@@ -58,6 +58,11 @@ struct nk_style_item;
 struct nk_color;
 struct proj_desc;
 
+struct entity_block_desc{
+    uint32_t uid;
+    float    radius;
+    vec2_t   pos;
+};
 
 VEC_TYPE(entity, uint32_t)
 VEC_IMPL(static inline, entity, uint32_t)

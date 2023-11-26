@@ -52,6 +52,7 @@
 #include "../navigation/public/nav.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
+#include "../phys/public/collision.h"
 
 #include <SDL.h>
 #include <assert.h>
@@ -132,6 +133,7 @@ struct cell_field_work_input{
 
 struct cell_field_work{
     bool                         consumed;
+    bool                         recompute_pending;
     struct map                  *map;
     uint32_t                     tid;
     uint32_t                     uid;
@@ -148,6 +150,15 @@ KHASH_MAP_INIT_INT(result, struct cell_arrival_field*)
 
 QUEUE_TYPE(coord, struct coord)
 QUEUE_IMPL(static, coord, struct coord)
+
+struct block_event{
+    enum eventtype type;
+    void          *arg;
+    uint32_t       tick_recorded;
+};
+
+QUEUE_TYPE(event, struct block_event)
+QUEUE_IMPL(static, event, struct block_event)
 
 enum formation_type{
     FORMATION_RANK,
@@ -197,6 +208,9 @@ struct formation{
     vec2_t               orientation;
     vec2_t               center;
     khash_t(entity)     *ents;
+    /* The tick during which this formation was created.
+     */
+    uint32_t             created_tick;
     /* A mapping between entities and subformations 
      */
     khash_t(assignment) *sub_assignment;
@@ -223,6 +237,8 @@ KHASH_MAP_INIT_INT(mapping, formation_id_t);
 static void complete_cell_field_work(struct subformation *formation);
 static struct cell_arrival_field *cell_get_field(uint32_t uid);
 static vec2_t cell_get_dir(const struct cell_arrival_field *field, int r, int c);
+static void recompute_cell_arrival_fields(struct map *map, vec2_t center, 
+                                          struct subformation *formation);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -233,6 +249,7 @@ static khash_t(mapping)   *s_ent_formation_map;
 static khash_t(formation) *s_formations;
 static formation_id_t      s_next_id;
 static SDL_TLSID           s_workspace;
+static queue_event_t       s_events;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -2379,6 +2396,108 @@ static void on_render_3d(void *user, void *event)
     }
 }
 
+static bool event_triggered_recalculate(struct formation *formation, struct block_event *event)
+{
+    struct entity_block_desc *desc = event->arg;
+    if(!G_EntityExists(desc->uid))
+        return false;
+
+    khiter_t k;
+    if((k = kh_get(entity, formation->ents, desc->uid)) != kh_end(formation->ents))
+        return false;
+
+    struct map_resolution nav_res;
+    M_NavGetResolution(s_map, &nav_res);
+
+    const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+
+    const float tile_x_dim = chunk_x_dim / nav_res.tile_w;
+    const float tile_z_dim = chunk_z_dim / nav_res.tile_h;
+
+    const float field_x_dim = tile_x_dim * CELL_ARRIVAL_FIELD_RES;
+    const float field_z_dim = tile_z_dim * CELL_ARRIVAL_FIELD_RES;
+
+    vec2_t base = formation->center;
+    vec2_t delta = (vec2_t){field_x_dim/2.0f, -field_z_dim/2.0f};
+    PFM_Vec2_Add(&base, &delta, &base);
+
+    struct box field_bounds = (struct box){
+        base.x,
+        base.z,
+        field_x_dim,
+        field_z_dim
+    };
+    return C_CircleRectIntersection(desc->pos, desc->radius, field_bounds);
+}
+
+static void on_entity_unblock(void *user, void *event)
+{
+    uint32_t uid = (uintptr_t)event;
+    uint32_t tick = SDL_GetTicks();
+    struct block_event block_event = (struct block_event){
+        .type = EVENT_MOVABLE_ENTITY_UNBLOCK,
+        .arg = event,
+        .tick_recorded = tick
+    };
+    queue_event_push(&s_events, &block_event);
+}
+
+static void on_entity_block(void *user, void *event)
+{
+    uint32_t tick = SDL_GetTicks();
+    struct block_event block_event = (struct block_event){
+        .type = EVENT_MOVABLE_ENTITY_BLOCK,
+        .arg = event,
+        .tick_recorded = tick
+    };
+    queue_event_push(&s_events, &block_event);
+}
+
+static void on_building_found(void *user, void *event)
+{
+}
+
+static void on_building_destroy(void *user, void *event)
+{
+}
+
+static void on_1hz_tick(void *user, void *event)
+{
+    khash_t(entity) *need_recompute = kh_init(entity);
+    uint32_t ticks = SDL_GetTicks();
+    struct block_event block_event;
+    while(queue_event_pop(&s_events, &block_event)) {
+
+        formation_id_t fid;
+        struct formation *formation;
+        kh_foreach_val_ptr(s_formations, fid, formation, {
+            khiter_t k;
+            if((k = kh_get(entity, need_recompute, fid)) != kh_end(need_recompute))
+                continue;
+            if(!SDL_TICKS_PASSED(block_event.tick_recorded, formation->created_tick))
+                continue;
+            if(!event_triggered_recalculate(formation, &block_event))
+                continue;
+            int status;
+            k = kh_put(entity, need_recompute, fid, &status);
+            assert(status != -1);
+        });
+        PF_FREE(block_event.arg);
+    }
+    formation_id_t fid;
+    kh_foreach_key(need_recompute, fid, {
+        khiter_t k = kh_get(formation, s_formations, fid);
+        assert(k != kh_end(s_formations));
+        struct formation *formation = &kh_val(s_formations, k);
+        for(int i = 0; i < vec_size(&formation->subformations); i++) {
+            struct subformation *curr = &vec_AT(&formation->subformations, i);
+            recompute_cell_arrival_fields((struct map*)s_map, formation->center, curr);
+        }
+    });
+    kh_destroy(entity, need_recompute);
+}
+
 static void destroy_subformation(struct subformation *formation)
 {
     complete_cell_field_work(formation);
@@ -2460,12 +2579,42 @@ static struct result cell_field_task(void *arg)
     return NULL_RESULT;
 }
 
-static void dispatch_cell_field_work(struct map *map, vec2_t center, struct subformation *formation)
+static void dispatch_cell_task(struct map *map, vec2_t center, uint32_t uid,
+                               struct subformation *formation, struct cell_field_work *work, 
+                               struct cell *cell)
 {
     struct map_resolution res;
     M_NavGetResolution(map, &res);
     vec3_t map_pos = M_GetPos(map);
 
+    struct tile_desc cell_td;
+    bool exists = M_Tile_DescForPoint2D(res, map_pos, bin_to_tile(cell->pos, center), &cell_td);
+    assert(exists);
+
+    struct tile_desc center_td;
+    exists = M_Tile_DescForPoint2D(res, map_pos, bin_to_tile(center, center), &center_td);
+    assert(exists);
+
+    work->consumed = false;
+    work->recompute_pending = false;
+    work->map = map;
+    work->uid = uid;
+    work->input = (struct cell_field_work_input){
+        .layer = formation->layer,
+        .enemy_faction_mask = G_GetEnemyFactions(formation->faction_id),
+        .cell_tile = cell_td,
+        .center_tile = center_td
+    };
+    SDL_AtomicSet(&work->future.status, FUTURE_INCOMPLETE);
+    work->tid = Sched_Create(31, cell_field_task, work, &work->future, 0);
+    if(work->tid == NULL_TID) {
+        cell_field_task(&work->result);
+        SDL_AtomicSet(&work->future.status, FUTURE_COMPLETE);
+    }
+}
+
+static void dispatch_cell_field_work(struct map *map, vec2_t center, struct subformation *formation)
+{
     /* Reserve the appropriate amount of space in the vector. 
      * Futures cannot be moved in memory once the corresponding 
      * task is dispatched. 
@@ -2484,30 +2633,7 @@ static void dispatch_cell_field_work(struct map *map, vec2_t center, struct subf
         struct coord coord = kh_val(formation->assignment, k);
         struct cell *cell = &vec_AT(&formation->cells,
             CELL_IDX(coord.r, coord.c, formation->ncols));
-
-        struct tile_desc cell_td;
-        bool exists = M_Tile_DescForPoint2D(res, map_pos, bin_to_tile(cell->pos, center), &cell_td);
-        assert(exists);
-
-        struct tile_desc center_td;
-        exists = M_Tile_DescForPoint2D(res, map_pos, bin_to_tile(center, center), &center_td);
-        assert(exists);
-
-        curr->consumed = false;
-        curr->map = map;
-        curr->uid = uid;
-        curr->input = (struct cell_field_work_input){
-            .layer = formation->layer,
-            .enemy_faction_mask = G_GetEnemyFactions(formation->faction_id),
-            .cell_tile = cell_td,
-            .center_tile = center_td
-        };
-        SDL_AtomicSet(&curr->future.status, FUTURE_INCOMPLETE);
-        curr->tid = Sched_Create(31, cell_field_task, curr, &curr->future, 0);
-        if(curr->tid == NULL_TID) {
-            cell_field_task(&curr->result);
-            SDL_AtomicSet(&curr->future.status, FUTURE_COMPLETE);
-        }
+        dispatch_cell_task(map, center, uid, formation, curr, cell);
         i++;
     });
 }
@@ -2533,6 +2659,15 @@ static void on_update_start(void *user, void *event)
             struct subformation *sub = &vec_AT(&formation->subformations, i);
             for(int j = 0; j < vec_size(&sub->futures); j++) {
                 struct cell_field_work *curr = &vec_AT(&sub->futures, j);
+                uint32_t uid = curr->uid;
+                if(curr->recompute_pending) {
+                    khiter_t k = kh_get(assignment, sub->assignment, uid);
+                    assert(k != kh_end(sub->assignment));
+                    struct coord coord = kh_val(sub->assignment, k);
+                    struct cell *cell = &vec_AT(&sub->cells,
+                        CELL_IDX(coord.r, coord.c, sub->ncols));
+                    dispatch_cell_task((struct map*)s_map, formation->center, uid, sub, curr, cell);
+                }
                 if(!curr->consumed && Sched_FutureIsReady(&curr->future)) {
                     /* Publish the result */
                     int ret;
@@ -2631,6 +2766,29 @@ static struct cell *cell_for_ent(struct formation *formation, uint32_t uid)
     return &vec_AT(&sub->cells, cell_idx);
 }
 
+static void recompute_cell_arrival_fields(struct map *map, vec2_t center, 
+                                          struct subformation *formation)
+{
+    int i = 0;
+    uint32_t uid;
+    kh_foreach_key(formation->ents, uid, {
+        struct cell_field_work *curr = &vec_AT(&formation->futures, i);
+        if(!curr->consumed && !Sched_FutureIsReady(&curr->future)) {
+            curr->recompute_pending = true;
+            continue;
+        }
+
+        khiter_t k = kh_get(assignment, formation->assignment, uid);
+        assert(k != kh_end(formation->assignment));
+        struct coord coord = kh_val(formation->assignment, k);
+        struct cell *cell = &vec_AT(&formation->cells,
+            CELL_IDX(coord.r, coord.c, formation->ncols));
+        dispatch_cell_task(map, center, uid, formation, curr, cell);
+
+        i++;
+    });
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -2650,12 +2808,18 @@ bool G_Formation_Init(const struct map *map)
     if(s_workspace == 0)
         goto fail_tls;
 
+    if(!queue_event_init(&s_events, 512))
+        goto fail_tls;
+
     s_map = map;
     s_next_id = 0;
 
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, 
         G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
     E_Global_Register(EVENT_UPDATE_START, on_update_start, NULL, G_RUNNING);
+    E_Global_Register(EVENT_MOVABLE_ENTITY_BLOCK, on_entity_block, NULL, G_RUNNING);
+    E_Global_Register(EVENT_MOVABLE_ENTITY_UNBLOCK, on_entity_unblock, NULL, G_RUNNING);
+    E_Global_Register(EVENT_1HZ_TICK, on_1hz_tick, NULL, G_RUNNING);
     return true;
 
 fail_tls:
@@ -2675,8 +2839,13 @@ void G_Formation_Shutdown(void)
         destroy_formation(formation);
     });
 
+    E_Global_Unregister(EVENT_1HZ_TICK, on_1hz_tick);
+    E_Global_Unregister(EVENT_MOVABLE_ENTITY_UNBLOCK, on_entity_unblock);
+    E_Global_Unregister(EVENT_MOVABLE_ENTITY_BLOCK, on_entity_block);
     E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
+
+    queue_event_destroy(&s_events);
     kh_destroy(formation, s_formations);
     kh_destroy(mapping, s_ent_formation_map);
 }
@@ -2708,6 +2877,7 @@ void G_Formation_Create(vec2_t target, const vec_entity_t *ents)
         .orientation = orientation,
         .center = field_center(target, orientation),
         .ents = copy_vector(ents),
+        .created_tick = SDL_GetTicks(),
         .sub_assignment = kh_init(assignment)
     };
     init_subformations(new);

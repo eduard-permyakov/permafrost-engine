@@ -400,6 +400,13 @@ static void entity_block(uint32_t uid)
     ms->blocking = true;
     ms->last_stop_pos = pos;
     ms->last_stop_radius = sel_radius;
+    struct entity_block_desc *desc = malloc(sizeof(struct entity_block_desc));
+    *desc = (struct entity_block_desc){
+        .uid = uid,
+        .radius = sel_radius,
+        .pos = pos
+    };
+    E_Global_Notify(EVENT_MOVABLE_ENTITY_BLOCK, desc, ES_ENGINE);
 }
 
 static void entity_unblock(uint32_t uid)
@@ -410,6 +417,14 @@ static void entity_unblock(uint32_t uid)
     int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
     M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, faction_id, s_map);
     ms->blocking = false;
+
+    struct entity_block_desc *desc = malloc(sizeof(struct entity_block_desc));
+    *desc = (struct entity_block_desc){
+        .uid = uid,
+        .radius = ms->last_stop_radius,
+        .pos = ms->last_stop_pos
+    };
+    E_Global_Notify(EVENT_MOVABLE_ENTITY_UNBLOCK, desc, ES_ENGINE);
 }
 
 static bool stationary(uint32_t uid)
@@ -2259,7 +2274,7 @@ static void *cp_vec_realloc(void *ptr, size_t size)
     return ret;
 }
 
-static void cp_vec_PF_FREE(void *ptr)
+static void cp_vec_free(void *ptr)
 {
     /* no-op */
 }
@@ -2508,8 +2523,8 @@ static void on_20hz_tick(void *user, void *event)
         dyn = stalloc(&s_move_work.mem, sizeof(vec_cp_ent_t));
         stat = stalloc(&s_move_work.mem, sizeof(vec_cp_ent_t));
 
-        vec_cp_ent_init_alloc(dyn, cp_vec_realloc, cp_vec_PF_FREE);
-        vec_cp_ent_init_alloc(stat, cp_vec_realloc, cp_vec_PF_FREE);
+        vec_cp_ent_init_alloc(dyn, cp_vec_realloc, cp_vec_free);
+        vec_cp_ent_init_alloc(stat, cp_vec_realloc, cp_vec_free);
 
         vec_cp_ent_resize(dyn, 16);
         vec_cp_ent_resize(stat, 16);

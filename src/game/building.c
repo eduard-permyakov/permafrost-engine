@@ -486,6 +486,13 @@ void G_Building_RemoveEntity(uint32_t uid)
 
     if(bs->state >= BUILDING_STATE_FOUNDED && bs->blocking) {
         M_NavBlockersDecrefOBB(s_map, G_GetFactionID(uid), &bs->obb);
+        struct entity_block_desc *desc = malloc(sizeof(struct entity_block_desc));
+        *desc = (struct entity_block_desc){
+            .uid = uid,
+            .radius = G_GetSelectionRadius(uid),
+            .pos = G_Pos_GetXZ(uid)
+        };
+        E_Global_Notify(EVENT_BUILDING_REMOVED, desc, ES_ENGINE);
     }
 
     if(G_EntityExists(bs->progress_model)) {
@@ -594,6 +601,14 @@ bool G_Building_Found(uint32_t uid, bool blocking)
 
     E_Entity_Register(EVENT_STORAGE_SITE_AMOUNT_CHANGED, uid, on_amount_changed, 
         (void*)((uintptr_t)uid), G_RUNNING);
+
+    struct entity_block_desc *desc = malloc(sizeof(struct entity_block_desc));
+    *desc = (struct entity_block_desc){
+        .uid = uid,
+        .radius = G_GetSelectionRadius(uid),
+        .pos = G_Pos_GetXZ(uid)
+    };
+    E_Global_Notify(EVENT_BUILDING_PLACED, desc, ES_ENGINE);
     return true;
 }
 
