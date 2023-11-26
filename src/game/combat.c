@@ -939,8 +939,8 @@ static void do_update_ref(int oldfac, int newfac, vec2_t pos)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    G_Combat_RemoveRef(oldfac, pos);
-    G_Combat_AddRef(newfac, pos);
+    do_remove_ref(oldfac, pos);
+    do_add_ref(newfac, pos);
 }
 
 static void do_set_base_armour(uint32_t uid, float armour_pc)
@@ -2267,6 +2267,7 @@ void G_Combat_AddTimeDelta(uint32_t delta)
 
 void G_Combat_AddRef(int faction_id, vec2_t pos)
 {
+    printf("AddRef: %d (%f, %f)\n", faction_id, pos.x, pos.z);
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_ADD_REF,
         .args[0] = {
@@ -2282,6 +2283,7 @@ void G_Combat_AddRef(int faction_id, vec2_t pos)
 
 void G_Combat_RemoveRef(int faction_id, vec2_t pos)
 {
+    printf("RemoveRef: %d (%f, %f)\n", faction_id, pos.x, pos.z);
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_REMOVE_REF,
         .args[0] = {
@@ -2297,6 +2299,7 @@ void G_Combat_RemoveRef(int faction_id, vec2_t pos)
 
 void G_Combat_UpdateRef(int oldfac, int newfac, vec2_t pos)
 {
+    printf("UpdateRef: %d->%d (%f, %f)\n", oldfac, newfac, pos.x, pos.z);
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_UPDATE_REF,
         .args[0] = {
