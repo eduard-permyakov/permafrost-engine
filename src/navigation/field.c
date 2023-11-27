@@ -37,6 +37,7 @@
 #include "nav_private.h"
 #include "../entity.h"
 #include "../sched.h"
+#include "../perf.h"
 #include "../map/public/tile.h"
 #include "../game/public/game.h"
 #include "../lib/public/pqueue.h"

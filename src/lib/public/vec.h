@@ -36,8 +36,6 @@
 #ifndef VEC_H
 #define VEC_H
 
-#include "../../perf.h"
-
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -113,17 +111,16 @@
                                                                                                 \
     scope bool vec_##name##_resize(vec(name) *vec, size_t new_cap)                              \
     {                                                                                           \
-        PERF_ENTER();                                                                           \
         if(vec->capacity >= new_cap)                                                            \
-            PERF_RETURN(true);                                                                  \
+            return true;                                                                        \
                                                                                                 \
         type *new_array = (type*)vec->vrealloc(vec->array, new_cap * sizeof(type));             \
         if(!new_array)                                                                          \
-            PERF_RETURN(false);                                                                 \
+            return false;                                                                       \
                                                                                                 \
         vec->array = new_array;                                                                 \
         vec->capacity = new_cap;                                                                \
-        PERF_RETURN(true);                                                                      \
+        return true;                                                                            \
     }                                                                                           \
                                                                                                 \
     scope void vec_##name##_destroy(vec(name) *vec)                                             \
