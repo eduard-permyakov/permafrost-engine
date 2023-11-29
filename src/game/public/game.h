@@ -456,5 +456,17 @@ bool   G_Region_ContainsEnt(const char *name, uint32_t uid);
 bool   G_Region_ExploreFog(const char *name, int faction_id);
 bool   G_Region_Explored(const char *name, uint16_t player_mask, bool *out);
 
+/*###########################################################################*/
+/* GAME FORMATION                                                            */
+/*###########################################################################*/
+
+enum formation_type{
+    FORMATION_NONE,
+    FORMATION_RANK,
+    FORMATION_COLUMN
+};
+
+void G_Formation_Arrange(enum formation_type type, vec_entity_t *ents);
+
 #endif
 

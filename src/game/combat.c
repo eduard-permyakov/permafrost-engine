@@ -557,7 +557,6 @@ static quat_t entity_turn_dir(uint32_t uid, uint32_t target)
     }
 
     PFM_Vec2_Normal(&ent_to_target, &ent_to_target);
-    quat_t curr = Entity_GetRotFrom(gs->transforms, uid);
     return quat_from_vec(ent_to_target);
 }
 

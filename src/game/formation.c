@@ -35,6 +35,7 @@
 
 #include "formation.h"
 #include "position.h"
+#include "movement.h"
 #include "../main.h"
 #include "../event.h"
 #include "../settings.h"
@@ -70,6 +71,7 @@
 #define UNIT_BUFFER_DIST         (1.0f)
 #define SUBFORMATION_BUFFER_DIST (8.0f)
 #define SIGNUM(x)                (((x) > 0) - ((x) < 0))
+#define EPSILON                  (1.0f/1024)
 
 enum cell_state{
     CELL_NOT_PLACED,
@@ -159,11 +161,6 @@ struct block_event{
 
 QUEUE_TYPE(event, struct block_event)
 QUEUE_IMPL(static, event, struct block_event)
-
-enum formation_type{
-    FORMATION_RANK,
-    FORMATION_COLUMN
-};
 
 struct subformation{
     /* Subformations are stored in an acyclic tree structure
@@ -295,7 +292,6 @@ static size_t nrows(enum formation_type type, size_t nunits)
 
 static vec2_t compute_orientation(vec2_t target, const vec_entity_t *ents)
 {
-    uint32_t curr;
     vec2_t COM = (vec2_t){0.0f, 0.0f};
     for(int i = 0; i < vec_size(ents); i++) {
         uint32_t curr = vec_AT(ents, i);
@@ -307,6 +303,19 @@ static vec2_t compute_orientation(vec2_t target, const vec_entity_t *ents)
 
     vec2_t orientation;
     PFM_Vec2_Sub(&target, &COM, &orientation);
+
+    if(PFM_Vec2_Len(&orientation) < EPSILON) {
+
+        vec4_t front = (vec4_t){0.0f, 0.0f, 1.0f, 1.0f};
+        quat_t rot = Entity_GetRot(vec_AT(ents, 0)); 
+
+        mat4x4_t rot_mat;
+        PFM_Mat4x4_RotFromQuat(&rot, &rot_mat);
+
+        vec4_t dir;
+        PFM_Mat4x4_Mult4x1(&rot_mat, &front, &dir);
+        return (vec2_t){dir.x, dir.z};
+    }
     PFM_Vec2_Normal(&orientation, &orientation);
     return orientation;
 }
@@ -558,13 +567,13 @@ static bool any_match(struct tile_desc *a, size_t numa,
     return false;
 }
 
-/* Find the X and Y offsets between adjacent in a formation, given
+/* Find the X and Y offsets between adjacent cells in a formation, given
  * that there are no obstacles. These cannot be computed from the 
  * unit radiuses because of the grid-based nature of the 'occupied'
  * field. 
  */
 static vec2_t target_direction_offsets(vec2_t center, vec2_t orientation, 
-                                       struct subformation *formation)
+                                       float unit_radius)
 {
     struct map_resolution nav_res;
     M_NavGetResolution(s_map, &nav_res);
@@ -594,14 +603,14 @@ static vec2_t target_direction_offsets(vec2_t center, vec2_t orientation,
         (root_tile.r + 0.5f) *  tile_z_dim
     };
     struct tile_desc descs[256];
-    size_t ndescs = M_Tile_AllUnderCircle(res, root_center, formation->unit_radius, 
+    size_t ndescs = M_Tile_AllUnderCircle(res, root_center, unit_radius, 
         origin, descs, ARR_SIZE(descs));
 
     /* Place a tile immediately to the front of this tile. Start with the
      * minimum possible distance and go forward in unit-sized increments 
      * along the direction vector.
      */
-    float minimal_distance = formation->unit_radius * 2 + UNIT_BUFFER_DIST;
+    float minimal_distance = unit_radius * 2 + UNIT_BUFFER_DIST;
     float unit_distance = step_distance(orientation, tile_x_dim);
     float front_distance = INFINITY;
 
@@ -619,7 +628,7 @@ static vec2_t target_direction_offsets(vec2_t center, vec2_t orientation,
 
     do{
         struct tile_desc front_descs[256];
-        size_t front_ndescs = M_Tile_AllUnderCircle(res, candidate, formation->unit_radius, 
+        size_t front_ndescs = M_Tile_AllUnderCircle(res, candidate, unit_radius, 
             origin, front_descs, ARR_SIZE(front_descs));
 
         if(!any_match(descs, ndescs, front_descs, front_ndescs)) {
@@ -647,7 +656,7 @@ static vec2_t target_direction_offsets(vec2_t center, vec2_t orientation,
 
     do{
         struct tile_desc right_descs[256];
-        size_t right_ndescs = M_Tile_AllUnderCircle(res, candidate, formation->unit_radius, 
+        size_t right_ndescs = M_Tile_AllUnderCircle(res, candidate, unit_radius, 
             origin, right_descs, ARR_SIZE(right_descs));
 
         if(!any_match(descs, ndescs, right_descs, right_ndescs)) {
@@ -897,7 +906,7 @@ static vec2_t subformation_target_pos(struct subformation *formation, vec2_t tar
     return ret;
 }
 
-static vec2_t formation_center(struct subformation *formation)
+static vec2_t subformation_center(struct subformation *formation)
 {
     vec2_t ret = (vec2_t){0.0f, 0.0f};
     size_t nents = kh_size(formation->ents);
@@ -914,6 +923,95 @@ static vec2_t formation_center(struct subformation *formation)
     return ret;
 }
 
+static vec2_t formation_center_of_mass(vec_entity_t *ents)
+{
+    vec2_t ret = (vec2_t){0.0f, 0.0f};
+    size_t nents = vec_size(ents);
+
+    uint32_t uid;
+    for(int i = 0; i < nents; i++) {
+        uint32_t uid = vec_AT(ents, i);
+        vec2_t pos = G_Pos_GetXZ(uid);
+        PFM_Vec2_Add(&ret, &pos, &ret);
+    }
+    PFM_Vec2_Scale(&ret, 1.0f / nents, &ret);
+    return ret;
+}
+
+static vec2_t formation_average_orientation(vec_entity_t *ents)
+{
+    vec4_t front = (vec4_t){0.0f, 0.0f, 1.0f, 1.0f};
+    vec2_t ret = (vec2_t){0.0f, 0.0f};
+    size_t nents = vec_size(ents);
+
+    uint32_t uid;
+    for(int i = 0; i < nents; i++) {
+
+        uint32_t uid = vec_AT(ents, i);
+        quat_t rot = Entity_GetRot(uid); 
+
+        mat4x4_t rot_mat;
+        PFM_Mat4x4_RotFromQuat(&rot, &rot_mat);
+
+        vec4_t dir;
+        PFM_Mat4x4_Mult4x1(&rot_mat, &front, &dir);
+        vec2_t dir_xz = (vec2_t){dir.x, dir.z};
+        PFM_Vec2_Add(&ret, &dir_xz, &ret);
+    }
+    PFM_Vec2_Normal(&ret, &ret);
+    return ret;
+}
+
+static vec2_t target_position(vec_entity_t *ents)
+{
+    if(vec_size(ents) == 1) {
+        uint32_t uid = vec_AT(ents, 0);
+        return G_Pos_GetXZ(uid);
+    }
+
+    vec2_t com = formation_center_of_mass(ents);
+    vec2_t dir = formation_average_orientation(ents);
+    float theta = atan2(dir.z, dir.x) - M_PI/2.0f;
+
+    float minx = INT_MAX, minz = INT_MAX, maxx = INT_MIN, maxz = INT_MIN;
+    for(int i = 0; i < vec_size(ents); i++) {
+        uint32_t uid = vec_AT(ents, i);
+        vec2_t pos = G_Pos_GetXZ(uid);
+        vec2_t delta;
+        PFM_Vec2_Sub(&pos, &com, &delta);
+
+        vec2_t rotated = (vec2_t){
+            -delta.x * cos(theta) - delta.z * sin(theta),
+            -delta.x * sin(theta) + delta.z * cos(theta)
+        };
+
+        minx = MIN(minx, rotated.x);
+        minz = MIN(minz, rotated.z);
+        maxx = MAX(maxx, rotated.x);
+        maxz = MAX(maxz, rotated.z);
+    }
+
+    struct box box = (struct box){
+        maxx, minz,
+        maxx - minx, 
+        maxz - minz
+    };
+    struct line_seg_2d seg = (struct line_seg_2d){
+        0, 0,
+        0, 500
+    };
+    vec2_t isec[2] = {0};
+    C_LineBoxIntersection(seg, box, isec);
+
+    vec2_t delta = dir;
+    PFM_Vec2_Normal(&delta, &delta);
+    PFM_Vec2_Scale(&dir, PFM_Vec2_Len(&isec[0]), &delta);
+
+    vec2_t ret = com;
+    PFM_Vec2_Add(&ret, &delta, &ret);
+    return ret;
+}
+
 static void place_subformation(struct subformation *formation, vec2_t center, 
     vec2_t target, vec2_t orientation,
     uint8_t occupied[NAV_LAYER_MAX][OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
@@ -922,7 +1020,7 @@ static void place_subformation(struct subformation *formation, vec2_t center,
     PERF_ENTER();
 
     vec2_t target_orientation = orientation;
-    vec2_t target_offsets = target_direction_offsets(center, orientation, formation);
+    vec2_t target_offsets = target_direction_offsets(center, orientation, formation->unit_radius);
     vec2_t target_pos = subformation_target_pos(formation, target, orientation, target_offsets);
 
     int nrows = formation->nrows;
@@ -999,7 +1097,7 @@ static void place_subformation(struct subformation *formation, vec2_t center,
 
     queue_coord_destroy(&frontier);
 
-    formation->pos = formation_center(formation);
+    formation->pos = subformation_center(formation);
     formation->orientation = orientation;
     PERF_RETURN_VOID();
 }
@@ -1196,11 +1294,6 @@ static void init_subformations(struct formation *formation)
 
     STFREE(ents);
     STFREE(types);
-}
-
-static float manhattan_distance(vec2_t vec)
-{
-    return vec.x + vec.z;
 }
 
 /* The cost matrix holds the distance between every entity
@@ -2337,6 +2430,43 @@ static void render_cell_arrival_field(struct formation *formation, int index)
     });
 }
 
+static void render_arrangements(vec2_t com, vec2_t dir)
+{
+    const vec3_t magenta = (vec3_t){1.0, 0.0, 1.0};
+    const float radius = 0.5f;
+    const float width = 1.5f;
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawSelectionCircle,
+        .nargs = 5,
+        .args = {
+            R_PushArg(&com, sizeof(com)),
+            R_PushArg(&radius, sizeof(radius)),
+            R_PushArg(&width, sizeof(width)),
+            R_PushArg(&magenta, sizeof(magenta)),
+            (void*)G_GetPrevTickMap(),
+        },
+    });
+
+    const float length = 15.0f;
+    const vec3_t green = (vec3_t){0.0, 1.0, 0.0};
+    vec2_t origin = com;
+    vec2_t delta, end;
+    PFM_Vec2_Scale(&dir, length, &delta);
+    PFM_Vec2_Add(&origin, &delta, &end);
+
+    vec2_t endpoints[] = {origin, end};
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawLine,
+        .nargs = 4,
+        .args = {
+            R_PushArg(endpoints, sizeof(endpoints)),
+            R_PushArg(&width, sizeof(width)),
+            R_PushArg(&green, sizeof(green)),
+            (void*)G_GetPrevTickMap()
+        }
+    });
+}
+
 static void on_render_3d(void *user, void *event)
 {
     enum nav_layer layer;
@@ -2789,6 +2919,19 @@ static void recompute_cell_arrival_fields(struct map *map, vec2_t center,
     });
 }
 
+static quat_t quat_from_vec(vec2_t dir)
+{
+    assert(PFM_Vec2_Len(&dir) > EPSILON);
+
+    float angle_rad = atan2(dir.z, dir.x) - M_PI/2.0f;
+    return (quat_t) {
+        0.0f, 
+        1.0f * sin(angle_rad / 2.0f),
+        0.0f,
+        cos(angle_rad / 2.0f)
+    };
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -2850,7 +2993,7 @@ void G_Formation_Shutdown(void)
     kh_destroy(mapping, s_ent_formation_map);
 }
 
-void G_Formation_Create(vec2_t target, const vec_entity_t *ents)
+void G_Formation_Create(vec2_t target, const vec_entity_t *ents, enum formation_type type)
 {
     ASSERT_IN_MAIN_THREAD();
     formation_id_t fid = s_next_id++;
@@ -2872,7 +3015,7 @@ void G_Formation_Create(vec2_t target, const vec_entity_t *ents)
     vec2_t orientation = compute_orientation(target, ents);
     *new = (struct formation){
         .refcount = kh_size(ents),
-        .type = FORMATION_RANK,
+        .type = type,
         .target = target,
         .orientation = orientation,
         .center = field_center(target, orientation),
@@ -3029,5 +3172,25 @@ vec2_t G_Formation_CellPosition(uint32_t uid)
     struct cell *cell = cell_for_ent(formation, uid);
     assert(cell);
     return cell->pos;
+}
+
+void G_Formation_Arrange(enum formation_type type, vec_entity_t *ents)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(type == FORMATION_NONE)
+        return;
+
+    vec2_t target = target_position(ents);
+    G_Move_ArrangeInFormation(ents, target, type);
+}
+
+quat_t G_Formation_TargetOrientation(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct formation *formation = formation_for_ent(uid);
+    assert(formation);
+    return quat_from_vec(formation->orientation);
 }
 

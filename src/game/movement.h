@@ -36,6 +36,7 @@
 #ifndef MOVEMENT_H
 #define MOVEMENT_H
 
+#include "public/game.h"
 #include "../pf_math.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -61,6 +62,7 @@ void G_Move_SetSeekEnemies(uint32_t uid);
 void G_Move_SetSurroundEntity(uint32_t uid, uint32_t target);
 void G_Move_SetChangeDirection(uint32_t uid, quat_t target);
 void G_Move_SetEnterRange(uint32_t uid, uint32_t target, float range);
+void G_Move_ArrangeInFormation(vec_entity_t *ents, vec2_t target, enum formation_type type);
 
 void G_Move_UpdatePos(uint32_t uid, vec2_t pos);
 void G_Move_UpdateFactionID(uint32_t uid, int oldfac, int newfac);

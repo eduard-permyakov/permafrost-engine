@@ -49,7 +49,7 @@ struct map;
 bool           G_Formation_Init(const struct map *map);
 void           G_Formation_Shutdown(void);
 
-void           G_Formation_Create(vec2_t target, const vec_entity_t *ents);
+void           G_Formation_Create(vec2_t target, const vec_entity_t *ents, enum formation_type type);
 formation_id_t G_Formation_GetForEnt(uint32_t uid);
 void           G_Formation_RemoveUnit(uint32_t uid);
 
@@ -60,6 +60,7 @@ vec2_t         G_Formation_ApproximateDesiredArrivalVelocity(uint32_t uid);
 bool           G_Formation_ArrivedAtCell(uint32_t uid);
 bool           G_Formation_AssignedToCell(uint32_t uid);
 vec2_t         G_Formation_CellPosition(uint32_t uid);
+quat_t         G_Formation_TargetOrientation(uint32_t uid);
 
 #endif
 

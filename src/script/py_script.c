@@ -217,6 +217,7 @@ static PyObject *PyPf_get_all_music(PyObject *self);
 static PyObject *PyPf_play_effect(PyObject *self, PyObject *args);
 static PyObject *PyPf_play_global_effect(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_spawn_projectile(PyObject *self, PyObject *args);
+static PyObject *PyPf_formation_arrange(PyObject *self, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -735,6 +736,10 @@ static PyMethodDef pf_module_methods[] = {
     "Spawn a projectile with the specified parameters at a map location. The projectile will travel "
     "with the specified velocity until it leaves the map bounds or hits a unit. The hit event can be "
     "handled."},
+
+    {"formation_arrange",
+    (PyCFunction)PyPf_formation_arrange, METH_VARARGS,
+    "Arrange the specified units into a formation of the specified type."},
 
     {NULL}  /* Sentinel */
 };
@@ -1388,7 +1393,6 @@ static PyObject *PyPf_set_unit_selection(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    //uint32_t ents[PyList_GET_SIZE(list)];
     STALLOC(uint32_t, ents, PyList_GET_SIZE(list));
     size_t nents = 0;
 
@@ -2994,6 +2998,36 @@ static PyObject *PyPf_spawn_projectile(PyObject *self, PyObject *args)
 
     uint32_t ret = P_Projectile_Add(origin, velocity, ent_parent, faction_id, cookie, flags, pd);
     return PyInt_FromLong(ret);
+}
+
+static PyObject *PyPf_formation_arrange(PyObject *self, PyObject *args)
+{
+    enum formation_type type;
+    vec_entity_t ents;
+    vec_entity_init(&ents);
+
+    PyObject *list;
+    if(!PyArg_ParseTuple(args, "O!i", &PyList_Type, &list, &type)) {
+        PyErr_SetString(PyExc_TypeError, 
+            "Argument must a list object and a formation type (integer).");
+        return NULL;
+    }
+
+    for(int i = 0; i < PyList_GET_SIZE(list); i++) {
+        PyObject *obj = PyList_GET_ITEM(list, i);
+        if(!S_Entity_Check(obj)) {
+            PyErr_SetString(PyExc_TypeError, "Argument must a list of pf.Entity objects.");
+            vec_entity_destroy(&ents);
+            return NULL;
+        }
+        uint32_t uid;
+        S_Entity_UIDForObj(obj, &uid);
+        vec_entity_push(&ents, uid);
+    }
+
+    G_Formation_Arrange(type, &ents);
+    vec_entity_destroy(&ents);
+    Py_RETURN_NONE;
 }
 
 static void script_task_destructor(void *arg)
