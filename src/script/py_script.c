@@ -3583,3 +3583,26 @@ uint64_t S_ScriptTypeID(uint32_t uid)
     return ret;
 }
 
+int S_FormationPriority(uint32_t uid)
+{
+    PyObject *ent = S_Entity_ObjForUID(uid);
+    if(!ent)
+        return 0;
+
+    PyTypeObject *type = ent->ob_type;
+    PyObject *attr = PyObject_GetAttrString((PyObject*)type, "formation_priority");
+    if(!attr) {
+        PyErr_Clear();
+        return 0;
+    }
+
+    if(!PyInt_Check(attr)) {
+        Py_DECREF(attr);
+        return 0;
+    }
+
+    int ret = PyInt_AS_LONG(attr);
+    Py_DECREF(attr);
+    return ret;
+}
+

@@ -1145,6 +1145,16 @@ static void mark_unused_cells(struct subformation *formation)
     }
 }
 
+static int compare_priorities(uint32_t a, uint32_t b)
+{
+    int prio_a = S_FormationPriority(a);
+    int prio_b = S_FormationPriority(b);
+
+    if(prio_a < prio_b) return -1;
+    if(prio_a > prio_b) return  1;
+    return 0;
+}
+
 static size_t sort_by_type(size_t size, uint32_t *ents, uint64_t *types)
 {
     if(size == 0)
@@ -1153,7 +1163,7 @@ static size_t sort_by_type(size_t size, uint32_t *ents, uint64_t *types)
     int i = 1;
     while(i < size) {
         int j = i;
-        while(j > 0 && types[j-1] < types[j]) {
+        while(j > 0 && (types[j-1] != types[j]) && compare_priorities(ents[j-1], ents[j]) > 0) {
 
             /* swap UIDs */
             uint32_t tmp = ents[j-1];
@@ -2826,6 +2836,8 @@ static void on_update_start(void *user, void *event)
 static struct cell_arrival_field *cell_get_field(uint32_t uid)
 {
     formation_id_t fid = G_Formation_GetForEnt(uid);
+    if(fid == NULL_FID)
+        return NULL;
 
     khiter_t k = kh_get(formation, s_formations, fid);
     assert(k != kh_end(s_formations));
@@ -2866,12 +2878,13 @@ static bool inside_arrival_field_bounds(struct formation *formation, vec2_t pos)
 
     const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
     const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+    const float buffer = 10.0f;
 
     const float tile_x_dim = chunk_x_dim / nav_res.tile_w;
     const float tile_z_dim = chunk_z_dim / nav_res.tile_h;
 
-    const float field_x_dim = tile_x_dim * OCCUPIED_FIELD_RES;
-    const float field_z_dim = tile_z_dim * OCCUPIED_FIELD_RES;
+    const float field_x_dim = tile_x_dim * OCCUPIED_FIELD_RES - buffer;
+    const float field_z_dim = tile_z_dim * OCCUPIED_FIELD_RES - buffer;
 
     vec2_t center = formation->center;
     vec2_t corners[] = {
@@ -3157,6 +3170,7 @@ vec2_t G_Formation_DesiredArrivalVelocity(uint32_t uid)
      * and CELL_ARRIVAL_FIELD_RES */
     coord.r += 1;
     coord.c += 1;
+    printf("pos: (%f, %f) [coord: %d, %d]\n", pos.x, pos.z, coord.r, coord.c);
 
     struct cell_arrival_field *field = cell_get_field(uid);
     vec2_t ret = cell_get_dir(field, coord.r, coord.c);

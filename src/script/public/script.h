@@ -77,6 +77,7 @@ bool            S_WeakrefDied(script_opaque_t arg);
 bool            S_ObjectsEqual(script_opaque_t a, script_opaque_t b);
 /* This value is not persistent accross sessions - careful */
 uint64_t        S_ScriptTypeID(uint32_t uid);
+int             S_FormationPriority(uint32_t uid);
 
 void            S_ClearState(void);
 bool            S_SaveState(SDL_RWops *stream);
