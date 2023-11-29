@@ -52,6 +52,7 @@ void           G_Formation_Shutdown(void);
 void           G_Formation_Create(vec2_t target, const vec_entity_t *ents, enum formation_type type);
 formation_id_t G_Formation_GetForEnt(uint32_t uid);
 void           G_Formation_RemoveUnit(uint32_t uid);
+void           G_Formation_RemoveEntity(uint32_t uid);
 
 bool           G_Formation_InRangeOfCell(uint32_t uid);
 bool           G_Formation_CanUseArrivalField(uint32_t uid);

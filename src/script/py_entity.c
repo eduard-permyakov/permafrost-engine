@@ -82,7 +82,8 @@ static int       PyEntity_set_rotation(PyEntityObject *self, PyObject *value, vo
 static PyObject *PyEntity_get_selectable(PyEntityObject *self, void *closure);
 static int       PyEntity_set_selectable(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_selection_radius(PyEntityObject *self, void *closure);
-static int       PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, void *closure);
+static int       PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, 
+                                               void *closure);
 static PyObject *PyEntity_get_pfobj_path(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_top_screen_pos(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_faction_id(PyEntityObject *self, void *closure);
@@ -872,11 +873,20 @@ static PyObject *PyMovableEntity_unpickle(PyObject *cls, PyObject *args, PyObjec
 
 static PyObject *PyMovableEntity_get_speed(PyMovableEntityObject *self, void *closure);
 static int       PyMovableEntity_set_speed(PyMovableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyMovableEntity_get_preferred_formation(PyMovableEntityObject *self, 
+                                                         void *closure);
+static int       PyMovableEntity_set_preferred_formation(PyMovableEntityObject *self, 
+                                                         PyObject *value, void *closure);
 
 static PyGetSetDef PyMovableEntity_getset[] = {
     {"speed",
     (getter)PyMovableEntity_get_speed, (setter)PyMovableEntity_set_speed,
     "Entity's movement speed (in OpenGL coordinates per second).",
+    NULL},
+    {"preferred_formation",
+    (getter)PyMovableEntity_get_preferred_formation, 
+    (setter)PyMovableEntity_set_preferred_formation,
+    "The preferred formation type for the entity (the formation to move in for the next move order).",
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -3404,6 +3414,40 @@ static int PyMovableEntity_set_speed(PyMovableEntityObject *self, PyObject *valu
     }
 
     G_Move_SetMaxSpeed(self->super.ent, PyFloat_AS_DOUBLE(value));
+    return 0;
+}
+
+static PyObject *PyMovableEntity_get_preferred_formation(PyMovableEntityObject *self, 
+                                                         void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
+    enum formation_type type = G_Formation_GetPreferred(self->super.ent);
+    return PyInt_FromLong(type);
+}
+
+static int PyMovableEntity_set_preferred_formation(PyMovableEntityObject *self, 
+                                                   PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return -1;
+    }
+
+    if(!PyInt_Check(value)
+    || PyInt_AS_LONG(value) < 0
+    || PyInt_AS_LONG(value) >= FORMATION_MAX) {
+        PyErr_SetString(PyExc_TypeError, "The formation type must be a valid formation "
+            "type enumeration value");
+        return -1;
+    }
+
+    enum formation_type type = PyInt_AS_LONG(value);
+    uint32_t uid = self->super.ent;
+    G_Formation_SetPreferred(uid, type);
     return 0;
 }
 

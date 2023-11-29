@@ -230,6 +230,7 @@ struct formation{
 
 KHASH_MAP_INIT_INT(formation, struct formation)
 KHASH_MAP_INIT_INT(mapping, formation_id_t);
+KHASH_MAP_INIT_INT(type, enum formation_type);
 
 static void complete_cell_field_work(struct subformation *formation);
 static struct cell_arrival_field *cell_get_field(uint32_t uid);
@@ -244,6 +245,7 @@ static void recompute_cell_arrival_fields(struct map *map, vec2_t center,
 static const struct map   *s_map;
 static khash_t(mapping)   *s_ent_formation_map;
 static khash_t(formation) *s_formations;
+static khash_t(type)      *s_preferred;
 static formation_id_t      s_next_id;
 static SDL_TLSID           s_workspace;
 static queue_event_t       s_events;
@@ -2638,6 +2640,16 @@ static void destroy_subformation(struct subformation *formation)
     kh_destroy(entity, formation->ents);
 }
 
+static void clear_mappings(struct formation *formation)
+{
+    uint32_t uid;
+    kh_foreach_key(formation->ents, uid, {
+        khiter_t k = kh_get(formation, s_formations, uid);
+        assert(k != kh_end(s_formations));
+        kh_del(formation, s_formations, k);
+    });
+}
+
 static void destroy_formation(struct formation *formation)
 {
     for(int i = 0; i < vec_size(&formation->subformations); i++) {
@@ -2932,6 +2944,26 @@ static quat_t quat_from_vec(vec2_t dir)
     };
 }
 
+static bool all_same_preferred(const vec_entity_t *ents)
+{
+    assert(vec_size(ents) > 0);
+    uint32_t first_uid = vec_AT(ents, 0);
+    enum formation_type first = G_Formation_GetPreferred(first_uid);
+    for(int i = 1; i < vec_size(ents); i++) {
+        enum formation_type curr = G_Formation_GetPreferred(vec_AT(ents, i));
+        if(curr != first)
+            return false;
+    }
+    return true;
+}
+
+static void clear_for_ent(uint32_t uid)
+{
+    khiter_t k = kh_get(mapping, s_ent_formation_map, uid);
+    assert(k != kh_end(s_ent_formation_map));
+    kh_del(mapping, s_ent_formation_map, k);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -2944,6 +2976,8 @@ bool G_Formation_Init(const struct map *map)
         return false;
     if(NULL == (s_formations = kh_init(formation)))
         goto fail_formations;
+    if(NULL == (s_preferred = kh_init(type)))
+        goto fail_preferred;
 
     if(s_workspace == 0) {
         s_workspace = SDL_TLSCreate();
@@ -2966,6 +3000,8 @@ bool G_Formation_Init(const struct map *map)
     return true;
 
 fail_tls:
+    kh_destroy(type, s_preferred);
+fail_preferred:
     kh_destroy(formation, s_formations);
 fail_formations:
     kh_destroy(mapping, s_ent_formation_map);
@@ -2979,6 +3015,7 @@ void G_Formation_Shutdown(void)
 
     struct formation *formation;
     kh_foreach_ptr(s_formations, formation, {
+        clear_mappings(formation);
         destroy_formation(formation);
     });
 
@@ -2989,6 +3026,7 @@ void G_Formation_Shutdown(void)
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
 
     queue_event_destroy(&s_events);
+    kh_destroy(type, s_preferred);
     kh_destroy(formation, s_formations);
     kh_destroy(mapping, s_ent_formation_map);
 }
@@ -2996,8 +3034,10 @@ void G_Formation_Shutdown(void)
 void G_Formation_Create(vec2_t target, const vec_entity_t *ents, enum formation_type type)
 {
     ASSERT_IN_MAIN_THREAD();
-    formation_id_t fid = s_next_id++;
+    if(type == FORMATION_NONE)
+        return;
 
+    formation_id_t fid = s_next_id++;
     /* Add a mapping from entities to the formation */
     for(int i = 0; i < vec_size(ents); i++) {
         uint32_t uid = vec_AT(ents, i);
@@ -3065,14 +3105,22 @@ void G_Formation_RemoveUnit(uint32_t uid)
     assert(k != kh_end(s_formations));
     struct formation *formation = &kh_val(s_formations, k);
 
-    khiter_t l = kh_get(entity, formation->ents, uid);
-    assert(l != kh_end(formation->ents));
-    kh_del(entity, formation->ents, l);
-    /* Remove the entity assignment */
-
+    clear_for_ent(uid);
     if(--formation->refcount == 0) {
         destroy_formation(formation);
         kh_del(formation, s_formations, k);
+    }
+}
+
+void G_Formation_RemoveEntity(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    G_Formation_RemoveUnit(uid);
+
+    khiter_t m = kh_get(type, s_preferred, uid);
+    if(m != kh_end(s_preferred)) {
+        kh_del(type, s_preferred, m);
     }
 }
 
@@ -3178,6 +3226,11 @@ void G_Formation_Arrange(enum formation_type type, vec_entity_t *ents)
 {
     ASSERT_IN_MAIN_THREAD();
 
+    for(int i = 0; i < vec_size(ents); i++) {
+        uint32_t curr = vec_AT(ents, i);
+        G_Formation_SetPreferred(curr, type);
+    }
+
     if(type == FORMATION_NONE)
         return;
 
@@ -3192,5 +3245,42 @@ quat_t G_Formation_TargetOrientation(uint32_t uid)
     struct formation *formation = formation_for_ent(uid);
     assert(formation);
     return quat_from_vec(formation->orientation);
+}
+
+void G_Formation_SetPreferred(uint32_t uid, enum formation_type type)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    khiter_t k = kh_get(type, s_preferred, uid);
+    if(k == kh_end(s_preferred)) {
+        int ret;
+        k = kh_put(type, s_preferred, uid, &ret);
+        assert(ret != -1);
+    }
+    kh_val(s_preferred, k) = type;
+
+    if(type == FORMATION_NONE) {
+        G_Formation_RemoveUnit(uid);
+    }
+}
+
+enum formation_type G_Formation_GetPreferred(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    khiter_t k = kh_get(type, s_preferred, uid);
+    assert(k != kh_end(s_preferred));
+    return kh_val(s_preferred, k);
+}
+
+enum formation_type G_Formation_PreferredForSet(const vec_entity_t *ents)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(all_same_preferred(ents)) {
+        uint32_t first = G_Formation_GetPreferred(vec_AT(ents, 0));
+        return first;
+    }
+    return FORMATION_NONE;
 }
 

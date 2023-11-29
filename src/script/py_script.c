@@ -218,6 +218,7 @@ static PyObject *PyPf_play_effect(PyObject *self, PyObject *args);
 static PyObject *PyPf_play_global_effect(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_spawn_projectile(PyObject *self, PyObject *args);
 static PyObject *PyPf_formation_arrange(PyObject *self, PyObject *args);
+static PyObject *PyPf_formation_preferred_for_set(PyObject *self, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -740,6 +741,10 @@ static PyMethodDef pf_module_methods[] = {
     {"formation_arrange",
     (PyCFunction)PyPf_formation_arrange, METH_VARARGS,
     "Arrange the specified units into a formation of the specified type."},
+
+    {"formation_preferred_for_set",
+    (PyCFunction)PyPf_formation_preferred_for_set, METH_VARARGS,
+    "Returns the preferred formation type for the specified set of entities."},
 
     {NULL}  /* Sentinel */
 };
@@ -3028,6 +3033,35 @@ static PyObject *PyPf_formation_arrange(PyObject *self, PyObject *args)
     G_Formation_Arrange(type, &ents);
     vec_entity_destroy(&ents);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_formation_preferred_for_set(PyObject *self, PyObject *args)
+{
+    vec_entity_t ents;
+    vec_entity_init(&ents);
+
+    PyObject *list;
+    if(!PyArg_ParseTuple(args, "O!", &PyList_Type, &list)) {
+        PyErr_SetString(PyExc_TypeError, 
+            "Argument must a list object.");
+        return NULL;
+    }
+
+    for(int i = 0; i < PyList_GET_SIZE(list); i++) {
+        PyObject *obj = PyList_GET_ITEM(list, i);
+        if(!S_Entity_Check(obj)) {
+            PyErr_SetString(PyExc_TypeError, "Argument must a list of pf.Entity objects.");
+            vec_entity_destroy(&ents);
+            return NULL;
+        }
+        uint32_t uid;
+        S_Entity_UIDForObj(obj, &uid);
+        vec_entity_push(&ents, uid);
+    }
+
+    enum formation_type type = G_Formation_PreferredForSet(&ents);
+    vec_entity_destroy(&ents);
+    return PyInt_FromLong(type);
 }
 
 static void script_task_destructor(void *arg)

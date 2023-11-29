@@ -463,10 +463,14 @@ bool   G_Region_Explored(const char *name, uint16_t player_mask, bool *out);
 enum formation_type{
     FORMATION_NONE,
     FORMATION_RANK,
-    FORMATION_COLUMN
+    FORMATION_COLUMN,
+    FORMATION_MAX
 };
 
 void G_Formation_Arrange(enum formation_type type, vec_entity_t *ents);
+void G_Formation_SetPreferred(uint32_t uid, enum formation_type type);
+enum formation_type G_Formation_GetPreferred(uint32_t uid);
+enum formation_type G_Formation_PreferredForSet(const vec_entity_t *ents);
 
 #endif
 

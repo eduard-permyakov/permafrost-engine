@@ -639,7 +639,8 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
     return true;
 }
 
-static void make_flocks(const vec_entity_t *sel, vec2_t target_xz, bool attack)
+static void make_flocks(const vec_entity_t *sel, vec2_t target_xz, 
+                        enum formation_type type, bool attack)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -657,7 +658,7 @@ static void make_flocks(const vec_entity_t *sel, vec2_t target_xz, bool attack)
         vec_entity_destroy(layer_flocks + i);
     }
 
-    G_Formation_Create(target_xz, &fsel, FORMATION_RANK);
+    G_Formation_Create(target_xz, &fsel, type);
     vec_entity_destroy(&fsel);
 }
 
@@ -818,6 +819,10 @@ static void on_mousedown(void *user, void *event)
                 .val.as_vec2 = (vec2_t){mouse_coord.x, mouse_coord.z}
             },
             .args[2] = {
+                .type = TYPE_INT,
+                .val.as_int = G_Formation_PreferredForSet(copy)
+            },
+            .args[3] = {
                 .type = TYPE_BOOL,
                 .val.as_bool = attack
             }
@@ -1800,14 +1805,15 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
     case STATE_ARRIVED:
         break;
     case STATE_ARRIVING_TO_CELL: {
+        if((G_Formation_GetForEnt(uid) == NULL_FID)
+        || !G_Formation_InRangeOfCell(uid)) {
+            /* We got pushed off of the cell arrival field */
+            ms->state = STATE_MOVING;
+            break;
+        }
         if(G_Formation_ArrivedAtCell(uid)) {
             ms->target_dir = G_Formation_TargetOrientation(uid);
             ms->state = STATE_TURNING;
-            break;
-        }
-        if(!G_Formation_InRangeOfCell(uid)) {
-            /* We got pushed off of the cell arrival field */
-            ms->state = STATE_MOVING;
             break;
         }
         break;
@@ -2279,8 +2285,9 @@ static void move_process_cmds(void)
         case MOVE_CMD_MAKE_FLOCKS: {
             vec_entity_t *sel = (vec_entity_t*)cmd.args[0].val.as_pointer;
             vec2_t target_xz = cmd.args[1].val.as_vec2;
-            bool attack = cmd.args[2].val.as_bool;
-            make_flocks(sel, target_xz, attack);
+            enum formation_type type = cmd.args[2].val.as_int;
+            bool attack = cmd.args[3].val.as_bool;
+            make_flocks(sel, target_xz, type, attack);
             vec_entity_destroy(sel);
             PF_FREE(sel);
             break;

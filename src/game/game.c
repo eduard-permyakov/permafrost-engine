@@ -1889,6 +1889,8 @@ bool G_AddEntity(uint32_t uid, uint32_t flags, vec3_t pos)
 
         assert(kh_size(s_gs.dynamic) == kh_size(s_gs.ent_gpu_id_map));
         assert(kh_size(s_gs.ent_gpu_id_map) == kh_size(s_gs.gpu_id_ent_map));
+
+        G_Formation_SetPreferred(uid, FORMATION_NONE);
     }
 
     return true;
@@ -1921,6 +1923,7 @@ bool G_RemoveEntity(uint32_t uid)
     A_RemoveEntity(uid);
     G_Sel_Remove(uid);
     G_Move_RemoveEntity(uid);
+    G_Formation_RemoveEntity(uid);
     G_Combat_RemoveEntity(uid);
     G_Building_RemoveEntity(uid);
     G_Builder_RemoveEntity(uid);
@@ -2416,6 +2419,7 @@ void G_Zombiefy(uint32_t uid, bool invis)
         g_delete_gpuid(uid);
 
     G_Move_RemoveEntity(uid);
+    G_Formation_RemoveEntity(uid);
     G_Combat_RemoveEntity(uid);
     G_Building_RemoveEntity(uid);
     G_Builder_RemoveEntity(uid);
