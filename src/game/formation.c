@@ -136,6 +136,7 @@ struct cell_field_work_input{
     uint16_t         enemy_faction_mask;
     struct tile_desc cell_tile;
     struct tile_desc center_tile;
+    struct tile_desc curr_tile;
 };
 
 struct refcounted_map{
@@ -928,6 +929,14 @@ static vec2_t subformation_target_pos(struct subformation *formation, vec2_t tar
     vec2_t ret = back_pos;
     PFM_Vec2_Add(&ret, &delta, &ret);
     return ret;
+}
+
+static struct subformation *subformation_for_ent(struct formation *formation, uint32_t uid)
+{
+    khiter_t k = kh_get(assignment, formation->sub_assignment, uid);
+    assert(k != kh_end(formation->sub_assignment));
+    size_t sub_idx = kh_val(formation->sub_assignment, k).r;
+    return &vec_AT(&formation->subformations, sub_idx);
 }
 
 static vec2_t subformation_center(struct subformation *formation)
@@ -2800,6 +2809,8 @@ static size_t formation_layers(vec_subformation_t *subformations, enum nav_layer
 
 static struct result cell_field_task(void *arg)
 {
+    PERF_ENTER();
+
     struct cell_field_work *work = arg;
     struct cell_field_work_input *input = &work->input;
     struct cell_arrival_field *result = &work->result;
@@ -2810,13 +2821,36 @@ static struct result cell_field_task(void *arg)
     M_NavCellArrivalFieldCreate(map->snapshot, CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES, 
         input->layer, input->enemy_faction_mask, input->cell_tile, input->center_tile,
         (uint8_t*)result, workspace, size);
+
     bool ret = SDL_AtomicDecRef(&map->refcount);
-    return NULL_RESULT;
+    PERF_RETURN(NULL_RESULT);
+}
+
+static struct result cell_field_fixup_task(void *arg)
+{
+    PERF_ENTER();
+
+    struct cell_field_work *work = arg;
+    struct cell_field_work_input *input = &work->input;
+    struct cell_arrival_field *result = &work->result;
+    struct refcounted_map *map = work->map;
+    void *workspace = get_workspace();
+    size_t size = workspace_size();
+
+    M_NavCellArrivalFieldCreate(map->snapshot, CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES, 
+        input->layer, input->enemy_faction_mask, input->cell_tile, input->center_tile,
+        (uint8_t*)result, workspace, size);
+    M_NavCellArrivalFieldUpdateToNearestPathable(map->snapshot, 
+        CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES, input->layer, input->enemy_faction_mask,
+        input->curr_tile, input->center_tile, (uint8_t*)result, workspace, size);
+
+    bool ret = SDL_AtomicDecRef(&map->refcount);
+    PERF_RETURN(NULL_RESULT);
 }
 
 static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t uid,
                                struct subformation *formation, struct cell_field_work *work, 
-                               struct cell *cell)
+                               struct cell *cell, struct result (*func)(void*))
 {
     struct refcounted_map *rmap = map_snapshot_get(parent);
     struct map_resolution res;
@@ -2839,16 +2873,16 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
     work->map = rmap;
     work->uid = uid;
     work->last_update_ticks = SDL_GetTicks();
-    work->input = (struct cell_field_work_input){
-        .layer = formation->layer,
-        .enemy_faction_mask = G_GetEnemyFactions(formation->faction_id),
-        .cell_tile = cell_td,
-        .center_tile = center_td
-    };
+
+    work->input.layer = formation->layer;
+    work->input.enemy_faction_mask = G_GetEnemyFactions(formation->faction_id);
+    work->input.cell_tile = cell_td;
+    work->input.center_tile = center_td;
+
     SDL_AtomicSet(&work->future.status, FUTURE_INCOMPLETE);
-    work->tid = Sched_Create(31, cell_field_task, work, &work->future, 0);
+    work->tid = Sched_Create(31, func, work, &work->future, 0);
     if(work->tid == NULL_TID) {
-        cell_field_task(&work->result);
+        func(&work->result);
         SDL_AtomicSet(&work->future.status, FUTURE_COMPLETE);
     }
 }
@@ -2874,7 +2908,7 @@ static void dispatch_cell_field_work(struct formation *parent, vec2_t center,
         struct coord coord = kh_val(formation->assignment, k);
         struct cell *cell = &vec_AT(&formation->cells,
             CELL_IDX(coord.r, coord.c, formation->ncols));
-        dispatch_cell_task(parent, center, uid, formation, curr, cell);
+        dispatch_cell_task(parent, center, uid, formation, curr, cell, cell_field_task);
         i++;
     });
 }
@@ -2909,7 +2943,8 @@ static void on_update_start(void *user, void *event)
                     struct coord coord = kh_val(sub->assignment, k);
                     struct cell *cell = &vec_AT(&sub->cells,
                         CELL_IDX(coord.r, coord.c, sub->ncols));
-                    dispatch_cell_task(formation, formation->center, uid, sub, curr, cell);
+                    dispatch_cell_task(formation, formation->center, uid, sub, curr, cell,
+                        cell_field_task);
                 }
                 if(!curr->consumed && Sched_FutureIsReady(&curr->future)) {
                     /* Publish the result */
@@ -3053,7 +3088,7 @@ static void recompute_cell_arrival_fields(struct formation *parent, vec2_t cente
         struct coord coord = kh_val(formation->assignment, k);
         struct cell *cell = &vec_AT(&formation->cells,
             CELL_IDX(coord.r, coord.c, formation->ncols));
-        dispatch_cell_task(parent, center, uid, formation, curr, cell);
+        dispatch_cell_task(parent, center, uid, formation, curr, cell, cell_field_task);
 
         i++;
     });
@@ -3477,12 +3512,13 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
     if(!field)
         PERF_RETURN_VOID();
 
-    struct map_resolution res;
-    M_NavGetResolution(s_map, &res);
-    vec3_t map_pos = M_GetPos(s_map);
-
     struct formation *formation = formation_for_ent(uid);
     assert(formation);
+
+    struct refcounted_map *rmap = map_snapshot_get(formation);
+    struct map_resolution res;
+    M_NavGetResolution(rmap->snapshot, &res);
+    vec3_t map_pos = M_GetPos(rmap->snapshot);
 
     vec2_t pos = G_Pos_GetXZ(uid);
     struct coord coord = pos_to_tile(pos, formation->center);
@@ -3503,28 +3539,25 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
      */
     uint32_t curr = SDL_GetTicks();
     float elapsed = (curr - work->last_update_ticks) / 1000.0f;
-    if(elapsed < FIELD_RECOMPUTE_INTERVAL)
+    if(elapsed < FIELD_RECOMPUTE_INTERVAL) {
+        bool ret = SDL_AtomicDecRef(&rmap->refcount);
         PERF_RETURN_VOID();
+    }
 
     /* The target cell location got blocked. Try to get as close as possible. 
      */
     struct cell *cell = cell_for_ent(formation, uid);
-    if(M_NavPositionBlocked(s_map, layer, cell->reachable_pos)) {
+    if(M_NavPositionBlocked(rmap->snapshot, layer, cell->reachable_pos)) {
 
         vec2_t new_reachable = cell->reachable_pos;
-        M_NavClosestPathable(s_map, layer, cell->reachable_pos, &new_reachable);
-        struct tile_desc new_target;
-        bool exists = M_Tile_DescForPoint2D(res, map_pos, new_reachable, &new_target);
-        assert(exists);
+        M_NavClosestPathable(rmap->snapshot, layer, cell->reachable_pos, &new_reachable);
 
         cell->reachable_pos = new_reachable;
-        work->input.cell_tile = new_target;
-
-        M_NavCellArrivalFieldCreate(s_map, CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES,
-            layer, input->enemy_faction_mask, new_target, input->center_tile,
-            field->raw, workspace, ws_size);
+        struct subformation *sub = subformation_for_ent(formation, uid);
+        dispatch_cell_task(formation, formation->center, uid, sub, work, cell, cell_field_task);
 
         work->last_update_ticks = curr;
+        bool ret = SDL_AtomicDecRef(&rmap->refcount);
         PERF_RETURN_VOID();
     }
 
@@ -3532,9 +3565,10 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
      * on an 'island' and can no longer reach its' target tile. In that
      * case, resort to stopping the unit at its' location.
      */
-    if(!M_NavPositionBlocked(s_map, layer, pos)
+    if(!M_NavPositionBlocked(rmap->snapshot, layer, pos)
     && cell_get_dir(field, coord.r, coord.c) == FD_NONE) {
         cell->reachable_pos = pos;
+        bool ret = SDL_AtomicDecRef(&rmap->refcount);
         PERF_RETURN_VOID();
     }
 
@@ -3545,14 +3579,12 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
     /* The entity may end up on a blocked tile (which is possible if a unit 
      * right next to it has 'stopped' and occupied a set of tiles under it). 
      */
-    if(M_NavPositionBlocked(s_map, layer, pos)) {
+    if(M_NavPositionBlocked(rmap->snapshot, layer, pos)) {
 
-        M_NavCellArrivalFieldCreate(s_map, CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES,
-            layer, input->enemy_faction_mask, input->cell_tile, input->center_tile,
-            field->raw, workspace, ws_size);
-        M_NavCellArrivalFieldUpdateToNearestPathable(s_map, 
-            CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES, layer, input->enemy_faction_mask,
-            td, input->center_tile, field->raw, workspace, ws_size);
+        work->input.curr_tile = td;
+        struct subformation *sub = subformation_for_ent(formation, uid);
+        dispatch_cell_task(formation, formation->center, uid, sub, work, cell, 
+            cell_field_fixup_task);
         work->last_update_ticks = curr;
     }
     /* If the current field is leading the entity towards
@@ -3560,12 +3592,12 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
      */
     else if(will_collide(field, layer, coord, pos)) {
 
-        M_NavCellArrivalFieldCreate(s_map, CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES,
-            layer, input->enemy_faction_mask, input->cell_tile, input->center_tile,
-            field->raw, workspace, ws_size);
+        struct subformation *sub = subformation_for_ent(formation, uid);
+        dispatch_cell_task(formation, formation->center, uid, sub, work, cell, cell_field_task);
         work->last_update_ticks = curr;
     }
 
+    bool ret = SDL_AtomicDecRef(&rmap->refcount);
     PERF_RETURN_VOID();
 }
 
