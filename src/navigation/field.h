@@ -48,8 +48,8 @@ struct nav_private;
 struct LOS_field{
     struct coord chunk;
     struct{
-        unsigned int visible : 1;
-        unsigned int wavefront_blocked : 1;
+        uint8_t visible : 1;
+        uint8_t wavefront_blocked : 1;
     }field[FIELD_RES_R][FIELD_RES_C];
 };
 
@@ -94,7 +94,7 @@ struct flow_field{
     struct coord chunk;
     struct field_target target;
     struct{
-        unsigned dir_idx : 4;
+        uint8_t dir_idx : 4;
     }field[FIELD_RES_R][FIELD_RES_C];
 };
 
