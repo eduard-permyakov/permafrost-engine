@@ -138,11 +138,16 @@ struct cell_field_work_input{
     struct tile_desc center_tile;
 };
 
+struct refcounted_map{
+    SDL_atomic_t      refcount;
+    const struct map *snapshot;
+};
+
 struct cell_field_work{
     bool                         consumed;
     bool                         recompute_pending;
     uint32_t                     last_update_ticks;
-    struct map                  *map;
+    struct refcounted_map       *map;
     uint32_t                     tid;
     uint32_t                     uid;
     struct future                future;
@@ -155,6 +160,7 @@ VEC_IMPL(static inline, work, struct cell_field_work)
 
 KHASH_MAP_INIT_INT(assignment, struct coord)
 KHASH_MAP_INIT_INT(result, struct cell_arrival_field*)
+KHASH_MAP_INIT_INT(map, struct refcounted_map)
 
 QUEUE_TYPE(coord, struct coord)
 QUEUE_IMPL(static, coord, struct coord)
@@ -221,9 +227,9 @@ struct formation{
      */
     struct subformation *root;
     vec_subformation_t   subformations;
-    /* Map snapshot to be used for asynchronous field computation.
+    /* Map snapshots to be used for asynchronous field computation.
      */
-    struct map          *map_snapshot;
+    khash_t(map)        *map_snapshots;
     /* The map tiles which have already been allocated to cells.
      * Centered at the target position.
      */
@@ -241,7 +247,7 @@ KHASH_MAP_INIT_INT(type, enum formation_type);
 static void complete_cell_field_work(struct subformation *formation);
 static struct cell_arrival_field *cell_get_field(uint32_t uid);
 static enum flow_dir cell_get_dir(const struct cell_arrival_field *field, int r, int c);
-static void recompute_cell_arrival_fields(struct map *map, vec2_t center, 
+static void recompute_cell_arrival_fields(struct formation *parent, vec2_t center, 
                                           struct subformation *formation);
 
 /*****************************************************************************/
@@ -1118,6 +1124,50 @@ static void place_subformation(struct subformation *formation, vec2_t center,
     formation->pos = subformation_center(formation);
     formation->orientation = orientation;
     PERF_RETURN_VOID();
+}
+
+static struct refcounted_map *map_snapshot_get(struct formation *formation)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    khiter_t k = kh_get(map, formation->map_snapshots, g_frame_idx);
+    if(k == kh_end(formation->map_snapshots)) {
+        int ret;
+        k = kh_put(map, formation->map_snapshots, g_frame_idx, &ret);
+        assert(ret != -1);
+
+        struct refcounted_map *rmap = &kh_val(formation->map_snapshots, k);
+        rmap->snapshot = M_AL_CopyWithFields(s_map);
+        SDL_AtomicSet(&rmap->refcount, 0);
+    }
+    struct refcounted_map *rmap = &kh_val(formation->map_snapshots, k);
+    SDL_AtomicIncRef(&rmap->refcount);
+    return rmap;
+}
+
+static void clean_up_map_snapshots(struct formation *formation)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    int todel[1024];
+    size_t ndel = 0;
+
+    int key;
+    struct refcounted_map *rmap;
+    kh_foreach_val_ptr(formation->map_snapshots, key, rmap, {
+        if(ndel == ARR_SIZE(todel))
+            break;
+        int refcnt = SDL_AtomicGet(&rmap->refcount);
+        if(refcnt == 0) {
+            todel[ndel++] = key;
+        }
+    });
+
+    for(int i = 0; i < ndel; i++) {
+        khiter_t k = kh_get(map, formation->map_snapshots, todel[i]);
+        assert(k != kh_end(formation->map_snapshots));
+        kh_del(map, formation->map_snapshots, k);
+    }
 }
 
 static void mark_unused_cells(struct subformation *formation)
@@ -2651,7 +2701,7 @@ static void on_1hz_tick(void *user, void *event)
         struct formation *formation = &kh_val(s_formations, k);
         for(int i = 0; i < vec_size(&formation->subformations); i++) {
             struct subformation *curr = &vec_AT(&formation->subformations, i);
-            recompute_cell_arrival_fields((struct map*)s_map, formation->center, curr);
+            recompute_cell_arrival_fields(formation, formation->center, curr);
         }
     });
     kh_destroy(entity, need_recompute);
@@ -2683,7 +2733,9 @@ static void destroy_formation(struct formation *formation)
         struct subformation *sub = &vec_AT(&formation->subformations, i);
         destroy_subformation(sub);
     }
-    PF_FREE(formation->map_snapshot);
+    clean_up_map_snapshots(formation);
+    assert(kh_size(formation->map_snapshots) == 0);
+    kh_destroy(map, formation->map_snapshots);
     kh_destroy(entity, formation->ents);
     vec_subformation_destroy(&formation->subformations);
     kh_destroy(assignment, formation->sub_assignment);
@@ -2738,26 +2790,28 @@ static struct result cell_field_task(void *arg)
     struct cell_field_work *work = arg;
     struct cell_field_work_input *input = &work->input;
     struct cell_arrival_field *result = &work->result;
-    struct map *map = work->map;
+    struct refcounted_map *map = work->map;
     void *workspace = get_workspace();
     size_t size = workspace_size();
 
-    M_NavCellArrivalFieldCreate(work->map, CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES, 
+    M_NavCellArrivalFieldCreate(map->snapshot, CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES, 
         input->layer, input->enemy_faction_mask, input->cell_tile, input->center_tile,
         (uint8_t*)result, workspace, size);
+    bool ret = SDL_AtomicDecRef(&map->refcount);
     return NULL_RESULT;
 }
 
-static void dispatch_cell_task(struct map *map, vec2_t center, uint32_t uid,
+static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t uid,
                                struct subformation *formation, struct cell_field_work *work, 
                                struct cell *cell)
 {
+    struct refcounted_map *rmap = map_snapshot_get(parent);
     struct map_resolution res;
-    M_NavGetResolution(map, &res);
-    vec3_t map_pos = M_GetPos(map);
+    M_NavGetResolution(rmap->snapshot, &res);
+    vec3_t map_pos = M_GetPos(rmap->snapshot);
 
     vec2_t bpos = bin_to_tile_clamped(cell->reachable_pos, center);
-    bpos = M_ClampedMapCoordinate(s_map, bpos);
+    bpos = M_ClampedMapCoordinate(rmap->snapshot, bpos);
 
     struct tile_desc cell_td;
     bool exists = M_Tile_DescForPoint2D(res, map_pos, bpos, &cell_td);
@@ -2769,7 +2823,7 @@ static void dispatch_cell_task(struct map *map, vec2_t center, uint32_t uid,
 
     work->consumed = false;
     work->recompute_pending = false;
-    work->map = map;
+    work->map = rmap;
     work->uid = uid;
     work->last_update_ticks = SDL_GetTicks();
     work->input = (struct cell_field_work_input){
@@ -2786,7 +2840,8 @@ static void dispatch_cell_task(struct map *map, vec2_t center, uint32_t uid,
     }
 }
 
-static void dispatch_cell_field_work(struct map *map, vec2_t center, struct subformation *formation)
+static void dispatch_cell_field_work(struct formation *parent, vec2_t center, 
+                                     struct subformation *formation)
 {
     /* Reserve the appropriate amount of space in the vector. 
      * Futures cannot be moved in memory once the corresponding 
@@ -2806,7 +2861,7 @@ static void dispatch_cell_field_work(struct map *map, vec2_t center, struct subf
         struct coord coord = kh_val(formation->assignment, k);
         struct cell *cell = &vec_AT(&formation->cells,
             CELL_IDX(coord.r, coord.c, formation->ncols));
-        dispatch_cell_task(map, center, uid, formation, curr, cell);
+        dispatch_cell_task(parent, center, uid, formation, curr, cell);
         i++;
     });
 }
@@ -2828,6 +2883,8 @@ static void on_update_start(void *user, void *event)
     struct formation *formation;
     kh_foreach_ptr(s_formations, formation, {
 
+        clean_up_map_snapshots(formation);
+
         for(int i = 0; i < vec_size(&formation->subformations); i++) {
             struct subformation *sub = &vec_AT(&formation->subformations, i);
             for(int j = 0; j < vec_size(&sub->futures); j++) {
@@ -2839,7 +2896,7 @@ static void on_update_start(void *user, void *event)
                     struct coord coord = kh_val(sub->assignment, k);
                     struct cell *cell = &vec_AT(&sub->cells,
                         CELL_IDX(coord.r, coord.c, sub->ncols));
-                    dispatch_cell_task((struct map*)s_map, formation->center, uid, sub, curr, cell);
+                    dispatch_cell_task(formation, formation->center, uid, sub, curr, cell);
                 }
                 if(!curr->consumed && Sched_FutureIsReady(&curr->future)) {
                     /* Publish the result */
@@ -2966,7 +3023,7 @@ static struct cell *cell_for_ent(struct formation *formation, uint32_t uid)
     return &vec_AT(&sub->cells, cell_idx);
 }
 
-static void recompute_cell_arrival_fields(struct map *map, vec2_t center, 
+static void recompute_cell_arrival_fields(struct formation *parent, vec2_t center, 
                                           struct subformation *formation)
 {
     int i = 0;
@@ -2983,7 +3040,7 @@ static void recompute_cell_arrival_fields(struct map *map, vec2_t center,
         struct coord coord = kh_val(formation->assignment, k);
         struct cell *cell = &vec_AT(&formation->cells,
             CELL_IDX(coord.r, coord.c, formation->ncols));
-        dispatch_cell_task(map, center, uid, formation, curr, cell);
+        dispatch_cell_task(parent, center, uid, formation, curr, cell);
 
         i++;
     });
@@ -3149,7 +3206,7 @@ void G_Formation_Create(vec2_t target, const vec_entity_t *ents, enum formation_
         .sub_assignment = kh_init(assignment)
     };
     init_subformations(new);
-    new->map_snapshot = M_AL_CopyWithFields(s_map);
+    new->map_snapshots = kh_init(map);
 
     enum nav_layer layers[NAV_LAYER_MAX];
     size_t nlayers = formation_layers(&new->subformations, layers);
@@ -3164,7 +3221,7 @@ void G_Formation_Create(vec2_t target, const vec_entity_t *ents, enum formation_
             new->occupied, new->islands);
         mark_unused_cells(sub);
         compute_cell_assignment(sub);
-        dispatch_cell_field_work(new->map_snapshot, new->center, sub);
+        dispatch_cell_field_work(new, new->center, sub);
     }
 }
 
