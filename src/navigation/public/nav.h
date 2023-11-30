@@ -523,6 +523,17 @@ void N_CellArrivalFieldCreate(void *nav_private, size_t rdim, size_t cdim,
                               uint8_t *out, void *workspace, size_t workspace_size);
 
 /* ------------------------------------------------------------------------
+ * Updates a field previously created by N_CellArrivalFieldCreate to 
+ * add guidance off of all blocked regions to the nearest pathable tile.
+ * ------------------------------------------------------------------------
+ */
+
+void N_CellArrivalFieldUpdateToNearestPathable(void *nav_private, size_t rdim, size_t cdim, 
+                              enum nav_layer layer, uint16_t enemies,
+                              struct tile_desc start, struct tile_desc center, 
+                              uint8_t *inout, void *workspace, size_t workspace_size);
+
+/* ------------------------------------------------------------------------
  * Convert a 'flow_dir' enum value to an XZ vector.
  * ------------------------------------------------------------------------
  */

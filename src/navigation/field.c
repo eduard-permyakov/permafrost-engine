@@ -108,6 +108,18 @@ static bool field_tile_passable(const struct nav_chunk *chunk, struct coord tile
     return true;
 }
 
+static bool tile_outside_region(struct map_resolution res, struct region region, 
+                                struct tile_desc td)
+{
+    int dr, dc;
+    M_Tile_Distance(res, &region.base, &td, &dr, &dc);
+    if(dr < 0 || dr >= region.r)
+        return true;
+    if(dc < 0 || dc >= region.c)
+        return true;
+    return false;
+}
+
 static uint16_t enemies_for_faction(int faction_id)
 {
     uint16_t ret = 0;
@@ -512,9 +524,7 @@ static void field_build_integration_region(
     const struct nav_private *priv,
     enum nav_layer            layer,
     uint16_t                  enemies,
-    struct tile_desc          base,
-    int                       rdim,
-    int                       cdim,
+    struct region             region,
     float                     inout[])
 {
     struct map_resolution res;
@@ -530,27 +540,28 @@ static void field_build_integration_region(
         int num_neighbours = field_neighbours_grid_global(priv, layer, curr, true, enemies, 
             neighbours, neighbour_costs);
 
+        int dr, dc;
+        M_Tile_Distance(res, &region.base, &curr, &dr, &dc);
+        assert(dr >= 0 && dr < region.r);
+        assert(dc >= 0 && dc < region.c);
+
         for(int i = 0; i < num_neighbours; i++) {
 
-            int dr, dc;
-            M_Tile_Distance(res, &base, &curr, &dr, &dc);
-            assert(dr >= 0 && dr < rdim);
-            assert(dc >= 0 && dc < cdim);
-
-            float total_cost = inout[dr * rdim + dc] + neighbour_costs[i];
+            if(tile_outside_region(res, region, neighbours[i]))
+                continue;
 
             int neighb_dr, neighb_dc;
-            M_Tile_Distance(res, &base, &neighbours[i], &neighb_dr, &neighb_dc);
-            if(neighb_dr < 0 || neighb_dr >= rdim)
-                continue;
-            if(neighb_dc < 0 || neighb_dc >= cdim)
-                continue;
+            M_Tile_Distance(res, &region.base, &neighbours[i], &neighb_dr, &neighb_dc);
+            assert(neighb_dr >= 0 && neighb_dr < region.r);
+            assert(neighb_dc >= 0 && neighb_dc < region.c);
 
-            assert(manhattan_dist((struct coord){dr, dc}, (struct coord){neighb_dr, neighb_dc}) == 1);
+            assert(manhattan_dist((struct coord){dr, dc}, 
+                (struct coord){neighb_dr, neighb_dc}) == 1);
 
-            if(total_cost < inout[neighb_dr * rdim + neighb_dc]) {
+            float total_cost = inout[dr * region.r+ dc] + neighbour_costs[i];
+            if(total_cost < inout[neighb_dr * region.r + neighb_dc]) {
 
-                inout[neighb_dr * rdim + neighb_dc] = total_cost;
+                inout[neighb_dr * region.r + neighb_dc] = total_cost;
                 if(!pq_td_contains(frontier, field_compare_tds, neighbours[i]))
                     pq_td_push(frontier, total_cost, neighbours[i]);
             }
@@ -588,6 +599,63 @@ static void field_build_integration_nonpass(
                 inout[neighbours[i].r][neighbours[i].c] = total_cost;
                 if(!pq_coord_contains(frontier, field_compare_tiles, neighbours[i]))
                     pq_coord_push(frontier, total_cost, neighbours[i]);
+            }
+        }
+    }
+}
+
+/* Like 'field_build_integration_nonpass', but supporting any sized square region 
+ * which may straddle chunk boundaries.
+ */
+static void field_build_integration_nonpass_region(
+    pq_td_t                  *frontier,
+    const struct nav_private *priv,
+    enum nav_layer            layer,
+    uint16_t                  enemies,
+    struct region             region,
+    float                     inout[])
+{
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    while(pq_size(frontier) > 0) {
+
+        struct tile_desc curr;
+        pq_td_pop(frontier, &curr);
+
+        struct tile_desc neighbours[8];
+        uint8_t neighbour_costs[8];
+        int num_neighbours = field_neighbours_grid_global(priv, layer, curr, false, enemies, 
+            neighbours, neighbour_costs);
+
+        int dr, dc;
+        M_Tile_Distance(res, &region.base, &curr, &dr, &dc);
+        assert(dr >= 0 && dr < region.r);
+        assert(dc >= 0 && dc < region.c);
+
+        for(int i = 0; i < num_neighbours; i++) {
+
+            struct tile_desc neighb = neighbours[i];
+            if(tile_outside_region(res, region, neighb))
+                continue;
+
+            struct nav_chunk *curr_chunk = 
+                &priv->chunks[layer][neighb.chunk_r * priv->width + neighb.chunk_c];
+            struct coord curr_coord = (struct coord){neighb.tile_r, neighb.tile_c};
+            if(field_tile_passable(curr_chunk, curr_coord))
+                continue;
+
+            int neighb_dr, neighb_dc;
+            M_Tile_Distance(res, &region.base, &neighb, &neighb_dr, &neighb_dc);
+            assert(neighb_dr >= 0 && neighb_dr < region.r);
+            assert(neighb_dc >= 0 && neighb_dc < region.c);
+
+            float total_cost = inout[dr * region.r + dc] + neighbour_costs[i];
+            if(total_cost < inout[neighb_dr * region.r + neighb_dc]) {
+
+                inout[neighb_dr * region.r + neighb_dc] = total_cost;
+                if(!pq_td_contains(frontier, field_compare_tds, neighb))
+                    pq_td_push(frontier, total_cost, neighb);
             }
         }
     }
@@ -778,18 +846,6 @@ static struct tile_desc qpop(struct tile_desc *q, size_t *qsize, int *head, int 
     *head = *head % nelems;
     --(*qsize);
     return ret;
-}
-
-static bool tile_outside_region(struct map_resolution res, struct region region, 
-                                struct tile_desc td)
-{
-    int dr, dc;
-    M_Tile_Distance(res, &region.base, &td, &dr, &dc);
-    if(dr < 0 || dr >= region.r)
-        return true;
-    if(dc < 0 || dc >= region.c)
-        return true;
-    return false;
 }
 
 static size_t field_closest_tiles_local(
@@ -1336,8 +1392,9 @@ static void field_update_enemies(
     const int roff = (chunk_coord.r > 0) ? FIELD_RES_R / 2 + (FIELD_RES_R % 2) : 0;
     const int coff = (chunk_coord.c > 0) ? FIELD_RES_C / 2 + (FIELD_RES_C % 2) : 0;
 
+    struct region region = (struct region){base, rdim, cdim};
     field_build_integration_region(&frontier, priv, layer, 0, 
-        base, rdim, cdim, integration_field);
+        region, integration_field);
     field_build_flow_region(rdim, cdim, roff, coff, integration_field, inout_flow);
 
     STFREE(integration_field);
@@ -1402,13 +1459,69 @@ static void field_update_entity(
     const int roff = (chunk_coord.r > 0) ? FIELD_RES_R / 2 + (FIELD_RES_R % 2) : 0;
     const int coff = (chunk_coord.c > 0) ? FIELD_RES_C / 2 + (FIELD_RES_C % 2) : 0;
 
-    field_build_integration_region(&frontier, priv, layer, 0, 
-        base, rdim, cdim, integration_field);
+    struct region region = (struct region){base, rdim, cdim};
+    field_build_integration_region(&frontier, priv, layer, 0, region, integration_field);
     field_build_flow_region(rdim, cdim, roff, coff, integration_field, inout_flow);
 
     STFREE(integration_field);
     STFREE(init_frontier);
     pq_td_destroy(&frontier);
+}
+
+static struct region clamped_region(struct nav_private *priv, size_t rdim, size_t cdim,
+                                    struct tile_desc center)
+{
+    /* Find the clamped base of the field */
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    bool exists;
+    struct tile_desc base, baser = center, basec = center;
+    exists = M_Tile_RelativeDesc(res, &baser, 0, -(rdim / 2));
+    if(!exists) {
+        base.chunk_r = 0;
+        base.tile_r = 0;
+    }else{
+        base.chunk_r = baser.chunk_r;
+        base.tile_r = baser.tile_r;
+    }
+
+    exists = M_Tile_RelativeDesc(res, &basec, -(cdim / 2), 0);
+    if(!exists) {
+        base.chunk_c = 0;
+        base.tile_c = 0;
+    }else{
+        base.chunk_c = basec.chunk_c;
+        base.tile_c = basec.tile_c;
+    }
+
+    struct tile_desc end, endr = center, endc = center;
+    exists = M_Tile_RelativeDesc(res, &endr, 0, (rdim / 2));
+    if(!exists) {
+        end.chunk_r = res.chunk_h - 1;
+        end.tile_r = res.tile_h - 1;
+    }else{
+        end.chunk_r = endr.chunk_r;
+        end.tile_r  = endr.tile_r;
+    }
+
+    exists = M_Tile_RelativeDesc(res, &endc, (cdim / 2), 0);
+    if(!exists) {
+        end.chunk_c = res.chunk_w - 1;
+        end.tile_c = res.tile_h - 1;
+    }else{
+        end.chunk_c = endc.chunk_c;
+        end.tile_c = endc.tile_c;
+    }
+
+    int dr, dc;
+    M_Tile_Distance(res, &base, &end, &dr, &dc);
+
+    return (struct region){
+        .base = base, 
+        .r = dr, 
+        .c = dc
+    };
 }
 
 /*****************************************************************************/
@@ -1932,8 +2045,8 @@ void N_CellArrivalFieldCreate(void *nav_private, size_t rdim, size_t cdim,
     pq_td_push(&frontier, 0.0f, target); 
     integration_field[dr * rdim + dc] = 0.0f;
 
-    field_build_integration_region(&frontier, priv, layer, enemies, 
-        base, rdim, cdim, integration_field);
+    struct region region = (struct region){base, rdim, cdim};
+    field_build_integration_region(&frontier, priv, layer, enemies, region, integration_field);
     field_build_flow_unaligned(rdim, cdim, integration_field, out);
 
     pq_td_destroy(&frontier);
@@ -1943,9 +2056,74 @@ void N_CellArrivalFieldCreate(void *nav_private, size_t rdim, size_t cdim,
 void N_CellArrivalFieldUpdateToNearestPathable(void *nav_private, size_t rdim, size_t cdim, 
                               enum nav_layer layer, uint16_t enemies,
                               struct tile_desc start, struct tile_desc center, 
-                              uint8_t *out, void *workspace, size_t workspace_size)
+                              uint8_t *inout, void *workspace, size_t workspace_size)
 {
-    struct coord init_frontier[1024];
-    //size_t ninit = 
+    struct nav_private *priv = nav_private;
+    struct tile_desc init_frontier[1024];
+    struct region clamped = clamped_region(priv, rdim, cdim, center);
+    size_t ninit = field_passable_frontier(priv, layer, start, 
+        clamped, init_frontier, ARR_SIZE(init_frontier));
+
+    pq_td_t frontier;
+    pq_td_init(&frontier);
+
+    size_t integration_field_size = sizeof(float) * rdim * cdim;
+    assert(workspace_size >= integration_field_size);
+    float *integration_field = workspace;
+
+    for(int r = 0; r < rdim; r++) {
+    for(int c = 0; c < cdim; c++) {
+        integration_field[r * rdim + c] = INFINITY;
+    }}
+
+    /* Find the clamped minimum coordinate of the field. Note that the 'base'
+     * coordinate may fall outside the map bounds.
+     */
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    int abs_r = center.chunk_r * res.tile_h + center.tile_r - (rdim / 2);
+    int abs_c = center.chunk_c * res.tile_w + center.tile_c - (cdim / 2);
+    struct tile_desc base = (struct tile_desc){
+        abs_r / res.tile_h,
+        abs_c / res.tile_w,
+        abs_r % res.tile_h,
+        abs_c % res.tile_w,
+    };
+
+    for(int i = 0; i < ninit; i++) {
+
+        int dr, dc;
+        M_Tile_Distance(res, &base, &init_frontier[i], &dr, &dc);
+        assert(dr >= 0 && dr <= rdim);
+        assert(dc >= 0 && dc <= cdim);
+
+        pq_td_push(&frontier, 0.0f, init_frontier[i]);
+        integration_field[dr * rdim + dc] = 0.0f;
+    }
+
+    struct region region = (struct region){base, rdim, cdim};
+    field_build_integration_nonpass_region(&frontier, priv, layer, enemies, 
+        region, integration_field);
+
+    for(int r = 0; r < rdim; r++) {
+    for(int c = 0; c < cdim; c++) {
+
+        struct tile_desc curr = base;
+        bool exists = M_Tile_RelativeDesc(res, &curr, c, r);
+        if(!exists)
+            continue;
+
+        if(integration_field[r * rdim + c] == INFINITY)
+            continue;
+        if(integration_field[r * rdim + c] == 0.0f)
+            continue;
+
+        enum flow_dir dir = field_flow_dir(rdim, cdim, (const float *)integration_field,
+            (struct coord){r, c});
+        set_flow_cell(dir, r, c, rdim, cdim, inout);
+    }}
+
+    pq_td_destroy(&frontier);
 }
 

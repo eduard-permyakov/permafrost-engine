@@ -430,6 +430,10 @@ void     M_NavCellArrivalFieldCreate(const struct map *map, size_t rdim, size_t 
                                      enum nav_layer layer, uint16_t enemies,
                                      struct tile_desc target, struct tile_desc center,
                                      uint8_t *out, void *workspace, size_t workspace_size);
+void     M_NavCellArrivalFieldUpdateToNearestPathable(const struct map *map, 
+                                  size_t rdim, size_t cdim, enum nav_layer layer, uint16_t enemies,
+                                  struct tile_desc start, struct tile_desc center, 
+                                  uint8_t *inout, void *workspace, size_t workspace_size);
 
 /* ------------------------------------------------------------------------
  * Request an asynchronous computation of a field.
