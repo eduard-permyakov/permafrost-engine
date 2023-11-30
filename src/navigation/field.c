@@ -65,6 +65,11 @@ struct box_xz{
     float z_min, z_max;
 };
 
+struct region{
+    /* Top-left coordinate */
+    struct tile_desc base;
+    size_t r, c;
+};
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -753,9 +758,9 @@ static bool field_enemy_ent(int faction_id, uint32_t ent)
     return true;
 }
 
-static void qpush(struct coord *q, size_t *qsize, int *head, int *tail, struct coord entry)
+static void qpush(struct tile_desc *q, size_t *qsize, int *head, int *tail, 
+                   size_t nelems, struct tile_desc entry)
 {
-    const size_t nelems = FIELD_RES_R * FIELD_RES_C;
     assert(*qsize < nelems);
     ++(*tail);
     *tail = *tail % nelems;
@@ -763,40 +768,59 @@ static void qpush(struct coord *q, size_t *qsize, int *head, int *tail, struct c
     ++(*qsize);
 }
 
-static struct coord qpop(struct coord *q, size_t *qsize, int *head, int *tail)
+static struct tile_desc qpop(struct tile_desc *q, size_t *qsize, int *head, int *tail, 
+                              size_t nelems)
 {
-    const size_t nelems = FIELD_RES_R * FIELD_RES_C;
     assert(*qsize > 0);
     assert(*head >= 0 && *head < nelems);
-    struct coord ret = q[*head];
+    struct tile_desc ret = q[*head];
     ++(*head);
     *head = *head % nelems;
     --(*qsize);
     return ret;
 }
 
+static bool tile_outside_region(struct map_resolution res, struct region region, 
+                                struct tile_desc td)
+{
+    int dr, dc;
+    M_Tile_Distance(res, &region.base, &td, &dr, &dc);
+    if(dr < 0 || dr >= region.r)
+        return true;
+    if(dc < 0 || dc >= region.c)
+        return true;
+    return false;
+}
+
 static size_t field_closest_tiles_local(
     const struct nav_chunk *chunk, 
+    struct coord            chunk_coord,
     struct coord            target, 
     uint16_t                local_iid, 
     uint16_t                global_iid,
     struct coord           *out, 
     size_t                  maxout)
 {
+    const size_t nelems = FIELD_RES_R * FIELD_RES_C;
     bool visited[FIELD_RES_R][FIELD_RES_C] = {0};
-    struct coord frontier[FIELD_RES_R * FIELD_RES_C];
+    struct tile_desc frontier[FIELD_RES_R * FIELD_RES_C];
     int fhead = 0, ftail = -1;
     size_t qsize = 0;
 
     size_t ret = 0;
     int first_mh_dist = -1;
 
-    qpush(frontier, &qsize, &fhead, &ftail, target);
+    struct tile_desc target_tile = (struct tile_desc){
+        chunk_coord.r, chunk_coord.c,
+        target.r, target.c
+    };
+    qpush(frontier, &qsize, &fhead, &ftail, nelems, target_tile);
     visited[target.r][target.c] = true;
 
     while(qsize > 0) {
 
-        struct coord curr = qpop(frontier, &qsize, &fhead, &ftail);
+        struct tile_desc td = qpop(frontier, &qsize, &fhead, &ftail, nelems);
+        struct coord curr = (struct coord){curr.r, curr.c};
         struct coord deltas[] = {
             { 0, -1},
             { 0, +1},
@@ -818,7 +842,11 @@ static size_t field_closest_tiles_local(
             if(visited[neighb.r][neighb.c])
                 continue;
             visited[neighb.r][neighb.c] = true;
-            qpush(frontier, &qsize, &fhead, &ftail, neighb);
+            struct tile_desc ntd = (struct tile_desc){
+                chunk_coord.r, chunk_coord.c,
+                neighb.r, neighb.c
+            };
+            qpush(frontier, &qsize, &fhead, &ftail, nelems, ntd);
         }
 
         int mh_dist = manhattan_dist(target, curr);
@@ -1166,29 +1194,47 @@ static void field_fixup(
     }
 }
 
+static size_t visited_idx(struct map_resolution res, struct region region, struct tile_desc curr)
+{
+    int dr, dc;
+    M_Tile_Distance(res, &region.base, &curr, &dr, &dc);
+    return (dr * region.r + dc);
+}
+
 /* Returns all pathable tiles surrounding an impassable island 
  * that 'start' is a part of. 
  */
 static size_t field_passable_frontier(
-    const struct nav_chunk *chunk, 
-    struct coord            start, 
-    struct coord           *out, 
-    size_t                  maxout)
+    const struct nav_private *priv, 
+    enum nav_layer            layer,
+    struct tile_desc          start, 
+    struct region             region,
+    struct tile_desc         *out, 
+    size_t                    maxout)
 {
-    assert(!field_tile_passable(chunk, start));
+    struct nav_chunk *start_chunk = 
+        &priv->chunks[layer][start.chunk_r * priv->width + start.chunk_c];
+    struct coord start_coord = (struct coord){start.tile_r, start.tile_c};
+    assert(!field_tile_passable(start_chunk, start_coord));
     size_t ret = 0;
 
-    bool visited[FIELD_RES_R][FIELD_RES_C] = {0};
-    struct coord frontier[FIELD_RES_R * FIELD_RES_C];
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    const size_t nelems = region.r * region.c;
+    STALLOC(bool, visited, nelems * sizeof(bool));
+    STALLOC(struct tile_desc, frontier, nelems * sizeof(struct coord));
+    memset(visited, 0, nelems * sizeof(bool));
+
     int fhead = 0, ftail = -1;
     size_t qsize = 0;
 
-    qpush(frontier, &qsize, &fhead, &ftail, start);
-    visited[start.r][start.c] = true;
+    qpush(frontier, &qsize, &fhead, &ftail, nelems, start);
+    visited[visited_idx(res, region, start)] = true;
 
     while(qsize > 0) {
     
-        struct coord curr = qpop(frontier, &qsize, &fhead, &ftail);
+        struct tile_desc curr = qpop(frontier, &qsize, &fhead, &ftail, nelems);
         struct coord deltas[] = {
             { 0, -1},
             { 0, +1},
@@ -1196,7 +1242,10 @@ static size_t field_passable_frontier(
             {+1,  0},
         };
 
-        if(field_tile_passable(chunk, curr)) {
+        struct nav_chunk *curr_chunk = 
+            &priv->chunks[layer][curr.chunk_r * priv->width + curr.chunk_c];
+        struct coord curr_coord = (struct coord){curr.tile_r, curr.tile_c};
+        if(field_tile_passable(curr_chunk, curr_coord)) {
 
             out[ret++] = curr;
             if(ret == maxout)
@@ -1206,21 +1255,20 @@ static size_t field_passable_frontier(
 
         for(int i = 0; i < ARR_SIZE(deltas); i++) {
 
-            struct coord neighb = (struct coord){
-                curr.r + deltas[i].r,
-                curr.c + deltas[i].c,
-            };
-            if(neighb.r < 0 || neighb.r >= FIELD_RES_R)
+            struct tile_desc neighb = curr;
+            if(!M_Tile_RelativeDesc(res, &neighb, deltas[i].c, deltas[i].r))
                 continue;
-            if(neighb.c < 0 || neighb.c >= FIELD_RES_C)
+            if(tile_outside_region(res, region, neighb))
                 continue;
 
-            if(visited[neighb.r][neighb.c])
+            if(visited[visited_idx(res, region, neighb)])
                 continue;
-            visited[neighb.r][neighb.c] = true;
-            qpush(frontier, &qsize, &fhead, &ftail, neighb);
+            visited[visited_idx(res, region, neighb)] = true;
+            qpush(frontier, &qsize, &fhead, &ftail, nelems, neighb);
         }
     }
+    STFREE(visited);
+    STFREE(frontier);
     return ret;
 }
 
@@ -1644,13 +1692,25 @@ void N_LOSFieldCreate(
 }
 
 void N_FlowFieldUpdateToNearestPathable(
-    const struct nav_chunk *chunk, 
-    struct coord            start, 
-    int                     faction_id, 
-    struct flow_field      *inout_flow)
+    const struct nav_private *priv, 
+    enum nav_layer            layer,
+    struct coord              chunk,
+    struct coord              start, 
+    int                       faction_id, 
+    struct flow_field        *inout_flow)
 {
-    struct coord init_frontier[FIELD_RES_R * FIELD_RES_C];
-    size_t ninit = field_passable_frontier(chunk, start, init_frontier, ARR_SIZE(init_frontier));
+    struct tile_desc init_frontier[FIELD_RES_R * FIELD_RES_C];
+    struct region chunk_region = (struct region){
+        .base = {chunk.r, chunk.c, 0, 0},
+        .r = FIELD_RES_R, 
+        .c = FIELD_RES_C
+    };
+    struct tile_desc start_coord = (struct tile_desc){
+        chunk.r, chunk.c,
+        start.r, start.c
+    };
+    size_t ninit = field_passable_frontier(priv, layer, start_coord, 
+        chunk_region, init_frontier, ARR_SIZE(init_frontier));
 
     pq_coord_t frontier;
     pq_coord_init(&frontier);
@@ -1663,12 +1723,16 @@ void N_FlowFieldUpdateToNearestPathable(
 
     for(int i = 0; i < ninit; i++) {
 
-        struct coord curr = init_frontier[i];
+        struct coord curr = (struct coord){
+            init_frontier[i].tile_r,
+            init_frontier[i].tile_c
+        };
         pq_coord_push(&frontier, 0.0f, curr); 
         integration_field[curr.r][curr.c] = 0.0f;
     }
 
-    field_build_integration_nonpass(&frontier, chunk, faction_id, integration_field);
+    struct nav_chunk *navchunk = &priv->chunks[layer][chunk.r * priv->width + chunk.c];
+    field_build_integration_nonpass(&frontier, navchunk, faction_id, integration_field);
 
     for(int r = 0; r < FIELD_RES_R; r++) {
     for(int c = 0; c < FIELD_RES_C; c++) {
@@ -1768,7 +1832,7 @@ void N_FlowFieldUpdateIslandToNearest(
         }
 
         struct coord tmp[FIELD_RES_R * FIELD_RES_C];
-        int nextra = field_closest_tiles_local(chunk, curr, local_iid, curr_giid, 
+        int nextra = field_closest_tiles_local(chunk, chunk_coord, curr, local_iid, curr_giid, 
             tmp, ARR_SIZE(tmp) - new_ninit);
         if(!nextra)
             continue;
@@ -1874,5 +1938,14 @@ void N_CellArrivalFieldCreate(void *nav_private, size_t rdim, size_t cdim,
 
     pq_td_destroy(&frontier);
     PERF_RETURN_VOID();
+}
+
+void N_CellArrivalFieldUpdateToNearestPathable(void *nav_private, size_t rdim, size_t cdim, 
+                              enum nav_layer layer, uint16_t enemies,
+                              struct tile_desc start, struct tile_desc center, 
+                              uint8_t *out, void *workspace, size_t workspace_size)
+{
+    struct coord init_frontier[1024];
+    //size_t ninit = 
 }
 

@@ -2722,7 +2722,8 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
     if(local_iid == ISLAND_NONE) {
 
         struct flow_field exist_ff = *ff;
-        N_FlowFieldUpdateToNearestPathable(chunk, 
+        N_FlowFieldUpdateToNearestPathable(priv, layer, 
+            (struct coord){tile.chunk_r, tile.chunk_c},
             (struct coord){tile.tile_r, tile.tile_c}, faction_id, &exist_ff);
         N_FC_PutFlowField(ffid, &exist_ff);
         ff = N_FC_FlowFieldAt(ffid);
@@ -2808,7 +2809,9 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
         struct flow_field exist_ff = *pff;
         struct coord curr = (struct coord){curr_tile.tile_r, curr_tile.tile_c};
 
-        N_FlowFieldUpdateToNearestPathable(nchunk, curr, faction_id, &exist_ff);
+        N_FlowFieldUpdateToNearestPathable(priv, layer, 
+            (struct coord){curr_tile.chunk_r, curr_tile.tile_c},
+            curr, faction_id, &exist_ff);
         N_FC_PutFlowField(ffid, &exist_ff);
 
         pff = N_FC_FlowFieldAt(ffid);
@@ -2886,7 +2889,9 @@ vec2_t N_DesiredSurroundVelocity(vec2_t curr_pos, void *nav_private, enum nav_la
         struct flow_field exist_ff = *pff;
         struct coord curr = (struct coord){curr_tile.tile_r, curr_tile.tile_c};
 
-        N_FlowFieldUpdateToNearestPathable(nchunk, curr, faction_id, &exist_ff);
+        N_FlowFieldUpdateToNearestPathable(priv, layer, 
+            (struct coord){curr_tile.chunk_r, curr_tile.chunk_c},
+            curr, faction_id, &exist_ff);
         N_FC_PutFlowField(ffid, &exist_ff);
 
         pff = N_FC_FlowFieldAt(ffid);

@@ -162,10 +162,12 @@ void    N_FlowFieldUpdateIslandToNearest(uint16_t                  local_iid,
  * somehow end up on an impassable one.
  * ------------------------------------------------------------------------
  */
-void    N_FlowFieldUpdateToNearestPathable(const struct nav_chunk *chunk, 
-                                           struct coord            start, 
-                                           int                     faction_id, 
-                                           struct flow_field      *inout_flow);
+void N_FlowFieldUpdateToNearestPathable(const struct nav_private *priv, 
+                                        enum nav_layer            layer,
+                                        struct coord              chunk,
+                                        struct coord              start, 
+                                        int                       faction_id, 
+                                        struct flow_field        *inout_flow);
 
 /* ------------------------------------------------------------------------
  * Create a line of sight field, indicating which tiles in this chunk are 
