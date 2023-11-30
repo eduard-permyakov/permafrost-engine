@@ -2665,10 +2665,24 @@ static void on_entity_block(void *user, void *event)
 
 static void on_building_found(void *user, void *event)
 {
+    uint32_t tick = SDL_GetTicks();
+    struct block_event block_event = (struct block_event){
+        .type = EVENT_MOVABLE_ENTITY_BLOCK,
+        .arg = event,
+        .tick_recorded = tick
+    };
+    queue_event_push(&s_events, &block_event);
 }
 
-static void on_building_destroy(void *user, void *event)
+static void on_building_remove(void *user, void *event)
 {
+    uint32_t tick = SDL_GetTicks();
+    struct block_event block_event = (struct block_event){
+        .type = EVENT_MOVABLE_ENTITY_UNBLOCK,
+        .arg = event,
+        .tick_recorded = tick
+    };
+    queue_event_push(&s_events, &block_event);
 }
 
 static void on_1hz_tick(void *user, void *event)
@@ -3059,13 +3073,28 @@ static quat_t quat_from_vec(vec2_t dir)
     };
 }
 
+static void filter_selection_movable(const vec_entity_t *in_sel, vec_entity_t *out_sel)
+{
+    vec_entity_init(out_sel);
+    for(int i = 0; i < vec_size(in_sel); i++) {
+
+        uint32_t uid = vec_AT(in_sel, i);
+        uint32_t flags = G_FlagsGet(uid);
+        if(!(flags & ENTITY_FLAG_MOVABLE))
+            continue;
+        vec_entity_push(out_sel, uid);
+    }
+}
+
 static bool all_same_preferred(const vec_entity_t *ents)
 {
     assert(vec_size(ents) > 0);
     uint32_t first_uid = vec_AT(ents, 0);
     enum formation_type first = G_Formation_GetPreferred(first_uid);
     for(int i = 1; i < vec_size(ents); i++) {
-        enum formation_type curr = G_Formation_GetPreferred(vec_AT(ents, i));
+        uint32_t uid = vec_AT(ents, i);
+        uint32_t flags = G_FlagsGet(uid);
+        enum formation_type curr = G_Formation_GetPreferred(uid);
         if(curr != first)
             return false;
     }
@@ -3138,6 +3167,8 @@ bool G_Formation_Init(const struct map *map)
     E_Global_Register(EVENT_UPDATE_START, on_update_start, NULL, G_RUNNING);
     E_Global_Register(EVENT_MOVABLE_ENTITY_BLOCK, on_entity_block, NULL, G_RUNNING);
     E_Global_Register(EVENT_MOVABLE_ENTITY_UNBLOCK, on_entity_unblock, NULL, G_RUNNING);
+    E_Global_Register(EVENT_BUILDING_FOUNDED, on_building_found, NULL, G_RUNNING);
+    E_Global_Register(EVENT_BUILDING_REMOVED, on_building_remove, NULL, G_RUNNING);
     E_Global_Register(EVENT_1HZ_TICK, on_1hz_tick, NULL, G_RUNNING);
     return true;
 
@@ -3162,6 +3193,8 @@ void G_Formation_Shutdown(void)
     });
 
     E_Global_Unregister(EVENT_1HZ_TICK, on_1hz_tick);
+    E_Global_Unregister(EVENT_BUILDING_FOUNDED, on_building_found);
+    E_Global_Unregister(EVENT_BUILDING_REMOVED, on_building_remove);
     E_Global_Unregister(EVENT_MOVABLE_ENTITY_UNBLOCK, on_entity_unblock);
     E_Global_Unregister(EVENT_MOVABLE_ENTITY_BLOCK, on_entity_block);
     E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
@@ -3368,16 +3401,22 @@ void G_Formation_Arrange(enum formation_type type, vec_entity_t *ents)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    for(int i = 0; i < vec_size(ents); i++) {
-        uint32_t curr = vec_AT(ents, i);
+    vec_entity_t filtered;
+    filter_selection_movable(ents, &filtered);
+
+    for(int i = 0; i < vec_size(&filtered); i++) {
+        uint32_t curr = vec_AT(&filtered, i);
         G_Formation_SetPreferred(curr, type);
     }
 
-    if(type == FORMATION_NONE)
+    if(type == FORMATION_NONE) {
+        vec_entity_destroy(&filtered);
         return;
+    }
 
-    vec2_t target = target_position(ents);
-    G_Move_ArrangeInFormation(ents, target, type);
+    vec2_t target = target_position(&filtered);
+    G_Move_ArrangeInFormation(&filtered, target, type);
+    vec_entity_destroy(&filtered);
 }
 
 quat_t G_Formation_TargetOrientation(uint32_t uid)
@@ -3419,10 +3458,14 @@ enum formation_type G_Formation_PreferredForSet(const vec_entity_t *ents)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    if(all_same_preferred(ents)) {
+    vec_entity_t filtered;
+    filter_selection_movable(ents, &filtered);
+    if(vec_size(&filtered) > 0 && all_same_preferred(ents)) {
         uint32_t first = G_Formation_GetPreferred(vec_AT(ents, 0));
+        vec_entity_destroy(&filtered);
         return first;
     }
+    vec_entity_destroy(&filtered);
     return FORMATION_NONE;
 }
 
