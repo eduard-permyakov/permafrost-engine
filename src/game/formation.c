@@ -72,6 +72,7 @@
 #define SUBFORMATION_BUFFER_DIST (8.0f)
 #define SIGNUM(x)                (((x) > 0) - ((x) < 0))
 #define EPSILON                  (1.0f/1024)
+#define FIELD_RECOMPUTE_INTERVAL (1.0f) /* seconds */
 
 enum cell_state{
     CELL_NOT_PLACED,
@@ -112,6 +113,10 @@ struct cell{
      * into account map geometry and blockers.
      */
     vec2_t          pos;
+    /* The last known reachable position 
+     * that is maximally close to 'pos'.
+     */
+    vec2_t          reachable_pos;
 };
 
 struct range2d{
@@ -136,6 +141,7 @@ struct cell_field_work_input{
 struct cell_field_work{
     bool                         consumed;
     bool                         recompute_pending;
+    uint32_t                     last_update_ticks;
     struct map                  *map;
     uint32_t                     tid;
     uint32_t                     uid;
@@ -234,7 +240,7 @@ KHASH_MAP_INIT_INT(type, enum formation_type);
 
 static void complete_cell_field_work(struct subformation *formation);
 static struct cell_arrival_field *cell_get_field(uint32_t uid);
-static vec2_t cell_get_dir(const struct cell_arrival_field *field, int r, int c);
+static enum flow_dir cell_get_dir(const struct cell_arrival_field *field, int r, int c);
 static void recompute_cell_arrival_fields(struct map *map, vec2_t center, 
                                           struct subformation *formation);
 
@@ -256,7 +262,8 @@ static queue_event_t       s_events;
 
 static size_t workspace_size(void)
 {
-    return CELL_ARRIVAL_FIELD_RES * CELL_ARRIVAL_FIELD_RES * sizeof(float);
+    size_t count = CELL_ARRIVAL_FIELD_RES * CELL_ARRIVAL_FIELD_RES;
+    return count * (sizeof(float) + sizeof(bool) + sizeof(struct tile_desc));
 }
 
 static void *get_workspace(void)
@@ -456,6 +463,14 @@ static struct coord pos_to_tile(vec2_t center, vec2_t pos)
 static vec2_t bin_to_tile(vec2_t pos, vec2_t center)
 {
     struct coord tile = pos_to_tile(center, pos);
+    return tile_to_pos(tile, center);
+}
+
+static vec2_t bin_to_tile_clamped(vec2_t pos, vec2_t center)
+{
+    struct coord tile = pos_to_tile(center, pos);
+    tile.r = CLAMP(tile.r, 0, OCCUPIED_FIELD_RES-1);
+    tile.c = CLAMP(tile.c, 0, OCCUPIED_FIELD_RES-1);
     return tile_to_pos(tile, center);
 }
 
@@ -807,6 +822,7 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
         curr->ideal_binned = tile_to_pos(target_tile, center);
         curr->state = CELL_NOT_OCCUPIED;
         curr->pos = tile_to_pos(curr_tile, center);
+        curr->reachable_pos = pos;
     }
     return success;
 }
@@ -2425,7 +2441,8 @@ static void render_cell_arrival_field(struct formation *formation, int index)
             continue;
 
         positions_buff[count] = pos;
-        dirs_buff[count] = cell_get_dir(field, r, c);
+        enum flow_dir dir = cell_get_dir(field, r, c);
+        dirs_buff[count] = N_FlowDir(dir);
         count++;
     }}
 
@@ -2739,8 +2756,11 @@ static void dispatch_cell_task(struct map *map, vec2_t center, uint32_t uid,
     M_NavGetResolution(map, &res);
     vec3_t map_pos = M_GetPos(map);
 
+    vec2_t bpos = bin_to_tile_clamped(cell->reachable_pos, center);
+    bpos = M_ClampedMapCoordinate(s_map, bpos);
+
     struct tile_desc cell_td;
-    bool exists = M_Tile_DescForPoint2D(res, map_pos, bin_to_tile(cell->pos, center), &cell_td);
+    bool exists = M_Tile_DescForPoint2D(res, map_pos, bpos, &cell_td);
     assert(exists);
 
     struct tile_desc center_td;
@@ -2751,6 +2771,7 @@ static void dispatch_cell_task(struct map *map, vec2_t center, uint32_t uid,
     work->recompute_pending = false;
     work->map = map;
     work->uid = uid;
+    work->last_update_ticks = SDL_GetTicks();
     work->input = (struct cell_field_work_input){
         .layer = formation->layer,
         .enemy_faction_mask = G_GetEnemyFactions(formation->faction_id),
@@ -2854,7 +2875,31 @@ static struct cell_arrival_field *cell_get_field(uint32_t uid)
     return kh_val(sub->results, m);
 }
 
-static vec2_t cell_get_dir(const struct cell_arrival_field *field, int r, int c)
+static struct cell_field_work *cell_get_work(uint32_t uid)
+{
+    formation_id_t fid = G_Formation_GetForEnt(uid);
+    if(fid == NULL_FID)
+        return NULL;
+
+    khiter_t k = kh_get(formation, s_formations, fid);
+    assert(k != kh_end(s_formations));
+    struct formation *formation = &kh_val(s_formations, k);
+
+    khiter_t l = kh_get(assignment, formation->sub_assignment, uid);
+    assert(l != kh_end(formation->sub_assignment));
+    int idx = kh_val(formation->sub_assignment, l).r;
+    struct subformation *sub = &vec_AT(&formation->subformations, idx);
+
+    for(int i = 0; i < vec_size(&sub->futures); i++) {
+        struct cell_field_work *curr = &vec_AT(&sub->futures, i);
+        if(curr->uid == uid)
+            return curr;
+    }
+    assert(0);
+    return NULL;
+}
+
+static enum flow_dir cell_get_dir(const struct cell_arrival_field *field, int r, int c)
 {
     assert(r >= 0 && r < CELL_ARRIVAL_FIELD_RES);
     assert(c >= 0 && c < CELL_ARRIVAL_FIELD_RES);
@@ -2868,7 +2913,7 @@ static vec2_t cell_get_dir(const struct cell_arrival_field *field, int r, int c)
     }else{
         dir = (field->raw[byte_index] & 0xf0) >> 4;
     }
-    return N_FlowDir(dir);
+    return dir;
 }
 
 static bool inside_arrival_field_bounds(struct formation *formation, vec2_t pos)
@@ -2975,6 +3020,33 @@ static void clear_for_ent(uint32_t uid)
     khiter_t k = kh_get(mapping, s_ent_formation_map, uid);
     assert(k != kh_end(s_ent_formation_map));
     kh_del(mapping, s_ent_formation_map, k);
+}
+
+/* Returns true if the current cell arrival field for the entity
+ * will guide it towards a blocked tile.
+ */
+static bool will_collide(struct cell_arrival_field *field, enum nav_layer layer, 
+                         struct coord coord, vec2_t pos)
+{
+    struct map_resolution res;
+    M_NavGetResolution(s_map, &res);
+    vec3_t map_pos = M_GetPos(s_map);
+
+    enum flow_dir dir = cell_get_dir(field, coord.r, coord.c);
+    vec2_t vec_dir = N_FlowDir(dir);
+
+    float magnitude = 4.0f;
+    if(vec_dir.x != 0.0f && vec_dir.z != 0.0f)
+        magnitude *= sqrt(2.0f);
+    PFM_Vec2_Scale(&vec_dir, magnitude, &vec_dir);
+
+    vec2_t next_pos;
+    PFM_Vec2_Add(&pos, &vec_dir, &next_pos);
+
+    if(!M_PointInsideMap(s_map, next_pos))
+        return true;
+
+    return M_NavPositionBlocked(s_map, layer, next_pos);
 }
 
 /*****************************************************************************/
@@ -3170,11 +3242,10 @@ vec2_t G_Formation_DesiredArrivalVelocity(uint32_t uid)
      * and CELL_ARRIVAL_FIELD_RES */
     coord.r += 1;
     coord.c += 1;
-    printf("pos: (%f, %f) [coord: %d, %d]\n", pos.x, pos.z, coord.r, coord.c);
 
     struct cell_arrival_field *field = cell_get_field(uid);
-    vec2_t ret = cell_get_dir(field, coord.r, coord.c);
-    return ret;
+    enum flow_dir dir = cell_get_dir(field, coord.r, coord.c);
+    return N_FlowDir(dir);
 }
 
 vec2_t G_Formation_ApproximateDesiredArrivalVelocity(uint32_t uid)
@@ -3186,7 +3257,7 @@ vec2_t G_Formation_ApproximateDesiredArrivalVelocity(uint32_t uid)
     struct cell *cell = cell_for_ent(formation, uid);
     assert(cell);
 
-    vec2_t cell_pos = cell->pos;
+    vec2_t cell_pos = cell->reachable_pos;
     vec2_t ent_pos = G_Pos_GetXZ(uid);
     vec2_t delta;
     PFM_Vec2_Sub(&cell_pos, &ent_pos, &delta);
@@ -3207,7 +3278,7 @@ bool G_Formation_ArrivedAtCell(uint32_t uid)
     float radius = G_GetSelectionRadius(uid);
     float arrive_thresh = radius * 1.5f;
 
-    vec2_t cell_pos = cell->pos;
+    vec2_t cell_pos = cell->reachable_pos;
     vec2_t ent_pos = G_Pos_GetXZ(uid);
     vec2_t delta;
     PFM_Vec2_Sub(&ent_pos, &cell_pos, &delta);
@@ -3233,7 +3304,7 @@ vec2_t G_Formation_CellPosition(uint32_t uid)
     assert(formation);
     struct cell *cell = cell_for_ent(formation, uid);
     assert(cell);
-    return cell->pos;
+    return cell->reachable_pos;
 }
 
 void G_Formation_Arrange(enum formation_type type, vec_entity_t *ents)
@@ -3296,5 +3367,106 @@ enum formation_type G_Formation_PreferredForSet(const vec_entity_t *ents)
         return first;
     }
     return FORMATION_NONE;
+}
+
+void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+    PERF_ENTER();
+
+    struct cell_arrival_field *field = cell_get_field(uid);
+    if(!field)
+        PERF_RETURN_VOID();
+
+    struct map_resolution res;
+    M_NavGetResolution(s_map, &res);
+    vec3_t map_pos = M_GetPos(s_map);
+
+    struct formation *formation = formation_for_ent(uid);
+    assert(formation);
+
+    vec2_t pos = G_Pos_GetXZ(uid);
+    struct coord coord = pos_to_tile(pos, formation->center);
+    /* Account for the difference between OCCUPIED_FIELD_RES
+     * and CELL_ARRIVAL_FIELD_RES */
+    coord.r += 1;
+    coord.c += 1;
+
+    enum nav_layer layer = Entity_NavLayer(uid);
+    struct cell_field_work *work = cell_get_work(uid);
+    struct cell_field_work_input *input = &work->input;
+    void *workspace = get_workspace();
+    size_t ws_size = workspace_size();
+
+    /* Out of performance considerations, don't re-compute the 
+     * field too often. Wait for a number of changes to pile up
+     * and do it perfodically, as necessary.
+     */
+    uint32_t curr = SDL_GetTicks();
+    float elapsed = (curr - work->last_update_ticks) / 1000.0f;
+    if(elapsed < FIELD_RECOMPUTE_INTERVAL)
+        PERF_RETURN_VOID();
+
+    /* The target cell location got blocked. Try to get as close as possible. 
+     */
+    struct cell *cell = cell_for_ent(formation, uid);
+    if(M_NavPositionBlocked(s_map, layer, cell->reachable_pos)) {
+
+        vec2_t new_reachable = cell->reachable_pos;
+        M_NavClosestPathable(s_map, layer, cell->reachable_pos, &new_reachable);
+        struct tile_desc new_target;
+        bool exists = M_Tile_DescForPoint2D(res, map_pos, new_reachable, &new_target);
+        assert(exists);
+
+        cell->reachable_pos = new_reachable;
+        work->input.cell_tile = new_target;
+
+        M_NavCellArrivalFieldCreate(s_map, CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES,
+            layer, input->enemy_faction_mask, new_target, input->center_tile,
+            field->raw, workspace, ws_size);
+
+        work->last_update_ticks = curr;
+        PERF_RETURN_VOID();
+    }
+
+    /* The entity got blocked in by other units, such that it's trapped 
+     * on an 'island' and can no longer reach its' target tile. In that
+     * case, resort to stopping the unit at its' location.
+     */
+    if(!M_NavPositionBlocked(s_map, layer, pos)
+    && cell_get_dir(field, coord.r, coord.c) == FD_NONE) {
+        cell->reachable_pos = pos;
+        PERF_RETURN_VOID();
+    }
+
+    struct tile_desc td;
+    bool exists = M_Tile_DescForPoint2D(res, map_pos, pos, &td);
+    assert(exists);
+
+    /* The entity may end up on a blocked tile (which is possible if a unit 
+     * right next to it has 'stopped' and occupied a set of tiles under it). 
+     */
+    if(M_NavPositionBlocked(s_map, layer, pos)) {
+
+        M_NavCellArrivalFieldCreate(s_map, CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES,
+            layer, input->enemy_faction_mask, input->cell_tile, input->center_tile,
+            field->raw, workspace, ws_size);
+        M_NavCellArrivalFieldUpdateToNearestPathable(s_map, 
+            CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES, layer, input->enemy_faction_mask,
+            td, input->center_tile, field->raw, workspace, ws_size);
+        work->last_update_ticks = curr;
+    }
+    /* If the current field is leading the entity towards
+     * a blocked tile, it must be outdated. Recompute it.
+     */
+    else if(will_collide(field, layer, coord, pos)) {
+
+        M_NavCellArrivalFieldCreate(s_map, CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES,
+            layer, input->enemy_faction_mask, input->cell_tile, input->center_tile,
+            field->raw, workspace, ws_size);
+        work->last_update_ticks = curr;
+    }
+
+    PERF_RETURN_VOID();
 }
 

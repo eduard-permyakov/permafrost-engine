@@ -1061,6 +1061,7 @@ static vec2_t ent_desired_velocity(uint32_t uid)
         if(!G_Formation_CanUseArrivalField(uid)) {
             return G_Formation_ApproximateDesiredArrivalVelocity(uid);
         }
+        G_Formation_UpdateFieldIfNeeded(uid);
         return G_Formation_DesiredArrivalVelocity(uid);
     }
     default:

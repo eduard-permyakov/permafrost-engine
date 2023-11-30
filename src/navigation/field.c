@@ -1266,7 +1266,9 @@ static size_t field_passable_frontier(
     struct tile_desc          start, 
     struct region             region,
     struct tile_desc         *out, 
-    size_t                    maxout)
+    size_t                    maxout,
+    void                     *workspace,
+    size_t                    ws_size)
 {
     struct nav_chunk *start_chunk = 
         &priv->chunks[layer][start.chunk_r * priv->width + start.chunk_c];
@@ -1278,8 +1280,23 @@ static size_t field_passable_frontier(
     N_GetResolution(priv, &res);
 
     const size_t nelems = region.r * region.c;
-    STALLOC(bool, visited, nelems * sizeof(bool));
-    STALLOC(struct tile_desc, frontier, nelems * sizeof(struct coord));
+    STALLOC(bool, visited_buff, workspace ? 1 : nelems);
+    STALLOC(struct tile_desc, frontier_buff, workspace ? 1 : nelems);
+
+    /* Allow worker threads to use thread-local workspace memory
+     * for stack allocations when this routine is running in task
+     * context.
+     */
+    bool *visited;
+    struct tile_desc *frontier;
+    if(!workspace) {
+        visited = visited_buff;
+        frontier = frontier_buff;
+    }else{
+        assert(ws_size >= (sizeof(bool) + sizeof(struct tile_desc)) * nelems);
+        visited = workspace;
+        frontier = (void*)(((char*)workspace) + (sizeof(bool) * nelems));
+    }
     memset(visited, 0, nelems * sizeof(bool));
 
     int fhead = 0, ftail = -1;
@@ -1323,8 +1340,8 @@ static size_t field_passable_frontier(
             qpush(frontier, &qsize, &fhead, &ftail, nelems, neighb);
         }
     }
-    STFREE(visited);
-    STFREE(frontier);
+    STFREE(visited_buff);
+    STFREE(frontier_buff);
     return ret;
 }
 
@@ -1823,7 +1840,7 @@ void N_FlowFieldUpdateToNearestPathable(
         start.r, start.c
     };
     size_t ninit = field_passable_frontier(priv, layer, start_coord, 
-        chunk_region, init_frontier, ARR_SIZE(init_frontier));
+        chunk_region, init_frontier, ARR_SIZE(init_frontier), NULL, 0);
 
     pq_coord_t frontier;
     pq_coord_init(&frontier);
@@ -2039,8 +2056,8 @@ void N_CellArrivalFieldCreate(void *nav_private, size_t rdim, size_t cdim,
 
     int dr, dc;
     M_Tile_Distance(res, &base, &target, &dr, &dc);
-    assert(dr >= 0 && dr <= rdim);
-    assert(dc >= 0 && dc <= cdim);
+    assert(dr >= 0 && dr < rdim);
+    assert(dc >= 0 && dc < cdim);
 
     pq_td_push(&frontier, 0.0f, target); 
     integration_field[dr * rdim + dc] = 0.0f;
@@ -2058,18 +2075,21 @@ void N_CellArrivalFieldUpdateToNearestPathable(void *nav_private, size_t rdim, s
                               struct tile_desc start, struct tile_desc center, 
                               uint8_t *inout, void *workspace, size_t workspace_size)
 {
+    size_t integration_field_size = sizeof(float) * rdim * cdim;
+    assert(workspace_size >= integration_field_size);
+    float *integration_field = workspace;
+    workspace_size -= integration_field_size;
+    workspace = ((char*)workspace) + integration_field_size;
+
     struct nav_private *priv = nav_private;
-    struct tile_desc init_frontier[1024];
+    struct tile_desc init_frontier[512];
     struct region clamped = clamped_region(priv, rdim, cdim, center);
     size_t ninit = field_passable_frontier(priv, layer, start, 
-        clamped, init_frontier, ARR_SIZE(init_frontier));
+        clamped, init_frontier, ARR_SIZE(init_frontier), workspace, workspace_size);
 
     pq_td_t frontier;
     pq_td_init(&frontier);
 
-    size_t integration_field_size = sizeof(float) * rdim * cdim;
-    assert(workspace_size >= integration_field_size);
-    float *integration_field = workspace;
 
     for(int r = 0; r < rdim; r++) {
     for(int c = 0; c < cdim; c++) {
