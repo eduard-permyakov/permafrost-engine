@@ -51,6 +51,7 @@
 #include "../lib/public/mpool_allocator.h"
 #include "../lib/public/string_intern.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/stalloc.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -137,6 +138,7 @@ static khash_t(state)       *s_entity_state_table;
 static mpa_buff_t            s_mpool;
 static khash_t(stridx)      *s_stridx;
 static mp_strbuff_t          s_stringpool;
+static struct memstack       s_eventargs;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -393,6 +395,11 @@ static void on_amount_changed(void *user, void *event)
     G_Building_Supply(uid);
 }
 
+static void on_update(void *user, void *event)
+{
+    stalloc_clear(&s_eventargs);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -409,11 +416,17 @@ bool G_Building_Init(const struct map *map)
         goto fail_res;
     if(!si_init(&s_stringpool, &s_stridx, 512))
         goto fail_res;
+    if(!stalloc_init(&s_eventargs))
+        goto fail_eventargs;
 
-    E_Global_Register(EVENT_RENDER_3D_PRE, on_render_3d, NULL, G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
+    E_Global_Register(EVENT_RENDER_3D_PRE, on_render_3d, NULL, 
+        G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
+    E_Global_Register(EVENT_UPDATE_START, on_update, NULL, G_RUNNING);
     s_map = map;
     return true;
 
+fail_eventargs:
+    si_shutdown(&s_stringpool, s_stridx);
 fail_res:
     kh_destroy(state, s_entity_state_table);
 fail_table:
@@ -425,6 +438,7 @@ fail_mpool:
 void G_Building_Shutdown(void)
 {
     s_map = NULL;
+    E_Global_Unregister(EVENT_UPDATE_START, on_update);
     E_Global_Unregister(EVENT_RENDER_3D_PRE, on_render_3d);
 
     uint32_t key;
@@ -435,6 +449,7 @@ void G_Building_Shutdown(void)
         vec_uid_destroy(&curr.markers);
     });
 
+    stalloc_destroy(&s_eventargs);
     si_shutdown(&s_stringpool, s_stridx);
     kh_destroy(state, s_entity_state_table);
     mpa_buff_destroy(&s_mpool);
@@ -486,7 +501,7 @@ void G_Building_RemoveEntity(uint32_t uid)
 
     if(bs->state >= BUILDING_STATE_FOUNDED && bs->blocking) {
         M_NavBlockersDecrefOBB(s_map, G_GetFactionID(uid), &bs->obb);
-        struct entity_block_desc *desc = malloc(sizeof(struct entity_block_desc));
+        struct entity_block_desc *desc = stalloc(&s_eventargs, sizeof(struct entity_block_desc));
         *desc = (struct entity_block_desc){
             .uid = uid,
             .radius = G_GetSelectionRadius(uid),

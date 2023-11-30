@@ -2706,7 +2706,6 @@ static void on_1hz_tick(void *user, void *event)
             k = kh_put(entity, need_recompute, fid, &status);
             assert(status != -1);
         });
-        PF_FREE(block_event.arg);
     }
     formation_id_t fid;
     kh_foreach_key(need_recompute, fid, {

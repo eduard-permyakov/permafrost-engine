@@ -64,6 +64,7 @@
 #include "../lib/public/pf_string.h"
 #include "../lib/public/stalloc.h"
 #include "../anim/public/anim.h"
+#include "../lib/public/stalloc.h"
 
 #include <assert.h>
 #include <SDL.h>
@@ -300,6 +301,7 @@ static dest_id_t               s_last_cmd_dest;
 
 static struct move_work        s_move_work;
 static queue_cmd_t             s_move_commands;
+static struct memstack         s_eventargs;
 
 static const char *s_state_str[] = {
     [STATE_MOVING]              = STR(STATE_MOVING),
@@ -401,7 +403,7 @@ static void entity_block(uint32_t uid)
     ms->blocking = true;
     ms->last_stop_pos = pos;
     ms->last_stop_radius = sel_radius;
-    struct entity_block_desc *desc = malloc(sizeof(struct entity_block_desc));
+    struct entity_block_desc *desc = stalloc(&s_eventargs, sizeof(struct entity_block_desc));
     *desc = (struct entity_block_desc){
         .uid = uid,
         .radius = sel_radius,
@@ -419,7 +421,7 @@ static void entity_unblock(uint32_t uid)
     M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, faction_id, s_map);
     ms->blocking = false;
 
-    struct entity_block_desc *desc = malloc(sizeof(struct entity_block_desc));
+    struct entity_block_desc *desc = stalloc(&s_eventargs, sizeof(struct entity_block_desc));
     *desc = (struct entity_block_desc){
         .uid = uid,
         .radius = ms->last_stop_radius,
@@ -2609,6 +2611,11 @@ static void on_20hz_tick(void *user, void *event)
     PERF_POP();
 }
 
+static void on_update(void *user, void *event)
+{
+    stalloc_clear(&s_eventargs);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -2632,9 +2639,17 @@ bool G_Move_Init(const struct map *map)
         return NULL;
     }
 
+    if(!stalloc_init(&s_eventargs)) {
+        stalloc_destroy(&s_move_work.mem);
+        kh_destroy(state, s_entity_state_table);
+        queue_cmd_destroy(&s_move_commands);
+        return NULL;
+    }
+
     vec_entity_init(&s_move_markers);
     vec_flock_init(&s_flocks);
 
+    E_Global_Register(EVENT_UPDATE_START, on_update, NULL, G_RUNNING);
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, 
         G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
@@ -2655,6 +2670,7 @@ void G_Move_Shutdown(void)
     E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
+    E_Global_Unregister(EVENT_UPDATE_START, on_update);
 
     for(int i = 0; i < vec_size(&s_move_markers); i++) {
         E_Entity_Unregister(EVENT_ANIM_FINISHED, vec_AT(&s_move_markers, i), on_marker_anim_finish);
@@ -2665,6 +2681,7 @@ void G_Move_Shutdown(void)
     move_release_gamestate();
     vec_flock_destroy(&s_flocks);
     vec_entity_destroy(&s_move_markers);
+    stalloc_destroy(&s_eventargs);
     queue_cmd_destroy(&s_move_commands);
     stalloc_destroy(&s_move_work.mem);
     kh_destroy(state, s_entity_state_table);
