@@ -140,8 +140,8 @@ struct cell_field_work_input{
 };
 
 struct refcounted_map{
-    SDL_atomic_t      refcount;
-    const struct map *snapshot;
+    SDL_atomic_t  refcount;
+    struct map   *snapshot;
 };
 
 struct cell_field_work{
@@ -161,7 +161,7 @@ VEC_IMPL(static inline, work, struct cell_field_work)
 
 KHASH_MAP_INIT_INT(assignment, struct coord)
 KHASH_MAP_INIT_INT(result, struct cell_arrival_field*)
-KHASH_MAP_INIT_INT(map, struct refcounted_map)
+KHASH_MAP_INIT_INT64(map, struct refcounted_map)
 
 QUEUE_TYPE(coord, struct coord)
 QUEUE_IMPL(static, coord, struct coord)
@@ -190,6 +190,11 @@ struct subformation{
     vec2_t               orientation;
     size_t               nrows;
     size_t               ncols;
+    /* Each bit correspongs to an index in the subformation array.
+     * Indicates which lower-priority subformation cells should act
+     * as blockers that the entities go around.
+     */
+    uint64_t             blocked;
     khash_t(entity)     *ents;
     /* Each cell holds a single unit from the subformation
      */
@@ -1151,18 +1156,131 @@ static void place_subformation(struct subformation *formation, vec2_t center,
     PERF_RETURN_VOID();
 }
 
-static struct refcounted_map *map_snapshot_get(struct formation *formation)
+static uint64_t map_table_key(struct formation *formation, struct subformation *sub)
+{
+    uint64_t idx = 0;
+    for(int i = 0; i < vec_size(&formation->subformations); i++) {
+        struct subformation *curr = &vec_AT(&formation->subformations, i);
+        if(curr == sub) {
+            idx = i;
+            break;
+        }
+    }
+    return (g_frame_idx << 8) | idx;
+}
+
+static float average_distance_to_target(struct subformation *formation)
+{
+    /* Find the entity center of mass for the subformation */
+    vec2_t ent_com = (vec2_t){0.0f, 0.0f};
+    size_t nents = kh_size(formation->ents);
+
+    uint32_t uid;
+    kh_foreach_key(formation->ents, uid, {
+        vec2_t pos = G_Pos_GetXZ(uid);
+        PFM_Vec2_Add(&ent_com, &pos, &ent_com);
+    });
+    assert(nents > 0);
+    PFM_Vec2_Scale(&ent_com, 1.0f / nents, &ent_com);
+
+    /* Find the cell center of mass for the target cells */
+    vec2_t cell_com = (vec2_t){0.0f, 0.0f};
+    size_t ncells = 0;
+    for(int i = 0; i < vec_size(&formation->cells); i++) {
+        struct cell *cell = &vec_AT(&formation->cells, i);
+        if(cell->state != CELL_OCCUPIED)
+            continue;
+        PFM_Vec2_Add(&cell_com, &cell->pos, &cell_com);
+        ncells++;
+    }
+    if(ncells > 0) {
+        PFM_Vec2_Scale(&cell_com, 1.0f / ncells, &cell_com);
+    }
+
+    vec2_t delta;
+    PFM_Vec2_Sub(&cell_com, &ent_com, &delta);
+    return PFM_Vec2_Len(&delta);
+}
+
+static void map_block_cells(struct map *map, struct subformation *sub)
+{
+    int faction_id = sub->faction_id;
+    float radius = sub->unit_radius;
+
+    for(int i = 0; i < vec_size(&sub->cells); i++) {
+        struct cell *cell = &vec_AT(&sub->cells, i);
+        if(cell->state != CELL_OCCUPIED)
+            continue;
+        M_NavBlockersIncref(cell->pos, radius, faction_id, map);
+    }
+}
+
+/* Block out all cells for lower priority subformations that are (on average) 
+ * closer to their target location than the current subformation. This will
+ * cause entities to go around the whole subformation area, instead of attempting
+ * to go directly through it and resulting in a lot of unit collisions and field 
+ * re-computations that will then, anyways, lead the units around the lower priority 
+ * subformation.
+ */
+static void map_add_blockers(struct map *map, struct formation *formation, struct subformation *sub)
+{
+    for(int i = 0; i < vec_size(&formation->subformations); i++) {
+        struct subformation *curr = &vec_AT(&formation->subformations, i);
+        if(sub->blocked & (((uint64_t)0x1) << i)) {
+            map_block_cells(map, curr);
+        }
+    }
+}
+
+static uint64_t compute_blocked(struct formation *formation, struct subformation *sub)
+{
+    uint64_t ret = 0;
+    int idx = 0;
+    for(int i = 0; i < vec_size(&formation->subformations); i++) {
+        struct subformation *curr = &vec_AT(&formation->subformations, i);
+        if(curr == sub) {
+            idx = i;
+            break;
+        }
+    }
+
+    float sub_distance = average_distance_to_target(sub);
+    const float BUFFER = 15.0f;
+    for(int i = idx + 1; i < vec_size(&formation->subformations); i++) {
+        if(i >= 64)
+            break;
+        struct subformation *curr = &vec_AT(&formation->subformations, i);
+        float curr_distance = average_distance_to_target(curr);
+        if(curr_distance + BUFFER < sub_distance) {
+            ret |= ((uint64_t)0x1) << i;
+        }
+    }
+    return ret;
+}
+
+static void compute_all_blocked(struct formation *formation)
+{
+    for(int i = 0; i < vec_size(&formation->subformations); i++) {
+        struct subformation *curr = &vec_AT(&formation->subformations, i);
+        curr->blocked = compute_blocked(formation, curr);
+    }
+}
+
+static struct refcounted_map *map_snapshot_get(struct formation *formation, 
+                                               struct subformation *sub)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    khiter_t k = kh_get(map, formation->map_snapshots, g_frame_idx);
+    uint64_t key = map_table_key(formation, sub);
+    khiter_t k = kh_get(map, formation->map_snapshots, key);
     if(k == kh_end(formation->map_snapshots)) {
         int ret;
-        k = kh_put(map, formation->map_snapshots, g_frame_idx, &ret);
+        k = kh_put(map, formation->map_snapshots, key, &ret);
         assert(ret != -1);
 
         struct refcounted_map *rmap = &kh_val(formation->map_snapshots, k);
         rmap->snapshot = M_AL_CopyWithFields(s_map);
+        map_add_blockers(rmap->snapshot, formation, sub);
         SDL_AtomicSet(&rmap->refcount, 0);
     }
     struct refcounted_map *rmap = &kh_val(formation->map_snapshots, k);
@@ -1174,10 +1292,10 @@ static void clean_up_map_snapshots(struct formation *formation)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    int todel[1024];
+    uint64_t todel[1024];
     size_t ndel = 0;
 
-    int key;
+    uint64_t key;
     struct refcounted_map *rmap;
     kh_foreach_val_ptr(formation->map_snapshots, key, rmap, {
         if(ndel == ARR_SIZE(todel))
@@ -1191,6 +1309,8 @@ static void clean_up_map_snapshots(struct formation *formation)
     for(int i = 0; i < ndel; i++) {
         khiter_t k = kh_get(map, formation->map_snapshots, todel[i]);
         assert(k != kh_end(formation->map_snapshots));
+        struct refcounted_map *rmap = &kh_val(formation->map_snapshots, k);
+        PF_FREE(rmap->snapshot);
         kh_del(map, formation->map_snapshots, k);
     }
 }
@@ -2868,7 +2988,7 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
                                struct subformation *formation, struct cell_field_work *work, 
                                struct cell *cell, struct result (*func)(void*))
 {
-    struct refcounted_map *rmap = map_snapshot_get(parent);
+    struct refcounted_map *rmap = map_snapshot_get(parent, formation);
     struct map_resolution res;
     M_NavGetResolution(rmap->snapshot, &res);
     vec3_t map_pos = M_GetPos(rmap->snapshot);
@@ -3305,6 +3425,7 @@ void G_Formation_Create(vec2_t target, const vec_entity_t *ents, enum formation_
             new->occupied, new->islands);
         mark_unused_cells(sub);
         compute_cell_assignment(sub);
+        compute_all_blocked(new);
         dispatch_cell_field_work(new, new->center, sub);
     }
 }
@@ -3530,9 +3651,9 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
         PERF_RETURN_VOID();
 
     struct formation *formation = formation_for_ent(uid);
-    assert(formation);
+    struct subformation *sub = subformation_for_ent(formation, uid);
 
-    struct refcounted_map *rmap = map_snapshot_get(formation);
+    struct refcounted_map *rmap = map_snapshot_get(formation, sub);
     struct map_resolution res;
     M_NavGetResolution(rmap->snapshot, &res);
     vec3_t map_pos = M_GetPos(rmap->snapshot);
@@ -3570,7 +3691,6 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
         M_NavClosestPathable(rmap->snapshot, layer, cell->reachable_pos, &new_reachable);
 
         cell->reachable_pos = new_reachable;
-        struct subformation *sub = subformation_for_ent(formation, uid);
         dispatch_cell_task(formation, formation->center, uid, sub, work, cell, cell_field_task);
 
         work->last_update_ticks = curr;
@@ -3599,7 +3719,6 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
     if(M_NavPositionBlocked(rmap->snapshot, layer, pos)) {
 
         work->input.curr_tile = td;
-        struct subformation *sub = subformation_for_ent(formation, uid);
         dispatch_cell_task(formation, formation->center, uid, sub, work, cell, 
             cell_field_fixup_task);
         work->last_update_ticks = curr;
@@ -3609,7 +3728,6 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
      */
     else if(will_collide(field, layer, coord, pos)) {
 
-        struct subformation *sub = subformation_for_ent(formation, uid);
         dispatch_cell_task(formation, formation->center, uid, sub, work, cell, cell_field_task);
         work->last_update_ticks = curr;
     }
