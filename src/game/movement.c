@@ -181,6 +181,7 @@ struct flock{
 struct move_work_in{
     uint32_t      ent_uid;
     vec2_t        ent_des_v;
+    float         speed;
     vec2_t        cell_pos;
     struct cp_ent cp_ent;
     bool          save_debug;
@@ -459,6 +460,18 @@ static void vec2_truncate(vec2_t *inout, float max_len)
 static bool ent_still(const struct movestate *ms)
 {
     return (ms->state == STATE_ARRIVED || ms->state == STATE_WAITING);
+}
+
+static float entity_speed(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(G_Formation_GetForEnt(uid) != NULL_FID) {
+        return G_Formation_Speed(uid);
+    }
+
+    struct movestate *ms = movestate_get(uid);
+    return ms->max_speed;
 }
 
 static void entity_finish_moving(uint32_t uid, enum arrival_state newstate)
@@ -1398,7 +1411,8 @@ static void nullify_impass_components(uint32_t uid, vec2_t *inout_force)
         inout_force->z = 0.0f;
 }
 
-static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock, bool has_dest_los)
+static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock, 
+                               bool has_dest_los, float speed)
 {
     struct movestate *ms = movestate_get(uid);
     assert(ms);
@@ -1427,12 +1441,12 @@ static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock, bool has
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
-    vec2_truncate(&new_vel, ms->max_speed / MOVE_TICK_RES);
+    vec2_truncate(&new_vel, speed / MOVE_TICK_RES);
 
     return new_vel;
 }
 
-static vec2_t cell_arrival_seek_vpref(uint32_t uid, vec2_t cell_pos)
+static vec2_t cell_arrival_seek_vpref(uint32_t uid, vec2_t cell_pos, float speed)
 {
     struct movestate *ms = movestate_get(uid);
     assert(ms);
@@ -1461,12 +1475,12 @@ static vec2_t cell_arrival_seek_vpref(uint32_t uid, vec2_t cell_pos)
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
-    vec2_truncate(&new_vel, ms->max_speed / MOVE_TICK_RES);
+    vec2_truncate(&new_vel, speed / MOVE_TICK_RES);
 
     return new_vel;
 }
 
-static vec2_t enemy_seek_vpref(uint32_t uid)
+static vec2_t enemy_seek_vpref(uint32_t uid, float speed)
 {
     struct movestate *ms = movestate_get(uid);
     assert(ms);
@@ -1477,7 +1491,7 @@ static vec2_t enemy_seek_vpref(uint32_t uid)
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
-    vec2_truncate(&new_vel, ms->max_speed / MOVE_TICK_RES);
+    vec2_truncate(&new_vel, speed / MOVE_TICK_RES);
 
     return new_vel;
 }
@@ -2348,15 +2362,15 @@ static void move_work(int begin_idx, int end_idx)
             break;
         case STATE_SEEK_ENEMIES: 
             assert(!flock);
-            vpref = enemy_seek_vpref(in->ent_uid);
+            vpref = enemy_seek_vpref(in->ent_uid, in->speed);
             break;
         case STATE_ARRIVING_TO_CELL:
             assert(flock);
-            vpref = cell_arrival_seek_vpref(in->ent_uid, in->cell_pos);
+            vpref = cell_arrival_seek_vpref(in->ent_uid, in->cell_pos, in->speed);
             break;
         default:
             assert(flock);
-            vpref = point_seek_vpref(in->ent_uid, flock, in->has_dest_los);
+            vpref = point_seek_vpref(in->ent_uid, flock, in->has_dest_los, in->speed);
         }
         assert(vpref.x != NAN && vpref.z != NAN);
 
@@ -2596,6 +2610,7 @@ static void on_20hz_tick(void *user, void *event)
         move_push_work((struct move_work_in){
             .ent_uid = curr,
             .ent_des_v = ms->vdes,
+            .speed = entity_speed(curr),
             .cell_pos = cell_pos,
             .cp_ent = curr_cp,
             .save_debug = G_ClearPath_ShouldSaveDebug(curr),

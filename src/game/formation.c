@@ -218,6 +218,10 @@ struct formation{
     vec2_t               orientation;
     vec2_t               center;
     khash_t(entity)     *ents;
+    /* The minimum speed of all units in the formation,
+     * used by all units moving in this formation.
+     */
+    float                speed;
     /* The tick during which this formation was created.
      */
     uint32_t             created_tick;
@@ -334,6 +338,18 @@ static vec2_t compute_orientation(vec2_t target, const vec_entity_t *ents)
     }
     PFM_Vec2_Normal(&orientation, &orientation);
     return orientation;
+}
+
+static float formation_speed(const vec_entity_t *ents)
+{
+    float min = INFINITY;
+    for(int i = 0; i < vec_size(ents); i++) {
+        uint32_t uid = vec_AT(ents, i);
+        float speed = 0.0f;
+        G_Move_GetMaxSpeed(uid, &speed);
+        min = MIN(min, speed);
+    }
+    return min;
 }
 
 /* Shift the field center in the opposite direction of the 
@@ -3269,6 +3285,7 @@ void G_Formation_Create(vec2_t target, const vec_entity_t *ents, enum formation_
         .orientation = orientation,
         .center = field_center(target, orientation),
         .ents = copy_vector(ents),
+        .speed = formation_speed(ents),
         .created_tick = SDL_GetTicks(),
         .sub_assignment = kh_init(assignment)
     };
@@ -3599,5 +3616,14 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
 
     bool ret = SDL_AtomicDecRef(&rmap->refcount);
     PERF_RETURN_VOID();
+}
+
+float G_Formation_Speed(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct formation *formation = formation_for_ent(uid);
+    assert(formation);
+    return formation->speed;
 }
 
