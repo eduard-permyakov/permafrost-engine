@@ -64,6 +64,7 @@ vec2_t         G_Formation_CellPosition(uint32_t uid);
 quat_t         G_Formation_TargetOrientation(uint32_t uid);
 void           G_Formation_UpdateFieldIfNeeded(uint32_t uid);
 float          G_Formation_Speed(uint32_t uid);
+vec2_t         G_Formation_Force(uint32_t uid);
 
 #endif
 
