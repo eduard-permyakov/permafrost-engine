@@ -102,6 +102,10 @@
 enum arrival_state{
     /* Entity is moving towards the flock's destination point */
     STATE_MOVING,
+    /* Like STATE_MOVING, but the entity is also constrained by
+     * a number of forces that give it a tendency to occupy its' 
+     * relative position in a formation. */
+    STATE_MOVING_IN_FORMATION,
     /* Entity is considered to have arrived and no longer moving. */
     STATE_ARRIVED,
     /* Entity is approaching the nearest enemy entity */
@@ -179,15 +183,19 @@ struct flock{
 };
 
 struct move_work_in{
-    uint32_t      ent_uid;
-    vec2_t        ent_des_v;
-    float         speed;
-    vec2_t        cell_pos;
-    struct cp_ent cp_ent;
-    bool          save_debug;
-    vec_cp_ent_t *stat_neighbs;
-    vec_cp_ent_t *dyn_neighbs;
-    bool          has_dest_los;
+    uint32_t       ent_uid;
+    vec2_t         ent_des_v;
+    float          speed;
+    vec2_t         cell_pos;
+    struct cp_ent  cp_ent;
+    bool           save_debug;
+    vec_cp_ent_t  *stat_neighbs;
+    vec_cp_ent_t  *dyn_neighbs;
+    bool           has_dest_los;
+    formation_id_t fid;
+    vec2_t         normal_form_cohesion_force;
+    vec2_t         normal_form_align_force;
+    vec2_t         normal_form_drag_force;
 };
 
 struct move_work_out{
@@ -266,6 +274,7 @@ static void do_update_pos(uint32_t uid, vec2_t pos);
 #define SEPARATION_FORCE_SCALE          (0.6f)
 #define MOVE_ARRIVE_FORCE_SCALE         (0.5f)
 #define MOVE_COHESION_FORCE_SCALE       (0.15f)
+#define ALIGNMENT_FORCE_SCALE           (0.15f)
 
 #define SEPARATION_BUFFER_DIST          (0.0f)
 #define COHESION_NEIGHBOUR_RADIUS       (50.0f)
@@ -273,6 +282,7 @@ static void do_update_pos(uint32_t uid, vec2_t pos);
 #define ADJACENCY_SEP_DIST              (5.0f)
 #define ALIGN_NEIGHBOUR_RADIUS          (10.0f)
 #define SEPARATION_NEIGHB_RADIUS        (30.0f)
+#define CELL_ARRIVAL_RADIUS             (30.0f)
 
 #define COLLISION_MAX_SEE_AHEAD         (10.0f)
 #define WAIT_TICKS                      (60)
@@ -306,6 +316,7 @@ static struct memstack         s_eventargs;
 
 static const char *s_state_str[] = {
     [STATE_MOVING]              = STR(STATE_MOVING),
+    [STATE_MOVING_IN_FORMATION] = STR(STATE_MOVING_IN_FORMATION),
     [STATE_ARRIVED]             = STR(STATE_ARRIVED),
     [STATE_SEEK_ENEMIES]        = STR(STATE_SEEK_ENEMIES),
     [STATE_WAITING]             = STR(STATE_WAITING),
@@ -435,7 +446,7 @@ static bool stationary(uint32_t uid)
 {
     struct movestate *ms = movestate_get(uid);
     if(!ms)
-        return false;
+        return true;
 
     if(ms->max_speed == 0.0f)
         return true;
@@ -572,7 +583,7 @@ static void split_into_layers(const vec_entity_t *sel, vec_entity_t layer_flocks
 }
 
 static bool make_flock(const vec_entity_t *units, vec2_t target_xz, 
-                       enum nav_layer layer, bool attack)
+                       enum nav_layer layer, bool attack, enum formation_type type)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -618,7 +629,7 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
         }
 
         flock_add(&new_flock, curr_ent);
-        ms->state = STATE_MOVING;
+        ms->state = (type == FORMATION_NONE) ? STATE_MOVING : STATE_MOVING_IN_FORMATION;
     }
 
     /* The flow fields will be computed on-demand during the next movement update tick */
@@ -669,7 +680,7 @@ static void make_flocks(const vec_entity_t *sel, vec2_t target_xz,
     split_into_layers(&fsel, layer_flocks);
 
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
-        make_flock(layer_flocks + i, target_xz, i, attack);
+        make_flock(layer_flocks + i, target_xz, i, attack, type);
         vec_entity_destroy(layer_flocks + i);
     }
 
@@ -692,7 +703,7 @@ static void arrange_in_formation(const vec_entity_t *sel, vec2_t target_xz,
     split_into_layers(&fsel, layer_flocks);
 
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
-        make_flock(layer_flocks + i, target_xz, i, false);
+        make_flock(layer_flocks + i, target_xz, i, false, type);
         vec_entity_destroy(layer_flocks + i);
     }
 
@@ -887,6 +898,7 @@ static void on_render_3d(void *user, void *event)
 
             switch(ms->state) {
             case STATE_MOVING:
+            case STATE_MOVING_IN_FORMATION:
             case STATE_ENTER_ENTITY_RANGE:
                 assert(flock);
                 M_NavRenderVisiblePathFlowField(s_map, cam, flock->dest_id);
@@ -1314,8 +1326,6 @@ static vec2_t point_seek_total_force(uint32_t uid, const struct flock *flock,
     PFM_Vec2_Scale(&separation, SEPARATION_FORCE_SCALE,    &separation);
 
     vec2_t ret = (vec2_t){0.0f};
-    assert(!ent_still(ms));
-
     PFM_Vec2_Add(&ret, &arrive, &ret);
     PFM_Vec2_Add(&ret, &separation, &ret);
     PFM_Vec2_Add(&ret, &cohesion, &ret);
@@ -1324,23 +1334,32 @@ static vec2_t point_seek_total_force(uint32_t uid, const struct flock *flock,
     return ret;
 }
 
-/* Like point_seek_total_force, but exclusing the cohesion force */
-static vec2_t cell_seek_total_force(uint32_t uid, vec2_t cell_pos)
+static vec2_t cell_seek_total_force(uint32_t uid, vec2_t cell_pos,
+                                    vec2_t cohesion, vec2_t alignment)
 {
     struct movestate *ms = movestate_get(uid);
     assert(ms);
+
+    vec2_t delta;
+    vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
+    PFM_Vec2_Sub(&cell_pos, &pos_xz, &delta);
 
     vec2_t arrive = arrive_force_cell(uid, cell_pos);
     vec2_t separation = separation_force(uid, SEPARATION_BUFFER_DIST);
 
     PFM_Vec2_Scale(&arrive,     MOVE_ARRIVE_FORCE_SCALE,   &arrive);
     PFM_Vec2_Scale(&separation, SEPARATION_FORCE_SCALE,    &separation);
+    PFM_Vec2_Scale(&cohesion,   MOVE_COHESION_FORCE_SCALE, &cohesion);
+    PFM_Vec2_Scale(&alignment,  ALIGNMENT_FORCE_SCALE,     &alignment);
 
     vec2_t ret = (vec2_t){0.0f};
-    assert(!ent_still(ms));
-
     PFM_Vec2_Add(&ret, &arrive, &ret);
     PFM_Vec2_Add(&ret, &separation, &ret);
+
+    if(PFM_Vec2_Len(&delta) > CELL_ARRIVAL_RADIUS) {
+        PFM_Vec2_Add(&ret, &cohesion, &ret);
+        PFM_Vec2_Add(&ret, &alignment, &ret);
+    }
 
     vec2_truncate(&ret, MAX_FORCE);
     return ret;
@@ -1446,7 +1465,8 @@ static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock,
     return new_vel;
 }
 
-static vec2_t cell_arrival_seek_vpref(uint32_t uid, vec2_t cell_pos, float speed)
+static vec2_t cell_arrival_seek_vpref(uint32_t uid, vec2_t cell_pos, float speed,
+                                      vec2_t cohesion, vec2_t alignment, vec2_t drag)
 {
     struct movestate *ms = movestate_get(uid);
     assert(ms);
@@ -1456,7 +1476,7 @@ static vec2_t cell_arrival_seek_vpref(uint32_t uid, vec2_t cell_pos, float speed
 
         switch(prio) {
         case 0: 
-            steer_force = cell_seek_total_force(uid, cell_pos); 
+            steer_force = cell_seek_total_force(uid, cell_pos, cohesion, alignment); 
             break;
         case 1: 
             steer_force = separation_force(uid, SEPARATION_BUFFER_DIST); 
@@ -1476,6 +1496,9 @@ static vec2_t cell_arrival_seek_vpref(uint32_t uid, vec2_t cell_pos, float speed
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
     vec2_truncate(&new_vel, speed / MOVE_TICK_RES);
+    if(PFM_Vec2_Len(&drag) > EPSILON) {
+        vec2_truncate(&new_vel, (speed * 0.75) / MOVE_TICK_RES);
+    }
 
     return new_vel;
 }
@@ -1492,6 +1515,69 @@ static vec2_t enemy_seek_vpref(uint32_t uid, float speed)
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
     vec2_truncate(&new_vel, speed / MOVE_TICK_RES);
+
+    return new_vel;
+}
+
+static vec2_t formation_point_seek_total_force(uint32_t uid, const struct flock *flock,
+                                               vec2_t cohesion, vec2_t alignment, bool has_dest_los)
+{
+    struct movestate *ms = movestate_get(uid);
+    assert(ms);
+
+    vec2_t arrive = arrive_force_point(uid, flock->target_xz, has_dest_los);
+    vec2_t separation = separation_force(uid, SEPARATION_BUFFER_DIST);
+
+    PFM_Vec2_Scale(&arrive,     MOVE_ARRIVE_FORCE_SCALE,   &arrive);
+    PFM_Vec2_Scale(&cohesion,   MOVE_COHESION_FORCE_SCALE, &cohesion);
+    PFM_Vec2_Scale(&separation, SEPARATION_FORCE_SCALE,    &separation);
+    PFM_Vec2_Scale(&alignment,  ALIGNMENT_FORCE_SCALE,     &alignment);
+
+    vec2_t ret = (vec2_t){0.0f};
+    PFM_Vec2_Add(&ret, &arrive, &ret);
+    PFM_Vec2_Add(&ret, &separation, &ret);
+    PFM_Vec2_Add(&ret, &cohesion, &ret);
+
+    vec2_truncate(&ret, MAX_FORCE);
+    return ret;
+}
+
+static vec2_t formation_seek_vpref(uint32_t uid, const struct flock *flock, float speed,
+                                   vec2_t cohesion, vec2_t alignment, vec2_t drag,
+                                   bool has_dest_los)
+{
+    struct movestate *ms = movestate_get(uid);
+    assert(ms);
+
+    vec2_t steer_force;
+    for(int prio = 0; prio < 3; prio++) {
+
+        switch(prio) {
+        case 0: 
+            steer_force = formation_point_seek_total_force(uid, flock, 
+                cohesion, alignment, has_dest_los); 
+            break;
+        case 1: 
+            steer_force = separation_force(uid, SEPARATION_BUFFER_DIST); 
+            break;
+        case 2: 
+            steer_force = arrive_force_point(uid, flock->target_xz, has_dest_los); 
+            break;
+        }
+
+        nullify_impass_components(uid, &steer_force);
+        if(PFM_Vec2_Len(&steer_force) > MAX_FORCE * 0.01)
+            break;
+    }
+
+    vec2_t accel, new_vel; 
+    PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
+
+    PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
+    vec2_truncate(&new_vel, speed / MOVE_TICK_RES);
+    if(PFM_Vec2_Len(&drag) > EPSILON) {
+        vec2_truncate(&new_vel, (speed * 0.75) / MOVE_TICK_RES);
+    }
 
     return new_vel;
 }
@@ -1621,7 +1707,8 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
         return;
 
     switch(ms->state) {
-    case STATE_MOVING: {
+    case STATE_MOVING: 
+    case STATE_MOVING_IN_FORMATION: {
 
         if((G_Formation_GetForEnt(uid) != NULL_FID) 
         &&  G_Formation_AssignedToCell(uid)
@@ -2040,7 +2127,13 @@ static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack)
     vec_entity_init(&flock);
     vec_entity_push(&flock, uid);
 
-    make_flock(&flock, dest_xz, layer, attack);
+    enum formation_type type = FORMATION_NONE;
+    formation_id_t fid = G_Formation_GetForEnt(uid);
+    if(fid != NULL_FID) {
+        type = G_Formation_Type(fid);
+    }
+
+    make_flock(&flock, dest_xz, layer, attack, type);
     vec_entity_destroy(&flock);
 }
 
@@ -2366,7 +2459,18 @@ static void move_work(int begin_idx, int end_idx)
             break;
         case STATE_ARRIVING_TO_CELL:
             assert(flock);
-            vpref = cell_arrival_seek_vpref(in->ent_uid, in->cell_pos, in->speed);
+            vpref = cell_arrival_seek_vpref(in->ent_uid, in->cell_pos, in->speed,
+                in->normal_form_cohesion_force,
+                in->normal_form_align_force,
+                in->normal_form_drag_force);
+            break;
+        case STATE_MOVING_IN_FORMATION:
+            assert(flock);
+            vpref = formation_seek_vpref(in->ent_uid, flock, in->speed, 
+                in->normal_form_cohesion_force,
+                in->normal_form_align_force,
+                in->normal_form_drag_force,
+                in->has_dest_los);
             break;
         default:
             assert(flock);
@@ -2607,6 +2711,7 @@ static void on_20hz_tick(void *user, void *event)
             cell_pos = G_Formation_CellPosition(curr);
         }
 
+        formation_id_t fid = G_Formation_GetForEnt(curr);
         move_push_work((struct move_work_in){
             .ent_uid = curr,
             .ent_des_v = ms->vdes,
@@ -2616,7 +2721,14 @@ static void on_20hz_tick(void *user, void *event)
             .save_debug = G_ClearPath_ShouldSaveDebug(curr),
             .stat_neighbs = stat,
             .dyn_neighbs = dyn,
-            .has_dest_los = flock ? M_NavHasDestLOS(s_map, flock->dest_id, pos) : false
+            .has_dest_los = flock ? M_NavHasDestLOS(s_map, flock->dest_id, pos) : false,
+            .fid = fid,
+            .normal_form_cohesion_force = ((fid != NULL_FID) ? G_Formation_CohesionForce(curr) 
+                                                             : (vec2_t){0.0f, 0.0f}),
+            .normal_form_align_force = ((fid != NULL_FID) ? G_Formation_AlignmentForce(curr)
+                                                          : (vec2_t){0.0f, 0.0f}),
+            .normal_form_drag_force = ((fid != NULL_FID) ? G_Formation_DragForce(curr)
+                                                         : (vec2_t){0.0f, 0.0f})
         });
     });
     PERF_POP();

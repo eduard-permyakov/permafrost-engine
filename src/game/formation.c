@@ -265,11 +265,12 @@ static enum flow_dir cell_get_dir(const struct cell_arrival_field *field, int r,
 static void recompute_cell_arrival_fields(struct formation *parent, vec2_t center, 
                                           struct subformation *formation);
 static uint32_t subformation_leader(struct subformation *formation);
-static void subformation_anchor_and_heading(struct subformation *formation,
+static void subformation_anchor_and_heading(uint32_t leader,
                                             vec2_t *out_anchor, vec2_t *out_heading);
 static bool in_front_row(uint32_t uid, uint32_t leader, struct subformation *formation, 
                          int *out_col_offset);
 static vec2_t entity_target_position(vec2_t anchor, vec2_t heading, float distance);
+static uint32_t unit_in_front(uint32_t uid, struct subformation *formation);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -289,8 +290,9 @@ static queue_event_t       s_events;
 
 static size_t workspace_size(void)
 {
+    size_t padding = 64;
     size_t count = CELL_ARRIVAL_FIELD_RES * CELL_ARRIVAL_FIELD_RES;
-    return count * (sizeof(float) + sizeof(bool) + sizeof(struct tile_desc));
+    return count * (sizeof(float) + sizeof(bool) + sizeof(struct tile_desc)) + padding;
 }
 
 static void *get_workspace(void)
@@ -1256,7 +1258,7 @@ static uint64_t compute_blocked(struct formation *formation, struct subformation
     }
 
     float sub_distance = average_distance_to_target(sub);
-    const float BUFFER = 15.0f;
+    const float BUFFER = 25.0f;
     for(int i = idx + 1; i < vec_size(&formation->subformations); i++) {
         if(i >= 64)
             break;
@@ -2680,6 +2682,8 @@ static void render_formation_forces(void)
         for(int i = 0; i < vec_size(&formation->subformations); i++) {
             struct subformation *curr = &vec_AT(&formation->subformations, i);
             uint32_t leader = subformation_leader(curr);
+            if(leader == NULL_UID)
+                continue;
 
             vec2_t leader_pos = G_Pos_GetXZ(leader);
             float radius = G_GetSelectionRadius(leader);
@@ -2699,7 +2703,7 @@ static void render_formation_forces(void)
             });
 
             vec2_t anchor, heading;
-            subformation_anchor_and_heading(curr, &anchor, &heading);
+            subformation_anchor_and_heading(leader, &anchor, &heading);
             vec2_t perpendicular = (vec2_t){-heading.z, heading.x};
             float len = curr->ncols * (2 * radius + MOVE_BUFFER_DIST) + 8.0f;
             PFM_Vec2_Normal(&perpendicular, &perpendicular);
@@ -2723,13 +2727,12 @@ static void render_formation_forces(void)
             });
 
             uint32_t uid;
-            kh_foreach_key(formation->ents, uid, {
-
-                if(uid == leader)
-                    continue;
+            kh_foreach_key(curr->ents, uid, {
 
                 int col_offset;
-                if(in_front_row(uid, leader, curr, &col_offset)) {
+                vec2_t ent_pos = G_Pos_GetXZ(uid);
+
+                if((uid != leader) && in_front_row(uid, leader, curr, &col_offset)) {
                     float distance = -col_offset * (2 * radius + MOVE_BUFFER_DIST);
                     vec2_t target = entity_target_position(anchor, heading, distance);
                     const vec3_t magenta = (vec3_t){1.0, 0.0, 1.0};
@@ -2747,7 +2750,6 @@ static void render_formation_forces(void)
                         },
                     });
 
-                    vec2_t ent_pos = G_Pos_GetXZ(uid);
                     vec2_t endpoints[] = {ent_pos, target};
                     float width = 0.5f;
 
@@ -2760,6 +2762,51 @@ static void render_formation_forces(void)
                             R_PushArg(&magenta, sizeof(magenta)),
                             (void*)G_GetPrevTickMap()
                         }
+                    });
+                }else if(uid != leader) {
+                    uint32_t unit = unit_in_front(uid, curr);
+                    if(unit != NULL_UID) {
+
+                        vec2_t from = ent_pos;
+                        vec2_t to = G_Pos_GetXZ(unit);
+                        vec2_t endpoints[] = {from, to};
+                        vec3_t green = (vec3_t){0.0f, 1.0f, 0.0f};
+                        float width = 0.5f;
+
+                        R_PushCmd((struct rcmd){
+                            .func = R_GL_DrawLine,
+                            .nargs = 4,
+                            .args = {
+                                R_PushArg(endpoints, sizeof(endpoints)),
+                                R_PushArg(&width, sizeof(width)),
+                                R_PushArg(&green, sizeof(green)),
+                                (void*)G_GetPrevTickMap()
+                            }
+                        });
+                    }
+                }
+
+                /* Entities currently experiencing a drag force 
+                 * will have a red circle around them */
+                vec2_t drag_force = G_Formation_DragForce(uid);
+                if(PFM_Vec2_Len(&drag_force) > EPSILON) {
+                    
+                    vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
+                    float marker_radius = radius;
+                    if(uid == leader) {
+                        marker_radius += 1.0f;
+                    }
+
+                    R_PushCmd((struct rcmd){
+                        .func = R_GL_DrawSelectionCircle,
+                        .nargs = 5,
+                        .args = {
+                            R_PushArg(&ent_pos, sizeof(ent_pos)),
+                            R_PushArg(&marker_radius, sizeof(marker_radius)),
+                            R_PushArg(&width, sizeof(width)),
+                            R_PushArg(&red, sizeof(red)),
+                            (void*)G_GetPrevTickMap(),
+                        },
                     });
                 }
             });
@@ -3427,12 +3474,9 @@ static uint32_t subformation_leader(struct subformation *formation)
     return NULL_UID;
 }
 
-static void subformation_anchor_and_heading(struct subformation *formation,
+static void subformation_anchor_and_heading(uint32_t leader,
                                             vec2_t *out_anchor, vec2_t *out_heading)
 {
-    uint32_t leader = subformation_leader(formation);
-    assert(leader != NULL_UID);
-
     vec4_t front = (vec4_t){0.0f, 0.0f, 1.0f, 1.0f};
     quat_t rot = Entity_GetRot(leader);
 
@@ -3446,6 +3490,38 @@ static void subformation_anchor_and_heading(struct subformation *formation,
     *out_heading = (vec2_t){dir.x, dir.z};
 }
 
+static uint32_t unit_in_front(uint32_t uid, struct subformation *formation)
+{
+    khiter_t k = kh_get(assignment, formation->assignment, uid);
+    assert(k != kh_end(formation->assignment));
+    struct coord cell_coord = kh_val(formation->assignment, k);
+
+    int c = cell_coord.c;
+    for(int r = cell_coord.r + 1; r < formation->nrows; r++) {
+        int idx = CELL_IDX(r, c, formation->ncols);
+        struct cell *cell = &vec_AT(&formation->cells, idx);
+        if(cell->state != CELL_OCCUPIED)
+            continue;
+        khiter_t l = kh_get(reverse, formation->reverse, idx);
+        if(l != kh_end(formation->reverse))
+            return kh_val(formation->reverse, l);
+    }
+    return NULL_UID;
+}
+
+static int front_row_idx(struct subformation *formation)
+{
+    size_t front = formation->nrows - 1;
+    for(int r = front; r >= 0; r--) {
+    for(int c = 0; c < formation->ncols; c++) {
+        size_t cell_idx = CELL_IDX(r, c, formation->ncols);
+        khiter_t k = kh_get(reverse, formation->reverse, cell_idx);
+        if(k != kh_end(formation->reverse))
+            return r;
+    }}
+    return 0;
+}
+
 static bool in_front_row(uint32_t uid, uint32_t leader, struct subformation *formation, 
                          int *out_col_offset)
 {
@@ -3453,8 +3529,8 @@ static bool in_front_row(uint32_t uid, uint32_t leader, struct subformation *for
     assert(k != kh_end(formation->assignment));
     struct coord cell_coord = kh_val(formation->assignment, k);
 
-    int front_row_idx = formation->nrows - 1;
-    if(cell_coord.r != front_row_idx)
+    int front_idx = front_row_idx(formation);
+    if(cell_coord.r != front_idx)
         return false;
 
     k = kh_get(assignment, formation->assignment, leader);
@@ -3462,6 +3538,25 @@ static bool in_front_row(uint32_t uid, uint32_t leader, struct subformation *for
     struct coord leader_coord = kh_val(formation->assignment, k);
     *out_col_offset = cell_coord.c - leader_coord.c;
     return true;
+}
+
+static bool ahead_of_target(uint32_t uid, vec2_t target, vec2_t anchor, vec2_t heading,
+                            float *out_dist)
+{
+    /* project pos on heading starting from anchor */
+    vec2_t pos = G_Pos_GetXZ(uid);
+    vec2_t anchor_to_pos;
+    PFM_Vec2_Sub(&pos, &anchor, &anchor_to_pos);
+    float ent_proj = PFM_Vec2_Dot(&anchor_to_pos, &heading);
+
+    /* project target on heading starting from anchor */
+    vec2_t anchor_to_target;
+    PFM_Vec2_Sub(&target, &anchor, &anchor_to_target);
+    float target_proj = PFM_Vec2_Dot(&anchor_to_target, &heading);
+
+    const float TOLERANCE = 2.5f;
+    *out_dist = ent_proj - target_proj;
+    return ((ent_proj - TOLERANCE) > target_proj);
 }
 
 static vec2_t entity_target_position(vec2_t anchor, vec2_t heading, float distance)
@@ -3473,6 +3568,54 @@ static vec2_t entity_target_position(vec2_t anchor, vec2_t heading, float distan
     vec2_t ret;
     PFM_Vec2_Add(&anchor, &perpendicular, &ret);
     return ret;
+}
+
+static bool leader_should_slow_dowm(uint32_t leader, struct subformation *formation)
+{
+    vec2_t anchor, heading;
+    subformation_anchor_and_heading(leader, &anchor, &heading);
+    float radius = G_GetSelectionRadius(leader);
+
+    khiter_t k = kh_get(assignment, formation->assignment, leader);
+    assert(k != kh_end(formation->assignment));
+    struct coord leader_coord = kh_val(formation->assignment, k);
+
+    int front_row = front_row_idx(formation);
+    for(int c = 0; c < formation->ncols; c++) {
+        int idx = CELL_IDX(front_row, c, formation->ncols);
+        khiter_t k = kh_get(reverse, formation->reverse, idx);
+        if(k == kh_end(formation->reverse))
+            continue;
+
+        uint32_t uid = kh_val(formation->reverse, k);
+        int col_offset = c - leader_coord.c;
+        float distance = -col_offset * (2 * radius + MOVE_BUFFER_DIST);
+        vec2_t target = entity_target_position(anchor, heading, distance);
+
+        float amount;
+        if(!ahead_of_target(uid, target, anchor, heading, &amount) 
+        && (fabsf(amount) > 5.0f)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static vec2_t follow_force(uint32_t uid, struct subformation *formation)
+{
+    uint32_t unit = unit_in_front(uid, formation);
+    if(unit == NULL_UID)
+        return (vec2_t){0.0f, 0.0f};
+
+    vec2_t ent_pos = G_Pos_GetXZ(uid);
+    vec2_t front_pos = G_Pos_GetXZ(unit);
+
+    vec2_t delta;
+    PFM_Vec2_Sub(&front_pos, &ent_pos, &delta);
+    if(PFM_Vec2_Len(&delta) > EPSILON) {
+        PFM_Vec2_Normal(&delta, &delta);
+    }
+    return delta;
 }
 
 /*****************************************************************************/
@@ -3598,7 +3741,6 @@ void G_Formation_Create(vec2_t target, const vec_entity_t *ents, enum formation_
         compute_all_blocked(new);
         dispatch_cell_field_work(new, new->center, sub);
     }
-    G_Formation_Force(vec_AT(ents, 0));
 }
 
 formation_id_t G_Formation_GetForEnt(uint32_t uid)
@@ -3622,6 +3764,28 @@ void G_Formation_RemoveUnit(uint32_t uid)
     khiter_t k = kh_get(formation, s_formations, fid);
     assert(k != kh_end(s_formations));
     struct formation *formation = &kh_val(s_formations, k);
+    struct subformation *sub = subformation_for_ent(formation, uid);
+
+    /* Remove from the formation and subformation entity set */
+    khiter_t e = kh_get(entity, formation->ents, uid);
+    assert(e != kh_end(formation->ents));
+    kh_del(entity, formation->ents, e);
+
+    e = kh_get(entity, sub->ents, uid);
+    assert(k != kh_end(sub->ents));
+    kh_del(entity, sub->ents, e);
+
+    /* Clear assignment */
+    khiter_t l = kh_get(assignment, sub->assignment, uid);
+    assert(l != kh_end(sub->assignment));
+    struct coord coord = kh_val(sub->assignment, l);
+    int idx = CELL_IDX(coord.r, coord.c, sub->ncols);
+    kh_del(assignment, sub->assignment, l);
+
+    /* Clear reverse assignment */
+    khiter_t m = kh_get(reverse, sub->reverse, idx);
+    assert(m != kh_end(sub->reverse));
+    kh_del(reverse, sub->reverse, m);
 
     clear_for_ent(uid);
     if(--formation->refcount == 0) {
@@ -3916,7 +4080,67 @@ float G_Formation_Speed(uint32_t uid)
     return formation->speed;
 }
 
-vec2_t G_Formation_Force(uint32_t uid)
+enum formation_type G_Formation_Type(formation_id_t fid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    khiter_t k = kh_get(formation, s_formations, fid);
+    assert(k != kh_end(s_formations));
+    struct formation *formation = &kh_val(s_formations, k);
+    return formation->type;
+}
+
+vec2_t G_Formation_AlignmentForce(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    vec2_t total = (vec2_t){0.0f, 0.0f};
+    size_t nents = 0;
+
+    struct formation *formation = formation_for_ent(uid);
+    struct subformation *sub = subformation_for_ent(formation, uid);
+    uint32_t leader = subformation_leader(sub);
+    assert(leader != NULL_FID);
+
+    int col_offset;
+    if(in_front_row(uid, leader, sub, &col_offset)) {
+
+        int front_row = front_row_idx(sub);
+        for(int c = 0; c < sub->ncols; c++) {
+            int idx = CELL_IDX(front_row, c, sub->ncols);
+            struct cell *cell = &vec_AT(&sub->cells, idx);
+            if(cell->state != CELL_OCCUPIED)
+                continue;
+
+            khiter_t k = kh_get(reverse, sub->reverse, idx);
+            if(k == kh_end(sub->reverse))
+                continue;
+
+            uint32_t ent = kh_val(sub->reverse, k);
+            if(ent == uid)
+                continue;
+
+            quat_t rot = Entity_GetRot(ent);
+            vec4_t front = (vec4_t){0.0f, 0.0f, 1.0f, 1.0f};
+            mat4x4_t rot_mat;
+            PFM_Mat4x4_RotFromQuat(&rot, &rot_mat);
+
+            vec4_t dir;
+            PFM_Mat4x4_Mult4x1(&rot_mat, &front, &dir);
+
+            vec2_t dir_xz = (vec2_t){dir.x, dir.z};
+            PFM_Vec2_Add(&total, &dir_xz, &total);
+            nents++;
+        }
+    }
+
+    if(nents > 0) {
+        PFM_Vec2_Normal(&total, &total);
+    }
+    return total;
+}
+
+vec2_t G_Formation_CohesionForce(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -3924,12 +4148,78 @@ vec2_t G_Formation_Force(uint32_t uid)
     struct subformation *sub = subformation_for_ent(formation, uid);
     float radius = G_GetSelectionRadius(uid);
 
+    vec2_t pos = G_Pos_GetXZ(uid);
     uint32_t leader = subformation_leader(sub);
     assert(leader != NULL_FID);
+
+    vec2_t anchor, heading;
+    subformation_anchor_and_heading(leader, &anchor, &heading);
 
     int col_offset;
     if(in_front_row(uid, leader, sub, &col_offset)) {
         float distance = -col_offset * (2 * radius + MOVE_BUFFER_DIST);
+        vec2_t target = entity_target_position(anchor, heading, distance);
+
+        vec2_t ret = (vec2_t){0.0f, 0.0f};
+        PFM_Vec2_Sub(&target, &pos, &ret);
+        if(PFM_Vec2_Len(&ret) > EPSILON) {
+            PFM_Vec2_Normal(&ret, &ret);
+        }
+        return ret;
+    }
+
+    return follow_force(uid, sub);
+}
+
+vec2_t G_Formation_DragForce(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct formation *formation = formation_for_ent(uid);
+    struct subformation *sub = subformation_for_ent(formation, uid);
+    float radius = G_GetSelectionRadius(uid);
+
+    vec2_t pos = G_Pos_GetXZ(uid);
+    uint32_t leader = subformation_leader(sub);
+    assert(leader != NULL_FID);
+
+    vec2_t anchor, heading;
+    subformation_anchor_and_heading(leader, &anchor, &heading);
+
+    int col_offset;
+    bool front_row = in_front_row(uid, leader, sub, &col_offset);
+
+    if((uid == leader) && !leader_should_slow_dowm(leader, sub)) {
+        return (vec2_t){0.0f, 0.0f};
+    }
+
+    float distance = -col_offset * (2 * radius + MOVE_BUFFER_DIST);
+    vec2_t target = entity_target_position(anchor, heading, distance);
+
+    float amount;
+    if((uid == leader) || ahead_of_target(uid, target, anchor, heading, &amount)) {
+        /* The drag force will act in the direction 
+         * opposite of the entity's current orientation.
+         */
+        vec2_t ent_anchor, ent_heading;
+        subformation_anchor_and_heading(uid, &ent_anchor, &ent_heading);
+        PFM_Vec2_Scale(&ent_heading, -1.0f, &ent_heading);
+        if(PFM_Vec2_Len(&ent_heading) > EPSILON) {
+            PFM_Vec2_Normal(&ent_heading, &ent_heading);
+        }
+        return ent_heading;
+    }
+
+    /* Back-row units will experience drag if the unit directly 
+     * in front of them is affected by drag */
+    uint32_t front;
+    if((front = unit_in_front(uid, sub)) != NULL_UID) {
+        vec2_t delta;
+        vec2_t front_pos = G_Pos_GetXZ(front);
+        PFM_Vec2_Sub(&pos, &front_pos, &delta);
+        if(PFM_Vec2_Len(&delta) < (2 * radius + 5.0f)) {
+            return G_Formation_DragForce(front);
+        }
     }
     return (vec2_t){0.0f, 0.0f};
 }

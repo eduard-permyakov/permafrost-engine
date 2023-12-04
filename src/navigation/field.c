@@ -1295,7 +1295,11 @@ static size_t field_passable_frontier(
     }else{
         assert(ws_size >= (sizeof(bool) + sizeof(struct tile_desc)) * nelems);
         visited = workspace;
-        frontier = (void*)(((char*)workspace) + (sizeof(bool) * nelems));
+        /* Align the 'frontier' pointer */
+        char *tmp = (void*)(((char*)workspace) + (sizeof(bool) * nelems));
+        tmp += 16;
+        tmp = (char*)(((uintptr_t)tmp) & ~0xf);
+        frontier = (void*)tmp;
     }
     memset(visited, 0, nelems * sizeof(bool));
 
