@@ -1998,6 +1998,7 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
         if(ms->wait_ticks_left == 0) {
 
             assert(ms->wait_prev == STATE_MOVING 
+                || ms->wait_prev == STATE_MOVING_IN_FORMATION
                 || ms->wait_prev == STATE_SEEK_ENEMIES
                 || ms->wait_prev == STATE_SURROUND_ENTITY);
 

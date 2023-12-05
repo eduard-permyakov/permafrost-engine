@@ -2119,8 +2119,8 @@ void N_CellArrivalFieldUpdateToNearestPathable(void *nav_private, size_t rdim, s
 
         int dr, dc;
         M_Tile_Distance(res, &base, &init_frontier[i], &dr, &dc);
-        assert(dr >= 0 && dr <= rdim);
-        assert(dc >= 0 && dc <= cdim);
+        assert(dr >= 0 && dr < rdim);
+        assert(dc >= 0 && dc < cdim);
 
         pq_td_push(&frontier, 0.0f, init_frontier[i]);
         integration_field[dr * rdim + dc] = 0.0f;

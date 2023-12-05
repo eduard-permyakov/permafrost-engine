@@ -364,7 +364,7 @@ static vec2_t field_center(vec2_t target, vec2_t orientation)
 }
 
 static bool try_occupy_cell(struct coord *curr, vec2_t orientation, uint16_t iid,
-                            float radius, enum nav_layer layer, int anchor,
+                            float radius, enum nav_layer layer, int anchor, bool commit,
                             uint8_t occupied[NAV_LAYER_MAX][OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
                             uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
 {
@@ -404,10 +404,12 @@ static bool try_occupy_cell(struct coord *curr, vec2_t orientation, uint16_t iid
         && occupied[layer][coord.r][coord.c] != TILE_VISITED)
             return false;
     }
-    for(int i = 0; i < ndescs; i++) {
-        struct coord coord = (struct coord){descs[i].tile_r, descs[i].tile_c};
-        for(int j = 0; j < NAV_LAYER_MAX; j++) {
-            occupied[j][coord.r][coord.c] = TILE_ALLOCATED;
+    if(commit) {
+        for(int i = 0; i < ndescs; i++) {
+            struct coord coord = (struct coord){descs[i].tile_r, descs[i].tile_c};
+            for(int j = 0; j < NAV_LAYER_MAX; j++) {
+                occupied[j][coord.r][coord.c] = TILE_ALLOCATED;
+            }
         }
     }
     return true;
@@ -503,11 +505,12 @@ static float step_distance(vec2_t orientation, float base)
 }
 
 static bool nearest_free_tile(struct coord *curr, struct coord *out, uint16_t iid,
-                              int direction_mask, vec2_t center, vec2_t orientation,
-                              uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
-                              uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
+    int direction_mask, vec2_t center, vec2_t orientation, float radius, enum nav_layer layer,
+    uint8_t occupied[NAV_LAYER_MAX][OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
+    uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
 {
-    if(occupied[curr->r][curr->c] == TILE_FREE) {
+    if(try_occupy_cell(curr, orientation, iid, radius, layer,
+                       direction_mask, false, occupied, islands)) {
         *out = *curr;
         return true;
     }
@@ -550,8 +553,8 @@ static bool nearest_free_tile(struct coord *curr, struct coord *out, uint16_t ii
     if(test_tile.r != curr->r || test_tile.c != curr->c) {
         if((test_tile.r >= 0 && test_tile.r < OCCUPIED_FIELD_RES)
         && (test_tile.c >= 0 && test_tile.c < OCCUPIED_FIELD_RES)
-        && (islands[test_tile.r][test_tile.c] == iid)
-        && (occupied[test_tile.r][test_tile.c] == TILE_FREE)) {
+        && (try_occupy_cell(&test_tile, orientation, iid, radius, layer,
+                            (int)direction_mask, false, occupied, islands))) {
             *out = test_tile;
             return true;
         }
@@ -563,19 +566,19 @@ static bool nearest_free_tile(struct coord *curr, struct coord *out, uint16_t ii
     for(int delta = 1; delta < OCCUPIED_FIELD_RES; delta++) {
         for(int dr = -delta; dr <= +delta; dr++) {
         for(int dc = -delta; dc <= +delta; dc++) {
-            if(abs(dr) != delta || abs(dc) != delta)
+            if(abs(dr) != delta && abs(dc) != delta)
                 continue;
 
             int abs_r = curr->r + dr;
             int abs_c = curr->c + dc;
-            if(abs_r <= 0 || abs_r >= OCCUPIED_FIELD_RES)
+            if(abs_r < 0 || abs_r >= OCCUPIED_FIELD_RES)
                 continue;
-            if(abs_c <= 0 || abs_c >= OCCUPIED_FIELD_RES)
+            if(abs_c < 0 || abs_c >= OCCUPIED_FIELD_RES)
                 continue;
 
-            bool free = (occupied[abs_r][abs_c] == TILE_FREE);
-            bool islands_match = (islands[abs_r][abs_c] == iid);
-            if(free && islands_match) {
+            struct coord curr = (struct coord){abs_r, abs_c};
+            if(try_occupy_cell(&curr, orientation, iid, radius, layer,
+                               direction_mask, false, occupied, islands)) {
                 *out = (struct coord){abs_r, abs_c};
                 return true;
             }
@@ -799,7 +802,7 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
     assert(iid != UINT16_MAX);
 
     bool exists = nearest_free_tile(&target_tile, &curr_tile, iid, anchor, 
-        center, orientation, occupied[layer], islands[layer]);
+        center, orientation, radius, layer, occupied, islands[layer]);
     if(!exists)
         return false;
 
@@ -812,12 +815,12 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
     bool success = false;
     do{
         success = try_occupy_cell(&curr_tile, orientation, iid, radius, layer, 
-            anchor, occupied, islands[layer]);
+            anchor, true, occupied, islands[layer]);
         if(!success) {
             occupied[layer][curr_tile.r][curr_tile.c] = TILE_VISITED;
             visited[nvisited++] = curr_tile;
             bool exists = nearest_free_tile(&curr_tile, &curr_tile, iid, anchor, 
-                center, orientation, occupied[layer], islands[layer]);
+                center, orientation, radius, layer, occupied, islands[layer]);
             if(!exists)
                 break;
         }
@@ -894,11 +897,17 @@ static vec2_t back_row_average_pos(struct subformation *formation)
 {
     size_t row = 0;
     vec2_t total = (vec2_t){0.0f, 0.0f};
+    size_t nadded = 0;
     for(int i = 0; i < formation->ncols; i++) {
         struct cell *curr = &vec_AT(&formation->cells, CELL_IDX(row, i, formation->ncols));
+        if(curr->state == CELL_NOT_PLACED || curr->state == CELL_NOT_USED)
+            continue;
         PFM_Vec2_Add(&total, &curr->pos, &total);
+        nadded++;
     }
-    PFM_Vec2_Scale(&total, 1.0f / formation->ncols, &total);
+    if(nadded > 0) {
+        PFM_Vec2_Scale(&total, 1.0f / nadded, &total);
+    }
     return total;
 }
 
