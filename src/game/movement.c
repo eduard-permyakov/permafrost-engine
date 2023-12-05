@@ -254,7 +254,7 @@ enum move_cmd_type{
 struct move_cmd{
     bool               deleted;
     enum move_cmd_type type;
-    struct attr        args[4];
+    struct attr        args[6];
 };
 
 KHASH_MAP_INIT_INT(state, struct movestate)
@@ -301,6 +301,11 @@ static const struct map       *s_map;
 static bool                    s_attack_on_lclick = false;
 static bool                    s_move_on_lclick = false;
 static bool                    s_click_move_enabled = true;
+
+static bool                    s_mouse_dragged = false;
+static vec3_t                  s_drag_begin_pos;
+static vec3_t                  s_drag_end_pos;
+static bool                    s_drag_attacking;
 
 static vec_entity_t            s_move_markers;
 static vec_flock_t             s_flocks;
@@ -665,7 +670,7 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
     return true;
 }
 
-static void make_flocks(const vec_entity_t *sel, vec2_t target_xz, 
+static void make_flocks(const vec_entity_t *sel, vec2_t target_xz, vec2_t target_orientation, 
                         enum formation_type type, bool attack)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -684,7 +689,7 @@ static void make_flocks(const vec_entity_t *sel, vec2_t target_xz,
         vec_entity_destroy(layer_flocks + i);
     }
 
-    G_Formation_Create(target_xz, &fsel, type);
+    G_Formation_Create(target_xz, target_orientation, &fsel, type);
     vec_entity_destroy(&fsel);
 }
 
@@ -713,7 +718,8 @@ static void arrange_in_formation(const vec_entity_t *sel, vec2_t target_xz,
         ms->state = STATE_ARRIVING_TO_CELL;
     }
 
-    G_Formation_Create(target_xz, &fsel, type);
+    vec2_t orientation = G_Formation_AutoOrientation(target_xz, &fsel);
+    G_Formation_Create(target_xz, orientation, &fsel, type);
     vec_entity_destroy(&fsel);
 }
 
@@ -766,51 +772,10 @@ static void move_marker_add(vec3_t pos, bool attack)
     vec_entity_push(&s_move_markers, uid);
 }
 
-static void on_mousedown(void *user, void *event)
+static void move_order(const vec_entity_t *sel, bool attack, vec3_t mouse_coord, 
+                       vec2_t orientation)
 {
-    SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
-
-    bool targeting = G_Move_InTargetMode();
-    bool attack = s_attack_on_lclick && (mouse_event->button == SDL_BUTTON_LEFT);
-    bool move = s_move_on_lclick ? mouse_event->button == SDL_BUTTON_LEFT
-                                 : mouse_event->button == SDL_BUTTON_RIGHT;
-
-    assert(!s_move_on_lclick || !s_attack_on_lclick);
-    assert(!attack || !move);
-
-    s_attack_on_lclick = false;
-    s_move_on_lclick = false;
-
-    if(!s_click_move_enabled)
-        return;
-
-    if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
-        return;
-
-    if((mouse_event->button == SDL_BUTTON_RIGHT) && targeting)
-        return;
-
-    if(!attack && !move)
-        return;
-
-    if(G_CurrContextualAction() != CTX_ACTION_NONE)
-        return;
-
-    if(G_MouseInTargetMode() && !targeting)
-        return;
-
-    vec3_t mouse_coord;
-    if(!M_MinimapMouseMapCoords(s_map, &mouse_coord)
-    && !M_Raycast_MouseIntersecCoord(&mouse_coord))
-        return;
-
-    enum selection_type sel_type;
-    const vec_entity_t *sel = G_Sel_Get(&sel_type);
     size_t nmoved = 0;
-
-    if(vec_size(sel) == 0 || sel_type != SELECTION_TYPE_PLAYER)
-        return;
-
     for(int i = 0; i < vec_size(sel); i++) {
 
         uint32_t curr = vec_AT(sel, i);
@@ -851,13 +816,149 @@ static void on_mousedown(void *user, void *event)
             .args[3] = {
                 .type = TYPE_BOOL,
                 .val.as_bool = attack
+            },
+            .args[4] = {
+                .type = TYPE_VEC2,
+                .val.as_vec2 = orientation
             }
         });
     }
 }
 
+static void on_mousedown(void *user, void *event)
+{
+    SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
+
+    bool targeting = G_Move_InTargetMode();
+    bool attack = s_attack_on_lclick && (mouse_event->button == SDL_BUTTON_LEFT);
+    bool move = s_move_on_lclick ? mouse_event->button == SDL_BUTTON_LEFT
+                                 : mouse_event->button == SDL_BUTTON_RIGHT;
+
+    assert(!s_move_on_lclick || !s_attack_on_lclick);
+    assert(!attack || !move);
+
+    s_attack_on_lclick = false;
+    s_move_on_lclick = false;
+
+    if(!s_click_move_enabled)
+        return;
+
+    if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
+        return;
+
+    if((mouse_event->button == SDL_BUTTON_RIGHT) && targeting)
+        return;
+
+    if(!attack && !move)
+        return;
+
+    if(G_CurrContextualAction() != CTX_ACTION_NONE)
+        return;
+
+    if(G_MouseInTargetMode() && !targeting)
+        return;
+
+    vec3_t mouse_coord;
+    if(!M_MinimapMouseMapCoords(s_map, &mouse_coord)
+    && !M_Raycast_MouseIntersecCoord(&mouse_coord))
+        return;
+
+    enum selection_type sel_type;
+    const vec_entity_t *sel = G_Sel_Get(&sel_type);
+
+    if(vec_size(sel) == 0 || sel_type != SELECTION_TYPE_PLAYER)
+        return;
+
+    /* Allow dragging the mouse to orient the formation around 
+     * the clicked location. The move orders will be issued when
+     * the mouse is released. 
+     */
+    if(G_Formation_PreferredForSet(sel) != FORMATION_NONE) {
+        s_mouse_dragged = true;
+        s_drag_begin_pos = mouse_coord;
+        s_drag_end_pos = mouse_coord;
+        s_drag_attacking = attack;
+        return;
+    }
+
+    move_order(sel, attack, mouse_coord, (vec2_t){0.0f, 0.0f});
+}
+
+static void on_mouseup(void *user, void *event)
+{
+    if(!s_mouse_dragged)
+        return;
+    s_mouse_dragged = false;
+
+    enum selection_type seltype;
+    const vec_entity_t *sel = G_Sel_Get(&seltype);
+
+    vec2_t endpoints[] = {
+        (vec2_t){s_drag_begin_pos.x, s_drag_begin_pos.z},
+        (vec2_t){s_drag_end_pos.x, s_drag_end_pos.z}
+    };
+
+    vec2_t orientation;
+    PFM_Vec2_Sub(&endpoints[1], &endpoints[0], &orientation);
+    if(PFM_Vec2_Len(&orientation) < 0.1f) {
+        orientation = G_Formation_AutoOrientation(endpoints[0], sel);
+    }else{
+        PFM_Vec2_Normal(&orientation, &orientation);
+    }
+    move_order(sel, s_drag_attacking, s_drag_begin_pos, orientation);
+}
+
+static void on_mousemotion(void *user, void *event)
+{
+    if(!s_mouse_dragged)
+        return;
+
+    vec3_t mouse_coord = (vec3_t){0.0f, 0.0f, 0.0f};
+    if(!M_Raycast_MouseIntersecCoord(&mouse_coord))
+        return;
+
+    s_drag_end_pos = mouse_coord;
+}
+
+static void render_formation_orientation(void)
+{
+    vec2_t endpoints[] = {
+        (vec2_t){s_drag_begin_pos.x, s_drag_begin_pos.z},
+        (vec2_t){s_drag_end_pos.x, s_drag_end_pos.z}
+    };
+
+    vec2_t delta;
+    PFM_Vec2_Sub(&endpoints[1], &endpoints[0], &delta);
+    if(PFM_Vec2_Len(&delta) > EPSILON) {
+        PFM_Vec2_Normal(&delta, &delta);
+    }
+
+    float width = 1.0f;
+    vec3_t green = (vec3_t){140.0f / 255.0f, 240.0f / 255.0f, 140.0f / 255.0f};
+    vec3_t red = (vec3_t){230.0f / 255.0f, 64.0f / 255.0f, 85.0f / 255.0f};
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawLine,
+        .nargs = 4,
+        .args = {
+            R_PushArg(endpoints, sizeof(endpoints)),
+            R_PushArg(&width, sizeof(width)),
+            R_PushArg(s_drag_attacking ? &red : &green, sizeof(vec3_t)),
+            (void*)G_GetPrevTickMap()
+        }
+    });
+    enum selection_type seltype;
+    const vec_entity_t *sel = G_Sel_Get(&seltype);
+    
+    G_Formation_RenderPlacement(sel, endpoints[0], delta);
+}
+
 static void on_render_3d(void *user, void *event)
 {
+    if(s_mouse_dragged) {
+        render_formation_orientation();
+    }
+
     const struct camera *cam = G_GetActiveCamera();
     enum nav_layer layer;
 
@@ -2397,7 +2498,8 @@ static void move_process_cmds(void)
             vec2_t target_xz = cmd.args[1].val.as_vec2;
             enum formation_type type = cmd.args[2].val.as_int;
             bool attack = cmd.args[3].val.as_bool;
-            make_flocks(sel, target_xz, type, attack);
+            vec2_t target_orientation = cmd.args[4].val.as_vec2;
+            make_flocks(sel, target_xz, target_orientation, type, attack);
             vec_entity_destroy(sel);
             PF_FREE(sel);
             break;
@@ -2778,6 +2880,8 @@ bool G_Move_Init(const struct map *map)
 
     E_Global_Register(EVENT_UPDATE_START, on_update, NULL, G_RUNNING);
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
+    E_Global_Register(SDL_MOUSEBUTTONUP, on_mouseup, NULL, G_RUNNING);
+    E_Global_Register(SDL_MOUSEMOTION, on_mousemotion, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, 
         G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
     E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
@@ -2785,6 +2889,8 @@ bool G_Move_Init(const struct map *map)
     s_map = map;
     s_attack_on_lclick = false;
     s_move_on_lclick = false;
+    s_mouse_dragged = false;
+    s_drag_attacking = false;
     move_copy_gamestate();
     return true;
 }
@@ -2797,6 +2903,8 @@ void G_Move_Shutdown(void)
     E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
+    E_Global_Unregister(SDL_MOUSEBUTTONUP, on_mouseup);
+    E_Global_Unregister(SDL_MOUSEMOTION, on_mousemotion);
     E_Global_Unregister(EVENT_UPDATE_START, on_update);
 
     for(int i = 0; i < vec_size(&s_move_markers); i++) {

@@ -876,7 +876,7 @@ static size_t field_closest_tiles_local(
     while(qsize > 0) {
 
         struct tile_desc td = qpop(frontier, &qsize, &fhead, &ftail, nelems);
-        struct coord curr = (struct coord){curr.r, curr.c};
+        struct coord curr = (struct coord){td.tile_r, td.tile_c};
         struct coord deltas[] = {
             { 0, -1},
             { 0, +1},

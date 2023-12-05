@@ -49,7 +49,9 @@ struct map;
 bool           G_Formation_Init(const struct map *map);
 void           G_Formation_Shutdown(void);
 
-void           G_Formation_Create(vec2_t target, const vec_entity_t *ents, enum formation_type type);
+vec2_t         G_Formation_AutoOrientation(vec2_t target, const vec_entity_t *ents);
+void           G_Formation_Create(vec2_t target, vec2_t orientation,
+                                  const vec_entity_t *ents, enum formation_type type);
 formation_id_t G_Formation_GetForEnt(uint32_t uid);
 void           G_Formation_RemoveUnit(uint32_t uid);
 void           G_Formation_RemoveEntity(uint32_t uid);
@@ -65,6 +67,7 @@ quat_t         G_Formation_TargetOrientation(uint32_t uid);
 void           G_Formation_UpdateFieldIfNeeded(uint32_t uid);
 float          G_Formation_Speed(uint32_t uid);
 enum formation_type G_Formation_Type(formation_id_t fid);
+void           G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t pos, vec2_t orientation);
 
 vec2_t         G_Formation_CohesionForce(uint32_t uid);
 vec2_t         G_Formation_AlignmentForce(uint32_t uid);

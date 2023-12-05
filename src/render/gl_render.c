@@ -1075,6 +1075,8 @@ void R_GL_DrawLine(vec2_t endpoints[], const float *width, const vec3_t *color, 
     vec2_t delta;
     PFM_Vec2_Sub(&endpoints[1], &endpoints[0], &delta);
     const float len = PFM_Vec2_Len(&delta);
+    if(len < EPSILON)
+        GL_PERF_RETURN_VOID();
 
     vec2_t perp = (vec2_t){ delta.z, -delta.x };
     PFM_Vec2_Normal(&perp, &perp);

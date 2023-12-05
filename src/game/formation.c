@@ -328,36 +328,6 @@ static size_t nrows(enum formation_type type, size_t nunits)
     return ceilf(nunits / ncols(type, nunits));
 }
 
-static vec2_t compute_orientation(vec2_t target, const vec_entity_t *ents)
-{
-    vec2_t COM = (vec2_t){0.0f, 0.0f};
-    for(int i = 0; i < vec_size(ents); i++) {
-        uint32_t curr = vec_AT(ents, i);
-        vec2_t curr_pos = G_Pos_GetXZ(curr);
-        PFM_Vec2_Add(&COM, &curr_pos, &COM);
-    }
-    size_t nents = vec_size(ents);
-    PFM_Vec2_Scale(&COM, 1.0f / nents, &COM);
-
-    vec2_t orientation;
-    PFM_Vec2_Sub(&target, &COM, &orientation);
-
-    if(PFM_Vec2_Len(&orientation) < EPSILON) {
-
-        vec4_t front = (vec4_t){0.0f, 0.0f, 1.0f, 1.0f};
-        quat_t rot = Entity_GetRot(vec_AT(ents, 0)); 
-
-        mat4x4_t rot_mat;
-        PFM_Mat4x4_RotFromQuat(&rot, &rot_mat);
-
-        vec4_t dir;
-        PFM_Mat4x4_Mult4x1(&rot_mat, &front, &dir);
-        return (vec2_t){dir.x, dir.z};
-    }
-    PFM_Vec2_Normal(&orientation, &orientation);
-    return orientation;
-}
-
 static float formation_speed(const vec_entity_t *ents)
 {
     float min = INFINITY;
@@ -1366,6 +1336,33 @@ static void mark_unused_cells(struct subformation *formation)
             right++;
         }
         nexcess--;
+    }
+}
+
+static void render_cells(struct subformation *formation)
+{
+    for(int i = 0; i < vec_size(&formation->cells); i++) {
+        struct cell *curr = &vec_AT(&formation->cells, i);
+        if(curr->state == CELL_NOT_PLACED
+        || curr->state == CELL_NOT_USED)
+            continue;
+
+        const vec2_t pos = curr->pos;
+        const vec3_t white = (vec3_t){1.0f, 1.0f, 1.0f};
+        const float radius = formation->unit_radius;
+        const float width = 0.5f;
+
+        R_PushCmd((struct rcmd){
+            .func = R_GL_DrawSelectionCircle,
+            .nargs = 5,
+            .args = {
+                R_PushArg(&pos, sizeof(pos)),
+                R_PushArg(&radius, sizeof(radius)),
+                R_PushArg(&width, sizeof(width)),
+                R_PushArg(&white, sizeof(white)),
+                (void*)G_GetPrevTickMap(),
+            },
+        });
     }
 }
 
@@ -3689,7 +3686,40 @@ void G_Formation_Shutdown(void)
     kh_destroy(mapping, s_ent_formation_map);
 }
 
-void G_Formation_Create(vec2_t target, const vec_entity_t *ents, enum formation_type type)
+vec2_t G_Formation_AutoOrientation(vec2_t target, const vec_entity_t *ents)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    vec2_t COM = (vec2_t){0.0f, 0.0f};
+    for(int i = 0; i < vec_size(ents); i++) {
+        uint32_t curr = vec_AT(ents, i);
+        vec2_t curr_pos = G_Pos_GetXZ(curr);
+        PFM_Vec2_Add(&COM, &curr_pos, &COM);
+    }
+    size_t nents = vec_size(ents);
+    PFM_Vec2_Scale(&COM, 1.0f / nents, &COM);
+
+    vec2_t orientation;
+    PFM_Vec2_Sub(&target, &COM, &orientation);
+
+    if(PFM_Vec2_Len(&orientation) < EPSILON) {
+
+        vec4_t front = (vec4_t){0.0f, 0.0f, 1.0f, 1.0f};
+        quat_t rot = Entity_GetRot(vec_AT(ents, 0)); 
+
+        mat4x4_t rot_mat;
+        PFM_Mat4x4_RotFromQuat(&rot, &rot_mat);
+
+        vec4_t dir;
+        PFM_Mat4x4_Mult4x1(&rot_mat, &front, &dir);
+        return (vec2_t){dir.x, dir.z};
+    }
+    PFM_Vec2_Normal(&orientation, &orientation);
+    return orientation;
+}
+
+void G_Formation_Create(vec2_t target, vec2_t orientation, 
+                        const vec_entity_t *ents, enum formation_type type)
 {
     ASSERT_IN_MAIN_THREAD();
     if(type == FORMATION_NONE)
@@ -3710,9 +3740,8 @@ void G_Formation_Create(vec2_t target, const vec_entity_t *ents, enum formation_
     assert(ret != -1);
     struct formation *new = &kh_val(s_formations, k);
 
-    vec2_t orientation = compute_orientation(target, ents);
     *new = (struct formation){
-        .refcount = kh_size(ents),
+        .refcount = vec_size(ents),
         .type = type,
         .target = target,
         .orientation = orientation,
@@ -4222,5 +4251,45 @@ vec2_t G_Formation_DragForce(uint32_t uid)
         }
     }
     return (vec2_t){0.0f, 0.0f};
+}
+
+void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t orientation)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(PFM_Vec2_Len(&orientation) < EPSILON) {
+        orientation = G_Formation_AutoOrientation(target, ents);
+    }
+
+    enum formation_type type = G_Formation_PreferredForSet(ents);
+    struct formation formation = (struct formation){
+        .refcount = vec_size(ents),
+        .type = type,
+        .target = target,
+        .orientation = orientation,
+        .center = field_center(target, orientation),
+        .ents = copy_vector(ents),
+        .speed = formation_speed(ents),
+        .created_tick = SDL_GetTicks(),
+        .sub_assignment = kh_init(assignment),
+        .map_snapshots = kh_init(map)
+    };
+    init_subformations(&formation);
+
+    enum nav_layer layers[NAV_LAYER_MAX];
+    size_t nlayers = formation_layers(&formation.subformations, layers);
+    for(int i = 0; i < nlayers; i++) {
+        init_occupied_field(layers[i], formation.center, formation.occupied[layers[i]]);
+        init_islands_field(layers[i], formation.center, formation.islands[layers[i]]);
+    }
+
+    for(int i = 0; i < vec_size(&formation.subformations); i++) {
+        struct subformation *sub = &vec_AT(&formation.subformations, i);
+        place_subformation(sub, formation.center, target, formation.orientation, 
+            formation.occupied, formation.islands);
+        mark_unused_cells(sub);
+        render_cells(sub);
+    }
+    destroy_formation(&formation);
 }
 
