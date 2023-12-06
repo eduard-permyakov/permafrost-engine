@@ -1706,11 +1706,11 @@ static void combat_release_gamestate(void)
         s_combat_work.gamestate.diptable = NULL;
     }
     if(s_combat_work.gamestate.buildstate) {
-        PF_FREE(s_combat_work.gamestate.buildstate);
+        kh_destroy(state, s_combat_work.gamestate.buildstate);
         s_combat_work.gamestate.buildstate = NULL;
     }
     if(s_combat_work.gamestate.aabbs) {
-        PF_FREE(s_combat_work.gamestate.aabbs);
+        kh_destroy(aabb, s_combat_work.gamestate.aabbs);
         s_combat_work.gamestate.aabbs = NULL;
     }
     if(s_combat_work.gamestate.fog_state) {
