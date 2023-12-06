@@ -880,6 +880,7 @@ void M_NavCellArrivalFieldCreate(const struct map *map, size_t rdim, size_t cdim
                                  struct tile_desc target, struct tile_desc center,
                                  uint8_t *out, void *workspace, size_t workspace_size)
 {
+    assert(map->nav_private);
     N_CellArrivalFieldCreate(map->nav_private, rdim, cdim, layer, enemies, 
         target, center, out, workspace, workspace_size);
 }
@@ -889,6 +890,7 @@ void M_NavCellArrivalFieldUpdateToNearestPathable(const struct map *map,
                               struct tile_desc start, struct tile_desc center, 
                               uint8_t *inout, void *workspace, size_t workspace_size)
 {
+    assert(map->nav_private);
     N_CellArrivalFieldUpdateToNearestPathable(map->nav_private, rdim, cdim, layer, enemies,
         start, center, inout, workspace, workspace_size);
 }

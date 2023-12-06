@@ -799,7 +799,12 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
 
     struct coord dest_coord = pos_to_tile(center, target);
     uint16_t iid = islands[layer][dest_coord.r][dest_coord.c];
-    assert(iid != UINT16_MAX);
+    /* This case should not be hit under normal conditions, as 
+     * the 'target' position should be on the same island as the 
+     * formation units. 
+     */
+    if(iid == UINT16_MAX)
+        return false;
 
     bool exists = nearest_free_tile(&target_tile, &curr_tile, iid, anchor, 
         center, orientation, radius, layer, occupied, islands[layer]);
@@ -836,7 +841,7 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
         curr->ideal_binned = tile_to_pos(target_tile, center);
         curr->state = CELL_NOT_OCCUPIED;
         curr->pos = tile_to_pos(curr_tile, center);
-        curr->reachable_pos = pos;
+        curr->reachable_pos = curr->pos;
     }
     return success;
 }
@@ -1429,7 +1434,7 @@ static size_t next_type_range(size_t begin, size_t size,
     }
     size_t count = 0;
     int i = begin;
-    for(; i < size; i++) {
+    for(; i < size-1; i++) {
         uint64_t *a = types + i;
         uint64_t *b = types + i + 1;
         if(*a != *b)
@@ -1454,7 +1459,7 @@ static void init_subformation(vec2_t target, struct subformation *formation,
         first_ent_pos, target);
 
     size_t curr_child = 0;
-    while((curr_child < nents) && (curr_child < MAX_CHILDREN)) {
+    while((curr_child < nchildren) && (curr_child < MAX_CHILDREN)) {
         formation->children[curr_child] = children[curr_child];
         curr_child++;
     }
@@ -2618,6 +2623,7 @@ static void render_cell_arrival_field(struct formation *formation, int index)
             break;
     });
 
+    printf("render cell arrival field for unit %u\n", uid);
     struct cell_arrival_field *field = cell_get_field(uid);
     if(!field)
         return;

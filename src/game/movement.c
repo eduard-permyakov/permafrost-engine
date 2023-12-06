@@ -1033,6 +1033,9 @@ static void on_render_3d(void *user, void *event)
                 M_NavRenderVisibleEnemySeekField(s_map, cam, layer, faction_id);
                 break;
             }
+            case STATE_ARRIVING_TO_CELL:
+                /* Following the cell arrival field */
+                break;
             default: 
                 assert(0);
             }
@@ -1768,6 +1771,26 @@ static void flush_update_pos_commands(uint32_t uid)
     }
 }
 
+static bool arrived(uint32_t uid)
+{
+    vec2_t diff_to_target;
+    vec2_t xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
+    struct flock *flock = flock_for_ent(uid);
+    assert(flock);
+
+    PFM_Vec2_Sub((vec2_t*)&flock->target_xz, &xz_pos, &diff_to_target);
+    float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
+    float arrive_thresh = radius * 1.5f;
+    enum nav_layer layer = Entity_NavLayerWithRadius(radius);
+
+    if(PFM_Vec2_Len(&diff_to_target) < arrive_thresh
+    || (M_NavIsAdjacentToImpassable(s_map, layer, xz_pos) 
+        && M_NavIsMaximallyClose(s_map, layer, xz_pos, flock->target_xz, arrive_thresh))) {
+        return true;
+    }
+    return false;
+}
+
 static void entity_update(uint32_t uid, vec2_t new_vel)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -1818,19 +1841,10 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
             break;
         }
 
-        vec2_t diff_to_target;
-        vec2_t xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
         struct flock *flock = flock_for_ent(uid);
         assert(flock);
 
-        PFM_Vec2_Sub((vec2_t*)&flock->target_xz, &xz_pos, &diff_to_target);
-        float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
-        float arrive_thresh = radius * 1.5f;
-
-        if(PFM_Vec2_Len(&diff_to_target) < arrive_thresh
-        || (M_NavIsAdjacentToImpassable(s_map, layer, xz_pos) 
-            && M_NavIsMaximallyClose(s_map, layer, xz_pos, flock->target_xz, arrive_thresh))) {
-
+        if(arrived(uid)) {
             entity_finish_moving(uid, STATE_ARRIVED);
             break;
         }
@@ -1851,7 +1865,6 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
                 break;
             }
         }
-
         STFREE(adjacent);
 
         if(done) {
