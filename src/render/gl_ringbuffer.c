@@ -165,7 +165,6 @@ static void *unsynch_vbo_map(struct gl_ring *ring, size_t offset, size_t size)
     glBindBuffer(GL_TEXTURE_BUFFER, ring->VBO);
     return glMapBufferRange(GL_TEXTURE_BUFFER, offset, size,
         GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
-    glBindBuffer(GL_TEXTURE_BUFFER, 0);
 }
 
 static void unsynch_vbo_unmap(struct gl_ring *ring)
