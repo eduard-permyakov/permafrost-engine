@@ -5,6 +5,7 @@
 PLAT ?= LINUX
 TYPE ?= DEBUG
 ASAN ?= 0
+TSAN ?= 0
 
 # ------------------------------------------------------------------------------
 # Sources 
@@ -123,6 +124,11 @@ ASAN_CFLAGS = -fsanitize=address -static-libasan
 ASAN_LDFLAGS = -fsanitize=address -static-libasan
 endif
 
+ifneq ($(TSAN),0)
+TSAN_CFLAGS = -fsanitize=thread -static-libtsan
+TSAN_LDFLAGS = -fsanitize=thread -static-libtsan
+endif
+
 CFLAGS = \
 	-I$(GLEW_SRC)/include \
 	-I$(SDL2_SRC)/include \
@@ -133,6 +139,7 @@ CFLAGS = \
 	-fno-strict-aliasing \
 	-fwrapv \
 	$(ASAN_CFLAGS) \
+	$(TSAN_CFLAGS) \
 	$(WARNING_FLAGS) \
 	$(EXTRA_FLAGS)
 
@@ -141,6 +148,7 @@ LDFLAGS = \
 	-lm \
 	-lpthread \
 	$(ASAN_LDFLAGS) \
+	$(TSAN_LDFLAGS) \
 	$(PLAT_LDFLAGS)
 
 DEPS = \
