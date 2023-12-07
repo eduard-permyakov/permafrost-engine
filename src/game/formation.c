@@ -859,14 +859,14 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
     return success;
 }
 
-static void init_occupied_field(enum nav_layer layer, vec2_t center,
+static void init_occupied_field(const struct map *map, enum nav_layer layer, vec2_t center,
                                 uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
 {
     PERF_ENTER();
 
     struct map_resolution res;
-    M_NavGetResolution(s_map, &res);
-    vec3_t map_pos = M_GetPos(s_map);
+    M_NavGetResolution(map, &res);
+    vec3_t map_pos = M_GetPos(map);
 
     struct tile_desc center_tile;
     M_Tile_DescForPoint2D(res, map_pos, center, &center_tile);
@@ -894,8 +894,8 @@ static void init_occupied_field(enum nav_layer layer, vec2_t center,
             bounds.x - bounds.width / 2.0f,
             bounds.z + bounds.height / 2.0f
         };
-        if(!M_NavPositionPathable(s_map, layer, center)
-        ||  M_NavPositionBlocked(s_map, layer, center)) {
+        if(!M_NavPositionPathable(map, layer, center)
+        ||  M_NavPositionBlocked(map, layer, center)) {
             occupied[r][c] = TILE_BLOCKED;
             continue;
         }
@@ -904,10 +904,10 @@ static void init_occupied_field(enum nav_layer layer, vec2_t center,
     PERF_RETURN_VOID();
 }
 
-static void init_islands_field(enum nav_layer layer, vec2_t center,
+static void init_islands_field(const struct map *map, enum nav_layer layer, vec2_t center,
                                uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
 {
-    M_NavCopyIslandsFieldView(s_map, center, OCCUPIED_FIELD_RES, OCCUPIED_FIELD_RES,
+    M_NavCopyIslandsFieldView(map, center, OCCUPIED_FIELD_RES, OCCUPIED_FIELD_RES,
         layer, (uint16_t*)islands);
 }
 
@@ -4155,8 +4155,8 @@ void G_Formation_Create(vec2_t target, vec2_t orientation,
     enum nav_layer layers[NAV_LAYER_MAX];
     size_t nlayers = formation_layers(&new->subformations, layers);
     for(int i = 0; i < nlayers; i++) {
-        init_occupied_field(layers[i], new->center, new->occupied[layers[i]]);
-        init_islands_field(layers[i], new->center, new->islands[layers[i]]);
+        init_occupied_field(s_map, layers[i], new->center, new->occupied[layers[i]]);
+        init_islands_field(s_map, layers[i], new->center, new->islands[layers[i]]);
     }
 
     for(int i = 0; i < vec_size(&new->subformations); i++) {
@@ -4659,6 +4659,17 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
         orientation = G_Formation_AutoOrientation(target, ents);
     }
 
+    struct map *map = M_AL_CopyWithFields(s_map);
+    for(int i = 0; i < vec_size(ents); i++) {
+        uint32_t uid = vec_AT(ents, i);
+        float radius = G_GetSelectionRadius(uid);
+        vec2_t pos = G_Pos_GetXZ(uid);
+        int faction_id = G_GetFactionID(uid);
+        if(G_Move_Still(uid)) {
+            M_NavBlockersDecref(pos, radius, faction_id, map);
+        }
+    }
+
     enum formation_type type = G_Formation_PreferredForSet(ents);
     struct formation formation = (struct formation){
         .refcount = vec_size(ents),
@@ -4677,8 +4688,8 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
     enum nav_layer layers[NAV_LAYER_MAX];
     size_t nlayers = formation_layers(&formation.subformations, layers);
     for(int i = 0; i < nlayers; i++) {
-        init_occupied_field(layers[i], formation.center, formation.occupied[layers[i]]);
-        init_islands_field(layers[i], formation.center, formation.islands[layers[i]]);
+        init_occupied_field(map, layers[i], formation.center, formation.occupied[layers[i]]);
+        init_islands_field(map, layers[i], formation.center, formation.islands[layers[i]]);
     }
 
     for(int i = 0; i < vec_size(&formation.subformations); i++) {
@@ -4689,6 +4700,7 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
         render_cells(sub);
     }
     destroy_formation(&formation);
+    PF_FREE(map);
 }
 
 bool G_Formation_SaveState(struct SDL_RWops *stream)

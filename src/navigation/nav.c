@@ -3761,12 +3761,14 @@ void N_CopyFields(void *nav_private, void *out)
         size_t cost_size = sizeof(((struct nav_chunk*)0)->cost_base);
         size_t blockers_size = sizeof(((struct nav_chunk*)0)->blockers);
         size_t factions_size = sizeof(((struct nav_chunk*)0)->factions);
+        size_t islands_size = sizeof(((struct nav_chunk*)0)->islands);
         to->chunks[i] = (struct nav_chunk*)cursor;
 
         for(int j = 0; j < chunks_per_layer; j++) {
             memcpy(to->chunks[i][j].cost_base, from->chunks[i][j].cost_base, cost_size);
             memcpy(to->chunks[i][j].blockers, from->chunks[i][j].blockers, blockers_size);
             memcpy(to->chunks[i][j].factions, from->chunks[i][j].factions, factions_size);
+            memcpy(to->chunks[i][j].islands, from->chunks[i][j].islands, islands_size);
         }
         cursor += layer_size;
     }
