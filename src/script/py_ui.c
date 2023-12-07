@@ -200,6 +200,8 @@ static int       PyWindow_set_background(PyWindowObject *self, PyObject *value, 
 static PyObject *PyWindow_get_fixed_background(PyWindowObject *self, void *closure);
 static int       PyWindow_set_fixed_background(PyWindowObject *self, PyObject *value, void *closure);
 
+NK_API struct nk_window *nk_find_window(struct nk_context *ctx, nk_hash hash, const char *name);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -2256,13 +2258,24 @@ static void active_windows_update(void *user, void *event)
         struct rect adj_bounds = UI_BoundsForAspectRatio(win->rect, 
             TO_VEC2T(win->virt_res), TO_VEC2T(adj_vres), win->resize_mask);
 
+        /* The windows are internally indexed by their name, so it is not possible
+         * to have multiple active windows with the exact same name. 
+         */
+		int name_len = (int)nk_strlen(win->name);
+		nk_hash name_hash = nk_murmur_hash(win->name, (int)name_len, NK_WINDOW_TITLE);
+		struct nk_window *nkwin = nk_find_window(s_nk_ctx, name_hash, win->name);
+		if(nkwin && (nkwin->seq == s_nk_ctx->seq))
+			continue;
+
         if(nk_begin_with_vres(s_nk_ctx, win->name, 
-            nk_rect(adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h), win->flags, adj_vres)) {
+            nk_rect(adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h), 
+            win->flags, adj_vres)) {
 
             call_registered((PyObject*)win, "update");
         }
 
-        if(win->hide || (s_nk_ctx->current->flags & NK_WINDOW_HIDDEN && !(win->flags & NK_WINDOW_HIDDEN))) {
+        if(win->hide || (s_nk_ctx->current->flags & NK_WINDOW_HIDDEN 
+        && !(win->flags & NK_WINDOW_HIDDEN))) {
 
             PyObject *manual = win->hide ? Py_False : Py_True;
             Py_INCREF(manual);
@@ -2281,7 +2294,8 @@ static void active_windows_update(void *user, void *event)
         struct nk_vec2 pos = nk_window_get_position(s_nk_ctx);
         struct nk_vec2 size = nk_window_get_size(s_nk_ctx);
         adj_bounds = (struct rect){pos.x, pos.y, size.x, size.y};
-        win->rect = UI_BoundsForAspectRatio(adj_bounds, TO_VEC2T(adj_vres), TO_VEC2T(win->virt_res), win->resize_mask);
+        win->rect = UI_BoundsForAspectRatio(adj_bounds, TO_VEC2T(adj_vres), 
+            TO_VEC2T(win->virt_res), win->resize_mask);
 
         int sample_mask = NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED;
         win->flags &= ~sample_mask; 
