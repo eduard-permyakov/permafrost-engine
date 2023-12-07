@@ -6,6 +6,7 @@ PLAT ?= LINUX
 TYPE ?= DEBUG
 ASAN ?= 0
 TSAN ?= 0
+LTO  ?= 0
 
 # ------------------------------------------------------------------------------
 # Sources 
@@ -13,8 +14,11 @@ TSAN ?= 0
 
 PF_DIRS = $(sort $(dir $(wildcard ./src/*/), ./src/))
 PF_SRCS = $(foreach dir,$(PF_DIRS),$(wildcard $(dir)*.c))
-PF_OBJS = $(PF_SRCS:./src/%.c=./obj/%.o)
-PF_DEPS = $(PF_OBJS:%.o=%.d)
+PF_SRC_OBJS = $(PF_SRCS:./src/%.c=./obj/%.o)
+PF_ASM = $(foreach dir,$(PF_DIRS),$(wildcard $(dir)*.S))
+PF_ASM_OBJS = $(PF_ASM:./src/%.S=./obj/%.o)
+PF_OBJS = $(PF_SRC_OBJS) $(PF_ASM_OBJS)
+PF_DEPS = $(PF_SRC_OBJS:%.o=%.d)
 
 # ------------------------------------------------------------------------------
 # Library Dependencies
@@ -129,6 +133,11 @@ TSAN_CFLAGS = -fsanitize=thread -static-libtsan
 TSAN_LDFLAGS = -fsanitize=thread -static-libtsan
 endif
 
+ifneq ($(LTO),0)
+LTO_CFLAGS = -flto
+LTO_LDFLAGS = -flto
+endif
+
 CFLAGS = \
 	-I$(GLEW_SRC)/include \
 	-I$(SDL2_SRC)/include \
@@ -141,6 +150,7 @@ CFLAGS = \
 	$(ASAN_CFLAGS) \
 	$(TSAN_CFLAGS) \
 	$(WARNING_FLAGS) \
+	$(LTO_CFLAGS) \
 	$(EXTRA_FLAGS)
 
 LDFLAGS = \
@@ -149,6 +159,7 @@ LDFLAGS = \
 	-lpthread \
 	$(ASAN_LDFLAGS) \
 	$(TSAN_LDFLAGS) \
+	$(LTO_LDFLAGS) \
 	$(PLAT_LDFLAGS)
 
 DEPS = \
@@ -204,10 +215,15 @@ endif
 
 deps: $(DEPS)
 
-./obj/%.o: ./src/%.c
+$(PF_SRC_OBJS): ./obj/%.o: ./src/%.c
 	@mkdir -p $(dir $@)
 	@printf "%-8s %s\n" "[CC]" $@
 	@$(CC) -MT $@ -MMD -MP -MF ./obj/$*.d $(CFLAGS) $(DEFS) -c $< -o $@
+
+$(PF_ASM_OBJS): ./obj/%.o: ./src/%.S
+	@mkdir -p $(dir $@)
+	@printf "%-8s %s\n" "[AS]" $@
+	@$(CC) $(CFLAGS) $(DEFS) -c $< -o $@
 
 $(BIN): $(PF_OBJS)
 	@mkdir -p ./bin
