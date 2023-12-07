@@ -50,6 +50,7 @@
 #include "../lib/public/queue.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/stalloc.h"
+#include "../lib/public/attr.h"
 #include "../navigation/public/nav.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
@@ -74,6 +75,18 @@
 #define SIGNUM(x)                (((x) > 0) - ((x) < 0))
 #define EPSILON                  (1.0f/1024)
 #define FIELD_RECOMPUTE_INTERVAL (1.0f) /* seconds */
+
+#define CHK_TRUE_RET(_pred)             \
+    do{                                 \
+        if(!(_pred))                    \
+            return false;               \
+    }while(0)
+
+#define CHK_TRUE_JMP(_pred, _label)     \
+    do{                                 \
+        if(!(_pred))                    \
+            goto _label;                \
+    }while(0)
 
 enum cell_state{
     CELL_NOT_PLACED,
@@ -259,7 +272,7 @@ KHASH_MAP_INIT_INT(formation, struct formation)
 KHASH_MAP_INIT_INT(mapping, formation_id_t);
 KHASH_MAP_INIT_INT(type, enum formation_type);
 
-static void complete_cell_field_work(struct subformation *formation);
+static void complete_cell_field_work(struct subformation *formation, bool yield);
 static struct cell_arrival_field *cell_get_field(uint32_t uid);
 static enum flow_dir cell_get_dir(const struct cell_arrival_field *field, int r, int c);
 static void recompute_cell_arrival_fields(struct formation *parent, vec2_t center, 
@@ -2623,7 +2636,6 @@ static void render_cell_arrival_field(struct formation *formation, int index)
             break;
     });
 
-    printf("render cell arrival field for unit %u\n", uid);
     struct cell_arrival_field *field = cell_get_field(uid);
     if(!field)
         return;
@@ -3010,7 +3022,7 @@ static void on_1hz_tick(void *user, void *event)
 
 static void destroy_subformation(struct subformation *formation)
 {
-    complete_cell_field_work(formation);
+    complete_cell_field_work(formation, false);
     vec_work_destroy(&formation->futures);
     vec_cell_destroy(&formation->cells);
     kh_destroy(result, formation->results);
@@ -3193,7 +3205,7 @@ static void dispatch_cell_field_work(struct formation *parent, vec2_t center,
     });
 }
 
-static void complete_cell_field_work(struct subformation *formation)
+static void complete_cell_field_work(struct subformation *formation, bool yield)
 {
     for(int j = 0; j < vec_size(&formation->futures); j++) {
         struct cell_field_work *curr = &vec_AT(&formation->futures, j);
@@ -3201,6 +3213,9 @@ static void complete_cell_field_work(struct subformation *formation)
             continue;
         while(!Sched_FutureIsReady(&curr->future)) {
             Sched_RunSync(curr->tid);
+            if(yield) {
+                Sched_TryYield();
+            }
         }
     }
 }
@@ -3630,6 +3645,374 @@ static vec2_t follow_force(uint32_t uid, struct subformation *formation)
     return delta;
 }
 
+static size_t subformation_index(struct formation *formation, struct subformation *sub)
+{
+    for(int i = 0; i < vec_size(&formation->subformations); i++) {
+        struct subformation *curr = &vec_AT(&formation->subformations, i);
+        if(curr == sub)
+            return i;
+    }
+    return 0;
+}
+
+static bool subformation_save_state(struct formation *parent, struct subformation *sub, 
+                                    struct SDL_RWops *stream)
+{
+    size_t parent_idx = subformation_index(parent, sub->parent);
+    struct attr parent_attr = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = parent_idx
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &parent_attr, "parent_idx"));
+
+    struct attr nchildren = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = sub->nchildren
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &nchildren, "nchildren"));
+
+    for(int i = 0; i < sub->nchildren; i++) {
+
+        struct attr child_attr = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = subformation_index(parent, sub->children[i])
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &child_attr, "child_idx"));
+    }
+
+    struct attr unit_radius = (struct attr){
+        .type = TYPE_FLOAT,
+        .val.as_float = sub->unit_radius
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &unit_radius, "unit_radius"));
+
+    struct attr layer = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = sub->layer
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &layer, "layer"));
+
+    struct attr faction_id = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = sub->faction_id
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &faction_id, "faction_id"));
+
+    struct attr reachable_target = (struct attr){
+        .type = TYPE_VEC2,
+        .val.as_vec2 = sub->reachable_target
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &reachable_target, "reachable_target"));
+
+    struct attr pos = (struct attr){
+        .type = TYPE_VEC2,
+        .val.as_vec2 = sub->pos
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &pos, "pos"));
+
+    struct attr orientation = (struct attr){
+        .type = TYPE_VEC2,
+        .val.as_vec2 = sub->orientation
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &orientation, "orientation"));
+
+    struct attr nrows = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = sub->nrows
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &nrows, "nrows"));
+
+    struct attr ncols = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = sub->ncols
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &ncols, "ncols"));
+
+    struct attr blocked_low = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = (uint32_t)sub->blocked
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &blocked_low, "blocked_low"));
+
+    struct attr blocked_high = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = (uint32_t)(sub->blocked >> 32)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &blocked_high, "blocked_high"));
+
+    struct attr nents = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(sub->ents)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &nents, "num_entities"));
+
+    uint32_t uid;
+    kh_foreach_key(sub->ents, uid, {
+
+        struct attr uid_attr = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = uid
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &uid_attr, "uid"));
+    });
+
+    struct attr ncells = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = vec_size(&sub->cells)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &ncells, "ncells"));
+
+    for(int i = 0; i < vec_size(&sub->cells); i++) {
+        struct cell *cell = &vec_AT(&sub->cells, i);
+
+        struct attr cell_state = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = cell->state
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &cell_state, "cell_state"));
+        
+        struct attr cell_ideal_raw = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = cell->ideal_raw
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &cell_ideal_raw, "cell_ideal_raw"));
+
+        struct attr cell_ideal_binned = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = cell->ideal_binned
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &cell_ideal_binned, "cell_ideal_binned"));
+
+        struct attr cell_pos = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = cell->pos
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &cell_pos, "cell_pos"));
+
+        struct attr cell_reachable_pos = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = cell->reachable_pos
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &cell_reachable_pos, "cell_reachable_pos"));
+    }
+
+    struct attr nassigned = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(sub->assignment)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &nassigned, "nassigned"));
+
+    struct coord coord;
+    kh_foreach(sub->assignment, uid, coord, {
+
+        struct attr uid_attr = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = uid
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &uid_attr, "uid"));
+
+        struct attr coord_r = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = coord.r
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &coord_r, "coord_r"));
+
+        struct attr coord_c = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = coord.c
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &coord_c, "coord_c"));
+    });
+
+    struct attr nreverse = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(sub->reverse)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &nreverse, "nreverse"));
+
+    int idx;
+    kh_foreach(sub->reverse, idx, uid, {
+
+        struct attr idx_attr = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = idx
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &idx_attr, "idx"));
+
+        struct attr uid_attr = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = uid
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &uid_attr, "uid"));
+    });
+
+    /* results and futures are re-created at loading time */
+    return true;
+}
+
+static bool subformation_load_state(struct formation *parent, struct subformation *sub, 
+                                    struct SDL_RWops *stream)
+{
+    sub->results = kh_init(result);
+    sub->assignment = kh_init(assignment);
+    sub->reverse = kh_init(reverse);
+    sub->ents = kh_init(entity);
+    vec_cell_init(&sub->cells);
+    vec_work_init(&sub->futures);
+
+    struct attr attr;
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    size_t parent_idx = attr.val.as_int;
+    sub->parent = &vec_AT(&parent->subformations, parent_idx);
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    size_t nchildren = attr.val.as_int;
+    sub->nchildren = nchildren;
+
+    for(int i = 0; i < nchildren; i++) {
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        size_t child_idx = attr.val.as_int;
+        sub->children[i] = &vec_AT(&parent->subformations, child_idx);
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+    sub->unit_radius = attr.val.as_float;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    sub->layer = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    sub->faction_id = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC2);
+    sub->reachable_target = attr.val.as_vec2;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC2);
+    sub->pos = attr.val.as_vec2;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC2);
+    sub->orientation = attr.val.as_vec2;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    sub->nrows = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    sub->ncols = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    uint32_t blocked_low = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    uint32_t blocked_high = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    size_t nents = attr.val.as_int;
+
+    for(int i = 0; i < nents; i++) {
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uint32_t uid = attr.val.as_int;
+
+        int ret;
+        khiter_t k = kh_put(entity, sub->ents, uid, &ret);
+        CHK_TRUE_RET(ret != -1);
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    size_t ncells = attr.val.as_int;
+
+    vec_cell_resize(&sub->cells, ncells);
+    sub->cells.size = ncells;
+
+    for(int i = 0; i < ncells; i++) {
+        struct cell *cell = &vec_AT(&sub->cells, i);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        cell->state = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        cell->ideal_raw = attr.val.as_vec2;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        cell->ideal_binned = attr.val.as_vec2;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        cell->pos = attr.val.as_vec2;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        cell->reachable_pos = attr.val.as_vec2;
+    }
+    Sched_TryYield();
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    size_t nassigned = attr.val.as_int;
+
+    for(int i = 0; i < nassigned; i++) {
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uint32_t uid = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int r = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int c = attr.val.as_int;
+
+        int ret;
+        khiter_t k = kh_put(assignment, sub->assignment, uid, &ret);
+        CHK_TRUE_RET(ret != -1);
+        kh_val(sub->assignment, k) = (struct coord){r, c};
+    }
+    Sched_TryYield();
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    size_t nreverse = attr.val.as_int;
+
+    for(int i = 0; i < nreverse; i++) {
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        size_t idx = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uint32_t uid = attr.val.as_int;
+
+        int ret;
+        khiter_t k = kh_put(reverse, sub->reverse, idx, &ret);
+        CHK_TRUE_RET(ret != -1);
+        kh_val(sub->reverse, k) = uid;
+    }
+    return true;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -3764,10 +4147,10 @@ void G_Formation_Create(vec2_t target, vec2_t orientation,
         .ents = copy_vector(ents),
         .speed = formation_speed(ents),
         .created_tick = SDL_GetTicks(),
-        .sub_assignment = kh_init(assignment)
+        .sub_assignment = kh_init(assignment),
+        .map_snapshots = kh_init(map)
     };
     init_subformations(new);
-    new->map_snapshots = kh_init(map);
 
     enum nav_layer layers[NAV_LAYER_MAX];
     size_t nlayers = formation_layers(&new->subformations, layers);
@@ -4306,5 +4689,384 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
         render_cells(sub);
     }
     destroy_formation(&formation);
+}
+
+bool G_Formation_SaveState(struct SDL_RWops *stream)
+{
+    /* Save next formation ID */
+    struct attr next_fid = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = s_next_id
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &next_fid, "next_fid"));
+    
+    /* Save entity:formation map */
+    struct attr nents = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_ent_formation_map)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &nents, "num_entities"));
+
+    uint32_t uid;
+    formation_id_t ent_fid;
+    kh_foreach(s_ent_formation_map, uid, ent_fid, {
+        struct attr uid_attr = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = uid
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &uid_attr, "uid"));
+
+        struct attr fid_attr = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = ent_fid
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &fid_attr, "fid"));
+    });
+    Sched_TryYield();
+
+    /* Save formation structures */
+    struct attr nformations = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_formations)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &nformations, "num_formations"));
+
+    formation_id_t fid;
+    struct formation *formation;
+    kh_foreach_val_ptr(s_formations, fid, formation, {
+
+        struct attr fid_attr = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = fid
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &fid_attr, "fid"));
+
+        struct attr refcount = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = formation->refcount
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &refcount, "refcount"));
+
+        struct attr type = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = formation->type
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &type, "type"));
+
+        struct attr target = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = formation->target
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &target, "target"));
+
+        struct attr orientation = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = formation->orientation
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &orientation, "orientation"));
+
+        struct attr center = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = formation->center
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &center, "center"));
+
+        struct attr nents = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = kh_size(formation->ents)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &nents, "num_entities"));
+
+        uint32_t uid;
+        kh_foreach_key(formation->ents, uid, {
+            struct attr uid_attr = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = uid
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &uid_attr, "entity"));
+        });
+        Sched_TryYield();
+
+        struct attr speed = (struct attr){
+            .type = TYPE_FLOAT,
+            .val.as_float = formation->speed
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &speed, "speed"));
+
+        /* created_tick is not saved */
+
+        /* Save sub assignment */
+        struct attr nassigned = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = kh_size(formation->sub_assignment)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &nassigned, "num_assigned"));
+
+        struct coord coord;
+        kh_foreach(formation->sub_assignment, uid, coord, {
+
+            struct attr uid_attr = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = uid
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &uid_attr, "uid"));
+
+            struct attr coord_r = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = coord.r
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &coord_r, "coord_r"));
+
+            struct attr coord_c = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = coord.c
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &coord_c, "coord_c"));
+        });
+        Sched_TryYield();
+
+        /* Save subformations */
+        struct attr nsubformations = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = vec_size(&formation->subformations)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &nsubformations, "nsubformations"));
+
+        for(int i = 0; i < vec_size(&formation->subformations); i++) {
+            struct subformation *curr = &vec_AT(&formation->subformations, i);
+            CHK_TRUE_RET(subformation_save_state(formation, curr, stream));
+            Sched_TryYield();
+        }
+
+        /* Save subformation pointers by index/reference */
+        size_t root_idx = subformation_index(formation, formation->root);
+        struct attr root = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = root_idx
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &root, "root"));
+
+        /* map_snapshots is not saved */
+
+        for(int l = 0; l < NAV_LAYER_MAX; l++) {
+        for(int r = 0; r < OCCUPIED_FIELD_RES; r++) {
+        for(int c = 0; c < OCCUPIED_FIELD_RES; c++) {
+
+            struct attr occupied_state = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = formation->occupied[l][r][c]
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &occupied_state, "occupied_state"));
+        }}}
+        Sched_TryYield();
+
+        for(int l = 0; l < NAV_LAYER_MAX; l++) {
+        for(int r = 0; r < OCCUPIED_FIELD_RES; r++) {
+        for(int c = 0; c < OCCUPIED_FIELD_RES; c++) {
+
+            struct attr island_state = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = formation->islands[l][r][c]
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &island_state, "island_state"));
+        }}}
+        Sched_TryYield();
+    });
+    return true;
+}
+
+bool G_Formation_LoadState(struct SDL_RWops *stream)
+{
+    uint32_t curr_tick = SDL_GetTicks();
+    struct attr attr;
+
+    /* Load next formation ID */
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    s_next_id = attr.val.as_int;
+
+    /* Load entity:formation map */
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    size_t nents = attr.val.as_int;
+
+    for(int i = 0; i < nents; i++) {
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uint32_t uid = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        formation_id_t fid = attr.val.as_int;
+
+        int ret;
+        khiter_t k = kh_put(mapping, s_ent_formation_map, uid, &ret);
+        assert(ret != -1);
+        kh_val(s_ent_formation_map, k) = fid;
+    }
+    Sched_TryYield();
+
+    /* Load formation structures */
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    size_t nformations = attr.val.as_int;
+
+    for(int i = 0; i < nformations; i++) {
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        formation_id_t fid = attr.val.as_int;
+
+        int ret;
+        khiter_t k = kh_put(formation, s_formations, fid, &ret);
+        assert(ret != -1);
+        struct formation *new = &kh_val(s_formations, k);
+
+        *new = (struct formation){
+            .ents = kh_init(entity),
+            .sub_assignment = kh_init(assignment),
+            .map_snapshots = kh_init(map)
+        };
+        vec_subformation_init(&new->subformations);
+
+        CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_formation);
+        CHK_TRUE_JMP(attr.type == TYPE_INT, fail_load_formation);
+        new->refcount = attr.val.as_int;
+
+        CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_formation);
+        CHK_TRUE_JMP(attr.type == TYPE_INT, fail_load_formation);
+        new->type = attr.val.as_int;
+
+        CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_formation);
+        CHK_TRUE_JMP(attr.type == TYPE_VEC2, fail_load_formation);
+        new->target = attr.val.as_vec2;
+
+        CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_formation);
+        CHK_TRUE_JMP(attr.type == TYPE_VEC2, fail_load_formation);
+        new->orientation = attr.val.as_vec2;
+
+        CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_formation);
+        CHK_TRUE_JMP(attr.type == TYPE_VEC2, fail_load_formation);
+        new->center = attr.val.as_vec2;
+
+        CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_formation);
+        CHK_TRUE_JMP(attr.type == TYPE_INT, fail_load_formation);
+        size_t nents = attr.val.as_int;
+
+        for(int i = 0; i < nents; i++) {
+
+            CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_formation);
+            CHK_TRUE_JMP(attr.type == TYPE_INT, fail_load_formation);
+            uint32_t uid = attr.val.as_int;
+
+            int ret;
+            khiter_t k = kh_put(entity, new->ents, uid, &ret);
+            CHK_TRUE_JMP(ret != -1, fail_load_formation);
+        }
+        Sched_TryYield();
+
+        CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_formation);
+        CHK_TRUE_JMP(attr.type == TYPE_FLOAT, fail_load_formation);
+        new->speed = attr.val.as_float;
+        new->created_tick = curr_tick;
+
+        CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_formation);
+        CHK_TRUE_JMP(attr.type == TYPE_INT, fail_load_formation);
+        size_t nassigned = attr.val.as_int;
+
+        for(int i = 0; i < nassigned; i++) {
+
+            CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_formation);
+            CHK_TRUE_JMP(attr.type == TYPE_INT, fail_load_formation);
+            uint32_t uid = attr.val.as_int;
+
+            CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_formation);
+            CHK_TRUE_JMP(attr.type == TYPE_INT, fail_load_formation);
+            int r = attr.val.as_int;
+
+            CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_formation);
+            CHK_TRUE_JMP(attr.type == TYPE_INT, fail_load_formation);
+            int c = attr.val.as_int;
+
+            int ret;
+            khiter_t k = kh_put(assignment, new->sub_assignment, uid, &ret);
+            CHK_TRUE_JMP(ret != -1, fail_load_formation);
+            kh_val(new->sub_assignment, k) = (struct coord){r, c};
+        }
+        Sched_TryYield();
+
+        /* Load subformations */
+        CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_formation);
+        CHK_TRUE_JMP(attr.type == TYPE_INT, fail_load_formation);
+        size_t nsub = attr.val.as_int;
+        vec_subformation_resize(&new->subformations, nsub);
+        new->subformations.size = nsub;
+
+        size_t nloaded = 0;
+        for(int i = 0; i < nsub; i++) {
+            nloaded++;
+            struct subformation *next = &vec_AT(&new->subformations, i);
+            CHK_TRUE_JMP(subformation_load_state(new, next, stream), fail_load_subformations);
+            Sched_TryYield();
+        }
+
+        CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_subformations);
+        CHK_TRUE_JMP(attr.type == TYPE_INT, fail_load_subformations);
+        new->root = &vec_AT(&new->subformations, attr.val.as_int);
+
+        /* Load occupied fields */
+        for(int l = 0; l < NAV_LAYER_MAX; l++) {
+        for(int r = 0; r < OCCUPIED_FIELD_RES; r++) {
+        for(int c = 0; c < OCCUPIED_FIELD_RES; c++) {
+
+            CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_subformations);
+            CHK_TRUE_JMP(attr.type == TYPE_INT, fail_load_subformations);
+            new->occupied[l][r][c] = attr.val.as_int;
+        }}}
+        Sched_TryYield();
+
+        /* Load islands fields */
+        for(int l = 0; l < NAV_LAYER_MAX; l++) {
+        for(int r = 0; r < OCCUPIED_FIELD_RES; r++) {
+        for(int c = 0; c < OCCUPIED_FIELD_RES; c++) {
+
+            CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_subformations);
+            CHK_TRUE_JMP(attr.type == TYPE_INT, fail_load_subformations);
+            new->islands[l][r][c] = attr.val.as_int;
+        }}}
+
+        Sched_TryYield();
+        continue;
+
+    fail_load_subformations:
+        for(int i = 0; i < nloaded; i++) {
+            struct subformation *curr = &vec_AT(&new->subformations, i);
+            destroy_subformation(curr);
+        }
+    fail_load_formation:
+        kh_destroy(map, new->map_snapshots);
+        kh_destroy(entity, new->ents);
+        vec_subformation_destroy(&new->subformations);
+        kh_destroy(assignment, new->sub_assignment);
+        kh_del(formation, s_formations, k);
+        return false;
+    }
+
+    /* Re-compute all necessary cell fields */
+    struct formation *formation;
+    kh_foreach_ptr(s_formations, formation, {
+        for(int i = 0; i < vec_size(&formation->subformations); i++) {
+            struct subformation *sub = &vec_AT(&formation->subformations, i);
+            dispatch_cell_field_work(formation, formation->center, sub);
+        }
+    });
+    kh_foreach_ptr(s_formations, formation, {
+        for(int i = 0; i < vec_size(&formation->subformations); i++) {
+            struct subformation *sub = &vec_AT(&formation->subformations, i);
+            complete_cell_field_work(sub, true);
+        }
+    });
+    return true;
 }
 

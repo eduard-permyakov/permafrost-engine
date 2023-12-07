@@ -1828,7 +1828,7 @@ uint32_t G_FlagsGetFrom(khash_t(id) *table, uint32_t uid)
 
 khash_t(id) *G_FlagsCopyTable(void)
 {
-	return kh_copy_id(s_gs.ent_flag_map);
+    return kh_copy_id(s_gs.ent_flag_map);
 }
 
 bool G_AddEntity(uint32_t uid, uint32_t flags, vec3_t pos)
@@ -2166,7 +2166,7 @@ int G_GetFactionID(uint32_t uid)
 
 khash_t(id) *G_FactionIDCopyTable(void)
 {
-	return kh_copy_id(s_gs.ent_faction_map);
+    return kh_copy_id(s_gs.ent_faction_map);
 }
 
 int G_GetFactionIDFrom(khash_t(id) *table, uint32_t uid)
@@ -2220,7 +2220,7 @@ float G_GetSelectionRadius(uint32_t uid)
 
 khash_t(range) *G_SelectionRadiusCopyTable(void)
 {
-	return kh_copy_range(s_gs.selection_radiuses);
+    return kh_copy_range(s_gs.selection_radiuses);
 }
 
 float G_GetSelectionRadiusFrom(khash_t(range) *table, uint32_t uid)
@@ -2901,6 +2901,9 @@ bool G_SaveEntityState(SDL_RWops *stream)
     if(!G_Move_SaveState(stream))
         return false;
 
+    if(!G_Formation_SaveState(stream))
+        return false;
+
     if(!G_Combat_SaveState(stream))
         return false;
 
@@ -2940,6 +2943,9 @@ bool G_LoadEntityState(SDL_RWops *stream)
         return true;
 
     if(!G_Move_LoadState(stream))
+        return false;
+
+    if(!G_Formation_LoadState(stream))
         return false;
 
     if(!G_Combat_LoadState(stream))

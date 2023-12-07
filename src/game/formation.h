@@ -73,5 +73,8 @@ vec2_t         G_Formation_CohesionForce(uint32_t uid);
 vec2_t         G_Formation_AlignmentForce(uint32_t uid);
 vec2_t         G_Formation_DragForce(uint32_t uid);
 
+bool           G_Formation_SaveState(struct SDL_RWops *stream);
+bool           G_Formation_LoadState(struct SDL_RWops *stream);
+
 #endif
 
