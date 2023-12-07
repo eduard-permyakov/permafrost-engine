@@ -43,7 +43,9 @@ Download the free (or donate what-you-want) demo on [itch.io](https://spb.itch.i
 * Hierarchial flow field pathfinding
 * Handling of dynamic obstacles in pathfinding
 * Dynamic collision avoidance of multiple entities using Hybrid Reciprocal Velocity Obstacles and the ClearPath algorithm
+* Formation-based unit movement and placement
 * Pathfinding of different kinds/sizes of units (using "navigation layers")
+* Movement and pathfinding computations accelerated with parallelism
 * Efficient spatial indexing using a quadtree
 * Efficient real-time tracking of entity membership to dynamic spatial regions
 * Audio system supporting positional effects and multiple channels of global effects
