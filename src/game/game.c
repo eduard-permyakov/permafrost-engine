@@ -76,7 +76,7 @@
 #include <assert.h> 
 
 
-#define CAM_HEIGHT          175.0f
+#define BASE_CAM_HEIGHT     175.0f
 #define CAM_TILT_UP_DEGREES 25.0f
 #define CAM_SPEED           0.20f
 #define CAM_SENS            0.05f
@@ -125,8 +125,17 @@ static vec2_t g_default_minimap_pos(void)
 
 static void g_reset_camera(struct camera *cam)
 {
+    float multiplier = 1.0f;
+    if(G_GetCameraMode() == CAM_MODE_RTS) {
+        ss_e status;
+        (void)status;
+        struct sval setting;
+        status = Settings_Get("pf.game.camera_zoom", &setting);
+        assert(status == SS_OKAY);
+        multiplier = setting.as_int / 100.0f;
+    }
     Camera_SetPitchAndYaw(cam, -(90.0f - CAM_TILT_UP_DEGREES), 90.0f + 45.0f);
-    Camera_SetPos(cam, (vec3_t){ 0.0f, CAM_HEIGHT, 0.0f }); 
+    Camera_SetPos(cam, (vec3_t){ 0.0f, BASE_CAM_HEIGHT * multiplier, 0.0f }); 
 }
 
 static bool g_init_camera(void) 
@@ -517,6 +526,26 @@ static bool bool_val_validate(const struct sval *new_val)
     return (new_val->type == ST_TYPE_BOOL);
 }
 
+static bool cam_zoom_validate(const struct sval *new_val)
+{
+    if(new_val->type != ST_TYPE_INT)
+        return false;
+    if(new_val->as_int < 75 || new_val->as_int > 200)
+        return false;
+    return true;
+}
+
+static void cam_zoom_commit(const struct sval *new_val)
+{
+    float multiplier = new_val->as_int / 100.0f;
+    if(G_GetCameraMode() != CAM_MODE_RTS)
+        return;
+
+    struct camera *cam = G_GetActiveCamera();
+    vec3_t pos = Camera_GetPos(cam);
+    Camera_SetPos(cam, (vec3_t){ pos.x, BASE_CAM_HEIGHT * multiplier, pos.z }); 
+}
+
 static bool nav_layer_validate(const struct sval *new_val)
 {
     if(new_val->type != ST_TYPE_INT)
@@ -838,6 +867,18 @@ static void g_create_settings(void)
         .prio = 0,
         .validate = bool_val_validate,
         .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.game.camera_zoom",
+        .val = (struct sval) {
+            .type = ST_TYPE_INT,
+            .as_int = 100
+        },
+        .prio = 0,
+        .validate = cam_zoom_validate,
+        .commit = cam_zoom_commit,
     });
     assert(status == SS_OKAY);
 
