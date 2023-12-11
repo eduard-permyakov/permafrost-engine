@@ -2810,7 +2810,7 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
         struct coord curr = (struct coord){curr_tile.tile_r, curr_tile.tile_c};
 
         N_FlowFieldUpdateToNearestPathable(priv, layer, 
-            (struct coord){curr_tile.chunk_r, curr_tile.tile_c},
+            (struct coord){curr_tile.chunk_r, curr_tile.chunk_c},
             curr, faction_id, &exist_ff);
         N_FC_PutFlowField(ffid, &exist_ff);
 
