@@ -74,11 +74,17 @@ def save(operator, context, filepath, global_matrix, export_bbox, local_origin):
         meshes = [obj.data for obj in mesh_objs]
         arms   = [obj for obj in bpy.context.selected_objects if obj.type == 'ARMATURE']
 
-        textured_mats = []
+        all_textured_mats = []
         for mesh in meshes:
             for mat in mesh.materials:
                 if mat.active_texture:
-                    textured_mats.append(mat)
+                    all_textured_mats.append(mat)
+        seen_names = set()
+        textured_mats = []
+        for mat in all_textured_mats:
+            if mat.name not in seen_names:
+                textured_mats.append(mat)
+                seen_names.add(mat.name)
 
         for mesh in meshes:
             mesh_triangulate(mesh)
@@ -165,7 +171,9 @@ def save(operator, context, filepath, global_matrix, export_bbox, local_origin):
                     line += "\n"
                     ofile.write(line)
 
-                    mat_idx = textured_mats.index( mesh.materials[face.material_index] )
+                    mat_name = mesh.materials[face.material_index].name
+                    #mat_idx = textured_mats.index( mesh.materials[face.material_index] )
+                    mat_idx = [mat.name for mat in textured_mats].index(mat_name)
                     line = "vm {idx}\n"
                     line = line.format(idx=mat_idx)
                     ofile.write(line)
