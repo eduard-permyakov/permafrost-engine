@@ -110,6 +110,13 @@ static struct saved_ctx s_debug_saved;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
+static bool same_position(vec2_t a, vec2_t b)
+{
+    vec2_t delta;
+    PFM_Vec2_Sub(&b, &a, &delta);
+    return (PFM_Vec2_Len(&delta) < EPSILON);
+}
+
 static void compute_vo_edges(struct cp_ent ent, struct cp_ent neighb,
                              vec2_t *out_xz_right, vec2_t *out_xz_left)
 {
@@ -203,7 +210,9 @@ static size_t compute_all_vos(struct cp_ent ent, vec_cp_ent_t stat_neighbs,
 
     for(struct cp_ent *nb = stat_neighbs.array; 
         nb < stat_neighbs.array + vec_size(&stat_neighbs); nb++) {
-        
+
+        if(same_position(ent.xz_pos, nb->xz_pos))
+            continue;
         out[ret++] = compute_vo(ent, *nb);
     }
 
@@ -216,8 +225,10 @@ static size_t compute_all_hrvos(struct cp_ent ent, vec_cp_ent_t dyn_neighbs,
     size_t ret = 0; 
 
     for(int i = 0; i < vec_size(&dyn_neighbs); i++) {
-        
+
         struct cp_ent *nb = &vec_AT(&dyn_neighbs, i);
+        if(same_position(ent.xz_pos, nb->xz_pos))
+            continue;
         out[ret++] = compute_hrvo(ent, *nb);
     }
 
@@ -542,8 +553,11 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
     size_t n_hrvos = compute_all_hrvos(cpent, dyn_neighbs, dyn_hrvos);
     size_t n_vos = compute_all_vos(cpent, stat_neighbs, (struct VO*)stat_vos);
 
-    assert(n_hrvos == vec_size(&dyn_neighbs));
-    assert(n_vos == vec_size(&stat_neighbs));
+    /* We may have skipped the neighbours that are at the exact same 
+     * or nearly same position as the entity.
+     */
+    assert(n_hrvos <= vec_size(&dyn_neighbs));
+    assert(n_vos <= vec_size(&stat_neighbs));
 
     /* Following the ClearPath approach, which is applicable to many variations 
      * of velocity obstacles, we represent the combined hybrid reciprocal velocity 
