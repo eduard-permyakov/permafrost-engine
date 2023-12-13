@@ -1396,6 +1396,9 @@ static vec2_t separation_force(uint32_t uid, float buffer_dist)
                      + buffer_dist;
         PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
 
+        if(PFM_Vec2_Len(&diff) < EPSILON)
+            continue;
+
         /* Exponential decay with y=1 when diff = radius*0.85 
          * Use smooth decay curves in order to curb the 'toggling' or oscillating 
          * behaviour that may arise when there are discontinuities in the forces. 
