@@ -597,7 +597,10 @@ bool G_Region_AddCircle(const char *name, vec2_t pos, float radius)
     if(!region_add(name, newreg))
         return false;
 
-    region_update_ents(name, &newreg);
+    khiter_t k = kh_get(region, s_regions, name);
+    assert(k != kh_end(s_regions));
+    struct region *added = &kh_val(s_regions, k);
+    region_update_ents(name, added);
     return true;
 }
 
@@ -616,7 +619,10 @@ bool G_Region_AddRectangle(const char *name, vec2_t pos, float xlen, float zlen)
     if(!region_add(name, newreg))
         return false;
 
-    region_update_ents(name, &newreg);
+    khiter_t k = kh_get(region, s_regions, name);
+    assert(k != kh_end(s_regions));
+    struct region *added = &kh_val(s_regions, k);
+    region_update_ents(name, added);
     return true;
 }
 
