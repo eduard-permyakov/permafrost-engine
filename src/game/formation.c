@@ -176,7 +176,7 @@ VEC_IMPL(static inline, work, struct cell_field_work)
 KHASH_MAP_INIT_INT(assignment, struct coord)
 KHASH_MAP_INIT_INT(reverse, uint32_t);
 KHASH_MAP_INIT_INT(result, struct cell_arrival_field*)
-KHASH_MAP_INIT_INT64(map, struct refcounted_map)
+KHASH_MAP_INIT_INT64(map, struct refcounted_map*)
 
 QUEUE_TYPE(coord, struct coord)
 QUEUE_IMPL(static, coord, struct coord)
@@ -1288,12 +1288,13 @@ static struct refcounted_map *map_snapshot_get(struct formation *formation,
         k = kh_put(map, formation->map_snapshots, key, &ret);
         assert(ret != -1);
 
-        struct refcounted_map *rmap = &kh_val(formation->map_snapshots, k);
+        struct refcounted_map *rmap = malloc(sizeof(struct refcounted_map));
         rmap->snapshot = M_AL_CopyWithFields(s_map);
         map_add_blockers(rmap->snapshot, formation, sub);
         SDL_AtomicSet(&rmap->refcount, 0);
+        kh_val(formation->map_snapshots, k) = rmap;
     }
-    struct refcounted_map *rmap = &kh_val(formation->map_snapshots, k);
+    struct refcounted_map *rmap = kh_val(formation->map_snapshots, k);
     SDL_AtomicIncRef(&rmap->refcount);
     return rmap;
 }
@@ -1307,7 +1308,7 @@ static void clean_up_map_snapshots(struct formation *formation)
 
     uint64_t key;
     struct refcounted_map *rmap;
-    kh_foreach_val_ptr(formation->map_snapshots, key, rmap, {
+    kh_foreach(formation->map_snapshots, key, rmap, {
         if(ndel == ARR_SIZE(todel))
             break;
         int refcnt = SDL_AtomicGet(&rmap->refcount);
@@ -1319,8 +1320,9 @@ static void clean_up_map_snapshots(struct formation *formation)
     for(int i = 0; i < ndel; i++) {
         khiter_t k = kh_get(map, formation->map_snapshots, todel[i]);
         assert(k != kh_end(formation->map_snapshots));
-        struct refcounted_map *rmap = &kh_val(formation->map_snapshots, k);
+        struct refcounted_map *rmap = kh_val(formation->map_snapshots, k);
         PF_FREE(rmap->snapshot);
+        PF_FREE(rmap);
         kh_del(map, formation->map_snapshots, k);
     }
 }
@@ -4199,7 +4201,7 @@ void G_Formation_RemoveUnit(uint32_t uid)
     kh_del(entity, formation->ents, e);
 
     e = kh_get(entity, sub->ents, uid);
-    assert(k != kh_end(sub->ents));
+    assert(e != kh_end(sub->ents));
     kh_del(entity, sub->ents, e);
 
     /* Clear assignment */
