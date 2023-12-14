@@ -1082,10 +1082,14 @@ static void entity_stop_combat(uint32_t uid)
 uint32_t closest_eligible_entity(uint32_t uid)
 {
     struct combat_gamestate *gs = &s_combat_work.gamestate;
+    struct combatstate *cs = combatstate_get(uid);
     vec2_t pos = G_Pos_GetXZFrom(gs->positions, uid);
+    float range = MAX(TARGET_ACQUISITION_RANGE, cs->stats.attack_range);
+    int faction_id = G_GetFactionIDFrom(gs->faction_ids, uid);
+
     uint32_t ents[128];
     size_t nents = G_Pos_EntsInCircleWithPredFrom(
-        gs->postree, pos, TARGET_ACQUISITION_RANGE, ents, 
+        gs->postree, pos, range, ents, 
         ARR_SIZE(ents), valid_enemy, (void*)((uintptr_t)uid));
 
     if(!nents)
@@ -1105,8 +1109,15 @@ uint32_t closest_eligible_entity(uint32_t uid)
         float dist = PFM_Vec2_Len(&delta);
 
         if(dist < min_dist) {
-            min_dist = dist;
-            ret = ents[i];
+
+            struct obb obb;
+            current_obb_from_gamestate(ents[i], &obb);
+
+            uint16_t pmask = gs->player_factions;
+            if(G_Fog_ObjVisibleFrom(gs->fog_state, gs->fog_enabled, pmask, &obb)) {
+                min_dist = dist;
+                ret = ents[i];
+            }
         }
     }
     return ret;
@@ -2051,7 +2062,7 @@ bool G_Combat_Init(const struct map *map)
     }
 
     vec_entity_init(&s_dying_ents);
-    E_Global_Register(EVENT_30HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
+    E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_ALL);
     E_Global_Register(EVENT_PROJECTILE_HIT, on_proj_hit, NULL, G_RUNNING);
@@ -2075,7 +2086,7 @@ void G_Combat_Shutdown(void)
     combat_complete_work();
     s_map = NULL;
 
-    E_Global_Unregister(EVENT_30HZ_TICK, on_20hz_tick);
+    E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     E_Global_Unregister(EVENT_PROJECTILE_HIT, on_proj_hit);
