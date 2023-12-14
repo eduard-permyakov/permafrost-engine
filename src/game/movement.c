@@ -499,8 +499,7 @@ static void entity_finish_moving(uint32_t uid, enum arrival_state newstate)
 
     E_Entity_Notify(EVENT_MOTION_END, uid, NULL, ES_ENGINE);
     if(flags & ENTITY_FLAG_COMBATABLE
-    && (ms->state != STATE_TURNING)
-    && G_Combat_GetStance(uid) != COMBAT_STANCE_HOLD_POSITION) {
+    && (newstate != STATE_TURNING)) {
         G_Combat_SetStance(uid, COMBAT_STANCE_AGGRESSIVE);
     }
 
@@ -1695,7 +1694,9 @@ static vec2_t vel_wma(const struct movestate *ms)
         denom += (VEL_HIST_LEN-i);
     }
 
-    PFM_Vec2_Scale(&ret, 1.0f/denom, &ret);
+    if(denom > EPSILON) {
+        PFM_Vec2_Scale(&ret, 1.0f/denom, &ret);
+    }
     return ret;
 }
 

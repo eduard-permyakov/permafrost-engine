@@ -371,8 +371,6 @@ static vec2_t compute_vnew(const vec_vec2_t *outside_points, vec2_t des_v, vec2_
             ret = curr;
         }
     }
-
-    assert(min_dist < INFINITY);
     return ret;
 }
 
