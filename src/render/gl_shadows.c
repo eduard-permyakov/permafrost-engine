@@ -44,6 +44,7 @@
 #include "../pf_math.h"
 #include "../config.h"
 #include "../settings.h"
+#include "../camera.h"
 #include "../phys/public/collision.h"
 #include "../game/public/game.h"
 
@@ -51,7 +52,8 @@
 #include <assert.h>
 
 
-#define LIGHT_EXTRA_HEIGHT (280.0f)
+#define LIGHT_EXTRA_HEIGHT    (150.0f)
+#define LIGHT_VISIBILITY_ZOOM (75.0f)
 
 struct shadow_gl_state{
     GLint viewport[4];
@@ -251,8 +253,21 @@ void R_GL_ShadowMapBind(void)
     glBindTexture(GL_TEXTURE_2D, s_depth_map_tex);
 }
 
-void R_LightFrustum(vec3_t light_pos, vec3_t cam_pos, vec3_t cam_dir, struct frustum *out)
+void R_LightVisibilityFrustum(const struct camera *cam, struct frustum *out)
 {
-    make_light_frustum(light_pos, cam_pos, cam_dir, out, NULL);
+    vec3_t pos = Camera_GetPos(cam);
+    vec3_t dir = Camera_GetDir(cam);
+
+    vec3_t delta = dir;
+    PFM_Vec3_Scale(&delta, -1.0f, &delta);
+    PFM_Vec3_Scale(&delta, LIGHT_VISIBILITY_ZOOM, &delta);
+
+    vec3_t new_pos;
+    PFM_Vec3_Add(&pos, &delta, &new_pos);
+
+    DECL_CAMERA_STACK(zoomed_out);
+    Camera_SetPos((struct camera*)zoomed_out, new_pos);
+    Camera_SetDir((struct camera*)zoomed_out, dir);
+    Camera_MakeFrustum((struct camera*)zoomed_out, out);
 }
 

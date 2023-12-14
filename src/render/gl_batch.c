@@ -1286,8 +1286,8 @@ void R_GL_Batch_RenderDepthMap(struct render_input *in)
     GL_PERF_ENTER();
     GL_PERF_PUSH_GROUP(0, "batch::RenderDepthMap");
 
-    batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_DEPTH);
-    batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_DEPTH, BATCH_ID_NULL);
+    batch_render_anim_all(&in->light_vis_anim, true, RENDER_PASS_DEPTH);
+    batch_render_stat_all(&in->light_vis_stat, true, RENDER_PASS_DEPTH, BATCH_ID_NULL);
 
     GL_PERF_POP_GROUP();
     GL_PERF_RETURN_VOID();

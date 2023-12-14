@@ -1680,7 +1680,7 @@ void G_Update(void)
     Camera_MakeFrustum(s_gs.active_cam, &cam_frust);
 
     struct frustum light_frust;
-    R_LightFrustum(s_gs.light_pos, pos, dir, &light_frust);
+    R_LightVisibilityFrustum(s_gs.active_cam, &light_frust);
 
     uint16_t pm = g_player_mask();
     uint32_t curr;

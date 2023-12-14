@@ -50,6 +50,7 @@
 struct frustum;
 struct tile_desc;
 struct map;
+struct camera;
 
 enum render_info{
     RENDER_INFO_VENDOR,
@@ -124,8 +125,8 @@ void        R_ClearWS(struct render_workspace *ws);
 
 const char *R_GetInfo(enum render_info attr);
 
-/* Shadows */
 void        R_LightFrustum(vec3_t light_pos, vec3_t cam_pos, vec3_t cam_dir, struct frustum *out);
+void        R_LightVisibilityFrustum(const struct camera *cam, struct frustum *out);
 
 /* Tile */
 int         R_TileGetTriMesh(const struct map *map, struct tile_desc *td, mat4x4_t *model, vec3_t out[]);
