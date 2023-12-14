@@ -1395,14 +1395,11 @@ static void render_cells(struct subformation *formation)
     }
 }
 
-static int compare_priorities(uint32_t a, uint32_t b)
+static bool compare_priorities(uint32_t a, uint32_t b, uint64_t typea, uint64_t typeb)
 {
-    int prio_a = S_FormationPriority(a);
-    int prio_b = S_FormationPriority(b);
-
-    if(prio_a < prio_b) return -1;
-    if(prio_a > prio_b) return  1;
-    return 0;
+    if(S_FormationPriority(a) == S_FormationPriority(b))
+        return (typea > typeb);
+    return (S_FormationPriority(a) > S_FormationPriority(b));
 }
 
 static size_t sort_by_type(size_t size, uint32_t *ents, uint64_t *types)
@@ -1413,7 +1410,7 @@ static size_t sort_by_type(size_t size, uint32_t *ents, uint64_t *types)
     int i = 1;
     while(i < size) {
         int j = i;
-        while(j > 0 && (types[j-1] != types[j]) && compare_priorities(ents[j-1], ents[j]) > 0) {
+        while(j > 0 && compare_priorities(ents[j-1], ents[j], types[j-1], types[j])) {
 
             /* swap UIDs */
             uint32_t tmp = ents[j-1];
