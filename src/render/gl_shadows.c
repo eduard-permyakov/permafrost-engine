@@ -52,7 +52,7 @@
 #include <assert.h>
 
 
-#define LIGHT_EXTRA_HEIGHT    (150.0f)
+#define LIGHT_EXTRA_HEIGHT    (300.0f)
 #define LIGHT_VISIBILITY_ZOOM (75.0f)
 
 struct shadow_gl_state{
