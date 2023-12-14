@@ -527,6 +527,9 @@ bool P_Projectile_VelocityForTarget(vec3_t src, vec3_t dst, float init_speed, ve
     vec3_t delta;
     PFM_Vec3_Sub(&dst, &src, &delta);
 
+    if(PFM_Vec3_Len(&delta) < EPSILON)
+        return false;
+
     /* Use a coordinate system such that the y-axis is up and 
      * the x-axis is along the direction of motion (src -> dst). 
      */
