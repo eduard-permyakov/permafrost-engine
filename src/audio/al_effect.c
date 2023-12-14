@@ -59,6 +59,7 @@
 
 #define MIN(a, b)       ((a) < (b) ? (a) : (b))
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
+#define INVALID_SOURCE  (~((ALuint)0))
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -339,6 +340,14 @@ static void audio_make_effect_source(ALuint *out, vec3_t pos, ALint buffer)
     ALuint source;
     alGenSources(1, &source);
 
+    /* Resort to dropping the request if we are not able 
+     * to generate more sources */
+    ALenum error = alGetError();
+    if(error == AL_OUT_OF_MEMORY) {
+        *out = INVALID_SOURCE;
+        return;
+    }
+
     alSourcef(source,  AL_PITCH, 1);
     alSourcef(source,  AL_GAIN, s_effect_volume);
     alSourcei(source,  AL_BUFFER, buffer);
@@ -424,6 +433,8 @@ static bool audio_load_effect(SDL_RWops *stream)
 
         ALuint source;
         audio_make_effect_source(&source, pos, buffer);
+        if(source == INVALID_SOURCE)
+            return false;
         alSourcei(source, AL_SAMPLE_OFFSET, offset);
 
         if(alGetError() != AL_NO_ERROR) {
@@ -549,6 +560,8 @@ bool Audio_Effect_Add(vec3_t pos, const char *track)
 
     ALuint source;
     audio_make_effect_source(&source, pos, buffer);
+    if(source == INVALID_SOURCE)
+        return false;
 
     uint32_t start_tick = SDL_GetTicks();
     float duration = Audio_BufferDuration(buffer);
