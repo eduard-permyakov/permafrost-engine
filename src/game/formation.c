@@ -4302,7 +4302,7 @@ bool G_Formation_ArrivedAtCell(uint32_t uid)
 
     /* Check if we are within tolerance of the cell position */
     float radius = G_GetSelectionRadius(uid);
-    float arrive_thresh = radius * 1.5f;
+    float arrive_thresh = MIN(radius * 1.5f, 10.0f);
 
     vec2_t cell_pos = cell->reachable_pos;
     vec2_t ent_pos = G_Pos_GetXZ(uid);
