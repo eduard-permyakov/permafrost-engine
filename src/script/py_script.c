@@ -218,6 +218,8 @@ static PyObject *PyPf_play_effect(PyObject *self, PyObject *args);
 static PyObject *PyPf_play_global_effect(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_spawn_projectile(PyObject *self, PyObject *args);
 static PyObject *PyPf_formation_arrange(PyObject *self, PyObject *args);
+static PyObject *PyPf_move_in_formation(PyObject *self, PyObject *args);
+static PyObject *PyPf_attack_in_formation(PyObject *self, PyObject *args);
 static PyObject *PyPf_formation_preferred_for_set(PyObject *self, PyObject *args);
 
 /*****************************************************************************/
@@ -741,6 +743,15 @@ static PyMethodDef pf_module_methods[] = {
     {"formation_arrange",
     (PyCFunction)PyPf_formation_arrange, METH_VARARGS,
     "Arrange the specified units into a formation of the specified type."},
+
+    {"move_in_formation",
+    (PyCFunction)PyPf_move_in_formation, METH_VARARGS,
+    "Order the specified units to arrange themselves at the target location and orientation."},
+
+    {"attack_in_formation",
+    (PyCFunction)PyPf_attack_in_formation, METH_VARARGS,
+    "Order the specified units to arrange themselves at the target location and orientation, "
+    "attacking any enemies along the way."},
 
     {"formation_preferred_for_set",
     (PyCFunction)PyPf_formation_preferred_for_set, METH_VARARGS,
@@ -3021,7 +3032,8 @@ static PyObject *PyPf_formation_arrange(PyObject *self, PyObject *args)
     for(int i = 0; i < PyList_GET_SIZE(list); i++) {
         PyObject *obj = PyList_GET_ITEM(list, i);
         if(!S_Entity_Check(obj)) {
-            PyErr_SetString(PyExc_TypeError, "Argument must a list of pf.Entity objects.");
+            PyErr_SetString(PyExc_TypeError,
+                "The entity list must contain only pf.Entity objects.");
             vec_entity_destroy(&ents);
             return NULL;
         }
@@ -3031,6 +3043,74 @@ static PyObject *PyPf_formation_arrange(PyObject *self, PyObject *args)
     }
 
     G_Formation_Arrange(type, &ents);
+    vec_entity_destroy(&ents);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_move_in_formation(PyObject *self, PyObject *args)
+{
+    enum formation_type type;
+    vec2_t target, orientation;
+    vec_entity_t ents;
+    vec_entity_init(&ents);
+
+    PyObject *list;
+    if(!PyArg_ParseTuple(args, "O!i(ff)(ff)", &PyList_Type, &list, &type,
+        &target.x, &target.z, &orientation.x, &orientation.z)) {
+        PyErr_SetString(PyExc_TypeError, 
+            "Argument must a list object, a formation type (integer), "
+             "a target location (list of 2 floats), and a target orientation (list of 2 floats).");
+        return NULL;
+    }
+
+    for(int i = 0; i < PyList_GET_SIZE(list); i++) {
+        PyObject *obj = PyList_GET_ITEM(list, i);
+        if(!S_Entity_Check(obj)) {
+            PyErr_SetString(PyExc_TypeError, 
+                "The entity list must contain only pf.Entity objects.");
+            vec_entity_destroy(&ents);
+            return NULL;
+        }
+        uint32_t uid;
+        S_Entity_UIDForObj(obj, &uid);
+        vec_entity_push(&ents, uid);
+    }
+
+    G_Move_ArrangeInFormation(&ents, target, orientation, type);
+    vec_entity_destroy(&ents);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_attack_in_formation(PyObject *self, PyObject *args)
+{
+    enum formation_type type;
+    vec2_t target, orientation;
+    vec_entity_t ents;
+    vec_entity_init(&ents);
+
+    PyObject *list;
+    if(!PyArg_ParseTuple(args, "O!i(ff)(ff)", &PyList_Type, &list, &type,
+        &target.x, &target.z, &orientation.x, &orientation.z)) {
+        PyErr_SetString(PyExc_TypeError, 
+            "Argument must a list object, a formation type (integer), "
+             "a target location (list of 2 floats), and a target orientation (list of 2 floats).");
+        return NULL;
+    }
+
+    for(int i = 0; i < PyList_GET_SIZE(list); i++) {
+        PyObject *obj = PyList_GET_ITEM(list, i);
+        if(!S_Entity_Check(obj)) {
+            PyErr_SetString(PyExc_TypeError, 
+                "The entity list must contain only pf.Entity objects.");
+            vec_entity_destroy(&ents);
+            return NULL;
+        }
+        uint32_t uid;
+        S_Entity_UIDForObj(obj, &uid);
+        vec_entity_push(&ents, uid);
+    }
+
+    G_Move_AttackInFormation(&ents, target, orientation, type);
     vec_entity_destroy(&ents);
     Py_RETURN_NONE;
 }

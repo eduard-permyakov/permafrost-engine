@@ -108,6 +108,13 @@ enum hb_mode{
     HB_MODE_NEVER
 };
 
+enum formation_type{
+    FORMATION_NONE,
+    FORMATION_RANK,
+    FORMATION_COLUMN,
+    FORMATION_MAX
+};
+
 /*###########################################################################*/
 /* GAME GENERAL                                                              */
 /*###########################################################################*/
@@ -240,6 +247,10 @@ bool G_Move_GetClickEnabled(void);
 bool G_Move_GetMaxSpeed(uint32_t uid, float *out);
 bool G_Move_SetMaxSpeed(uint32_t uid, float speed);
 
+void G_Move_ArrangeInFormation(vec_entity_t *ents, vec2_t target, 
+                               vec2_t orientation, enum formation_type type);
+void G_Move_AttackInFormation(vec_entity_t *ents, vec2_t target,
+                              vec2_t orientation, enum formation_type type);
 
 /*###########################################################################*/
 /* GAME COMBAT                                                               */
@@ -459,13 +470,6 @@ bool   G_Region_Explored(const char *name, uint16_t player_mask, bool *out);
 /*###########################################################################*/
 /* GAME FORMATION                                                            */
 /*###########################################################################*/
-
-enum formation_type{
-    FORMATION_NONE,
-    FORMATION_RANK,
-    FORMATION_COLUMN,
-    FORMATION_MAX
-};
 
 void G_Formation_Arrange(enum formation_type type, vec_entity_t *ents);
 void G_Formation_SetPreferred(uint32_t uid, enum formation_type type);

@@ -248,7 +248,6 @@ enum move_cmd_type{
     MOVE_CMD_UPDATE_SELECTION_RADIUS,
     MOVE_CMD_SET_MAX_SPEED,
     MOVE_CMD_MAKE_FLOCKS,
-    MOVE_CMD_ARRANGE_IN_FORMATION
 };
 
 struct move_cmd{
@@ -690,36 +689,6 @@ static void make_flocks(const vec_entity_t *sel, vec2_t target_xz, vec2_t target
     }
 
     G_Formation_Create(target_xz, target_orientation, &fsel, type);
-    vec_entity_destroy(&fsel);
-}
-
-static void arrange_in_formation(const vec_entity_t *sel, vec2_t target_xz, 
-                                 enum formation_type type)
-{
-    ASSERT_IN_MAIN_THREAD();
-
-    vec_entity_t fsel;
-    filter_selection_pathable(sel, &fsel);
-
-    if(vec_size(&fsel) == 0)
-        return;
-
-    vec_entity_t layer_flocks[NAV_LAYER_MAX];
-    split_into_layers(&fsel, layer_flocks);
-
-    for(int i = 0; i < NAV_LAYER_MAX; i++) {
-        make_flock(layer_flocks + i, target_xz, i, false, type);
-        vec_entity_destroy(layer_flocks + i);
-    }
-
-    for(int i = 0; i < vec_size(sel); i++) {
-        uint32_t uid = vec_AT(sel, i);
-        struct movestate *ms = movestate_get(uid);
-        ms->state = STATE_ARRIVING_TO_CELL;
-    }
-
-    vec2_t orientation = G_Formation_AutoOrientation(target_xz, &fsel);
-    G_Formation_Create(target_xz, orientation, &fsel, type);
     vec_entity_destroy(&fsel);
 }
 
@@ -2521,15 +2490,6 @@ static void move_process_cmds(void)
             PF_FREE(sel);
             break;
         }
-        case MOVE_CMD_ARRANGE_IN_FORMATION: {
-            vec_entity_t *units = (vec_entity_t*)cmd.args[0].val.as_pointer;
-            vec2_t target_xz = cmd.args[1].val.as_vec2;
-            enum formation_type type = cmd.args[2].val.as_int;
-            arrange_in_formation(units, target_xz, type);
-            vec_entity_destroy(units);
-            PF_FREE(units);
-            break;
-        }
         default:
             assert(0);
         }
@@ -3241,7 +3201,8 @@ bool G_Move_SetMaxSpeed(uint32_t uid, float speed)
     return true;
 }
 
-void G_Move_ArrangeInFormation(vec_entity_t *ents, vec2_t target, enum formation_type type)
+void G_Move_ArrangeInFormation(vec_entity_t *ents, vec2_t target, 
+                               vec2_t orientation, enum formation_type type)
 {
     ASSERT_IN_MAIN_THREAD();
     vec_entity_t *copy = malloc(sizeof(vec_entity_t));
@@ -3249,7 +3210,7 @@ void G_Move_ArrangeInFormation(vec_entity_t *ents, vec2_t target, enum formation
     vec_entity_copy(copy, ents);
 
     move_push_cmd((struct move_cmd){
-        .type = MOVE_CMD_ARRANGE_IN_FORMATION,
+        .type = MOVE_CMD_MAKE_FLOCKS,
         .args[0] = {
             .type = TYPE_POINTER,
             .val.as_pointer = copy
@@ -3261,6 +3222,47 @@ void G_Move_ArrangeInFormation(vec_entity_t *ents, vec2_t target, enum formation
         .args[2] = {
             .type = TYPE_INT,
             .val.as_int = type
+        },
+        .args[3] = {
+            .type = TYPE_BOOL,
+            .val.as_bool = false
+        },
+        .args[4] = {
+            .type = TYPE_VEC2,
+            .val.as_vec2 = orientation
+        }
+    });
+}
+
+void G_Move_AttackInFormation(vec_entity_t *ents, vec2_t target, 
+                              vec2_t orientation, enum formation_type type)
+{
+    ASSERT_IN_MAIN_THREAD();
+    vec_entity_t *copy = malloc(sizeof(vec_entity_t));
+    vec_entity_init(copy);
+    vec_entity_copy(copy, ents);
+
+    move_push_cmd((struct move_cmd){
+        .type = MOVE_CMD_MAKE_FLOCKS,
+        .args[0] = {
+            .type = TYPE_POINTER,
+            .val.as_pointer = copy
+        },
+        .args[1] = {
+            .type = TYPE_VEC2,
+            .val.as_vec2 = target,
+        },
+        .args[2] = {
+            .type = TYPE_INT,
+            .val.as_int = type
+        },
+        .args[3] = {
+            .type = TYPE_BOOL,
+            .val.as_bool = true
+        },
+        .args[4] = {
+            .type = TYPE_VEC2,
+            .val.as_vec2 = orientation
         }
     });
 }

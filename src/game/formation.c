@@ -4351,7 +4351,8 @@ void G_Formation_Arrange(enum formation_type type, vec_entity_t *ents)
     }
 
     vec2_t target = target_position(&filtered);
-    G_Move_ArrangeInFormation(&filtered, target, type);
+    vec2_t orientation = G_Formation_AutoOrientation(target, &filtered);
+    G_Move_ArrangeInFormation(&filtered, target, orientation, type);
     vec_entity_destroy(&filtered);
 }
 
