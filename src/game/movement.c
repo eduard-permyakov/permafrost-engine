@@ -559,8 +559,11 @@ static void filter_selection_pathable(const vec_entity_t *in_sel, vec_entity_t *
     for(int i = 0; i < vec_size(in_sel); i++) {
 
         uint32_t curr = vec_AT(in_sel, i);
-        vec2_t xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr);
+        struct movestate *ms = movestate_get(curr);
+        if(!ms)
+            continue;
 
+        vec2_t xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr);
         float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr);
         if(!M_NavPositionPathable(s_map, Entity_NavLayerWithRadius(radius), xz_pos))
             continue;
@@ -2116,6 +2119,10 @@ static void do_add_entity(uint32_t uid, vec3_t pos, float selection_radius, int 
     k = kh_put(id, s_move_work.gamestate.faction_ids, uid, &ret);
     assert(ret != -1);
     kh_value(s_move_work.gamestate.faction_ids, k) = faction_id;
+
+    k = kh_put(id, s_move_work.gamestate.flags, uid, &ret);
+    assert(ret != -1);
+    kh_value(s_move_work.gamestate.flags, k) = G_FlagsGet(uid);
 
     struct movestate new_ms = (struct movestate) {
         .velocity = {0.0f}, 
