@@ -151,6 +151,8 @@ Follow the development of Permafrost Engine and EVERGLORY on [YouTube](https://w
 
 [Indie RTS Devlog #15: Unit Formations](https://www.youtube.com/watch?v=a4yXJ-9H4pY)
 
+[EVERGLORY (Indie RTS Game) - Pathfinding Showcase](https://www.youtube.com/watch?v=7GcqVAzuJgo)
+
 ## Comments/Questions ##
 
 Comments or questions regarding the project or the source code? E-mail: edward.permyakov@gmail.com.
