@@ -505,17 +505,21 @@ static void *g_push_render_input(struct render_input in)
     ret->cam = R_PushArg(in.cam, g_sizeof_camera);
 
     if(in.cam_vis_stat.size) {
-        ret->cam_vis_stat.array = R_PushArg(in.cam_vis_stat.array, in.cam_vis_stat.size * sizeof(struct ent_stat_rstate));
+        ret->cam_vis_stat.array = R_PushArg(in.cam_vis_stat.array, 
+            in.cam_vis_stat.size * sizeof(struct ent_stat_rstate));
     }
     if(in.cam_vis_anim.size) {
-        ret->cam_vis_anim.array = R_PushArg(in.cam_vis_anim.array, in.cam_vis_anim.size * sizeof(struct ent_anim_rstate));
+        ret->cam_vis_anim.array = R_PushArg(in.cam_vis_anim.array, 
+            in.cam_vis_anim.size * sizeof(struct ent_anim_rstate));
     }
 
     if(in.light_vis_stat.size) {
-        ret->light_vis_stat.array = R_PushArg(in.light_vis_stat.array, in.light_vis_stat.size * sizeof(struct ent_stat_rstate));
+        ret->light_vis_stat.array = R_PushArg(in.light_vis_stat.array, 
+            in.light_vis_stat.size * sizeof(struct ent_stat_rstate));
     }
     if(in.light_vis_anim.size) {
-        ret->light_vis_anim.array = R_PushArg(in.light_vis_anim.array, in.light_vis_anim.size * sizeof(struct ent_anim_rstate));
+        ret->light_vis_anim.array = R_PushArg(in.light_vis_anim.array, 
+            in.light_vis_anim.size * sizeof(struct ent_anim_rstate));
     }
 
     return ret;

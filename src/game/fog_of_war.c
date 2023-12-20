@@ -814,6 +814,9 @@ bool G_Fog_NearVisibleWater(uint16_t fac_mask, vec2_t xz_pos, float radius)
         if(M_Tile_BaseHeight(tile) >= 0)
             continue;
 
+        if(!s_enabled)
+            return true;
+
         int idx = td_index(tds[i]);
         uint32_t fac_state = s_fog_state[idx] & facstate_mask;
 
