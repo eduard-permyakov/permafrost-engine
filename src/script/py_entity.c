@@ -926,6 +926,48 @@ static PyTypeObject PyMovableEntity_type = {
 };
 
 /*****************************************************************************/
+/* pf.WaterEntity                                                            */
+/*****************************************************************************/
+
+typedef struct {
+    PyEntityObject super; 
+}PyWaterEntityObject;
+
+static PyObject *PyWaterEntity_del(PyWaterEntityObject *self);
+static PyObject *PyWaterEntity_pickle(PyWaterEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyWaterEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
+
+static PyMethodDef PyWaterEntity_methods[] = {
+
+    {"__del__", 
+    (PyCFunction)PyWaterEntity_del, METH_NOARGS,
+    "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
+
+    {"__pickle__", 
+    (PyCFunction)PyWaterEntity_pickle, METH_KEYWORDS,
+    "Serialize a Permafrost Engine combatable entity to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyWaterEntity_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
+    "Create a new pf.WaterEntity instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyWaterEntity_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name      = "pf.WaterEntity",
+    .tp_basicsize = sizeof(PyWaterEntityObject), 
+    .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc       = "Permafrost Engine water-based entity. This is a subclass of pf.Entity. "
+                    "This kind of entity is restricted to being on water.",
+    .tp_methods   = PyWaterEntity_methods,
+    .tp_getset    = NULL,
+    .tp_base      = &PyEntity_type,
+};
+
+/*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
@@ -1069,6 +1111,9 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
     if(!zombie && PyType_IsSubtype(type, &PyMovableEntity_type))
         extra_flags |= ENTITY_FLAG_MOVABLE;
+
+    if(!zombie && PyType_IsSubtype(type, &PyWaterEntity_type))
+        extra_flags |= ENTITY_FLAG_WATER;
 
     vec3_t pos = (vec3_t){0.0f, 0.0f, 0.0f};
     if(kwds) {
@@ -3490,6 +3535,22 @@ static PyObject *PyMovableEntity_unpickle(PyObject *cls, PyObject *args, PyObjec
     return s_call_super_method("__unpickle__", (PyObject*)&PyMovableEntity_type, cls, args, kwargs);
 }
 
+static PyObject *PyWaterEntity_del(PyWaterEntityObject *self)
+{
+    return s_super_del((PyObject*)self, &PyWaterEntity_type);
+}
+
+static PyObject *PyWaterEntity_pickle(PyWaterEntityObject *self, PyObject *args, PyObject *kwargs)
+{
+    return s_call_super_method("__pickle__", (PyObject*)&PyWaterEntity_type, 
+        (PyObject*)self, args, kwargs);
+}
+
+static PyObject *PyWaterEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
+{
+    return s_call_super_method("__unpickle__", (PyObject*)&PyWaterEntity_type, cls, args, kwargs);
+}
+
 static PyObject *s_obj_from_attr(const struct attr *attr)
 {
     switch(attr->type){
@@ -3702,6 +3763,11 @@ void S_Entity_PyRegister(PyObject *module)
         Py_FatalError("Can't initialize pf.MovableEntity type");
     Py_INCREF(&PyMovableEntity_type);
     PyModule_AddObject(module, "MovableEntity", (PyObject*)&PyMovableEntity_type);
+
+    if(PyType_Ready(&PyWaterEntity_type) < 0)
+        Py_FatalError("Can't initialize pf.WaterEntity type");
+    Py_INCREF(&PyWaterEntity_type);
+    PyModule_AddObject(module, "WaterEntity", (PyObject*)&PyWaterEntity_type);
 }
 
 bool S_Entity_Init(void)
