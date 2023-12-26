@@ -996,8 +996,9 @@ static void on_arrive_at_transport_dest(void *user, void *event)
         G_StorageSite_SetCurr(hs->transport_dest_uid, rname, cap);
     }
 
+    uint32_t dest = hs->transport_dest_uid;
     finish_transporing(hs);
-    G_Harvester_Transport(uid, hs->transport_dest_uid);
+    G_Harvester_Transport(uid, dest);
 }
 
 static void selection_try_order_gather(bool targeting)
