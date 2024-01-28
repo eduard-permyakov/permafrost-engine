@@ -1419,7 +1419,7 @@ static void on_harvest_anim_finished_source(void *user, void *event)
         E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
             (void*)((uintptr_t)uid), G_RUNNING);
 
-        G_Move_SetSurroundEntity(uid, hs->res_uid);
+        G_Move_SetSurroundEntity(uid, hs->transport_dest_uid);
         hs->state = STATE_TRANSPORT_PUTTING;
         E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, uid, 
             (void*)(uintptr_t)hs->transport_dest_uid, ES_ENGINE);
