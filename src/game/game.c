@@ -1587,6 +1587,24 @@ bool G_PointInsideMap(vec2_t xz)
     return M_PointInsideMap(s_gs.map, xz);
 }
 
+bool G_PointOverWater(vec2_t xz)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(!s_gs.map)
+        return false;
+    return M_PointOverWater(s_gs.map, xz);
+}
+
+bool G_PointOverLand(vec2_t xz)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(!s_gs.map)
+        return false;
+    return M_PointOverLand(s_gs.map, xz);
+}
+
 void G_BakeNavDataForScene(void)
 {
     PERF_ENTER();

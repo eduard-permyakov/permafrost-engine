@@ -158,6 +158,8 @@ static PyObject *PyPf_set_minimap_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_minimap_border_clr(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_minimap_render_all_ents(PyObject *self, PyObject *args);
 static PyObject *PyPf_mouse_over_minimap(PyObject *self);
+static PyObject *PyPf_map_pos_over_water(PyObject *self, PyObject *args);
+static PyObject *PyPf_map_pos_over_land(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_nearest_pathable(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_pos_under_cursor(PyObject *self);
@@ -511,6 +513,14 @@ static PyMethodDef pf_module_methods[] = {
     {"mouse_over_minimap",
     (PyCFunction)PyPf_mouse_over_minimap, METH_NOARGS,
     "Returns true if the mouse cursor is over the minimap, false otherwise."},
+
+    {"map_pos_over_water",
+    (PyCFunction)PyPf_map_pos_over_water, METH_VARARGS,
+    "Returns true if the XZ position is over water."},
+
+    {"map_pos_over_land",
+    (PyCFunction)PyPf_map_pos_over_land, METH_VARARGS,
+    "Returns true if the XZ position is over land."},
 
     {"map_height_at_point",
     (PyCFunction)PyPf_map_height_at_point, METH_VARARGS,
@@ -1866,6 +1876,30 @@ static PyObject *PyPf_mouse_over_minimap(PyObject *self)
     }else {
         Py_RETURN_FALSE;
     }
+}
+
+static PyObject *PyPf_map_pos_over_water(PyObject *self, PyObject *args)
+{
+    float x, z;
+    if(!PyArg_ParseTuple(args, "ff", &x, &z)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two floats.");
+        return NULL;
+    }
+
+    bool result = G_PointOverWater((vec2_t){x, z});
+    return PyBool_FromLong(result);
+}
+
+static PyObject *PyPf_map_pos_over_land(PyObject *self, PyObject *args)
+{
+    float x, z;
+    if(!PyArg_ParseTuple(args, "ff", &x, &z)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two floats.");
+        return NULL;
+    }
+
+    bool result = G_PointOverLand((vec2_t){x, z});
+    return PyBool_FromLong(result);
 }
 
 static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args)

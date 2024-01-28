@@ -53,6 +53,7 @@
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
 #define CLAMP(a, min, max)  (MIN(MAX((a), (min)), (max)))
+#define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
 
 
 /*****************************************************************************/
@@ -893,5 +894,57 @@ void M_NavCellArrivalFieldUpdateToNearestPathable(const struct map *map,
     assert(map->nav_private);
     N_CellArrivalFieldUpdateToNearestPathable(map->nav_private, rdim, cdim, layer, enemies,
         start, center, inout, workspace, workspace_size);
+}
+
+bool M_PointOverWater(const struct map *map, vec2_t pos)
+{
+    if(!M_PointInsideMap(map, pos))
+        return false;
+    float height = M_HeightAtPoint(map, pos);
+    return (height <= 0.0f);
+}
+
+bool M_PointOverLand(const struct map *map, vec2_t pos)
+{
+    if(!M_PointInsideMap(map, pos))
+        return false;
+    float height = M_HeightAtPoint(map, pos);
+    return (height > 0.0f);
+}
+
+bool M_TileAdjacentToWater(const struct map *map, const struct tile_desc *td)
+{
+    struct map_resolution res;
+    M_GetResolution(map, &res);
+
+    struct tile_desc adjacent[9];
+    size_t nadjacent = M_Tile_Contour(1, td, res, adjacent, ARR_SIZE(adjacent));
+
+    for(int i = 0; i < nadjacent; i++) {
+        struct tile *tile = NULL;
+        M_TileForDesc(map, adjacent[i], &tile);
+        assert(tile);
+        if(M_Tile_BaseHeight(tile) <= 0.0f)
+            return true;
+    }
+    return false;
+}
+
+bool M_TileAdjacentToLand(const struct map *map, const struct tile_desc *td)
+{
+    struct map_resolution res;
+    M_GetResolution(map, &res);
+
+    struct tile_desc adjacent[9];
+    size_t nadjacent = M_Tile_Contour(1, td, res, adjacent, ARR_SIZE(adjacent));
+
+    for(int i = 0; i < nadjacent; i++) {
+        struct tile *tile = NULL;
+        M_TileForDesc(map, adjacent[i], &tile);
+        assert(tile);
+        if(M_Tile_BaseHeight(tile) > 0.0f)
+            return true;
+    }
+    return false;
 }
 

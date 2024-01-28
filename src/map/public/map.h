@@ -233,6 +233,30 @@ vec2_t M_WorldCoordsToNormMapCoords(const struct map *map, vec2_t xz);
 bool   M_PointInsideMap(const struct map *map, vec2_t xz);
 
 /* ------------------------------------------------------------------------
+ * Returns true if the XZ coordinate is over water.
+ * ------------------------------------------------------------------------
+ */
+bool   M_PointOverWater(const struct map *map, vec2_t pos);
+
+/* ------------------------------------------------------------------------
+ * Returns true if the XZ coordinate is over land.
+ * ------------------------------------------------------------------------
+ */
+bool   M_PointOverLand(const struct map *map, vec2_t pos);
+
+/* ------------------------------------------------------------------------
+ * Returns true if the tile has at least one adjacent tile over water.
+ * ------------------------------------------------------------------------
+ */
+bool   M_TileAdjacentToWater(const struct map *map, const struct tile_desc *td);
+
+/* ------------------------------------------------------------------------
+ * Returns true if the tile has at least one adjacent tile over land.
+ * ------------------------------------------------------------------------
+ */
+bool   M_TileAdjacentToLand(const struct map *map, const struct tile_desc *td);
+
+/* ------------------------------------------------------------------------
  * Returns an XZ coordinate that is contained within the map bounds. The 
  * 'xz' arg is truncated if it's outside the map range, or unchanged otherwise.
  * ------------------------------------------------------------------------
