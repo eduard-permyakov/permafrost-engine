@@ -36,6 +36,7 @@
 #include "map_private.h"
 #include "pfchunk.h"
 #include "public/map.h"
+#include "../sched.h"
 #include "../perf.h"
 #include "../camera.h"
 #include "../settings.h"
@@ -402,12 +403,8 @@ float M_HeightAtPoint(const struct map *map, vec2_t xz)
 
 bool M_DescForPoint2D(const struct map *map, vec2_t point_xz, struct tile_desc *out)
 {
-    struct map_resolution res = (struct map_resolution) {
-        .chunk_w = map->width,
-        .chunk_h = map->height,
-        .tile_w = TILES_PER_CHUNK_WIDTH,
-        .tile_h = TILES_PER_CHUNK_HEIGHT,
-    };
+    struct map_resolution res;
+    M_GetResolution(map, &res);
     return M_Tile_DescForPoint2D(res, map->pos, point_xz, out);
 }
 
@@ -685,24 +682,28 @@ bool M_NavLocationsReachable(const struct map *map, enum nav_layer layer,
     return N_LocationsReachable(map->nav_private, layer, map->pos, a, b);
 }
 
-void M_NavBlockersIncref(vec2_t xz_pos, float range, int faction_id, const struct map *map)
+void M_NavBlockersIncref(vec2_t xz_pos, float range, int faction_id, 
+                         uint32_t flags, const struct map *map)
 {
-    N_BlockersIncref(xz_pos, range, faction_id, map->pos, map->nav_private);
+    N_BlockersIncref(xz_pos, range, faction_id, flags, map->pos, map->nav_private);
 }
 
-void M_NavBlockersDecref(vec2_t xz_pos, float range, int faction_id, const struct map *map)
+void M_NavBlockersDecref(vec2_t xz_pos, float range, int faction_id, 
+                         uint32_t flags, const struct map *map)
 {
-    N_BlockersDecref(xz_pos, range, faction_id, map->pos, map->nav_private);
+    N_BlockersDecref(xz_pos, range, faction_id, flags, map->pos, map->nav_private);
 }
 
-void M_NavBlockersIncrefOBB(const struct map *map, int faction_id, const struct obb *obb)
+void M_NavBlockersIncrefOBB(const struct map *map, int faction_id, 
+                            uint32_t flags, const struct obb *obb)
 {
-    N_BlockersIncrefOBB(map->nav_private, faction_id, map->pos, obb);
+    N_BlockersIncrefOBB(map->nav_private, faction_id, flags, map->pos, obb);
 }
 
-void M_NavBlockersDecrefOBB(const struct map *map, int faction_id, const struct obb *obb)
+void M_NavBlockersDecrefOBB(const struct map *map, int faction_id, 
+                            uint32_t flags, const struct obb *obb)
 {
-    N_BlockersDecrefOBB(map->nav_private, faction_id, map->pos, obb);
+    N_BlockersDecrefOBB(map->nav_private, faction_id, flags, map->pos, obb);
 }
 
 bool M_TileForDesc(const struct map *map, struct tile_desc desc, struct tile **out)
@@ -898,24 +899,37 @@ void M_NavCellArrivalFieldUpdateToNearestPathable(const struct map *map,
 
 bool M_PointOverWater(const struct map *map, vec2_t pos)
 {
-    if(!M_PointInsideMap(map, pos))
+    struct tile *tile = NULL;
+    struct tile_desc td;
+    if(!M_DescForPoint2D(map, pos, &td))
         return false;
-    float height = M_HeightAtPoint(map, pos);
-    return (height <= 0.0f);
+    M_TileForDesc(map, td, &tile);
+    assert(tile);
+    return (M_Tile_BaseHeight(tile) <= 0);
 }
 
 bool M_PointOverLand(const struct map *map, vec2_t pos)
 {
-    if(!M_PointInsideMap(map, pos))
+    struct tile *tile = NULL;
+    struct tile_desc td;
+    if(!M_DescForPoint2D(map, pos, &td))
         return false;
-    float height = M_HeightAtPoint(map, pos);
-    return (height > 0.0f);
+    M_TileForDesc(map, td, &tile);
+    assert(tile);
+    return (M_Tile_BaseHeight(tile) > 0);
 }
 
 bool M_TileAdjacentToWater(const struct map *map, const struct tile_desc *td)
 {
     struct map_resolution res;
     M_GetResolution(map, &res);
+
+    struct tile *tile = NULL;
+    M_TileForDesc(map, *td, &tile);
+    assert(tile);
+
+    if(M_Tile_BaseHeight(tile) <= 0)
+        return true;
 
     struct tile_desc adjacent[9];
     size_t nadjacent = M_Tile_Contour(1, td, res, adjacent, ARR_SIZE(adjacent));
@@ -924,7 +938,7 @@ bool M_TileAdjacentToWater(const struct map *map, const struct tile_desc *td)
         struct tile *tile = NULL;
         M_TileForDesc(map, adjacent[i], &tile);
         assert(tile);
-        if(M_Tile_BaseHeight(tile) <= 0.0f)
+        if(M_Tile_BaseHeight(tile) <= 0)
             return true;
     }
     return false;
@@ -938,11 +952,52 @@ bool M_TileAdjacentToLand(const struct map *map, const struct tile_desc *td)
     struct tile_desc adjacent[9];
     size_t nadjacent = M_Tile_Contour(1, td, res, adjacent, ARR_SIZE(adjacent));
 
+    struct tile *tile = NULL;
+    M_TileForDesc(map, *td, &tile);
+    assert(tile);
+
+    if(M_Tile_BaseHeight(tile) > 0)
+        return true;
+
     for(int i = 0; i < nadjacent; i++) {
         struct tile *tile = NULL;
         M_TileForDesc(map, adjacent[i], &tile);
         assert(tile);
-        if(M_Tile_BaseHeight(tile) > 0.0f)
+        if(M_Tile_BaseHeight(tile) > 0)
+            return true;
+    }
+    return false;
+}
+
+bool M_ObjectAdjacentToWater(const struct map *map, const struct obb *obb)
+{
+    assert(Sched_UsingBigStack());
+
+    struct map_resolution res;
+    M_GetResolution(map, &res);
+
+    struct tile_desc tds[1024];
+    size_t ntiles = M_Tile_AllUnderObj(map->pos, res, obb, tds, ARR_SIZE(tds));
+
+    for(int i = 0; i < ntiles; i++) {
+        if(M_TileAdjacentToWater(map, &tds[i]))
+            return true;
+    }
+    return false;
+}
+
+bool M_ObjectAdjacentToLand(const struct map *map, const struct obb *obb)
+{
+    assert(Sched_UsingBigStack());
+
+    struct map_resolution res;
+    M_GetResolution(map, &res);
+
+    struct tile_desc tds[1024];
+    size_t ntiles = M_Tile_AllUnderObj(map->pos, res, obb, tds, ARR_SIZE(tds));
+
+    for(int i = 0; i < ntiles; i++) {
+        if(M_TileAdjacentToLand(map, &tds[i]))
             return true;
     }
     return false;

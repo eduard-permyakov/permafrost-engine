@@ -500,7 +500,7 @@ void G_Building_RemoveEntity(uint32_t uid)
     assert(bs);
 
     if(bs->state >= BUILDING_STATE_FOUNDED && bs->blocking) {
-        M_NavBlockersDecrefOBB(s_map, G_GetFactionID(uid), &bs->obb);
+        M_NavBlockersDecrefOBB(s_map, G_GetFactionID(uid), G_FlagsGet(uid), &bs->obb);
         struct entity_block_desc *desc = stalloc(&s_eventargs, sizeof(struct entity_block_desc));
         *desc = (struct entity_block_desc){
             .uid = uid,
@@ -603,7 +603,7 @@ bool G_Building_Found(uint32_t uid, bool blocking)
 
     bs->blocking = blocking;
     if(bs->blocking) {
-        M_NavBlockersIncrefOBB(s_map, G_GetFactionID(uid), &obb);
+        M_NavBlockersIncrefOBB(s_map, G_GetFactionID(uid), ent_flags, &obb);
         bs->obb = obb;
     }
 
@@ -685,7 +685,6 @@ bool G_Building_Unobstructed(uint32_t uid)
 {
     struct obb obb;
     Entity_CurrentOBB(uid, &obb, true);
-
     return M_NavObjectBuildable(s_map, NAV_LAYER_GROUND_1X1, &obb);
 }
 
@@ -763,9 +762,10 @@ void G_Building_UpdateBounds(uint32_t uid)
     if(!bs->blocking)
         return;
 
-    M_NavBlockersDecrefOBB(s_map, G_GetFactionID(uid), &bs->obb);
+    uint32_t flags = G_FlagsGet(uid);
+    M_NavBlockersDecrefOBB(s_map, G_GetFactionID(uid), flags, &bs->obb);
     Entity_CurrentOBB(uid, &bs->obb, true);
-    M_NavBlockersIncrefOBB(s_map, G_GetFactionID(uid), &bs->obb);
+    M_NavBlockersIncrefOBB(s_map, G_GetFactionID(uid), flags, &bs->obb);
 }
 
 void G_Building_UpdateFactionID(uint32_t uid, int oldfac, int newfac)
@@ -780,8 +780,9 @@ void G_Building_UpdateFactionID(uint32_t uid, int oldfac, int newfac)
     if(!bs->blocking)
         return;
 
-    M_NavBlockersDecrefOBB(s_map, oldfac, &bs->obb);
-    M_NavBlockersIncrefOBB(s_map, newfac, &bs->obb);
+    uint32_t flags = G_FlagsGet(uid);
+    M_NavBlockersDecrefOBB(s_map, oldfac, flags, &bs->obb);
+    M_NavBlockersIncrefOBB(s_map, newfac, flags, &bs->obb);
 }
 
 bool G_Building_NeedsRepair(uint32_t uid)

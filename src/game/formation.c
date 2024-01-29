@@ -1221,7 +1221,8 @@ static void map_block_cells(struct map *map, struct subformation *sub)
         struct cell *cell = &vec_AT(&sub->cells, i);
         if(cell->state != CELL_OCCUPIED)
             continue;
-        M_NavBlockersIncref(cell->pos, radius, faction_id, map);
+        M_NavBlockersIncref(cell->pos, radius, faction_id, 0, map);
+        M_NavBlockersIncref(cell->pos, radius, faction_id, ENTITY_FLAG_WATER, map);
     }
 }
 
@@ -4665,8 +4666,9 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
         float radius = G_GetSelectionRadius(uid);
         vec2_t pos = G_Pos_GetXZ(uid);
         int faction_id = G_GetFactionID(uid);
+        uint32_t flags = G_FlagsGet(uid);
         if(G_Move_Still(uid)) {
-            M_NavBlockersDecref(pos, radius, faction_id, map);
+            M_NavBlockersDecref(pos, radius, faction_id, flags, map);
         }
     }
 

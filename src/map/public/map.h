@@ -257,6 +257,14 @@ bool   M_TileAdjacentToWater(const struct map *map, const struct tile_desc *td);
 bool   M_TileAdjacentToLand(const struct map *map, const struct tile_desc *td);
 
 /* ------------------------------------------------------------------------
+ * Returns true if any of the tiles under the object are adjacent to water
+ * or land.
+ * ------------------------------------------------------------------------
+ */
+bool   M_ObjectAdjacentToWater(const struct map *map, const struct obb *obb);
+bool   M_ObjectAdjacentToLand(const struct map *map, const struct obb *obb);
+
+/* ------------------------------------------------------------------------
  * Returns an XZ coordinate that is contained within the map bounds. The 
  * 'xz' arg is truncated if it's outside the map range, or unchanged otherwise.
  * ------------------------------------------------------------------------
@@ -429,11 +437,15 @@ bool M_NavLocationsReachable(const struct map *map, enum nav_layer layer,
  * count of greater than 0.
  * ------------------------------------------------------------------------
  */
-void   M_NavBlockersIncref(vec2_t xz_pos, float range, int faction_id, const struct map *map);
-void   M_NavBlockersDecref(vec2_t xz_pos, float range, int faction_id, const struct map *map);
+void   M_NavBlockersIncref(vec2_t xz_pos, float range, int faction_id, 
+                           uint32_t flags, const struct map *map);
+void   M_NavBlockersDecref(vec2_t xz_pos, float range, int faction_id, 
+                           uint32_t flags, const struct map *map);
 
-void   M_NavBlockersIncrefOBB(const struct map *map, int faction_id, const struct obb *obb);
-void   M_NavBlockersDecrefOBB(const struct map *map, int faction_id, const struct obb *obb);
+void   M_NavBlockersIncrefOBB(const struct map *map, int faction_id, 
+                              uint32_t flags, const struct obb *obb);
+void   M_NavBlockersDecrefOBB(const struct map *map, int faction_id, 
+                              uint32_t flags, const struct obb *obb);
 
 /* ------------------------------------------------------------------------
  * Wrapper around navigation APIs.

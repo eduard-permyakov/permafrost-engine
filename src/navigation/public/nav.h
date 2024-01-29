@@ -78,6 +78,10 @@ enum nav_layer{
     NAV_LAYER_GROUND_3X3,
     NAV_LAYER_GROUND_5X5,
     NAV_LAYER_GROUND_7X7,
+    NAV_LAYER_WATER_1X1,
+    NAV_LAYER_WATER_3X3,
+    NAV_LAYER_WATER_5X5,
+    NAV_LAYER_WATER_7X7,
     NAV_LAYER_MAX,
 };
 
@@ -413,14 +417,14 @@ bool N_LocationsReachable(void *nav_private, enum nav_layer layer,
  * 'occupying' which tiles.
  * ------------------------------------------------------------------------
  */
-void      N_BlockersIncref(vec2_t xz_pos, float range, int faction_id, 
+void      N_BlockersIncref(vec2_t xz_pos, float range, int faction_id, uint32_t flags,
                            vec3_t map_pos, void *nav_private);
-void      N_BlockersDecref(vec2_t xz_pos, float range, int faction_id, 
+void      N_BlockersDecref(vec2_t xz_pos, float range, int faction_id, uint32_t flags,
                            vec3_t map_pos, void *nav_private);
 
-void      N_BlockersIncrefOBB(void *nav_private, int faction_id, 
+void      N_BlockersIncrefOBB(void *nav_private, int faction_id, uint32_t flags,
                               vec3_t map_pos, const struct obb *obb);
-void      N_BlockersDecrefOBB(void *nav_private, int faction_id, 
+void      N_BlockersDecrefOBB(void *nav_private, int faction_id, uint32_t flags,
                               vec3_t map_pos, const struct obb *obb);
 
 /* ------------------------------------------------------------------------

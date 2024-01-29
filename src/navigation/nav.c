@@ -181,7 +181,18 @@ static bool n_tile_pathable(const struct tile *tile)
 {
     if(!tile->pathable)
         return false;
+    if(tile->base_height < -1)
+        return false;
     if(tile->type != TILETYPE_FLAT && tile->ramp_height > 1)
+        return false;
+    return true;
+}
+
+static bool n_tile_water_pathable(const struct tile *tile)
+{
+    if(!tile->pathable)
+        return false;
+    if(tile->base_height + tile->ramp_height > -1)
         return false;
     return true;
 }
@@ -209,7 +220,14 @@ static struct map_resolution n_res(void *nav_private)
     };
 }
 
-static void n_set_cost_for_tile(struct nav_chunk *chunk, 
+static bool n_height_pathable(enum nav_layer layer, int height)
+{
+    if(layer >= NAV_LAYER_WATER_1X1 && layer < NAV_LAYER_MAX)
+        return (height <= -1);
+    return (height >= -1);
+}
+
+static void n_set_cost_for_tile(enum nav_layer layer, struct nav_chunk *chunk, 
                                 size_t chunk_w, size_t chunk_h,
                                 size_t tile_r,  size_t tile_c,
                                 const struct tile *tile)
@@ -272,9 +290,17 @@ static void n_set_cost_for_tile(struct nav_chunk *chunk,
     for(int r = 0; r < 2; r++) {
     for(int c = 0; c < 2; c++) {
 
-        chunk->cost_base[r_base + r][c_base + c] = n_tile_pathable(tile) ? 1 
-                                                 : tile_path_map[r][c]   ? 1
-                                                 : COST_IMPASSABLE;
+        bool pathable = false;
+        if(layer >= 0 && layer < NAV_LAYER_WATER_1X1)
+            pathable = n_tile_pathable(tile);
+        if(layer >= NAV_LAYER_WATER_1X1 && layer < NAV_LAYER_MAX)
+            pathable = n_tile_water_pathable(tile);
+
+        float corner_height = M_Tile_HeightAtPos(tile, c, r);
+        chunk->cost_base[r_base + r][c_base + c] = 
+              pathable                                                       ? 1 
+            : tile_path_map[r][c] && n_height_pathable(layer, corner_height) ? 1
+            : COST_IMPASSABLE;
     }}
 }
 
@@ -964,8 +990,8 @@ static void n_update_blockers(struct nav_private *priv, enum nav_layer layer, in
     }
 }
 
-static void n_update_blockers_circle(struct nav_private *priv, vec2_t xz_pos, float range, 
-                                     int faction_id, vec3_t map_pos, int ref_delta)
+static void n_update_blockers_circle_ground(struct nav_private *priv, vec2_t xz_pos, float range, 
+                                            int faction_id, vec3_t map_pos, int ref_delta)
 {
     struct tile_desc tds[1024];
     int ntds = M_Tile_AllUnderCircle(n_res(priv), xz_pos, range, map_pos, tds, ARR_SIZE(tds));
@@ -992,8 +1018,36 @@ static void n_update_blockers_circle(struct nav_private *priv, vec2_t xz_pos, fl
     n_update_blockers(priv, NAV_LAYER_GROUND_7X7, faction_id, outline7x7, noutline7x7, ref_delta);
 }
 
-static void n_update_blockers_obb(struct nav_private *priv, const struct obb *obb, 
-                                  int faction_id, vec3_t map_pos, int ref_delta)
+static void n_update_blockers_circle_water(struct nav_private *priv, vec2_t xz_pos, float range, 
+                                           int faction_id, vec3_t map_pos, int ref_delta)
+{
+    struct tile_desc tds[1024];
+    int ntds = M_Tile_AllUnderCircle(n_res(priv), xz_pos, range, map_pos, tds, ARR_SIZE(tds));
+    n_update_blockers(priv, NAV_LAYER_WATER_1X1, faction_id, tds, ntds, ref_delta);
+
+    struct tile_desc outline3x3[1024];
+    int noutline3x3 = M_Tile_Contour(ntds, tds, n_res(priv), outline3x3, ARR_SIZE(outline3x3));
+    n_update_blockers(priv, NAV_LAYER_WATER_3X3, faction_id, tds, ntds, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_WATER_3X3, faction_id, outline3x3, noutline3x3, ref_delta);
+
+    struct tile_desc outline5x5[1024];
+    int noutline5x5 = M_Tile_Contour(noutline3x3, outline3x3, n_res(priv), outline5x5, 
+        ARR_SIZE(outline5x5));
+    n_update_blockers(priv, NAV_LAYER_WATER_5X5, faction_id, tds, ntds, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_WATER_5X5, faction_id, outline3x3, noutline3x3, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_WATER_5X5, faction_id, outline5x5, noutline5x5, ref_delta);
+
+    struct tile_desc outline7x7[1024];
+    int noutline7x7 = M_Tile_Contour(noutline5x5, outline5x5, n_res(priv), outline7x7, 
+        ARR_SIZE(outline7x7));
+    n_update_blockers(priv, NAV_LAYER_WATER_7X7, faction_id, tds, ntds, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_WATER_7X7, faction_id, outline3x3, noutline3x3, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_WATER_7X7, faction_id, outline5x5, noutline5x5, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_WATER_7X7, faction_id, outline7x7, noutline7x7, ref_delta);
+}
+
+static void n_update_blockers_obb_ground(struct nav_private *priv, const struct obb *obb, 
+                                         int faction_id, vec3_t map_pos, int ref_delta)
 {
     struct tile_desc tds[1024];
     int ntds = M_Tile_AllUnderObj(map_pos, n_res(priv), obb, tds, ARR_SIZE(tds));
@@ -1016,6 +1070,32 @@ static void n_update_blockers_obb(struct nav_private *priv, const struct obb *ob
     n_update_blockers(priv, NAV_LAYER_GROUND_7X7, faction_id, outline3x3, noutline3x3, ref_delta);
     n_update_blockers(priv, NAV_LAYER_GROUND_7X7, faction_id, outline5x5, noutline5x5, ref_delta);
     n_update_blockers(priv, NAV_LAYER_GROUND_7X7, faction_id, outline7x7, noutline7x7, ref_delta);
+}
+
+static void n_update_blockers_obb_water(struct nav_private *priv, const struct obb *obb, 
+                                        int faction_id, vec3_t map_pos, int ref_delta)
+{
+    struct tile_desc tds[1024];
+    int ntds = M_Tile_AllUnderObj(map_pos, n_res(priv), obb, tds, ARR_SIZE(tds));
+    n_update_blockers(priv, NAV_LAYER_WATER_1X1, faction_id, tds, ntds, ref_delta);
+
+    struct tile_desc outline3x3[1024];
+    int noutline3x3 = M_Tile_Contour(ntds, tds, n_res(priv), outline3x3, ARR_SIZE(outline3x3));
+    n_update_blockers(priv, NAV_LAYER_WATER_3X3, faction_id, tds, ntds, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_WATER_3X3, faction_id, outline3x3, noutline3x3, ref_delta);
+
+    struct tile_desc outline5x5[1024];
+    int noutline5x5 = M_Tile_Contour(noutline3x3, outline3x3, n_res(priv), outline5x5, ARR_SIZE(outline5x5));
+    n_update_blockers(priv, NAV_LAYER_WATER_5X5, faction_id, tds, ntds, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_WATER_5X5, faction_id, outline3x3, noutline3x3, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_WATER_5X5, faction_id, outline5x5, noutline5x5, ref_delta);
+
+    struct tile_desc outline7x7[1024];
+    int noutline7x7 = M_Tile_Contour(noutline5x5, outline5x5, n_res(priv), outline7x7, ARR_SIZE(outline7x7));
+    n_update_blockers(priv, NAV_LAYER_WATER_7X7, faction_id, tds, ntds, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_WATER_7X7, faction_id, outline3x3, noutline3x3, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_WATER_7X7, faction_id, outline5x5, noutline5x5, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_WATER_7X7, faction_id, outline7x7, noutline7x7, ref_delta);
 }
 
 static int manhattan_dist(struct tile_desc a, struct tile_desc b)
@@ -1952,7 +2032,8 @@ void *N_BuildForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
 
                 if(update) {
                     const struct tile *curr_tile = &curr_tiles[tile_r * chunk_w + tile_c];
-                    n_set_cost_for_tile(curr_chunk, chunk_w, chunk_h, tile_r, tile_c, curr_tile);
+                    n_set_cost_for_tile(layer, curr_chunk, chunk_w, chunk_h, 
+                        tile_r, tile_c, curr_tile);
                 }else{
                     n_clear_cost_for_tile(curr_chunk, chunk_w, chunk_h, tile_r, tile_c);
                 }
@@ -3303,24 +3384,44 @@ vec2_t N_TileDims(void)
     };
 }
 
-void N_BlockersIncref(vec2_t xz_pos, float range, int faction_id, vec3_t map_pos, void *nav_private)
+void N_BlockersIncref(vec2_t xz_pos, float range, int faction_id, uint32_t flags,
+                      vec3_t map_pos, void *nav_private)
 {
-    n_update_blockers_circle(nav_private, xz_pos, range, faction_id, map_pos, +1);
+    if(flags & ENTITY_FLAG_WATER) {
+        n_update_blockers_circle_water(nav_private, xz_pos, range, faction_id, map_pos, +1);
+    }else{
+        n_update_blockers_circle_ground(nav_private, xz_pos, range, faction_id, map_pos, +1);
+    }
 }
 
-void N_BlockersDecref(vec2_t xz_pos, float range, int faction_id, vec3_t map_pos, void *nav_private)
+void N_BlockersDecref(vec2_t xz_pos, float range, int faction_id, uint32_t flags,
+                      vec3_t map_pos, void *nav_private)
 {
-    n_update_blockers_circle(nav_private, xz_pos, range, faction_id, map_pos, -1);
+    if(flags & ENTITY_FLAG_WATER) {
+        n_update_blockers_circle_water(nav_private, xz_pos, range, faction_id, map_pos, -1);
+    }else{
+        n_update_blockers_circle_ground(nav_private, xz_pos, range, faction_id, map_pos, -1);
+    }
 }
 
-void N_BlockersIncrefOBB(void *nav_private, int faction_id, vec3_t map_pos, const struct obb *obb)
+void N_BlockersIncrefOBB(void *nav_private, int faction_id, uint32_t flags,
+                         vec3_t map_pos, const struct obb *obb)
 {
-    n_update_blockers_obb(nav_private, obb, faction_id, map_pos, +1);
+    if(flags & ENTITY_FLAG_WATER) {
+        n_update_blockers_obb_water(nav_private, obb, faction_id, map_pos, +1);
+    }else{
+        n_update_blockers_obb_ground(nav_private, obb, faction_id, map_pos, +1);
+    }
 }
 
-void N_BlockersDecrefOBB(void *nav_private, int faction_id, vec3_t map_pos, const struct obb *obb)
+void N_BlockersDecrefOBB(void *nav_private, int faction_id, uint32_t flags,
+                         vec3_t map_pos, const struct obb *obb)
 {
-    n_update_blockers_obb(nav_private, obb, faction_id, map_pos, -1);
+    if(flags & ENTITY_FLAG_WATER) {
+        n_update_blockers_obb_water(nav_private, obb, faction_id, map_pos, -1);
+    }else{
+        n_update_blockers_obb_ground(nav_private, obb, faction_id, map_pos, +1);
+    }
 }
 
 bool N_IsMaximallyClose(void *nav_private, enum nav_layer layer, vec3_t map_pos, 

@@ -410,8 +410,9 @@ static void entity_block(uint32_t uid)
 {
     float sel_radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
     vec2_t pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
+    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
     M_NavBlockersIncref(pos, sel_radius, 
-        G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid), s_map);
+        G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid), flags, s_map);
 
     struct movestate *ms = movestate_get(uid);
     assert(!ms->blocking);
@@ -434,7 +435,8 @@ static void entity_unblock(uint32_t uid)
     assert(ms->blocking);
 
     int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
-    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, faction_id, s_map);
+    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, faction_id, flags, s_map);
     ms->blocking = false;
 
     struct entity_block_desc *desc = stalloc(&s_eventargs, sizeof(struct entity_block_desc));
@@ -565,7 +567,8 @@ static void filter_selection_pathable(const vec_entity_t *in_sel, vec_entity_t *
 
         vec2_t xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr);
         float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr);
-        if(!M_NavPositionPathable(s_map, Entity_NavLayerWithRadius(radius), xz_pos))
+        uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, curr);
+        if(!M_NavPositionPathable(s_map, Entity_NavLayerWithRadius(flags, radius), xz_pos))
             continue;
         vec_entity_push(out_sel, curr);
     }
@@ -583,7 +586,8 @@ static void split_into_layers(const vec_entity_t *sel, vec_entity_t layer_flocks
 
         uint32_t curr = vec_AT(sel, i);
         float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr);
-        enum nav_layer layer = Entity_NavLayerWithRadius(radius);
+        uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, curr);
+        enum nav_layer layer = Entity_NavLayerWithRadius(flags, radius);
         vec_entity_push(&layer_flocks[layer], curr);
     }
 }
@@ -983,7 +987,8 @@ static void on_render_3d(void *user, void *event)
                 if(ms->using_surround_field) {
                     float radius = G_GetSelectionRadiusFrom(
                         s_move_work.gamestate.sel_radiuses, ent);
-                    int layer = Entity_NavLayerWithRadius(radius); 
+                    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, ent);
+                    int layer = Entity_NavLayerWithRadius(flags, radius); 
                     M_NavRenderVisibleSurroundField(s_map, cam, layer, ms->surround_target_uid);
                     UI_DrawText("(Surround Field)", (struct rect){5,75,600,50}, text_color);
                 }else{
@@ -999,7 +1004,8 @@ static void on_render_3d(void *user, void *event)
             case STATE_SEEK_ENEMIES: {
                 float radius = G_GetSelectionRadiusFrom(
                     s_move_work.gamestate.sel_radiuses, ent);
-                int layer = Entity_NavLayerWithRadius(radius); 
+                uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, ent);
+                int layer = Entity_NavLayerWithRadius(flags, radius); 
                 int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, ent);
                 M_NavRenderVisibleEnemySeekField(s_map, cam, layer, faction_id);
                 break;
@@ -1087,7 +1093,8 @@ static void request_async_field(uint32_t uid)
     switch(ms->state) {
     case STATE_SEEK_ENEMIES:  {
         float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
-        int layer = Entity_NavLayerWithRadius(radius);
+        uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+        int layer = Entity_NavLayerWithRadius(flags, radius);
         int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
         return M_NavRequestAsyncEnemySeekField(s_map, layer, pos_xz, faction_id);
     }
@@ -1098,7 +1105,8 @@ static void request_async_field(uint32_t uid)
 
         if(ms->using_surround_field) {
             float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
-            int layer = Entity_NavLayerWithRadius(radius);
+            uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+            int layer = Entity_NavLayerWithRadius(flags, radius);
             int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
             return M_NavRequestAsyncSurroundField(s_map, layer, pos_xz, 
                 ms->surround_target_uid, faction_id);
@@ -1124,7 +1132,8 @@ static vec2_t ent_desired_velocity(uint32_t uid)
 
     case STATE_SEEK_ENEMIES:  {
         float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
-        int layer = Entity_NavLayerWithRadius(radius);
+        uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+        int layer = Entity_NavLayerWithRadius(flags, radius);
         int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
         return M_NavDesiredEnemySeekVelocity(s_map, layer, pos_xz, faction_id);
     }
@@ -1150,7 +1159,8 @@ static vec2_t ent_desired_velocity(uint32_t uid)
 
         if(ms->using_surround_field) {
             float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
-            int layer = Entity_NavLayerWithRadius(radius);
+            uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+            int layer = Entity_NavLayerWithRadius(flags, radius);
             int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
             return M_NavDesiredSurroundVelocity(s_map, layer, pos_xz, 
                 ms->surround_target_uid, faction_id);
@@ -1479,7 +1489,8 @@ static void nullify_impass_components(uint32_t uid, vec2_t *inout_force)
 {
     vec2_t nt_dims = N_TileDims();
     float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
-    enum nav_layer layer = Entity_NavLayerWithRadius(radius);
+    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+    enum nav_layer layer = Entity_NavLayerWithRadius(flags, radius);
 
     vec2_t pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
     vec2_t left =  (vec2_t){pos.x + nt_dims.x, pos.z};
@@ -1757,7 +1768,8 @@ static bool arrived(uint32_t uid)
     PFM_Vec2_Sub((vec2_t*)&flock->target_xz, &xz_pos, &diff_to_target);
     float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
     float arrive_thresh = radius * 1.5f;
-    enum nav_layer layer = Entity_NavLayerWithRadius(radius);
+    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+    enum nav_layer layer = Entity_NavLayerWithRadius(flags, radius);
 
     if(PFM_Vec2_Len(&diff_to_target) < arrive_thresh
     || (M_NavIsAdjacentToImpassable(s_map, layer, xz_pos) 
@@ -1765,6 +1777,14 @@ static bool arrived(uint32_t uid)
         return true;
     }
     return false;
+}
+
+static float unit_height(uint32_t uid, vec2_t pos)
+{
+    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+    if(flags & ENTITY_FLAG_WATER)
+        return 0.0f;
+    return M_HeightAtPoint(s_map, pos);
 }
 
 static void entity_update(uint32_t uid, vec2_t new_vel)
@@ -1775,12 +1795,13 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
 
     vec2_t new_pos_xz = new_pos_for_vel(uid, new_vel);
     float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
-    enum nav_layer layer = Entity_NavLayerWithRadius(radius);
+    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+    enum nav_layer layer = Entity_NavLayerWithRadius(flags, radius);
 
     if(PFM_Vec2_Len(&new_vel) > 0
     && M_NavPositionPathable(s_map, layer, new_pos_xz)) {
     
-        vec3_t new_pos = (vec3_t){new_pos_xz.x, M_HeightAtPoint(s_map, new_pos_xz), new_pos_xz.z};
+        vec3_t new_pos = (vec3_t){new_pos_xz.x, unit_height(uid, new_pos_xz), new_pos_xz.z};
         G_Pos_Set(uid, new_pos);
         flush_update_pos_commands(uid);
         ms->velocity = new_vel;
@@ -2178,7 +2199,8 @@ static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack)
     ASSERT_IN_MAIN_THREAD();
 
     float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
-    enum nav_layer layer = Entity_NavLayerWithRadius(radius);
+    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+    enum nav_layer layer = Entity_NavLayerWithRadius(flags, radius);
     vec2_t pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
     dest_xz = M_NavClosestReachableDest(s_map, layer, pos, dest_xz);
 
@@ -2267,8 +2289,9 @@ static void do_set_enter_range(uint32_t uid, uint32_t target, float range)
         return;
     }
 
+    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
     vec2_t xz_target = M_NavClosestReachableInRange(s_map, 
-        Entity_NavLayerWithRadius(radius), xz_src, xz_dst, range);
+        Entity_NavLayerWithRadius(flags, radius), xz_src, xz_dst, range);
     do_set_dest(uid, xz_target, false);
 
     ms->state = STATE_ENTER_ENTITY_RANGE;
@@ -2330,7 +2353,7 @@ static void do_update_pos(uint32_t uid, vec2_t pos)
 
     vec3_t newpos = {
         pos.x,
-        M_HeightAtPoint(s_map, pos),
+        unit_height(uid, pos),
         pos.z
     };
 
@@ -2345,8 +2368,9 @@ static void do_update_pos(uint32_t uid, vec2_t pos)
         return;
 
     int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
-    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, faction_id, s_map);
-    M_NavBlockersIncref(pos, ms->last_stop_radius, faction_id, s_map);
+    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, faction_id, flags, s_map);
+    M_NavBlockersIncref(pos, ms->last_stop_radius, faction_id, flags, s_map);
     ms->last_stop_pos = pos;
 }
 
@@ -2365,8 +2389,9 @@ static void do_update_faction_id(uint32_t uid, int oldfac, int newfac)
     if(!ms->blocking)
         return;
 
-    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, oldfac, s_map);
-    M_NavBlockersIncref(ms->last_stop_pos, ms->last_stop_radius, newfac, s_map);
+    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, oldfac, flags, s_map);
+    M_NavBlockersIncref(ms->last_stop_pos, ms->last_stop_radius, newfac, flags, s_map);
 }
 
 static void do_update_selection_radius(uint32_t uid, float sel_radius)
@@ -2385,8 +2410,9 @@ static void do_update_selection_radius(uint32_t uid, float sel_radius)
         return;
 
     int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
-    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, faction_id, s_map);
-    M_NavBlockersIncref(ms->last_stop_pos, sel_radius, faction_id, s_map);
+    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, faction_id, flags, s_map);
+    M_NavBlockersIncref(ms->last_stop_pos, sel_radius, faction_id, flags, s_map);
     ms->last_stop_radius = sel_radius;
 }
 

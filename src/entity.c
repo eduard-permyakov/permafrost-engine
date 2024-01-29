@@ -214,12 +214,13 @@ static struct result disappear_task(void *arg)
     struct dis_arg darg = *(struct dis_arg*)arg;
     vec3_t start_pos = G_Pos_Get(darg.uid);
     int faction_id = G_GetFactionID(darg.uid);
+    uint32_t flags = G_FlagsGet(darg.uid);
 
     struct obb obb;
     Entity_CurrentOBB(darg.uid, &obb, false);
 
     if(darg.map) {
-        M_NavBlockersIncrefOBB(darg.map, faction_id, &obb);
+        M_NavBlockersIncrefOBB(darg.map, faction_id, flags, &obb);
     }
 
     int height = obb.half_lengths[1] * 2.0f;
@@ -267,7 +268,7 @@ static struct result disappear_task(void *arg)
     }
 
     if(darg.map) {
-        M_NavBlockersDecrefOBB(darg.map, faction_id, &obb);
+        M_NavBlockersDecrefOBB(darg.map, faction_id, flags, &obb);
     }
 
     if(darg.on_finish) {
@@ -512,19 +513,21 @@ int Entity_NavLayer(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
     float radius = G_GetSelectionRadius(uid);
-    return Entity_NavLayerWithRadius(radius);
+    uint32_t flags = G_FlagsGet(uid);
+    return Entity_NavLayerWithRadius(flags, radius);
 }
 
-int Entity_NavLayerWithRadius(float radius)
+int Entity_NavLayerWithRadius(uint32_t flags, float radius)
 {
+    bool water = !!(flags & ENTITY_FLAG_WATER);
     if(radius >= 15.0f) {
-        return NAV_LAYER_GROUND_7X7;
+        return water ? NAV_LAYER_WATER_7X7 : NAV_LAYER_GROUND_7X7;
     }else if(radius >= 10.0f) {
-        return NAV_LAYER_GROUND_5X5;
+        return water ? NAV_LAYER_WATER_5X5 : NAV_LAYER_GROUND_5X5;
     }else if(radius >= 5.0f) {
-        return NAV_LAYER_GROUND_3X3;
+        return water ? NAV_LAYER_WATER_3X3 : NAV_LAYER_GROUND_3X3;
     }else{
-        return NAV_LAYER_GROUND_1X1;
+        return water ? NAV_LAYER_WATER_1X1 : NAV_LAYER_GROUND_1X1;
     }
 }
 
