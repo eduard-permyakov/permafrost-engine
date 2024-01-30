@@ -968,6 +968,131 @@ static PyTypeObject PyWaterEntity_type = {
 };
 
 /*****************************************************************************/
+/* pf.GarrisonEntity                                                         */
+/*****************************************************************************/
+
+typedef struct {
+    PyEntityObject super; 
+}PyGarrisonEntityObject;
+
+static PyObject *PyGarrisonEntity_garrison(PyGarrisonEntityObject *self, PyObject *args);
+static PyObject *PyGarrisonEntity_del(PyGarrisonEntityObject *self);
+static PyObject *PyGarrisonEntity_pickle(PyGarrisonEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyGarrisonEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
+
+static PyObject *PyGarrisonEntity_get_garrison_capacity(PyGarrisonEntityObject *self, 
+                                                        void *closure);
+static int       PyGarrisonEntity_set_garrison_capacity(PyGarrisonEntityObject *self, 
+                                                        PyObject *value, void *closure);
+
+static PyGetSetDef PyGarrisonEntity_getset[] = {
+    {"garrison_capacity",
+    (getter)PyGarrisonEntity_get_garrison_capacity, (setter)PyGarrisonEntity_set_garrison_capacity,
+    "The capacity of the garrisonable entity that is used up when this entity is garrisoned.",
+    NULL},
+    {NULL}  /* Sentinel */
+};
+
+static PyMethodDef PyGarrisonEntity_methods[] = {
+
+    {"garrison", 
+    (PyCFunction)PyGarrisonEntity_garrison, METH_VARARGS,
+    "Issues a 'garrison' order to the entity to try and enter the garrisonable entity specified "
+    "by the argument."},
+
+    {"__del__", 
+    (PyCFunction)PyGarrisonEntity_del, METH_NOARGS,
+    "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
+
+    {"__pickle__", 
+    (PyCFunction)PyGarrisonEntity_pickle, METH_KEYWORDS,
+    "Serialize a Permafrost Engine combatable entity to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyGarrisonEntity_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
+    "Create a new pf.GarrisonEntity instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyGarrisonEntity_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name      = "pf.GarrisonEntity",
+    .tp_basicsize = sizeof(PyGarrisonEntityObject), 
+    .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc       = "Permafrost Engine entity that is able to be garrisoned inside buildings or "
+                    "transport units. This is a subclass of pf.Entity.",
+    .tp_methods   = PyGarrisonEntity_methods,
+    .tp_getset    = PyGarrisonEntity_getset,
+    .tp_base      = &PyEntity_type,
+};
+
+/*****************************************************************************/
+/* pf.GarrisonableEntity                                                     */
+/*****************************************************************************/
+
+typedef struct {
+    PyEntityObject super; 
+}PyGarrisonableEntityObject;
+
+static PyObject *PyGarrisonableEntity_del(PyGarrisonableEntityObject *self);
+static PyObject *PyGarrisonableEntity_pickle(PyGarrisonableEntityObject *self, PyObject *args, 
+                                             PyObject *kwargs);
+static PyObject *PyGarrisonableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
+
+static PyObject *PyGarrisonableEntity_get_capacity(PyGarrisonableEntityObject *self, 
+                                                   void *closure);
+static int       PyGarrisonableEntity_set_capacity(PyGarrisonableEntityObject *self, 
+                                               PyObject *value, void *closure);
+static PyObject *PyGarrisonableEntity_get_current(PyGarrisonableEntityObject *self, 
+                                                  void *closure);
+
+static PyGetSetDef PyGarrisonableEntity_getset[] = {
+    {"garrisonable_capacity",
+    (getter)PyGarrisonableEntity_get_capacity, 
+    (setter)PyGarrisonableEntity_set_capacity,
+    "The capacity of for the total garrisoned population.",
+    NULL},
+    {"garrisonable_current",
+    (getter)PyGarrisonableEntity_get_current, 
+    NULL,
+    "The total of the currently garrisoned population.",
+    NULL},
+    {NULL}  /* Sentinel */
+};
+
+static PyMethodDef PyGarrisonableEntity_methods[] = {
+
+    {"__del__", 
+    (PyCFunction)PyGarrisonableEntity_del, METH_NOARGS,
+    "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
+
+    {"__pickle__", 
+    (PyCFunction)PyGarrisonableEntity_pickle, METH_KEYWORDS,
+    "Serialize a Permafrost Engine combatable entity to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyGarrisonableEntity_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
+    "Create a new pf.GarrisonableEntity instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyGarrisonableEntity_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name      = "pf.GarrisonableEntity",
+    .tp_basicsize = sizeof(PyGarrisonableEntityObject), 
+    .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc       = "Permafrost Engine entity that is able to hold a garrison of units. "
+                    "This is a subclass of pf.Entity.",
+    .tp_methods   = PyGarrisonableEntity_methods,
+    .tp_getset    = PyGarrisonableEntity_getset,
+    .tp_base      = &PyEntity_type,
+};
+
+/*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
@@ -1114,6 +1239,12 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
     if(!zombie && PyType_IsSubtype(type, &PyWaterEntity_type))
         extra_flags |= ENTITY_FLAG_WATER;
+
+    if(!zombie && PyType_IsSubtype(type, &PyGarrisonEntity_type))
+        extra_flags |= ENTITY_FLAG_GARRISON;
+
+    if(!zombie && PyType_IsSubtype(type, &PyGarrisonableEntity_type))
+        extra_flags |= ENTITY_FLAG_GARRISONABLE;
 
     vec3_t pos = (vec3_t){0.0f, 0.0f, 0.0f};
     if(kwds) {
@@ -3449,7 +3580,7 @@ static PyObject *PyMovableEntity_get_speed(PyMovableEntityObject *self, void *cl
 static int PyMovableEntity_set_speed(PyMovableEntityObject *self, PyObject *value, void *closure)
 {
     if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
-        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
         return -1;
     }
 
@@ -3549,6 +3680,134 @@ static PyObject *PyWaterEntity_pickle(PyWaterEntityObject *self, PyObject *args,
 static PyObject *PyWaterEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
     return s_call_super_method("__unpickle__", (PyObject*)&PyWaterEntity_type, cls, args, kwargs);
+}
+
+static PyObject *PyGarrisonEntity_garrison(PyGarrisonEntityObject *self, PyObject *args)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+
+    PyGarrisonableEntityObject *garrisonable;
+    if(!PyArg_ParseTuple(args, "O", &garrisonable)
+    || !PyObject_IsInstance((PyObject*)garrisonable, (PyObject*)&PyGarrisonableEntity_type)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a pf.GarrisonableEntity instance.");
+        return NULL;
+    }
+
+    if(!G_Garrison_Enter(self->super.ent, garrisonable->super.ent)) {
+        PyErr_SetString(PyExc_TypeError, "Unable to garrison inside specified "
+            "pf.GarrisonableEntity instance.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyGarrisonEntity_del(PyGarrisonEntityObject *self)
+{
+    return s_super_del((PyObject*)self, &PyGarrisonEntity_type);
+}
+
+static PyObject *PyGarrisonEntity_pickle(PyGarrisonEntityObject *self, PyObject *args, 
+                                         PyObject *kwargs)
+{
+    return s_call_super_method("__pickle__", (PyObject*)&PyGarrisonEntity_type, 
+        (PyObject*)self, args, kwargs);
+}
+
+static PyObject *PyGarrisonEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
+{
+    return s_call_super_method("__unpickle__", (PyObject*)&PyGarrisonEntity_type, 
+        cls, args, kwargs);
+}
+
+static PyObject *PyGarrisonEntity_get_garrison_capacity(PyGarrisonEntityObject *self, 
+                                                        void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
+    int capacity = G_Garrison_GetCapacityConsumed(self->super.ent);
+    return PyInt_FromLong(capacity);
+}
+
+static int PyGarrisonEntity_set_garrison_capacity(PyGarrisonEntityObject *self, 
+                                                  PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Attribute must be an integer.");
+        return -1;
+    }
+
+    G_Garrison_SetCapacityConsumed(self->super.ent, PyInt_AS_LONG(value));
+    return 0;
+}
+
+static PyObject *PyGarrisonableEntity_del(PyGarrisonableEntityObject *self)
+{
+    return s_super_del((PyObject*)self, &PyGarrisonableEntity_type);
+}
+
+static PyObject *PyGarrisonableEntity_pickle(PyGarrisonableEntityObject *self, PyObject *args, 
+                                             PyObject *kwargs)
+{
+    return s_call_super_method("__pickle__", (PyObject*)&PyGarrisonableEntity_type, 
+        (PyObject*)self, args, kwargs);
+}
+
+static PyObject *PyGarrisonableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
+{
+    return s_call_super_method("__unpickle__", (PyObject*)&PyGarrisonableEntity_type, 
+        cls, args, kwargs);
+}
+
+static PyObject *PyGarrisonableEntity_get_capacity(PyGarrisonableEntityObject *self, 
+                                                   void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
+    int capacity = G_Garrison_GetGarrisonableCapacity(self->super.ent);
+    return PyInt_FromLong(capacity);
+}
+
+static int PyGarrisonableEntity_set_capacity(PyGarrisonableEntityObject *self, 
+                                             PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Attribute must be an integer.");
+        return -1;
+    }
+
+    G_Garrison_SetGarrisonableCapacity(self->super.ent, PyInt_AS_LONG(value));
+    return 0;
+}
+
+static PyObject *PyGarrisonableEntity_get_current(PyGarrisonableEntityObject *self, 
+                                                  void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
+    int current = G_Garrison_GetCurrentGarrisoned(self->super.ent);
+    return PyInt_FromLong(current);
 }
 
 static PyObject *s_obj_from_attr(const struct attr *attr)
@@ -3768,6 +4027,16 @@ void S_Entity_PyRegister(PyObject *module)
         Py_FatalError("Can't initialize pf.WaterEntity type");
     Py_INCREF(&PyWaterEntity_type);
     PyModule_AddObject(module, "WaterEntity", (PyObject*)&PyWaterEntity_type);
+
+    if(PyType_Ready(&PyGarrisonEntity_type) < 0)
+        Py_FatalError("Can't initialize pf.GarrisonEntity type");
+    Py_INCREF(&PyGarrisonEntity_type);
+    PyModule_AddObject(module, "GarrisonEntity", (PyObject*)&PyGarrisonEntity_type);
+
+    if(PyType_Ready(&PyGarrisonableEntity_type) < 0)
+        Py_FatalError("Can't initialize pf.GarrisonableEntity type");
+    Py_INCREF(&PyGarrisonableEntity_type);
+    PyModule_AddObject(module, "GarrisonableEntity", (PyObject*)&PyGarrisonableEntity_type);
 }
 
 bool S_Entity_Init(void)

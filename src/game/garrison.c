@@ -180,11 +180,32 @@ void G_Garrison_SetCapacityConsumed(uint32_t uid, int capacity)
     gus->capacity_consumed = capacity;
 }
 
+int G_Garrison_GetCapacityConsumed(uint32_t uid)
+{
+    struct garrison_state *gus = gu_state_get(uid);
+    assert(gus);
+    return gus->capacity_consumed;
+}
+
 void G_Garrison_SetGarrisonableCapacity(uint32_t uid, int capacity)
 {
     struct garrisonable_state *gbs = gb_state_get(uid);
     assert(gbs);
     gbs->capacity = capacity;
+}
+
+int G_Garrison_GetGarrisonableCapacity(uint32_t uid)
+{
+    struct garrisonable_state *gbs = gb_state_get(uid);
+    assert(gbs);
+    return gbs->capacity;
+}
+
+int G_Garrison_GetCurrentGarrisoned(uint32_t uid)
+{
+    struct garrisonable_state *gbs = gb_state_get(uid);
+    assert(gbs);
+    return gbs->current;
 }
 
 bool G_Garrison_Enter(uint32_t garrisonable, uint32_t unit)

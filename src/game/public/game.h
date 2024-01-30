@@ -483,7 +483,10 @@ enum formation_type G_Formation_PreferredForSet(const vec_entity_t *ents);
 /*###########################################################################*/
 
 void G_Garrison_SetCapacityConsumed(uint32_t uid, int capacity);
+int  G_Garrison_GetCapacityConsumed(uint32_t uid);
 void G_Garrison_SetGarrisonableCapacity(uint32_t uid, int capacity);
+int  G_Garrison_GetGarrisonableCapacity(uint32_t uid);
+int  G_Garrison_GetCurrentGarrisoned(uint32_t uid);
 bool G_Garrison_Enter(uint32_t garrisonable, uint32_t unit);
 bool G_Garrison_Evict(uint32_t garrisonable, uint32_t unit);
 
