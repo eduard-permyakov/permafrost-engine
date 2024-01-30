@@ -66,7 +66,10 @@ enum{
     ENTITY_FLAG_RESOURCE            = (1 << 11),
     ENTITY_FLAG_HARVESTER           = (1 << 12),
     ENTITY_FLAG_STORAGE_SITE        = (1 << 13),
-    ENTITY_FLAG_WATER               = (1 << 14)
+    ENTITY_FLAG_WATER               = (1 << 14),
+    ENTITY_FLAG_AIR                 = (1 << 15),
+    ENTITY_FLAG_GARRISON            = (1 << 16),
+    ENTITY_FLAG_GARRISONABLE        = (1 << 17)
 };
 
 struct entity{

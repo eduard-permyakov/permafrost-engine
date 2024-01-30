@@ -478,5 +478,14 @@ void G_Formation_SetPreferred(uint32_t uid, enum formation_type type);
 enum formation_type G_Formation_GetPreferred(uint32_t uid);
 enum formation_type G_Formation_PreferredForSet(const vec_entity_t *ents);
 
+/*###########################################################################*/
+/* GAME GARRISONN                                                            */
+/*###########################################################################*/
+
+void G_Garrison_SetCapacityConsumed(uint32_t uid, int capacity);
+void G_Garrison_SetGarrisonableCapacity(uint32_t uid, int capacity);
+bool G_Garrison_Enter(uint32_t garrisonable, uint32_t unit);
+bool G_Garrison_Evict(uint32_t garrisonable, uint32_t unit);
+
 #endif
 

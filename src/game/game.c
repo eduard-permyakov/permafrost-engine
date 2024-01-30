@@ -50,6 +50,7 @@
 #include "storage_site.h"
 #include "resource.h"
 #include "region.h"
+#include "garrison.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../anim/public/anim.h"
@@ -159,6 +160,7 @@ static void g_init_map(void)
     M_InitMinimap(s_gs.map, g_default_minimap_pos());
     G_Pos_Init(s_gs.map);
     G_Building_Init(s_gs.map);
+    G_Garrison_Init(s_gs.map);
     G_Fog_Init(s_gs.map);
     G_Combat_Init(s_gs.map);
     G_Move_Init(s_gs.map);
@@ -744,6 +746,7 @@ static void g_clear_map_state(void)
 
         M_Raycast_Uninstall();
         M_FreeMinimap(s_gs.map);
+        G_Garrison_Shutdown();
         G_Building_Shutdown();
         G_Fog_Shutdown();
         G_Combat_Shutdown();
@@ -1945,6 +1948,12 @@ bool G_AddEntity(uint32_t uid, uint32_t flags, vec3_t pos)
     if(flags & ENTITY_FLAG_HARVESTER)
         G_Harvester_AddEntity(uid);
 
+    if(flags & ENTITY_FLAG_GARRISON)
+        G_Garrison_AddGarrison(uid);
+
+    if(flags & ENTITY_FLAG_GARRISONABLE)
+        G_Garrison_AddGarrisonable(uid);
+
     if(flags & ENTITY_FLAG_MOVABLE) {
     
         k = kh_put(entity, s_gs.dynamic, uid, &ret);
@@ -2004,6 +2013,8 @@ bool G_RemoveEntity(uint32_t uid)
     G_Harvester_RemoveEntity(uid);
     G_Resource_RemoveEntity(uid);
     G_StorageSite_RemoveEntity(uid);
+    G_Garrison_RemoveGarrison(uid);
+    G_Garrison_RemoveGarrisonable(uid);
     G_Region_RemoveEnt(uid);
     G_Pos_Delete(uid);
     Entity_Remove(uid);
@@ -2500,6 +2511,8 @@ void G_Zombiefy(uint32_t uid, bool invis)
     G_Harvester_RemoveEntity(uid);
     G_Resource_RemoveEntity(uid);
     G_StorageSite_RemoveEntity(uid);
+    G_Garrison_RemoveGarrison(uid);
+    G_Garrison_RemoveGarrisonable(uid);
 
     G_SetVisionRange(uid, 0.0f);
     G_Region_RemoveEnt(uid);
