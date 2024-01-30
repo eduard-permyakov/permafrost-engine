@@ -1178,7 +1178,7 @@ void R_GL_DrawQuad(vec2_t corners[], const float *width, const vec3_t *color, co
 }
 
 void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *count, 
-                              mat4x4_t *model, const struct map *map)
+                              mat4x4_t *model, bool *on_water_surface, const struct map *map)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -1218,6 +1218,9 @@ void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *
                 M_HeightAtPoint(map, (vec2_t){ws_xz_homo.x, ws_xz_homo.z}) + 0.1, 
                 verts[i].raw[1]
             };
+            if(*on_water_surface) {
+                verts_3d[i].y = MAX(verts_3d[i].y, 0.1f);
+            }
         }
 
         vec4_t surf_color = (vec4_t){colors->x, colors->y, colors->z, 0.25};

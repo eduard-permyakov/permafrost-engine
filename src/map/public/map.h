@@ -135,11 +135,13 @@ void   M_NavRenderNavigationBlockers(const struct map *map, const struct camera 
 
 /* ------------------------------------------------------------------------
  * Render a layer over the visible map surface showing which tiles under
- * an object's OBB can currently be built on.
+ * an object's OBB can currently be built on. The 'blocked' flag can be used
+ * to render all tiles as non-buildable.
  * ------------------------------------------------------------------------
  */
 void   M_NavRenderBuildableTiles(const struct map *map, const struct camera *cam, 
-                                 const struct obb *obb, enum nav_layer layer);
+                                 const struct obb *obb, enum nav_layer layer, 
+                                 bool blocked, bool allow_cliffs);
 
 /* ------------------------------------------------------------------------
  * Render a layer over the visible map surface showing portals between chunks
@@ -456,7 +458,7 @@ uint32_t M_NavDestIDForPosAttacking(const struct map *map, vec2_t xz_pos,
                                     enum nav_layer layer, int faction_id);
 void     M_NavGetResolution(const struct map *map, struct map_resolution *out);
 bool     M_NavObjectBuildable(const struct map *map, enum nav_layer layer, 
-                              const struct obb *obb);
+                              bool allow_shore, const struct obb *obb);
 bool     M_NavIsMaximallyClose(const struct map *map, enum nav_layer layer, 
                                vec2_t xz_pos, vec2_t xz_dest, float tolerance);
 bool     M_NavIsAdjacentToImpassable(const struct map *map, enum nav_layer layer, vec2_t xz_pos);

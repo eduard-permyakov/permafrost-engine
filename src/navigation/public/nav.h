@@ -213,7 +213,8 @@ void      N_RenderNavigationBlockers(void *nav_private, const struct map *map,
  */
 void      N_RenderBuildableTiles(void *nav_private, const struct map *map, 
                                  mat4x4_t *chunk_model, int chunk_r, int chunk_c,
-                                 const struct obb *obb, enum nav_layer layer);
+                                 const struct obb *obb, enum nav_layer layer,
+                                 bool blocked, bool allows_shore);
 
 /* ------------------------------------------------------------------------
  * Debug rendering to show the portals between chunks. 'Active' portals
@@ -481,7 +482,8 @@ void      N_GetResolution(const void *nav_private, struct map_resolution *out);
  * and not currently blocked.
  * ------------------------------------------------------------------------
  */
-bool      N_ObjectBuildable(void *nav_private, enum nav_layer layer, 
+bool      N_ObjectBuildable(void *nav_private, const struct map *map, 
+                            enum nav_layer layer, bool allow_shore,
                             vec3_t map_pos, const struct obb *obb);
 
 /* ------------------------------------------------------------------------

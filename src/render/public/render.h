@@ -230,7 +230,7 @@ void   R_GL_DrawQuad(vec2_t corners[], const float *width, const vec3_t *color,
  * ---------------------------------------------------------------------------
  */
 void   R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *count, mat4x4_t *model, 
-                                const struct map *map);
+                                bool *on_water_surface, const struct map *map);
 
 /* ---------------------------------------------------------------------------
  * Render an array of 2d vectors over the map surface. The positions are 

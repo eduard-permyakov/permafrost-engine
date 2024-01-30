@@ -2461,7 +2461,8 @@ void N_RenderNavigationBlockers(void *nav_private, const struct map *map,
 
 void N_RenderBuildableTiles(void *nav_private, const struct map *map, 
                             mat4x4_t *chunk_model, int chunk_r, int chunk_c,
-                            const struct obb *obb, enum nav_layer layer)
+                            const struct obb *obb, enum nav_layer layer, 
+                            bool blocked, bool allow_shore)
 {
     assert(Sched_UsingBigStack());
 
@@ -2475,6 +2476,9 @@ void N_RenderBuildableTiles(void *nav_private, const struct map *map,
     struct map_resolution res;
     N_GetResolution(priv, &res);
     vec3_t map_pos = M_GetPos(map);
+
+    struct map_resolution tile_res;
+    M_GetResolution(map, &tile_res);
 
     struct tile_desc tds[2048];
     size_t ntiles = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
@@ -2517,10 +2521,21 @@ void N_RenderBuildableTiles(void *nav_private, const struct map *map,
         ws_center_homo.x /= ws_center_homo.w;
         ws_center_homo.z /= ws_center_homo.w;
 
-        if(chunk->blockers [tds[i].tile_r][tds[i].tile_c]
-        || chunk->cost_base[tds[i].tile_r][tds[i].tile_c] == COST_IMPASSABLE
+        struct tile_desc map_td = (struct tile_desc){
+            tds[i].chunk_r,
+            tds[i].chunk_c,
+            tds[i].tile_r / ((float)res.tile_h) * tile_res.tile_h,
+            tds[i].tile_c / ((float)res.tile_w) * tile_res.tile_w
+        };
+        struct tile *tile = NULL;
+        M_TileForDesc(map, map_td, &tile);
+        assert(tile);
+        bool shore = (tile->ramp_height > 1) && (tile->base_height < 0);
+
+        if((chunk->blockers [tds[i].tile_r][tds[i].tile_c]
+        || ((allow_shore ? !shore : true) && chunk->cost_base[tds[i].tile_r][tds[i].tile_c] == COST_IMPASSABLE)
         || !G_Fog_PlayerExplored((vec2_t){ws_center_homo.x, ws_center_homo.z})
-        || (kh_get(td, tileset, td_key(tds + i)) != kh_end(tileset))) {
+        || (kh_get(td, tileset, td_key(tds + i)) != kh_end(tileset))) || blocked) {
             *colors_base++ = (vec3_t){1.0f, 0.0f, 0.0f};
         }else{
             *colors_base++ = (vec3_t){0.0f, 1.0f, 0.0f};
@@ -2529,14 +2544,16 @@ void N_RenderBuildableTiles(void *nav_private, const struct map *map,
     }
     free(tileset);
 
+    bool on_water_surface = true;
     R_PushCmd((struct rcmd){
         .func = R_GL_DrawMapOverlayQuads,
-        .nargs = 5,
+        .nargs = 6,
         .args = {
             R_PushArg(corners_buff, sizeof(corners_buff)),
             R_PushArg(colors_buff, sizeof(colors_buff)),
             R_PushArg(&count, sizeof(count)),
             R_PushArg(chunk_model, sizeof(*chunk_model)),
+            R_PushArg(&on_water_surface, sizeof(bool)),
             (void*)G_GetPrevTickMap(),
         },
     });
@@ -3630,14 +3647,17 @@ void N_GetResolution(const void *nav_private, struct map_resolution *out)
     out->field_h = Z_COORDS_PER_TILE * TILES_PER_CHUNK_HEIGHT;
 }
 
-bool N_ObjectBuildable(void *nav_private, enum nav_layer layer, 
-                       vec3_t map_pos, const struct obb *obb)
+bool N_ObjectBuildable(void *nav_private, const struct map *map, enum nav_layer layer, 
+                       bool allow_shore, vec3_t map_pos, const struct obb *obb)
 {
     assert(Sched_UsingBigStack());
 
     struct nav_private *priv = nav_private;
     struct map_resolution res;
     N_GetResolution(priv, &res);
+
+    struct map_resolution tile_res;
+    M_GetResolution(map, &tile_res);
 
     struct tile_desc tds[2048];
     size_t ntiles = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
@@ -3655,9 +3675,20 @@ bool N_ObjectBuildable(void *nav_private, enum nav_layer layer,
             bounds.x - bounds.width / 2.0f,
             bounds.z + bounds.height / 2.0f
         };
+
+        struct tile_desc map_td = (struct tile_desc){
+            tds[i].chunk_r,
+            tds[i].chunk_c,
+            tds[i].tile_r / ((float)res.tile_h) * tile_res.tile_h,
+            tds[i].tile_c / ((float)res.tile_w) * tile_res.tile_w
+        };
+        struct tile *tile = NULL;
+        M_TileForDesc(map, map_td, &tile);
+        assert(tile);
+        bool shore = (tile->ramp_height > 1) && (tile->base_height < 0);
     
         if(chunk->blockers [tds[i].tile_r][tds[i].tile_c]
-        || chunk->cost_base[tds[i].tile_r][tds[i].tile_c] == COST_IMPASSABLE
+        || ((allow_shore ? !shore : true) && chunk->cost_base[tds[i].tile_r][tds[i].tile_c] == COST_IMPASSABLE)
         || !G_Fog_PlayerExplored((vec2_t){center.x, center.z})
         || (kh_get(td, tileset, td_key(tds + i)) != kh_end(tileset))) {
             goto out;

@@ -220,8 +220,15 @@ static void on_render_3d(void *user, void *event)
 
         struct obb obb;
         Entity_CurrentOBB(key, &obb, true);
+        uint32_t flags = G_FlagsGet(key);
 
-        M_NavRenderBuildableTiles(s_map, cam, &obb, NAV_LAYER_GROUND_1X1);
+        if(flags & ENTITY_FLAG_WATER) {
+            M_NavRenderBuildableTiles(s_map, cam, &obb, NAV_LAYER_WATER_1X1,
+                !(M_ObjectAdjacentToLand(s_map, &obb) && M_ObjectAdjacentToWater(s_map, &obb)), 
+                true);
+        }else{
+            M_NavRenderBuildableTiles(s_map, cam, &obb, NAV_LAYER_GROUND_1X1, false, false);
+        }
     });
 }
 
@@ -231,6 +238,14 @@ static uint64_t td_key(const struct tile_desc *td)
           | ((uint64_t)td->chunk_c << 32)
           | ((uint64_t)td->tile_r  << 16)
           | ((uint64_t)td->tile_c  <<  0));
+}
+
+static float building_height(uint32_t uid, vec2_t pos)
+{
+    uint32_t flags = G_FlagsGet(uid);
+    if(flags & ENTITY_FLAG_WATER)
+        return 0.0f;
+    return M_HeightAtPoint(s_map, pos);
 }
 
 static void building_mark_border(struct buildstate *bs, struct tile_desc *a, struct tile_desc *b)
@@ -685,7 +700,15 @@ bool G_Building_Unobstructed(uint32_t uid)
 {
     struct obb obb;
     Entity_CurrentOBB(uid, &obb, true);
-    return M_NavObjectBuildable(s_map, NAV_LAYER_GROUND_1X1, &obb);
+    uint32_t flags = G_FlagsGet(uid);
+
+    if(flags & ENTITY_FLAG_WATER) {
+        return M_NavObjectBuildable(s_map, NAV_LAYER_WATER_1X1, true, &obb)
+            && M_ObjectAdjacentToWater(s_map, &obb)
+            && M_ObjectAdjacentToLand(s_map, &obb);
+    }else{
+        return M_NavObjectBuildable(s_map, NAV_LAYER_GROUND_1X1, false, &obb);
+    }
 }
 
 bool G_Building_IsFounded(uint32_t uid)
@@ -743,7 +766,7 @@ void G_Building_UpdateProgress(uint32_t uid, float frac_done)
     float height = obb.half_lengths[1] * 2;
 
     vec3_t pos = G_Pos_Get(bs->progress_model);
-    float map_height = M_HeightAtPoint(s_map, (vec2_t){pos.x, pos.z});
+    float map_height = building_height(uid, (vec2_t){pos.x, pos.z});
 
     pos.y = map_height - (height * (1.0f - frac_done));
     G_Pos_Set(bs->progress_model, pos);

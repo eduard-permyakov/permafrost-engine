@@ -2574,14 +2574,16 @@ static void render_formations_occupied_field(enum nav_layer layer)
 
             size_t num_tiles;
             size_t next_offset = next_chunk_range(offset, count, chunk_buff, &num_tiles);
+            bool on_water_surface = false;
             R_PushCmd((struct rcmd){
                 .func = R_GL_DrawMapOverlayQuads,
-                .nargs = 5,
+                .nargs = 6,
                 .args = {
                     R_PushArg(corners_buff + 4 * offset, sizeof(vec2_t) * 4 * num_tiles),
                     R_PushArg(colors_buff + offset, sizeof(vec3_t) * num_tiles),
                     R_PushArg(&num_tiles, sizeof(num_tiles)),
                     R_PushArg(&chunk_model, sizeof(chunk_model)),
+                    R_PushArg(&on_water_surface, sizeof(bool)),
                     (void*)G_GetPrevTickMap(),
                 },
             });

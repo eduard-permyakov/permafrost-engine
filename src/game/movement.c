@@ -1896,8 +1896,9 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
             break;
         }
 
-        if(Entity_MaybeAdjacentFast(uid, ms->surround_target_uid, 10.0f) 
-        && M_NavObjAdjacent(s_map, uid, ms->surround_target_uid)) {
+        if(!G_EntityExists(ms->surround_target_uid)
+        || (Entity_MaybeAdjacentFast(uid, ms->surround_target_uid, 10.0f) 
+            && M_NavObjAdjacent(s_map, uid, ms->surround_target_uid))) {
             entity_finish_moving(uid, STATE_ARRIVED);
             break;
         }

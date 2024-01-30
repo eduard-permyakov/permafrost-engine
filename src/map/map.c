@@ -93,6 +93,27 @@ static bool m_chunk_has_water(const struct pfchunk *chunk)
     return false;
 }
 
+static struct tile *tile_for_desc(const struct map *map, const struct tile_desc *td)
+{
+    struct map_resolution res, nav_res;
+    M_GetResolution(map, &res);
+    M_NavGetResolution(map, &nav_res);
+
+    struct box bounds = M_Tile_Bounds(nav_res, map->pos, *td);
+    vec2_t center = (vec2_t){
+        bounds.x - bounds.width / 2.0f,
+        bounds.z + bounds.height / 2.0f
+    };
+
+    struct tile_desc converted_td;
+    M_Tile_DescForPoint2D(res, map->pos, center, &converted_td);
+
+    struct tile *ret = NULL;
+    M_TileForDesc(map, converted_td, &ret);
+    assert(ret);
+    return ret;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -514,7 +535,8 @@ void M_NavRenderNavigationBlockers(const struct map *map, const struct camera *c
 }
 
 void M_NavRenderBuildableTiles(const struct map *map, const struct camera *cam, 
-                               const struct obb *obb, enum nav_layer layer)
+                               const struct obb *obb, enum nav_layer layer, bool blocked, 
+                               bool allow_shore)
 {
     struct frustum frustum;
     Camera_MakeFrustum(cam, &frustum);
@@ -530,7 +552,7 @@ void M_NavRenderBuildableTiles(const struct map *map, const struct camera *cam,
 
         mat4x4_t chunk_model;
         M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
-        N_RenderBuildableTiles(map->nav_private, map, &chunk_model, r, c, obb, layer);
+        N_RenderBuildableTiles(map->nav_private, map, &chunk_model, r, c, obb, layer, blocked, allow_shore);
     }}
 }
 
@@ -842,9 +864,10 @@ void M_NavGetResolution(const struct map *map, struct map_resolution *out)
     return N_GetResolution(map->nav_private, out);
 }
 
-bool M_NavObjectBuildable(const struct map *map, enum nav_layer layer, const struct obb *obb)
+bool M_NavObjectBuildable(const struct map *map, enum nav_layer layer, 
+                          bool allow_shore, const struct obb *obb)
 {
-    return N_ObjectBuildable(map->nav_private, layer, map->pos, obb);
+    return N_ObjectBuildable(map->nav_private, map, layer, allow_shore, map->pos, obb);
 }
 
 bool M_NavHasEntityLOS(const struct map *map, enum nav_layer layer, 
@@ -905,7 +928,7 @@ bool M_PointOverWater(const struct map *map, vec2_t pos)
         return false;
     M_TileForDesc(map, td, &tile);
     assert(tile);
-    return (M_Tile_BaseHeight(tile) <= 0);
+    return (M_Tile_BaseHeight(tile) < 0);
 }
 
 bool M_PointOverLand(const struct map *map, vec2_t pos)
@@ -916,29 +939,26 @@ bool M_PointOverLand(const struct map *map, vec2_t pos)
         return false;
     M_TileForDesc(map, td, &tile);
     assert(tile);
-    return (M_Tile_BaseHeight(tile) > 0);
+    return (M_Tile_BaseHeight(tile) >= 0);
 }
 
 bool M_TileAdjacentToWater(const struct map *map, const struct tile_desc *td)
 {
-    struct map_resolution res;
+    struct map_resolution res, nav_res;
     M_GetResolution(map, &res);
+    M_NavGetResolution(map, &nav_res);
 
-    struct tile *tile = NULL;
-    M_TileForDesc(map, *td, &tile);
-    assert(tile);
-
-    if(M_Tile_BaseHeight(tile) <= 0)
+    struct tile *tile = tile_for_desc(map, td);
+    if(M_Tile_BaseHeight(tile) < 0)
         return true;
 
     struct tile_desc adjacent[9];
-    size_t nadjacent = M_Tile_Contour(1, td, res, adjacent, ARR_SIZE(adjacent));
+    size_t nadjacent = M_Tile_Contour(1, td, nav_res, adjacent, ARR_SIZE(adjacent));
 
     for(int i = 0; i < nadjacent; i++) {
-        struct tile *tile = NULL;
-        M_TileForDesc(map, adjacent[i], &tile);
-        assert(tile);
-        if(M_Tile_BaseHeight(tile) <= 0)
+
+        struct tile *tile = tile_for_desc(map, &adjacent[i]);
+        if(M_Tile_BaseHeight(tile) < 0)
             return true;
     }
     return false;
@@ -946,24 +966,20 @@ bool M_TileAdjacentToWater(const struct map *map, const struct tile_desc *td)
 
 bool M_TileAdjacentToLand(const struct map *map, const struct tile_desc *td)
 {
-    struct map_resolution res;
-    M_GetResolution(map, &res);
+    struct map_resolution nav_res;
+    M_NavGetResolution(map, &nav_res);
 
-    struct tile_desc adjacent[9];
-    size_t nadjacent = M_Tile_Contour(1, td, res, adjacent, ARR_SIZE(adjacent));
-
-    struct tile *tile = NULL;
-    M_TileForDesc(map, *td, &tile);
-    assert(tile);
-
-    if(M_Tile_BaseHeight(tile) > 0)
+    struct tile *tile = tile_for_desc(map, td);
+    if(M_Tile_BaseHeight(tile) >= -1)
         return true;
 
+    struct tile_desc adjacent[9];
+    size_t nadjacent = M_Tile_Contour(1, td, nav_res, adjacent, ARR_SIZE(adjacent));
+
     for(int i = 0; i < nadjacent; i++) {
-        struct tile *tile = NULL;
-        M_TileForDesc(map, adjacent[i], &tile);
-        assert(tile);
-        if(M_Tile_BaseHeight(tile) > 0)
+
+        struct tile *tile = tile_for_desc(map, &adjacent[i]);
+        if(M_Tile_BaseHeight(tile) >= -1)
             return true;
     }
     return false;
@@ -973,15 +989,16 @@ bool M_ObjectAdjacentToWater(const struct map *map, const struct obb *obb)
 {
     assert(Sched_UsingBigStack());
 
-    struct map_resolution res;
-    M_GetResolution(map, &res);
+    struct map_resolution nav_res;
+    M_NavGetResolution(map, &nav_res);
 
     struct tile_desc tds[1024];
-    size_t ntiles = M_Tile_AllUnderObj(map->pos, res, obb, tds, ARR_SIZE(tds));
+    size_t ntiles = M_Tile_AllUnderObj(map->pos, nav_res, obb, tds, ARR_SIZE(tds));
 
     for(int i = 0; i < ntiles; i++) {
-        if(M_TileAdjacentToWater(map, &tds[i]))
+        if(M_TileAdjacentToWater(map, &tds[i])) {
             return true;
+        }
     }
     return false;
 }
@@ -990,11 +1007,11 @@ bool M_ObjectAdjacentToLand(const struct map *map, const struct obb *obb)
 {
     assert(Sched_UsingBigStack());
 
-    struct map_resolution res;
-    M_GetResolution(map, &res);
+    struct map_resolution nav_res;
+    M_NavGetResolution(map, &nav_res);
 
     struct tile_desc tds[1024];
-    size_t ntiles = M_Tile_AllUnderObj(map->pos, res, obb, tds, ARR_SIZE(tds));
+    size_t ntiles = M_Tile_AllUnderObj(map->pos, nav_res, obb, tds, ARR_SIZE(tds));
 
     for(int i = 0; i < ntiles; i++) {
         if(M_TileAdjacentToLand(map, &tds[i]))
