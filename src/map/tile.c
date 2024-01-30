@@ -801,7 +801,7 @@ size_t M_Tile_Contour(size_t ntds, const struct tile_desc tds[],
         int relc = c - minc + 1;
         bool contour = false;
 
-        if(marked[relr * (dc + 2) + relc])
+        if(marked[relr * width + relc])
             continue;
 
         if(ret == maxout)
@@ -812,17 +812,17 @@ size_t M_Tile_Contour(size_t ntds, const struct tile_desc tds[],
             continue;
 
         /* If any of the neighbours are 'marked', this tile is part of the contour  */
-        if((relr > (0)    && marked[(relr - 1) * (dc + 2) + relc])
-        || (relr < (dr-1) && marked[(relr + 1) * (dc + 2) + relc])
-        || (relc > (0)    && marked[relr * (dc + 2) + (relc - 1)])
-        || (relc < (dc-1) && marked[relr * (dc + 2) + (relc + 1)])) {
+        if((relr > (0)  && marked[(relr - 1) * (dc + 2) + relc])
+        || (relr < (dr) && marked[(relr + 1) * (dc + 2) + relc])
+        || (relc > (0)  && marked[relr * (dc + 2) + (relc - 1)])
+        || (relc < (dc) && marked[relr * (dc + 2) + (relc + 1)])) {
             contour = true;
         }
 
-        if((relr > 0      && relc > 0      && marked[(relr - 1) * (dc + 2) + (relc - 1)])
-        || (relr > 0      && relc < (dc-1) && marked[(relr - 1) * (dc + 2) + (relc + 1)])
-        || (relr < (dr-1) && relc > 0      && marked[(relr + 1) * (dc + 2) + (relc - 1)])
-        || (relr < (dr-1) && relc < (dc-1) && marked[(relr + 1) * (dc + 2) + (relc + 1)])) {
+        if((relr > 0    && relc > 0    && marked[(relr - 1) * (dc + 2) + (relc - 1)])
+        || (relr > 0    && relc < (dc) && marked[(relr - 1) * (dc + 2) + (relc + 1)])
+        || (relr < (dr) && relc > 0    && marked[(relr + 1) * (dc + 2) + (relc - 1)])
+        || (relr < (dr) && relc < (dc) && marked[(relr + 1) * (dc + 2) + (relc + 1)])) {
             contour = true;
         }
 
