@@ -489,6 +489,10 @@ int  G_Garrison_GetGarrisonableCapacity(uint32_t uid);
 int  G_Garrison_GetCurrentGarrisoned(uint32_t uid);
 bool G_Garrison_Enter(uint32_t garrisonable, uint32_t unit);
 bool G_Garrison_Evict(uint32_t garrisonable, uint32_t unit);
+void G_Garrison_SetFontColor(const struct nk_color *clr);
+void G_Garrison_SetBackgroundStyle(const struct nk_style_item *item);
+void G_Garrison_SetIcon(const char *path);
+void G_Garrison_SetShowUI(bool show);
 
 #endif
 

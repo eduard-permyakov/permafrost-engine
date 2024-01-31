@@ -35,8 +35,14 @@
 
 #include "garrison.h"
 #include "public/game.h"
+#include "fog_of_war.h"
+#include "../ui.h"
+#include "../entity.h"
+#include "../event.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"
+#include "../lib/public/pf_nuklear.h"
+#include "../lib/public/pf_string.h"
 
 #include <assert.h>
 
@@ -60,6 +66,11 @@ KHASH_MAP_INIT_INT(garrisonable, struct garrisonable_state)
 static const struct map      *s_map;
 static khash_t(garrison)     *s_garrison_state_table;
 static khash_t(garrisonable) *s_garrisonable_state_table;
+
+static char                   s_garrison_icon_path[512] = {0};
+static struct nk_style_item   s_bg_style = {0};
+static struct nk_color        s_font_clr = {0};
+static bool                   s_show_ui = true;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -121,6 +132,63 @@ static void gb_state_remove(uint32_t uid)
         kh_del(garrisonable, s_garrisonable_state_table, k);
 }
 
+static void on_update_ui(void *user, void *event)
+{
+    if(!s_show_ui)
+        return;
+
+    uint32_t uid;
+    struct garrisonable_state gbs;
+    struct nk_context *ctx = UI_GetContext();
+
+    nk_style_push_style_item(ctx, &ctx->style.window.fixed_background, s_bg_style);
+
+    kh_foreach(s_garrisonable_state_table, uid, gbs, {
+
+        struct obb obb;
+        Entity_CurrentOBB(uid, &obb, true);
+        if(!G_Fog_ObjExplored(G_GetPlayerControlledFactions(), uid, &obb))
+            continue;
+
+        char name[256];
+        pf_snprintf(name, sizeof(name), "__garrisonable__.%x", uid);
+
+        const vec2_t vres = (vec2_t){1920, 1080};
+        const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
+
+        vec2_t ss_pos = Entity_TopScreenPos(uid, adj_vres.x, adj_vres.y);
+        const int width = 100;
+        const int height = 32;
+        const vec2_t pos = (vec2_t){ss_pos.x - width/2, ss_pos.y + 20};
+        const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
+
+        struct rect adj_bounds = UI_BoundsForAspectRatio(
+            (struct rect){pos.x, pos.y, width, height}, 
+            vres, adj_vres, ANCHOR_DEFAULT
+        );
+
+        if(nk_begin_with_vres(ctx, name, 
+            (struct nk_rect){adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h}, 
+            flags, (struct nk_vec2i){adj_vres.x, adj_vres.y})) {
+
+            char text[32];
+            pf_snprintf(text, sizeof(text), "%d / %d", gbs.current, gbs.capacity);
+
+            nk_layout_row_begin(ctx, NK_STATIC, 24, 3);
+            nk_layout_row_push(ctx, 24);
+            nk_image_texpath(ctx, s_garrison_icon_path);
+
+            nk_layout_row_push(ctx, 2);
+            nk_spacing(ctx, 1);
+
+            nk_layout_row_push(ctx, 72);
+            nk_label_colored(ctx, text, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
+        }
+        nk_end(ctx);
+    });
+    nk_style_pop_style_item(ctx);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -132,6 +200,13 @@ bool G_Garrison_Init(const struct map *map)
     if((s_garrisonable_state_table = kh_init(garrisonable)) == NULL)
         goto fail_garrisonable;
 
+    struct nk_context ctx;
+    nk_style_default(&ctx);
+    s_bg_style = ctx.style.window.fixed_background;
+    s_font_clr = ctx.style.text.color;
+
+    E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, 
+        G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
     s_map = map;
     return true;
 
@@ -143,6 +218,7 @@ fail_garrison:
 
 void G_Garrison_Shutdown(void)
 {
+    E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
     kh_destroy(garrisonable, s_garrisonable_state_table);
     kh_destroy(garrison, s_garrison_state_table);
 }
@@ -216,5 +292,28 @@ bool G_Garrison_Enter(uint32_t garrisonable, uint32_t unit)
 bool G_Garrison_Evict(uint32_t garrisonable, uint32_t unit)
 {
     return true;
+}
+
+void G_Garrison_SetFontColor(const struct nk_color *clr)
+{
+    s_font_clr = *clr;
+}
+
+void G_Garrison_SetIcon(const char *path)
+{
+    size_t len = strlen(path) + 1;
+    size_t buffsize = sizeof(s_garrison_icon_path);
+    size_t copysize = len < buffsize ? len : buffsize;
+    pf_strlcpy(s_garrison_icon_path, path, copysize);
+}
+
+void G_Garrison_SetBackgroundStyle(const struct nk_style_item *item)
+{
+    s_bg_style = *item;
+}
+
+void G_Garrison_SetShowUI(bool show)
+{
+    s_show_ui = show;
 }
 

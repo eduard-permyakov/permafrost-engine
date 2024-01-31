@@ -168,6 +168,10 @@ static PyObject *PyPf_set_storage_site_ui_style(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_storage_site_ui_border_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_storage_site_ui_font_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_storage_site_show_ui(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_garrison_ui_font_color(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_garrison_ui_icon(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_garrison_ui_style(PyObject *self, PyObject *args);
+static PyObject *PyPf_garrison_show_ui(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_set_move_on_left_click(PyObject *self);
 static PyObject *PyPf_set_attack_on_left_click(PyObject *self);
@@ -595,6 +599,22 @@ static PyMethodDef pf_module_methods[] = {
     {"storage_site_show_ui",
     (PyCFunction)PyPf_storage_site_show_ui, METH_VARARGS,
     "Set a flag controlling whether or not the UI windows are rendered over the storage sites."},
+
+    {"set_garrison_ui_font_color",
+    (PyCFunction)PyPf_set_garrison_ui_font_color, METH_VARARGS,
+    "Set the garrison UI text color to the specified color (R, G, B, A)."},
+
+    {"set_garrison_ui_icon",
+    (PyCFunction)PyPf_set_garrison_ui_icon, METH_VARARGS,
+    "Set the garrisonable UI icon to the specified image (specified as an image path string)."},
+
+    {"set_garrison_ui_style",
+    (PyCFunction)PyPf_set_garrison_ui_style, METH_VARARGS,
+    "Set the garrisonable UI background to the specified color (R, G, B, A) or image (string)."},
+
+    {"garrison_show_ui",
+    (PyCFunction)PyPf_garrison_show_ui, METH_VARARGS,
+    "Set a flag controlling whether or not the UI labels are rendered over the garrisonable entities."},
 
     {"settings_get",
     (PyCFunction)PyPf_settings_get, METH_VARARGS,
@@ -2109,7 +2129,7 @@ static PyObject *PyPf_set_storage_site_ui_font_color(PyObject *self, PyObject *a
 {
     int r, g, b, a;
     if(!PyArg_ParseTuple(args, "iiii", &r, &g, &b, &a)) {
-        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple or an image path.");
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A).");
         return NULL;
     }
 
@@ -2128,6 +2148,81 @@ static PyObject *PyPf_storage_site_show_ui(PyObject *self, PyObject *args)
 
     bool show = PyObject_IsTrue(obj);
     G_StorageSite_SetShowUI(show);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_garrison_ui_font_color(PyObject *self, PyObject *args)
+{
+    int r, g, b, a;
+    if(!PyArg_ParseTuple(args, "iiii", &r, &g, &b, &a)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return NULL;
+    }
+
+    struct nk_color clr = (struct nk_color){r, g, b, a};
+    G_Garrison_SetFontColor(&clr);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_garrison_ui_icon(PyObject *self, PyObject *args)
+{
+    const char *path;
+    if(!PyArg_ParseTuple(args, "s", &path)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a string.");
+    }
+
+    G_Garrison_SetIcon(path);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_garrison_ui_style(PyObject *self, PyObject *args)
+{
+    struct nk_style_item style;
+    PyObject *val;
+
+    if(!PyArg_ParseTuple(args, "O", &val)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an (R, G, B, A) tuple or an image path.");
+        return NULL;
+    }
+
+    if(PyTuple_Check(val) 
+    && PyTuple_GET_SIZE(val) == 4
+    && PyInt_Check(PyTuple_GET_ITEM(val, 0))
+    && PyInt_Check(PyTuple_GET_ITEM(val, 1))
+    && PyInt_Check(PyTuple_GET_ITEM(val, 2))
+    && PyInt_Check(PyTuple_GET_ITEM(val, 3))) {
+
+        style.type = NK_STYLE_ITEM_COLOR;
+        style.data.color.r = PyInt_AS_LONG(PyTuple_GET_ITEM(val, 0));
+        style.data.color.g = PyInt_AS_LONG(PyTuple_GET_ITEM(val, 1));
+        style.data.color.b = PyInt_AS_LONG(PyTuple_GET_ITEM(val, 2));
+        style.data.color.a = PyInt_AS_LONG(PyTuple_GET_ITEM(val, 3));
+
+    }else if(PyString_Check(val)) {
+
+        style.type = NK_STYLE_ITEM_TEXPATH;
+        pf_strlcpy(style.data.texpath, PyString_AS_STRING(val),
+            ARR_SIZE(style.data.texpath));
+
+    }else{
+        PyErr_SetString(PyExc_TypeError, "Argument must be an (R, G, B, A) tuple or an image path.");
+        return NULL; 
+    }
+
+    G_Garrison_SetBackgroundStyle(&style);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_garrison_show_ui(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    if(!PyArg_ParseTuple(args, "O", &obj)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting a single argument (True or False expression)");
+        return NULL;
+    }
+
+    bool show = PyObject_IsTrue(obj);
+    G_Garrison_SetShowUI(show);
     Py_RETURN_NONE;
 }
 
