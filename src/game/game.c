@@ -802,6 +802,9 @@ static void g_set_contextual_cursor(void)
     case CTX_ACTION_TRANSPORT:
         Cursor_SetRTSPointer(CURSOR_TRANSPORT);
         break;
+    case CTX_ACTION_GARRISON:
+        Cursor_SetRTSPointer(CURSOR_GARRISON);
+        break;
     default:
         Cursor_SetRTSPointer(CURSOR_POINTER);
         break;
@@ -2617,6 +2620,8 @@ enum ctx_action G_CurrContextualAction(void)
     if((action = G_Harvester_CurrContextualAction()) != CTX_ACTION_NONE)
         return action;
     if((action = G_Combat_CurrContextualAction()) != CTX_ACTION_NONE)
+        return action;
+    if((action = G_Garrison_CurrContextualAction()) != CTX_ACTION_NONE)
         return action;
     return CTX_ACTION_NONE;
 }

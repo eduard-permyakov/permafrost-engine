@@ -897,6 +897,7 @@ static void s_expose_cursor_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, CURSOR_BUILD);
     PY_EXPOSE_ENUM(module, CURSOR_DROP_OFF);
     PY_EXPOSE_ENUM(module, CURSOR_TRANSPORT);
+    PY_EXPOSE_ENUM(module, CURSOR_GARRISON);
     PY_EXPOSE_ENUM(module, _CURSOR_MAX);
 }
 

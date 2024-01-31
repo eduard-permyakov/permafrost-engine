@@ -35,7 +35,9 @@
 
 #include "garrison.h"
 #include "public/game.h"
+#include "game_private.h"
 #include "fog_of_war.h"
+#include "selection.h"
 #include "../ui.h"
 #include "../entity.h"
 #include "../event.h"
@@ -189,6 +191,56 @@ static void on_update_ui(void *user, void *event)
     nk_style_pop_style_item(ctx);
 }
 
+static void filter_selection_garrison(const vec_entity_t *in_sel, vec_entity_t *out_sel)
+{
+    vec_entity_init(out_sel);
+    for(int i = 0; i < vec_size(in_sel); i++) {
+
+        uint32_t uid = vec_AT(in_sel, i);
+        uint32_t flags = G_FlagsGet(uid);
+        if(!(flags & ENTITY_FLAG_GARRISON))
+            continue;
+        vec_entity_push(out_sel, uid);
+    }
+}
+
+static void on_mousedown(void *user, void *event)
+{
+    SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
+
+    if(G_MouseOverMinimap())
+        return;
+
+    if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
+        return;
+
+    bool right = (mouse_event->button == SDL_BUTTON_RIGHT);
+    if(!right)
+        return;
+
+    int action = G_CurrContextualAction();
+    if(action != CTX_ACTION_GARRISON)
+        return;
+
+    enum selection_type sel_type;
+    const vec_entity_t *sel = G_Sel_Get(&sel_type);
+    uint32_t target = G_Sel_GetHovered();
+
+    vec_entity_t filtered;
+    filter_selection_garrison(sel, &filtered);
+
+    for(int i = 0; i < vec_size(&filtered); i++) {
+
+        uint32_t curr = vec_AT(&filtered, i);
+        G_Garrison_Enter(target, curr);
+    }
+
+    if(vec_size(&filtered) > 0) {
+        Entity_Ping(target);
+    }
+    vec_entity_destroy(&filtered);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -207,6 +259,8 @@ bool G_Garrison_Init(const struct map *map)
 
     E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, 
         G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
+    E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
+
     s_map = map;
     return true;
 
@@ -218,6 +272,7 @@ fail_garrison:
 
 void G_Garrison_Shutdown(void)
 {
+    E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
     kh_destroy(garrisonable, s_garrisonable_state_table);
     kh_destroy(garrison, s_garrison_state_table);
@@ -315,5 +370,43 @@ void G_Garrison_SetBackgroundStyle(const struct nk_style_item *item)
 void G_Garrison_SetShowUI(bool show)
 {
     s_show_ui = show;
+}
+
+int G_Garrison_CurrContextualAction(void)
+{
+    uint32_t hovered = G_Sel_GetHovered();
+    if(!G_EntityExists(hovered))
+        return CTX_ACTION_NONE;
+
+    if(M_MouseOverMinimap(s_map))
+        return CTX_ACTION_NONE;
+
+    if(!(G_FlagsGet(hovered) & ENTITY_FLAG_GARRISONABLE))
+        return CTX_ACTION_NONE;
+
+    int mouse_x, mouse_y;
+    SDL_GetMouseState(&mouse_x, &mouse_y);
+    if(S_UI_MouseOverWindow(mouse_x, mouse_y))
+        return CTX_ACTION_NONE;
+
+    enum selection_type sel_type;
+    const vec_entity_t *sel = G_Sel_Get(&sel_type);
+
+    vec_entity_t filtered;
+    filter_selection_garrison(sel, &filtered);
+
+    if(vec_size(&filtered) == 0 || sel_type != SELECTION_TYPE_PLAYER) {
+        vec_entity_destroy(&filtered);
+        return CTX_ACTION_NONE;
+    }
+
+    uint32_t first = vec_AT(&filtered, 0);
+    if(G_GetFactionID(hovered) != G_GetFactionID(first)) {
+        vec_entity_destroy(&filtered);
+        return CTX_ACTION_NONE;
+    }
+
+    vec_entity_destroy(&filtered);
+    return CTX_ACTION_GARRISON;
 }
 

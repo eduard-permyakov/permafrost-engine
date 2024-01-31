@@ -56,6 +56,7 @@ enum cursortype{
     CURSOR_BUILD,
     CURSOR_DROP_OFF,
     CURSOR_TRANSPORT,
+    CURSOR_GARRISON,
     _CURSOR_MAX
 };
 

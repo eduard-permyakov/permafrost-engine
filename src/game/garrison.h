@@ -47,6 +47,7 @@ bool G_Garrison_AddGarrison(uint32_t uid);
 void G_Garrison_RemoveGarrison(uint32_t uid);
 bool G_Garrison_AddGarrisonable(uint32_t uid);
 void G_Garrison_RemoveGarrisonable(uint32_t uid);
+int  G_Garrison_CurrContextualAction(void);
 
 #endif
 
