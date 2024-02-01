@@ -674,14 +674,16 @@ void G_Fog_RenderChunkVisibility(int faction_id, int chunk_r, int chunk_c, mat4x
     assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
 
     size_t count = res.tile_w * res.tile_h;
+    bool on_water_surface = true;
     R_PushCmd((struct rcmd){
         .func = R_GL_DrawMapOverlayQuads,
-        .nargs = 5,
+        .nargs = 6,
         .args = {
             R_PushArg(corners_buff, sizeof(corners_buff)),
             R_PushArg(colors_buff, sizeof(colors_buff)),
             R_PushArg(&count, sizeof(count)),
             R_PushArg(model, sizeof(*model)),
+            R_PushArg(&on_water_surface, sizeof(bool)),
             (void*)G_GetPrevTickMap(),
         },
     });

@@ -160,6 +160,7 @@ void            G_UpdateBounds(uint32_t uid);
 void            G_Zombiefy(uint32_t uid, bool invis);
 bool            G_EntityExists(uint32_t uid);
 bool            G_EntityIsZombie(uint32_t uid);
+bool            G_EntityIsGarrisoned(uint32_t uid);
 
 void            G_FreeEntity(uint32_t uid);
 void            G_DeferredRemove(uint32_t uid);

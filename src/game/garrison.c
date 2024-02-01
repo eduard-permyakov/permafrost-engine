@@ -38,6 +38,8 @@
 #include "game_private.h"
 #include "fog_of_war.h"
 #include "selection.h"
+#include "movement.h"
+#include "position.h"
 #include "../ui.h"
 #include "../entity.h"
 #include "../event.h"
@@ -48,8 +50,16 @@
 
 #include <assert.h>
 
+enum unit_state{
+    STATE_NOT_GARRISONED,
+    STATE_MOVING_TO_GARRISONABLE,
+    STATE_GARRISONED
+};
+
 struct garrison_state{
-    int capacity_consumed;
+    int             capacity_consumed;
+    uint32_t        target;
+    enum unit_state state;
 };
 
 struct garrisonable_state{
@@ -241,6 +251,90 @@ static void on_mousedown(void *user, void *event)
     vec_entity_destroy(&filtered);
 }
 
+static bool can_garrison(uint32_t uid, uint32_t target)
+{
+    struct garrison_state *gus = gu_state_get(uid);
+    struct garrisonable_state *gbs = gb_state_get(target);
+    assert(gus && gbs);
+    int capacity_left = gbs->capacity - gbs->current;
+    return (capacity_left >= gus->capacity_consumed);
+}
+
+static void do_garrison(uint32_t uid, uint32_t target)
+{
+    struct garrison_state *gus = gu_state_get(uid);
+    struct garrisonable_state *gbs = gb_state_get(target);
+    assert(gus && gbs);
+
+    /* Add the unit to the garrisonable's units */
+    gbs->current += gus->capacity_consumed;
+    vec_entity_push(&gbs->garrisoned, uid);
+
+    /* Remove the garrisoned unit from the game simulation */
+    G_Sel_Remove(uid);
+    gus->state = STATE_GARRISONED;
+    uint32_t flags = G_FlagsGet(uid);
+    flags |= ENTITY_FLAG_GARRISONED;
+    G_FlagsSet(uid, flags);
+
+    vec2_t pos = G_Pos_GetXZ(uid);
+    float range = G_GetSelectionRadius(uid);
+    int faction_id = G_GetFactionID(uid);
+    enum nav_layer layer = Entity_NavLayer(uid);
+    M_NavBlockersDecref(pos, range, faction_id, flags, s_map);
+}
+
+static void on_20hz_tick(void *user, void *event)
+{
+    uint32_t uid;
+    struct garrison_state *gu_state;
+
+    kh_foreach_val_ptr(s_garrison_state_table, uid, gu_state, {
+        switch(gu_state->state) {
+        case STATE_GARRISONED:
+        case STATE_NOT_GARRISONED:
+            break;
+        case STATE_MOVING_TO_GARRISONABLE: {
+            if(G_Move_Still(uid)) {
+                if(!G_EntityExists(gu_state->target) || G_EntityIsZombie(gu_state->target)) {
+                    gu_state->state = STATE_NOT_GARRISONED;
+                    break;
+                }
+                float radius = G_GetSelectionRadius(uid);
+                float garrison_thresh = radius * 1.5f;
+
+                vec2_t ent_pos = G_Pos_GetXZ(uid);
+                vec2_t target_pos = G_Pos_GetXZ(gu_state->target);
+                enum nav_layer layer = Entity_NavLayer(uid);
+
+                struct obb obb;
+                Entity_CurrentOBB(gu_state->target, &obb, true);
+
+                if(M_NavObjAdjacent(s_map, uid, gu_state->target)) {
+
+                    if(!can_garrison(uid, gu_state->target)) {
+                        gu_state->state = STATE_NOT_GARRISONED;
+                        break;
+                    }
+                    do_garrison(uid, gu_state->target); 
+                    break;
+                }
+
+                /* We were not able to reach the garrisonable target */
+                if(G_Move_Still(gu_state->target) 
+                && M_NavIsAdjacentToImpassable(s_map, layer, ent_pos)
+                && M_NavIsMaximallyClose(s_map, layer, ent_pos, target_pos, garrison_thresh)) {
+                    gu_state->state = STATE_NOT_GARRISONED;
+                    break;
+                }
+            }
+            break;
+        }
+        default: assert(0);
+        }
+    });
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -260,6 +354,7 @@ bool G_Garrison_Init(const struct map *map)
     E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, 
         G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
+    E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
 
     s_map = map;
     return true;
@@ -272,6 +367,7 @@ fail_garrison:
 
 void G_Garrison_Shutdown(void)
 {
+    E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
     kh_destroy(garrisonable, s_garrisonable_state_table);
@@ -282,6 +378,8 @@ bool G_Garrison_AddGarrison(uint32_t uid)
 {
     struct garrison_state gus;
     gus.capacity_consumed = 1;
+    gus.target = NULL_UID;
+    gus.state = STATE_NOT_GARRISONED;
     return gu_state_set(uid, gus);
 }
 
@@ -341,6 +439,11 @@ int G_Garrison_GetCurrentGarrisoned(uint32_t uid)
 
 bool G_Garrison_Enter(uint32_t garrisonable, uint32_t unit)
 {
+    struct garrison_state *gus = gu_state_get(unit);
+    assert(gus);
+    gus->target = garrisonable;
+    gus->state = STATE_MOVING_TO_GARRISONABLE;
+    G_Move_SetSurroundEntity(unit, garrisonable);
     return true;
 }
 

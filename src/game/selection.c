@@ -524,6 +524,8 @@ void G_Sel_Update(struct camera *cam, const vec_entity_t *visible, const vec_obb
 
                     if(!(flags & ENTITY_FLAG_SELECTABLE))
                         continue;
+                    if(flags & ENTITY_FLAG_GARRISONED)
+                        continue;
                     uint64_t curr_id = S_ScriptTypeID(curr);
                     if(curr_id != 0 && (hovered_id == curr_id)) {
                         sel_process_unit(curr);
@@ -545,6 +547,8 @@ void G_Sel_Update(struct camera *cam, const vec_entity_t *visible, const vec_obb
 
             uint32_t flags = G_FlagsGet(vec_AT(visible, i));
             if(!(flags & ENTITY_FLAG_SELECTABLE))
+                continue;
+            if(flags & ENTITY_FLAG_GARRISONED)
                 continue;
 
             if(C_FrustumOBBIntersectionExact(&frust, &vec_AT(visible_obbs, i))) {

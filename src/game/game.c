@@ -420,6 +420,9 @@ static void g_make_draw_list(vec_entity_t ents, vec_rstat_t *out_stat, vec_ranim
         if(flags & ENTITY_FLAG_INVISIBLE)
             continue;
 
+        if(flags & ENTITY_FLAG_GARRISONED)
+            continue;
+
         PERF_PUSH("process entity");
 
         mat4x4_t model;
@@ -2552,6 +2555,14 @@ bool G_EntityIsZombie(uint32_t uid)
     if(!G_EntityExists(uid))
         return false;
     return (G_FlagsGet(uid) & ENTITY_FLAG_ZOMBIE);
+}
+
+bool G_EntityIsGarrisoned(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+    if(!G_EntityExists(uid))
+        return false;
+    return (G_FlagsGet(uid) & ENTITY_FLAG_GARRISONED);
 }
 
 struct render_workspace *G_GetSimWS(void)

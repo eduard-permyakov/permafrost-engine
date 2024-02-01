@@ -705,14 +705,16 @@ static void n_render_grid_path(struct nav_chunk *chunk, mat4x4_t *chunk_model,
     assert(corners_base == corners_buff + 4 * vec_size(path));
 
     size_t count = vec_size(path);
+    bool on_water_surface = false;
     R_PushCmd((struct rcmd){
         .func = R_GL_DrawMapOverlayQuads,
-        .nargs = 5,
+        .nargs = 6,
         .args = {
             R_PushArg(corners_buff, sizeof(vec2_t) * 4 * vec_size(path)),
             R_PushArg(colors_buff, sizeof(vec3_t) * vec_size(path)),
             R_PushArg(&count, sizeof(count)),
             R_PushArg(chunk_model, sizeof(*chunk_model)),
+            R_PushArg(&on_water_surface, sizeof(bool)),
             (void*)G_GetPrevTickMap(),
         },
     });
@@ -764,14 +766,16 @@ static void n_render_portals(const struct nav_chunk *chunk, mat4x4_t *chunk_mode
         }
     }
 
+    bool on_water_surface = false;
     R_PushCmd((struct rcmd){
         .func = R_GL_DrawMapOverlayQuads,
-        .nargs = 5,
+        .nargs = 6,
         .args = {
             R_PushArg(corners_buff, sizeof(corners_buff)),
             R_PushArg(colors_buff, sizeof(colors_buff)),
             R_PushArg(&num_tiles, sizeof(num_tiles)),
             R_PushArg(chunk_model, sizeof(*chunk_model)),
+            R_PushArg(&on_water_surface, sizeof(bool)),
             (void*)G_GetPrevTickMap(),
         },
     });
@@ -2140,14 +2144,16 @@ void N_RenderPathableChunk(void *nav_private, mat4x4_t *chunk_model,
     assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
 
     size_t count = FIELD_RES_R * FIELD_RES_C;
+    bool on_water_surface = false;
     R_PushCmd((struct rcmd){
         .func = R_GL_DrawMapOverlayQuads,
-        .nargs = 5,
+        .nargs = 6,
         .args = {
             R_PushArg(corners_buff, sizeof(corners_buff)),
             R_PushArg(colors_buff, sizeof(colors_buff)),
             R_PushArg(&count, sizeof(count)),
             R_PushArg(chunk_model, sizeof(*chunk_model)),
+            R_PushArg(&on_water_surface, sizeof(bool)),
             (void*)G_GetPrevTickMap(),
         },
     });
@@ -2251,14 +2257,16 @@ void N_RenderLOSField(void *nav_private, const struct map *map, mat4x4_t *chunk_
     assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
 
     size_t count = FIELD_RES_R * FIELD_RES_C;
+    bool on_water_surface = false;
     R_PushCmd((struct rcmd){
         .func = R_GL_DrawMapOverlayQuads,
-        .nargs = 5,
+        .nargs = 6,
         .args = {
             R_PushArg(corners_buff, sizeof(corners_buff)),
             R_PushArg(colors_buff, sizeof(colors_buff)),
             R_PushArg(&count, sizeof(count)),
             R_PushArg(chunk_model, sizeof(*chunk_model)),
+            R_PushArg(&on_water_surface, sizeof(bool)),
             (void*)G_GetPrevTickMap(),
         },
     });
@@ -2336,14 +2344,16 @@ void N_RenderEnemySeekField(void *nav_private, const struct map *map, mat4x4_t *
             (void*)G_GetPrevTickMap(),
         },
     });
+    bool on_water_surface = false;
     R_PushCmd((struct rcmd){
         .func = R_GL_DrawMapOverlayQuads,
-        .nargs = 5,
+        .nargs = 6,
         .args = {
             R_PushArg(corners_buff, sizeof(corners_buff)),
             R_PushArg(colors_buff, sizeof(colors_buff)),
             R_PushArg(&count, sizeof(count)),
             R_PushArg(chunk_model, sizeof(*chunk_model)),
+            R_PushArg(&on_water_surface, sizeof(bool)),
             (void*)G_GetPrevTickMap(),
         },
     });
@@ -2446,14 +2456,16 @@ void N_RenderNavigationBlockers(void *nav_private, const struct map *map,
     assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
 
     size_t count = FIELD_RES_R * FIELD_RES_C;
+    bool on_water_surface = false;
     R_PushCmd((struct rcmd){
         .func = R_GL_DrawMapOverlayQuads,
-        .nargs = 5,
+        .nargs = 6,
         .args = {
             R_PushArg(corners_buff, sizeof(corners_buff)),
             R_PushArg(colors_buff, sizeof(colors_buff)),
             R_PushArg(&count, sizeof(count)),
             R_PushArg(chunk_model, sizeof(*chunk_model)),
+            R_PushArg(&on_water_surface, sizeof(bool)),
             (void*)G_GetPrevTickMap(),
         },
     });

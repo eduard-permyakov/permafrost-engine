@@ -86,6 +86,25 @@ static bool uids_equal(const uint32_t *a, const uint32_t *b)
     return (*a == *b);
 }
 
+static int filter_garrisoned(khash_t(id) *flags, uint32_t *candidates, int count)
+{
+    int ret = count;
+    for(int i = count-1; i >=0; i--) {
+        uint32_t curr = candidates[i];
+        uint32_t f;
+        if(flags) {
+            f = G_FlagsGetFrom(flags, curr);
+        }else{
+            f = G_FlagsGet(curr);
+        }
+        if(f & ENTITY_FLAG_GARRISONED) {
+            candidates[i] = candidates[ret - 1];
+            ret--;
+        }
+    }
+    return ret;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -225,6 +244,7 @@ int G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout)
     PERF_ENTER();
     int ret = qt_ent_inrange_rect(&s_postree, 
         xz_min.x, xz_max.x, xz_min.z, xz_max.z, out, maxout);
+    ret = filter_garrisoned(NULL, out, ret);
     PERF_RETURN(ret);
 }
 
@@ -238,6 +258,7 @@ int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t
 
     int ntotal = qt_ent_inrange_rect(&s_postree, 
         xz_min.x, xz_max.x, xz_min.z, xz_max.z, ent_ids, maxout);
+    ntotal = filter_garrisoned(NULL, out, ntotal);
     int ret = 0;
 
     for(int i = 0; i < ntotal; i++) {
@@ -248,7 +269,6 @@ int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t
 
         out[ret++] = curr;
     }
-
     STFREE(ent_ids);
     PERF_RETURN(ret);
 }
@@ -259,6 +279,7 @@ int G_Pos_EntsInCircle(vec2_t xz_point, float range, uint32_t *out, size_t maxou
     ASSERT_IN_MAIN_THREAD();
     int ret = qt_ent_inrange_circle(&s_postree, 
         xz_point.x, xz_point.z, range, out, maxout);
+    ret = filter_garrisoned(NULL, out, ret);
     PERF_RETURN(ret);
 }
 
@@ -266,7 +287,7 @@ int G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, uint32_t *out, size
                                bool (*predicate)(uint32_t ent, void *arg), void *arg)
 {
     ASSERT_IN_MAIN_THREAD();
-    return G_Pos_EntsInCircleWithPredFrom(&s_postree, xz_point, range, out, maxout, predicate, arg);
+    return G_Pos_EntsInCircleWithPredFrom(&s_postree, NULL, xz_point, range, out, maxout, predicate, arg);
 }
 
 qt_ent_t *G_Pos_CopyQuadTree(void)
@@ -284,15 +305,16 @@ void G_Pos_DestroyQuadTree(qt_ent_t *tree)
     free(tree);
 }
 
-int G_Pos_EntsInCircleFrom(qt_ent_t *tree, vec2_t xz_point, float range, 
+int G_Pos_EntsInCircleFrom(qt_ent_t *tree, khash_t(id) *flags, vec2_t xz_point, float range, 
                            uint32_t *out, size_t maxout)
 {
     PERF_ENTER();
     int ret = qt_ent_inrange_circle(tree, xz_point.x, xz_point.z, range, out, maxout);
+    ret = filter_garrisoned(flags, out, ret);
     PERF_RETURN(ret);
 }
 
-int G_Pos_EntsInCircleWithPredFrom(qt_ent_t *tree, vec2_t xz_point, float range, 
+int G_Pos_EntsInCircleWithPredFrom(qt_ent_t *tree, khash_t(id) *flags, vec2_t xz_point, float range, 
                                    uint32_t *out, size_t maxout,
                                    bool (*predicate)(uint32_t ent, void *arg), void *arg)
 {
@@ -303,6 +325,7 @@ int G_Pos_EntsInCircleWithPredFrom(qt_ent_t *tree, vec2_t xz_point, float range,
 
     int ntotal = qt_ent_inrange_circle(tree, 
         xz_point.x, xz_point.z, range, ent_ids, maxout);
+    ntotal = filter_garrisoned(flags, out, ntotal);
     int ret = 0;
 
     for(int i = 0; i < ntotal; i++) {
@@ -342,6 +365,7 @@ uint32_t G_Pos_NearestWithPred(vec2_t xz_point,
 
         int num_cands = qt_ent_inrange_circle(&s_postree, xz_point.x, xz_point.z,
             len, ent_ids, ARR_SIZE(ent_ids));
+        num_cands = filter_garrisoned(NULL, ent_ids, num_cands);
 
         for(int i = 0; i < num_cands; i++) {
         

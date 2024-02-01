@@ -69,7 +69,8 @@ enum{
     ENTITY_FLAG_WATER               = (1 << 14),
     ENTITY_FLAG_AIR                 = (1 << 15),
     ENTITY_FLAG_GARRISON            = (1 << 16),
-    ENTITY_FLAG_GARRISONABLE        = (1 << 17)
+    ENTITY_FLAG_GARRISONABLE        = (1 << 17),
+    ENTITY_FLAG_GARRISONED          = (1 << 18)
 };
 
 struct entity{

@@ -36,6 +36,7 @@
 #ifndef POSITION_H
 #define POSITION_H
 
+#include "game_private.h"
 #include "../pf_math.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/quadtree.h"
@@ -54,9 +55,9 @@ void      G_Pos_Upload(void);
 
 qt_ent_t *G_Pos_CopyQuadTree(void);
 void      G_Pos_DestroyQuadTree(qt_ent_t *tree);
-int       G_Pos_EntsInCircleFrom(qt_ent_t *tree, vec2_t xz_point, float range, 
+int       G_Pos_EntsInCircleFrom(qt_ent_t *tree, khash_t(id) *flags, vec2_t xz_point, float range, 
                                  uint32_t *out, size_t maxout);
-int       G_Pos_EntsInCircleWithPredFrom(qt_ent_t *tree, vec2_t xz_point, float range, 
+int       G_Pos_EntsInCircleWithPredFrom(qt_ent_t *tree, khash_t(id) *flags, vec2_t xz_point, float range, 
                                          uint32_t *out, size_t maxout,
                                          bool (*predicate)(uint32_t ent, void *arg), void *arg);
 

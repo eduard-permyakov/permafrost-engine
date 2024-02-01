@@ -1356,6 +1356,7 @@ static vec2_t separation_force(uint32_t uid, float buffer_dist)
     vec2_t ret = (vec2_t){0.0f};
     uint32_t near_ents[128];
     int num_near = G_Pos_EntsInCircleFrom(s_move_work.gamestate.postree,
+        s_move_work.gamestate.flags,
         G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid), 
         SEPARATION_NEIGHB_RADIUS, near_ents, ARR_SIZE(near_ents));
 
@@ -2053,6 +2054,7 @@ static void find_neighbours(uint32_t uid,
 
     uint32_t near_ents[512];
     int num_near = G_Pos_EntsInCircleFrom(s_move_work.gamestate.postree, 
+        s_move_work.gamestate.flags,
         G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid), 
         CLEARPATH_NEIGHBOUR_RADIUS, near_ents, ARR_SIZE(near_ents));
 
