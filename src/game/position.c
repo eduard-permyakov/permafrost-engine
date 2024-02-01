@@ -203,6 +203,39 @@ void G_Pos_Delete(uint32_t uid)
     assert(kh_size(s_postable) == s_postree.nrecs);
 }
 
+void G_Pos_Garrison(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    khiter_t k = kh_get(pos, s_postable, uid);
+    assert(k != kh_end(s_postable));
+    vec3_t old_pos = kh_val(s_postable, k);
+    float vrange = G_GetVisionRange(uid);
+
+    G_Combat_RemoveRef(G_GetFactionID(uid), (vec2_t){old_pos.x, old_pos.z});
+    G_Region_RemoveRef(uid, (vec2_t){old_pos.x, old_pos.z});
+    G_Fog_RemoveVision((vec2_t){old_pos.x, old_pos.z}, G_GetFactionID(uid), vrange);
+}
+
+void G_Pos_Ungarrison(uint32_t uid, vec3_t pos)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    khiter_t k = kh_get(pos, s_postable, uid);
+    assert(k != kh_end(s_postable));
+
+    vec3_t old_pos = kh_val(s_postable, k);
+    qt_ent_delete(&s_postree, old_pos.x, old_pos.z, uid);
+    qt_ent_insert(&s_postree, pos.x, pos.z, uid);
+
+    kh_val(s_postable, k) = pos;
+    float vrange = G_GetVisionRange(uid);
+
+    G_Combat_AddRef(G_GetFactionID(uid), (vec2_t){pos.x, pos.z});
+    G_Region_AddRef(uid, (vec2_t){pos.x, pos.z});
+    G_Fog_AddVision((vec2_t){pos.x, pos.z}, G_GetFactionID(uid), vrange);
+}
+
 bool G_Pos_Init(const struct map *map)
 {
     ASSERT_IN_MAIN_THREAD();

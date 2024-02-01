@@ -3416,41 +3416,29 @@ vec2_t N_TileDims(void)
 void N_BlockersIncref(vec2_t xz_pos, float range, int faction_id, uint32_t flags,
                       vec3_t map_pos, void *nav_private)
 {
-    if(flags & ENTITY_FLAG_WATER) {
-        n_update_blockers_circle_water(nav_private, xz_pos, range, faction_id, map_pos, +1);
-    }else{
-        n_update_blockers_circle_ground(nav_private, xz_pos, range, faction_id, map_pos, +1);
-    }
+    n_update_blockers_circle_water(nav_private, xz_pos, range, faction_id, map_pos, +1);
+    n_update_blockers_circle_ground(nav_private, xz_pos, range, faction_id, map_pos, +1);
 }
 
 void N_BlockersDecref(vec2_t xz_pos, float range, int faction_id, uint32_t flags,
                       vec3_t map_pos, void *nav_private)
 {
-    if(flags & ENTITY_FLAG_WATER) {
-        n_update_blockers_circle_water(nav_private, xz_pos, range, faction_id, map_pos, -1);
-    }else{
-        n_update_blockers_circle_ground(nav_private, xz_pos, range, faction_id, map_pos, -1);
-    }
+    n_update_blockers_circle_water(nav_private, xz_pos, range, faction_id, map_pos, -1);
+    n_update_blockers_circle_ground(nav_private, xz_pos, range, faction_id, map_pos, -1);
 }
 
 void N_BlockersIncrefOBB(void *nav_private, int faction_id, uint32_t flags,
                          vec3_t map_pos, const struct obb *obb)
 {
-    if(flags & ENTITY_FLAG_WATER) {
-        n_update_blockers_obb_water(nav_private, obb, faction_id, map_pos, +1);
-    }else{
-        n_update_blockers_obb_ground(nav_private, obb, faction_id, map_pos, +1);
-    }
+    n_update_blockers_obb_water(nav_private, obb, faction_id, map_pos, +1);
+    n_update_blockers_obb_ground(nav_private, obb, faction_id, map_pos, +1);
 }
 
 void N_BlockersDecrefOBB(void *nav_private, int faction_id, uint32_t flags,
                          vec3_t map_pos, const struct obb *obb)
 {
-    if(flags & ENTITY_FLAG_WATER) {
-        n_update_blockers_obb_water(nav_private, obb, faction_id, map_pos, -1);
-    }else{
-        n_update_blockers_obb_ground(nav_private, obb, faction_id, map_pos, +1);
-    }
+    n_update_blockers_obb_water(nav_private, obb, faction_id, map_pos, -1);
+    n_update_blockers_obb_ground(nav_private, obb, faction_id, map_pos, +1);
 }
 
 bool N_IsMaximallyClose(void *nav_private, enum nav_layer layer, vec3_t map_pos, 

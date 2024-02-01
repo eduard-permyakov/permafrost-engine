@@ -2618,6 +2618,8 @@ bool G_MouseInTargetMode(void)
         return true;
     if(G_Harvester_InTargetMode())
         return true;
+    if(G_Garrison_InTargetMode())
+        return true;
     return false;
 }
 

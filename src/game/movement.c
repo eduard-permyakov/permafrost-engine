@@ -248,6 +248,8 @@ enum move_cmd_type{
     MOVE_CMD_UPDATE_SELECTION_RADIUS,
     MOVE_CMD_SET_MAX_SPEED,
     MOVE_CMD_MAKE_FLOCKS,
+    MOVE_CMD_UNBLOCK,
+    MOVE_CMD_BLOCK
 };
 
 struct move_cmd{
@@ -491,7 +493,7 @@ static float entity_speed(uint32_t uid)
     return ms->max_speed;
 }
 
-static void entity_finish_moving(uint32_t uid, enum arrival_state newstate)
+static void entity_finish_moving(uint32_t uid, enum arrival_state newstate, bool block)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -514,7 +516,9 @@ static void entity_finish_moving(uint32_t uid, enum arrival_state newstate)
     ms->velocity = (vec2_t){0.0f, 0.0f};
     ms->vnew = (vec2_t){0.0f, 0.0f};
 
-    entity_block(uid);
+    if(block) {
+        entity_block(uid);
+    }
     assert(ent_still(ms));
 }
 
@@ -1799,6 +1803,13 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
     uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
     enum nav_layer layer = Entity_NavLayerWithRadius(flags, radius);
 
+    if(flags & ENTITY_FLAG_GARRISONED) {
+        if(!ent_still(ms)) {
+            entity_finish_moving(uid, STATE_ARRIVED, false);
+        }
+        return;
+    }
+
     if(PFM_Vec2_Len(&new_vel) > 0
     && M_NavPositionPathable(s_map, layer, new_pos_xz)) {
     
@@ -1843,7 +1854,7 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
         assert(flock);
 
         if(arrived(uid)) {
-            entity_finish_moving(uid, STATE_ARRIVED);
+            entity_finish_moving(uid, STATE_ARRIVED, true);
             break;
         }
 
@@ -1858,7 +1869,7 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
 
             if(adj_ms->state == STATE_ARRIVED) {
 
-                entity_finish_moving(uid, STATE_ARRIVED);
+                entity_finish_moving(uid, STATE_ARRIVED, true);
                 done = true;
                 break;
             }
@@ -1877,7 +1888,7 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
         if(PFM_Vec2_Len(&ms->vdes) < EPSILON) {
 
             assert(flock_for_ent(uid));
-            entity_finish_moving(uid, STATE_WAITING);
+            entity_finish_moving(uid, STATE_WAITING, true);
             break;
         }
         break;
@@ -1886,21 +1897,21 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
 
         if(PFM_Vec2_Len(&ms->vdes) < EPSILON) {
 
-            entity_finish_moving(uid, STATE_WAITING);
+            entity_finish_moving(uid, STATE_WAITING, true);
         }
         break;
     }
     case STATE_SURROUND_ENTITY: {
 
         if(ms->surround_target_uid == NULL_UID) {
-            entity_finish_moving(uid, STATE_ARRIVED);
+            entity_finish_moving(uid, STATE_ARRIVED, true);
             break;
         }
 
         if(!G_EntityExists(ms->surround_target_uid)
         || (Entity_MaybeAdjacentFast(uid, ms->surround_target_uid, 10.0f) 
             && M_NavObjAdjacent(s_map, uid, ms->surround_target_uid))) {
-            entity_finish_moving(uid, STATE_ARRIVED);
+            entity_finish_moving(uid, STATE_ARRIVED, true);
             break;
         }
 
@@ -1917,7 +1928,7 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
                 ms->surround_target_uid, &dest);
 
             if(!hasdest) {
-                entity_finish_moving(uid, STATE_ARRIVED);
+                entity_finish_moving(uid, STATE_ARRIVED, true);
                 break;
             }
         }
@@ -1937,14 +1948,14 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
         }
 
         if(PFM_Vec2_Len(&ms->vdes) < EPSILON) {
-            entity_finish_moving(uid, STATE_WAITING);
+            entity_finish_moving(uid, STATE_WAITING, true);
         }
         break;
     }
     case STATE_ENTER_ENTITY_RANGE: {
 
         if(ms->surround_target_uid == NULL_UID) {
-            entity_finish_moving(uid, STATE_ARRIVED);
+            entity_finish_moving(uid, STATE_ARRIVED, true);
             break;
         }
 
@@ -1959,7 +1970,7 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
         || (M_NavIsAdjacentToImpassable(s_map, layer, xz_pos) 
             && M_NavIsMaximallyClose(s_map, layer, xz_pos, xz_target, 0.0f))) {
         
-            entity_finish_moving(uid, STATE_ARRIVED);
+            entity_finish_moving(uid, STATE_ARRIVED, true);
             break;
         }
 
@@ -1983,7 +1994,7 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
 
         /* if it's within a tolerance, stop turning */
         if(fabs(degrees) <= 5.0f) {
-            entity_finish_moving(uid, STATE_ARRIVED);
+            entity_finish_moving(uid, STATE_ARRIVED, true);
             break;
         }
 
@@ -2190,7 +2201,7 @@ static void do_stop(uint32_t uid)
         return;
 
     if(!ent_still(ms)) {
-        entity_finish_moving(uid, STATE_ARRIVED);
+        entity_finish_moving(uid, STATE_ARRIVED, true);
     }
 
     remove_from_flocks(uid);
@@ -2428,6 +2439,18 @@ static void do_set_max_speed(uint32_t uid, float speed)
     ms->max_speed = speed;
 }
 
+static void do_block(uint32_t uid, vec3_t newpos)
+{
+    khiter_t k = kh_get(pos, s_move_work.gamestate.positions, uid);
+    assert(k != kh_end(s_move_work.gamestate.positions));
+    vec3_t oldpos = kh_val(s_move_work.gamestate.positions, k);
+    qt_ent_delete(s_move_work.gamestate.postree, oldpos.x, oldpos.z, uid);
+    qt_ent_insert(s_move_work.gamestate.postree, newpos.x, newpos.z, uid);
+    kh_val(s_move_work.gamestate.positions, k) = newpos;
+
+    entity_block(uid);
+}
+
 static void move_push_cmd(struct move_cmd cmd)
 {
     queue_cmd_push(&s_move_commands, &cmd);
@@ -2525,6 +2548,25 @@ static void move_process_cmds(void)
             make_flocks(sel, target_xz, target_orientation, type, attack);
             vec_entity_destroy(sel);
             PF_FREE(sel);
+            break;
+        }
+        case MOVE_CMD_UNBLOCK: {
+            uint32_t uid = cmd.args[0].val.as_int;
+            struct movestate *ms = movestate_get(uid);
+            assert(ms);
+            if(ms->blocking) {
+                entity_unblock(uid);
+            }
+            break;
+        }
+        case MOVE_CMD_BLOCK: {
+            uint32_t uid = cmd.args[0].val.as_int;
+            vec3_t pos = cmd.args[1].val.as_vec3;
+            struct movestate *ms = movestate_get(uid);
+            assert(ms);
+            if(!ms->blocking) {
+                do_block(uid, pos);
+            }
             break;
         }
         default:
@@ -3148,6 +3190,34 @@ void G_Move_UpdatePos(uint32_t uid, vec2_t pos)
         .args[1] = {
             .type = TYPE_VEC2,
             .val.as_vec2 = pos
+        }
+    });
+}
+
+void G_Move_Unblock(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+    move_push_cmd((struct move_cmd){
+        .type = MOVE_CMD_UNBLOCK,
+        .args[0] = {
+            .type = TYPE_INT,
+            .val.as_int = uid
+        }
+    });
+}
+
+void G_Move_BlockAt(uint32_t uid, vec3_t pos)
+{
+    ASSERT_IN_MAIN_THREAD();
+    move_push_cmd((struct move_cmd){
+        .type = MOVE_CMD_BLOCK,
+        .args[0] = {
+            .type = TYPE_INT,
+            .val.as_int = uid
+        },
+        .args[1] = {
+            .type = TYPE_VEC3,
+            .val.as_vec3 = pos
         }
     });
 }

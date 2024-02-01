@@ -40,15 +40,21 @@
 #include "selection.h"
 #include "movement.h"
 #include "position.h"
+#include "../main.h"
 #include "../ui.h"
 #include "../entity.h"
 #include "../event.h"
+#include "../sched.h"
+#include "../task.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/pf_string.h"
 
 #include <assert.h>
+
+#define EVICT_DELAY_MS          (1000)
+#define GARRISON_THRESHOLD_DIST (25.0f)
 
 enum unit_state{
     STATE_NOT_GARRISONED,
@@ -68,6 +74,12 @@ struct garrisonable_state{
     vec_entity_t garrisoned;
 };
 
+struct evict_work{
+    uint32_t      uid;
+    vec2_t        target;
+    uint32_t      tid;
+};
+
 KHASH_MAP_INIT_INT(garrison, struct garrison_state)
 KHASH_MAP_INIT_INT(garrisonable, struct garrisonable_state)
 
@@ -78,6 +90,7 @@ KHASH_MAP_INIT_INT(garrisonable, struct garrisonable_state)
 static const struct map      *s_map;
 static khash_t(garrison)     *s_garrison_state_table;
 static khash_t(garrisonable) *s_garrisonable_state_table;
+static bool                   s_evict_on_lclick = false;
 
 static char                   s_garrison_icon_path[512] = {0};
 static struct nk_style_item   s_bg_style = {0};
@@ -214,27 +227,14 @@ static void filter_selection_garrison(const vec_entity_t *in_sel, vec_entity_t *
     }
 }
 
-static void on_mousedown(void *user, void *event)
+static void garrison_selection(void)
 {
-    SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
-
-    if(G_MouseOverMinimap())
-        return;
-
-    if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
-        return;
-
-    bool right = (mouse_event->button == SDL_BUTTON_RIGHT);
-    if(!right)
-        return;
-
-    int action = G_CurrContextualAction();
-    if(action != CTX_ACTION_GARRISON)
-        return;
-
     enum selection_type sel_type;
     const vec_entity_t *sel = G_Sel_Get(&sel_type);
     uint32_t target = G_Sel_GetHovered();
+
+    if(sel_type != SELECTION_TYPE_PLAYER)
+        return;
 
     vec_entity_t filtered;
     filter_selection_garrison(sel, &filtered);
@@ -249,6 +249,62 @@ static void on_mousedown(void *user, void *event)
         Entity_Ping(target);
     }
     vec_entity_destroy(&filtered);
+}
+
+static void try_evict(vec2_t target)
+{
+    enum selection_type sel_type;
+    const vec_entity_t *sel = G_Sel_Get(&sel_type);
+
+    if(sel_type != SELECTION_TYPE_PLAYER)
+        return;
+
+    for(int i = 0; i < vec_size(sel); i++) {
+
+        uint32_t curr = vec_AT(sel, i);
+        uint32_t flags = G_FlagsGet(curr);
+        if(!(flags & ENTITY_FLAG_GARRISONABLE))
+            continue;
+        G_Garrison_EvictAll(curr, target);
+    }
+}
+
+static void on_mousedown(void *user, void *event)
+{
+    SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
+
+    bool targeting = G_Garrison_InTargetMode();
+    bool right = (mouse_event->button == SDL_BUTTON_RIGHT);
+    bool left = (mouse_event->button == SDL_BUTTON_LEFT);
+    bool evict = s_evict_on_lclick && left;
+    s_evict_on_lclick = false;
+
+    if(G_MouseOverMinimap())
+        return;
+
+    if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
+        return;
+
+    if(right && targeting)
+        return;
+
+    if(left && !targeting)
+        return;
+
+    int action = G_CurrContextualAction();
+    if(right && (action != CTX_ACTION_GARRISON))
+        return;
+
+    if(right) {
+        garrison_selection(); 
+        return;
+    }
+
+    vec3_t mouse_coord;
+    if(!M_MinimapMouseMapCoords(s_map, &mouse_coord)
+    && !M_Raycast_MouseIntersecCoord(&mouse_coord))
+        return;
+    try_evict((vec2_t){mouse_coord.x, mouse_coord.z});
 }
 
 static bool can_garrison(uint32_t uid, uint32_t target)
@@ -276,12 +332,28 @@ static void do_garrison(uint32_t uid, uint32_t target)
     uint32_t flags = G_FlagsGet(uid);
     flags |= ENTITY_FLAG_GARRISONED;
     G_FlagsSet(uid, flags);
+    G_Move_Unblock(uid);
+    G_Pos_Garrison(uid);
+}
 
-    vec2_t pos = G_Pos_GetXZ(uid);
-    float range = G_GetSelectionRadius(uid);
-    int faction_id = G_GetFactionID(uid);
-    enum nav_layer layer = Entity_NavLayer(uid);
-    M_NavBlockersDecref(pos, range, faction_id, flags, s_map);
+static bool adjacent(uint32_t unit, uint32_t garrisonable)
+{
+    uint32_t flags = G_FlagsGet(garrisonable);
+    float unit_radius = G_GetSelectionRadius(unit);
+    float garrisonable_radius = G_GetSelectionRadius(garrisonable);
+    vec2_t unit_pos = G_Pos_GetXZ(unit);
+    vec2_t garrisonable_pos = G_Pos_GetXZ(garrisonable);
+
+    if(flags & ENTITY_FLAG_MOVABLE) {
+        return M_NavObjAdjacentToDynamicWith(s_map, unit_pos, 
+            unit_radius, garrisonable_pos, 
+            garrisonable_radius + GARRISON_THRESHOLD_DIST);
+    }else{
+        struct obb obb;
+        Entity_CurrentOBB(garrisonable, &obb, true);
+        return M_NavObjAdjacentToStaticWith(s_map, unit_pos, 
+            unit_radius + GARRISON_THRESHOLD_DIST, &obb);
+    }
 }
 
 static void on_20hz_tick(void *user, void *event)
@@ -307,10 +379,7 @@ static void on_20hz_tick(void *user, void *event)
                 vec2_t target_pos = G_Pos_GetXZ(gu_state->target);
                 enum nav_layer layer = Entity_NavLayer(uid);
 
-                struct obb obb;
-                Entity_CurrentOBB(gu_state->target, &obb, true);
-
-                if(M_NavObjAdjacent(s_map, uid, gu_state->target)) {
+                if(adjacent(uid, gu_state->target)) {
 
                     if(!can_garrison(uid, gu_state->target)) {
                         gu_state->state = STATE_NOT_GARRISONED;
@@ -326,6 +395,9 @@ static void on_20hz_tick(void *user, void *event)
                 && M_NavIsMaximallyClose(s_map, layer, ent_pos, target_pos, garrison_thresh)) {
                     gu_state->state = STATE_NOT_GARRISONED;
                     break;
+                }else{
+                    /* Retry */
+                    G_Garrison_Enter(gu_state->target, uid);
                 }
             }
             break;
@@ -333,6 +405,32 @@ static void on_20hz_tick(void *user, void *event)
         default: assert(0);
         }
     });
+}
+
+static bool compare_uids(uint32_t *a, uint32_t *b)
+{
+    return *a == *b;
+}
+
+static struct result evict_task(void *arg)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct evict_work *work = arg;
+    struct garrisonable_state *gbs = gb_state_get(work->uid);
+    if(!gbs)
+        goto out;
+
+    struct garrisonable_state copy = *gbs;
+    for(int i = 0; i < vec_size(&copy.garrisoned); i++) {
+        uint32_t curr = vec_AT(&copy.garrisoned, i);
+        G_Garrison_Evict(work->uid, curr, work->target);
+        Task_Sleep(EVICT_DELAY_MS);
+    }
+
+out:
+    free(arg);
+    return NULL_RESULT;
 }
 
 /*****************************************************************************/
@@ -443,12 +541,98 @@ bool G_Garrison_Enter(uint32_t garrisonable, uint32_t unit)
     assert(gus);
     gus->target = garrisonable;
     gus->state = STATE_MOVING_TO_GARRISONABLE;
-    G_Move_SetSurroundEntity(unit, garrisonable);
+
+    vec2_t garrisonable_pos = G_Pos_GetXZ(garrisonable);
+    vec2_t unit_pos = G_Pos_GetXZ(unit);
+    enum nav_layer layer = Entity_NavLayer(unit);
+
+    if(M_NavLocationsReachable(s_map, layer, unit_pos, garrisonable_pos)) {
+        G_Move_SetSurroundEntity(unit, garrisonable);
+    }else{
+        vec2_t closest = M_NavClosestReachableDest(s_map, layer, unit_pos, garrisonable_pos);
+        G_Move_SetDest(unit, closest, false);
+    }
     return true;
 }
 
-bool G_Garrison_Evict(uint32_t garrisonable, uint32_t unit)
+bool G_Garrison_Evict(uint32_t garrisonable, uint32_t unit, vec2_t target)
 {
+    struct garrison_state *gus = gu_state_get(unit);
+    if(!gus)
+        return false;
+
+    struct garrisonable_state *gbs = gb_state_get(garrisonable);
+    if(!gbs)
+        return false;
+
+    int idx = vec_entity_indexof(&gbs->garrisoned, unit, compare_uids);
+    if(idx == -1)
+        return false;
+
+    enum nav_layer layer = Entity_NavLayer(unit);
+    vec2_t garrisonable_pos = G_Pos_GetXZ(garrisonable);
+    uint32_t garrisonable_flags = G_FlagsGet(garrisonable);
+
+    vec2_t closest;
+    if(!M_NavClosestPathable(s_map, layer, garrisonable_pos, &closest))
+        return false;
+
+    /* Check if we are able to evit the unit */
+    if(garrisonable_flags & ENTITY_FLAG_BUILDING) {
+
+        struct obb obb;
+        Entity_CurrentOBB(garrisonable, &obb, true);
+        if(!M_NavObjAdjacentToStaticWith(s_map, closest, GARRISON_THRESHOLD_DIST, &obb))
+            return false;
+    }else{
+
+        vec2_t delta;
+        PFM_Vec2_Sub(&closest, &garrisonable_pos, &delta);
+        float distance = PFM_Vec2_Len(&delta);
+
+        float garrisonable_radius = G_GetSelectionRadius(garrisonable);
+        float unit_radius = G_GetSelectionRadius(unit);
+        float threshold = garrisonable_radius + unit_radius + GARRISON_THRESHOLD_DIST;
+        if(distance > threshold)
+            return false;
+    }
+
+    /* Now it is certain that eviction can take place */
+    int capacity_consumed = gus->capacity_consumed;
+    vec_entity_del(&gbs->garrisoned, idx);
+    gbs->current -= capacity_consumed;
+
+    /* Place the evicted unit at the closest location and issue it a move order */
+    uint32_t flags = G_FlagsGet(unit);
+    flags &= ~ENTITY_FLAG_GARRISONED;
+    G_FlagsSet(unit, flags);
+
+    vec3_t pos = (vec3_t){
+        closest.x,
+        M_HeightAtPoint(s_map, closest),
+        closest.z
+    };
+
+    G_Pos_Ungarrison(unit, pos);
+    G_Move_BlockAt(unit, pos);
+    G_Move_SetDest(unit, target, false);
+
+    return true;
+}
+
+bool G_Garrison_EvictAll(uint32_t garrisonable, vec2_t target)
+{
+    struct evict_work *work = malloc(sizeof(struct evict_work));
+    if(!work)
+        return false;
+    work->uid = garrisonable;
+    work->target = target;
+    work->tid = Sched_Create(16, evict_task, work, NULL, TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
+    if(work->tid == NULL_TID) {
+        free(work);
+        return false;
+    }
+    Sched_RunSync(work->tid);
     return true;
 }
 
@@ -511,5 +695,15 @@ int G_Garrison_CurrContextualAction(void)
 
     vec_entity_destroy(&filtered);
     return CTX_ACTION_GARRISON;
+}
+
+bool G_Garrison_InTargetMode(void)
+{
+    return s_evict_on_lclick;
+}
+
+void G_Garrison_SetEvictOnLeftClick(void)
+{
+    s_evict_on_lclick = true;
 }
 
