@@ -604,6 +604,61 @@ static size_t batch_sort_by_chunk(vec_rstat_t *ents, struct chunk_batch_desc *ou
     return ret;
 }
 
+static size_t batch_sort_by_transparency(vec_rstat_t *ents, const struct chunk_batch_desc *desc)
+{
+    if(vec_size(ents) == 0)
+        return 0;
+
+    int i = desc->start_idx;
+    while(i <= desc->end_idx) {
+        int j = i;
+        while(j > desc->start_idx 
+            && (vec_AT(ents, j - 1).translucent && !vec_AT(ents, j).translucent)) {
+
+            struct ent_stat_rstate tmp = vec_AT(ents, j - 1);
+            vec_AT(ents, j - 1) = vec_AT(ents, j);
+            vec_AT(ents, j) = tmp;
+            j--;
+        }
+        i++;
+    }
+
+    size_t ret = 0;
+    for(int i = desc->start_idx; i <= desc->end_idx; i++) {
+        struct ent_stat_rstate *curr = &vec_AT(ents, i);
+        if(curr->translucent)
+            ret++;
+    }
+    return ret;
+}
+
+static size_t batch_anim_sort_by_transparency(vec_ranim_t *ents, size_t nents)
+{
+    if(vec_size(ents) == 0)
+        return 0;
+
+    int i = 0;
+    while(i < nents) {
+        int j = i;
+        while(j > 0 && (vec_AT(ents, j - 1).translucent && !vec_AT(ents, j).translucent)) {
+
+            struct ent_anim_rstate tmp = vec_AT(ents, j - 1);
+            vec_AT(ents, j - 1) = vec_AT(ents, j);
+            vec_AT(ents, j) = tmp;
+            j--;
+        }
+        i++;
+    }
+
+    size_t ret = 0;
+    for(int i = 0; i < nents; i++) {
+        struct ent_anim_rstate *curr = &vec_AT(ents, i);
+        if(curr->translucent)
+            ret++;
+    }
+    return ret;
+}
+
 static size_t batch_sort_by_inst_stat(struct ent_stat_rstate *ents, size_t nents, 
                                       struct inst_group_desc *out, size_t maxout)
 {
@@ -1129,10 +1184,19 @@ static void batch_render_anim_all(vec_ranim_t *ents, bool shadows, enum render_p
     default: assert(0);
     }
 
+    size_t ntranslucent = batch_anim_sort_by_transparency(ents, nanim);
+    size_t nopaque = nanim - ntranslucent;
+
     for(int i = 0; i < nanim; i++) {
         batch_append(s_anim_batch, vec_AT(ents, i).render_private);
     }
-    batch_render_anim(s_anim_batch, &vec_AT(ents, 0), nanim);
+    batch_render_anim(s_anim_batch, &vec_AT(ents, 0), nopaque);
+    if(ntranslucent > 0) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR);
+        batch_render_anim(s_anim_batch, &vec_AT(ents, nopaque), ntranslucent);
+        glDisable(GL_BLEND);
+    }
     GL_ASSERT_OK();
 }
 
@@ -1166,6 +1230,12 @@ static void batch_render_stat_all(vec_rstat_t *ents, bool shadows,
         const struct chunk_batch_desc *curr = &descs[i];
         struct gl_batch *batch = NULL;
 
+        /* Further subdivide each batch into translucent and opaque entities, 
+         * and draw each one as separate draw calls, as this requires pipeline
+         * state changes.
+         */
+        size_t ntranslucent = batch_sort_by_transparency(ents, curr);
+
         if(batch_id == 0) {
         
             uint32_t key = batch_chunk_key(curr->chunk_r, curr->chunk_c);
@@ -1194,11 +1264,20 @@ static void batch_render_stat_all(vec_rstat_t *ents, bool shadows,
 
         assert(batch);
         size_t ndraw = curr->end_idx - curr->start_idx + 1;
+        size_t nopaque = ndraw - ntranslucent;
 
         for(int i = 0; i < ndraw; i++) {
             batch_append(batch, vec_AT(ents, curr->start_idx + i).render_private);
         }
-        batch_render_stat(batch, &vec_AT(ents, curr->start_idx), ndraw, pass);
+        batch_render_stat(batch, &vec_AT(ents, curr->start_idx), nopaque, pass);
+        if(ntranslucent > 0) {
+            size_t start = curr->start_idx + nopaque;
+
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR);
+            batch_render_stat(batch, &vec_AT(ents, start), ntranslucent, pass);
+            glDisable(GL_BLEND);
+        }
     }
 }
 
