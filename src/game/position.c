@@ -95,6 +95,8 @@ static int filter_garrisoned(khash_t(id) *flags, uint32_t *candidates, int count
         if(flags) {
             f = G_FlagsGetFrom(flags, curr);
         }else{
+            if(!G_EntityExists(curr))
+                continue;
             f = G_FlagsGet(curr);
         }
         if(f & ENTITY_FLAG_GARRISONED) {
