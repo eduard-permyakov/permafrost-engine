@@ -104,6 +104,7 @@ static PyObject *PyEntity_ping(PyEntityObject *self);
 static PyObject *PyEntity_zombiefy(PyEntityObject *self);
 static PyObject *PyEntity_add_tag(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_remove_tag(PyEntityObject *self, PyObject *args);
+static PyObject *PyEntity_is_garrisoned(PyEntityObject *self);
 static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
@@ -162,6 +163,10 @@ static PyMethodDef PyEntity_methods[] = {
     {"remove_tag", 
     (PyCFunction)PyEntity_remove_tag, METH_VARARGS,
     "Remove a string tag from this entity's list of tags."},
+
+    {"is_garrisoned", 
+    (PyCFunction)PyEntity_is_garrisoned, METH_VARARGS,
+    "Returns True if the entity is currently garrisoned."},
 
     {"__pickle__", 
     (PyCFunction)PyEntity_pickle, METH_KEYWORDS,
@@ -1698,6 +1703,19 @@ static PyObject *PyEntity_remove_tag(PyEntityObject *self, PyObject *args)
 
     Entity_RemoveTag(self->ent, tag);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_is_garrisoned(PyEntityObject *self)
+{
+    uint32_t flags = G_FlagsGet(self->ent);
+    if(G_FlagsGet(self->ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+    if(flags & ENTITY_FLAG_GARRISONED) {
+        Py_RETURN_TRUE;
+    }
+    Py_RETURN_FALSE;
 }
 
 static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject *kwargs)

@@ -546,6 +546,7 @@ bool G_Garrison_Enter(uint32_t garrisonable, uint32_t unit)
     vec2_t unit_pos = G_Pos_GetXZ(unit);
     enum nav_layer layer = Entity_NavLayer(unit);
 
+    G_StopEntity(unit, false);
     if(M_NavLocationsReachable(s_map, layer, unit_pos, garrisonable_pos)) {
         G_Move_SetSurroundEntity(unit, garrisonable);
     }else{

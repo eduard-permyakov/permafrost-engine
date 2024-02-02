@@ -2533,6 +2533,9 @@ void G_Zombiefy(uint32_t uid, bool invis)
     flags &= ~ENTITY_FLAG_HARVESTER;
     flags &= ~ENTITY_FLAG_RESOURCE;
     flags &= ~ENTITY_FLAG_STORAGE_SITE;
+    flags &= ~ENTITY_FLAG_GARRISON;
+    flags &= ~ENTITY_FLAG_GARRISONABLE;
+    flags &= ~ENTITY_FLAG_GARRISONED;
 
     flags |= ENTITY_FLAG_ZOMBIE;
 
