@@ -2005,7 +2005,7 @@ int G_Harvester_CurrContextualAction(void)
         return CTX_ACTION_GATHER;
 
     if(G_GetFactionID(hovered) != G_GetFactionID(first))
-        return false;
+        return CTX_ACTION_NONE;
 
     if(G_FlagsGet(hovered) & ENTITY_FLAG_STORAGE_SITE
     && G_Harvester_GetCurrTotalCarry(first) > 0)
