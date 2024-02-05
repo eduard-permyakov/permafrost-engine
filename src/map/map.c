@@ -1020,3 +1020,15 @@ bool M_ObjectAdjacentToLand(const struct map *map, const struct obb *obb)
     return false;
 }
 
+vec2_t M_NavClosestPointAdjacentToLand(const struct map *map, vec2_t pos)
+{
+    return N_ClosestPointAdjacentToLand(map, map->nav_private, map->pos, pos);
+}
+
+vec2_t M_NavClosestPointAdjacentToIsland(const struct map *map, vec2_t pos, vec2_t island_pos, 
+                                         enum nav_layer unit_layer, enum nav_layer island_layer)
+{
+    return N_ClosestPointAdjacentToIsland(map->nav_private, map->pos, pos, island_pos, 
+        unit_layer, island_layer);
+}
+

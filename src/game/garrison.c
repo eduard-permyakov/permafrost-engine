@@ -55,23 +55,39 @@
 
 #define EVICT_DELAY_MS          (1000)
 #define GARRISON_THRESHOLD_DIST (25.0f)
+#define GARRISON_WAIT_TICKS     (5)
+#define GARRISONABLE_WAIT_TICKS (10)
 
 enum unit_state{
     STATE_NOT_GARRISONED,
     STATE_MOVING_TO_GARRISONABLE,
+    STATE_AWAITING_PICKUP,
     STATE_GARRISONED
+};
+
+enum holder_state{
+    STATE_IDLE,
+    STATE_MOVING_TO_PICKUP_POINT,
+    STATE_MOVING_TO_DROPOFF_POINT
 };
 
 struct garrison_state{
     int             capacity_consumed;
     uint32_t        target;
     enum unit_state state;
+    int             wait_ticks;
 };
 
 struct garrisonable_state{
-    int          capacity;
-    int          current;
-    vec_entity_t garrisoned;
+    enum holder_state state;
+    /* The point the unit will go to in order to go in order to get into the transport */
+    vec2_t            rendevouz_point_unit;
+    /* The point the transport will go to in order to pickup the unit(s) */
+    vec2_t            rendevouz_point_transport;
+    int               wait_ticks;
+    int               capacity;
+    int               current;
+    vec_entity_t      garrisoned;
 };
 
 struct evict_work{
@@ -359,8 +375,9 @@ static bool adjacent(uint32_t unit, uint32_t garrisonable)
 static void on_20hz_tick(void *user, void *event)
 {
     uint32_t uid;
-    struct garrison_state *gu_state;
 
+    /* Process GARRISON entities */
+    struct garrison_state *gu_state;
     kh_foreach_val_ptr(s_garrison_state_table, uid, gu_state, {
         switch(gu_state->state) {
         case STATE_GARRISONED:
@@ -396,12 +413,78 @@ static void on_20hz_tick(void *user, void *event)
                     gu_state->state = STATE_NOT_GARRISONED;
                     break;
                 }else{
-                    /* Retry */
-                    G_Garrison_Enter(gu_state->target, uid);
+                    struct garrisonable_state *target_state = gb_state_get(gu_state->target);
+                    if(!target_state) {
+                        gu_state->wait_ticks = 0;
+                        gu_state = STATE_NOT_GARRISONED;
+                        break;
+                    }
+                    if(target_state->state == STATE_MOVING_TO_PICKUP_POINT) {
+                        gu_state->wait_ticks = 0;
+                        gu_state->state = STATE_AWAITING_PICKUP;
+                        break;
+                    }
+                    gu_state->wait_ticks++;
+                    if(gu_state->wait_ticks == GARRISON_WAIT_TICKS) {
+                        gu_state->wait_ticks = 0;
+                        /* Retry */
+                        G_Garrison_Enter(gu_state->target, uid);
+                    }
                 }
             }
             break;
         }
+        case STATE_AWAITING_PICKUP: {
+            struct garrisonable_state *target_state = gb_state_get(gu_state->target);
+            if(!target_state) {
+                gu_state->state = STATE_NOT_GARRISONED;
+                break;
+            }
+            if(target_state->state == STATE_IDLE) {
+                gu_state->state = STATE_MOVING_TO_GARRISONABLE;
+                break;
+            }
+            break;
+        }
+        default: assert(0);
+        }
+    });
+
+    /* Process GARRISONABLE entities */
+    struct garrisonable_state *gb_state;
+    kh_foreach_val_ptr(s_garrisonable_state_table, uid, gb_state, {
+
+        enum nav_layer garrisonable_layer = Entity_NavLayer(uid);
+        float garrisonable_radius = G_GetSelectionRadius(uid);
+        vec2_t garrisonable_pos = G_Pos_GetXZ(uid);
+
+        switch(gb_state->state) {
+        case STATE_IDLE:
+            break;
+        case STATE_MOVING_TO_PICKUP_POINT: {
+
+            vec2_t delta;
+            PFM_Vec2_Sub(&gb_state->rendevouz_point_transport, &garrisonable_pos, &delta);
+            const float tolerance = garrisonable_radius * 1.5f;
+
+            if(G_Move_Still(uid)) {
+
+                if(M_NavIsMaximallyClose(s_map, garrisonable_layer, garrisonable_pos, 
+                    gb_state->rendevouz_point_transport, tolerance)
+                    || PFM_Vec2_Len(&delta) <= tolerance){
+                    gb_state->state = STATE_IDLE;
+                    gb_state->wait_ticks = 0;
+                    break;
+                }
+                gb_state->wait_ticks++;
+                if(gb_state->wait_ticks == GARRISONABLE_WAIT_TICKS) {
+                    G_Move_SetDest(uid, gb_state->rendevouz_point_transport, false);
+                }
+            }
+            break;
+        }
+        case STATE_MOVING_TO_DROPOFF_POINT:
+            break;
         default: assert(0);
         }
     });
@@ -478,6 +561,7 @@ bool G_Garrison_AddGarrison(uint32_t uid)
     gus.capacity_consumed = 1;
     gus.target = NULL_UID;
     gus.state = STATE_NOT_GARRISONED;
+    gus.wait_ticks = 0;
     return gu_state_set(uid, gus);
 }
 
@@ -489,6 +573,8 @@ void G_Garrison_RemoveGarrison(uint32_t uid)
 bool G_Garrison_AddGarrisonable(uint32_t uid)
 {
     struct garrisonable_state gbs;
+    gbs.state = STATE_IDLE;
+    gbs.wait_ticks = 0;
     gbs.capacity = 0;
     gbs.current = 0;
     vec_entity_init(&gbs.garrisoned);
@@ -537,20 +623,74 @@ int G_Garrison_GetCurrentGarrisoned(uint32_t uid)
 
 bool G_Garrison_Enter(uint32_t garrisonable, uint32_t unit)
 {
+    /* In cases where land units are ordered inside a water-based transport, the 
+     * transport should "automatically" go to the shore to pick up the units
+     */
+    struct garrisonable_state *gbs = gb_state_get(garrisonable);
+    assert(gbs);
+
+    vec2_t unit_pos = G_Pos_GetXZ(unit);
+    enum nav_layer unit_layer = Entity_NavLayer(unit);
+    uint32_t unit_flags = G_FlagsGet(unit);
+
+    uint32_t garrisonable_flags = G_FlagsGet(garrisonable);
+    vec2_t garrisonable_pos = G_Pos_GetXZ(garrisonable);
+    enum nav_layer garrisonable_layer = Entity_NavLayer(garrisonable);
+    float garrisonable_radius = G_GetSelectionRadius(garrisonable);
+
+    bool has_rendevouz_point = false;
+    vec2_t rendevouz_point;
+    vec2_t rendevouz_point_transport;
+
+    if((garrisonable_flags & (ENTITY_FLAG_WATER | ENTITY_FLAG_MOVABLE))
+    && !(unit_flags & ENTITY_FLAG_WATER)) {
+
+        if(gbs->state == STATE_MOVING_TO_PICKUP_POINT) {
+            rendevouz_point = gbs->rendevouz_point_unit;
+            rendevouz_point_transport = gbs->rendevouz_point_transport;
+            has_rendevouz_point = true;
+        }else{
+            rendevouz_point = M_NavClosestPointAdjacentToIsland(s_map, 
+                garrisonable_pos, unit_pos, garrisonable_layer, unit_layer);
+            rendevouz_point_transport = M_NavClosestReachableDest(s_map, garrisonable_layer, 
+            garrisonable_pos, rendevouz_point);
+
+            vec2_t delta;
+            PFM_Vec2_Sub(&rendevouz_point_transport, &garrisonable_pos, &delta);
+            const float tolerance = garrisonable_radius * 1.5f;
+
+            if(!M_NavIsMaximallyClose(s_map, garrisonable_layer, garrisonable_pos, 
+                rendevouz_point_transport, tolerance)
+                && (PFM_Vec2_Len(&delta) > tolerance)){
+                has_rendevouz_point = true;
+            }
+        }
+    }
+
+    if(has_rendevouz_point) {
+        G_StopEntity(garrisonable, true);
+        G_Move_SetDest(garrisonable, rendevouz_point, false);
+
+        gbs->state = STATE_MOVING_TO_PICKUP_POINT;
+        gbs->rendevouz_point_unit = rendevouz_point;
+        gbs->rendevouz_point_transport = rendevouz_point_transport;
+    }
+
     struct garrison_state *gus = gu_state_get(unit);
     assert(gus);
     gus->target = garrisonable;
     gus->state = STATE_MOVING_TO_GARRISONABLE;
 
-    vec2_t garrisonable_pos = G_Pos_GetXZ(garrisonable);
-    vec2_t unit_pos = G_Pos_GetXZ(unit);
-    enum nav_layer layer = Entity_NavLayer(unit);
+    vec2_t unit_target_pos = garrisonable_pos;
+    if(has_rendevouz_point) {
+        unit_target_pos = rendevouz_point;
+    }
 
     G_StopEntity(unit, false);
-    if(M_NavLocationsReachable(s_map, layer, unit_pos, garrisonable_pos)) {
+    if(M_NavLocationsReachable(s_map, unit_layer, unit_pos, garrisonable_pos)) {
         G_Move_SetSurroundEntity(unit, garrisonable);
     }else{
-        vec2_t closest = M_NavClosestReachableDest(s_map, layer, unit_pos, garrisonable_pos);
+        vec2_t closest = M_NavClosestReachableDest(s_map, unit_layer, unit_pos, unit_target_pos);
         G_Move_SetDest(unit, closest, false);
     }
     return true;

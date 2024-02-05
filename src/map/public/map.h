@@ -427,6 +427,22 @@ bool M_NavClosestPathable(const struct map *map, enum nav_layer layer,
                           vec2_t xz_src, vec2_t *out);
 
 /* ------------------------------------------------------------------------
+ * Returns the closest position to 'pos' that is adjacent to a land tile.
+ * ------------------------------------------------------------------------
+ */
+vec2_t M_NavClosestPointAdjacentToLand(const struct map *map, vec2_t pos);
+
+/* ------------------------------------------------------------------------
+ * Returns the closest position to 'pos' that is adjacent to a land tile
+ * having the same global "island ID" as the tile under the 'island_pos'
+ * location.
+ * ------------------------------------------------------------------------
+ */
+vec2_t M_NavClosestPointAdjacentToIsland(const struct map *map, vec2_t pos,
+                                         vec2_t island_pos, enum nav_layer unit_layer,
+                                         enum nav_layer island_layer);
+
+/* ------------------------------------------------------------------------
  * Returns true if the two locations can currently be reached from one another.
  * ------------------------------------------------------------------------
  */
