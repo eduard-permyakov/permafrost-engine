@@ -1035,7 +1035,7 @@ static void selection_try_order_gather(bool targeting)
         struct hstate *hs = hstate_get(curr);
         assert(hs);
 
-        G_StopEntity(curr, true);
+        G_StopEntity(curr, true, true);
         G_Harvester_Gather(curr, target);
         G_NotifyOrderIssued(curr);
         ngather++;
@@ -1076,7 +1076,7 @@ static void selection_try_order_pick_up(bool targeting)
         if(G_Harvester_GetCurrTotalCarry(curr) > 0)
             continue;
 
-        G_StopEntity(curr, true);
+        G_StopEntity(curr, true, true);
         G_Harvester_PickUp(curr, target);
         G_NotifyOrderIssued(curr);
         ncarry++;
@@ -1117,7 +1117,7 @@ static void selection_try_order_drop_off(bool targeting)
         if(G_Harvester_GetCurrTotalCarry(curr) == 0)
             continue;
 
-        G_StopEntity(curr, true);
+        G_StopEntity(curr, true, true);
         G_Harvester_DropOff(curr, target);
         G_NotifyOrderIssued(curr);
         ncarry++;
@@ -1155,7 +1155,7 @@ static void selection_try_order_transport(bool targeting)
         struct hstate *hs = hstate_get(curr);
         assert(hs);
 
-        G_StopEntity(curr, true);
+        G_StopEntity(curr, true, true);
         G_Harvester_Transport(curr, target);
         G_NotifyOrderIssued(curr);
         ntransport++;

@@ -668,7 +668,7 @@ bool G_Garrison_Enter(uint32_t garrisonable, uint32_t unit)
     }
 
     if(has_rendevouz_point) {
-        G_StopEntity(garrisonable, true);
+        G_StopEntity(garrisonable, true, false);
         G_Move_SetDest(garrisonable, rendevouz_point, false);
 
         gbs->state = STATE_MOVING_TO_PICKUP_POINT;
@@ -686,7 +686,7 @@ bool G_Garrison_Enter(uint32_t garrisonable, uint32_t unit)
         unit_target_pos = rendevouz_point;
     }
 
-    G_StopEntity(unit, false);
+    G_StopEntity(unit, false, false);
     if(M_NavLocationsReachable(s_map, unit_layer, unit_pos, garrisonable_pos)) {
         G_Move_SetSurroundEntity(unit, garrisonable);
     }else{
@@ -846,5 +846,24 @@ bool G_Garrison_InTargetMode(void)
 void G_Garrison_SetEvictOnLeftClick(void)
 {
     s_evict_on_lclick = true;
+}
+
+void G_Garrison_Stop(uint32_t uid)
+{
+    uint32_t flags = G_FlagsGet(uid);
+    if(flags & ENTITY_FLAG_GARRISON) {
+        struct garrison_state *gus = gu_state_get(uid);
+        assert(gus);
+        if(gus->state != STATE_GARRISONED) {
+            gus->state = STATE_NOT_GARRISONED;
+            gus->wait_ticks = 0;
+        }
+    }
+    if(flags & ENTITY_FLAG_GARRISONABLE) {
+        struct garrisonable_state *gbs = gb_state_get(uid);
+        assert(gbs);
+        gbs->state = STATE_IDLE;
+        gbs->wait_ticks = 0;
+    }
 }
 

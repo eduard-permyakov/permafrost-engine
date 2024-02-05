@@ -762,7 +762,7 @@ static void move_order(const vec_entity_t *sel, bool attack, vec3_t mouse_coord,
         if(!(flags & ENTITY_FLAG_MOVABLE))
             continue;
 
-        G_StopEntity(curr, false);
+        G_StopEntity(curr, false, true);
         E_Entity_Notify(EVENT_MOVE_ISSUED, curr, NULL, ES_ENGINE);
         G_NotifyOrderIssued(curr);
         nmoved++;

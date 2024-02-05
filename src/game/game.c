@@ -2041,7 +2041,7 @@ bool G_RemoveEntity(uint32_t uid)
     return true;
 }
 
-void G_StopEntity(uint32_t uid, bool stop_move)
+void G_StopEntity(uint32_t uid, bool stop_move, bool stop_garrison)
 {
     ASSERT_IN_MAIN_THREAD();
     uint32_t flags = G_FlagsGet(uid);
@@ -2059,6 +2059,9 @@ void G_StopEntity(uint32_t uid, bool stop_move)
     }
     if(flags & ENTITY_FLAG_BUILDER) {
         G_Builder_Stop(uid);
+    }
+    if(stop_garrison && ((flags & ENTITY_FLAG_GARRISON) || (flags & ENTITY_FLAG_GARRISONABLE))) {
+        G_Garrison_Stop(uid);
     }
 
     E_Entity_Notify(EVENT_ENTITY_STOP, uid, NULL, ES_ENGINE);

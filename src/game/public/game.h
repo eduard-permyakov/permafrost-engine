@@ -155,7 +155,7 @@ void            G_BakeNavDataForScene(void);
 
 bool            G_AddEntity(uint32_t uid, uint32_t flags, vec3_t pos);
 bool            G_RemoveEntity(uint32_t uid);
-void            G_StopEntity(uint32_t uid, bool stop_move);
+void            G_StopEntity(uint32_t uid, bool stop_move, bool stop_garrison);
 void            G_UpdateBounds(uint32_t uid);
 void            G_Zombiefy(uint32_t uid, bool invis);
 bool            G_EntityExists(uint32_t uid);
