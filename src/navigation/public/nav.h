@@ -405,6 +405,30 @@ bool N_ClosestPathable(void *nav_private, enum nav_layer layer,
                        vec3_t map_pos, vec2_t xz_src, vec2_t *out);
 
 /* ------------------------------------------------------------------------
+ * Returns the closest position to 'pos' that is adjacent to a land tile.
+ * ------------------------------------------------------------------------
+ */
+vec2_t N_ClosestPointAdjacentToLand(const struct map *map, void *nav_private, 
+                                    vec3_t map_pos, vec2_t pos);
+
+/* ------------------------------------------------------------------------
+ * Returns the closest position to a particular navigation island. (area
+ * of land disconnected from other "islands" by impassable terrain).
+ * ------------------------------------------------------------------------
+ */
+vec2_t N_ClosestPointAdjacentToIsland(void *nav_private, vec3_t map_pos, 
+                                      vec2_t pos, vec2_t island_pos, 
+                                      enum nav_layer unit_layer, enum nav_layer island_layer);
+
+/* ------------------------------------------------------------------------
+ * Returns true if any tiles within the 'radius' of 'xa_pos' are on or adjacent
+ * to the island specified by 'island_pos'.
+ * ------------------------------------------------------------------------
+ */
+bool N_IsAdjacentToIsland(void *nav_private, enum nav_layer layer, vec3_t map_pos, vec2_t xz_pos,
+                          float radius, vec2_t island_pos);
+
+/* ------------------------------------------------------------------------
  * Returns 'true' if the two locations are currenntly reachable from one another.
  * ------------------------------------------------------------------------
  */

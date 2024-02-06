@@ -488,6 +488,8 @@ void     M_NavCellArrivalFieldUpdateToNearestPathable(const struct map *map,
                                   size_t rdim, size_t cdim, enum nav_layer layer, uint16_t enemies,
                                   struct tile_desc start, struct tile_desc center, 
                                   uint8_t *inout, void *workspace, size_t workspace_size);
+bool     M_NavIsAdjacentToIsland(const struct map *map, enum nav_layer layer, vec2_t xz_pos, 
+                                 float radius, vec2_t island_pos);
 
 /* ------------------------------------------------------------------------
  * Request an asynchronous computation of a field.

@@ -1032,3 +1032,10 @@ vec2_t M_NavClosestPointAdjacentToIsland(const struct map *map, vec2_t pos, vec2
         unit_layer, island_layer);
 }
 
+bool M_NavIsAdjacentToIsland(const struct map *map, enum nav_layer layer, 
+                             vec2_t xz_pos, float radius, vec2_t island_pos)
+{
+    return N_IsAdjacentToIsland(map->nav_private, layer, map->pos, xz_pos, 
+        radius, island_pos);
+}
+

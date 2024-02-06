@@ -61,6 +61,8 @@
 #include <string.h>
 #include <float.h>
 
+bool M_TileAdjacentToWater(const struct map *map, const struct tile_desc *td);
+bool M_TileAdjacentToLand(const struct map *map, const struct tile_desc *td);
 
 #define IDX(r, width, c)   ((r) * (width) + (c))
 #define CURSOR_OFF(cursor, base) ((ptrdiff_t)((cursor) - (base)))
@@ -1909,6 +1911,18 @@ static void field_join_work(void)
 	}
 }
 
+vec2_t tile_center_location(struct nav_private *priv, vec3_t map_pos, struct tile_desc td)
+{
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct box bounds = M_Tile_Bounds(res, map_pos, td);
+    return (vec2_t){
+        bounds.x - bounds.width / 2.0f,
+        bounds.z + bounds.height / 2.0f
+    };
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -3343,6 +3357,145 @@ done:
     return ret;
 }
 
+vec2_t N_ClosestPointAdjacentToLand(const struct map *map, void *nav_private, 
+                                    vec3_t map_pos, vec2_t pos)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    bool result;
+    (void)result;
+
+    struct tile_desc src_desc;
+    result = M_Tile_DescForPoint2D(res, map_pos, pos, &src_desc);
+    assert(result);
+
+    if(M_TileAdjacentToLand(map, &src_desc))
+        return tile_center_location(priv, map_pos, src_desc);
+
+    vec2_t ret = pos;
+    queue_td_t frontier;
+    queue_td_init(&frontier, 1024);
+    queue_td_push(&frontier, &src_desc);
+
+    khash_t(td) *visited = kh_init(td);
+
+    while(queue_size(frontier) > 0) {
+
+        struct tile_desc curr;
+        queue_td_pop(&frontier, &curr);
+
+        if(M_TileAdjacentToLand(map, &curr)) {
+            ret = tile_center_location(priv, map_pos, curr);
+            goto done;
+        }
+
+        struct coord deltas[] = {
+            { 0, -1},
+            { 0, +1},
+            {-1,  0},
+            {+1,  0},
+        };
+
+        for(int i = 0; i < ARR_SIZE(deltas); i++) {
+        
+            struct tile_desc neighb = curr;
+            if(!M_Tile_RelativeDesc(res, &neighb, deltas[i].c, deltas[i].r))
+                continue;
+
+            if(kh_get(td, visited, td_key(&neighb)) != kh_end(visited))
+                continue;
+
+            kh_put(td, visited, td_key(&neighb), &(int){0});
+            queue_td_push(&frontier, &neighb);
+        }
+    }
+
+done:
+    kh_destroy(td, visited);
+    queue_td_destroy(&frontier);
+    return ret;
+}
+
+vec2_t N_ClosestPointAdjacentToIsland(void *nav_private, vec3_t map_pos, 
+                                      vec2_t pos, vec2_t island_pos,
+                                      enum nav_layer unit_layer, enum nav_layer island_layer)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    bool result;
+    (void)result;
+
+    struct tile_desc src_desc;
+    result = M_Tile_DescForPoint2D(res, map_pos, pos, &src_desc);
+    assert(result);
+
+    struct tile_desc dst_desc;
+    result = M_Tile_DescForPoint2D(res, map_pos, island_pos, &dst_desc);
+    assert(result);
+
+    const struct nav_chunk *src_chunk = 
+        &priv->chunks[unit_layer][src_desc.chunk_r * priv->width + src_desc.chunk_c];
+    const struct nav_chunk *dst_chunk = 
+        &priv->chunks[island_layer][dst_desc.chunk_r * priv->width + dst_desc.chunk_c];
+
+    uint16_t start_idd = src_chunk->islands[src_desc.tile_r][src_desc.tile_c];
+    uint16_t target_iid = dst_chunk->islands[dst_desc.tile_r][dst_desc.tile_c];
+
+    if(start_idd == target_iid)
+        return tile_center_location(priv, map_pos, src_desc);
+
+    vec2_t ret = pos;
+    queue_td_t frontier;
+    queue_td_init(&frontier, 1024);
+    queue_td_push(&frontier, &src_desc);
+
+    khash_t(td) *visited = kh_init(td);
+
+    while(queue_size(frontier) > 0) {
+
+        struct tile_desc curr;
+        queue_td_pop(&frontier, &curr);
+
+        const struct nav_chunk *curr_chunk = 
+            &priv->chunks[island_layer][curr.chunk_r * priv->width + curr.chunk_c];
+        uint16_t curr_iid = curr_chunk->islands[curr.tile_r][curr.tile_c];
+
+        if(curr_iid == target_iid) {
+            ret = tile_center_location(priv, map_pos, curr);
+            goto done;
+        }
+
+        struct coord deltas[] = {
+            { 0, -1},
+            { 0, +1},
+            {-1,  0},
+            {+1,  0},
+        };
+
+        for(int i = 0; i < ARR_SIZE(deltas); i++) {
+        
+            struct tile_desc neighb = curr;
+            if(!M_Tile_RelativeDesc(res, &neighb, deltas[i].c, deltas[i].r))
+                continue;
+
+            if(kh_get(td, visited, td_key(&neighb)) != kh_end(visited))
+                continue;
+
+            kh_put(td, visited, td_key(&neighb), &(int){0});
+            queue_td_push(&frontier, &neighb);
+        }
+    }
+
+done:
+    kh_destroy(td, visited);
+    queue_td_destroy(&frontier);
+    return ret;
+}
+
 bool N_LocationsReachable(void *nav_private, enum nav_layer layer, 
                           vec3_t map_pos, vec2_t a, vec2_t b)
 {
@@ -3501,6 +3654,47 @@ bool N_IsAdjacentToImpassable(void *nav_private, enum nav_layer layer, vec3_t ma
         if(n_tile_blocked(priv, layer, td))
             PERF_RETURN(true);
     }}
+
+    PERF_RETURN(false);
+}
+
+bool N_IsAdjacentToIsland(void *nav_private, enum nav_layer layer, vec3_t map_pos, vec2_t xz_pos,
+                          float radius, vec2_t island_pos)
+{
+    PERF_ENTER();
+    assert(Sched_UsingBigStack());
+
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct tile_desc target_td;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, island_pos, &target_td);
+    assert(result);
+
+    const struct nav_chunk *target_chunk = 
+        &priv->chunks[layer][IDX(target_td.chunk_r, priv->width, target_td.chunk_c)];
+    uint16_t target_iid = target_chunk->islands[target_td.tile_r][target_td.tile_c];
+
+    struct tile_desc tds[2048];
+    size_t ntiles = M_Tile_AllUnderCircle(res, xz_pos, radius, 
+        map_pos, tds, ARR_SIZE(tds));
+
+    for(int i = 0; i < ntiles; i++) {
+
+        for(int dr = -1; dr <= 1; dr++) {
+        for(int dc = -1; dc <= 1; dc++) {
+            struct tile_desc td = tds[i];
+            if(!M_Tile_RelativeDesc(res, &td, dc, dr))
+                continue;
+
+            const struct nav_chunk *curr_chunk = 
+                &priv->chunks[layer][IDX(td.chunk_r, priv->width, td.chunk_c)];
+            uint16_t curr_iid = curr_chunk->islands[td.tile_r][td.tile_c];
+            if(curr_iid == target_iid)
+                PERF_RETURN(true);
+        }}
+    }
 
     PERF_RETURN(false);
 }
