@@ -1781,6 +1781,15 @@ static bool arrived(uint32_t uid)
         && M_NavIsMaximallyClose(s_map, layer, xz_pos, flock->target_xz, arrive_thresh))) {
         return true;
     }
+
+    vec2_t nearest;
+    if(M_NavClosestPathable(s_map, layer, flock->target_xz, &nearest)) {
+        vec2_t delta;
+        PFM_Vec2_Sub(&nearest, &xz_pos, &delta);
+        if(PFM_Vec2_Len(&delta) < arrive_thresh)
+            return true;
+    }
+
     return false;
 }
 

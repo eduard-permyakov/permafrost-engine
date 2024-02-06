@@ -1134,7 +1134,7 @@ static int n_closest_island_tiles(const struct nav_private *priv,
     memset(visited, 0, count);
 
     const size_t stride_a = res.chunk_h * res.chunk_w * res.tile_h;
-    const size_t stride_b = res.chunk_h * res.chunk_w;
+    const size_t stride_b = res.chunk_h * res.tile_h;
     const size_t stride_c = res.chunk_h;
 
     visited[target.chunk_r * stride_a + target.chunk_c * stride_b 
@@ -1149,10 +1149,15 @@ static int n_closest_island_tiles(const struct nav_private *priv,
         queue_td_pop(&frontier, &curr);
 
         struct coord deltas[] = {
+            { 0,  0},
             { 0, -1},
             { 0, +1},
             {-1,  0},
             {+1,  0},
+            {-1, -1},
+            {-1,  1},
+            { 1, -1},
+            { 1,  1},
         };
 
         for(int i = 0; i < ARR_SIZE(deltas); i++) {
@@ -1161,7 +1166,6 @@ static int n_closest_island_tiles(const struct nav_private *priv,
             if(!M_Tile_RelativeDesc(res, &neighb, deltas[i].c, deltas[i].r))
                 continue;
 
-            assert(memcmp(&curr, &neighb, sizeof(struct tile_desc)) != 0);
             const struct nav_chunk *chunk = 
                 &priv->chunks[layer][IDX(neighb.chunk_r, priv->width, neighb.chunk_c)];
 
@@ -3419,8 +3423,7 @@ done:
 }
 
 vec2_t N_ClosestPointAdjacentToIsland(void *nav_private, vec3_t map_pos, 
-                                      vec2_t pos, vec2_t island_pos,
-                                      enum nav_layer unit_layer, enum nav_layer island_layer)
+                                      vec2_t pos, vec2_t island_pos, enum nav_layer layer)
 {
     struct nav_private *priv = nav_private;
     struct map_resolution res;
@@ -3437,16 +3440,9 @@ vec2_t N_ClosestPointAdjacentToIsland(void *nav_private, vec3_t map_pos,
     result = M_Tile_DescForPoint2D(res, map_pos, island_pos, &dst_desc);
     assert(result);
 
-    const struct nav_chunk *src_chunk = 
-        &priv->chunks[unit_layer][src_desc.chunk_r * priv->width + src_desc.chunk_c];
     const struct nav_chunk *dst_chunk = 
-        &priv->chunks[island_layer][dst_desc.chunk_r * priv->width + dst_desc.chunk_c];
-
-    uint16_t start_idd = src_chunk->islands[src_desc.tile_r][src_desc.tile_c];
+        &priv->chunks[layer][dst_desc.chunk_r * priv->width + dst_desc.chunk_c];
     uint16_t target_iid = dst_chunk->islands[dst_desc.tile_r][dst_desc.tile_c];
-
-    if(start_idd == target_iid)
-        return tile_center_location(priv, map_pos, src_desc);
 
     vec2_t ret = pos;
     queue_td_t frontier;
@@ -3461,7 +3457,7 @@ vec2_t N_ClosestPointAdjacentToIsland(void *nav_private, vec3_t map_pos,
         queue_td_pop(&frontier, &curr);
 
         const struct nav_chunk *curr_chunk = 
-            &priv->chunks[island_layer][curr.chunk_r * priv->width + curr.chunk_c];
+            &priv->chunks[layer][curr.chunk_r * priv->width + curr.chunk_c];
         uint16_t curr_iid = curr_chunk->islands[curr.tile_r][curr.tile_c];
 
         if(curr_iid == target_iid) {

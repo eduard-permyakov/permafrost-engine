@@ -417,8 +417,7 @@ vec2_t N_ClosestPointAdjacentToLand(const struct map *map, void *nav_private,
  * ------------------------------------------------------------------------
  */
 vec2_t N_ClosestPointAdjacentToIsland(void *nav_private, vec3_t map_pos, 
-                                      vec2_t pos, vec2_t island_pos, 
-                                      enum nav_layer unit_layer, enum nav_layer island_layer);
+                                      vec2_t pos, vec2_t island_pos, enum nav_layer layer);
 
 /* ------------------------------------------------------------------------
  * Returns true if any tiles within the 'radius' of 'xa_pos' are on or adjacent
