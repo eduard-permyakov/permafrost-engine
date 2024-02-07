@@ -609,7 +609,10 @@ static void entity_die(uint32_t uid)
     E_Entity_Notify(EVENT_ENTITY_DEATH, uid, NULL, ES_ENGINE);
     vec_entity_push(&s_dying_ents, uid);
 
-    if(flags & ENTITY_FLAG_ANIMATED && !(flags & ENTITY_FLAG_BUILDING)) {
+    if(flags & ENTITY_FLAG_ANIMATED 
+    && !(flags & ENTITY_FLAG_BUILDING)
+    && !(flags & ENTITY_FLAG_WATER)
+    && !(flags & ENTITY_FLAG_AIR)) {
 
         struct combatstate *cs = combatstate_get(uid);
         cs->state = STATE_DEATH_ANIM_PLAYING;
@@ -664,6 +667,13 @@ static void entity_ranged_attack(uint32_t uid, uint32_t target)
 
     P_Projectile_Add(ent_pos, vel, uid, G_GetFactionIDFrom(gs->faction_ids, uid), 
         ent_dmg, PROJ_ONLY_HIT_COMBATABLE | PROJ_ONLY_HIT_ENEMIES, cs->pd);
+}
+
+static bool garrisoned(uint32_t uid)
+{
+    struct combat_gamestate *gs = &s_combat_work.gamestate;
+    uint32_t flags = G_FlagsGetFrom(gs->flags, uid);
+    return (flags & ENTITY_FLAG_GARRISONED);
 }
 
 static void on_death_anim_finish(void *user, void *event)
@@ -735,7 +745,7 @@ static void do_tryhit(uint32_t uid)
         return;
 
     cs->state = STATE_CAN_ATTACK;
-    if(entity_dead(cs->target_uid) || G_EntityIsGarrisoned(cs->target_uid)) {
+    if(entity_dead(cs->target_uid) || garrisoned(cs->target_uid)) {
         return; /* Our target already got 'killed' */
     }
 
@@ -766,7 +776,7 @@ static void do_tryhit(uint32_t uid)
 
 static void do_proj_tryhit(struct proj_hit *hit)
 {
-    if(entity_dead(hit->ent_uid) || G_EntityIsGarrisoned(hit->ent_uid))
+    if(entity_dead(hit->ent_uid) || garrisoned(hit->ent_uid))
         return;
 
     struct combatstate *cs = combatstate_get(hit->ent_uid);
@@ -1207,7 +1217,7 @@ static void entity_compute_update(uint32_t uid, struct combat_work_out *out)
     {
         assert(flags & ENTITY_FLAG_MOVABLE);
 
-        if(entity_dead(curr->target_uid) || G_EntityIsGarrisoned(curr->target_uid)) {
+        if(entity_dead(curr->target_uid) || garrisoned(curr->target_uid)) {
 
             curr->state = STATE_NOT_IN_COMBAT;
             curr->sticky = false;
@@ -1268,13 +1278,13 @@ static void entity_compute_update(uint32_t uid, struct combat_work_out *out)
     {
         /* Our target could have 'died' or gotten out of combat range - check this first. */
         if(entity_dead(curr->target_uid) 
-        || G_EntityIsGarrisoned(curr->target_uid)
+        || garrisoned(curr->target_uid)
         || !entity_can_attack(uid, curr->target_uid)) {
 
             if(curr->sticky) {
 
                 if(!entity_dead(curr->target_uid)
-                || G_EntityIsGarrisoned(curr->target_uid)) {
+                || garrisoned(curr->target_uid)) {
 
                     curr->state = STATE_MOVING_TO_TARGET_LOCKED;
                     out->notify_attack_end = true;
@@ -1347,7 +1357,7 @@ static void entity_compute_update(uint32_t uid, struct combat_work_out *out)
     case STATE_TURNING_TO_TARGET: {
 
         if(entity_dead(curr->target_uid) 
-        || G_EntityIsGarrisoned(curr->target_uid)
+        || garrisoned(curr->target_uid)
         || !entity_can_attack(uid, curr->target_uid)) {
 
             out->action = COMBAT_ACTION_STOP_COMBAT;
@@ -1912,7 +1922,7 @@ static void combat_render_targets(void)
         case STATE_MOVING_TO_TARGET_LOCKED:
         case STATE_CAN_ATTACK: {
 
-            if(entity_dead(curr.target_uid) || G_EntityIsGarrisoned(curr.target_uid))
+            if(entity_dead(curr.target_uid) || garrisoned(curr.target_uid))
                 continue;
         
             vec2_t delta;
