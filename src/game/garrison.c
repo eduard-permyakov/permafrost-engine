@@ -34,7 +34,6 @@
  */
 
 #include "garrison.h"
-#include "public/game.h"
 #include "game_private.h"
 #include "fog_of_war.h"
 #include "selection.h"
@@ -389,8 +388,6 @@ static void on_20hz_tick(void *user, void *event)
             assert(!gu_state->target_rendevouz_issued);
             break;
         case STATE_MOVING_TO_GARRISONABLE: {
-            //printf("[%u] -> MOVING state [still: %hhd]\n", uid,
-            //    G_Move_Still(uid));
             if(G_Move_Still(uid)) {
                 if(!G_EntityExists(gu_state->target) || G_EntityIsZombie(gu_state->target)) {
                     gu_state->target_rendevouz_issued = false;
@@ -418,23 +415,18 @@ static void on_20hz_tick(void *user, void *event)
                     gu_state->target_rendevouz_issued = false;
                     gu_state->state = STATE_GARRISONED;
                     break;
-                }else{
-                    printf("[%u] the unit is NOT adjacent to the transport... [ticks: %u]\n",
-                        uid, gu_state->wait_ticks);
                 }
 
                 struct garrisonable_state *target_state = gb_state_get(gu_state->target);
                 /* We were not able to reach the garrisonable target 
                  */
                 if(!target_state) {
-                    printf(" ~~~> there is NO target state...\n");
                     gu_state->wait_ticks = 0;
                     gu_state->target_rendevouz_issued = false;
                     gu_state = STATE_NOT_GARRISONED;
                     break;
                 }
                 if(target_state->state == STATE_MOVING_TO_PICKUP_POINT) {
-                    printf("entering AWAITING pickup state\n");
                     gu_state->wait_ticks = 0;
                     gu_state->state = STATE_AWAITING_PICKUP;
                     break;
@@ -446,7 +438,6 @@ static void on_20hz_tick(void *user, void *event)
                 if(gu_state->wait_ticks < GARRISON_WAIT_TICKS)
                     break;
 
-                printf("we've been STILL for 10 ticks (?)\n");
                 /* The transport is stopped, possibly due to a new command
                  * from the player.
                  */
@@ -801,10 +792,8 @@ bool G_Garrison_Enter(uint32_t garrisonable, uint32_t unit)
 
     G_StopEntity(unit, false, false);
     if(M_NavLocationsReachable(s_map, unit_layer, unit_pos, garrisonable_pos)) {
-        printf("SET SURROUND of the garrisonable\n");
         G_Move_SetSurroundEntity(unit, garrisonable);
     }else{
-        printf("GO TO THE POS\n");
         G_Move_SetDest(unit, unit_target_pos, false);
     }
     return true;
@@ -975,7 +964,6 @@ void G_Garrison_Stop(uint32_t uid)
         struct garrison_state *gus = gu_state_get(uid);
         assert(gus);
         if(gus->state != STATE_GARRISONED) {
-            printf("[%u] STOP\n", uid);
             gus->target_rendevouz_issued = false;
             gus->state = STATE_NOT_GARRISONED;
             gus->wait_ticks = 0;
@@ -987,5 +975,19 @@ void G_Garrison_Stop(uint32_t uid)
         gbs->state = STATE_IDLE;
         gbs->wait_ticks = 0;
     }
+}
+
+void G_Garrison_GetUnits(uint32_t uid, vec_entity_t *out)
+{
+    struct garrisonable_state *gbs = gb_state_get(uid);
+    assert(gbs);
+    vec_entity_copy(out, &gbs->garrisoned);
+}
+
+void G_Garrison_ClearGarrison(uint32_t uid)
+{
+    struct garrisonable_state *gbs = gb_state_get(uid);
+    assert(gbs);
+    vec_entity_reset(&gbs->garrisoned);
 }
 

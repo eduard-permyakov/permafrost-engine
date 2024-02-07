@@ -2195,8 +2195,12 @@ static void do_remove_entity(uint32_t uid)
     if(k == kh_end(s_entity_state_table))
         return;
 
+    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+
     do_stop(uid);
-    entity_unblock(uid);
+    if(!(flags & ENTITY_FLAG_GARRISONED)) {
+        entity_unblock(uid);
+    }
 
     kh_del(state, s_entity_state_table, k);
 }

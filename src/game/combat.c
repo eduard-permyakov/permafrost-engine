@@ -39,6 +39,7 @@
 #include "building.h"
 #include "fog_of_war.h"
 #include "position.h"
+#include "garrison.h"
 #include "public/game.h"
 #include "../ui.h"
 #include "../event.h"
@@ -608,6 +609,21 @@ static void entity_die(uint32_t uid)
     E_Global_Notify(EVENT_ENTITY_DIED, (void*)((uintptr_t)uid), ES_ENGINE);
     E_Entity_Notify(EVENT_ENTITY_DEATH, uid, NULL, ES_ENGINE);
     vec_entity_push(&s_dying_ents, uid);
+
+    /* All units garrisoned inside a 'dead' entity die also. 
+     */
+    if(flags & ENTITY_FLAG_GARRISONABLE) {
+        vec_entity_t garrisoned;
+        vec_entity_init(&garrisoned);
+        G_Garrison_GetUnits(uid, &garrisoned);
+        for(int i = 0; i < vec_size(&garrisoned); i++) {
+            uint32_t unit = vec_AT(&garrisoned, i);
+            E_Global_Notify(EVENT_ENTITY_DIED, (void*)((uintptr_t)unit), ES_ENGINE);
+            E_Entity_Notify(EVENT_ENTITY_DEATH_IMMEDIATE, unit, NULL, ES_ENGINE);
+        }
+        vec_entity_destroy(&garrisoned);
+        G_Garrison_ClearGarrison(uid);
+    }
 
     if(flags & ENTITY_FLAG_ANIMATED 
     && !(flags & ENTITY_FLAG_BUILDING)

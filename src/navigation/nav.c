@@ -3587,7 +3587,7 @@ void N_BlockersDecrefOBB(void *nav_private, int faction_id, uint32_t flags,
                          vec3_t map_pos, const struct obb *obb)
 {
     n_update_blockers_obb_water(nav_private, obb, faction_id, map_pos, -1);
-    n_update_blockers_obb_ground(nav_private, obb, faction_id, map_pos, +1);
+    n_update_blockers_obb_ground(nav_private, obb, faction_id, map_pos, -1);
 }
 
 bool N_IsMaximallyClose(void *nav_private, enum nav_layer layer, vec3_t map_pos, 

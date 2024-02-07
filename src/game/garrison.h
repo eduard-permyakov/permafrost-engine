@@ -36,6 +36,8 @@
 #ifndef GARRISON_H
 #define GARRISON_H
 
+#include "public/game.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -50,6 +52,8 @@ void G_Garrison_RemoveGarrisonable(uint32_t uid);
 int  G_Garrison_CurrContextualAction(void);
 bool G_Garrison_InTargetMode(void);
 void G_Garrison_Stop(uint32_t uid);
+void G_Garrison_GetUnits(uint32_t uid, vec_entity_t *out);
+void G_Garrison_ClearGarrison(uint32_t uid);
 
 #endif
 
