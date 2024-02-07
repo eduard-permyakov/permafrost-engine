@@ -2550,7 +2550,6 @@ void G_Zombiefy(uint32_t uid, bool invis)
 
 bool G_EntityExists(uint32_t uid)
 {
-    ASSERT_IN_MAIN_THREAD();
     khiter_t k = kh_get(entity, s_gs.active, uid);
     return (k != kh_end(s_gs.active));
 }

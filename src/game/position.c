@@ -293,7 +293,7 @@ int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t
 
     int ntotal = qt_ent_inrange_rect(&s_postree, 
         xz_min.x, xz_max.x, xz_min.z, xz_max.z, ent_ids, maxout);
-    ntotal = filter_garrisoned(NULL, out, ntotal);
+    ntotal = filter_garrisoned(NULL, ent_ids, ntotal);
     int ret = 0;
 
     for(int i = 0; i < ntotal; i++) {
@@ -360,7 +360,7 @@ int G_Pos_EntsInCircleWithPredFrom(qt_ent_t *tree, khash_t(id) *flags, vec2_t xz
 
     int ntotal = qt_ent_inrange_circle(tree, 
         xz_point.x, xz_point.z, range, ent_ids, maxout);
-    ntotal = filter_garrisoned(flags, out, ntotal);
+    ntotal = filter_garrisoned(flags, ent_ids, ntotal);
     int ret = 0;
 
     for(int i = 0; i < ntotal; i++) {

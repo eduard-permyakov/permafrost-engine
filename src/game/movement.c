@@ -2834,6 +2834,10 @@ static void on_20hz_tick(void *user, void *event)
 
     uint32_t curr;
 
+    /* The field computations can read various gamestate 
+     * from different threads. This is okay so long as nothing
+     * concurrently mutates it.
+     */
     PERF_PUSH("compute volatile fields");
     N_PrepareAsyncWork();
     kh_foreach_key(G_GetDynamicEntsSet(), curr, {

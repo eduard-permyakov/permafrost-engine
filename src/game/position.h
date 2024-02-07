@@ -57,7 +57,8 @@ qt_ent_t *G_Pos_CopyQuadTree(void);
 void      G_Pos_DestroyQuadTree(qt_ent_t *tree);
 int       G_Pos_EntsInCircleFrom(qt_ent_t *tree, khash_t(id) *flags, vec2_t xz_point, float range, 
                                  uint32_t *out, size_t maxout);
-int       G_Pos_EntsInCircleWithPredFrom(qt_ent_t *tree, khash_t(id) *flags, vec2_t xz_point, float range, 
+int       G_Pos_EntsInCircleWithPredFrom(qt_ent_t *tree, khash_t(id) *flags, 
+                                         vec2_t xz_point, float range, 
                                          uint32_t *out, size_t maxout,
                                          bool (*predicate)(uint32_t ent, void *arg), void *arg);
 
