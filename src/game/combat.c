@@ -504,7 +504,11 @@ static bool valid_enemy(uint32_t curr, void *arg)
 {
     struct combat_gamestate *gs = &s_combat_work.gamestate;
     uint32_t ent = (uintptr_t)arg;
+    uint32_t ent_flags = G_FlagsGetFrom(gs->flags, ent);
     uint32_t curr_flags = G_FlagsGetFrom(gs->flags, curr);
+
+    struct combatstate *ent_cs = combatstate_get(ent);
+    assert(ent_cs);
 
     if(curr == ent)
         return false;
@@ -514,6 +518,10 @@ static bool valid_enemy(uint32_t curr, void *arg)
     && !G_Building_IsFoundedFrom(gs->buildstate, curr))
         return false;
     if(!enemies(ent, curr))
+        return false;
+    if(!(ent_flags & ENTITY_FLAG_AIR)
+    && (curr_flags & ENTITY_FLAG_AIR)
+    && (ent_cs->stats.attack_range == 0.0f))
         return false;
 
     struct combatstate *cs = combatstate_get(curr);
