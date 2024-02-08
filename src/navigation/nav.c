@@ -676,6 +676,15 @@ static int n_update_edge_states(struct nav_chunk *chunk)
     return ret;
 }
 
+static void n_update_all_edge_states(struct nav_private *priv, enum nav_layer layer)
+{
+    size_t nchunks = priv->width * priv->height;
+    for(int i = 0; i < nchunks; i++) {
+        struct nav_chunk *chunk = &priv->chunks[layer][i];
+        n_update_edge_states(chunk);
+    }
+}
+
 static void n_render_grid_path(struct nav_chunk *chunk, mat4x4_t *chunk_model,
                                const struct map *map, vec_coord_t *path, vec3_t color)
 {
@@ -1693,6 +1702,7 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
     (void)result;
 
     n_update_dirty_local_islands(nav_private, layer);
+    n_update_all_edge_states(nav_private, layer);
 
     /* Convert source and destination positions to tile coordinates */
     struct tile_desc src_desc, dst_desc;
