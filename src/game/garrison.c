@@ -511,9 +511,13 @@ static void on_20hz_tick(void *user, void *event)
         }
         case STATE_MOVING_TO_DROPOFF_POINT: {
 
+            uint32_t garrisonable_flags = G_FlagsGet(uid);
             enum nav_layer garrisonable_layer = Entity_NavLayer(uid);
             float garrisonable_radius = G_GetSelectionRadius(uid);
             vec2_t garrisonable_pos = G_Pos_GetXZ(uid);
+
+            uint32_t first = vec_AT(&gb_state->garrisoned, 0);
+            enum nav_layer target_layer = Entity_NavLayer(first);
 
             vec2_t delta;
             PFM_Vec2_Sub(&gb_state->rendevouz_point_transport, &garrisonable_pos, &delta);
@@ -521,7 +525,19 @@ static void on_20hz_tick(void *user, void *event)
 
             if(G_Move_Still(uid)) {
 
-                if(M_NavIsAdjacentToIsland(s_map, garrisonable_layer, garrisonable_pos,
+                if((garrisonable_flags & ENTITY_FLAG_AIR)
+                && (M_NavIsMaximallyClose(s_map, garrisonable_layer, garrisonable_pos,
+                    gb_state->evict_target, tolerance + GARRISON_BUFFER_DIST)
+                    || PFM_Vec2_Len(&delta) < tolerance + GARRISON_BUFFER_DIST)) {
+
+                    gb_state->state = STATE_IDLE;
+                    gb_state->wait_ticks = 0;
+                    G_Garrison_EvictAll(uid, gb_state->evict_target);
+                    break;
+                }
+
+                if((garrisonable_flags & ENTITY_FLAG_WATER)
+                && M_NavIsAdjacentToIsland(s_map, target_layer, garrisonable_pos,
                     tolerance + GARRISON_BUFFER_DIST, gb_state->evict_target)){
 
                     gb_state->state = STATE_IDLE;
@@ -531,6 +547,8 @@ static void on_20hz_tick(void *user, void *event)
                 }
                 gb_state->wait_ticks++;
                 if(gb_state->wait_ticks == GARRISONABLE_WAIT_TICKS) {
+                    /* Retry */
+                    gb_state->wait_ticks = 0;
                     G_Move_SetDest(uid, gb_state->evict_target, false);
                 }
             }
@@ -589,10 +607,24 @@ static bool transport_move(uint32_t garrisonable, vec2_t target)
      * come adjacent to the targeted "island" and only subsequently
      * evict the units.
      */
-    if((garrisonable_flags & (ENTITY_FLAG_WATER | ENTITY_FLAG_MOVABLE))
-    && !(unit_flags & ENTITY_FLAG_WATER)
-    && !M_NavIsAdjacentToIsland(s_map, target_layer, garrisonable_pos,
-        garrisonable_radius * 1.5f, target)) {
+    bool water_transport_should_rendevouz = 
+         ((garrisonable_flags & (ENTITY_FLAG_WATER | ENTITY_FLAG_MOVABLE)) == (ENTITY_FLAG_WATER | ENTITY_FLAG_MOVABLE))
+     &&  !(unit_flags & ENTITY_FLAG_WATER);
+
+    bool air_transport_should_rendevouz = 
+         ((garrisonable_flags & (ENTITY_FLAG_AIR | ENTITY_FLAG_MOVABLE)) == (ENTITY_FLAG_AIR | ENTITY_FLAG_MOVABLE))
+     &&  !(unit_flags & ENTITY_FLAG_AIR);
+
+    vec2_t delta;
+    PFM_Vec2_Sub(&target, &garrisonable_pos, &delta);
+    float distance = PFM_Vec2_Len(&delta);
+    float tolerance = garrisonable_radius * 1.5f;
+
+    if((water_transport_should_rendevouz
+        && !M_NavIsAdjacentToIsland(s_map, target_layer, garrisonable_pos, tolerance, target)) 
+    || (air_transport_should_rendevouz
+        && (!M_NavIsMaximallyClose(s_map, transport_layer, garrisonable_pos, target, tolerance)
+            && distance > tolerance))) {
 
         if(gbs->state == STATE_MOVING_TO_DROPOFF_POINT) {
 
@@ -740,8 +772,15 @@ bool G_Garrison_Enter(uint32_t garrisonable, uint32_t unit)
     vec2_t rendevouz_point;
     vec2_t rendevouz_point_transport;
 
-    if((garrisonable_flags & (ENTITY_FLAG_WATER | ENTITY_FLAG_MOVABLE))
-    && !(unit_flags & ENTITY_FLAG_WATER)) {
+    bool water_transport_should_rendevouz = 
+         ((garrisonable_flags & (ENTITY_FLAG_WATER | ENTITY_FLAG_MOVABLE)) == (ENTITY_FLAG_WATER | ENTITY_FLAG_MOVABLE))
+     &&  !(unit_flags & ENTITY_FLAG_WATER);
+
+    bool air_transport_should_rendevouz = 
+         ((garrisonable_flags & (ENTITY_FLAG_AIR | ENTITY_FLAG_MOVABLE)) == (ENTITY_FLAG_AIR | ENTITY_FLAG_MOVABLE))
+     &&  !(unit_flags & ENTITY_FLAG_AIR);
+
+    if(water_transport_should_rendevouz || air_transport_should_rendevouz) {
 
         if(M_NavIsAdjacentToIsland(s_map, unit_layer, garrisonable_pos,
             garrisonable_radius * 1.5f, unit_pos)) {

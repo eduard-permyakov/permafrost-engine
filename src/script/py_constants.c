@@ -853,6 +853,8 @@ static void s_expose_game_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, FORMATION_RANK);
     PY_EXPOSE_ENUM(module, FORMATION_COLUMN);
     PY_EXPOSE_ENUM(module, FORMATION_MAX);
+
+    PY_EXPOSE_ENUM(module, AIR_UNIT_HEIGHT);
 }
 
 static void s_expose_anim_constants(PyObject *module)

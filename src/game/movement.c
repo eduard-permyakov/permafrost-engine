@@ -72,9 +72,9 @@
 
 /* For the purpose of movement simulation, all entities have the same mass,
  * meaning they are accelerate the same amount when applied equal forces. */
-#define ENTITY_MASS  (1.0f)
-#define EPSILON      (1.0f/1024)
-#define MAX_FORCE    (0.75f)
+#define ENTITY_MASS     (1.0f)
+#define EPSILON         (1.0f/1024)
+#define MAX_FORCE       (0.75f)
 
 #define SIGNUM(x)    (((x) > 0) - ((x) < 0))
 #define MAX(a, b)    ((a) > (b) ? (a) : (b))
@@ -1358,6 +1358,7 @@ static vec2_t cohesion_force(uint32_t uid, const struct flock *flock)
 static vec2_t separation_force(uint32_t uid, float buffer_dist)
 {
     vec2_t ret = (vec2_t){0.0f};
+    uint32_t ent_flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
     uint32_t near_ents[128];
     int num_near = G_Pos_EntsInCircleFrom(s_move_work.gamestate.postree,
         s_move_work.gamestate.flags,
@@ -1371,6 +1372,8 @@ static vec2_t separation_force(uint32_t uid, float buffer_dist)
         if(curr == uid)
             continue;
         if(!(flags & ENTITY_FLAG_MOVABLE))
+            continue;
+        if((ent_flags & ENTITY_FLAG_AIR) != (curr & ENTITY_FLAG_AIR))
             continue;
 
         vec2_t diff;
@@ -1798,6 +1801,9 @@ static float unit_height(uint32_t uid, vec2_t pos)
     uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
     if(flags & ENTITY_FLAG_WATER)
         return 0.0f;
+    if(flags & ENTITY_FLAG_AIR) {
+        return M_HeightAtPoint(s_map, pos) + AIR_UNIT_HEIGHT;
+    }
     return M_HeightAtPoint(s_map, pos);
 }
 
@@ -2072,6 +2078,7 @@ static void find_neighbours(uint32_t uid,
      * meaning they will not perform collision avoidance maneuvers of
      * their own. */
 
+    uint32_t ent_flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
     uint32_t near_ents[512];
     int num_near = G_Pos_EntsInCircleFrom(s_move_work.gamestate.postree, 
         s_move_work.gamestate.flags,
@@ -2090,6 +2097,9 @@ static void find_neighbours(uint32_t uid,
             continue;
 
         if(G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr) == 0.0f)
+            continue;
+
+        if((ent_flags & ENTITY_FLAG_AIR) != (curr & ENTITY_FLAG_AIR))
             continue;
 
         struct movestate *ms = movestate_get(curr);

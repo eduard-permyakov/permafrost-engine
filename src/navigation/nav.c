@@ -224,8 +224,10 @@ static struct map_resolution n_res(void *nav_private)
 
 static bool n_height_pathable(enum nav_layer layer, int height)
 {
-    if(layer >= NAV_LAYER_WATER_1X1 && layer < NAV_LAYER_MAX)
+    if(layer >= NAV_LAYER_WATER_1X1 && layer <= NAV_LAYER_WATER_7X7)
         return (height <= -1);
+    if(layer >= NAV_LAYER_AIR_1X1 && layer <= NAV_LAYER_AIR_7X7)
+        return true;
     return (height >= -1);
 }
 
@@ -293,10 +295,12 @@ static void n_set_cost_for_tile(enum nav_layer layer, struct nav_chunk *chunk,
     for(int c = 0; c < 2; c++) {
 
         bool pathable = false;
-        if(layer >= 0 && layer < NAV_LAYER_WATER_1X1)
+        if(layer >= 0 && layer <= NAV_LAYER_GROUND_7X7)
             pathable = n_tile_pathable(tile);
-        if(layer >= NAV_LAYER_WATER_1X1 && layer < NAV_LAYER_MAX)
+        if(layer >= NAV_LAYER_WATER_1X1 && layer <= NAV_LAYER_WATER_7X7)
             pathable = n_tile_water_pathable(tile);
+        if(layer >= NAV_LAYER_AIR_1X1 && layer <= NAV_LAYER_AIR_7X7)
+            pathable = true;
 
         float corner_height = M_Tile_HeightAtPos(tile, c, r);
         chunk->cost_base[r_base + r][c_base + c] = 
@@ -1052,6 +1056,34 @@ static void n_update_blockers_circle_water(struct nav_private *priv, vec2_t xz_p
     n_update_blockers(priv, NAV_LAYER_WATER_7X7, faction_id, outline7x7, noutline7x7, ref_delta);
 }
 
+static void n_update_blockers_circle_air(struct nav_private *priv, vec2_t xz_pos, float range, 
+                                         int faction_id, vec3_t map_pos, int ref_delta)
+{
+    struct tile_desc tds[1024];
+    int ntds = M_Tile_AllUnderCircle(n_res(priv), xz_pos, range, map_pos, tds, ARR_SIZE(tds));
+    n_update_blockers(priv, NAV_LAYER_AIR_1X1, faction_id, tds, ntds, ref_delta);
+
+    struct tile_desc outline3x3[1024];
+    int noutline3x3 = M_Tile_Contour(ntds, tds, n_res(priv), outline3x3, ARR_SIZE(outline3x3));
+    n_update_blockers(priv, NAV_LAYER_AIR_3X3, faction_id, tds, ntds, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_AIR_3X3, faction_id, outline3x3, noutline3x3, ref_delta);
+
+    struct tile_desc outline5x5[1024];
+    int noutline5x5 = M_Tile_Contour(noutline3x3, outline3x3, n_res(priv), outline5x5, 
+        ARR_SIZE(outline5x5));
+    n_update_blockers(priv, NAV_LAYER_AIR_5X5, faction_id, tds, ntds, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_AIR_5X5, faction_id, outline3x3, noutline3x3, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_AIR_5X5, faction_id, outline5x5, noutline5x5, ref_delta);
+
+    struct tile_desc outline7x7[1024];
+    int noutline7x7 = M_Tile_Contour(noutline5x5, outline5x5, n_res(priv), outline7x7, 
+        ARR_SIZE(outline7x7));
+    n_update_blockers(priv, NAV_LAYER_AIR_7X7, faction_id, tds, ntds, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_AIR_7X7, faction_id, outline3x3, noutline3x3, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_AIR_7X7, faction_id, outline5x5, noutline5x5, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_AIR_7X7, faction_id, outline7x7, noutline7x7, ref_delta);
+}
+
 static void n_update_blockers_obb_ground(struct nav_private *priv, const struct obb *obb, 
                                          int faction_id, vec3_t map_pos, int ref_delta)
 {
@@ -1102,6 +1134,32 @@ static void n_update_blockers_obb_water(struct nav_private *priv, const struct o
     n_update_blockers(priv, NAV_LAYER_WATER_7X7, faction_id, outline3x3, noutline3x3, ref_delta);
     n_update_blockers(priv, NAV_LAYER_WATER_7X7, faction_id, outline5x5, noutline5x5, ref_delta);
     n_update_blockers(priv, NAV_LAYER_WATER_7X7, faction_id, outline7x7, noutline7x7, ref_delta);
+}
+
+static void n_update_blockers_obb_air(struct nav_private *priv, const struct obb *obb, 
+                                      int faction_id, vec3_t map_pos, int ref_delta)
+{
+    struct tile_desc tds[1024];
+    int ntds = M_Tile_AllUnderObj(map_pos, n_res(priv), obb, tds, ARR_SIZE(tds));
+    n_update_blockers(priv, NAV_LAYER_AIR_1X1, faction_id, tds, ntds, ref_delta);
+
+    struct tile_desc outline3x3[1024];
+    int noutline3x3 = M_Tile_Contour(ntds, tds, n_res(priv), outline3x3, ARR_SIZE(outline3x3));
+    n_update_blockers(priv, NAV_LAYER_AIR_3X3, faction_id, tds, ntds, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_AIR_3X3, faction_id, outline3x3, noutline3x3, ref_delta);
+
+    struct tile_desc outline5x5[1024];
+    int noutline5x5 = M_Tile_Contour(noutline3x3, outline3x3, n_res(priv), outline5x5, ARR_SIZE(outline5x5));
+    n_update_blockers(priv, NAV_LAYER_AIR_5X5, faction_id, tds, ntds, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_AIR_5X5, faction_id, outline3x3, noutline3x3, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_AIR_5X5, faction_id, outline5x5, noutline5x5, ref_delta);
+
+    struct tile_desc outline7x7[1024];
+    int noutline7x7 = M_Tile_Contour(noutline5x5, outline5x5, n_res(priv), outline7x7, ARR_SIZE(outline7x7));
+    n_update_blockers(priv, NAV_LAYER_AIR_7X7, faction_id, tds, ntds, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_AIR_7X7, faction_id, outline3x3, noutline3x3, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_AIR_7X7, faction_id, outline5x5, noutline5x5, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_AIR_7X7, faction_id, outline7x7, noutline7x7, ref_delta);
 }
 
 static int manhattan_dist(struct tile_desc a, struct tile_desc b)
@@ -2729,6 +2787,9 @@ void N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *o
     size_t ntiles = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
 
     for(int layer = 0; layer < NAV_LAYER_MAX; layer++) {
+        /* Do not cut out from air layers */
+        if(layer >= NAV_LAYER_AIR_1X1 && layer <= NAV_LAYER_AIR_7X7)
+            continue;
         /* In the current implementation, we are content to block 
          * the exact same tiles for all the existing layers */
         for(int i = 0; i < ntiles; i++) {
@@ -3565,29 +3626,45 @@ vec2_t N_TileDims(void)
 void N_BlockersIncref(vec2_t xz_pos, float range, int faction_id, uint32_t flags,
                       vec3_t map_pos, void *nav_private)
 {
-    n_update_blockers_circle_water(nav_private, xz_pos, range, faction_id, map_pos, +1);
-    n_update_blockers_circle_ground(nav_private, xz_pos, range, faction_id, map_pos, +1);
+    if(flags & ENTITY_FLAG_AIR) {
+        n_update_blockers_circle_air(nav_private, xz_pos, range, faction_id, map_pos, +1);
+    }else{
+        n_update_blockers_circle_water(nav_private, xz_pos, range, faction_id, map_pos, +1);
+        n_update_blockers_circle_ground(nav_private, xz_pos, range, faction_id, map_pos, +1);
+    }
 }
 
 void N_BlockersDecref(vec2_t xz_pos, float range, int faction_id, uint32_t flags,
                       vec3_t map_pos, void *nav_private)
 {
-    n_update_blockers_circle_water(nav_private, xz_pos, range, faction_id, map_pos, -1);
-    n_update_blockers_circle_ground(nav_private, xz_pos, range, faction_id, map_pos, -1);
+    if(flags & ENTITY_FLAG_AIR) {
+        n_update_blockers_circle_air(nav_private, xz_pos, range, faction_id, map_pos, -1);
+    }else{
+        n_update_blockers_circle_water(nav_private, xz_pos, range, faction_id, map_pos, -1);
+        n_update_blockers_circle_ground(nav_private, xz_pos, range, faction_id, map_pos, -1);
+    }
 }
 
 void N_BlockersIncrefOBB(void *nav_private, int faction_id, uint32_t flags,
                          vec3_t map_pos, const struct obb *obb)
 {
-    n_update_blockers_obb_water(nav_private, obb, faction_id, map_pos, +1);
-    n_update_blockers_obb_ground(nav_private, obb, faction_id, map_pos, +1);
+    if(flags & ENTITY_FLAG_AIR) {
+        n_update_blockers_obb_air(nav_private, obb, faction_id, map_pos, +1);
+    }else{
+        n_update_blockers_obb_water(nav_private, obb, faction_id, map_pos, +1);
+        n_update_blockers_obb_ground(nav_private, obb, faction_id, map_pos, +1);
+    }
 }
 
 void N_BlockersDecrefOBB(void *nav_private, int faction_id, uint32_t flags,
                          vec3_t map_pos, const struct obb *obb)
 {
-    n_update_blockers_obb_water(nav_private, obb, faction_id, map_pos, -1);
-    n_update_blockers_obb_ground(nav_private, obb, faction_id, map_pos, -1);
+    if(flags & ENTITY_FLAG_AIR) {
+        n_update_blockers_obb_air(nav_private, obb, faction_id, map_pos, -1);
+    }else{
+        n_update_blockers_obb_water(nav_private, obb, faction_id, map_pos, -1);
+        n_update_blockers_obb_ground(nav_private, obb, faction_id, map_pos, -1);
+    }
 }
 
 bool N_IsMaximallyClose(void *nav_private, enum nav_layer layer, vec3_t map_pos, 

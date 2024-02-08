@@ -966,8 +966,50 @@ static PyTypeObject PyWaterEntity_type = {
     .tp_basicsize = sizeof(PyWaterEntityObject), 
     .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_doc       = "Permafrost Engine water-based entity. This is a subclass of pf.Entity. "
-                    "This kind of entity is restricted to being on water.",
+                    "This kind of entity ignores ground and water obstacles.",
     .tp_methods   = PyWaterEntity_methods,
+    .tp_getset    = NULL,
+    .tp_base      = &PyEntity_type,
+};
+
+/*****************************************************************************/
+/* pf.AirEntity                                                              */
+/*****************************************************************************/
+
+typedef struct {
+    PyEntityObject super; 
+}PyAirEntityObject;
+
+static PyObject *PyAirEntity_del(PyAirEntityObject *self);
+static PyObject *PyAirEntity_pickle(PyAirEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyAirEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
+
+static PyMethodDef PyAirEntity_methods[] = {
+
+    {"__del__", 
+    (PyCFunction)PyAirEntity_del, METH_NOARGS,
+    "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
+
+    {"__pickle__", 
+    (PyCFunction)PyAirEntity_pickle, METH_KEYWORDS,
+    "Serialize a Permafrost Engine combatable entity to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyAirEntity_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
+    "Create a new pf.AirEntity instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyAirEntity_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name      = "pf.AirEntity",
+    .tp_basicsize = sizeof(PyAirEntityObject), 
+    .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc       = "Permafrost Engine air-based (flying) entity. This is a subclass of pf.Entity. "
+                    "This kind of entity .",
+    .tp_methods   = PyAirEntity_methods,
     .tp_getset    = NULL,
     .tp_base      = &PyEntity_type,
 };
@@ -1244,6 +1286,9 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
     if(!zombie && PyType_IsSubtype(type, &PyWaterEntity_type))
         extra_flags |= ENTITY_FLAG_WATER;
+
+    if(!zombie && PyType_IsSubtype(type, &PyAirEntity_type))
+        extra_flags |= ENTITY_FLAG_AIR;
 
     if(!zombie && PyType_IsSubtype(type, &PyGarrisonEntity_type))
         extra_flags |= ENTITY_FLAG_GARRISON;
@@ -3667,7 +3712,6 @@ static PyObject *PyMovableEntity_move(PyMovableEntityObject *self, PyObject *arg
     Py_RETURN_NONE;
 }
 
-
 static PyObject *PyMovableEntity_del(PyMovableEntityObject *self)
 {
     return s_super_del((PyObject*)self, &PyMovableEntity_type);
@@ -3698,6 +3742,22 @@ static PyObject *PyWaterEntity_pickle(PyWaterEntityObject *self, PyObject *args,
 static PyObject *PyWaterEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
     return s_call_super_method("__unpickle__", (PyObject*)&PyWaterEntity_type, cls, args, kwargs);
+}
+
+static PyObject *PyAirEntity_del(PyAirEntityObject *self)
+{
+    return s_super_del((PyObject*)self, &PyAirEntity_type);
+}
+
+static PyObject *PyAirEntity_pickle(PyAirEntityObject *self, PyObject *args, PyObject *kwargs)
+{
+    return s_call_super_method("__pickle__", (PyObject*)&PyAirEntity_type, 
+        (PyObject*)self, args, kwargs);
+}
+
+static PyObject *PyAirEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
+{
+    return s_call_super_method("__unpickle__", (PyObject*)&PyAirEntity_type, cls, args, kwargs);
 }
 
 static PyObject *PyGarrisonEntity_garrison(PyGarrisonEntityObject *self, PyObject *args)
@@ -4045,6 +4105,11 @@ void S_Entity_PyRegister(PyObject *module)
         Py_FatalError("Can't initialize pf.WaterEntity type");
     Py_INCREF(&PyWaterEntity_type);
     PyModule_AddObject(module, "WaterEntity", (PyObject*)&PyWaterEntity_type);
+
+    if(PyType_Ready(&PyAirEntity_type) < 0)
+        Py_FatalError("Can't initialize pf.AirEntity type");
+    Py_INCREF(&PyAirEntity_type);
+    PyModule_AddObject(module, "AirEntity", (PyObject*)&PyAirEntity_type);
 
     if(PyType_Ready(&PyGarrisonEntity_type) < 0)
         Py_FatalError("Can't initialize pf.GarrisonEntity type");

@@ -520,14 +520,23 @@ int Entity_NavLayer(uint32_t uid)
 int Entity_NavLayerWithRadius(uint32_t flags, float radius)
 {
     bool water = !!(flags & ENTITY_FLAG_WATER);
+    bool air = !!(flags & ENTITY_FLAG_AIR);
     if(radius >= 15.0f) {
-        return water ? NAV_LAYER_WATER_7X7 : NAV_LAYER_GROUND_7X7;
+        return water ? NAV_LAYER_WATER_7X7 : 
+               air   ? NAV_LAYER_AIR_7X7   :
+                       NAV_LAYER_GROUND_7X7;
     }else if(radius >= 10.0f) {
-        return water ? NAV_LAYER_WATER_5X5 : NAV_LAYER_GROUND_5X5;
+        return water ? NAV_LAYER_WATER_5X5 : 
+               air   ? NAV_LAYER_AIR_5X5   :
+                       NAV_LAYER_GROUND_5X5;
     }else if(radius >= 5.0f) {
-        return water ? NAV_LAYER_WATER_3X3 : NAV_LAYER_GROUND_3X3;
+        return water ? NAV_LAYER_WATER_3X3 : 
+               air   ? NAV_LAYER_AIR_3X3   :
+                       NAV_LAYER_GROUND_3X3;
     }else{
-        return water ? NAV_LAYER_WATER_1X1 : NAV_LAYER_GROUND_1X1;
+        return water ? NAV_LAYER_WATER_1X1 :
+               air   ? NAV_LAYER_AIR_1X1   : 
+                       NAV_LAYER_GROUND_1X1;
     }
 }
 

@@ -185,6 +185,7 @@ static void on_motion_end(void *user, void *event)
     assert(bs->target_uid != UID_NONE);
 
     if(!G_EntityExists(bs->target_uid)
+    ||  G_EntityIsZombie(bs->target_uid)
     || !M_NavObjAdjacent(s_map, uid, bs->target_uid)) {
         bs->state = STATE_NOT_BUILDING;
         bs->target_uid = UID_NONE;
