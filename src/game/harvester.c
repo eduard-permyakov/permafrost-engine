@@ -405,10 +405,13 @@ static bool valid_storage_site_dropoff(uint32_t curr, void *arg)
     struct searcharg *sarg = arg;
     struct hstate *hs = hstate_get(sarg->ent);
     uint32_t curr_flags = G_FlagsGet(curr);
+    uint32_t ent_flags = G_FlagsGet(sarg->ent);
 
     if(!(curr_flags & ENTITY_FLAG_STORAGE_SITE))
         return false;
     if(G_GetFactionID(sarg->ent) != G_GetFactionID(curr))
+        return false;
+    if(!(curr_flags & ENTITY_FLAG_WATER) && (ent_flags & ENTITY_FLAG_WATER))
         return false;
 
     int stored = G_StorageSite_GetCurr(curr, sarg->rname);
@@ -427,6 +430,7 @@ static bool valid_storage_site_source(uint32_t curr, void *arg)
     struct searcharg *sarg = arg;
     struct hstate *hs = hstate_get(sarg->ent);
     uint32_t curr_flags = G_FlagsGet(curr);
+    uint32_t ent_flags = G_FlagsGet(sarg->ent);
 
     if(!(curr_flags & ENTITY_FLAG_STORAGE_SITE))
         return false;
@@ -435,6 +439,8 @@ static bool valid_storage_site_source(uint32_t curr, void *arg)
     if(curr == sarg->ent)
         return false;
     if(G_StorageSite_GetDoNotTake(curr))
+        return false;
+    if(!(curr_flags & ENTITY_FLAG_WATER) && (ent_flags & ENTITY_FLAG_WATER))
         return false;
 
     /* Don't get resources from build sites - this prevents builders 
