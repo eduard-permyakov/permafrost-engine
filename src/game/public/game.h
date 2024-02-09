@@ -147,7 +147,7 @@ void            G_SetMinimapRenderAllEntities(bool on);
 bool            G_MouseOverMinimap(void);
 bool            G_MouseInTargetMode(void);
 bool            G_MapHeightAtPoint(vec2_t xz, float *out_height);
-bool            G_MapClosestPathable(vec2_t xz, vec2_t *out);
+bool            G_MapClosestPathable(vec2_t xz, vec2_t *out, enum nav_layer layer);
 bool            G_PointInsideMap(vec2_t xz);
 bool            G_PointOverWater(vec2_t xz);
 bool            G_PointOverLand(vec2_t xz);

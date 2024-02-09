@@ -161,7 +161,9 @@ static PyObject *PyPf_mouse_over_minimap(PyObject *self);
 static PyObject *PyPf_map_pos_over_water(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_pos_over_land(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args);
-static PyObject *PyPf_map_nearest_pathable(PyObject *self, PyObject *args);
+static PyObject *PyPf_map_nearest_pathable(PyObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPf_map_nearest_pathable_water(PyObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPf_map_nearest_pathable_air(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_map_pos_under_cursor(PyObject *self);
 static PyObject *PyPf_draw_text(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_storage_site_ui_style(PyObject *self, PyObject *args);
@@ -533,8 +535,16 @@ static PyMethodDef pf_module_methods[] = {
     "specified coordinate is outside the map bounds."},
 
     {"map_nearest_pathable",
-    (PyCFunction)PyPf_map_nearest_pathable, METH_VARARGS,
+    (PyCFunction)PyPf_map_nearest_pathable, METH_VARARGS | METH_KEYWORDS,
     "Returns the closest XZ map position that is pathable and not currently blocked."},
+
+    {"map_nearest_pathable_water",
+    (PyCFunction)PyPf_map_nearest_pathable_water, METH_VARARGS | METH_KEYWORDS,
+    "Returns the closest XZ map position that is on water, pathable and not currently blocked."},
+
+    {"map_nearest_pathable_air",
+    (PyCFunction)PyPf_map_nearest_pathable_air, METH_VARARGS | METH_KEYWORDS,
+    "Returns the closest XZ map position that is not currently blocked by other air units."},
 
     {"map_pos_under_cursor",
     (PyCFunction)PyPf_map_pos_under_cursor, METH_NOARGS,
@@ -1946,17 +1956,72 @@ static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args)
     }
 }
 
-static PyObject *PyPf_map_nearest_pathable(PyObject *self, PyObject *args)
+static PyObject *PyPf_map_nearest_pathable(PyObject *self, PyObject *args, PyObject *kwargs)
 {
     float x, z;
+    static char *kwlist[] = {"pos", "radius", NULL};
+    float radius = 0.0f;
 
-    if(!PyArg_ParseTuple(args, "(ff)", &x, &z)) {
-        PyErr_SetString(PyExc_TypeError, "Arguments must be a tuple of two floats.");
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "(ff)|f", kwlist, &x, &z)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a tuple of two floats. "
+            "An optional (float) 'radius' arugment is allowed.");
         return NULL;
     }
 
+    uint32_t flags = 0;
+    enum nav_layer layer = Entity_NavLayerWithRadius(flags, radius);
+
     vec2_t ret;
-    bool exists = G_MapClosestPathable((vec2_t){x, z}, &ret);
+    bool exists = G_MapClosestPathable((vec2_t){x, z}, &ret, layer);
+    if(!exists) {
+        Py_RETURN_NONE;
+    }else{
+        return Py_BuildValue("ff", ret.x, ret.z);
+    }
+}
+
+static PyObject *PyPf_map_nearest_pathable_water(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    float x, z;
+    static char *kwlist[] = {"pos", "radius", NULL};
+    float radius = 0.0f;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "(ff)|f", kwlist, &x, &z, &radius)) {
+        PyErr_Print();
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a tuple of two floats. "
+            "An optional (float) 'radius' arugment is allowed.");
+        return NULL;
+    }
+
+    uint32_t flags = ENTITY_FLAG_WATER;
+    enum nav_layer layer = Entity_NavLayerWithRadius(flags, radius);
+
+    vec2_t ret;
+    bool exists = G_MapClosestPathable((vec2_t){x, z}, &ret, layer);
+    if(!exists) {
+        Py_RETURN_NONE;
+    }else{
+        return Py_BuildValue("ff", ret.x, ret.z);
+    }
+}
+
+static PyObject *PyPf_map_nearest_pathable_air(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    float x, z;
+    static char *kwlist[] = {"pos", "radius", NULL};
+    float radius = 0.0f;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "(ff)|f", kwlist, &x, &z, &radius)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a tuple of two floats. "
+            "An optional (float) 'radius' arugment is allowed.");
+        return NULL;
+    }
+
+    uint32_t flags = ENTITY_FLAG_AIR;
+    enum nav_layer layer = Entity_NavLayerWithRadius(flags, radius);
+
+    vec2_t ret;
+    bool exists = G_MapClosestPathable((vec2_t){x, z}, &ret, layer);
     if(!exists) {
         Py_RETURN_NONE;
     }else{
