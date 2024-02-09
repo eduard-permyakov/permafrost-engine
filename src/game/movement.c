@@ -1373,7 +1373,7 @@ static vec2_t separation_force(uint32_t uid, float buffer_dist)
             continue;
         if(!(flags & ENTITY_FLAG_MOVABLE))
             continue;
-        if((ent_flags & ENTITY_FLAG_AIR) != (curr & ENTITY_FLAG_AIR))
+        if((ent_flags & ENTITY_FLAG_AIR) != (flags & ENTITY_FLAG_AIR))
             continue;
 
         vec2_t diff;
@@ -2099,7 +2099,7 @@ static void find_neighbours(uint32_t uid,
         if(G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr) == 0.0f)
             continue;
 
-        if((ent_flags & ENTITY_FLAG_AIR) != (curr & ENTITY_FLAG_AIR))
+        if((ent_flags & ENTITY_FLAG_AIR) != (flags & ENTITY_FLAG_AIR))
             continue;
 
         struct movestate *ms = movestate_get(curr);
