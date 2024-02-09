@@ -45,6 +45,7 @@ Download the free (or donate what-you-want) demo on [itch.io](https://spb.itch.i
 * Dynamic collision avoidance of multiple entities using Hybrid Reciprocal Velocity Obstacles and the ClearPath algorithm
 * Formation-based unit movement and placement
 * Pathfinding of different kinds/sizes of units (using "navigation layers")
+* Pathfinding of Land, Water, and Air units
 * Movement and pathfinding computations accelerated with parallelism
 * Efficient spatial indexing using a quadtree
 * Efficient real-time tracking of entity membership to dynamic spatial regions
@@ -55,6 +56,7 @@ Download the free (or donate what-you-want) demo on [itch.io](https://spb.itch.i
 * RTS fog-of-war system
 * RTS base-building mechanics
 * RTS resource gathering (and transporting) mechanics
+* RTS unit garrison and transport mechanics
 * Ranged combat using an efficient projectile physics simulation
 * Support for different resolutions and aspect ratios
 * Configurable graphics settings

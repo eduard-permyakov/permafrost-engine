@@ -25,6 +25,11 @@ BUILT-IN FUNCTIONS
     faction is mutually at peace with every other existing faction. By default,
     new factions are player-controllable.
 
+    [attack_in_formation]
+    ----------------------------------------------------------------------------
+    Order the specified units to arrange themselves at the target location and
+    orientation, attacking any enemies along the way.
+
     [clear_unit_selection]
     ----------------------------------------------------------------------------
     Clear the current unit seleciton.
@@ -117,6 +122,11 @@ BUILT-IN FUNCTIONS
     [formation_preferred_for_set]
     ----------------------------------------------------------------------------
     Returns the preferred formation type for the specified set of entities.
+
+    [garrison_show_ui]
+    ----------------------------------------------------------------------------
+    Set a flag controlling whether or not the UI labels are rendered over the
+    garrisonable entities.
 
     [get_active_camera]
     ----------------------------------------------------------------------------
@@ -267,6 +277,24 @@ BUILT-IN FUNCTIONS
     Returns the closest XZ map position that is pathable and not currently
     blocked.
 
+    [map_nearest_pathable_air]
+    ----------------------------------------------------------------------------
+    Returns the closest XZ map position that is not currently blocked by other
+    air units.
+
+    [map_nearest_pathable_water]
+    ----------------------------------------------------------------------------
+    Returns the closest XZ map position that is on water, pathable and not
+    currently blocked.
+
+    [map_pos_over_land]
+    ----------------------------------------------------------------------------
+    Returns true if the XZ position is over land.
+
+    [map_pos_over_water]
+    ----------------------------------------------------------------------------
+    Returns true if the XZ position is over water.
+
     [map_pos_under_cursor]
     ----------------------------------------------------------------------------
     Returns the XYZ coordinate of the point of the map underneath the cursor.
@@ -279,6 +307,11 @@ BUILT-IN FUNCTIONS
     [mouse_over_ui]
     ----------------------------------------------------------------------------
     Returns True if the mouse cursor is within the bounds of any UI windows.
+
+    [move_in_formation]
+    ----------------------------------------------------------------------------
+    Order the specified units to arrange themselves at the target location and
+    orientation.
 
     [multiply_quaternions]
     ----------------------------------------------------------------------------
@@ -405,9 +438,29 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Sets the position (in XYZ worldspace coordinates)
 
+    [set_evict_on_left_click]
+    ----------------------------------------------------------------------------
+    Set the cursor to target mode. The next left click will issue an 'evict'
+    command to the garrisonable units in the selection, to get as close as
+    possible to the target and evict all units..
+
     [set_faction_controllable]
     ----------------------------------------------------------------------------
     Sets whether units of this faction can be controlled by the player or not.
+
+    [set_garrison_ui_font_color]
+    ----------------------------------------------------------------------------
+    Set the garrison UI text color to the specified color (R, G, B, A).
+
+    [set_garrison_ui_icon]
+    ----------------------------------------------------------------------------
+    Set the garrisonable UI icon to the specified image (specified as an image
+    path string).
+
+    [set_garrison_ui_style]
+    ----------------------------------------------------------------------------
+    Set the garrisonable UI background to the specified color (R, G, B, A) or
+    image (string).
 
     [set_gather_on_left_click]
     ----------------------------------------------------------------------------
@@ -572,6 +625,120 @@ BUILT-IN FUNCTIONS
 BUILT-IN CLASSES
 ********************************************************************************
 
+    [AirEntity]
+    ----------------------------------------------------------------------------
+    Permafrost Engine air-based (flying) entity. This is a subclass of
+    pf.Entity. This kind of entity .
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [bounds]
+        Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
+        box (in OpenGL coordinates).
+
+        [faction_id]
+        Index of the faction that the entity belongs to.
+
+        [height]
+        Returns the scaled height of the entity, in OpenGL coordinates.
+
+        [name]
+        Custom name given to this enity.
+
+        [pfobj_path]
+        The relative path of the PFOBJ file used to instantiate the entity.
+        Readonly.
+
+        [pos]
+        The XYZ position in worldspace coordinates.
+
+        [rotation]
+        XYZW quaternion for rotaion about local origin.
+
+        [scale]
+        The XYZ scaling factors.
+
+        [selectable]
+        Flag indicating whether this entity can be selected with the mouse.
+
+        [selection_radius]
+        Radius (in OpenGL coordinates) of the unit selection circle for this
+        entity.
+
+        [tags]
+        Return a tuple with all the entity's tags.
+
+        [top_screen_pos]
+        Get the location of the top center point of the entity, in screenspace
+        coordinates.
+
+        [uid]
+        The unique integer ID of this entity
+
+        [vision_range]
+        The radius (in OpenGL coordinates) that the entity sees around itself.
+
+        [zombie]
+        Returns True if the entity is a zombie (destroyed in the game
+        simulation, but retained via a scripting reference).
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__del__]
+        Calls the next __del__ in the MRO if there is one, otherwise do nothing.
+
+        [__pickle__]
+        Serialize a Permafrost Engine combatable entity to a string.
+
+        [add_tag]
+        Add a string tag to this entity's list of tags.
+
+        [deselect]
+        Removes the entity from the current unit selection, if it is selected.
+
+        [face_towards]
+        Make the entity face towards the specified point.
+
+        [is_garrisoned]
+        Returns True if the entity is currently garrisoned.
+
+        [notify]
+        Send a specific event to an entity in order to invoke the entity's
+        event handlers. Weakref arguments are automatically unpacked before
+        being passed to the handler.
+
+        [ping]
+        Temporarily blink the enitity's selection circle.
+
+        [register]
+        Registers the specified callable to be invoked when an event of the
+        specified type is sent to this entity.
+
+        [remove_tag]
+        Remove a string tag from this entity's list of tags.
+
+        [select]
+        Adds the entity to the current unit selection, if it is not present
+        there already.
+
+        [set_model]
+        Replace the current entity's current model and animation data with the
+        specified PFOBJ data.
+
+        [stop]
+        Issues a 'stop' command to the entity, stopping its' movement and
+        attack. Cancels 'hold position' order.
+
+        [unregister]
+        Unregisters a callable previously registered to be invoked on the
+        specified event.
+
+        [zombiefy]
+        Make the entity a 'zombie', effectively removing it from the game
+        simulation but allowing the scripting object to persist.
+
     [AnimEntity]
     ----------------------------------------------------------------------------
     Permafrost Engine animated entity. This type requires the 'idle_clip'
@@ -650,6 +817,9 @@ BUILT-IN CLASSES
 
         [get_anim]
         Get the name of the currently playing animation clip.
+
+        [is_garrisoned]
+        Returns True if the entity is currently garrisoned.
 
         [notify]
         Send a specific event to an entity in order to invoke the entity's
@@ -787,6 +957,9 @@ BUILT-IN CLASSES
         Advance a building to the 'FOUNDED' state from the 'MARKED' state,
         where it becomes a build site and wait for workers to supply it.
 
+        [is_garrisoned]
+        Returns True if the entity is currently garrisoned.
+
         [mark]
         Advance a building to the 'MARKED' state from the initial 'PLACEMENT'
         state, where it will wait for a worker to found it.
@@ -915,6 +1088,9 @@ BUILT-IN CLASSES
 
         [face_towards]
         Make the entity face towards the specified point.
+
+        [is_garrisoned]
+        Returns True if the entity is currently garrisoned.
 
         [notify]
         Send a specific event to an entity in order to invoke the entity's
@@ -1104,6 +1280,9 @@ BUILT-IN CLASSES
         Issues a 'hold position' order to the entity, stopping it and
         preventing it from moving to attack.
 
+        [is_garrisoned]
+        Returns True if the entity is currently garrisoned.
+
         [notify]
         Send a specific event to an entity in order to invoke the entity's
         event handlers. Weakref arguments are automatically unpacked before
@@ -1213,6 +1392,251 @@ BUILT-IN CLASSES
 
         [face_towards]
         Make the entity face towards the specified point.
+
+        [is_garrisoned]
+        Returns True if the entity is currently garrisoned.
+
+        [notify]
+        Send a specific event to an entity in order to invoke the entity's
+        event handlers. Weakref arguments are automatically unpacked before
+        being passed to the handler.
+
+        [ping]
+        Temporarily blink the enitity's selection circle.
+
+        [register]
+        Registers the specified callable to be invoked when an event of the
+        specified type is sent to this entity.
+
+        [remove_tag]
+        Remove a string tag from this entity's list of tags.
+
+        [select]
+        Adds the entity to the current unit selection, if it is not present
+        there already.
+
+        [set_model]
+        Replace the current entity's current model and animation data with the
+        specified PFOBJ data.
+
+        [stop]
+        Issues a 'stop' command to the entity, stopping its' movement and
+        attack. Cancels 'hold position' order.
+
+        [unregister]
+        Unregisters a callable previously registered to be invoked on the
+        specified event.
+
+        [zombiefy]
+        Make the entity a 'zombie', effectively removing it from the game
+        simulation but allowing the scripting object to persist.
+
+    [GarrisonEntity]
+    ----------------------------------------------------------------------------
+    Permafrost Engine entity that is able to be garrisoned inside buildings or
+    transport units. This is a subclass of pf.Entity.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [bounds]
+        Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
+        box (in OpenGL coordinates).
+
+        [faction_id]
+        Index of the faction that the entity belongs to.
+
+        [garrison_capacity]
+        The capacity of the garrisonable entity that is used up when this
+        entity is garrisoned.
+
+        [height]
+        Returns the scaled height of the entity, in OpenGL coordinates.
+
+        [name]
+        Custom name given to this enity.
+
+        [pfobj_path]
+        The relative path of the PFOBJ file used to instantiate the entity.
+        Readonly.
+
+        [pos]
+        The XYZ position in worldspace coordinates.
+
+        [rotation]
+        XYZW quaternion for rotaion about local origin.
+
+        [scale]
+        The XYZ scaling factors.
+
+        [selectable]
+        Flag indicating whether this entity can be selected with the mouse.
+
+        [selection_radius]
+        Radius (in OpenGL coordinates) of the unit selection circle for this
+        entity.
+
+        [tags]
+        Return a tuple with all the entity's tags.
+
+        [top_screen_pos]
+        Get the location of the top center point of the entity, in screenspace
+        coordinates.
+
+        [uid]
+        The unique integer ID of this entity
+
+        [vision_range]
+        The radius (in OpenGL coordinates) that the entity sees around itself.
+
+        [zombie]
+        Returns True if the entity is a zombie (destroyed in the game
+        simulation, but retained via a scripting reference).
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__del__]
+        Calls the next __del__ in the MRO if there is one, otherwise do nothing.
+
+        [__pickle__]
+        Serialize a Permafrost Engine combatable entity to a string.
+
+        [add_tag]
+        Add a string tag to this entity's list of tags.
+
+        [deselect]
+        Removes the entity from the current unit selection, if it is selected.
+
+        [face_towards]
+        Make the entity face towards the specified point.
+
+        [garrison]
+        Issues a 'garrison' order to the entity to try and enter the
+        garrisonable entity specified by the argument.
+
+        [is_garrisoned]
+        Returns True if the entity is currently garrisoned.
+
+        [notify]
+        Send a specific event to an entity in order to invoke the entity's
+        event handlers. Weakref arguments are automatically unpacked before
+        being passed to the handler.
+
+        [ping]
+        Temporarily blink the enitity's selection circle.
+
+        [register]
+        Registers the specified callable to be invoked when an event of the
+        specified type is sent to this entity.
+
+        [remove_tag]
+        Remove a string tag from this entity's list of tags.
+
+        [select]
+        Adds the entity to the current unit selection, if it is not present
+        there already.
+
+        [set_model]
+        Replace the current entity's current model and animation data with the
+        specified PFOBJ data.
+
+        [stop]
+        Issues a 'stop' command to the entity, stopping its' movement and
+        attack. Cancels 'hold position' order.
+
+        [unregister]
+        Unregisters a callable previously registered to be invoked on the
+        specified event.
+
+        [zombiefy]
+        Make the entity a 'zombie', effectively removing it from the game
+        simulation but allowing the scripting object to persist.
+
+    [GarrisonableEntity]
+    ----------------------------------------------------------------------------
+    Permafrost Engine entity that is able to hold a garrison of units. This is
+    a subclass of pf.Entity.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [bounds]
+        Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
+        box (in OpenGL coordinates).
+
+        [faction_id]
+        Index of the faction that the entity belongs to.
+
+        [garrisonable_capacity]
+        The capacity of for the total garrisoned population.
+
+        [garrisonable_current]
+        The total of the currently garrisoned population.
+
+        [height]
+        Returns the scaled height of the entity, in OpenGL coordinates.
+
+        [name]
+        Custom name given to this enity.
+
+        [pfobj_path]
+        The relative path of the PFOBJ file used to instantiate the entity.
+        Readonly.
+
+        [pos]
+        The XYZ position in worldspace coordinates.
+
+        [rotation]
+        XYZW quaternion for rotaion about local origin.
+
+        [scale]
+        The XYZ scaling factors.
+
+        [selectable]
+        Flag indicating whether this entity can be selected with the mouse.
+
+        [selection_radius]
+        Radius (in OpenGL coordinates) of the unit selection circle for this
+        entity.
+
+        [tags]
+        Return a tuple with all the entity's tags.
+
+        [top_screen_pos]
+        Get the location of the top center point of the entity, in screenspace
+        coordinates.
+
+        [uid]
+        The unique integer ID of this entity
+
+        [vision_range]
+        The radius (in OpenGL coordinates) that the entity sees around itself.
+
+        [zombie]
+        Returns True if the entity is a zombie (destroyed in the game
+        simulation, but retained via a scripting reference).
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__del__]
+        Calls the next __del__ in the MRO if there is one, otherwise do nothing.
+
+        [__pickle__]
+        Serialize a Permafrost Engine combatable entity to a string.
+
+        [add_tag]
+        Add a string tag to this entity's list of tags.
+
+        [deselect]
+        Removes the entity from the current unit selection, if it is selected.
+
+        [face_towards]
+        Make the entity face towards the specified point.
+
+        [is_garrisoned]
+        Returns True if the entity is currently garrisoned.
 
         [notify]
         Send a specific event to an entity in order to invoke the entity's
@@ -1367,6 +1791,9 @@ BUILT-IN CLASSES
         Move the specified resource up in the priority list the peasant uses
         for selecting which resource to bring next to the target storage site.
 
+        [is_garrisoned]
+        Returns True if the entity is currently garrisoned.
+
         [notify]
         Send a specific event to an entity in order to invoke the entity's
         event handlers. Weakref arguments are automatically unpacked before
@@ -1497,6 +1924,9 @@ BUILT-IN CLASSES
 
         [face_towards]
         Make the entity face towards the specified point.
+
+        [is_garrisoned]
+        Returns True if the entity is currently garrisoned.
 
         [move]
         Issues a 'move' order to the entity at the XZ position specified by the
@@ -1676,6 +2106,9 @@ BUILT-IN CLASSES
         [face_towards]
         Make the entity face towards the specified point.
 
+        [is_garrisoned]
+        Returns True if the entity is currently garrisoned.
+
         [notify]
         Send a specific event to an entity in order to invoke the entity's
         event handlers. Weakref arguments are automatically unpacked before
@@ -1807,6 +2240,9 @@ BUILT-IN CLASSES
         [get_desired]
         Gets the target amount of the specified resource that harvesters will
         aim to store there.
+
+        [is_garrisoned]
+        Returns True if the entity is currently garrisoned.
 
         [notify]
         Send a specific event to an entity in order to invoke the entity's
@@ -2663,6 +3099,120 @@ BUILT-IN CLASSES
         [__pickle__]
         Serialize a Permafrost Engine UIToggleStyle object to a string.
 
+    [WaterEntity]
+    ----------------------------------------------------------------------------
+    Permafrost Engine water-based entity. This is a subclass of pf.Entity. This
+    kind of entity ignores ground and water obstacles.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [bounds]
+        Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
+        box (in OpenGL coordinates).
+
+        [faction_id]
+        Index of the faction that the entity belongs to.
+
+        [height]
+        Returns the scaled height of the entity, in OpenGL coordinates.
+
+        [name]
+        Custom name given to this enity.
+
+        [pfobj_path]
+        The relative path of the PFOBJ file used to instantiate the entity.
+        Readonly.
+
+        [pos]
+        The XYZ position in worldspace coordinates.
+
+        [rotation]
+        XYZW quaternion for rotaion about local origin.
+
+        [scale]
+        The XYZ scaling factors.
+
+        [selectable]
+        Flag indicating whether this entity can be selected with the mouse.
+
+        [selection_radius]
+        Radius (in OpenGL coordinates) of the unit selection circle for this
+        entity.
+
+        [tags]
+        Return a tuple with all the entity's tags.
+
+        [top_screen_pos]
+        Get the location of the top center point of the entity, in screenspace
+        coordinates.
+
+        [uid]
+        The unique integer ID of this entity
+
+        [vision_range]
+        The radius (in OpenGL coordinates) that the entity sees around itself.
+
+        [zombie]
+        Returns True if the entity is a zombie (destroyed in the game
+        simulation, but retained via a scripting reference).
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__del__]
+        Calls the next __del__ in the MRO if there is one, otherwise do nothing.
+
+        [__pickle__]
+        Serialize a Permafrost Engine combatable entity to a string.
+
+        [add_tag]
+        Add a string tag to this entity's list of tags.
+
+        [deselect]
+        Removes the entity from the current unit selection, if it is selected.
+
+        [face_towards]
+        Make the entity face towards the specified point.
+
+        [is_garrisoned]
+        Returns True if the entity is currently garrisoned.
+
+        [notify]
+        Send a specific event to an entity in order to invoke the entity's
+        event handlers. Weakref arguments are automatically unpacked before
+        being passed to the handler.
+
+        [ping]
+        Temporarily blink the enitity's selection circle.
+
+        [register]
+        Registers the specified callable to be invoked when an event of the
+        specified type is sent to this entity.
+
+        [remove_tag]
+        Remove a string tag from this entity's list of tags.
+
+        [select]
+        Adds the entity to the current unit selection, if it is not present
+        there already.
+
+        [set_model]
+        Replace the current entity's current model and animation data with the
+        specified PFOBJ data.
+
+        [stop]
+        Issues a 'stop' command to the entity, stopping its' movement and
+        attack. Cancels 'hold position' order.
+
+        [unregister]
+        Unregisters a callable previously registered to be invoked on the
+        specified event.
+
+        [zombiefy]
+        Make the entity a 'zombie', effectively removing it from the game
+        simulation but allowing the scripting object to persist.
+
     [Window]
     ----------------------------------------------------------------------------
     Permafrost Engine UI window.
@@ -2930,6 +3480,7 @@ BUILT-IN CLASSES
 BUILT-IN CONSTANTS
 ********************************************************************************
 
+    AIR_UNIT_HEIGHT 20
     ANCHOR_DEFAULT 9
     ANCHOR_X_CENTER 4
     ANCHOR_X_LEFT 1
@@ -2950,6 +3501,7 @@ BUILT-IN CONSTANTS
     CURSOR_ATTACK 10
     CURSOR_BUILD 12
     CURSOR_DROP_OFF 13
+    CURSOR_GARRISON 15
     CURSOR_NO_ATTACK 11
     CURSOR_POINTER 0
     CURSOR_SCROLL_BOT 5
@@ -2970,55 +3522,56 @@ BUILT-IN CONSTANTS
     EVENT_60HZ_TICK 65546
     EVENT_ANIM_CYCLE_FINISHED 65553
     EVENT_ANIM_FINISHED 65552
-    EVENT_ATTACK_END 65559
+    EVENT_ATTACK_END 65560
     EVENT_ATTACK_START 65557
-    EVENT_BUILDING_COMPLETED 65573
-    EVENT_BUILDING_CONSTRUCTED 65574
-    EVENT_BUILDING_FOUNDED 65572
-    EVENT_BUILD_BEGIN 65568
-    EVENT_BUILD_END 65569
-    EVENT_BUILD_FAIL_FOUND 65570
-    EVENT_BUILD_TARGET_ACQUIRED 65571
+    EVENT_BUILDING_COMPLETED 65574
+    EVENT_BUILDING_CONSTRUCTED 65575
+    EVENT_BUILDING_FOUNDED 65573
+    EVENT_BUILD_BEGIN 65569
+    EVENT_BUILD_END 65570
+    EVENT_BUILD_FAIL_FOUND 65571
+    EVENT_BUILD_TARGET_ACQUIRED 65572
     EVENT_ENGINE_LAST 131071
-    EVENT_ENTERED_REGION 65587
+    EVENT_ENTERED_REGION 65588
     EVENT_ENTITY_DEATH 65558
-    EVENT_ENTITY_DIED 65575
-    EVENT_ENTITY_DISAPPEARED 65592
-    EVENT_ENTITY_STOP 65576
-    EVENT_EXITED_REGION 65588
-    EVENT_GAME_SIMSTATE_CHANGED 65560
-    EVENT_HARVEST_BEGIN 65577
-    EVENT_HARVEST_END 65578
-    EVENT_HARVEST_TARGET_ACQUIRED 65579
+    EVENT_ENTITY_DEATH_IMMEDIATE 65559
+    EVENT_ENTITY_DIED 65576
+    EVENT_ENTITY_DISAPPEARED 65593
+    EVENT_ENTITY_STOP 65577
+    EVENT_EXITED_REGION 65589
+    EVENT_GAME_SIMSTATE_CHANGED 65561
+    EVENT_HARVEST_BEGIN 65578
+    EVENT_HARVEST_END 65579
+    EVENT_HARVEST_TARGET_ACQUIRED 65580
     EVENT_MOTION_END 65556
     EVENT_MOTION_START 65555
     EVENT_MOVE_ISSUED 65554
     EVENT_NEW_GAME 65544
-    EVENT_ORDER_ISSUED 65593
-    EVENT_PROJECTILE_DISAPPEAR 65590
-    EVENT_PROJECTILE_HIT 65591
+    EVENT_ORDER_ISSUED 65594
+    EVENT_PROJECTILE_DISAPPEAR 65591
+    EVENT_PROJECTILE_HIT 65592
     EVENT_RENDER_3D_POST 65540
     EVENT_RENDER_3D_PRE 65539
     EVENT_RENDER_FINISH 65542
     EVENT_RENDER_UI 65541
-    EVENT_RESOURCE_AMOUNT_CHANGED 65586
-    EVENT_RESOURCE_DROPPED_OFF 65583
-    EVENT_RESOURCE_EXHAUSTED 65585
-    EVENT_RESOURCE_PICKED_UP 65584
-    EVENT_SCRIPT_TASK_EXCEPTION 65566
-    EVENT_SCRIPT_TASK_FINISHED 65567
+    EVENT_RESOURCE_AMOUNT_CHANGED 65587
+    EVENT_RESOURCE_DROPPED_OFF 65584
+    EVENT_RESOURCE_EXHAUSTED 65586
+    EVENT_RESOURCE_PICKED_UP 65585
+    EVENT_SCRIPT_TASK_EXCEPTION 65567
+    EVENT_SCRIPT_TASK_FINISHED 65568
     EVENT_SELECTED_TILE_CHANGED 65543
-    EVENT_SESSION_FAIL_LOAD 65564
-    EVENT_SESSION_FAIL_SAVE 65565
-    EVENT_SESSION_LOADED 65561
-    EVENT_SESSION_POPPED 65562
-    EVENT_SESSION_SAVED 65563
-    EVENT_STORAGE_SITE_AMOUNT_CHANGED 65582
-    EVENT_STORAGE_TARGET_ACQUIRED 65581
-    EVENT_TRANSPORT_TARGET_ACQUIRED 65580
+    EVENT_SESSION_FAIL_LOAD 65565
+    EVENT_SESSION_FAIL_SAVE 65566
+    EVENT_SESSION_LOADED 65562
+    EVENT_SESSION_POPPED 65563
+    EVENT_SESSION_SAVED 65564
+    EVENT_STORAGE_SITE_AMOUNT_CHANGED 65583
+    EVENT_STORAGE_TARGET_ACQUIRED 65582
+    EVENT_TRANSPORT_TARGET_ACQUIRED 65581
     EVENT_UNIT_SELECTION_CHANGED 65545
     EVENT_UPDATE_END 65537
-    EVENT_UPDATE_FACTION 65589
+    EVENT_UPDATE_FACTION 65590
     EVENT_UPDATE_START 65536
     EVENT_UPDATE_UI 65538
     FORMATION_COLUMN 2
@@ -3689,5 +4242,5 @@ BUILT-IN CONSTANTS
     X_COORDS_PER_TILE 8
     Y_COORDS_PER_TILE 4
     Z_COORDS_PER_TILE 8
-    _CURSOR_MAX 15
+    _CURSOR_MAX 16
     trace_pickling False
