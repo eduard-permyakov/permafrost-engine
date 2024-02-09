@@ -289,9 +289,9 @@ static void do_update_pos(uint32_t uid, vec2_t pos);
 #define WAIT_TICKS                      (60)
 #define MAX_TURN_RATE                   (15.0f) /* degree/tick */
 
-#define SURROUND_LOW_WATER_X            (CHUNK_WIDTH/4.0f)
+#define SURROUND_LOW_WATER_X            (CHUNK_WIDTH/3.0f)
 #define SURROUND_HIGH_WATER_X           (CHUNK_WIDTH/2.0f)
-#define SURROUND_LOW_WATER_Z            (CHUNK_HEIGHT/4.0f)
+#define SURROUND_LOW_WATER_Z            (CHUNK_HEIGHT/3.0f)
 #define SURROUND_HIGH_WATER_Z           (CHUNK_HEIGHT/2.0f)
 
 /*****************************************************************************/
@@ -2328,7 +2328,7 @@ static void do_set_enter_range(uint32_t uid, uint32_t target, float range)
 
     uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
     vec2_t xz_target = M_NavClosestReachableInRange(s_map, 
-        Entity_NavLayerWithRadius(flags, radius), xz_src, xz_dst, range);
+        Entity_NavLayerWithRadius(flags, radius), xz_src, xz_dst, range - radius);
     do_set_dest(uid, xz_target, false);
 
     ms->state = STATE_ENTER_ENTITY_RANGE;
@@ -2906,7 +2906,8 @@ static void on_20hz_tick(void *user, void *event)
             .save_debug = G_ClearPath_ShouldSaveDebug(curr),
             .stat_neighbs = stat,
             .dyn_neighbs = dyn,
-            .has_dest_los = flock ? M_NavHasDestLOS(s_map, flock->dest_id, pos) : false,
+            .has_dest_los = (flock && !ms->using_surround_field) 
+                          ? M_NavHasDestLOS(s_map, flock->dest_id, pos) : false,
             .fid = fid,
             .normal_form_cohesion_force = ((fid != NULL_FID) ? G_Formation_CohesionForce(curr) 
                                                              : (vec2_t){0.0f, 0.0f}),
