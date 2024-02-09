@@ -42,6 +42,7 @@
 #include <stdint.h>
 
 struct map;
+struct SDL_RWops;
 
 bool G_Garrison_Init(const struct map *map);
 void G_Garrison_Shutdown(void);
@@ -54,6 +55,8 @@ bool G_Garrison_InTargetMode(void);
 void G_Garrison_Stop(uint32_t uid);
 void G_Garrison_GetUnits(uint32_t uid, vec_entity_t *out);
 void G_Garrison_ClearGarrison(uint32_t uid);
+bool G_Garrison_SaveState(struct SDL_RWops *stream);
+bool G_Garrison_LoadState(struct SDL_RWops *stream);
 
 #endif
 

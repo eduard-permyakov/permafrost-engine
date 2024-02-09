@@ -47,6 +47,7 @@
 #include "../task.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"
+#include "../lib/public/attr.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/pf_string.h"
 
@@ -58,6 +59,12 @@
 #define GARRISON_WAIT_TICKS     (5)
 #define GARRISONABLE_WAIT_TICKS (10)
 #define EPSILON                 (1.0f/1024)
+
+#define CHK_TRUE_RET(_pred)             \
+    do{                                 \
+        if(!(_pred))                    \
+            return false;               \
+    }while(0)
 
 enum unit_state{
     STATE_NOT_GARRISONED,
@@ -102,6 +109,9 @@ struct evict_work{
 KHASH_MAP_INIT_INT(garrison, struct garrison_state)
 KHASH_MAP_INIT_INT(garrisonable, struct garrisonable_state)
 
+VEC_TYPE(evict, struct evict_work)
+VEC_IMPL(static inline, evict, struct evict_work)
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -110,6 +120,7 @@ static const struct map      *s_map;
 static khash_t(garrison)     *s_garrison_state_table;
 static khash_t(garrisonable) *s_garrisonable_state_table;
 static bool                   s_evict_on_lclick = false;
+static vec_evict_t            s_evicting;
 
 static char                   s_garrison_icon_path[512] = {0};
 static struct nk_style_item   s_bg_style = {0};
@@ -172,8 +183,11 @@ static bool gb_state_set(uint32_t uid, struct garrisonable_state gus)
 static void gb_state_remove(uint32_t uid)
 {
     khiter_t k = kh_get(garrisonable, s_garrisonable_state_table, uid);
-    if(k != kh_end(s_garrisonable_state_table))
+    if(k != kh_end(s_garrisonable_state_table)) {
+        struct garrisonable_state *gbs = &kh_value(s_garrisonable_state_table, k);
+        vec_entity_destroy(&gbs->garrisoned);
         kh_del(garrisonable, s_garrisonable_state_table, k);
+    }
 }
 
 static void on_update_ui(void *user, void *event)
@@ -564,6 +578,11 @@ static bool compare_uids(uint32_t *a, uint32_t *b)
     return *a == *b;
 }
 
+static bool compare_evict_work(struct evict_work *a, struct evict_work *b)
+{
+    return a->uid == b->uid;
+}
+
 static struct result evict_task(void *arg)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -573,11 +592,18 @@ static struct result evict_task(void *arg)
     if(!gbs)
         goto out;
 
+    vec_evict_push(&s_evicting, *work);
+
     struct garrisonable_state copy = *gbs;
     for(int i = 0; i < vec_size(&copy.garrisoned); i++) {
         uint32_t curr = vec_AT(&copy.garrisoned, i);
         G_Garrison_Evict(work->uid, curr, work->target);
         Task_Sleep(EVICT_DELAY_MS);
+    }
+
+    int idx = vec_evict_indexof(&s_evicting, *work, compare_evict_work);
+    if(idx != -1) {
+        vec_evict_del(&s_evicting, idx);
     }
 
 out:
@@ -644,6 +670,58 @@ static bool transport_move(uint32_t garrisonable, vec2_t target)
     return false;
 }
 
+static bool save_color(struct nk_color clr, SDL_RWops *stream)
+{
+    struct attr clr_r = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = clr.r
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &clr_r, "clr_r"));
+
+    struct attr clr_g = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = clr.g
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &clr_g, "clr_g"));
+
+    struct attr clr_b = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = clr.b
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &clr_b, "clr_b"));
+
+    struct attr clr_a = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = clr.a
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &clr_a, "clr_a"));
+
+    return true;
+}
+
+static bool load_color(struct nk_color *out, SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    out->r = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    out->g = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    out->b = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    out->a = attr.val.as_int;
+
+    return true;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -654,6 +732,7 @@ bool G_Garrison_Init(const struct map *map)
         goto fail_garrison;
     if((s_garrisonable_state_table = kh_init(garrisonable)) == NULL)
         goto fail_garrisonable;
+    vec_evict_init(&s_evicting);
 
     struct nk_context ctx;
     nk_style_default(&ctx);
@@ -679,6 +758,7 @@ void G_Garrison_Shutdown(void)
     E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
+    vec_evict_destroy(&s_evicting);
     kh_destroy(garrisonable, s_garrisonable_state_table);
     kh_destroy(garrison, s_garrison_state_table);
 }
@@ -1028,5 +1108,352 @@ void G_Garrison_ClearGarrison(uint32_t uid)
     struct garrisonable_state *gbs = gb_state_get(uid);
     assert(gbs);
     vec_entity_reset(&gbs->garrisoned);
+}
+
+bool G_Garrison_SaveState(struct SDL_RWops *stream)
+{
+    struct attr num_ents = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_garrison_state_table)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_ents, "num_ents"));
+    Sched_TryYield();
+
+    uint32_t key;
+    struct garrison_state curr_gus;
+    struct garrisonable_state curr_gbs;
+
+    kh_foreach(s_garrison_state_table, key, curr_gus, {
+
+        struct attr uid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = key
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &uid, "uid"));
+
+        struct attr cap_consumed = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr_gus.capacity_consumed
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &cap_consumed, "capacity_consumed"));
+
+        struct attr target = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr_gus.target
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &target, "target"));
+
+        struct attr target_issued = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr_gus.target_rendevouz_issued
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &target_issued, "target_rendevouz_issued"));
+
+        struct attr state = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr_gus.state
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &state, "state"));
+
+        struct attr wait_ticks = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr_gus.wait_ticks
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &wait_ticks, "wait_ticks"));
+        Sched_TryYield();
+    });
+
+    struct attr num_garrisonable_ents = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_garrisonable_state_table)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_garrisonable_ents, "num_ents"));
+    Sched_TryYield();
+
+    kh_foreach(s_garrisonable_state_table, key, curr_gbs, {
+
+        struct attr uid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = key
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &uid, "uid"));
+
+        struct attr state = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr_gbs.state
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &state, "state"));
+
+        struct attr evict_target = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = curr_gbs.evict_target
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &evict_target, "evict_target"));
+
+        struct attr rendevouz_point_unit = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = curr_gbs.rendevouz_point_unit
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &rendevouz_point_unit, "rendevouz_point_unit"));
+
+        struct attr rendevouz_point_transport = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = curr_gbs.rendevouz_point_transport
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &rendevouz_point_transport, "rendevouz_point_transport"));
+
+        struct attr wait_ticks = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr_gbs.wait_ticks
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &wait_ticks, "wait_ticks"));
+
+        struct attr capacity = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr_gbs.capacity
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &capacity, "capacity"));
+
+        struct attr current = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr_gbs.current
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &current, "current"));
+
+        struct attr garrisoned_size = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = vec_size(&curr_gbs.garrisoned)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &garrisoned_size, "garrisoned_size"));
+        Sched_TryYield();
+
+        for(int i = 0; i < vec_size(&curr_gbs.garrisoned); i++) {
+            uint32_t curr = vec_AT(&curr_gbs.garrisoned, i);
+            struct attr uid = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = curr
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &uid, "garrisoned_uid"));
+        }
+        Sched_TryYield();
+    });
+
+    struct attr garrison_icon_path = (struct attr){
+        .type = TYPE_STRING
+    };
+    pf_strlcpy(garrison_icon_path.val.as_string, s_garrison_icon_path,
+        sizeof(garrison_icon_path.val.as_string));
+    CHK_TRUE_RET(Attr_Write(stream, &garrison_icon_path, "garrison_icon_path"));
+
+    struct attr bg_style_type = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = s_bg_style.type
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &bg_style_type, "bg_style_type"));
+    Sched_TryYield();
+
+    switch(s_bg_style.type) {
+    case NK_STYLE_ITEM_COLOR: {
+
+        CHK_TRUE_RET(save_color(s_bg_style.data.color, stream));
+        break;
+    }
+    case NK_STYLE_ITEM_TEXPATH: {
+
+        struct attr bg_texpath = (struct attr){ .type = TYPE_STRING };
+        pf_strlcpy(bg_texpath.val.as_string, s_bg_style.data.texpath, 
+            sizeof(bg_texpath.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &bg_texpath, "bg_texpath"));
+        break;
+    }
+    default: assert(0);
+    }
+
+    CHK_TRUE_RET(save_color(s_font_clr, stream));
+    Sched_TryYield();
+
+    struct attr ui_shown = (struct attr){
+        .type = TYPE_BOOL,
+        .val.as_bool = s_show_ui
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &ui_shown, "ui_shown"));
+    Sched_TryYield();
+
+    struct attr num_evicting = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = vec_size(&s_evicting)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_evicting, "num_evicting"));
+
+    for(int i = 0; i < vec_size(&s_evicting); i++) {
+
+        struct evict_work curr = vec_AT(&s_evicting, i);
+
+        struct attr uid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.uid
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &uid, "evicting_uid"));
+
+        struct attr target = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = curr.target
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &target, "evicting_target"));
+    }
+    Sched_TryYield();
+
+    return true;
+}
+
+bool G_Garrison_LoadState(struct SDL_RWops *stream)
+{
+    struct attr attr;
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_ents = attr.val.as_int;
+    Sched_TryYield();
+
+    for(int i = 0; i < num_ents; i++) {
+
+        uint32_t uid;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uid = attr.val.as_int;
+        CHK_TRUE_RET(G_EntityExists(attr.val.as_int));
+
+        struct garrison_state *gus = gu_state_get(uid);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        gus->capacity_consumed = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        gus->target = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        gus->target_rendevouz_issued = attr.val.as_bool;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        gus->state = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        gus->wait_ticks = attr.val.as_int;
+        Sched_TryYield();
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_garrisonable = attr.val.as_int;
+    Sched_TryYield();
+
+    for(int i = 0; i < num_garrisonable; i++) {
+
+        uint32_t uid;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uid = attr.val.as_int;
+        CHK_TRUE_RET(G_EntityExists(attr.val.as_int));
+
+        struct garrisonable_state *gbs = gb_state_get(uid);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        gbs->state = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        gbs->evict_target = attr.val.as_vec2;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        gbs->rendevouz_point_unit = attr.val.as_vec2;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        gbs->rendevouz_point_transport = attr.val.as_vec2;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        gbs->wait_ticks = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        gbs->capacity = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        gbs->current = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        const size_t garrisoned_size = attr.val.as_int;
+        Sched_TryYield();
+
+        for(int i = 0; i < garrisoned_size; i++) {
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            uint32_t uid = attr.val.as_int;
+            vec_entity_push(&gbs->garrisoned, uid);
+        }
+        Sched_TryYield();
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_STRING);
+    pf_strlcpy(s_garrison_icon_path, attr.val.as_string, sizeof(s_garrison_icon_path));
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    s_bg_style.type = attr.val.as_int;
+
+    switch(s_bg_style.type) {
+    case NK_STYLE_ITEM_COLOR: {
+
+        CHK_TRUE_RET(load_color(&s_bg_style.data.color, stream));
+        break;
+    }
+    case NK_STYLE_ITEM_TEXPATH: {
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        pf_strlcpy(s_bg_style.data.texpath, attr.val.as_string, sizeof(s_bg_style.data.texpath));
+        break;
+    }
+    default: 
+        return false;
+    }
+
+    CHK_TRUE_RET(load_color(&s_font_clr, stream));
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_BOOL);
+    s_show_ui = attr.val.as_bool;
+    Sched_TryYield();
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_evicting = attr.val.as_int;
+
+    for(int i = 0; i < num_evicting; i++) {
+    
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uint32_t uid = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        vec2_t target = attr.val.as_vec2;
+
+        G_Garrison_EvictAll(uid, target);
+    }
+    return true;
 }
 

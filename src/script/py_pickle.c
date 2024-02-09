@@ -679,6 +679,10 @@ static struct pickle_entry s_pf_dispatch_table[] = {
     {.type = NULL, /* PyHarvesterEntity_type */           .picklefunc = custom_pickle   },
     {.type = NULL, /* PyStorageSiteEntity_type */         .picklefunc = custom_pickle   },
     {.type = NULL, /* PyMovableEntity_type */             .picklefunc = custom_pickle   },
+    {.type = NULL, /* PyWaterEntity_type */               .picklefunc = custom_pickle   },
+    {.type = NULL, /* PyAirEntity_type */                 .picklefunc = custom_pickle   },
+    {.type = NULL, /* PyGarrisonEntity_type */            .picklefunc = custom_pickle   },
+    {.type = NULL, /* PyGarrisonableEntity_type */        .picklefunc = custom_pickle   },
     {.type = NULL, /* PyRegion_type*/                     .picklefunc = custom_pickle   },
 };
 
@@ -840,6 +844,10 @@ struct sc_map_entry{
     { NULL, /*&PyHarvesterEntity_type*/     NULL },
     { NULL, /*&PyStorageSiteEntity_type*/   NULL },
     { NULL, /*&PyMovableEntity_type*/       NULL },
+    { NULL, /*&PyWaterEntity_type*/         NULL },
+    { NULL, /*&PyAirEntity_type*/           NULL },
+    { NULL, /*&PyGarrisonEntity_type*/      NULL },
+    { NULL, /*&PyGarrisonableEntity_type*/  NULL },
     { NULL, /*&PyRegion_type*/              NULL },
 };
 
@@ -1232,6 +1240,10 @@ static void load_subclassable_builtin_refs(void)
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "HarvesterEntity");
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "StorageSiteEntity");
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "MovableEntity");
+    s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "WaterEntity");
+    s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "AirEntity");
+    s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "GarrisonEntity");
+    s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "GarrisonableEntity");
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "Region");
 
 	assert(base_idx == ARR_SIZE(s_subclassable_builtin_map));
@@ -1337,6 +1349,10 @@ static void load_engine_builtin_types(void)
     s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "HarvesterEntity");
     s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "StorageSiteEntity");
     s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "MovableEntity");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "WaterEntity");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "AirEntity");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "GarrisonEntity");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "GarrisonableEntity");
     s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Region");
 
     for(int i = 0; i < ARR_SIZE(s_pf_dispatch_table); i++) {
