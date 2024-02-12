@@ -155,6 +155,8 @@ Follow the development of Permafrost Engine and EVERGLORY on [YouTube](https://w
 
 [EVERGLORY (Indie RTS Game) - Pathfinding Showcase](https://www.youtube.com/watch?v=7GcqVAzuJgo)
 
+[Indie RTS Devlog #16: Land, Water, and Air](https://www.youtube.com/watch?v=9GAbggOEHH0)
+
 ## Comments/Questions ##
 
 Comments or questions regarding the project or the source code? E-mail: edward.permyakov@gmail.com.
