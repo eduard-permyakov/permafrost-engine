@@ -289,10 +289,16 @@ static void sel_compute_hovered(struct camera *cam, const vec_entity_t *visible,
 
     float t_min = FLT_MAX;
     s_hovered_uid = NULL_UID;
+    bool selectable_hovered = false;
 
     for(int i = 0; i < vec_size(visible_obbs); i++) {
 
         if(G_EntityIsZombie(vec_AT(visible, i)))
+            continue;
+
+        /* Prioritize selectable entities over non-selectable ones */
+        uint32_t flags = G_FlagsGet(vec_AT(visible, i));
+        if(selectable_hovered && !(flags & ENTITY_FLAG_SELECTABLE))
             continue;
 
         float t;
@@ -301,6 +307,8 @@ static void sel_compute_hovered(struct camera *cam, const vec_entity_t *visible,
             if(t < t_min) {
                 t_min = t;
                 s_hovered_uid = vec_AT(visible, i);
+                if(flags & ENTITY_FLAG_SELECTABLE)
+                    selectable_hovered = true;
             }
         }
     }

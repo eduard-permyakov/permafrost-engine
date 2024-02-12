@@ -407,7 +407,8 @@ static void g_sort_anim_list(vec_ranim_t *inout)
     PERF_RETURN_VOID();
 }
 
-static void g_make_draw_list(vec_entity_t ents, vec_rstat_t *out_stat, vec_ranim_t *out_anim)
+static void g_make_draw_list(vec_entity_t ents, vec_rstat_t *out_stat, vec_ranim_t *out_anim,
+                             bool onlycasters)
 {
     PERF_ENTER();
     struct map_resolution res;
@@ -427,18 +428,21 @@ static void g_make_draw_list(vec_entity_t ents, vec_rstat_t *out_stat, vec_ranim
         if(flags & ENTITY_FLAG_GARRISONED)
             continue;
 
+        if(onlycasters && !(flags & ENTITY_FLAG_COLLISION))
+            continue;
+
         PERF_PUSH("process entity");
 
         mat4x4_t model;
         Entity_ModelMatrix(curr, &model);
 
         if(flags & ENTITY_FLAG_ANIMATED) {
-        
+
             struct ent_anim_rstate rstate = (struct ent_anim_rstate){
                 .uid = curr,
                 .render_private = ent->render_private, 
                 .model = model,
-                .translucent = !!(flags & ENTITY_FLAG_TRANSLUCENT)
+                .translucent = !!(flags & ENTITY_FLAG_TRANSLUCENT),
             };
             A_GetRenderState(curr, &rstate.njoints, rstate.curr_pose, &rstate.inv_bind_pose);
             vec_ranim_push(out_anim, rstate);
@@ -492,8 +496,8 @@ static void g_create_render_input(struct render_input *out)
     vec_rstat_resize(&out->light_vis_stat, 2048);
     vec_ranim_resize(&out->light_vis_anim, 2048);
 
-    g_make_draw_list(s_gs.visible, &out->cam_vis_stat, &out->cam_vis_anim);
-    g_make_draw_list(s_gs.light_visible, &out->light_vis_stat, &out->light_vis_anim);
+    g_make_draw_list(s_gs.visible, &out->cam_vis_stat, &out->cam_vis_anim, false);
+    g_make_draw_list(s_gs.light_visible, &out->light_vis_stat, &out->light_vis_anim, true);
 
     PERF_RETURN_VOID();
 }

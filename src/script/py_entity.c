@@ -1256,11 +1256,21 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
     }
 
     uint32_t extra_flags = 0;
+    bool collision = true;
     if(kwds) {
         PyObject *flags = PyDict_GetItemString(kwds, "__extra_flags__");
-        if(flags && PyInt_Check(flags))
+        if(flags && PyInt_Check(flags)) {
             extra_flags = PyInt_AS_LONG(flags);
+            collision = !!(extra_flags & ENTITY_FLAG_COLLISION);
+        }
     }
+
+    if(kwds) {
+        PyObject *nc = PyDict_GetItemString(kwds, "__no_collision__");
+        if(nc && PyBool_Check(nc) && PyObject_IsTrue(nc))
+            collision = false;
+    }
+
     bool zombie = (extra_flags & ENTITY_FLAG_ZOMBIE);
 
     if(!zombie && PyType_IsSubtype(type, &PyCombatableEntity_type))
@@ -1295,6 +1305,9 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
     if(!zombie && PyType_IsSubtype(type, &PyGarrisonableEntity_type))
         extra_flags |= ENTITY_FLAG_GARRISONABLE;
+
+    if(collision)
+        extra_flags |= ENTITY_FLAG_COLLISION;
 
     vec3_t pos = (vec3_t){0.0f, 0.0f, 0.0f};
     if(kwds) {
@@ -4213,9 +4226,12 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
     }
     uint32_t ent = ((PyEntityObject*)ret)->ent;
 
-    if(((k = kh_get(attr, attr_table, "collision")) != kh_end(attr_table))
-    && kh_value(attr_table, k).val.as_bool) {
-        G_FlagsSet(ent, G_FlagsGet(ent) | ENTITY_FLAG_COLLISION);
+    if((k = kh_get(attr, attr_table, "collision")) != kh_end(attr_table)) {
+        if(kh_value(attr_table, k).val.as_bool) {
+            G_FlagsSet(ent, G_FlagsGet(ent) | ENTITY_FLAG_COLLISION);
+        }else{
+            G_FlagsSet(ent, G_FlagsGet(ent) & ~ENTITY_FLAG_COLLISION);
+        }
     }
 
     if(PyObject_IsInstance(ret, (PyObject*)&PyBuildableEntity_type)) {
