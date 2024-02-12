@@ -749,9 +749,8 @@ static void on_arrive_at_resource(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
 
-    if(!G_Move_Still(uid)) {
+    if(!G_Move_Still(uid))
         return; 
-    }
 
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_resource);
     E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel);
@@ -1755,14 +1754,20 @@ bool G_Harvester_Gather(uint32_t harvester, uint32_t resource)
     E_Entity_Notify(EVENT_HARVEST_TARGET_ACQUIRED, harvester, 
         (void*)(uintptr_t)resource, ES_ENGINE);
 
-    if(M_NavObjAdjacent(s_map, harvester, resource)) {
+    if(M_NavObjAdjacent(s_map, harvester, resource) && (resource_flags & ENTITY_FLAG_COLLISION)) {
         on_arrive_at_resource((void*)((uintptr_t)harvester), NULL);
     }else{
         E_Entity_Register(EVENT_MOTION_END, harvester, on_arrive_at_resource, 
             (void*)((uintptr_t)harvester), G_RUNNING);
         E_Entity_Register(EVENT_ORDER_ISSUED, harvester, on_motion_begin_travel, 
             (void*)((uintptr_t)harvester), G_RUNNING);
-        G_Move_SetSurroundEntity(harvester, resource);
+
+        if(!(resource_flags & ENTITY_FLAG_COLLISION)) {
+            vec2_t center = G_Pos_GetXZ(resource);
+            G_Move_SetDest(harvester, center, false);
+        }else{
+            G_Move_SetSurroundEntity(harvester, resource);
+        }
     }
 
     return true;

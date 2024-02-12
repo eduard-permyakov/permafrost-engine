@@ -686,6 +686,11 @@ bool G_Building_Complete(uint32_t uid)
     flags &= ~ENTITY_FLAG_INVISIBLE;
     G_FlagsSet(uid, flags);
 
+    if(bs->blocking && !(flags & ENTITY_FLAG_COLLISION)) {
+        bs->blocking = false;
+        M_NavBlockersDecrefOBB(s_map, G_GetFactionID(uid), G_FlagsGet(uid), &bs->obb);
+    }
+
     float old = G_GetVisionRange(uid);
     vec2_t xz_pos = G_Pos_GetXZ(uid);
 

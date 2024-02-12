@@ -1754,6 +1754,46 @@ static struct move_cmd *snoop_most_recent_command(enum move_cmd_type type, void 
     return NULL;
 }
 
+static bool snoop_still(uint32_t uid)
+{
+    if(queue_size(s_move_commands) == 0) {
+        struct movestate *ms = movestate_get(uid);
+        assert(ms);
+        return (ms->state == STATE_ARRIVED);
+    }
+
+    size_t left = queue_size(s_move_commands);
+    for(int i = s_move_commands.itail; left > 0;) {
+        struct move_cmd *curr = &s_move_commands.mem[i];
+        switch(curr->type) {
+        case MOVE_CMD_SET_DEST:
+        case MOVE_CMD_CHANGE_DIRECTION:
+        case MOVE_CMD_SET_ENTER_RANGE:
+        case MOVE_CMD_SET_SEEK_ENEMIES:
+        case MOVE_CMD_SET_SURROUND_ENTITY: {
+            if(curr->args[0].val.as_int == uid)
+                return false;
+            break;
+        }
+        case MOVE_CMD_STOP:
+            if(curr->args[0].val.as_int == uid)
+                return true;
+            break;
+        default:
+            break;
+        }
+        i--;
+        left--;
+        if(i < 0) {
+            i = s_move_commands.capacity - 1; /* Wrap around */
+        }
+    }
+
+    struct movestate *ms = movestate_get(uid);
+    assert(ms);
+    return (ms->state == STATE_ARRIVED);
+}
+
 static void flush_update_pos_commands(uint32_t uid)
 {
     struct move_cmd *cmd;
@@ -3107,7 +3147,7 @@ bool G_Move_Still(uint32_t uid)
     struct movestate *ms = movestate_get(uid);
     if(!ms)
         return true;
-    return (ms->state == STATE_ARRIVED);
+    return snoop_still(uid);
 }
 
 void G_Move_SetDest(uint32_t uid, vec2_t dest_xz, bool attack)
