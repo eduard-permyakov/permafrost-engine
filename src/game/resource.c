@@ -62,6 +62,7 @@ struct rstate{
 };
 
 KHASH_MAP_INIT_INT(state, struct rstate)
+KHASH_MAP_INIT_STR(icon, const char*)
 KHASH_SET_INIT_STR(name)
 
 /*****************************************************************************/
@@ -74,6 +75,7 @@ static khash_t(state)   *s_entity_state_table;
 static const struct map *s_map;
 /* The set of all resources that exist (or have existed) in the current session */
 static khash_t(name)    *s_all_names;
+static khash_t(icon)    *s_icon_table;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -124,10 +126,14 @@ bool G_Resource_Init(const struct map *map)
         goto fail_strintern;
     if(!(s_all_names = kh_init(name)))
         goto fail_name_set;
+    if(!(s_icon_table = kh_init(icon)))
+        goto fail_icon_table;
 
     s_map = map;
     return true;
 
+fail_icon_table:
+    kh_destroy(name, s_all_names);
 fail_name_set:
     si_shutdown(&s_stringpool, s_stridx);
 fail_strintern:
@@ -138,6 +144,7 @@ fail_table:
 
 void G_Resource_Shutdown(void)
 {
+    kh_destroy(icon, s_icon_table);
     kh_destroy(name, s_all_names);
     si_shutdown(&s_stringpool, s_stridx);
     kh_destroy(state, s_entity_state_table);
@@ -281,6 +288,28 @@ bool G_Resource_SetCursor(uint32_t uid, const char *cursor)
     return true;
 }
 
+void G_Resource_SetIcon(const char *name, const char *path)
+{
+    const char *key = si_intern(name, &s_stringpool, s_stridx);
+    if(!key)
+        return;
+
+    const char *value = si_intern(path, &s_stringpool, s_stridx);
+    if(!path)
+        return;
+
+    khiter_t k = kh_put(icon, s_icon_table, key, &(int){0});
+    kh_val(s_icon_table, k) = value;
+}
+
+const char *G_Resource_GetIcon(const char *name)
+{
+    khiter_t k = kh_get(icon, s_icon_table, name);
+    if(k == kh_end(s_icon_table))
+        return NULL;
+    return kh_val(s_icon_table, k);
+}
+
 int G_Resource_GetAllNames(size_t maxout, const char *out[])
 {
     size_t ret = 0;
@@ -352,6 +381,31 @@ bool G_Resource_SaveState(struct SDL_RWops *stream)
         Sched_TryYield();
     }
 
+    struct attr nicons = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_icon_table)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &nicons, "nicons"));
+    Sched_TryYield();
+
+    for(khiter_t k = kh_begin(s_icon_table); k != kh_end(s_icon_table); k++) {
+
+        if(!kh_exist(s_icon_table, k))
+            continue;
+
+        const char *key = kh_key(s_icon_table, k);
+        struct attr name = (struct attr){ .type = TYPE_STRING };
+        pf_strlcpy(name.val.as_string, key, sizeof(name.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &name, "name"));
+
+        const char *val = kh_val(s_icon_table, k);
+        struct attr path = (struct attr){ .type = TYPE_STRING };
+        pf_strlcpy(path.val.as_string, val, sizeof(path.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &path, "icon"));
+
+        Sched_TryYield();
+    }
+
     return true;
 }
 
@@ -399,6 +453,24 @@ bool G_Resource_LoadState(struct SDL_RWops *stream)
         const char *key = si_intern(attr.val.as_string, &s_stringpool, s_stridx);
         kh_put(name, s_all_names, key, &(int){0});
         Sched_TryYield();
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_icons = attr.val.as_int;
+    Sched_TryYield();
+
+    for(int i = 0; i < num_icons; i++) {
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        const char *key = si_intern(attr.val.as_string, &s_stringpool, s_stridx);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        const char *val = si_intern(attr.val.as_string, &s_stringpool, s_stridx);
+
+        G_Resource_SetIcon(key, val);
     }
 
     return true;

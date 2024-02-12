@@ -139,6 +139,8 @@ static PyObject *PyPf_show_healthbars(PyObject *self);
 static PyObject *PyPf_get_resource_list(PyObject *self);
 static PyObject *PyPf_get_resource_stored(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_resource_capacity(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_resource_icon(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_resource_icon(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_factions_list(PyObject *self);
 static PyObject *PyPf_add_faction(PyObject *self, PyObject *args);
 static PyObject *PyPf_remove_faction(PyObject *self, PyObject *args);
@@ -443,6 +445,14 @@ static PyMethodDef pf_module_methods[] = {
     {"get_resource_capacity",
     (PyCFunction)PyPf_get_resource_capacity, METH_VARARGS,
     "Returns the total capacity for storing a particular resource between all player-controlled storage sites."},
+
+    {"set_resource_icon",
+    (PyCFunction)PyPf_set_resource_icon, METH_VARARGS,
+    "Specify an image path (string) to be used as the icon for a resource with the specified resource name."},
+
+    {"get_resource_icon",
+    (PyCFunction)PyPf_get_resource_icon, METH_VARARGS,
+    "Returns an image path (stirng) that is currently set to be used as the icon for the specified resource name."},
 
     {"get_factions_list",
     (PyCFunction)PyPf_get_factions_list, METH_NOARGS,
@@ -1566,6 +1576,31 @@ static PyObject *PyPf_get_resource_capacity(PyObject *self, PyObject *args)
 
     int cap = G_StorageSite_GetPlayerCapacity(name);
     return PyInt_FromLong(cap);
+}
+
+static PyObject *PyPf_set_resource_icon(PyObject *self, PyObject *args)
+{
+    const char *name, *path;
+    if(!PyArg_ParseTuple(args, "ss", &name, &path)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting two arguments: resource name (string) and image path (string).");
+        return NULL;
+    }
+
+    G_Resource_SetIcon(name, path);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_get_resource_icon(PyObject *self, PyObject *args)
+{
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one arguments: resource name (string).");
+        return NULL;
+    }
+    const char *path = G_Resource_GetIcon(name);
+    if(!path)
+        Py_RETURN_NONE;
+    return PyString_FromString(path);
 }
 
 static PyObject *PyPf_get_factions_list(PyObject *self)

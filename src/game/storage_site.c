@@ -356,6 +356,7 @@ static void on_update_ui(void *user, void *event)
 
     nk_style_push_style_item(ctx, &ctx->style.window.fixed_background, s_bg_style);
     nk_style_push_color(ctx, &ctx->style.window.border_color, s_border_clr);
+    nk_style_push_vec2(ctx, &ctx->style.window.padding, nk_vec2(8.0f, 16.0f));
 
     kh_foreach(s_entity_state_table, key, curr, {
 
@@ -376,8 +377,8 @@ static void on_update_ui(void *user, void *event)
         vec2_t ss_pos = Entity_TopScreenPos(key, adj_vres.x, adj_vres.y);
         khash_t(int) *table = (curr.use_alt) ? curr.alt_capacity : curr.capacity;
 
-        const int width = 224;
-        const int height = MIN(kh_size(table), 16) * 20 + 4;
+        const int width = 198;
+        const int height = MIN(kh_size(table), 16) * 20 + 32;
         const vec2_t pos = (vec2_t){ss_pos.x - width/2, ss_pos.y + 20};
         const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BORDER | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
 
@@ -408,26 +409,32 @@ static void on_update_ui(void *user, void *event)
                 pf_snprintf(cap, sizeof(cap), "%4d", capacity);
                 pf_snprintf(des, sizeof(des), "(%4d)", desired);
 
-                nk_layout_row_begin(ctx, NK_DYNAMIC, 16, 2);
-                nk_layout_row_push(ctx, 0.30f);
-                nk_label_colored(ctx, names[i], NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
+                nk_layout_row_begin(ctx, NK_STATIC, 16, 5);
+                nk_layout_row_push(ctx, 16);
+                const char *icon = G_Resource_GetIcon(names[i]);
+                if(icon) {
+                    nk_image_texpath(ctx, icon);
+                }else{
+                    nk_label_colored(ctx, "?", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
+                }
 
-                nk_layout_row_push(ctx, 0.20f);
+                nk_layout_row_push(ctx, 40);
                 nk_label_colored(ctx, curr, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
 
-                nk_layout_row_push(ctx, 0.05f);
+                nk_layout_row_push(ctx, 10);
                 nk_label_colored(ctx, "/", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
 
-                nk_layout_row_push(ctx, 0.20f);
+                nk_layout_row_push(ctx, 40);
                 nk_label_colored(ctx, cap, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
 
-                nk_layout_row_push(ctx, 0.30f);
+                nk_layout_row_push(ctx, 68);
                 nk_label_colored(ctx, des, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
             }
         }
         nk_end(ctx);
     });
 
+    nk_style_pop_vec2(ctx);
     nk_style_pop_style_item(ctx);
     nk_style_pop_color(ctx);
 }

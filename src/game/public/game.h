@@ -364,6 +364,8 @@ bool        G_Resource_SetName(uint32_t uid, const char *name);
 const char *G_Resource_GetName(uint32_t uid);
 const char *G_Resource_GetCursor(uint32_t uid);
 bool        G_Resource_SetCursor(uint32_t uid, const char *cursor);
+void        G_Resource_SetIcon(const char *name, const char *path);
+const char *G_Resource_GetIcon(const char *name);
 int         G_Resource_GetAllNames(size_t maxout, const char* out[]);
 void        G_Resource_UpdateSelectionRadius(uint32_t uid, float radius);
 
