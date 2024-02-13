@@ -1190,7 +1190,9 @@ static void batch_render_anim_all(vec_ranim_t *ents, bool shadows, enum render_p
     for(int i = 0; i < nanim; i++) {
         batch_append(s_anim_batch, vec_AT(ents, i).render_private);
     }
-    batch_render_anim(s_anim_batch, &vec_AT(ents, 0), nopaque);
+    if(nopaque > 0) {
+        batch_render_anim(s_anim_batch, &vec_AT(ents, 0), nopaque);
+    }
     if(ntranslucent > 0) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR);
@@ -1269,7 +1271,9 @@ static void batch_render_stat_all(vec_rstat_t *ents, bool shadows,
         for(int i = 0; i < ndraw; i++) {
             batch_append(batch, vec_AT(ents, curr->start_idx + i).render_private);
         }
-        batch_render_stat(batch, &vec_AT(ents, curr->start_idx), nopaque, pass);
+        if(nopaque > 0) {
+            batch_render_stat(batch, &vec_AT(ents, curr->start_idx), nopaque, pass);
+        }
         if(ntranslucent > 0) {
             size_t start = curr->start_idx + nopaque;
 
