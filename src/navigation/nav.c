@@ -1517,6 +1517,14 @@ static bool n_moving_entity(uint32_t ent, void *arg)
     return !G_Move_Still(ent);
 }
 
+static bool n_non_collidable_building(uint32_t ent, void *arg)
+{
+    uint32_t flags = G_FlagsGet(ent);
+    return  (flags & (ENTITY_FLAG_BUILDING)
+        && !(flags & ENTITY_FLAG_COLLISION)
+        && G_Building_IsFounded(ent));
+}
+
 static khash_t(td) *n_moving_entities_tileset(struct nav_private *priv, vec3_t map_pos, 
                                               const struct obb *area)
 {
@@ -1526,7 +1534,7 @@ static khash_t(td) *n_moving_entities_tileset(struct nav_private *priv, vec3_t m
     N_GetResolution(priv, &res);
 
     vec2_t center_xz = (vec2_t){area->center.x, area->center.z};
-    float radius = MAX(area->half_lengths[0], area->half_lengths[2]);
+    float radius = MAX(area->half_lengths[0] * 1.5f, area->half_lengths[2] * 1.5f);
 
     uint32_t ents[1024];
     size_t nents = G_Pos_EntsInCircleWithPred(center_xz, radius, ents, 
@@ -1548,6 +1556,41 @@ static khash_t(td) *n_moving_entities_tileset(struct nav_private *priv, vec3_t m
         kh_put(td, ret, td_key(&tile), &status);
     }
 
+    return ret;
+}
+
+static khash_t(td) *n_non_collidable_buildings_tileset(struct nav_private *priv, vec3_t map_pos,
+                                                       const struct obb *area)
+{
+    assert(Sched_UsingBigStack());
+
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    vec2_t center_xz = (vec2_t){area->center.x, area->center.z};
+    float radius = MAX(area->half_lengths[0] + 50.0f, area->half_lengths[2] + 50.0f);
+
+    uint32_t ents[1024];
+    size_t nents = G_Pos_EntsInCircleWithPred(center_xz, radius, ents, 
+        ARR_SIZE(ents), n_non_collidable_building, NULL);
+
+    khash_t(td) *ret = kh_init(td);
+    if(!ret)
+        return NULL;
+
+    for(int i = 0; i < nents; i++) {
+
+        struct obb obb;
+        Entity_CurrentOBB(ents[i], &obb, true);
+
+        struct tile_desc tds[1024];
+        size_t ntiles = M_Tile_AllUnderObj(map_pos, res, &obb, tds, ARR_SIZE(tds));
+
+        for(int j = 0; j < ntiles; j++) {
+            int status;
+            kh_put(td, ret, td_key(&tds[j]), &status);
+        }
+    }
     return ret;
 }
 
@@ -2584,6 +2627,9 @@ void N_RenderBuildableTiles(void *nav_private, const struct map *map,
     khash_t(td) *tileset = n_moving_entities_tileset(priv, map_pos, obb);
     assert(tileset);
 
+    khash_t(td) *building_tileset = n_non_collidable_buildings_tileset(priv, map_pos, obb);
+    assert(building_tileset);
+
     vec2_t corners_buff[4 * FIELD_RES_R * FIELD_RES_C];
     vec3_t colors_buff[FIELD_RES_R * FIELD_RES_C];
 
@@ -2633,7 +2679,9 @@ void N_RenderBuildableTiles(void *nav_private, const struct map *map,
         if((chunk->blockers [tds[i].tile_r][tds[i].tile_c]
         || ((allow_shore ? !shore : true) && chunk->cost_base[tds[i].tile_r][tds[i].tile_c] == COST_IMPASSABLE)
         || !G_Fog_PlayerExplored((vec2_t){ws_center_homo.x, ws_center_homo.z})
-        || (kh_get(td, tileset, td_key(tds + i)) != kh_end(tileset))) || blocked) {
+        || (kh_get(td, tileset, td_key(tds + i)) != kh_end(tileset))
+        || (kh_get(td, building_tileset, td_key(tds + i)) != kh_end(building_tileset))) 
+        || blocked) {
             *colors_base++ = (vec3_t){1.0f, 0.0f, 0.0f};
         }else{
             *colors_base++ = (vec3_t){0.0f, 1.0f, 0.0f};
@@ -2641,6 +2689,7 @@ void N_RenderBuildableTiles(void *nav_private, const struct map *map,
         count++;
     }
     free(tileset);
+    free(building_tileset);
 
     bool on_water_surface = true;
     R_PushCmd((struct rcmd){
@@ -3941,8 +3990,11 @@ bool N_ObjectBuildable(void *nav_private, const struct map *map, enum nav_layer 
 
     khash_t(td) *tileset = n_moving_entities_tileset(priv, map_pos, obb);
     assert(tileset);
-    bool ret = false;
 
+    khash_t(td) *building_tileset = n_non_collidable_buildings_tileset(priv, map_pos, obb);
+    assert(building_tileset);
+
+    bool ret = false;
     for(int i = 0; i < ntiles; i++) {
 
         const struct nav_chunk *chunk = 
@@ -3967,13 +4019,15 @@ bool N_ObjectBuildable(void *nav_private, const struct map *map, enum nav_layer 
         if(chunk->blockers [tds[i].tile_r][tds[i].tile_c]
         || ((allow_shore ? !shore : true) && chunk->cost_base[tds[i].tile_r][tds[i].tile_c] == COST_IMPASSABLE)
         || !G_Fog_PlayerExplored((vec2_t){center.x, center.z})
-        || (kh_get(td, tileset, td_key(tds + i)) != kh_end(tileset))) {
+        || (kh_get(td, tileset, td_key(tds + i)) != kh_end(tileset))
+        || (kh_get(td, building_tileset, td_key(tds + i) != kh_end(building_tileset)) )) {
             goto out;
         }
     }
     ret = true;
 out:
     free(tileset);
+    free(building_tileset);
     return ret;
 }
 
