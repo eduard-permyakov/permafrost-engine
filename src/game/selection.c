@@ -290,6 +290,7 @@ static void sel_compute_hovered(struct camera *cam, const vec_entity_t *visible,
     float t_min = FLT_MAX;
     s_hovered_uid = NULL_UID;
     bool selectable_hovered = false;
+    bool collision_hovered = false;
 
     for(int i = 0; i < vec_size(visible_obbs); i++) {
 
@@ -301,14 +302,23 @@ static void sel_compute_hovered(struct camera *cam, const vec_entity_t *visible,
         if(selectable_hovered && !(flags & ENTITY_FLAG_SELECTABLE))
             continue;
 
+        /* Prioritize entities with collision over those without */
+        if(collision_hovered && !(flags & ENTITY_FLAG_COLLISION))
+            continue;
+
         float t;
         if(C_RayIntersectsOBB(ray_origin, ray_dir, vec_AT(visible_obbs, i), &t)) {
 
-            if(t < t_min) {
+            bool first_selected = (flags & ENTITY_FLAG_SELECTABLE) && !selectable_hovered;
+            bool first_collision = (flags & ENTITY_FLAG_COLLISION) && !collision_hovered;
+
+            if(t < t_min && (first_selected || (!selectable_hovered && first_collision))) {
                 t_min = t;
                 s_hovered_uid = vec_AT(visible, i);
                 if(flags & ENTITY_FLAG_SELECTABLE)
                     selectable_hovered = true;
+                if(flags & ENTITY_FLAG_COLLISION)
+                    collision_hovered = true;
             }
         }
     }

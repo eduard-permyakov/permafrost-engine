@@ -351,7 +351,7 @@ static void e_handle_event(struct event event, bool immediate)
 
             if(!immediate && ((elem.simmask & ss) == 0))
                 continue;
-            if(SDL_TICKS_PASSED(elem.register_tick, event.tick))
+            if(event.tick != elem.register_tick && SDL_TICKS_PASSED(elem.register_tick, event.tick))
                 continue;
 
             e_invoke(elem, event);
