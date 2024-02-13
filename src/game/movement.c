@@ -2946,7 +2946,7 @@ static void on_20hz_tick(void *user, void *event)
             .save_debug = G_ClearPath_ShouldSaveDebug(curr),
             .stat_neighbs = stat,
             .dyn_neighbs = dyn,
-            .has_dest_los = (flock && !ms->using_surround_field) 
+            .has_dest_los = (flock && (ms->state != STATE_SURROUND_ENTITY || !ms->using_surround_field)) 
                           ? M_NavHasDestLOS(s_map, flock->dest_id, pos) : false,
             .fid = fid,
             .normal_form_cohesion_force = ((fid != NULL_FID) ? G_Formation_CohesionForce(curr) 
