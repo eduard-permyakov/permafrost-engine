@@ -105,6 +105,7 @@ struct buildstate{
     float      vision_range;
     bool       blocking;
     bool       is_storage_site;
+    vec2_t     rally_point;
     struct obb obb;
     kh_int_t  *required;
 };
@@ -482,7 +483,8 @@ bool G_Building_AddEntity(uint32_t uid)
         .markers = {0},
         .progress_model = UID_NONE,
         .obb = {0},
-        .is_storage_site = !!(G_FlagsGet(uid) & ENTITY_FLAG_STORAGE_SITE)
+        .is_storage_site = !!(G_FlagsGet(uid) & ENTITY_FLAG_STORAGE_SITE),
+        .rally_point = G_Pos_GetXZ(uid)
     };
 
     new_bs.required = kh_init(int);
@@ -784,6 +786,7 @@ void G_Building_UpdateBounds(uint32_t uid)
     if(!bs)
         return;
 
+    bs->rally_point = G_Pos_GetXZ(uid);
     if(!G_Building_IsFounded(uid))
         return;
 
@@ -873,6 +876,20 @@ bool G_Building_SetRequired(uint32_t uid, const char *rname, int req)
     return bstate_set_key(bs->required, rname, req);
 }
 
+void G_Building_SetRallyPoint(uint32_t uid, vec2_t pos)
+{
+    struct buildstate *bs = buildstate_get(uid);
+    assert(bs);
+    bs->rally_point = pos;
+}
+
+vec2_t G_Building_GetRallyPoint(uint32_t uid)
+{
+    struct buildstate *bs = buildstate_get(uid);
+    assert(bs);
+    return bs->rally_point;
+}
+
 bool G_Building_SaveState(struct SDL_RWops *stream)
 {
     struct attr num_buildings = (struct attr){
@@ -930,6 +947,12 @@ bool G_Building_SaveState(struct SDL_RWops *stream)
             .val.as_bool = curr.is_storage_site
         };
         CHK_TRUE_RET(Attr_Write(stream, &building_ss, "building_ss"));
+
+        struct attr rally_point = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = curr.rally_point
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &rally_point, "rally_point"));
 
         struct attr num_required = (struct attr){
             .type = TYPE_INT,
@@ -998,6 +1021,10 @@ bool G_Building_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(attr.type == TYPE_BOOL);
         bool is_storage_site = attr.val.as_bool;
 
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        vec2_t rally_point = attr.val.as_vec2;
+
         CHK_TRUE_RET(G_EntityExists(uid));
         CHK_TRUE_RET(G_FlagsGet(uid) & ENTITY_FLAG_BUILDING);
 
@@ -1005,6 +1032,7 @@ bool G_Building_LoadState(struct SDL_RWops *stream)
         assert(bs);
         bs->vision_range = vis_range;
         bs->is_storage_site = is_storage_site;
+        bs->rally_point = rally_point;
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);

@@ -451,6 +451,8 @@ static PyObject *PyBuildableEntity_get_supplied(PyBuildableEntityObject *self, v
 static PyObject *PyBuildableEntity_get_completed(PyBuildableEntityObject *self, void *closure);
 static PyObject *PyBuildableEntity_get_vision_range(PyBuildableEntityObject *self, void *closure);
 static int       PyBuildableEntity_set_vision_range(PyBuildableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyBuildableEntity_get_rally_point(PyBuildableEntityObject *self, void *closure);
+static int       PyBuildableEntity_set_rally_point(PyBuildableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyBuildableEntity_get_required_resources(PyBuildableEntityObject *self, void *closure);
 static PyObject *PyBuildableEntity_pickle(PyBuildableEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyBuildableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
@@ -503,6 +505,10 @@ static PyGetSetDef PyBuildableEntity_getset[] = {
     {"vision_range",
     (getter)PyBuildableEntity_get_vision_range, (setter)PyBuildableEntity_set_vision_range,
     "The radius (in OpenGL coordinates) that the entity sees around itself.",
+    NULL},
+    {"rally_point",
+    (getter)PyBuildableEntity_get_rally_point, (setter)PyBuildableEntity_set_rally_point,
+    "The location to which newly created or upgraded units will rally to.",
     NULL},
     {"founded",
     (getter)PyBuildableEntity_get_founded, NULL,
@@ -2778,6 +2784,39 @@ static int PyBuildableEntity_set_vision_range(PyBuildableEntityObject *self, PyO
     }
 
     G_Building_SetVisionRange(self->super.ent, PyFloat_AS_DOUBLE(value));
+    return 0;
+}
+
+static PyObject *PyBuildableEntity_get_rally_point(PyBuildableEntityObject *self, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot access attribute of zombie entity.");
+        return NULL;
+    }
+    vec2_t rally = G_Building_GetRallyPoint(self->super.ent);
+    return Py_BuildValue("ff", rally.x, rally.z);
+}
+
+static int PyBuildableEntity_set_rally_point(PyBuildableEntityObject *self, 
+                                             PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot access attribute of zombie entity.");
+        return -1;
+    }
+
+    if(!PyTuple_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple.");
+        return -1;
+    }
+
+    vec2_t rally;
+    if(!PyArg_ParseTuple(value, "ff", &rally.x, &rally.z)) {
+        PyErr_SetString(PyExc_TypeError, "Value must be a tuple of 2 floats.");
+        return -1;
+    }
+
+    G_Building_SetRallyPoint(self->super.ent, rally);
     return 0;
 }
 

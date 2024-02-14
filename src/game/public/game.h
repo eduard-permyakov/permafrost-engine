@@ -344,6 +344,8 @@ int    G_Building_GetRequired(uint32_t uid, const char *rname);
 bool   G_Building_SetRequired(uint32_t uid, const char *rname, int req);
 size_t G_Building_GetAllRequired(uint32_t uid, size_t maxout, 
                                  const char *names[], int amounts[]);
+void   G_Building_SetRallyPoint(uint32_t uid, vec2_t pos);
+vec2_t G_Building_GetRallyPoint(uint32_t uid);
 
 /*###########################################################################*/
 /* GAME BUILDER                                                              */
