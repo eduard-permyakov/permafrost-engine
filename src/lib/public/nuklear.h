@@ -4572,6 +4572,7 @@ NK_API void nk_fill_polygon(struct nk_command_buffer*, float*, int point_count, 
 /* misc */
 NK_API void nk_draw_image(struct nk_command_buffer*, struct nk_rect, const struct nk_image*, struct nk_color);
 NK_API void nk_draw_text(struct nk_command_buffer*, struct nk_rect, const char *text, int len, const struct nk_user_font*, struct nk_color, struct nk_color);
+NK_API void nk_draw_texpath(struct nk_command_buffer *b, struct nk_rect r, const char *texpath, struct nk_color col); 
 NK_API void nk_push_scissor(struct nk_command_buffer*, struct nk_rect);
 NK_API void nk_push_custom(struct nk_command_buffer*, struct nk_rect, nk_command_custom_callback, nk_handle usr);
 

@@ -53,6 +53,9 @@
 
 #include <assert.h>
 
+#define INDICATOR_SIZE      (15.0f)
+#define INDICATOR_PERIOD_MS (1500)
+
 #define TO_VEC2T(_nk_vec2i) ((vec2_t){_nk_vec2i.x, _nk_vec2i.y})
 #define TO_VEC2I(_pf_vec2t) ((struct nk_vec2i){_pf_vec2t.x, _pf_vec2t.y})
 
@@ -93,6 +96,7 @@ static PyObject *PyWindow_layout_row_push(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_label_colored(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_label_colored_wrap(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyWindow_animated_button_label(PyWindowObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyWindow_simple_chart(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_selectable_label(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_option_label(PyWindowObject *self, PyObject *args);
@@ -242,6 +246,10 @@ static PyMethodDef PyWindow_methods[] = {
     {"button_label", 
     (PyCFunction)PyWindow_button_label, METH_VARARGS | METH_KEYWORDS,
     "Add a button with a label and action."},
+
+    {"animated_button_label", 
+    (PyCFunction)PyWindow_animated_button_label, METH_VARARGS | METH_KEYWORDS,
+    "Add a button with a label and action with a circling animation around it."},
 
     {"simple_chart", 
     (PyCFunction)PyWindow_simple_chart, METH_VARARGS,
@@ -621,6 +629,43 @@ static int parse_float_pair(PyObject *tuple, float *out_a, float *out_b)
     return 0;
 }
 
+static struct nk_rect indicator_bounds(struct nk_rect parent, float percent)
+{
+    float total_length = parent.w * 2 + parent.h * 2;
+    float offset = (percent/100.0) * total_length;
+    assert(offset <= total_length);
+    float x, y;
+    (void)x;
+    (void)y;
+
+    if(offset > parent.w * 2 + parent.h) {
+        float edge_offset = offset - (parent.w * 2 + parent.h);
+        float adjusted = (edge_offset / parent.h) * (parent.h - INDICATOR_SIZE);
+        assert(edge_offset <= parent.h);
+        x = parent.x;
+        y = parent.y + parent.h - INDICATOR_SIZE - adjusted;
+    }else if(offset > parent.w + parent.h) {
+        float edge_offset = offset - parent.w - parent.h;
+        float adjusted = (edge_offset / parent.w) * (parent.w - INDICATOR_SIZE);
+        assert(edge_offset <= parent.w);
+        x = parent.x + parent.w - INDICATOR_SIZE - adjusted;
+        y = parent.y + parent.h - INDICATOR_SIZE;
+    }else if(offset > parent.w) {
+        float edge_offset = offset - parent.w;
+        float adjusted = (edge_offset / parent.h) * (parent.h - INDICATOR_SIZE);
+        assert(edge_offset <= parent.h);
+        x = parent.x + parent.w - INDICATOR_SIZE;
+        y = parent.y + adjusted;
+    }else{
+        float edge_offset = offset;
+        float adjusted = (edge_offset / parent.w) * (parent.w - INDICATOR_SIZE);
+        assert(edge_offset <= parent.w);
+        x = parent.x + adjusted;
+        y = parent.y;
+    }
+    return (struct nk_rect){x, y, INDICATOR_SIZE, INDICATOR_SIZE};
+}
+
 static int PyWindow_init(PyWindowObject *self, PyObject *args, PyObject *kwargs)
 {
     const char *name;
@@ -778,16 +823,79 @@ static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args, PyO
         Py_XDECREF(ret);
     }
 
+    bool right_clicked = nk_input_is_mouse_click_in_rect(in, NK_BUTTON_RIGHT, bounds);
     bool hovering = nk_input_is_mouse_hovering_rect(in, bounds);
     if(tooltip && hovering) {
         nk_tooltip(s_nk_ctx, tooltip);
     }
 
-    if(hovering) {
-        Py_RETURN_TRUE;
-    }else{
-        Py_RETURN_FALSE;
+    PyObject *hoverobj = PyBool_FromLong(hovering);
+    PyObject *rclickobj = PyBool_FromLong(right_clicked);
+    return Py_BuildValue("(OO)", hoverobj, rclickobj);
+}
+
+static PyObject *PyWindow_animated_button_label(PyWindowObject *self, PyObject *args, PyObject *kwargs)
+{
+    uint32_t last_ts = 0;
+    float fraction = 0.0f;
+    const char *str, *tooltip = NULL;
+    PyObject *callable, *cargs = NULL;
+    const char *indicator_image = NULL;
+    static char *kwlist[] = { "string", "callable", "timestamp", "fraction", "args", "tooltip", 
+        "indicator_image", NULL };
+    struct nk_rect bounds = nk_widget_bounds(s_nk_ctx);
+    const struct nk_input *in = &s_nk_ctx->input;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "sOIf|Oss", kwlist, &str, &callable, 
+        &last_ts, &fraction, &cargs, &tooltip, &indicator_image)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string, an object, an integer "
+            "and a float. "
+            "Optionally, an argument to the callable can be provided, as well as tooltip text "
+            "and indicator image path.");
+        return NULL;
     }
+
+    if(!PyCallable_Check(callable)) {
+        PyErr_SetString(PyExc_TypeError, "Second argument must be callable.");
+        return NULL;
+    }
+
+    if(nk_button_label(s_nk_ctx, str)) {
+        PyObject *ret = PyObject_CallObject(callable, cargs);
+        Py_XDECREF(ret);
+    }
+
+    /* Render animated indicator going around the inner perimeter of 
+     * the button.
+     */
+    uint32_t curr_ts = SDL_GetTicks();
+    uint32_t delta = curr_ts - last_ts;
+    delta %= INDICATOR_PERIOD_MS;
+    float delta_fraction = (float)delta / INDICATOR_PERIOD_MS;
+    fraction += delta_fraction;
+    if(fraction > 1.0f) {
+        fraction = fraction - 1.0f;
+    }
+
+    struct nk_window *win = s_nk_ctx->current;
+    struct nk_rect ind_bounds = indicator_bounds(bounds, fraction * 100.0f);
+    struct nk_color indicator_color = (struct nk_color){250, 250, 50, 255};
+    if(indicator_image) {
+        nk_draw_texpath(&win->buffer, ind_bounds, indicator_image, indicator_color);
+    }else{
+        nk_fill_rect(&win->buffer, ind_bounds, 3.0f, indicator_color);
+    }
+
+    bool right_clicked = nk_input_is_mouse_click_in_rect(in, NK_BUTTON_RIGHT, bounds);
+    bool hovering = nk_input_is_mouse_hovering_rect(in, bounds);
+    if(tooltip && hovering) {
+        nk_tooltip(s_nk_ctx, tooltip);
+    }
+
+    PyObject *hoverobj = PyBool_FromLong(hovering);
+    PyObject *rclickobj = PyBool_FromLong(right_clicked 
+        && !(win->flags & NK_WINDOW_NOT_INTERACTIVE));
+    return Py_BuildValue("(IfOO)", curr_ts, fraction, hoverobj, rclickobj);
 }
 
 static PyObject *PyWindow_simple_chart(PyWindowObject *self, PyObject *args)
