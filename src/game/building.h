@@ -56,6 +56,8 @@ void *G_Building_CopyState(void);
 bool  G_Building_IsFoundedFrom(void *state, uint32_t uid);
 bool  G_Building_IsCompletedFrom(void *state, uint32_t uid);
 
+bool G_Building_InTargetMode(void);
+
 bool G_Building_SaveState(struct SDL_RWops *stream);
 bool G_Building_LoadState(struct SDL_RWops *stream);
 

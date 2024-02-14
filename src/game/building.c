@@ -140,6 +140,7 @@ static mpa_buff_t            s_mpool;
 static khash_t(stridx)      *s_stridx;
 static mp_strbuff_t          s_stringpool;
 static struct memstack       s_eventargs;
+static bool                  s_set_rally_on_lclick = false;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -416,6 +417,63 @@ static void on_update(void *user, void *event)
     stalloc_clear(&s_eventargs);
 }
 
+static void try_place_rally_points(void)
+{
+    vec3_t map_pos;
+    if(!M_Raycast_MouseIntersecCoord(&map_pos))
+        return;
+
+    enum selection_type sel_type;
+    const vec_entity_t *sel = G_Sel_Get(&sel_type);
+    if(vec_size(sel) == 0 || sel_type != SELECTION_TYPE_PLAYER)
+        return;
+
+    size_t nset = 0;
+    for(int i = 0; i < vec_size(sel); i++) {
+        uint32_t curr = vec_AT(sel, i);
+        uint32_t flags = G_FlagsGet(curr);
+        if(!(flags & ENTITY_FLAG_BUILDING))
+            continue;
+        G_Building_SetRallyPoint(curr, (vec2_t){map_pos.x, map_pos.z});
+        nset++;
+    }
+
+    if(nset > 0) {
+        E_Global_Notify(EVENT_RALLY_POINT_SET, NULL, ES_ENGINE);
+    }
+}
+
+static void on_mousedown(void *user, void *event)
+{
+    SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
+
+    bool targeting = G_Building_InTargetMode();
+    bool right = (mouse_event->button == SDL_BUTTON_RIGHT);
+    bool left = (mouse_event->button == SDL_BUTTON_LEFT);
+
+    bool set = s_set_rally_on_lclick;
+    s_set_rally_on_lclick = false;
+
+    if(G_MouseOverMinimap())
+        return;
+
+    if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
+        return;
+
+    if(right && targeting)
+        return;
+
+    if(left && !targeting)
+        return;
+
+    if(G_CurrContextualAction() != CTX_ACTION_NONE)
+        return;
+
+    if(right || (left && set)) {
+        try_place_rally_points();
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -438,6 +496,7 @@ bool G_Building_Init(const struct map *map)
     E_Global_Register(EVENT_RENDER_3D_PRE, on_render_3d, NULL, 
         G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
     E_Global_Register(EVENT_UPDATE_START, on_update, NULL, G_RUNNING);
+    E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     s_map = map;
     return true;
 
@@ -454,6 +513,7 @@ fail_mpool:
 void G_Building_Shutdown(void)
 {
     s_map = NULL;
+    E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     E_Global_Unregister(EVENT_UPDATE_START, on_update);
     E_Global_Unregister(EVENT_RENDER_3D_PRE, on_render_3d);
 
@@ -888,6 +948,16 @@ vec2_t G_Building_GetRallyPoint(uint32_t uid)
     struct buildstate *bs = buildstate_get(uid);
     assert(bs);
     return bs->rally_point;
+}
+
+void G_Building_SetPositionRallyPointOnLeftClick(void)
+{
+    s_set_rally_on_lclick = true;
+}
+
+bool G_Building_InTargetMode(void)
+{
+    return s_set_rally_on_lclick;
 }
 
 bool G_Building_SaveState(struct SDL_RWops *stream)

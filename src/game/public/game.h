@@ -346,6 +346,7 @@ size_t G_Building_GetAllRequired(uint32_t uid, size_t maxout,
                                  const char *names[], int amounts[]);
 void   G_Building_SetRallyPoint(uint32_t uid, vec2_t pos);
 vec2_t G_Building_GetRallyPoint(uint32_t uid);
+void   G_Building_SetPositionRallyPointOnLeftClick(void);
 
 /*###########################################################################*/
 /* GAME BUILDER                                                              */

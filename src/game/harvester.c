@@ -1961,25 +1961,6 @@ bool G_Harvester_InTargetMode(void)
         || s_transport_on_lclick;
 }
 
-bool G_Harvester_HasRightClickAction(void)
-{
-    uint32_t hovered = G_Sel_GetHovered();
-    if(!G_EntityExists(hovered))
-        return false;
-
-    enum selection_type sel_type;
-    const vec_entity_t *sel = G_Sel_Get(&sel_type);
-
-    if(vec_size(sel) == 0)
-        return false;
-
-    uint32_t first = vec_AT(sel, 0);
-    if((G_FlagsGet(first) & ENTITY_FLAG_HARVESTER) && (G_FlagsGet(hovered) & ENTITY_FLAG_RESOURCE))
-        return true;
-
-    return false;
-}
-
 int G_Harvester_CurrContextualAction(void)
 {
     uint32_t hovered = G_Sel_GetHovered();

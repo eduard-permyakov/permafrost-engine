@@ -185,6 +185,7 @@ static PyObject *PyPf_set_pick_up_on_left_click(PyObject *self);
 static PyObject *PyPf_set_drop_off_on_left_click(PyObject *self);
 static PyObject *PyPf_set_transport_on_left_click(PyObject *self);
 static PyObject *PyPf_set_evict_on_left_click(PyObject *self);
+static PyObject *PyPf_set_position_rally_point_on_left_click(PyObject *self);
 static PyObject *PyPf_set_click_move_enabled(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_settings_get(PyObject *self, PyObject *args);
@@ -600,6 +601,11 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_set_evict_on_left_click, METH_NOARGS,
     "Set the cursor to target mode. The next left click will issue an 'evict' command to the garrisonable "
     "units in the selection, to get as close as possible to the target and evict all units.."},
+
+    {"set_position_rally_point_on_left_click",
+    (PyCFunction)PyPf_set_position_rally_point_on_left_click, METH_NOARGS,
+    "Set the cursor to target mode. The next left click will update the rally points of all "
+    "currently selected buildings."},
 
     {"set_click_move_enabled",
     (PyCFunction)PyPf_set_click_move_enabled, METH_VARARGS,
@@ -2119,6 +2125,12 @@ static PyObject *PyPf_set_transport_on_left_click(PyObject *self)
 static PyObject *PyPf_set_evict_on_left_click(PyObject *self)
 {
     G_Garrison_SetEvictOnLeftClick();
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_position_rally_point_on_left_click(PyObject *self)
+{
+    G_Building_SetPositionRallyPointOnLeftClick();
     Py_RETURN_NONE;
 }
 

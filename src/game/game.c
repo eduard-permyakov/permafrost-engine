@@ -2633,6 +2633,8 @@ bool G_MouseInTargetMode(void)
         return true;
     if(G_Garrison_InTargetMode())
         return true;
+    if(G_Building_InTargetMode())
+        return true;
     return false;
 }
 
