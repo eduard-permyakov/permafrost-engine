@@ -70,11 +70,17 @@ struct dis_arg{
     void *arg;
 };
 
+struct iconlist{
+    size_t      nicons;
+    const char *icons[MAX_ICONS]; 
+};
+
 MPOOL_TYPE(taglist, struct taglist)
 MPOOL_PROTOTYPES(static, taglist, struct taglist)
 MPOOL_IMPL(static, taglist, struct taglist)
 
 KHASH_MAP_INIT_INT(tags, struct taglist)
+KHASH_MAP_INIT_INT(icons, struct iconlist)
 __KHASH_IMPL(trans, extern, khint32_t, struct transform, 1, kh_int_hash_func, kh_int_hash_equal)
 
 /*****************************************************************************/
@@ -88,6 +94,7 @@ static mp_strbuff_t      s_stringpool;
 static kh_ents_t        *s_tag_ent_map;
 static kh_tags_t        *s_ent_tag_map;
 static kh_trans_t       *s_ent_trans_map;
+static kh_icons_t       *s_ent_icons_map;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -143,6 +150,19 @@ static void tag_remove_entity(const char *tag, uint32_t uid)
     if(iter != kh_end(set)) {
         kh_del(uid, set, iter);
     }
+}
+
+static struct iconlist *entity_iconlist(uint32_t uid)
+{
+    khiter_t k = kh_get(icons, s_ent_icons_map, uid);
+    if(k == kh_end(s_ent_icons_map)) {
+        int status;
+        k = kh_put(icons, s_ent_icons_map, uid, &status);
+        if(status == -1)
+            return NULL;
+        kh_value(s_ent_icons_map, k).nicons = 0;
+    }
+    return &kh_value(s_ent_icons_map, k);
 }
 
 static struct result ping_task(void *arg)
@@ -557,8 +577,14 @@ bool Entity_Init(void)
     if(!s_ent_trans_map)
         goto fail_ent_trans_map;
 
+    s_ent_icons_map = kh_init(icons);
+    if(!s_ent_icons_map)
+        goto fail_ent_icons_map;
+
     return true;
 
+fail_ent_icons_map:
+    kh_destroy(trans, s_ent_trans_map);
 fail_ent_trans_map:
     kh_destroy(tags, s_ent_tag_map);
 fail_ent_tag_map:
@@ -571,6 +597,7 @@ fail_strintern:
 
 void Entity_Shutdown(void)
 {
+    kh_destroy(icons, s_ent_icons_map);
     kh_destroy(trans, s_ent_trans_map);
     kh_destroy(tags, s_ent_tag_map);
     kh_destroy(ents, s_tag_ent_map);
@@ -579,6 +606,7 @@ void Entity_Shutdown(void)
 
 void Entity_ClearState(void)
 {
+    kh_clear(icons, s_ent_icons_map);
     kh_clear(trans, s_ent_trans_map);
     kh_clear(tags, s_ent_tag_map);
     kh_clear(ents, s_tag_ent_map);
@@ -726,5 +754,37 @@ uint64_t Entity_TypeID(uint32_t uid)
     if((obj = S_Entity_ObjForUID(uid)) == NULL)
         return 0;
     return S_Entity_TypeID(obj);
+}
+
+bool Entity_SetIcons(uint32_t uid, size_t nicons, const char **icons)
+{
+    struct iconlist *list = entity_iconlist(uid);
+    if(!list)
+        return false;
+
+    nicons = MIN(nicons, MAX_ICONS);
+    list->nicons = 0;
+    for(int i = 0; i < nicons; i++) {
+        const char *str = si_intern(icons[i], &s_stringpool, s_stridx);
+        if(!str)
+            return false;
+        list->icons[list->nicons++] = str;
+    }
+    return true;
+}
+
+size_t Entity_GetIcons(uint32_t uid, size_t maxout, const char *out[])
+{
+    struct iconlist *il = entity_iconlist(uid);
+    if(!il)
+        return 0;
+    size_t ret = MIN(il->nicons, maxout);
+    memcpy(out, il->icons, ret * sizeof(char*));
+    return ret;
+}
+
+void Entity_ClearIcons(uint32_t uid)
+{
+    kh_del(icons, s_ent_icons_map, uid);
 }
 

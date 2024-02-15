@@ -105,6 +105,9 @@ static PyObject *PyEntity_zombiefy(PyEntityObject *self);
 static PyObject *PyEntity_add_tag(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_remove_tag(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_is_garrisoned(PyEntityObject *self);
+static PyObject *PyEntity_set_icons(PyEntityObject *self, PyObject *value);
+static PyObject *PyEntity_get_icons(PyEntityObject *self);
+static PyObject *PyEntity_clear_icons(PyEntityObject *self);
 static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
@@ -167,6 +170,18 @@ static PyMethodDef PyEntity_methods[] = {
     {"is_garrisoned", 
     (PyCFunction)PyEntity_is_garrisoned, METH_VARARGS,
     "Returns True if the entity is currently garrisoned."},
+
+    {"set_icons", 
+    (PyCFunction)PyEntity_set_icons, METH_VARARGS,
+    "Assign a set of icons to be displayed over the entity."},
+
+    {"clear_icons", 
+    (PyCFunction)PyEntity_clear_icons, METH_NOARGS,
+    "Clear the set of icons displayed over the entity."},
+
+    {"get_icons", 
+    (PyCFunction)PyEntity_get_icons, METH_NOARGS,
+    "Get the set of icons displayed over the entity."},
 
     {"__pickle__", 
     (PyCFunction)PyEntity_pickle, METH_KEYWORDS,
@@ -1782,6 +1797,70 @@ static PyObject *PyEntity_is_garrisoned(PyEntityObject *self)
     Py_RETURN_FALSE;
 }
 
+static PyObject *PyEntity_set_icons(PyEntityObject *self, PyObject *value)
+{
+    if(G_FlagsGet(self->ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+
+    char buff[512];
+    PyObject *obj = NULL;
+    if(!PyArg_ParseTuple(value, "O", &obj) || !PyTuple_Check(obj) 
+    || PyTuple_GET_SIZE(obj) > MAX_ICONS)
+        goto fail;
+
+    const char *strings[16] = {0};
+    size_t nicons = PyTuple_GET_SIZE(obj);
+    for(int i = 0; i < nicons; i++) {
+        PyObject *strobj = PyTuple_GET_ITEM(obj, i);
+        if(!PyString_Check(strobj))
+            goto fail;
+        strings[i] = PyString_AS_STRING(strobj);
+    }
+
+    Entity_SetIcons(self->ent, nicons, strings);
+    Py_RETURN_NONE;
+
+fail:
+    pf_snprintf(buff, sizeof(buff), "Argument must be a tuple of strings (No more than %d).",
+        MAX_ICONS);
+    PyErr_SetString(PyExc_TypeError, buff);
+    return NULL;
+}
+
+static PyObject *PyEntity_clear_icons(PyEntityObject *self)
+{
+    if(G_FlagsGet(self->ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+
+    Entity_ClearIcons(self->ent);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_get_icons(PyEntityObject *self)
+{
+    const char *icons[MAX_TAGS];
+    size_t nicons = Entity_GetIcons(self->ent, ARR_SIZE(icons), icons);
+
+    PyObject *ret = PyTuple_New(nicons);
+    if(!ret)
+        return NULL;
+
+    for(int i = 0; i < nicons; i++) {
+        PyObject *str = PyString_FromString(icons[i]);
+        if(!str) {
+            Py_DECREF(ret);
+            return NULL;
+        }
+        PyTuple_SET_ITEM(ret, i, str);
+    }
+
+    return ret;
+}
+
 static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject *kwargs)
 {
     bool status;
@@ -1867,6 +1946,12 @@ static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject 
     Py_DECREF(tags);
     CHK_TRUE(status, fail_pickle);
 
+    PyObject *icons = PyEntity_get_icons(self);
+    CHK_TRUE(icons, fail_pickle);
+    status = S_PickleObjgraph(icons, stream);
+    Py_DECREF(icons);
+    CHK_TRUE(status, fail_pickle);
+
     ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
 
 fail_pickle:
@@ -1932,10 +2017,13 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
     PyObject *tags = S_UnpickleObjgraph(stream);
     SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
+    PyObject *icons = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
     if(!pos || !scale
     || !rotation || !flags 
     || !sel_radius || !faction_id
-    || !vision_range || !tags) {
+    || !vision_range || !tags || !icons) {
 
         PyErr_SetString(PyExc_RuntimeError, "Could not unpickle attributes of pf.Entity instance");
         goto fail_unpickle_atts;
@@ -1986,6 +2074,19 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
             CHK_TRUE(PyString_Check(tag), fail_unpickle_atts);
             Entity_AddTag(ent, PyString_AS_STRING(tag));
         }
+
+        CHK_TRUE(PyTuple_Check(icons), fail_unpickle_atts);
+
+        const char *iconstrings[MAX_ICONS];
+        size_t nicons = PyTuple_GET_SIZE(icons);
+
+        for(int i = 0; i < PyTuple_GET_SIZE(icons); i++) {
+            CHK_TRUE(i < MAX_ICONS, fail_unpickle_atts);
+            PyObject *icon = PyTuple_GET_ITEM(icons, i);
+            CHK_TRUE(PyString_Check(icon), fail_unpickle_atts);
+            iconstrings[i] = PyString_AS_STRING(icon);
+        }
+        Entity_SetIcons(ent, nicons, iconstrings);
     }
 
     Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
@@ -2001,6 +2102,7 @@ fail_unpickle_atts:
     Py_XDECREF(faction_id);
     Py_XDECREF(vision_range);
     Py_XDECREF(tags);
+    Py_XDECREF(icons);
 fail_unpickle:
     Py_XDECREF(basedir);
     Py_XDECREF(filename);

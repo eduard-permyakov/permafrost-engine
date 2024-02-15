@@ -47,6 +47,7 @@
 
 #define MAX_JOINTS  (96)
 #define MAX_TAGS    (127)
+#define MAX_ICONS   (4)
 #define NULL_UID    (~((uint32_t)0))
 
 enum{
@@ -159,5 +160,9 @@ void            Entity_CurrentOBBFrom(const struct aabb *aabb, mat4x4_t model,
                                       vec3_t scale, struct obb *out);
 
 uint64_t        Entity_TypeID(uint32_t uid);
+
+bool   Entity_SetIcons(uint32_t uid, size_t nicons, const char **icons);
+size_t Entity_GetIcons(uint32_t uid, size_t maxout, const char *out[]);
+void   Entity_ClearIcons(uint32_t uid);
 
 #endif
