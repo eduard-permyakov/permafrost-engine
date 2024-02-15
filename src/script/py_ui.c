@@ -823,6 +823,7 @@ static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args, PyO
         Py_XDECREF(ret);
     }
 
+    struct nk_window *win = s_nk_ctx->current;
     bool right_clicked = nk_input_is_mouse_click_in_rect(in, NK_BUTTON_RIGHT, bounds);
     bool hovering = nk_input_is_mouse_hovering_rect(in, bounds);
     if(tooltip && hovering) {
@@ -830,7 +831,8 @@ static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args, PyO
     }
 
     PyObject *hoverobj = PyBool_FromLong(hovering);
-    PyObject *rclickobj = PyBool_FromLong(right_clicked);
+    PyObject *rclickobj = PyBool_FromLong(right_clicked 
+        && !(win->flags & NK_WINDOW_NOT_INTERACTIVE));
     return Py_BuildValue("(OO)", hoverobj, rclickobj);
 }
 
