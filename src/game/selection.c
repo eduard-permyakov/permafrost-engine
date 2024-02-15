@@ -312,7 +312,7 @@ static void sel_compute_hovered(struct camera *cam, const vec_entity_t *visible,
             bool first_selected = (flags & ENTITY_FLAG_SELECTABLE) && !selectable_hovered;
             bool first_collision = (flags & ENTITY_FLAG_COLLISION) && !collision_hovered;
 
-            if(t < t_min && (first_selected || (!selectable_hovered && first_collision))) {
+            if(t < t_min || (first_selected || (!selectable_hovered && first_collision))) {
                 t_min = t;
                 s_hovered_uid = vec_AT(visible, i);
                 if(flags & ENTITY_FLAG_SELECTABLE)
