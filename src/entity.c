@@ -46,6 +46,7 @@
 #include "game/public/game.h"
 #include "anim/public/anim.h"
 #include "lib/public/mpool.h"
+#include "lib/public/pf_string.h"
 #include "lib/public/string_intern.h"
 
 #include <assert.h>
@@ -775,6 +776,10 @@ bool Entity_SetIcons(uint32_t uid, size_t nicons, const char **icons)
 
 size_t Entity_GetIcons(uint32_t uid, size_t maxout, const char *out[])
 {
+    khiter_t k = kh_get(icons, s_ent_icons_map, uid);
+    if(k == kh_end(s_ent_icons_map))
+        return 0;
+
     struct iconlist *il = entity_iconlist(uid);
     if(!il)
         return 0;
@@ -785,6 +790,9 @@ size_t Entity_GetIcons(uint32_t uid, size_t maxout, const char *out[])
 
 void Entity_ClearIcons(uint32_t uid)
 {
-    kh_del(icons, s_ent_icons_map, uid);
+    khiter_t k = kh_get(icons, s_ent_icons_map, uid);
+    if(k != kh_end(s_ent_icons_map)) {
+        kh_del(icons, s_ent_icons_map, k);
+    }
 }
 

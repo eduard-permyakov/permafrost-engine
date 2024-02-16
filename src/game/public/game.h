@@ -216,6 +216,9 @@ uint32_t        G_EntForGPUID(uint32_t gpuid);
 void            G_FlagsSet(uint32_t uid, uint32_t flags);
 uint32_t        G_FlagsGet(uint32_t uid);
 
+void            G_SetShowUnitIcons(bool show);
+bool            G_GetShowUnitIcons(void);
+
 /*###########################################################################*/
 /* GAME SELECTION                                                            */
 /*###########################################################################*/

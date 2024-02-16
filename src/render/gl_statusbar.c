@@ -58,7 +58,7 @@
 /*****************************************************************************/
 
 void R_GL_DrawHealthbars(const size_t *num_ents, GLfloat *ent_health_pc, 
-                         vec3_t *ent_top_pos_ws, const struct camera *cam)
+                         vec3_t *ent_top_pos_ws, int *yoffsets, const struct camera *cam)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -85,7 +85,7 @@ void R_GL_DrawHealthbars(const size_t *num_ents, GLfloat *ent_health_pc,
         float screen_x = (ndc.x + 1.0f) * width/2.0f;
         float screen_y = height - ((ndc.y + 1.0f) * height/2.0f);
 
-        ent_top_pos_ss[i] = (vec2_t){screen_x, screen_y};
+        ent_top_pos_ss[i] = (vec2_t){screen_x, screen_y + yoffsets[i]};
     }
 
     /* Create a buffer of mesh vertices for a healthbar centered at (0, 0).

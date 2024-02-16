@@ -66,5 +66,8 @@ int  G_StorageSite_GetAltCapacity(uint32_t uid, const char *rname);
 bool G_StorageSite_SetAltDesired(uint32_t uid, const char *rname, int des);
 int  G_StorageSite_GetAltDesired(uint32_t uid, const char *rname);
 
+float G_StorageSite_GetWindowHeight(uint32_t uid);
+bool  G_StorageSite_GetShowUI(void);
+
 #endif
 

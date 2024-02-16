@@ -135,6 +135,8 @@ static PyObject *PyPf_entities_for_tag(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_hide_healthbars(PyObject *self);
 static PyObject *PyPf_show_healthbars(PyObject *self);
+static PyObject *PyPf_hide_unit_icons(PyObject *self);
+static PyObject *PyPf_show_unit_icons(PyObject *self);
 
 static PyObject *PyPf_get_resource_list(PyObject *self);
 static PyObject *PyPf_get_resource_stored(PyObject *self, PyObject *args);
@@ -434,6 +436,14 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_show_healthbars, METH_NOARGS,
     "Re-enable showing the healthbars after a 'hide_healthbars' call. Note that the healthbars will only "
     "be rendered if the corresponding user-configurable setting is set."},
+
+    {"hide_unit_icons", 
+    (PyCFunction)PyPf_hide_unit_icons, METH_NOARGS,
+    "Disable rendering of icons on top of entities."},
+
+    {"show_unit_icons", 
+    (PyCFunction)PyPf_show_unit_icons, METH_NOARGS,
+    "Enable rendering of icons on top of entities."},
 
     {"get_resource_list",
     (PyCFunction)PyPf_get_resource_list, METH_NOARGS,
@@ -1537,6 +1547,18 @@ static PyObject *PyPf_hide_healthbars(PyObject *self)
 static PyObject *PyPf_show_healthbars(PyObject *self)
 {
     G_SetHideHealthbars(false);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_hide_unit_icons(PyObject *self)
+{
+    G_SetShowUnitIcons(false);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_show_unit_icons(PyObject *self)
+{
+    G_SetShowUnitIcons(true);
     Py_RETURN_NONE;
 }
 

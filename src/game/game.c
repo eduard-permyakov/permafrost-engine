@@ -61,6 +61,7 @@
 #include "../phys/public/collision.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/mem.h"
+#include "../lib/public/pf_nuklear.h"
 #include "../entity.h"
 #include "../camera.h"
 #include "../cam_control.h"
@@ -325,6 +326,7 @@ static void g_render_healthbars(void)
 
     STALLOC(GLfloat, ent_health_pc, max_ents);
     STALLOC(vec3_t, ent_top_pos_ws, max_ents);
+    STALLOC(int, ent_yoffsets, max_ents);
 
     for(int i = 0; i < max_ents; i++) {
     
@@ -348,25 +350,33 @@ static void g_render_healthbars(void)
         if(hb_setting.as_int == HB_MODE_DAMAGED && curr_health == max_health)
             continue;
 
+        int yoffset = -20;
+        if((G_FlagsGet(curr) & ENTITY_FLAG_STORAGE_SITE) && G_StorageSite_GetShowUI()) {
+            yoffset += G_StorageSite_GetWindowHeight(curr) / 8.0f;
+        }
+
         ent_top_pos_ws[num_combat_visible] = Entity_TopCenterPointWS(curr);
         ent_health_pc[num_combat_visible] = ((GLfloat)curr_health)/max_health;
+        ent_yoffsets[num_combat_visible] = yoffset;
 
         num_combat_visible++;
     }
 
     R_PushCmd((struct rcmd){
         .func = R_GL_DrawHealthbars,
-        .nargs = 4,
+        .nargs = 5,
         .args = {
             R_PushArg(&num_combat_visible, sizeof(num_combat_visible)),
             R_PushArg(ent_health_pc, max_ents * sizeof(GLfloat)),
             R_PushArg(ent_top_pos_ws, max_ents * sizeof(vec3_t)),
+            R_PushArg(ent_yoffsets, max_ents * sizeof(int)),
             R_PushArg(s_gs.active_cam, g_sizeof_camera),
         },
     });
 
     STFREE(ent_health_pc);
     STFREE(ent_top_pos_ws);
+    STFREE(ent_yoffsets);
 
     PERF_RETURN_VOID();
 }
@@ -1288,6 +1298,69 @@ void g_delete_gpuid(uint32_t uid)
     assert(kh_size(s_gs.ent_gpu_id_map) == kh_size(s_gs.gpu_id_ent_map));
 }
 
+static void on_update_ui(void *user, void *event)
+{
+    if(!s_gs.show_unit_icons)
+        return;
+
+    struct nk_style_item bg_style = (struct nk_style_item){
+        .type = NK_STYLE_ITEM_COLOR,
+        .data.color = (struct nk_color){0, 0, 0, 0}
+    };
+
+    struct nk_context *ctx = UI_GetContext();
+    nk_style_push_style_item(ctx, &ctx->style.window.fixed_background, bg_style);
+    nk_style_push_vec2(ctx, &ctx->style.window.padding, nk_vec2(0.0f, 0.0f));
+    nk_style_push_vec2(ctx, &ctx->style.window.spacing, nk_vec2(0.0f, 0.0f));
+
+    for(int i = 0; i < vec_size(&s_gs.visible); i++) {
+
+        uint32_t uid = vec_AT(&s_gs.visible, i);
+        const char *icons[MAX_ICONS];
+        size_t nicons = Entity_GetIcons(uid, ARR_SIZE(icons), icons);
+        if(nicons == 0 || G_EntityIsZombie(uid))
+            continue;
+
+        char name[256];
+        pf_snprintf(name, sizeof(name), "__icons__.%x", uid);
+
+        const vec2_t vres = (vec2_t){1920, 1080};
+        const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
+
+        vec2_t ss_pos = Entity_TopScreenPos(uid, adj_vres.x, adj_vres.y);
+        const int width = 32 * nicons;
+        const int height = 32;
+
+        float yoffset = 0;
+        if((G_FlagsGet(uid) & ENTITY_FLAG_STORAGE_SITE) && G_StorageSite_GetShowUI()) {
+            yoffset = G_StorageSite_GetWindowHeight(uid) / 8.0f;
+        }
+
+        const vec2_t pos = (vec2_t){ss_pos.x - width/2, ss_pos.y - 14 + yoffset};
+        const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
+
+        struct rect adj_bounds = UI_BoundsForAspectRatio(
+            (struct rect){pos.x, pos.y, width, height}, 
+            vres, adj_vres, ANCHOR_DEFAULT
+        );
+
+        if(nk_begin_with_vres(ctx, name, 
+            (struct nk_rect){adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h}, 
+            flags, (struct nk_vec2i){adj_vres.x, adj_vres.y})) {
+
+            nk_layout_row_begin(ctx, NK_STATIC, 32, nicons);
+            nk_layout_row_push(ctx, 32);
+            for(int i = 0; i < nicons; i++) {
+                nk_image_texpath(ctx, icons[i]);
+            }
+        }
+        nk_end(ctx);
+    }
+    nk_style_pop_vec2(ctx);
+    nk_style_pop_vec2(ctx);
+    nk_style_pop_style_item(ctx);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1360,6 +1433,8 @@ bool G_Init(void)
     s_gs.ss = G_RUNNING;
     s_gs.requested_ss = G_RUNNING;
 
+    E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, 
+        G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
     return true;
 
 fail_ws:
@@ -1461,6 +1536,7 @@ void G_ClearState(void)
     s_gs.factions_allocd = 0;
     s_gs.hide_healthbars = false;
     s_gs.minimap_render_all = false;
+    s_gs.show_unit_icons = false;
 
     vec3_t white = (vec3_t){1.0f, 1.0f, 1.0f};
     R_PushCmd((struct rcmd){
@@ -1671,6 +1747,7 @@ void G_Shutdown(void)
 {
     ASSERT_IN_MAIN_THREAD();
 
+    E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
     G_ClearState();
 
     R_DestroyWS(&s_gs.ws[0]);
@@ -2534,6 +2611,7 @@ void G_Zombiefy(uint32_t uid, bool invis)
     G_SetVisionRange(uid, 0.0f);
     G_Region_RemoveEnt(uid);
     Entity_ClearTags(uid);
+    Entity_ClearIcons(uid);
 
     flags &= ~ENTITY_FLAG_SELECTABLE;
     flags &= ~ENTITY_FLAG_COLLISION;
@@ -2683,6 +2761,16 @@ void G_UpdateBounds(uint32_t uid)
 
     G_Building_UpdateBounds(uid);
     G_Resource_UpdateBounds(uid);
+}
+
+void G_SetShowUnitIcons(bool show)
+{
+    s_gs.show_unit_icons = show;
+}
+
+bool G_GetShowUnitIcons(void)
+{
+    return s_gs.show_unit_icons;
 }
 
 bool G_SaveGlobalState(SDL_RWops *stream)
@@ -2847,6 +2935,12 @@ bool G_SaveGlobalState(SDL_RWops *stream)
     };
     CHK_TRUE_RET(Attr_Write(stream, &hide_healthbars, "hide_healthbars"));
 
+    struct attr show_unit_icons = (struct attr){
+        .type = TYPE_BOOL, 
+        .val.as_bool = s_gs.show_unit_icons
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &show_unit_icons, "show_unit_icons"));
+
     struct attr minimap_render_all = (struct attr){
         .type = TYPE_BOOL, 
         .val.as_bool = s_gs.minimap_render_all
@@ -2980,6 +3074,10 @@ bool G_LoadGlobalState(SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_BOOL);
     s_gs.hide_healthbars = attr.val.as_bool;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_BOOL);
+    s_gs.show_unit_icons= attr.val.as_bool;
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_BOOL);

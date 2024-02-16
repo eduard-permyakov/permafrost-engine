@@ -375,10 +375,8 @@ static void on_update_ui(void *user, void *event)
         const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
 
         vec2_t ss_pos = Entity_TopScreenPos(key, adj_vres.x, adj_vres.y);
-        khash_t(int) *table = (curr.use_alt) ? curr.alt_capacity : curr.capacity;
-
         const int width = 198;
-        const int height = MIN(kh_size(table), 16) * 20 + 32;
+        const int height = G_StorageSite_GetWindowHeight(key);
         const vec2_t pos = (vec2_t){ss_pos.x - width/2, ss_pos.y + 20};
         const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BORDER | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
 
@@ -894,6 +892,11 @@ void G_StorageSite_SetShowUI(bool show)
     s_show_ui = show;
 }
 
+bool G_StorageSite_GetShowUI(void)
+{
+    return s_show_ui;
+}
+
 bool G_StorageSite_GetDoNotTake(uint32_t uid)
 {
     struct ss_state *ss = ss_state_get(uid);
@@ -1057,6 +1060,14 @@ bool G_StorageSite_Desires(uint32_t uid, const char *rname)
 
     ss_state_get_key(ss->curr, rname, &rcurr);
     return (rdes > rcurr);
+}
+
+float G_StorageSite_GetWindowHeight(uint32_t uid)
+{
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
+    khash_t(int) *table = (ss->use_alt) ? ss->alt_capacity : ss->capacity;
+    return MIN(kh_size(table), 16) * 20 + 32;
 }
 
 bool G_StorageSite_SaveState(struct SDL_RWops *stream)
