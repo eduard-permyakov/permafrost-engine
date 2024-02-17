@@ -81,6 +81,7 @@ static PyObject *PyEntity_get_rotation(PyEntityObject *self, void *closure);
 static int       PyEntity_set_rotation(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_selectable(PyEntityObject *self, void *closure);
 static int       PyEntity_set_selectable(PyEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyEntity_get_idle(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_selection_radius(PyEntityObject *self, void *closure);
 static int       PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, 
                                                void *closure);
@@ -227,6 +228,10 @@ static PyGetSetDef PyEntity_getset[] = {
     {"selectable",
     (getter)PyEntity_get_selectable, (setter)PyEntity_set_selectable,
     "Flag indicating whether this entity can be selected with the mouse.",
+    NULL},
+    {"idle",
+    (getter)PyEntity_get_idle, NULL,
+    "Boolean indicating whether the entity is currently in an idle state.",
     NULL},
     {"selection_radius",
     (getter)PyEntity_get_selection_radius, (setter)PyEntity_set_selection_radius,
@@ -1486,6 +1491,14 @@ static int PyEntity_set_rotation(PyEntityObject *self, PyObject *value, void *cl
 static PyObject *PyEntity_get_selectable(PyEntityObject *self, void *closure)
 {
     if(G_FlagsGet(self->ent) & ENTITY_FLAG_SELECTABLE)
+        Py_RETURN_TRUE;
+    else
+        Py_RETURN_FALSE;
+}
+
+static PyObject *PyEntity_get_idle(PyEntityObject *self, void *closure)
+{
+    if(G_Automation_IsIdle(self->ent))
         Py_RETURN_TRUE;
     else
         Py_RETURN_FALSE;

@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2020-2023 Eduard Permyakov 
+ *  Copyright (C) 2024 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,26 +33,17 @@
  *
  */
 
-#ifndef BUILDER_H
-#define BUILDER_H
+#ifndef AUTOMATION_H
+#define AUTOMATION_H
 
 #include <stdbool.h>
 #include <stdint.h>
 
-struct map;
-struct SDL_RWops;
+bool G_Automation_Init(void);
+void G_Automation_Shutdown(void);
 
-bool G_Builder_Init(struct map *map);
-void G_Builder_Shutdown(void);
-void G_Builder_AddEntity(uint32_t uid);
-void G_Builder_RemoveEntity(uint32_t uid);
-bool G_Builder_InTargetMode(void);
-int  G_Builder_CurrContextualAction(void);
-void G_Builder_Stop(uint32_t uid);
-bool G_Builder_Idle(uint32_t uid);
-
-bool G_Builder_SaveState(struct SDL_RWops *stream);
-bool G_Builder_LoadState(struct SDL_RWops *stream);
+bool G_Automation_AddEntity(uint32_t uid);
+void G_Automation_RemoveEntity(uint32_t uid);
 
 #endif
 

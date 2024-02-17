@@ -2277,6 +2277,13 @@ int G_Combat_CurrContextualAction(void)
     }
 }
 
+bool G_Combat_Idle(uint32_t uid)
+{
+    struct combatstate *cs = combatstate_get(uid);
+    assert(cs);
+    return (cs->state == STATE_NOT_IN_COMBAT);
+}
+
 void G_Combat_AttackUnit(uint32_t uid, uint32_t target)
 {
     combat_push_cmd((struct combat_cmd){

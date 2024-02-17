@@ -506,5 +506,12 @@ void G_Garrison_SetIcon(const char *path);
 void G_Garrison_SetShowUI(bool show);
 void G_Garrison_SetEvictOnLeftClick(void);
 
+/*###########################################################################*/
+/* GAME AUTOMATION                                                           */
+/*###########################################################################*/
+
+void G_Automation_GetIdle(vec_entity_t *out);
+bool G_Automation_IsIdle(uint32_t uid);
+
 #endif
 

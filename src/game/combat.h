@@ -55,6 +55,7 @@ void G_Combat_RemoveEntity(uint32_t uid);
 void G_Combat_StopAttack(uint32_t uid);
 void G_Combat_ClearSavedMoveCmd(uint32_t uid);
 int  G_Combat_CurrContextualAction(void);
+bool G_Combat_Idle(uint32_t uid);
 
 void G_Combat_AddRef(int faction_id, vec2_t pos);
 void G_Combat_RemoveRef(int faction_id, vec2_t pos);

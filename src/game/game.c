@@ -51,6 +51,7 @@
 #include "resource.h"
 #include "region.h"
 #include "garrison.h"
+#include "automation.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../anim/public/anim.h"
@@ -170,6 +171,7 @@ static void g_init_map(void)
     G_Resource_Init(s_gs.map);
     G_Region_Init(s_gs.map);
     G_Harvester_Init(s_gs.map);
+    G_Automation_Init();
     G_ClearPath_Init(s_gs.map);
     N_ClearState();
 }
@@ -777,6 +779,7 @@ static void g_clear_map_state(void)
         G_Resource_Shutdown();
         G_Region_Shutdown();
         G_Harvester_Shutdown();
+        G_Automation_Shutdown();
         G_ClearPath_Shutdown();
         G_Pos_Shutdown();
 
@@ -2067,6 +2070,13 @@ bool G_AddEntity(uint32_t uid, uint32_t flags, vec3_t pos)
         G_Formation_SetPreferred(uid, FORMATION_NONE);
     }
 
+    if((flags & ENTITY_FLAG_MOVABLE)
+    || (flags & ENTITY_FLAG_COMBATABLE)
+    || (flags & ENTITY_FLAG_HARVESTER)
+    || (flags & ENTITY_FLAG_BUILDER)) {
+        G_Automation_AddEntity(uid);
+    }
+
     return true;
 }
 
@@ -2106,6 +2116,7 @@ bool G_RemoveEntity(uint32_t uid)
     G_StorageSite_RemoveEntity(uid);
     G_Garrison_RemoveGarrison(uid);
     G_Garrison_RemoveGarrisonable(uid);
+    G_Automation_RemoveEntity(uid);
     G_Region_RemoveEnt(uid);
     G_Pos_Delete(uid);
     Entity_Remove(uid);
@@ -2607,6 +2618,7 @@ void G_Zombiefy(uint32_t uid, bool invis)
     G_StorageSite_RemoveEntity(uid);
     G_Garrison_RemoveGarrison(uid);
     G_Garrison_RemoveGarrisonable(uid);
+    G_Automation_RemoveEntity(uid);
 
     G_SetVisionRange(uid, 0.0f);
     G_Region_RemoveEnt(uid);

@@ -446,6 +446,13 @@ void G_Builder_Stop(uint32_t uid)
     finish_building(bs, uid);
 }
 
+bool G_Builder_Idle(uint32_t uid)
+{
+    struct builderstate *bs = builderstate_get(uid);
+    assert(bs);
+    return (bs->state == STATE_NOT_BUILDING);
+}
+
 bool G_Builder_SaveState(struct SDL_RWops *stream)
 {
     struct attr num_builders = (struct attr){

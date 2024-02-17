@@ -129,6 +129,7 @@ static PyObject *PyPf_enable_unit_selection(PyObject *self);
 static PyObject *PyPf_disable_unit_selection(PyObject *self);
 static PyObject *PyPf_clear_unit_selection(PyObject *self);
 static PyObject *PyPf_get_unit_selection(PyObject *self);
+static PyObject *PyPf_get_idle_units(PyObject *self);
 static PyObject *PyPf_set_unit_selection(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_hovered_unit(PyObject *self);
 static PyObject *PyPf_entities_for_tag(PyObject *self, PyObject *args);
@@ -415,6 +416,10 @@ static PyMethodDef pf_module_methods[] = {
     {"get_unit_selection", 
     (PyCFunction)PyPf_get_unit_selection, METH_NOARGS,
     "Returns a list of objects currently selected by the player."},
+
+    {"get_idle_units", 
+    (PyCFunction)PyPf_get_idle_units, METH_NOARGS,
+    "Returns a list of currently idle units."},
 
     {"set_unit_selection", 
     (PyCFunction)PyPf_set_unit_selection, METH_VARARGS,
@@ -1470,6 +1475,28 @@ static PyObject *PyPf_get_unit_selection(PyObject *self)
         }
     }
 
+    return ret;
+}
+
+static PyObject *PyPf_get_idle_units(PyObject *self)
+{
+    PyObject *ret = PyList_New(0);
+    if(!ret)
+        return NULL;
+
+    vec_entity_t idle;
+    vec_entity_init(&idle);
+    G_Automation_GetIdle(&idle);
+
+    for(int i = 0; i < vec_size(&idle); i++) {
+        uint32_t uid = vec_AT(&idle, i);
+        PyObject *ent = S_Entity_ObjForUID(uid);
+        if(ent) {
+            PyList_Append(ret, ent);
+        }
+    }
+
+    vec_entity_destroy(&idle);
     return ret;
 }
 

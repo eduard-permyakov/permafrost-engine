@@ -1953,6 +1953,13 @@ void G_Harvester_ClearQueuedCmd(uint32_t uid)
     hs->queued.uid_arg = NULL_UID;
 }
 
+bool G_Harvester_Idle(uint32_t uid)
+{
+    struct hstate *hs = hstate_get(uid);
+    assert(hs);
+    return (hs->state == STATE_NOT_HARVESTING);
+}
+
 bool G_Harvester_InTargetMode(void)
 {
     return s_gather_on_lclick 
