@@ -75,6 +75,7 @@
 #define SIGNUM(x)                (((x) > 0) - ((x) < 0))
 #define EPSILON                  (1.0f/1024)
 #define FIELD_RECOMPUTE_INTERVAL (1.0f) /* seconds */
+#define MAX_CELL_ASSIGNMENT_WORK (256)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -190,7 +191,13 @@ struct block_event{
 QUEUE_TYPE(event, struct block_event)
 QUEUE_IMPL(static, event, struct block_event)
 
+enum subformation_state{
+    SUBFORMATION_COMPUTING_ASSIGNMENT,
+    SUBFORMATION_READY
+};
+
 struct subformation{
+    enum subformation_state state;
     /* Subformations are stored in an acyclic tree structure
      * and are placed relative to their parent with some constaints.
      */
@@ -231,6 +238,27 @@ struct subformation{
 VEC_TYPE(subformation, struct subformation)
 VEC_IMPL(static inline, subformation, struct subformation)
 
+struct cell_assignment_work{
+    bool                 destroyed;
+    /* Input */
+    khash_t(entity)     *ents;
+    khash_t(pos)        *positions;
+    size_t               nrows, ncols;
+    formation_id_t       fid;
+    size_t               subformation_idx;
+    /* Input/output */
+    vec_cell_t           cells;
+    /* Output */
+    khash_t(assignment) *assignment;
+    khash_t(reverse)    *reverse;
+    /* Job data */
+    uint32_t             tid;
+    struct future        future;
+};
+
+VEC_TYPE(assignment_work, struct cell_assignment_work)
+VEC_IMPL(static inline, assignment_work, struct cell_assignment_work)
+
 struct formation{
     /* The refcount is the number of movement system
      * entities associated with this formation.
@@ -266,17 +294,26 @@ struct formation{
      * by the 'occupied' field.
      */
     uint16_t             islands[NAV_LAYER_MAX][OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES];
+    /* State associated with outstanding cell assignment computations 
+     */
+    vec_assignment_work_t work;
 };
 
 KHASH_MAP_INIT_INT(formation, struct formation)
 KHASH_MAP_INIT_INT(mapping, formation_id_t);
 KHASH_MAP_INIT_INT(type, enum formation_type);
 
+static void complete_cell_assignment_work(struct cell_assignment_work *work, bool yield);
+static void cell_assignment_work_destroy(struct cell_assignment_work *work);
+static void collect_cell_assignment_result(const struct cell_assignment_work *work, 
+                                           struct subformation *out);
+
 static void complete_cell_field_work(struct subformation *formation, bool yield);
 static struct cell_arrival_field *cell_get_field(uint32_t uid);
 static enum flow_dir cell_get_dir(const struct cell_arrival_field *field, int r, int c);
 static void recompute_cell_arrival_fields(struct formation *parent, vec2_t center, 
                                           struct subformation *formation);
+
 static uint32_t subformation_leader(struct subformation *formation);
 static void subformation_anchor_and_heading(uint32_t leader,
                                             vec2_t *out_anchor, vec2_t *out_heading);
@@ -1560,36 +1597,36 @@ static void init_subformations(struct formation *formation)
 /* The cost matrix holds the distance between every entity
  * and every cell.
  */
-static void create_cost_matrix(struct subformation *formation, int *out_costs, 
+static void create_cost_matrix(struct cell_assignment_work *work, int *out_costs, 
                                struct coord *out_idx_to_cell)
 {
-    size_t nents = kh_size(formation->ents);
+    size_t nents = kh_size(work->ents);
     int (*out_rows)[nents] = (void*)out_costs;
 
     size_t cell_idx = 0;
     for(int i = 0; i < nents; i++) {
         struct cell *cell;
         do{
-            cell = &vec_AT(&formation->cells, cell_idx);
+            cell = &vec_AT(&work->cells, cell_idx);
             cell_idx++;
         }while(cell->state == CELL_NOT_USED);
         out_idx_to_cell[i] = (struct coord){
-            (cell_idx-1) / formation->ncols,
-            (cell_idx-1) % formation->ncols
+            (cell_idx-1) / work->ncols,
+            (cell_idx-1) % work->ncols
         };
     }
-    assert(cell_idx == formation->nrows * formation->ncols);
+    assert(cell_idx == work->nrows * work->ncols);
 
     int i = 0;
     uint32_t uid;
-    kh_foreach_key(formation->ents, uid, {
+    kh_foreach_key(work->ents, uid, {
 
-        vec2_t pos = G_Pos_GetXZ(uid);
+        vec2_t pos = G_Pos_GetXZFrom(work->positions, uid);
         size_t cell_idx = 0;
         for(int j = 0; j < nents; j++) {
             struct coord cell_coord = out_idx_to_cell[j];
-            size_t cell_idx = CELL_IDX(cell_coord.r, cell_coord.c, formation->ncols);
-            struct cell *cell = &vec_AT(&formation->cells, cell_idx);
+            size_t cell_idx = CELL_IDX(cell_coord.r, cell_coord.c, work->ncols);
+            struct cell *cell = &vec_AT(&work->cells, cell_idx);
             if(cell->state == CELL_NOT_PLACED) {
                 out_rows[i][j] = INT_MAX;
             }else{
@@ -1806,8 +1843,6 @@ static int min_uncovered_value(int *costs, bool *covered, size_t nents)
 static int min_lines_to_cover_zeroes(int *costs, int *out_next, 
                                      struct coord *out_assignment, size_t nents)
 {
-    PERF_ENTER();
-
     STALLOC(bool, starred, nents * nents);
     STALLOC(bool, covered, nents * nents);
     STALLOC(bool, primed, nents * nents);
@@ -1920,6 +1955,7 @@ iterate:
                     }
                 }
                 STFREE(path);
+                Sched_TryYield();
                 goto iterate;
             }
         }
@@ -1976,23 +2012,21 @@ iterate:
     STFREE(covered);
     STFREE(primed);
 
-    PERF_RETURN(ret);
+    return ret;
 }
 
 /* Use the Hungarian algorithm to find an optimal assignment of entities to cells
  * (minimizing the combined distance that needs to be traveled by the entities).
  */
-static void compute_cell_assignment(struct subformation *formation)
+static void compute_cell_assignment(struct cell_assignment_work *work)
 {
-    PERF_ENTER();
-
-    size_t nents = kh_size(formation->ents);
+    size_t nents = kh_size(work->ents);
     STALLOC(int, costs, nents * nents);
     STALLOC(int, next, nents * nents);
     STALLOC(struct coord, assignment, nents);
     STALLOC(struct coord, idx_to_cell, nents);
 
-    create_cost_matrix(formation, costs, idx_to_cell);
+    create_cost_matrix(work, costs, idx_to_cell);
     int (*rows)[nents] = (void*)costs;
 
     /* Step 1: Subtract row minima
@@ -2018,6 +2052,7 @@ static void compute_cell_assignment(struct subformation *formation)
 
     size_t min_lines;
     do{
+        Sched_TryYield();
         /* Step 3: Cover all zeros with a minimum number of lines
          * Cover all zeros in the resulting matrix using a minimum number of horizontal and 
          * vertical lines. If n lines are required, an optimal assignment exists among the zeros. 
@@ -2038,23 +2073,23 @@ static void compute_cell_assignment(struct subformation *formation)
 
     int i = 0;
     uint32_t uid;
-    kh_foreach_key(formation->ents, uid, {
+    kh_foreach_key(work->ents, uid, {
         /* Add an entity:cell mapping */
         int status;
-        khiter_t k = kh_put(assignment, formation->assignment, uid, &status);
+        khiter_t k = kh_put(assignment, work->assignment, uid, &status);
         assert(status != -1);
         size_t meta_idx = assignment[i].c;
         struct coord cell_coord = idx_to_cell[meta_idx];
-        kh_val(formation->assignment, k) = cell_coord;
-        size_t cell_idx = CELL_IDX(cell_coord.r, cell_coord.c, formation->ncols);
-        struct cell *cell = &vec_AT(&formation->cells, cell_idx);
+        kh_val(work->assignment, k) = cell_coord;
+        size_t cell_idx = CELL_IDX(cell_coord.r, cell_coord.c, work->ncols);
+        struct cell *cell = &vec_AT(&work->cells, cell_idx);
         if(cell->state != CELL_NOT_PLACED) {
             cell->state = CELL_OCCUPIED;
         }
         /* Add a cell:entity mapping */
-        khiter_t l = kh_put(reverse, formation->reverse, cell_idx, &status);
+        khiter_t l = kh_put(reverse, work->reverse, cell_idx, &status);
         assert(status != -1);
-        kh_val(formation->reverse, l) = uid;
+        kh_val(work->reverse, l) = uid;
 
         i++;
     });
@@ -2063,8 +2098,6 @@ static void compute_cell_assignment(struct subformation *formation)
     STFREE(next)
     STFREE(assignment);
     STFREE(idx_to_cell);
-
-    PERF_RETURN_VOID();
 }
 
 static mat4x4_t cell_field_model_matrix(vec2_t center)
@@ -3016,6 +3049,8 @@ static void on_1hz_tick(void *user, void *event)
         struct formation *formation = &kh_val(s_formations, k);
         for(int i = 0; i < vec_size(&formation->subformations); i++) {
             struct subformation *curr = &vec_AT(&formation->subformations, i);
+            if(curr->state != SUBFORMATION_READY)
+                continue;
             recompute_cell_arrival_fields(formation, formation->center, curr);
         }
     });
@@ -3045,10 +3080,16 @@ static void clear_mappings(struct formation *formation)
 
 static void destroy_formation(struct formation *formation)
 {
+    for(int i = 0; i < vec_size(&formation->work); i++) {
+        struct cell_assignment_work *work = &vec_AT(&formation->work, i);
+        complete_cell_assignment_work(work, false);
+        cell_assignment_work_destroy(work);
+    }
     for(int i = 0; i < vec_size(&formation->subformations); i++) {
         struct subformation *sub = &vec_AT(&formation->subformations, i);
         destroy_subformation(sub);
     }
+    vec_assignment_work_destroy(&formation->work);
     clean_up_map_snapshots(formation);
     assert(kh_size(formation->map_snapshots) == 0);
     kh_destroy(map, formation->map_snapshots);
@@ -3224,7 +3265,28 @@ static void complete_cell_field_work(struct subformation *formation, bool yield)
 
 static void on_update_start(void *user, void *event)
 {
+    /* Consume cell assignment work results 
+    */
     struct formation *formation;
+    kh_foreach_ptr(s_formations, formation, {
+
+        for(int i = 0; i < vec_size(&formation->work); i++) {
+            struct cell_assignment_work *work = &vec_AT(&formation->work, i);
+            if(work->destroyed)
+                continue;
+            struct subformation *sub = &vec_AT(&formation->subformations, i);
+            if(Sched_FutureIsReady(&work->future)) {
+                collect_cell_assignment_result(work, sub);
+                cell_assignment_work_destroy(work);
+
+                compute_all_blocked(formation);
+                dispatch_cell_field_work(formation, formation->center, sub);
+            }
+        }
+    });
+
+    /* Consume cell field work results 
+     */
     kh_foreach_ptr(s_formations, formation, {
 
         clean_up_map_snapshots(formation);
@@ -4015,6 +4077,148 @@ static bool subformation_load_state(struct formation *parent, struct subformatio
     return true;
 }
 
+static khash_t(pos) *copy_entity_positions(const struct subformation *sub)
+{
+    khash_t(pos) *ret = kh_init(pos);
+    if(!ret)
+        return NULL;
+
+    uint32_t uid;
+    kh_foreach_key(sub->ents, uid, {
+        int status;
+        khiter_t k = kh_put(pos, ret, uid, &status);
+        assert(status!= -1);
+        kh_val(ret, k) = G_Pos_Get(uid);
+    });
+    return ret;
+}
+
+static void cell_assignment_work_init(struct cell_assignment_work *work, 
+                                      const struct subformation *sub,
+                                      formation_id_t fid, int idx)
+{
+    work->destroyed = false;
+    work->ents = kh_copy(entity, sub->ents);
+    work->positions = copy_entity_positions(sub);
+    work->assignment = kh_init(assignment);
+    work->reverse = kh_init(reverse);
+    vec_cell_init(&work->cells);
+    vec_cell_copy(&work->cells, &(((struct subformation*)sub)->cells));
+    work->ncols = sub->ncols;
+    work->nrows = sub->nrows;
+    work->fid = fid;
+    work->subformation_idx = idx;
+}
+
+static void cell_assignment_work_destroy(struct cell_assignment_work *work)
+{
+    if(work->destroyed)
+        return;
+    kh_destroy(entity, work->ents);
+    kh_destroy(pos, work->positions);
+    kh_destroy(assignment, work->assignment);
+    kh_destroy(reverse, work->reverse);
+    vec_cell_destroy(&work->cells);
+    work->destroyed = true;
+}
+
+static void collect_cell_assignment_result(const struct cell_assignment_work *work, 
+                                           struct subformation *out)
+{
+    assert(kh_size(work->ents) == kh_size(work->reverse));
+    assert(kh_size(work->ents) == kh_size(work->assignment));
+    assert(kh_size(out->ents) >= kh_size(work->ents));
+
+    /* Account for any entities that have been removed from the 
+     * subformation since the cell assignement work has been kicked off
+     */
+    if(kh_size(out->ents) > kh_size(work->ents)) {
+
+        vec_entity_t removed;
+        vec_entity_init(&removed);
+
+        uint32_t uid;
+        kh_foreach_key(work->ents, uid, {
+            if(kh_get(entity, out->ents, uid) == kh_end(out->ents)) {
+                vec_entity_push(&removed, uid);
+            }
+        });
+        assert(kh_size(out->ents) + vec_size(&removed) == kh_size(work->ents));
+
+        for(int i = 0; i < vec_size(&removed); i++) {
+            uint32_t uid = vec_AT(&removed, i);
+
+            /* First get the cell index from the assignment */
+            khiter_t l = kh_get(assignment, work->assignment, uid);
+            assert(l != kh_end(work->assignment));
+            struct coord coord = kh_val(work->assignment, l);
+            int idx = CELL_IDX(coord.r, coord.c, work->ncols);
+
+            /* Clear assignment */
+            khiter_t k = kh_get(assignment, work->assignment, uid);
+            assert(k != kh_end(work->assignment));
+            kh_del(assignment, work->assignment, k);
+
+            /* Remove reverse assignment */
+            khiter_t m = kh_get(reverse, work->reverse, uid);
+            assert(m != kh_end(work->reverse));
+            kh_del(reverse, work->reverse, m);
+        }
+        vec_entity_destroy(&removed);
+    }
+
+    kh_destroy(reverse, out->reverse);
+    out->reverse = kh_copy(reverse, work->reverse);
+
+    kh_destroy(assignment, out->assignment);
+    out->assignment = kh_copy(assignment, work->assignment);
+
+    vec_cell_reset(&out->cells);
+    vec_cell_copy(&out->cells, &(((struct cell_assignment_work*)work)->cells));
+    out->state = SUBFORMATION_READY;
+}
+
+static struct result cell_assignment_task(void *arg)
+{
+    PERF_ENTER();
+
+    struct cell_assignment_work *work = arg;
+    compute_cell_assignment(work);
+
+    PERF_RETURN(NULL_RESULT);
+}
+
+static void complete_cell_assignment_work(struct cell_assignment_work *work, bool yield)
+{
+    while(!Sched_FutureIsReady(&work->future)) {
+        Sched_RunSync(work->tid);
+        if(yield) {
+            Sched_TryYield();
+        }
+    }
+}
+
+static void dispatch_cell_assignment_task(struct cell_assignment_work *work)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    SDL_AtomicSet(&work->future.status, FUTURE_INCOMPLETE);
+    work->tid = Sched_Create(16, cell_assignment_task, work, &work->future, TASK_BIG_STACK);
+    if(work->tid == NULL_TID) {
+        cell_assignment_task(work);
+        SDL_AtomicSet(&work->future.status, FUTURE_COMPLETE);
+    }
+}
+
+static void dispatch_cell_assignment_work(struct formation *parent)
+{
+    ASSERT_IN_MAIN_THREAD();
+    for(int i = 0; i < vec_size(&parent->work); i++) {
+        struct cell_assignment_work *work = &vec_AT(&parent->work, i);
+        dispatch_cell_assignment_task(work);
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -4161,15 +4365,21 @@ void G_Formation_Create(vec2_t target, vec2_t orientation,
         init_islands_field(s_map, layers[i], new->center, new->islands[layers[i]]);
     }
 
+    vec_assignment_work_init(&new->work);
+    vec_assignment_work_resize(&new->work, vec_size(&new->subformations));
+    new->work.size = vec_size(&new->subformations);
+
     for(int i = 0; i < vec_size(&new->subformations); i++) {
         struct subformation *sub = &vec_AT(&new->subformations, i);
+        sub->state = SUBFORMATION_COMPUTING_ASSIGNMENT;
         place_subformation(sub, new->center, target, new->orientation, 
             new->occupied, new->islands);
         mark_unused_cells(sub);
-        compute_cell_assignment(sub);
-        compute_all_blocked(new);
-        dispatch_cell_field_work(new, new->center, sub);
+
+        struct cell_assignment_work *work = &vec_AT(&new->work, i);
+        cell_assignment_work_init(work, sub, fid, i);
     }
+    dispatch_cell_assignment_work(new);
 }
 
 formation_id_t G_Formation_GetForEnt(uint32_t uid)
@@ -4204,17 +4414,19 @@ void G_Formation_RemoveUnit(uint32_t uid)
     assert(e != kh_end(sub->ents));
     kh_del(entity, sub->ents, e);
 
-    /* Clear assignment */
-    khiter_t l = kh_get(assignment, sub->assignment, uid);
-    assert(l != kh_end(sub->assignment));
-    struct coord coord = kh_val(sub->assignment, l);
-    int idx = CELL_IDX(coord.r, coord.c, sub->ncols);
-    kh_del(assignment, sub->assignment, l);
+    if(sub->state == SUBFORMATION_READY) {
+        /* Clear assignment */
+        khiter_t l = kh_get(assignment, sub->assignment, uid);
+        assert(l != kh_end(sub->assignment));
+        struct coord coord = kh_val(sub->assignment, l);
+        int idx = CELL_IDX(coord.r, coord.c, sub->ncols);
+        kh_del(assignment, sub->assignment, l);
 
-    /* Clear reverse assignment */
-    khiter_t m = kh_get(reverse, sub->reverse, idx);
-    assert(m != kh_end(sub->reverse));
-    kh_del(reverse, sub->reverse, m);
+        /* Clear reverse assignment */
+        khiter_t m = kh_get(reverse, sub->reverse, idx);
+        assert(m != kh_end(sub->reverse));
+        kh_del(reverse, sub->reverse, m);
+    }
 
     clear_for_ent(uid);
     if(--formation->refcount == 0) {
@@ -4309,6 +4521,16 @@ bool G_Formation_ArrivedAtCell(uint32_t uid)
     vec2_t delta;
     PFM_Vec2_Sub(&ent_pos, &cell_pos, &delta);
     return (PFM_Vec2_Len(&delta) <= arrive_thresh);
+}
+
+bool G_Formation_AssignmentReady(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct formation *formation = formation_for_ent(uid);
+    assert(formation);
+    struct subformation *sub = subformation_for_ent(formation, uid);
+    return (sub->state == SUBFORMATION_READY);
 }
 
 bool G_Formation_AssignedToCell(uint32_t uid)
@@ -4529,6 +4751,9 @@ vec2_t G_Formation_AlignmentForce(uint32_t uid)
 
     struct formation *formation = formation_for_ent(uid);
     struct subformation *sub = subformation_for_ent(formation, uid);
+    if(sub->state == SUBFORMATION_COMPUTING_ASSIGNMENT)
+        return (vec2_t){0.0f, 0.0f};
+
     uint32_t leader = subformation_leader(sub);
     assert(leader != NULL_FID);
 
@@ -4576,8 +4801,10 @@ vec2_t G_Formation_CohesionForce(uint32_t uid)
 
     struct formation *formation = formation_for_ent(uid);
     struct subformation *sub = subformation_for_ent(formation, uid);
-    float radius = G_GetSelectionRadius(uid);
+    if(sub->state == SUBFORMATION_COMPUTING_ASSIGNMENT)
+        return (vec2_t){0.0f, 0.0f};
 
+    float radius = G_GetSelectionRadius(uid);
     vec2_t pos = G_Pos_GetXZ(uid);
     uint32_t leader = subformation_leader(sub);
     assert(leader != NULL_FID);
@@ -4607,8 +4834,10 @@ vec2_t G_Formation_DragForce(uint32_t uid)
 
     struct formation *formation = formation_for_ent(uid);
     struct subformation *sub = subformation_for_ent(formation, uid);
-    float radius = G_GetSelectionRadius(uid);
+    if(sub->state == SUBFORMATION_COMPUTING_ASSIGNMENT)
+        return (vec2_t){0.0f, 0.0f};
 
+    float radius = G_GetSelectionRadius(uid);
     vec2_t pos = G_Pos_GetXZ(uid);
     uint32_t leader = subformation_leader(sub);
     assert(leader != NULL_FID);
@@ -4688,6 +4917,7 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
         .map_snapshots = kh_init(map)
     };
     init_subformations(&formation);
+    vec_assignment_work_init(&formation.work);
 
     enum nav_layer layers[NAV_LAYER_MAX];
     size_t nlayers = formation_layers(&formation.subformations, layers);
@@ -5070,7 +5300,27 @@ bool G_Formation_LoadState(struct SDL_RWops *stream)
     }
 
     /* Re-compute all necessary cell fields */
+    formation_id_t fid;
     struct formation *formation;
+    kh_foreach_val_ptr(s_formations, fid, formation, {
+
+        size_t nsubformations = vec_size(&formation->subformations);
+        vec_assignment_work_init(&formation->work);
+        vec_assignment_work_resize(&formation->work, nsubformations);
+        formation->work.size = nsubformations;
+
+        for(int i = 0; i < vec_size(&formation->subformations); i++) {
+
+            struct subformation *sub = &vec_AT(&formation->subformations, i);
+            struct cell_assignment_work *work = &vec_AT(&formation->work, i);
+
+            cell_assignment_work_init(work, sub, fid, i);
+            dispatch_cell_assignment_task(work);
+            complete_cell_assignment_work(work, true);
+            collect_cell_assignment_result(work, sub);
+            cell_assignment_work_destroy(work);
+        }
+    });
     kh_foreach_ptr(s_formations, formation, {
         for(int i = 0; i < vec_size(&formation->subformations); i++) {
             struct subformation *sub = &vec_AT(&formation->subformations, i);

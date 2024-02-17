@@ -193,6 +193,7 @@ struct move_work_in{
     vec_cp_ent_t  *dyn_neighbs;
     bool           has_dest_los;
     formation_id_t fid;
+    bool           formation_assignment_ready;
     vec2_t         normal_form_cohesion_force;
     vec2_t         normal_form_align_force;
     vec2_t         normal_form_drag_force;
@@ -1898,6 +1899,9 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
     case STATE_MOVING: 
     case STATE_MOVING_IN_FORMATION: {
 
+        if((G_Formation_GetForEnt(uid) != NULL_FID) && !G_Formation_AssignmentReady(uid))
+            break;
+
         if((G_Formation_GetForEnt(uid) != NULL_FID) 
         &&  G_Formation_AssignedToCell(uid)
         &&  G_Formation_InRangeOfCell(uid)) {
@@ -2089,10 +2093,15 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
     case STATE_ARRIVED:
         break;
     case STATE_ARRIVING_TO_CELL: {
-        if((G_Formation_GetForEnt(uid) == NULL_FID)
-        || !G_Formation_InRangeOfCell(uid)) {
-            /* We got pushed off of the cell arrival field */
+        if(G_Formation_GetForEnt(uid) == NULL_FID) {
             ms->state = STATE_MOVING;
+            break;
+        }
+        if(!G_Formation_AssignmentReady(uid))
+            break;
+        if(!G_Formation_InRangeOfCell(uid)) {
+            /* We got pushed off of the cell arrival field */
+            ms->state = STATE_MOVING_IN_FORMATION;
             break;
         }
         if(G_Formation_ArrivedAtCell(uid)) {
@@ -2680,6 +2689,10 @@ static void move_work(int begin_idx, int end_idx)
             break;
         case STATE_ARRIVING_TO_CELL:
             assert(flock);
+            if(!in->formation_assignment_ready) {
+                vpref = (vec2_t){0.0f, 0.0f};
+                break;
+            }
             vpref = cell_arrival_seek_vpref(in->ent_uid, in->cell_pos, in->speed,
                 in->normal_form_cohesion_force,
                 in->normal_form_align_force,
@@ -2687,6 +2700,10 @@ static void move_work(int begin_idx, int end_idx)
             break;
         case STATE_MOVING_IN_FORMATION:
             assert(flock);
+            if(!in->formation_assignment_ready) {
+                vpref = (vec2_t){0.0f, 0.0f};
+                break;
+            }
             vpref = formation_seek_vpref(in->ent_uid, flock, in->speed, 
                 in->normal_form_cohesion_force,
                 in->normal_form_align_force,
@@ -2949,6 +2966,8 @@ static void on_20hz_tick(void *user, void *event)
             .has_dest_los = (flock && (ms->state != STATE_SURROUND_ENTITY || !ms->using_surround_field)) 
                           ? M_NavHasDestLOS(s_map, flock->dest_id, pos) : false,
             .fid = fid,
+            .formation_assignment_ready = (fid == NULL_FID) ? false 
+                                                            : G_Formation_AssignmentReady(curr),
             .normal_form_cohesion_force = ((fid != NULL_FID) ? G_Formation_CohesionForce(curr) 
                                                              : (vec2_t){0.0f, 0.0f}),
             .normal_form_align_force = ((fid != NULL_FID) ? G_Formation_AlignmentForce(curr)

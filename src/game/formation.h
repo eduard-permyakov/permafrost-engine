@@ -60,6 +60,7 @@ bool           G_Formation_InRangeOfCell(uint32_t uid);
 bool           G_Formation_CanUseArrivalField(uint32_t uid);
 vec2_t         G_Formation_DesiredArrivalVelocity(uint32_t uid);
 vec2_t         G_Formation_ApproximateDesiredArrivalVelocity(uint32_t uid);
+bool           G_Formation_AssignmentReady(uint32_t uid);
 bool           G_Formation_ArrivedAtCell(uint32_t uid);
 bool           G_Formation_AssignedToCell(uint32_t uid);
 vec2_t         G_Formation_CellPosition(uint32_t uid);
