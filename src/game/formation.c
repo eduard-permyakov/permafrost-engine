@@ -4529,8 +4529,19 @@ bool G_Formation_AssignmentReady(uint32_t uid)
 
     struct formation *formation = formation_for_ent(uid);
     assert(formation);
+    /* We consider the assignment ready when all units in front of the 
+     * subformation have an assignment and thus can start moving.
+     */
     struct subformation *sub = subformation_for_ent(formation, uid);
-    return (sub->state == SUBFORMATION_READY);
+    for(int i = 0; i < vec_size(&formation->subformations); i++) {
+        struct subformation *curr = &vec_AT(&formation->subformations, i);
+        if(curr == sub)
+            return (curr->state == SUBFORMATION_READY);
+        if(curr->state != SUBFORMATION_READY)
+            return false;
+    }
+    assert(0);
+    return false;
 }
 
 bool G_Formation_AssignedToCell(uint32_t uid)
