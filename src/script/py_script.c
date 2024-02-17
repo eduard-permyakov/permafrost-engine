@@ -2025,7 +2025,7 @@ static PyObject *PyPf_map_nearest_pathable(PyObject *self, PyObject *args, PyObj
     static char *kwlist[] = {"pos", "radius", NULL};
     float radius = 0.0f;
 
-    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "(ff)|f", kwlist, &x, &z)) {
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "(ff)|f", kwlist, &x, &z, &radius)) {
         PyErr_SetString(PyExc_TypeError, "Arguments must be a tuple of two floats. "
             "An optional (float) 'radius' arugment is allowed.");
         return NULL;
