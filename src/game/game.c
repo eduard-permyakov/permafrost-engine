@@ -1162,6 +1162,17 @@ static void g_create_settings(void)
         .validate = bool_val_validate,
         .commit = NULL,
     });
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.show_harvester_state",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
 }
 
 static void g_render_minimap_units(void)
@@ -2744,12 +2755,12 @@ enum ctx_action G_CurrContextualAction(void)
     return CTX_ACTION_NONE;
 }
 
-void G_NotifyOrderIssued(uint32_t uid)
+void G_NotifyOrderIssued(uint32_t uid, bool clear_harvester)
 {
     ASSERT_IN_MAIN_THREAD();
 
     uint32_t flags = G_FlagsGet(uid);
-    if(flags & ENTITY_FLAG_HARVESTER) {
+    if(clear_harvester && (flags & ENTITY_FLAG_HARVESTER)) {
         G_Harvester_ClearQueuedCmd(uid);
     }
     if(flags & ENTITY_FLAG_COMBATABLE) {

@@ -276,7 +276,7 @@ static void on_mousedown(void *user, void *event)
         finish_building(bs, curr);
         G_StopEntity(curr, true, true);
         G_Builder_Build(curr, target);
-        G_NotifyOrderIssued(curr);
+        G_NotifyOrderIssued(curr, true);
         nbuilding++;
     }
 

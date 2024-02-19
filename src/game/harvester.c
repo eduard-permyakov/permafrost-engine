@@ -43,6 +43,8 @@
 #include "../event.h"
 #include "../entity.h"
 #include "../cursor.h"
+#include "../settings.h"
+#include "../camera.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/pf_string.h"
@@ -54,7 +56,9 @@
 #include <assert.h>
 #include <string.h>
 
-#define REACQUIRE_RADIUS    (50.0)
+
+#define UID_NONE            (~((uint32_t)0))
+#define REACQUIRE_RADIUS    (150.0)
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 
@@ -127,6 +131,13 @@ struct searcharg{
     uint32_t ent;
     const char *rname;
     enum tstrategy strat;
+};
+
+struct valid_resource_arg{
+    vec2_t         ent_pos;
+    enum nav_layer ent_layer;
+    const char    *rname;
+    uint32_t       exclude;
 };
 
 typedef char buff_t[512];
@@ -465,14 +476,21 @@ static bool valid_storage_site_source(uint32_t curr, void *arg)
 
 static bool valid_resource(uint32_t uid, void *arg)
 {
-    const char *name = arg;
+    struct valid_resource_arg *vrarg = arg;
     uint32_t flags = G_FlagsGet(uid);
 
     if(!(flags & ENTITY_FLAG_RESOURCE))
         return false;
+    if(flags & ENTITY_FLAG_ZOMBIE)
+        return false;
+    if((vrarg->exclude != NULL_UID) && (vrarg->exclude == uid))
+        return false;
     if((flags & ENTITY_FLAG_BUILDING) && !G_Building_IsCompleted(uid))
         return false;
-    if(strcmp(name, G_Resource_GetName(uid)))
+    if(strcmp(vrarg->rname, G_Resource_GetName(uid)))
+        return false;
+    vec2_t res_pos = G_Pos_GetXZ(uid);
+    if(!M_NavLocationsReachable(s_map, vrarg->ent_layer, vrarg->ent_pos, res_pos))
         return false;
     return true;
 }
@@ -499,8 +517,28 @@ uint32_t nearest_storage_site_source(uint32_t uid, const char *rname, enum tstra
 
 uint32_t nearest_resource(uint32_t uid, const char *name)
 {
+    assert(name);
     vec2_t pos = G_Pos_GetXZ(uid);
-    return G_Pos_NearestWithPred(pos, valid_resource, (void*)name, REACQUIRE_RADIUS);
+    struct valid_resource_arg arg = (struct valid_resource_arg){
+        .ent_pos = pos,
+        .ent_layer = Entity_NavLayer(uid),
+        .rname = name,
+        .exclude = UID_NONE
+    };
+    return G_Pos_NearestWithPred(pos, valid_resource, (void*)&arg, REACQUIRE_RADIUS);
+}
+
+uint32_t nearest_resource_with_exclusion(uint32_t uid, const char *name, uint32_t exclude)
+{
+    assert(name);
+    vec2_t pos = G_Pos_GetXZ(uid);
+    struct valid_resource_arg arg = (struct valid_resource_arg){
+        .ent_pos = pos,
+        .ent_layer = Entity_NavLayer(uid),
+        .rname = name,
+        .exclude = exclude
+    };
+    return G_Pos_NearestWithPred(pos, valid_resource, (void*)&arg, REACQUIRE_RADIUS);
 }
 
 static void finish_harvesting(struct hstate *hs, uint32_t uid)
@@ -577,6 +615,16 @@ static void entity_try_gather_nearest(uint32_t uid, const char *rname)
     }
 }
 
+static void entity_try_gather_nearest_with_exclusion(uint32_t uid, const char *rname, uint32_t exclude)
+{
+    uint32_t newtarget = nearest_resource_with_exclusion(uid, rname, exclude);
+    if(newtarget != NULL_UID) {
+        G_Harvester_Gather(uid, newtarget);
+    }else{
+        entity_try_drop_off(uid);
+    }
+}
+
 static void entity_try_retarget(uint32_t uid)
 {
     struct hstate *hs = hstate_get(uid);
@@ -586,15 +634,21 @@ static void entity_try_retarget(uint32_t uid)
     entity_try_gather_nearest(uid, rname);
 }
 
-uint32_t target_resource(struct hstate *hs, const char *rname)
+uint32_t target_resource(uint32_t uid, struct hstate *hs, const char *rname)
 {
     bool resource = false;
     if((hs->res_uid != NULL_UID) && !(G_FlagsGet(hs->res_uid) & ENTITY_FLAG_ZOMBIE)) {
         resource = true;
     }
     if(!resource) {
+        struct valid_resource_arg arg = (struct valid_resource_arg){
+            .ent_pos = G_Pos_GetXZ(uid),
+            .ent_layer = Entity_NavLayer(uid),
+            .rname = rname,
+            .exclude = UID_NONE,
+        };
         return G_Pos_NearestWithPred(hs->res_last_pos, valid_resource, 
-            (void*)rname, REACQUIRE_RADIUS);
+            (void*)&arg, REACQUIRE_RADIUS);
     }
     return hs->res_uid;
 }
@@ -610,25 +664,28 @@ static void clear_queued_command(uint32_t uid)
 
     switch(cmd) {
     case CMD_GATHER: {
-        if(G_EntityExists(arg)) {
+        if(G_EntityExists(arg) && !G_EntityIsZombie(arg)) {
             G_Harvester_Gather(uid, arg);
+        }else{
+            entity_try_gather_nearest(uid, hs->res_name);
         }
         break;
     }
     case CMD_TRANSPORT: {
-        if(G_EntityExists(arg)) {
+        if(G_EntityExists(arg) && !G_EntityIsZombie(arg)) {
             G_Harvester_Transport(uid, arg);
         }
         break;
     }
     case CMD_BUILD: {
-        if((G_FlagsGet(uid) & ENTITY_FLAG_BUILDER) && G_EntityExists(arg)) {
+        if((G_FlagsGet(uid) & ENTITY_FLAG_BUILDER) && G_EntityExists(arg)
+            && !G_EntityIsZombie(arg)) {
             G_Builder_Build(uid, arg);
         }
         break;
     }
     case CMD_SUPPLY: {
-        if(G_EntityExists(arg)) {
+        if(G_EntityExists(arg) && !G_EntityIsZombie(arg)) {
             G_Harvester_SupplyBuilding(uid, arg);
         }
         break;
@@ -674,9 +731,8 @@ static void on_harvest_anim_finished(void *user, void *event)
     int gathered = hs->accum + gather_speed;
     hs->accum += gather_speed;
 
-    if(gathered == 0) {
+    if(gathered == 0)
         return;
-    }
     hs->accum = 0;
 
     int old_carry = G_Harvester_GetCurrCarry(uid, rname);
@@ -764,7 +820,7 @@ static void on_arrive_at_resource(void *user, void *event)
     || !M_NavObjAdjacent(s_map, uid, hs->res_uid)) {
 
         /* harvester could not reach the resource */
-        entity_try_gather_nearest(uid, hs->res_name);
+        entity_try_gather_nearest_with_exclusion(uid, hs->res_name, hs->res_uid);
         return; 
     }
 
@@ -786,9 +842,8 @@ static void on_arrive_at_storage(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
 
-    if(!G_Move_Still(uid)) {
+    if(!G_Move_Still(uid))
         return; 
-    }
 
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_storage);
     E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel);
@@ -821,14 +876,16 @@ static void on_arrive_at_storage(void *user, void *event)
         G_Harvester_SetCurrCarry(uid, rname, 0);
         G_StorageSite_SetCurr(hs->ss_uid, rname, curr + carry);
 
-        uint32_t resource = target_resource(hs, rname);
-        if(G_EntityExists(resource) && !hs->drop_off_only) {
-            G_Harvester_Gather(uid, resource);
-        }else{
+        uint32_t resource = target_resource(uid, hs, rname);
+        if(hs->drop_off_only) {
             hs->state = STATE_NOT_HARVESTING;
             hs->ss_uid = NULL_UID;
             hs->res_name = NULL;
             clear_queued_command(uid);
+        }else if(G_EntityExists(resource) && !G_EntityIsZombie(resource)) {
+            G_Harvester_Gather(uid, resource);
+        }else{
+            entity_try_gather_nearest(uid, rname);
         }
 
     }else{
@@ -853,7 +910,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
     struct hstate *hs = hstate_get(uid);
     assert(hs);
 
-    if(!G_EntityExists(hs->transport_src_uid)
+    if((!G_EntityExists(hs->transport_src_uid) || G_EntityIsZombie(hs->transport_src_uid))
     || !(G_FlagsGet(hs->transport_src_uid) & ENTITY_FLAG_STORAGE_SITE)
     || !M_NavObjAdjacent(s_map, uid, hs->transport_src_uid)
     || G_StorageSite_GetDoNotTake(hs->transport_src_uid)) {
@@ -863,7 +920,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
         finish_transporing(hs);
 
         /* If the destination is still there, re-try */
-        if(G_EntityExists(hs->transport_dest_uid)) {
+        if(G_EntityExists(hs->transport_dest_uid) && !G_EntityIsZombie(hs->transport_dest_uid)) {
             G_Harvester_Transport(uid, hs->transport_dest_uid);
         }
         return;
@@ -908,7 +965,8 @@ static void on_arrive_at_transport_source(void *user, void *event)
         E_Entity_Notify(EVENT_RESOURCE_PICKED_UP, uid, NULL, ES_ENGINE);
     }
 
-    if(!G_EntityExists(hs->transport_dest_uid)) {
+    if(!G_EntityExists(hs->transport_dest_uid)
+    ||  G_EntityIsZombie(hs->transport_dest_uid)) {
 
         hs->transport_dest_uid = NULL_UID;
         hs->transport_src_uid = NULL_UID;
@@ -924,7 +982,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
     if(curr_carry + take < max_carry) {
     
         uint32_t newsrc = transport_source(uid, hs->transport_dest_uid, hs->res_name);
-        if(G_EntityExists(newsrc)) {
+        if(G_EntityExists(newsrc) && !G_EntityIsZombie(newsrc)) {
             E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_at_transport_source, 
                 (void*)((uintptr_t)uid), G_RUNNING);
             E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
@@ -971,7 +1029,7 @@ static void on_arrive_at_transport_dest(void *user, void *event)
     struct hstate *hs = hstate_get(uid);
     assert(hs);
 
-    if(!G_EntityExists(hs->transport_dest_uid)
+    if((!G_EntityExists(hs->transport_dest_uid) || G_EntityIsZombie(hs->transport_dest_uid))
     || !(G_FlagsGet(hs->transport_dest_uid) & ENTITY_FLAG_STORAGE_SITE)
     || !M_NavObjAdjacent(s_map, uid, hs->transport_dest_uid)) {
         /* harvester could not reach the destination storage site */
@@ -1042,7 +1100,7 @@ static void selection_try_order_gather(bool targeting)
 
         G_StopEntity(curr, true, true);
         G_Harvester_Gather(curr, target);
-        G_NotifyOrderIssued(curr);
+        G_NotifyOrderIssued(curr, false);
         ngather++;
     }
 
@@ -1083,7 +1141,7 @@ static void selection_try_order_pick_up(bool targeting)
 
         G_StopEntity(curr, true, true);
         G_Harvester_PickUp(curr, target);
-        G_NotifyOrderIssued(curr);
+        G_NotifyOrderIssued(curr, false);
         ncarry++;
     }
 
@@ -1124,7 +1182,7 @@ static void selection_try_order_drop_off(bool targeting)
 
         G_StopEntity(curr, true, true);
         G_Harvester_DropOff(curr, target);
-        G_NotifyOrderIssued(curr);
+        G_NotifyOrderIssued(curr, false);
         ncarry++;
     }
 
@@ -1162,7 +1220,7 @@ static void selection_try_order_transport(bool targeting)
 
         G_StopEntity(curr, true, true);
         G_Harvester_Transport(curr, target);
-        G_NotifyOrderIssued(curr);
+        G_NotifyOrderIssued(curr, false);
         ntransport++;
     }
 
@@ -1267,7 +1325,7 @@ static void entity_try_gather_nearest_source(uint32_t harvester,
                                              const char *rname, uint32_t dest)
 {
     uint32_t newtarget = nearest_resource(harvester, rname);
-    if(!G_EntityExists(newtarget)) {
+    if(!G_EntityExists(newtarget) || G_EntityIsZombie(newtarget)) {
         /* In case there are no more resources to gather, fall back 
          * to an alternate transporting strategy */
         G_Harvester_Transport(harvester, dest);
@@ -1297,14 +1355,14 @@ static void on_arrive_at_resource_source(void *user, void *event)
     struct hstate *hs = hstate_get(uid);
     assert(hs);
 
-    if(!G_Move_Still(uid)) {
+    if(!G_Move_Still(uid))
         return; 
-    }
 
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_resource_source);
     E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel);
 
-    if(!G_EntityExists(hs->transport_dest_uid)) {
+    if(!G_EntityExists(hs->transport_dest_uid)
+    || G_EntityIsZombie(hs->transport_dest_uid)) {
 
         hs->transport_dest_uid = NULL_UID;
         hs->transport_src_uid = NULL_UID;
@@ -1352,7 +1410,7 @@ static void on_harvest_anim_finished_source(void *user, void *event)
     struct hstate *hs = hstate_get(uid);
     assert(hs);
 
-    if(!G_EntityExists(hs->transport_dest_uid)) {
+    if(!G_EntityExists(hs->transport_dest_uid) || G_EntityIsZombie(hs->transport_dest_uid)) {
 
         finish_harvesting(hs, uid);
         hs->transport_dest_uid = NULL_UID;
@@ -1440,7 +1498,13 @@ static bool harvester_transport_from_resources(uint32_t harvester, uint32_t stor
     assert(rname);
 
     vec2_t pos = G_Pos_GetXZ(harvester);
-    uint32_t resource = G_Pos_NearestWithPred(pos, valid_resource, (void*)rname, 0);
+    struct valid_resource_arg arg = (struct valid_resource_arg){
+        .ent_pos = pos,
+        .ent_layer = Entity_NavLayer(harvester),
+        .rname = rname,
+        .exclude = UID_NONE,
+    };
+    uint32_t resource = G_Pos_NearestWithPred(pos, valid_resource, (void*)&arg, 0);
     if(resource == NULL_UID)
         return false;
 
@@ -1468,6 +1532,36 @@ static bool harvester_transport_from_resources(uint32_t harvester, uint32_t stor
     return true;
 }
 
+static void on_render_ui(void *user, void *event)
+{
+    struct sval setting;
+    ss_e status;
+    (void)status;
+
+    status = Settings_Get("pf.debug.show_harvester_state", &setting);
+    assert(status == SS_OKAY);
+    if(!setting.as_bool)
+        return;
+
+    struct camera *cam = G_GetActiveCamera();
+    mat4x4_t view, proj;
+    Camera_MakeViewMat(cam, &view); 
+    Camera_MakeProjMat(cam, &proj);
+
+    uint32_t uid;
+    struct hstate *hs;
+    kh_foreach_val_ptr(s_entity_state_table, uid, hs, {
+
+        vec4_t center = (vec4_t){0.0f, 0.0f, 0.0f, 1.0f};
+        mat4x4_t model;
+        Entity_ModelMatrix(uid, &model);
+
+        char text[16];
+        pf_snprintf(text, sizeof(text), "[%u] %d", uid, hs->state);
+        N_RenderOverlayText(text, center, &model, &view, &proj);
+    });
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1485,6 +1579,7 @@ bool G_Harvester_Init(const struct map *map)
 
     s_map = map;
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
+    E_Global_Register(EVENT_RENDER_UI, on_render_ui, NULL, G_RUNNING);
     return true;
 
 fail_strintern:
@@ -1498,6 +1593,7 @@ fail_mpool:
 void G_Harvester_Shutdown(void)
 {
     s_map = NULL;
+    E_Global_Unregister(EVENT_RENDER_UI, on_render_ui);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
 
     si_shutdown(&s_stringpool, s_stridx);
