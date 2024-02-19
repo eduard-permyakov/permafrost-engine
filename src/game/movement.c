@@ -2304,8 +2304,16 @@ static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack)
     }
     struct flock *fl = flock_for_dest(dest_id);
 
-    if(fl && fl == flock_for_ent(uid))
+    if(fl && fl == flock_for_ent(uid)) { 
+        struct movestate *ms = movestate_get(uid);
+        assert(ms);
+        if(ent_still(ms)) {
+            entity_unblock(uid);
+            E_Entity_Notify(EVENT_MOTION_START, uid, NULL, ES_ENGINE);
+        }
+        ms->state = STATE_MOVING;
         return;
+    }
 
     if(fl) {
 
