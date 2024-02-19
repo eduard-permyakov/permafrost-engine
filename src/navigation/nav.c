@@ -4020,7 +4020,7 @@ bool N_ObjectBuildable(void *nav_private, const struct map *map, enum nav_layer 
         || ((allow_shore ? !shore : true) && chunk->cost_base[tds[i].tile_r][tds[i].tile_c] == COST_IMPASSABLE)
         || !G_Fog_PlayerExplored((vec2_t){center.x, center.z})
         || (kh_get(td, tileset, td_key(tds + i)) != kh_end(tileset))
-        || (kh_get(td, building_tileset, td_key(tds + i) != kh_end(building_tileset)) )) {
+        || (kh_get(td, building_tileset, td_key(tds + i)) != kh_end(building_tileset))) {
             goto out;
         }
     }
