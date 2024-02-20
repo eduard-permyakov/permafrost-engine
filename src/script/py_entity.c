@@ -633,8 +633,20 @@ static int       PyResourceEntity_set_cursor(PyResourceEntityObject *self, PyObj
 static PyObject *PyResourceEntity_get_name(PyResourceEntityObject *self, void *closure);
 static PyObject *PyResourceEntity_get_amount(PyResourceEntityObject *self, void *closure);
 static int       PyResourceEntity_set_amount(PyResourceEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyResourceEntity_get_replenishable(PyResourceEntityObject *self, void *closure);
+static int       PyResourceEntity_set_replenishable(PyResourceEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyResourceEntity_get_replenish_amount(PyResourceEntityObject *self, PyObject *args);
+static PyObject *PyResourceEntity_set_replenish_amount(PyResourceEntityObject *self, PyObject *args);
 
 static PyMethodDef PyResourceEntity_methods[] = {
+
+    {"get_replenish_amount", 
+    (PyCFunction)PyResourceEntity_get_replenish_amount, METH_VARARGS,
+    "Gets the amount of a resource required to replenish the resource after it is exhausted."},
+
+    {"set_replenish_amount", 
+    (PyCFunction)PyResourceEntity_set_replenish_amount, METH_VARARGS,
+    "Sets the amount of a resource required to replenish the resource after it is exhausted."},
 
     {"__del__", 
     (PyCFunction)PyResourceEntity_del, METH_NOARGS,
@@ -656,6 +668,10 @@ static PyGetSetDef PyResourceEntity_getset[] = {
     {"cursor",
     (getter)PyResourceEntity_get_cursor, (setter)PyResourceEntity_set_cursor,
     "The name of the cursor to display as a contextual gather command indicator when hovering over the resource.",
+    NULL},
+    {"replenishable",
+    (getter)PyResourceEntity_get_replenishable, (setter)PyResourceEntity_set_replenishable,
+    "Boolean indicating whether this resource can be replenished after it is exhausted.",
     NULL},
     {"resource_name",
     (getter)PyResourceEntity_get_name, NULL,
@@ -3314,6 +3330,71 @@ static int PyResourceEntity_set_amount(PyResourceEntityObject *self, PyObject *v
 
     G_Resource_SetAmount(self->super.ent, PyInt_AS_LONG(value));
     return 0;
+}
+
+static PyObject *PyResourceEntity_get_replenishable(PyResourceEntityObject *self, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+    bool replenishable = G_Resource_GetReplenishable(self->super.ent);
+    if(replenishable) {
+        Py_RETURN_TRUE;
+    }else{
+        Py_RETURN_FALSE;
+    }
+}
+
+static int PyResourceEntity_set_replenishable(PyResourceEntityObject *self, PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+
+    bool set = PyObject_IsTrue(value);
+    G_Resource_SetReplenishable(self->super.ent, set);
+    return 0;
+}
+
+static PyObject *PyResourceEntity_get_replenish_amount(PyResourceEntityObject *self, PyObject *args)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
+        return NULL;
+    }
+
+    int amount = G_Resource_GetReplenishAmount(self->super.ent, name);
+    return PyInt_FromLong(amount);
+}
+
+static PyObject *PyResourceEntity_set_replenish_amount(PyResourceEntityObject *self, PyObject *args)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return NULL;
+    }
+
+    const char *name;
+    int amount;
+
+    if(!PyArg_ParseTuple(args, "si", &name, &amount)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting two arguments: name (string) and amount (integer).");
+        return NULL;
+    }
+
+    if(!G_Resource_SetReplenishAmount(self->super.ent, name, amount)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to set the resource replenish amount.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyHarvesterEntity_del(PyHarvesterEntityObject *self)

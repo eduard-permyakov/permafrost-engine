@@ -44,6 +44,7 @@
 #include "../lib/public/string_intern.h"
 #include "../lib/public/attr.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/string_intern.h"
 
 
 #define CHK_TRUE_RET(_pred)             \
@@ -52,6 +53,7 @@
             return false;               \
     }while(0)
 
+KHASH_MAP_INIT_STR(int, int)
 
 struct rstate{
     const char *name;
@@ -59,6 +61,8 @@ struct rstate{
     int         amount;
     vec2_t      blocking_pos;
     float       blocking_radius;
+    bool        replenishable;
+    kh_int_t   *replenish_resources;
 };
 
 KHASH_MAP_INIT_INT(state, struct rstate)
@@ -158,6 +162,8 @@ bool G_Resource_AddEntity(uint32_t uid)
         .amount = 0,
         .blocking_pos = G_Pos_GetXZ(uid),
         .blocking_radius = G_GetSelectionRadius(uid),
+        .replenishable = false,
+        .replenish_resources = kh_init(int)
     };
 
     if(!rstate_set(uid, rs))
@@ -182,6 +188,7 @@ void G_Resource_RemoveEntity(uint32_t uid)
             flags, s_map);
     }
 
+    kh_destroy(int, rs->replenish_resources);
     rstate_remove(uid);
 }
 
@@ -228,6 +235,54 @@ void G_Resource_UpdateSelectionRadius(uint32_t uid, float radius)
         M_NavBlockersIncref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(uid), 
             flags, s_map);
     }
+}
+
+bool G_Resource_GetReplenishable(uint32_t uid)
+{
+    struct rstate *rs = rstate_get(uid);
+    assert(rs);
+    return rs->replenishable;
+}
+
+void G_Resource_SetReplenishable(uint32_t uid, bool set)
+{
+    struct rstate *rs = rstate_get(uid);
+    assert(rs);
+    rs->replenishable = set;
+}
+
+bool G_Resource_SetReplenishAmount(uint32_t uid, const char *rname, int amount)
+{
+    struct rstate *rs = rstate_get(uid);
+    assert(rs);
+
+    const char *key = si_intern(rname, &s_stringpool, s_stridx);
+    if(!key)
+        return false;
+
+    int status;
+    khiter_t k = kh_put(int, rs->replenish_resources, key, &status);
+    if(status == -1)
+        return false;
+
+    kh_val(rs->replenish_resources, k) = amount;
+    return true;
+}
+
+int G_Resource_GetReplenishAmount(uint32_t uid, const char *rname)
+{
+    struct rstate *rs = rstate_get(uid);
+    assert(rs);
+
+    const char *key = si_intern(rname, &s_stringpool, s_stridx);
+    if(!key)
+        return 0;
+
+    khiter_t k = kh_get(int, rs->replenish_resources, key);
+    if(k == kh_end(rs->replenish_resources))
+        return 0;
+
+    return kh_val(rs->replenish_resources, k);
 }
 
 int G_Resource_GetAmount(uint32_t uid)

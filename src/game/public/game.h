@@ -374,6 +374,10 @@ void        G_Resource_SetIcon(const char *name, const char *path);
 const char *G_Resource_GetIcon(const char *name);
 int         G_Resource_GetAllNames(size_t maxout, const char* out[]);
 void        G_Resource_UpdateSelectionRadius(uint32_t uid, float radius);
+bool        G_Resource_GetReplenishable(uint32_t uid);
+void        G_Resource_SetReplenishable(uint32_t uid, bool set);
+bool        G_Resource_SetReplenishAmount(uint32_t uid, const char *rname, int amount);
+int         G_Resource_GetReplenishAmount(uint32_t uid, const char *rname);
 
 /*###########################################################################*/
 /* GAME HARVESTER                                                            */
