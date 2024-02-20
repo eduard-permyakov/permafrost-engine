@@ -1832,7 +1832,7 @@ bool G_Harvester_Gather(uint32_t harvester, uint32_t resource)
         if(strcmp(carryname, G_Resource_GetName(resource))) {
         
             uint32_t target = nearest_storage_site_dropoff(harvester, carryname);
-            if(!target)
+            if(target == NULL_UID)
                 return false;
 
             hs->queued.cmd = CMD_GATHER;
