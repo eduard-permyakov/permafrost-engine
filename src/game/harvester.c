@@ -120,6 +120,7 @@ struct hstate{
             CMD_TRANSPORT,
             CMD_BUILD,
             CMD_SUPPLY,
+            CMD_REPLENISH,
         }cmd;
         uint32_t uid_arg;
     }queued;
@@ -487,6 +488,8 @@ static bool valid_resource(uint32_t uid, void *arg)
         return false;
     if((flags & ENTITY_FLAG_BUILDING) && !G_Building_IsCompleted(uid))
         return false;
+    if(G_Resource_IsReplenishing(uid))
+        return false;
     if(strcmp(vrarg->rname, G_Resource_GetName(uid)))
         return false;
     vec2_t res_pos = G_Pos_GetXZ(uid);
@@ -690,6 +693,12 @@ static void clear_queued_command(uint32_t uid)
         }
         break;
     }
+    case CMD_REPLENISH: {
+        if(G_EntityExists(arg) && !G_EntityIsZombie(arg)) {
+            G_Harvester_ReplenishResource(uid, arg);
+        }
+        break;
+    }
     default:
         break;
     }
@@ -746,12 +755,22 @@ static void on_harvest_anim_finished(void *user, void *event)
 
     if(resource_left == 0) {
 
-        E_Entity_Notify(EVENT_RESOURCE_EXHAUSTED, hs->res_uid, NULL, ES_ENGINE);
-        G_Zombiefy(hs->res_uid, true);
+        if(G_Resource_GetReplenishable(hs->res_uid)) {
 
-        if(new_carry < max_carry) {
-            entity_try_retarget(uid);
-            return;
+            if(G_Resource_IsReplenishing(hs->res_uid)) {
+                G_Harvester_ReplenishResource(uid, hs->res_uid);
+            }else{
+                G_Resource_SetReplenishing(hs->res_uid);
+                G_Harvester_ReplenishResource(uid, hs->res_uid);
+            }
+        }else{
+            E_Entity_Notify(EVENT_RESOURCE_EXHAUSTED, hs->res_uid, NULL, ES_ENGINE);
+            G_Zombiefy(hs->res_uid, true);
+
+            if(new_carry < max_carry) {
+                entity_try_retarget(uid);
+                return;
+            }
         }
     }
 
@@ -841,6 +860,7 @@ static void on_arrive_at_resource(void *user, void *event)
 static void on_arrive_at_storage(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
+    printf("[%u] on_arrive_at_storage...\n", uid);
 
     if(!G_Move_Still(uid))
         return; 
@@ -1029,9 +1049,23 @@ static void on_arrive_at_transport_dest(void *user, void *event)
     struct hstate *hs = hstate_get(uid);
     assert(hs);
 
-    if((!G_EntityExists(hs->transport_dest_uid) || G_EntityIsZombie(hs->transport_dest_uid))
-    || !(G_FlagsGet(hs->transport_dest_uid) & ENTITY_FLAG_STORAGE_SITE)
-    || !M_NavObjAdjacent(s_map, uid, hs->transport_dest_uid)) {
+    /* Handle the case where we were supplying a resource that 
+     * got replenshed> If the unit is capable of gathering it, 
+     * begin work immediately.
+     */
+    uint32_t dest_uid = hs->transport_dest_uid;
+    if((G_FlagsGet(dest_uid) & ENTITY_FLAG_RESOURCE)
+    && !G_Resource_IsReplenishing(dest_uid)
+    && G_Harvester_GetGatherSpeed(uid, G_Resource_GetName(dest_uid)) > 0) {
+
+        finish_transporing(hs);
+        G_Harvester_Gather(uid, dest_uid);
+        return;
+    }
+
+    if((!G_EntityExists(dest_uid) || G_EntityIsZombie(dest_uid))
+    || !(G_FlagsGet(dest_uid) & ENTITY_FLAG_STORAGE_SITE)
+    || !M_NavObjAdjacent(s_map, uid, dest_uid)) {
         /* harvester could not reach the destination storage site */
         finish_transporing(hs);
         return;
@@ -1059,6 +1093,21 @@ static void on_arrive_at_transport_dest(void *user, void *event)
         G_StorageSite_SetCurr(hs->transport_dest_uid, rname, cap);
     }
 
+    uint32_t ss_uid = hs->transport_dest_uid;
+    uint32_t ss_flags = G_FlagsGet(ss_uid);
+
+    if((ss_flags & ENTITY_FLAG_RESOURCE)
+    && G_Resource_IsReplenishing(ss_uid)
+    && G_StorageSite_IsSaturated(ss_uid)) {
+
+        G_Resource_SetReplenished(ss_uid);
+        finish_transporing(hs);
+        if(G_Harvester_GetGatherSpeed(uid, rname) > 0) {
+            G_Harvester_Gather(uid, ss_uid);
+        }
+        return;
+    }
+
     uint32_t dest = hs->transport_dest_uid;
     finish_transporing(hs);
     G_Harvester_Transport(uid, dest);
@@ -1073,6 +1122,8 @@ static void selection_try_order_gather(bool targeting)
     if(!G_EntityExists(target) || !(G_FlagsGet(target) & ENTITY_FLAG_RESOURCE))
         return;
     if((G_FlagsGet(target) & ENTITY_FLAG_BUILDING) && !G_Building_IsCompleted(target))
+        return;
+    if(G_Resource_IsReplenishing(target))
         return;
 
     enum selection_type sel_type;
@@ -2019,6 +2070,29 @@ bool G_Harvester_SupplyBuilding(uint32_t harvester, uint32_t building)
     return true;
 }
 
+bool G_Harvester_ReplenishResource(uint32_t harvester, uint32_t resource)
+{
+    struct hstate *hs = hstate_get(harvester);
+    assert(hs);
+
+    if(G_Harvester_GetCurrTotalCarry(harvester)
+    && !G_StorageSite_Desires(resource, carried_resource_name(hs))) {
+
+        const char *carryname = carried_resource_name(hs);
+        uint32_t nearest = nearest_storage_site_dropoff(harvester, carryname);
+
+        if(nearest == NULL_UID)
+            return false;
+
+        hs->queued.cmd = CMD_REPLENISH;
+        hs->queued.uid_arg = resource;
+
+        G_Harvester_DropOff(harvester, nearest);
+        return true;
+    }
+    return G_Harvester_Transport(harvester, resource);
+}
+
 void G_Harvester_Stop(uint32_t uid)
 {
     struct hstate *hs = hstate_get(uid);
@@ -2096,7 +2170,8 @@ int G_Harvester_CurrContextualAction(void)
         return CTX_ACTION_NONE;
 
     if(G_FlagsGet(hovered) & ENTITY_FLAG_RESOURCE
-    && G_Harvester_GetGatherSpeed(first, G_Resource_GetName(hovered)) > 0)
+    && G_Harvester_GetGatherSpeed(first, G_Resource_GetName(hovered)) > 0
+    && !G_Resource_IsReplenishing(hovered))
         return CTX_ACTION_GATHER;
 
     if(G_GetFactionID(hovered) != G_GetFactionID(first))

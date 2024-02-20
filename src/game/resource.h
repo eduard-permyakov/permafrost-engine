@@ -49,6 +49,9 @@ bool G_Resource_AddEntity(uint32_t uid);
 void G_Resource_RemoveEntity(uint32_t uid);
 void G_Resource_UpdateBounds(uint32_t uid);
 void G_Resource_UpdateFactionID(uint32_t uid, int oldfac, int newfac);
+void G_Resource_SetReplenishing(uint32_t uid);
+void G_Resource_SetReplenished(uint32_t uid);
+bool G_Resource_IsReplenishing(uint32_t uid);
 
 bool G_Resource_SaveState(struct SDL_RWops *stream);
 bool G_Resource_LoadState(struct SDL_RWops *stream);

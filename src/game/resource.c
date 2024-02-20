@@ -35,6 +35,8 @@
 
 #include "resource.h"
 #include "game_private.h"
+#include "public/game.h"
+#include "storage_site.h"
 #include "../sched.h"
 #include "../event.h"
 #include "../entity.h"
@@ -55,14 +57,23 @@
 
 KHASH_MAP_INIT_STR(int, int)
 
+enum resource_state{
+    STATE_NORMAL,
+    STATE_REPLENISHING,
+};
+
 struct rstate{
     const char *name;
     const char *cursor;
     int         amount;
+    int         restored_amount;
     vec2_t      blocking_pos;
     float       blocking_radius;
     bool        replenishable;
     kh_int_t   *replenish_resources;
+    bool        is_storage_site;
+    bool        ss_do_not_take;
+    enum resource_state state;
 };
 
 KHASH_MAP_INIT_INT(state, struct rstate)
@@ -156,14 +167,18 @@ void G_Resource_Shutdown(void)
 
 bool G_Resource_AddEntity(uint32_t uid)
 {
-    struct rstate rs = (struct rstate) {
+    struct rstate rs = (struct rstate){
         .name = "",
         .cursor = "",
         .amount = 0,
+        .restored_amount = 0,
         .blocking_pos = G_Pos_GetXZ(uid),
         .blocking_radius = G_GetSelectionRadius(uid),
         .replenishable = false,
-        .replenish_resources = kh_init(int)
+        .replenish_resources = kh_init(int),
+        .is_storage_site = false,
+        .ss_do_not_take = false,
+        .state = STATE_NORMAL
     };
 
     if(!rstate_set(uid, rs))
@@ -283,6 +298,85 @@ int G_Resource_GetReplenishAmount(uint32_t uid, const char *rname)
         return 0;
 
     return kh_val(rs->replenish_resources, k);
+}
+
+void G_Resource_SetReplenishing(uint32_t uid)
+{
+    uint32_t flags = G_FlagsGet(uid);
+
+    struct rstate *rs = rstate_get(uid);
+    assert(rs);
+    rs->state = STATE_REPLENISHING;
+    rs->is_storage_site = !!(flags & ENTITY_FLAG_STORAGE_SITE);
+    if(rs->is_storage_site) {
+        rs->ss_do_not_take = G_StorageSite_GetDoNotTake(uid);
+    }
+
+    if(!rs->is_storage_site) {
+
+        flags |= ENTITY_FLAG_STORAGE_SITE;
+        G_StorageSite_AddEntity(uid);
+        G_FlagsSet(uid, flags);
+        G_StorageSite_SetDoNotTake(uid, true);
+
+        const char *rname;
+        int amount;
+        kh_foreach(rs->replenish_resources, rname, amount, {
+            G_StorageSite_SetCapacity(uid, rname, amount);
+            G_StorageSite_SetDesired(uid, rname, amount);
+        });
+    }else{
+        G_StorageSite_SetUseAlt(uid, true);
+        G_StorageSite_SetDoNotTake(uid, true);
+
+        const char *rname;
+        int amount;
+        kh_foreach(rs->replenish_resources, rname, amount, {
+            G_StorageSite_SetAltCapacity(uid, rname, amount);
+            G_StorageSite_SetAltDesired(uid, rname, amount);
+        });
+    }
+}
+
+void G_Resource_SetReplenished(uint32_t uid)
+{
+    struct rstate *rs = rstate_get(uid);
+    assert(rs);
+    rs->state = STATE_NORMAL;
+
+    uint32_t flags = G_FlagsGet(uid);
+
+    if(rs->is_storage_site) {
+        G_StorageSite_ClearAlt(uid);
+        G_StorageSite_SetUseAlt(uid, false);
+        G_StorageSite_SetDoNotTake(uid, rs->ss_do_not_take);
+    }else{
+        G_StorageSite_RemoveEntity(uid);
+        flags &= ~ENTITY_FLAG_STORAGE_SITE;
+        G_FlagsSet(uid, flags);
+    }
+    G_Resource_SetAmount(uid, rs->restored_amount);
+}
+
+bool G_Resource_IsReplenishing(uint32_t uid)
+{
+    struct rstate *rs = rstate_get(uid);
+    assert(rs);
+    return (rs->state == STATE_REPLENISHING);
+}
+
+int G_Resource_GetRestoredAmount(uint32_t uid)
+{
+    struct rstate *rs = rstate_get(uid);
+    assert(rs);
+    return rs->restored_amount;
+}
+
+void G_Resource_SetRestoredAmount(uint32_t uid, int amount)
+{
+    struct rstate *rs = rstate_get(uid);
+    assert(rs);
+    rs->restored_amount = amount;
 }
 
 int G_Resource_GetAmount(uint32_t uid)
@@ -414,6 +508,60 @@ bool G_Resource_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr.amount
         };
         CHK_TRUE_RET(Attr_Write(stream, &amount, "amount"));
+
+        struct attr restored_amount = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.restored_amount
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &restored_amount, "restored_amount"));
+
+        struct attr replenishable = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr.replenishable
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &replenishable, "replenishable"));
+
+        struct attr num_replenish_resources = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = kh_size(curr.replenish_resources)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &num_replenish_resources, "num_replenish_resources"));
+
+        const char *key;
+        int value;
+        kh_foreach(curr.replenish_resources, key, value, {
+
+            struct attr resource_name = (struct attr){
+                .type = TYPE_STRING,
+            };
+            pf_strlcpy(resource_name.val.as_string, key, sizeof(resource_name.val.as_string));
+            CHK_TRUE_RET(Attr_Write(stream, &resource_name, "resource_name"));
+
+            struct attr resource_amount = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = value
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &resource_amount, "resource_amount"));
+        });
+
+        struct attr is_storage_site = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr.is_storage_site
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &is_storage_site, "is_storage_site"));
+
+        struct attr ss_do_not_take = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr.ss_do_not_take
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &ss_do_not_take, "ss_do_not_take"));
+
+        struct attr resource_state = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.state
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &resource_state, "resource_state"));
+
         Sched_TryYield();
     });
 
@@ -481,6 +629,9 @@ bool G_Resource_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(attr.type == TYPE_INT);
         uid = attr.val.as_int;
 
+        struct rstate *rstate = rstate_get(uid);
+        CHK_TRUE_RET(rstate);
+
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_STRING);
         G_Resource_SetName(uid, attr.val.as_string);
@@ -492,6 +643,44 @@ bool G_Resource_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         G_Resource_SetAmount(uid, attr.val.as_int);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        G_Resource_SetRestoredAmount(uid, attr.val.as_int);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        G_Resource_SetReplenishable(uid, attr.val.as_bool);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        const size_t num_replenish_resources = attr.val.as_int;
+
+        for(int i = 0; i < num_replenish_resources; i++) {
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_STRING);
+            const char *key = attr.val.as_string;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            int amount = attr.val.as_int;
+
+            G_Resource_SetReplenishAmount(uid, key, amount);
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        rstate->is_storage_site = attr.val.as_bool;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        rstate->ss_do_not_take = attr.val.as_bool;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        rstate->state = attr.val.as_int;
+
         Sched_TryYield();
     }
 

@@ -635,6 +635,8 @@ static PyObject *PyResourceEntity_get_amount(PyResourceEntityObject *self, void 
 static int       PyResourceEntity_set_amount(PyResourceEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyResourceEntity_get_replenishable(PyResourceEntityObject *self, void *closure);
 static int       PyResourceEntity_set_replenishable(PyResourceEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyResourceEntity_get_restored_amount(PyResourceEntityObject *self, void *closure);
+static int       PyResourceEntity_set_restored_amount(PyResourceEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyResourceEntity_get_replenish_amount(PyResourceEntityObject *self, PyObject *args);
 static PyObject *PyResourceEntity_set_replenish_amount(PyResourceEntityObject *self, PyObject *args);
 
@@ -672,6 +674,10 @@ static PyGetSetDef PyResourceEntity_getset[] = {
     {"replenishable",
     (getter)PyResourceEntity_get_replenishable, (setter)PyResourceEntity_set_replenishable,
     "Boolean indicating whether this resource can be replenished after it is exhausted.",
+    NULL},
+    {"restored_amount",
+    (getter)PyResourceEntity_get_restored_amount, (setter)PyResourceEntity_set_restored_amount,
+    "The amount of the resource that will be restored to the entity when it is replenished.",
     NULL},
     {"resource_name",
     (getter)PyResourceEntity_get_name, NULL,
@@ -3355,6 +3361,31 @@ static int PyResourceEntity_set_replenishable(PyResourceEntityObject *self, PyOb
 
     bool set = PyObject_IsTrue(value);
     G_Resource_SetReplenishable(self->super.ent, set);
+    return 0;
+}
+
+static PyObject *PyResourceEntity_get_restored_amount(PyResourceEntityObject *self, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+    int amount = G_Resource_GetRestoredAmount(self->super.ent);
+    return PyInt_FromLong(amount);
+}
+
+static int PyResourceEntity_set_restored_amount(PyResourceEntityObject *self, PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer.");
+        return -1;
+    }
+    int amount = PyInt_AS_LONG(value);
+    G_Resource_SetRestoredAmount(self->super.ent, amount);
     return 0;
 }
 
