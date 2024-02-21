@@ -860,7 +860,6 @@ static void on_arrive_at_resource(void *user, void *event)
 static void on_arrive_at_storage(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
-    printf("[%u] on_arrive_at_storage...\n", uid);
 
     if(!G_Move_Still(uid))
         return; 
@@ -937,11 +936,12 @@ static void on_arrive_at_transport_source(void *user, void *event)
 
         /* harvester could not reach the storage site, 
          * or the 'do not take' option for it was set */
+        uint32_t dest = hs->transport_dest_uid;
         finish_transporing(hs);
 
         /* If the destination is still there, re-try */
-        if(G_EntityExists(hs->transport_dest_uid) && !G_EntityIsZombie(hs->transport_dest_uid)) {
-            G_Harvester_Transport(uid, hs->transport_dest_uid);
+        if(G_EntityExists(dest) && !G_EntityIsZombie(dest)) {
+            G_Harvester_Transport(uid, dest);
         }
         return;
     }
@@ -1142,8 +1142,8 @@ static void selection_try_order_gather(bool targeting)
         if(!(flags & ENTITY_FLAG_HARVESTER))
             continue;
 
-        if(G_Harvester_GetMaxCarry(curr, rname) == 0
-        || G_Harvester_GetGatherSpeed(curr, rname) == 0.0f)
+        if((G_Harvester_GetMaxCarry(curr, rname) == 0)
+        || (G_Harvester_GetGatherSpeed(curr, rname) == 0.0f))
             continue;
 
         struct hstate *hs = hstate_get(curr);
@@ -1981,8 +1981,16 @@ bool G_Harvester_Transport(uint32_t harvester, uint32_t storage)
     assert(hs);
 
     uint32_t storage_flags = G_FlagsGet(storage);
-    if(!(storage_flags & ENTITY_FLAG_STORAGE_SITE))
+    if(!(storage_flags & ENTITY_FLAG_STORAGE_SITE)) {
+
+        if((storage_flags & ENTITY_FLAG_RESOURCE)
+        && !G_Resource_IsReplenishing(storage)
+        && (G_Harvester_GetGatherSpeed(harvester, G_Resource_GetName(storage)) > 0)) {
+            G_Harvester_Gather(harvester, storage);
+            return true;
+        }
         return false;
+    }
 
     if(hs->queued.cmd != CMD_NONE) {
         clear_queued_command(harvester);
@@ -2141,7 +2149,7 @@ bool G_Harvester_InTargetMode(void)
 int G_Harvester_CurrContextualAction(void)
 {
     uint32_t hovered = G_Sel_GetHovered();
-    if(!G_EntityExists(hovered))
+    if(!G_EntityExists(hovered) || G_EntityIsZombie(hovered))
         return CTX_ACTION_NONE;
 
     if(M_MouseOverMinimap(s_map))
@@ -2169,8 +2177,8 @@ int G_Harvester_CurrContextualAction(void)
     if(!(G_FlagsGet(first) & ENTITY_FLAG_HARVESTER))
         return CTX_ACTION_NONE;
 
-    if(G_FlagsGet(hovered) & ENTITY_FLAG_RESOURCE
-    && G_Harvester_GetGatherSpeed(first, G_Resource_GetName(hovered)) > 0
+    if((G_FlagsGet(hovered) & ENTITY_FLAG_RESOURCE)
+    && (G_Harvester_GetGatherSpeed(first, G_Resource_GetName(hovered)) > 0)
     && !G_Resource_IsReplenishing(hovered))
         return CTX_ACTION_GATHER;
 
@@ -2190,7 +2198,7 @@ int G_Harvester_CurrContextualAction(void)
 bool G_Harvester_GetContextualCursor(char *out, size_t maxout)
 {
     uint32_t hovered = G_Sel_GetHovered();
-    if(!G_EntityExists(hovered))
+    if(!G_EntityExists(hovered) || G_EntityIsZombie(hovered))
         return false;
 
     if(!(G_FlagsGet(hovered) & ENTITY_FLAG_RESOURCE))
