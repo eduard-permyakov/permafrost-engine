@@ -74,6 +74,8 @@ struct automation_state{
 struct cost_mapping{
     uint32_t site;
     int      cost;
+    float    distance;
+    int      num_assigned;
 };
 
 KHASH_MAP_INIT_INT(state, struct automation_state)
@@ -132,25 +134,16 @@ static bool idle(uint32_t uid)
     return true;
 }
 
-static bool transporter_compatible(uint32_t worker, uint32_t site)
+static bool transporter_compatible_for_resource(uint32_t worker, uint32_t site, const char *rname)
 {
-    uint32_t flags = G_FlagsGet(worker);
-    if(!(flags & ENTITY_FLAG_HARVESTER))
+    if(!G_StorageSite_Desires(site, rname))
         return false;
-
-    const char *storable[64];
-    size_t nstorable = G_StorageSite_GetStorableResources(site, ARR_SIZE(storable), storable);
-
-    for(int i = 0; i < nstorable; i++) {
-        if(G_StorageSite_Desires(site, storable[i])
-        && (G_Harvester_GetMaxCarry(worker, storable[i]) > 0)) {
-            return true;
-        }
-    }
-    return false;
+    if(G_Harvester_GetMaxCarry(worker, rname) == 0)
+        return false;
+    return true;
 }
 
-static int transport_job_cost(uint32_t worker, uint32_t site)
+static int transport_job_cost(uint32_t worker, uint32_t site, int *out_num_assigned, float *out_dist)
 {
     /* The job 'cost' takes into account both the distance from
      * the target site, and the number of automated workers 
@@ -164,12 +157,14 @@ static int transport_job_cost(uint32_t worker, uint32_t site)
     vec2_t delta;
     PFM_Vec2_Sub(&site_pos, &worker_pos, &delta);
     float len = PFM_Vec2_Len(&delta);
+    *out_dist = len;
 
     int num_assigned = 0;
     khiter_t k = kh_get(count, s_transport_count, site);
     if(k != kh_end(s_transport_count)) {
         num_assigned = kh_value(s_transport_count, k);
     }
+    *out_num_assigned = num_assigned;
 
     int distance_cost = ((int)len) / TRANSPORT_UNIT_COST_DISTANCE;
     int fairness_cost = num_assigned;
@@ -183,10 +178,22 @@ static int compare_jobs(const void *a, const void *b)
 
     if (mappinga.cost < mappingb.cost) return -1;
     if (mappinga.cost > mappingb.cost) return 1;
+
+    /* When costs are the same, resort to sorting by number of
+     * assigned workers.
+     */
+    if(mappinga.num_assigned < mappingb.num_assigned) return -1;
+    if(mappinga.num_assigned > mappingb.num_assigned) return 1;
+
+    /* Lastly, resort to distance. 
+     */
+    if(mappinga.distance < mappingb.distance) return -1;
+    if(mappinga.distance > mappingb.distance) return 1;
+
     return 0;
 }
 
-static uint32_t target_site(uint32_t uid)
+static uint32_t target_site_for_resource(uint32_t uid, const char *rname)
 {
     uint32_t ret = NULL_UID;
 
@@ -200,17 +207,24 @@ static uint32_t target_site(uint32_t uid)
     /* Prune sites which are not compatible */
     for(int i = nsites - 1; i >= 0; i--) {
         uint32_t site = vec_AT(&sites, i);
-        if(!transporter_compatible(uid, site)) {
+        if(!transporter_compatible_for_resource(uid, site, rname)) {
             vec_entity_del(&sites, i);
         }
     }
 
     size_t left = vec_size(&sites);
     for(int i = 0; i < left; i++) {
+
         uint32_t site = vec_AT(&sites, i);
+        int num_assigned;
+        float distance;
+        int cost = transport_job_cost(uid, site, &num_assigned, &distance);
+
         costs[i] = (struct cost_mapping){
             .site = site,
-            .cost = transport_job_cost(uid, site),
+            .cost = cost,
+            .num_assigned = num_assigned,
+            .distance = distance,
         };
     }
     qsort(costs, left, sizeof(struct cost_mapping), compare_jobs);
@@ -221,6 +235,19 @@ static uint32_t target_site(uint32_t uid)
     STFREE(costs);
     vec_entity_destroy(&sites);
     return ret;
+}
+
+static uint32_t target_site(uint32_t uid)
+{
+    const char *transportable[64];
+    size_t ntransportable = G_Harvester_GetTransportPrio(uid, ARR_SIZE(transportable), transportable);
+
+    for(int i = 0; i < ntransportable; i++) {
+        uint32_t target = target_site_for_resource(uid, transportable[i]);
+        if(target != NULL_UID)
+            return target;
+    }
+    return NULL_UID;
 }
 
 static void increment_assigned_transporters(uint32_t site)
