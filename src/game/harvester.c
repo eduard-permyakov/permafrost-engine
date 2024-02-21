@@ -1999,17 +1999,20 @@ bool G_Harvester_Transport(uint32_t harvester, uint32_t storage)
 
     if(G_Harvester_GetCurrTotalCarry(harvester)) {
 
+        uint32_t drop_off_storage = NULL_UID;
         const char *carryname = carried_resource_name(hs);
         if(!G_StorageSite_Desires(storage, carryname)) {
-            storage = nearest_storage_site_dropoff(harvester, carryname);
+            drop_off_storage = nearest_storage_site_dropoff(harvester, carryname);
+        }else{
+            drop_off_storage = storage;
         }
 
-        if(storage == NULL_UID)
+        if(drop_off_storage == NULL_UID)
             return false;
 
-        G_Harvester_DropOff(harvester, storage);
         hs->queued.cmd = CMD_TRANSPORT;
         hs->queued.uid_arg = storage;
+        G_Harvester_DropOff(harvester, drop_off_storage);
 
         return true;
     }
