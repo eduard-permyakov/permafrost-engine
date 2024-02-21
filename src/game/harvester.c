@@ -2104,6 +2104,20 @@ bool G_Harvester_ReplenishResource(uint32_t harvester, uint32_t resource)
     return G_Harvester_Transport(harvester, resource);
 }
 
+uint32_t G_Harvester_TransportTarget(uint32_t harvester)
+{
+    struct hstate *hs = hstate_get(harvester);
+    assert(hs);
+
+    if(hs->state == STATE_TRANSPORT_GETTING
+    || hs->state == STATE_TRANSPORT_PUTTING
+    || hs->state == STATE_TRANSPORT_SEEK_RESOURCE
+    || hs->state == STATE_TRANSPORT_HARVESTING) {
+        return hs->transport_dest_uid;
+    }
+    return NULL_UID;
+}
+
 void G_Harvester_Stop(uint32_t uid)
 {
     struct hstate *hs = hstate_get(uid);

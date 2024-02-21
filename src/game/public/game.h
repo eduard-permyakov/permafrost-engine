@@ -518,6 +518,8 @@ void G_Garrison_SetEvictOnLeftClick(void);
 
 void G_Automation_GetIdle(vec_entity_t *out);
 bool G_Automation_IsIdle(uint32_t uid);
+void G_Automation_SetAutomaticTransport(uint32_t uid, bool on);
+bool G_Automation_GetAutomaticTransport(uint32_t uid);
 
 #endif
 

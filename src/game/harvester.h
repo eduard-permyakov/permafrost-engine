@@ -58,6 +58,7 @@ bool G_Harvester_GetContextualCursor(char *out, size_t maxout);
 void G_Harvester_ClearQueuedCmd(uint32_t uid);
 bool G_Harvester_Idle(uint32_t uid);
 bool G_Harvester_ReplenishResource(uint32_t harvester, uint32_t resource);
+uint32_t G_Harvester_TransportTarget(uint32_t harvester);
 
 bool G_Harvester_SaveState(struct SDL_RWops *stream);
 bool G_Harvester_LoadState(struct SDL_RWops *stream);

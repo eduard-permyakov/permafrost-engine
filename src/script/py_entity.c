@@ -727,6 +727,8 @@ static PyObject *PyHarvesterEntity_pickle(PyHarvesterEntityObject *self, PyObjec
 static PyObject *PyHarvesterEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 static PyObject *PyHarvesterEntity_get_strategy(PyHarvesterEntityObject *self, void *closure);
 static int       PyHarvesterEntity_set_strategy(PyHarvesterEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyHarvesterEntity_get_automatic_transport(PyHarvesterEntityObject *self, void *closure);
+static int       PyHarvesterEntity_set_automatic_transport(PyHarvesterEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyHarvesterEntity_get_total_carry(PyHarvesterEntityObject *self, void *closure);
 static PyObject *PyHarvesterEntity_get_transport_priority(PyHarvesterEntityObject *self, void *closure);
 
@@ -808,6 +810,11 @@ static PyGetSetDef PyHarvesterEntity_getset[] = {
     (getter)PyHarvesterEntity_get_strategy, (setter)PyHarvesterEntity_set_strategy,
     "The approach used by the harvester to pick the next storage site to get resources from. "
     "Must be a pf.TRANSPORT_ enum value.",
+    NULL},
+    {"automatic_transport",
+    (getter)PyHarvesterEntity_get_automatic_transport, (setter)PyHarvesterEntity_set_automatic_transport,
+    "Boolean indicating whether the unit is currently in 'automatic transport' mode. When in "
+    "this mode, the unit will perform transporting jobs each time it becomes idle.",
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -3720,6 +3727,33 @@ static int PyHarvesterEntity_set_strategy(PyHarvesterEntityObject *self, PyObjec
     return 0;
 }
 
+static PyObject *PyHarvesterEntity_get_automatic_transport(PyHarvesterEntityObject *self, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
+    bool on = G_Automation_GetAutomaticTransport(self->super.ent);
+    if(on) {
+        Py_RETURN_TRUE;
+    }else{
+        Py_RETURN_FALSE;
+    }
+}
+
+static int PyHarvesterEntity_set_automatic_transport(PyHarvesterEntityObject *self, PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+
+    bool on = PyObject_IsTrue(value);
+    G_Automation_SetAutomaticTransport(self->super.ent, on);
+    return 0;
+}
+
 static PyObject *PyStorageSiteEntity_del(PyStorageSiteEntityObject *self)
 {
     return s_super_del((PyObject*)self, &PyStorageSiteEntity_type);
@@ -3745,7 +3779,7 @@ static PyObject *PyStorageSiteEntity_get_curr_amount(PyStorageSiteEntityObject *
 static PyObject *PyStorageSiteEntity_set_curr_amount(PyStorageSiteEntityObject *self, PyObject *args)
 {
     if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
-        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
         return NULL;
     }
 

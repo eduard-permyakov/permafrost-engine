@@ -39,6 +39,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
+#include "public/game.h"
 
 #define DEFAULT_CAPACITY (0)
 
@@ -68,6 +69,7 @@ int  G_StorageSite_GetAltDesired(uint32_t uid, const char *rname);
 
 float G_StorageSite_GetWindowHeight(uint32_t uid);
 bool  G_StorageSite_GetShowUI(void);
+void  G_StorageSite_GetAll(vec_entity_t *out);
 
 #endif
 

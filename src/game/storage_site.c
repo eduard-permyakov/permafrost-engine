@@ -897,6 +897,14 @@ bool G_StorageSite_GetShowUI(void)
     return s_show_ui;
 }
 
+void G_StorageSite_GetAll(vec_entity_t *out)
+{
+    uint32_t uid;
+    kh_foreach_key(s_entity_state_table, uid, {
+        vec_entity_push(out, uid);
+    });
+}
+
 bool G_StorageSite_GetDoNotTake(uint32_t uid)
 {
     struct ss_state *ss = ss_state_get(uid);

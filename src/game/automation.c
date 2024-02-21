@@ -38,13 +38,20 @@
 #include "harvester.h"
 #include "builder.h"
 #include "combat.h"
+#include "position.h"
+#include "storage_site.h"
+#include "harvester.h"
 #include "../event.h"
 #include "../entity.h"
 #include "../lib/public/khash.h"
+#include "../lib/public/stalloc.h"
 
 #include <assert.h>
+#include <stdlib.h>
 
-#define TRANSIENT_STATE_TICKS   (2) 
+#define TRANSIENT_STATE_TICKS        (2) 
+#define TRANSPORT_UNIT_COST_DISTANCE (150)
+#define ARR_SIZE(a)                  (sizeof(a)/sizeof((a)[0]))
 
 /* 'IDLE' and 'ACTIVE' are the two core states. 'WAKING' and 
  * 'STOPPING' are transient states used to ensure that there is
@@ -61,15 +68,24 @@ struct automation_state{
     enum worker_state state;
     int               transient_ticks;
     bool              automatic_transport;
+    uint32_t          transport_target;
+};
+
+struct cost_mapping{
+    uint32_t site;
+    int      cost;
 };
 
 KHASH_MAP_INIT_INT(state, struct automation_state)
+KHASH_MAP_INIT_INT(count, uint32_t);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
 static khash_t(state) *s_entity_state_table;
+/* Maps storage sites to the number of automated transporters servicing it */
+static khash_t(count) *s_transport_count;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -116,7 +132,117 @@ static bool idle(uint32_t uid)
     return true;
 }
 
-static void on_20hz_tick(void *user, void *event)
+static bool transporter_compatible(uint32_t worker, uint32_t site)
+{
+    uint32_t flags = G_FlagsGet(worker);
+    if(!(flags & ENTITY_FLAG_HARVESTER))
+        return false;
+
+    const char *storable[64];
+    size_t nstorable = G_StorageSite_GetStorableResources(site, ARR_SIZE(storable), storable);
+
+    for(int i = 0; i < nstorable; i++) {
+        if(G_StorageSite_Desires(site, storable[i])
+        && (G_Harvester_GetMaxCarry(worker, storable[i]) > 0)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static int transport_job_cost(uint32_t worker, uint32_t site)
+{
+    /* The job 'cost' takes into account both the distance from
+     * the target site, and the number of automated workers 
+     * currently 'servicing' that site, in order to stike a 
+     * balance between 'fairness' and redundant traveling due 
+     * to far-off assignments.
+     */
+    vec2_t worker_pos = G_Pos_GetXZ(worker);
+    vec2_t site_pos = G_Pos_GetXZ(site);
+
+    vec2_t delta;
+    PFM_Vec2_Sub(&site_pos, &worker_pos, &delta);
+    float len = PFM_Vec2_Len(&delta);
+
+    int num_assigned = 0;
+    khiter_t k = kh_get(count, s_transport_count, site);
+    if(k != kh_end(s_transport_count)) {
+        num_assigned = kh_value(s_transport_count, k);
+    }
+
+    int distance_cost = ((int)len) / TRANSPORT_UNIT_COST_DISTANCE;
+    int fairness_cost = num_assigned;
+    return (distance_cost + fairness_cost);
+}
+
+static int compare_jobs(const void *a, const void *b)
+{
+    struct cost_mapping mappinga = *(const struct cost_mapping*)a;
+    struct cost_mapping mappingb = *(const struct cost_mapping*)b;
+
+    if (mappinga.cost < mappingb.cost) return -1;
+    if (mappinga.cost > mappingb.cost) return 1;
+    return 0;
+}
+
+static uint32_t target_site(uint32_t uid)
+{
+    uint32_t ret = NULL_UID;
+
+    vec_entity_t sites;
+    vec_entity_init(&sites);
+    G_StorageSite_GetAll(&sites);
+
+    const size_t nsites = vec_size(&sites);
+    STALLOC(struct cost_mapping, costs, nsites);
+
+    /* Prune sites which are not compatible */
+    for(int i = nsites - 1; i >= 0; i--) {
+        uint32_t site = vec_AT(&sites, i);
+        if(!transporter_compatible(uid, site)) {
+            vec_entity_del(&sites, i);
+        }
+    }
+
+    size_t left = vec_size(&sites);
+    for(int i = 0; i < left; i++) {
+        uint32_t site = vec_AT(&sites, i);
+        costs[i] = (struct cost_mapping){
+            .site = site,
+            .cost = transport_job_cost(uid, site),
+        };
+    }
+    qsort(costs, left, sizeof(struct cost_mapping), compare_jobs);
+    if(left > 0) {
+        ret = costs[0].site;
+    }
+
+    STFREE(costs);
+    vec_entity_destroy(&sites);
+    return ret;
+}
+
+static void increment_assigned_transporters(uint32_t site)
+{
+    khiter_t k = kh_get(count, s_transport_count, site);
+    if(k == kh_end(s_transport_count)) {
+        int status;
+        kh_put(count, s_transport_count, site, &status);
+        assert(status != -1);
+        kh_val(s_transport_count, k) = 0;
+    }
+    kh_val(s_transport_count, k)++;
+}
+
+static void decrement_assigned_transporters(uint32_t site)
+{
+    khiter_t k = kh_get(count, s_transport_count, site);
+    assert(k != kh_end(s_transport_count));
+    kh_val(s_transport_count, k)--;
+}
+
+static void recompute_idle(void)
 {
     uint32_t uid;
     struct automation_state *astate;
@@ -160,6 +286,10 @@ static void on_20hz_tick(void *user, void *event)
             if(astate->transient_ticks == TRANSIENT_STATE_TICKS) {
                 astate->transient_ticks = 0;
                 astate->state = STATE_IDLE;
+                if(astate->transport_target != NULL_UID) {
+                    decrement_assigned_transporters(astate->transport_target);
+                    astate->transport_target = NULL_UID;
+                }
                 E_Global_Notify(EVENT_UNIT_BECAME_IDLE, (void*)((uintptr_t)uid), ES_ENGINE);
             }
             break;
@@ -167,6 +297,38 @@ static void on_20hz_tick(void *user, void *event)
         default: assert(0);
         }
     });
+}
+
+static void assign_transport_jobs(void)
+{
+    uint32_t uid;
+    struct automation_state *astate;
+
+    kh_foreach_val_ptr(s_entity_state_table, uid, astate, {
+
+        if(astate->state != STATE_IDLE)
+            continue;
+
+        if(!(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER))
+            continue;
+        
+        if(!astate->automatic_transport)
+            continue;
+
+        uint32_t site = target_site(uid);
+        if(site == NULL_UID)
+            continue;
+
+        increment_assigned_transporters(site);
+        astate->transport_target = site;
+        G_Harvester_Transport(uid, site);
+    });
+}
+
+static void on_20hz_tick(void *user, void *event)
+{
+    recompute_idle();
+    assign_transport_jobs();
 }
 
 /*****************************************************************************/
@@ -178,7 +340,8 @@ bool G_Automation_AddEntity(uint32_t uid)
     struct automation_state state = (struct automation_state){
         .state = STATE_IDLE,
         .transient_ticks = 0,
-        .automatic_transport = false
+        .automatic_transport = false,
+        .transport_target = NULL_UID,
     };
     return astate_set(uid, state);
 }
@@ -194,14 +357,23 @@ void G_Automation_RemoveEntity(uint32_t uid)
 bool G_Automation_Init(void)
 {
     if((s_entity_state_table = kh_init(state)) == NULL)
-        return false;
+        goto fail_entity_state_table;
+    if((s_transport_count = kh_init(count)) == NULL)
+        goto fail_transport_count_table;
+
     E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
     return true;
+
+fail_transport_count_table:
+    kh_destroy(state, s_entity_state_table);
+fail_entity_state_table:
+    return false;
 }
 
 void G_Automation_Shutdown(void)
 {
     E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
+    kh_destroy(count, s_transport_count);
     kh_destroy(state, s_entity_state_table);
 }
 
@@ -225,5 +397,38 @@ bool G_Automation_IsIdle(uint32_t uid)
     if(!astate)
         return true;
     return (astate->state == STATE_IDLE);
+}
+
+void G_Automation_SetAutomaticTransport(uint32_t uid, bool on)
+{
+    struct automation_state *astate = astate_get(uid);
+    if(!astate)
+        return;
+
+    assert(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER);
+    bool prev = astate->automatic_transport;
+
+    if(on && !prev) {
+        assert(astate->transport_target == NULL_UID);
+        uint32_t target = G_Harvester_TransportTarget(uid);
+        if(target != NULL_UID) {
+            increment_assigned_transporters(target);
+            astate->transport_target = target;
+        }
+    }else if(!on && prev){
+        if(astate->transport_target != NULL_UID) {
+            decrement_assigned_transporters(astate->transport_target);
+            astate->transport_target = NULL_UID;
+        }
+    }
+    astate->automatic_transport = on;
+}
+
+bool G_Automation_GetAutomaticTransport(uint32_t uid)
+{
+    struct automation_state *astate = astate_get(uid);
+    if(!astate)
+        return false;
+    return astate->automatic_transport;
 }
 
