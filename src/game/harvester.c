@@ -798,7 +798,7 @@ static void on_harvest_anim_finished(void *user, void *event)
                 G_Harvester_ReplenishResource(uid, hs->res_uid);
             }
         }else{
-            E_Entity_Notify(EVENT_RESOURCE_EXHAUSTED, hs->res_uid, NULL, ES_ENGINE);
+            E_Entity_NotifyImmediate(EVENT_RESOURCE_EXHAUSTED, hs->res_uid, NULL, ES_ENGINE);
             G_Zombiefy(hs->res_uid, true);
 
             if(new_carry < max_carry) {
@@ -1543,7 +1543,7 @@ static void on_harvest_anim_finished_source(void *user, void *event)
 
     if(resource_left == 0) {
 
-        E_Entity_Notify(EVENT_RESOURCE_EXHAUSTED, hs->res_uid, NULL, ES_ENGINE);
+        E_Entity_NotifyImmediate(EVENT_RESOURCE_EXHAUSTED, hs->res_uid, NULL, ES_ENGINE);
         G_Zombiefy(hs->res_uid, true);
 
         if(new_carry < max_carry) {
