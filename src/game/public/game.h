@@ -423,6 +423,8 @@ bool  G_Harvester_IncreaseTransportPrio(uint32_t uid, const char *rname);
 bool  G_Harvester_DecreaseTransportPrio(uint32_t uid, const char *rname);
 int   G_Harvester_GetTransportPrio(uint32_t uid, size_t maxout, const char* out[]);
 int   G_Harvester_GetCurrTotalCarry(uint32_t uid);
+bool  G_Harvester_SetDoNotTransport(uint32_t uid, const char *rname, bool set);
+bool  G_Harvester_GetDoNotTransport(uint32_t uid, const char *rname);
 
 /*###########################################################################*/
 /* GAME STORAGE SITE                                                         */

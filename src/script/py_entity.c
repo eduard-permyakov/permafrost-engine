@@ -721,6 +721,8 @@ static PyObject *PyHarvesterEntity_get_max_carry(PyHarvesterEntityObject *self, 
 static PyObject *PyHarvesterEntity_set_max_carry(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_get_gather_speed(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_set_gather_speed(PyHarvesterEntityObject *self, PyObject *args);
+static PyObject *PyHarvesterEntity_get_do_not_transport(PyHarvesterEntityObject *self, PyObject *args);
+static PyObject *PyHarvesterEntity_set_do_not_transport(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_increase_transport_priority(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_decrease_transport_priority(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_pickle(PyHarvesterEntityObject *self, PyObject *args, PyObject *kwargs);
@@ -774,6 +776,14 @@ static PyMethodDef PyHarvesterEntity_methods[] = {
     {"set_gather_speed", 
     (PyCFunction)PyHarvesterEntity_set_gather_speed, METH_VARARGS,
     "Set how much of the specified resource the entity gathers in a single animation."},
+
+    {"get_do_not_transport", 
+    (PyCFunction)PyHarvesterEntity_get_do_not_transport, METH_VARARGS,
+    "Get flag indicating whether the enitty is forbidden from transporting the particular resource."},
+
+    {"set_do_not_transport", 
+    (PyCFunction)PyHarvesterEntity_set_do_not_transport, METH_VARARGS,
+    "Get flag indicating whether the enitty is forbidden from transporting the particular resource."},
 
     {"increase_transport_priority", 
     (PyCFunction)PyHarvesterEntity_increase_transport_priority, METH_VARARGS,
@@ -3609,6 +3619,46 @@ static PyObject *PyHarvesterEntity_set_gather_speed(PyHarvesterEntityObject *sel
         PyErr_SetString(PyExc_RuntimeError, "Unable to set the gathering speed.");
         return NULL;
     }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyHarvesterEntity_get_do_not_transport(PyHarvesterEntityObject *self, PyObject *args)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return NULL;
+    }
+
+    const char *rname;
+    if(!PyArg_ParseTuple(args, "s", &rname)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one arguments: resource name (string).");
+        return NULL;
+    }
+    bool ret = G_Harvester_GetDoNotTransport(self->super.ent, rname);
+    if(ret) {
+        Py_RETURN_TRUE;
+    }else{
+        Py_RETURN_FALSE;
+    }
+}
+
+static PyObject *PyHarvesterEntity_set_do_not_transport(PyHarvesterEntityObject *self, PyObject *args)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return NULL;
+    }
+
+    const char *name;
+    PyObject *obj = NULL;
+
+    if(!PyArg_ParseTuple(args, "sO", &name, &obj)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting two arguments: name (string) and amount (boolean).");
+        return NULL;
+    }
+
+    bool value = PyObject_IsTrue(obj);
+    G_Harvester_SetDoNotTransport(self->super.ent, name, value);
     Py_RETURN_NONE;
 }
 

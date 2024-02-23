@@ -110,6 +110,7 @@ struct hstate{
     kh_float_t *gather_speeds;    /* How much of each resource the entity gets each cycle */
     kh_int_t   *max_carry;        /* The maximum amount of each resource the entity can carry */
     kh_int_t   *curr_carry;       /* The amount of each resource the entity currently holds */
+    kh_int_t   *do_not_transport; /* Per-resource flag to disable transporting */
     vec_name_t  priority;         /* The order in which the harvester will transport resources */
     bool        drop_off_only;
     float       accum;            /* How much we gathered - only integer amounts are taken */ 
@@ -268,6 +269,7 @@ static void hstate_destroy(struct hstate *hs)
     kh_destroy(float, hs->gather_speeds);
     kh_destroy(int, hs->max_carry);
     kh_destroy(int, hs->curr_carry);
+    kh_destroy(int, hs->do_not_transport);
 }
 
 static bool hstate_init(struct hstate *hs)
@@ -279,8 +281,10 @@ static bool hstate_init(struct hstate *hs)
     hs->gather_speeds = kh_init(float);
     hs->max_carry = kh_init(int);
     hs->curr_carry = kh_init(int);
+    hs->do_not_transport = kh_init(int);
 
-    if(!hs->gather_speeds || !hs->max_carry || !hs->curr_carry) {
+    if(!hs->gather_speeds || !hs->max_carry 
+    || !hs->curr_carry || !hs->do_not_transport) {
 
         hstate_destroy(hs);
         return false;
@@ -1338,6 +1342,11 @@ static const char *transport_resource(struct hstate *hs, uint32_t target)
     for(int i = 0; i < vec_size(&hs->priority); i++) {
 
         const char *rname = vec_AT(&hs->priority, i);
+        int do_not_transport = 0;
+        hstate_get_key_int(hs->do_not_transport, rname, &do_not_transport);
+        if(do_not_transport)
+            continue;
+
         int desired = ss_desired(target, rname);
         int stored = G_StorageSite_GetCurr(target, rname);
 
@@ -1831,6 +1840,23 @@ int G_Harvester_GetCurrTotalCarry(uint32_t uid)
         ret += curr;
     });
 
+    return ret;
+}
+
+bool G_Harvester_SetDoNotTransport(uint32_t uid, const char *rname, bool set)
+{
+    struct hstate *hs = hstate_get(uid);
+    assert(hs);
+    return hstate_set_key_int(hs->do_not_transport, rname, set);
+}
+
+bool G_Harvester_GetDoNotTransport(uint32_t uid, const char *rname)
+{
+    int ret = 0;
+    struct hstate *hs = hstate_get(uid);
+    assert(hs);
+
+    hstate_get_key_int(hs->do_not_transport, rname, &ret);
     return ret;
 }
 
@@ -2356,6 +2382,27 @@ bool G_Harvester_SaveState(struct SDL_RWops *stream)
         });
         Sched_TryYield();
 
+        struct attr num_dnt = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = kh_size(curr.do_not_transport)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &num_dnt, "num_dnt"));
+
+        int curr_flag;
+        kh_foreach(curr.do_not_transport, curr_key, curr_flag, {
+        
+            struct attr curr_key_attr = (struct attr){ .type = TYPE_STRING, };
+            pf_strlcpy(curr_key_attr.val.as_string, curr_key, sizeof(curr_key_attr.val.as_string));
+            CHK_TRUE_RET(Attr_Write(stream, &curr_key_attr, "curr_key"));
+
+            struct attr curr_flag_attr = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = curr_flag
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &curr_flag_attr, "curr_flag"));
+        });
+        Sched_TryYield();
+
         struct attr num_priorities = (struct attr){
             .type = TYPE_INT,
             .val.as_int = vec_size(&curr.priority)
@@ -2569,6 +2616,25 @@ bool G_Harvester_LoadState(struct SDL_RWops *stream)
             int val = attr.val.as_int;
 
             G_Harvester_SetCurrCarry(uid, key, val);
+        }
+        Sched_TryYield();
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int num_dnt  = attr.val.as_int;
+
+        for(int j = 0; j < num_dnt; j++) {
+        
+            struct attr keyattr;
+            CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
+            CHK_TRUE_RET(keyattr.type == TYPE_STRING);
+            const char *key = keyattr.val.as_string;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            bool val = !!attr.val.as_int;
+
+            G_Harvester_SetDoNotTransport(uid, key, val);
         }
         Sched_TryYield();
 

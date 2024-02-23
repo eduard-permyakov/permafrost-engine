@@ -141,6 +141,8 @@ static bool transporter_compatible_for_resource(uint32_t worker, uint32_t site, 
 {
     if(!G_StorageSite_Desires(site, rname))
         return false;
+    if(G_Harvester_GetDoNotTransport(worker, rname))
+        return false;
     if(G_Harvester_GetMaxCarry(worker, rname) == 0)
         return false;
     return true;
