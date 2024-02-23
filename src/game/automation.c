@@ -43,8 +43,11 @@
 #include "harvester.h"
 #include "../event.h"
 #include "../entity.h"
+#include "../settings.h"
+#include "../camera.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/stalloc.h"
+#include "../lib/public/pf_string.h"
 
 #include <assert.h>
 #include <stdlib.h>
@@ -255,7 +258,7 @@ static void increment_assigned_transporters(uint32_t site)
     khiter_t k = kh_get(count, s_transport_count, site);
     if(k == kh_end(s_transport_count)) {
         int status;
-        kh_put(count, s_transport_count, site, &status);
+        k = kh_put(count, s_transport_count, site, &status);
         assert(status != -1);
         kh_val(s_transport_count, k) = 0;
     }
@@ -358,6 +361,75 @@ static void on_20hz_tick(void *user, void *event)
     assign_transport_jobs();
 }
 
+static void on_update_ui(void *user, void *event)
+{
+    struct sval setting;
+    ss_e status;
+    (void)status;
+
+    status = Settings_Get("pf.debug.show_automation_state", &setting);
+    assert(status == SS_OKAY);
+    if(!setting.as_bool)
+        return;
+
+    struct camera *cam = G_GetActiveCamera();
+    mat4x4_t view, proj;
+    Camera_MakeViewMat(cam, &view); 
+    Camera_MakeProjMat(cam, &proj);
+
+    /* Show relevant storage site state */
+    vec_entity_t sites;
+    vec_entity_init(&sites);
+    G_StorageSite_GetAll(&sites);
+
+    for(int i = 0; i < vec_size(&sites); i++) {
+
+        uint32_t uid = vec_AT(&sites, i);
+        vec4_t center = (vec4_t){0.0f, 0.0f, 0.0f, 1.0f};
+        mat4x4_t model;
+        Entity_ModelMatrix(uid, &model);
+
+        char text[16];
+        pf_snprintf(text, sizeof(text), "SITE: [%u]", uid);
+        N_RenderOverlayText(text, center, &model, &view, &proj);
+    }
+    vec_entity_destroy(&sites);
+
+    /* Show relevant transporter state */
+    uint32_t uid;
+    struct automation_state *astate;
+
+    kh_foreach_val_ptr(s_entity_state_table, uid, astate, {
+
+        if(!(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER))
+            continue;
+
+        char text[16] = {0};
+        switch(astate->state) {
+        case STATE_IDLE:
+        case STATE_WAKING:
+            pf_snprintf(text, sizeof(text), "[%u] IDLE", uid);
+            break;
+        case STATE_ACTIVE:
+        case STATE_STOPPING:
+            pf_snprintf(text, sizeof(text), "[%u] ACTIVE", uid);
+            break;
+        }
+
+        vec4_t center = (vec4_t){0.0f, 0.0f, 0.0f, 1.0f};
+        mat4x4_t model;
+        Entity_ModelMatrix(uid, &model);
+        N_RenderOverlayText(text, center, &model, &view, &proj);
+
+        if(astate->automatic_transport) {
+            char text[32];
+            pf_snprintf(text, sizeof(text), "AUTO [%u]", astate->transport_target);
+            vec4_t off = (vec4_t){0.0f, -10.0f, 0.0f, 1.0f};
+            N_RenderOverlayText(text, off, &model, &view, &proj);
+        }
+    });
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -389,6 +461,7 @@ bool G_Automation_Init(void)
         goto fail_transport_count_table;
 
     E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
+    E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING);
     return true;
 
 fail_transport_count_table:
@@ -399,6 +472,7 @@ fail_entity_state_table:
 
 void G_Automation_Shutdown(void)
 {
+    E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
     E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
     kh_destroy(count, s_transport_count);
     kh_destroy(state, s_entity_state_table);
