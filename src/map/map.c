@@ -1039,3 +1039,9 @@ bool M_NavIsAdjacentToIsland(const struct map *map, enum nav_layer layer,
         radius, island_pos);
 }
 
+bool M_NavIsAdjacentToIslandOBB(const struct map *map, enum nav_layer layer, 
+                                const struct obb *obb, vec2_t island_pos)
+{
+    return N_IsAdjacentToIslandOBB(map->nav_private, layer, map->pos, obb, island_pos);
+}
+

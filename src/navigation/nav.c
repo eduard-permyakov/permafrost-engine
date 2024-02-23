@@ -3831,6 +3831,46 @@ bool N_IsAdjacentToIsland(void *nav_private, enum nav_layer layer, vec3_t map_po
     PERF_RETURN(false);
 }
 
+bool N_IsAdjacentToIslandOBB(void *nav_private, enum nav_layer layer, vec3_t map_pos,
+                             const struct obb *obb, vec2_t island_pos)
+{
+    PERF_ENTER();
+    assert(Sched_UsingBigStack());
+
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct tile_desc target_td;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, island_pos, &target_td);
+    assert(result);
+
+    const struct nav_chunk *target_chunk = 
+        &priv->chunks[layer][IDX(target_td.chunk_r, priv->width, target_td.chunk_c)];
+    uint16_t target_iid = target_chunk->islands[target_td.tile_r][target_td.tile_c];
+
+    struct tile_desc tds[2048];
+    size_t ntiles = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
+
+    for(int i = 0; i < ntiles; i++) {
+
+        for(int dr = -1; dr <= 1; dr++) {
+        for(int dc = -1; dc <= 1; dc++) {
+            struct tile_desc td = tds[i];
+            if(!M_Tile_RelativeDesc(res, &td, dc, dr))
+                continue;
+
+            const struct nav_chunk *curr_chunk = 
+                &priv->chunks[layer][IDX(td.chunk_r, priv->width, td.chunk_c)];
+            uint16_t curr_iid = curr_chunk->islands[td.tile_r][td.tile_c];
+            if(curr_iid == target_iid)
+                PERF_RETURN(true);
+        }}
+    }
+
+    PERF_RETURN(false);
+}
+
 bool N_PortalReachableFromTile(const struct portal *port, struct coord tile, 
                                const struct nav_chunk *chunk)
 {

@@ -416,6 +416,35 @@ static void hstate_insert_prio(struct hstate *hs, const char *name)
     }
 }
 
+static bool storage_site_reachable(uint32_t ent, uint32_t site)
+{
+    enum nav_layer ent_layer = Entity_NavLayer(ent);
+    uint32_t ent_flags = G_FlagsGet(ent);
+    uint32_t site_flags = G_FlagsGet(site);
+
+    vec2_t ent_pos = G_Pos_GetXZ(ent);
+    vec2_t site_pos = G_Pos_GetXZ(site);
+
+    if(site_flags & ENTITY_FLAG_WATER) {
+        if(ent_flags & ENTITY_FLAG_WATER) {
+            if(!M_NavLocationsReachable(s_map, ent_layer, ent_pos, site_pos))
+                return false;
+        }else{
+            struct obb obb;
+            Entity_CurrentOBB(site, &obb, false);
+            if(!M_NavIsAdjacentToIslandOBB(s_map, ent_layer, &obb, ent_pos))
+                return false;
+        }
+    }else{
+        /* Water units can only transport to/from water sites */
+        if(ent_flags & ENTITY_FLAG_WATER)
+            return false;
+        if(!M_NavLocationsReachable(s_map, ent_layer, ent_pos, site_pos))
+            return false;
+    }
+    return true;
+}
+
 static bool valid_storage_site_dropoff(uint32_t curr, void *arg)
 {
     struct searcharg *sarg = arg;
@@ -427,7 +456,7 @@ static bool valid_storage_site_dropoff(uint32_t curr, void *arg)
         return false;
     if(G_GetFactionID(sarg->ent) != G_GetFactionID(curr))
         return false;
-    if(!(curr_flags & ENTITY_FLAG_WATER) && (ent_flags & ENTITY_FLAG_WATER))
+    if(!storage_site_reachable(sarg->ent, curr))
         return false;
 
     int stored = G_StorageSite_GetCurr(curr, sarg->rname);
@@ -456,7 +485,7 @@ static bool valid_storage_site_source(uint32_t curr, void *arg)
         return false;
     if(G_StorageSite_GetDoNotTake(curr))
         return false;
-    if(!(curr_flags & ENTITY_FLAG_WATER) && (ent_flags & ENTITY_FLAG_WATER))
+    if(!storage_site_reachable(sarg->ent, curr))
         return false;
 
     /* Don't get resources from build sites - this prevents builders 
