@@ -1060,7 +1060,8 @@ static void on_arrive_at_transport_dest(void *user, void *event)
     uint32_t dest_uid = hs->transport_dest_uid;
     if((G_FlagsGet(dest_uid) & ENTITY_FLAG_RESOURCE)
     && !G_Resource_IsReplenishing(dest_uid)
-    && G_Harvester_GetGatherSpeed(uid, G_Resource_GetName(dest_uid)) > 0) {
+    && G_Harvester_GetGatherSpeed(uid, G_Resource_GetName(dest_uid)) > 0
+    && (!(G_FlagsGet(dest_uid) & ENTITY_FLAG_BUILDING) || G_Building_IsCompleted(dest_uid))) {
 
         finish_transporing(hs);
         G_Harvester_Gather(uid, dest_uid);
@@ -2011,7 +2012,9 @@ bool G_Harvester_Transport(uint32_t harvester, uint32_t storage)
 
         if((storage_flags & ENTITY_FLAG_RESOURCE)
         && !G_Resource_IsReplenishing(storage)
-        && (G_Harvester_GetGatherSpeed(harvester, G_Resource_GetName(storage)) > 0)) {
+        && (G_Harvester_GetGatherSpeed(harvester, G_Resource_GetName(storage)) > 0)
+        && (!(G_FlagsGet(storage) & ENTITY_FLAG_BUILDING) || G_Building_IsCompleted(storage))) {
+
             G_Harvester_Gather(harvester, storage);
             return true;
         }

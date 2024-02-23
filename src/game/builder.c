@@ -138,8 +138,15 @@ static void finish_building(struct builderstate *bs, uint32_t uid)
         E_Entity_Notify(EVENT_BUILD_END, uid, NULL, ES_ENGINE);
     }
 
+    uint32_t building = bs->target_uid;
     bs->state = STATE_NOT_BUILDING;
     bs->target_uid = UID_NONE;
+
+    if(G_Building_IsCompleted(building)
+    && (G_FlagsGet(building) & ENTITY_FLAG_RESOURCE)
+    && (G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER)) {
+        G_Harvester_Gather(uid, building);
+    }
 }
 
 static void on_build_anim_finished(void *user, void *event)
@@ -216,6 +223,13 @@ static void on_motion_end(void *user, void *event)
             G_Harvester_SupplyBuilding(uid, bs->target_uid);
         }
         bs->state = STATE_NOT_BUILDING;
+        return;
+    }
+
+    if(G_Building_IsCompleted(bs->target_uid)
+    && (G_FlagsGet(bs->target_uid) & ENTITY_FLAG_RESOURCE)
+    && (G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER)) {
+        G_Harvester_Gather(uid, bs->target_uid);
         return;
     }
 
