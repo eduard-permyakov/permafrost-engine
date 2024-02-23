@@ -908,7 +908,7 @@ static void g_create_settings(void)
         .name = "pf.game.camera_zoom",
         .val = (struct sval) {
             .type = ST_TYPE_INT,
-            .as_int = 100
+            .as_int = 150
         },
         .prio = 0,
         .validate = cam_zoom_validate,
