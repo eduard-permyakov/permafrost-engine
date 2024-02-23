@@ -131,6 +131,7 @@ struct hstate{
 
 struct searcharg{
     uint32_t ent;
+    uint32_t storage;
     const char *rname;
     enum tstrategy strat;
 };
@@ -481,7 +482,7 @@ static bool valid_storage_site_source(uint32_t curr, void *arg)
         return false;
     if(G_GetFactionID(sarg->ent) != G_GetFactionID(curr))
         return false;
-    if(curr == sarg->ent)
+    if(curr == sarg->storage)
         return false;
     if(G_StorageSite_GetDoNotTake(ent_flags, curr))
         return false;
@@ -534,18 +535,18 @@ static bool valid_resource(uint32_t uid, void *arg)
 uint32_t nearest_storage_site_dropoff(uint32_t uid, const char *rname)
 {
     vec2_t pos = G_Pos_GetXZ(uid);
-    struct searcharg arg = (struct searcharg){uid, rname};
+    struct searcharg arg = (struct searcharg){uid, NULL_UID, rname};
     return G_Pos_NearestWithPred(pos, valid_storage_site_dropoff, (void*)&arg, 0.0f);
 }
 
-uint32_t nearest_storage_site_source(uint32_t uid, const char *rname, enum tstrategy strat)
+uint32_t nearest_storage_site_source(uint32_t uid, uint32_t storage, const char *rname, enum tstrategy strat)
 {
-    vec2_t pos = G_Pos_GetXZ(uid);
-    struct searcharg arg = (struct searcharg){uid, rname, strat};
+    vec2_t pos = G_Pos_GetXZ(storage);
+    struct searcharg arg = (struct searcharg){uid, storage, rname, strat};
     uint32_t ret = G_Pos_NearestWithPred(pos, valid_storage_site_source, (void*)&arg, 0.0f);
 
     if((ret == NULL_UID) && (strat == TRANSPORT_STRATEGY_EXCESS)) {
-        arg = (struct searcharg){uid, rname, TRANSPORT_STRATEGY_NEAREST};
+        arg = (struct searcharg){uid, storage, rname, TRANSPORT_STRATEGY_NEAREST};
         ret = G_Pos_NearestWithPred(pos, valid_storage_site_source, (void*)&arg, 0.0f);
     }
     return ret;
@@ -742,7 +743,7 @@ uint32_t transport_source(uint32_t uid, uint32_t storage, const char *rname)
 {
     struct hstate *hs = hstate_get(uid);
     assert(hs);
-    return nearest_storage_site_source(storage, rname, hs->strategy);
+    return nearest_storage_site_source(uid, storage, rname, hs->strategy);
 }
 
 static void finish_transporing(struct hstate *hs)
@@ -997,7 +998,8 @@ static void on_arrive_at_transport_source(void *user, void *event)
         /* If there are absolutely no valid storage sites which have excess 
          * of our target resource, then we are allowed to overstep the 'desired' 
          * limit */
-        if(hs->transport_src_uid == nearest_storage_site_source(uid, hs->res_name, hs->strategy)) {
+        if(hs->transport_src_uid == nearest_storage_site_source(uid, 
+            hs->transport_dest_uid, hs->res_name, hs->strategy)) {
             take = MIN(carry_cap, store_curr);
         }else{
             take = MAX(MIN(carry_cap, excess), 0);
