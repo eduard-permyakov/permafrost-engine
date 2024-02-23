@@ -483,7 +483,7 @@ static bool valid_storage_site_source(uint32_t curr, void *arg)
         return false;
     if(curr == sarg->ent)
         return false;
-    if(G_StorageSite_GetDoNotTake(curr))
+    if(G_StorageSite_GetDoNotTake(ent_flags, curr))
         return false;
     if(!storage_site_reachable(sarg->ent, curr))
         return false;
@@ -961,11 +961,12 @@ static void on_arrive_at_transport_source(void *user, void *event)
 
     struct hstate *hs = hstate_get(uid);
     assert(hs);
+    uint32_t ent_flags = G_FlagsGet(uid);
 
     if((!G_EntityExists(hs->transport_src_uid) || G_EntityIsZombie(hs->transport_src_uid))
     || !(G_FlagsGet(hs->transport_src_uid) & ENTITY_FLAG_STORAGE_SITE)
     || !M_NavObjAdjacent(s_map, uid, hs->transport_src_uid)
-    || G_StorageSite_GetDoNotTake(hs->transport_src_uid)) {
+    || G_StorageSite_GetDoNotTake(ent_flags, hs->transport_src_uid)) {
 
         /* harvester could not reach the storage site, 
          * or the 'do not take' option for it was set */

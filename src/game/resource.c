@@ -72,7 +72,8 @@ struct rstate{
     bool        replenishable;
     kh_int_t   *replenish_resources;
     bool        is_storage_site;
-    bool        ss_do_not_take;
+    bool        ss_do_not_take_land;
+    bool        ss_do_not_take_water;
     enum resource_state state;
 };
 
@@ -177,7 +178,8 @@ bool G_Resource_AddEntity(uint32_t uid)
         .replenishable = false,
         .replenish_resources = kh_init(int),
         .is_storage_site = false,
-        .ss_do_not_take = false,
+        .ss_do_not_take_land = false,
+        .ss_do_not_take_water = false,
         .state = STATE_NORMAL
     };
 
@@ -309,7 +311,8 @@ void G_Resource_SetReplenishing(uint32_t uid)
     rs->state = STATE_REPLENISHING;
     rs->is_storage_site = !!(flags & ENTITY_FLAG_STORAGE_SITE);
     if(rs->is_storage_site) {
-        rs->ss_do_not_take = G_StorageSite_GetDoNotTake(uid);
+        rs->ss_do_not_take_land = G_StorageSite_GetDoNotTakeLand(uid);
+        rs->ss_do_not_take_water = G_StorageSite_GetDoNotTakeWater(uid);
     }
 
     if(!rs->is_storage_site) {
@@ -317,7 +320,8 @@ void G_Resource_SetReplenishing(uint32_t uid)
         flags |= ENTITY_FLAG_STORAGE_SITE;
         G_StorageSite_AddEntity(uid);
         G_FlagsSet(uid, flags);
-        G_StorageSite_SetDoNotTake(uid, true);
+        G_StorageSite_SetDoNotTakeLand(uid, true);
+        G_StorageSite_SetDoNotTakeWater(uid, true);
 
         const char *rname;
         int amount;
@@ -327,7 +331,8 @@ void G_Resource_SetReplenishing(uint32_t uid)
         });
     }else{
         G_StorageSite_SetUseAlt(uid, true);
-        G_StorageSite_SetDoNotTake(uid, true);
+        G_StorageSite_SetDoNotTakeLand(uid, true);
+        G_StorageSite_SetDoNotTakeWater(uid, true);
 
         const char *rname;
         int amount;
@@ -349,7 +354,8 @@ void G_Resource_SetReplenished(uint32_t uid)
     if(rs->is_storage_site) {
         G_StorageSite_ClearAlt(uid);
         G_StorageSite_SetUseAlt(uid, false);
-        G_StorageSite_SetDoNotTake(uid, rs->ss_do_not_take);
+        G_StorageSite_SetDoNotTakeLand(uid, rs->ss_do_not_take_land);
+        G_StorageSite_SetDoNotTakeWater(uid, rs->ss_do_not_take_water);
     }else{
         G_StorageSite_RemoveEntity(uid);
         flags &= ~ENTITY_FLAG_STORAGE_SITE;
@@ -550,11 +556,17 @@ bool G_Resource_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &is_storage_site, "is_storage_site"));
 
-        struct attr ss_do_not_take = (struct attr){
+        struct attr ss_do_not_take_land = (struct attr){
             .type = TYPE_BOOL,
-            .val.as_bool = curr.ss_do_not_take
+            .val.as_bool = curr.ss_do_not_take_land
         };
-        CHK_TRUE_RET(Attr_Write(stream, &ss_do_not_take, "ss_do_not_take"));
+        CHK_TRUE_RET(Attr_Write(stream, &ss_do_not_take_land, "ss_do_not_take_land"));
+
+        struct attr ss_do_not_take_water = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr.ss_do_not_take_water
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &ss_do_not_take_water, "ss_do_not_take_water"));
 
         struct attr resource_state = (struct attr){
             .type = TYPE_INT,
@@ -675,7 +687,11 @@ bool G_Resource_LoadState(struct SDL_RWops *stream)
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_BOOL);
-        rstate->ss_do_not_take = attr.val.as_bool;
+        rstate->ss_do_not_take_land = attr.val.as_bool;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        rstate->ss_do_not_take_water = attr.val.as_bool;
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);

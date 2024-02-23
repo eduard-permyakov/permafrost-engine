@@ -86,9 +86,10 @@ struct ss_state{
     bool                   use_alt;
     kh_int_t              *alt_capacity;
     kh_int_t              *alt_desired;
-    /* Flag to inform harvesters not to take anything 
+    /* Flags to inform harvesters not to take anything 
      * from this site */
-    bool                   do_not_take;
+    bool                   do_not_take_land;
+    bool                   do_not_take_water;
 };
 
 typedef char buff_t[512];
@@ -213,7 +214,8 @@ static bool ss_state_init(struct ss_state *hs)
 
     hs->last_change = (struct ss_delta_event){0};
     hs->use_alt = false;
-    hs->do_not_take = false;
+    hs->do_not_take_land = false;
+    hs->do_not_take_water = false;
     return true;
 }
 
@@ -905,18 +907,41 @@ void G_StorageSite_GetAll(vec_entity_t *out)
     });
 }
 
-bool G_StorageSite_GetDoNotTake(uint32_t uid)
+bool G_StorageSite_GetDoNotTakeLand(uint32_t uid)
 {
     struct ss_state *ss = ss_state_get(uid);
     assert(ss);
-    return ss->do_not_take;
+    return ss->do_not_take_land;
 }
 
-void G_StorageSite_SetDoNotTake(uint32_t uid, bool on)
+void G_StorageSite_SetDoNotTakeLand(uint32_t uid, bool on)
 {
     struct ss_state *ss = ss_state_get(uid);
     assert(ss);
-    ss->do_not_take = on;
+    ss->do_not_take_land = on;
+}
+
+bool G_StorageSite_GetDoNotTakeWater(uint32_t uid)
+{
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
+    return ss->do_not_take_water;
+}
+
+void G_StorageSite_SetDoNotTakeWater(uint32_t uid, bool on)
+{
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
+    ss->do_not_take_water = on;
+}
+
+bool G_StorageSite_GetDoNotTake(uint32_t flags, uint32_t uid)
+{
+    if(flags & ENTITY_FLAG_WATER) {
+        return G_StorageSite_GetDoNotTakeWater(uid);
+    }else{
+        return G_StorageSite_GetDoNotTakeLand(uid);
+    }
 }
 
 void G_StorageSite_SetUseAlt(uint32_t uid, bool use)
@@ -1209,11 +1234,17 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
             CHK_TRUE_RET(Attr_Write(stream, &alt_desired_amount_attr, "alt_desired_amount"));
         });
 
-        struct attr do_not_take = (struct attr){
+        struct attr do_not_take_land = (struct attr){
             .type = TYPE_BOOL,
-            .val.as_bool = curr.do_not_take
+            .val.as_bool = curr.do_not_take_land
         };
-        CHK_TRUE_RET(Attr_Write(stream, &do_not_take, "do_not_take"));
+        CHK_TRUE_RET(Attr_Write(stream, &do_not_take_land, "do_not_take_land"));
+
+        struct attr do_not_take_water = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr.do_not_take_water
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &do_not_take_water, "do_not_take_water"));
         Sched_TryYield();
     });
 
@@ -1382,7 +1413,11 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_BOOL);
-        ss->do_not_take = attr.val.as_bool;
+        ss->do_not_take_land = attr.val.as_bool;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        ss->do_not_take_water = attr.val.as_bool;
         Sched_TryYield();
     }
 

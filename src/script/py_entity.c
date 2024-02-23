@@ -857,8 +857,10 @@ static PyObject *PyStorageSiteEntity_set_capacity(PyStorageSiteEntityObject *sel
 static PyObject *PyStorageSiteEntity_get_storable(PyStorageSiteEntityObject *self, void *closure);
 static PyObject *PyStorageSiteEntity_get_desired(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_set_desired(PyStorageSiteEntityObject *self, PyObject *args);
-static PyObject *PyStorageSiteEntity_get_do_not_take(PyStorageSiteEntityObject *self, void *closure);
-static int       PyStorageSiteEntity_set_do_not_take(PyStorageSiteEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyStorageSiteEntity_get_do_not_take_land(PyStorageSiteEntityObject *self, void *closure);
+static int       PyStorageSiteEntity_set_do_not_take_land(PyStorageSiteEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyStorageSiteEntity_get_do_not_take_water(PyStorageSiteEntityObject *self, void *closure);
+static int       PyStorageSiteEntity_set_do_not_take_water(PyStorageSiteEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyStorageSiteEntity_pickle(PyStorageSiteEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyStorageSiteEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
@@ -909,9 +911,13 @@ static PyGetSetDef PyStorageSiteEntity_getset[] = {
     (getter)PyStorageSiteEntity_get_storable, NULL,
     "The list of resources that are currently able to be held at this storage site.",
     NULL},
-    {"do_not_take",
-    (getter)PyStorageSiteEntity_get_do_not_take, (setter)PyStorageSiteEntity_set_do_not_take,
-    "The list of resources that are currently able to be held at this storage site.",
+    {"do_not_take_land",
+    (getter)PyStorageSiteEntity_get_do_not_take_land, (setter)PyStorageSiteEntity_set_do_not_take_land,
+    "Boolean specifying whether land-based units are forbidden from taking resources from this site.",
+    NULL},
+    {"do_not_take_water",
+    (getter)PyStorageSiteEntity_get_do_not_take_water, (setter)PyStorageSiteEntity_set_do_not_take_water,
+    "Boolean specifying whether water-based units are forbidden from taking resources from this site.",
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -3928,14 +3934,14 @@ static PyObject *PyStorageSiteEntity_set_desired(PyStorageSiteEntityObject *self
     Py_RETURN_NONE;
 }
 
-static PyObject *PyStorageSiteEntity_get_do_not_take(PyStorageSiteEntityObject *self, void *closure)
+static PyObject *PyStorageSiteEntity_get_do_not_take_land(PyStorageSiteEntityObject *self, void *closure)
 {
     if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
         PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
         return NULL;
     }
 
-    bool do_not_take = G_StorageSite_GetDoNotTake(self->super.ent);
+    bool do_not_take = G_StorageSite_GetDoNotTakeLand(self->super.ent);
     if(do_not_take) {
         Py_RETURN_TRUE;
     }else{
@@ -3943,7 +3949,7 @@ static PyObject *PyStorageSiteEntity_get_do_not_take(PyStorageSiteEntityObject *
     }
 }
 
-static int PyStorageSiteEntity_set_do_not_take(PyStorageSiteEntityObject *self, PyObject *value, void *closure)
+static int PyStorageSiteEntity_set_do_not_take_land(PyStorageSiteEntityObject *self, PyObject *value, void *closure)
 {
     if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
         PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
@@ -3951,7 +3957,33 @@ static int PyStorageSiteEntity_set_do_not_take(PyStorageSiteEntityObject *self, 
     }
 
     bool do_not_take = PyObject_IsTrue(value);
-    G_StorageSite_SetDoNotTake(self->super.ent, do_not_take);
+    G_StorageSite_SetDoNotTakeLand(self->super.ent, do_not_take);
+    return 0;
+}
+
+static PyObject *PyStorageSiteEntity_get_do_not_take_water(PyStorageSiteEntityObject *self, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+    bool do_not_take = G_StorageSite_GetDoNotTakeWater(self->super.ent);
+    if(do_not_take) {
+        Py_RETURN_TRUE;
+    }else{
+        Py_RETURN_FALSE;
+    }
+}
+
+static int PyStorageSiteEntity_set_do_not_take_water(PyStorageSiteEntityObject *self, PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+
+    bool do_not_take = PyObject_IsTrue(value);
+    G_StorageSite_SetDoNotTakeWater(self->super.ent, do_not_take);
     return 0;
 }
 

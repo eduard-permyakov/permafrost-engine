@@ -70,6 +70,7 @@ int  G_StorageSite_GetAltDesired(uint32_t uid, const char *rname);
 float G_StorageSite_GetWindowHeight(uint32_t uid);
 bool  G_StorageSite_GetShowUI(void);
 void  G_StorageSite_GetAll(vec_entity_t *out);
+bool  G_StorageSite_GetDoNotTake(uint32_t flags, uint32_t uid);
 
 #endif
 

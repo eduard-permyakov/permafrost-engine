@@ -455,8 +455,10 @@ void G_StorageSite_SetFontColor(const struct nk_color *clr);
 void G_StorageSite_SetBorderColor(const struct nk_color *clr);
 void G_StorageSite_SetBackgroundStyle(const struct nk_style_item *style);
 void G_StorageSite_SetShowUI(bool show);
-bool G_StorageSite_GetDoNotTake(uint32_t uid);
-void G_StorageSite_SetDoNotTake(uint32_t uid, bool on);
+bool G_StorageSite_GetDoNotTakeLand(uint32_t uid);
+void G_StorageSite_SetDoNotTakeLand(uint32_t uid, bool on);
+bool G_StorageSite_GetDoNotTakeWater(uint32_t uid);
+void G_StorageSite_SetDoNotTakeWater(uint32_t uid, bool on);
 
 /*###########################################################################*/
 /* GAME REGION                                                               */
