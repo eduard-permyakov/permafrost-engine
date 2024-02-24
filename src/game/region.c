@@ -455,7 +455,10 @@ static void on_render_3d(void *user, void *event)
 
     kh_foreach(s_regions, key, reg, {
 
-        if(!s_render && !reg.shown)
+        if(!s_render)
+            continue;
+
+        if(!reg.shown)
             continue;
 
         bool explored = false;
