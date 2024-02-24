@@ -3166,6 +3166,9 @@ bool G_SaveEntityState(SDL_RWops *stream)
     if(!G_Garrison_SaveState(stream))
         return false;
 
+    if(!G_Automation_SaveState(stream))
+        return false;
+
     return true;
 }
 
@@ -3211,6 +3214,9 @@ bool G_LoadEntityState(SDL_RWops *stream)
         return false;
 
     if(!G_Garrison_LoadState(stream))
+        return false;
+
+    if(!G_Automation_LoadState(stream))
         return false;
 
     return true;

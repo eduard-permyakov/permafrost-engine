@@ -39,11 +39,16 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+struct SDL_RWops;
+
 bool G_Automation_Init(void);
 void G_Automation_Shutdown(void);
 
 bool G_Automation_AddEntity(uint32_t uid);
 void G_Automation_RemoveEntity(uint32_t uid);
+
+bool G_Automation_SaveState(struct SDL_RWops *stream);
+bool G_Automation_LoadState(struct SDL_RWops *stream);
 
 #endif
 

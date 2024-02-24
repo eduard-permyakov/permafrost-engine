@@ -45,9 +45,11 @@
 #include "../entity.h"
 #include "../settings.h"
 #include "../camera.h"
+#include "../sched.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/stalloc.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/attr.h"
 
 #include <assert.h>
 #include <stdlib.h>
@@ -56,6 +58,12 @@
 #define TRANSIENT_STATE_TICKS        (2) 
 #define TRANSPORT_UNIT_COST_DISTANCE (150)
 #define ARR_SIZE(a)                  (sizeof(a)/sizeof((a)[0]))
+
+#define CHK_TRUE_RET(_pred)             \
+    do{                                 \
+        if(!(_pred))                    \
+            return false;               \
+    }while(0)
 
 /* 'IDLE' and 'ACTIVE' are the two core states. 'WAKING' and 
  * 'STOPPING' are transient states used to ensure that there is
@@ -569,5 +577,142 @@ bool G_Automation_GetAutomaticTransport(uint32_t uid)
     if(!astate)
         return false;
     return astate->automatic_transport;
+}
+
+bool G_Automation_SaveState(struct SDL_RWops *stream)
+{
+    struct attr num_ents = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_entity_state_table)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_ents, "num_ents"));
+
+    uint32_t key;
+    struct automation_state astate;
+
+    kh_foreach(s_entity_state_table, key, astate, {
+
+        struct attr uid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = key
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &uid, "uid"));
+
+        struct attr state = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = astate.state
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &state, "state"));
+
+        struct attr transient_ticks = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = astate.transient_ticks
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &transient_ticks, "transient_ticks"));
+
+        struct attr automatic_transport = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = astate.automatic_transport
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &automatic_transport, "automatic_transport"));
+
+        struct attr transport_target = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = astate.transport_target
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &transport_target, "transport_target"));
+        Sched_TryYield();
+    });
+
+    struct attr num_sites = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_transport_count)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_sites, "num_sites"));
+
+    uint32_t count;
+    kh_foreach(s_transport_count, key, count, {
+
+        struct attr uid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = key
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &uid, "uid"));
+
+        struct attr count_attr = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = count
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &count_attr, "count"));
+        Sched_TryYield();
+    });
+    return true;
+}
+
+bool G_Automation_LoadState(struct SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_ents = attr.val.as_int;
+    Sched_TryYield();
+
+    for(int i = 0; i < num_ents; i++) {
+
+        uint32_t uid;
+        struct automation_state *astate;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uid = attr.val.as_int;
+
+        /* The entity should have already been loaded from the scripting state */
+        khiter_t k = kh_get(state, s_entity_state_table, uid);
+        CHK_TRUE_RET(k != kh_end(s_entity_state_table));
+        astate = &kh_value(s_entity_state_table, k);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        astate->state = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        astate->transient_ticks = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        astate->automatic_transport = attr.val.as_bool;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        astate->transport_target = attr.val.as_int;
+        Sched_TryYield();
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_sites = attr.val.as_int;
+
+    for(int i = 0; i < num_sites; i++) {
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uint32_t uid = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uint32_t count = attr.val.as_int;
+
+        khiter_t k = kh_get(count, s_transport_count, uid);
+        if(k == kh_end(s_transport_count)) {
+            int status;
+            k = kh_put(count, s_transport_count, uid, &status);
+            CHK_TRUE_RET(status != -1);
+        }
+        kh_val(s_transport_count, k) = count;
+        Sched_TryYield();
+    }
+    return true;
 }
 
