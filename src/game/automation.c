@@ -51,6 +51,7 @@
 
 #include <assert.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #define TRANSIENT_STATE_TICKS        (2) 
 #define TRANSPORT_UNIT_COST_DISTANCE (150)
@@ -83,6 +84,8 @@ struct cost_mapping{
 
 KHASH_MAP_INIT_INT(state, struct automation_state)
 KHASH_MAP_INIT_INT(count, uint32_t);
+
+static void on_order_issued(void *user, void *event);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -274,6 +277,14 @@ static void decrement_assigned_transporters(uint32_t site)
     kh_val(s_transport_count, k)--;
 }
 
+static int get_assigned_transporters(uint32_t site)
+{
+    khiter_t k = kh_get(count, s_transport_count, site);
+    if(k == kh_end(s_transport_count))
+        return 0;
+    return kh_val(s_transport_count, k);
+}
+
 static void recompute_idle(void)
 {
     uint32_t uid;
@@ -392,7 +403,8 @@ static void on_update_ui(void *user, void *event)
         Entity_ModelMatrix(uid, &model);
 
         char text[16];
-        pf_snprintf(text, sizeof(text), "SITE: [%u]", uid);
+        pf_snprintf(text, sizeof(text), "SITE: [%u] [%u]", uid,
+            get_assigned_transporters(uid));
         N_RenderOverlayText(text, center, &model, &view, &proj);
     }
     vec_entity_destroy(&sites);
@@ -432,6 +444,27 @@ static void on_update_ui(void *user, void *event)
     });
 }
 
+static void on_order_issued(void *user, void *event)
+{
+    uint32_t uid = (uintptr_t)event;
+
+    struct automation_state *astate = astate_get(uid);
+    if(!astate)
+        return;
+
+    if(!astate->automatic_transport)
+        return;
+
+    uint32_t target = G_Harvester_TransportTarget(uid);
+    if(astate->transport_target != target) {
+        decrement_assigned_transporters(astate->transport_target);
+        if(target != NULL_UID) {
+            increment_assigned_transporters(target);
+        }
+        astate->transport_target = target;
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -452,6 +485,7 @@ void G_Automation_RemoveEntity(uint32_t uid)
     struct automation_state *astate = astate_get(uid);
     if(!astate)
         return;
+    E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_order_issued);
     astate_remove(uid);
 }
 
@@ -464,6 +498,7 @@ bool G_Automation_Init(void)
 
     E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
     E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING);
+    E_Global_Register(EVENT_ORDER_ISSUED, on_order_issued, NULL, G_RUNNING);
     return true;
 
 fail_transport_count_table:
@@ -474,6 +509,7 @@ fail_entity_state_table:
 
 void G_Automation_Shutdown(void)
 {
+    E_Global_Unregister(EVENT_ORDER_ISSUED, on_order_issued);
     E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
     E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
     kh_destroy(count, s_transport_count);
