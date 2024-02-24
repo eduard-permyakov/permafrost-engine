@@ -103,11 +103,11 @@
             size_t bot = queue->capacity - queue->ihead;                                        \
             assert(top + bot == queue->size);                                                   \
                                                                                                 \
-            STALLOC(type, tmp, top);                                                            \
+            type *tmp = malloc(sizeof(type) * top);                                             \
             memcpy(tmp, new_mem, sizeof(type) * top);                                           \
             memmove(new_mem, new_mem + queue->ihead, sizeof(type) * bot);                       \
             memcpy(new_mem + bot, tmp, sizeof(type) * top);                                     \
-            STFREE(tmp);                                                                        \
+            free(tmp);                                                                          \
                                                                                                 \
             queue->ihead = 0;                                                                   \
             queue->itail = top + bot - 1;                                                       \

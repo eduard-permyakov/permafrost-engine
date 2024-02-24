@@ -460,8 +460,6 @@ void E_ClearPendingEvents(void)
 
 void E_FlushEventQueue(void)
 {
-    uint32_t ticks = SDL_GetTicks();
-
     while(E_EventsQueued()) {
 
         queue_event_t *queue = &s_event_queues[s_front_queue_idx];
@@ -469,6 +467,11 @@ void E_FlushEventQueue(void)
 
         struct event event;
         while(queue_event_pop(queue, &event)) {
+            /* Skip over SDL events during flushing - the pointers
+             * may already be stale.
+             */
+            if((int)event.type <= (int)SDL_LASTEVENT)
+                continue;
             e_handle_event(event, true);
         }
     }

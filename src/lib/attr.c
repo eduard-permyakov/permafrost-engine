@@ -71,8 +71,12 @@ bool Attr_Parse(struct SDL_RWops *stream, struct attr *out, bool named)
 
         out->type = TYPE_STRING;
         token = pf_strtok_r(NULL, "\n", &saveptr);
-        CHK_TRUE(token, fail);
-        pf_snprintf(out->val.as_string, sizeof(out->val.as_string), "%s", token);
+        if(token) {
+            CHK_TRUE(token, fail);
+            pf_snprintf(out->val.as_string, sizeof(out->val.as_string), "%s", token);
+        }else{
+            out->val.as_string[0] = '\0';
+        }
 
     }else if(!strcmp(token, "quat")) {
 

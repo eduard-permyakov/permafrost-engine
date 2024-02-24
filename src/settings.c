@@ -97,7 +97,7 @@ static bool sett_parse_line(char *line, int *out_prio, struct named_val *out_val
 
         out_val->val.type = ST_TYPE_STRING;
         token = pf_strtok_r(NULL, " \t", &saveptr);
-        if(!sscanf(token, "%" STR(SETT_NAME_LEN) "s\n", out_val->val.as_string))
+        if(!sscanf(token, "%64s\n", out_val->val.as_string))
             goto fail;
 
     }else if(!strcmp(token, "vec2")) {
