@@ -128,15 +128,13 @@ static vec2_t g_default_minimap_pos(void)
 
 static void g_reset_camera(struct camera *cam)
 {
-    float multiplier = 1.0f;
-    if(G_GetCameraMode() == CAM_MODE_RTS) {
-        ss_e status;
-        (void)status;
-        struct sval setting;
-        status = Settings_Get("pf.game.camera_zoom", &setting);
-        assert(status == SS_OKAY);
-        multiplier = setting.as_int / 100.0f;
-    }
+    ss_e status;
+    (void)status;
+    struct sval setting;
+    status = Settings_Get("pf.game.camera_zoom", &setting);
+    assert(status == SS_OKAY);
+    float multiplier = setting.as_int / 100.0f;
+
     Camera_SetPitchAndYaw(cam, -(90.0f - CAM_TILT_UP_DEGREES), 90.0f + 45.0f);
     Camera_SetPos(cam, (vec3_t){ 0.0f, BASE_CAM_HEIGHT * multiplier, 0.0f }); 
 }
