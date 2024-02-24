@@ -1315,7 +1315,21 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(G_EntityExists(attr.val.as_int));
 
         struct ss_state *ss = ss_state_get(uid);
-        CHK_TRUE_RET(ss);
+        if(!ss) {
+            /* Certain Storage Site state can be created 
+             * from outside the scripting layer, such as 
+             * when building builings or replenishing reources 
+             */
+            struct ss_state newstate;
+            CHK_TRUE_RET(ss_state_init(&newstate));
+            CHK_TRUE_RET(ss_state_set(uid, newstate));
+            ss = ss_state_get(uid);
+            CHK_TRUE_RET(ss);
+
+            uint32_t flags = G_FlagsGet(uid);
+            flags |= ENTITY_FLAG_STORAGE_SITE;
+            G_FlagsSet(uid, flags);
+        }
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_BOOL);
