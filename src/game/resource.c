@@ -672,7 +672,7 @@ bool G_Resource_LoadState(struct SDL_RWops *stream)
 
             CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
             CHK_TRUE_RET(attr.type == TYPE_STRING);
-            const char *key = attr.val.as_string;
+            const char *key = si_intern(attr.val.as_string, &s_stringpool, s_stridx);
 
             CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
             CHK_TRUE_RET(attr.type == TYPE_INT);
