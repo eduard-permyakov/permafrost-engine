@@ -860,20 +860,18 @@ static void n_visit_island(struct nav_private *priv, uint16_t id,
     queue_td_destroy(&frontier);
 }
 
-static void n_visit_island_local(struct nav_private *priv, 
+static void n_visit_island_local(struct nav_private *priv, struct coord chunk_coord,
                                  struct nav_chunk *chunk, uint16_t id, struct coord start)
 {
     struct map_resolution res;
     N_GetResolution(priv, &res);
 
     struct tile_desc start_td = {
-        0, 0, start.r, start.c
+        chunk_coord.r, chunk_coord.c, start.r, start.c
     };
 
     queue_td_t frontier;
     queue_td_init(&frontier, 1024);
-
-    chunk->local_islands[start.r][start.c] = id;
     queue_td_push(&frontier, &start_td);
 
     while(queue_size(frontier) > 0) {
@@ -888,22 +886,22 @@ static void n_visit_island_local(struct nav_private *priv,
             {+1,  0},
         };
 
+        if(curr.chunk_r != chunk_coord.r || curr.chunk_c != chunk_coord.c)
+            continue;
+        if(chunk->cost_base[curr.tile_r][curr.tile_c] == COST_IMPASSABLE)
+            continue;
+        if(chunk->blockers[curr.tile_r][curr.tile_c] > 0)
+            continue;
+        if(chunk->local_islands[curr.tile_r][curr.tile_c] != ISLAND_NONE)
+            continue;
+
+        chunk->local_islands[curr.tile_r][curr.tile_c] = id;
+
         for(int i = 0; i < ARR_SIZE(deltas); i++) {
         
             struct tile_desc neighb = curr;
             if(!M_Tile_RelativeDesc(res, &neighb, deltas[i].c, deltas[i].r))
                 continue;
-
-            if(chunk->cost_base[neighb.tile_r][neighb.tile_c] == COST_IMPASSABLE)
-                continue;
-
-            if(chunk->blockers[neighb.tile_r][neighb.tile_c] > 0)
-                continue;
-
-            if(chunk->local_islands[neighb.tile_r][neighb.tile_c] != ISLAND_NONE)
-                continue;
-
-            chunk->local_islands[neighb.tile_r][neighb.tile_c] = id;
             queue_td_push(&frontier, &neighb);
         }
     }
@@ -926,7 +924,8 @@ static bool enemy_ent(uint32_t ent, void *arg)
     return (ds == DIPLOMACY_STATE_WAR);
 }
 
-static void n_update_local_islands(struct nav_private *priv, struct nav_chunk *chunk)
+static void n_update_local_islands(struct nav_private *priv, struct coord chunk_coord, 
+                                   struct nav_chunk *chunk)
 {
     int local_iid = 0;
     memset(chunk->local_islands, 0xff, sizeof(chunk->local_islands));
@@ -940,7 +939,7 @@ static void n_update_local_islands(struct nav_private *priv, struct nav_chunk *c
             continue;
         if(chunk->blockers[r][c] > 0)
             continue;
-        n_visit_island_local(priv, chunk, ++local_iid, (struct coord){r, c});
+        n_visit_island_local(priv, chunk_coord, chunk, ++local_iid, (struct coord){r, c});
     }}
 }
 
@@ -950,7 +949,7 @@ static void n_update_local_island_field(struct nav_private *priv, enum nav_layer
     for(int chunk_c = 0; chunk_c < priv->width;  chunk_c++) {
 
         struct nav_chunk *curr_chunk = &priv->chunks[layer][IDX(chunk_r, priv->width, chunk_c)];
-        n_update_local_islands(priv, curr_chunk);
+        n_update_local_islands(priv, (struct coord){chunk_r, chunk_c}, curr_chunk);
     }}
 }
 
@@ -970,7 +969,7 @@ static void n_update_dirty_local_islands(void *nav_private, enum nav_layer layer
         struct coord curr = (struct coord){ key >> 16, key & 0xffff };
 
         struct nav_chunk *chunk = &priv->chunks[layer][IDX(curr.r, priv->width, curr.c)];
-        n_update_local_islands(priv, chunk);
+        n_update_local_islands(priv, (struct coord){curr.r, curr.c}, chunk);
     }
     s_local_islands_dirty[layer] = false;
 }
