@@ -1227,7 +1227,8 @@ static float average_distance_to_target(struct subformation *formation)
         vec2_t pos = G_Pos_GetXZ(uid);
         PFM_Vec2_Add(&ent_com, &pos, &ent_com);
     });
-    assert(nents > 0);
+    if(nents == 0)
+        return 0.0f;
     PFM_Vec2_Scale(&ent_com, 1.0f / nents, &ent_com);
 
     /* Find the cell center of mass for the target cells */
@@ -4127,12 +4128,12 @@ static void collect_cell_assignment_result(const struct cell_assignment_work *wo
 {
     assert(kh_size(work->ents) == kh_size(work->reverse));
     assert(kh_size(work->ents) == kh_size(work->assignment));
-    assert(kh_size(out->ents) >= kh_size(work->ents));
+    assert(kh_size(out->ents) <= kh_size(work->ents));
 
     /* Account for any entities that have been removed from the 
      * subformation since the cell assignement work has been kicked off
      */
-    if(kh_size(out->ents) > kh_size(work->ents)) {
+    if(kh_size(out->ents) < kh_size(work->ents)) {
 
         vec_entity_t removed;
         vec_entity_init(&removed);
@@ -4160,7 +4161,7 @@ static void collect_cell_assignment_result(const struct cell_assignment_work *wo
             kh_del(assignment, work->assignment, k);
 
             /* Remove reverse assignment */
-            khiter_t m = kh_get(reverse, work->reverse, uid);
+            khiter_t m = kh_get(reverse, work->reverse, idx);
             assert(m != kh_end(work->reverse));
             kh_del(reverse, work->reverse, m);
         }
