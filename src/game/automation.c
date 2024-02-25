@@ -278,11 +278,12 @@ static void increment_assigned_transporters(uint32_t site)
     kh_val(s_transport_count, k)++;
 }
 
-static void decrement_assigned_transporters(uint32_t site)
+static void try_decrement_assigned_transporters(uint32_t site)
 {
     khiter_t k = kh_get(count, s_transport_count, site);
-    assert(k != kh_end(s_transport_count));
-    kh_val(s_transport_count, k)--;
+    if(k != kh_end(s_transport_count)) {
+        kh_val(s_transport_count, k)--;
+    }
 }
 
 static int get_assigned_transporters(uint32_t site)
@@ -338,7 +339,7 @@ static void recompute_idle(void)
                 astate->transient_ticks = 0;
                 astate->state = STATE_IDLE;
                 if(astate->transport_target != NULL_UID) {
-                    decrement_assigned_transporters(astate->transport_target);
+                    try_decrement_assigned_transporters(astate->transport_target);
                     astate->transport_target = NULL_UID;
                 }
                 E_Global_Notify(EVENT_UNIT_BECAME_IDLE, (void*)((uintptr_t)uid), ES_ENGINE);
@@ -465,7 +466,7 @@ static void on_order_issued(void *user, void *event)
 
     uint32_t target = G_Harvester_TransportTarget(uid);
     if(astate->transport_target != target) {
-        decrement_assigned_transporters(astate->transport_target);
+        try_decrement_assigned_transporters(astate->transport_target);
         if(target != NULL_UID) {
             increment_assigned_transporters(target);
         }
@@ -564,7 +565,7 @@ void G_Automation_SetAutomaticTransport(uint32_t uid, bool on)
         }
     }else if(!on && prev){
         if(astate->transport_target != NULL_UID) {
-            decrement_assigned_transporters(astate->transport_target);
+            try_decrement_assigned_transporters(astate->transport_target);
             astate->transport_target = NULL_UID;
         }
     }
