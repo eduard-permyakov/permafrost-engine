@@ -342,7 +342,7 @@ static size_t workspace_size(void)
 {
     size_t padding = 64;
     size_t count = CELL_ARRIVAL_FIELD_RES * CELL_ARRIVAL_FIELD_RES;
-    return count * (sizeof(float) + sizeof(bool) + sizeof(struct tile_desc)) + padding;
+    return count * (sizeof(float) + sizeof(bool) + sizeof(struct tile_desc) * 2) + padding;
 }
 
 static void *get_workspace(void)

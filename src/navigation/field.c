@@ -830,8 +830,11 @@ static void qpush(struct tile_desc *q, size_t *qsize, int *head, int *tail,
                    size_t nelems, struct tile_desc entry)
 {
     assert(*qsize < nelems);
+
     ++(*tail);
     *tail = *tail % nelems;
+
+    assert(*tail >= 0 && *tail < nelems);
     q[*tail] = entry;
     ++(*qsize);
 }
@@ -1278,28 +1281,27 @@ static size_t field_passable_frontier(
 
     struct map_resolution res;
     N_GetResolution(priv, &res);
-
     const size_t nelems = region.r * region.c;
-    STALLOC(bool, visited_buff, workspace ? 1 : nelems);
-    STALLOC(struct tile_desc, frontier_buff, workspace ? 1 : nelems);
 
     /* Allow worker threads to use thread-local workspace memory
      * for stack allocations when this routine is running in task
      * context.
      */
-    bool *visited;
-    struct tile_desc *frontier;
+    bool *visited = NULL;
+    struct tile_desc *frontier = NULL;
     if(!workspace) {
-        visited = visited_buff;
-        frontier = frontier_buff;
+        visited = malloc(sizeof(bool) * nelems);
+        frontier = malloc(sizeof(struct tile_desc) * nelems);
     }else{
-        assert(ws_size >= (sizeof(bool) + sizeof(struct tile_desc)) * nelems);
+        assert(ws_size >= (sizeof(bool) + sizeof(struct tile_desc)) * nelems + 16);
         visited = workspace;
+        assert(((uintptr_t)visited) % sizeof(bool) == 0);
         /* Align the 'frontier' pointer */
         char *tmp = (void*)(((char*)workspace) + (sizeof(bool) * nelems));
         tmp += 16;
         tmp = (char*)(((uintptr_t)tmp) & ~0xf);
         frontier = (void*)tmp;
+        assert(((uintptr_t)frontier) % 16 == 0);
     }
     memset(visited, 0, nelems * sizeof(bool));
 
@@ -1344,8 +1346,10 @@ static size_t field_passable_frontier(
             qpush(frontier, &qsize, &fhead, &ftail, nelems, neighb);
         }
     }
-    STFREE(visited_buff);
-    STFREE(frontier_buff);
+    if(!workspace) {
+        PF_FREE(visited);
+        PF_FREE(frontier);
+    }
     return ret;
 }
 
@@ -2041,21 +2045,36 @@ void N_CellArrivalFieldCreate(void *nav_private, size_t rdim, size_t cdim,
     size_t integration_field_size = sizeof(float) * rdim * cdim;
     assert(workspace_size >= integration_field_size);
     float *integration_field = workspace;
+    assert(((uintptr_t)integration_field) % sizeof(float) == 0);
+
     for(int r = 0; r < rdim; r++) {
     for(int c = 0; c < cdim; c++) {
         integration_field[r * rdim + c] = INFINITY;
     }}
 
+    int base_abs_r = center.chunk_r * res.tile_h + center.tile_r - (rdim / 2);
+    int base_abs_c = center.chunk_c * res.tile_w + center.tile_c - (cdim / 2);
+
+    /* Clamp the base coordinate to account for any off-by-one 
+     * errors due to rounding and binning.
+     */
+    int target_abs_r = target.chunk_r * res.tile_h + target.tile_r;
+    int target_abs_c = target.chunk_c * res.tile_w + target.tile_c;
+    if((target_abs_r - base_abs_r) >= rdim) {
+        base_abs_r = target_abs_r - (rdim - 1);
+    }
+    if((target_abs_c - base_abs_c) >= cdim) {
+        base_abs_c = target_abs_c - (cdim - 1);
+    }
+
     /* Find the clamped minimum coordinate of the field. Note that the 'base'
      * coordinate may fall outside the map bounds.
      */
-    int abs_r = center.chunk_r * res.tile_h + center.tile_r - (rdim / 2);
-    int abs_c = center.chunk_c * res.tile_w + center.tile_c - (cdim / 2);
     struct tile_desc base = (struct tile_desc){
-        abs_r / res.tile_h,
-        abs_c / res.tile_w,
-        abs_r % res.tile_h,
-        abs_c % res.tile_w,
+        base_abs_r / res.tile_h,
+        base_abs_c / res.tile_w,
+        base_abs_r % res.tile_h,
+        base_abs_c % res.tile_w,
     };
 
     int dr, dc;
@@ -2079,21 +2098,37 @@ void N_CellArrivalFieldUpdateToNearestPathable(void *nav_private, size_t rdim, s
                               struct tile_desc start, struct tile_desc center, 
                               uint8_t *inout, void *workspace, size_t workspace_size)
 {
+    struct nav_private *priv = nav_private;
     size_t integration_field_size = sizeof(float) * rdim * cdim;
-    assert(workspace_size >= integration_field_size);
+
     float *integration_field = workspace;
+    assert(((uintptr_t)integration_field) % sizeof(float) == 0);
+    assert(workspace_size >= integration_field_size);
+
     workspace_size -= integration_field_size;
     workspace = ((char*)workspace) + integration_field_size;
+    assert(((uintptr_t)workspace) % sizeof(float) == 0);
 
-    struct nav_private *priv = nav_private;
-    struct tile_desc init_frontier[512];
+    size_t frontier_size = sizeof(struct tile_desc) * rdim * cdim;
+    assert(workspace_size >= frontier_size * 2);
+
+    /* Align the 'frontier' pointer */
+    char *tmp = workspace;
+    tmp += 16;
+    tmp = (char*)(((uintptr_t)tmp) & ~0xf);
+
+    struct tile_desc *init_frontier = (void*)tmp;
+    assert(((uintptr_t)init_frontier) % 16 == 0);
+
+    size_t delta = (char*)init_frontier - (char*)workspace;
+    workspace_size -= delta;
+
     struct region clamped = clamped_region(priv, rdim, cdim, center);
     size_t ninit = field_passable_frontier(priv, layer, start, 
-        clamped, init_frontier, ARR_SIZE(init_frontier), workspace, workspace_size);
+        clamped, init_frontier, rdim * cdim, workspace, workspace_size);
 
     pq_td_t frontier;
     pq_td_init(&frontier);
-
 
     for(int r = 0; r < rdim; r++) {
     for(int c = 0; c < cdim; c++) {
@@ -2119,6 +2154,11 @@ void N_CellArrivalFieldUpdateToNearestPathable(void *nav_private, size_t rdim, s
 
         int dr, dc;
         M_Tile_Distance(res, &base, &init_frontier[i], &dr, &dc);
+        /* Skip any tiles that don't fall within the bounds */
+        if(dr < 0 || dr >= rdim)
+            continue;
+        if(dc < 0 || dc >= cdim)
+            continue;
         assert(dr >= 0 && dr < rdim);
         assert(dc >= 0 && dc < cdim);
 
