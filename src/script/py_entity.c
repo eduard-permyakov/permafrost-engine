@@ -2755,6 +2755,12 @@ static int PyBuildableEntity_init(PyBuildableEntityObject *self, PyObject *args,
         G_Building_SetRequired(self->super.ent, rname, ramount);
     }
 
+    PyObject *pathable;
+    if(kwds && ((pathable = PyDict_GetItemString(kwds, "pathable")) != NULL)) {
+        bool pathable_flag = PyObject_IsTrue(pathable);
+        G_Building_SetPathable(self->super.ent, pathable_flag);
+    }
+
     /* Call the next __init__ method in the MRO. This is required for all __init__ calls in the 
      * MRO to complete in cases when this class is one of multiple base classes of another type. 
      * This allows this type to be used as one of many mix-in bases. */

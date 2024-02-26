@@ -103,6 +103,7 @@ struct buildstate{
     vec_uid_t  markers;
     uint32_t   progress_model;
     float      vision_range;
+    bool       pathable;
     bool       blocking;
     bool       is_storage_site;
     vec2_t     rally_point;
@@ -543,6 +544,7 @@ bool G_Building_AddEntity(uint32_t uid)
         .markers = {0},
         .progress_model = UID_NONE,
         .obb = {0},
+        .pathable = false,
         .is_storage_site = !!(G_FlagsGet(uid) & ENTITY_FLAG_STORAGE_SITE),
         .rally_point = G_Pos_GetXZ(uid)
     };
@@ -748,7 +750,7 @@ bool G_Building_Complete(uint32_t uid)
     flags &= ~ENTITY_FLAG_INVISIBLE;
     G_FlagsSet(uid, flags);
 
-    if(bs->blocking && !(flags & ENTITY_FLAG_COLLISION)) {
+    if(bs->blocking && (!(flags & ENTITY_FLAG_COLLISION) || bs->pathable)) {
         bs->blocking = false;
         M_NavBlockersDecrefOBB(s_map, G_GetFactionID(uid), G_FlagsGet(uid), &bs->obb);
     }
@@ -929,6 +931,20 @@ size_t G_Building_GetAllRequired(uint32_t uid, size_t maxout,
     return ret;
 }
 
+void G_Building_SetPathable(uint32_t uid, bool pathable)
+{
+    struct buildstate *bs = buildstate_get(uid);
+    assert(bs);
+    bs->pathable = pathable;
+}
+
+bool G_Building_GetPathable(uint32_t uid)
+{
+    struct buildstate *bs = buildstate_get(uid);
+    assert(bs);
+    return bs->pathable;
+}
+
 bool G_Building_SetRequired(uint32_t uid, const char *rname, int req)
 {
     struct buildstate *bs = buildstate_get(uid);
@@ -1005,6 +1021,12 @@ bool G_Building_SaveState(struct SDL_RWops *stream)
             .val.as_float = curr.vision_range
         };
         CHK_TRUE_RET(Attr_Write(stream, &building_vis_range, "building_vis_range"));
+
+        struct attr building_pathable = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr.pathable
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &building_pathable, "building_pathable"));
 
         struct attr building_blocking = (struct attr){
             .type = TYPE_BOOL,
@@ -1085,6 +1107,10 @@ bool G_Building_LoadState(struct SDL_RWops *stream)
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        bool pathable = attr.val.as_bool;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
         bool blocking = attr.val.as_bool;
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
@@ -1101,6 +1127,7 @@ bool G_Building_LoadState(struct SDL_RWops *stream)
         struct buildstate *bs = buildstate_get(uid);
         assert(bs);
         bs->vision_range = vis_range;
+        bs->pathable = pathable;
         bs->is_storage_site = is_storage_site;
         bs->rally_point = rally_point;
 
