@@ -65,7 +65,7 @@
 #include <SDL.h>
 
 
-#define TARGET_ACQUISITION_RANGE    (50.0f)
+#define TARGET_ACQUISITION_RANGE    (75.0f)
 #define PROJECTILE_DEFAULT_SPEED    (100.0f)
 #define EPSILON                     (1.0f/1024)
 #define DEFAULT_ATTACK_PERIOD       (4.0f/3.0f)
