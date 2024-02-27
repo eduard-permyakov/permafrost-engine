@@ -3665,7 +3665,7 @@ static PyObject *PyHarvesterEntity_set_do_not_transport(PyHarvesterEntityObject 
     PyObject *obj = NULL;
 
     if(!PyArg_ParseTuple(args, "sO", &name, &obj)) {
-        PyErr_SetString(PyExc_TypeError, "Expecting two arguments: name (string) and amount (boolean).");
+        PyErr_SetString(PyExc_TypeError, "Expecting two arguments: name (string) and setting (boolean).");
         return NULL;
     }
 

@@ -145,6 +145,9 @@ static void finish_building(struct builderstate *bs, uint32_t uid)
     if(building == NULL_UID)
         return;
 
+    if(!G_EntityExists(building) || G_EntityIsZombie(building))
+        return;
+
     if(G_Building_IsCompleted(building)
     && (G_FlagsGet(building) & ENTITY_FLAG_RESOURCE)
     && (G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER)) {
