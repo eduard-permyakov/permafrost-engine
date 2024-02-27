@@ -741,6 +741,7 @@ static void s_expose_event_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, EVENT_UNIT_SELECTION_CHANGED);
     PY_EXPOSE_ENUM(module, EVENT_60HZ_TICK);
     PY_EXPOSE_ENUM(module, EVENT_30HZ_TICK);
+    PY_EXPOSE_ENUM(module, EVENT_20HZ_TICK);
     PY_EXPOSE_ENUM(module, EVENT_10HZ_TICK);
     PY_EXPOSE_ENUM(module, EVENT_1HZ_TICK);
     PY_EXPOSE_ENUM(module, EVENT_ANIM_FINISHED);
