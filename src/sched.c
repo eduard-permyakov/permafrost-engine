@@ -841,13 +841,14 @@ static void sched_init_thread_tid_map(void)
     int status;
     uint64_t main_key = thread_id_to_key(g_main_thread_id);
 
-    k = kh_put(tid, s_thread_tid_map, g_main_thread_id, &status);
+    k = kh_put(tid, s_thread_tid_map, main_key, &status);
     assert(status != -1 && status != 0);
     kh_value(s_thread_tid_map, k) = NULL_TID;
 
     for(int i = 0; i < s_nworkers; i++) {
 
         uint64_t key = thread_id_to_key(SDL_GetThreadID(s_worker_threads[i]));
+        assert(key);
         k = kh_put(tid, s_thread_tid_map, key, &status);
         assert(status != -1 && status != 0);
         kh_value(s_thread_tid_map, k) = NULL_TID;
@@ -876,6 +877,14 @@ static void sched_wait_workers_done(void)
 
     assert(s_idle_workers == s_nworkers);
     assert(s_nwaiters == 0);
+}
+
+static void sched_wait_workers_idle(int count)
+{
+    SDL_LockMutex(s_ready_lock);
+    while(s_idle_workers < count)
+        SDL_CondWait(s_ready_cond, s_ready_lock);
+    SDL_UnlockMutex(s_ready_lock);
 }
 
 static void sched_quiesce_workers(void)
@@ -948,6 +957,7 @@ static void worker_do_work(int id)
 static int worker_threadfn(void *arg)
 {
     int id = (uintptr_t)arg;
+    worker_notify_done(id);
 
     while(true) {
 
@@ -1157,6 +1167,9 @@ bool Sched_Init(void)
         s_worker_threads[i] = SDL_CreateThread(worker_threadfn, threadname, (void*)((uintptr_t)i));
         if(!s_worker_threads[i])
             goto fail_workers;
+
+        sched_wait_workers_idle(1);
+        s_idle_workers = 0;
         Perf_RegisterThread(SDL_GetThreadID(s_worker_threads[i]), threadname);
     }
 
