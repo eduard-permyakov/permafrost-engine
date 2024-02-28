@@ -89,6 +89,7 @@ static PyObject *PyPf_set_ambient_light_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args);
 static PyObject *PyPf_load_scene(PyObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPf_open_url(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_register_event_handler(PyObject *self, PyObject *args);
 static PyObject *PyPf_register_ui_event_handler(PyObject *self, PyObject *args);
@@ -267,6 +268,10 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_load_scene, METH_VARARGS | METH_KEYWORDS,
     "Import list of entities from a PFSCENE file (specified as a path string). "
     "Returns a tuple of the following items: list of loaded entities, list of loaded regions."},
+
+    {"open_url", 
+    (PyCFunction)PyPf_open_url, METH_VARARGS,
+    "Open the specified URL in the system's browser."},
 
     {"register_event_handler", 
     (PyCFunction)PyPf_register_event_handler, METH_VARARGS,
@@ -998,6 +1003,24 @@ fail_load:
     Py_DECREF(ents);
     Py_DECREF(regs);
     return NULL;
+}
+
+static PyObject *PyPf_open_url(PyObject *self, PyObject *args)
+{
+    const char *url;
+    if(!PyArg_ParseTuple(args, "s", &url)) {
+        PyErr_SetString(PyExc_TypeError, "Arugment must be a string (URL)");
+        return NULL;
+    }
+
+    int result = SDL_OpenURL(url);
+    if(result == 0) {
+        Py_RETURN_NONE;
+    }else{
+        char errbuff[256];
+        pf_snprintf(errbuff, sizeof(errbuff), SDL_GetError());
+        return NULL;
+    }
 }
 
 static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args)
