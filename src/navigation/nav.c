@@ -4216,8 +4216,7 @@ void N_CopyIslandsFieldView(void *nav_private, vec2_t center, vec3_t map_pos, in
     N_GetResolution(priv, &res);
     struct tile_desc center_tile;
     M_Tile_DescForPoint2D(res, map_pos, center, &center_tile);
-    STALLOC(uint16_t*, rows, ncols);
-    rows = (void*)out_field;
+    uint16_t *rows = out_field;
 
     for(int r = 0; r < nrows; r++) {
     for(int c = 0; c < ncols; c++) {
@@ -4228,15 +4227,14 @@ void N_CopyIslandsFieldView(void *nav_private, vec2_t center, vec3_t map_pos, in
         struct tile_desc curr = center_tile;
         bool exists = M_Tile_RelativeDesc(res, &curr, dc, dr);
         if(!exists) {
-            rows[r][c] = ISLAND_NONE;
+            rows[IDX(r, ncols, c)] = ISLAND_NONE;
             continue;
         }
 
         struct nav_chunk *chunk 
             = &priv->chunks[layer][IDX(curr.chunk_r, priv->width, curr.chunk_c)];
-        rows[r][c] = chunk->islands[curr.tile_r][curr.tile_c];
+        rows[IDX(r, ncols, c)] = chunk->islands[curr.tile_r][curr.tile_c];
     }}
-    STFREE(rows);
 }
 
 size_t N_DeepCopySize(void *nav_private)

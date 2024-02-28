@@ -241,6 +241,9 @@ clean_deps:
 	cd deps/SDL2 && git clean -f -d
 	cd deps/Python && git clean -f -d
 	cd deps/openal-soft && git clean -f -d
+	rm -rf deps/SDL2/build
+	rm -rf deps/Python/build
+	rm -rf deps/openal-soft/build
 	rm -rf ./lib/*
 
 clean:

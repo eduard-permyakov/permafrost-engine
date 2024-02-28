@@ -45,7 +45,6 @@
 
 .text
 .global sched_switch_ctx
-.type sched_switch_ctx, @function
 
 sched_switch_ctx:
 Lsave_ctx:
@@ -104,7 +103,6 @@ Lback:
 
 .text
 .global sched_task_exit_trampoline
-.type sched_task_exit_trampoline, @function
 
 sched_task_exit_trampoline:
    mov %rax, %rcx
@@ -120,7 +118,6 @@ sched_task_exit_trampoline:
 
 .text
 .global sched_switch_ctx
-.type sched_switch_ctx, @function
 
 sched_switch_ctx:
 Lsave_ctx:
@@ -155,7 +152,7 @@ Lback:
 
 .text
 .global sched_task_exit_trampoline
-.type sched_task_exit_trampoline, @function
+#.type sched_task_exit_trampoline, @function
 
 sched_task_exit_trampoline:
    movq %rax, %rdi
