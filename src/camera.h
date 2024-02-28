@@ -49,10 +49,6 @@ struct bound_box{
     GLfloat w, h;
 };
 
-#define DECL_CAMERA_STACK(_name) \
-    STALLOC(char, _name, g_sizeof_camera);
-
-
 #define CAM_Z_NEAR_DIST     (5.0f)
 #define CAM_FOV_RAD         (M_PI/4.0f)
 

@@ -267,15 +267,15 @@ static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
     }
 
     /* Flip camera over the water's surface */
-    DECL_CAMERA_STACK(cam);
-    memset(cam, 0, g_sizeof_camera);
+    struct camera *cam = Camera_New();
     vec3_t cam_pos = Camera_GetPos(in.cam);
     vec3_t cam_dir = Camera_GetDir(in.cam);
     cam_pos.y -= (cam_pos.y - WATER_LVL) * 2.0f;
     cam_dir.y *= -1.0f;
-    Camera_SetPos((struct camera*)cam, cam_pos);
-    Camera_SetDir((struct camera*)cam, cam_dir);
-    Camera_TickFinishPerspective((struct camera*)cam);
+    Camera_SetPos(cam, cam_pos);
+    Camera_SetDir(cam, cam_dir);
+    Camera_TickFinishPerspective(cam);
+    Camera_Free(cam);
 
     /* Face culling is problematic when we're looking from below - changing 
      * the winding order does not work in all cases. */
@@ -298,7 +298,6 @@ static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
     glDisable(GL_CLIP_DISTANCE0);
     glEnable(GL_CULL_FACE);
 
-    STFREE(cam);
     GL_PERF_POP_GROUP();
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();

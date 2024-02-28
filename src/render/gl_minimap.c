@@ -346,14 +346,13 @@ static void create_water_texture(const struct map *map)
 
     vec3_t map_center = M_GetCenterPos(map);
 
-    DECL_CAMERA_STACK(map_cam);
-    memset(map_cam, 0, g_sizeof_camera);
-    Camera_SetPos((struct camera*)map_cam, map_center);
-    Camera_SetPitchAndYaw((struct camera*)map_cam, -90.0f, 90.0f);
+    struct camera *map_cam = Camera_New();
+    Camera_SetPos(map_cam, map_center);
+    Camera_SetPitchAndYaw(map_cam, -90.0f, 90.0f);
 
     bool fval = false;
     struct render_input in = (struct render_input){
-        .cam = (struct camera*)map_cam,
+        .cam = map_cam,
         .map = map,
         .shadows = false,
         .light_pos = (vec3_t){0.0f, 1.0f, 0.0f},
@@ -372,7 +371,7 @@ static void create_water_texture(const struct map *map)
     s_ctx.water_texture.tunit = GL_TEXTURE1;
     R_GL_Texture_AddExisting("__minimap_water__", s_ctx.water_texture.id);
 
-    STFREE(map_cam);
+    Camera_Free(map_cam);
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }
@@ -391,21 +390,19 @@ static void setup_ortho_view_uniforms(const struct map *map)
 
     /* Create a new camera, with orthographic projection, centered 
      * over the map and facing straight down. */
-    DECL_CAMERA_STACK(map_cam);
-    memset(map_cam, 0, g_sizeof_camera);
-
+    struct camera *map_cam = Camera_New();
     vec3_t offset = (vec3_t){0.0f, 200.0f, 0.0f};
     PFM_Vec3_Add(&map_center, &offset, &map_center);
 
-    Camera_SetPos((struct camera*)map_cam, map_center);
-    Camera_SetPitchAndYaw((struct camera*)map_cam, -90.0f, 90.0f);
+    Camera_SetPos(map_cam, map_center);
+    Camera_SetPitchAndYaw(map_cam, -90.0f, 90.0f);
 
     float map_dim = MAX(map_size.raw[0], map_size.raw[1]);
     vec2_t bot_left  = (vec2_t){ -(map_dim/2),  (map_dim/2) };
     vec2_t top_right = (vec2_t){  (map_dim/2), -(map_dim/2) };
     Camera_TickFinishOrthographic((struct camera*)map_cam, bot_left, top_right);
 
-    STFREE(map_cam);
+    Camera_Free(map_cam);
     GL_PERF_RETURN_VOID();
 }
 

@@ -265,9 +265,10 @@ void R_LightVisibilityFrustum(const struct camera *cam, struct frustum *out)
     vec3_t new_pos;
     PFM_Vec3_Add(&pos, &delta, &new_pos);
 
-    DECL_CAMERA_STACK(zoomed_out);
-    Camera_SetPos((struct camera*)zoomed_out, new_pos);
-    Camera_SetDir((struct camera*)zoomed_out, dir);
-    Camera_MakeFrustum((struct camera*)zoomed_out, out);
+    struct camera *zoomed_out = Camera_New();
+    Camera_SetPos(zoomed_out, new_pos);
+    Camera_SetDir(zoomed_out, dir);
+    Camera_MakeFrustum(zoomed_out, out);
+    Camera_Free(zoomed_out);
 }
 
