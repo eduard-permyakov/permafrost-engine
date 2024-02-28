@@ -114,6 +114,9 @@
     <PreBuildEvent>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">copy $(ProjectDir)..\Include\pyconfig-vs.h $(ProjectDir)..\Include\pyconfig.h</Command>
     </PreBuildEvent>
+    <PreBuildEvent>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">copy $(ProjectDir)..\Include\pyconfig-vs.h $(ProjectDir)..\Include\pyconfig.h</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\Include\abstract.h" />

@@ -4216,7 +4216,8 @@ void N_CopyIslandsFieldView(void *nav_private, vec2_t center, vec3_t map_pos, in
     N_GetResolution(priv, &res);
     struct tile_desc center_tile;
     M_Tile_DescForPoint2D(res, map_pos, center, &center_tile);
-    uint16_t (*rows)[ncols] = (void*)out_field;
+    STALLOC(uint16_t*, rows, ncols);
+    rows = (void*)out_field;
 
     for(int r = 0; r < nrows; r++) {
     for(int c = 0; c < ncols; c++) {
@@ -4235,6 +4236,7 @@ void N_CopyIslandsFieldView(void *nav_private, vec2_t center, vec3_t map_pos, in
             = &priv->chunks[layer][IDX(curr.chunk_r, priv->width, curr.chunk_c)];
         rows[r][c] = chunk->islands[curr.tile_r][curr.tile_c];
     }}
+    STFREE(rows);
 }
 
 size_t N_DeepCopySize(void *nav_private)

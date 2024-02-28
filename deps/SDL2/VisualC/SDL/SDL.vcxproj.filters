@@ -833,6 +833,12 @@
       <Filter>render\direct3d12</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\hidapi\SDL_hidapi_c.h" />
+    <ClInclude Include="..\..\src\video\yuv2rgb\yuv_rgb_common.h" />
+    <ClInclude Include="..\..\src\video\yuv2rgb\yuv_rgb_internal.h" />
+    <ClInclude Include="..\..\src\video\yuv2rgb\yuv_rgb_lsx.h" />
+    <ClInclude Include="..\..\src\video\yuv2rgb\yuv_rgb_lsx_func.h" />
+    <ClInclude Include="..\..\src\video\yuv2rgb\yuv_rgb_sse.h" />
+    <ClInclude Include="..\..\src\video\yuv2rgb\yuv_rgb_std.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\src\audio\wasapi\SDL_wasapi.c" />
@@ -1189,9 +1195,6 @@
     <ClCompile Include="..\..\src\video\dummy\SDL_nullvideo.c">
       <Filter>video\dummy</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\video\yuv2rgb\yuv_rgb.c">
-      <Filter>video\yuv2rgb</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\src\video\windows\SDL_windowsclipboard.c">
       <Filter>video\windows</Filter>
     </ClCompile>
@@ -1365,6 +1368,9 @@
       <Filter>render\direct3d12</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\stdlib\SDL_mslibc.c" />
+    <ClCompile Include="..\..\src\video\yuv2rgb\yuv_rgb_lsx.c" />
+    <ClCompile Include="..\..\src\video\yuv2rgb\yuv_rgb_sse.c" />
+    <ClCompile Include="..\..\src\video\yuv2rgb\yuv_rgb_std.c" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\..\src\main\windows\version.rc" />

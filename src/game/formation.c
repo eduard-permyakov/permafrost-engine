@@ -76,6 +76,7 @@
 #define EPSILON                  (1.0f/1024)
 #define FIELD_RECOMPUTE_INTERVAL (1.0f) /* seconds */
 #define MAX_CELL_ASSIGNMENT_WORK (256)
+#define IDX(r, width, c)         (r * width + c)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -1603,7 +1604,7 @@ static void create_cost_matrix(struct cell_assignment_work *work, int *out_costs
                                struct coord *out_idx_to_cell)
 {
     size_t nents = kh_size(work->ents);
-    int (*out_rows)[nents] = (void*)out_costs;
+    int *out_rows = out_costs;
 
     size_t cell_idx = 0;
     for(int i = 0; i < nents; i++) {
@@ -1630,7 +1631,7 @@ static void create_cost_matrix(struct cell_assignment_work *work, int *out_costs
             size_t cell_idx = CELL_IDX(cell_coord.r, cell_coord.c, work->ncols);
             struct cell *cell = &vec_AT(&work->cells, cell_idx);
             if(cell->state == CELL_NOT_PLACED) {
-                out_rows[i][j] = INT_MAX;
+                out_rows[IDX(i, nents, j)] = INT_MAX;
             }else{
                 vec2_t delta;
                 PFM_Vec2_Sub(&cell->pos, &pos, &delta);
@@ -1639,7 +1640,7 @@ static void create_cost_matrix(struct cell_assignment_work *work, int *out_costs
                  * distance adds an additional penalty for a unit 'overtaking'
                  * another one in the formation. */
                 float squared_distance = powf(PFM_Vec2_Len(&delta) * 100, 2);
-                out_rows[i][j] = squared_distance;
+                out_rows[IDX(i, nents, j)] = squared_distance;
             }
         }
         i++;
@@ -1648,29 +1649,29 @@ static void create_cost_matrix(struct cell_assignment_work *work, int *out_costs
 
 static int row_minimum(int *costs, int irow, size_t nents)
 {
-    int (*rows)[nents] = (void*)costs;
-    int min = rows[irow][0];
+    int *rows = costs;
+    int min = rows[IDX(irow, nents, 0)];
     for(int i = 1; i < nents; i++) {
-        min = MIN(min, rows[irow][i]);
+        min = MIN(min, rows[IDX(irow, nents, i)]);
     }
     return min;
 }
 
 static int column_minimum(int *costs, int icol, size_t nents)
 {
-    int (*rows)[nents] = (void*)costs;
-    int min = rows[0][icol];
+    int *rows = costs;
+    int min = rows[IDX(0, nents, icol)];
     for(int i = 1; i < nents; i++) {
-        min = MIN(min, rows[i][icol]);
+        min = MIN(min, rows[IDX(i, nents, icol)]);
     }
     return min;
 }
 
 static bool assigned_in_column(bool *starred, size_t nents, size_t icol)
 {
-    bool (*rows)[nents] = (void*)starred;
+    bool *rows = (void*)starred;
     for(int i = 0; i < nents; i++) {
-        if(rows[i][icol])
+        if(rows[IDX(i, nents, icol)])
             return true;
     }
     return false;
@@ -1678,10 +1679,10 @@ static bool assigned_in_column(bool *starred, size_t nents, size_t icol)
 
 static bool row_is_covered(bool *covered, size_t nents, size_t irow)
 {
-    bool (*rows)[nents] = (void*)covered;
+    bool *rows = covered;
     size_t ncovered = 0;
     for(int i = 0; i < nents; i++) {
-        if(rows[irow][i])
+        if(rows[IDX(irow, nents, i)])
             ncovered++;
     }
     return (ncovered == nents);
@@ -1689,35 +1690,35 @@ static bool row_is_covered(bool *covered, size_t nents, size_t irow)
 
 static void cover_column(bool *covered, size_t nents, size_t icol)
 {
-    bool (*rows)[nents] = (void*)covered;
+    bool *rows = covered;
     for(int i = 0; i < nents; i++) {
-        rows[i][icol] = true;
+        rows[IDX(i, nents, icol)] = true;
     }
 }
 
 static void uncover_column(bool *covered, size_t nents, size_t icol)
 {
-    bool (*rows)[nents] = (void*)covered;
+    bool *rows = covered;
     for(int i = 0; i < nents; i++) {
         if(!row_is_covered(covered, nents, i)) {
-            rows[i][icol] = false;
+            rows[IDX(i, nents, icol)] = false;
         }
     }
 }
 
 static void cover_row(bool *covered, size_t nents, size_t irow)
 {
-    bool (*rows)[nents] = (void*)covered;
+    bool *rows = (void*)covered;
     for(int i = 0; i < nents; i++) {
-        rows[irow][i] = true;
+        rows[IDX(irow, nents, i)] = true;
     }
 }
 
 static bool row_has_starred(bool *starred, size_t nents, size_t irow, int *out_col)
 {
-    bool (*rows)[nents] = (void*)starred;
+    bool *rows = (void*)starred;
     for(int i = 0; i < nents; i++) {
-        if(rows[irow][i]) {
+        if(rows[IDX(irow, nents, i)]) {
             *out_col = i;
             return true;
         }
@@ -1727,10 +1728,10 @@ static bool row_has_starred(bool *starred, size_t nents, size_t irow, int *out_c
 
 static bool column_is_covered(bool *covered, size_t nents, size_t icol)
 {
-    bool (*rows)[nents] = (void*)covered;
+    bool *rows = (void*)covered;
     size_t ncovered = 0;
     for(int i = 0; i < nents; i++) {
-        if(rows[i][icol])
+        if(rows[IDX(i, nents, icol)])
             ncovered++;
     }
     return (ncovered == nents);
@@ -1738,9 +1739,9 @@ static bool column_is_covered(bool *covered, size_t nents, size_t icol)
 
 static bool column_has_starred(bool *starred, size_t nents, size_t icol, int *out_row)
 {
-    bool (*rows)[nents] = (void*)starred;
+    bool *rows = (void*)starred;
     for(int i = 0; i < nents; i++) {
-        if(rows[i][icol]) {
+        if(rows[IDX(i, nents, icol)]) {
             *out_row = i;
             return true;
         }
@@ -1750,9 +1751,9 @@ static bool column_has_starred(bool *starred, size_t nents, size_t icol, int *ou
 
 static int primed_zero_at_row(bool *primed, size_t nents, size_t irow)
 {
-    bool (*rows)[nents] = (void*)primed;
+    bool *rows = (void*)primed;
     for(int i = 0; i < nents; i++) {
-        if(rows[irow][i])
+        if(rows[IDX(irow, nents, i)])
             return i;
     }
     assert(0);
@@ -1761,12 +1762,12 @@ static int primed_zero_at_row(bool *primed, size_t nents, size_t irow)
 
 static size_t count_covered_rows(bool *covered, size_t nents)
 {
-    bool (*rows)[nents] = (void*)covered;
+    bool *rows = (void*)covered;
     size_t ret = 0;
     for(int i = 0; i < nents; i++) {
         size_t ncovered = 0;
         for(int j = 0; j < nents; j++) {
-            if(rows[i][j])
+            if(rows[IDX(i, nents, j)])
                 ncovered++;
         }
         if(ncovered == nents)
@@ -1777,12 +1778,12 @@ static size_t count_covered_rows(bool *covered, size_t nents)
 
 static size_t count_covered_columns(bool *covered, size_t nents)
 {
-    bool (*rows)[nents] = (void*)covered;
+    bool *rows = covered;
     size_t ret = 0;
     for(int i = 0; i < nents; i++) {
         size_t ncovered = 0;
         for(int j = 0; j < nents; j++) {
-            if(rows[j][i])
+            if(rows[IDX(j, nents, i)])
                 ncovered++;
         }
         if(ncovered == nents)
@@ -1793,10 +1794,10 @@ static size_t count_covered_columns(bool *covered, size_t nents)
 
 static void dump_cost_matrix_only(int *costs, size_t nents)
 {
-    int (*cost_rows)[nents] = (void*)costs;
+    int *cost_rows = costs;
     for(int r = 0; r < nents; r++) {
         for(int c = 0; c < nents; c++) {
-            printf("%03d", cost_rows[r][c]);
+            printf("%03d", cost_rows[IDX(r, nents, c)]);
             if(c != nents-1)
                 printf("  ");
         }
@@ -1807,18 +1808,18 @@ static void dump_cost_matrix_only(int *costs, size_t nents)
 static void dump_cost_matrix(int *costs, size_t nents,
                              bool *starred, bool *covered, bool *primed)
 {
-    int  (*cost_rows)[nents] = (void*)costs;
-    bool (*starred_rows)[nents] = (void*)starred;
-    bool (*covered_rows)[nents] = (void*)covered;
-    bool (*primed_rows)[nents] = (void*)primed;
+    int  *cost_rows = costs;
+    bool *starred_rows = starred;
+    bool *covered_rows = covered;
+    bool *primed_rows = primed;
 
     for(int r = 0; r < nents; r++) {
         for(int c = 0; c < nents; c++) {
             printf("%03d%c%c%c", 
-                cost_rows[r][c],
-                starred_rows[r][c] ? '*'  : ' ',
-                primed_rows[r][c]  ? '\'' : ' ',
-                covered_rows[r][c] ? 'C'  : ' ');
+                cost_rows[IDX(r, nents, c)],
+                starred_rows[IDX(r, nents, c)] ? '*'  : ' ',
+                primed_rows[IDX(r, nents, c)]  ? '\'' : ' ',
+                covered_rows[IDX(r, nents, c)] ? 'C'  : ' ');
             if(c != nents-1)
                 printf("  ");
         }
@@ -1828,14 +1829,14 @@ static void dump_cost_matrix(int *costs, size_t nents,
 
 static int min_uncovered_value(int *costs, bool *covered, size_t nents)
 {
-    int  (*cost_rows)[nents] = (void*)costs;
-    bool (*covered_rows)[nents] = (void*)covered;
+    int  *cost_rows = costs;
+    bool *covered_rows = (void*)covered;
 
     int min = INT_MAX;
     for(int r = 0; r < nents; r++) {
         for(int c = 0; c < nents; c++) {
-            if(!covered_rows[r][c]) {
-                min = MIN(cost_rows[r][c], min);
+            if(!covered_rows[IDX(r, nents, c)]) {
+                min = MIN(cost_rows[IDX(r, nents, c)], min);
             }
         }
     }
@@ -1853,10 +1854,10 @@ static int min_lines_to_cover_zeroes(int *costs, int *out_next,
     memset(covered, 0, nents * nents * sizeof(bool));
     memset(primed, 0, nents * nents * sizeof(bool));
 
-    int  (*cost_rows)[nents] = (void*)costs;
-    bool (*starred_rows)[nents] = (void*)starred;
-    bool (*covered_rows)[nents] = (void*)covered;
-    bool (*primed_rows)[nents] = (void*)primed;
+    int  *cost_rows = costs;
+    bool *starred_rows = starred;
+    bool *covered_rows = covered;
+    bool *primed_rows = primed;
 
 iterate:
     /* For each row, try to assign an arbitrary zero. Assigned tasks
@@ -1865,10 +1866,10 @@ iterate:
      */
     for(int row = 0; row < nents; row++) {
         for(int col = 0; col < nents; col++) {
-            if(starred_rows[row][col])
+            if(starred_rows[IDX(row, nents, col)])
                 break;
-            if((cost_rows[row][col] == 0) && !assigned_in_column(starred, nents, col)) {
-                starred_rows[row][col] = true;
+            if((cost_rows[IDX(row, nents, col)] == 0) && !assigned_in_column(starred, nents, col)) {
+                starred_rows[IDX(row, nents, col)] = true;
                 break;
             }
         }
@@ -1878,7 +1879,7 @@ iterate:
      */
     for(int row = 0; row < nents; row++) {
         for(int col = 0; col < nents; col++) {
-            if(starred_rows[row][col])
+            if(starred_rows[IDX(row, nents, col)])
                 cover_column(covered, nents, col);
         }
     }
@@ -1890,9 +1891,9 @@ iterate:
         has_uncovered = false;
         for(int row = 0; row < nents; row++) {
             for(int col = 0; col < nents; col++) {
-                if(cost_rows[row][col] == 0 && !covered_rows[row][col]) {
+                if(cost_rows[IDX(row, nents, col)] == 0 && !covered_rows[IDX(row, nents, col)]) {
                     has_uncovered = true;
-                    primed_rows[row][col] = true;
+                    primed_rows[IDX(row, nents, col)] = true;
                     primed_r = row;
                     primed_c = col;
                     break;
@@ -1940,11 +1941,11 @@ iterate:
                  */
                 for(int i = 0; i < npath; i++) {
                     struct coord curr = path[i];
-                    assert(starred_rows[curr.r][curr.c] ^ primed_rows[curr.r][curr.c]);
-                    if(starred_rows[curr.r][curr.c]) {
-                        starred_rows[curr.r][curr.c] = false;
-                    }else if(primed_rows[curr.r][curr.c]) {
-                        starred_rows[curr.r][curr.c] = true;
+                    assert(starred_rows[IDX(curr.r, nents, curr.c)] ^ primed_rows[IDX(curr.r, nents, curr.c)]);
+                    if(starred_rows[IDX(curr.r, nents, curr.c)]) {
+                        starred_rows[IDX(curr.r, nents, curr.c)] = false;
+                    }else if(primed_rows[IDX(curr.r, nents, curr.c)]) {
+                        starred_rows[IDX(curr.r, nents, curr.c)] = true;
                     }
                 }
 
@@ -1952,8 +1953,8 @@ iterate:
                  */
                 for(int i = 0; i < nents; i++) {
                     for(int j = 0; j < nents; j++) {
-                        primed_rows[i][j] = false;
-                        covered_rows[i][j] = false;
+                        primed_rows[IDX(i, nents, j)] = false;
+                        covered_rows[IDX(i, nents, j)] = false;
                     }
                 }
                 STFREE(path);
@@ -1980,21 +1981,21 @@ iterate:
          * not covered and adding the same number to all columns which are 
          * covered. These operations do not change optimal assignments. 
          */
-        int (*next_rows)[nents] = (void*)out_next;
+        int *next_rows = out_next;
         memcpy(out_next, costs, sizeof(int) * nents * nents);
 
         int min = min_uncovered_value(costs, covered, nents);
         for(int r = 0; r < nents; r++) {
             if(!row_is_covered(covered, nents, r)) {
                 for(int c = 0; c < nents; c++) {
-                    next_rows[r][c] -= min;
+                    next_rows[IDX(r, nents, c)] -= min;
                 }
             }
         }
         for(int c = 0; c < nents; c++) {
             if(column_is_covered(covered, nents, c)) {
                 for(int r = 0; r < nents; r++) {
-                    next_rows[r][c] += min;
+                    next_rows[IDX(r, nents, c)] += min;
                 }
             }
         }
@@ -2002,7 +2003,7 @@ iterate:
         int i = 0;
         for(int r = 0; r < nents; r++) {
             for(int c = 0; c < nents; c++) {
-                if(starred_rows[r][c]) {
+                if(starred_rows[IDX(r, nents, c)]) {
                     out_assignment[i++] = (struct coord){r, c};
                 }
             }
@@ -2029,7 +2030,7 @@ static void compute_cell_assignment(struct cell_assignment_work *work)
     STALLOC(struct coord, idx_to_cell, nents);
 
     create_cost_matrix(work, costs, idx_to_cell);
-    int (*rows)[nents] = (void*)costs;
+    int *rows = costs;
 
     /* Step 1: Subtract row minima
      * For each row, find the lowest element and subtract it from each element in that row.
@@ -2037,7 +2038,7 @@ static void compute_cell_assignment(struct cell_assignment_work *work)
     for(int i = 0; i < nents; i++) {
         int row_min = row_minimum(costs, i, nents);
         for(int j = 0; j < nents; j++) {
-            rows[i][j] -= row_min;
+            rows[IDX(i, nents, j)] -= row_min;
         }
     }
 
@@ -2048,7 +2049,7 @@ static void compute_cell_assignment(struct cell_assignment_work *work)
     for(int i = 0; i < nents; i++) {
         int col_min = column_minimum(costs, i, nents);
         for(int j = 0; j < nents; j++) {
-            rows[j][i] -= col_min;
+            rows[IDX(j, nents, i)] -= col_min;
         }
     }
 
@@ -2097,7 +2098,7 @@ static void compute_cell_assignment(struct cell_assignment_work *work)
     });
 
     STFREE(costs);
-    STFREE(next)
+    STFREE(next);
     STFREE(assignment);
     STFREE(idx_to_cell);
 }

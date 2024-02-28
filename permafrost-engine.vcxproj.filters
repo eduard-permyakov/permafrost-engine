@@ -348,6 +348,15 @@
     <ClCompile Include="src\render\gl_movement.c">
       <Filter>Source Files\render</Filter>
     </ClCompile>
+    <ClCompile Include="src\game\automation.c">
+      <Filter>Source Files\game</Filter>
+    </ClCompile>
+    <ClCompile Include="src\game\formation.c">
+      <Filter>Source Files\game</Filter>
+    </ClCompile>
+    <ClCompile Include="src\game\garrison.c">
+      <Filter>Source Files\game</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\asset_load.h">
@@ -655,6 +664,15 @@
     </ClInclude>
     <ClInclude Include="src\audio\al_effect.h">
       <Filter>Header Files\audio</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\garrison.h">
+      <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\formation.h">
+      <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\automation.h">
+      <Filter>Header Files\game</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
