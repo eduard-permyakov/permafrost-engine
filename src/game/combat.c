@@ -718,8 +718,6 @@ static void do_add_entity(uint32_t uid, enum combat_stance initial)
     ASSERT_IN_MAIN_THREAD();
 
     assert(combatstate_get(uid) == NULL);
-    assert(G_FlagsGet(uid) & ENTITY_FLAG_COMBATABLE);
-
     struct combatstate new_cs = (struct combatstate) {
         .stats = {0},
         .current_hp = 0,
