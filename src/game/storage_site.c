@@ -46,6 +46,7 @@
 #include "../lib/public/mpool_allocator.h"
 #include "../lib/public/string_intern.h"
 #include "../lib/public/attr.h"
+#include "../lib/public/stalloc.h"
 
 #include <assert.h>
 
@@ -80,7 +81,6 @@ struct ss_state{
     kh_int_t              *capacity;
     kh_int_t              *curr;
     kh_int_t              *desired;
-    struct ss_delta_event  last_change;
     /* Alternative capacity/desired parameters that 
      *can be turned on/off */
     bool                   use_alt;
@@ -118,6 +118,7 @@ KHASH_MAP_INIT_STR(res, int)
 static mpa_buff_t       s_mpool;
 static khash_t(stridx) *s_stridx;
 static mp_strbuff_t     s_stringpool;
+static struct memstack  s_eventargs;
 static khash_t(state)  *s_entity_state_table;
 static khash_t(res)    *s_global_resource_tables[MAX_FACTIONS];
 static khash_t(res)    *s_global_capacity_tables[MAX_FACTIONS];
@@ -212,7 +213,6 @@ static bool ss_state_init(struct ss_state *hs)
         return false;
     }
 
-    hs->last_change = (struct ss_delta_event){0};
     hs->use_alt = false;
     hs->do_not_take_land = false;
     hs->do_not_take_water = false;
@@ -439,6 +439,11 @@ static void on_update_ui(void *user, void *event)
     nk_style_pop_color(ctx);
 }
 
+static void on_update(void *user, void *event)
+{
+    stalloc_clear(&s_eventargs);
+}
+
 static bool save_color(struct nk_color clr, SDL_RWops *stream)
 {
     struct attr clr_r = (struct attr){
@@ -640,6 +645,9 @@ bool G_StorageSite_Init(void)
     if(!si_init(&s_stringpool, &s_stridx, 512))
         goto fail_strintern;
 
+    if(!stalloc_init(&s_eventargs))
+        goto fail_eventargs;
+
     struct nk_context ctx;
     nk_style_default(&ctx);
 
@@ -662,8 +670,11 @@ bool G_StorageSite_Init(void)
     assert(status == SS_OKAY);
 
     E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
+    E_Global_Register(EVENT_UPDATE_START, on_update, NULL, G_RUNNING);
     return true;
 
+fail_eventargs:
+    si_shutdown(&s_stringpool, s_stridx);
 fail_strintern:
     for(int i = 0; i < MAX_FACTIONS; i++)
         kh_destroy(res, s_global_capacity_tables[i]);
@@ -680,6 +691,7 @@ fail_mpool:
 
 void G_StorageSite_Shutdown(void)
 {
+    E_Global_Unregister(EVENT_UPDATE_START, on_update);
     E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
 
     for(int i = 0; i < MAX_FACTIONS; i++)
@@ -687,6 +699,7 @@ void G_StorageSite_Shutdown(void)
     for(int i = 0; i < MAX_FACTIONS; i++)
         kh_destroy(res, s_global_resource_tables[i]);
 
+    stalloc_destroy(&s_eventargs);
     si_shutdown(&s_stringpool, s_stridx);
     kh_destroy(state, s_entity_state_table);
     mpa_buff_destroy(&s_mpool);
@@ -796,11 +809,12 @@ bool G_StorageSite_SetCurr(uint32_t uid, const char *rname, int curr)
     update_res_delta(rname, delta, G_GetFactionID(uid));
 
     if(delta) {
-        ss->last_change = (struct ss_delta_event){
+        struct ss_delta_event *event = stalloc(&s_eventargs, sizeof(struct ss_delta_event));
+        *event = (struct ss_delta_event){
             .name = si_intern(rname, &s_stringpool, s_stridx),
             .delta = delta
         };
-        E_Entity_Notify(EVENT_STORAGE_SITE_AMOUNT_CHANGED, uid, &ss->last_change, ES_ENGINE);
+        E_Entity_Notify(EVENT_STORAGE_SITE_AMOUNT_CHANGED, uid, event, ES_ENGINE);
     }
 
     return ss_state_set_key(ss->curr, rname, curr);
