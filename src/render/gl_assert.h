@@ -63,6 +63,7 @@
 
 #else
 
+#define PRINT(...) 
 #define GL_ASSERT_OK() /* no-op */
 
 #endif

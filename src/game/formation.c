@@ -371,6 +371,7 @@ static size_t ncols(enum formation_type type, size_t nunits)
         return MIN(ceilf(sqrtf(nunits / COLUMN_WIDTH_RATIO)), nunits);
     default: assert(0);
     }
+	return 0;
 }
 
 static size_t nrows(enum formation_type type, size_t nunits)
@@ -3198,6 +3199,7 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
 
     struct tile_desc cell_td;
     bool exists = M_Tile_DescForPoint2D(res, map_pos, bpos, &cell_td);
+	(void)exists;
     assert(exists);
 
     struct tile_desc center_td;

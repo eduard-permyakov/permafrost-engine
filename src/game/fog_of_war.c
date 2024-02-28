@@ -40,6 +40,7 @@
 #include "../event.h"
 #include "../settings.h"
 #include "../sched.h"
+#include "../perf.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../lib/public/pqueue.h"
@@ -694,6 +695,7 @@ void G_Fog_RenderChunkVisibility(int faction_id, int chunk_r, int chunk_c, mat4x
 
 void G_Fog_UpdateVisionState(void)
 {
+    PERF_ENTER();
     bool controllable[MAX_FACTIONS];
     uint16_t facs = G_GetFactions(NULL, NULL, controllable);
 
@@ -742,6 +744,7 @@ submit:
             R_PushArg(&size, sizeof(size)),
         },
     });
+    PERF_RETURN_VOID();
 }
 
 bool G_Fog_ObjExplored(uint16_t fac_mask, uint32_t uid, const struct obb *obb)

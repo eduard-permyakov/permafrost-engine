@@ -1828,6 +1828,7 @@ void G_Update(void)
         A_Update();
     }
 
+    PERF_PUSH("visibility culling");
     kh_foreach_key(s_gs.active, curr, {
 
         struct obb obb;
@@ -1855,6 +1856,7 @@ void G_Update(void)
             }
         }
     });
+    PERF_POP();
 
     if(s_gs.map) {
         G_Region_Update();

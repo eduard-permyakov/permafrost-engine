@@ -38,6 +38,7 @@
 #include "position.h"
 #include "fog_of_war.h"
 #include "../ui.h"
+#include "../perf.h"
 #include "../main.h"
 #include "../camera.h"
 #include "../event.h"
@@ -774,6 +775,7 @@ bool G_Region_GetRender(void)
 
 void G_Region_Update(void)
 {
+    PERF_ENTER();
     for(int i = 0; i < vec_size(&s_eventargs); i++) {
         PF_FREE(vec_AT(&s_eventargs, i));
     }
@@ -791,6 +793,7 @@ void G_Region_Update(void)
         region_notify_changed(key, reg);
     }
     kh_clear(name, s_dirty);
+    PERF_RETURN_VOID();
 }
    
 bool G_Region_GetRadius(const char *name, float *out)
