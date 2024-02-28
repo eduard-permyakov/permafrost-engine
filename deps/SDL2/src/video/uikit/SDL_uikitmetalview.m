@@ -1,15 +1,15 @@
 /*
  Simple DirectMedia Layer
- Copyright (C) 1997-2019 Sam Lantinga <slouken@libsdl.org>
- 
+ Copyright (C) 1997-2024 Sam Lantinga <slouken@libsdl.org>
+
  This software is provided 'as-is', without any express or implied
  warranty.  In no event will the authors be held liable for any damages
  arising from the use of this software.
- 
+
  Permission is granted to anyone to use this software for any purpose,
  including commercial applications, and to alter it and redistribute it
  freely, subject to the following restrictions:
- 
+
  1. The origin of this software must not be misrepresented; you must not
  claim that you wrote the original software. If you use this software
  in a product, an acknowledgment in the product documentation would be
@@ -22,19 +22,20 @@
 /*
  * @author Mark Callow, www.edgewise-consulting.com.
  *
- * Thanks to Alex Szpakowski, @slime73 on GitHub, for his gist showing
- * how to add a CAMetalLayer backed view.
+ * Thanks to @slime73 on GitHub for their gist showing how to add a CAMetalLayer
+ * backed view.
  */
 
 #include "../../SDL_internal.h"
 
-#if SDL_VIDEO_DRIVER_UIKIT && (SDL_VIDEO_VULKAN || SDL_VIDEO_METAL)
+#if defined(SDL_VIDEO_DRIVER_UIKIT) && (defined(SDL_VIDEO_VULKAN) || defined(SDL_VIDEO_METAL))
 
-#import "../SDL_sysvideo.h"
+#include "SDL_syswm.h"
+#include "../SDL_sysvideo.h"
+
 #import "SDL_uikitwindow.h"
 #import "SDL_uikitmetalview.h"
 
-#include "SDL_assert.h"
 
 @implementation SDL_uikitmetalview
 
@@ -48,7 +49,7 @@
                         scale:(CGFloat)scale
 {
     if ((self = [super initWithFrame:frame])) {
-        self.tag = METALVIEW_TAG;
+        self.tag = SDL_METALVIEW_TAG;
         self.layer.contentsScale = scale;
         [self updateDrawableSize];
     }
@@ -73,8 +74,7 @@
 
 @end
 
-SDL_MetalView
-UIKit_Metal_CreateView(_THIS, SDL_Window * window)
+SDL_MetalView UIKit_Metal_CreateView(_THIS, SDL_Window * window)
 { @autoreleasepool {
     SDL_WindowData *data = (__bridge SDL_WindowData *)window->driverdata;
     CGFloat scale = 1.0;
@@ -86,22 +86,22 @@ UIKit_Metal_CreateView(_THIS, SDL_Window * window)
          * dimensions of the screen rather than the dimensions in points
          * yielding high resolution on retine displays.
          */
-        if ([data.uiwindow.screen respondsToSelector:@selector(nativeScale)]) {
-            scale = data.uiwindow.screen.nativeScale;
-        } else {
-            scale = data.uiwindow.screen.scale;
-        }
+        scale = data.uiwindow.screen.nativeScale;
     }
 
     metalview = [[SDL_uikitmetalview alloc] initWithFrame:data.uiwindow.bounds
                                                     scale:scale];
+    if (metalview == nil) {
+        SDL_OutOfMemory();
+        return NULL;
+    }
+
     [metalview setSDLWindow:window];
 
     return (void*)CFBridgingRetain(metalview);
 }}
 
-void
-UIKit_Metal_DestroyView(_THIS, SDL_MetalView view)
+void UIKit_Metal_DestroyView(_THIS, SDL_MetalView view)
 { @autoreleasepool {
     SDL_uikitmetalview *metalview = CFBridgingRelease(view);
 
@@ -110,13 +110,18 @@ UIKit_Metal_DestroyView(_THIS, SDL_MetalView view)
     }
 }}
 
-void
-UIKit_Metal_GetDrawableSize(SDL_Window * window, int * w, int * h)
+void *UIKit_Metal_GetLayer(_THIS, SDL_MetalView view)
+{ @autoreleasepool {
+    SDL_uikitview *uiview = (__bridge SDL_uikitview *)view;
+    return (__bridge void *)uiview.layer;
+}}
+
+void UIKit_Metal_GetDrawableSize(_THIS, SDL_Window * window, int * w, int * h)
 {
     @autoreleasepool {
         SDL_WindowData *data = (__bridge SDL_WindowData *)window->driverdata;
         SDL_uikitview *view = (SDL_uikitview*)data.uiwindow.rootViewController.view;
-        SDL_uikitmetalview* metalview = [view viewWithTag:METALVIEW_TAG];
+        SDL_uikitmetalview* metalview = [view viewWithTag:SDL_METALVIEW_TAG];
         if (metalview) {
             CAMetalLayer *layer = (CAMetalLayer*)metalview.layer;
             assert(layer != NULL);

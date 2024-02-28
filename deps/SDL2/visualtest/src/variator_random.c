@@ -1,4 +1,4 @@
-/* See COPYING.txt for the full license governing this code. */
+/* See LICENSE.txt for the full license governing this code. */
 /**
  * \file variator_random.c
  *
@@ -47,12 +47,13 @@ SDLVisualTest_GetNextRandomVariation(SDLVisualTest_RandomVariator* variator)
     SDLVisualTest_SUTOptionValue* vars;
     SDLVisualTest_SUTOption* options;
     int i;
+
     if(!variator)
     {
         SDLTest_LogError("variator argument cannot be NULL");
         return NULL;
     }
- 
+
     /* to save typing */
     vars = variator->variation.vars;
     options = variator->config.options;
@@ -106,6 +107,7 @@ void SDLVisualTest_FreeRandomVariator(SDLVisualTest_RandomVariator* variator)
         SDLTest_LogError("variator argument cannot be NULL");
         return;
     }
+
     SDL_free(variator->variation.vars);
     variator->variation.vars = NULL;
 }

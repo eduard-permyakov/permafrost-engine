@@ -19,6 +19,7 @@ distfile = $(distdir).tar.gz
 @SET_MAKE@
 SHELL	= @SHELL@
 CC      = @CC@
+CXX     = @CXX@
 INCLUDE = @INCLUDE@
 CFLAGS  = @BUILD_CFLAGS@
 EXTRA_CFLAGS = @EXTRA_CFLAGS@
@@ -26,9 +27,13 @@ LDFLAGS = @BUILD_LDFLAGS@
 EXTRA_LDFLAGS = @EXTRA_LDFLAGS@
 LIBTOOL = @LIBTOOL@
 INSTALL = @INSTALL@
+FGREP	= @FGREP@
 AR	= @AR@
 RANLIB	= @RANLIB@
-WINDRES	= @WINDRES@
+RC	= @RC@
+LINKER = @LINKER@
+LIBTOOLLINKERTAG = @LIBTOOLLINKERTAG@
+SDL_VENDOR_INFO = @SDL_VENDOR_INFO@
 
 TARGET  = libSDL2.la
 OBJECTS = @OBJECTS@
@@ -43,10 +48,11 @@ SDLTEST_TARGET = libSDL2_test.la
 SDLTEST_OBJECTS = @SDLTEST_OBJECTS@
 
 WAYLAND_SCANNER = @WAYLAND_SCANNER@
+WAYLAND_SCANNER_CODE_MODE = @WAYLAND_SCANNER_CODE_MODE@
 
 INSTALL_SDL2_CONFIG = @INSTALL_SDL2_CONFIG@
 
-SRC_DIST = *.txt acinclude Android.mk autogen.sh android-project build-scripts cmake cmake_uninstall.cmake.in configure configure.ac debian docs include Makefile.* sdl2-config.cmake.in sdl2-config.in sdl2.m4 sdl2.pc.in SDL2.spec.in SDL2Config.cmake src test VisualC.html VisualC VisualC-WinRT Xcode Xcode-iOS wayland-protocols
+SRC_DIST = *.md *.txt acinclude Android.mk autogen.sh android-project build-scripts cmake cmake_uninstall.cmake.in configure configure.ac docs include Makefile.* mingw sdl2-config.cmake.in sdl2-config-version.cmake.in sdl2-config.in sdl2.m4 sdl2.pc.in SDL2.spec.in SDL2Config.cmake.in src test VisualC VisualC-WinRT Xcode Xcode-iOS wayland-protocols
 GEN_DIST = SDL2.spec
 
 ifneq ($V,1)
@@ -55,6 +61,7 @@ RUN_CMD_CC     = @echo "  CC    " $@;
 RUN_CMD_CXX    = @echo "  CXX   " $@;
 RUN_CMD_LTLINK = @echo "  LTLINK" $@;
 RUN_CMD_RANLIB = @echo "  RANLIB" $@;
+RUN_CMD_RC     = @echo "  RC    " $@;
 RUN_CMD_GEN    = @echo "  GEN   " $@;
 LIBTOOL += --quiet
 endif
@@ -75,16 +82,20 @@ HDRS = \
 	SDL_filesystem.h \
 	SDL_gamecontroller.h \
 	SDL_gesture.h \
+	SDL_guid.h \
 	SDL_haptic.h \
+	SDL_hidapi.h \
 	SDL_hints.h \
 	SDL_joystick.h \
 	SDL_keyboard.h \
 	SDL_keycode.h \
 	SDL_loadso.h \
+	SDL_locale.h \
 	SDL_log.h \
 	SDL_main.h \
 	SDL_messagebox.h \
 	SDL_metal.h \
+	SDL_misc.h \
 	SDL_mouse.h \
 	SDL_mutex.h \
 	SDL_name.h \
@@ -120,7 +131,7 @@ HDRS = \
 	begin_code.h \
 	close_code.h
 
-SDLTEST_HDRS = $(shell ls $(srcdir)/include | fgrep SDL_test)
+SDLTEST_HDRS = $(shell ls $(srcdir)/include | $(FGREP) SDL_test)
 
 LT_AGE      = @LT_AGE@
 LT_CURRENT  = @LT_CURRENT@
@@ -143,18 +154,18 @@ $(objects)/.created:
 	touch $@
 
 update-revision:
-	$(SHELL) $(auxdir)/updaterev.sh
+	$(SHELL) $(auxdir)/updaterev.sh --vendor "$(SDL_VENDOR_INFO)"
 
 .PHONY: all update-revision install install-bin install-hdrs install-lib install-data uninstall uninstall-bin uninstall-hdrs uninstall-lib uninstall-data clean distclean dist $(OBJECTS:.lo=.d)
 
 $(objects)/$(TARGET): $(GEN_HEADERS) $(GEN_OBJECTS) $(OBJECTS) $(VERSION_OBJECTS)
-	$(RUN_CMD_LTLINK)$(LIBTOOL) --tag=CC --mode=link $(CC) -o $@ $(OBJECTS) $(GEN_OBJECTS) $(VERSION_OBJECTS) $(LDFLAGS) $(EXTRA_LDFLAGS) $(LT_LDFLAGS)
+	$(RUN_CMD_LTLINK)$(LIBTOOL) --tag=$(LIBTOOLLINKERTAG) --mode=link $(LINKER) -o $@ $(OBJECTS) $(GEN_OBJECTS) $(VERSION_OBJECTS) $(LDFLAGS) $(EXTRA_LDFLAGS) $(LT_LDFLAGS)
 
 $(objects)/$(SDLMAIN_TARGET): $(SDLMAIN_OBJECTS)
-	$(RUN_CMD_LTLINK)$(LIBTOOL) --tag=CC --mode=link $(CC) -static -o $@ $(SDLMAIN_OBJECTS) -rpath $(libdir)
+	$(RUN_CMD_LTLINK)$(LIBTOOL) --tag=$(LIBTOOLLINKERTAG) --mode=link $(LINKER) -static -o $@ $(SDLMAIN_OBJECTS) -rpath $(libdir)
 
 $(objects)/$(SDLTEST_TARGET): $(SDLTEST_OBJECTS)
-	$(RUN_CMD_LTLINK)$(LIBTOOL) --tag=CC --mode=link $(CC) -static -o $@ $(SDLTEST_OBJECTS) -rpath $(libdir)
+	$(RUN_CMD_LTLINK)$(LIBTOOL) --tag=$(LIBTOOLLINKERTAG) --mode=link $(LINKER) -static -o $@ $(SDLTEST_OBJECTS) -rpath $(libdir)
 
 install: all install-bin install-hdrs install-lib install-data
 install-bin:
@@ -175,7 +186,7 @@ install-hdrs: update-revision
 	    $(INSTALL) -m 644 $(srcdir)/include/SDL_revision.h $(DESTDIR)$(includedir)/SDL2/SDL_revision.h; \
 	fi
 
-install-lib: $(objects) $(objects)/$(TARGET) $(objects)/$(SDLMAIN_TARGET) $(objects)/$(SDLTEST_TARGET)
+install-lib: $(objects)/$(TARGET) $(objects)/$(SDLMAIN_TARGET) $(objects)/$(SDLTEST_TARGET)
 	$(SHELL) $(auxdir)/mkinstalldirs $(DESTDIR)$(libdir)
 	$(LIBTOOL) --mode=install $(INSTALL) $(objects)/$(TARGET) $(DESTDIR)$(libdir)/$(TARGET)
 	$(LIBTOOL) --mode=install $(INSTALL) $(objects)/$(SDLMAIN_TARGET) $(DESTDIR)$(libdir)/$(SDLMAIN_TARGET)
@@ -188,6 +199,7 @@ install-data:
 ifeq ($(INSTALL_SDL2_CONFIG),TRUE)
 	$(SHELL) $(auxdir)/mkinstalldirs $(DESTDIR)$(libdir)/cmake/SDL2
 	$(INSTALL) -m 644 sdl2-config.cmake $(DESTDIR)$(libdir)/cmake/SDL2
+	$(INSTALL) -m 644 sdl2-config-version.cmake $(DESTDIR)$(libdir)/cmake/SDL2
 endif
 
 uninstall: uninstall-bin uninstall-hdrs uninstall-lib uninstall-data
@@ -208,6 +220,7 @@ uninstall-data:
 	rm -f $(DESTDIR)$(datadir)/aclocal/sdl2.m4
 	rm -f $(DESTDIR)$(libdir)/pkgconfig/sdl2.pc
 	rm -f $(DESTDIR)$(libdir)/cmake/SDL2/sdl2-config.cmake
+	rm -f $(DESTDIR)$(libdir)/cmake/SDL2/sdl2-config-version.cmake
 
 clean:
 	rm -rf $(objects)
@@ -241,7 +254,8 @@ dist $(distfile):
 	    -name '.#*' \) \
 	    -exec rm -f {} \;
 	if test -f $(distdir)/test/Makefile; then (cd $(distdir)/test && make distclean); fi
-	(cd $(distdir); build-scripts/updaterev.sh)
+	# Intentionally no vendor suffix: that's a property of the build, not the source
+	(cd $(distdir); $(srcdir)/build-scripts/updaterev.sh --dist)
 	tar cvf - $(distdir) | gzip --best >$(distfile)
 	rm -rf $(distdir)
 

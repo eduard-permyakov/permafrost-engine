@@ -1,6 +1,6 @@
 /*
   Simple DirectMedia Layer
-  Copyright (C) 1997-2019 Sam Lantinga <slouken@libsdl.org>
+  Copyright (C) 1997-2024 Sam Lantinga <slouken@libsdl.org>
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -49,36 +49,58 @@ typedef void *SDL_MetalView;
 /* @{ */
 
 /**
- *  \brief Create a CAMetalLayer-backed NSView/UIView and attach it to the
- *        specified window.
+ * Create a CAMetalLayer-backed NSView/UIView and attach it to the specified
+ * window.
  *
- *  On macOS, this does *not* associate a MTLDevice with the CAMetalLayer on its
- *  own. It is up to user code to do that.
+ * On macOS, this does *not* associate a MTLDevice with the CAMetalLayer on
+ * its own. It is up to user code to do that.
  *
- *  The returned handle can be casted directly to a NSView or UIView, and the
- *  CAMetalLayer can be accessed from the view's 'layer' property.
+ * The returned handle can be casted directly to a NSView or UIView. To access
+ * the backing CAMetalLayer, call SDL_Metal_GetLayer().
  *
- *  \code
- *  SDL_MetalView metalview = SDL_Metal_CreateView(window);
- *  UIView *uiview = (__bridge UIView *)metalview;
- *  CAMetalLayer *metallayer = (CAMetalLayer *)uiview.layer;
- *  // [...]
- *  SDL_Metal_DestroyView(metalview);
- *  \endcode
+ * \since This function is available since SDL 2.0.12.
  *
- *  \sa SDL_Metal_DestroyView
+ * \sa SDL_Metal_DestroyView
+ * \sa SDL_Metal_GetLayer
  */
 extern DECLSPEC SDL_MetalView SDLCALL SDL_Metal_CreateView(SDL_Window * window);
 
 /**
- *  \brief Destroy an existing SDL_MetalView object.
+ * Destroy an existing SDL_MetalView object.
  *
- *  This should be called before SDL_DestroyWindow, if SDL_Metal_CreateView was
- *  called after SDL_CreateWindow.
+ * This should be called before SDL_DestroyWindow, if SDL_Metal_CreateView was
+ * called after SDL_CreateWindow.
  *
- *  \sa SDL_Metal_CreateView
+ * \since This function is available since SDL 2.0.12.
+ *
+ * \sa SDL_Metal_CreateView
  */
 extern DECLSPEC void SDLCALL SDL_Metal_DestroyView(SDL_MetalView view);
+
+/**
+ * Get a pointer to the backing CAMetalLayer for the given view.
+ *
+ * \since This function is available since SDL 2.0.14.
+ *
+ * \sa SDL_Metal_CreateView
+ */
+extern DECLSPEC void *SDLCALL SDL_Metal_GetLayer(SDL_MetalView view);
+
+/**
+ * Get the size of a window's underlying drawable in pixels (for use with
+ * setting viewport, scissor & etc).
+ *
+ * \param window SDL_Window from which the drawable size should be queried
+ * \param w Pointer to variable for storing the width in pixels, may be NULL
+ * \param h Pointer to variable for storing the height in pixels, may be NULL
+ *
+ * \since This function is available since SDL 2.0.14.
+ *
+ * \sa SDL_GetWindowSize
+ * \sa SDL_CreateWindow
+ */
+extern DECLSPEC void SDLCALL SDL_Metal_GetDrawableSize(SDL_Window* window, int *w,
+                                                       int *h);
 
 /* @} *//* Metal support functions */
 

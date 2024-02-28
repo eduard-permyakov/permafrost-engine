@@ -1,4 +1,4 @@
-/* See COPYING.txt for the full license governing this code. */
+/* See LICENSE.txt for the full license governing this code. */
 /**
  * \file variator_common.c
  *
@@ -189,7 +189,7 @@ SDLVisualTest_InitVariation(SDLVisualTest_Variation* variation,
                      sizeof(SDLVisualTest_SUTOptionValue));
     if(!variation->vars)
     {
-        SDLTest_LogError("malloc() failed");
+        SDLTest_LogError("SDL_malloc() failed");
         return 0;
     }
     variation->num_vars = config->num_options;
