@@ -1019,6 +1019,7 @@ static PyObject *PyPf_open_url(PyObject *self, PyObject *args)
     }else{
         char errbuff[256];
         pf_snprintf(errbuff, sizeof(errbuff), SDL_GetError());
+        PyErr_SetString(PyExc_RuntimeError, errbuff);
         return NULL;
     }
 }
