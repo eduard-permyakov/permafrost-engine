@@ -882,7 +882,7 @@ static void g_create_settings(void)
         .name = "pf.game.healthbar_mode",
         .val = (struct sval) {
             .type = ST_TYPE_INT,
-            .as_int = HB_MODE_ALWAYS
+            .as_int = HB_MODE_DAMAGED
         },
         .prio = 0,
         .validate = hb_mode_validate,
