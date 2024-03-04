@@ -1396,6 +1396,7 @@ bool G_Init(void)
     vec_entity_init(&s_gs.light_visible);
     vec_obb_init(&s_gs.visible_obbs);
     vec_entity_init(&s_gs.removed);
+    g_create_settings();
 
     s_gs.active = kh_init(entity);
     if(!s_gs.active)
@@ -1446,7 +1447,6 @@ bool G_Init(void)
     G_Sel_Enable();
     G_Timer_Init();
     G_StorageSite_Init();
-    g_create_settings();
 
     R_PushCmd((struct rcmd){ R_GL_WaterInit, 0 });
 

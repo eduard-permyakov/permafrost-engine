@@ -2435,8 +2435,7 @@ static PyObject *PyPf_settings_get(PyObject *self, PyObject *args)
     struct sval val;
     ss_e status = Settings_Get(sname, &val);
     if(status == SS_NO_SETTING) {
-        PyErr_SetString(PyExc_RuntimeError, "The setting with the given name does not exist.");
-        return NULL;
+        Py_RETURN_NONE;
     }
 
     switch(val.type) {
