@@ -47,6 +47,7 @@
 #include "lib/public/khash.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/mem.h"
+#include "lib/public/block_allocator.h"
 
 #include <SDL.h>
 #include <inttypes.h>
@@ -191,21 +192,22 @@ void        sched_task_exit(struct result ret);
 /* After initialization, no new keys are added to the maps, 
  * so they are safe to read from different threads. 
  */
-static khash_t(tid)    *s_thread_tid_map;
-static khash_t(tid)    *s_thread_worker_id_map;
+static khash_t(tid)           *s_thread_tid_map;
+static khash_t(tid)           *s_thread_worker_id_map;
 
-static struct context   s_main_ctx;
-static struct task     *s_freehead;
-static unsigned         s_nfree = MAX_TASKS;
+static struct context          s_main_ctx;
+static struct task            *s_freehead;
+static unsigned                s_nfree = MAX_TASKS;
 
-static struct task      s_tasks[MAX_TASKS];
-static char             s_stacks[MAX_TASKS][STACK_SZ];
-static queue_tid_t      s_msg_queues[MAX_TASKS];
-static bool             s_parent_waiting[MAX_TASKS];
-static khash_t(tqueue) *s_event_queues;
+static struct task             s_tasks[MAX_TASKS];
+static char                    s_stacks[MAX_TASKS][STACK_SZ];
+static struct block_allocator  s_bigstacks;
+static queue_tid_t             s_msg_queues[MAX_TASKS];
+static bool                    s_parent_waiting[MAX_TASKS];
+static khash_t(tqueue)        *s_event_queues;
 
 /* Lock used to serialzie the scheduler requests */
-static SDL_mutex       *s_request_lock;
+static SDL_mutex              *s_request_lock;
 
 /* The active worker threads wait on the ready cond to be 
  * notified when the ready queue(s) becomes non-empty, so that
@@ -526,7 +528,7 @@ static void sched_task_init(struct task *task, int prio, uint32_t flags,
 
     PERF_PUSH("stack alloc");
     if(flags & TASK_BIG_STACK) {
-        task->stackmem = malloc(BIG_STACK_SZ);
+        task->stackmem = block_alloc(&s_bigstacks);
     }else{
         task->stackmem = s_stacks[task->tid - 1];
     }
@@ -792,7 +794,7 @@ static void sched_task_service_request(struct task *task)
     case _SCHED_REQ_FREE:
 
         if(task->flags & TASK_BIG_STACK) {
-            PF_FREE(task->stackmem);
+            block_free(&s_bigstacks, task->stackmem);
         }
         if(task->flags & TASK_DETACHED) {
             sched_task_free(task);
@@ -1134,6 +1136,7 @@ bool Sched_Init(void)
         s_tasks[i].prev = &s_tasks[i - 1];
     }
     s_freehead = s_tasks;
+    block_alloc_init(&s_bigstacks, BIG_STACK_SZ, 8);
 
     for(int i = 0; i < MAX_TASKS; i++) {
 
@@ -1228,6 +1231,7 @@ void Sched_Shutdown(void)
     });
     kh_destroy(tqueue, s_event_queues);
 
+    block_alloc_destroy(&s_bigstacks);
     SDL_DestroyCond(s_ready_cond);
     SDL_DestroyMutex(s_ready_lock);
     kh_destroy(tid, s_thread_tid_map);
