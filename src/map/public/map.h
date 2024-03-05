@@ -715,6 +715,7 @@ void   M_AL_ShallowCopy(struct map *dst, const struct map *src);
  * ------------------------------------------------------------------------
  */
 struct map *M_AL_CopyWithFields(const struct map *src);
+void        M_AL_FreeCopyWithFields(struct map *map);
 
 /* ------------------------------------------------------------------------
  * Write the map contents to the stream in PFMap format.
@@ -722,6 +723,12 @@ struct map *M_AL_CopyWithFields(const struct map *src);
  */
 bool   M_AL_WritePFMap(const struct map *map, SDL_RWops *stream);
 
+/* ------------------------------------------------------------------------
+ * Manage memory pools used for 'deep' copies of the map.
+ * ------------------------------------------------------------------------
+ */
+void   M_InitCopyPools(const struct map *map);
+void   M_DestroyCopyPools(void);
 
 
 #endif

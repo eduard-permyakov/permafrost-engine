@@ -158,6 +158,7 @@ static void g_init_map(void)
     M_RestrictRTSCamToMap(s_gs.map, s_gs.active_cam);
     M_Raycast_Install(s_gs.map, s_gs.active_cam);
     M_InitMinimap(s_gs.map, g_default_minimap_pos());
+    M_InitCopyPools(s_gs.map);
     G_Pos_Init(s_gs.map);
     G_Building_Init(s_gs.map);
     G_Garrison_Init(s_gs.map);
@@ -780,6 +781,7 @@ static void g_clear_map_state(void)
         G_Automation_Shutdown();
         G_ClearPath_Shutdown();
         G_Pos_Shutdown();
+        M_DestroyCopyPools();
 
         AL_MapFree(s_gs.map);
         s_gs.map = NULL;

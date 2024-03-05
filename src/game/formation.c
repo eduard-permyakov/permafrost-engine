@@ -1362,7 +1362,7 @@ static void clean_up_map_snapshots(struct formation *formation)
         khiter_t k = kh_get(map, formation->map_snapshots, todel[i]);
         assert(k != kh_end(formation->map_snapshots));
         struct refcounted_map *rmap = kh_val(formation->map_snapshots, k);
-        PF_FREE(rmap->snapshot);
+        M_AL_FreeCopyWithFields(rmap->snapshot);
         PF_FREE(rmap);
         kh_del(map, formation->map_snapshots, k);
     }
@@ -4949,7 +4949,7 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
         render_cells(sub);
     }
     destroy_formation(&formation);
-    PF_FREE(map);
+    M_AL_FreeCopyWithFields(map);
 }
 
 bool G_Formation_SaveState(struct SDL_RWops *stream)

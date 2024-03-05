@@ -2798,7 +2798,7 @@ static void move_release_gamestate(void)
         s_move_work.gamestate.faction_ids = NULL;
     }
     if(s_move_work.gamestate.map) {
-        PF_FREE(s_move_work.gamestate.map);
+        M_AL_FreeCopyWithFields((struct map*)s_move_work.gamestate.map);
         s_move_work.gamestate.map = NULL;
     }
     PERF_RETURN_VOID();

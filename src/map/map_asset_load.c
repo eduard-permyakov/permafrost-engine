@@ -44,7 +44,9 @@
 #include "../game/public/game.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/mem.h"
+#include "../lib/public/block_allocator.h"
 #include "../ui.h"
+#include "../perf.h"
 
 #include <stdlib.h>
 #include <assert.h>
@@ -55,6 +57,12 @@
 #define MINIMAP_DFLT_SZ (256)
 #define PFMAP_VER       (1.0f)
 #define CHK_TRUE(_pred, _label) do{ if(!(_pred)) goto _label; }while(0)
+
+/*****************************************************************************/
+/* STATIC VARIABLES                                                          */
+/*****************************************************************************/
+
+static struct block_allocator s_block_alloc;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -360,7 +368,9 @@ struct map *M_AL_CopyWithFields(const struct map *src)
 {
     size_t map_size = M_AL_ShallowCopySize(src->width, src->height);
     size_t nav_size = N_DeepCopySize(src->nav_private);
-    struct map *ret = malloc(map_size + nav_size);
+    PERF_PUSH("alloc map block");
+    struct map *ret = block_alloc(&s_block_alloc);
+    PERF_POP();
     if(!ret)
         return NULL;
 
@@ -368,6 +378,11 @@ struct map *M_AL_CopyWithFields(const struct map *src)
     ret->nav_private = ret + 1;
     N_CopyFields(src->nav_private, ret->nav_private);
     return ret;
+}
+
+void M_AL_FreeCopyWithFields(struct map *map)
+{
+    block_free(&s_block_alloc, map);
 }
 
 bool M_AL_WritePFMap(const struct map *map, SDL_RWops *stream)
@@ -414,5 +429,18 @@ bool M_AL_WritePFMap(const struct map *map, SDL_RWops *stream)
 
 fail:
     return false;
+}
+
+void M_InitCopyPools(const struct map *map)
+{
+    size_t map_size = M_AL_ShallowCopySize(map->width, map->height);
+    size_t nav_size = N_DeepCopySize(map->nav_private);
+    size_t blocksize = map_size + nav_size;
+    block_alloc_init(&s_block_alloc, blocksize, 8);
+}
+
+void M_DestroyCopyPools(void)
+{
+    block_alloc_destroy(&s_block_alloc);
 }
 
