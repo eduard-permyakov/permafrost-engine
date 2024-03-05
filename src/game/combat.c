@@ -276,6 +276,7 @@ static uint16_t          *s_fac_refcnts[MAX_FACTIONS];
 
 static struct combat_work s_combat_work;
 static queue_cmd_t        s_combat_commands;
+static unsigned long      s_last_tick;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -1843,6 +1844,9 @@ static void combat_submit_work(void)
 
 static void on_20hz_tick(void *user, void *event)
 {
+    if(s_last_tick == g_frame_idx)
+        return;
+
     PERF_PUSH("combat::on_20hz_tick");
 
     combat_finish_work();
@@ -1857,6 +1861,7 @@ static void on_20hz_tick(void *user, void *event)
         combat_push_work((struct combat_work_in){uid});
     });
     combat_submit_work();
+    s_last_tick = g_frame_idx;
 
     PERF_POP();
 }

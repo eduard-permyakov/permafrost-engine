@@ -793,6 +793,7 @@ int main(int argc, char **argv)
     G_Render();
     G_SwapBuffers();
     Perf_FinishTick();
+    SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
 
     while(!s_quit) {
 
@@ -838,6 +839,7 @@ int main(int argc, char **argv)
 
             Sched_Tick();
             if(Sched_FutureIsReady(&s_request_done)) {
+                SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
                 s_state = ENGINE_STATE_RUNNING;
             }
             render_thread_wait_done();

@@ -320,6 +320,7 @@ static dest_id_t               s_last_cmd_dest;
 static struct move_work        s_move_work;
 static queue_cmd_t             s_move_commands;
 static struct memstack         s_eventargs;
+static unsigned long           s_last_tick = 0;
 
 static const char *s_state_str[] = {
     [STATE_MOVING]              = STR(STATE_MOVING),
@@ -2901,6 +2902,9 @@ static void move_submit_work(void)
 
 static void on_20hz_tick(void *user, void *event)
 {
+    if(g_frame_idx == s_last_tick)
+        return;
+
     PERF_PUSH("movement::on_20hz_tick");
 
     move_finish_work();
@@ -2987,7 +2991,7 @@ static void on_20hz_tick(void *user, void *event)
     PERF_POP();
 
     move_submit_work();
-
+    s_last_tick = g_frame_idx;
     PERF_POP();
 }
 
