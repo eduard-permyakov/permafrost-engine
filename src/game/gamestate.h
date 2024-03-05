@@ -40,6 +40,7 @@
 #include "faction.h"
 #include "selection.h"
 #include "../lib/public/vec.h"
+#include "../lib/public/stalloc.h"
 #include "../render/public/render_ctrl.h"
 
 #include <stdint.h>
@@ -189,6 +190,11 @@ struct gamestate{
      *-------------------------------------------------------------------------
      */
     vec_entity_t            removed;
+    /*-------------------------------------------------------------------------
+     * Stack allocator used for per-frame render descriptors.
+     *-------------------------------------------------------------------------
+     */
+    struct memstack         render_data_stack;
 };
 
 #endif

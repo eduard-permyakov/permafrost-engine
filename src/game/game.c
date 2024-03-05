@@ -482,6 +482,29 @@ static void g_make_draw_list(vec_entity_t ents, vec_rstat_t *out_stat, vec_ranim
     PERF_RETURN_VOID();
 }
 
+static void *stackmalloc(size_t size)
+{
+    return stalloc(&s_gs.render_data_stack, size);
+}
+
+static void *stackrealloc(void *ptr, size_t size)
+{
+    if(!ptr)
+        return stackmalloc(size);
+
+    /* We don't really want to be hitting this case */
+    void *ret = stackmalloc(size);
+    if(!ret)
+        return NULL;
+    memmove(ret, ptr, size);
+    return ret;
+}
+
+static void stackfree(void *ptr)
+{
+    /* no-op */
+}
+
 static void g_create_render_input(struct render_input *out)
 {
     PERF_ENTER();
@@ -495,11 +518,11 @@ static void g_create_render_input(struct render_input *out)
     out->shadows = shadows_setting.as_bool;
     out->light_pos = s_gs.light_pos;
 
-    vec_rstat_init(&out->cam_vis_stat);
-    vec_ranim_init(&out->cam_vis_anim);
+    vec_rstat_init_alloc(&out->cam_vis_stat, stackrealloc, stackfree);
+    vec_ranim_init_alloc(&out->cam_vis_anim, stackrealloc, stackfree);
 
-    vec_rstat_init(&out->light_vis_stat);
-    vec_ranim_init(&out->light_vis_anim);
+    vec_rstat_init_alloc(&out->light_vis_stat, stackrealloc, stackfree);
+    vec_ranim_init_alloc(&out->light_vis_anim, stackrealloc, stackfree);
 
     vec_rstat_resize(&out->cam_vis_stat, 2048);
     vec_ranim_resize(&out->cam_vis_anim, 2048);
@@ -513,13 +536,9 @@ static void g_create_render_input(struct render_input *out)
     PERF_RETURN_VOID();
 }
 
-static void g_destroy_render_input(struct render_input *rinput)
+static void g_destroy_render_input(void)
 {
-    vec_rstat_destroy(&rinput->cam_vis_stat);
-    vec_ranim_destroy(&rinput->cam_vis_anim);
-
-    vec_rstat_destroy(&rinput->light_vis_stat);
-    vec_ranim_destroy(&rinput->light_vis_anim);
+    stalloc_clear(&s_gs.render_data_stack);
 }
 
 static void *g_push_render_input(struct render_input in)
@@ -1400,6 +1419,9 @@ bool G_Init(void)
     vec_entity_init(&s_gs.removed);
     g_create_settings();
 
+    if(!stalloc_init(&s_gs.render_data_stack))
+        return false;
+
     s_gs.active = kh_init(entity);
     if(!s_gs.active)
         goto fail_active;
@@ -1798,6 +1820,7 @@ void G_Shutdown(void)
     vec_entity_destroy(&s_gs.visible);
     vec_obb_destroy(&s_gs.visible_obbs);
     vec_entity_destroy(&s_gs.removed);
+    stalloc_destroy(&s_gs.render_data_stack);
 }
 
 void G_Update(void)
@@ -1912,7 +1935,7 @@ void G_Render(void)
             },
         });
     }
-    g_destroy_render_input(&in);
+    g_destroy_render_input();
 
     enum selection_type sel_type;
     const vec_entity_t *selected = G_Sel_Get(&sel_type);
