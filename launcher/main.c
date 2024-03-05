@@ -49,7 +49,7 @@
 #if defined(_WIN32)
 
 #include <windows.h>
-#include <Dbghelp.h>
+#include <dbghelp.h>
 #include <debugapi.h>
 #include <strsafe.h>
 
