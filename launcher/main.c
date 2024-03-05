@@ -233,7 +233,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
     LPTSTR cmdline = 
         STR(BIN_PATH) " .\\ " STR(SCRIPT_PATH)
-#ifdef APPANAME
+#ifdef APPNAME
         " --appname=\"" STR(APPNAME) "\" "
 #endif
 #ifdef APPICON
