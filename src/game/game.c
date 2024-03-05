@@ -1419,6 +1419,10 @@ bool G_Init(void)
     vec_entity_init(&s_gs.removed);
     g_create_settings();
 
+    vec_entity_resize(&s_gs.visible, 2048);
+    vec_entity_resize(&s_gs.light_visible, 2048);
+    vec_obb_resize(&s_gs.visible_obbs, 2048);
+
     if(!stalloc_init(&s_gs.render_data_stack))
         return false;
 

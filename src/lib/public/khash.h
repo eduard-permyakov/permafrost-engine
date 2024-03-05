@@ -123,6 +123,8 @@ int main() {
   Generic hash table library.
  */
 
+#include "../../perf.h"
+
 #define AC_VERSION_KHASH_H "0.2.8"
 
 #include <stdlib.h>
@@ -254,6 +256,7 @@ static const double __ac_HASH_UPPER = 0.77;
                                                                                                 \
     SCOPE int kh_resize_##name(kh_##name##_t *h, khint_t new_n_buckets)                         \
     {                                                                                           \
+      PERF_ENTER();                                                                             \
       /* This function uses 0.25*n_buckets bytes of working space instead of */                 \
       /* [sizeof(key_t+val_t)+.25]*n_buckets. */                                                \
         khint32_t *new_flags = 0;                                                               \
@@ -267,14 +270,14 @@ static const double __ac_HASH_UPPER = 0.77;
             else { /* hash table size to be changed (shrink or expand); rehash */               \
                 new_flags = (khint32_t*)kmalloc(__ac_fsize(new_n_buckets) * sizeof(khint32_t)); \
                 if (!new_flags)                                                                 \
-                    return -1;                                                                  \
+                    PERF_RETURN(-1);                                                            \
                 memset(new_flags, 0xaa, __ac_fsize(new_n_buckets) * sizeof(khint32_t));         \
                 if (h->n_buckets < new_n_buckets) { /* expand */                                \
                     khkey_t *new_keys = (khkey_t*)krealloc((void *)h->keys,                     \
                         new_n_buckets * sizeof(khkey_t));                                       \
                     if (!new_keys) {                                                            \
                         kfree(new_flags);                                                       \
-                        return -1;                                                              \
+                        PERF_RETURN(-1);                                                        \
                     }                                                                           \
                     h->keys = new_keys;                                                         \
                     if (kh_is_map) {                                                            \
@@ -282,7 +285,7 @@ static const double __ac_HASH_UPPER = 0.77;
                             new_n_buckets * sizeof(khval_t));                                   \
                         if (!new_vals) {                                                        \
                             kfree(new_flags);                                                   \
-                            return -1;                                                          \
+                            PERF_RETURN(-1);                                                    \
                         }                                                                       \
                         h->vals = new_vals;                                                     \
                     }                                                                           \
@@ -337,7 +340,7 @@ static const double __ac_HASH_UPPER = 0.77;
             h->n_occupied = h->size;                                                            \
             h->upper_bound = (khint_t)(h->n_buckets * __ac_HASH_UPPER + 0.5);                   \
         }                                                                                       \
-        return 0;                                                                               \
+        PERF_RETURN(0);                                                                         \
     }                                                                                           \
                                                                                                 \
     SCOPE khint_t kh_put_##name(kh_##name##_t *h, khkey_t key, int *ret)                        \

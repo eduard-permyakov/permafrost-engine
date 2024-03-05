@@ -37,6 +37,7 @@
 #define QUEUE_H
 
 #include "mem.h"
+#include "../../perf.h"
 
 #include <stddef.h>
 #include <stdlib.h>
@@ -80,9 +81,10 @@
                                                                                                 \
     static bool _queue_##name##_resize(queue(name) *queue, size_t new_cap)                      \
     {                                                                                           \
+        PERF_ENTER();                                                                           \
         type *new_mem = realloc((void*)queue->mem, sizeof(type) * new_cap);                     \
         if(!new_mem)                                                                            \
-            return false;                                                                       \
+            PERF_RETURN(false);                                                                 \
                                                                                                 \
         if(queue->ihead > queue->itail) {                                                       \
             /*                       */                                                         \
@@ -115,7 +117,7 @@
                                                                                                 \
         queue->mem = new_mem;                                                                   \
         queue->capacity = new_cap;                                                              \
-        return true;                                                                            \
+        PERF_RETURN(true);                                                                      \
     }                                                                                           \
                                                                                                 \
     scope bool queue_##name##_init(queue(name) *queue, size_t init_cap)                         \

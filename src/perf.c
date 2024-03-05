@@ -66,6 +66,13 @@ struct perf_entry{
     uint32_t name_id;
 };
 
+#ifndef NDEBUG
+#undef PERF_ENTER
+#undef PERF_RETURN
+#define PERF_ENTER()
+#define PERF_RETURN(...) do {return (__VA_ARGS__); } while(0)
+#endif
+
 KHASH_MAP_INIT_STR(name_id, uint32_t)
 KHASH_MAP_INIT_INT(id_name, const char *)
 
@@ -443,8 +450,6 @@ void Perf_FinishTick(void)
 
 size_t Perf_Report(size_t maxout, struct perf_info **out)
 {
-    PERF_ENTER();
-
     size_t ret = 0;
     for(khiter_t k = kh_begin(s_thread_state_table); k != kh_end(s_thread_state_table); k++) {
     
@@ -482,8 +487,7 @@ size_t Perf_Report(size_t maxout, struct perf_info **out)
         }
         out[ret++] = info;
     }
-
-    PERF_RETURN(ret);
+    return ret;
 }
 
 uint32_t Perf_LastFrameMS(void)
