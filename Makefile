@@ -144,7 +144,7 @@ CFLAGS = \
 	-I$(PYTHON_SRC)/Include \
 	-I$(OPENAL_SRC)/include \
 	-std=c99 \
-	-O2 \
+	-O3 \
 	-fno-strict-aliasing \
 	-fwrapv \
 	$(ASAN_CFLAGS) \
