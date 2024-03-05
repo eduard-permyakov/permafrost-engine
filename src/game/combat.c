@@ -2283,7 +2283,8 @@ int G_Combat_CurrContextualAction(void)
 bool G_Combat_Idle(uint32_t uid)
 {
     struct combatstate *cs = combatstate_get(uid);
-    assert(cs);
+    if(!cs)
+        return true;
     return (cs->state == STATE_NOT_IN_COMBAT);
 }
 
