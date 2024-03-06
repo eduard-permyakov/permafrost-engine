@@ -55,6 +55,7 @@ Download the free (or donate what-you-want) demo on [itch.io](https://spb.itch.i
 * RTS unit combat system
 * RTS fog-of-war system
 * RTS base-building mechanics
+* Configurable Automation Options for transporting and production
 * RTS resource gathering (and transporting) mechanics
 * RTS unit garrison and transport mechanics
 * Ranged combat using an efficient projectile physics simulation
@@ -71,8 +72,8 @@ Download the free (or donate what-you-want) demo on [itch.io](https://spb.itch.i
 
 ## Dependencies ##
 
-* SDL2 2.0.10
-* GLEW 2.1.0
+* SDL2 2.30.0
+* GLEW 2.2.0
 * python 2.7.17
 * openal-soft 1.21.1
 * stb_image.h, stb_image_resize.h

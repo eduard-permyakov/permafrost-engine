@@ -169,6 +169,10 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Get the closest unit under the mouse cursor, or None.
 
+    [get_idle_units]
+    ----------------------------------------------------------------------------
+    Returns a list of currently idle units.
+
     [get_key_name]
     ----------------------------------------------------------------------------
     Returns the string name for an SDL_Keycode integer value.
@@ -207,6 +211,11 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Returns the total capacity for storing a particular resource between all
     player-controlled storage sites.
+
+    [get_resource_icon]
+    ----------------------------------------------------------------------------
+    Returns an image path (stirng) that is currently set to be used as the icon
+    for the specified resource name.
 
     [get_resource_list]
     ----------------------------------------------------------------------------
@@ -248,6 +257,10 @@ BUILT-IN FUNCTIONS
     [hide_regions]
     ----------------------------------------------------------------------------
     Hide region outlines and names.
+
+    [hide_unit_icons]
+    ----------------------------------------------------------------------------
+    Disable rendering of icons on top of entities.
 
     [load_map]
     ----------------------------------------------------------------------------
@@ -323,6 +336,10 @@ BUILT-IN FUNCTIONS
     Returns the nearest entity to the specified 'position' - (X, Z) point or
     None. Takes an optional 'predicate' callable argument to filter the results
     and an optional 'max_range' (Float) argument.
+
+    [open_url]
+    ----------------------------------------------------------------------------
+    Open the specified URL in the system's browser.
 
     [pickle_object]
     ----------------------------------------------------------------------------
@@ -510,6 +527,16 @@ BUILT-IN FUNCTIONS
     Set the cursor to target mode. The next left click will issue a 'pick up'
     command to the storage site under the cursor.
 
+    [set_position_rally_point_on_left_click]
+    ----------------------------------------------------------------------------
+    Set the cursor to target mode. The next left click will update the rally
+    points of all currently selected buildings.
+
+    [set_resource_icon]
+    ----------------------------------------------------------------------------
+    Specify an image path (string) to be used as the icon for a resource with
+    the specified resource name.
+
     [set_simstate]
     ----------------------------------------------------------------------------
     Set the current simulation state.
@@ -582,6 +609,10 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Show region outlines and names over the map surface.
 
+    [show_unit_icons]
+    ----------------------------------------------------------------------------
+    Enable rendering of icons on top of entities.
+
     [spawn_projectile]
     ----------------------------------------------------------------------------
     Spawn a projectile with the specified parameters at a map location. The
@@ -643,6 +674,9 @@ BUILT-IN CLASSES
         [height]
         Returns the scaled height of the entity, in OpenGL coordinates.
 
+        [idle]
+        Boolean indicating whether the entity is currently in an idle state.
+
         [name]
         Custom name given to this enity.
 
@@ -695,11 +729,17 @@ BUILT-IN CLASSES
         [add_tag]
         Add a string tag to this entity's list of tags.
 
+        [clear_icons]
+        Clear the set of icons displayed over the entity.
+
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
         [face_towards]
         Make the entity face towards the specified point.
+
+        [get_icons]
+        Get the set of icons displayed over the entity.
 
         [is_garrisoned]
         Returns True if the entity is currently garrisoned.
@@ -722,6 +762,9 @@ BUILT-IN CLASSES
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
+
+        [set_icons]
+        Assign a set of icons to be displayed over the entity.
 
         [set_model]
         Replace the current entity's current model and animation data with the
@@ -756,6 +799,9 @@ BUILT-IN CLASSES
 
         [height]
         Returns the scaled height of the entity, in OpenGL coordinates.
+
+        [idle]
+        Boolean indicating whether the entity is currently in an idle state.
 
         [name]
         Custom name given to this enity.
@@ -809,6 +855,9 @@ BUILT-IN CLASSES
         [add_tag]
         Add a string tag to this entity's list of tags.
 
+        [clear_icons]
+        Clear the set of icons displayed over the entity.
+
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
@@ -817,6 +866,9 @@ BUILT-IN CLASSES
 
         [get_anim]
         Get the name of the currently playing animation clip.
+
+        [get_icons]
+        Get the set of icons displayed over the entity.
 
         [is_garrisoned]
         Returns True if the entity is currently garrisoned.
@@ -843,6 +895,9 @@ BUILT-IN CLASSES
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
+
+        [set_icons]
+        Assign a set of icons to be displayed over the entity.
 
         [set_model]
         Replace the current entity's current model and animation data with the
@@ -886,6 +941,9 @@ BUILT-IN CLASSES
         [height]
         Returns the scaled height of the entity, in OpenGL coordinates.
 
+        [idle]
+        Boolean indicating whether the entity is currently in an idle state.
+
         [name]
         Custom name given to this enity.
 
@@ -895,6 +953,9 @@ BUILT-IN CLASSES
 
         [pos]
         The XYZ position in worldspace coordinates.
+
+        [rally_point]
+        The location to which newly created or upgraded units will rally to.
 
         [required_resources]
         Get a dictionary of the resources required to supply this building.
@@ -944,6 +1005,9 @@ BUILT-IN CLASSES
         [add_tag]
         Add a string tag to this entity's list of tags.
 
+        [clear_icons]
+        Clear the set of icons displayed over the entity.
+
         [complete]
         Advance a building to the 'COMPLETED' state from the 'SUPPLIED' state.
 
@@ -956,6 +1020,9 @@ BUILT-IN CLASSES
         [found]
         Advance a building to the 'FOUNDED' state from the 'MARKED' state,
         where it becomes a build site and wait for workers to supply it.
+
+        [get_icons]
+        Get the set of icons displayed over the entity.
 
         [is_garrisoned]
         Returns True if the entity is currently garrisoned.
@@ -982,6 +1049,9 @@ BUILT-IN CLASSES
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
+
+        [set_icons]
+        Assign a set of icons to be displayed over the entity.
 
         [set_model]
         Replace the current entity's current model and animation data with the
@@ -1027,6 +1097,9 @@ BUILT-IN CLASSES
 
         [height]
         Returns the scaled height of the entity, in OpenGL coordinates.
+
+        [idle]
+        Boolean indicating whether the entity is currently in an idle state.
 
         [name]
         Custom name given to this enity.
@@ -1083,11 +1156,17 @@ BUILT-IN CLASSES
         [build]
         Issue an order to build a specific buildable entity.
 
+        [clear_icons]
+        Clear the set of icons displayed over the entity.
+
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
         [face_towards]
         Make the entity face towards the specified point.
+
+        [get_icons]
+        Get the set of icons displayed over the entity.
 
         [is_garrisoned]
         Returns True if the entity is currently garrisoned.
@@ -1110,6 +1189,9 @@ BUILT-IN CLASSES
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
+
+        [set_icons]
+        Assign a set of icons to be displayed over the entity.
 
         [set_model]
         Replace the current entity's current model and animation data with the
@@ -1211,6 +1293,9 @@ BUILT-IN CLASSES
         [hp]
         The current number of hitpoints that the entity has.
 
+        [idle]
+        Boolean indicating whether the entity is currently in an idle state.
+
         [max_hp]
         The maximum number of hitpoints that the entity starts out with.
 
@@ -1270,11 +1355,17 @@ BUILT-IN CLASSES
         Issues an 'attack move' order to the entity at the XZ position
         specified by the argument.
 
+        [clear_icons]
+        Clear the set of icons displayed over the entity.
+
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
         [face_towards]
         Make the entity face towards the specified point.
+
+        [get_icons]
+        Get the set of icons displayed over the entity.
 
         [hold_position]
         Issues a 'hold position' order to the entity, stopping it and
@@ -1301,6 +1392,9 @@ BUILT-IN CLASSES
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
+
+        [set_icons]
+        Assign a set of icons to be displayed over the entity.
 
         [set_model]
         Replace the current entity's current model and animation data with the
@@ -1334,6 +1428,9 @@ BUILT-IN CLASSES
 
         [height]
         Returns the scaled height of the entity, in OpenGL coordinates.
+
+        [idle]
+        Boolean indicating whether the entity is currently in an idle state.
 
         [name]
         Custom name given to this enity.
@@ -1387,11 +1484,17 @@ BUILT-IN CLASSES
         [add_tag]
         Add a string tag to this entity's list of tags.
 
+        [clear_icons]
+        Clear the set of icons displayed over the entity.
+
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
         [face_towards]
         Make the entity face towards the specified point.
+
+        [get_icons]
+        Get the set of icons displayed over the entity.
 
         [is_garrisoned]
         Returns True if the entity is currently garrisoned.
@@ -1414,6 +1517,9 @@ BUILT-IN CLASSES
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
+
+        [set_icons]
+        Assign a set of icons to be displayed over the entity.
 
         [set_model]
         Replace the current entity's current model and animation data with the
@@ -1452,6 +1558,9 @@ BUILT-IN CLASSES
 
         [height]
         Returns the scaled height of the entity, in OpenGL coordinates.
+
+        [idle]
+        Boolean indicating whether the entity is currently in an idle state.
 
         [name]
         Custom name given to this enity.
@@ -1505,6 +1614,9 @@ BUILT-IN CLASSES
         [add_tag]
         Add a string tag to this entity's list of tags.
 
+        [clear_icons]
+        Clear the set of icons displayed over the entity.
+
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
@@ -1514,6 +1626,9 @@ BUILT-IN CLASSES
         [garrison]
         Issues a 'garrison' order to the entity to try and enter the
         garrisonable entity specified by the argument.
+
+        [get_icons]
+        Get the set of icons displayed over the entity.
 
         [is_garrisoned]
         Returns True if the entity is currently garrisoned.
@@ -1536,6 +1651,9 @@ BUILT-IN CLASSES
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
+
+        [set_icons]
+        Assign a set of icons to be displayed over the entity.
 
         [set_model]
         Replace the current entity's current model and animation data with the
@@ -1577,6 +1695,9 @@ BUILT-IN CLASSES
         [height]
         Returns the scaled height of the entity, in OpenGL coordinates.
 
+        [idle]
+        Boolean indicating whether the entity is currently in an idle state.
+
         [name]
         Custom name given to this enity.
 
@@ -1629,11 +1750,17 @@ BUILT-IN CLASSES
         [add_tag]
         Add a string tag to this entity's list of tags.
 
+        [clear_icons]
+        Clear the set of icons displayed over the entity.
+
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
         [face_towards]
         Make the entity face towards the specified point.
+
+        [get_icons]
+        Get the set of icons displayed over the entity.
 
         [is_garrisoned]
         Returns True if the entity is currently garrisoned.
@@ -1656,6 +1783,9 @@ BUILT-IN CLASSES
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
+
+        [set_icons]
+        Assign a set of icons to be displayed over the entity.
 
         [set_model]
         Replace the current entity's current model and animation data with the
@@ -1682,6 +1812,11 @@ BUILT-IN CLASSES
         ************************************************************************
         MEMBERS
         ************************************************************************
+        [automatic_transport]
+        Boolean indicating whether the unit is currently in 'automatic
+        transport' mode. When in this mode, the unit will perform transporting
+        jobs each time it becomes idle.
+
         [bounds]
         Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
         box (in OpenGL coordinates).
@@ -1691,6 +1826,9 @@ BUILT-IN CLASSES
 
         [height]
         Returns the scaled height of the entity, in OpenGL coordinates.
+
+        [idle]
+        Boolean indicating whether the entity is currently in an idle state.
 
         [name]
         Custom name given to this enity.
@@ -1758,6 +1896,9 @@ BUILT-IN CLASSES
         [clear_curr_carry]
         Clear any resources that the unit is currently carrying.
 
+        [clear_icons]
+        Clear the set of icons displayed over the entity.
+
         [decrease_transport_priority]
         Move the specified resource down in the priority list the peasant uses
         for selecting which resource to bring next to the target storage site.
@@ -1779,9 +1920,16 @@ BUILT-IN CLASSES
         Get the amount of a particular resources that this entity is currently
         carrying.
 
+        [get_do_not_transport]
+        Get flag indicating whether the enitty is forbidden from transporting
+        the particular resource.
+
         [get_gather_speed]
         Get how much of the specified resource the entity gathers in a single
         animation.
+
+        [get_icons]
+        Get the set of icons displayed over the entity.
 
         [get_max_carry]
         Get the maximum amount of a particular resources that this entity is
@@ -1813,9 +1961,16 @@ BUILT-IN CLASSES
         Adds the entity to the current unit selection, if it is not present
         there already.
 
+        [set_do_not_transport]
+        Get flag indicating whether the enitty is forbidden from transporting
+        the particular resource.
+
         [set_gather_speed]
         Set how much of the specified resource the entity gathers in a single
         animation.
+
+        [set_icons]
+        Assign a set of icons to be displayed over the entity.
 
         [set_max_carry]
         Set how much of the specified resource the entity is able to carry at a
@@ -1859,6 +2014,9 @@ BUILT-IN CLASSES
 
         [height]
         Returns the scaled height of the entity, in OpenGL coordinates.
+
+        [idle]
+        Boolean indicating whether the entity is currently in an idle state.
 
         [name]
         Custom name given to this enity.
@@ -1919,11 +2077,17 @@ BUILT-IN CLASSES
         [add_tag]
         Add a string tag to this entity's list of tags.
 
+        [clear_icons]
+        Clear the set of icons displayed over the entity.
+
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
         [face_towards]
         Make the entity face towards the specified point.
+
+        [get_icons]
+        Get the set of icons displayed over the entity.
 
         [is_garrisoned]
         Returns True if the entity is currently garrisoned.
@@ -1950,6 +2114,9 @@ BUILT-IN CLASSES
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
+
+        [set_icons]
+        Assign a set of icons to be displayed over the entity.
 
         [set_model]
         Replace the current entity's current model and animation data with the
@@ -2042,6 +2209,9 @@ BUILT-IN CLASSES
         [height]
         Returns the scaled height of the entity, in OpenGL coordinates.
 
+        [idle]
+        Boolean indicating whether the entity is currently in an idle state.
+
         [name]
         Custom name given to this enity.
 
@@ -2052,11 +2222,19 @@ BUILT-IN CLASSES
         [pos]
         The XYZ position in worldspace coordinates.
 
+        [replenishable]
+        Boolean indicating whether this resource can be replenished after it is
+        exhausted.
+
         [resource_amount]
         The amount of resources that this entity currently holds
 
         [resource_name]
         The name of resource that can be harvested from this entity
+
+        [restored_amount]
+        The amount of the resource that will be restored to the entity when it
+        is replenished.
 
         [rotation]
         XYZW quaternion for rotaion about local origin.
@@ -2100,11 +2278,21 @@ BUILT-IN CLASSES
         [add_tag]
         Add a string tag to this entity's list of tags.
 
+        [clear_icons]
+        Clear the set of icons displayed over the entity.
+
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
         [face_towards]
         Make the entity face towards the specified point.
+
+        [get_icons]
+        Get the set of icons displayed over the entity.
+
+        [get_replenish_amount]
+        Gets the amount of a resource required to replenish the resource after
+        it is exhausted.
 
         [is_garrisoned]
         Returns True if the entity is currently garrisoned.
@@ -2128,9 +2316,16 @@ BUILT-IN CLASSES
         Adds the entity to the current unit selection, if it is not present
         there already.
 
+        [set_icons]
+        Assign a set of icons to be displayed over the entity.
+
         [set_model]
         Replace the current entity's current model and animation data with the
         specified PFOBJ data.
+
+        [set_replenish_amount]
+        Sets the amount of a resource required to replenish the resource after
+        it is exhausted.
 
         [stop]
         Issues a 'stop' command to the entity, stopping its' movement and
@@ -2157,15 +2352,22 @@ BUILT-IN CLASSES
         Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
         box (in OpenGL coordinates).
 
-        [do_not_take]
-        The list of resources that are currently able to be held at this
-        storage site.
+        [do_not_take_land]
+        Boolean specifying whether land-based units are forbidden from taking
+        resources from this site.
+
+        [do_not_take_water]
+        Boolean specifying whether water-based units are forbidden from taking
+        resources from this site.
 
         [faction_id]
         Index of the faction that the entity belongs to.
 
         [height]
         Returns the scaled height of the entity, in OpenGL coordinates.
+
+        [idle]
+        Boolean indicating whether the entity is currently in an idle state.
 
         [name]
         Custom name given to this enity.
@@ -2223,6 +2425,9 @@ BUILT-IN CLASSES
         [add_tag]
         Add a string tag to this entity's list of tags.
 
+        [clear_icons]
+        Clear the set of icons displayed over the entity.
+
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
@@ -2240,6 +2445,9 @@ BUILT-IN CLASSES
         [get_desired]
         Gets the target amount of the specified resource that harvesters will
         aim to store there.
+
+        [get_icons]
+        Get the set of icons displayed over the entity.
 
         [is_garrisoned]
         Returns True if the entity is currently garrisoned.
@@ -2274,6 +2482,9 @@ BUILT-IN CLASSES
         [set_desired]
         Sets the target amount of the specified resource that harvesters will
         aim to store there.
+
+        [set_icons]
+        Assign a set of icons to be displayed over the entity.
 
         [set_model]
         Replace the current entity's current model and animation data with the
@@ -3117,6 +3328,9 @@ BUILT-IN CLASSES
         [height]
         Returns the scaled height of the entity, in OpenGL coordinates.
 
+        [idle]
+        Boolean indicating whether the entity is currently in an idle state.
+
         [name]
         Custom name given to this enity.
 
@@ -3169,11 +3383,17 @@ BUILT-IN CLASSES
         [add_tag]
         Add a string tag to this entity's list of tags.
 
+        [clear_icons]
+        Clear the set of icons displayed over the entity.
+
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
         [face_towards]
         Make the entity face towards the specified point.
+
+        [get_icons]
+        Get the set of icons displayed over the entity.
 
         [is_garrisoned]
         Returns True if the entity is currently garrisoned.
@@ -3196,6 +3416,9 @@ BUILT-IN CLASSES
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
+
+        [set_icons]
+        Assign a set of icons to be displayed over the entity.
 
         [set_model]
         Replace the current entity's current model and animation data with the
@@ -3340,6 +3563,10 @@ BUILT-IN CLASSES
         ************************************************************************
         [__pickle__]
         Serialize a Permafrost Engine window to a string.
+
+        [animated_button_label]
+        Add a button with a label and action with a circling animation around
+        it.
 
         [button_label]
         Add a button with a label and action.
@@ -3518,6 +3745,7 @@ BUILT-IN CONSTANTS
     DIPLOMACY_STATE_WAR 1
     EVENT_10HZ_TICK 65550
     EVENT_1HZ_TICK 65551
+    EVENT_20HZ_TICK 65548
     EVENT_30HZ_TICK 65547
     EVENT_60HZ_TICK 65546
     EVENT_ANIM_CYCLE_FINISHED 65553
@@ -3527,6 +3755,8 @@ BUILT-IN CONSTANTS
     EVENT_BUILDING_COMPLETED 65574
     EVENT_BUILDING_CONSTRUCTED 65575
     EVENT_BUILDING_FOUNDED 65573
+    EVENT_BUILDING_PLACED 65597
+    EVENT_BUILDING_REMOVED 65598
     EVENT_BUILD_BEGIN 65569
     EVENT_BUILD_END 65570
     EVENT_BUILD_FAIL_FOUND 65571
@@ -3545,11 +3775,14 @@ BUILT-IN CONSTANTS
     EVENT_HARVEST_TARGET_ACQUIRED 65580
     EVENT_MOTION_END 65556
     EVENT_MOTION_START 65555
+    EVENT_MOVABLE_ENTITY_BLOCK 65596
+    EVENT_MOVABLE_ENTITY_UNBLOCK 65595
     EVENT_MOVE_ISSUED 65554
     EVENT_NEW_GAME 65544
     EVENT_ORDER_ISSUED 65594
     EVENT_PROJECTILE_DISAPPEAR 65591
     EVENT_PROJECTILE_HIT 65592
+    EVENT_RALLY_POINT_SET 65599
     EVENT_RENDER_3D_POST 65540
     EVENT_RENDER_3D_PRE 65539
     EVENT_RENDER_FINISH 65542
@@ -3569,6 +3802,8 @@ BUILT-IN CONSTANTS
     EVENT_STORAGE_SITE_AMOUNT_CHANGED 65583
     EVENT_STORAGE_TARGET_ACQUIRED 65582
     EVENT_TRANSPORT_TARGET_ACQUIRED 65581
+    EVENT_UNIT_BECAME_ACTIVE 65601
+    EVENT_UNIT_BECAME_IDLE 65600
     EVENT_UNIT_SELECTION_CHANGED 65545
     EVENT_UPDATE_END 65537
     EVENT_UPDATE_FACTION 65590
