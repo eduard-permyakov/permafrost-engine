@@ -11,12 +11,19 @@ EVERGLORY is the flagship game developed using Permafrost Engine.
 
 Download the free (or donate what-you-want) demo on [itch.io](https://spb.itch.io/everglory) or on [Steam](https://store.steampowered.com/app/1309720/EVERGLORY/). With the demo you also get access to all the scripts and assets powering the gameplay to learn from and modify as you wish.
 
-![screenshot-01](docs/images/screenshot-01.png)
-![screenshot-02](docs/images/screenshot-02.png)
-![screenshot-03](docs/images/screenshot-03.png)
-![screenshot-04](docs/images/screenshot-04.png)
-![screenshot-05](docs/images/screenshot-05.png)
-![screenshot-06](docs/images/screenshot-06.png)
+![screenshot-01](docs/images/screenshot-01.jpg)
+![screenshot-02](docs/images/screenshot-02.jpg)
+![screenshot-03](docs/images/screenshot-03.jpg)
+![screenshot-04](docs/images/screenshot-04.jpg)
+![screenshot-05](docs/images/screenshot-05.jpg)
+![screenshot-06](docs/images/screenshot-06.jpg)
+![screenshot-07](docs/images/screenshot-07.jpg)
+![screenshot-08](docs/images/screenshot-08.jpg)
+![screenshot-09](docs/images/screenshot-09.jpg)
+![screenshot-10](docs/images/screenshot-10.jpg)
+![screenshot-11](docs/images/screenshot-11.jpg)
+![screenshot-12](docs/images/screenshot-12.jpg)
+![screenshot-13](docs/images/screenshot-13.jpg)
 
 ## Engine Summary ##
 
