@@ -51,6 +51,7 @@ Download the free (or donate what-you-want) demo on [itch.io](https://spb.itch.i
 * Handling of dynamic obstacles in pathfinding
 * Dynamic collision avoidance of multiple entities using Hybrid Reciprocal Velocity Obstacles and the ClearPath algorithm
 * Formation-based unit movement and placement
+* Optimal formation re-shuffling using the Hungarian Algorithm
 * Pathfinding of different kinds/sizes of units (using "navigation layers")
 * Pathfinding of Land, Water, and Air units
 * Movement and pathfinding computations accelerated with parallelism
@@ -62,7 +63,7 @@ Download the free (or donate what-you-want) demo on [itch.io](https://spb.itch.i
 * RTS unit combat system
 * RTS fog-of-war system
 * RTS base-building mechanics
-* Configurable Automation Options for transporting and production
+* Configurable automation of workers and production
 * RTS resource gathering (and transporting) mechanics
 * RTS unit garrison and transport mechanics
 * Ranged combat using an efficient projectile physics simulation
@@ -164,6 +165,8 @@ Follow the development of Permafrost Engine and EVERGLORY on [YouTube](https://w
 [EVERGLORY (Indie RTS Game) - Pathfinding Showcase](https://www.youtube.com/watch?v=7GcqVAzuJgo)
 
 [Indie RTS Devlog #16: Land, Water, and Air](https://www.youtube.com/watch?v=9GAbggOEHH0)
+
+[Indie RTS Devlog #17: Economy + NEW DEMO](https://www.youtube.com/watch?v=jkfB9ZsTkWc)
 
 ## Comments/Questions ##
 
