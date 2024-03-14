@@ -33,20 +33,30 @@
  *
  */
 
+/* Implementation of the Image Quilting algorithm as described 
+ * in the paper "Image Quilting for Texture Synthesis and Transfer"
+ * by Alexei A. Efros and William T. Freeman.
+ */
+
 #include "gl_image_quilt.h"
 #include "../pf_math.h"
 #include "../lib/public/stb_image.h"
 #include "../lib/public/stb_image_resize.h"
+#include "../lib/public/vec.h"
 
 #include <string.h>
 #include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <limits.h>
 
 #define BLOCK_DIM           (65)
 #define OVERLAP_DIM         (10)
 #define TILE_DIM            (130)
-#define OVERLAP_TOLERANCE   (0.3)
+#define OVERLAP_TOLERANCE   (0.1)
+
+#define MIN(a, b)           ((a) < (b) ? (a) : (b))
+#define MAX(a, b)           ((a) > (b) ? (a) : (b))
 
 enum constraint{
     CONSTRAIN_LEFT,
@@ -84,14 +94,21 @@ struct image_tile{
     char *pixels;
 };
 
+struct coord{
+    int r, c;
+};
+
+VEC_TYPE(coord, struct coord)
+VEC_IMPL(static inline, coord, struct coord)
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static bool dump_ppm(const char* filename, const unsigned char *data, 
+static bool dump_ppm(const char *filename, const unsigned char *data, 
                      int nr_channels, int width, int height)
 {
-    FILE* file = fopen(filename, "wb");
+    FILE *file = fopen(filename, "wb");
     if(!file)
         return false;
 
@@ -117,9 +134,9 @@ static bool dump_patch(const char *filename, const struct image image,
         image.nr_channels, BLOCK_DIM, BLOCK_DIM);
 }
 
-static bool dump_mask_ppm(const char* filename, const struct image_patch_mask *mask)
+static bool dump_mask_ppm(const char *filename, const struct image_patch_mask *mask)
 {
-    FILE* file = fopen(filename, "wb");
+    FILE *file = fopen(filename, "wb");
     if(!file)
         return false;
 
@@ -133,6 +150,43 @@ static bool dump_mask_ppm(const char* filename, const struct image_patch_mask *m
             color[1] = 255;
             color[2] = 255;
         }
+        fwrite(color, 1, 3, file);
+    }}
+
+    fclose(file);
+    return true;
+}
+
+static bool dump_cost_image_ppm(const char *filename, const struct cost_image *cost_image)
+{
+    FILE *file = fopen(filename, "wb");
+    if(!file)
+        return false;
+
+    int min = INT_MAX;
+    int max = INT_MIN;
+
+    for(int r = 0; r < cost_image->height; r++) {
+    for(int c = 0; c < cost_image->width; c++) {
+        size_t offset = r * cost_image->width + c;
+        min = MIN(min, cost_image->data[offset]);
+        max = MAX(max, cost_image->data[offset]);
+    }}
+    int range = max - min;
+
+    fprintf(file, "P6\n%d %d\n%d\n", (int)cost_image->width, (int)cost_image->height, 255);
+    for(int r = 0; r < cost_image->height; r++) {
+    for(int c = 0; c < cost_image->width; c++) {
+
+        size_t offset = r * cost_image->width + c;
+        int value = cost_image->data[offset];
+        float percent = ((float)(value - min)) / range;
+        assert(percent >= 0.0f && percent <= 1.0f);
+        unsigned char color[3] = {
+            percent * 255,
+            percent * 255,
+            percent * 255
+        };
         fwrite(color, 1, 3, file);
     }}
 
@@ -197,7 +251,7 @@ static void copy_left(const struct image image, struct image_view view,
 }
 
 static void copy_top(const struct image image, struct image_view view,
-                     struct image_patch *template)
+                     struct image_patch *template, bool diagonal)
 {
     for(int r = 0; r < OVERLAP_DIM; r++) {
         size_t row_offset = (view.y + view.height + r) * image.width * image.nr_channels;
@@ -205,29 +259,34 @@ static void copy_top(const struct image image, struct image_view view,
         size_t bytes_per_row = image.nr_channels * view.width;
         const unsigned char *src = image.data + row_offset + col_offset;
         char *dst = template->pixels + (r * bytes_per_row);
-        memcpy(dst, src, bytes_per_row);
+        size_t bytes_copied = bytes_per_row;
+        if(diagonal) {
+            dst += r;
+            bytes_copied -= r;
+        }
+        memcpy(dst, src, bytes_copied);
     }
 }
 
-static bool copy_overlap(const struct image image, struct image_view view, 
+static bool copy_overlap(const struct image image, struct image_view *views, 
                          enum constraint constraint, struct image_patch *template)
 {
-    size_t patch_size = image.nr_channels * view.width * view.height;
+    size_t patch_size = image.nr_channels * views[0].width * views[0].height;
     template->pixels = malloc(patch_size);
     if(!template->pixels)
         return false;
 
-    memset(template->pixels, 0, view.width * view.height * image.nr_channels);
+    memset(template->pixels, 0, views[0].width * views[0].height * image.nr_channels);
     switch(constraint) {
     case CONSTRAIN_LEFT:
-        copy_left(image, view, template);
+        copy_left(image, views[0], template);
         break;
     case CONSTRAIN_TOP:
-        copy_top(image, view, template);
+        copy_top(image, views[0], template, false);
         break;
     case CONSTRAIN_TOP_LEFT: {
-        copy_left(image, view, template);
-        copy_top(image, view, template);
+        copy_left(image, views[0], template);
+        copy_top(image, views[1], template, true);
         break;
     }
     default: assert(0);
@@ -267,9 +326,33 @@ static void create_mask(enum constraint constraint, struct image_patch_mask *mas
     }
 }
 
-static int compute_ssd(struct image image)
+static int compute_ssd(struct image image, struct image_view view,
+                       const struct image_patch *template, 
+                       const struct image_patch_mask *mask)
 {
-    return 0;
+    int ssd = 0;
+    for(int r = 0; r < view.height; r++) {
+    for(int c = 0; c < view.width; c++) {
+
+        if(!mask->bits[r][c])
+            continue;
+
+        int img_x = view.x + c;
+        int img_y = view.y + r;
+
+        char vector_a[32];
+        memcpy(vector_a, &image.data[img_y * image.width + img_x], image.nr_channels);
+
+        char vector_b[32];
+        memcpy(vector_b, &template->pixels[r * view.width + c], image.nr_channels);
+
+        int diff_magnitude_squared = 0;
+        for(int i = 0; i < image.nr_channels; i++) {
+            diff_magnitude_squared += vector_a[i] - vector_b[i];
+        }
+        ssd += diff_magnitude_squared;
+    }}
+    return ssd;
 }
 
 /* ssd_patch performs template matching with the overlapping region, computing the 
@@ -283,21 +366,69 @@ static int compute_ssd(struct image image)
  * cost (SSD) of choosing a sample centered at each pixel.
  */
 static void ssd_patch(struct image image, struct cost_image out_cost_image, 
-                      struct image_patch *patch, struct image_patch_mask *mask)
+                      struct image_patch *template, struct image_patch_mask *mask)
 {
+    int offx = BLOCK_DIM / 2;
+    int offy = BLOCK_DIM / 2;
+
+    for(int i = 0; i < out_cost_image.width; i++) {
+    for(int j = 0; j < out_cost_image.height; j++) {
+        struct image_view view = (struct image_view){
+            .x = offx + i,
+            .y = offy + j,
+            .width = BLOCK_DIM,
+            .height = BLOCK_DIM
+        };
+        out_cost_image.data[out_cost_image.width * i + j] = 
+            compute_ssd(image, view, template, mask);
+    }}
 }
 
 /* choose_sample takes as input the cost image (each pixel's value is the cost of
  * selecting the patch centered at that pixel) and selects a randomly sampled patch
  * with low cost.
  */
-static void choose_sample(struct image image, struct image cost_image)
+static struct coord choose_sample(struct cost_image cost_image)
 {
+    vec_coord_t candidates;
+    vec_coord_init(&candidates);
+
+    int min = INT_MAX;
+    int max = INT_MIN;
+
+    for(int r = 0; r < cost_image.height; r++) {
+    for(int c = 0; c < cost_image.width; c++) {
+        size_t offset = r * cost_image.width + c;
+        min = MIN(min, cost_image.data[offset]);
+        max = MAX(max, cost_image.data[offset]);
+    }}
+    int range = max - min;
+
+    for(int r = 0; r < cost_image.height; r++) {
+    for(int c = 0; c < cost_image.width; c++) {
+        size_t offset = r * cost_image.width + c;
+        int value = cost_image.data[offset];
+        float percent = ((float)(value - min)) / range;
+        if(percent <= OVERLAP_TOLERANCE) {
+            vec_coord_push(&candidates, (struct coord){r, c});
+        }
+    }}
+    assert(vec_size(&candidates) > 0);
+
+    int min_coord = 0;
+    int max_coord = vec_size(&candidates) - 1;
+    int idx = rand() % (max_coord + 1 - min_coord) + min_coord;
+
+    struct coord ret = vec_AT(&candidates, idx);
+    vec_coord_destroy(&candidates);
+    return ret;
 }
 
-static void match_block(struct image image, enum constraint constraint,
-                        int x, int y, struct image_patch *out)
+static bool match_next_block(struct image image, struct image_view *views, 
+                             enum constraint constraint, struct image_view *out_view, 
+                             struct image_patch *out_block)
 {
+    bool ret = false;
     size_t cost_width = image.width - BLOCK_DIM + 1;
     size_t cost_height = image.height - BLOCK_DIM + 1;
     struct cost_image cost_image = (struct cost_image){
@@ -305,10 +436,32 @@ static void match_block(struct image image, enum constraint constraint,
         .width = cost_width,
         .height = cost_height,
     };
+    if(!cost_image.data)
+        goto fail_cost_image;
+
+    struct image_patch template;
+    if(!copy_overlap(image, views, constraint, &template))
+        goto fail_template;
+
     struct image_patch_mask mask;
     create_mask(constraint, &mask);
-    ssd_patch(image, cost_image, out, &mask);
+
+    ssd_patch(image, cost_image, &template, &mask);
+    struct coord sample = choose_sample(cost_image);
+    *out_view = (struct image_view){
+        .x = sample.c - (BLOCK_DIM / 2),
+        .y = sample.r - (BLOCK_DIM / 2),
+        .width = BLOCK_DIM,
+        .height = BLOCK_DIM
+    };
+    copy_view(image, *out_view, out_block);
+    ret = true;
+
+    free(template.pixels);
+fail_template:
     free(cost_image.data);
+fail_cost_image:
+    return ret;
 }
 
 static bool quilt_tile(struct image image, struct image_tile *tile)
@@ -326,23 +479,30 @@ static bool quilt_tile(struct image image, struct image_tile *tile)
      */
 
     bool ret = false;
-    struct image_patch template;
-    struct image_patch blocks[4];
+    struct image_view views[4] = {0};
+    struct image_patch blocks[4] = {0};
 
-    struct image_view view = random_block(image);
-    if(!copy_view(image, view, &blocks[0]))
-        goto fail_block_0;
+    views[0] = random_block(image);
+    if(!copy_view(image, views[0], &blocks[0]))
+        goto fail_block;
 
-    if(!copy_overlap(image, view, CONSTRAIN_TOP_LEFT, &template))
-        return false;
+    struct image_view b1_views[] = {views[0]};
+    if(!match_next_block(image, b1_views, CONSTRAIN_LEFT, &views[1], &blocks[1]))
+        goto fail_block;
 
-    struct image_patch_mask mask;
-    create_mask(CONSTRAIN_TOP_LEFT, &mask);
+    struct image_view b2_views[] = {views[0]};
+    if(!match_next_block(image, b2_views, CONSTRAIN_TOP, &views[2], &blocks[2]))
+        goto fail_block;
+
+    struct image_view b3_views[] = {views[1], views[2]};
+    if(!match_next_block(image, b3_views, CONSTRAIN_TOP_LEFT, &views[3], &blocks[3]))
+        goto fail_block;
 
     ret = true;
-    free(template.pixels);
-    free(blocks[0].pixels);
-fail_block_0:
+fail_block:
+    for(int i = 0; i < 4; i++) {
+        free(blocks[i].pixels);
+    }
     return ret;
 }
 
