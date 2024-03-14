@@ -202,7 +202,7 @@
         }                                                                                       \
                                                                                                 \
         qt_node(name) *parent = mp_##name##_entry(&qt->node_pool, node->parent);                \
-        float pxmin, pxmax, pymin, pymax;                                                       \
+        float pxmin = 0, pxmax = 0, pymin = 0, pymax = 0;                                       \
         _qt_##name##_node_bounds(qt, node->parent, &pxmin, &pxmax, &pymin, &pymax);             \
                                                                                                 \
         if(parent->nw == ref) {                                                                 \
@@ -284,7 +284,7 @@
                                             float x, float y, float range,                      \
                                             type *out, int *inout_maxout)                       \
     {                                                                                           \
-        float xmin, xmax, ymin, ymax;                                                           \
+        float xmin = 0, xmax = 0, ymin = 0, ymax = 0;                                           \
         _qt_##name##_node_bounds(qt, ref, &xmin, &xmax, &ymin, &ymax);                          \
         _qt_##name##_extend_bounds(&xmin, &xmax, &ymin, &ymax, range);                          \
                                                                                                 \
@@ -339,7 +339,7 @@
                                           float axmin, float axmax, float aymin, float aymax,   \
                                           type *out, int *inout_maxout)                         \
     {                                                                                           \
-        float xmin, xmax, ymin, ymax;                                                           \
+        float xmin = 0, xmax = 0, ymin = 0, ymax = 0;                                           \
         _qt_##name##_node_bounds(qt, ref, &xmin, &xmax, &ymin, &ymax);                          \
                                                                                                 \
         if(_qt_##name##_bounds_intersect(xmin,  xmax,  ymin,  ymax,                             \
