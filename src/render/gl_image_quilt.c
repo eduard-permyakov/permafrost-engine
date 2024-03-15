@@ -43,6 +43,7 @@
 #include "../lib/public/stb_image.h"
 #include "../lib/public/stb_image_resize.h"
 #include "../lib/public/vec.h"
+#include "../lib/public/khash.h"
 
 #include <string.h>
 #include <assert.h>
@@ -62,6 +63,11 @@ enum constraint{
     CONSTRAIN_LEFT,
     CONSTRAIN_TOP,
     CONSTRAIN_TOP_LEFT
+};
+
+enum direction{
+    DIRECTION_HORIZONTAL,
+    DIRECTION_VERTICAL
 };
 
 struct image{
@@ -101,9 +107,24 @@ struct coord{
 VEC_TYPE(coord, struct coord)
 VEC_IMPL(static inline, coord, struct coord)
 
+KHASH_MAP_INIT_INT64(coord, int)
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static uint64_t coord_to_key(struct coord coord)
+{
+    return ((uint64_t)coord.r) << 32
+         | ((uint64_t)coord.c) << 0;
+}
+
+struct coord key_to_coord(uint64_t key)
+{
+    uint64_t r = key >> 32;
+    uint64_t c = (key & 0xffffffff);
+    return (struct coord){r, c};
+}
 
 static bool dump_ppm(const char *filename, const unsigned char *data, 
                      int nr_channels, int width, int height)
@@ -350,7 +371,7 @@ static int compute_ssd(struct image image, struct image_view view,
         for(int i = 0; i < image.nr_channels; i++) {
             diff_magnitude_squared += vector_a[i] - vector_b[i];
         }
-        ssd += diff_magnitude_squared;
+        ssd += abs(diff_magnitude_squared);
     }}
     return ssd;
 }
@@ -464,6 +485,184 @@ fail_cost_image:
     return ret;
 }
 
+static int compute_min_err_at(struct cost_image err, khash_t(coord) *memo, struct coord coord,
+                              enum direction dir)
+{
+    uint64_t key = coord_to_key(coord);
+    khiter_t k = kh_get(coord, memo, key);
+    if(k != kh_end(memo)) {
+        return kh_val(memo, k);
+    }
+
+    /* For horizontal patches, the path goes from left to right.
+     * For vertical patches, the path goes from top to bottom.
+     */
+    if((dir == DIRECTION_VERTICAL && (coord.r == 0))
+    || (dir == DIRECTION_HORIZONTAL && (coord.c == 0))) {
+        int value = err.data[coord.r * err.width + coord.c];
+        int status;
+        khiter_t k = kh_put(coord, memo, key, &status);
+        assert(status != -1);
+        kh_val(memo, k) = value;
+        assert(value >= 0);
+        return value;
+    }
+
+    /* If we are not at the edge, find the minimum adjacent 
+     * cumulative costs and combine it with the current cost;
+     */
+    int ret = 0;
+    size_t nadjacent = 0;
+    struct coord adjacent[3] = {0};
+    int adjacent_errs[3] = {0};
+
+    switch(dir) {
+    case DIRECTION_VERTICAL: {
+        assert(coord.r > 0);
+        if(coord.c > 0) {
+            adjacent[nadjacent++] = (struct coord){coord.r - 1, coord.c - 1};
+        }
+        adjacent[nadjacent++] = (struct coord){coord.r - 1, coord.c};
+        if(coord.c < err.width-1) {
+            adjacent[nadjacent++] = (struct coord){coord.r - 1, coord.c + 1};
+        }
+        break;
+    }
+    case DIRECTION_HORIZONTAL: {
+        assert(coord.c > 0);
+        if(coord.r > 0) {
+            adjacent[nadjacent++] = (struct coord){coord.r - 1, coord.c - 1};
+        }
+        adjacent[nadjacent++] = (struct coord){coord.r, coord.c - 1};
+        if(coord.r < err.height-1) {
+            adjacent[nadjacent++] = (struct coord){coord.r + 1, coord.c - 1};
+        }
+        break;
+    }
+    default: assert(0);
+    }
+    assert(nadjacent > 0);
+
+    int min_err_idx = -1;
+    int min_err = INT_MAX;
+    for(int i = 0; i < nadjacent; i++) {
+        adjacent_errs[i] = compute_min_err_at(err, memo, adjacent[i], dir);
+        if(adjacent_errs[i] < min_err) {
+            min_err = adjacent_errs[i];
+            min_err_idx = i;
+        }
+    }
+    assert(min_err_idx != -1);
+
+    int curr_err = err.data[coord.r * err.width + coord.c];
+    ret = curr_err + min_err;
+
+    int status;
+    k = kh_put(coord, memo, key, &status);
+    assert(status != -1);
+    kh_val(memo, k) = ret;
+    assert(ret >= 0);
+    return ret;
+}
+
+static bool compute_min_err_surface(struct cost_image err, struct cost_image out,
+                                    enum direction dir)
+{
+    khash_t(coord) *memo = kh_init(coord);
+    if(!memo)
+        return false;
+    if(0 != kh_resize(coord, memo, err.width * err.height)) {
+        kh_destroy(coord, memo);
+        return false;
+    }
+
+    for(int r = 0; r < err.height; r++) {
+    for(int c = 0; c < err.width; c++) {
+        size_t offset = r * err.width + c;
+        out.data[offset] = compute_min_err_at(err, memo, (struct coord){r, c}, dir);
+    }}
+
+    kh_destroy(coord, memo);
+    return true;
+}
+
+static bool find_error_surface(struct image image, struct image_view a, struct image_view b,
+                               enum direction dir)
+{
+    size_t width  = (dir == DIRECTION_HORIZONTAL) ? a.width : OVERLAP_DIM * 2;
+    size_t height = (dir == DIRECTION_HORIZONTAL) ? OVERLAP_DIM * 2 : a.height;
+    size_t patch_size = width * height * sizeof(int);
+    struct cost_image patch = (struct cost_image){
+        .data = malloc(patch_size),
+        .width = width,
+        .height = height
+    };
+    if(!patch.data)
+        return false;
+
+    struct image_view overlap_a, overlap_b;
+    switch(dir) {
+    case DIRECTION_HORIZONTAL:
+        overlap_a = (struct image_view){
+            .x = a.x,
+            .y = a.y + a.height - OVERLAP_DIM,
+            .width = a.width,
+            .height = OVERLAP_DIM * 2
+        };
+        overlap_b = (struct image_view){
+            .x = b.x,
+            .y = b.y - OVERLAP_DIM,
+            .width = b.width,
+            .height = OVERLAP_DIM * 2
+        };
+        break;
+    case DIRECTION_VERTICAL:
+        overlap_a = (struct image_view){
+            .x = a.x + a.width - OVERLAP_DIM,
+            .y = a.y,
+            .width = OVERLAP_DIM * 2,
+            .height = a.height
+        };
+        overlap_b = (struct image_view){
+            .x = b.x - OVERLAP_DIM,
+            .y = b.y,
+            .width = OVERLAP_DIM * 2,
+            .height = b.height
+        };
+        break;
+    default: assert(0);
+    }
+
+    for(int r = 0; r < height; r++) {
+    for(int c = 0; c < width; c++) {
+
+        size_t offset_dst = (r * width + c);
+        size_t offset_a = ((overlap_a.y + r) * image.width) + (overlap_a.x + c);
+        size_t offset_b = ((overlap_b.y + r) * image.width) + (overlap_b.x + c);
+
+        int diff_magnitude_squared = 0;
+        for(int i = 0; i < image.nr_channels; i++) {
+            diff_magnitude_squared += image.data[offset_a + i] - image.data[offset_b + i];
+        }
+        patch.data[offset_dst] = abs(diff_magnitude_squared);
+    }}
+
+    struct cost_image min_err_surface = (struct cost_image){
+        .data = malloc(patch_size),
+        .width = width,
+        .height = height
+    };
+    if(!min_err_surface.data){
+        free(patch.data);
+        return false;
+    }
+    compute_min_err_surface(patch, min_err_surface, dir);
+
+    free(min_err_surface.data);
+    free(patch.data);
+    return true;
+}
+
 static bool quilt_tile(struct image image, struct image_tile *tile)
 {
     /* Go through the image to be synthesized in raster scan order in steps of one 
@@ -497,6 +696,11 @@ static bool quilt_tile(struct image image, struct image_tile *tile)
     struct image_view b3_views[] = {views[1], views[2]};
     if(!match_next_block(image, b3_views, CONSTRAIN_TOP_LEFT, &views[3], &blocks[3]))
         goto fail_block;
+
+    /* Now that we have selected the blocks, find the minimum error boundary
+     * but between adjacent blocks and paste them onto the final tile texture.
+     */
+    find_error_surface(image, views[0], views[2], DIRECTION_HORIZONTAL);
 
     ret = true;
 fail_block:
