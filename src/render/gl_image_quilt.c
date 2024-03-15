@@ -96,6 +96,10 @@ struct image_patch_mask{
     char bits[BLOCK_DIM][BLOCK_DIM];
 };
 
+struct seam_mask{
+    char *bits;
+};
+
 struct image_tile{
     char *pixels;
 };
@@ -167,6 +171,31 @@ static bool dump_mask_ppm(const char *filename, const struct image_patch_mask *m
 
         unsigned char color[3] = {0};
         if(mask->bits[i][j]) {
+            color[0] = 255;
+            color[1] = 255;
+            color[2] = 255;
+        }
+        fwrite(color, 1, 3, file);
+    }}
+
+    fclose(file);
+    return true;
+}
+
+static bool dump_seam_mask_ppm(const char *filename, const struct seam_mask *mask,
+                               size_t width, size_t height)
+{
+    FILE *file = fopen(filename, "wb");
+    if(!file)
+        return false;
+
+    fprintf(file, "P6\n%d %d\n%d\n", (int)width, (int)height, 255);
+    for (int i = 0; i < height; i++) {
+    for (int j = 0; j < width; j++) {
+
+        unsigned char color[3] = {0};
+        size_t offset = i * width + j;
+        if(mask->bits[offset]) {
             color[0] = 255;
             color[1] = 255;
             color[2] = 255;
@@ -565,6 +594,8 @@ static int compute_min_err_at(struct cost_image err, khash_t(coord) *memo, struc
     return ret;
 }
 
+/* Use dynamic programming to find the minimum error sufrace.
+ */
 static bool compute_min_err_surface(struct cost_image err, struct cost_image out,
                                     enum direction dir)
 {
@@ -586,9 +617,100 @@ static bool compute_min_err_surface(struct cost_image err, struct cost_image out
     return true;
 }
 
+struct coord row_min(struct cost_image err_surface, int row)
+{
+    int min = INT_MAX;
+    int min_col = 0;
+    for(int c = 0; c < err_surface.width; c++) {
+        size_t offset = row * err_surface.width + c;
+        int value = err_surface.data[offset];
+        if(value < min) {
+            min = value;
+            min_col = c;
+        }
+    }
+    return (struct coord){row, min_col};
+}
+
+struct coord col_min(struct cost_image err_surface, int col)
+{
+    int min = INT_MAX;
+    int min_row = 0;
+    for(int r = 0; r < err_surface.height; r++) {
+        size_t offset = r * err_surface.width + col;
+        int value = err_surface.data[offset];
+        if(value < min) {
+            min = value;
+            min_row = r;
+        }
+    }
+    return (struct coord){min_row, col};
+}
+
+static void seam_path(struct cost_image err_surface, enum direction dir, struct coord *out_path)
+{
+    switch(dir) {
+    case DIRECTION_HORIZONTAL:
+        for(int c = 0; c < err_surface.width; c++) {
+            out_path[c] = col_min(err_surface, c);
+        }
+        break;
+    case DIRECTION_VERTICAL:
+        for(int r = 0; r < err_surface.height; r++) {
+            out_path[r] = row_min(err_surface, r);
+        }
+        break;
+    default: assert(0);
+    }
+}
+
+static bool seam_mask_from_err_surface(struct cost_image err_surface, struct seam_mask *out,
+                                       enum direction dir)
+{
+    size_t mask_size = err_surface.width * err_surface.height;
+    out->bits = malloc(mask_size);
+    if(!out->bits)
+        return false;
+
+    /* Find the minimum path accross the surface.
+     */
+    size_t pathlen = MAX(err_surface.width, err_surface.height);
+    struct coord *path = malloc(pathlen * sizeof(struct coord));
+    if(!path) {
+        free(out->bits);
+        return false;
+    }
+    seam_path(err_surface, dir, path);
+
+    memset(out->bits, 0, mask_size);
+    for(int i = 0; i < pathlen; i++) {
+
+        struct coord curr = path[i];
+        switch(dir) {
+        case DIRECTION_HORIZONTAL:
+            for(int r = 0; r < curr.r; r++) {
+                size_t offset = r * err_surface.width + i;
+                out->bits[offset] = 1;
+            }
+            break;
+        case DIRECTION_VERTICAL:
+            for(int c = 0; c < curr.c; c++) {
+                size_t offset = i * err_surface.width + c;
+                out->bits[offset] = 1;
+            }
+            break;
+        default: assert(0);
+        }
+    }
+
+    free(path);
+    return true;
+}
+
 static bool find_error_surface(struct image image, struct image_view a, struct image_view b,
                                enum direction dir)
 {
+    bool ret = false;
     size_t width  = (dir == DIRECTION_HORIZONTAL) ? a.width : OVERLAP_DIM * 2;
     size_t height = (dir == DIRECTION_HORIZONTAL) ? OVERLAP_DIM * 2 : a.height;
     size_t patch_size = width * height * sizeof(int);
@@ -598,7 +720,7 @@ static bool find_error_surface(struct image image, struct image_view a, struct i
         .height = height
     };
     if(!patch.data)
-        return false;
+        goto fail_patch;
 
     struct image_view overlap_a, overlap_b;
     switch(dir) {
@@ -652,15 +774,23 @@ static bool find_error_surface(struct image image, struct image_view a, struct i
         .width = width,
         .height = height
     };
-    if(!min_err_surface.data){
-        free(patch.data);
-        return false;
-    }
-    compute_min_err_surface(patch, min_err_surface, dir);
+    if(!min_err_surface.data)
+        goto fail_err_surface;
+    if(!compute_min_err_surface(patch, min_err_surface, dir))
+        goto fail_seam;
 
+    struct seam_mask mask;
+    if(!seam_mask_from_err_surface(min_err_surface, &mask, dir))
+        goto fail_seam;
+
+    ret = true;
+    free(mask.bits);
+fail_seam:
     free(min_err_surface.data);
+fail_err_surface:
     free(patch.data);
-    return true;
+fail_patch:
+    return ret;
 }
 
 static bool quilt_tile(struct image image, struct image_tile *tile)
