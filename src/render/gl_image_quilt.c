@@ -70,6 +70,13 @@ enum direction{
     DIRECTION_VERTICAL
 };
 
+enum tile_patch{
+    TOP_LEFT,
+    TOP_RIGHT,
+    BOT_LEFT,
+    BOT_RIGHT
+};
+
 struct image{
     unsigned char *data;
     size_t         width;
@@ -475,8 +482,7 @@ static struct coord choose_sample(struct cost_image cost_image)
 }
 
 static bool match_next_block(struct image image, struct image_view *views, 
-                             enum constraint constraint, struct image_view *out_view, 
-                             struct image_patch *out_block)
+                             enum constraint constraint, struct image_view *out_view)
 {
     bool ret = false;
     size_t cost_width = image.width - BLOCK_DIM + 1;
@@ -504,7 +510,6 @@ static bool match_next_block(struct image image, struct image_view *views,
         .width = BLOCK_DIM,
         .height = BLOCK_DIM
     };
-    copy_view(image, *out_view, out_block);
     ret = true;
 
     free(template.pixels);
@@ -573,6 +578,7 @@ static int compute_min_err_at(struct cost_image err, khash_t(coord) *memo, struc
     assert(nadjacent > 0);
 
     int min_err_idx = -1;
+    (void)min_err_idx;
     int min_err = INT_MAX;
     for(int i = 0; i < nadjacent; i++) {
         adjacent_errs[i] = compute_min_err_at(err, memo, adjacent[i], dir);
@@ -617,11 +623,11 @@ static bool compute_min_err_surface(struct cost_image err, struct cost_image out
     return true;
 }
 
-struct coord row_min(struct cost_image err_surface, int row)
+struct coord row_min(struct cost_image err_surface, int row, int minc, int maxc)
 {
     int min = INT_MAX;
     int min_col = 0;
-    for(int c = 0; c < err_surface.width; c++) {
+    for(int c = minc; c <= maxc; c++) {
         size_t offset = row * err_surface.width + c;
         int value = err_surface.data[offset];
         if(value < min) {
@@ -632,11 +638,11 @@ struct coord row_min(struct cost_image err_surface, int row)
     return (struct coord){row, min_col};
 }
 
-struct coord col_min(struct cost_image err_surface, int col)
+struct coord col_min(struct cost_image err_surface, int col, int minr, int maxr)
 {
     int min = INT_MAX;
     int min_row = 0;
-    for(int r = 0; r < err_surface.height; r++) {
+    for(int r = minr; r <= maxr; r++) {
         size_t offset = r * err_surface.width + col;
         int value = err_surface.data[offset];
         if(value < min) {
@@ -651,13 +657,29 @@ static void seam_path(struct cost_image err_surface, enum direction dir, struct 
 {
     switch(dir) {
     case DIRECTION_HORIZONTAL:
-        for(int c = 0; c < err_surface.width; c++) {
-            out_path[c] = col_min(err_surface, c);
+        for(int c = err_surface.width-1; c >= 0; c--) {
+            int minr, maxr;
+            if(c == err_surface.width-1) {
+                minr = 0;
+                maxr = err_surface.height-1;
+            }else{
+                minr = MAX(out_path[c+1].r-1, 0);
+                maxr = MIN(out_path[c+1].r+1, err_surface.height-1);
+            }
+            out_path[c] = col_min(err_surface, c, minr, maxr);
         }
         break;
     case DIRECTION_VERTICAL:
-        for(int r = 0; r < err_surface.height; r++) {
-            out_path[r] = row_min(err_surface, r);
+        for(int r = err_surface.height-1; r >= 0; r--) {
+            int minc, maxc;
+            if(r == err_surface.height-1) {
+                minc = 0;
+                maxc = err_surface.width-1;
+            }else{
+                minc = MAX(out_path[r+1].c-1, 0);
+                maxc = MIN(out_path[r+1].c+1, err_surface.width-1);
+            }
+            out_path[r] = row_min(err_surface, r, minc, maxc);
         }
         break;
     default: assert(0);
@@ -707,12 +729,12 @@ static bool seam_mask_from_err_surface(struct cost_image err_surface, struct sea
     return true;
 }
 
-static bool find_error_surface(struct image image, struct image_view a, struct image_view b,
-                               enum direction dir)
+static bool find_seam(struct image image, struct image_view a, struct image_view b,
+                      enum direction dir, struct seam_mask *out)
 {
     bool ret = false;
-    size_t width  = (dir == DIRECTION_HORIZONTAL) ? a.width : OVERLAP_DIM * 2;
-    size_t height = (dir == DIRECTION_HORIZONTAL) ? OVERLAP_DIM * 2 : a.height;
+    size_t width  = (dir == DIRECTION_HORIZONTAL) ? a.width + OVERLAP_DIM * 2: OVERLAP_DIM * 2;
+    size_t height = (dir == DIRECTION_HORIZONTAL) ? OVERLAP_DIM * 2 : a.height + OVERLAP_DIM * 2;
     size_t patch_size = width * height * sizeof(int);
     struct cost_image patch = (struct cost_image){
         .data = malloc(patch_size),
@@ -728,13 +750,13 @@ static bool find_error_surface(struct image image, struct image_view a, struct i
         overlap_a = (struct image_view){
             .x = a.x,
             .y = a.y + a.height - OVERLAP_DIM,
-            .width = a.width,
+            .width = a.width + OVERLAP_DIM * 2,
             .height = OVERLAP_DIM * 2
         };
         overlap_b = (struct image_view){
             .x = b.x,
             .y = b.y - OVERLAP_DIM,
-            .width = b.width,
+            .width = b.width + OVERLAP_DIM * 2,
             .height = OVERLAP_DIM * 2
         };
         break;
@@ -743,13 +765,13 @@ static bool find_error_surface(struct image image, struct image_view a, struct i
             .x = a.x + a.width - OVERLAP_DIM,
             .y = a.y,
             .width = OVERLAP_DIM * 2,
-            .height = a.height
+            .height = a.height + OVERLAP_DIM * 2
         };
         overlap_b = (struct image_view){
             .x = b.x - OVERLAP_DIM,
             .y = b.y,
             .width = OVERLAP_DIM * 2,
-            .height = b.height
+            .height = b.height + OVERLAP_DIM * 2
         };
         break;
     default: assert(0);
@@ -779,18 +801,210 @@ static bool find_error_surface(struct image image, struct image_view a, struct i
     if(!compute_min_err_surface(patch, min_err_surface, dir))
         goto fail_seam;
 
-    struct seam_mask mask;
-    if(!seam_mask_from_err_surface(min_err_surface, &mask, dir))
+    if(!seam_mask_from_err_surface(min_err_surface, out, dir))
         goto fail_seam;
 
     ret = true;
-    free(mask.bits);
 fail_seam:
     free(min_err_surface.data);
 fail_err_surface:
     free(patch.data);
 fail_patch:
     return ret;
+}
+
+static void blit_patch_mask(enum tile_patch patch, struct seam_mask *patch_mask,
+                            struct seam_mask *vertical, struct seam_mask *horizontal)
+{
+    /* Blit the non-overlapping region */
+    int offx, offy;
+    switch(patch) {
+    case TOP_LEFT:
+        offx = 0;
+        offy = 0;
+        break;
+    case TOP_RIGHT:
+        offx = OVERLAP_DIM * 2;
+        offy = 0;
+        break;
+    case BOT_LEFT:
+        offx = 0;
+        offy = OVERLAP_DIM * 2;
+        break;
+    case BOT_RIGHT:
+        offx = OVERLAP_DIM * 2;
+        offy = OVERLAP_DIM * 2;
+        break;
+    default: assert(0);
+    }
+
+    for(int r = offy; r < offy + BLOCK_DIM; r++) {
+    for(int c = offx; c < offx + BLOCK_DIM; c++) {
+        size_t width = BLOCK_DIM + OVERLAP_DIM * 2;
+        size_t offset = r * width + c;
+        patch_mask->bits[offset] = 1;
+    }}
+
+    /* Blit the horizontal overlap */
+    switch(patch) {
+    case TOP_LEFT:
+        offx = 0;
+        offy = BLOCK_DIM;
+        break;
+    case TOP_RIGHT:
+        offx = OVERLAP_DIM * 2;
+        offy = BLOCK_DIM;
+        break;
+    case BOT_LEFT:
+        offx = 0;
+        offy = 0;
+        break;
+    case BOT_RIGHT:
+        offx = OVERLAP_DIM * 2;
+        offy = 0;
+        break;
+    default: assert(0);
+    }
+
+    for(int r = offy; r < offy + OVERLAP_DIM * 2; r++) {
+    for(int c = offx; c < offx + BLOCK_DIM; c++) {
+        size_t width = BLOCK_DIM + OVERLAP_DIM * 2;
+        size_t offset = r * width + c;
+
+        size_t horizontal_width = BLOCK_DIM + OVERLAP_DIM * 2;
+        size_t horizontal_offset = (r - offy) * horizontal_width + (c - offx);
+        if(patch == TOP_RIGHT || patch == BOT_RIGHT) {
+            horizontal_offset += OVERLAP_DIM * 2;
+        }
+        if(patch == TOP_LEFT || patch == TOP_RIGHT) {
+            patch_mask->bits[offset] = horizontal->bits[horizontal_offset];
+        }else{
+            patch_mask->bits[offset] = !horizontal->bits[horizontal_offset];
+        }
+    }}
+
+    /* Blit the vertical overlap */
+    switch(patch) {
+    case TOP_LEFT:
+        offx = BLOCK_DIM;
+        offy = 0;
+        break;
+    case TOP_RIGHT:
+        offx = 0;
+        offy = 0;
+        break;
+    case BOT_LEFT:
+        offx = BLOCK_DIM;
+        offy = OVERLAP_DIM * 2;
+        break;
+    case BOT_RIGHT:
+        offx = 0;
+        offy = OVERLAP_DIM * 2;
+        break;
+    default: assert(0);
+    }
+
+    for(int r = offy; r < offy + BLOCK_DIM; r++) {
+    for(int c = offx; c < offx + OVERLAP_DIM * 2; c++) {
+        size_t width = BLOCK_DIM + OVERLAP_DIM * 2;
+        size_t offset = r * width + c;
+
+        size_t vertical_width = OVERLAP_DIM * 2;
+        size_t vertical_offset = (r - offy) * vertical_width + (c - offx);
+        if(patch == BOT_LEFT || patch == BOT_RIGHT) {
+            vertical_offset += (OVERLAP_DIM * 2) * vertical_width;
+        }
+        if(patch == TOP_LEFT || patch == BOT_LEFT) {
+            patch_mask->bits[offset] = vertical->bits[vertical_offset];
+        }else{
+            patch_mask->bits[offset] = !vertical->bits[vertical_offset];
+        }
+    }}
+
+    /* Blit the intersection of the vertical and horizontal overlaps */
+    switch(patch) {
+    case TOP_LEFT:
+        offx = BLOCK_DIM;
+        offy = BLOCK_DIM;
+        break;
+    case TOP_RIGHT:
+        offx = 0;
+        offy = BLOCK_DIM;
+        break;
+    case BOT_LEFT:
+        offx = BLOCK_DIM;
+        offy = 0;
+        break;
+    case BOT_RIGHT:
+        offx = 0;
+        offy = 0;
+        break;
+    default: assert(0);
+    }
+
+    for(int r = offy; r < offy + OVERLAP_DIM * 2; r++) {
+    for(int c = offx; c < offx + OVERLAP_DIM * 2; c++) {
+        size_t width = BLOCK_DIM + OVERLAP_DIM * 2;
+        size_t offset = r * width + c;
+
+        size_t vertical_width = OVERLAP_DIM * 2;
+        size_t vertical_offset = (r - offy) * vertical_width + (c - offx);
+        if(patch == BOT_LEFT || patch == BOT_RIGHT) {
+            vertical_offset += (OVERLAP_DIM * 2) * vertical_width;
+        }
+
+        size_t horizontal_width = BLOCK_DIM + OVERLAP_DIM * 2;
+        size_t horizontal_offset = (r - offy) * horizontal_width + (c - offx);
+        if(patch == TOP_RIGHT || patch == BOT_RIGHT) {
+            horizontal_offset += OVERLAP_DIM * 2;
+        }
+
+        char horizontal_bit;
+        if(patch == TOP_LEFT || patch == TOP_RIGHT) {
+            horizontal_bit = horizontal->bits[horizontal_offset];
+        }else{
+            horizontal_bit = !horizontal->bits[horizontal_offset];
+        }
+
+        char vertical_bit;
+        if(patch == TOP_LEFT || patch == BOT_LEFT) {
+            vertical_bit = vertical->bits[vertical_offset];
+        }else{
+            vertical_bit = !vertical->bits[vertical_offset];
+        }
+
+        patch_mask->bits[offset] = horizontal_bit & vertical_bit;
+    }}
+}
+
+static bool paste_block(struct image image, enum tile_patch patch, struct image_view view, 
+                        struct image_view *left, struct image_view *top,
+                        struct seam_mask *vertical, struct seam_mask *horizontal,
+                        struct image_tile *out)
+{
+    struct seam_mask patch_mask;
+    size_t patch_mask_size = (BLOCK_DIM + OVERLAP_DIM * 2) * (BLOCK_DIM + OVERLAP_DIM * 2);
+    patch_mask.bits = malloc(patch_mask_size);
+    if(!patch_mask.bits)
+        return false;
+
+    memset(patch_mask.bits, 0, patch_mask_size);
+    blit_patch_mask(patch, &patch_mask, vertical, horizontal);
+
+    switch(patch) {
+    case TOP_LEFT:
+        break;
+    case TOP_RIGHT:
+        break;
+    case BOT_LEFT:
+        break;
+    case BOT_RIGHT:
+        break;
+    default: assert(0);
+    }
+
+    free(patch_mask.bits);
+    return true;
 }
 
 static bool quilt_tile(struct image image, struct image_tile *tile)
@@ -809,34 +1023,53 @@ static bool quilt_tile(struct image image, struct image_tile *tile)
 
     bool ret = false;
     struct image_view views[4] = {0};
-    struct image_patch blocks[4] = {0};
-
     views[0] = random_block(image);
-    if(!copy_view(image, views[0], &blocks[0]))
-        goto fail_block;
 
     struct image_view b1_views[] = {views[0]};
-    if(!match_next_block(image, b1_views, CONSTRAIN_LEFT, &views[1], &blocks[1]))
+    if(!match_next_block(image, b1_views, CONSTRAIN_LEFT, &views[1]))
         goto fail_block;
 
     struct image_view b2_views[] = {views[0]};
-    if(!match_next_block(image, b2_views, CONSTRAIN_TOP, &views[2], &blocks[2]))
+    if(!match_next_block(image, b2_views, CONSTRAIN_TOP, &views[2]))
         goto fail_block;
 
     struct image_view b3_views[] = {views[1], views[2]};
-    if(!match_next_block(image, b3_views, CONSTRAIN_TOP_LEFT, &views[3], &blocks[3]))
+    if(!match_next_block(image, b3_views, CONSTRAIN_TOP_LEFT, &views[3]))
         goto fail_block;
 
-    /* Now that we have selected the blocks, find the minimum error boundary
-     * but between adjacent blocks and paste them onto the final tile texture.
-     */
-    find_error_surface(image, views[0], views[2], DIRECTION_HORIZONTAL);
+    struct seam_mask seams[4] = {0};
+    if(!find_seam(image, views[0], views[1], DIRECTION_VERTICAL, &seams[0]))
+        goto fail_seams;
+    if(!find_seam(image, views[0], views[2], DIRECTION_HORIZONTAL, &seams[1]))
+        goto fail_seams;
+    if(!find_seam(image, views[1], views[3], DIRECTION_HORIZONTAL, &seams[2]))
+        goto fail_seams;
+    if(!find_seam(image, views[2], views[3], DIRECTION_VERTICAL, &seams[3]))
+        goto fail_seams;
+
+    tile->pixels = malloc(image.nr_channels * TILE_DIM * TILE_DIM);
+    if(!tile->pixels)
+        goto fail_seams;
+
+    if(!paste_block(image, TOP_LEFT, views[0], NULL, NULL, &seams[0], &seams[1], tile))
+        goto fail_paste;
+    if(!paste_block(image, TOP_RIGHT, views[1], &views[0], NULL, &seams[0], &seams[2], tile))
+        goto fail_paste;
+    if(!paste_block(image, BOT_LEFT, views[2], NULL, &views[0], &seams[3], &seams[1], tile))
+        goto fail_paste;
+    if(!paste_block(image, BOT_RIGHT, views[3], &views[2], &views[1], &seams[3], &seams[2], tile))
+        goto fail_paste;
 
     ret = true;
-fail_block:
-    for(int i = 0; i < 4; i++) {
-        free(blocks[i].pixels);
+fail_paste:
+    if(!ret) {
+        free(tile->pixels);
     }
+fail_seams:
+    for(int i = 0; i < 4; i++) {
+        free(seams[i].bits);
+    }
+fail_block:
     return ret;
 }
 
