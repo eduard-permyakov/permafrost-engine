@@ -160,6 +160,30 @@ static bool dump_ppm(const char *filename, const unsigned char *data,
     return true;
 }
 
+static bool dump_view_ppm(const char *filename, struct image image, 
+                          struct image_view view)
+{
+    FILE *file = fopen(filename, "wb");
+    if(!file)
+        return false;
+
+    fprintf(file, "P6\n%d %d\n%d\n", view.width, view.height, 255);
+    for (int i = 0; i < view.height; i++) {
+    for (int j = 0; j < view.width; j++) {
+
+        size_t row_offset = image.nr_channels * (i + view.y) * image.width;
+        size_t col_offset = image.nr_channels * (j + view.x);
+        unsigned char color[3];
+        color[0] = image.data[row_offset + col_offset + 0]; 
+        color[1] = image.data[row_offset + col_offset + 1];
+        color[2] = image.data[row_offset + col_offset + 2];
+        fwrite(color, 1, 3, file);
+    }}
+
+    fclose(file);
+    return true;
+}
+
 static bool dump_patch(const char *filename, const struct image image, 
                        const struct image_patch *patch)
 {
@@ -326,8 +350,9 @@ static void copy_top(const struct image image, struct image_view view,
         char *dst = template->pixels + (r * bytes_per_row);
         size_t bytes_copied = bytes_per_row;
         if(diagonal) {
-            dst += r;
-            bytes_copied -= r;
+            dst += r * image.nr_channels;
+            src += r * image.nr_channels;
+            bytes_copied -= r * image.nr_channels;
         }
         memcpy(dst, src, bytes_copied);
     }
@@ -405,11 +430,18 @@ static int compute_ssd(struct image image, struct image_view view,
         int img_x = view.x + c;
         int img_y = view.y + r;
 
-        char vector_a[32];
-        memcpy(vector_a, &image.data[img_y * image.width + img_x], image.nr_channels);
+        size_t img_row_width = image.width * image.nr_channels;
+        size_t template_row_width = view.width * image.nr_channels;
 
-        char vector_b[32];
-        memcpy(vector_b, &template->pixels[r * view.width + c], image.nr_channels);
+        size_t img_x_offset = img_x * image.nr_channels;
+        size_t template_x_offset = c * image.nr_channels;
+
+        unsigned char vector_a[32];
+        memcpy(vector_a, &image.data[img_y * img_row_width + img_x_offset], image.nr_channels);
+
+        unsigned char vector_b[32];
+        memcpy(vector_b, &template->pixels[r * template_row_width + template_x_offset], 
+            image.nr_channels);
 
         int diff_magnitude_squared = 0;
         for(int i = 0; i < image.nr_channels; i++) {
@@ -433,8 +465,8 @@ static int compute_ssd(struct image image, struct image_view view,
 static void ssd_patch(struct image image, struct cost_image out_cost_image, 
                       struct image_patch *template, struct image_patch_mask *mask)
 {
-    int offx = (BLOCK_DIM + OVERLAP_DIM * 2) / 2;
-    int offy = (BLOCK_DIM + OVERLAP_DIM * 2) / 2;
+    int offx = OVERLAP_DIM;
+    int offy = OVERLAP_DIM;
 
     for(int i = 0; i < out_cost_image.width; i++) {
     for(int j = 0; j < out_cost_image.height; j++) {
@@ -444,7 +476,7 @@ static void ssd_patch(struct image image, struct cost_image out_cost_image,
             .width = BLOCK_DIM,
             .height = BLOCK_DIM
         };
-        out_cost_image.data[out_cost_image.width * i + j] = 
+        out_cost_image.data[out_cost_image.width * j + i] = 
             compute_ssd(image, view, template, mask);
     }}
 }
@@ -1086,7 +1118,7 @@ static bool quilt_tile(struct image image, struct image_tile *tile)
     if(!match_next_block(image, b2_views, CONSTRAIN_TOP, &views[2]))
         goto fail_block;
 
-    struct image_view b3_views[] = {views[1], views[2]};
+    struct image_view b3_views[] = {views[2], views[1]};
     if(!match_next_block(image, b3_views, CONSTRAIN_TOP_LEFT, &views[3]))
         goto fail_block;
 
@@ -1137,7 +1169,7 @@ bool R_GL_ImageQuilt_MakeTileset(const char *source, struct texture_arr *out, GL
     if(!load_image(source, &image))
         goto fail_load;
 
-    for(int i = 0; i < 4; i++) {
+    for(int i = 0; i < 8; i++) {
         struct image_tile tile;
         if(!quilt_tile(image, &tile))
             goto fail_quilt;
