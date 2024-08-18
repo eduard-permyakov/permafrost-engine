@@ -40,6 +40,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+
+#define LOD_BIAS (-0.5f)
+
 struct material;
 
 struct texture{

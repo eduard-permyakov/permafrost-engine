@@ -39,6 +39,9 @@
  */
 
 #include "gl_image_quilt.h"
+#include "gl_texture.h"
+#include "gl_assert.h"
+#include "../main.h"
 #include "../pf_math.h"
 #include "../lib/public/stb_image.h"
 #include "../lib/public/stb_image_resize.h"
@@ -109,6 +112,11 @@ struct seam_mask{
 };
 
 struct image_tile{
+    char *pixels;
+};
+
+struct diamond_patch{
+    int width, height;
     char *pixels;
 };
 
@@ -1158,28 +1166,288 @@ fail_block:
     return ret;
 }
 
+static bool stitch_samples(struct image image, struct image_view *views, struct image_tile *tile)
+{
+    bool ret = false;
+    struct seam_mask seams[4] = {0};
+    if(!find_seam(image, views[0], views[1], DIRECTION_VERTICAL, &seams[0]))
+        goto fail_seams;
+    if(!find_seam(image, views[0], views[2], DIRECTION_HORIZONTAL, &seams[1]))
+        goto fail_seams;
+    if(!find_seam(image, views[1], views[3], DIRECTION_HORIZONTAL, &seams[2]))
+        goto fail_seams;
+    if(!find_seam(image, views[2], views[3], DIRECTION_VERTICAL, &seams[3]))
+        goto fail_seams;
+
+    tile->pixels = malloc(image.nr_channels * TILE_DIM * TILE_DIM);
+    if(!tile->pixels)
+        goto fail_seams;
+
+    if(!paste_block(image, TOP_LEFT, views[0], &seams[0], &seams[1], tile))
+        goto fail_paste;
+    if(!paste_block(image, TOP_RIGHT, views[1], &seams[0], &seams[2], tile))
+        goto fail_paste;
+    if(!paste_block(image, BOT_LEFT, views[2], &seams[3], &seams[1], tile))
+        goto fail_paste;
+    if(!paste_block(image, BOT_RIGHT, views[3], &seams[3], &seams[2], tile))
+        goto fail_paste;
+
+    ret = true;
+fail_paste:
+    if(!ret) {
+        free(tile->pixels);
+    }
+fail_seams:
+    for(int i = 0; i < 4; i++) {
+        free(seams[i].bits);
+    }
+    return ret;
+}
+
+static bool sample_diamond(size_t nr_channels, const struct image_tile *tile, 
+                           struct diamond_patch *out)
+{
+    bool ret = false;
+    size_t rotated_size = ceil(TILE_DIM * cos(M_PI/4)) * 2;
+    char *rotbuff = calloc(1, rotated_size * rotated_size * nr_channels);
+    if(!rotbuff)
+        goto fail_rotbuff;
+    size_t diamond_size = (TILE_DIM/2) / cos(M_PI/4);
+    out->pixels = malloc(nr_channels * diamond_size * diamond_size);
+    if(!out->pixels)
+        goto fail_patchbuff;
+    out->width = diamond_size;
+    out->height = diamond_size;
+
+    /* First, rotate the original tile by 45 degrees */
+    const int center[2] = {TILE_DIM/2, TILE_DIM/2};
+    for(int r = 0; r < TILE_DIM; r++) {
+    for(int c = 0; c < TILE_DIM; c++) {
+
+        int relr = r - center[0];
+        int relc = c - center[1];
+        int rc = rotated_size/2 + round(relc * cos(-M_PI/4) - relr * sin(-M_PI/4));
+        int rr = rotated_size/2 + round(relr * cos(-M_PI/4) + relc * sin(-M_PI/4));
+        assert(rr >= 0 && rr < rotated_size);
+        assert(rc >= 0 && rc < rotated_size);
+
+        char *src = tile->pixels + (r * TILE_DIM * nr_channels) + c * nr_channels;
+        char *dst = rotbuff + (rr * rotated_size * nr_channels) + rc * nr_channels;
+        memcpy(dst, src, nr_channels);
+    }}
+
+    /* Then cut out the middle part of the rotated image, and perform some
+     * bare-bones anti-aliasing */
+    size_t padding = (rotated_size - diamond_size) / 2;
+    for(int r = 0; r < diamond_size; r++) {
+    for(int c = 0; c < diamond_size; c++) {
+
+        int fr = r + padding;
+        int fc = c + padding;
+
+        char *src = rotbuff + (fr * rotated_size * nr_channels) + fc * nr_channels;
+        char *dst = out->pixels + (r * diamond_size * nr_channels) + c * nr_channels;
+        assert(src >= rotbuff 
+            && src < rotbuff + (rotated_size * rotated_size * nr_channels));
+        assert(dst >= out->pixels 
+            && dst < out->pixels + (diamond_size * diamond_size * nr_channels));
+
+        /* Add some basic anti-aliasing: In cases where we didn't write a pixel in
+         * the rotated image due to aliasing, simply take the average of the nearby 
+         * pixels.
+         */
+        char zero[4] = {0};
+        if(0 != memcmp(src, zero, nr_channels)) {
+            memcpy(dst, src, nr_channels);
+        }else{
+            size_t neighb_count = 0;
+            unsigned int average[4] = {0};
+            for(int dr = -1; dr <= 1; dr++) {
+            for(int dc = -1; dc <= 1; dc++) {
+                if(dr == 0 && dc == 0)
+                    continue;
+                int sample_r = fr + dr;
+                int sample_c = fc + dc;
+                if((sample_r >= 0 && sample_r < rotated_size)
+                && (sample_c >= 0 && sample_c < rotated_size)) {
+                    unsigned char *pixel = (unsigned char*)rotbuff 
+                                         + (sample_r * rotated_size * nr_channels) 
+                                         + sample_c * nr_channels;
+                    if(0 != memcmp(pixel, zero, nr_channels)) {
+                        for(int i = 0; i < nr_channels; i++)
+                            average[i] += (int)pixel[i];
+                        neighb_count++;
+                    }
+                }
+            }}
+            if(neighb_count > 0) {
+                for(int i = 0; i < nr_channels; i++)
+                    average[i] /= (float)neighb_count;
+                char newpixel[4] = {average[0], average[1], average[2], average[3]};
+                memcpy(dst, newpixel, nr_channels);
+            }
+        }
+    }}
+
+    ret = true;
+fail_patchbuff:
+    free(rotbuff);
+fail_rotbuff:
+    return ret;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool R_GL_ImageQuilt_MakeTileset(const char *source, struct texture_arr *out, GLuint tunit)
+bool R_GL_ImageQuilt_MakeTile(const char *source, struct texture *out, GLuint tunit)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     bool ret = false;
     struct image image;
     if(!load_image(source, &image))
         goto fail_load;
 
-    for(int i = 0; i < 8; i++) {
-        struct image_tile tile;
-        if(!quilt_tile(image, &tile))
-            goto fail_quilt;
-        free(tile.pixels);
-    }
+    if(image.nr_channels != 3 && image.nr_channels != 4)
+        goto fail_quilt;
 
+    struct image_tile tile;
+    if(!quilt_tile(image, &tile))
+        goto fail_quilt;
+
+    GLuint texture;
+    glActiveTexture(GL_TEXTURE0);
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    GLint format = (image.nr_channels == 3) ? GL_RGB : GL_RGBA;
+    glTexImage2D(GL_TEXTURE_2D, 0, format, image.width, image.height, 0, 
+        format, GL_UNSIGNED_BYTE, tile.pixels);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    out->id = texture;
+    out->tunit = tunit;
     ret = true;
+
 fail_quilt:
     free(image.data);
 fail_load:
+    GL_ASSERT_OK();
+    return ret;
+}
+
+bool R_GL_ImageQuilt_MakeTileset(const char *source, struct texture_arr *out, GLuint tunit)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    bool ret = false;
+    struct image image;
+    if(!load_image(source, &image))
+        goto fail_load;
+
+    if(image.nr_channels != 3 && image.nr_channels != 4)
+        goto fail_block;
+
+    /* For Wang tileset generation, first pick 4 sample images */
+    struct image_view views[4] = {0};
+    views[0] = random_block(image);
+
+    struct image_view b1_views[] = {views[0]};
+    if(!match_next_block(image, b1_views, CONSTRAIN_LEFT, &views[1]))
+        goto fail_block;
+
+    struct image_view b2_views[] = {views[0]};
+    if(!match_next_block(image, b2_views, CONSTRAIN_TOP, &views[2]))
+        goto fail_block;
+
+    struct image_view b3_views[] = {views[2], views[1]};
+    if(!match_next_block(image, b3_views, CONSTRAIN_TOP_LEFT, &views[3]))
+        goto fail_block;
+
+    /* Next, generate an 8-tile Wang tileset by stitching the sample images
+     * together in different combinations */
+    const int BLUE = 0, RED = 1, YELLOW = 2, GREEN = 3;
+    struct image_tile tiles[8] = {0};
+
+    if(!stitch_samples(image, (struct image_view[4]){
+        views[RED], views[BLUE], views[YELLOW], views[GREEN]}, &tiles[0]))
+        goto fail_stitch;
+    if(!stitch_samples(image, (struct image_view[4]){
+        views[BLUE], views[GREEN], views[BLUE], views[GREEN]}, &tiles[1]))
+        goto fail_stitch;
+    if(!stitch_samples(image, (struct image_view[4]){
+        views[YELLOW], views[RED], views[YELLOW], views[RED]}, &tiles[2]))
+        goto fail_stitch;
+    if(!stitch_samples(image, (struct image_view[4]){
+        views[YELLOW], views[GREEN], views[BLUE], views[RED]}, &tiles[3]))
+        goto fail_stitch;
+    if(!stitch_samples(image, (struct image_view[4]){
+        views[YELLOW], views[RED], views[BLUE], views[GREEN]}, &tiles[4]))
+        goto fail_stitch;
+    if(!stitch_samples(image, (struct image_view[4]){
+        views[YELLOW], views[GREEN], views[YELLOW], views[GREEN]}, &tiles[5]))
+        goto fail_stitch;
+    if(!stitch_samples(image, (struct image_view[4]){
+        views[RED], views[BLUE], views[RED], views[BLUE]}, &tiles[6]))
+        goto fail_stitch;
+    if(!stitch_samples(image, (struct image_view[4]){
+        views[BLUE], views[GREEN], views[YELLOW], views[RED]}, &tiles[7]))
+        goto fail_stitch;
+
+    /* Sample the middle diamond from each of the generated tiles */
+    struct diamond_patch diamonds[8] = {0};
+    for(int i = 0; i < 8; i++) {
+        if(!sample_diamond(image.nr_channels, &tiles[i], &diamonds[i]))
+            goto fail_diamond;
+    }
+    size_t diamond_dim = diamonds[0].width;
+
+    /* Generate a texture array from the created tiles */
+    glActiveTexture(tunit);
+    out->tunit = tunit;
+    glGenTextures(1, &out->id);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
+
+    GLint format = (image.nr_channels == 3) ? GL_RGB : GL_RGBA;
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, format, 
+        diamond_dim, diamond_dim, 8, 0, format, GL_UNSIGNED_BYTE, 0);
+
+    for(int i = 0; i < 8; i++) {
+        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, diamond_dim, 
+            diamond_dim, 1, format, GL_UNSIGNED_BYTE, diamonds[i].pixels);
+    }
+
+    glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
+
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+    ret = true;
+
+fail_diamond:
+    for(int i = 0; i < 8; i++) {
+        free(diamonds[i].pixels);
+    }
+fail_stitch:
+    for(int i = 0; i < 8; i++) {
+        free(tiles[i].pixels);
+    }
+fail_block:
+    free(image.data);
+fail_load:
+    GL_ASSERT_OK();
     return ret;
 }
 

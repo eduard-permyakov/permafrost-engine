@@ -49,8 +49,6 @@
 #include <math.h>
 
 
-#define LOD_BIAS (-0.5f)
-
 #define MIN(a, b)       ((a) < (b) ? (a) : (b))
 #define MAX(a, b)       ((a) > (b) ? (a) : (b))
 #define MAX3(a, b, c)   (MAX((a), MAX((b), (c))))

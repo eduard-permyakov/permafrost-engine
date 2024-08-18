@@ -40,7 +40,9 @@
 #include <stdbool.h>
 
 struct texture_arr;
+struct texture;
 
+bool R_GL_ImageQuilt_MakeTile(const char *source, struct texture *out, GLuint tunit);
 bool R_GL_ImageQuilt_MakeTileset(const char *source, struct texture_arr *out, GLuint tunit);
 
 #endif
