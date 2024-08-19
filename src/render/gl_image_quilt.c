@@ -1451,3 +1451,8 @@ fail_load:
     return ret;
 }
 
+size_t R_GL_ImageQuilt_TilesetDim(void)
+{
+    return (TILE_DIM/2) / cos(M_PI/4);
+}
+

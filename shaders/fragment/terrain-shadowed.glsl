@@ -225,7 +225,7 @@ float tint_factor(ivec4 td, vec2 uv)
 
 vec4 texture_val(int mat_idx, vec2 uv)
 {
-    return texture(tex_array0, vec3(uv, mat_idx));
+    return texture(tex_array0, vec3(uv, mat_idx * 8));
 }
 
 vec4 mixed_texture_val(ivec2 adjacency_mats, vec2 uv)

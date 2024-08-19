@@ -46,6 +46,7 @@
 #include "render_private.h"
 #include "public/render.h"
 #include "../entity.h"
+#include "../config.h"
 #include "../lib/public/pf_malloc.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/mem.h"
@@ -406,7 +407,8 @@ static bool batch_append_tex(struct gl_batch *batch, GLuint tid, int idx, struct
     R_GL_Texture_BindArray(&batch->textures[curr_arr_idx].arr, R_GL_Shader_GetCurrActive());
     assert(glIsTexture(batch->textures[curr_arr_idx].arr.id));
     assert(glIsTexture(arr->id));
-    R_GL_Texture_ArrayCopyElem(&batch->textures[curr_arr_idx].arr, slice_idx, arr, idx);
+    R_GL_Texture_ArrayCopyElem(&batch->textures[curr_arr_idx].arr, slice_idx, arr, idx,
+		CONFIG_ARR_TEX_RES);
 
     int status;
     k = kh_put(tdesc, batch->tid_desc_map, tid, &status);

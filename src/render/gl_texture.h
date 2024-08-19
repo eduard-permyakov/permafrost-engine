@@ -60,12 +60,16 @@ void R_GL_Texture_Shutdown(void);
 
 void R_GL_Texture_ArrayAlloc(size_t num_elems, struct texture_arr *out, GLuint tunit);
 void R_GL_Texture_ArrayFree(struct texture_arr array);
-void R_GL_Texture_ArrayCopyElem(struct texture_arr *dst, int dst_idx, struct texture_arr *src, int src_idx);
+void R_GL_Texture_ArrayCopyElem(struct texture_arr *dst, int dst_idx, 
+                                struct texture_arr *src, int src_idx,
+                                int max_res);
 
 void R_GL_Texture_ArrayMake(const struct material *mats, size_t num_mats, 
                             struct texture_arr *out, GLuint tunit);
 void R_GL_Texture_ArrayMakeMap(const char texnames[][256], size_t num_textures, 
                                struct texture_arr *out, GLuint tunit);
+void R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t num_textures, 
+                                          struct texture_arr *out, GLuint tunit);
 
 void R_GL_Texture_Bind(const struct texture *text, GLuint shader_prog);
 void R_GL_Texture_BindArray(const struct texture_arr *arr, GLuint shader_prog);

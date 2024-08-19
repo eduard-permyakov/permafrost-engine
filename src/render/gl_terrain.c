@@ -40,6 +40,7 @@
 #include "gl_assert.h"
 #include "gl_state.h"
 #include "gl_perf.h"
+#include "gl_image_quilt.h"
 #include "render_private.h"
 #include "../main.h"
 #include "../map/public/tile.h"
@@ -72,7 +73,7 @@ void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures,
     s_fog_ring = R_GL_RingbufferInit(nchunks * TILES_PER_CHUNK_WIDTH * TILES_PER_CHUNK_HEIGHT * 3, RING_UBYTE);
     assert(s_fog_ring);
 
-    R_GL_Texture_ArrayMakeMap(map_texfiles, *num_textures, &s_map_textures, GL_TEXTURE0);
+    R_GL_Texture_ArrayMakeMapWangTileset(map_texfiles, *num_textures, &s_map_textures, GL_TEXTURE0);
 
     R_GL_StateSet(GL_U_MAP_RES, (struct uval){
         .type = UTYPE_IVEC4,
