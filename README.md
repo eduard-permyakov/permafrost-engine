@@ -37,6 +37,8 @@ Download the free (or donate what-you-want) demo on [itch.io](https://spb.itch.i
 * RTS camera, FPS camera
 * Rendering of tile-based map parsed from ASCII file
 * Water rendering (including reflection, refraction, soft edge effects)
+* Programmatic synthesis of textures using the Image Quilting algorithm
+* Aperiodic tiling of the map plane using the Wang Tiling algorithm
 * Export/Import of game entites to/from ASCII files
 * Engine internals exposed to Python 2.7 for scripting
 * Event system
