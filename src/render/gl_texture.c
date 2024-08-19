@@ -598,84 +598,108 @@ void R_GL_Texture_ArrayMakeMap(const char texnames[][256], size_t num_textures,
     GL_ASSERT_OK();
 }
 
-void R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t num_textures, 
-                                          struct texture_arr *out, GLuint tunit)
+size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t num_textures, 
+                                            struct texture_arr *out, GLuint tunit)
 {
     ASSERT_IN_RENDER_THREAD();
 
+    size_t ret = 0;
     size_t tileset_dim = R_GL_ImageQuilt_TilesetDim();
     size_t num_slots = num_textures * 8;
 
-    glActiveTexture(tunit);
-    out->tunit = tunit;
-    glGenTextures(1, &out->id);
-    glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
-
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, 
-        tileset_dim, tileset_dim, num_slots, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    GLint max_layers;
+    glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &max_layers);
+    size_t num_arrays = ceil((float)num_slots / max_layers);
+    size_t slots_per_array = (max_layers / 8) * 8;
 
     GLuint fbo;
     glGenFramebuffers(1, &fbo);
 
-    for(int i = 0; i < num_textures; i++) {
+    int i = 0;
+    size_t slots_consumed = 0;
+    for(int n = 0; n < num_arrays; n++) {
 
-        char path[512];
-        pf_snprintf(path, sizeof(path), "%s/assets/map_textures/%s", g_basepath, texnames[i]);
+        size_t slots_left = num_slots - (n * slots_per_array);
+        size_t curr_slots = MIN(slots_left, slots_per_array);
 
-        struct texture_arr tiles;
-        bool success = R_GL_ImageQuilt_MakeTileset(path, &tiles, tunit);
-        if(success) {
+        glActiveTexture(tunit);
+        out->tunit = tunit;
+        glGenTextures(1, &out->id);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
 
-            for(int j = 0; j < 8; j++) {
+        glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, 
+            tileset_dim, tileset_dim, curr_slots, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
 
-                int dst_idx = (i * 8) + j;
-                int src_idx = j;
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
 
-                glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-                glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, 
-                    tiles.id, 0, src_idx);
-                glFramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, 
-                    out->id, 0, dst_idx);
-                glReadBuffer(GL_COLOR_ATTACHMENT0);
-                glDrawBuffer(GL_COLOR_ATTACHMENT1);
+        for(; i < num_textures; i++) {
 
-                assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
-                glBlitFramebuffer(0, 0, tileset_dim, tileset_dim, 0, 0, tileset_dim, tileset_dim, 
-                                  GL_COLOR_BUFFER_BIT, GL_NEAREST);
-                glBindFramebuffer(GL_FRAMEBUFFER, 0);
-                GL_ASSERT_OK();
+            char path[512];
+            pf_snprintf(path, sizeof(path), "%s/assets/map_textures/%s", g_basepath, texnames[i]);
+
+            /* Move on to the next texture array, this one's full */
+            if((i * 8) >= curr_slots + slots_consumed)
+                break;
+
+            struct texture_arr tiles;
+            bool success = R_GL_ImageQuilt_MakeTileset(path, &tiles, tunit);
+            if(success) {
+
+                for(int j = 0; j < 8; j++) {
+
+                    int dst_idx = (i * 8) + j - slots_consumed;
+                    int src_idx = j;
+
+                    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+                    glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, 
+                        tiles.id, 0, src_idx);
+                    glFramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, 
+                        out->id, 0, dst_idx);
+                    glReadBuffer(GL_COLOR_ATTACHMENT0);
+                    glDrawBuffer(GL_COLOR_ATTACHMENT1);
+
+                    assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+                    glBlitFramebuffer(0, 0, tileset_dim, tileset_dim, 0, 0, tileset_dim, tileset_dim, 
+                                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
+                    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                    GL_ASSERT_OK();
+                }
+                R_GL_Texture_ArrayFree(tiles);
+
+            }else{
+
+                GLubyte *data = calloc(1, tileset_dim * tileset_dim * 3);
+                if(!data)
+                    continue;
+
+                glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
+                for(int j = 0; j < 8; j++) {
+                    glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, (i * 8) + j, tileset_dim, 
+                        tileset_dim, 1, GL_RGB, GL_UNSIGNED_BYTE, data);
+                }
+                free(data);
             }
-            R_GL_Texture_ArrayFree(tiles);
-
-        }else{
-
-            GLubyte *data = calloc(1, tileset_dim * tileset_dim * 3);
-            if(!data)
-                continue;
-
-            glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
-            for(int j = 0; j < 8; j++) {
-                glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, (i * 8) + j, tileset_dim, 
-                    tileset_dim, 1, GL_RGB, GL_UNSIGNED_BYTE, data);
-            }
-            free(data);
         }
+
+        glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
+        glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
+
+        ret++;
+        out++;
+        tunit++;
+        slots_consumed += curr_slots;
     }
+
     glDeleteFramebuffers(1, &fbo);
-
-    glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
-    glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
-
     glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
     GL_ASSERT_OK();
+    return ret;
 }
 
 void R_GL_Texture_ArrayFree(struct texture_arr array)

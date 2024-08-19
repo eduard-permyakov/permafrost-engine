@@ -95,6 +95,9 @@ uniform vec3 view_pos;
 uniform sampler2D shadow_map;
 
 uniform sampler2DArray tex_array0;
+uniform sampler2DArray tex_array1;
+uniform sampler2DArray tex_array2;
+uniform sampler2DArray tex_array3;
 
 uniform usamplerBuffer visbuff;
 uniform int visbuff_offset;
@@ -225,7 +228,27 @@ float tint_factor(ivec4 td, vec2 uv)
 
 vec4 texture_val(int mat_idx, vec2 uv)
 {
-    return texture(tex_array0, vec3(uv, mat_idx * 8));
+    int idx = mat_idx * 8;
+    int size = textureSize(tex_array0, 0).z;
+    if(idx < size) {
+        return texture(tex_array0, vec3(uv, idx));
+    }
+    idx -= size;
+    size = textureSize(tex_array1, 0).z;
+    if(idx < size) {
+        return texture(tex_array1, vec3(uv, idx));
+    }
+    idx -= size;
+    size = textureSize(tex_array2, 0).z;
+    if(idx < size) {
+        return texture(tex_array2, vec3(uv, idx));
+    }
+    idx -= size;
+    size = textureSize(tex_array3, 0).z;
+    if(idx < size) {
+        return texture(tex_array3, vec3(uv, idx));
+    }
+    return vec4(0, 0, 0, 0);
 }
 
 vec4 mixed_texture_val(ivec2 adjacency_mats, vec2 uv)

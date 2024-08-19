@@ -54,7 +54,8 @@
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static struct texture_arr     s_map_textures;
+static size_t                 s_num_arrays;
+static struct texture_arr     s_map_textures[4];
 static bool                   s_map_ctx_active = false;
 static struct gl_ring        *s_fog_ring;
 static struct map_resolution  s_res;
@@ -70,10 +71,12 @@ void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures,
     ASSERT_IN_RENDER_THREAD();
 
     size_t nchunks = res->chunk_w * res->chunk_h;
-    s_fog_ring = R_GL_RingbufferInit(nchunks * TILES_PER_CHUNK_WIDTH * TILES_PER_CHUNK_HEIGHT * 3, RING_UBYTE);
+    s_fog_ring = R_GL_RingbufferInit(nchunks * TILES_PER_CHUNK_WIDTH * TILES_PER_CHUNK_HEIGHT * 3, 
+        RING_UBYTE);
     assert(s_fog_ring);
 
-    R_GL_Texture_ArrayMakeMapWangTileset(map_texfiles, *num_textures, &s_map_textures, GL_TEXTURE0);
+    s_num_arrays = R_GL_Texture_ArrayMakeMapWangTileset(map_texfiles, 
+        *num_textures, s_map_textures, GL_TEXTURE0);
 
     R_GL_StateSet(GL_U_MAP_RES, (struct uval){
         .type = UTYPE_IVEC4,
@@ -98,7 +101,9 @@ void R_GL_MapUpdateFog(void *buff, const size_t *size)
 
 void R_GL_MapShutdown(void)
 {
-    R_GL_Texture_ArrayFree(s_map_textures);
+    for(int i = 0; i < s_num_arrays; i++) {
+        R_GL_Texture_ArrayFree(s_map_textures[i]);
+    }
     R_GL_RingbufferDestroy(s_fog_ring);
 }
 
@@ -129,8 +134,10 @@ void R_GL_MapBegin(const bool *shadows, const vec2_t *pos)
     assert(shader_prog != -1);
     R_GL_Shader_InstallProg(shader_prog);
 
-    R_GL_Texture_BindArray(&s_map_textures, shader_prog);
-    R_GL_RingbufferBindLast(s_fog_ring, GL_TEXTURE1, shader_prog, "visbuff");
+    for(int i = 0; i < s_num_arrays; i++) {
+        R_GL_Texture_BindArray(&s_map_textures[i], shader_prog);
+    }
+    R_GL_RingbufferBindLast(s_fog_ring, GL_TEXTURE5, shader_prog, "visbuff");
 
     R_GL_StateSet(GL_U_MAP_POS, (struct uval){
         .type = UTYPE_VEC2,
