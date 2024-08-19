@@ -1379,28 +1379,28 @@ bool R_GL_ImageQuilt_MakeTileset(const char *source, struct texture_arr *out, GL
     struct image_tile tiles[8] = {0};
 
     if(!stitch_samples(image, (struct image_view[4]){
-        views[RED], views[BLUE], views[YELLOW], views[GREEN]}, &tiles[0]))
+        views[BLUE], views[RED], views[GREEN], views[YELLOW]}, &tiles[0]))
         goto fail_stitch;
     if(!stitch_samples(image, (struct image_view[4]){
-        views[BLUE], views[GREEN], views[BLUE], views[GREEN]}, &tiles[1]))
+        views[BLUE], views[GREEN], views[GREEN], views[BLUE]}, &tiles[1]))
         goto fail_stitch;
     if(!stitch_samples(image, (struct image_view[4]){
-        views[YELLOW], views[RED], views[YELLOW], views[RED]}, &tiles[2]))
+        views[YELLOW], views[RED], views[RED], views[YELLOW]}, &tiles[2]))
         goto fail_stitch;
     if(!stitch_samples(image, (struct image_view[4]){
-        views[YELLOW], views[GREEN], views[BLUE], views[RED]}, &tiles[3]))
+        views[YELLOW], views[GREEN], views[RED], views[BLUE]}, &tiles[3]))
         goto fail_stitch;
     if(!stitch_samples(image, (struct image_view[4]){
-        views[YELLOW], views[RED], views[BLUE], views[GREEN]}, &tiles[4]))
+        views[YELLOW], views[RED], views[GREEN], views[BLUE]}, &tiles[4]))
         goto fail_stitch;
     if(!stitch_samples(image, (struct image_view[4]){
-        views[YELLOW], views[GREEN], views[YELLOW], views[GREEN]}, &tiles[5]))
+        views[YELLOW], views[GREEN], views[GREEN], views[YELLOW]}, &tiles[5]))
         goto fail_stitch;
     if(!stitch_samples(image, (struct image_view[4]){
-        views[RED], views[BLUE], views[RED], views[BLUE]}, &tiles[6]))
+        views[BLUE], views[RED], views[RED], views[BLUE]}, &tiles[6]))
         goto fail_stitch;
     if(!stitch_samples(image, (struct image_view[4]){
-        views[BLUE], views[GREEN], views[YELLOW], views[RED]}, &tiles[7]))
+        views[BLUE], views[GREEN], views[RED], views[YELLOW]}, &tiles[7]))
         goto fail_stitch;
 
     /* Sample the middle diamond from each of the generated tiles */

@@ -74,6 +74,7 @@ in VertexToFrag {
     flat ivec2 c2_indices; 
     flat int   tb_indices;
     flat int   lr_indices;
+    flat int   wang_index;
          vec4  light_space_pos;
 }from_vertex;
 
@@ -226,38 +227,85 @@ float tint_factor(ivec4 td, vec2 uv)
     return bilinear_interp_unit_square(tl_corner, tr_corner, bl_corner, br_corner, uv);
 }
 
-vec4 texture_val(int mat_idx, vec2 uv)
+vec4 wang_color(vec2 uv, vec4 left_color, vec4 top_color, vec4 right_color, vec4 bot_color)
+{
+    bool left =  (uv.x <  uv.y) && (1.0 - uv.x >= uv.y);
+    bool top =   (uv.x <  uv.y) && (1.0 - uv.x <  uv.y);
+    bool right = (uv.x >= uv.y) && (1.0 - uv.x <  uv.y);
+    bool bot =   (uv.x >= uv.y) && (1.0 - uv.x >= uv.y);
+
+    if(left)
+        return left_color;
+    else if(top)
+        return top_color;
+    else if(right)
+        return right_color;
+    else
+        return bot_color;
+}
+
+/* Debug rendering of Wang tile indices */
+vec4 wang_texture_val(int wang_idx, vec2 uv)
+{
+    vec4 red = vec4(1.0, 0.0, 0.0, 1.0);
+    vec4 green = vec4(0.0, 1.0, 0.0, 1.0);
+    vec4 blue = vec4(0.0, 0.0, 1.0, 1.0);
+    vec4 yellow = vec4(1.0, 1.0, 0.0, 1.0);
+
+    switch(wang_idx) {
+    case 0:
+        return wang_color(uv, blue, red, yellow, green);
+    case 1:
+        return wang_color(uv, blue, green, blue, green);
+    case 2:
+        return wang_color(uv, yellow, red, yellow, red);
+    case 3:
+        return wang_color(uv, yellow, green, blue, red);
+    case 4:
+        return wang_color(uv, yellow, red, blue, green);
+    case 5:
+        return wang_color(uv, yellow, green, yellow, green);
+    case 6:
+        return wang_color(uv, blue, red, blue, red);
+    case 7:
+        return wang_color(uv, blue, green, yellow, red);
+    default:
+        return vec4(1.0, 0.0, 1.0, 1.0);
+    }
+}
+
+vec4 texture_val(int mat_idx, int wang_idx, vec2 uv)
 {
     int idx = mat_idx * 8;
     int size = textureSize(tex_array0, 0).z;
     if(idx < size) {
-        return texture(tex_array0, vec3(uv, idx));
+        return texture(tex_array0, vec3(uv.x, 1.0 - uv.y, idx + wang_idx));
     }
     idx -= size;
     size = textureSize(tex_array1, 0).z;
     if(idx < size) {
-        return texture(tex_array1, vec3(uv, idx));
+        return texture(tex_array1, vec3(uv.x, 1.0 - uv.y, idx + wang_idx));
     }
     idx -= size;
     size = textureSize(tex_array2, 0).z;
     if(idx < size) {
-        return texture(tex_array2, vec3(uv, idx));
+        return texture(tex_array2, vec3(uv.x, 1.0 - uv.y, idx + wang_idx));
     }
     idx -= size;
     size = textureSize(tex_array3, 0).z;
     if(idx < size) {
-        return texture(tex_array3, vec3(uv, idx));
+        return texture(tex_array3, vec3(uv.x, 1.0 - uv.y, idx + wang_idx));
     }
     return vec4(0, 0, 0, 0);
 }
 
-vec4 mixed_texture_val(ivec2 adjacency_mats, vec2 uv)
+vec4 mixed_texture_val(ivec2 adjacency_mats, int wang_idx, vec2 uv)
 {
     vec4 ret = vec4(0.0f);
     for(int i = 0; i < 2; i++) {
     for(int j = 0; j < 4; j++) {
         int idx = (adjacency_mats[i] >> (j * 8)) & 0xff;
-        ret += texture_val(idx, uv) * (1.0/8.0);
+        ret += texture_val(idx, wang_idx, uv) * (1.0/8.0);
     }}
     return ret;
 }
@@ -376,7 +424,7 @@ void main()
 
     switch(from_vertex.blend_mode) {
     case BLEND_MODE_NOBLEND:
-        tex_color = texture_val(from_vertex.mat_idx, from_vertex.uv);
+        tex_color = texture_val(from_vertex.mat_idx, from_vertex.wang_index, from_vertex.uv);
         break;
     case BLEND_MODE_BLUR:
 
@@ -442,32 +490,32 @@ void main()
         /***********************************************************************
          * Set the fragment texture color
          **********************************************************************/
-        vec4 color1 = mixed_texture_val(from_vertex.c1_indices, from_vertex.uv);
-        vec4 color2 = mixed_texture_val(from_vertex.c2_indices, from_vertex.uv);
+        vec4 color1 = mixed_texture_val(from_vertex.c1_indices, from_vertex.wang_index, from_vertex.uv);
+        vec4 color2 = mixed_texture_val(from_vertex.c2_indices, from_vertex.wang_index, from_vertex.uv);
 
         vec4 tile_color = mix(
-            texture_val((from_vertex.mid_indices >> 0) & 0xff, from_vertex.uv),
-            texture_val((from_vertex.mid_indices >> 8) & 0xff, from_vertex.uv),
+            texture_val((from_vertex.mid_indices >> 0) & 0xff, from_vertex.wang_index, from_vertex.uv),
+            texture_val((from_vertex.mid_indices >> 8) & 0xff, from_vertex.wang_index, from_vertex.uv),
             0.5f
         );
         vec4 left_center_color =  mix(
-            texture_val((from_vertex.lr_indices >> 16) & 0xff, from_vertex.uv),
-            texture_val((from_vertex.lr_indices >> 24) & 0xff, from_vertex.uv),
+            texture_val((from_vertex.lr_indices >> 16) & 0xff, from_vertex.wang_index, from_vertex.uv),
+            texture_val((from_vertex.lr_indices >> 24) & 0xff, from_vertex.wang_index, from_vertex.uv),
             0.5f
         );
         vec4 bot_center_color = mix(
-            texture_val((from_vertex.tb_indices >> 0) & 0xff, from_vertex.uv),
-            texture_val((from_vertex.tb_indices >> 8) & 0xff, from_vertex.uv),
+            texture_val((from_vertex.tb_indices >> 0) & 0xff, from_vertex.wang_index, from_vertex.uv),
+            texture_val((from_vertex.tb_indices >> 8) & 0xff, from_vertex.wang_index, from_vertex.uv),
             0.5f
         );
         vec4 right_center_color = mix(
-            texture_val((from_vertex.lr_indices >> 0) & 0xff, from_vertex.uv),
-            texture_val((from_vertex.lr_indices >> 8) & 0xff, from_vertex.uv),
+            texture_val((from_vertex.lr_indices >> 0) & 0xff, from_vertex.wang_index, from_vertex.uv),
+            texture_val((from_vertex.lr_indices >> 8) & 0xff, from_vertex.wang_index, from_vertex.uv),
             0.5f
         );
         vec4 top_center_color = mix(
-            texture_val((from_vertex.tb_indices >> 16) & 0xff, from_vertex.uv),
-            texture_val((from_vertex.tb_indices >> 24) & 0xff, from_vertex.uv),
+            texture_val((from_vertex.tb_indices >> 16) & 0xff, from_vertex.wang_index, from_vertex.uv),
+            texture_val((from_vertex.tb_indices >> 24) & 0xff, from_vertex.wang_index, from_vertex.uv),
             0.5f
         );
 

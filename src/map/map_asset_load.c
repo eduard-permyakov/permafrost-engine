@@ -58,6 +58,16 @@
 #define PFMAP_VER       (1.0f)
 #define CHK_TRUE(_pred, _label) do{ if(!(_pred)) goto _label; }while(0)
 
+/* The Wang tiling algorithm is based on the paper "Wang Tiles for Image and Texture Generation"
+ * by Cohen, Shade, Hiller, and Deussen.
+ */
+enum wang_tile_color{
+    BLUE,
+    RED,
+    YELLOW,
+    GREEN,
+};
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -203,6 +213,203 @@ static void m_al_patch_adjacency_info(struct map *map)
     }}
 }
 
+static enum wang_tile_color bot_edge_color(int idx)
+{
+    assert(idx >= 0 && idx < 8);
+    enum wang_tile_color map[] = {
+        [0] = GREEN,
+        [1] = GREEN,
+        [2] = RED,
+        [3] = RED,
+        [4] = GREEN,
+        [5] = GREEN,
+        [6] = RED,
+        [7] = RED
+    };
+    return map[idx];
+}
+
+static enum wang_tile_color top_edge_color(int idx)
+{
+    assert(idx >= 0 && idx < 8);
+    enum wang_tile_color map[] = {
+        [0] = RED,
+        [1] = GREEN,
+        [2] = RED,
+        [3] = GREEN,
+        [4] = RED,
+        [5] = GREEN,
+        [6] = RED,
+        [7] = GREEN
+    };
+    return map[idx];
+}
+
+static enum wang_tile_color right_edge_color(int idx)
+{
+    assert(idx >= 0 && idx < 8);
+    enum wang_tile_color map[] = {
+        [0] = YELLOW,
+        [1] = BLUE,
+        [2] = YELLOW,
+        [3] = BLUE,
+        [4] = BLUE,
+        [5] = YELLOW,
+        [6] = BLUE,
+        [7] = YELLOW
+    };
+    return map[idx];
+}
+
+static enum wang_tile_color left_edge_color(int idx)
+{
+    assert(idx >= 0 && idx < 8);
+    enum wang_tile_color map[] = {
+        [0] = BLUE,
+        [1] = BLUE,
+        [2] = YELLOW,
+        [3] = YELLOW,
+        [4] = YELLOW,
+        [5] = YELLOW,
+        [6] = BLUE,
+        [7] = BLUE
+    };
+    return map[idx];
+}
+
+static int random_wang_idx(void)
+{
+    return rand() % 8;
+}
+
+size_t indices_with_top_color(enum wang_tile_color top_color, int *out)
+{
+    size_t ret = 0;
+    for(int i = 0; i < 8; i++) {
+        if(top_edge_color(i) == top_color)
+            out[ret++] = i;
+    }
+    assert(ret > 0 && ret < 8);
+    return ret;
+}
+
+size_t indices_with_left_color(enum wang_tile_color left_color, int *out)
+{
+    size_t ret = 0;
+    for(int i = 0; i < 8; i++) {
+        if(left_edge_color(i) == left_color)
+            out[ret++] = i;
+    }
+    assert(ret > 0 && ret < 8);
+    return ret;
+}
+
+size_t indices_with_top_left_colors(enum wang_tile_color top_color,
+                                    enum wang_tile_color left_color, int *out)
+{
+    size_t ret = 0;
+    for(int i = 0; i < 8; i++) {
+        if(top_edge_color(i) == top_color && left_edge_color(i) == left_color)
+            out[ret++] = i;
+    }
+    assert(ret > 0 && ret < 8);
+    return ret;
+}
+
+static int random_wang_idx_constrain_top(int top_idx)
+{
+    enum wang_tile_color top_color = bot_edge_color(top_idx);
+    int indices[8];
+    size_t ncompat = indices_with_top_color(top_color, indices);
+    assert(ncompat > 0);
+    size_t roll = rand() % ncompat;
+    return indices[roll];
+}
+
+static int random_wang_idx_constrain_left(int left_idx)
+{
+    enum wang_tile_color left_color = right_edge_color(left_idx);
+    int indices[8];
+    size_t ncompat = indices_with_left_color(left_color, indices);
+    assert(ncompat > 0);
+    size_t roll = rand() % ncompat;
+    return indices[roll];
+}
+
+static int random_wang_idx_constrain_top_left(int top_idx, int left_idx)
+{
+    enum wang_tile_color top_color = bot_edge_color(top_idx);
+    enum wang_tile_color left_color = right_edge_color(left_idx);
+    int indices[8];
+    size_t ncompat = indices_with_top_left_colors(top_color, left_color, indices);
+    assert(ncompat > 0);
+    size_t roll = rand() % ncompat;
+    return indices[roll];
+}
+
+static void generate_wang_indices(struct map *map)
+{
+    struct map_resolution res;
+    M_GetResolution(map, &res);
+
+    for(int chunk_r = 0; chunk_r < res.chunk_h; chunk_r++) {
+    for(int chunk_c = 0; chunk_c < res.chunk_w; chunk_c++) {
+
+        struct pfchunk *chunk = &map->chunks[chunk_r * res.chunk_w + chunk_c];
+
+        for(int tile_r = 0; tile_r < res.tile_h; tile_r++) {
+        for(int tile_c = 0; tile_c < res.tile_w; tile_c++) {
+
+            int global_r = (chunk_r * res.tile_w) + tile_r;
+            int global_c = (chunk_c * res.tile_h) + tile_c;
+            struct tile *tile = &chunk->tiles[tile_r * res.tile_w + tile_c];
+
+            int wang_idx;
+            if(global_r == 0 && global_c == 0) {
+
+                wang_idx = random_wang_idx();
+
+            }else if(global_r == 0 && global_c > 0) {
+
+                struct tile_desc td = (struct tile_desc){chunk_r, chunk_c, tile_r, tile_c};
+                M_Tile_RelativeDesc(res, &td, -1, 0);
+                struct tile *left_tile;
+                M_TileForDesc(map, td, &left_tile);
+                int left_idx = left_tile->wang_idx;
+                wang_idx = random_wang_idx_constrain_left(left_idx);
+
+            }else if(global_r > 0 && global_c == 0) {
+
+                struct tile_desc td = (struct tile_desc){chunk_r, chunk_c, tile_r, tile_c};
+                M_Tile_RelativeDesc(res, &td, 0, -1);
+                struct tile *top_tile;
+                M_TileForDesc(map, td, &top_tile);
+                int top_idx = top_tile->wang_idx;
+                wang_idx = random_wang_idx_constrain_top(top_idx);
+
+            }else{
+
+                struct tile_desc td = (struct tile_desc){chunk_r, chunk_c, tile_r, tile_c};
+                M_Tile_RelativeDesc(res, &td, -1, 0);
+                struct tile *left_tile;
+                M_TileForDesc(map, td, &left_tile);
+                int left_idx = left_tile->wang_idx;
+
+                td = (struct tile_desc){chunk_r, chunk_c, tile_r, tile_c};
+                M_Tile_RelativeDesc(res, &td, 0, -1);
+                struct tile *top_tile;
+                M_TileForDesc(map, td, &top_tile);
+                int top_idx = top_tile->wang_idx;
+
+                wang_idx = random_wang_idx_constrain_top_left(top_idx, left_idx);
+                assert(bot_edge_color(top_idx) == top_edge_color(wang_idx));
+                assert(right_edge_color(left_idx) == left_edge_color(wang_idx));
+            }
+            tile->wang_idx = wang_idx;
+        }}
+    }}
+}
+
 static void set_minimap_defaults(struct map *map)
 {
     map->minimap_vres = (vec2_t){1920, 1080};
@@ -269,6 +476,8 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
             return false;
     }
 
+    generate_wang_indices(map);
+
     for(int i = 0; i < num_chunks; i++) {
     
         map->chunks[i].render_private = (void*)unused_base;
@@ -318,7 +527,9 @@ bool M_AL_UpdateTile(struct map *map, const struct tile_desc *desc, const struct
         return false;
 
     struct pfchunk *chunk = &map->chunks[desc->chunk_r * map->width + desc->chunk_c];
+    int old_wang_idx = chunk->tiles[desc->tile_r * TILES_PER_CHUNK_WIDTH + desc->tile_c].wang_idx;
     chunk->tiles[desc->tile_r * TILES_PER_CHUNK_WIDTH + desc->tile_c] = *tile;
+    chunk->tiles[desc->tile_r * TILES_PER_CHUNK_WIDTH + desc->tile_c].wang_idx = old_wang_idx;
 
     struct map_resolution res;
     M_GetResolution(map, &res);

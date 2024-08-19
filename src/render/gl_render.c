@@ -154,6 +154,11 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
         glVertexAttribIPointer(9, 1, GL_INT, priv->vertex_stride, 
             (void*)offsetof(struct terrain_vert, lr_indices));
         glEnableVertexAttribArray(9);
+
+        /* Attribute 10 - the index of the Wang tile in the corresponding tileset */
+        glVertexAttribIPointer(10, 1, GL_INT, priv->vertex_stride, 
+            (void*)offsetof(struct terrain_vert, wang_index));
+        glEnableVertexAttribArray(10);
     }
 
     priv->shader_prog = R_GL_Shader_GetProgForName(shader);

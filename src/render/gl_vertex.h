@@ -75,6 +75,7 @@ struct terrain_vert{
     uint32_t  c2_indices[2]; /* corner 2 */
     uint32_t  tb_indices;
     uint32_t  lr_indices;
+    uint32_t  wang_index;
 };
 
 struct colored_vert{

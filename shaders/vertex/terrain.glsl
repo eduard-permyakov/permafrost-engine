@@ -46,6 +46,7 @@ layout (location = 6) in ivec2 in_c1_indices;
 layout (location = 7) in ivec2 in_c2_indices; 
 layout (location = 8) in int   in_tb_indices;
 layout (location = 9) in int   in_lr_indices;
+layout (location = 10) in int  in_wang_index;
 
 /*****************************************************************************/
 /* OUTPUTS                                                                   */
@@ -62,6 +63,7 @@ out VertexToFrag {
     flat ivec2 c2_indices; 
     flat int   tb_indices;
     flat int   lr_indices;
+    flat int   wang_index;
 }to_fragment;
 
 out VertexToGeo {
@@ -93,6 +95,7 @@ void main()
     to_fragment.c2_indices = in_c2_indices;
     to_fragment.tb_indices = in_tb_indices;
     to_fragment.lr_indices = in_lr_indices;
+    to_fragment.wang_index = in_wang_index;
 
     to_geometry.normal = normalize(mat3(projection * view * model) * in_normal);
 
