@@ -42,6 +42,7 @@
 #include "lib/public/stb_image.h"
 #include "lib/public/vec.h"
 #include "lib/public/pf_string.h"
+#include "lib/public/noise.h"
 #include "script/public/script.h"
 #include "game/public/game.h"
 #include "navigation/public/nav.h"
@@ -363,6 +364,7 @@ fail_surface:
 static bool engine_init(void)
 {
     g_main_thread_id = SDL_ThreadID();
+    Noise_Init();
 
     if(!Perf_Init()) {
         fprintf(stderr, "Failed to initialize performance module.\n");
