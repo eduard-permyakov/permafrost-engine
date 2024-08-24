@@ -43,6 +43,9 @@ void Noise_GeneratePerlin1D(size_t x, float frequency, float *outbuff);
 void Noise_GeneratePerlin2D(size_t x, size_t y, float frequency, float *outbuff);
 void Noise_GenerateOctavePerlin2D(size_t x, size_t y, float frequency, int octaves,
                                   float persistence, float *outbuff);
+/* Generate a noise image that is seamlessly tilable in all directions */
+void Noise_GenerateOctavePerlinTile2D(size_t x, size_t y, float frequency, int octaves,
+                                      float persistence, float *outbuff);
 void Noise_GeneratePerlin3D(size_t x, size_t y, size_t z, float frequency, float *outbuff);
 void Noise_Normalize2D(size_t x, size_t y, float *inout);
 void Noise_DumpPPM(const char *path, size_t width, size_t height, float *buffer);

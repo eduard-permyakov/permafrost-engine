@@ -90,12 +90,31 @@ static float grad(int hash, double x, double y, double z)
     return ((h & 1) == 0 ? u : -u) + ((h & 2) == 0 ? v : -v);
 }
 
-static float noise(float x, float y, float z)
+static int inc(int num, int repeat) 
 {
+    num++;
+    if(repeat > 0) {
+        num %= repeat;
+    }
+    return num;
+}
+
+static float noise(float x, float y, float z,
+                   int repeatx, int repeaty, int repeatz)
+{
+    if(repeatx > 0) {
+        x = fmod(x, repeatx);
+    }
+    if(repeaty > 0) {
+        y = fmod(y, repeaty);
+    }
+    if(repeatz > 0) {
+        z = fmod(z, repeatz);
+    }
     /* Find unit cube that contains point */
-    int X = (int)floor(x) & 255;
-    int Y = (int)floor(y) & 255;
-    int Z = (int)floor(z) & 255;
+    int xi = (int)floor(x) & 255;
+    int yi = (int)floor(y) & 255;
+    int zi = (int)floor(z) & 255;
 
     /* Find relative x, y, z of point in cube */
     x -= floor(x);
@@ -108,29 +127,37 @@ static float noise(float x, float y, float z)
     float w = fade(z);
 
     /* Compute hash coordinates of the 8 cube corners */
-    int A = p[X  ]+Y, AA = p[A]+Z, AB = p[A+1]+Z,
-        B = p[X+1]+Y, BA = p[B]+Z, BB = p[B+1]+Z;
+    int aaa, aba, aab, abb, baa, bba, bab, bbb;
+    aaa = p[p[p[    xi          ]+    yi          ]+    zi          ];
+    aba = p[p[p[    xi          ]+inc(yi, repeaty)]+    zi          ];
+    aab = p[p[p[    xi          ]+    yi          ]+inc(zi, repeatz)];
+    abb = p[p[p[    xi          ]+inc(yi, repeaty)]+inc(zi, repeatz)];
+    baa = p[p[p[inc(xi, repeatx)]+    yi          ]+    zi          ];
+    bba = p[p[p[inc(xi, repeatx)]+inc(yi, repeaty)]+    zi          ];
+    bab = p[p[p[inc(xi, repeatx)]+    yi          ]+inc(zi, repeatz)];
+    bbb = p[p[p[inc(xi, repeatx)]+inc(yi, repeaty)]+inc(zi, repeatz)];
 
     /* Add blended results from 8 corners of the cube */
-    return lerp(w, lerp(v, lerp(u, grad(p[AA  ], x  , y  , z   ),
-                                   grad(p[BA  ], x-1, y  , z   )),
-                           lerp(u, grad(p[AB  ], x  , y-1, z   ),
-                                   grad(p[BB  ], x-1, y-1, z   ))),
-                   lerp(v, lerp(u, grad(p[AA+1], x  , y  , z-1 ),
-                                   grad(p[BA+1], x-1, y  , z-1 )),
-                           lerp(u, grad(p[AB+1], x  , y-1, z-1 ),
-                                   grad(p[BB+1], x-1, y-1, z-1 ))));
+    return lerp(w, lerp(v, lerp(u, grad(aaa, x  , y  , z   ),
+                                   grad(baa, x-1, y  , z   )),
+                           lerp(u, grad(aba, x  , y-1, z   ),
+                                   grad(bba, x-1, y-1, z   ))),
+                   lerp(v, lerp(u, grad(aab, x  , y  , z-1 ),
+                                   grad(bab, x-1, y  , z-1 )),
+                           lerp(u, grad(abb, x  , y-1, z-1 ),
+                                   grad(bbb, x-1, y-1, z-1 ))));
 }
 
-static float octave_noise(float x, float y, float z, float frequency, 
-                          int octaves, float persistence)
+static float octave_noise(float x, float y, float z, int repeatx, int repeaty, int repeatz, 
+                          float frequency, int octaves, float persistence)
 {
     float total = 0.0f;
     float max_value = 0.0f;
     float amplitude = 1.0f;
 
     for(int i = 0; i < octaves; i++) {
-        total += noise(x * frequency, y * frequency, z * frequency) * amplitude;
+        total += noise(x * frequency, y * frequency, z * frequency, 
+            repeatx * pow(2, i), repeaty * pow(2, i), repeatz * pow(2, i)) * amplitude;
         max_value += amplitude;
         amplitude *= persistence;
         frequency *= 2;
@@ -151,7 +178,7 @@ void Noise_Init(void)
 void Noise_GeneratePerlin1D(size_t x, float frequency, float *outbuff)
 {
     for(size_t ix = 0; ix < x; ix++) {
-        outbuff[ix] = noise(ix * frequency, 0, 0);
+        outbuff[ix] = noise(ix * frequency, 0, 0, 0, 0, 0);
     }
 }
 
@@ -161,7 +188,7 @@ void Noise_GeneratePerlin2D(size_t x, size_t y, float frequency, float *outbuff)
     for(size_t ix = 0; ix < x; ix++) {
         size_t out_idx = (iy * y) + ix;
         assert(out_idx < x * y);
-        outbuff[out_idx] = noise(ix * frequency, iy * frequency, 0);
+        outbuff[out_idx] = noise(ix * frequency, iy * frequency, 0, 0, 0, 0);
     }}
 }
 
@@ -172,7 +199,18 @@ void Noise_GenerateOctavePerlin2D(size_t x, size_t y, float frequency, int octav
     for(size_t ix = 0; ix < x; ix++) {
         size_t out_idx = (iy * x) + ix;
         assert(out_idx < x * y);
-        outbuff[out_idx] = octave_noise(ix, iy, 0, 
+        outbuff[out_idx] = octave_noise(ix, iy, 0, 0, 0, 0, frequency, octaves, persistence);
+    }}
+}
+
+void Noise_GenerateOctavePerlinTile2D(size_t x, size_t y, float frequency, int octaves,
+                                      float persistence, float *outbuff)
+{
+    for(size_t iy = 0; iy < y; iy++) {
+    for(size_t ix = 0; ix < x; ix++) {
+        size_t out_idx = (iy * x) + ix;
+        assert(out_idx < x * y);
+        outbuff[out_idx] = octave_noise(ix, iy, 0, x * frequency, y * frequency, 0, 
             frequency, octaves, persistence);
     }}
 }
@@ -196,7 +234,7 @@ void Noise_GeneratePerlin3D(size_t x, size_t y, size_t z, float frequency, float
     for(size_t iz = 0; iz < z; iz++) {
         size_t out_idx = (iz * x * y) + (iy * x) + ix;
         assert(out_idx < x * y);
-        outbuff[out_idx] = noise(ix * frequency, iy * frequency, iz * frequency);
+        outbuff[out_idx] = noise(ix * frequency, iy * frequency, iz * frequency, 0, 0, 0);
     }}}
 }
 
