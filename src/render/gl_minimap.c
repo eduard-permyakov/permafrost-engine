@@ -225,8 +225,8 @@ static void draw_minimap_terrain(struct render_private *priv, mat4x4_t *chunk_mo
 
     const bool fval = false;
     vec2_t pos = (vec2_t){
-        res.chunk_w * res.tile_w * X_COORDS_PER_TILE,
-        res.chunk_h * res.tile_h * Z_COORDS_PER_TILE * -1
+        (res.chunk_w * res.tile_w * X_COORDS_PER_TILE) / 2.0,
+        (res.chunk_h * res.tile_h * Z_COORDS_PER_TILE * -1) / 2.0
     };
     R_GL_MapBegin(&fval, &pos);
 
