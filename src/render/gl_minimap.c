@@ -218,12 +218,16 @@ void draw_cam_frustum(const struct camera *cam, mat4x4_t *minimap_model, const s
     GL_PERF_RETURN_VOID();
 }
 
-static void draw_minimap_terrain(struct render_private *priv, mat4x4_t *chunk_model_mat)
+static void draw_minimap_terrain(struct render_private *priv, mat4x4_t *chunk_model_mat,
+                                 struct map_resolution res)
 {
     GL_PERF_ENTER();
 
     const bool fval = false;
-    vec2_t pos = (vec2_t){0.0f, 0.0f};
+    vec2_t pos = (vec2_t){
+        res.chunk_w * res.tile_w * X_COORDS_PER_TILE,
+        res.chunk_h * res.tile_h * Z_COORDS_PER_TILE * -1
+    };
     R_GL_MapBegin(&fval, &pos);
 
     /* Clip everything below the 'Shallow Water' level. The 'Shallow Water' is 
@@ -313,7 +317,7 @@ static void create_minimap_texture(const struct map *map, void **chunk_rprivates
         mat4x4_t *mat = &chunk_model_mats[r * res.chunk_w + c];
 
         draw_minimap_water(map, (struct coord){r,c});
-        draw_minimap_terrain(priv, mat);
+        draw_minimap_terrain(priv, mat, res);
     }}
 
     R_GL_MapInvalidate();
@@ -535,6 +539,10 @@ void R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate,
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
+
+    struct map_resolution res;
+    M_GetResolution(map, &res);
+
     setup_ortho_view_uniforms(map);
 
     /* Render the chunk to the existing minimap texture */
@@ -552,7 +560,7 @@ void R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate,
 
     glViewport(0,0, MINIMAP_RES, MINIMAP_RES);
     draw_minimap_water(map, (struct coord){*chunk_r, *chunk_c});
-    draw_minimap_terrain(chunk_rprivate, chunk_model);
+    draw_minimap_terrain(chunk_rprivate, chunk_model, res);
 
     R_GL_MapInvalidate();
 

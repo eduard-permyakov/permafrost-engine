@@ -44,11 +44,18 @@
 #include "render_private.h"
 #include "../main.h"
 #include "../map/public/tile.h"
+#include "../lib/public/noise.h"
 
 #include <assert.h>
 #include <string.h>
 
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
+#define HEIGHT_MAP_RES  (1024)
+
+struct heightmap{
+    GLuint buffer;
+    GLuint tex_buff;
+};
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -58,7 +65,35 @@ static size_t                 s_num_arrays;
 static struct texture_arr     s_map_textures[4];
 static bool                   s_map_ctx_active = false;
 static struct gl_ring        *s_fog_ring;
+static struct heightmap       s_heightmap;
 static struct map_resolution  s_res;
+
+/*****************************************************************************/
+/* STATIC FUNCTIONS                                                          */
+/*****************************************************************************/
+
+static void create_height_map(void)
+{
+    ASSERT_IN_RENDER_THREAD();
+    
+    size_t buffsize = sizeof(float) * HEIGHT_MAP_RES * HEIGHT_MAP_RES;
+    float *data = malloc(buffsize);
+    if(!data)
+        return;
+
+    Noise_GenerateOctavePerlinTile2D(HEIGHT_MAP_RES, HEIGHT_MAP_RES, 1/128.0, 4, 0.5, data);
+
+    glGenBuffers(1, &s_heightmap.buffer);
+    glBindBuffer(GL_TEXTURE_BUFFER, s_heightmap.buffer);
+    glBufferStorage(GL_TEXTURE_BUFFER, buffsize, data, 0);
+
+    glGenTextures(1, &s_heightmap.tex_buff);
+    glBindTexture(GL_TEXTURE_BUFFER, s_heightmap.tex_buff);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_R32F, s_heightmap.buffer);
+
+    free(data);
+    GL_ASSERT_OK();
+}
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -77,6 +112,13 @@ void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures,
 
     s_num_arrays = R_GL_Texture_ArrayMakeMapWangTileset(map_texfiles, 
         *num_textures, s_map_textures, GL_TEXTURE0);
+
+    create_height_map();
+
+    R_GL_StateSet(GL_U_HEIGHT_MAP, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = HEIGHT_MAP_TUNIT - GL_TEXTURE0
+    });
 
     R_GL_StateSet(GL_U_MAP_RES, (struct uval){
         .type = UTYPE_IVEC4,
@@ -101,6 +143,9 @@ void R_GL_MapUpdateFog(void *buff, const size_t *size)
 
 void R_GL_MapShutdown(void)
 {
+    glDeleteBuffers(1, &s_heightmap.buffer);
+    glDeleteBuffers(1, &s_heightmap.tex_buff);
+
     for(int i = 0; i < s_num_arrays; i++) {
         R_GL_Texture_ArrayFree(s_map_textures[i]);
     }
@@ -143,6 +188,9 @@ void R_GL_MapBegin(const bool *shadows, const vec2_t *pos)
         .type = UTYPE_VEC2,
         .val.as_vec2 = *pos
     });
+
+    glActiveTexture(HEIGHT_MAP_TUNIT);
+    glBindTexture(GL_TEXTURE_BUFFER, s_heightmap.tex_buff);
 
     s_map_ctx_active = true;
     GL_PERF_RETURN_VOID();

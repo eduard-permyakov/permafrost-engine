@@ -59,6 +59,8 @@
 #define STATE_IN_FOG     1
 #define STATE_VISIBLE    2
 
+#define HEIGHT_MAP_RES   1024
+
 /*****************************************************************************/
 /* INPUTS                                                                    */
 /*****************************************************************************/
@@ -93,6 +95,7 @@ uniform vec3 light_color;
 uniform vec3 light_pos;
 uniform vec3 view_pos;
 
+uniform samplerBuffer height_map;
 uniform sampler2D shadow_map;
 
 uniform sampler2DArray tex_array0;
@@ -408,6 +411,33 @@ float shadow_factor_poisson(vec4 light_space_pos)
             visibility -= 0.25;
     }
     return shadow * visibility;
+}
+
+float height_at_pos(vec3 ws_pos)
+{
+    int chunk_w = map_resolution[0];
+    int chunk_h = map_resolution[1];
+    int tile_w = map_resolution[2];
+    int tile_h = map_resolution[3];
+    int tiles_per_chunk = tile_w * tile_h;
+
+    int chunk_x_dist = tile_w * X_COORDS_PER_TILE;
+    int chunk_z_dist = tile_h * Z_COORDS_PER_TILE;
+
+    int chunk_r = int(abs(map_pos.y - ws_pos.z) / chunk_z_dist);
+    int chunk_c = int(abs(map_pos.x - ws_pos.x) / chunk_x_dist);
+
+    float chunk_base_x = map_pos.x - (chunk_c * chunk_x_dist);
+    float chunk_base_z = map_pos.y + (chunk_r * chunk_z_dist);
+
+    float percentu = clamp((chunk_base_x - ws_pos.x) / chunk_x_dist, 0, 1.0);
+    float percentv = clamp((ws_pos.z - chunk_base_z) / chunk_z_dist, 0, 1.0);
+
+    int buffx = int(percentu * (HEIGHT_MAP_RES - 1));
+    int buffy = int(percentv * (HEIGHT_MAP_RES - 1));
+    int idx = clamp(buffx * HEIGHT_MAP_RES + buffy, 0, HEIGHT_MAP_RES * HEIGHT_MAP_RES - 1);
+
+    return texelFetch(height_map, idx).r;
 }
 
 void main()

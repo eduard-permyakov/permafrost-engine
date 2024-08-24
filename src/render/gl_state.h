@@ -72,6 +72,7 @@
 #define GL_U_LIGHT_COLOR        "light_color"
 #define GL_U_LS_TRANS           "light_space_transform"
 #define GL_U_SHADOW_MAP         "shadow_map"
+#define GL_U_HEIGHT_MAP         "height_map"
 #define GL_U_ENT_TOP_OFFSETS_SS "ent_top_offsets_ss"
 #define GL_U_ENT_HEALTH_PC      "ent_health_pc"
 #define GL_U_CURR_RES           "curr_res"

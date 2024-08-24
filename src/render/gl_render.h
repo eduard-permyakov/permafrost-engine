@@ -46,6 +46,7 @@
 #include <stdbool.h>
 
 
+#define HEIGHT_MAP_TUNIT (GL_TEXTURE15)
 #define SHADOW_MAP_TUNIT (GL_TEXTURE16)
 
 struct render_private;

@@ -236,6 +236,7 @@ static struct shader s_shaders[] = {
             { UTYPE_INT,       "visbuff_offset",      },
             { UTYPE_IVEC4,     GL_U_MAP_RES,          },
             { UTYPE_VEC2,      GL_U_MAP_POS,          },
+            { UTYPE_INT,       GL_U_HEIGHT_MAP        },
             {0}
         },
     },
@@ -262,6 +263,7 @@ static struct shader s_shaders[] = {
             { UTYPE_IVEC4,     GL_U_MAP_RES,          },
             { UTYPE_VEC2,      GL_U_MAP_POS,          },
             { UTYPE_INT,       GL_U_SHADOW_MAP        },
+            { UTYPE_INT,       GL_U_HEIGHT_MAP        },
             {0}
         },
     },
