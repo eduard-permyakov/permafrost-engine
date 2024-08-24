@@ -56,7 +56,8 @@
 #define STATE_IN_FOG     1
 #define STATE_VISIBLE    2
 
-#define HEIGHT_MAP_RES   1024
+#define HEIGHT_MAP_RES    1024
+#define HEIGHT_MAP_WEIGHT 0.075
 
 /*****************************************************************************/
 /* INPUTS                                                                    */
@@ -313,6 +314,57 @@ float height_at_pos(vec3 ws_pos)
     return texelFetch(height_map, idx).r;
 }
 
+vec3 normal_at_pos(vec3 ws_pos)
+{
+    int chunk_w = map_resolution[0];
+    int chunk_h = map_resolution[1];
+    int tile_w = map_resolution[2];
+    int tile_h = map_resolution[3];
+    int tiles_per_chunk = tile_w * tile_h;
+
+    int chunk_x_dist = tile_w * X_COORDS_PER_TILE;
+    int chunk_z_dist = tile_h * Z_COORDS_PER_TILE;
+
+    int chunk_r = int(abs(map_pos.y - ws_pos.z) / chunk_z_dist);
+    int chunk_c = int(abs(map_pos.x - ws_pos.x) / chunk_x_dist);
+
+    float chunk_base_x = map_pos.x - (chunk_c * chunk_x_dist);
+    float chunk_base_z = map_pos.y + (chunk_r * chunk_z_dist);
+
+    float percentu = clamp((chunk_base_x - ws_pos.x) / chunk_x_dist, 0, 1.0);
+    float percentv = clamp((ws_pos.z - chunk_base_z) / chunk_z_dist, 0, 1.0);
+
+    int buffx = int(percentu * (HEIGHT_MAP_RES - 1));
+    int buffy = int(percentv * (HEIGHT_MAP_RES - 1));
+    int idx = clamp(buffx * HEIGHT_MAP_RES + buffy, 0, HEIGHT_MAP_RES * HEIGHT_MAP_RES - 1);
+
+    /* Compute the derivative at the point using the finite difference approximation
+     * (central difference).
+     */
+    int backx = (buffx - 1) % HEIGHT_MAP_RES;
+    int backx_idx = clamp(backx * HEIGHT_MAP_RES + buffy, 0, HEIGHT_MAP_RES * HEIGHT_MAP_RES - 1);
+
+    int frontx = (buffx + 1) % HEIGHT_MAP_RES;
+    int front_idx = clamp(frontx * HEIGHT_MAP_RES + buffy, 0, HEIGHT_MAP_RES * HEIGHT_MAP_RES - 1);
+
+    int backz = (buffy - 1) % HEIGHT_MAP_RES;
+    int backz_idx = clamp(buffx * HEIGHT_MAP_RES + backz, 0, HEIGHT_MAP_RES * HEIGHT_MAP_RES - 1);
+
+    int frontz = (buffy + 1) % HEIGHT_MAP_RES;
+    int frontz_idx = clamp(buffx * HEIGHT_MAP_RES + frontz, 0, HEIGHT_MAP_RES * HEIGHT_MAP_RES - 1);
+
+    float x0 = texelFetch(height_map, backx_idx).r;
+    float x1 = texelFetch(height_map, front_idx).r;
+    float dx = (x1 - x0) / 2.0;
+
+    float z0 = texelFetch(height_map, backz_idx).r;
+    float z1 = texelFetch(height_map, front_idx).r;
+    float dz = (z1 - z0) / 2.0;
+
+    vec2 xz_normal = normalize(vec2(dx, dz));
+    return vec3(xz_normal.x, 1.0, xz_normal.y);
+}
+
 void main()
 {
     ivec4 td = tile_desc_at(from_vertex.world_pos);
@@ -474,16 +526,21 @@ void main()
     /* Ambient calculations */
     vec3 ambient = (TERRAIN_AMBIENT + height * EXTRA_AMBIENT_PER_LEVEL) * ambient_color;
 
+    /* Add variance to our normal using bump-mapping */
+    vec3 heightmap_normal = normal_at_pos(from_vertex.world_pos);
+    vec3 vertex_normal = from_vertex.normal;
+    vec3 normal = normalize(vertex_normal + heightmap_normal * HEIGHT_MAP_WEIGHT);
+
     /* Diffuse calculations */
     /* Always use light direction relative to world origin. Otherwise different parts of a
      * large map have too distinct differences in lighting */
     vec3 light_dir = normalize(light_pos);  
-    float diff = max(dot(from_vertex.normal, light_dir), 0.0);
+    float diff = max(dot(normal, light_dir), 0.0);
     vec3 diffuse = light_color * (diff * TERRAIN_DIFFUSE);
 
     /* Specular calculations */
     vec3 view_dir = normalize(view_pos - from_vertex.world_pos);
-    vec3 reflect_dir = reflect(-light_dir, from_vertex.normal);  
+    vec3 reflect_dir = reflect(-light_dir, normal);  
     float spec = pow(max(dot(view_dir, reflect_dir), 0.0), SPECULAR_SHININESS);
     vec3 specular = SPECULAR_STRENGTH * light_color * (spec * TERRAIN_SPECULAR);
 
