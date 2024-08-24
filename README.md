@@ -32,6 +32,7 @@ Download the free (or donate what-you-want) demo on [itch.io](https://spb.itch.i
 * Skeletal animation with GPU skinning
 * Phong reflection model with materials
 * Directional light shadow mapping
+* Bump mapping
 * Batched rendering with dynamic batches
 * Ringbuffer-based streaming of data to GPU
 * RTS camera, FPS camera
