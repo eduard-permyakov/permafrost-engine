@@ -241,11 +241,25 @@ void render_thread_wait_done(void)
 {
     PERF_ENTER();
 
+again:;
+    bool interrupted = false, done = false;
     SDL_LockMutex(s_rstate.done_lock);
-    while(!s_rstate.done)
+    while(!s_rstate.done && !s_rstate.pump_events) {
         SDL_CondWait(s_rstate.done_cond, s_rstate.done_lock);
-    s_rstate.done = false;
+        interrupted = s_rstate.pump_events;
+        done = s_rstate.done;
+    }
+    s_rstate.pump_events = false;
+    if(s_rstate.done) {
+        s_rstate.done = false;
+    }
     SDL_UnlockMutex(s_rstate.done_lock);
+
+    if(interrupted && !done) {
+        SDL_PumpEvents();
+        SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+        goto again;
+    }
 
     PERF_RETURN_VOID();
 }
@@ -729,6 +743,22 @@ void Engine_WaitRenderWorkDone(void)
     SDL_UnlockMutex(s_rstate.done_lock);
 
     PERF_RETURN_VOID();
+}
+
+void Engine_RequestPumpEvents(void)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    SDL_LockMutex(s_rstate.done_lock);
+    s_rstate.pump_events = true;
+    SDL_CondSignal(s_rstate.done_cond);
+    SDL_UnlockMutex(s_rstate.done_lock);
+}
+
+void Engine_SwapWindow(void)
+{
+    ASSERT_IN_RENDER_THREAD();
+    SDL_GL_SwapWindow(s_window);
 }
 
 void Engine_ClearPendingEvents(void)

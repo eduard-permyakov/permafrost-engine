@@ -86,6 +86,9 @@ struct render_sync_state{
     /* Flag to specify if the framebuffer should be presented on
      * the screen after all commands are executed */
     bool       swap_buffers;
+    /* Flag to request the main thread to pump events and go back
+     * to waiting for the render thread. */
+    bool       pump_events;
 };
 
 #define MAX_ARGS 8

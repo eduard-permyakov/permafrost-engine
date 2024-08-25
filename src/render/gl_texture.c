@@ -33,6 +33,7 @@
  *
  */
 
+#include "public/render.h"
 #include "gl_texture.h"
 #include "gl_state.h"
 #include "gl_assert.h"
@@ -680,6 +681,14 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
                 }
                 free(data);
             }
+
+            /* Since generating the tilesets may take a while, invoke 
+             * an event pump on the main thread and re-present the loading
+             * screen to avoid losing responsiveness. 
+             */
+            Engine_RequestPumpEvents();
+            R_GL_DrawLoadingScreen();
+            Engine_SwapWindow();
         }
 
         glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
