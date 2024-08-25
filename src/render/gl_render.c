@@ -126,39 +126,44 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
     }else if(strstr(shader, "terrain")) {
 
         /* Attribute 4 - blend mode */
-        glVertexAttribIPointer(4, 1, GL_SHORT, priv->vertex_stride, 
+        glVertexAttribIPointer(4, 1, GL_BYTE, priv->vertex_stride, 
             (void*)offsetof(struct terrain_vert, blend_mode));
         glEnableVertexAttribArray(4);
 
-        /* Attribute 5 - middle material indices packed together */
-        glVertexAttribIPointer(5, 1, GL_SHORT, priv->vertex_stride, 
-          (void*)offsetof(struct terrain_vert, middle_indices));
+        /* Attribute 5 - flag if bump map should be used */
+        glVertexAttribIPointer(5, 1, GL_BYTE, priv->vertex_stride, 
+            (void*)offsetof(struct terrain_vert, no_bump_map));
         glEnableVertexAttribArray(5);
 
-        /* Attribute 6 - corner 1 material indices packed together */
-        glVertexAttribIPointer(6, 2, GL_INT, priv->vertex_stride, 
-            (void*)offsetof(struct terrain_vert, c1_indices));
+        /* Attribute 6 - middle material indices packed together */
+        glVertexAttribIPointer(6, 1, GL_SHORT, priv->vertex_stride, 
+          (void*)offsetof(struct terrain_vert, middle_indices));
         glEnableVertexAttribArray(6);
 
-        /* Attribute 7 - corner 2 material indices packed together */
+        /* Attribute 7 - corner 1 material indices packed together */
         glVertexAttribIPointer(7, 2, GL_INT, priv->vertex_stride, 
-            (void*)offsetof(struct terrain_vert, c2_indices));
+            (void*)offsetof(struct terrain_vert, c1_indices));
         glEnableVertexAttribArray(7);
 
-        /* Attribute 8 - tile top and bottom material indices packed together */
-        glVertexAttribIPointer(8, 1, GL_INT, priv->vertex_stride, 
-            (void*)offsetof(struct terrain_vert, tb_indices));
+        /* Attribute 8 - corner 2 material indices packed together */
+        glVertexAttribIPointer(8, 2, GL_INT, priv->vertex_stride, 
+            (void*)offsetof(struct terrain_vert, c2_indices));
         glEnableVertexAttribArray(8);
 
-        /* Attribute 9 - tile left and right material indices packed together */
+        /* Attribute 9 - tile top and bottom material indices packed together */
         glVertexAttribIPointer(9, 1, GL_INT, priv->vertex_stride, 
-            (void*)offsetof(struct terrain_vert, lr_indices));
+            (void*)offsetof(struct terrain_vert, tb_indices));
         glEnableVertexAttribArray(9);
 
-        /* Attribute 10 - the index of the Wang tile in the corresponding tileset */
+        /* Attribute 10 - tile left and right material indices packed together */
         glVertexAttribIPointer(10, 1, GL_INT, priv->vertex_stride, 
-            (void*)offsetof(struct terrain_vert, wang_index));
+            (void*)offsetof(struct terrain_vert, lr_indices));
         glEnableVertexAttribArray(10);
+
+        /* Attribute 11 - the index of the Wang tile in the corresponding tileset */
+        glVertexAttribIPointer(11, 1, GL_INT, priv->vertex_stride, 
+            (void*)offsetof(struct terrain_vert, wang_index));
+        glEnableVertexAttribArray(11);
     }
 
     priv->shader_prog = R_GL_Shader_GetProgForName(shader);

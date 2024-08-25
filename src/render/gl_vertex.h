@@ -68,7 +68,8 @@ struct anim_vert{
 
 struct terrain_vert{
     VERTEX_BASE
-    uint16_t  blend_mode;
+    uint8_t   blend_mode;
+    uint8_t   no_bump_map;
     uint16_t  middle_indices; 
     /* Each uint32_t holds 4 8-bit indices */
     uint32_t  c1_indices[2]; /* corner 1 */

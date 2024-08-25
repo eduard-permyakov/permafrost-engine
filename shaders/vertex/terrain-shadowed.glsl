@@ -40,13 +40,14 @@ layout (location = 1) in vec2  in_uv;
 layout (location = 2) in vec3  in_normal;
 layout (location = 3) in int   in_material_idx;
 
-layout (location = 4) in int   in_blend_mode;
-layout (location = 5) in int   in_mid_indices;
-layout (location = 6) in ivec2 in_c1_indices;
-layout (location = 7) in ivec2 in_c2_indices; 
-layout (location = 8) in int   in_tb_indices;
-layout (location = 9) in int   in_lr_indices;
-layout (location = 10) in int  in_wang_index;
+layout (location = 4)  in int   in_blend_mode;
+layout (location = 5)  in int   in_no_bump_map;
+layout (location = 6)  in int   in_mid_indices;
+layout (location = 7)  in ivec2 in_c1_indices;
+layout (location = 8)  in ivec2 in_c2_indices; 
+layout (location = 9)  in int   in_tb_indices;
+layout (location = 10) in int   in_lr_indices;
+layout (location = 11) in int   in_wang_index;
 
 /*****************************************************************************/
 /* OUTPUTS                                                                   */
@@ -58,6 +59,7 @@ out VertexToFrag {
          vec3  world_pos;
          vec3  normal;
     flat int   blend_mode;
+    flat int   no_bump_map;
     flat int   mid_indices;
     flat ivec2 c1_indices;
     flat ivec2 c2_indices; 
@@ -92,6 +94,7 @@ void main()
     to_fragment.world_pos = (model * vec4(in_pos, 1.0)).xyz;
     to_fragment.normal = normalize(mat3(model) * in_normal);
     to_fragment.blend_mode = in_blend_mode;
+    to_fragment.no_bump_map = in_no_bump_map;
     to_fragment.mid_indices = in_mid_indices;
     to_fragment.c1_indices = in_c1_indices;
     to_fragment.c2_indices = in_c2_indices;

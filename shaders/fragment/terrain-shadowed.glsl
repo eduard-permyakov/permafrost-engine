@@ -72,6 +72,7 @@ in VertexToFrag {
          vec3  world_pos;
          vec3  normal;
     flat int   blend_mode;
+    flat int   no_bump_map;
     flat int   mid_indices;
     flat ivec2 c1_indices;
     flat ivec2 c2_indices; 
@@ -654,9 +655,14 @@ void main()
     vec3 ambient = (TERRAIN_AMBIENT + height * EXTRA_AMBIENT_PER_LEVEL) * ambient_color;
 
     /* Add variance to our normal using bump-mapping */
-    vec3 heightmap_normal = normal_at_pos(from_vertex.world_pos);
-    vec3 vertex_normal = from_vertex.normal;
-    vec3 normal = normalize(vertex_normal + heightmap_normal * HEIGHT_MAP_WEIGHT);
+    vec3 normal;
+    if(from_vertex.no_bump_map != 0) {
+        normal = from_vertex.normal;
+    }else{
+        vec3 heightmap_normal = normal_at_pos(from_vertex.world_pos);
+        vec3 vertex_normal = from_vertex.normal;
+        normal = normalize(vertex_normal + heightmap_normal * HEIGHT_MAP_WEIGHT);
+    }
 
     /* Diffuse calculations */
     /* Always use light direction relative to world origin. Otherwise different parts of a

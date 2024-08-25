@@ -71,10 +71,10 @@
 
     Each 24 character tile can be broken down into the following fields:
 
-            +-+-+--+--+---+---+-+-+-+---------+
-    Region: |A|B|C |D |E  |F  |G|H|I|J        |
-    Size:   |1|1|2 |2 |3  |3  |1|1|1|9        |
-            +-+-+--+--+---+---+-+-+-+---------+
+            +-+-+--+--+---+---+-+-+-+-+-------+
+    Region: |A|B|C |D |E  |F  |G|H|I|J|K      |
+    Size:   |1|1|2 |2 |3  |3  |1|1|1|1|8      |
+            +-+-+--+--+---+---+-+-+-+-+-------+
             
     A - Tile Type
     This is a hexadecimal number having a legal range of values between 0 and C. 
@@ -134,7 +134,11 @@
     Has a value of either '0' or '1'. When it is '1', the normals of the tile's top 
     face are averaged with surrounding normals to create smooth, continuous edges.
 
-    J - Reserved
+    J - Do Not Use Bump Map Flag
+    Has a value of either '0' or '1'. When it is '0', a bumpy texture is applied to
+    the top surface of the tile.
+
+    K - Reserved
     These characters are reserved for future expansions to the PFMAP format. They
     are ignored by the engine.
 

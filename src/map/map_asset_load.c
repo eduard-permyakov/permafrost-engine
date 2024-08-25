@@ -94,6 +94,7 @@ static bool m_al_parse_tile(const char *str, struct tile *out)
     out->pathable      = (bool)          A2I(str[12]);
     out->blend_mode    = (int)           A2I(str[13]);
     out->blend_normals = (bool)          A2I(str[14]);
+    out->no_bump_map   = (bool)          A2I(str[15]);
 
     return true;
 }
@@ -101,7 +102,7 @@ static bool m_al_parse_tile(const char *str, struct tile *out)
 static bool m_al_write_tile(const struct tile *tile, SDL_RWops *stream)
 {
     char buff[MAX_LINE_LEN];
-    pf_snprintf(buff, sizeof(buff), "%01X%c%02d%02d%03d%03d%01d%01d%01d000000000", 
+    pf_snprintf(buff, sizeof(buff), "%01X%c%02d%02d%03d%03d%01d%01d%01d%01d00000000", 
         tile->type,
         tile->base_height >= 0 ? '+' : '-',
         abs(tile->base_height),
@@ -110,7 +111,8 @@ static bool m_al_write_tile(const struct tile *tile, SDL_RWops *stream)
         tile->sides_mat_idx,
         tile->pathable,
         tile->blend_mode,
-        tile->blend_normals);
+        tile->blend_normals,
+        tile->no_bump_map);
 
     return SDL_RWwrite(stream, buff, strlen(buff), 1);
 }

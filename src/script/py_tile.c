@@ -85,6 +85,9 @@ static PyMemberDef PyTile_members[] = {
     {"blend_normals",   T_UBYTE, BASE + offsetof(struct tile, blend_normals),  0,
     "A boolean which determines if this tile's normals are averaged together with adjacent normals "
     "to create a 'smooth' terrain look."},
+    {"no_bump_map",    T_UBYTE, BASE + offsetof(struct tile, no_bump_map),     0,
+    "A boolean which determines if the bump map is used for giving an uneven texture to the top surface."
+    "('False' means that the bump map is used)."},
     {NULL}  /* Sentinel */
 };
 #undef BASE

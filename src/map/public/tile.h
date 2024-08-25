@@ -94,6 +94,7 @@ struct tile{
     int             sides_mat_idx;
     enum blend_mode blend_mode;
     bool            blend_normals;
+    bool            no_bump_map;
     int             wang_idx;
 };
 
