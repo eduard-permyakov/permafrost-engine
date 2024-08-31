@@ -130,6 +130,7 @@ static void exec_draw_commands(const struct nk_draw_list *dl, GLuint shader_prog
             (GLint)(cmd->clip_rect.w / (float)curr_vres.x * w),
             (GLint)(cmd->clip_rect.h / (float)curr_vres.y * h));
         glDrawElements(GL_TRIANGLES, (GLsizei)cmd->elem_count, GL_UNSIGNED_INT, offset);
+        glBindTexture(GL_TEXTURE_2D, 0);
 
         offset += cmd->elem_count;
     }
@@ -200,6 +201,7 @@ void R_GL_UI_Render(const struct nk_draw_list *dl)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
+    GL_PERF_PUSH_GROUP(0, "UI");
 
     /* setup global state */
     glEnable(GL_BLEND);
@@ -236,6 +238,7 @@ void R_GL_UI_Render(const struct nk_draw_list *dl)
     glDisable(GL_BLEND);
     glDisable(GL_SCISSOR_TEST);
 
+    GL_PERF_POP_GROUP();
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }

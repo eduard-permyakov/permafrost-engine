@@ -1139,6 +1139,7 @@ static void batch_render_stat(struct gl_batch *batch, struct ent_stat_rstate *en
     size_t ndcalls = batch_sort_by_vbo(batch, descs, ninsts, dcalls, ARR_SIZE(dcalls));
 
     for(int i = 0; i < batch->ntexarrs; i++) {
+        assert(batch->textures[i].arr.tunit == GL_TEXTURE0 + i);
         R_GL_Texture_BindArray(&batch->textures[i].arr, R_GL_Shader_GetCurrActive());
     }
 

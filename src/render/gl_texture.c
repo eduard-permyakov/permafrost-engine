@@ -689,8 +689,11 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
             Engine_RequestPumpEvents();
             R_GL_DrawLoadingScreen();
             Engine_SwapWindow();
+
+            glActiveTexture(tunit);
         }
 
+        glActiveTexture(tunit);
         glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
         glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
         glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);

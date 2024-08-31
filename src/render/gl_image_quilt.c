@@ -1317,7 +1317,7 @@ bool R_GL_ImageQuilt_MakeTile(const char *source, struct texture *out, GLuint tu
         goto fail_quilt;
 
     GLuint texture;
-    glActiveTexture(GL_TEXTURE0);
+    glActiveTexture(tunit);
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
 
