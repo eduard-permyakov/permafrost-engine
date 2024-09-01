@@ -38,7 +38,7 @@ from constants import *
 class DemoWindow(pf.Window):
 
     WIDTH = 250
-    HEIGHT = 390
+    HEIGHT = 430
 
     def __init__(self):
         super(DemoWindow, self).__init__("Permafrost Engine Demo", (25, 25, DemoWindow.WIDTH, DemoWindow.HEIGHT), 
@@ -65,7 +65,7 @@ class DemoWindow(pf.Window):
         self.layout_row_dynamic(140, 1)
         self.group("Controlled Faction", pf.NK_WINDOW_BORDER, factions_group)
 
-        self.layout_row_dynamic(5, 1)
+        self.layout_row_dynamic(6, 1)
 
         def on_exit():
             pf.global_event(pf.SDL_QUIT, None)
@@ -85,6 +85,9 @@ class DemoWindow(pf.Window):
         def on_session():
             pf.global_event(EVENT_SESSION_SHOW, None)
 
+        def on_console():
+            pf.show_console()
+
         self.layout_row_dynamic(30, 1)
         self.button_label("Settings", on_settings)
 
@@ -97,6 +100,9 @@ class DemoWindow(pf.Window):
 
         self.layout_row_dynamic(30, 1)
         self.button_label("Session", on_session)
+
+        self.layout_row_dynamic(30, 1)
+        self.button_label("Console", on_console)
 
         self.layout_row_dynamic(30, 1)
         self.button_label("Exit Demo", on_exit)
