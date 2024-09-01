@@ -52,7 +52,7 @@
 #include <SDL.h>
 #include <inttypes.h>
 #ifdef _MSC_VER
-#include <windows.h>
+#include "lib/public/windows.h"
 #endif
 
 

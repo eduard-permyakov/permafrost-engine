@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2023 Eduard Permyakov 
+ *  Copyright (C) 2024 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,39 +33,26 @@
  *
  */
 
-#ifndef GL_ASSERT_H
-#define GL_ASSERT_H
+#ifndef PF_WINDOWS_H
+#define PF_WINDOWS_H
 
-#include <assert.h>
-#include <stdio.h>
+#if defined(_WIN32)
 
-#ifndef NDEBUG
+#undef WINVER
+#undef _WIN32_WINNT
+#undef NTDDI_VERSION
 
-#ifdef _MSC_VER
-#include "../lib/public/windows.h"
-#define PRINT(_text) OutputDebugString(_text)
-#else
-#define PRINT(_text) fprintf(stderr, "%s", (_text))
-#endif
+#define WINVER 0x0600
+#define _WIN32_WINNT 0x0600
+#define NTDDI_VERSION 0x06000000
 
-#define GL_ASSERT_OK()                                  \
-    do {                                                \
-        GLenum error = glGetError();                    \
-        if(error != GL_NO_ERROR) {                      \
-            char buff[512];                             \
-            snprintf(buff, sizeof(buff),                \
-                "%s:%d OpenGL error: %x\n",             \
-                __FILE__, __LINE__, error);             \
-            PRINT(buff);                                \
-        }                                               \
-        assert(error == GL_NO_ERROR);                   \
-    }while(0)
+#define _CRT_RAND_S
+#define WIN32_LEAN_AND_MEAN
+#define UNICODE
 
-#else
+#include <windows.h>
 
-#define PRINT(...) 
-#define GL_ASSERT_OK() /* no-op */
+#endif // _WIN32
 
-#endif
+#endif // WINDOWS_H
 
-#endif

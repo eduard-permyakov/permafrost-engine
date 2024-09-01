@@ -244,7 +244,7 @@ void Noise_DumpPPM(const char *path, size_t width, size_t height, float *buffer)
     if(!file)
         return;
 
-    fprintf(file, "P6\n%zu %zu\n%d\n", width, height, 255);
+    fprintf(file, "P6\n%lu %lu\n%d\n", (unsigned long)width, (unsigned long)height, 255);
 
     for(int r = 0; r < height; r++) {
     for(int c = 0; c < width; c++) {
