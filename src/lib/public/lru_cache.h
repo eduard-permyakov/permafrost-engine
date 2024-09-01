@@ -91,6 +91,21 @@
         }                                                                                       \
     }while(0)
 
+#define LRU_FOREACH_REVERSE_SAFE_REMOVE(name, _lru, _key, _val, ...)                            \
+    do{                                                                                         \
+        mp_ref_t curr, prev_curr;                                                               \
+        lru_node(name) *curr_node;                                                              \
+        for(curr = (_lru)->ilru_tail; curr; curr = prev_curr) {                                 \
+            curr_node = mp_##name##_entry(&((_lru)->node_pool), curr);                          \
+            prev_curr = curr_node->prev;                                                        \
+                                                                                                \
+            _key = curr_node->key;                                                              \
+            _val = curr_node->entry;                                                            \
+                                                                                                \
+            __VA_ARGS__                                                                         \
+        }                                                                                       \
+    }while(0)
+
 /***********************************************************************************************/
 
 #define LRU_CACHE_PROTOTYPES(scope, name, type)                                                 \

@@ -45,6 +45,7 @@
 #include "py_task.h"
 #include "py_region.h"
 #include "py_error.h"
+#include "py_console.h"
 #include "public/script.h"
 #include "../entity.h"
 #include "../game/public/game.h"
@@ -237,6 +238,7 @@ static PyObject *PyPf_formation_arrange(PyObject *self, PyObject *args);
 static PyObject *PyPf_move_in_formation(PyObject *self, PyObject *args);
 static PyObject *PyPf_attack_in_formation(PyObject *self, PyObject *args);
 static PyObject *PyPf_formation_preferred_for_set(PyObject *self, PyObject *args);
+static PyObject *PyPf_show_console(PyObject *self);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -838,6 +840,10 @@ static PyMethodDef pf_module_methods[] = {
     {"formation_preferred_for_set",
     (PyCFunction)PyPf_formation_preferred_for_set, METH_VARARGS,
     "Returns the preferred formation type for the specified set of entities."},
+
+    {"show_console",
+    (PyCFunction)PyPf_show_console, METH_NOARGS,
+    "Brings up the interactive Python console."},
 
     {NULL}  /* Sentinel */
 };
@@ -3469,6 +3475,12 @@ static PyObject *PyPf_formation_preferred_for_set(PyObject *self, PyObject *args
     return PyInt_FromLong(type);
 }
 
+static PyObject *PyPf_show_console(PyObject *self)
+{
+    S_Console_Show();
+    Py_RETURN_NONE;
+}
+
 static void script_task_destructor(void *arg)
 {
     free(arg);
@@ -3541,6 +3553,9 @@ bool S_Init(const char *progname, const char *base_path, struct nk_context *ctx)
     if(!S_Camera_Init())
         return false;
 
+    if(!S_Console_Init())
+        return false;
+
     PyObject *module = PyDict_GetItemString(PySys_GetObject("modules"), "pf");
     assert(module);
     /* Initialize the pickler after registering all the built-ins, so that they can
@@ -3571,6 +3586,7 @@ void S_Shutdown(void)
 
     /* Free all memory allocated during initialization - this can only 
      * be done now as destructors can still be called during finalization */
+    S_Console_Shutdown();
     S_Pickle_Shutdown();
     S_Camera_Shutdown();
     S_Region_Shutdown();
