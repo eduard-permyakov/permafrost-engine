@@ -63,13 +63,12 @@
 #include <stdlib.h>
 
 #if defined(_WIN32)
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#include "lib/public/windows.h"
 #endif
 
 
 #define PF_VER_MAJOR 1
-#define PF_VER_MINOR 6
+#define PF_VER_MINOR 7
 #define PF_VER_PATCH 0
 
 /* In the WAITING state the engine only pumps events and re-draws the window,

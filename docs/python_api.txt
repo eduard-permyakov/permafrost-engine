@@ -599,6 +599,10 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Returns True if either of the SHIFT keys are currently pressed.
 
+    [show_console]
+    ----------------------------------------------------------------------------
+    Brings up the interactive Python console.
+
     [show_healthbars]
     ----------------------------------------------------------------------------
     Re-enable showing the healthbars after a 'hide_healthbars' call. Note that
@@ -2578,6 +2582,10 @@ BUILT-IN CLASSES
 
         [bot_right_height]
         The height of the bot right corner.
+
+        [no_bump_map]
+        A boolean which determines if the bump map is used for giving an uneven
+        texture to the top surface.('False' means that the bump map is used).
 
         [pathable]
         Whether or not units can travel through this tile.

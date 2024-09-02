@@ -24,6 +24,7 @@ Download the free (or donate what-you-want) demo on [itch.io](https://spb.itch.i
 ![screenshot-11](docs/images/screenshot-11.jpg)
 ![screenshot-12](docs/images/screenshot-12.jpg)
 ![screenshot-13](docs/images/screenshot-13.jpg)
+![screenshot-14](docs/images/screenshot-14.jpg)
 
 ## Engine Summary ##
 
@@ -42,6 +43,7 @@ Download the free (or donate what-you-want) demo on [itch.io](https://spb.itch.i
 * Aperiodic tiling of the map plane using the Wang Tiling algorithm
 * Export/Import of game entites to/from ASCII files
 * Engine internals exposed to Python 2.7 for scripting
+* Embedded interactive Python console
 * Event system
 * UI framework (Nuklear-based)
 * Efficient raycasting
