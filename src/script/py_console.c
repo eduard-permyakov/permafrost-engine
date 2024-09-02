@@ -34,22 +34,41 @@
  */
 
 #include <Python.h> /* Must be included first */
+#include <node.h>
+#include <grammar.h>
+#include <parsetok.h>
+#include <errcode.h>
 
 #include "../ui.h"
 #include "../event.h"
 #include "../lib/public/lru_cache.h"
 #include "../lib/public/mem.h"
+#include "../lib/public/vec.h"
 #include "../lib/public/pf_string.h"
 #include "../game/public/game.h"
 #include "../lib/public/pf_nuklear.h"
 
 #include <stdlib.h>
+#include <string.h>
+#include <assert.h>
+
+extern grammar _PyParser_Grammar;
 
 #define CONSOLE_HIST_SIZE (1024)
+#define MIN(a, b)         ((a) < (b) ? (a) : (b))
 
 struct strbuff{
     char line[256];
 };
+
+enum code_status{
+    COMPLETE,
+    NEEDS_MORE,
+    INVALID
+};
+
+VEC_TYPE(str, struct strbuff)
+VEC_IMPL(static inline, str, struct strbuff)
 
 LRU_CACHE_TYPE(hist, struct strbuff)
 LRU_CACHE_PROTOTYPES(static, hist, struct strbuff)
@@ -63,6 +82,7 @@ static bool      s_shown = false;
 static lru(hist) s_history;
 static uint64_t  s_next_lineid;
 static char      s_inputbuff[256];
+static vec_str_t s_multilines;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -73,6 +93,194 @@ static void add_history(const char *str)
     struct strbuff next;
     pf_strlcpy(next.line, str, sizeof(next.line));
     lru_hist_put(&s_history, s_next_lineid++, &next);
+}
+
+static bool try_run_multiline(const char *next)
+{
+    size_t tot_size = 0;
+    for(int i = 0; i < vec_size(&s_multilines); i++) {
+        const char *line = vec_AT(&s_multilines, i).line;
+        tot_size += strlen(line) + 1;
+    }
+    tot_size += 1;
+
+    char *buff = malloc(tot_size);
+    if(!buff)
+        return false;
+
+    buff[0] = '\0';
+    for(int i = 0; i < vec_size(&s_multilines); i++) {
+        const char *line = vec_AT(&s_multilines, i).line;
+        pf_strlcat(buff, line, tot_size);
+        pf_strlcat(buff, "\n", tot_size);
+    }
+
+    int result = PyRun_SimpleString(buff);
+    free(buff);
+    return (result == 0);
+}
+
+static bool errors_equal(perrdetail err1, perrdetail err2)
+{
+    if(err1.error != err2.error)
+        return false;
+    if(err1.lineno != err2.lineno)
+        return false;
+    if(err1.offset != err2.offset)
+        return false;
+    if(err1.token != err2.token)
+        return false;
+    if(err1.expected != err2.expected)
+        return false;
+    return true;
+}
+
+/* To support evaluating multi-line statements, we need to be able to 
+ * determine when code is 'incomplete', and expects more lines to finish
+ * off a proper multi-line statement. Due to the limited parser API, the
+ * logic for this is not intuitive, but it is the same approach used in
+ * CPython's own REPL loop:
+ * 
+ * Compile three times: as is, with \n, and with \n\n appended.  If it
+ * compiles as is, it's complete. If it compiles with one \n appended,
+ * we expect more. If it doesn't compile either way, we compare the
+ * error we get when compiling with \n or \n\n appended. If the errors
+ * are the same, the code is broken. But if the errors are different, we
+ * expect more.
+*/
+static enum code_status try_compile(const char *next, bool append)
+{
+    enum code_status ret = INVALID;
+    size_t tot_size = 0;
+    if(append) {
+        for(int i = 0; i < vec_size(&s_multilines); i++) {
+            const char *line = vec_AT(&s_multilines, i).line;
+            tot_size += strlen(line) + 1;
+        }
+    }
+    tot_size += strlen(next);
+    tot_size += 3;
+
+    char *buff = malloc(tot_size);
+    if(!buff)
+        return INVALID;
+
+    buff[0] = '\0';
+    if(append) {
+        for(int i = 0; i < vec_size(&s_multilines); i++) {
+            const char *line = vec_AT(&s_multilines, i).line;
+            pf_strlcat(buff, line, tot_size);
+            pf_strlcat(buff, "\n", tot_size);
+        }
+    }
+    pf_strlcat(buff, next, tot_size);
+
+    perrdetail orig_err;
+    struct _node *orig = PyParser_ParseStringFlagsFilename(buff, "<console>",
+        &_PyParser_Grammar, Py_single_input, &orig_err, 0);
+    bool compiled = (orig != NULL);
+    PyNode_Free(orig);
+
+    if(compiled) {
+        ret = COMPLETE;
+        goto out;
+    }
+
+    if(orig_err.error == E_EOF) {
+        ret = NEEDS_MORE;
+        goto out;
+    }
+
+    pf_strlcat(buff, "\n", tot_size);
+    perrdetail with_newline_err;
+    struct _node *with_newline = PyParser_ParseStringFlagsFilename(buff, "<console>",
+        &_PyParser_Grammar, Py_single_input, &with_newline_err, 0);
+    compiled = (with_newline != NULL);
+    PyNode_Free(with_newline);
+
+    if(compiled) {
+        ret = NEEDS_MORE;
+        goto out;
+    }
+
+    pf_strlcat(buff, "\n", tot_size);
+    perrdetail with_two_newlines_err;
+    struct _node *with_two_newlines = PyParser_ParseStringFlagsFilename(buff, "<console>",
+        &_PyParser_Grammar, Py_single_input, &with_two_newlines_err, 0);
+    compiled = (with_two_newlines != NULL);
+    PyNode_Free(with_two_newlines);
+
+    if(compiled || !errors_equal(with_newline_err, with_two_newlines_err)) {
+        ret = NEEDS_MORE;
+        goto out;
+    }
+
+out:
+    free(buff);
+    return ret;
+}
+
+static bool handle_compilation_result(enum code_status status, const char *str)
+{
+    switch(status) {
+    case COMPLETE:
+        return true;
+    case NEEDS_MORE: {
+        /* We are waiting for the next line */
+        struct strbuff nextline;
+        pf_strlcpy(nextline.line, str, sizeof(nextline.line));
+        vec_str_push(&s_multilines, nextline);
+        break;
+    }
+    case INVALID:
+        /* The line is malformed */
+        vec_str_reset(&s_multilines);
+        PyErr_Print();
+        break;
+    }
+    return false;
+}
+
+static void do_interactive_one(const char *str)
+{
+    size_t len = strlen(str);
+
+    if(len == 0) {
+        if(vec_size(&s_multilines)) {
+            /* We terminated a multi-line statement 
+             */
+            bool success = try_run_multiline(str);
+            vec_str_reset(&s_multilines);
+            if(!success) {
+                PyErr_Print();
+            }
+        }
+        return;
+    }
+
+    if(vec_size(&s_multilines)) {
+        /* In any case, the line must be syntactically valid. Check this. 
+         */
+        enum code_status status = try_compile(str, true);
+        bool valid = handle_compilation_result(status, str);
+        if(valid) {
+            /* Continue adding lines to the current multi-line string, but do 
+             * not evaluate the multi-line string until it is terminated by an 
+             * explicit newline.
+             */
+            struct strbuff nextline;
+            pf_strlcpy(nextline.line, str, sizeof(nextline.line));
+            vec_str_push(&s_multilines, nextline);
+        }
+        return;
+    }
+
+    /* It must be a single-line statement, or the start of a new multi-line statement */
+    enum code_status status = try_compile(str, false);
+    bool valid = handle_compilation_result(status, str);
+    if(valid) {
+        PyRun_SimpleString(str);
+    }
 }
 
 static void on_update(void *user, void *event)
@@ -123,6 +331,7 @@ static void on_update(void *user, void *event)
         nk_layout_row_push(ctx, 0.8);
         nk_edit_string(ctx, NK_EDIT_SIMPLE | NK_EDIT_ALWAYS_INSERT_MODE | NK_EDIT_ALLOW_TAB, 
             s_inputbuff, &len, sizeof(s_inputbuff), nk_filter_default);
+        len = MIN(len, sizeof(s_inputbuff)-1);
         s_inputbuff[len] = '\0';
 
         bool enter_pressed = ctx->current->edit.active 
@@ -131,6 +340,7 @@ static void on_update(void *user, void *event)
         nk_layout_row_push(ctx, 0.15);
         if((nk_button_label(ctx, "ENTER") || enter_pressed)) {
             add_history(s_inputbuff);
+            do_interactive_one(s_inputbuff);
             s_inputbuff[0] = '\0';
         }
         nk_layout_row_end(ctx);
@@ -153,13 +363,18 @@ bool S_Console_Init(void)
     s_next_lineid = 0;
     memset(s_inputbuff, 0, sizeof(s_inputbuff));
     E_Global_Register(EVENT_UPDATE_START, on_update, NULL, G_ALL);
+
+    vec_str_init(&s_multilines);
+
     if(!lru_hist_init(&s_history, CONSOLE_HIST_SIZE, NULL))
         return false;
+
     return true;
 }
 
 void S_Console_Shutdown(void)
 {
+    vec_str_destroy(&s_multilines);
     lru_hist_destroy(&s_history);
     E_Global_Unregister(EVENT_UPDATE_START, on_update);
 }
