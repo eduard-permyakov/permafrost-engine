@@ -2503,6 +2503,10 @@ bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
 
 bool S_UI_TextEditHasFocus(void)
 {
+    struct nk_window *console = nk_window_find(s_nk_ctx, "Console");
+    if(console && (console->edit.active == nk_true))
+        return true;
+
     for(int i = 0; i < vec_size(&s_active_windows); i++) {
 
         PyWindowObject *win = vec_AT(&s_active_windows, i);
