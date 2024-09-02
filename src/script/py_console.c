@@ -55,6 +55,7 @@
 extern grammar _PyParser_Grammar;
 
 #define CONSOLE_HIST_SIZE (1024)
+#define MAX_LINES         (256)
 #define MIN(a, b)         ((a) < (b) ? (a) : (b))
 
 struct strbuff{
@@ -74,6 +75,9 @@ LRU_CACHE_TYPE(hist, struct strbuff)
 LRU_CACHE_PROTOTYPES(static, hist, struct strbuff)
 LRU_CACHE_IMPL(static, hist, struct strbuff)
 
+static PyObject *PyPf_write_stdout(PyObject *self, PyObject *args);
+static PyObject *PyPf_write_stderr(PyObject *self, PyObject *args);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -84,6 +88,16 @@ static uint64_t  s_next_lineid;
 static char      s_inputbuff[256];
 static vec_str_t s_multilines;
 
+static PyMethodDef stdout_catcher_methods[] = {
+    {"write", PyPf_write_stdout, METH_VARARGS, "Write something to stdout."},
+    {NULL, NULL, 0, NULL}
+};
+
+static PyMethodDef stderr_catcher_methods[] = {
+    {"write", PyPf_write_stderr, METH_VARARGS, "Write something to stderr."},
+    {NULL, NULL, 0, NULL}
+};
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -93,6 +107,57 @@ static void add_history(const char *str)
     struct strbuff next;
     pf_strlcpy(next.line, str, sizeof(next.line));
     lru_hist_put(&s_history, s_next_lineid++, &next);
+}
+
+static void write_str(const char *str)
+{
+    static size_t nextline_idx = 0;
+    static char nextline[256];
+
+    /* Tokenize by lines, and add to the history */
+    const char *curr = str;
+    while(*curr) {
+        if(*curr == '\r') {
+            curr++;
+            continue;
+        }
+        if(*curr == '\n' || nextline_idx == sizeof(nextline)-1) {
+            struct strbuff next;
+            memcpy(next.line, nextline, nextline_idx);
+            next.line[nextline_idx] = '\0';
+            lru_hist_put(&s_history, s_next_lineid++, &next);
+
+            nextline_idx = 0;
+            curr++;
+            continue;
+        }
+        nextline[nextline_idx++] = *curr;
+        curr++;
+    }
+}
+
+static PyObject *PyPf_write_stdout(PyObject *self, PyObject *args)
+{
+    const char *what;
+    if(!PyArg_ParseTuple(args, "s", &what))
+        return NULL;
+    if(*what == '\0') {
+        Py_RETURN_NONE; 
+    }
+    write_str(what);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_write_stderr(PyObject *self, PyObject *args)
+{
+    const char *what;
+    if(!PyArg_ParseTuple(args, "s", &what))
+        return NULL;
+    if(*what == '\0') {
+        Py_RETURN_NONE; 
+    }
+    write_str(what);
+    Py_RETURN_NONE;
 }
 
 static bool try_run_multiline(const char *next)
@@ -116,7 +181,7 @@ static bool try_run_multiline(const char *next)
     }
 
     int result = PyRun_SimpleString(buff);
-    free(buff);
+    PF_FREE(buff);
     return (result == 0);
 }
 
@@ -216,7 +281,10 @@ static enum code_status try_compile(const char *next, bool append)
     }
 
 out:
-    free(buff);
+    PF_FREE(buff);
+    if(ret == INVALID) {
+        PyParser_SetError(&orig_err);
+    }
     return ret;
 }
 
@@ -288,6 +356,8 @@ static void on_update(void *user, void *event)
     if(!s_shown)
         return;
 
+    static nk_uint x_offset = 0;
+    static nk_uint y_offset = 0;
     const char *font = UI_GetActiveFont();
     UI_SetActiveFont("__default__");
 
@@ -310,7 +380,7 @@ static void on_update(void *user, void *event)
         (struct nk_vec2i){adj_vres.x, adj_vres.y})) {
 
         nk_layout_row_dynamic(ctx, 500, 1);
-        if(nk_group_begin(ctx, "__history__", NK_WINDOW_BORDER)) {
+        if(nk_group_scrolled_offset_begin(ctx, &x_offset, &y_offset, "__history__", NK_WINDOW_BORDER)) {
 
             uint64_t key;
             (void)key;
@@ -324,7 +394,13 @@ static void on_update(void *user, void *event)
         }
         nk_layout_row_begin(ctx, NK_DYNAMIC, 40, 3);
         nk_layout_row_push(ctx, 0.05);
-        nk_label_colored(ctx, ">>>", NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE, 
+        const char *prompt;
+        if(vec_size(&s_multilines) > 0) {
+            prompt = "...";
+        }else{
+            prompt = ">>>";
+        }
+        nk_label_colored(ctx, prompt, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE, 
             nk_rgb(0, 255, 0));
 
         int len = strlen(s_inputbuff);
@@ -342,6 +418,8 @@ static void on_update(void *user, void *event)
             add_history(s_inputbuff);
             do_interactive_one(s_inputbuff);
             s_inputbuff[0] = '\0';
+            /* Scroll to the bottom */
+            y_offset = INT_MAX;
         }
         nk_layout_row_end(ctx);
     }
@@ -361,6 +439,7 @@ static void on_update(void *user, void *event)
 bool S_Console_Init(void)
 {
     s_next_lineid = 0;
+    s_shown = false;
     memset(s_inputbuff, 0, sizeof(s_inputbuff));
     E_Global_Register(EVENT_UPDATE_START, on_update, NULL, G_ALL);
 
@@ -369,6 +448,21 @@ bool S_Console_Init(void)
     if(!lru_hist_init(&s_history, CONSOLE_HIST_SIZE, NULL))
         return false;
 
+    PyObject *stdout_catcher = Py_InitModule("stdout_catcher", stdout_catcher_methods);
+    if(!stdout_catcher) {
+        lru_hist_destroy(&s_history);
+        return false;
+    }
+
+    PyObject *stderr_catcher = Py_InitModule("stderr_catcher", stderr_catcher_methods);
+    if(!stderr_catcher) {
+        Py_DECREF(stdout_catcher);
+        lru_hist_destroy(&s_history);
+        return false;
+    }
+
+    PySys_SetObject("stdout", stdout_catcher);
+    PySys_SetObject("stderr", stderr_catcher);
     return true;
 }
 
