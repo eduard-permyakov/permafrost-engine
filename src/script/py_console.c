@@ -58,7 +58,15 @@ extern grammar _PyParser_Grammar;
 #define MAX_LINES         (256)
 #define MIN(a, b)         ((a) < (b) ? (a) : (b))
 
+enum line_type{
+    LINE_STDOUT,
+    LINE_STDERR,
+    LINE_INPUT_NEW,
+    LINE_INPUT_CONTINUE
+};
+
 struct strbuff{
+    enum line_type type;
     char line[256];
 };
 
@@ -102,17 +110,19 @@ static PyMethodDef stderr_catcher_methods[] = {
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static void add_history(const char *str)
+static void add_history(const char *str, enum line_type type)
 {
     struct strbuff next;
+    next.type = type;
     pf_strlcpy(next.line, str, sizeof(next.line));
     lru_hist_put(&s_history, s_next_lineid++, &next);
 }
 
-static void write_str(const char *str)
+static void write_str(const char *str, size_t idx)
 {
-    static size_t nextline_idx = 0;
-    static char nextline[256];
+    assert(idx < 2);
+    static size_t nextline_idx[2] = {0};
+    static char nextline[2][80];
 
     /* Tokenize by lines, and add to the history */
     const char *curr = str;
@@ -121,17 +131,20 @@ static void write_str(const char *str)
             curr++;
             continue;
         }
-        if(*curr == '\n' || nextline_idx == sizeof(nextline)-1) {
+        if(*curr == '\n' || nextline_idx[idx] == sizeof(nextline[0])-1) {
             struct strbuff next;
-            memcpy(next.line, nextline, nextline_idx);
-            next.line[nextline_idx] = '\0';
+            next.type = (idx == 0 ? LINE_STDOUT : LINE_STDERR);
+            memcpy(next.line, nextline[idx], nextline_idx[idx]);
+            next.line[nextline_idx[idx]] = '\0';
             lru_hist_put(&s_history, s_next_lineid++, &next);
 
-            nextline_idx = 0;
-            curr++;
+            nextline_idx[idx] = 0;
+            if(*curr == '\n') {
+                curr++;
+            }
             continue;
         }
-        nextline[nextline_idx++] = *curr;
+        nextline[idx][nextline_idx[idx]++] = *curr;
         curr++;
     }
 }
@@ -144,7 +157,7 @@ static PyObject *PyPf_write_stdout(PyObject *self, PyObject *args)
     if(*what == '\0') {
         Py_RETURN_NONE; 
     }
-    write_str(what);
+    write_str(what, 0);
     Py_RETURN_NONE;
 }
 
@@ -156,7 +169,7 @@ static PyObject *PyPf_write_stderr(PyObject *self, PyObject *args)
     if(*what == '\0') {
         Py_RETURN_NONE; 
     }
-    write_str(what);
+    write_str(what, 1);
     Py_RETURN_NONE;
 }
 
@@ -386,9 +399,21 @@ static void on_update(void *user, void *event)
             (void)key;
             struct strbuff line;
             LRU_FOREACH_REVERSE_SAFE_REMOVE(hist, &s_history, key, line, {
-                nk_layout_row_dynamic(ctx, 12, 1);
-                nk_label_colored(ctx, line.line, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE,
-                    nk_rgb(255, 255, 255));
+
+                const char *prompt = (line.type == LINE_INPUT_NEW)      ? ">>>"
+                                   : (line.type == LINE_INPUT_CONTINUE) ? "..."
+                                                                        : "";
+                struct nk_color color = (line.type == LINE_STDOUT) ? nk_rgb(0xaa, 0xaa, 0x80)
+                                      : (line.type == LINE_STDERR) ? nk_rgb(0xed, 0x48, 0x48)
+                                                                   : nk_rgb(0xff, 0xff, 0xff);
+
+                nk_layout_row_begin(ctx, NK_DYNAMIC, 12, 2);
+                nk_layout_row_push(ctx, 0.05);
+                nk_label_colored(ctx, prompt, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE, 
+                    nk_rgb(255, 255, 0));
+                nk_layout_row_push(ctx, 0.95);
+                nk_label_colored(ctx, line.line, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, color);
+                nk_layout_row_end(ctx);
             });
             nk_group_end(ctx);
         }
@@ -415,7 +440,8 @@ static void on_update(void *user, void *event)
 
         nk_layout_row_push(ctx, 0.15);
         if((nk_button_label(ctx, "ENTER") || enter_pressed)) {
-            add_history(s_inputbuff);
+            enum line_type type = (vec_size(&s_multilines) > 0 ? LINE_INPUT_CONTINUE : LINE_INPUT_NEW);
+            add_history(s_inputbuff, type);
             do_interactive_one(s_inputbuff);
             s_inputbuff[0] = '\0';
             /* Scroll to the bottom */
@@ -430,6 +456,26 @@ static void on_update(void *user, void *event)
     if(win->flags & (NK_WINDOW_CLOSED | NK_WINDOW_HIDDEN)) {
         s_shown = false;
     }
+}
+
+static void print_welcome(void)
+{
+    const char *version = Py_GetVersion();
+    const char *platform = Py_GetPlatform();
+
+    char infoline[256];
+    pf_snprintf(infoline, sizeof(infoline), "%s on %s", version, platform);
+
+    char *firstline = infoline;
+    char *secondline = infoline;
+    while(*secondline++ != '\n');
+    *(secondline - 1) = '\0';
+
+    add_history(firstline, LINE_STDOUT);
+    add_history(secondline, LINE_STDOUT);
+
+    pf_snprintf(infoline, sizeof(infoline), "Welcome to the Permafrost Engine Python console.");
+    add_history(infoline, LINE_STDOUT);
 }
 
 /*****************************************************************************/
@@ -463,6 +509,8 @@ bool S_Console_Init(void)
 
     PySys_SetObject("stdout", stdout_catcher);
     PySys_SetObject("stderr", stderr_catcher);
+
+    print_welcome();
     return true;
 }
 
