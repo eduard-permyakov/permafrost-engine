@@ -173,6 +173,8 @@ Follow the development of Permafrost Engine and EVERGLORY on [YouTube](https://w
 
 [Indie RTS Devlog #17: Economy + NEW DEMO](https://www.youtube.com/watch?v=jkfB9ZsTkWc)
 
+[Indie RTS Devlog #18: Improved Map Rendering](https://www.youtube.com/watch?v=GjKUPQDtLUE)
+
 ## Comments/Questions ##
 
 Comments or questions regarding the project or the source code? E-mail: edward.permyakov@gmail.com.
