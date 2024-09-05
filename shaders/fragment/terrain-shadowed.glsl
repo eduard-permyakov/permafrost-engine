@@ -98,6 +98,7 @@ uniform vec3 light_pos;
 uniform vec3 view_pos;
 
 uniform samplerBuffer height_map;
+uniform samplerCube skybox;
 uniform sampler2D shadow_map;
 
 uniform sampler2DArray tex_array0;

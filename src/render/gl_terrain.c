@@ -120,6 +120,11 @@ void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures,
         .val.as_int = HEIGHT_MAP_TUNIT - GL_TEXTURE0
     });
 
+    R_GL_StateSet(GL_U_SKYBOX, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = SKYBOX_TUNIT - GL_TEXTURE0
+    });
+
     R_GL_StateSet(GL_U_MAP_RES, (struct uval){
         .type = UTYPE_IVEC4,
         .val.as_ivec4[0] = res->chunk_w, 
@@ -191,6 +196,8 @@ void R_GL_MapBegin(const bool *shadows, const vec2_t *pos)
 
     glActiveTexture(HEIGHT_MAP_TUNIT);
     glBindTexture(GL_TEXTURE_BUFFER, s_heightmap.tex_buff);
+
+    R_GL_SkyboxBind();
 
     s_map_ctx_active = true;
     GL_PERF_RETURN_VOID();

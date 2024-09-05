@@ -601,6 +601,11 @@ void R_GL_MoveDispatchWork(const size_t *nents);
  */
 void R_GL_MoveReadNewVelocities(void *out, const size_t *nents, const size_t *maxout);
 
+/*###########################################################################*/
+/* RENDER SKYBOX                                                             */
+/*###########################################################################*/
+
+void R_GL_SkyboxLoad(const char *dir, const char *extension);
 
 #endif
 

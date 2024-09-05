@@ -46,8 +46,9 @@
 #include <stdbool.h>
 
 
-#define HEIGHT_MAP_TUNIT (GL_TEXTURE15)
-#define SHADOW_MAP_TUNIT (GL_TEXTURE16)
+#define SKYBOX_TUNIT     (GL_TEXTURE13)
+#define HEIGHT_MAP_TUNIT (GL_TEXTURE14)
+#define SHADOW_MAP_TUNIT (GL_TEXTURE15)
 
 struct render_private;
 struct vertex;
@@ -73,8 +74,13 @@ void   R_GL_ShadowMapBind(void);
 void   R_GL_SetClipPlane(vec4_t plane_eq);
 
 /* Terrain */
+
 void   R_GL_MapFogBindLast(GLuint tunit, GLuint shader_prog, const char *uname);
 void   R_GL_MapUpdateFogClear(void);
+
+/* Skybox */
+
+void   R_GL_SkyboxBind(void);
 
 
 #endif

@@ -99,6 +99,7 @@ uniform sampler2DArray tex_array2;
 uniform sampler2DArray tex_array3;
 
 uniform samplerBuffer height_map;
+uniform samplerCube skybox;
 
 uniform usamplerBuffer visbuff;
 uniform int visbuff_offset;
