@@ -13,6 +13,7 @@
 !/assets/water_textures
 !/assets/loading_screens
 !/assets/icons
+!/assets/skyboxes
 
 *.pyc
 *.pickle
