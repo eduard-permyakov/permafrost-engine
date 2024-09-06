@@ -81,6 +81,7 @@ void   R_GL_MapUpdateFogClear(void);
 /* Skybox */
 
 void   R_GL_SkyboxBind(void);
+void   R_GL_DrawSkyboxScaled(const struct camera *cam, float *map_width, float *map_height);
 
 
 #endif

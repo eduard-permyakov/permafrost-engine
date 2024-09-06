@@ -573,6 +573,7 @@ static struct shader s_shaders[] = {
         .compute_path   = NULL,
         .frag_path      = "shaders/fragment/skybox.glsl",
         .uniforms       = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_VIEW_ROT_MAT      },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
             { UTYPE_INT,       GL_U_SKYBOX            },

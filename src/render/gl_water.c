@@ -75,6 +75,7 @@ struct water_gl_state{
 
 
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0])) 
+#define MAX(a, b)       ((a) > (b) ? (a) : (b))
 
 #define WATER_LVL       (-1.0f * Y_COORDS_PER_TILE + 2.0f)
 #define DUDV_PATH       "assets/water_textures/dudvmap.png"
@@ -225,6 +226,22 @@ static void render_refraction_tex(GLuint clr_tex, GLuint depth_tex, bool on, str
     GL_PERF_RETURN_VOID();
 }
 
+static void render_non_parallax_skybox(const struct camera *cam, const struct render_input *in)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    struct map_resolution res;
+    M_GetResolution(in->map, &res);
+
+    vec3_t map_center = M_GetCenterPos(in->map);
+    vec2_t map_size = (vec2_t) {
+        res.chunk_w * res.tile_w * X_COORDS_PER_TILE, 
+        res.chunk_h * res.tile_h * Z_COORDS_PER_TILE
+    };
+
+    R_GL_DrawSkyboxScaled(cam, &map_size.x, &map_size.z);
+}
+
 static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
 {
     GL_PERF_ENTER();
@@ -275,7 +292,6 @@ static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
     Camera_SetPos(cam, cam_pos);
     Camera_SetDir(cam, cam_dir);
     Camera_TickFinishPerspective(cam);
-    Camera_Free(cam);
 
     /* Face culling is problematic when we're looking from below - changing 
      * the winding order does not work in all cases. */
@@ -291,6 +307,7 @@ static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
     in.shadows = false;
     G_RenderMapAndEntities(&in);
     GL_PERF_POP_GROUP();
+    render_non_parallax_skybox(cam, &in);
 
     /* Clean up framebuffer */
     glDeleteRenderbuffers(1, &depth_rb);
@@ -298,6 +315,7 @@ static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
     glDisable(GL_CLIP_DISTANCE0);
     glEnable(GL_CULL_FACE);
 
+    Camera_Free(cam);
     GL_PERF_POP_GROUP();
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();

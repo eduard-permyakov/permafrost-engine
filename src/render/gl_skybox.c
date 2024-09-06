@@ -49,6 +49,8 @@
 
 
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
+#define MAX(a, b)       ((a) > (b) ? (a) : (b))
+#define MIN(a, b)       ((a) < (b) ? (a) : (b))
 
 struct skybox{
     GLuint cubemap;
@@ -194,6 +196,9 @@ void R_GL_DrawSkybox(const struct camera *cam)
     mat4x4_t view_mat;
     Camera_MakeViewMat(cam, &view_mat);
 
+    mat4x4_t identity;
+    PFM_Mat4x4_Identity(&identity);
+
     /* Remove the translation component from the view matrix */
     mat4x4_t view_dir_mat;
     view_dir_mat = (mat4x4_t){
@@ -218,9 +223,55 @@ void R_GL_DrawSkybox(const struct camera *cam)
         .cols[3][3] = 1
     };
 
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = identity
+    });
+
     R_GL_StateSet(GL_U_VIEW_ROT_MAT, (struct uval){
         .type = UTYPE_MAT4,
         .val.as_mat4 = view_dir_mat
+    });
+
+    GLint old_cull_face_mode;
+    glGetIntegerv(GL_CULL_FACE_MODE, &old_cull_face_mode);
+    GLint old_depth_func_mode;
+    glGetIntegerv(GL_DEPTH_FUNC, &old_depth_func_mode);
+
+    glCullFace(GL_FRONT);
+    glDepthFunc(GL_LEQUAL);
+
+    R_GL_Shader_Install("skybox");
+    glBindVertexArray(s_skybox.VAO);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+
+    glDepthMask(old_depth_func_mode);
+    glCullFace(old_cull_face_mode);
+
+    GL_PERF_POP_GROUP();
+    GL_ASSERT_OK();
+}
+
+void R_GL_DrawSkyboxScaled(const struct camera *cam, float *map_width, float *map_height)
+{
+    ASSERT_IN_RENDER_THREAD();
+    GL_PERF_PUSH_GROUP(0, "skybox");
+
+    float scale = MAX(*map_width, *map_height) / (10.0f * 2.0f);
+    mat4x4_t model;
+    PFM_Mat4x4_MakeScale(scale, scale, scale, &model);
+
+    mat4x4_t view;
+    Camera_MakeViewMat(cam, &view);
+
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = model
+    });
+
+    R_GL_StateSet(GL_U_VIEW_ROT_MAT, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = view
     });
 
     GLint old_cull_face_mode;
