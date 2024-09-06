@@ -42,6 +42,7 @@
 #define GL_U_PROJECTION         "projection"
 #define GL_U_VIEW               "view"
 #define GL_U_VIEW_POS           "view_pos"
+#define GL_U_VIEW_ROT_MAT       "view_rot"
 #define GL_U_MODEL              "model"
 #define GL_U_MATERIALS          "materials"
 #define GL_U_INV_BIND_MATS      "anim_inv_bind_mats"

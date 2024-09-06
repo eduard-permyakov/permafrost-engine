@@ -1981,6 +1981,14 @@ void G_Render(void)
         }
     }
 
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawSkybox,
+        .nargs = 1,
+        .args = {
+            R_PushArg(s_gs.active_cam, g_sizeof_camera)
+        }
+    });
+
     E_Global_NotifyImmediate(EVENT_RENDER_3D_POST, NULL, ES_ENGINE);
     R_PushCmd((struct rcmd) { R_GL_SetScreenspaceDrawMode, 0 });
 

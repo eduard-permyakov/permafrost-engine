@@ -605,7 +605,17 @@ void R_GL_MoveReadNewVelocities(void *out, const size_t *nents, const size_t *ma
 /* RENDER SKYBOX                                                             */
 /*###########################################################################*/
 
+/* ---------------------------------------------------------------------------
+ * Load the images for all the skybox faces and set up the rendering state.
+ * ---------------------------------------------------------------------------
+ */
 void R_GL_SkyboxLoad(const char *dir, const char *extension);
+
+/* ---------------------------------------------------------------------------
+ * Render the skybox.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_DrawSkybox(const struct camera *cam);
 
 #endif
 

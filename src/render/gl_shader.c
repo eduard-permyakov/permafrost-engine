@@ -237,7 +237,6 @@ static struct shader s_shaders[] = {
             { UTYPE_IVEC4,     GL_U_MAP_RES,          },
             { UTYPE_VEC2,      GL_U_MAP_POS,          },
             { UTYPE_INT,       GL_U_HEIGHT_MAP        },
-            { UTYPE_INT,       GL_U_SKYBOX            },
             {0}
         },
     },
@@ -265,7 +264,6 @@ static struct shader s_shaders[] = {
             { UTYPE_VEC2,      GL_U_MAP_POS,          },
             { UTYPE_INT,       GL_U_SHADOW_MAP        },
             { UTYPE_INT,       GL_U_HEIGHT_MAP        },
-            { UTYPE_INT,       GL_U_SKYBOX            },
             {0}
         },
     },
@@ -564,6 +562,20 @@ static struct shader s_shaders[] = {
         .compute_path   = "shaders/compute/movement.glsl",
         .frag_path      = NULL,
         .uniforms       = (struct uniform[]){
+            {0}
+        },
+    },
+    {
+        .prog_id        = (intptr_t)NULL,
+        .name           = "skybox",
+        .vertex_path    = "shaders/vertex/skybox.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/skybox.glsl",
+        .uniforms       = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_VIEW_ROT_MAT      },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_INT,       GL_U_SKYBOX            },
             {0}
         },
     },

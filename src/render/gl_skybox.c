@@ -35,18 +35,25 @@
 
 #include "gl_render.h"
 #include "gl_assert.h"
+#include "gl_shader.h"
+#include "gl_perf.h"
+#include "gl_state.h"
 #include "../main.h"
+#include "../camera.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/stb_image.h"
 
 #include <GL/glew.h>
 #include <assert.h>
+#include <string.h>
 
 
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
 
 struct skybox{
     GLuint cubemap;
+    GLuint VAO;
+    GLuint VBO;
 };
 
 /*****************************************************************************/
@@ -54,6 +61,50 @@ struct skybox{
 /*****************************************************************************/
 
 static struct skybox s_skybox;
+
+static const vec3_t s_cube_verts[] = {
+    (vec3_t){ 10.0f,  10.0f, -10.0f},
+    (vec3_t){ 10.0f, -10.0f, -10.0f},
+    (vec3_t){-10.0f, -10.0f, -10.0f},
+    (vec3_t){-10.0f, -10.0f, -10.0f},
+    (vec3_t){-10.0f,  10.0f, -10.0f},
+    (vec3_t){ 10.0f,  10.0f, -10.0f},
+
+    (vec3_t){ 10.0f, -10.0f,  10.0f},
+    (vec3_t){ 10.0f, -10.0f, -10.0f},
+    (vec3_t){ 10.0f,  10.0f, -10.0f},
+    (vec3_t){ 10.0f,  10.0f, -10.0f},
+    (vec3_t){ 10.0f,  10.0f,  10.0f},
+    (vec3_t){ 10.0f, -10.0f,  10.0f},
+
+    (vec3_t){-10.0f, -10.0f, -10.0f},
+    (vec3_t){-10.0f, -10.0f,  10.0f},
+    (vec3_t){-10.0f,  10.0f,  10.0f},
+    (vec3_t){-10.0f,  10.0f,  10.0f},
+    (vec3_t){-10.0f,  10.0f, -10.0f},
+    (vec3_t){-10.0f, -10.0f, -10.0f},
+
+    (vec3_t){ 10.0f, -10.0f,  10.0f},
+    (vec3_t){ 10.0f,  10.0f,  10.0f},
+    (vec3_t){-10.0f,  10.0f,  10.0f},
+    (vec3_t){-10.0f,  10.0f,  10.0f},
+    (vec3_t){-10.0f, -10.0f,  10.0f},
+    (vec3_t){ 10.0f, -10.0f,  10.0f},
+
+    (vec3_t){ 10.0f,  10.0f, -10.0f},
+    (vec3_t){-10.0f,  10.0f, -10.0f},
+    (vec3_t){-10.0f,  10.0f,  10.0f},
+    (vec3_t){-10.0f,  10.0f,  10.0f},
+    (vec3_t){ 10.0f,  10.0f,  10.0f},
+    (vec3_t){ 10.0f,  10.0f, -10.0f},
+
+    (vec3_t){ 10.0f, -10.0f, -10.0f},
+    (vec3_t){ 10.0f, -10.0f,  10.0f},
+    (vec3_t){-10.0f, -10.0f, -10.0f},
+    (vec3_t){-10.0f, -10.0f, -10.0f},
+    (vec3_t){ 10.0f, -10.0f,  10.0f},
+    (vec3_t){-10.0f, -10.0f,  10.0f}
+};
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -109,14 +160,85 @@ void R_GL_SkyboxLoad(const char *dir, const char *extension)
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);  
 
+    /* Generate cube mesh */
+    glGenVertexArrays(1, &s_skybox.VAO);
+    glBindVertexArray(s_skybox.VAO);
+
+    glGenBuffers(1, &s_skybox.VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, s_skybox.VBO);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    size_t buffsize = sizeof(s_cube_verts);
+    glBufferData(GL_ARRAY_BUFFER, buffsize, s_cube_verts, GL_STATIC_DRAW);
+
     GL_ASSERT_OK();
 }
 
 void R_GL_SkyboxBind(void)
 {
     ASSERT_IN_RENDER_THREAD();
+
     glActiveTexture(SKYBOX_TUNIT);
     glBindTexture(GL_TEXTURE_CUBE_MAP, s_skybox.cubemap);
+
+    GL_ASSERT_OK();
+}
+
+void R_GL_DrawSkybox(const struct camera *cam)
+{
+    ASSERT_IN_RENDER_THREAD();
+    GL_PERF_PUSH_GROUP(0, "skybox");
+
+    mat4x4_t view_mat;
+    Camera_MakeViewMat(cam, &view_mat);
+
+    /* Remove the translation component from the view matrix */
+    mat4x4_t view_dir_mat;
+    view_dir_mat = (mat4x4_t){
+        .cols[0][0] = view_mat.cols[0][0],   
+        .cols[1][0] = view_mat.cols[1][0],    
+        .cols[2][0] = view_mat.cols[2][0],    
+        .cols[3][0] = 0,
+
+        .cols[0][1] = view_mat.cols[0][1],   
+        .cols[1][1] = view_mat.cols[1][1],    
+        .cols[2][1] = view_mat.cols[2][1],    
+        .cols[3][1] = 0,
+
+        .cols[0][2] = view_mat.cols[0][2],   
+        .cols[1][2] = view_mat.cols[1][2],    
+        .cols[2][2] = view_mat.cols[2][2],    
+        .cols[3][2] = 0,
+
+        .cols[0][3] = 0,                     
+        .cols[1][3] = 0,                      
+        .cols[2][3] = 0,                      
+        .cols[3][3] = 1
+    };
+
+    R_GL_StateSet(GL_U_VIEW_ROT_MAT, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = view_dir_mat
+    });
+
+    GLint old_cull_face_mode;
+    glGetIntegerv(GL_CULL_FACE_MODE, &old_cull_face_mode);
+    GLint old_depth_func_mode;
+    glGetIntegerv(GL_DEPTH_FUNC, &old_depth_func_mode);
+
+    glCullFace(GL_FRONT);
+    glDepthFunc(GL_LEQUAL);
+
+    R_GL_Shader_Install("skybox");
+    glBindVertexArray(s_skybox.VAO);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+
+    glDepthMask(old_depth_func_mode);
+    glCullFace(old_cull_face_mode);
+
+    GL_PERF_POP_GROUP();
     GL_ASSERT_OK();
 }
 
