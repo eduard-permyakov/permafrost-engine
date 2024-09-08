@@ -352,6 +352,8 @@ bool   G_Building_GetPathable(uint32_t uid);
 void   G_Building_SetRallyPoint(uint32_t uid, vec2_t pos);
 vec2_t G_Building_GetRallyPoint(uint32_t uid);
 void   G_Building_SetPositionRallyPointOnLeftClick(void);
+void   G_Building_SetGroundTexture(uint32_t uid, const char *texture);
+const char *G_BuildingGetGroundTexture(uint32_t uid);
 
 /*###########################################################################*/
 /* GAME BUILDER                                                              */

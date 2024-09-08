@@ -287,6 +287,13 @@ float  M_HeightAtPoint(const struct map *map, vec2_t xz);
 bool   M_DescForPoint2D(const struct map *map, vec2_t point_xz, struct tile_desc *out);
 
 /* ------------------------------------------------------------------------
+ * Returns the material index for a particular texture, or '-1' if it is 
+ * not found.
+ * ------------------------------------------------------------------------
+ */
+int    M_MaterialIndexForTexture(const struct map *map, const char *texture);
+
+/* ------------------------------------------------------------------------
  * Make an impassable region in the navigation data, making it not possible 
  * for pathable units to pass through the region underneath the OBB.
  * ------------------------------------------------------------------------

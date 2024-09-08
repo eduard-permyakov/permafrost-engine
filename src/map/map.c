@@ -429,6 +429,15 @@ bool M_DescForPoint2D(const struct map *map, vec2_t point_xz, struct tile_desc *
     return M_Tile_DescForPoint2D(res, map->pos, point_xz, out);
 }
 
+int M_MaterialIndexForTexture(const struct map *map, const char *texture)
+{
+    for(int i = 0; i < map->num_mats; i++) {
+        if(0 == strcmp(texture, map->texnames[i]))
+            return i;
+    }
+    return -1;
+}
+
 void M_NavCutoutStaticObject(const struct map *map, const struct obb *obb)
 {
     N_CutoutStaticObject(map->nav_private, map->pos, obb);

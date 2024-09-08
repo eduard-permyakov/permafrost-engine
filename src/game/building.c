@@ -52,6 +52,7 @@
 #include "../lib/public/string_intern.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/stalloc.h"
+#include "../lib/public/mem.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -99,16 +100,17 @@ struct buildstate{
         BUILDING_STATE_SUPPLIED,
         BUILDING_STATE_COMPLETED,
     }state;
-    float      frac_done;
-    vec_uid_t  markers;
-    uint32_t   progress_model;
-    float      vision_range;
-    bool       pathable;
-    bool       blocking;
-    bool       is_storage_site;
-    vec2_t     rally_point;
-    struct obb obb;
-    kh_int_t  *required;
+    float       frac_done;
+    vec_uid_t   markers;
+    uint32_t    progress_model;
+    float       vision_range;
+    bool        pathable;
+    bool        blocking;
+    bool        is_storage_site;
+    vec2_t      rally_point;
+    struct obb  obb;
+    kh_int_t   *required;
+    const char *ground_texture;
 };
 
 typedef char buff_t[512];
@@ -475,6 +477,40 @@ static void on_mousedown(void *user, void *event)
     }
 }
 
+static void try_apply_ground_texture(const struct buildstate *bs, const char *texture)
+{
+    int mat_idx = M_MaterialIndexForTexture(s_map, texture);
+    if(mat_idx < 0)
+        return;
+
+    struct map_resolution res;
+    M_GetResolution(s_map, &res);
+
+    struct tile_desc tds[2048];
+    size_t ntiles = M_Tile_AllUnderObj(M_GetPos(s_map), res, &bs->obb, tds, ARR_SIZE(tds));
+
+    size_t nchunks = res.chunk_w * res.chunk_h;
+    STALLOC(bool, dirty_chunks, nchunks);
+    memset(dirty_chunks, 0, nchunks);
+
+    for(int i = 0; i < ntiles; i++) {
+        struct tile *tile = NULL;
+        M_TileForDesc(s_map, tds[i], &tile);
+        tile->top_mat_idx = mat_idx;
+        G_UpdateTile(&tds[i], tile);
+        dirty_chunks[tds[i].chunk_r * res.chunk_w + tds[i].chunk_c] = true;
+    }
+
+    for(int i = 0; i < nchunks; i++) {
+        if(dirty_chunks[i] == false)
+            continue;
+        int chunk_r = i / res.chunk_w;
+        int chunk_c = i % res.chunk_w;
+        G_UpdateMinimapChunk(chunk_r, chunk_c);
+    }
+    STFREE(dirty_chunks);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -546,7 +582,8 @@ bool G_Building_AddEntity(uint32_t uid)
         .obb = {0},
         .pathable = false,
         .is_storage_site = !!(G_FlagsGet(uid) & ENTITY_FLAG_STORAGE_SITE),
-        .rally_point = G_Pos_GetXZ(uid)
+        .rally_point = G_Pos_GetXZ(uid),
+        .ground_texture = NULL
     };
 
     new_bs.required = kh_init(int);
@@ -755,6 +792,10 @@ bool G_Building_Complete(uint32_t uid)
         M_NavBlockersDecrefOBB(s_map, G_GetFactionID(uid), G_FlagsGet(uid), &bs->obb);
     }
 
+    if(bs->ground_texture) {
+        try_apply_ground_texture(bs, bs->ground_texture);
+    }
+
     float old = G_GetVisionRange(uid);
     vec2_t xz_pos = G_Pos_GetXZ(uid);
 
@@ -945,6 +986,26 @@ bool G_Building_GetPathable(uint32_t uid)
     return bs->pathable;
 }
 
+void G_Building_SetGroundTexture(uint32_t uid, const char *texture)
+{
+    struct buildstate *bs = buildstate_get(uid);
+    assert(bs);
+    const char *key = si_intern(texture, &s_stringpool, s_stridx);
+    if(!bs->ground_texture || (0 != strcmp(key, bs->ground_texture))) {
+        if(bs->state == BUILDING_STATE_COMPLETED) {
+            try_apply_ground_texture(bs, texture);
+        }
+    }
+    bs->ground_texture = key;
+}
+
+const char *G_BuildingGetGroundTexture(uint32_t uid)
+{
+    struct buildstate *bs = buildstate_get(uid);
+    assert(bs);
+    return bs->ground_texture;
+}
+
 bool G_Building_SetRequired(uint32_t uid, const char *rname, int req)
 {
     struct buildstate *bs = buildstate_get(uid);
@@ -1067,6 +1128,16 @@ bool G_Building_SaveState(struct SDL_RWops *stream)
             CHK_TRUE_RET(Attr_Write(stream, &required_amount_attr, "required_amount"));
         });
 
+        struct attr ground_texture = (struct attr){
+            .type = TYPE_STRING,
+            .val.as_string = {"null"}
+        };
+        if(curr.ground_texture) {
+            pf_strlcpy(ground_texture.val.as_string, curr.ground_texture, 
+                sizeof(ground_texture.val.as_string));
+        }
+        CHK_TRUE_RET(Attr_Write(stream, &ground_texture, "ground_texture"));
+
         CHK_TRUE_RET(AL_SaveOBB(stream, &curr.obb));
         Sched_TryYield();
     });
@@ -1147,6 +1218,15 @@ bool G_Building_LoadState(struct SDL_RWops *stream)
             int val = attr.val.as_int;
 
             G_Building_SetRequired(uid, key, val);
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        if(0 != strcmp(attr.val.as_string, "null")) {
+            const char *key = si_intern(attr.val.as_string, &s_stringpool, s_stridx);
+            bs->ground_texture = key; 
+        }else{
+            bs->ground_texture = NULL;
         }
 
         CHK_TRUE_RET(AL_LoadOBB(stream, &bs->obb));

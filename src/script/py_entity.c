@@ -2761,6 +2761,14 @@ static int PyBuildableEntity_init(PyBuildableEntityObject *self, PyObject *args,
         G_Building_SetPathable(self->super.ent, pathable_flag);
     }
 
+    PyObject *ground_texture;
+    if(kwds && ((ground_texture = PyDict_GetItemString(kwds, "ground_texture")) != NULL)) {
+        if(PyString_Check(ground_texture)) {
+            const char *texture = PyString_AS_STRING(ground_texture);
+            G_Building_SetGroundTexture(self->super.ent, texture);
+        }
+    }
+
     /* Call the next __init__ method in the MRO. This is required for all __init__ calls in the 
      * MRO to complete in cases when this class is one of multiple base classes of another type. 
      * This allows this type to be used as one of many mix-in bases. */
