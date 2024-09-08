@@ -617,5 +617,11 @@ void R_GL_SkyboxLoad(const char *dir, const char *extension);
  */
 void R_GL_DrawSkybox(const struct camera *cam);
 
+/* ---------------------------------------------------------------------------
+ * Release GPU resources used by the skybox.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_SkyboxFree(void);
+
 #endif
 

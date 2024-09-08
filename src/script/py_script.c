@@ -121,6 +121,7 @@ static PyObject *PyPf_get_key_name(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_get_active_font(PyObject *self);
 static PyObject *PyPf_set_active_font(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_skybox(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_show_regions(PyObject *self);
 static PyObject *PyPf_hide_regions(PyObject *self);
@@ -387,6 +388,10 @@ static PyMethodDef pf_module_methods[] = {
     {"set_active_font", 
     (PyCFunction)PyPf_set_active_font, METH_VARARGS,
     "Set the current active font to that of the specified name."},
+
+    {"set_skybox", 
+    (PyCFunction)PyPf_set_skybox, METH_VARARGS,
+    "Set the image set to be used for the skybox."},
 
     {"show_regions", 
     (PyCFunction)PyPf_show_regions, METH_NOARGS,
@@ -1179,7 +1184,6 @@ static PyObject *PyPf_prev_frame_perfstats(PyObject *self)
     for(int i = 0; i < nthreads; i++) {
 
         struct perf_info *curr_info = infos[i];
-        //PyObject *parents[curr_info->nentries + 1];
         STALLOC(PyObject*, parents, curr_info->nentries + 1);
 
         PyObject *thread_dict = PyDict_New();
@@ -1432,6 +1436,31 @@ static PyObject *PyPf_set_active_font(PyObject *self, PyObject *args)
     }else{
         Py_RETURN_TRUE;
     }
+}
+
+static PyObject *PyPf_set_skybox(PyObject *self, PyObject *args)
+{
+    const char *dir, *extension;
+
+    if(!PyArg_ParseTuple(args, "ss", &dir, &extension)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be 2 strings.");
+        return NULL;
+    }
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SkyboxFree,
+        .nargs = 0,
+        .args = {}
+    });
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SkyboxLoad,
+        .nargs = 2,
+        .args = {
+            R_PushArg(dir, strlen(dir)),
+            R_PushArg(extension, strlen(extension)),
+        }
+    });
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_show_regions(PyObject *self)

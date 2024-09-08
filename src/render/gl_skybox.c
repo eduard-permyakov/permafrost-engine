@@ -293,3 +293,14 @@ void R_GL_DrawSkyboxScaled(const struct camera *cam, float *map_width, float *ma
     GL_ASSERT_OK();
 }
 
+void R_GL_SkyboxFree(void)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    glDeleteTextures(1, &s_skybox.cubemap);
+    glDeleteVertexArrays(1, &s_skybox.VAO);
+    glDeleteBuffers(1, &s_skybox.VBO);
+
+    GL_ASSERT_OK();
+}
+
