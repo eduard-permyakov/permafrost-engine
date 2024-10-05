@@ -379,6 +379,7 @@ static PyObject *PyCombatableEntity_get_base_armour(PyCombatableEntityObject *se
 static int       PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyCombatableEntity_get_attack_range(PyCombatableEntityObject *self, void *closure);
 static int       PyCombatableEntity_set_attack_range(PyCombatableEntityObject *self, PyObject *value, void *closure);
+static int       PyCombatableEntity_set_corpse_model(PyCombatableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyCombatableEntity_hold_position(PyCombatableEntityObject *self);
 static PyObject *PyCombatableEntity_attack(PyCombatableEntityObject *self, PyObject *args);
 static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self, PyObject *args, PyObject *kwargs);
@@ -430,6 +431,12 @@ static PyGetSetDef PyCombatableEntity_getset[] = {
     {"attack_range",
     (getter)PyCombatableEntity_get_attack_range, (setter)PyCombatableEntity_set_attack_range,
     "The distance from which an entity can attack. 0 for melee units.",
+    NULL},
+    {"corpse_model",
+    NULL, (setter)PyCombatableEntity_set_corpse_model,
+    "Descriptor of the corpse model to display upon entity death. Only shown for entities with a "
+    "death animation. Must be a tuple with 3 values: directory (string), filename (string), "
+    "model scale (tuple of 3 floats).",
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -2724,6 +2731,25 @@ static int PyCombatableEntity_set_attack_range(PyCombatableEntityObject *self, P
     }
 
     G_Combat_SetRange(self->super.ent, range);
+    return 0;
+}
+
+static int PyCombatableEntity_set_corpse_model(PyCombatableEntityObject *self, PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+
+    const char *dir, *pfobj;
+    vec3_t scale;
+    if(!PyTuple_Check(value) || !PyArg_ParseTuple(value, "ss(fff)", &dir, &pfobj, &scale.x, &scale.y, &scale.z)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string (directory), a string (filename), "
+            "and a tuple of 3 floats (model scale).");
+        return -1;
+    }
+
+    G_Combat_SetCorpseModel(self->super.ent, dir, pfobj, scale);
     return 0;
 }
 

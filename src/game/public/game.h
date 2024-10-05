@@ -291,6 +291,7 @@ int   G_Combat_GetMaxHP(uint32_t uid);
 void  G_Combat_SetRange(uint32_t uid, float range);
 float G_Combat_GetRange(uint32_t uid);
 void  G_Combat_SetProjDesc(uint32_t uid, const struct proj_desc *pd);
+void  G_Combat_SetCorpseModel(uint32_t uid, const char *dir, const char *pfobj, vec3_t scale);
 
 enum combat_stance G_Combat_GetStance(uint32_t uid);
 

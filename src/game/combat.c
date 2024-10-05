@@ -59,6 +59,7 @@
 #include "../lib/public/pf_string.h"
 #include "../lib/public/mem.h"
 #include "../lib/public/queue.h"
+#include "../lib/public/string_intern.h"
 
 #include <assert.h>
 #include <float.h>
@@ -149,6 +150,10 @@ struct combatstate{
     uint32_t           attack_start_tick;
     /* only used by ranged entities */
     struct proj_desc   pd;
+    /* Optional model to be displayed after an entity's death */
+    const char        *corpse_dir;
+    const char        *corpse_pfobj;
+    vec3_t             corpse_scale;
 };
 
 struct combat_work_in{
@@ -230,6 +235,7 @@ enum combat_cmd_type{
     COMBAT_CMD_CLEAR_SAVED_MOVE_CMD,
     COMBAT_CMD_ADD_TIME_DELTA,
     COMBAT_CMD_SET_PROJ_DESC,
+    COMBAT_CMD_SET_CORPSE_MODEL,
     COMBAT_CMD_PROJ_HIT
 };
 
@@ -287,6 +293,8 @@ static struct combat_work s_combat_work;
 static queue_cmd_t        s_combat_commands;
 static unsigned long      s_last_tick;
 
+static khash_t(stridx)   *s_stridx;
+static mp_strbuff_t       s_stringpool;
 static vec_corpse_t       s_corpses;
 
 /*****************************************************************************/
@@ -712,7 +720,53 @@ static bool garrisoned(uint32_t uid)
     return (flags & ENTITY_FLAG_GARRISONED);
 }
 
-static void add_corpose(const char *dir, const char *pfobj, uint32_t duration,
+static struct result corpse_disappear_task(void *arg)
+{
+    uint32_t uid = (uintptr_t)arg;
+    vec3_t start_pos = G_Pos_Get(uid);
+    uint32_t flags = G_FlagsGet(uid);
+
+    struct obb obb;
+    Entity_CurrentOBB(uid, &obb, true);
+    int height = obb.half_lengths[1] * 2.0f;
+
+    uint32_t newflags = G_FlagsGet(uid);
+    newflags |= ENTITY_FLAG_TRANSLUCENT;
+    G_FlagsSet(uid, newflags);
+
+    const float duration = 1000.0f;
+    uint32_t elapsed = 0;
+    uint32_t start = SDL_GetTicks();
+
+    while(elapsed < duration) {
+    
+        Task_AwaitEvent(EVENT_UPDATE_START, &(int){0});
+        uint32_t curr = SDL_GetTicks();
+
+        /* The entity can theoretically be forecefully removed during the 
+         * disappearing animation. Make sure we don't crap out if this happens
+         */
+        if(!G_EntityExists(uid))
+            return NULL_RESULT;
+
+        uint32_t prev_long = elapsed / 250;
+        uint32_t curr_long =  (curr - start) / 250;
+        elapsed = curr - start;
+
+        float pc = (elapsed - (prev_long * 250)) / 250;
+        vec3_t curr_pos = (vec3_t){
+            start_pos.x,
+            start_pos.y - (elapsed / duration) * height,
+            start_pos.z,
+        };
+        G_Pos_Set(uid, curr_pos);
+    }
+
+    G_DeferredRemove(uid);
+    return NULL_RESULT;
+}
+
+static void add_corpse(const char *dir, const char *pfobj, uint32_t duration,
                         vec3_t pos, vec3_t scale, quat_t rot)
 {
     const uint32_t uid = Entity_NewUID();
@@ -732,6 +786,8 @@ static void add_corpose(const char *dir, const char *pfobj, uint32_t duration,
 static void on_death_anim_finish(void *user, void *event)
 {
     uint32_t self = (uintptr_t)user;
+    struct combatstate *cs = combatstate_get(self);
+    assert(cs);
 
     khash_t(id) *flags = s_combat_work.gamestate.flags;
     khiter_t k = kh_get(id, flags, self);
@@ -743,11 +799,12 @@ static void on_death_anim_finish(void *user, void *event)
 
     struct combat_gamestate *gs = &s_combat_work.gamestate;
     vec3_t pos = G_Pos_GetFrom(gs->positions, self);
-    vec3_t scale = Entity_GetScaleFrom(gs->transforms, self);
     quat_t rot = Entity_GetRotFrom(gs->transforms, self);
 
-    add_corpose("assets/models/props", "cross_2.pfobj", DEFAULT_CORPSE_DURATION_SECS,
-        pos, scale, rot);
+    if(cs->corpse_dir && cs->corpse_pfobj) {
+        add_corpse(cs->corpse_dir, cs->corpse_pfobj, DEFAULT_CORPSE_DURATION_SECS,
+            pos, cs->corpse_scale, rot);
+    }
 }
 
 static void do_add_entity(uint32_t uid, enum combat_stance initial)
@@ -763,6 +820,8 @@ static void do_add_entity(uint32_t uid, enum combat_stance initial)
         .sticky = false,
         .move_cmd_interrupted = false,
         .pd = combat_default_proj(),
+        .corpse_dir = NULL,
+        .corpse_pfobj = NULL,
     };
     combatstate_set(uid, &new_cs);
 }
@@ -1072,6 +1131,17 @@ static void do_set_proj_desc(uint32_t uid, const struct proj_desc *pd)
         pd->scale,
         pd->speed,
     };
+}
+
+static void do_set_corpse_model(uint32_t uid, const char *dir, const char *pfobj, vec3_t scale)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct combatstate *cs = combatstate_get(uid);
+    assert(cs);
+    cs->corpse_dir = dir;
+    cs->corpse_pfobj = pfobj;
+    cs->corpse_scale = scale;
 }
 
 static void on_attack_anim_finish(void *user, void *event)
@@ -1674,6 +1744,17 @@ static void combat_process_cmds(void)
             PF_FREE(pd);
             break;
         }
+        case COMBAT_CMD_SET_CORPSE_MODEL: {
+
+            uint32_t uid = cmd.args[0].val.as_int;
+            const char *dirkey = si_intern(cmd.args[1].val.as_string, &s_stringpool, s_stridx);
+            const char *objkey = si_intern(cmd.args[2].val.as_string, &s_stringpool, s_stridx);
+            vec3_t scale = cmd.args[3].val.as_vec3;
+            if(dirkey && objkey) {
+                do_set_corpse_model(uid, dirkey, objkey, scale);
+            }
+            break;
+        }
         case COMBAT_CMD_PROJ_HIT: {
             struct proj_hit *hit = cmd.args[0].val.as_pointer;
             do_proj_tryhit(hit);
@@ -1911,7 +1992,9 @@ static void on_1hz_tick(void *user, void *event)
         if(curr->secs_left == 0) {
 
             uint32_t uid = curr->uid;
-            G_Zombiefy(uid, true);
+            uint32_t tid = Sched_Create(1, corpse_disappear_task, 
+                (void*)(uintptr_t)uid, NULL, TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
+            Sched_RunSync(tid);
 
             struct corpse *last = &vec_AT(&s_corpses, ncorpses-1);
             memmove(curr, last, sizeof(struct corpse));
@@ -2147,6 +2230,9 @@ bool G_Combat_Init(const struct map *map)
     if(!queue_cmd_init(&s_combat_commands, 256))
         goto fail_queue;
 
+    if(!si_init(&s_stringpool, &s_stridx, 512))
+        goto fail_strintern;
+
     struct map_resolution res;
     M_GetResolution(map, &res);
 
@@ -2172,6 +2258,8 @@ bool G_Combat_Init(const struct map *map)
 fail_refcnts:
     for(int i = 0; i < MAX_FACTIONS; i++)
         PF_FREE(s_fac_refcnts[i]);
+    si_shutdown(&s_stringpool, s_stridx);
+fail_strintern:
     queue_cmd_destroy(&s_combat_commands);
 fail_queue:
     stalloc_destroy(&s_combat_work.mem);
@@ -2206,12 +2294,8 @@ void G_Combat_Shutdown(void)
     stalloc_destroy(&s_combat_work.mem);
     kh_destroy(state, s_entity_state_table);
 
-    for(int i = 0; i < vec_size(&s_corpses); i++) {
-        uint32_t curr = vec_AT(&s_corpses, i).uid;
-        G_RemoveEntity(curr);
-        G_FreeEntity(curr);
-    }
     vec_corpse_destroy(&s_corpses);
+    si_shutdown(&s_stringpool, s_stridx);
 }
 
 bool G_Combat_HasWork(void)
@@ -2640,6 +2724,30 @@ float G_Combat_GetRange(uint32_t uid)
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
     return cs->stats.attack_range;
+}
+
+void G_Combat_SetCorpseModel(uint32_t uid, const char *dir, const char *pfobj, vec3_t scale)
+{
+    struct combat_cmd cmd = (struct combat_cmd){
+        .type = COMBAT_CMD_SET_CORPSE_MODEL,
+        .args[0] = {
+            .type = TYPE_INT,
+            .val.as_int = uid
+        },
+        .args[1] = {
+            .type = TYPE_STRING,
+        },
+        .args[2] = {
+            .type = TYPE_STRING,
+        },
+        .args[3] = {
+            .type = TYPE_VEC3,
+            .val.as_vec3 = scale
+        }
+    };
+    pf_strlcpy(cmd.args[1].val.as_string, dir, sizeof(cmd.args[1].val.as_string));
+    pf_strlcpy(cmd.args[2].val.as_string, pfobj, sizeof(cmd.args[2].val.as_string));
+    combat_push_cmd(cmd);
 }
 
 bool G_Combat_SaveState(struct SDL_RWops *stream)

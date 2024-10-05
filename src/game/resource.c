@@ -43,7 +43,6 @@
 #include "../phys/public/collision.h"
 #include "../map/public/map.h"
 #include "../lib/public/khash.h"
-#include "../lib/public/string_intern.h"
 #include "../lib/public/attr.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/string_intern.h"
