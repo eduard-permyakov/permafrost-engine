@@ -71,6 +71,7 @@
 #include "../cursor.h"
 #include "../task.h"
 #include "../sched.h"
+#include "../asset_load.h"
 
 #include <SDL.h>
 #include <stdio.h>
@@ -91,6 +92,7 @@ static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args);
 static PyObject *PyPf_load_scene(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_open_url(PyObject *self, PyObject *args);
+static PyObject *PyPf_preload_pfobj(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_register_event_handler(PyObject *self, PyObject *args);
 static PyObject *PyPf_register_ui_event_handler(PyObject *self, PyObject *args);
@@ -275,6 +277,10 @@ static PyMethodDef pf_module_methods[] = {
     {"open_url", 
     (PyCFunction)PyPf_open_url, METH_VARARGS,
     "Open the specified URL in the system's browser."},
+
+    {"preload_pfobj", 
+    (PyCFunction)PyPf_preload_pfobj, METH_VARARGS,
+    "Load and cache the model and animation data from the specified PFOBJ file."},
 
     {"register_event_handler", 
     (PyCFunction)PyPf_register_event_handler, METH_VARARGS,
@@ -1033,6 +1039,17 @@ static PyObject *PyPf_open_url(PyObject *self, PyObject *args)
         PyErr_SetString(PyExc_RuntimeError, errbuff);
         return NULL;
     }
+}
+
+static PyObject *PyPf_preload_pfobj(PyObject *self, PyObject *args)
+{
+    const char *dir, *filename;
+    if(!PyArg_ParseTuple(args, "ss", &dir, &filename)) {
+        PyErr_SetString(PyExc_TypeError, "Arugments must be 2 strings (PFObj directory and filename).");
+        return NULL;
+    }
+    AL_PreloadPFObj(dir, filename);
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args)
