@@ -65,16 +65,17 @@
 #include <SDL.h>
 
 
-#define TARGET_ACQUISITION_RANGE    (75.0f)
-#define PROJECTILE_DEFAULT_SPEED    (100.0f)
-#define EPSILON                     (1.0f/1024)
-#define DEFAULT_ATTACK_PERIOD       (4.0f/3.0f)
-#define MAX(a, b)                   ((a) > (b) ? (a) : (b))
-#define MIN(a, b)                   ((a) < (b) ? (a) : (b))
-#define ARR_SIZE(a)                 (sizeof(a)/sizeof(a[0]))
-#define X_BINS_PER_CHUNK            (8)
-#define Z_BINS_PER_CHUNK            (8)
-#define MAX_COMBAT_TASKS            (64)
+#define TARGET_ACQUISITION_RANGE     (75.0f)
+#define PROJECTILE_DEFAULT_SPEED     (100.0f)
+#define EPSILON                      (1.0f/1024)
+#define DEFAULT_ATTACK_PERIOD        (4.0f/3.0f)
+#define MAX(a, b)                    ((a) > (b) ? (a) : (b))
+#define MIN(a, b)                    ((a) < (b) ? (a) : (b))
+#define ARR_SIZE(a)                  (sizeof(a)/sizeof(a[0]))
+#define X_BINS_PER_CHUNK             (8)
+#define Z_BINS_PER_CHUNK             (8)
+#define MAX_COMBAT_TASKS             (64)
+#define DEFAULT_CORPSE_DURATION_SECS (30)
 
 #define CHK_TRUE_RET(_pred)         \
     do{                             \
@@ -237,10 +238,18 @@ struct combat_cmd{
     struct attr          args[4];
 };
 
+struct corpse{
+    uint32_t uid;
+    uint32_t secs_left;
+};
+
 KHASH_MAP_INIT_INT(state, struct combatstate)
 
 QUEUE_TYPE(cmd, struct combat_cmd)
 QUEUE_IMPL(static, cmd, struct combat_cmd)
+
+VEC_TYPE(corpse, struct corpse);
+VEC_IMPL(static, corpse, struct corpse);
 
 static void combat_push_cmd(struct combat_cmd cmd);
 static void on_attack_anim_finish(void *user, void *event);
@@ -277,6 +286,8 @@ static uint16_t          *s_fac_refcnts[MAX_FACTIONS];
 static struct combat_work s_combat_work;
 static queue_cmd_t        s_combat_commands;
 static unsigned long      s_last_tick;
+
+static vec_corpse_t       s_corpses;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -701,6 +712,23 @@ static bool garrisoned(uint32_t uid)
     return (flags & ENTITY_FLAG_GARRISONED);
 }
 
+static void add_corpose(const char *dir, const char *pfobj, uint32_t duration,
+                        vec3_t pos, vec3_t scale, quat_t rot)
+{
+    const uint32_t uid = Entity_NewUID();
+    uint32_t flags;
+    bool loaded = AL_EntityFromPFObj(dir, pfobj, "__corpse__", uid, &flags);
+    if(!loaded)
+        return;
+
+    G_AddEntity(uid, flags, pos);
+    Entity_SetRot(uid, rot);
+    Entity_SetScale(uid, scale);
+    G_Pos_Set(uid, pos);
+
+    vec_corpse_push(&s_corpses, (struct corpse){uid, duration});
+}
+
 static void on_death_anim_finish(void *user, void *event)
 {
     uint32_t self = (uintptr_t)user;
@@ -712,6 +740,14 @@ static void on_death_anim_finish(void *user, void *event)
 
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, self, on_death_anim_finish);
     G_Zombiefy(self, true);
+
+    struct combat_gamestate *gs = &s_combat_work.gamestate;
+    vec3_t pos = G_Pos_GetFrom(gs->positions, self);
+    vec3_t scale = Entity_GetScaleFrom(gs->transforms, self);
+    quat_t rot = Entity_GetRotFrom(gs->transforms, self);
+
+    add_corpose("assets/models/props", "cross_2.pfobj", DEFAULT_CORPSE_DURATION_SECS,
+        pos, scale, rot);
 }
 
 static void do_add_entity(uint32_t uid, enum combat_stance initial)
@@ -1866,6 +1902,25 @@ static void on_20hz_tick(void *user, void *event)
     PERF_POP();
 }
 
+static void on_1hz_tick(void *user, void *event)
+{
+    size_t ncorpses = vec_size(&s_corpses);
+    for(int i = 0; i < ncorpses; i++) {
+        struct corpse *curr = &vec_AT(&s_corpses, i);
+        curr->secs_left--;
+        if(curr->secs_left == 0) {
+
+            uint32_t uid = curr->uid;
+            G_Zombiefy(uid, true);
+
+            struct corpse *last = &vec_AT(&s_corpses, ncorpses-1);
+            memmove(curr, last, sizeof(struct corpse));
+            ncorpses--;
+            s_corpses.size--;
+        }
+    }
+}
+
 static void on_mousedown(void *user, void *event)
 {
     SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
@@ -2104,12 +2159,14 @@ bool G_Combat_Init(const struct map *map)
     }
 
     vec_entity_init(&s_dying_ents);
+    E_Global_Register(EVENT_1HZ_TICK, on_1hz_tick, NULL, G_RUNNING);
     E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_ALL);
     E_Global_Register(EVENT_PROJECTILE_HIT, on_proj_hit, NULL, G_RUNNING);
     s_map = map;
     combat_copy_gamestate();
+    vec_corpse_init(&s_corpses);
     return true;
 
 fail_refcnts:
@@ -2128,6 +2185,7 @@ void G_Combat_Shutdown(void)
     combat_complete_work();
     s_map = NULL;
 
+    E_Global_Unregister(EVENT_1HZ_TICK, on_1hz_tick);
     E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
@@ -2147,6 +2205,13 @@ void G_Combat_Shutdown(void)
     queue_cmd_destroy(&s_combat_commands);
     stalloc_destroy(&s_combat_work.mem);
     kh_destroy(state, s_entity_state_table);
+
+    for(int i = 0; i < vec_size(&s_corpses); i++) {
+        uint32_t curr = vec_AT(&s_corpses, i).uid;
+        G_RemoveEntity(curr);
+        G_FreeEntity(curr);
+    }
+    vec_corpse_destroy(&s_corpses);
 }
 
 bool G_Combat_HasWork(void)
