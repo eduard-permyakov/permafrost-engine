@@ -998,7 +998,20 @@ static PyObject *PyPf_load_scene(PyObject *self, PyObject *args, PyObject *kwarg
     }
 
     if(!Scene_Load(full_path)) {
-        PyErr_SetString(PyExc_RuntimeError, "Unable to load scene from the specified file.");
+        char errbuff[256];
+        pf_snprintf(errbuff, sizeof(errbuff), "Unable to load scene from the sepcified file%s",
+            PyErr_Occurred() ? ": " : ".");
+        if(PyErr_Occurred()) {
+            PyObject *type, *value, *traceback;
+            PyErr_Fetch(&type, &value, &traceback);
+            PyObject *str = PyObject_Repr(value);
+            pf_strlcat(errbuff, PyString_AS_STRING(str), sizeof(errbuff));
+            Py_XDECREF(str);
+            Py_XDECREF(type);
+            Py_XDECREF(value);
+            Py_XDECREF(traceback);
+        }
+        PyErr_SetString(PyExc_RuntimeError, errbuff);
         goto fail_load;
     }
 
