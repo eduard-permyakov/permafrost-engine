@@ -245,8 +245,10 @@ struct combat_cmd{
 };
 
 struct corpse{
-    uint32_t uid;
-    uint32_t secs_left;
+    uint32_t    uid;
+    uint32_t    secs_left;
+    const char *dir;
+    const char *pfobj;
 };
 
 KHASH_MAP_INIT_INT(state, struct combatstate)
@@ -780,7 +782,7 @@ static void add_corpse(const char *dir, const char *pfobj, uint32_t duration,
     Entity_SetScale(uid, scale);
     G_Pos_Set(uid, pos);
 
-    vec_corpse_push(&s_corpses, (struct corpse){uid, duration});
+    vec_corpse_push(&s_corpses, (struct corpse){uid, duration, dir, pfobj});
 }
 
 static void on_death_anim_finish(void *user, void *event)
@@ -2845,6 +2847,33 @@ bool G_Combat_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &pd_speed, "pd_speed"));
         Sched_TryYield();
+
+        struct attr corpse_basedir = (struct attr){
+            .type = TYPE_STRING,
+            .val.as_string = "NULL"
+        };
+        if(curr.corpse_dir) {
+            pf_strlcpy(corpse_basedir.val.as_string, curr.corpse_dir, 
+                sizeof(corpse_basedir.val.as_string));
+        }
+        CHK_TRUE_RET(Attr_Write(stream, &corpse_basedir, "corpse_basedir"));
+
+        struct attr corpse_pfobj = (struct attr){
+            .type = TYPE_STRING,
+            .val.as_string = "NULL"
+        };
+        if(curr.corpse_pfobj) {
+            pf_strlcpy(corpse_pfobj.val.as_string, curr.corpse_pfobj, 
+                sizeof(corpse_pfobj.val.as_string));
+        }
+        CHK_TRUE_RET(Attr_Write(stream, &corpse_pfobj, "corpse_pfobj"));
+
+        struct attr corpse_scale  = (struct attr){
+            .type = TYPE_VEC3,
+            .val.as_vec3 = curr.corpse_scale,
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &corpse_scale, "corpse_scale"));
+        Sched_TryYield();
     });
 
     struct attr num_dying = (struct attr){
@@ -2865,6 +2894,63 @@ bool G_Combat_SaveState(struct SDL_RWops *stream)
         Sched_TryYield();
     }
 
+    struct attr num_corpses = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = vec_size(&s_corpses)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_corpses, "num_corpses"));
+    Sched_TryYield();
+
+    for(int i = 0; i < vec_size(&s_corpses); i++) {
+
+        uint32_t corpse_ent = vec_AT(&s_corpses, i).uid;
+        struct attr corpse_ent_attr = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = corpse_ent
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &corpse_ent_attr, "corpse_ent"));
+
+        uint32_t secs_left = vec_AT(&s_corpses, i).secs_left;
+        struct attr secs_left_attr = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = secs_left
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &secs_left_attr, "secs_left"));
+
+        struct attr corpse_loc_attr = (struct attr){
+            .type = TYPE_VEC3,
+            .val.as_vec3 = G_Pos_Get(corpse_ent)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &corpse_loc_attr, "corpse_loc"));
+
+        struct attr corpse_rot_attr = (struct attr){
+            .type = TYPE_QUAT,
+            .val.as_quat = Entity_GetRot(corpse_ent)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &corpse_rot_attr, "corpse_rot"));
+
+        struct attr corpse_scale_attr = (struct attr){
+            .type = TYPE_VEC3,
+            .val.as_vec3 = Entity_GetScale(corpse_ent)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &corpse_scale_attr, "corpse_scale"));
+
+        struct attr corpse_dir = (struct attr){
+            .type = TYPE_STRING,
+        };
+        const char *dir = vec_AT(&s_corpses, i).dir;
+        pf_strlcpy(corpse_dir.val.as_string, dir, sizeof(corpse_dir.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &corpse_dir, "corpse_dir"));
+
+        struct attr corpse_pfobj = (struct attr){
+            .type = TYPE_STRING,
+        };
+        const char *pfobj = vec_AT(&s_corpses, i).pfobj;
+        pf_strlcpy(corpse_pfobj.val.as_string, pfobj, sizeof(corpse_pfobj.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &corpse_pfobj, "corpse_pfobj"));
+
+        Sched_TryYield();
+    }
     return true;
 }
 
@@ -2951,6 +3037,31 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(attr.type == TYPE_FLOAT);
         cs->pd.speed = attr.val.as_float;
         Sched_TryYield();
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        cs->corpse_dir = NULL;
+        if(strcmp(attr.val.as_string, "NULL") != 0) {
+            const char *dirkey = si_intern(attr.val.as_string, &s_stringpool, s_stridx);
+            if(dirkey) {
+                cs->corpse_dir = dirkey;
+            }
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        cs->corpse_pfobj = NULL;
+        if(strcmp(attr.val.as_string, "NULL") != 0) {
+            const char *objkey = si_intern(attr.val.as_string, &s_stringpool, s_stridx);
+            if(objkey) {
+                cs->corpse_pfobj = objkey;
+            }
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC3);
+        cs->corpse_scale = attr.val.as_vec3;
+        Sched_TryYield();
     }
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
@@ -2973,6 +3084,47 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
         }else{
             Entity_DisappearAnimated(uid, s_map, on_disappear_finish, 
                 (void*)((uintptr_t)uid));
+        }
+        Sched_TryYield();
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_corpses = attr.val.as_int;
+    Sched_TryYield();
+
+    for(int i = 0; i < num_corpses; i++) {
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uint32_t uid = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uint32_t secs_left = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC3);
+        vec3_t corpse_pos = attr.val.as_vec3;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_QUAT);
+        quat_t corpse_rot = attr.val.as_quat;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC3);
+        vec3_t corpse_scale = attr.val.as_vec3;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        const char *dirkey = si_intern(attr.val.as_string, &s_stringpool, s_stridx);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        const char *objkey = si_intern(attr.val.as_string, &s_stringpool, s_stridx);
+
+        if(dirkey && objkey) {
+            add_corpse(dirkey, objkey, secs_left, corpse_pos, corpse_scale, corpse_rot); 
         }
         Sched_TryYield();
     }
