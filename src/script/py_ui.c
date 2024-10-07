@@ -109,6 +109,8 @@ static PyObject *PyWindow_tree(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_tree_element(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_selectable_symbol_label(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_combo_box(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_combo_label(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_combo_close(PyWindowObject *self);
 static PyObject *PyWindow_checkbox(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_color_picker(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_image(PyWindowObject *self, PyObject *args);
@@ -301,6 +303,14 @@ static PyMethodDef PyWindow_methods[] = {
     {"combo_box", 
     (PyCFunction)PyWindow_combo_box, METH_VARARGS,
     "Present a combo box with a list of selectable options."},
+
+    {"combo_label", 
+    (PyCFunction)PyWindow_combo_label, METH_VARARGS,
+    "Present a combo box with a list of custom selectable options."},
+
+    {"combo_close", 
+    (PyCFunction)PyWindow_combo_close, METH_NOARGS,
+    "Close the currently active combo box."},
 
     {"checkbox", 
     (PyCFunction)PyWindow_checkbox, METH_VARARGS,
@@ -1261,6 +1271,43 @@ static PyObject *PyWindow_combo_box(PyWindowObject *self, PyObject *args)
     int ret = nk_combo(s_nk_ctx, labels, num_items, selected_idx, item_height, size);
     STFREE(labels);
     return Py_BuildValue("i", ret);
+}
+
+static PyObject *PyWindow_combo_label(PyWindowObject *self, PyObject *args)
+{
+    struct nk_vec2 size;
+    const char *str;
+    PyObject *callable, *cargs = NULL;
+    if(!PyArg_ParseTuple(args, "ffsO|O", &size.x, &size.y, &str, &callable, &cargs)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two floats (size), a string, and "
+            "a callable object. Optionally, args to the callable can be supplied.");
+        return NULL;
+    }
+
+    if(!PyCallable_Check(callable)) {
+        PyErr_SetString(PyExc_TypeError, "Fourth argument must be callable.");
+        return NULL;
+    }
+
+    if(nk_combo_begin_label(s_nk_ctx, str, size)) {
+        PyObject *ret = PyObject_CallObject(callable, cargs);
+        Py_XDECREF(ret);
+
+        nk_combo_end(s_nk_ctx);
+        if(!ret)
+            return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyWindow_combo_close(PyWindowObject *self)
+{
+    if(!s_nk_ctx->current || !s_nk_ctx->current->layout) {
+        PyErr_SetString(PyExc_TypeError, "No active combo box.");
+        return NULL;
+    }
+    nk_combo_close(s_nk_ctx);
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyWindow_checkbox(PyWindowObject *self, PyObject *args)
