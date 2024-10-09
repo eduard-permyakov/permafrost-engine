@@ -116,6 +116,21 @@ int pf_snprintf(char *str, size_t size, const char *format, ...)
     return ret;
 }
 
+int pf_beginswith(const char *str, const char *begin)
+{
+    size_t slen = strlen(str);
+    size_t beginlen = strlen(begin);
+
+    if(beginlen > slen)
+        return 0;
+
+    for(int i = 0; i < beginlen; i++) {
+        if(str[i] != begin[i])
+            return 0;
+    }
+    return 1;
+}
+
 int pf_endswith(const char *str, const char *end)
 {
     size_t slen = strlen(str);
