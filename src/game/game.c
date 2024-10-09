@@ -3216,44 +3216,68 @@ bool G_LoadEntityState(SDL_RWops *stream)
         G_BakeNavDataForScene();
     }
 
-    if(!g_load_anim_state(stream))
+    if(!g_load_anim_state(stream)) {
+        fprintf(stderr, "Could not load animation state.\n");
         return false;
+    }
 
-    if(!G_Sel_LoadState(stream))
+    if(!G_Sel_LoadState(stream)) {
+        fprintf(stderr, "Could not load selection state.\n");
         return false;
+    }
 
     if(!s_gs.map)
         return true;
 
-    if(!G_Move_LoadState(stream))
+    if(!G_Move_LoadState(stream)) {
+        fprintf(stderr, "Could not load movement state.\n");
         return false;
+    }
 
-    if(!G_Formation_LoadState(stream))
+    if(!G_Formation_LoadState(stream)) {
+        fprintf(stderr, "Could not load formation state.\n");
         return false;
+    }
 
-    if(!G_Combat_LoadState(stream))
+    if(!G_Combat_LoadState(stream)) {
+        fprintf(stderr, "Could not load combat state.\n");
         return false;
+    }
 
-    if(!G_Building_LoadState(stream))
+    if(!G_Building_LoadState(stream)) {
+        fprintf(stderr, "Could not load building state.\n");
         return false;
+    }
 
-    if(!G_Builder_LoadState(stream))
+    if(!G_Builder_LoadState(stream)) {
+        fprintf(stderr, "could not load builder state.\n");
         return false;
+    }
 
-    if(!G_StorageSite_LoadState(stream))
+    if(!G_StorageSite_LoadState(stream)) {
+        fprintf(stderr, "Could not load storage site state.\n");
         return false;
+    }
 
-    if(!G_Resource_LoadState(stream))
+    if(!G_Resource_LoadState(stream)) {
+        fprintf(stderr, "Could not load resource state.\n");
         return false;
+    }
 
-    if(!G_Harvester_LoadState(stream))
+    if(!G_Harvester_LoadState(stream)) {
+        fprintf(stderr, "Could not load harvester state.\n");
         return false;
+    }
 
-    if(!G_Garrison_LoadState(stream))
+    if(!G_Garrison_LoadState(stream)) {
+        fprintf(stderr, "Could not load garrison state.\n");
         return false;
+    }
 
-    if(!G_Automation_LoadState(stream))
+    if(!G_Automation_LoadState(stream)) {
+        fprintf(stderr, "Could not load automation state.\n");
         return false;
+    }
 
     return true;
 }
