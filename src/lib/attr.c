@@ -150,7 +150,9 @@ bool Attr_Write(struct SDL_RWops *stream, const struct attr *in, const char name
     switch(in->type) {
     case TYPE_STRING:
         CHK_TRUE(SDL_RWwrite(stream, "string ", strlen("string "), 1), fail); 
-        CHK_TRUE(SDL_RWwrite(stream, in->val.as_string, strlen(in->val.as_string), 1), fail); 
+        if(strlen(in->val.as_string) > 0) {
+            CHK_TRUE(SDL_RWwrite(stream, in->val.as_string, strlen(in->val.as_string), 1), fail); 
+        }
         CHK_TRUE(SDL_RWwrite(stream, "\n", 1, 1), fail); 
         break;
     case TYPE_FLOAT: {
