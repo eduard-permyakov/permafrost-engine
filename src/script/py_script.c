@@ -59,7 +59,9 @@
 #include "../lib/public/SDL_vec_rwops.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/pf_nuklear.h"
+#include "../lib/public/nk_file_browser.h"
 #include "../lib/public/mem.h"
+#include "../lib/public/windows.h"
 #include "../event.h"
 #include "../config.h"
 #include "../scene.h"
@@ -75,6 +77,11 @@
 
 #include <SDL.h>
 #include <stdio.h>
+#include <time.h>
+
+#if defined(__linux__)
+#include <sys/stat.h>
+#endif
 
 
 #define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
@@ -117,6 +124,10 @@ static PyObject *PyPf_mouse_over_ui(PyObject *self);
 static PyObject *PyPf_ui_text_edit_has_focus(PyObject *self);
 static PyObject *PyPf_get_active_window(PyObject *self);
 static PyObject *PyPf_get_file_size(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_files_in_dir(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_time_str(PyObject *self);
+static PyObject *PyPf_ensure_directory(PyObject *self, PyObject *args);
+static PyObject *PyPf_delete_user_file(PyObject *self, PyObject *args);
 static PyObject *PyPf_shift_pressed(PyObject *self);
 static PyObject *PyPf_ctrl_pressed(PyObject *self);
 static PyObject *PyPf_get_key_name(PyObject *self, PyObject *args);
@@ -374,6 +385,25 @@ static PyMethodDef pf_module_methods[] = {
     {"get_file_size", 
     (PyCFunction)PyPf_get_file_size, METH_VARARGS,
     "Get the size (in bytes) of a Python file object."},
+
+    {"get_files_in_dir",
+    (PyCFunction)PyPf_get_files_in_dir, METH_VARARGS,
+    "Get a list of non-directory files in the specified directory (relative to the working "
+    "directory)."},
+
+    {"get_time_str",
+    (PyCFunction)PyPf_get_time_str, METH_VARARGS,
+    "Get a string of the current system date and time."},
+
+    {"ensure_directory",
+    (PyCFunction)PyPf_ensure_directory, METH_VARARGS,
+    "Create a directory relative to the working directory, if it does not exist already."},
+
+    {"delete_user_file",
+    (PyCFunction)PyPf_delete_user_file, METH_VARARGS,
+    "Delete a specific user-created file. The first argument is a path to a directory, which "
+    "may not contain sub-directories, may not be one of the installation directories, and may "
+    "not be empty. The second argument is the filename."},
 
     {"shift_pressed", 
     (PyCFunction)PyPf_shift_pressed, METH_NOARGS,
@@ -2210,6 +2240,9 @@ static PyObject *PyPf_map_nearest_pathable_air(PyObject *self, PyObject *args, P
 
 static PyObject *PyPf_map_pos_under_cursor(PyObject *self)
 {
+    if(!G_MapLoaded()) {
+        Py_RETURN_NONE;
+    }
     vec3_t pos;
     if(M_Raycast_MouseIntersecCoord(&pos)) {
         return Py_BuildValue("(fff)", pos.x, pos.y, pos.z);
@@ -2882,6 +2915,136 @@ static PyObject *PyPf_load_session(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+static PyObject *PyPf_get_files_in_dir(PyObject *self, PyObject *args)
+{
+    const char *str;
+    if(!PyArg_ParseTuple(args, "s", &str)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a string (relative directory path).");
+        return NULL;
+    }
+    char absdir[NK_MAX_PATH_LEN];
+    pf_snprintf(absdir, sizeof(absdir), "%s/%s", g_basepath, str);
+
+    size_t nfiles = 0;
+    struct file *files = nk_file_list(absdir, &nfiles);
+
+    PyObject *ret = PyList_New(0);
+    if(!ret)
+        return NULL;
+
+    for(int i = 0; i < nfiles; i++) {
+        struct file *curr = &files[i];
+        if(curr->is_dir)
+            continue;
+        PyObject *str = PyString_FromString(curr->name);
+        if(!str) {
+            Py_DECREF(ret);
+            return NULL;
+        }
+        PyList_Append(ret, str);
+        Py_DECREF(str);
+    }
+    return ret;
+}
+
+static PyObject *PyPf_get_time_str(PyObject *self)
+{
+    time_t curr_time = time(NULL);
+    if(curr_time == (time_t)-1) {
+        PyErr_SetString(PyExc_RuntimeError, "Could not get the time.");
+        return NULL;
+    }
+    struct tm *tm = localtime(&curr_time);
+    if(!tm) {
+        PyErr_SetString(PyExc_RuntimeError, "Could not get the local time.");
+        return NULL;
+    }
+
+    char buff[256];
+    if(!strftime(buff, sizeof(buff), "%Y-%m-%d [%a] %H:%M", tm)) {
+        PyErr_SetString(PyExc_RuntimeError, "Could not format time.");
+        return NULL;
+    }
+
+    return PyString_FromString(buff);
+}
+
+static PyObject *PyPf_ensure_directory(PyObject *self, PyObject *args)
+{
+    const char *str;
+    if(!PyArg_ParseTuple(args, "s", &str)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a string (relative directory name).");
+        return NULL;
+    }
+    if(strchr(str, '/') || strchr(str, '\\') || strchr(str, '.')) {
+        PyErr_SetString(PyExc_TypeError, "Directory name must not contain '/', '\\', or '.'.");
+        return NULL;
+    }
+
+    char path[512];
+    pf_snprintf(path, sizeof(path), "%s/%s", g_basepath, str);
+
+#ifdef _WIN32
+    if(CreateDirectory(path, NULL) 
+    || ERROR_ALREADY_EXISTS == GetLastError()) {
+        Py_RETURN_NONE;
+    }
+#else
+    if((mkdir(path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == -1)
+    || errno == EEXIST) {
+        Py_RETURN_NONE;
+    }
+#endif
+
+    PyErr_SetString(PyExc_TypeError, "Cannot create directory.");
+    return NULL;
+}
+
+static PyObject *PyPf_delete_user_file(PyObject *self, PyObject *args)
+{
+    const char *dir, *file;
+    if(!PyArg_ParseTuple(args, "ss", &dir, &file)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string (relative directory name), "
+            "and a filename.");
+        return NULL;
+    }
+
+    if(strchr(dir, '/') || strchr(dir, '\\') || strchr(dir, '.')) {
+        PyErr_SetString(PyExc_TypeError, "Directory name must not contain '/', '\\', or '.'.");
+        return NULL;
+    }
+    if(strlen(dir) == 0) {
+        PyErr_SetString(PyExc_TypeError, "Directory name not be empty.");
+        return NULL;
+    }
+    const char *blacklist[] = {
+        "assets",
+        "scripts"
+    };
+    for(int i = 0; i < ARR_SIZE(blacklist); i++) {
+        if(0 == strcmp(dir, blacklist[i])) {
+            PyErr_SetString(PyExc_TypeError, "Cannot delete from a blacklisted directory.");
+            return NULL;
+        }
+    }
+
+    char path[512];
+    pf_snprintf(path, sizeof(path), "%s/%s/%s", g_basepath, dir, file);
+
+#ifdef _WIN32
+    if(0 == _unlink(path)) {
+        Py_RETURN_NONE;
+    }
+#else
+    if(0 == unlink(path)) {
+        Py_RETURN_NONE;
+    }
+#endif
+
+    PyErr_SetString(PyExc_TypeError, "Unable to delete the specified file.");
+    return NULL;
+}
+
 static bool s_sys_path_add_dir(const char *filename)
 {
     if(strlen(filename) >= 512)
@@ -3328,7 +3491,7 @@ static PyObject *PyPf_get_all_music(PyObject *self)
     for(int i = 0; i < ntracks; i++) {
         PyObject *str = PyString_FromString(tracks[i]);
         if(!str) {
-            Py_DECREF(str);
+            Py_DECREF(ret);
             return NULL;
         }
         PyList_SET_ITEM(ret, i, str);
