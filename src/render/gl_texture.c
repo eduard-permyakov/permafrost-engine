@@ -216,6 +216,20 @@ bool R_GL_Texture_GetForName(const char *basedir, const char *name, GLuint *out)
     return true;
 }
 
+bool R_GL_Texture_GetForNameUnqualified(const char *name, GLuint *out)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    khiter_t k;
+    if((k = kh_get(tex, s_name_tex_table, name)) == kh_end(s_name_tex_table)) {
+        *out = s_null_tex;
+        return false;
+    }
+
+    *out = kh_val(s_name_tex_table, k);
+    return true;
+}
+
 bool R_GL_Texture_Load(const char *basedir, const char *name, GLuint *out)
 {
     ASSERT_IN_RENDER_THREAD();
@@ -762,6 +776,9 @@ void R_GL_Texture_GetOrLoad(const char *basedir, const char *name, GLuint *out)
     ASSERT_IN_RENDER_THREAD();
 
     if(R_GL_Texture_GetForName(basedir, name, out))
+        return;
+
+    if(R_GL_Texture_GetForNameUnqualified(name, out))
         return;
 
     R_GL_Texture_Load(basedir, name, out);

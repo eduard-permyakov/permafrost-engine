@@ -368,6 +368,46 @@ void Camera_TickFinishPerspective(struct camera *cam)
     cam->prev_frame_ts = SDL_GetTicks();
 }
 
+void Camera_TickFinishPerspectiveUpsideDown(struct camera *cam)
+{
+    mat4x4_t view, proj;
+
+    /* Set the view matrix for the vertex shader */
+    vec3_t target;
+    PFM_Vec3_Add(&cam->pos, &cam->front, &target);
+    PFM_Mat4x4_MakeLookAt(&cam->pos, &target, &cam->up, &view);
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SetViewMatAndPos,
+        .nargs = 2,
+        .args = {
+            R_PushArg(&view, sizeof(view)),
+            R_PushArg(&cam->pos, sizeof(cam->pos)),
+        },
+    });
+    
+    /* Set the projection matrix for the vertex shader */
+    int w, h;
+    Engine_WinDrawableSize(&w, &h);
+    PFM_Mat4x4_MakePerspective(DEG_TO_RAD(45.0f), ((GLfloat)w)/h, CAM_Z_NEAR_DIST, CONFIG_DRAWDIST, &proj);
+
+    vec3_t scale = (vec3_t){1.0f, -1.0f, 1.0f};
+    mat4x4_t scale_mat;
+    PFM_Mat4x4_MakeScale(scale.x, scale.y, scale.z, &scale_mat);
+
+    mat4x4_t proj_flipped;
+    PFM_Mat4x4_Mult4x4(&scale_mat, &proj, &proj_flipped);
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SetProj,
+        .nargs = 1,
+        .args = { R_PushArg(&proj_flipped, sizeof(proj_flipped)) },
+    });
+
+    /* Update our last timestamp */
+    cam->prev_frame_ts = SDL_GetTicks();
+}
+
 void Camera_TickFinishOrthographic(struct camera *cam, vec2_t bot_left, vec2_t top_right)
 {
     mat4x4_t view, proj;

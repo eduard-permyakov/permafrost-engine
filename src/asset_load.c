@@ -37,7 +37,9 @@
 #include "entity.h"
 #include "main.h"
 
+#include "render/public/render.h"
 #include "render/public/render_al.h"
+#include "render/public/render_ctrl.h"
 #include "anim/public/anim.h"
 #include "game/public/game.h"
 #include "lib/public/attr.h"
@@ -174,6 +176,31 @@ fail:
     return false;
 }
 
+static void al_render_to_texture(struct shared_resource *res)
+{
+    mat4x4_t model;
+    PFM_Mat4x4_Identity(&model);
+    vec3_t scale = (vec3_t){1.0f, 1.0f, 1.0f};
+
+    struct obb obb;
+    Entity_CurrentOBBFrom(&res->aabb, model, scale, &obb);
+
+    struct ent_anim_rstate rstate;
+    A_GetDefaultPoseRenderState(res->anim_private, &rstate.njoints,
+        rstate.curr_pose, &rstate.inv_bind_pose);
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawModelToTexture,
+        .nargs = 5,
+        .args = {
+            (void*)res->render_private,
+            R_PushArg(&obb, sizeof(obb)),
+            R_PushArg(&rstate, sizeof(rstate)),
+            R_PushArg(res->filename, strlen(res->filename) + 1)
+        }
+    });
+}
+
 static bool al_get_resource(const char *path, const char *basedir, 
                             const char *pfobj_name, struct shared_resource *out)
 {
@@ -225,6 +252,8 @@ static bool al_get_resource(const char *path, const char *basedir,
     k = kh_put(entity_res, s_name_resource_table, pf_strdup(path), &put_ret);
     assert(put_ret != -1 && put_ret != 0);
     kh_value(s_name_resource_table, k) = *out;
+
+    al_render_to_texture(out);
 
     SDL_RWclose(stream);
     return true;

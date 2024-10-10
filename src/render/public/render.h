@@ -57,6 +57,7 @@ struct nk_draw_list;
 struct map_resolution;
 struct obb;
 struct aabb;
+struct ent_anim_rstate;
 
 enum render_pass{
     RENDER_PASS_DEPTH,
@@ -144,6 +145,14 @@ void   R_GL_SetLightPos(const vec3_t *pos);
  */
 void   R_GL_DrawSkeleton(uint32_t uid, const struct skeleton *skel, 
                          const struct camera *cam);
+
+/* ---------------------------------------------------------------------------
+ * Render the model to a texture and save the output texture to the specified
+ * key.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_DrawModelToTexture(const void *render_private, const struct obb *obb, 
+                               struct ent_anim_rstate *anim_state, const char *key);
 
 /* ---------------------------------------------------------------------------
  * Debugging utility to draw X(red), Y(green), Z(blue) axes at the origin

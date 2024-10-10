@@ -46,6 +46,7 @@
 
 struct pfobj_hdr;
 struct skeleton;
+struct anim_data;
 
 enum anim_mode{
     ANIM_MODE_LOOP,
@@ -80,6 +81,14 @@ void                   A_SetActiveClip(uint32_t uid, const char *name,
 void                   A_GetRenderState(uint32_t uid, size_t *out_njoints, 
                                         mat4x4_t *out_curr_pose, 
                                         const mat4x4_t **out_inv_bind_pose);
+
+/* ---------------------------------------------------------------------------
+ * Retreive a copy of the state of the first sample of the first animation clip.
+ * ---------------------------------------------------------------------------
+ */
+void                   A_GetDefaultPoseRenderState(struct anim_data *data, size_t *out_njoints,
+                                                   mat4x4_t *out_curr_pose, 
+                                                   const mat4x4_t **out_inv_bind_pose);
 
 /* ---------------------------------------------------------------------------
  * Simple utility to get a reference to the skeleton structure in its' default

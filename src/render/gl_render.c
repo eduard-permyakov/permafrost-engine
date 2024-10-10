@@ -42,6 +42,7 @@
 #include "gl_assert.h"
 #include "gl_perf.h"
 #include "gl_state.h"
+#include "gl_texture.h"
 #include "public/render.h"
 #include "../entity.h"
 #include "../camera.h"
@@ -65,6 +66,8 @@
 #define ARR_SIZE(a)                 (sizeof(a)/sizeof(a[0]))
 #define MAX(a, b)                   ((a) > (b) ? (a) : (b))
 #define MIN(a, b)                   ((a) < (b) ? (a) : (b))
+#define BG_CLR                      ((GLfloat[4]){200/256.0f, 215/256.0f, 215/256.0f, 1.0f})
+#define MODEL_TEX_DIM               (256)
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -503,6 +506,112 @@ void R_GL_DrawSkeleton(uint32_t uid, const struct skeleton *skel, const struct c
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
     PF_FREE(vbuff);
+
+    GL_ASSERT_OK();
+    GL_PERF_RETURN_VOID();
+}
+
+void R_GL_DrawModelToTexture(const void *render_private, const struct obb *obb, 
+                             struct ent_anim_rstate *anim_state, const char *key)
+{
+    GL_PERF_ENTER();
+    ASSERT_IN_RENDER_THREAD();
+    const struct render_private *priv = render_private;
+
+    /* Save GL state */
+    GLint saved_viewport[4];
+    GLint saved_fb, saved_rb;
+    GLboolean saved_depth_test_enabled;
+
+    glGetIntegerv(GL_VIEWPORT, saved_viewport);
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &saved_fb);
+    glGetIntegerv(GL_RENDERBUFFER_BINDING, &saved_rb);
+    glGetBooleanv(GL_DEPTH_TEST, &saved_depth_test_enabled);
+
+    /* Create camera and model matrix */
+    mat4x4_t model;
+    PFM_Mat4x4_Identity(&model);
+
+    vec3_t cam_pos = (vec3_t){
+        obb->half_lengths[0] * 2 + 2.5f,
+        obb->half_lengths[1] * 2 + 2.5f,
+        obb->half_lengths[2] * 2 + 2.5f
+    };
+    vec3_t center = (vec3_t){0.0f, obb->half_lengths[1], 0.0f};
+    vec3_t delta, cam_dir;
+    PFM_Vec3_Sub(&center, &cam_pos, &delta);
+    PFM_Vec3_Normal(&delta, &cam_dir);
+
+    struct camera *cam = Camera_New();
+    Camera_SetPos(cam, cam_pos);
+    Camera_SetDir(cam, cam_dir);
+
+    /* Create texture object */
+    GLuint tex;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, MODEL_TEX_DIM, MODEL_TEX_DIM, 
+        0, GL_RGB, GL_UNSIGNED_BYTE, 0);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+    /* Create framebuffer object */
+    GLuint fb;
+    glGenFramebuffers(1, &fb);
+    glBindFramebuffer(GL_FRAMEBUFFER, fb);
+
+    GLuint depth_rb;
+    glGenRenderbuffers(1, &depth_rb);
+    glBindRenderbuffer(GL_RENDERBUFFER, depth_rb);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, MODEL_TEX_DIM, MODEL_TEX_DIM);
+
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_rb);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, tex, 0);
+
+    GLenum draw_buffs[1] = {GL_COLOR_ATTACHMENT0};
+    glDrawBuffers(ARR_SIZE(draw_buffs), draw_buffs);
+    assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+
+    /* Clear buffers */
+    glEnable(GL_DEPTH_TEST);
+    glViewport(0, 0, MODEL_TEX_DIM, MODEL_TEX_DIM);
+    glClearColor(BG_CLR[0], BG_CLR[1], BG_CLR[2], BG_CLR[3]);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    /* Render to texture */
+    bool translucent = false;
+    if(anim_state) {
+        mat4x4_t tmp, normal;
+        PFM_Mat4x4_Inverse((mat4x4_t*)&model, &tmp);
+        PFM_Mat4x4_Transpose(&tmp, &normal);
+
+        R_GL_SetAnimUniforms((void*)anim_state->inv_bind_pose, anim_state->curr_pose, 
+            &normal, &anim_state->njoints);
+    }
+    const char *shader = NULL;
+    if(anim_state) {
+        shader = "mesh.animated.textured-phong";
+    }else{
+        shader = "mesh.static.textured-phong";
+    }
+    R_GL_Shader_Install(shader);
+    Camera_TickFinishPerspectiveUpsideDown(cam);
+    R_GL_Draw(priv, (mat4x4_t*)&model, &translucent);
+    R_GL_Texture_AddExisting(key, tex);
+
+    /* Cleanup */
+    Camera_Free(cam);
+    glDeleteFramebuffers(1, &fb);
+    glDeleteRenderbuffers(1, &depth_rb);
+
+    /* Restore GL state */
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glViewport(saved_viewport[0], saved_viewport[1], saved_viewport[2], saved_viewport[3]);
+    glBindFramebuffer(GL_FRAMEBUFFER, saved_fb);
+    glBindRenderbuffer(GL_RENDERBUFFER, saved_rb);
+    if(!saved_depth_test_enabled) {
+        glDisable(GL_DEPTH_TEST);
+    }
 
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();

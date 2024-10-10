@@ -78,6 +78,7 @@ bool R_GL_Texture_Load(const char *basedir, const char *name, GLuint *out);
 void R_GL_Texture_Free(const char *basedir, const char *name);
 void R_GL_Texture_GetOrLoad(const char *basedir, const char *name, GLuint *out);
 bool R_GL_Texture_GetForName(const char *basedir, const char *name, GLuint *out);
+bool R_GL_Texture_GetForNameUnqualified(const char *name, GLuint *out);
 void R_GL_Texture_GetSize(GLuint texid, int *out_w, int *out_h, int *out_d);
 bool R_GL_Texture_AddExisting(const char *name, GLuint id);
 
