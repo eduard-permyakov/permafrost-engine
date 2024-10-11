@@ -1478,9 +1478,13 @@ bool G_Init(void)
 
     R_PushCmd((struct rcmd){ R_GL_WaterInit, 0 });
 
+    G_SetLightPos((vec3_t){120.0f, 150.0f, 120.0f});
+    G_SetAmbientLightColor((vec3_t){1.0f, 1.0f, 1.0f}); 
+    G_SetEmitLightColor((vec3_t){1.0f, 1.0f, 1.0f});
+    G_SetSkybox("", "");
+
     s_gs.prev_tick_map = NULL;
     s_gs.curr_ws_idx = 0;
-    s_gs.light_pos = (vec3_t){120.0f, 150.0f, 120.0f};
     s_gs.ss = G_RUNNING;
     s_gs.requested_ss = G_RUNNING;
 
@@ -2643,6 +2647,71 @@ void G_SetLightPos(vec3_t pos)
     });
 }
 
+void G_SetAmbientLightColor(vec3_t color)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    s_gs.ambient_light_color = color;
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SetAmbientLightColor,
+        .nargs = 1,
+        .args = { R_PushArg(&color, sizeof(color)) },
+    });
+}
+
+vec3_t G_GetAmbientLightColor(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    return s_gs.ambient_light_color;
+}
+
+void G_SetEmitLightColor(vec3_t color)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    s_gs.emit_light_color = color;
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SetLightEmitColor,
+        .nargs = 1,
+        .args = { R_PushArg(&color, sizeof(color)) },
+    });
+}
+
+vec3_t G_GetEmitLightColor(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    return s_gs.emit_light_color;
+}
+
+void G_SetSkybox(const char *dir, const char *extension)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    pf_strlcpy(s_gs.skybox_directory, dir, sizeof(s_gs.skybox_directory));
+    pf_strlcpy(s_gs.skybox_extension, extension, sizeof(s_gs.skybox_extension));
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SkyboxFree,
+        .nargs = 0,
+        .args = {}
+    });
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SkyboxLoad,
+        .nargs = 2,
+        .args = {
+            R_PushArg(dir, strlen(dir)),
+            R_PushArg(extension, strlen(extension)),
+        }
+    });
+}
+
+void G_GetSkybox(const char **dir, const char **extension)
+{
+    ASSERT_IN_MAIN_THREAD();
+    *dir = s_gs.skybox_directory;
+    *extension = s_gs.skybox_extension;
+}
+
 vec3_t G_GetLightPos(void)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -2904,6 +2973,28 @@ bool G_SaveGlobalState(SDL_RWops *stream)
     };
     CHK_TRUE_RET(Attr_Write(stream, &light_pos, "light_pos"));
 
+    struct attr ambient_light_color = (struct attr){
+        .type = TYPE_VEC3, 
+        .val.as_vec3 = s_gs.ambient_light_color
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &ambient_light_color, "ambient_light_color"));
+
+    struct attr emit_light_color = (struct attr){
+        .type = TYPE_VEC3, 
+        .val.as_vec3 = s_gs.emit_light_color
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &emit_light_color, "emit_light_color"));
+
+    struct attr skybox_directory = (struct attr){ .type = TYPE_STRING, };
+    pf_snprintf(skybox_directory.val.as_string, sizeof(skybox_directory.val.as_string), 
+        "%s", s_gs.skybox_directory);
+    CHK_TRUE_RET(Attr_Write(stream, &skybox_directory, "skybox_directory"));
+
+    struct attr skybox_extension = (struct attr){ .type = TYPE_STRING, };
+    pf_snprintf(skybox_extension.val.as_string, sizeof(skybox_extension.val.as_string), 
+        "%s", s_gs.skybox_extension);
+    CHK_TRUE_RET(Attr_Write(stream, &skybox_extension, "skybox_extension"));
+
     struct attr num_factions = (struct attr){
         .type = TYPE_INT, 
         .val.as_int = g_num_factions()
@@ -3068,6 +3159,21 @@ bool G_LoadGlobalState(SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_VEC3);
     G_SetLightPos(attr.val.as_vec3);
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC3);
+    G_SetAmbientLightColor(attr.val.as_vec3);
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC3);
+    G_SetEmitLightColor(attr.val.as_vec3);
+
+    struct attr dir, ext;
+    CHK_TRUE_RET(Attr_Parse(stream, &dir, true));
+    CHK_TRUE_RET(dir.type == TYPE_STRING);
+    CHK_TRUE_RET(Attr_Parse(stream, &ext, true));
+    CHK_TRUE_RET(ext.type == TYPE_STRING);
+    G_SetSkybox(dir.val.as_string, ext.val.as_string);
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);

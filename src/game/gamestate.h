@@ -72,6 +72,18 @@ struct gamestate{
      */
     vec3_t                  light_pos;
     /*-------------------------------------------------------------------------
+     * Cache of currently set lighting parameters.
+     *-------------------------------------------------------------------------
+     */
+    vec3_t                  ambient_light_color;
+    vec3_t                  emit_light_color;
+    /*-------------------------------------------------------------------------
+     * Cache of skybox state.
+     *-------------------------------------------------------------------------
+     */
+    char                    skybox_directory[256];
+    char                    skybox_extension[16];
+    /*-------------------------------------------------------------------------
      * Boolean to disable rendering of healthbars. Overrides the user-modifiable
      * setting.
      *-------------------------------------------------------------------------

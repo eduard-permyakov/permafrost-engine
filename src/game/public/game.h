@@ -200,6 +200,13 @@ void            G_SetLightPos(vec3_t pos);
 vec3_t          G_GetLightPos(void);
 void            G_SetHideHealthbars(bool on);
 
+void            G_SetAmbientLightColor(vec3_t color);
+vec3_t          G_GetAmbientLightColor(void);
+void            G_SetEmitLightColor(vec3_t color);
+vec3_t          G_GetEmitLightColor(void);
+void            G_SetSkybox(const char *dir, const char *extension);
+void            G_GetSkybox(const char **dir, const char **extension);
+
 bool            G_SaveGlobalState(SDL_RWops *stream);
 bool            G_LoadGlobalState(SDL_RWops *stream);
 bool            G_SaveEntityState(SDL_RWops *stream);

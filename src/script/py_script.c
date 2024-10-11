@@ -160,6 +160,7 @@ static PyObject *PyPf_get_resource_stored(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_resource_capacity(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_resource_icon(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_resource_icon(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_render_settings(PyObject *self);
 static PyObject *PyPf_get_factions_list(PyObject *self);
 static PyObject *PyPf_add_faction(PyObject *self, PyObject *args);
 static PyObject *PyPf_remove_faction(PyObject *self, PyObject *args);
@@ -517,6 +518,10 @@ static PyMethodDef pf_module_methods[] = {
     {"get_resource_icon",
     (PyCFunction)PyPf_get_resource_icon, METH_VARARGS,
     "Returns an image path (stirng) that is currently set to be used as the icon for the specified resource name."},
+
+    {"get_render_settings",
+    (PyCFunction)PyPf_get_render_settings, METH_VARARGS,
+    "Returns a dictionary with the current render settings."},
 
     {"get_factions_list",
     (PyCFunction)PyPf_get_factions_list, METH_NOARGS,
@@ -983,11 +988,7 @@ static PyObject *PyPf_set_ambient_light_color(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    R_PushCmd((struct rcmd){
-        .func = R_GL_SetAmbientLightColor,
-        .nargs = 1,
-        .args = { R_PushArg(&color, sizeof(color)) },
-    });
+    G_SetAmbientLightColor(color);
     Py_RETURN_NONE;
 }
 
@@ -999,11 +1000,7 @@ static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    R_PushCmd((struct rcmd){
-        .func = R_GL_SetLightEmitColor,
-        .nargs = 1,
-        .args = { R_PushArg(&color, sizeof(color)) },
-    });
+    G_SetEmitLightColor(color);
     Py_RETURN_NONE;
 }
 
@@ -1507,19 +1504,7 @@ static PyObject *PyPf_set_skybox(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    R_PushCmd((struct rcmd){
-        .func = R_GL_SkyboxFree,
-        .nargs = 0,
-        .args = {}
-    });
-    R_PushCmd((struct rcmd){
-        .func = R_GL_SkyboxLoad,
-        .nargs = 2,
-        .args = {
-            R_PushArg(dir, strlen(dir)),
-            R_PushArg(extension, strlen(extension)),
-        }
-    });
+    G_SetSkybox(dir, extension);
     Py_RETURN_NONE;
 }
 
@@ -1775,6 +1760,57 @@ static PyObject *PyPf_get_resource_icon(PyObject *self, PyObject *args)
     if(!path)
         Py_RETURN_NONE;
     return PyString_FromString(path);
+}
+
+static PyObject *PyPf_get_render_settings(PyObject *self)
+{
+    PyObject *curr;
+    vec3_t light_pos = G_GetLightPos();
+    vec3_t ambient_clr = G_GetAmbientLightColor();
+    vec3_t emit_clr = G_GetEmitLightColor();
+    const char *skybox_dir, *skybox_ext;
+    G_GetSkybox(&skybox_dir, &skybox_ext);
+
+    PyObject *ret = PyDict_New();
+    if(!ret)
+        goto fail;
+
+    curr = Py_BuildValue("(fff)", light_pos.x, light_pos.y, light_pos.z);
+    if(!curr)
+        goto fail;
+    if(0 != PyDict_SetItemString(ret, "emit_light_pos", curr)) {
+        Py_DECREF(curr);
+        goto fail;
+    }
+
+    curr = Py_BuildValue("(fff)", ambient_clr.x, ambient_clr.y, ambient_clr.z);
+    if(!curr)
+        goto fail;
+    if(0 != PyDict_SetItemString(ret, "ambient_light_color", curr)) {
+        Py_DECREF(curr);
+        goto fail;
+    }
+
+    curr = Py_BuildValue("(fff)", emit_clr.x, emit_clr.y, emit_clr.z);
+    if(!curr)
+        goto fail;
+    if(0 != PyDict_SetItemString(ret, "emit_light_color", curr)) {
+        Py_DECREF(curr);
+        goto fail;
+    }
+
+    curr = Py_BuildValue("(ss)", skybox_dir, skybox_ext);
+    if(!curr)
+        goto fail;
+    if(0 != PyDict_SetItemString(ret, "skybox", curr)) {
+        Py_DECREF(curr);
+        goto fail;
+    }
+    return ret;
+
+fail:
+    Py_XDECREF(ret);
+    return NULL;
 }
 
 static PyObject *PyPf_get_factions_list(PyObject *self)
