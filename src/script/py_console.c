@@ -39,6 +39,7 @@
 #include <parsetok.h>
 #include <errcode.h>
 
+#include "py_console.h"
 #include "../ui.h"
 #include "../event.h"
 #include "../lib/public/lru_cache.h"
@@ -57,6 +58,7 @@ extern grammar _PyParser_Grammar;
 #define CONSOLE_HIST_SIZE (1024)
 #define MAX_LINES         (256)
 #define MIN(a, b)         ((a) < (b) ? (a) : (b))
+#define CONSOLE_HOTKEY    (SDL_SCANCODE_F12)
 
 enum line_type{
     LINE_STDOUT,
@@ -458,6 +460,14 @@ static void on_update(void *user, void *event)
     }
 }
 
+static void on_keydown(void *user, void *event)
+{
+    SDL_Event *e = (SDL_Event*)event;
+    if(e->key.keysym.scancode == CONSOLE_HOTKEY) {
+        S_Console_ToggleShown();
+    }
+}
+
 static void print_welcome(void)
 {
     const char *version = Py_GetVersion();
@@ -488,6 +498,7 @@ bool S_Console_Init(void)
     s_shown = false;
     memset(s_inputbuff, 0, sizeof(s_inputbuff));
     E_Global_Register(EVENT_UPDATE_START, on_update, NULL, G_ALL);
+    E_Global_Register(SDL_KEYDOWN, on_keydown, NULL, G_ALL);
 
     vec_str_init(&s_multilines);
 
@@ -519,10 +530,16 @@ void S_Console_Shutdown(void)
     vec_str_destroy(&s_multilines);
     lru_hist_destroy(&s_history);
     E_Global_Unregister(EVENT_UPDATE_START, on_update);
+    E_Global_Unregister(SDL_KEYDOWN, on_keydown);
 }
 
 void S_Console_Show(void)
 {
     s_shown = true;
+}
+
+void S_Console_ToggleShown(void)
+{
+    s_shown = !s_shown;
 }
 

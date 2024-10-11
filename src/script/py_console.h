@@ -41,6 +41,7 @@
 bool S_Console_Init(void);
 void S_Console_Shutdown(void);
 void S_Console_Show(void);
+void S_Console_ToggleShown(void);
 
 #endif
 
