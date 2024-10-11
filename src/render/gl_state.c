@@ -229,8 +229,10 @@ static void uval_composite_install(GLuint shader_prog, const char *uname, const 
             pf_snprintf(uname_full, sizeof(uname_full), "%s[%d].%s", uname, i, curr->name);
             GLuint loc = glGetUniformLocation(shader_prog, uname_full);
 
-            if(loc == ((GLuint)-1))
+            if(loc == ((GLuint)-1)) {
+                curr++;
                 continue;
+            }
 
             switch(curr->type) {
             case UTYPE_FLOAT:
