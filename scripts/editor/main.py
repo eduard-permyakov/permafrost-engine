@@ -78,7 +78,7 @@ else:
     pf.load_map_string(globals.active_map.pfmap_str(), update_navgrid=False)
 
 if len(sys.argv) > 2:
-    globals.active_objects_list, = pf.load_scene(sys.argv[2], update_navgrid=False)
+    globals.active_objects_list, _ = pf.load_scene(sys.argv[2], update_navgrid=False)
     globals.scene_filename = sys.argv[2]
     for obj in globals.active_objects_list:
         obj.selectable = True
