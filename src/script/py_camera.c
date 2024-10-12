@@ -35,10 +35,12 @@
 
 #include "py_camera.h"
 #include "py_pickle.h"
+#include "public/script.h"
 #include "../camera.h"
 #include "../pf_math.h"
 #include "../map/public/map.h"
 #include "../lib/public/SDL_vec_rwops.h"
+#include "../lib/public/pf_string.h"
 #include "../game/public/game.h"
 
 #define CAM_DEFAULT_SPEED   (0.20f)
@@ -51,6 +53,7 @@ typedef struct {
     PyObject_HEAD
     struct camera *cam;
     enum cam_mode  mode;
+    const char    *name;
 }PyCameraObject;
 
 static PyObject *PyCamera_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
@@ -62,6 +65,8 @@ static PyObject *PyCamera_pickle(PyCameraObject *self, PyObject *args, PyObject 
 static PyObject *PyCamera_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 static PyObject *PyCamera_get_mode(PyCameraObject *self, void *closure);
+static PyObject *PyCamera_get_name(PyCameraObject *self, void *closure);
+static int       PyCamera_set_name(PyCameraObject *self, PyObject *value, void *closure);
 static PyObject *PyCamera_get_pos(PyCameraObject *self, void *closure);
 static int       PyCamera_set_pos(PyCameraObject *self, PyObject *value, void *closure);
 static PyObject *PyCamera_get_dir(PyCameraObject *self, void *closure);
@@ -79,6 +84,7 @@ static int       PyCamera_set_sensitivity(PyCameraObject *self, PyObject *value,
 /*****************************************************************************/
 
 static PyObject *s_active_cam = NULL;
+static PyObject *s_loaded;
 
 static PyMethodDef PyCamera_methods[] = {
     {"center_over_location", 
@@ -102,6 +108,10 @@ static PyGetSetDef PyCamera_getset[] = {
     (getter)PyCamera_get_mode, NULL,
     "The mode determines which controller is installed when the camera is activated. "
     "Can be one of pf.CAM_MODE_RTS, pf.CAM_MODE_FPS, pf.CAM_MODE_FREE",
+    NULL},
+    {"name",
+    (getter)PyCamera_get_name, (setter)PyCamera_set_name,
+    "The user-provided name string for the camera.", 
     NULL},
     {"position",
     (getter)PyCamera_get_pos, (setter)PyCamera_set_pos,
@@ -157,6 +167,7 @@ static PyTypeObject PyCamera_type = {
     "in its' constructor:                                           \n"
     "                                                               \n"
     "  - mode {pf.CAM_MODE_RTS, pf.CAM_MODE_FPS, pf.CAM_MODE_FREE}  \n"
+    "  - name (string)                                              \n"
     "  - position (tuple of 3 floats)                               \n"
     "  - pitch (float)                                              \n"
     "  - yaw (float)                                                \n"
@@ -200,14 +211,23 @@ static PyObject *PyCamera_new(PyTypeObject *type, PyObject *args, PyObject *kwds
         return NULL;
     }
 
-    static char *kwlist[] = {"mode", "position", "pitch", "yaw", "speed", "sensitivity", NULL};
+    static char *kwlist[] = {"name", "mode", "position", "pitch", "yaw", 
+        "speed", "sensitivity", NULL};
+    const char *name = NULL;
     enum cam_mode mode = CAM_MODE_FREE;
     PyObject *obj;
     float a, b, c, d;
 
-    if(!PyArg_ParseTupleAndKeywords(args, kwds, "|iOffff", kwlist, &mode, &obj, &a, &b, &c, &d)) {
+    if(!PyArg_ParseTupleAndKeywords(args, kwds, "|siOffff", kwlist, &name, &mode, 
+        &obj, &a, &b, &c, &d)) {
         assert(PyErr_Occurred());
         return NULL;
+    }
+
+    if(name) {
+        self->name = pf_strdup(name);
+    }else{
+        self->name = NULL;
     }
 
     self->mode = mode;
@@ -221,12 +241,14 @@ static void PyCamera_dealloc(PyCameraObject *self)
     if(self->cam != G_GetActiveCamera()) {
         Camera_Free(self->cam);
     }
+    PF_FREE(self->name);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
 static int PyCamera_init(PyCameraObject *self, PyObject *args, PyObject *kwds)
 {
-    static char *kwlist[] = {"mode", "position", "pitch", "yaw", "speed", "sensitivity", NULL};
+    static char *kwlist[] = {"name", "mode", "position", "pitch", "yaw", 
+        "speed", "sensitivity", NULL};
 
     PyObject *pos_tuple = NULL;
     vec3_t pos = Camera_GetPos(self->cam);
@@ -236,9 +258,10 @@ static int PyCamera_init(PyCameraObject *self, PyObject *args, PyObject *kwds)
     float yaw = Camera_GetYaw(self->cam);
     float speed = CAM_DEFAULT_SPEED;
     float sens = CAM_DEFAULT_SENS;
+    const char *name = NULL;
 
-    if(!PyArg_ParseTupleAndKeywords(args, kwds, "|iOffff", kwlist, 
-        &mode, &pos_tuple, &pitch, &yaw, &speed, &sens)) {
+    if(!PyArg_ParseTupleAndKeywords(args, kwds, "|siOffff", kwlist, 
+        &name, &mode, &pos_tuple, &pitch, &yaw, &speed, &sens)) {
         assert(PyErr_Occurred());
         return -1;
     }
@@ -323,6 +346,12 @@ static PyObject *PyCamera_pickle(PyCameraObject *self, PyObject *args, PyObject 
     Py_DECREF(active);
     CHK_TRUE(status, fail_pickle);
 
+    PyObject *name = PyString_FromString(self->name);
+    CHK_TRUE(name, fail_pickle);
+    status = S_PickleObjgraph(name, stream);
+    Py_DECREF(name);
+    CHK_TRUE(status, fail_pickle);
+
     PyObject *mode = PyInt_FromLong(self->mode);
     CHK_TRUE(mode, fail_pickle);
     status = S_PickleObjgraph(mode, stream);
@@ -386,6 +415,9 @@ static PyObject *PyCamera_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
     PyObject *active = S_UnpickleObjgraph(stream);
     SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
+    PyObject *name = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
     PyObject *mode = S_UnpickleObjgraph(stream);
     SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
@@ -405,6 +437,7 @@ static PyObject *PyCamera_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
     SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
     if(!active
+    || !name
     || !mode
     || !position
     || !pitch
@@ -429,7 +462,8 @@ static PyObject *PyCamera_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
         if(!cam_args)
             goto fail_unpickle;
 
-        PyObject *cam_kwargs = Py_BuildValue("{s:O,s:O,s:O,s:O,s:O,s:O}", 
+        PyObject *cam_kwargs = Py_BuildValue("{s:O,s:O,s:O,s:O,s:O,s:O,s:O}", 
+            "name",         name,
             "mode",         mode,
             "position",     position,
             "pitch",        pitch,
@@ -454,6 +488,7 @@ static PyObject *PyCamera_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
 
 fail_unpickle:
     Py_XDECREF(active);
+    Py_XDECREF(name);
     Py_XDECREF(mode);
     Py_XDECREF(position);
     Py_XDECREF(pitch);
@@ -479,6 +514,33 @@ static PyObject *PyCamera_get_mode(PyCameraObject *self, void *closure)
     return PyInt_FromLong(self->mode);
 }
 
+static PyObject *PyCamera_get_name(PyCameraObject *self, void *closure)
+{
+    if(!self->name) {
+        Py_RETURN_NONE;
+    }
+    return PyString_FromString(self->name);
+}
+
+static int PyCamera_set_name(PyCameraObject *self, PyObject *value, void *closure)
+{
+    if(value == Py_None) {
+        PF_FREE(self->name);
+        self->name = NULL;
+        return 0;
+    }
+
+    if(!PyString_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Value must be a string or none.");
+        return -1;
+    }
+
+    char *str = PyString_AS_STRING(value);
+    PF_FREE(self->name);
+    self->name = pf_strdup(str);
+    return 0;
+}
+
 static PyObject *PyCamera_get_pos(PyCameraObject *self, void *closure)
 {
     vec3_t pos = Camera_GetPos(self->cam);
@@ -492,7 +554,7 @@ static int PyCamera_set_pos(PyCameraObject *self, PyObject *value, void *closure
 
     if(!PyTuple_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a tuple.");
-        return false;
+        return -1;
     }
 
     vec3_t newpos;
@@ -595,6 +657,10 @@ void S_Camera_PyRegister(PyObject *module)
 
 bool S_Camera_Init(void)
 {
+    s_loaded = PyList_New(0);
+    if(!s_loaded)
+        return false;
+
     s_active_cam = PyCamera_type.tp_alloc(&PyCamera_type, 0);
     if(!s_active_cam) {
         assert(PyErr_Occurred());
@@ -609,7 +675,7 @@ bool S_Camera_Init(void)
 
 void S_Camera_Shutdown(void)
 {
-    /* No-op for now */
+    Py_CLEAR(s_loaded);
 }
 
 void S_Camera_Clear(void)
@@ -640,5 +706,43 @@ bool S_Camera_SetActive(PyObject *cam)
     PyCameraObject *pycam = (PyCameraObject*)s_active_cam;
     G_SetActiveCamera(pycam->cam, pycam->mode);
     return true;
+}
+
+script_opaque_t S_Camera_ObjFromAtts(const char *name, vec3_t pos, float pitch, float yaw)
+{
+    PyObject *kwargs = Py_BuildValue("{s:s, s:(fff), s:f, s:f}",
+        "name", name,
+        "position", pos.x, pos.y, pos.z,
+        "pitch", pitch,
+        "yaw", yaw);
+    if(!kwargs)
+        return NULL;
+
+    PyObject *args = PyTuple_New(0);
+    if(!args) {
+        Py_DECREF(kwargs);
+        return NULL;
+    }
+        
+    PyObject *ret = PyObject_Call((PyObject*)&PyCamera_type, args, kwargs);
+    Py_DECREF(kwargs);
+    Py_DECREF(args);
+
+    if(ret) {
+        PyList_Append(s_loaded, ret);
+    }
+    return ret;
+}
+
+PyObject *S_Camera_GetLoaded(void)
+{
+    PyObject *ret = s_loaded;
+    if(!ret)
+        return NULL;
+
+    s_loaded = PyList_New(0);
+    assert(s_loaded);
+
+    return ret;
 }
 

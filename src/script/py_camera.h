@@ -46,6 +46,7 @@ void      S_Camera_Clear(void);
 
 PyObject *S_Camera_GetActive(void);
 bool      S_Camera_SetActive(PyObject *cam);
+PyObject *S_Camera_GetLoaded(void);
 
 #endif
 

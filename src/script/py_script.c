@@ -284,7 +284,8 @@ static PyMethodDef pf_module_methods[] = {
     {"load_scene", 
     (PyCFunction)PyPf_load_scene, METH_VARARGS | METH_KEYWORDS,
     "Import list of entities from a PFSCENE file (specified as a path string). "
-    "Returns a tuple of the following items: list of loaded entities, list of loaded regions."},
+    "Returns a tuple of the following items: list of loaded entities, list of loaded regions, "
+    "list of loaded cameras."},
 
     {"open_url", 
     (PyCFunction)PyPf_open_url, METH_VARARGS,
@@ -1046,12 +1047,13 @@ static PyObject *PyPf_load_scene(PyObject *self, PyObject *args, PyObject *kwarg
         G_BakeNavDataForScene();
     }
 
-    PyObject *ret = PyTuple_New(2);
+    PyObject *ret = PyTuple_New(3);
     if(!ret)
         goto fail_load;
 
     PyTuple_SET_ITEM(ret, 0, S_Entity_GetLoaded());
     PyTuple_SET_ITEM(ret, 1, S_Region_GetLoaded());
+    PyTuple_SET_ITEM(ret, 2, S_Camera_GetLoaded());
     return ret;
 
 fail_load:
@@ -1882,7 +1884,7 @@ static PyObject *PyPf_add_faction(PyObject *self, PyObject *args)
     }
 
     vec3_t color = {color_ints[0], color_ints[1], color_ints[2]};
-    if(!G_AddFaction(name, color)) {
+    if(!G_AddFaction(name, color, NULL)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to add the specified faction."); 
         return NULL;
     }

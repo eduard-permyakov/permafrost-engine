@@ -2256,7 +2256,7 @@ uint32_t G_EntForGPUID(uint32_t gpuid)
     return kh_value(s_gs.gpu_id_ent_map, k);
 }
 
-bool G_AddFaction(const char *name, vec3_t color)
+bool G_AddFaction(const char *name, vec3_t color, int *out_id)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -2280,6 +2280,9 @@ bool G_AddFaction(const char *name, vec3_t color)
     }
 
     E_Global_Notify(EVENT_UPDATE_FACTION, (void*)((uintptr_t)new_fac_id), ES_ENGINE);
+    if(out_id) {
+        *out_id = new_fac_id;
+    }
     return true;
 }
 

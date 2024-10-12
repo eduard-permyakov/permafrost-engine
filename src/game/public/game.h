@@ -79,7 +79,8 @@ enum cam_mode{
 
 enum diplomacy_state{
     DIPLOMACY_STATE_PEACE,
-    DIPLOMACY_STATE_WAR
+    DIPLOMACY_STATE_WAR,
+    DIPLOMACY_STATE_MAX
 };
 
 enum simstate{
@@ -166,7 +167,7 @@ bool            G_EntityIsGarrisoned(uint32_t uid);
 void            G_FreeEntity(uint32_t uid);
 void            G_DeferredRemove(uint32_t uid);
 
-bool            G_AddFaction(const char *name, vec3_t color);
+bool            G_AddFaction(const char *name, vec3_t color, int *out_id);
 bool            G_RemoveFaction(int faction_id);
 bool            G_UpdateFaction(int faction_id, const char *name, vec3_t color, bool control);
 uint16_t        G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors, bool *out_ctrl);

@@ -47,11 +47,20 @@
 #include <assert.h>
 
 
-#define PFSCENE_VERSION (1.0)
+#define PFSCENE_VERSION_MAJOR (1)
+#define PFSCENE_VERSION_MINOR (1)
+
+#define VERSION_REACHED(_v, _major, _minor) \
+    (((_v).major > _major) || ((_v).major == _major && (_v).minor >= _minor))
 
 #define STR2(val) #val
 #define STR(val) STR2(val)
 #define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
+
+struct version{
+    int major;
+    int minor;
+};
 
 VEC_IMPL(extern, attr, struct attr)
 __KHASH_IMPL(attr, extern, kh_cstr_t, struct attr, 1, kh_str_hash_func, kh_str_hash_equal)
@@ -60,7 +69,7 @@ __KHASH_IMPL(attr, extern, kh_cstr_t, struct attr, 1, kh_str_hash_func, kh_str_h
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static bool scene_load_entity(SDL_RWops *stream)
+static bool scene_load_entity(struct version version, SDL_RWops *stream)
 {
     char line[MAX_LINE_LEN];
     char name[128];
@@ -151,7 +160,7 @@ fail_alloc:
     return false;
 }
 
-static bool scene_load_entities(SDL_RWops *stream)
+static bool scene_load_entities(struct version version, SDL_RWops *stream)
 {
     char line[MAX_LINE_LEN];
     unsigned num_ents;
@@ -161,7 +170,7 @@ static bool scene_load_entities(SDL_RWops *stream)
         goto fail_parse;
 
     for(int i = 0; i < num_ents; i++) {
-        if(!scene_load_entity(stream))
+        if(!scene_load_entity(version, stream))
             goto fail_parse;
         Sched_TryYield();
     }
@@ -171,7 +180,7 @@ fail_parse:
     return false;
 }
 
-static bool scene_load_faction(SDL_RWops *stream)
+static bool scene_load_faction(struct version version, SDL_RWops *stream)
 {
     char line[MAX_LINE_LEN];
     char name[32];
@@ -187,14 +196,38 @@ static bool scene_load_faction(SDL_RWops *stream)
     if(color.type != TYPE_VEC3)
         goto fail_parse;
 
-    G_AddFaction(name, color.val.as_vec3);
+    int new_id;
+    G_AddFaction(name, color.val.as_vec3, &new_id);
+
+    if(VERSION_REACHED(version, 1, 1)) {
+
+        struct attr controllable;
+        if(!Attr_Parse(stream, &controllable, true))
+            goto fail_parse;
+        
+        if(controllable.type != TYPE_BOOL)
+            goto fail_parse;
+
+        char names[MAX_FACTIONS][MAX_FAC_NAME_LEN];
+        vec3_t colors[MAX_FACTIONS];
+        bool ctrl[MAX_FACTIONS];
+
+        int i = 0;
+        uint16_t facs = G_GetFactions(names, colors, ctrl);
+        for(uint16_t fcopy = facs; fcopy; fcopy >>= 1, i++) {
+            if((fcopy & 0x1) && (i == new_id)) {
+                G_UpdateFaction(i, names[i], colors[i], controllable.val.as_bool);
+                break;
+            }
+        }
+    }
     return true;
 
 fail_parse:
     return false;
 }
 
-static bool scene_load_factions(SDL_RWops *stream)
+static bool scene_load_factions(struct version version, SDL_RWops *stream)
 {
     char line[MAX_LINE_LEN];
     unsigned num_factions;
@@ -204,16 +237,33 @@ static bool scene_load_factions(SDL_RWops *stream)
         goto fail_parse;
 
     for(int i = 0; i < num_factions; i++) {
-        if(!scene_load_faction(stream))
+        if(!scene_load_faction(version, stream))
             goto fail_parse;
     }
+
+    if(VERSION_REACHED(version, 1, 1)) {
+        for(int i = 0; i < num_factions * num_factions; i++) {
+
+            int faca, facb, state;
+            READ_LINE(stream, line, fail_parse);
+            if(!sscanf(line, " diplomacy %u %u %u", &faca, &facb, &state))
+                goto fail_parse;
+            if((state >= DIPLOMACY_STATE_MAX) || (faca >= MAX_FACTIONS) || (facb >= MAX_FACTIONS))
+                goto fail_parse;
+            if(faca == facb)
+                continue;
+            if(!G_SetDiplomacyState(faca, facb, state))
+                goto fail_parse;
+        }
+    }
+
     return true;
 
 fail_parse:
     return false;
 }
 
-static bool scene_load_region(SDL_RWops *stream)
+static bool scene_load_region(struct version version, SDL_RWops *stream)
 {
     char line[MAX_LINE_LEN];
     char name[128];
@@ -256,7 +306,7 @@ fail_parse:
     return false;
 }
 
-static bool scene_load_regions(SDL_RWops *stream)
+static bool scene_load_regions(struct version version, SDL_RWops *stream)
 {
     char line[MAX_LINE_LEN];
     unsigned num_regions;
@@ -266,7 +316,7 @@ static bool scene_load_regions(SDL_RWops *stream)
         goto fail_parse;
 
     for(int i = 0; i < num_regions; i++) {
-        if(!scene_load_region(stream))
+        if(!scene_load_region(version, stream))
             goto fail_parse;
     }
     return true;
@@ -275,18 +325,122 @@ fail_parse:
     return false;
 }
 
-static bool scene_load_section(SDL_RWops *stream)
+static bool scene_load_general(struct version version, SDL_RWops *stream)
+{
+    char line[MAX_LINE_LEN];
+    char skybox_dir[256], skybox_ext[256];
+
+    READ_LINE(stream, line, fail_parse);
+    if(!sscanf(line, " skybox \"%255[^\"]\" %255s", skybox_dir, skybox_ext))
+        goto fail_parse;
+
+    G_SetSkybox(skybox_dir, skybox_ext);
+
+    int r, g, b, a;
+    READ_LINE(stream, line, fail_parse);
+    if(!sscanf(line, " ambient_light_color %d %d %d %d", &r, &g, &b, &a))
+        goto fail_parse;
+
+    vec3_t ambient = (vec3_t){
+        r / 255.0f,
+        g / 255.0f,
+        b / 255.0f
+    };
+    G_SetAmbientLightColor(ambient);
+
+    READ_LINE(stream, line, fail_parse);
+    if(!sscanf(line, " emit_light_color %d %d %d %d", &r, &g, &b, &a))
+        goto fail_parse;
+
+    vec3_t emit = (vec3_t){
+        r / 255.0f,
+        g / 255.0f,
+        b / 255.0f
+    };
+    G_SetEmitLightColor(emit);
+
+    vec3_t pos;
+    READ_LINE(stream, line, fail_parse);
+    if(!sscanf(line, " emit_light_pos %f %f %f", &pos.x, &pos.y, &pos.z))
+        goto fail_parse;
+
+    G_SetLightPos(pos);
+    return true;
+
+fail_parse:
+    return false;
+}
+
+static bool scene_load_camera(struct version version, SDL_RWops *stream)
+{
+    char line[MAX_LINE_LEN];
+    char name[128];
+    struct attr attr;
+
+    READ_LINE(stream, line, fail_parse);
+    if(!sscanf(line, " camera %127s", name))
+        goto fail_parse;
+
+    if(!Attr_Parse(stream, &attr, true))
+        goto fail_parse;
+    if(attr.type != TYPE_VEC3)
+        goto fail_parse;
+    vec3_t pos = attr.val.as_vec3;
+
+    if(!Attr_Parse(stream, &attr, true))
+        goto fail_parse;
+    if(attr.type != TYPE_FLOAT)
+        goto fail_parse;
+    float pitch = attr.val.as_float;
+
+    if(!Attr_Parse(stream, &attr, true))
+        goto fail_parse;
+    if(attr.type != TYPE_FLOAT)
+        goto fail_parse;
+    float yaw = attr.val.as_float;
+
+    if(!S_Camera_ObjFromAtts(name, pos, pitch, yaw))
+        goto fail_parse;
+
+    return true;
+
+fail_parse:
+    return false;
+}
+
+static bool scene_load_cameras(struct version version, SDL_RWops *stream)
+{
+    char line[MAX_LINE_LEN];
+    unsigned num_cameras;
+
+    READ_LINE(stream, line, fail_parse);
+    if(!sscanf(line, " num_cameras %u", &num_cameras))
+        goto fail_parse;
+
+    for(int i = 0; i < num_cameras; i++) {
+        if(!scene_load_camera(version, stream))
+            goto fail_parse;
+    }
+    return true;
+
+fail_parse:
+    return false;
+}
+
+static bool scene_load_section(struct version version, SDL_RWops *stream)
 {
     char line[MAX_LINE_LEN];
     char name[MAX_LINE_LEN + 1];
 
     struct{
         const char *name;
-        bool (*func)(SDL_RWops*);
+        bool (*func)(struct version, SDL_RWops*);
     }map[] = {
+        {"general",      scene_load_general},
         {"factions",     scene_load_factions},
         {"entities",     scene_load_entities},
-        {"regions",      scene_load_regions }
+        {"regions",      scene_load_regions },
+        {"cameras",      scene_load_cameras}
     };
 
     READ_LINE(stream, line, fail_parse);
@@ -295,7 +449,7 @@ static bool scene_load_section(SDL_RWops *stream)
 
     for(int i = 0; i < ARR_SIZE(map); i++) {
         if(0 == strcmp(map[i].name, name))
-            return map[i].func(stream);
+            return map[i].func(version, stream);
     }
 
 fail_parse:
@@ -311,17 +465,18 @@ bool Scene_Load(const char *path)
     SDL_RWops *stream;
     char line[MAX_LINE_LEN];
     unsigned num_sections;
-    float version;
+    int version_major, version_minor;
 
     stream = SDL_RWFromFile(path, "r");
     if(!stream)
         goto fail_stream;
 
     READ_LINE(stream, line, fail_parse);
-    if(!sscanf(line, " version %f", &version))
+    if(!sscanf(line, " version %d.%d", &version_major, &version_minor))
         goto fail_parse;
 
-    if(version > PFSCENE_VERSION)
+    if((version_major > PFSCENE_VERSION_MAJOR)
+    || (version_major == PFSCENE_VERSION_MAJOR && version_minor > PFSCENE_VERSION_MINOR))
         goto fail_parse;
 
     READ_LINE(stream, line, fail_parse);
@@ -329,7 +484,7 @@ bool Scene_Load(const char *path)
         goto fail_parse;
 
     for(int i = 0; i < num_sections; i++) {
-        if(!scene_load_section(stream))
+        if(!scene_load_section((struct version){version_major, version_minor}, stream))
             goto fail_parse;
     }
 
