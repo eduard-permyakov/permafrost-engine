@@ -346,7 +346,7 @@ static PyObject *PyCamera_pickle(PyCameraObject *self, PyObject *args, PyObject 
     Py_DECREF(active);
     CHK_TRUE(status, fail_pickle);
 
-    PyObject *name = PyString_FromString(self->name);
+    PyObject *name = self->name ? PyString_FromString(self->name) : (Py_INCREF(Py_None), Py_None);
     CHK_TRUE(name, fail_pickle);
     status = S_PickleObjgraph(name, stream);
     Py_DECREF(name);
@@ -462,14 +462,17 @@ static PyObject *PyCamera_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
         if(!cam_args)
             goto fail_unpickle;
 
-        PyObject *cam_kwargs = Py_BuildValue("{s:O,s:O,s:O,s:O,s:O,s:O,s:O}", 
-            "name",         name,
+        PyObject *cam_kwargs = Py_BuildValue("{s:O,s:O,s:O,s:O,s:O,s:O}", 
             "mode",         mode,
             "position",     position,
             "pitch",        pitch,
             "yaw",          yaw,
             "speed",        speed,
-            "sensitivity",  sensitivity);
+            "sensitivity",  sensitivity
+        );
+        if(name != Py_None) {
+            PyDict_SetItemString(cam_kwargs, "name", name);
+        }
         if(!cam_kwargs) {
             Py_DECREF(cam_args);
             goto fail_unpickle;
