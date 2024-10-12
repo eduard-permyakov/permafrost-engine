@@ -436,6 +436,19 @@ void Perf_FinishTick(void)
             continue;
 
         struct perf_state *curr = &kh_val(s_thread_state_table, k);
+        /* The stack should always be empty, unless there is 
+         * a missing pop for prior push. In that case, be nice,
+         * and dump some info about where to find it.
+         */
+        while(vec_size(&curr->perf_stack) > 0) {
+
+            uint32_t idx = vec_idx_pop(&curr->perf_stack);
+            assert(idx < vec_size(&curr->perf_trees[curr->perf_tree_idx]));
+            struct perf_entry *pe = &vec_AT(&curr->perf_trees[curr->perf_tree_idx], idx);
+
+            const char *name = name_for_id(curr, pe->name_id);
+            fprintf(stderr, "Unmatched perf marker: %s\n", name);
+        }
         assert(vec_size(&curr->perf_stack) == 0);
 
         curr->perf_tree_idx = (curr->perf_tree_idx + 1) % NFRAMES_LOGGED;
