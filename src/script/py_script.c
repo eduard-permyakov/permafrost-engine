@@ -3023,7 +3023,12 @@ static PyObject *PyPf_ensure_directory(PyObject *self, PyObject *args)
     pf_snprintf(path, sizeof(path), "%s/%s", g_basepath, str);
 
 #ifdef _WIN32
-    if(CreateDirectory(path, NULL) 
+
+    size_t wlen;
+    wchar_t wpath[512];
+    mbstowcs_s(&wlen, wpath, sizeof(wpath)-1, path, strlen(path));
+
+    if(CreateDirectory(wpath, NULL) 
     || ERROR_ALREADY_EXISTS == GetLastError()) {
         Py_RETURN_NONE;
     }
