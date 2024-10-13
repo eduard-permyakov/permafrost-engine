@@ -25,6 +25,8 @@ Download the free (or donate what-you-want) demo on [itch.io](https://spb.itch.i
 ![screenshot-12](docs/images/screenshot-12.jpg)
 ![screenshot-13](docs/images/screenshot-13.jpg)
 ![screenshot-14](docs/images/screenshot-14.jpg)
+![screenshot-15](docs/images/screenshot-15.jpg)
+![screenshot-16](docs/images/screenshot-16.jpg)
 
 ## Engine Summary ##
 
