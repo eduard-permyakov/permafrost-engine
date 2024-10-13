@@ -186,8 +186,11 @@ static void al_render_to_texture(struct shared_resource *res)
     Entity_CurrentOBBFrom(&res->aabb, model, scale, &obb);
 
     struct ent_anim_rstate rstate;
-    A_GetDefaultPoseRenderState(res->anim_private, &rstate.njoints,
-        rstate.curr_pose, &rstate.inv_bind_pose);
+    bool animated = !!(res->ent_flags & ENTITY_FLAG_ANIMATED);
+    if(animated) {
+        A_GetDefaultPoseRenderState(res->anim_private, &rstate.njoints,
+            rstate.curr_pose, &rstate.inv_bind_pose);
+    }
 
     R_PushCmd((struct rcmd){
         .func = R_GL_DrawModelToTexture,
@@ -195,7 +198,7 @@ static void al_render_to_texture(struct shared_resource *res)
         .args = {
             (void*)res->render_private,
             R_PushArg(&obb, sizeof(obb)),
-            R_PushArg(&rstate, sizeof(rstate)),
+            animated ? R_PushArg(&rstate, sizeof(rstate)) : NULL,
             R_PushArg(res->filename, strlen(res->filename) + 1)
         }
     });
