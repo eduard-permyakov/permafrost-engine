@@ -2408,16 +2408,26 @@ static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args
     }
 
     enum anim_mode mode = ANIM_MODE_LOOP; /* default */
-    PyObject *mode_obj;
+	int fps = 24;
+    PyObject *mode_obj, *fps_obj;
 
     if(kwds && (mode_obj = PyDict_GetItemString(kwds, "mode"))) {
     
         if(!PyInt_Check(mode_obj)
         || (mode = PyInt_AS_LONG(mode_obj)) > ANIM_MODE_ONCE) {
         
-            PyErr_SetString(PyExc_TypeError, "Mode kwarg must be a valid animation mode (int).");
+            PyErr_SetString(PyExc_TypeError, "'mode' kwarg must be a valid animation mode (int).");
             return NULL;
         }
+    }
+
+    if(kwds && (fps_obj = PyDict_GetItemString(kwds, "fps"))) {
+    
+        if(!PyInt_Check(fps_obj)) {
+            PyErr_SetString(PyExc_TypeError, "'fps' kwarg must be an integer.");
+            return NULL;
+        }
+		fps = PyInt_AsLong(fps_obj);
     }
 
     if(!A_HasClip(self->super.ent, clipname)) {
@@ -2432,7 +2442,7 @@ static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args
         return NULL;
     }
 
-    A_SetActiveClip(self->super.ent, clipname, mode, 24);
+    A_SetActiveClip(self->super.ent, clipname, mode, fps);
     Py_RETURN_NONE;
 }
 
