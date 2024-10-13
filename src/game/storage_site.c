@@ -671,6 +671,7 @@ bool G_StorageSite_Init(void)
 
     E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
     E_Global_Register(EVENT_UPDATE_START, on_update, NULL, G_RUNNING);
+    s_show_ui = true;
     return true;
 
 fail_eventargs:
