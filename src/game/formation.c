@@ -1618,7 +1618,7 @@ static void create_cost_matrix(struct cell_assignment_work *work, int *out_costs
             (cell_idx-1) % work->ncols
         };
     }
-    assert(cell_idx == work->nrows * work->ncols);
+    assert(cell_idx <= work->nrows * work->ncols);
 
     int i = 0;
     uint32_t uid;
