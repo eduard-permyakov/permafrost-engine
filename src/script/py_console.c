@@ -478,11 +478,13 @@ static void print_welcome(void)
 
     char *firstline = infoline;
     char *secondline = infoline;
-    while(*secondline++ != '\n');
+    while(*secondline && *secondline++ != '\n');
     *(secondline - 1) = '\0';
 
     add_history(firstline, LINE_STDOUT);
-    add_history(secondline, LINE_STDOUT);
+    if(*secondline) {
+        add_history(secondline, LINE_STDOUT);
+    }
 
     pf_snprintf(infoline, sizeof(infoline), "Welcome to the Permafrost Engine Python console.");
     add_history(infoline, LINE_STDOUT);
