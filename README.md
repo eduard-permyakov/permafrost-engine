@@ -178,6 +178,8 @@ Follow the development of Permafrost Engine and EVERGLORY on [YouTube](https://w
 
 [Indie RTS Devlog #18: Improved Map Rendering](https://www.youtube.com/watch?v=GjKUPQDtLUE)
 
+[EVERGLORY: Teaser Trailer #2 \[Indie RTS Game\]](https://youtu.be/q8bvpDb9meg)
+
 ## Comments/Questions ##
 
 Comments or questions regarding the project or the source code? E-mail: edward.permyakov@gmail.com.
