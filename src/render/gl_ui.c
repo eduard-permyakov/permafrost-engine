@@ -109,7 +109,7 @@ static void exec_draw_commands(const struct nk_draw_list *dl, GLuint shader_prog
             case NK_COMMAND_IMAGE_TEXPATH: {
 
                 stbi_set_flip_vertically_on_load(false);
-                R_GL_Texture_GetOrLoad(g_basepath, ud->texpath, (GLuint*)&cmd->texture.id);
+                R_GL_Texture_GetOrLoad(g_basepath, ud->image.texpath, (GLuint*)&cmd->texture.id);
                 stbi_set_flip_vertically_on_load(true);
                 break;
             }
