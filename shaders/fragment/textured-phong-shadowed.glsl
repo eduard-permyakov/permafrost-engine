@@ -41,7 +41,7 @@
 #define SPECULAR_SHININESS 2
 
 #define SHADOW_MAP_BIAS 0.002
-#define SHADOW_MULTIPLIER 0.7
+#define SHADOW_MULTIPLIER 0.55
 
 /*****************************************************************************/
 /* INPUTS                                                                    */
@@ -128,7 +128,7 @@ void main()
     float spec = pow(max(dot(view_dir, reflect_dir), 0.0), SPECULAR_SHININESS);
     vec3 specular = SPECULAR_STRENGTH * light_color * (spec * materials[from_vertex.mat_idx].specular_clr);
 
-    vec4 final_color = vec4( (ambient + diffuse + specular) * tex_color.xyz, 1.0);
+    vec4 final_color = vec4( (ambient * 0.55 + diffuse * 1.5 + specular * 1.5) * tex_color.xyz, 1.0);
     float shadow = shadow_factor(from_vertex.light_space_pos);
     if(shadow > 0.0) {
         o_frag_color = vec4(final_color.xyz * SHADOW_MULTIPLIER, 1.0);

@@ -53,7 +53,7 @@
 #define TERRAIN_SPECULAR    vec3(0.1, 0.1, 0.1)
 
 #define SHADOW_MAP_BIAS 0.002
-#define SHADOW_MULTIPLIER 0.7
+#define SHADOW_MULTIPLIER 0.55
 
 #define STATE_UNEXPLORED 0
 #define STATE_IN_FOG     1

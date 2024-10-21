@@ -103,6 +103,6 @@ void main()
     float spec = pow(max(dot(view_dir, reflect_dir), 0.0), SPECULAR_SHININESS);
     vec3 specular = SPECULAR_STRENGTH * light_color * (spec * materials[from_vertex.mat_idx].specular_clr);  
 
-    o_frag_color = vec4( (ambient + diffuse + specular) * tex_color.xyz, 1.0);
+    vec4 final_color = vec4( (ambient * 0.55 + diffuse * 1.5 + specular * 1.5) * tex_color.xyz, 1.0);
 }
 
