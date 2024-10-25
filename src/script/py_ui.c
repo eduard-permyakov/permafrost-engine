@@ -44,6 +44,7 @@
 #include "../lib/public/SDL_vec_rwops.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/nk_file_browser.h"
+#include "../lib/public/stb_image.h"
 #include "../game/public/game.h"
 #include "../phys/public/collision.h"
 #include "../event.h"
@@ -636,6 +637,48 @@ static int parse_float_pair(PyObject *tuple, float *out_a, float *out_b)
 
     *out_a = PyFloat_AsDouble(a);
     *out_b = PyFloat_AsDouble(b);
+    return 0;
+}
+
+static int parse_nine_patch(PyObject *tuple, struct nk_nine_slice_texpath *out)
+{
+    if(!PyTuple_Check(tuple))
+        return -1;
+
+    if(PyTuple_GET_SIZE(tuple) != 5)
+        return -1;
+
+    if(!PyString_Check(PyTuple_GET_ITEM(tuple, 0)))
+        return -1;
+
+    for(int i = 1; i < PyTuple_GET_SIZE(tuple); i++) {
+        if(!PyInt_Check(PyTuple_GET_ITEM(tuple, i)))
+            return -1;
+    }
+
+    const char *texpath = PyString_AS_STRING(PyTuple_GET_ITEM(tuple, 0));
+    pf_strlcpy(out->texpath, texpath, sizeof(out->texpath));
+
+    char path[512];
+    pf_snprintf(path, sizeof(path), "%s/%s", g_basepath, texpath);
+
+    int x, y, components;
+    int status = stbi_info(path, &x, &y, &components);
+    if(status != 1)
+        return -1;
+
+    out->w = x;
+    out->h = y;
+    out->region[0] = 0;
+    out->region[1] = 0;
+    out->region[2] = x;
+    out->region[3] = y;
+
+    out->l = PyInt_AS_LONG(PyTuple_GET_ITEM(tuple, 1));
+    out->r = PyInt_AS_LONG(PyTuple_GET_ITEM(tuple, 2));
+    out->t = PyInt_AS_LONG(PyTuple_GET_ITEM(tuple, 3));
+    out->b = PyInt_AS_LONG(PyTuple_GET_ITEM(tuple, 4));
+
     return 0;
 }
 
@@ -2334,6 +2377,9 @@ static PyObject *PyWindow_get_fixed_background(PyWindowObject *self, void *closu
 {
     if(self->style.fixed_background.type == NK_STYLE_ITEM_TEXPATH) {
         return PyString_FromString(self->style.fixed_background.data.texpath);
+    }else if(self->style.fixed_background.type == NK_STYLE_ITEM_NINE_SLICE_TEXPATH) {
+        struct nk_nine_slice_texpath data = self->style.fixed_background.data.slice_texpath;
+        return Py_BuildValue("siiii", data.texpath, data.l, data.r, data.t, data.b);
     }else{
         assert(self->style.fixed_background.type == NK_STYLE_ITEM_COLOR);
         struct nk_color clr = self->style.fixed_background.data.color;
@@ -2345,10 +2391,15 @@ static int PyWindow_set_fixed_background(PyWindowObject *self, PyObject *value, 
 {
     int r, g, b, a;
 
-    if(PyTuple_Check(value)) {
+    if(parse_nine_patch(value, &self->style.fixed_background.data.slice_texpath) == 0) {
+
+        self->style.fixed_background.type = NK_STYLE_ITEM_NINE_SLICE_TEXPATH;
+
+    }else if(PyTuple_Check(value)) {
     
         if(!PyArg_ParseTuple(value, "iiii", &r, &g, &b, &a)) {
-            PyErr_SetString(PyExc_TypeError, "Value must be a tuple of 4 integers (0-255) or a path string.");
+            PyErr_SetString(PyExc_TypeError, "Value must be a tuple of 4 integers (0-255), a path string, "
+                "or a 9-patch tuple.");
             return -1;
         }
 
@@ -2365,7 +2416,8 @@ static int PyWindow_set_fixed_background(PyWindowObject *self, PyObject *value, 
             sizeof(self->style.fixed_background.data.texpath));
     
     }else{
-        PyErr_SetString(PyExc_TypeError, "Value must be a tuple of 4 integers (0-255) or a path string.");
+        PyErr_SetString(PyExc_TypeError, "Value must be a tuple of 4 integers (0-255), a path string, "
+            "or a 9-patch tuple.");
         return -1;
     }
 

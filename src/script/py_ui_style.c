@@ -36,9 +36,11 @@
 #include "py_ui_style.h"
 #include "py_pickle.h"
 #include "../ui.h"
+#include "../main.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/SDL_vec_rwops.h"
+#include "../lib/public/stb_image.h"
 #include "../render/public/render.h"
 
 #include <string.h>
@@ -2177,6 +2179,48 @@ static int parse_rgba(PyObject *tuple, float out[4])
     return 0;
 }
 
+static int parse_nine_patch(PyObject *tuple, struct nk_nine_slice_texpath *out)
+{
+    if(!PyTuple_Check(tuple))
+        return -1;
+
+    if(PyTuple_GET_SIZE(tuple) != 5)
+        return -1;
+
+    if(!PyString_Check(PyTuple_GET_ITEM(tuple, 0)))
+        return -1;
+
+    for(int i = 1; i < PyTuple_GET_SIZE(tuple); i++) {
+        if(!PyInt_Check(PyTuple_GET_ITEM(tuple, i)))
+            return -1;
+    }
+
+    const char *texpath = PyString_AS_STRING(PyTuple_GET_ITEM(tuple, 0));
+    pf_strlcpy(out->texpath, texpath, sizeof(out->texpath));
+
+    char path[512];
+    pf_snprintf(path, sizeof(path), "%s/%s", g_basepath, texpath);
+
+    int x, y, components;
+    int status = stbi_info(path, &x, &y, &components);
+    if(status != 1)
+        return -1;
+
+    out->w = x;
+    out->h = y;
+    out->region[0] = 0;
+    out->region[1] = 0;
+    out->region[2] = x;
+    out->region[3] = y;
+
+    out->l = PyInt_AS_LONG(PyTuple_GET_ITEM(tuple, 1));
+    out->r = PyInt_AS_LONG(PyTuple_GET_ITEM(tuple, 2));
+    out->t = PyInt_AS_LONG(PyTuple_GET_ITEM(tuple, 3));
+    out->b = PyInt_AS_LONG(PyTuple_GET_ITEM(tuple, 4));
+
+    return 0;
+}
+
 static PyObject *style_get_item(const struct nk_style_item *item)
 {
     if(item->type == NK_STYLE_ITEM_COLOR) {
@@ -2185,8 +2229,14 @@ static PyObject *style_get_item(const struct nk_style_item *item)
             item->data.color.g,
             item->data.color.b,
             item->data.color.a);
+    }else if(item->type == NK_STYLE_ITEM_NINE_SLICE_TEXPATH) {
+        return Py_BuildValue("(s,i,i,i,i)",
+            item->data.slice_texpath.texpath,
+            item->data.slice_texpath.l,
+            item->data.slice_texpath.r,
+            item->data.slice_texpath.t,
+            item->data.slice_texpath.b);
     }else{
-
         return PyString_FromString(item->data.texpath);
     }
 }
@@ -2201,6 +2251,11 @@ static int style_set_item(PyObject *value, struct nk_style_item *out)
         out->data.color  = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
         return 0;
 
+    }else if(parse_nine_patch(value, &out->data.slice_texpath) == 0) {
+
+        out->type = NK_STYLE_ITEM_NINE_SLICE_TEXPATH;
+        return 0;
+
     }else if(PyString_Check(value)) {
 
         out->type = NK_STYLE_ITEM_TEXPATH;
@@ -2209,7 +2264,9 @@ static int style_set_item(PyObject *value, struct nk_style_item *out)
         return 0;
 
     }else{
-        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple or an image path.");
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple, an image path, "
+            "or a tuple of 5 items (image path and Left, Right, Top, Bottom padding) specifying a "
+            "9-patch skin.");
         return -1; 
     }
 }
@@ -2563,11 +2620,23 @@ static bool load_vec2(struct SDL_RWops *stream, struct nk_vec2 *out)
 bool save_item(struct SDL_RWops *stream, const struct nk_style_item *item)
 {
     assert(item->type == NK_STYLE_ITEM_COLOR 
-        || item->type == NK_STYLE_ITEM_TEXPATH);
+        || item->type == NK_STYLE_ITEM_TEXPATH
+        || item->type == NK_STYLE_ITEM_NINE_SLICE_TEXPATH);
 
-    PyObject *val = item->type == NK_STYLE_ITEM_COLOR
-        ? Py_BuildValue("iiii", item->data.color.r, item->data.color.g, item->data.color.b, item->data.color.a)
-        : PyString_FromString(item->data.texpath);
+    PyObject *val = item->type == NK_STYLE_ITEM_COLOR 
+                        ? Py_BuildValue("iiii", 
+                            item->data.color.r, 
+                            item->data.color.g, 
+                            item->data.color.b, 
+                            item->data.color.a)
+                  : item->type == NK_STYLE_ITEM_NINE_SLICE_TEXPATH 
+                        ? Py_BuildValue("siiii",
+                            item->data.slice_texpath.texpath,
+                            item->data.slice_texpath.l,
+                            item->data.slice_texpath.r,
+                            item->data.slice_texpath.t,
+                            item->data.slice_texpath.b)
+                  : PyString_FromString(item->data.texpath);
 
     PyObject *pickle = Py_BuildValue("iO", item->type, val);
     Py_DECREF(val);
@@ -2594,7 +2663,8 @@ bool load_item(struct SDL_RWops *stream, struct nk_style_item *out)
     }
 
     if(type != NK_STYLE_ITEM_COLOR
-    && type != NK_STYLE_ITEM_TEXPATH) {
+    && type != NK_STYLE_ITEM_TEXPATH
+    && type != NK_STYLE_ITEM_NINE_SLICE_TEXPATH) {
         Py_DECREF(obj);
         return false;
     }
@@ -2613,6 +2683,12 @@ bool load_item(struct SDL_RWops *stream, struct nk_style_item *out)
             return false;
         }
         pf_snprintf(out->data.texpath, sizeof(out->data.texpath), "%s", PyString_AS_STRING(val));
+    }
+
+    if(type == NK_STYLE_ITEM_NINE_SLICE_TEXPATH
+    && (0 != parse_nine_patch(val, &out->data.slice_texpath))) {
+        Py_DECREF(obj);
+        return false;
     }
 
     out->type = type;
