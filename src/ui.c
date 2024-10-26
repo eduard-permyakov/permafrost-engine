@@ -294,19 +294,43 @@ static void ui_init_font_stash(struct nk_context *ctx)
             /* Terminator */
             0
         };
-        struct nk_font_config config = nk_font_config(16);
-        config.oversample_h = 1;
-        config.oversample_v = 1;
-        config.range = glyph_ranges;
 
-        struct nk_font *font = nk_font_atlas_add_from_file(&s_atlas, path, 16, &config);
-        if(!font)
-            continue;
+        enum font_size{
+            FONT_NORMAL,
+            FONT_LARGE,
+            NUM_FONT_SIZES
+        };
+        size_t font_sizes[] = {
+            [FONT_NORMAL] = 16,
+            [FONT_LARGE]  = 32,
+        };
+        for(enum font_size fs = 0; fs < NUM_FONT_SIZES; fs++) {
 
-        int result;
-        khiter_t k = kh_put(font, s_fontmap, pf_strdup(files[i].name), &result);
-        assert(result != -1 && result != 0);
-        kh_value(s_fontmap, k) = font;
+            size_t font_size = font_sizes[fs];
+            struct nk_font_config config = nk_font_config(font_size);
+            config.oversample_h = 1;
+            config.oversample_v = 1;
+            config.range = glyph_ranges;
+
+            struct nk_font *font = nk_font_atlas_add_from_file(&s_atlas, path, font_size, &config);
+            if(!font)
+                continue;
+
+            char fontname[256];
+            switch(fs) {
+            case FONT_NORMAL:
+                pf_snprintf(fontname, sizeof(fontname), "%s", files[i].name);
+                break;
+            case FONT_LARGE:
+                pf_snprintf(fontname, sizeof(fontname), "%s.32", files[i].name);
+                break;
+            default: assert(0);
+            }
+            int result;
+            khiter_t k = kh_put(font, s_fontmap, pf_strdup(fontname), &result);
+            assert(result != -1 && result != 0);
+            kh_value(s_fontmap, k) = font;
+        }
     }
 
     PF_FREE(files);
