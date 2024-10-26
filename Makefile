@@ -7,6 +7,7 @@ TYPE ?= DEBUG
 ASAN ?= 0
 TSAN ?= 0
 LTO  ?= 0
+GIT_VERSION := "$(shell git describe --always)"
 
 # ------------------------------------------------------------------------------
 # Sources 
@@ -98,7 +99,7 @@ WINDOWS_DEFS = -DMS_WIN64
 CC = $($(PLAT)_CC)
 BIN = $($(PLAT)_BIN)
 PLAT_LDFLAGS = $($(PLAT)_LDFLAGS)
-DEFS = $($(PLAT)_DEFS)
+DEFS = $($(PLAT)_DEFS) -DGIT_VERSION=\"$(GIT_VERSION)\"
 
 GLEW_LIB = $($(PLAT)_GLEW_LIB)
 SDL2_LIB = $($(PLAT)_SDL2_LIB)
@@ -230,9 +231,12 @@ $(BIN): $(PF_OBJS)
 	@printf "%-8s %s\n" "[LD]" $@
 	@$(CC) $^ -o $(BIN) $(LDFLAGS)
 
+./obj/version.o: .FORCE
+.FORCE:
+
 -include $(PF_DEPS)
 
-.PHONY: pf clean run run_editor clean_deps launchers
+.PHONY: pf clean run run_editor clean_deps launchers .FORCE
 
 pf: $(BIN)
 

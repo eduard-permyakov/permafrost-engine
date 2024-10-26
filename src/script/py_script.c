@@ -254,6 +254,7 @@ static PyObject *PyPf_move_in_formation(PyObject *self, PyObject *args);
 static PyObject *PyPf_attack_in_formation(PyObject *self, PyObject *args);
 static PyObject *PyPf_formation_preferred_for_set(PyObject *self, PyObject *args);
 static PyObject *PyPf_show_console(PyObject *self);
+static PyObject *PyPf_get_version_string(PyObject *self);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -890,6 +891,10 @@ static PyMethodDef pf_module_methods[] = {
 
     {"show_console",
     (PyCFunction)PyPf_show_console, METH_NOARGS,
+    "Brings up the interactive Python console."},
+
+    {"get_version_string",
+    (PyCFunction)PyPf_get_version_string, METH_NOARGS,
     "Brings up the interactive Python console."},
 
     {NULL}  /* Sentinel */
@@ -3744,6 +3749,11 @@ static PyObject *PyPf_show_console(PyObject *self)
 {
     S_Console_Show();
     Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_get_version_string(PyObject *self)
+{
+    return PyString_FromString(g_version);
 }
 
 static void script_task_destructor(void *arg)

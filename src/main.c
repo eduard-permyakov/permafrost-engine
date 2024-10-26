@@ -67,10 +67,6 @@
 #endif
 
 
-#define PF_VER_MAJOR 1
-#define PF_VER_MINOR 7
-#define PF_VER_PATCH 0
-
 /* In the WAITING state the engine only pumps events and re-draws the window,
  * giving all the remaining cycles to the scheduler. The purpose of this state 
  * is to allow the engine to remain responsive (i.e. the latency of handling 

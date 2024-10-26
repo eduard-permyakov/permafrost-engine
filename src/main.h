@@ -45,6 +45,7 @@ extern unsigned       g_last_frame_ms; /* readonly */
 extern unsigned long  g_frame_idx;     /* readonly */
 extern SDL_threadID   g_main_thread_id;   /* readonly */
 extern SDL_threadID   g_render_thread_id; /* readonly */
+extern const char     g_version[]; /* readonly */
 
 
 #define ASSERT_IN_RENDER_THREAD() \
