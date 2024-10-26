@@ -819,6 +819,12 @@ static PyObject *PyWindow_layout_row_push(PyWindowObject *self, PyObject *args)
         return NULL;
     }
 
+    struct nk_panel *layout = s_nk_ctx->current->layout;
+    if(!(layout->row.type == NK_LAYOUT_STATIC_ROW || layout->row.type == NK_LAYOUT_DYNAMIC_ROW)) {
+        PyErr_SetString(PyExc_TypeError, "A row can be pushed between matching 'layout_row_begin/layout_row_end' calls.");
+        return NULL;
+    }
+
     nk_layout_row_push(s_nk_ctx, width);
     Py_RETURN_NONE; 
 }
