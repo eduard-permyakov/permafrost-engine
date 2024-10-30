@@ -51,6 +51,7 @@
 #include <string.h>
 #include <assert.h>
 
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define CHK_TRUE_RET(_pred)   \
     do{                       \
         if(!(_pred))          \
@@ -221,11 +222,12 @@ void A_GetRenderState(uint32_t uid, size_t *out_njoints,
     struct anim_ctx *ctx = a_ctx_for_uid(uid);
     const struct anim_data *data = ctx->data;
 
-    for(int j = 0; j < data->skel.num_joints; j++) {
+    size_t read_joints = MIN(data->skel.num_joints, MAX_JOINTS_EXTENDED);
+    for(int j = 0; j < read_joints; j++) {
         a_make_pose_mat(uid, j, &data->skel, out_curr_pose + j);
     }
 
-    *out_njoints = data->skel.num_joints;
+    *out_njoints = read_joints;
     *out_inv_bind_pose = data->skel.inv_bind_poses;
 
     PERF_RETURN_VOID();
@@ -238,7 +240,8 @@ void A_GetDefaultPoseRenderState(struct anim_data *data, size_t *out_njoints,
     struct anim_sample *sample = &data->anims[0].samples[0];
     struct skeleton *skel = &data->skel;
 
-    for(int j = 0; j < skel->num_joints; j++) {
+    size_t read_joints = MIN(skel->num_joints, MAX_JOINTS_EXTENDED);
+    for(int j = 0; j < read_joints; j++) {
 
         mat4x4_t pose_trans;
         PFM_Mat4x4_Identity(&pose_trans);
@@ -258,7 +261,7 @@ void A_GetDefaultPoseRenderState(struct anim_data *data, size_t *out_njoints,
         out_curr_pose[j] = pose_trans;
     }
 
-    *out_njoints = data->skel.num_joints;
+    *out_njoints = read_joints;
     *out_inv_bind_pose = data->skel.inv_bind_poses;
 
     PERF_RETURN_VOID();

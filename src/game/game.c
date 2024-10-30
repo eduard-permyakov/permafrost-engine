@@ -496,7 +496,7 @@ static void *stackrealloc(void *ptr, size_t size)
     void *ret = stackmalloc(size);
     if(!ret)
         return NULL;
-    memmove(ret, ptr, size);
+    memmove(ret, ptr, size / 2);
     return ret;
 }
 

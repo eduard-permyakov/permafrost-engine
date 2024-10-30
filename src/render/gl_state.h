@@ -93,6 +93,7 @@
 #define GL_U_MAP_POS            "map_pos"
 #define GL_U_ATTR_STRIDE        "attr_stride"
 #define GL_U_ATTR_OFFSET        "attr_offset"
+#define GL_U_MAX_JOINTS         "max_joints"
 
 enum utype{
     UTYPE_FLOAT,

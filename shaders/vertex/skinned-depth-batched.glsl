@@ -50,6 +50,7 @@ layout (location = 8) in int   in_draw_id;
 
 uniform mat4 light_space_transform;
 uniform vec4 clip_plane0;
+uniform int  max_joints;
 
 /* The per-instance static attributes have the follwing layout in the buffer:
  *
@@ -116,7 +117,7 @@ mat4 anim_curr_pose_mats(int joint_idx)
 
 mat4 anim_inv_bind_mats(int joint_idx)
 {
-    int base = inst_attr_base(in_draw_id) + 176 + 16 + (MAX_JOINTS * 16);
+    int base = inst_attr_base(in_draw_id) + 176 + 16 + (max_joints * 16);
     return read_mat4(base + (16 * joint_idx));
 }
 

@@ -39,6 +39,7 @@
 #include <string.h>
 #include <assert.h>
 #include <stdint.h>
+#include <stdio.h>
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -78,8 +79,10 @@ void *stalloc(struct memstack *st, size_t size)
     size_t curr_left = curr_end - (unsigned char*)st->top;
     assert(curr_left <= MEMBLOCK_SZ);
 
-    if(aligned_size > MEMBLOCK_SZ)
+    if(aligned_size > MEMBLOCK_SZ) {
+        fprintf(stderr, "stalloc: Requested size bigger than the block size.\n");
         return NULL;
+    }
 
     if(curr_left >= aligned_size) {
         void *ret = st->top;

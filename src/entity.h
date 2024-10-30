@@ -45,7 +45,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define MAX_JOINTS  (96)
+#define MAX_JOINTS          (96)
+#define MAX_JOINTS_EXTENDED (256)
 #define MAX_TAGS    (127)
 #define MAX_ICONS   (4)
 #define NULL_UID    (~((uint32_t)0))
@@ -100,7 +101,7 @@ struct ent_anim_rstate{
     bool            translucent;
     size_t          njoints;
     const mat4x4_t *inv_bind_pose; /* static, use shallow copy */
-    mat4x4_t        curr_pose[MAX_JOINTS];
+    mat4x4_t        curr_pose[MAX_JOINTS_EXTENDED];
 };
 
 struct transform{
