@@ -94,6 +94,10 @@
 #define GL_U_ATTR_STRIDE        "attr_stride"
 #define GL_U_ATTR_OFFSET        "attr_offset"
 #define GL_U_MAX_JOINTS         "max_joints"
+#define GL_U_EXTENDED_JOINTS    "extended_joints"
+#define GL_U_JOINTS_BUFF        "joints_buffer"
+#define GL_U_CURR_POSE_MATS_BUFF "anim_curr_pose_mats_buffer"
+#define GL_U_INV_BIND_MATS_BUFF  "anim_inv_bind_mats_buffer"
 
 enum utype{
     UTYPE_FLOAT,
@@ -109,6 +113,7 @@ enum utype{
     UTYPE_MAT4_ARR,
     UTYPE_COMPOSITE,
     UTYPE_ARRAY,
+    UTYPE_BLOCK_BINDING,
 };
 
 struct mdesc{
@@ -141,6 +146,7 @@ bool R_GL_StateGet(const char *uname, struct uval *out);
 void R_GL_StateSetArray(const char *uname, enum utype itemtype, size_t size, void *data);
 void R_GL_StateSetComposite(const char *uname, const struct mdesc *descs, 
                             size_t itemsize, size_t nitems, void *data);
+void R_GL_StateSetBlockBinding(const char *uname, GLuint binding);
 
 /* The shader program must have been used before installing the uniforms */
 void R_GL_StateInstall(const char *uname, GLuint shader_prog);

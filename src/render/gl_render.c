@@ -70,6 +70,14 @@
 #define MODEL_TEX_DIM               (256)
 
 /*****************************************************************************/
+/* STATIC VARIABLES                                                          */
+/*****************************************************************************/
+
+/* Scratch buffer for posting extended joint data to shaders.
+ */
+static GLuint s_joint_buff_ubo = 0;
+
+/*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
@@ -290,12 +298,39 @@ void R_GL_SetAnimUniforms(mat4x4_t *inv_bind_poses, mat4x4_t *curr_poses,
 {
     ASSERT_IN_RENDER_THREAD();
 
-    R_GL_StateSetArray(GL_U_INV_BIND_MATS, UTYPE_MAT4, *count, inv_bind_poses);
-    R_GL_StateSetArray(GL_U_CURR_POSE_MATS, UTYPE_MAT4, *count, curr_poses);
-    R_GL_StateSet(GL_U_NORMAL_MAT, (struct uval){
-        .type = UTYPE_MAT4, 
-        .val.as_mat4 = *normal_mat
+    bool extended = (*count > MAX_JOINTS);
+    R_GL_StateSet(GL_U_EXTENDED_JOINTS, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = (int)extended 
     });
+    if(extended) {
+
+        if(0 == s_joint_buff_ubo) {
+            glGenBuffers(1, &s_joint_buff_ubo);
+            glBindBuffer(GL_UNIFORM_BUFFER, s_joint_buff_ubo);
+            glBufferData(GL_UNIFORM_BUFFER, sizeof(mat4x4_t) * MAX_JOINTS_EXTENDED * 2, NULL, 
+                GL_STATIC_DRAW);
+        }
+        glBindBuffer(GL_UNIFORM_BUFFER, s_joint_buff_ubo);
+
+        glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(mat4x4_t) * MAX_JOINTS_EXTENDED, curr_poses);
+        glBufferSubData(GL_UNIFORM_BUFFER, sizeof(mat4x4_t) * MAX_JOINTS_EXTENDED, 
+            sizeof(mat4x4_t) * MAX_JOINTS_EXTENDED, inv_bind_poses);
+
+        glBindBufferBase(GL_UNIFORM_BUFFER, 0, s_joint_buff_ubo);
+        R_GL_StateSetBlockBinding(GL_U_JOINTS_BUFF, 0);
+        glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+    }else{
+        R_GL_StateSetArray(GL_U_INV_BIND_MATS, UTYPE_MAT4, *count, inv_bind_poses);
+        R_GL_StateSetArray(GL_U_CURR_POSE_MATS, UTYPE_MAT4, *count, curr_poses);
+        R_GL_StateSet(GL_U_NORMAL_MAT, (struct uval){
+            .type = UTYPE_MAT4, 
+            .val.as_mat4 = *normal_mat
+        });
+    }
+
+    GL_ASSERT_OK();
 }
 
 void R_GL_SetAmbientLightColor(const vec3_t *color)

@@ -117,6 +117,8 @@ static size_t uval_size(enum utype type)
         return sizeof(mat3x3_t);
     case UTYPE_MAT4:
         return sizeof(mat4x4_t);
+    case UTYPE_BLOCK_BINDING:
+        return sizeof(GLint);
     default:
         return (assert(0), 0);
     }
@@ -274,6 +276,12 @@ static void uval_composite_install(GLuint shader_prog, const char *uname, const 
     }
 }
 
+static void uval_block_binding_install(GLuint shader_prog, const char *uname, GLuint binding)
+{
+    GLuint loc = glGetUniformBlockIndex(shader_prog, uname);
+    glUniformBlockBinding(shader_prog, loc, binding);
+}
+
 static uint32_t hash_adler32(const void *data, size_t len) 
 {
      const uint8_t *buff = (const uint8_t*)data;
@@ -371,7 +379,8 @@ bool R_GL_StateGet(const char *uname, struct uval *out)
         return false;
 
     p = &kh_value(s_state_table, k);
-    if(p->v.type == UTYPE_COMPOSITE || p->v.type == UTYPE_ARRAY)
+    if(p->v.type == UTYPE_COMPOSITE || p->v.type == UTYPE_ARRAY 
+    || p->v.type == UTYPE_BLOCK_BINDING)
         return false;
 
     *out = p->v;
@@ -390,6 +399,8 @@ void R_GL_StateInstall(const char *uname, GLuint shader_prog)
         uval_array_install(shader_prog, uname, &p->av);
     }else if(p->v.type == UTYPE_COMPOSITE) {
         uval_composite_install(shader_prog, uname, &p->cv);
+    }else if(p->v.type == UTYPE_BLOCK_BINDING) {
+        uval_block_binding_install(shader_prog, uname, p->v.val.as_int);
     }else{
         uval_install(shader_prog, uname, &p->v);
     }
@@ -483,5 +494,14 @@ void R_GL_StateSetComposite(const char *uname, const struct mdesc *descs,
         },
         .ninstalled = 0
     };
+}
+
+void R_GL_StateSetBlockBinding(const char *uname, GLuint binding)
+{
+    struct uval uval = (struct uval){
+        .type = UTYPE_BLOCK_BINDING,
+        .val.as_int = binding
+    };
+    R_GL_StateSet(uname, uval);
 }
 

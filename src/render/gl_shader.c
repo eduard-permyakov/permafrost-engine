@@ -163,6 +163,8 @@ static struct shader s_shaders[] = {
             { UTYPE_VEC3,      GL_U_VIEW_POS          },
             { UTYPE_INT,       GL_U_TEX_ARRAY0        },
             { UTYPE_COMPOSITE, GL_U_MATERIALS,        },
+            { UTYPE_INT,       GL_U_EXTENDED_JOINTS,  },
+            { UTYPE_BLOCK_BINDING,  GL_U_JOINTS_BUFF, },
             {0}
         },
     },
@@ -198,6 +200,8 @@ static struct shader s_shaders[] = {
             { UTYPE_ARRAY,     GL_U_INV_BIND_MATS     },
             { UTYPE_MAT4,      GL_U_NORMAL_MAT        },
             { UTYPE_VEC4,      GL_U_COLOR,            },
+            { UTYPE_INT,       GL_U_EXTENDED_JOINTS,  },
+            { UTYPE_BLOCK_BINDING,  GL_U_JOINTS_BUFF, },
             {0}
         },
     },
@@ -317,6 +321,8 @@ static struct shader s_shaders[] = {
             { UTYPE_MAT4,      GL_U_LS_TRANS          },
             { UTYPE_ARRAY,     GL_U_CURR_POSE_MATS    },
             { UTYPE_ARRAY,     GL_U_INV_BIND_MATS     },
+            { UTYPE_INT,       GL_U_EXTENDED_JOINTS,  },
+            { UTYPE_BLOCK_BINDING,  GL_U_JOINTS_BUFF, },
             {0}
         },
     },
@@ -417,6 +423,8 @@ static struct shader s_shaders[] = {
             { UTYPE_INT,       GL_U_TEX_ARRAY0        },
             { UTYPE_COMPOSITE, GL_U_MATERIALS,        },
             { UTYPE_INT,       GL_U_SHADOW_MAP        },
+            { UTYPE_INT,       GL_U_EXTENDED_JOINTS,  },
+            { UTYPE_BLOCK_BINDING,  GL_U_JOINTS_BUFF, },
             {0}
         },
     },

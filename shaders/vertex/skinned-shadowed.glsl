@@ -35,8 +35,9 @@
 
 #version 330 core
 
-#define MAX_JOINTS 96
-#define USE_GEOMETRY 0
+#define MAX_JOINTS          (96)
+#define MAX_JOINTS_EXTENDED (256)
+#define USE_GEOMETRY        (0)
 
 layout (location = 0) in vec3  in_pos;
 layout (location = 1) in vec2  in_uv;
@@ -77,9 +78,35 @@ uniform mat4 anim_curr_pose_mats[MAX_JOINTS];
 uniform mat4 anim_inv_bind_mats [MAX_JOINTS];
 uniform mat4 anim_normal_mat;
 
+uniform int extended_joints;
+
+layout (std140) uniform joints_buffer
+{
+    mat4 anim_curr_pose_mats_buffer[MAX_JOINTS_EXTENDED];
+    mat4 anim_inv_bind_mats_buffer[MAX_JOINTS_EXTENDED];
+};
+
 /*****************************************************************************/
 /* PROGRAM
 /*****************************************************************************/
+
+mat4 curr_pose_for_joint(int joint_idx)
+{
+    if(bool(extended_joints)) {
+        return anim_curr_pose_mats_buffer[joint_idx];
+    }else{
+        return anim_curr_pose_mats[joint_idx];
+    }
+}
+
+mat4 inv_bind_pose_for_joint(int joint_idx)
+{
+    if(bool(extended_joints)) {
+        return anim_inv_bind_mats_buffer[joint_idx];
+    }else{
+        return anim_inv_bind_mats[joint_idx];
+    }
+}
 
 void main()
 {
@@ -120,8 +147,8 @@ void main()
             int joint_idx = int(w_idx < 3 ? in_joint_indices0[w_idx % 3]
                                           : in_joint_indices1[w_idx % 3]);
 
-            mat4 inv_bind_mat = anim_inv_bind_mats [joint_idx];
-            mat4 pose_mat     = anim_curr_pose_mats[joint_idx];
+            mat4 inv_bind_mat = inv_bind_pose_for_joint(joint_idx);
+            mat4 pose_mat     = curr_pose_for_joint(joint_idx);
 
             float weight = w_idx < 3 ? in_joint_weights0[w_idx % 3]
                                      : in_joint_weights1[w_idx % 3];
