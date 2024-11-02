@@ -111,6 +111,15 @@ static struct gamestate s_gs;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
+static bool g_use_batch_rendering(void)
+{
+    struct sval batch_setting;
+    ss_e status = Settings_Get("pf.video.use_batch_rendering", &batch_setting);
+    assert(status == SS_OKAY);
+    (void)status;
+    return batch_setting.as_bool;
+}
+
 static vec2_t g_default_minimap_pos(void)
 {
     struct sval res = (struct sval){ 
@@ -194,57 +203,57 @@ static void g_shadow_pass(struct render_input *in)
         M_RenderVisibleMap(in->map, in->cam, true, RENDER_PASS_DEPTH);
     }
 
-#if CONFIG_USE_BATCH_RENDERING
-
-    R_PushCmd((struct rcmd){
-        .func = R_GL_Batch_RenderDepthMap,
-        .nargs = 1,
-        .args = { in }
-    });
-
-#else // !CONFIG_USE_BATCH_RENDERING
-    for(int i = 0; i < vec_size(&in->light_vis_anim); i++) {
-    
-        struct ent_anim_rstate *curr = &vec_AT(&in->light_vis_anim, i);
-
-        mat4x4_t model, normal;
-        PFM_Mat4x4_Inverse(&curr->model, &model);
-        PFM_Mat4x4_Transpose(&model, &normal);
+    if(g_use_batch_rendering()) {
 
         R_PushCmd((struct rcmd){
-            .func = R_GL_SetAnimUniforms,
-            .nargs = 4,
-            .args = {
-                (void*)curr->inv_bind_pose, 
-                R_PushArg(curr->curr_pose, sizeof(curr->curr_pose)),
-                R_PushArg(&normal, sizeof(normal)),
-                R_PushArg(&curr->njoints, sizeof(curr->njoints)),
-            },
+            .func = R_GL_Batch_RenderDepthMap,
+            .nargs = 1,
+            .args = { in }
         });
 
-        R_PushCmd((struct rcmd){
-            .func = R_GL_RenderDepthMap,
-            .nargs = 2,
-            .args = {
-                curr->render_private,
-                R_PushArg(&curr->model, sizeof(curr->model)),
-            },
-        });
+    }else{
+        for(int i = 0; i < vec_size(&in->light_vis_anim); i++) {
+        
+            struct ent_anim_rstate *curr = &vec_AT(&in->light_vis_anim, i);
+
+            mat4x4_t model, normal;
+            PFM_Mat4x4_Inverse(&curr->model, &model);
+            PFM_Mat4x4_Transpose(&model, &normal);
+
+            R_PushCmd((struct rcmd){
+                .func = R_GL_SetAnimUniforms,
+                .nargs = 4,
+                .args = {
+                    (void*)curr->inv_bind_pose, 
+                    R_PushArg(curr->curr_pose, sizeof(curr->curr_pose)),
+                    R_PushArg(&normal, sizeof(normal)),
+                    R_PushArg(&curr->njoints, sizeof(curr->njoints)),
+                },
+            });
+
+            R_PushCmd((struct rcmd){
+                .func = R_GL_RenderDepthMap,
+                .nargs = 2,
+                .args = {
+                    curr->render_private,
+                    R_PushArg(&curr->model, sizeof(curr->model)),
+                },
+            });
+        }
+
+        for(int i = 0; i < vec_size(&in->light_vis_stat); i++) {
+        
+            struct ent_stat_rstate *curr = &vec_AT(&in->light_vis_stat, i);
+            R_PushCmd((struct rcmd){
+                .func = R_GL_RenderDepthMap,
+                .nargs = 2,
+                .args = {
+                    curr->render_private,
+                    R_PushArg(&curr->model, sizeof(curr->model)),
+                },
+            });
+        }
     }
-
-    for(int i = 0; i < vec_size(&in->light_vis_stat); i++) {
-    
-        struct ent_stat_rstate *curr = &vec_AT(&in->light_vis_stat, i);
-        R_PushCmd((struct rcmd){
-            .func = R_GL_RenderDepthMap,
-            .nargs = 2,
-            .args = {
-                curr->render_private,
-                R_PushArg(&curr->model, sizeof(curr->model)),
-            },
-        });
-    }
-#endif
 
     R_PushCmd((struct rcmd){ R_GL_DepthPassEnd, 0 });
 }
@@ -255,59 +264,59 @@ static void g_draw_pass(struct render_input *in)
         M_RenderVisibleMap(in->map, in->cam, in->shadows, RENDER_PASS_REGULAR);
     }
 
-#if CONFIG_USE_BATCH_RENDERING
-
-    R_PushCmd((struct rcmd){
-        .func = R_GL_Batch_Draw,
-        .nargs = 1,
-        .args = { in }
-    });
-
-#else // !CONFIG_USE_BATCH_RENDERING
-    for(int i = 0; i < vec_size(&in->cam_vis_anim); i++) {
-    
-        struct ent_anim_rstate *curr = &vec_AT(&in->cam_vis_anim, i);
-
-        mat4x4_t model, normal;
-        PFM_Mat4x4_Inverse(&curr->model, &model);
-        PFM_Mat4x4_Transpose(&model, &normal);
+    if(g_use_batch_rendering()) {
 
         R_PushCmd((struct rcmd){
-            .func = R_GL_SetAnimUniforms,
-            .nargs = 4,
-            .args = {
-                (void*)curr->inv_bind_pose, 
-                R_PushArg(curr->curr_pose, sizeof(curr->curr_pose)),
-                R_PushArg(&normal, sizeof(normal)),
-                R_PushArg(&curr->njoints, sizeof(curr->njoints)),
-            },
+            .func = R_GL_Batch_Draw,
+            .nargs = 1,
+            .args = { in }
         });
 
-        R_PushCmd((struct rcmd){
-            .func = R_GL_Draw,
-            .nargs = 3,
-            .args = {
-                curr->render_private,
-                R_PushArg(&curr->model, sizeof(curr->model)),
-                R_PushArg(&curr->translucent, sizeof(curr->translucent)),
-            },
-        });
+    }else{
+        for(int i = 0; i < vec_size(&in->cam_vis_anim); i++) {
+        
+            struct ent_anim_rstate *curr = &vec_AT(&in->cam_vis_anim, i);
+
+            mat4x4_t model, normal;
+            PFM_Mat4x4_Inverse(&curr->model, &model);
+            PFM_Mat4x4_Transpose(&model, &normal);
+
+            R_PushCmd((struct rcmd){
+                .func = R_GL_SetAnimUniforms,
+                .nargs = 4,
+                .args = {
+                    (void*)curr->inv_bind_pose, 
+                    R_PushArg(curr->curr_pose, sizeof(curr->curr_pose)),
+                    R_PushArg(&normal, sizeof(normal)),
+                    R_PushArg(&curr->njoints, sizeof(curr->njoints)),
+                },
+            });
+
+            R_PushCmd((struct rcmd){
+                .func = R_GL_Draw,
+                .nargs = 3,
+                .args = {
+                    curr->render_private,
+                    R_PushArg(&curr->model, sizeof(curr->model)),
+                    R_PushArg(&curr->translucent, sizeof(curr->translucent)),
+                },
+            });
+        }
+
+        for(int i = 0; i < vec_size(&in->cam_vis_stat); i++) {
+        
+            struct ent_stat_rstate *curr = &vec_AT(&in->cam_vis_stat, i);
+            R_PushCmd((struct rcmd){
+                .func = R_GL_Draw,
+                .nargs = 3,
+                .args = {
+                    curr->render_private,
+                    R_PushArg(&curr->model, sizeof(curr->model)),
+                    R_PushArg(&curr->translucent, sizeof(curr->translucent)),
+                },
+            });
+        }
     }
-
-    for(int i = 0; i < vec_size(&in->cam_vis_stat); i++) {
-    
-        struct ent_stat_rstate *curr = &vec_AT(&in->cam_vis_stat, i);
-        R_PushCmd((struct rcmd){
-            .func = R_GL_Draw,
-            .nargs = 3,
-            .args = {
-                curr->render_private,
-                R_PushArg(&curr->model, sizeof(curr->model)),
-                R_PushArg(&curr->translucent, sizeof(curr->translucent)),
-            },
-        });
-    }
-#endif
 }
 
 static void g_render_healthbars(void)
@@ -660,6 +669,31 @@ static void shadows_en_commit(const struct sval *new_val)
     });
 }
 
+static void batching_en_commit(const struct sval *new_val)
+{
+    bool on = new_val->as_bool;
+    if(on) {
+        if(s_gs.map) {
+            struct map_resolution res;
+            M_GetResolution(s_gs.map, &res);
+            R_PushCmd((struct rcmd){
+                .func = R_GL_Batch_AllocChunks,
+                .nargs = 1,
+                .args = {
+                    R_PushArg(&res, sizeof(res)),
+                }
+            });
+        }
+    }else{
+        R_PushCmd((struct rcmd){
+            .func = R_GL_Batch_Reset,
+            .nargs = 0,
+            .args = {},
+        });
+
+    }
+}
+
 static bool g_save_anim_state(SDL_RWops *stream)
 {
     size_t nanim = 0;
@@ -944,6 +978,18 @@ static void g_create_settings(void)
         .prio = 0,
         .validate = bool_val_validate,
         .commit = shadows_en_commit,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.video.use_batch_rendering",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = true 
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = batching_en_commit,
     });
     assert(status == SS_OKAY);
 
@@ -1535,17 +1581,17 @@ bool G_LoadMap(SDL_RWops *stream, bool update_navgrid)
 
     E_Global_Notify(EVENT_NEW_GAME, s_gs.map, ES_ENGINE);
 
-#if CONFIG_USE_BATCH_RENDERING
-    struct map_resolution res;
-    M_GetResolution(s_gs.map, &res);
-    R_PushCmd((struct rcmd){
-        .func = R_GL_Batch_AllocChunks,
-        .nargs = 1,
-        .args = {
-            R_PushArg(&res, sizeof(res)),
-        }
-    });
-#endif
+    if(g_use_batch_rendering()) {
+        struct map_resolution res;
+        M_GetResolution(s_gs.map, &res);
+        R_PushCmd((struct rcmd){
+            .func = R_GL_Batch_AllocChunks,
+            .nargs = 1,
+            .args = {
+                R_PushArg(&res, sizeof(res)),
+            }
+        });
+    }
 
     PERF_RETURN(true);
 }

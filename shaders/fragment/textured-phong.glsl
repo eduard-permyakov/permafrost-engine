@@ -104,5 +104,6 @@ void main()
     vec3 specular = SPECULAR_STRENGTH * light_color * (spec * materials[from_vertex.mat_idx].specular_clr);  
 
     vec4 final_color = vec4( (ambient * 0.55 + diffuse * 1.5 + specular * 1.5) * tex_color.xyz, 1.0);
+    o_frag_color = final_color;
 }
 
