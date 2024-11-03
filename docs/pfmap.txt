@@ -13,7 +13,10 @@
 * 1. VERSION AND CHANGELOG                                                     *
 ********************************************************************************
 
-    Current version: 1.0 
+    Current version: 1.1 
+
+    Nov 2024:
+        * Add support for 'splat maps'
 
 ********************************************************************************
 * 2. ABOUT                                                                     *
@@ -38,6 +41,7 @@
 
     version         <PFMAP version number (float)> 
     num_materials   <number of materials in material list>
+    num_splats      <number of texture splat mappings> (version >= 1.1)
     num_rows        <the height of the map, in number of chunks>
     num_cols        <the width of the map, in number of chunks>
 
@@ -52,8 +56,21 @@
 
     material Lava-Ground lava_ground.jpg
 
+    --------------
+    3.3 Splat List
+    --------------
+
+    Next is a list of exactly <num_splats> number of texture to texture mappings.
+    The first is the 'base' texture which is modified by the splat map, and the 
+    second is the 'accent' texture which is applied over the base texture. An example
+    splat is in the following format.
+
+    splat 0 1
+
+    Here, '0' and '1' are indices into the previously loaded materials list.
+
     -------------
-    3.2 Tile List
+    3.3 Tile List
     -------------
 
     Next is a list of <num_rows>*<num_cols>*32*32 tiles. Each tile is a string of 

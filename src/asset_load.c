@@ -162,6 +162,13 @@ static bool al_parse_pfmap_header(SDL_RWops *stream, struct pfmap_hdr *out)
     if(!sscanf(line, "num_materials %d", &out->num_materials))
         goto fail;
 
+    out->num_splats = 0;
+    if(out->version >= 1.1f) {
+        READ_LINE(stream, line, fail);
+        if(!sscanf(line, "num_splats %d", &out->num_splats))
+            goto fail;
+    }
+
     READ_LINE(stream, line, fail);
     if(!sscanf(line, "num_rows %d", &out->num_rows))
         goto fail;

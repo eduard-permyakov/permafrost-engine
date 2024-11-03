@@ -39,8 +39,14 @@
 #include "pfchunk.h"
 #include "../pf_math.h"
 
-#define MAX_NUM_MATS (256)
+#define MAX_NUM_MATS   (256)
+#define MAX_NUM_SPLATS (256)
 
+
+struct splat{
+    size_t base_material;
+    size_t accent_material;
+};
 
 struct map{
     /* ------------------------------------------------------------------------
@@ -87,6 +93,13 @@ struct map{
      */
     size_t num_mats;
     char texnames[MAX_NUM_MATS][256];
+    /* ------------------------------------------------------------------------
+     * Information about texture splats which are used to apply secondary
+     * 'accent' textures to an existing material texture.
+     * ------------------------------------------------------------------------
+     */
+    size_t num_splats;
+    struct splat splats[MAX_NUM_SPLATS];
     /* ------------------------------------------------------------------------
      * The map chunks stored in row-major order. In total, there must be 
      * (width * height) number of chunks.

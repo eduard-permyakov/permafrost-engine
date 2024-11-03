@@ -55,7 +55,7 @@
 /* ASCII to integer - argument must be an ascii digit */
 #define A2I(_a) ((_a) - '0')
 #define MINIMAP_DFLT_SZ (256)
-#define PFMAP_VER       (1.0f)
+#define PFMAP_VER       (1.1f)
 #define CHK_TRUE(_pred, _label) do{ if(!(_pred)) goto _label; }while(0)
 
 /* The Wang tiling algorithm is based on the paper "Wang Tiles for Image and Texture Generation"
@@ -171,6 +171,31 @@ static bool m_al_read_material(SDL_RWops *stream, char *out_texname)
     string = pf_strtok_r(NULL, " \t\n", &saveptr);
 
     strncpy(out_texname, string, MAX_LINE_LEN);
+    return true;
+
+fail:
+    return false;
+}
+
+static bool m_al_read_splat(SDL_RWops *stream, struct splat *out_splat)
+{
+    char line[MAX_LINE_LEN];
+    READ_LINE(stream, line, fail); 
+
+    char *saveptr;
+    char *string = pf_strtok_r(line, " \t\n", &saveptr);
+
+    if(strcmp(string, "splat") != 0)
+        goto fail;
+
+    string = pf_strtok_r(NULL, " \t\n", &saveptr);
+    if(!sscanf(string, "%zu", &out_splat->base_material))
+        goto fail;
+
+    string = pf_strtok_r(NULL, " \t\n", &saveptr);
+    if(!sscanf(string, "%zu", &out_splat->accent_material))
+        goto fail;
+
     return true;
 
 fail:
@@ -447,6 +472,15 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
     }
     map->num_mats = header->num_materials;
 
+    /* Read splats */
+    for(int i = 0; i < header->num_splats; i++) {
+        if(i >= MAX_NUM_SPLATS)
+            return false;
+        if(!m_al_read_splat(stream, &map->splats[i]))
+            return false;
+    }
+    map->num_splats = header->num_splats;
+
     struct map_resolution res = (struct map_resolution){
         header->num_cols,
         header->num_rows,
@@ -608,6 +642,9 @@ bool M_AL_WritePFMap(const struct map *map, SDL_RWops *stream)
     pf_snprintf(line, sizeof(line), "num_materials %d\n", map->num_mats);
     CHK_TRUE(SDL_RWwrite(stream, line, strlen(line), 1), fail);
 
+    pf_snprintf(line, sizeof(line), "num_splats %d\n", map->num_splats);
+    CHK_TRUE(SDL_RWwrite(stream, line, strlen(line), 1), fail);
+
     pf_snprintf(line, sizeof(line), "num_rows %d\n", map->height);
     CHK_TRUE(SDL_RWwrite(stream, line, strlen(line), 1), fail);
 
@@ -617,6 +654,13 @@ bool M_AL_WritePFMap(const struct map *map, SDL_RWops *stream)
     for(int i = 0; i < map->num_mats; i++) {
     
         pf_snprintf(line, sizeof(line), "material __anonymous__ %s\n", map->texnames[i]);
+        CHK_TRUE(SDL_RWwrite(stream, line, strlen(line), 1), fail);
+    }
+
+    for(int i = 0; i < map->num_splats; i++) {
+
+        pf_snprintf(line, sizeof(line), "splat %d %d\n", 
+            map->splats[i].base_material, map->splats[i].accent_material);
         CHK_TRUE(SDL_RWwrite(stream, line, strlen(line), 1), fail);
     }
 

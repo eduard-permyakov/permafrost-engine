@@ -70,6 +70,7 @@ struct pfobj_hdr{
 struct pfmap_hdr{
     float    version;
     unsigned num_materials;
+    unsigned num_splats;
     unsigned num_rows;
     unsigned num_cols;
 };
