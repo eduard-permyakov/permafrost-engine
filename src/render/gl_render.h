@@ -46,6 +46,7 @@
 #include <stdbool.h>
 
 
+#define SPLAT_MAP_TUNIT  (GL_TEXTURE12)
 #define SKYBOX_TUNIT     (GL_TEXTURE13)
 #define HEIGHT_MAP_TUNIT (GL_TEXTURE14)
 #define SHADOW_MAP_TUNIT (GL_TEXTURE15)

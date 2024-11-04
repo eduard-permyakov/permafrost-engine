@@ -59,7 +59,6 @@
 #define STATE_IN_FOG     1
 #define STATE_VISIBLE    2
 
-#define HEIGHT_MAP_RES    1024
 #define HEIGHT_MAP_WEIGHT 0.075
 
 /*****************************************************************************/
@@ -98,6 +97,7 @@ uniform vec3 light_pos;
 uniform vec3 view_pos;
 
 uniform samplerBuffer height_map;
+uniform samplerBuffer splat_map;
 uniform sampler2D shadow_map;
 
 uniform sampler2DArray tex_array0;
@@ -435,9 +435,10 @@ float height_at_pos(vec3 ws_pos)
     float percentu = clamp((chunk_base_x - ws_pos.x) / chunk_x_dist, 0, 1.0);
     float percentv = clamp((ws_pos.z - chunk_base_z) / chunk_z_dist, 0, 1.0);
 
-    int buffx = int(percentu * (HEIGHT_MAP_RES - 1));
-    int buffy = int(percentv * (HEIGHT_MAP_RES - 1));
-    int idx = clamp(buffx * HEIGHT_MAP_RES + buffy, 0, HEIGHT_MAP_RES * HEIGHT_MAP_RES - 1);
+    int res = int(sqrt(textureSize(height_map)));
+    int buffx = int(percentu * (res - 1));
+    int buffy = int(percentv * (res - 1));
+    int idx = clamp(buffx * res + buffy, 0, res * res - 1);
 
     return texelFetch(height_map, idx).r;
 }
@@ -462,24 +463,25 @@ vec3 normal_at_pos(vec3 ws_pos)
     float percentu = clamp((chunk_base_x - ws_pos.x) / chunk_x_dist, 0, 1.0);
     float percentv = clamp((ws_pos.z - chunk_base_z) / chunk_z_dist, 0, 1.0);
 
-    int buffx = int(percentu * (HEIGHT_MAP_RES - 1));
-    int buffy = int(percentv * (HEIGHT_MAP_RES - 1));
-    int idx = clamp(buffx * HEIGHT_MAP_RES + buffy, 0, HEIGHT_MAP_RES * HEIGHT_MAP_RES - 1);
+    int res = int(sqrt(textureSize(height_map)));
+    int buffx = int(percentu * (res - 1));
+    int buffy = int(percentv * (res - 1));
+    int idx = clamp(buffx * res + buffy, 0, res * res - 1);
 
     /* Compute the derivative at the point using the finite difference approximation
      * (central difference).
      */
-    int backx = (buffx - 1) % HEIGHT_MAP_RES;
-    int backx_idx = clamp(backx * HEIGHT_MAP_RES + buffy, 0, HEIGHT_MAP_RES * HEIGHT_MAP_RES - 1);
+    int backx = (buffx - 1) % res;
+    int backx_idx = clamp(backx * res + buffy, 0, res * res - 1);
 
-    int frontx = (buffx + 1) % HEIGHT_MAP_RES;
-    int front_idx = clamp(frontx * HEIGHT_MAP_RES + buffy, 0, HEIGHT_MAP_RES * HEIGHT_MAP_RES - 1);
+    int frontx = (buffx + 1) % res;
+    int front_idx = clamp(frontx * res + buffy, 0, res * res - 1);
 
-    int backz = (buffy - 1) % HEIGHT_MAP_RES;
-    int backz_idx = clamp(buffx * HEIGHT_MAP_RES + backz, 0, HEIGHT_MAP_RES * HEIGHT_MAP_RES - 1);
+    int backz = (buffy - 1) % res;
+    int backz_idx = clamp(buffx * res + backz, 0, res * res - 1);
 
-    int frontz = (buffy + 1) % HEIGHT_MAP_RES;
-    int frontz_idx = clamp(buffx * HEIGHT_MAP_RES + frontz, 0, HEIGHT_MAP_RES * HEIGHT_MAP_RES - 1);
+    int frontz = (buffy + 1) % res;
+    int frontz_idx = clamp(buffx * res + frontz, 0, res * res - 1);
 
     float x0 = texelFetch(height_map, backx_idx).r;
     float x1 = texelFetch(height_map, front_idx).r;

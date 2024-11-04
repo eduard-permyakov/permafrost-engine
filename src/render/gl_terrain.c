@@ -44,6 +44,7 @@
 #include "render_private.h"
 #include "../main.h"
 #include "../map/public/tile.h"
+#include "../lib/public/mem.h"
 #include "../lib/public/noise.h"
 
 #include <assert.h>
@@ -51,8 +52,14 @@
 
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
 #define HEIGHT_MAP_RES  (1024)
+#define SPLAT_MAP_RES   (1024)
 
 struct heightmap{
+    GLuint buffer;
+    GLuint tex_buff;
+};
+
+struct splatmap{
     GLuint buffer;
     GLuint tex_buff;
 };
@@ -66,6 +73,7 @@ static struct texture_arr     s_map_textures[4];
 static bool                   s_map_ctx_active = false;
 static struct gl_ring        *s_fog_ring;
 static struct heightmap       s_heightmap;
+static struct splatmap        s_splatmap;
 static struct map_resolution  s_res;
 
 /*****************************************************************************/
@@ -91,7 +99,30 @@ static void create_height_map(void)
     glBindTexture(GL_TEXTURE_BUFFER, s_heightmap.tex_buff);
     glTexBuffer(GL_TEXTURE_BUFFER, GL_R32F, s_heightmap.buffer);
 
-    free(data);
+    PF_FREE(data);
+    GL_ASSERT_OK();
+}
+
+static void create_splat_map(void)
+{
+    ASSERT_IN_RENDER_THREAD();
+    
+    size_t buffsize = sizeof(float) * SPLAT_MAP_RES * SPLAT_MAP_RES;
+    float *data = malloc(buffsize);
+    if(!data)
+        return;
+
+    Noise_GenerateOctavePerlinTile2D(SPLAT_MAP_RES, SPLAT_MAP_RES, 1/128.0, 4, 0.5, data);
+
+    glGenBuffers(1, &s_splatmap.buffer);
+    glBindBuffer(GL_TEXTURE_BUFFER, s_splatmap.buffer);
+    glBufferStorage(GL_TEXTURE_BUFFER, buffsize, data, 0);
+
+    glGenTextures(1, &s_splatmap.tex_buff);
+    glBindTexture(GL_TEXTURE_BUFFER, s_splatmap.tex_buff);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_R32F, s_splatmap.buffer);
+
+    PF_FREE(data);
     GL_ASSERT_OK();
 }
 
@@ -114,10 +145,16 @@ void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures,
         *num_textures, s_map_textures, GL_TEXTURE0);
 
     create_height_map();
+    create_splat_map();
 
     R_GL_StateSet(GL_U_HEIGHT_MAP, (struct uval){
         .type = UTYPE_INT,
         .val.as_int = HEIGHT_MAP_TUNIT - GL_TEXTURE0
+    });
+
+    R_GL_StateSet(GL_U_SPLAT_MAP, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = SPLAT_MAP_TUNIT - GL_TEXTURE0
     });
 
     R_GL_StateSet(GL_U_SKYBOX, (struct uval){
@@ -150,6 +187,9 @@ void R_GL_MapShutdown(void)
 {
     glDeleteBuffers(1, &s_heightmap.buffer);
     glDeleteBuffers(1, &s_heightmap.tex_buff);
+
+    glDeleteBuffers(1, &s_splatmap.buffer);
+    glDeleteBuffers(1, &s_splatmap.tex_buff);
 
     for(int i = 0; i < s_num_arrays; i++) {
         R_GL_Texture_ArrayFree(s_map_textures[i]);
@@ -196,6 +236,9 @@ void R_GL_MapBegin(const bool *shadows, const vec2_t *pos)
 
     glActiveTexture(HEIGHT_MAP_TUNIT);
     glBindTexture(GL_TEXTURE_BUFFER, s_heightmap.tex_buff);
+
+    glActiveTexture(SPLAT_MAP_TUNIT);
+    glBindTexture(GL_TEXTURE_BUFFER, s_splatmap.tex_buff);
 
     R_GL_SkyboxBind();
 
