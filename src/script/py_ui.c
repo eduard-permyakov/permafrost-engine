@@ -2477,11 +2477,13 @@ static void active_windows_update(void *user, void *event)
         /* The windows are internally indexed by their name, so it is not possible
          * to have multiple active windows with the exact same name. 
          */
-		int name_len = (int)nk_strlen(win->name);
-		nk_hash name_hash = nk_murmur_hash(win->name, (int)name_len, NK_WINDOW_TITLE);
-		struct nk_window *nkwin = nk_find_window(s_nk_ctx, name_hash, win->name);
-		if(nkwin && (nkwin->seq == s_nk_ctx->seq))
-			continue;
+        int name_len = (int)nk_strlen(win->name);
+        nk_hash name_hash = nk_murmur_hash(win->name, (int)name_len, NK_WINDOW_TITLE);
+        struct nk_window *nkwin = nk_find_window(s_nk_ctx, name_hash, win->name);
+        if(nkwin && (nkwin->seq == s_nk_ctx->seq)) {
+            s_nk_ctx->style.window = saved_style;
+            continue;
+        }
 
         if(nk_begin_with_vres(s_nk_ctx, win->name, 
             nk_rect(adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h), 

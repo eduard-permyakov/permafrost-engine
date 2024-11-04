@@ -111,6 +111,11 @@ static void      PyUIHeaderStyle_dealloc(PyUIHeaderStyleObject *self);
 static PyObject *PyUIHeaderStyle_get_close_button(PyUIHeaderStyleObject *self, void *);
 static PyObject *PyUIHeaderStyle_get_minimize_button(PyUIHeaderStyleObject *self, void *);
 
+static PyObject *PyUIHeaderStyle_get_padding(PyUIHeaderStyleObject *self, void *);
+static int       PyUIHeaderStyle_set_padding(PyUIHeaderStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIHeaderStyle_get_label_padding(PyUIHeaderStyleObject *self, void *);
+static int       PyUIHeaderStyle_set_label_padding(PyUIHeaderStyleObject *self, PyObject *value, void *);
+
 static PyObject *PyUIHeaderStyle_get_normal(PyUIHeaderStyleObject *self, void *);
 static int       PyUIHeaderStyle_set_normal(PyUIHeaderStyleObject *self, PyObject *value, void *);
 static PyObject *PyUIHeaderStyle_get_hover(PyUIHeaderStyleObject *self, void *);
@@ -729,6 +734,18 @@ static PyGetSetDef PyUIHeaderStyle_getset[] = {
     {"minimize_button",
     (getter)PyUIHeaderStyle_get_minimize_button, NULL,
     "A pf.UIButtonStyle object describing the style of the minimize button." ,
+    NULL},
+
+    {"padding",
+    (getter)PyUIHeaderStyle_get_padding, 
+    (setter)PyUIHeaderStyle_set_padding,
+    "An (X, Y) tuple of floats specifying additional padding around the header contents.",
+    NULL},
+
+    {"label_padding",
+    (getter)PyUIHeaderStyle_get_label_padding, 
+    (setter)PyUIHeaderStyle_set_label_padding,
+    "An (X, Y) tuple of floats specifying additional padding around the header title label.",
     NULL},
 
     {"normal",
@@ -3334,6 +3351,30 @@ static PyObject *PyUIHeaderStyle_get_minimize_button(PyUIHeaderStyleObject *self
 {
     Py_INCREF(self->minimize_button);
     return (PyObject*)self->minimize_button;
+}
+
+static PyObject *PyUIHeaderStyle_get_padding(PyUIHeaderStyleObject *self, void *closure)
+{
+    return Py_BuildValue("ff", self->style.padding.x, self->style.padding.y);
+}
+
+static int PyUIHeaderStyle_set_padding(PyUIHeaderStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyArg_ParseTuple(value, "ff", &self->style.padding.x, &self->style.padding.y))
+        return -1;
+    return 0;
+}
+
+static PyObject *PyUIHeaderStyle_get_label_padding(PyUIHeaderStyleObject *self, void *closure)
+{
+    return Py_BuildValue("ff", self->style.label_padding.x, self->style.label_padding.y);
+}
+
+static int PyUIHeaderStyle_set_label_padding(PyUIHeaderStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyArg_ParseTuple(value, "ff", &self->style.label_padding.x, &self->style.label_padding.y))
+        return -1;
+    return 0;
 }
 
 static PyObject *PyUIHeaderStyle_get_normal(PyUIHeaderStyleObject *self, void *closure)
