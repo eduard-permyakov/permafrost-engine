@@ -178,6 +178,8 @@ static void uval_array_install(GLuint shader_prog, const char *uname, const stru
     GLuint loc = glGetUniformLocation(shader_prog, uname);
     void *data = mp_buff_entry(&s_buff_pool, av->data)->raw;
 
+    const char *name = R_GL_Shader_GetName(shader_prog);
+
     if(loc == ((GLuint)-1))
         return;
 
@@ -442,7 +444,7 @@ void R_GL_StateSetArray(const char *uname, enum utype itemtype, size_t size, voi
             .nitems = size,
             .data = data_ref
         },
-        .ninstalled = true
+        .ninstalled = 0
     };
 }
 

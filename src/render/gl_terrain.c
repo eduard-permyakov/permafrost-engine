@@ -43,6 +43,7 @@
 #include "gl_image_quilt.h"
 #include "render_private.h"
 #include "../main.h"
+#include "../map/public/map.h"
 #include "../map/public/tile.h"
 #include "../lib/public/mem.h"
 #include "../lib/public/noise.h"
@@ -51,15 +52,15 @@
 #include <string.h>
 
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
-#define HEIGHT_MAP_RES  (1024)
+#define HEIGHT_MAP_RES  (2048)
 #define SPLAT_MAP_RES   (1024)
 
-struct heightmap{
+struct gl_heightmap{
     GLuint buffer;
     GLuint tex_buff;
 };
 
-struct splatmap{
+struct gl_splatmap{
     GLuint buffer;
     GLuint tex_buff;
 };
@@ -72,8 +73,8 @@ static size_t                 s_num_arrays;
 static struct texture_arr     s_map_textures[4];
 static bool                   s_map_ctx_active = false;
 static struct gl_ring        *s_fog_ring;
-static struct heightmap       s_heightmap;
-static struct splatmap        s_splatmap;
+static struct gl_heightmap    s_heightmap;
+static struct gl_splatmap     s_splatmap;
 static struct map_resolution  s_res;
 
 /*****************************************************************************/
@@ -90,6 +91,7 @@ static void create_height_map(void)
         return;
 
     Noise_GenerateOctavePerlinTile2D(HEIGHT_MAP_RES, HEIGHT_MAP_RES, 1/128.0, 4, 0.5, data);
+    Noise_Normalize2D(HEIGHT_MAP_RES, HEIGHT_MAP_RES, data);
 
     glGenBuffers(1, &s_heightmap.buffer);
     glBindBuffer(GL_TEXTURE_BUFFER, s_heightmap.buffer);
@@ -208,12 +210,33 @@ void R_GL_MapUpdateFogClear(void)
     free(buff);
 }
 
-void R_GL_MapBegin(const bool *shadows, const vec2_t *pos)
+void R_GL_MapBegin(const bool *shadows, const vec2_t *pos,
+                   size_t *num_splats, const struct splatmap *splatmap)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
     GL_PERF_PUSH_GROUP(0, "map");
     assert(!s_map_ctx_active);
+
+    R_GL_StateSet(GL_U_MAP_POS, (struct uval){
+        .type = UTYPE_VEC2,
+        .val.as_vec2 = *pos
+    });
+
+    GLint splatbuff[MAX_MAP_TEXTURES];
+    for(int i = 0; i < MAX_MAP_TEXTURES; i++) {
+        splatbuff[i] = -1;
+    }
+    for(int i = 0; i < *num_splats; i++) {
+        GLint base_idx = splatmap->splats[i].base_mat_idx;
+        GLint accent_idx = splatmap->splats[i].accent_mat_idx;
+
+        assert(base_idx < MAX_MAP_TEXTURES);
+        assert(accent_idx < MAX_MAP_TEXTURES);
+
+        splatbuff[base_idx] = accent_idx;
+    }
+    R_GL_StateSetArray(GL_U_SPLATS, UTYPE_INT, MAX_MAP_TEXTURES, splatbuff);
 
     GLuint shader_prog;
     if(*shadows) {
@@ -228,11 +251,6 @@ void R_GL_MapBegin(const bool *shadows, const vec2_t *pos)
         R_GL_Texture_BindArray(&s_map_textures[i], shader_prog);
     }
     R_GL_RingbufferBindLast(s_fog_ring, GL_TEXTURE5, shader_prog, "visbuff");
-
-    R_GL_StateSet(GL_U_MAP_POS, (struct uval){
-        .type = UTYPE_VEC2,
-        .val.as_vec2 = *pos
-    });
 
     glActiveTexture(HEIGHT_MAP_TUNIT);
     glBindTexture(GL_TEXTURE_BUFFER, s_heightmap.tex_buff);

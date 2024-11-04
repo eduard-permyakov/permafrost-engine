@@ -46,6 +46,7 @@
 
 #define MINIMAP_BORDER_WIDTH    (3.0f)
 #define MAX_HEIGHT_LEVEL        (9)
+#define MAX_MAP_TEXTURES        (256)
 
 struct pfchunk;
 struct pfmap_hdr;
@@ -59,6 +60,15 @@ struct map_resolution;
 
 struct chunkpos{
     int r, c;
+};
+
+struct splat{
+    size_t base_mat_idx;
+    size_t accent_mat_idx;
+};
+
+struct splatmap{
+    struct splat splats[MAX_MAP_TEXTURES];
 };
 
 /*###########################################################################*/
@@ -642,6 +652,14 @@ bool   M_MouseOverMinimap(const struct map *map);
  * ------------------------------------------------------------------------
  */
 bool   M_WaterMaybeVisible(const struct map *map, const struct camera *cam);
+
+/* ------------------------------------------------------------------------
+ * Add/remove secondary (splat) materials that are blended together with
+ * some existing material.
+ * ------------------------------------------------------------------------
+ */
+bool   M_AddSplat(struct map *map, int base_mat_idx, int accent_mat_idx);
+bool   M_RemoveSplat(struct map *map, int base_mat_idx, int accent_mat_idx);
 
 /* ------------------------------------------------------------------------
  * Returns true if the mouse is over a valid map location on the minimap.

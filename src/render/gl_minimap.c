@@ -228,7 +228,9 @@ static void draw_minimap_terrain(struct render_private *priv, mat4x4_t *chunk_mo
         (res.chunk_w * res.tile_w * X_COORDS_PER_TILE) / 2.0,
         (res.chunk_h * res.tile_h * Z_COORDS_PER_TILE * -1) / 2.0
     };
-    R_GL_MapBegin(&fval, &pos);
+    size_t num_splats = 0;
+    struct splatmap empty = {0};
+    R_GL_MapBegin(&fval, &pos, &num_splats, &empty);
 
     /* Clip everything below the 'Shallow Water' level. The 'Shallow Water' is 
      * rendered as just normal terrain. */

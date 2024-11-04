@@ -139,10 +139,12 @@ void M_RenderEntireMap(const struct map *map, bool shadows, enum render_pass pas
 
     R_PushCmd((struct rcmd){ 
         .func = R_GL_MapBegin,
-        .nargs = 2,
+        .nargs = 4,
         .args = { 
             R_PushArg(&shadows, sizeof(shadows)),
             R_PushArg(&pos, sizeof(pos)),
+            R_PushArg(&map->num_splats, sizeof(map->num_splats)),
+            R_PushArg(&map->splatmap, sizeof(map->splatmap))
         },
     });
 
@@ -192,10 +194,12 @@ void M_RenderVisibleMap(const struct map *map, const struct camera *cam,
 
     R_PushCmd((struct rcmd){ 
         .func = R_GL_MapBegin, 
-        .nargs = 2, 
+        .nargs = 4, 
         .args = {
             R_PushArg(&shadows, sizeof(shadows)),
             R_PushArg(&pos, sizeof(pos)),
+            R_PushArg(&map->num_splats, sizeof(map->num_splats)),
+            R_PushArg(&map->splatmap, sizeof(map->splatmap))
         },
     });
 
@@ -817,6 +821,44 @@ bool M_WaterMaybeVisible(const struct map *map, const struct camera *cam)
             PERF_RETURN(true);
     }}
     PERF_RETURN(false);
+}
+
+bool M_AddSplat(struct map *map, int base_mat_idx, int accent_mat_idx)
+{
+    if(map->num_splats == MAX_MAP_TEXTURES)
+        return false;
+
+    if(base_mat_idx >= map->num_mats || accent_mat_idx >= map->num_mats
+    || base_mat_idx < 0 || accent_mat_idx < 0)
+        return false;
+
+    for(int i = 0; i < map->num_splats; i++) {
+        const struct splat *curr = &map->splatmap.splats[i];
+        if(curr->base_mat_idx == base_mat_idx && curr->accent_mat_idx == accent_mat_idx)
+            return true;
+    }
+    map->splatmap.splats[map->num_splats++] = (struct splat){
+        .base_mat_idx = base_mat_idx,
+        .accent_mat_idx = accent_mat_idx
+    };
+    return true;
+}
+
+bool M_RemoveSplat(struct map *map, int base_mat_idx, int accent_mat_idx)
+{
+    if(map->num_splats == 0)
+        return true;
+
+    for(int i = map->num_splats-1; i >= 0; i--) {
+        struct splat *curr = &map->splatmap.splats[i];
+        const struct splat *last = &map->splatmap.splats[map->num_splats-1];
+        if(curr->base_mat_idx == base_mat_idx && curr->accent_mat_idx == accent_mat_idx) {
+            *curr = *last;
+            map->num_splats--;
+            return true;
+        }
+    }
+    return true;
 }
 
 bool M_NavIsMaximallyClose(const struct map *map, enum nav_layer layer, vec2_t xz_pos, 

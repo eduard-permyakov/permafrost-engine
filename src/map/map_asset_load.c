@@ -189,11 +189,11 @@ static bool m_al_read_splat(SDL_RWops *stream, struct splat *out_splat)
         goto fail;
 
     string = pf_strtok_r(NULL, " \t\n", &saveptr);
-    if(!sscanf(string, "%zu", &out_splat->base_material))
+    if(!sscanf(string, "%zu", &out_splat->base_mat_idx))
         goto fail;
 
     string = pf_strtok_r(NULL, " \t\n", &saveptr);
-    if(!sscanf(string, "%zu", &out_splat->accent_material))
+    if(!sscanf(string, "%zu", &out_splat->accent_mat_idx))
         goto fail;
 
     return true;
@@ -476,7 +476,7 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
     for(int i = 0; i < header->num_splats; i++) {
         if(i >= MAX_NUM_SPLATS)
             return false;
-        if(!m_al_read_splat(stream, &map->splats[i]))
+        if(!m_al_read_splat(stream, &map->splatmap.splats[i]))
             return false;
     }
     map->num_splats = header->num_splats;
@@ -660,7 +660,7 @@ bool M_AL_WritePFMap(const struct map *map, SDL_RWops *stream)
     for(int i = 0; i < map->num_splats; i++) {
 
         pf_snprintf(line, sizeof(line), "splat %d %d\n", 
-            map->splats[i].base_material, map->splats[i].accent_material);
+            map->splatmap.splats[i].base_mat_idx, map->splatmap.splats[i].accent_mat_idx);
         CHK_TRUE(SDL_RWwrite(stream, line, strlen(line), 1), fail);
     }
 

@@ -99,6 +99,7 @@
 #define GL_U_JOINTS_BUFF        "joints_buffer"
 #define GL_U_CURR_POSE_MATS_BUFF "anim_curr_pose_mats_buffer"
 #define GL_U_INV_BIND_MATS_BUFF  "anim_inv_bind_mats_buffer"
+#define GL_U_SPLATS             "splats"
 
 enum utype{
     UTYPE_FLOAT,

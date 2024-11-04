@@ -152,6 +152,8 @@ bool            G_MapClosestPathable(vec2_t xz, vec2_t *out, enum nav_layer laye
 bool            G_PointInsideMap(vec2_t xz);
 bool            G_PointOverWater(vec2_t xz);
 bool            G_PointOverLand(vec2_t xz);
+bool            G_MapAddSplat(int base_mat_idx, int accent_mat_idx);
+bool            G_MapRemoveSplat(int base_mat_idx, int accent_mat_idx);
 
 void            G_BakeNavDataForScene(void);
 

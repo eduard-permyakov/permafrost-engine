@@ -58,6 +58,7 @@ struct map_resolution;
 struct obb;
 struct aabb;
 struct ent_anim_rstate;
+struct splatmap;
 
 enum render_pass{
     RENDER_PASS_DEPTH,
@@ -393,7 +394,8 @@ void  R_GL_MapShutdown(void);
  * Must be followed with a matching call to 'R_GL_MapEnd'.
  * ---------------------------------------------------------------------------
  */
-void  R_GL_MapBegin(const bool *shadows, const vec2_t *pos);
+void  R_GL_MapBegin(const bool *shadows, const vec2_t *pos,
+                    size_t *num_splats, const struct splatmap *splatmap);
 
 /* ---------------------------------------------------------------------------
  * Call after finishing rendering all map chunks.

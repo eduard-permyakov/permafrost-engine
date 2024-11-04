@@ -242,6 +242,7 @@ static struct shader s_shaders[] = {
             { UTYPE_VEC2,      GL_U_MAP_POS,          },
             { UTYPE_INT,       GL_U_HEIGHT_MAP        },
             { UTYPE_INT,       GL_U_SPLAT_MAP         },
+            { UTYPE_ARRAY,     GL_U_SPLATS            },
             {0}
         },
     },
@@ -270,6 +271,7 @@ static struct shader s_shaders[] = {
             { UTYPE_INT,       GL_U_SHADOW_MAP        },
             { UTYPE_INT,       GL_U_HEIGHT_MAP        },
             { UTYPE_INT,       GL_U_SPLAT_MAP         },
+            { UTYPE_ARRAY,     GL_U_SPLATS            },
             {0}
         },
     },

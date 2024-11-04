@@ -57,6 +57,9 @@
 #define STATE_VISIBLE    2
 
 #define HEIGHT_MAP_WEIGHT 0.075
+#define MAX_TEXTURES      (256)
+#define SPLAT_NONE        (-1)
+#define MAX_MATERIALS     (16)
 
 /*****************************************************************************/
 /* INPUTS                                                                    */
@@ -106,9 +109,13 @@ uniform int visbuff_offset;
 uniform ivec4 map_resolution;
 uniform vec2 map_pos;
 
+uniform int splats[MAX_TEXTURES];
+
 /*****************************************************************************/
 /* PROGRAM                                                                   */
 /*****************************************************************************/
+
+vec4 splatted_color_at_pos(vec3 ws_pos, int base_mat_idx, vec4 tex_color);
 
 /*
  * x = chunk_r
@@ -227,7 +234,7 @@ float tint_factor(ivec4 td, vec2 uv)
     return bilinear_interp_unit_square(tl_corner, tr_corner, bl_corner, br_corner, uv);
 }
 
-vec4 texture_val(int mat_idx, int wang_idx, vec2 uv)
+vec4 texture_val_raw(int mat_idx, int wang_idx, vec2 uv)
 {
     int idx = mat_idx * 8;
     int size = textureSize(tex_array0, 0).z;
@@ -252,6 +259,12 @@ vec4 texture_val(int mat_idx, int wang_idx, vec2 uv)
     return vec4(0, 0, 0, 0);
 }
 
+vec4 texture_val(int mat_idx, int wang_idx, vec2 uv)
+{
+    vec4 tex_clr = texture_val_raw(mat_idx, wang_idx, uv);
+    return splatted_color_at_pos(from_vertex.world_pos, mat_idx, tex_clr);
+}
+
 vec4 mixed_texture_val(ivec2 adjacency_mats, int wang_idx, vec2 uv)
 {
     vec4 ret = vec4(0.0f);
@@ -261,6 +274,101 @@ vec4 mixed_texture_val(ivec2 adjacency_mats, int wang_idx, vec2 uv)
         ret += texture_val(idx, wang_idx, uv) * (1.0/8.0);
     }}
     return ret;
+}
+
+float splat_alpha_at_pos(vec3 ws_pos)
+{
+    int chunk_w = map_resolution[0];
+    int chunk_h = map_resolution[1];
+    int tile_w = map_resolution[2];
+    int tile_h = map_resolution[3];
+    int tiles_per_chunk = tile_w * tile_h;
+
+    int chunk_x_dist = tile_w * X_COORDS_PER_TILE;
+    int chunk_z_dist = tile_h * Z_COORDS_PER_TILE;
+
+    int chunk_r = int(abs(map_pos.y - ws_pos.z) / chunk_z_dist);
+    int chunk_c = int(abs(map_pos.x - ws_pos.x) / chunk_x_dist);
+
+    float chunk_base_x = map_pos.x - (chunk_c * chunk_x_dist);
+    float chunk_base_z = map_pos.y + (chunk_r * chunk_z_dist);
+
+    float percentu = clamp((chunk_base_x - ws_pos.x) / chunk_x_dist, 0, 1.0);
+    float percentv = clamp((ws_pos.z - chunk_base_z) / chunk_z_dist, 0, 1.0);
+
+    int res = int(sqrt(textureSize(splat_map)));
+    int buffx = int(percentu * (res - 1));
+    int buffy = int(percentv * (res - 1));
+    int idx = clamp(buffx * res + buffy, 0, res * res - 1);
+
+    return clamp(texelFetch(splat_map, idx).r + 0.2, 0.0, 1.0);
+}
+
+float sameness_value(int mid_indices, int edge_indices)
+{
+    float mid_map[MAX_MATERIALS];
+    float edge_map[MAX_MATERIALS];
+    for(int i = 0; i < MAX_MATERIALS; i++) {
+        mid_map[i] = 0;
+        edge_map[i] = 0;
+    }
+
+    for(int i = 0; i < 2; i++) {
+        int idx = (mid_indices >> (i * 4) & 0xf);
+        mid_map[idx] += 1;
+    }
+    for(int i = 0; i < 2; i++) {
+        int idx = (edge_indices >> (i * 4) & 0xf);
+        edge_map[idx] += 1;
+    }
+
+    float sameness = 1.0f;
+    for(int i = 0; i < MAX_MATERIALS; i++) {
+        int delta = int(abs(mid_map[i] - edge_map[i]));
+        float diff = 0.5f * delta;
+        sameness -= diff;
+    }
+    return sameness;
+}
+
+float bilinear_interp_float
+(
+    float q11, float q12, float q21, float q22, 
+    float x1, float x2, 
+    float y1, float y2, 
+    float x, float y
+)
+{
+    float x2x1, y2y1, x2x, y2y, yy1, xx1;
+
+    x2x1 = x2 - x1;
+    y2y1 = y2 - y1;
+    x2x = x2 - x;
+    y2y = y2 - y;
+    yy1 = y - y1;
+    xx1 = x - x1;
+
+    return 1.0 / (x2x1 * y2y1) * (
+        q11 * x2x * y2y +
+        q21 * xx1 * y2y +
+        q12 * x2x * yy1 +
+        q22 * xx1 * yy1
+    );
+}
+
+vec4 splatted_color_at_pos(vec3 ws_pos, int base_mat_idx, vec4 tex_color)
+{
+    int splat_idx = splats[base_mat_idx];
+    if(splat_idx == -1)
+        return tex_color;
+
+    float splat_alpha = splat_alpha_at_pos(ws_pos);
+    float tex_alpha = tex_color.w;
+    float total = splat_alpha + tex_alpha;
+
+    float splat_frac = splat_alpha / total;
+    vec4 splat_color = texture_val_raw(splat_idx, from_vertex.wang_index, from_vertex.uv);
+    return mix(splat_color, tex_color, 1.0 - splat_alpha);
 }
 
 vec4 bilinear_interp_vec4
@@ -368,6 +476,137 @@ vec3 normal_at_pos(vec3 ws_pos)
     return vec3(xz_normal.x, 1.0, xz_normal.y);
 }
 
+vec4 blended_texture_val()
+{
+    /* 
+     * This shader will blend this tile's texture(s) with adjacent tiles' textures 
+     * based on adjacency information of neighboring tiles' materials.
+     *
+     * Our top tile faces are made up of 4 triangles in the following configuration:
+     * (Note that the 4 "major" triangles may be further subdivided. In that case, the 
+     * triangles it is subdivided to must inherit the flat adjacency attributes. The
+     * other attributes will be interpolated. This is a detail not discussed further on.)
+     *
+     *  +----+----+
+     *  | \ top / |
+     *  |  \   /  |
+     *  + l -+- r +
+     *  |  /   \  |
+     *  | / bot \ |
+     *  +----+----+
+     *
+     * Each of the 4 triangles has a vertex at the center of the tile. The material indices
+     * are 'flat' attributes, so they will be the same for all fragments of a triangle.
+     *
+     * The UV coordinates for a tile go from (0.0, 1.0) to (1.0, 1.0) in the diagonal corner so
+     * we are able to determine which of the 4 triangles this fragment is in by checking 
+     * the interpolated UV coordinate.
+     *
+     * For a single tile, there are 9 reference points on the face of the tile: The 4 corners
+     * of the tile, the midpoints of the 4 edges, and the center point.
+     *
+     *  +---+---+
+     *  | 1 | 2 |
+     *  +---+---+
+     *  | 4 | 3 |
+     *  +---+---+ 
+     *
+     * Based on which quadrant we're in (which can be determined from UV), we will select the 
+     * closest 4 points and use bilinear interpolation to select the texture color for this 
+     * fragment using the UV coordinate.
+     *
+     * 'c1_indices' and 'c2_indices' hold the adjacency information for the two non-center vertices 
+     * for this triangle. Each element has 8 8-bit indices packed into 64 bits, resulting in 8 
+     * indices for each of the two vertices. Each index is the material of one of the 8 triangles 
+     * touching the vertex.
+     *
+     * 'tb_indices' and 'lr_indices' hold the materials for the centers of the edges of the 
+     * tile, with 2 8-bit indices for each edge.
+     * 
+     * 'mid_indices' holds the 2 materials at the central point of the tile in the lowest 8 bits. 
+     * Usually the 2 indices are the same except for some corner tiles where half of the tile uses 
+     * a different material.
+     *
+     */
+
+    vec4 tex_color;
+
+    bool bot   = (from_vertex.uv.x > from_vertex.uv.y) && (1.0 - from_vertex.uv.x > from_vertex.uv.y);
+    bool top   = (from_vertex.uv.x < from_vertex.uv.y) && (1.0 - from_vertex.uv.x < from_vertex.uv.y);
+    bool left  = (from_vertex.uv.x < from_vertex.uv.y) && (1.0 - from_vertex.uv.x > from_vertex.uv.y);
+    bool right = (from_vertex.uv.x > from_vertex.uv.y) && (1.0 - from_vertex.uv.x < from_vertex.uv.y);
+
+    bool left_half = from_vertex.uv.x < 0.5f;
+    bool bot_half = from_vertex.uv.y < 0.5f;
+
+    /***********************************************************************
+     * Set the fragment texture color
+     **********************************************************************/
+    vec4 color1 = mixed_texture_val(from_vertex.c1_indices, from_vertex.wang_index, from_vertex.uv);
+    vec4 color2 = mixed_texture_val(from_vertex.c2_indices, from_vertex.wang_index, from_vertex.uv);
+
+    vec4 tile_color = mix(
+        texture_val((from_vertex.mid_indices >> 0) & 0xff, from_vertex.wang_index, from_vertex.uv),
+        texture_val((from_vertex.mid_indices >> 8) & 0xff, from_vertex.wang_index, from_vertex.uv),
+        0.5f
+    );
+    vec4 left_center_color =  mix(
+        texture_val((from_vertex.lr_indices >> 16) & 0xff, from_vertex.wang_index, from_vertex.uv),
+        texture_val((from_vertex.lr_indices >> 24) & 0xff, from_vertex.wang_index, from_vertex.uv),
+        0.5f
+    );
+    vec4 bot_center_color = mix(
+        texture_val((from_vertex.tb_indices >> 0) & 0xff, from_vertex.wang_index, from_vertex.uv),
+        texture_val((from_vertex.tb_indices >> 8) & 0xff, from_vertex.wang_index, from_vertex.uv),
+        0.5f
+    );
+    vec4 right_center_color = mix(
+        texture_val((from_vertex.lr_indices >> 0) & 0xff, from_vertex.wang_index, from_vertex.uv),
+        texture_val((from_vertex.lr_indices >> 8) & 0xff, from_vertex.wang_index, from_vertex.uv),
+        0.5f
+    );
+    vec4 top_center_color = mix(
+        texture_val((from_vertex.tb_indices >> 16) & 0xff, from_vertex.wang_index, from_vertex.uv),
+        texture_val((from_vertex.tb_indices >> 24) & 0xff, from_vertex.wang_index, from_vertex.uv),
+        0.5f
+    );
+
+    if(top){
+
+        if(left_half)
+            tex_color = bilinear_interp_vec4(left_center_color, color1, tile_color, top_center_color,
+                0.0f, 0.5f, 0.5f, 1.0f, from_vertex.uv.x, from_vertex.uv.y);        
+        else
+            tex_color = bilinear_interp_vec4(tile_color, top_center_color, right_center_color, color2,
+                0.5f, 1.0f, 0.5f, 1.0f, from_vertex.uv.x, from_vertex.uv.y);
+    }else if(bot){
+
+        if(left_half)
+            tex_color = bilinear_interp_vec4(color1, left_center_color, bot_center_color, tile_color,
+                0.0f, 0.5f, 0.0f, 0.5f, from_vertex.uv.x, from_vertex.uv.y);        
+        else
+            tex_color = bilinear_interp_vec4(bot_center_color, tile_color, color2, right_center_color,
+                0.5f, 1.0f, 0.0f, 0.5f, from_vertex.uv.x, from_vertex.uv.y);
+    }else if(left){
+
+        if(bot_half)
+            tex_color = bilinear_interp_vec4(color1, left_center_color, bot_center_color, tile_color,
+                0.0f, 0.5f, 0.0f, 0.5f, from_vertex.uv.x, from_vertex.uv.y);        
+        else
+            tex_color = bilinear_interp_vec4(left_center_color, color2, tile_color, top_center_color,
+                0.0f, 0.5f, 0.5f, 1.0f, from_vertex.uv.x, from_vertex.uv.y);
+    }else if(right){
+
+        if(bot_half)
+            tex_color = bilinear_interp_vec4(bot_center_color, tile_color, color1, right_center_color,
+                0.5f, 1.0f, 0.0f, 0.5f, from_vertex.uv.x, from_vertex.uv.y);        
+        else
+            tex_color = bilinear_interp_vec4(tile_color, top_center_color, right_center_color, color2,
+                0.5f, 1.0f, 0.5f, 1.0f, from_vertex.uv.x, from_vertex.uv.y);
+    }
+    return tex_color;
+}
+
 void main()
 {
     ivec4 td = tile_desc_at(from_vertex.world_pos);
@@ -385,132 +624,7 @@ void main()
         tex_color = texture_val(from_vertex.mat_idx, from_vertex.wang_index, from_vertex.uv);
         break;
     case BLEND_MODE_BLUR:
-
-        /* 
-         * This shader will blend this tile's texture(s) with adjacent tiles' textures 
-         * based on adjacency information of neighboring tiles' materials.
-         *
-         * Our top tile faces are made up of 4 triangles in the following configuration:
-         * (Note that the 4 "major" triangles may be further subdivided. In that case, the 
-         * triangles it is subdivided to must inherit the flat adjacency attributes. The
-         * other attributes will be interpolated. This is a detail not discussed further on.)
-         *
-         *  +----+----+
-         *  | \ top / |
-         *  |  \   /  |
-         *  + l -+- r +
-         *  |  /   \  |
-         *  | / bot \ |
-         *  +----+----+
-         *
-         * Each of the 4 triangles has a vertex at the center of the tile. The material indices
-         * are 'flat' attributes, so they will be the same for all fragments of a triangle.
-         *
-         * The UV coordinates for a tile go from (0.0, 1.0) to (1.0, 1.0) in the diagonal corner so
-         * we are able to determine which of the 4 triangles this fragment is in by checking 
-         * the interpolated UV coordinate.
-         *
-         * For a single tile, there are 9 reference points on the face of the tile: The 4 corners
-         * of the tile, the midpoints of the 4 edges, and the center point.
-         *
-         *  +---+---+
-         *  | 1 | 2 |
-         *  +---+---+
-         *  | 4 | 3 |
-         *  +---+---+ 
-         *
-         * Based on which quadrant we're in (which can be determined from UV), we will select the closest 
-         * 4 points and use bilinear interpolation to select the texture color for this fragment using 
-         * the UV coordinate.
-         *
-         * 'c1_indices' and 'c2_indices' hold the adjacency information for the two non-center vertices 
-         * for this triangle. Each element has 8 8-bit indices packed into 64 bits, resulting in 8 indices 
-         * for each of the two vertices. Each index is the material of one of the 8 triangles touching the 
-         * vertex.
-         *
-         * 'tb_indices' and 'lr_indices' hold the materials for the centers of the edges of the tile, with 
-         * 2 8-bit indices for each edge.
-         * 
-         * 'mid_indices' holds the 2 materials at the central point of the tile in the lowest 8 bits. 
-         * Usually the 2 indices are the same except for some corner tiles where half of the tile uses 
-         * a different material.
-         *
-         */
-
-        bool bot   = (from_vertex.uv.x > from_vertex.uv.y) && (1.0 - from_vertex.uv.x > from_vertex.uv.y);
-        bool top   = (from_vertex.uv.x < from_vertex.uv.y) && (1.0 - from_vertex.uv.x < from_vertex.uv.y);
-        bool left  = (from_vertex.uv.x < from_vertex.uv.y) && (1.0 - from_vertex.uv.x > from_vertex.uv.y);
-        bool right = (from_vertex.uv.x > from_vertex.uv.y) && (1.0 - from_vertex.uv.x < from_vertex.uv.y);
-
-        bool left_half = from_vertex.uv.x < 0.5f;
-        bool bot_half = from_vertex.uv.y < 0.5f;
-
-        /***********************************************************************
-         * Set the fragment texture color
-         **********************************************************************/
-        vec4 color1 = mixed_texture_val(from_vertex.c1_indices, from_vertex.wang_index, from_vertex.uv);
-        vec4 color2 = mixed_texture_val(from_vertex.c2_indices, from_vertex.wang_index, from_vertex.uv);
-
-        vec4 tile_color = mix(
-            texture_val((from_vertex.mid_indices >> 0) & 0xff, from_vertex.wang_index, from_vertex.uv),
-            texture_val((from_vertex.mid_indices >> 8) & 0xff, from_vertex.wang_index, from_vertex.uv),
-            0.5f
-        );
-        vec4 left_center_color =  mix(
-            texture_val((from_vertex.lr_indices >> 16) & 0xff, from_vertex.wang_index, from_vertex.uv),
-            texture_val((from_vertex.lr_indices >> 24) & 0xff, from_vertex.wang_index, from_vertex.uv),
-            0.5f
-        );
-        vec4 bot_center_color = mix(
-            texture_val((from_vertex.tb_indices >> 0) & 0xff, from_vertex.wang_index, from_vertex.uv),
-            texture_val((from_vertex.tb_indices >> 8) & 0xff, from_vertex.wang_index, from_vertex.uv),
-            0.5f
-        );
-        vec4 right_center_color = mix(
-            texture_val((from_vertex.lr_indices >> 0) & 0xff, from_vertex.wang_index, from_vertex.uv),
-            texture_val((from_vertex.lr_indices >> 8) & 0xff, from_vertex.wang_index, from_vertex.uv),
-            0.5f
-        );
-        vec4 top_center_color = mix(
-            texture_val((from_vertex.tb_indices >> 16) & 0xff, from_vertex.wang_index, from_vertex.uv),
-            texture_val((from_vertex.tb_indices >> 24) & 0xff, from_vertex.wang_index, from_vertex.uv),
-            0.5f
-        );
-
-        if(top){
-
-            if(left_half)
-                tex_color = bilinear_interp_vec4(left_center_color, color1, tile_color, top_center_color,
-                    0.0f, 0.5f, 0.5f, 1.0f, from_vertex.uv.x, from_vertex.uv.y);        
-            else
-                tex_color = bilinear_interp_vec4(tile_color, top_center_color, right_center_color, color2,
-                    0.5f, 1.0f, 0.5f, 1.0f, from_vertex.uv.x, from_vertex.uv.y);
-        }else if(bot){
-
-            if(left_half)
-                tex_color = bilinear_interp_vec4(color1, left_center_color, bot_center_color, tile_color,
-                    0.0f, 0.5f, 0.0f, 0.5f, from_vertex.uv.x, from_vertex.uv.y);        
-            else
-                tex_color = bilinear_interp_vec4(bot_center_color, tile_color, color2, right_center_color,
-                    0.5f, 1.0f, 0.0f, 0.5f, from_vertex.uv.x, from_vertex.uv.y);
-        }else if(left){
-
-            if(bot_half)
-                tex_color = bilinear_interp_vec4(color1, left_center_color, bot_center_color, tile_color,
-                    0.0f, 0.5f, 0.0f, 0.5f, from_vertex.uv.x, from_vertex.uv.y);        
-            else
-                tex_color = bilinear_interp_vec4(left_center_color, color2, tile_color, top_center_color,
-                    0.0f, 0.5f, 0.5f, 1.0f, from_vertex.uv.x, from_vertex.uv.y);
-        }else if(right){
-
-            if(bot_half)
-                tex_color = bilinear_interp_vec4(bot_center_color, tile_color, color1, right_center_color,
-                    0.5f, 1.0f, 0.0f, 0.5f, from_vertex.uv.x, from_vertex.uv.y);        
-            else
-                tex_color = bilinear_interp_vec4(tile_color, top_center_color, right_center_color, color2,
-                    0.5f, 1.0f, 0.5f, 1.0f, from_vertex.uv.x, from_vertex.uv.y);
-        }
-
+        tex_color = blended_texture_val();
         break;
     default:
         o_frag_color = vec4(1.0, 0.0, 1.0, 1.0);

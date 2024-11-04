@@ -97,6 +97,8 @@ static PyObject *PyPf_load_map_string(PyObject *self, PyObject *args, PyObject *
 static PyObject *PyPf_set_ambient_light_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args);
+static PyObject *PyPf_map_add_splat(PyObject *self, PyObject *args);
+static PyObject *PyPf_map_remove_splat(PyObject *self, PyObject *args);
 static PyObject *PyPf_load_scene(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_open_url(PyObject *self, PyObject *args);
 static PyObject *PyPf_preload_pfobj(PyObject *self, PyObject *args);
@@ -281,6 +283,16 @@ static PyMethodDef pf_module_methods[] = {
     {"set_emit_light_pos", 
     (PyCFunction)PyPf_set_emit_light_pos, METH_VARARGS,
     "Sets the position (in XYZ worldspace coordinates)"},
+
+    {"map_add_splat", 
+    (PyCFunction)PyPf_map_add_splat, METH_VARARGS,
+    "Set a secondary texture for a particular texture. Takes 2 integers, the base material index "
+    "and the accent material index."},
+
+    {"map_remove_splat", 
+    (PyCFunction)PyPf_map_remove_splat, METH_VARARGS,
+    "Remove a secondary texture for a particular texture. Takes 2 integers, the base material index "
+    "and the accent material index."},
 
     {"load_scene", 
     (PyCFunction)PyPf_load_scene, METH_VARARGS | METH_KEYWORDS,
@@ -1108,6 +1120,32 @@ static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args)
     }
 
     G_SetLightPos(pos);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_map_add_splat(PyObject *self, PyObject *args)
+{
+    int base_mat_idx, accent_mat_idx;
+
+    if(!PyArg_ParseTuple(args, "ii", &base_mat_idx, &accent_mat_idx)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of 2 integers (material indices).");
+        return NULL;
+    }
+
+    G_MapAddSplat(base_mat_idx, accent_mat_idx);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_map_remove_splat(PyObject *self, PyObject *args)
+{
+    int base_mat_idx, accent_mat_idx;
+
+    if(!PyArg_ParseTuple(args, "ii", &base_mat_idx, &accent_mat_idx)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of 2 integers (material indices).");
+        return NULL;
+    }
+
+    G_MapRemoveSplat(base_mat_idx, accent_mat_idx);
     Py_RETURN_NONE;
 }
 

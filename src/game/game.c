@@ -1799,6 +1799,23 @@ bool G_PointOverLand(vec2_t xz)
     return M_PointOverLand(s_gs.map, xz);
 }
 
+bool G_MapAddSplat(int base_mat_idx, int accent_mat_idx)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(!s_gs.map)
+        return false;
+    return M_AddSplat(s_gs.map, base_mat_idx, accent_mat_idx);
+}
+
+bool G_MapRemoveSplat(int base_mat_idx, int accent_mat_idx)
+{
+    ASSERT_IN_MAIN_THREAD();
+    if(!s_gs.map)
+        return false;
+    return M_RemoveSplat(s_gs.map, base_mat_idx, accent_mat_idx);
+}
+
 void G_BakeNavDataForScene(void)
 {
     PERF_ENTER();

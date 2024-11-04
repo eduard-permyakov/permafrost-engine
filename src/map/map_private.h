@@ -43,11 +43,6 @@
 #define MAX_NUM_SPLATS (256)
 
 
-struct splat{
-    size_t base_material;
-    size_t accent_material;
-};
-
 struct map{
     /* ------------------------------------------------------------------------
      * Map dimensions in numbers of chunks.
@@ -92,14 +87,14 @@ struct map{
      * ------------------------------------------------------------------------
      */
     size_t num_mats;
-    char texnames[MAX_NUM_MATS][256];
+    char texnames[MAX_NUM_MATS][MAX_MAP_TEXTURES];
     /* ------------------------------------------------------------------------
      * Information about texture splats which are used to apply secondary
      * 'accent' textures to an existing material texture.
      * ------------------------------------------------------------------------
      */
     size_t num_splats;
-    struct splat splats[MAX_NUM_SPLATS];
+    struct splatmap splatmap;
     /* ------------------------------------------------------------------------
      * The map chunks stored in row-major order. In total, there must be 
      * (width * height) number of chunks.
