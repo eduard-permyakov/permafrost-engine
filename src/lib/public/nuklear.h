@@ -16225,6 +16225,7 @@ nk_panel_begin(struct nk_context *ctx, const char *title, enum nk_panel_type pan
             text.background = nk_rgba(0,0,0,0);
             nk_draw_nine_slice(&win->buffer, header, &background->data.slice, nk_white);
         }else if (background->type == NK_STYLE_ITEM_NINE_SLICE_TEXPATH) {
+            text.background = nk_rgba(0,0,0,0);
             nk_draw_nine_slice_texpath(&win->buffer, header, &background->data.slice_texpath, nk_white);
         } else {
             text.background = background->data.color;
