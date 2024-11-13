@@ -97,6 +97,7 @@ static PyObject *PyWindow_layout_row_push(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_label_colored(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_label_colored_wrap(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyWindow_button_label_with_overlay(PyWindowObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyWindow_animated_button_label(PyWindowObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyWindow_simple_chart(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_selectable_label(PyWindowObject *self, PyObject *args);
@@ -209,6 +210,11 @@ static int       PyWindow_set_fixed_background(PyWindowObject *self, PyObject *v
 
 NK_API struct nk_window *nk_find_window(struct nk_context *ctx, nk_hash hash, const char *name);
 
+struct nk_button_userdata{
+    const char *texpath;
+    struct nk_rect bounds;
+};
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -249,6 +255,11 @@ static PyMethodDef PyWindow_methods[] = {
     {"button_label", 
     (PyCFunction)PyWindow_button_label, METH_VARARGS | METH_KEYWORDS,
     "Add a button with a label and action."},
+
+    {"button_label_with_overlay", 
+    (PyCFunction)PyWindow_button_label_with_overlay, METH_VARARGS | METH_KEYWORDS,
+    "Add a button with a label and action. Specify a semi-transparent image that is rendered over "
+    "the button."},
 
     {"animated_button_label", 
     (PyCFunction)PyWindow_animated_button_label, METH_VARARGS | METH_KEYWORDS,
@@ -895,6 +906,65 @@ static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args, PyO
     return Py_BuildValue("(OO)", hoverobj, rclickobj);
 }
 
+static void draw_button_overlay(struct nk_command_buffer *buffer, nk_handle userdata)
+{
+    struct nk_button_userdata *user = userdata.ptr;
+    struct nk_color white = (struct nk_color){255,255,255,255};
+    nk_draw_texpath(buffer, user->bounds, user->texpath, white);
+}
+
+static PyObject *PyWindow_button_label_with_overlay(PyWindowObject *self, PyObject *args, PyObject *kwargs)
+{
+    const char *str, *overlay, *tooltip = NULL;
+    PyObject *callable, *cargs = NULL;
+    float x_padding = 0, y_padding = 0;
+    static char *kwlist[] = { "string", "overlay", "callable", 
+        "args", "tooltip", "x_padding", "y_padding", NULL };
+    struct nk_rect bounds = nk_widget_bounds(s_nk_ctx);
+    const struct nk_input *in = &s_nk_ctx->input;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "ssO|Osff", kwlist, &str, &overlay, &callable, 
+        &cargs, &tooltip, &x_padding, &y_padding)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string, a string (image path), and "
+            "an object. Optionally, an argument to the callable can be provided, as well as "
+            "tooltip text.");
+        return NULL;
+    }
+
+    if(!PyCallable_Check(callable)) {
+        PyErr_SetString(PyExc_TypeError, "Second argument must be callable.");
+        return NULL;
+    }
+
+    struct nk_style_button style = s_nk_ctx->style.button;
+    struct nk_button_userdata userdata = (struct nk_button_userdata){
+        .texpath = overlay,
+        .bounds = bounds,
+    };
+    style.userdata.ptr = &userdata;
+    style.draw_end = draw_button_overlay;
+
+    style.image_padding.x += x_padding;
+    style.image_padding.y += y_padding;
+
+    if(nk_button_label_styled(s_nk_ctx, &style, str, true)) {
+        PyObject *ret = PyObject_CallObject(callable, cargs);
+        Py_XDECREF(ret);
+    }
+
+    struct nk_window *win = s_nk_ctx->current;
+    bool right_clicked = nk_input_is_mouse_click_in_rect(in, NK_BUTTON_RIGHT, bounds);
+    bool hovering = nk_input_is_mouse_hovering_rect(in, bounds);
+    if(tooltip && hovering) {
+        nk_tooltip(s_nk_ctx, tooltip);
+    }
+
+    PyObject *hoverobj = PyBool_FromLong(hovering);
+    PyObject *rclickobj = PyBool_FromLong(right_clicked 
+        && !(win->flags & NK_WINDOW_NOT_INTERACTIVE));
+    return Py_BuildValue("(OO)", hoverobj, rclickobj);
+}
+
 static PyObject *PyWindow_animated_button_label(PyWindowObject *self, PyObject *args, PyObject *kwargs)
 {
     uint32_t last_ts = 0;
@@ -902,13 +972,16 @@ static PyObject *PyWindow_animated_button_label(PyWindowObject *self, PyObject *
     const char *str, *tooltip = NULL;
     PyObject *callable, *cargs = NULL;
     const char *indicator_image = NULL;
+    const char *overlay_image = NULL;
+    float x_padding = 0, y_padding = 0;
     static char *kwlist[] = { "string", "callable", "timestamp", "fraction", "args", "tooltip", 
-        "indicator_image", NULL };
+        "indicator_image", "overlay", "x_padding", "y_padding", NULL };
     struct nk_rect bounds = nk_widget_bounds(s_nk_ctx);
     const struct nk_input *in = &s_nk_ctx->input;
 
-    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "sOIf|Oss", kwlist, &str, &callable, 
-        &last_ts, &fraction, &cargs, &tooltip, &indicator_image)) {
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "sOIf|Osssff", kwlist, &str, &callable, 
+        &last_ts, &fraction, &cargs, &tooltip, &indicator_image, &overlay_image,
+        &x_padding, &y_padding)) {
         PyErr_SetString(PyExc_TypeError, "Arguments must be a string, an object, an integer "
             "and a float. "
             "Optionally, an argument to the callable can be provided, as well as tooltip text "
@@ -921,7 +994,20 @@ static PyObject *PyWindow_animated_button_label(PyWindowObject *self, PyObject *
         return NULL;
     }
 
-    if(nk_button_label(s_nk_ctx, str)) {
+    struct nk_style_button style = s_nk_ctx->style.button;
+    struct nk_button_userdata userdata = (struct nk_button_userdata){
+        .texpath = overlay_image,
+        .bounds = bounds,
+    };
+    if(overlay_image) {
+        style.userdata.ptr = &userdata;
+        style.draw_end = draw_button_overlay;
+    }
+
+    style.image_padding.x += x_padding;
+    style.image_padding.y += y_padding;
+
+    if(nk_button_label_styled(s_nk_ctx, &style, str, true)) {
         PyObject *ret = PyObject_CallObject(callable, cargs);
         Py_XDECREF(ret);
     }
@@ -938,8 +1024,14 @@ static PyObject *PyWindow_animated_button_label(PyWindowObject *self, PyObject *
         fraction = fraction - 1.0f;
     }
 
+    struct nk_rect content = bounds;
+    content.x += x_padding;
+    content.y += y_padding;
+    content.w -= 2 * x_padding;
+    content.h -= 2 * y_padding;
+
     struct nk_window *win = s_nk_ctx->current;
-    struct nk_rect ind_bounds = indicator_bounds(bounds, fraction * 100.0f);
+    struct nk_rect ind_bounds = indicator_bounds(content, fraction * 100.0f);
     struct nk_color indicator_color = (struct nk_color){250, 250, 50, 255};
     if(indicator_image) {
         nk_draw_texpath(&win->buffer, ind_bounds, indicator_image, indicator_color);
