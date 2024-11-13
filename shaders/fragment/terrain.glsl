@@ -304,33 +304,6 @@ float splat_alpha_at_pos(vec3 ws_pos)
     return clamp(texelFetch(splat_map, idx).r + 0.2, 0.0, 1.0);
 }
 
-float sameness_value(int mid_indices, int edge_indices)
-{
-    float mid_map[MAX_MATERIALS];
-    float edge_map[MAX_MATERIALS];
-    for(int i = 0; i < MAX_MATERIALS; i++) {
-        mid_map[i] = 0;
-        edge_map[i] = 0;
-    }
-
-    for(int i = 0; i < 2; i++) {
-        int idx = (mid_indices >> (i * 4) & 0xf);
-        mid_map[idx] += 1;
-    }
-    for(int i = 0; i < 2; i++) {
-        int idx = (edge_indices >> (i * 4) & 0xf);
-        edge_map[idx] += 1;
-    }
-
-    float sameness = 1.0f;
-    for(int i = 0; i < MAX_MATERIALS; i++) {
-        int delta = int(abs(mid_map[i] - edge_map[i]));
-        float diff = 0.5f * delta;
-        sameness -= diff;
-    }
-    return sameness;
-}
-
 float bilinear_interp_float
 (
     float q11, float q12, float q21, float q22, 
