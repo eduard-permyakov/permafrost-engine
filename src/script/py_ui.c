@@ -2676,7 +2676,8 @@ bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
         struct nk_vec2 visible_size = {adj_bounds.w, adj_bounds.h};
 
         if(win->flags & NK_WINDOW_HIDDEN
-        || win->flags & NK_WINDOW_CLOSED) {
+        || win->flags & NK_WINDOW_CLOSED
+        || win->flags & NK_WINDOW_BACKGROUND) {
             continue; 
         }
 
