@@ -84,6 +84,11 @@ struct gamestate{
     char                    skybox_directory[256];
     char                    skybox_extension[16];
     /*-------------------------------------------------------------------------
+     * Cached value of 'use_batch_rendering' setting.
+     *-------------------------------------------------------------------------
+     */
+    bool                    use_batch_rendering;
+    /*-------------------------------------------------------------------------
      * Boolean to disable rendering of healthbars. Overrides the user-modifiable
      * setting.
      *-------------------------------------------------------------------------

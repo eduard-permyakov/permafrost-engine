@@ -111,15 +111,6 @@ static struct gamestate s_gs;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static bool g_use_batch_rendering(void)
-{
-    struct sval batch_setting;
-    ss_e status = Settings_Get("pf.video.use_batch_rendering", &batch_setting);
-    assert(status == SS_OKAY);
-    (void)status;
-    return batch_setting.as_bool;
-}
-
 static vec2_t g_default_minimap_pos(void)
 {
     struct sval res = (struct sval){ 
@@ -203,7 +194,7 @@ static void g_shadow_pass(struct render_input *in)
         M_RenderVisibleMap(in->map, in->cam, true, RENDER_PASS_DEPTH);
     }
 
-    if(g_use_batch_rendering()) {
+    if(s_gs.use_batch_rendering) {
 
         R_PushCmd((struct rcmd){
             .func = R_GL_Batch_RenderDepthMap,
@@ -264,7 +255,7 @@ static void g_draw_pass(struct render_input *in)
         M_RenderVisibleMap(in->map, in->cam, in->shadows, RENDER_PASS_REGULAR);
     }
 
-    if(g_use_batch_rendering()) {
+    if(s_gs.use_batch_rendering) {
 
         R_PushCmd((struct rcmd){
             .func = R_GL_Batch_Draw,
@@ -692,6 +683,7 @@ static void batching_en_commit(const struct sval *new_val)
         });
 
     }
+    s_gs.use_batch_rendering = on;
 }
 
 static bool g_save_anim_state(SDL_RWops *stream)
@@ -1581,7 +1573,7 @@ bool G_LoadMap(SDL_RWops *stream, bool update_navgrid)
 
     E_Global_Notify(EVENT_NEW_GAME, s_gs.map, ES_ENGINE);
 
-    if(g_use_batch_rendering()) {
+    if(s_gs.use_batch_rendering) {
         struct map_resolution res;
         M_GetResolution(s_gs.map, &res);
         R_PushCmd((struct rcmd){
