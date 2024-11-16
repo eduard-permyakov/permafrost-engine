@@ -2519,7 +2519,9 @@ static int PyWindow_set_fixed_background(PyWindowObject *self, PyObject *value, 
         return -1;
     }
 
-    s_nk_ctx->style.window.fixed_background = self->style.fixed_background;
+    if(s_nk_ctx->current && !strcmp(s_nk_ctx->current->name_string, self->name)) {
+        s_nk_ctx->style.window.fixed_background = self->style.fixed_background;
+    }
     return 0;
 }
 

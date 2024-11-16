@@ -22196,12 +22196,20 @@ nk_draw_progress(struct nk_command_buffer *out, nk_flags state,
     if (background->type == NK_STYLE_ITEM_COLOR) {
         nk_fill_rect(out, *bounds, style->rounding, background->data.color);
         nk_stroke_rect(out, *bounds, style->rounding, style->border, style->border_color);
+    } else if (background->type == NK_STYLE_ITEM_TEXPATH) {
+        nk_draw_texpath(out, *bounds, background->data.texpath, nk_white);
+    } else if (background->type == NK_STYLE_ITEM_NINE_SLICE_TEXPATH) {
+        nk_draw_nine_slice_texpath(out, *bounds, &background->data.slice_texpath, nk_white);
     } else nk_draw_image(out, *bounds, &background->data.image, nk_white);
 
     /* draw cursor */
     if (cursor->type == NK_STYLE_ITEM_COLOR) {
         nk_fill_rect(out, *scursor, style->rounding, cursor->data.color);
         nk_stroke_rect(out, *scursor, style->rounding, style->border, style->border_color);
+    } else if (background->type == NK_STYLE_ITEM_TEXPATH) {
+        nk_draw_texpath(out, *bounds, cursor->data.texpath, nk_white);
+    } else if (background->type == NK_STYLE_ITEM_NINE_SLICE_TEXPATH) {
+        nk_draw_nine_slice_texpath(out, *bounds, &cursor->data.slice_texpath, nk_white);
     } else nk_draw_image(out, *scursor, &cursor->data.image, nk_white);
 }
 NK_LIB nk_size
