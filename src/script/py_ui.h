@@ -40,11 +40,13 @@
 #include <stdbool.h>
 
 struct nk_context;
+struct nk_nine_slice_texpath;
 
 bool      S_UI_Init(struct nk_context *ctx);
 void      S_UI_Shutdown(void);
 void      S_UI_Update(void);
 void      S_UI_PyRegister(PyObject *module);
+int       S_UI_ParseNinePatch(PyObject *tuple, struct nk_nine_slice_texpath *out);
 PyObject *S_UI_ActiveWindow(void);
 
 #endif

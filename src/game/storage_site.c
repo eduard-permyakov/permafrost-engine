@@ -40,6 +40,7 @@
 #include "../ui.h"
 #include "../event.h"
 #include "../settings.h"
+#include "../main.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/khash.h"
@@ -47,6 +48,7 @@
 #include "../lib/public/string_intern.h"
 #include "../lib/public/attr.h"
 #include "../lib/public/stalloc.h"
+#include "../lib/public/stb_image.h"
 
 #include <assert.h>
 
@@ -110,6 +112,8 @@ MPOOL_ALLOCATOR_IMPL(static, buff, buff_t)
 
 KHASH_MAP_INIT_INT(state, struct ss_state)
 KHASH_MAP_INIT_STR(res, int)
+
+#define GREEN_CLR (struct nk_color){22, 84, 5, 255}
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -403,9 +407,10 @@ static void on_update_ui(void *user, void *event)
                                             : G_StorageSite_GetCapacity(key, names[i]);
                 int desired = curr.use_alt ? G_StorageSite_GetAltDesired(key, names[i]) 
                                            : G_StorageSite_GetDesired(key, names[i]);
+                int curr_amount = G_StorageSite_GetCurr(key, names[i]);
 
                 char curr[5], cap[5], des[7];
-                pf_snprintf(curr, sizeof(curr), "%4d", G_StorageSite_GetCurr(key, names[i]));
+                pf_snprintf(curr, sizeof(curr), "%4d", curr_amount);
                 pf_snprintf(cap, sizeof(cap), "%4d", capacity);
                 pf_snprintf(des, sizeof(des), "(%4d)", desired);
 
@@ -419,7 +424,8 @@ static void on_update_ui(void *user, void *event)
                 }
 
                 nk_layout_row_push(ctx, 40);
-                nk_label_colored(ctx, curr, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
+                nk_label_colored(ctx, curr, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, 
+                    (curr_amount > 0) ? GREEN_CLR : s_font_clr);
 
                 nk_layout_row_push(ctx, 10);
                 nk_label_colored(ctx, "/", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
@@ -492,6 +498,82 @@ static bool load_color(struct nk_color *out, SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
     out->a = attr.val.as_int;
+
+    return true;
+}
+
+static bool save_nine_patch(struct nk_nine_slice_texpath *slice, SDL_RWops *stream)
+{
+    struct attr bg_texpath = (struct attr){ .type = TYPE_STRING };
+    pf_strlcpy(bg_texpath.val.as_string, slice->texpath, 
+        sizeof(bg_texpath.val.as_string));
+    CHK_TRUE_RET(Attr_Write(stream, &bg_texpath, "bg_texpath"));
+
+    struct attr bg_left = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = slice->l
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &bg_left, "bg_left"));
+
+    struct attr bg_right = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = slice->r
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &bg_right, "bg_right"));
+
+    struct attr bg_top = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = slice->t
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &bg_top, "bg_top"));
+
+    struct attr bg_bot = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = slice->b
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &bg_bot, "bg_bot"));
+
+    return true;
+}
+
+static bool load_nine_patch(struct nk_nine_slice_texpath *out, SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_STRING);
+    pf_strlcpy(out->texpath, attr.val.as_string, sizeof(out->texpath));
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    out->l = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    out->r = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    out->t = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    out->b = attr.val.as_int;
+
+    char path[512];
+    pf_snprintf(path, sizeof(path), "%s/%s", g_basepath, out->texpath);
+
+    int x, y, components;
+    int status = stbi_info(path, &x, &y, &components);
+    if(status != 1)
+        return false;
+
+    out->w = x;
+    out->h = y;
+    out->region[0] = 0;
+    out->region[1] = 0;
+    out->region[2] = x;
+    out->region[3] = y;
 
     return true;
 }
@@ -1294,6 +1376,11 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Write(stream, &bg_texpath, "bg_texpath"));
         break;
     }
+    case NK_STYLE_ITEM_NINE_SLICE_TEXPATH: {
+
+        CHK_TRUE_RET(save_nine_patch(&s_bg_style.data.slice_texpath, stream));
+        break;
+    }
     default: assert(0);
     }
 
@@ -1476,6 +1563,11 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_STRING);
         pf_strlcpy(s_bg_style.data.texpath, attr.val.as_string, sizeof(s_bg_style.data.texpath));
+        break;
+    }
+    case NK_STYLE_ITEM_NINE_SLICE_TEXPATH: {
+
+        CHK_TRUE_RET(load_nine_patch(&s_bg_style.data.slice_texpath, stream));
         break;
     }
     default: 

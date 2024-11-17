@@ -2753,3 +2753,8 @@ PyObject *S_UI_ActiveWindow(void)
     return NULL;
 }
 
+int S_UI_ParseNinePatch(PyObject *tuple, struct nk_nine_slice_texpath *out)
+{
+    return parse_nine_patch(tuple, out);
+}
+

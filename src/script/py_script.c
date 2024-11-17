@@ -2460,7 +2460,11 @@ static PyObject *PyPf_set_storage_site_ui_style(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    if(PyTuple_Check(val) 
+    if(S_UI_ParseNinePatch(val, &style.data.slice_texpath) == 0) {
+
+        style.type = NK_STYLE_ITEM_NINE_SLICE_TEXPATH;
+
+    }else if(PyTuple_Check(val) 
     && PyTuple_GET_SIZE(val) == 4
     && PyInt_Check(PyTuple_GET_ITEM(val, 0))
     && PyInt_Check(PyTuple_GET_ITEM(val, 1))
