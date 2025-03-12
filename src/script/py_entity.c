@@ -4670,7 +4670,6 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
         G_Building_Mark(ent);
         G_Building_Found(ent, true);
         G_Building_Supply(ent);
-        G_Building_Complete(ent);
     }
 
     const char *attrs[][2] = {
@@ -4699,6 +4698,13 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
             }
             Py_XDECREF(val);
         }
+    }
+
+    /* Must do this step after setting the scale, as that will impact which
+     * tiles 'under' the building model get updated.
+     */
+    if(PyObject_IsInstance(ret, (PyObject*)&PyBuildableEntity_type)) {
+        G_Building_Complete(ent);
     }
 
     PyList_Append(s_loaded, ret);
