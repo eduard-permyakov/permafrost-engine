@@ -41,7 +41,7 @@
 
 #include <SDL.h> /* for SDL_RWops */
 
-#define MAX_ANIM_SETS 16
+#define MAX_ANIM_SETS 32
 #define MAX_LINE_LEN  256
 
 #define READ_LINE(rwops, buff, fail_label)              \
