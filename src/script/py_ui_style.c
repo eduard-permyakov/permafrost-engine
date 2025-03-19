@@ -6607,7 +6607,6 @@ void S_UIHeaderStylePop(PyObject *obj, struct nk_context *ctx)
     assert(PyObject_IsInstance(obj, (PyObject*)&PyUIHeaderStyle_type));
     PyUIHeaderStyleObject *styleobj = (PyUIHeaderStyleObject*)obj;
 
-    styleobj->style = ctx->style.window.header;
     ctx->style.window.header = s_saved_header_style;
 }
 

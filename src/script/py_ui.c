@@ -918,13 +918,14 @@ static PyObject *PyWindow_button_label_with_overlay(PyWindowObject *self, PyObje
     const char *str, *overlay, *tooltip = NULL;
     PyObject *callable, *cargs = NULL;
     float x_padding = 0, y_padding = 0;
+    float x_overlay_padding = 0, y_overlay_padding = 0;
     static char *kwlist[] = { "string", "overlay", "callable", 
-        "args", "tooltip", "x_padding", "y_padding", NULL };
+        "args", "tooltip", "x_padding", "y_padding", "x_overlay_padding", "y_overlay_padding", NULL };
     struct nk_rect bounds = nk_widget_bounds(s_nk_ctx);
     const struct nk_input *in = &s_nk_ctx->input;
 
-    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "ssO|Osff", kwlist, &str, &overlay, &callable, 
-        &cargs, &tooltip, &x_padding, &y_padding)) {
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "ssO|Osffff", kwlist, &str, &overlay, &callable, 
+        &cargs, &tooltip, &x_padding, &y_padding, &x_overlay_padding, &y_overlay_padding)) {
         PyErr_SetString(PyExc_TypeError, "Arguments must be a string, a string (image path), and "
             "an object. Optionally, an argument to the callable can be provided, as well as "
             "tooltip text.");
@@ -936,10 +937,16 @@ static PyObject *PyWindow_button_label_with_overlay(PyWindowObject *self, PyObje
         return NULL;
     }
 
+    struct nk_rect overlay_bounds = bounds;
+    overlay_bounds.x += x_overlay_padding;
+    overlay_bounds.y += y_overlay_padding;
+    overlay_bounds.w -= 2 * x_overlay_padding;
+    overlay_bounds.h -= 2 * y_overlay_padding;
+
     struct nk_style_button style = s_nk_ctx->style.button;
     struct nk_button_userdata userdata = (struct nk_button_userdata){
         .texpath = overlay,
-        .bounds = bounds,
+        .bounds = overlay_bounds,
     };
     style.userdata.ptr = &userdata;
     style.draw_end = draw_button_overlay;
@@ -2576,6 +2583,7 @@ static void active_windows_update(void *user, void *event)
         struct nk_window *nkwin = nk_find_window(s_nk_ctx, name_hash, win->name);
         if(nkwin && (nkwin->seq == s_nk_ctx->seq)) {
             s_nk_ctx->style.window = saved_style;
+            S_UIHeaderStylePop(win->header_style, s_nk_ctx);
             continue;
         }
 
