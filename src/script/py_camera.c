@@ -527,7 +527,7 @@ static PyObject *PyCamera_get_name(PyCameraObject *self, void *closure)
 
 static int PyCamera_set_name(PyCameraObject *self, PyObject *value, void *closure)
 {
-    if(value == Py_None) {
+    if(value == Py_None || value == NULL) {
         PF_FREE(self->name);
         self->name = NULL;
         return 0;
