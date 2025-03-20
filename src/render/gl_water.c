@@ -538,7 +538,7 @@ void R_GL_WaterInit(void)
 
     glGenBuffers(1, &s_ctx.surface.VBO);
     glBindBuffer(GL_ARRAY_BUFFER, s_ctx.surface.VBO);
-    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(struct vertex), vbuff, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
     s_ctx.surface.num_verts = ARR_SIZE(vbuff);
 
     /* Attribute 0 - position */
