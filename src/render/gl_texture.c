@@ -34,6 +34,7 @@
  */
 
 #include "public/render.h"
+#include "render_private.h"
 #include "gl_texture.h"
 #include "gl_state.h"
 #include "gl_assert.h"
@@ -688,7 +689,6 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
                 if(!data)
                     continue;
 
-                glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
                 for(int j = 0; j < 8; j++) {
                     glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, (i * 8) + j, tileset_dim, 
                         tileset_dim, 1, GL_RGB, GL_UNSIGNED_BYTE, data);
@@ -700,15 +700,11 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
              * an event pump on the main thread and re-present the loading
              * screen to avoid losing responsiveness. 
              */
-            Engine_RequestPumpEvents();
-            R_GL_DrawLoadingScreen();
-            Engine_SwapWindow();
-
+            R_Yield();
             glActiveTexture(tunit);
+            glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
         }
 
-        glActiveTexture(tunit);
-        glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
         glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
         glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
         glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);

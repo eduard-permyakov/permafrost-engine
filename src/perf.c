@@ -314,7 +314,8 @@ void Perf_Pop(const char **out)
         return;
 
     struct perf_state *ps = &kh_val(s_thread_state_table, k);
-    assert(vec_size(&ps->perf_stack) > 0);
+    if(vec_size(&ps->perf_stack) == 0)
+        return;
 
     uint32_t idx = vec_idx_pop(&ps->perf_stack);
     assert(idx < vec_size(&ps->perf_trees[ps->perf_tree_idx]));

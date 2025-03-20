@@ -53,6 +53,9 @@ struct render_private{
     GLuint              vertex_stride;
 };
 
+/* General */
+void R_Yield(void);
+
 /* Tile */
 void R_TileGetVertices(const struct map *map, struct tile_desc td, struct terrain_vert *out);
 

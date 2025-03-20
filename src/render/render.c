@@ -67,7 +67,9 @@ bool g_trace_gpu;
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static SDL_GLContext s_context;
+static SDL_GLContext             s_context;
+static SDL_Window               *s_window;
+static struct render_sync_state *s_rstate; 
 
 /* write-once strings. Set by render thread at initialization */
 char                 s_info_vendor[128];
@@ -262,10 +264,10 @@ static bool render_wait_cmd(struct render_sync_state *rstate)
     return false;
 }
 
-static void render_signal_done(struct render_sync_state *rstate)
+static void render_signal_done(struct render_sync_state *rstate, enum render_status status)
 {
     SDL_LockMutex(rstate->done_lock);
-    rstate->done = true;
+    rstate->status= status;
     SDL_CondSignal(rstate->done_cond);
     SDL_UnlockMutex(rstate->done_lock);
 }
@@ -482,31 +484,31 @@ static void render_process_cmds(queue_rcmd_t *cmds)
 
 static int render(void *data)
 {
-    struct render_sync_state *rstate = data; 
-    SDL_Window *window = rstate->arg->in_window; /* cache window ptr */
+    s_rstate = data; 
+    s_window = s_rstate->arg->in_window; /* cache window ptr */
 
     Engine_SetRenderThreadID(SDL_ThreadID());
-    SDL_GL_MakeCurrent(window, s_context);
+    SDL_GL_MakeCurrent(s_window, s_context);
 
-    bool quit = render_wait_cmd(rstate);
+    bool quit = render_wait_cmd(s_rstate);
     assert(!quit);
-    render_init_ctx(rstate->arg);
-    bool initialized = rstate->arg->out_success;
+    render_init_ctx(s_rstate->arg);
+    bool initialized = s_rstate->arg->out_success;
 
-    rstate->arg = NULL; /* arg is stale after signalling main thread */
-    render_signal_done(rstate);
+    s_rstate->arg = NULL; /* arg is stale after signalling main thread */
+    render_signal_done(s_rstate, RSTAT_DONE);
 
     while(true) {
     
-        quit = render_wait_cmd(rstate);
+        quit = render_wait_cmd(s_rstate);
         if(quit)
             break;
 
         render_process_cmds(&G_GetRenderWS()->commands);
-        if(rstate->swap_buffers)
-            SDL_GL_SwapWindow(window);
+        if(s_rstate->swap_buffers)
+            SDL_GL_SwapWindow(s_window);
 
-        render_signal_done(rstate);
+        render_signal_done(s_rstate, RSTAT_DONE);
     }
 
     if(initialized) {
@@ -764,5 +766,31 @@ bool R_ComputeShaderSupported(void)
 {
     return (GLEW_VERSION_4_3 
         || (GLEW_ARB_compute_shader && GLEW_ARB_shader_storage_buffer_object));
+}
+
+void R_Yield(void)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    const char *stack[32] = {0};
+    size_t nitems = 0;
+    do{
+        if(nitems >= 32)
+            break;
+        Perf_Pop(&stack[nitems]);
+    }while(stack[nitems++] != NULL);
+
+    R_GL_DrawLoadingScreen();
+    SDL_GL_SwapWindow(s_window);
+
+    /* Set the status */
+    render_signal_done(s_rstate, RSTAT_YIELD);
+
+    /* We cannot handle a 'quit' while yielding */
+    (void)render_wait_cmd(s_rstate);
+
+    for(int i = nitems - 2; i >= 0; i--) {
+        Perf_Push(stack[i]);
+    }
 }
 

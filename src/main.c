@@ -177,7 +177,7 @@ static bool rstate_init(struct render_sync_state *rstate)
     if(!rstate->sq_cond)
         goto fail_sq_cond;
 
-    rstate->done = false;
+    rstate->status = RSTAT_NONE;
 
     rstate->done_lock = SDL_CreateMutex();
     if(!rstate->done_lock)
@@ -223,7 +223,7 @@ static int render_thread_quit(void)
 static void render_thread_start_work(void)
 {
     SDL_LockMutex(s_rstate.done_lock);
-    s_rstate.done = false;
+    s_rstate.status = RSTAT_NONE;
     SDL_UnlockMutex(s_rstate.done_lock);
 
     SDL_LockMutex(s_rstate.sq_lock);
@@ -232,31 +232,20 @@ static void render_thread_start_work(void)
     SDL_UnlockMutex(s_rstate.sq_lock);
 }
 
-void render_thread_wait_done(void)
+enum render_status render_thread_wait_done(void)
 {
     PERF_ENTER();
+    enum render_status ret;
 
-again:;
-    bool interrupted = false, done = false;
     SDL_LockMutex(s_rstate.done_lock);
-    while(!s_rstate.done && !s_rstate.pump_events) {
+    while(!s_rstate.status) {
         SDL_CondWait(s_rstate.done_cond, s_rstate.done_lock);
-        interrupted = s_rstate.pump_events;
-        done = s_rstate.done;
     }
-    s_rstate.pump_events = false;
-    if(s_rstate.done) {
-        s_rstate.done = false;
-    }
+    ret = s_rstate.status;
+    s_rstate.status = RSTAT_NONE;
     SDL_UnlockMutex(s_rstate.done_lock);
 
-    if(interrupted && !done) {
-        SDL_PumpEvents();
-        SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
-        goto again;
-    }
-
-    PERF_RETURN_VOID();
+    PERF_RETURN(ret);
 }
 
 static void render_maybe_enable(void)
@@ -460,6 +449,7 @@ static bool engine_init(void)
 
     render_thread_start_work();
     render_thread_wait_done();
+    s_rstate.swap_buffers = true;
 
     if(!rarg.out_success)
         goto fail_render_init;
@@ -542,7 +532,6 @@ static bool engine_init(void)
     }
 
     engine_create_settings();
-    s_rstate.swap_buffers = true;
     return true;
 
 fail_phys:
@@ -686,7 +675,7 @@ void Engine_SetDispMode(enum pf_window_flags wf)
 {
     SDL_SetWindowFullscreen(s_window, wf & SDL_WINDOW_FULLSCREEN);
     SDL_SetWindowBordered(s_window, !(wf & (SDL_WINDOW_BORDERLESS | SDL_WINDOW_FULLSCREEN)));
-    SDL_SetWindowPosition(s_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+    SDL_SetWindowPosition(s_window, 0, 0);
 }
 
 void Engine_WinDrawableSize(int *out_w, int *out_h)
@@ -730,24 +719,14 @@ void Engine_WaitRenderWorkDone(void)
         PERF_RETURN_VOID();
     }
 
-    /* Wait for the render thread to finish, but don't yet clear/ack the 'done' flag */
+    /* Wait for the render thread to finish, but don't yet clear/ack the 'status' flag */
     SDL_LockMutex(s_rstate.done_lock);
-    while(!s_rstate.done) {
+    while(!s_rstate.status) {
         SDL_CondWait(s_rstate.done_cond, s_rstate.done_lock);
     }
     SDL_UnlockMutex(s_rstate.done_lock);
 
     PERF_RETURN_VOID();
-}
-
-void Engine_RequestPumpEvents(void)
-{
-    ASSERT_IN_RENDER_THREAD();
-
-    SDL_LockMutex(s_rstate.done_lock);
-    s_rstate.pump_events = true;
-    SDL_CondSignal(s_rstate.done_cond);
-    SDL_UnlockMutex(s_rstate.done_lock);
 }
 
 void Engine_SwapWindow(void)
@@ -813,6 +792,7 @@ int main(int argc, char **argv)
     Audio_PlayMusicFirst();
     S_RunFileAsync(argv[2], 0, NULL, &s_request_done);
     s_state = ENGINE_STATE_WAITING;
+    enum render_status last_status = RSTAT_NONE;
 
     /* Run the first frame of the simulation, and prepare the buffers for rendering. */
     E_ServiceQueue();
@@ -853,12 +833,13 @@ int main(int argc, char **argv)
         switch(s_state) {
         case ENGINE_STATE_RUNNING:
 
-            E_ServiceQueue();
-            G_Update();
-            G_Render();
+            if(last_status != RSTAT_YIELD) {
+                E_ServiceQueue();
+                G_Update();
+                G_Render();
+            }
             Sched_Tick();
-            render_thread_wait_done();
-            G_SwapBuffers();
+            last_status = render_thread_wait_done();
 
             break;
 
@@ -869,12 +850,15 @@ int main(int argc, char **argv)
                 SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
                 s_state = ENGINE_STATE_RUNNING;
             }
-            render_thread_wait_done();
+            last_status = render_thread_wait_done();
             break;
 
         default: assert(0); break;
         }
 
+        if(last_status == RSTAT_DONE) {
+            G_SwapBuffers();
+        }
         Perf_FinishTick();
 
         if(prev_step_frame) {

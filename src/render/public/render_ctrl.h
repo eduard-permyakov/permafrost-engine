@@ -66,6 +66,12 @@ struct render_init_arg{
     bool        out_success;
 };
 
+enum render_status{
+    RSTAT_NONE,
+    RSTAT_DONE,
+    RSTAT_YIELD,
+};
+
 struct render_sync_state{
     /* The render thread owns the data pointed to by 'arg' until
      * signalling the first 'done'. */
@@ -78,17 +84,15 @@ struct render_sync_state{
     bool       quit;
     SDL_mutex *sq_lock;
     SDL_cond  *sq_cond;
-    /* The done flag is set by the render thread when it is done 
-     * procesing commands for the current frame. */
-    bool       done;
+    /* The status is set by the render thread when it is done 
+     * procesing commands for the current frame, or it wants to 
+     * yield. */
+    enum render_status status;
     SDL_mutex *done_lock;
     SDL_cond  *done_cond;
     /* Flag to specify if the framebuffer should be presented on
      * the screen after all commands are executed */
     bool       swap_buffers;
-    /* Flag to request the main thread to pump events and go back
-     * to waiting for the render thread. */
-    bool       pump_events;
 };
 
 #define MAX_ARGS 8
@@ -113,7 +117,7 @@ struct render_workspace{
 bool        R_Init(const char *base_path);
 SDL_Thread *R_Run(struct render_sync_state *rstate);
 /* Must be set up before creating the window */
-void 		R_InitAttributes(void);
+void        R_InitAttributes(void);
 bool        R_ComputeShaderSupported(void);
 
 void       *R_PushArg(const void *src, size_t size);

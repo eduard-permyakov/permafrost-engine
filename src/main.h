@@ -82,12 +82,6 @@ void Engine_WaitRenderWorkDone(void);
 void Engine_ClearPendingEvents(void);
 bool Engine_GetArg(const char *name, size_t maxout, char out[]);
 
-/* Can be invoked from the rendering thread to request an event pump
- * and buffer swap from the main thread. This is to avoid losing responsiveness
- * of the application during long-running render thread work.
- */
-void Engine_RequestPumpEvents(void);
-
 /* Present the window (from render thread only).
  */
 void Engine_SwapWindow(void);
