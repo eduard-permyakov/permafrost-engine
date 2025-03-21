@@ -66,6 +66,8 @@
 #include "lib/public/windows.h"
 #endif
 
+#define EVENT_VEC_SIZE (32768)
+
 
 /* In the WAITING state the engine only pumps events and re-draws the window,
  * giving all the remaining cycles to the scheduler. The purpose of this state 
@@ -118,15 +120,21 @@ static char                    **s_argv;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static void process_sdl_events(void)
+static void process_sdl_events(enum render_status status)
 {
     PERF_ENTER();
     UI_InputBegin();
 
-    vec_event_reset(&s_prev_tick_events);
-    SDL_Event event;    
-   
+    if(status != RSTAT_YIELD) {
+        vec_event_reset(&s_prev_tick_events);
+    }
+    int ibegin = (vec_size(&s_prev_tick_events) > 0 ? vec_size(&s_prev_tick_events)-1 : 0);
+
+    SDL_Event event;
     while(SDL_PollEvent(&event)) {
+
+        if(vec_size(&s_prev_tick_events) == EVENT_VEC_SIZE)
+            break;
 
         UI_HandleEvent(&event);
         vec_event_push(&s_prev_tick_events, event);
@@ -150,7 +158,7 @@ static void process_sdl_events(void)
     }
 
     if(s_state != ENGINE_STATE_WAITING) {
-        for(int i = 0; i < vec_size(&s_prev_tick_events); i++) {
+        for(int i = ibegin; i < vec_size(&s_prev_tick_events); i++) {
             const SDL_Event *event = &vec_AT(&s_prev_tick_events, i);
             E_Global_Notify(event->type, (void*)event, ES_ENGINE);
         }
@@ -370,7 +378,7 @@ static bool engine_init(void)
     }
 
     vec_event_init(&s_prev_tick_events);
-    if(!vec_event_resize(&s_prev_tick_events, 8192))
+    if(!vec_event_resize(&s_prev_tick_events, EVENT_VEC_SIZE))
         goto fail_resize;
 
     /* Initialize 'Settings' before any subsystem to allow all of them 
@@ -792,7 +800,7 @@ int main(int argc, char **argv)
     Audio_PlayMusicFirst();
     S_RunFileAsync(argv[2], 0, NULL, &s_request_done);
     s_state = ENGINE_STATE_WAITING;
-    enum render_status last_status = RSTAT_NONE;
+    enum render_status render_status = RSTAT_NONE;
 
     /* Run the first frame of the simulation, and prepare the buffers for rendering. */
     E_ServiceQueue();
@@ -823,7 +831,7 @@ int main(int argc, char **argv)
         render_maybe_enable();
         render_thread_start_work();
         Sched_StartBackgroundTasks();
-        process_sdl_events();
+        process_sdl_events(render_status);
 
         bool request = Session_ServiceRequests(&s_request_done);
         if(request) {
@@ -833,13 +841,13 @@ int main(int argc, char **argv)
         switch(s_state) {
         case ENGINE_STATE_RUNNING:
 
-            if(last_status != RSTAT_YIELD) {
+            if(render_status != RSTAT_YIELD) {
                 E_ServiceQueue();
                 G_Update();
                 G_Render();
             }
             Sched_Tick();
-            last_status = render_thread_wait_done();
+            render_status = render_thread_wait_done();
 
             break;
 
@@ -850,13 +858,13 @@ int main(int argc, char **argv)
                 SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
                 s_state = ENGINE_STATE_RUNNING;
             }
-            last_status = render_thread_wait_done();
+            render_status = render_thread_wait_done();
             break;
 
         default: assert(0); break;
         }
 
-        if(last_status == RSTAT_DONE) {
+        if(render_status == RSTAT_DONE) {
             G_SwapBuffers();
         }
         Perf_FinishTick();
