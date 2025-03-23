@@ -506,8 +506,6 @@ static struct result session_task(void* arg)
     s_request = SESH_REQ_NONE;
     s_change_tick = g_frame_idx;
 
-    Engine_EnableRendering(false);
-
     return (struct result) {
         .type = RESULT_BOOL,
         .val.as_bool = result

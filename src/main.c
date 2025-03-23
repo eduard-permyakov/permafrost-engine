@@ -120,14 +120,10 @@ static char                    **s_argv;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static void process_sdl_events(enum render_status status)
+static void process_sdl_events(void)
 {
     PERF_ENTER();
     UI_InputBegin();
-
-    if(status != RSTAT_YIELD) {
-        vec_event_reset(&s_prev_tick_events);
-    }
     int ibegin = (vec_size(&s_prev_tick_events) > 0 ? vec_size(&s_prev_tick_events)-1 : 0);
 
     SDL_Event event;
@@ -251,6 +247,21 @@ enum render_status render_thread_wait_done(void)
     }
     ret = s_rstate.status;
     s_rstate.status = RSTAT_NONE;
+    SDL_UnlockMutex(s_rstate.done_lock);
+
+    PERF_RETURN(ret);
+}
+
+enum render_status render_thread_poll(void)
+{
+    PERF_ENTER();
+    enum render_status ret;
+
+    SDL_LockMutex(s_rstate.done_lock);
+    while(!s_rstate.status) {
+        SDL_CondWait(s_rstate.done_cond, s_rstate.done_lock);
+    }
+    ret = s_rstate.status;
     SDL_UnlockMutex(s_rstate.done_lock);
 
     PERF_RETURN(ret);
@@ -694,19 +705,28 @@ void Engine_WinDrawableSize(int *out_w, int *out_h)
 void Engine_FlushRenderWorkQueue(void)
 {
     ASSERT_IN_MAIN_THREAD();
+    enum render_status status = RSTAT_NONE;
 
-    /* Wait for the render thread to finish its' current batch */
-    render_thread_start_work();
-    render_thread_wait_done();
-    G_SwapBuffers();
+    /* Flush both queues. */
+    if(Sched_ActiveTID() == NULL_TID) {
 
-    /* Submit and run the queued batch to completion */
-    render_thread_start_work();
-    render_thread_wait_done();
-    G_SwapBuffers();
+        render_thread_start_work();
+        render_thread_wait_done();
+        G_SwapBuffers();
 
-    /* Kick off the empty batch such that we're in the same state that we started in */
-    render_thread_start_work();
+        render_thread_start_work();
+        render_thread_wait_done();
+        G_SwapBuffers();
+        return;
+    }
+
+    /* When called from task context, assume 
+     * that the render thread is started. 
+     */
+    do{
+        Sched_TryYield();
+        status = render_thread_poll();
+    }while(status != RSTAT_DONE);
 }
 
 void Engine_SetRenderThreadID(SDL_threadID id)
@@ -831,7 +851,7 @@ int main(int argc, char **argv)
         render_maybe_enable();
         render_thread_start_work();
         Sched_StartBackgroundTasks();
-        process_sdl_events(render_status);
+        process_sdl_events();
 
         bool request = Session_ServiceRequests(&s_request_done);
         if(request) {
@@ -843,19 +863,22 @@ int main(int argc, char **argv)
 
             if(render_status != RSTAT_YIELD) {
                 E_ServiceQueue();
+                vec_event_reset(&s_prev_tick_events);
                 G_Update();
                 G_Render();
             }
             Sched_Tick();
             render_status = render_thread_wait_done();
 
+            if(render_status != RSTAT_YIELD) {
+                G_SwapBuffers();
+            }
             break;
 
         case ENGINE_STATE_WAITING:
 
             Sched_Tick();
             if(Sched_FutureIsReady(&s_request_done)) {
-                SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
                 s_state = ENGINE_STATE_RUNNING;
             }
             render_status = render_thread_wait_done();
@@ -864,9 +887,6 @@ int main(int argc, char **argv)
         default: assert(0); break;
         }
 
-        if(render_status == RSTAT_DONE) {
-            G_SwapBuffers();
-        }
         Perf_FinishTick();
 
         if(prev_step_frame) {
