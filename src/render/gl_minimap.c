@@ -502,6 +502,38 @@ static void unit_render_ctx_destroy(struct unit_render_ctx *in)
     glDeleteVertexArrays(1, &in->vao);
 }
 
+static void push_default_lighting(vec3_t *old_ambient, vec3_t *old_emit, vec3_t *old_pos)
+{
+    vec3_t ambient = (vec3_t){1.0f, 1.0f, 1.0f};
+    *old_ambient = ambient;
+    struct uval oldv = {0};
+    if(R_GL_StateGet(GL_U_AMBIENT_COLOR, &oldv)) {
+        *old_ambient = oldv.val.as_vec3;
+    }
+    R_GL_StateSet(GL_U_AMBIENT_COLOR, (struct uval){.type = UTYPE_VEC3, .val.as_vec3 = ambient });
+
+    vec3_t emit = (vec3_t){1.0f, 1.0f, 1.0f};
+    *old_emit = emit;
+    if(R_GL_StateGet(GL_U_LIGHT_COLOR, &oldv)) {
+        *old_emit = oldv.val.as_vec3;
+    }
+    R_GL_StateSet(GL_U_LIGHT_COLOR, (struct uval){.type = UTYPE_VEC3, .val.as_vec3 = emit });
+
+    vec3_t pos = (vec3_t){120.0f, 150.0f, 120.0f};
+    *old_pos = pos;
+    if(R_GL_StateGet(GL_U_LIGHT_POS, &oldv)) {
+        *old_pos = oldv.val.as_vec3;
+    }
+    R_GL_StateSet(GL_U_LIGHT_POS, (struct uval){.type = UTYPE_VEC3, .val.as_vec3 = pos });
+}
+
+static void restore_lighting(vec3_t old_ambient, vec3_t old_emit, vec3_t old_pos)
+{
+    R_GL_StateSet(GL_U_AMBIENT_COLOR, (struct uval){.type = UTYPE_VEC3, .val.as_vec3 = old_ambient });
+    R_GL_StateSet(GL_U_LIGHT_COLOR, (struct uval){.type = UTYPE_VEC3, .val.as_vec3 = old_emit });
+    R_GL_StateSet(GL_U_LIGHT_POS, (struct uval){.type = UTYPE_VEC3, .val.as_vec3 = old_pos });
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -511,6 +543,10 @@ void R_GL_MinimapBake(const struct map *map, void **chunk_rprivates,
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
+
+    /* Ignore the dynamic light and ambient color setting when rendering the minimap */
+    vec3_t old_ambient, old_emit, old_pos;
+    push_default_lighting(&old_ambient, &old_emit, &old_pos);
 
     M_GetResolution(map, &s_ctx.res);
     setup_ortho_view_uniforms(map);
@@ -525,6 +561,7 @@ void R_GL_MinimapBake(const struct map *map, void **chunk_rprivates,
 
     /* Re-bind the default framebuffer when we're done rendering */
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    restore_lighting(old_ambient, old_emit, old_pos);
 
     int width, height;
     Engine_WinDrawableSize(&width, &height);
@@ -541,6 +578,9 @@ void R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate,
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
+
+    vec3_t old_ambient, old_emit, old_pos;
+    push_default_lighting(&old_ambient, &old_emit, &old_pos);
 
     struct map_resolution res;
     M_GetResolution(map, &res);
@@ -573,6 +613,7 @@ void R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate,
     /* Re-bind the default framebuffer when we're done rendering */
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDeleteFramebuffers(1, &fb);
+    restore_lighting(old_ambient, old_emit, old_pos);
 
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
