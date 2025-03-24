@@ -847,14 +847,17 @@ static void on_mousedown(void *user, void *event)
     enum selection_type sel_type;
     const vec_entity_t *sel = G_Sel_Get(&sel_type);
 
-    if(vec_size(sel) == 0 || sel_type != SELECTION_TYPE_PLAYER)
+    vec_entity_t fsel;
+    filter_selection_pathable(sel, &fsel);
+
+    if(vec_size(&fsel) == 0 || sel_type != SELECTION_TYPE_PLAYER)
         return;
 
     /* Allow dragging the mouse to orient the formation around 
      * the clicked location. The move orders will be issued when
      * the mouse is released. 
      */
-    if(G_Formation_PreferredForSet(sel) != FORMATION_NONE) {
+    if(G_Formation_PreferredForSet(&fsel) != FORMATION_NONE) {
         s_mouse_dragged = true;
         s_drag_begin_pos = mouse_coord;
         s_drag_end_pos = mouse_coord;
@@ -862,7 +865,8 @@ static void on_mousedown(void *user, void *event)
         return;
     }
 
-    move_order(sel, attack, mouse_coord, (vec2_t){0.0f, 0.0f});
+    move_order(&fsel, attack, mouse_coord, (vec2_t){0.0f, 0.0f});
+    vec_entity_destroy(&fsel);
 }
 
 static void on_mouseup(void *user, void *event)
