@@ -1,3 +1,5 @@
+## [Support the Development - Wishlist EVERGLORY on Steam](https://store.steampowered.com/app/1309720/EVERGLORY/)
+
 ## ![Logo](docs/images/logo.png) ##
 
 Permafrost Engine is an OpenGL 3.3 Real Time Strategy game engine written in C. 
@@ -9,7 +11,7 @@ It is made in the image of old classics, but incorporating some modern ideas.
 
 EVERGLORY is the flagship game developed using Permafrost Engine. 
 
-Download the free (or donate what-you-want) demo on [itch.io](https://spb.itch.io/everglory) or on [Steam](https://store.steampowered.com/app/1309720/EVERGLORY/). With the demo you also get access to all the scripts and assets powering the gameplay to learn from and modify as you wish.
+Download the free demo on [Steam](https://store.steampowered.com/app/1309720/EVERGLORY/). With the demo you also get access to all the scripts powering the gameplay to learn from and modify as you wish.
 
 ![screenshot-01](docs/images/screenshot-01.jpg)
 ![screenshot-02](docs/images/screenshot-02.jpg)
@@ -36,6 +38,7 @@ Download the free (or donate what-you-want) demo on [itch.io](https://spb.itch.i
 * Phong reflection model with materials
 * Directional light shadow mapping
 * Bump mapping
+* Terrain texture splatting
 * Skybox
 * Batched rendering with dynamic batches
 * Ringbuffer-based streaming of data to GPU
