@@ -164,6 +164,12 @@ static void process_sdl_events(void)
     PERF_RETURN_VOID();
 }
 
+static void clear_sdl_events(void)
+{
+    SDL_PumpEvents();
+    SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+}
+
 static void on_user_quit(void *user, void *event)
 {
     s_quit = true;
@@ -765,7 +771,7 @@ void Engine_SwapWindow(void)
 
 void Engine_ClearPendingEvents(void)
 {
-    SDL_FlushEvents(0, SDL_LASTEVENT);
+    clear_sdl_events();
     E_ClearPendingEvents();
 }
 
@@ -851,11 +857,16 @@ int main(int argc, char **argv)
         render_maybe_enable();
         render_thread_start_work();
         Sched_StartBackgroundTasks();
-        process_sdl_events();
 
         bool request = Session_ServiceRequests(&s_request_done);
         if(request) {
             s_state = ENGINE_STATE_WAITING;
+        }
+
+        if(s_state == ENGINE_STATE_RUNNING && render_status != RSTAT_YIELD) {
+            process_sdl_events();
+        }else{
+            clear_sdl_events();
         }
 
         switch(s_state) {
@@ -879,6 +890,7 @@ int main(int argc, char **argv)
 
             Sched_Tick();
             if(Sched_FutureIsReady(&s_request_done)) {
+                clear_sdl_events();
                 s_state = ENGINE_STATE_RUNNING;
             }
             render_status = render_thread_wait_done();
