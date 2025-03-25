@@ -700,7 +700,7 @@ void Engine_SetDispMode(enum pf_window_flags wf)
 {
     SDL_SetWindowFullscreen(s_window, wf & SDL_WINDOW_FULLSCREEN);
     SDL_SetWindowBordered(s_window, !(wf & (SDL_WINDOW_BORDERLESS | SDL_WINDOW_FULLSCREEN)));
-    SDL_SetWindowPosition(s_window, 0, 0);
+    SDL_SetWindowPosition(s_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 }
 
 void Engine_WinDrawableSize(int *out_w, int *out_h)
