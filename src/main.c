@@ -56,6 +56,7 @@
 #include "session.h"
 #include "perf.h"
 #include "sched.h"
+#include "loading_screen.h"
 
 #include <stdbool.h>
 #include <assert.h>
@@ -98,7 +99,6 @@ SDL_threadID                     g_render_thread_id; /* write-once */
 /*****************************************************************************/
 
 static SDL_Window               *s_window;
-static SDL_Surface              *s_loading_screen;
 
 static enum engine_state         s_state = ENGINE_STATE_RUNNING;
 static struct future             s_request_done;
@@ -321,38 +321,6 @@ static void engine_create_settings(void)
     assert(status == SS_OKAY);
 }
 
-static SDL_Surface *engine_create_loading_screen(void)
-{
-    ASSERT_IN_MAIN_THREAD();
-    SDL_Surface *ret = NULL;
-
-    char fullpath[512];
-    pf_snprintf(fullpath, sizeof(fullpath), "%s/%s", g_basepath, CONFIG_LOADING_SCREEN);
-
-    int width, height, orig_format;
-    unsigned char *image = stbi_load(fullpath, &width, &height, 
-        &orig_format, STBI_rgb);
-
-    if(!image) {
-        fprintf(stderr, "Loading Screen: Failed to load image: %s\n", fullpath);
-        goto fail_load_image;
-    }
-
-    ret = SDL_CreateRGBSurfaceWithFormat(0, width, height, 24, SDL_PIXELFORMAT_RGB24);
-
-    if(!ret) {
-        fprintf(stderr, "Loading Screen: Failed to create SDL surface: %s\n", SDL_GetError());    
-        goto fail_surface;
-    }
-
-    memcpy(ret->pixels, image, width * height * 3);
-
-fail_surface:
-    stbi_image_free(image);
-fail_load_image:
-    return ret;
-}
-
 static void engine_set_icon(void)
 {
     char iconpath[512];
@@ -447,11 +415,11 @@ static bool engine_init(void)
         res[1], 
         SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | wf | extra_flags);
 
-    s_loading_screen = engine_create_loading_screen();
+    LoadingScreen_Init();
     engine_set_icon();
     stbi_set_flip_vertically_on_load(true);
 
-    Engine_LoadingScreen();
+    LoadingScreen_DrawEarly(s_window);
 
     if(!rstate_init(&s_rstate)) {
         fprintf(stderr, "Failed to initialize the render sync state.\n");
@@ -590,9 +558,7 @@ fail_render_init:
 fail_rthread:
     rstate_destroy(&s_rstate);
 fail_rstate:
-    if(s_loading_screen) {
-        SDL_FreeSurface(s_loading_screen);
-    }
+    LoadingScreen_Shutdown();
     SDL_DestroyWindow(s_window);
     SDL_Quit();
 fail_sdl:
@@ -638,9 +604,7 @@ static void engine_shutdown(void)
     vec_event_destroy(&s_prev_tick_events);
     rstate_destroy(&s_rstate);
 
-    if(s_loading_screen) {
-        SDL_FreeSurface(s_loading_screen);
-    }
+    LoadingScreen_Shutdown();
     SDL_DestroyWindow(s_window); 
     SDL_Quit();
 
@@ -650,36 +614,6 @@ static void engine_shutdown(void)
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
-
-/* Fills the framebuffer with the loading screen using SDL's software renderer. 
- * Used to set a loading screen immediately, even before the rendering subsystem 
- * is initialized, */
-void Engine_LoadingScreen(void)
-{
-    ASSERT_IN_MAIN_THREAD();
-    assert(s_window);
-
-    /* Make sure the render therad doesn't overwrite the screen... */
-    if(g_render_thread_id) {
-        Engine_WaitRenderWorkDone();
-    }
-
-    SDL_Surface *win_surface = SDL_GetWindowSurface(s_window);
-    SDL_Renderer *sw_renderer = SDL_CreateSoftwareRenderer(win_surface);
-    assert(sw_renderer);
-
-    SDL_SetRenderDrawColor(sw_renderer, 0x00, 0x00, 0x00, 0xff);
-    SDL_RenderClear(sw_renderer);
-
-    SDL_Texture *tex;
-    if(s_loading_screen && (tex = SDL_CreateTextureFromSurface(sw_renderer, s_loading_screen))) {
-        SDL_RenderCopy(sw_renderer, tex, NULL, NULL);
-        SDL_DestroyTexture(tex);
-    }
-
-    SDL_UpdateWindowSurface(s_window);
-    SDL_DestroyRenderer(sw_renderer);
-}
 
 int Engine_SetRes(int w, int h)
 {
