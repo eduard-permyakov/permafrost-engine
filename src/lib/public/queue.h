@@ -72,6 +72,7 @@
     scope  bool  queue_##name##_init    (queue(name) *queue, size_t init_cap);                  \
     scope  void  queue_##name##_destroy (queue(name) *queue);                                   \
     scope  bool  queue_##name##_push    (queue(name) *queue, type *entry);                      \
+    scope  bool  queue_##name##_push_front(queue(name) *queue, type *entry);                    \
     scope  bool  queue_##name##_pop     (queue(name) *queue, type *out);                        \
     scope  void  queue_##name##_clear   (queue(name) *queue);
 
@@ -146,6 +147,23 @@
         }                                                                                       \
                                                                                                 \
         queue->mem[queue->itail] = *entry;                                                      \
+        ++queue->size;                                                                          \
+        return true;                                                                            \
+    }                                                                                           \
+                                                                                                \
+    scope bool queue_##name##_push_front(queue(name) *queue, type *entry)                       \
+    {                                                                                           \
+        if(queue->size == queue->capacity) {                                                    \
+            if(!_queue_##name##_resize(queue, queue->capacity ? queue->capacity * 2 : 32))      \
+                return false;                                                                   \
+        }                                                                                       \
+                                                                                                \
+        --queue->ihead;                                                                         \
+        if(queue->ihead < 0) {                                                                  \
+            queue->ihead = queue->capacity-1;  /* Wrap around back to top */                    \
+        }                                                                                       \
+                                                                                                \
+        queue->mem[queue->ihead] = *entry;                                                      \
         ++queue->size;                                                                          \
         return true;                                                                            \
     }                                                                                           \
