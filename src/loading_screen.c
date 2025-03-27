@@ -36,6 +36,9 @@
 #include "loading_screen.h"
 #include "main.h"
 #include "config.h"
+#include "ui.h"
+#include "render/public/render.h"
+#include "render/public/render_ctrl.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/stb_image.h"
 
@@ -119,5 +122,27 @@ void LoadingScreen_Shutdown(void)
     if(s_loading_screen) {
         SDL_FreeSurface(s_loading_screen);
     }
+}
+
+/* As we are pusing to the _front_ of the render queue, push the rendering 
+ * commands in reverse order. */
+void LoadingScreen_Tick(void)
+{
+    char buff[256];
+    pf_snprintf(buff, sizeof(buff), "FRAME: [%lu]", g_frame_idx);
+
+    char old_font[256];
+    pf_strlcpy(old_font, UI_GetActiveFont(), sizeof(old_font));
+    UI_SetActiveFont("__default__");
+
+    UI_DrawText(buff, (struct rect){50, 50, 200, 50}, (struct rgba){255, 0, 0, 255});
+    UI_LoadingScreenTick();
+    UI_SetActiveFont(old_font);
+
+    R_PushCmdImmediateFront((struct rcmd){
+        .func = R_GL_DrawLoadingScreen,
+        .nargs = 0
+    });
+    R_PushCmdImmediateFront((struct rcmd){ R_GL_BeginFrame, 0 });
 }
 

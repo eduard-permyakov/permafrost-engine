@@ -51,6 +51,7 @@
 #include "../anim/public/anim.h"
 #include "../map/public/map.h"
 #include "../lib/public/mem.h"
+#include "../lib/public/pf_string.h"
 #include "../ui.h"
 #include "../main.h"
 

@@ -78,7 +78,10 @@
  */
 enum engine_state{
     ENGINE_STATE_RUNNING,
-    ENGINE_STATE_WAITING
+    ENGINE_STATE_WAITING,
+    /* A transient state for making sure there is no more work to be done 
+     * by the rendering thread. */
+    ENGINE_STATE_RESUMING,
 };
 
 VEC_TYPE(event, SDL_Event)
@@ -124,7 +127,7 @@ static void process_sdl_events(void)
 {
     PERF_ENTER();
     UI_InputBegin();
-    int ibegin = (vec_size(&s_prev_tick_events) > 0 ? vec_size(&s_prev_tick_events)-1 : 0);
+    vec_event_reset(&s_prev_tick_events);
 
     SDL_Event event;
     while(SDL_PollEvent(&event)) {
@@ -154,7 +157,7 @@ static void process_sdl_events(void)
     }
 
     if(s_state != ENGINE_STATE_WAITING) {
-        for(int i = ibegin; i < vec_size(&s_prev_tick_events); i++) {
+        for(int i = 0; i < vec_size(&s_prev_tick_events); i++) {
             const SDL_Event *event = &vec_AT(&s_prev_tick_events, i);
             E_Global_Notify(event->type, (void*)event, ES_ENGINE);
         }
@@ -248,7 +251,7 @@ enum render_status render_thread_wait_done(void)
     enum render_status ret;
 
     SDL_LockMutex(s_rstate.done_lock);
-    while(!s_rstate.status) {
+    while(s_rstate.status == RSTAT_NONE) {
         SDL_CondWait(s_rstate.done_cond, s_rstate.done_lock);
     }
     ret = s_rstate.status;
@@ -264,7 +267,7 @@ enum render_status render_thread_poll(void)
     enum render_status ret;
 
     SDL_LockMutex(s_rstate.done_lock);
-    while(!s_rstate.status) {
+    while(s_rstate.status == RSTAT_NONE) {
         SDL_CondWait(s_rstate.done_cond, s_rstate.done_lock);
     }
     ret = s_rstate.status;
@@ -442,7 +445,7 @@ static bool engine_init(void)
 
     render_thread_start_work();
     render_thread_wait_done();
-    s_rstate.swap_buffers = true;
+    render_maybe_enable();
 
     if(!rarg.out_success)
         goto fail_render_init;
@@ -674,12 +677,6 @@ void Engine_SetRenderThreadID(SDL_threadID id)
     g_render_thread_id = id;
 }
 
-void Engine_EnableRendering(bool on)
-{
-    Engine_WaitRenderWorkDone();
-    s_rstate.swap_buffers = on;
-}
-
 void Engine_WaitRenderWorkDone(void)
 {
     PERF_ENTER();
@@ -689,7 +686,7 @@ void Engine_WaitRenderWorkDone(void)
 
     /* Wait for the render thread to finish, but don't yet clear/ack the 'status' flag */
     SDL_LockMutex(s_rstate.done_lock);
-    while(!s_rstate.status) {
+    while(s_rstate.status == RSTAT_NONE) {
         SDL_CondWait(s_rstate.done_cond, s_rstate.done_lock);
     }
     SDL_UnlockMutex(s_rstate.done_lock);
@@ -781,11 +778,8 @@ int main(int argc, char **argv)
             G_SetSimState(G_RUNNING);
         }
 
-        if(s_state == ENGINE_STATE_WAITING) {
-            R_PushCmdImmediate((struct rcmd){
-                .func = R_GL_DrawLoadingScreen,
-                .nargs = 0
-            });
+        if(s_state != ENGINE_STATE_RUNNING) {
+            LoadingScreen_Tick();
         }
 
         render_maybe_enable();
@@ -797,37 +791,41 @@ int main(int argc, char **argv)
             s_state = ENGINE_STATE_WAITING;
         }
 
-        if(s_state == ENGINE_STATE_RUNNING && render_status != RSTAT_YIELD) {
-            process_sdl_events();
-        }else{
-            clear_sdl_events();
-        }
-
         switch(s_state) {
         case ENGINE_STATE_RUNNING:
 
-            if(render_status != RSTAT_YIELD) {
-                E_ServiceQueue();
-                vec_event_reset(&s_prev_tick_events);
-                G_Update();
-                G_Render();
-            }
-            Sched_Tick();
-            render_status = render_thread_wait_done();
+            process_sdl_events();
+            E_ServiceQueue();
 
-            if(render_status != RSTAT_YIELD) {
-                G_SwapBuffers();
-            }
+            G_Update();
+            G_Render();
+            Sched_Tick();
+
+            render_status = render_thread_wait_done();
+            G_SwapBuffers();
+
             break;
 
         case ENGINE_STATE_WAITING:
 
+            clear_sdl_events();
             Sched_Tick();
+            render_status = render_thread_wait_done();
             if(Sched_FutureIsReady(&s_request_done)) {
-                clear_sdl_events();
+                /* Kick off the rendering work */
+                G_SwapBuffers();
+                s_state = ENGINE_STATE_RESUMING;
+            }
+            break;
+
+        case ENGINE_STATE_RESUMING:
+
+            clear_sdl_events();
+            Sched_Tick();
+            render_status = render_thread_wait_done();
+            if(render_status == RSTAT_DONE) {
                 s_state = ENGINE_STATE_RUNNING;
             }
-            render_status = render_thread_wait_done();
             break;
 
         default: assert(0); break;
@@ -839,7 +837,6 @@ int main(int argc, char **argv)
             G_SetSimState(curr_ss);
             s_step_frame = false;
         }
-
         ++g_frame_idx;
     }
 

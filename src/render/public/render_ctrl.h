@@ -125,6 +125,7 @@ void        R_PushCmd(struct rcmd cmd);
 /* Pushes the command to the render queue directly. May only 
  * be called when the render thread is quiesced */
 void        R_PushCmdImmediate(struct rcmd cmd);
+void        R_PushCmdImmediateFront(struct rcmd cmd);
 
 bool        R_InitWS(struct render_workspace *ws);
 void        R_DestroyWS(struct render_workspace *ws);

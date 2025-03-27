@@ -47,6 +47,7 @@ void LoadingScreen_Shutdown(void);
  * is initialized, 
  */
 void LoadingScreen_DrawEarly(SDL_Window *window);
+void LoadingScreen_Tick(void);
 
 #endif
 

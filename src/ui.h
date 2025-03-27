@@ -77,6 +77,7 @@ void               UI_InputEnd(void);
 void               UI_HandleEvent(SDL_Event *evt);
 void               UI_DrawText(const char *text, struct rect rect, struct rgba rgba);
 vec2_t             UI_GetTextVres(void);
+void               UI_LoadingScreenTick(void);
 
 /* Returns a trimmed version of the virtual resolution when the aspect ratio of the window is 
  * different than the virtual resolution aspect ratio. The adjusted resolution has the same

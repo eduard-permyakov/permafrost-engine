@@ -61,6 +61,11 @@ struct text_desc{
     struct rgba rgba;
 };
 
+enum ui_render_mode{
+    UI_RENDER_MODE_NORMAL,
+    UI_RENDER_MODE_LOADING_SCREEN
+};
+
 VEC_TYPE(td, struct text_desc)
 VEC_IMPL(static inline, td, struct text_desc)
 
@@ -391,6 +396,7 @@ static void ui_render(void *user, void *event)
 {
     struct nk_buffer cmds, vbuf, ebuf;
     const enum nk_anti_aliasing aa = NK_ANTI_ALIASING_ON;
+    enum ui_render_mode mode = (enum ui_render_mode)((uintptr_t)user);
 
     void *vbuff = stalloc(&G_GetSimWS()->args, MAX_VERTEX_MEMORY);
     void *ebuff = stalloc(&G_GetSimWS()->args, MAX_ELEMENT_MEMORY);
@@ -423,13 +429,27 @@ static void ui_render(void *user, void *event)
 
     nk_convert(&s_ctx, &cmds, &vbuf, &ebuf, &config);
 
-    R_PushCmd((struct rcmd){
-        .func = R_GL_UI_Render,
-        .nargs = 1,
-        .args = {
-            push_draw_list(&s_ctx.draw_list),
-        },
-    });
+    switch(mode) {
+    case UI_RENDER_MODE_NORMAL:
+        R_PushCmd((struct rcmd){
+            .func = R_GL_UI_Render,
+            .nargs = 1,
+            .args = {
+                push_draw_list(&s_ctx.draw_list),
+            },
+        });
+        break;
+    case UI_RENDER_MODE_LOADING_SCREEN:
+        R_PushCmdImmediateFront((struct rcmd){
+            .func = R_GL_UI_Render,
+            .nargs = 1,
+            .args = {
+                push_draw_list(&s_ctx.draw_list),
+            },
+        });
+        break;
+    default: assert(0);
+    }
 
     nk_buffer_free(&cmds);
     nk_clear(&s_ctx);
@@ -464,7 +484,8 @@ bool UI_Init(const char *basedir, SDL_Window *win)
 
     vec_td_init(&s_curr_frame_labels);
     E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING | G_PAUSED_UI_RUNNING);
-    E_Global_Register(EVENT_RENDER_UI, ui_render, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
+    E_Global_Register(EVENT_RENDER_UI, ui_render, (void*)(uintptr_t)UI_RENDER_MODE_NORMAL, 
+        G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
 
     return true;
 }
@@ -680,5 +701,11 @@ void UI_ClearState(void)
 {
     UI_SetActiveFont("__default__");
     nk_clear(&s_ctx);
+}
+
+void UI_LoadingScreenTick(void)
+{
+    on_update_ui(NULL, NULL);
+    ui_render((void*)(uintptr_t)UI_RENDER_MODE_LOADING_SCREEN, NULL);
 }
 

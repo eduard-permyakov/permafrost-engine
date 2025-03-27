@@ -703,6 +703,18 @@ void R_PushCmdImmediate(struct rcmd cmd)
     queue_rcmd_push(&ws->commands, &cmd);
 }
 
+void R_PushCmdImmediateFront(struct rcmd cmd)
+{
+    if(SDL_ThreadID() == g_render_thread_id) {
+
+        render_dispatch_cmd(cmd);
+        return;
+    }
+
+    struct render_workspace *ws = G_GetRenderWS();
+    queue_rcmd_push_front(&ws->commands, &cmd);
+}
+
 bool R_InitWS(struct render_workspace *ws)
 {
     if(!stalloc_init(&ws->args)) 
@@ -771,6 +783,10 @@ bool R_ComputeShaderSupported(void)
 void R_Yield(void)
 {
     ASSERT_IN_RENDER_THREAD();
+    extern unsigned long g_frame_idx;
+
+    struct render_workspace *ws = G_GetRenderWS();
+    size_t left = queue_size(ws->commands);
 
     const char *stack[32] = {0};
     size_t nitems = 0;
@@ -780,7 +796,6 @@ void R_Yield(void)
         Perf_Pop(&stack[nitems]);
     }while(stack[nitems++] != NULL);
 
-    R_GL_DrawLoadingScreen();
     SDL_GL_SwapWindow(s_window);
 
     /* Set the status */
@@ -788,6 +803,15 @@ void R_Yield(void)
 
     /* We cannot handle a 'quit' while yielding */
     (void)render_wait_cmd(s_rstate);
+
+    /* Execute the commands that were appended to the front of the queue */
+    while(queue_size(ws->commands) > left) {
+
+        struct rcmd curr = {0};
+        queue_rcmd_pop(&ws->commands, &curr);
+        render_dispatch_cmd(curr);
+        GL_ASSERT_OK();
+    }
 
     for(int i = nitems - 2; i >= 0; i--) {
         Perf_Push(stack[i]);
