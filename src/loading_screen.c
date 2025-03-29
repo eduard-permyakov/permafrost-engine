@@ -39,19 +39,88 @@
 #include "ui.h"
 #include "render/public/render.h"
 #include "render/public/render_ctrl.h"
+#include "lib/public/vec.h"
+#include "lib/public/mem.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/stb_image.h"
+#include "lib/public/nk_file_browser.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+
+VEC_TYPE(str, const char*)
+VEC_IMPL(static inline, str, const char*)
+
+#define LOADING_SCREEN_CHANGE_PERIOD_MS (5000)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
 /* Only used before the renderer is up */
-static SDL_Surface *s_loading_screen;
+static SDL_Surface *s_early_loading_screen;
+static uint32_t     s_last_change_tick = 0;
+static vec_str_t    s_loading_screens;
+static int          s_curr_index = 0;
+
+/*****************************************************************************/
+/* STATIC FUNCTIONS                                                          */
+/*****************************************************************************/
+
+static void index_loading_screens(void)
+{
+    char absdir[NK_MAX_PATH_LEN];
+    pf_snprintf(absdir, sizeof(absdir), "%s/%s", g_basepath, "assets/loading_screens");
+
+    size_t nfiles = 0;
+    struct file *files = nk_file_list(absdir, &nfiles);
+
+    for(int i = 0; i < nfiles; i++) {
+        if(files[i].is_dir)
+            continue;
+
+        char path[NK_MAX_PATH_LEN];
+        pf_snprintf(path, sizeof(path), "%s/%s", "assets/loading_screens", files[i].name);
+
+        if(pf_endswith(path, CONFIG_LOADING_SCREEN))
+            continue;
+
+        if(!pf_endswith(path, ".png")
+        && !pf_endswith(path, ".jpg")
+        && !pf_endswith(path, ".jpeg"))
+            continue;
+
+        const char *loading_screen = pf_strdup(path);
+        if(!loading_screen)
+            continue;
+        vec_str_push(&s_loading_screens, loading_screen);
+    }
+}
+
+static const char *next_loading_screen(void)
+{
+    const char *ret = CONFIG_LOADING_SCREEN;
+    if(vec_size(&s_loading_screens) > 0) {
+        ret = vec_AT(&s_loading_screens, s_curr_index);
+    }
+    uint32_t now = SDL_GetTicks();
+    if(s_last_change_tick == 0) {
+        s_last_change_tick = now;
+    }
+    if(SDL_TICKS_PASSED(now, s_last_change_tick + LOADING_SCREEN_CHANGE_PERIOD_MS)) {
+        /* Make sure we don't show the same screen twice in a row */
+        int next;
+        do{
+            next = rand() % (vec_size(&s_loading_screens));
+        }while(next == s_curr_index);
+        assert(next < vec_size(&s_loading_screens));
+
+        s_curr_index = next;
+        s_last_change_tick = now;
+    }
+    return ret;
+}
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -62,6 +131,10 @@ bool LoadingScreen_Init(void)
     ASSERT_IN_MAIN_THREAD();
     SDL_Surface *surface = NULL;
     bool ret = false;
+
+    vec_str_init(&s_loading_screens);
+    index_loading_screens();
+    s_curr_index = rand() % (vec_size(&s_loading_screens)+1);
 
     char fullpath[512];
     pf_snprintf(fullpath, sizeof(fullpath), "%s/%s", g_basepath, CONFIG_LOADING_SCREEN);
@@ -83,7 +156,7 @@ bool LoadingScreen_Init(void)
     }
 
     memcpy(surface->pixels, image, width * height * 3);
-    s_loading_screen = surface;
+    s_early_loading_screen = surface;
     ret = true;
 
 fail_surface:
@@ -97,7 +170,7 @@ void LoadingScreen_DrawEarly(SDL_Window *window)
     ASSERT_IN_MAIN_THREAD();
     assert(window);
 
-    if(!s_loading_screen)
+    if(!s_early_loading_screen)
         return;
 
     SDL_Surface *win_surface = SDL_GetWindowSurface(window);
@@ -108,7 +181,7 @@ void LoadingScreen_DrawEarly(SDL_Window *window)
     SDL_RenderClear(sw_renderer);
 
     SDL_Texture *tex;
-    if(s_loading_screen && (tex = SDL_CreateTextureFromSurface(sw_renderer, s_loading_screen))) {
+    if(s_early_loading_screen && (tex = SDL_CreateTextureFromSurface(sw_renderer, s_early_loading_screen))) {
         SDL_RenderCopy(sw_renderer, tex, NULL, NULL);
         SDL_DestroyTexture(tex);
     }
@@ -119,8 +192,13 @@ void LoadingScreen_DrawEarly(SDL_Window *window)
 
 void LoadingScreen_Shutdown(void)
 {
-    if(s_loading_screen) {
-        SDL_FreeSurface(s_loading_screen);
+    for(int i = 0; i < vec_size(&s_loading_screens); i++) {
+        const char *curr = vec_AT(&s_loading_screens, i);
+        PF_FREE(curr);
+    }
+    vec_str_destroy(&s_loading_screens);
+    if(s_early_loading_screen) {
+        SDL_FreeSurface(s_early_loading_screen);
     }
 }
 
@@ -139,9 +217,13 @@ void LoadingScreen_Tick(void)
     UI_LoadingScreenTick();
     UI_SetActiveFont(old_font);
 
+    const char *screen = next_loading_screen();
     R_PushCmdImmediateFront((struct rcmd){
         .func = R_GL_DrawLoadingScreen,
-        .nargs = 0
+        .nargs = 1,
+        .args = {
+            R_PushArg(screen, strlen(screen) + 1)
+        }
     });
     R_PushCmdImmediateFront((struct rcmd){ R_GL_BeginFrame, 0 });
 }

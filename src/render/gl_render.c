@@ -388,7 +388,7 @@ void R_GL_SetScreenspaceDrawMode(void)
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DrawLoadingScreen(void)
+void R_GL_DrawLoadingScreen(const char *path)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -434,7 +434,7 @@ void R_GL_DrawLoadingScreen(void)
     GLuint prog = R_GL_Shader_GetProgForName("ui");
     R_GL_Shader_InstallProg(prog);
 
-    R_GL_Texture_GetOrLoad(g_basepath, CONFIG_LOADING_SCREEN, &tex.id);
+    R_GL_Texture_GetOrLoad(g_basepath, path, &tex.id);
     R_GL_Texture_Bind(&tex, prog);
 
     /* buffer & render */

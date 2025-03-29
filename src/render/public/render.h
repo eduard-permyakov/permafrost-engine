@@ -264,7 +264,7 @@ void   R_GL_SetScreenspaceDrawMode(void);
  * the OpenGL state for screenspace rendering.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DrawLoadingScreen(void);
+void   R_GL_DrawLoadingScreen(const char *path);
 
 /* ---------------------------------------------------------------------------
  * Draws the healthbars for the following 'num_ents'. 'ent_health_pc' must be
