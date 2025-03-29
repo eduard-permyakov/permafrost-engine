@@ -54,6 +54,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <limits.h>
+#include <time.h>
 
 #define BLOCK_DIM           (65)
 #define OVERLAP_DIM         (10)
@@ -128,6 +129,12 @@ VEC_TYPE(coord, struct coord)
 VEC_IMPL(static inline, coord, struct coord)
 
 KHASH_MAP_INIT_INT64(coord, int)
+
+/*****************************************************************************/
+/* STATIC VARIABLES                                                          */
+/*****************************************************************************/
+
+static unsigned int s_seed;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -311,8 +318,8 @@ static struct image_view random_block(struct image image)
 {
     int minx = OVERLAP_DIM, maxx = image.width - (BLOCK_DIM + OVERLAP_DIM);
     int miny = OVERLAP_DIM, maxy = image.height - (BLOCK_DIM + OVERLAP_DIM);
-    int x = rand() % (maxx + 1 - minx) + minx;
-    int y = rand() % (maxy + 1 - miny) + miny;
+    int x = rand_r(&s_seed) % (maxx + 1 - minx) + minx;
+    int y = rand_r(&s_seed) % (maxy + 1 - miny) + miny;
     return (struct image_view){x, y, BLOCK_DIM, BLOCK_DIM};
 }
 
@@ -522,7 +529,7 @@ static struct coord choose_sample(struct cost_image cost_image)
 
     int min_coord = 0;
     int max_coord = vec_size(&candidates) - 1;
-    int idx = rand() % (max_coord + 1 - min_coord) + min_coord;
+    int idx = rand_r(&s_seed) % (max_coord + 1 - min_coord) + min_coord;
 
     struct coord ret = vec_AT(&candidates, idx);
     vec_coord_destroy(&candidates);
@@ -1348,6 +1355,9 @@ fail_load:
 bool R_GL_ImageQuilt_MakeTileset(const char *source, struct texture_arr *out, GLuint tunit)
 {
     ASSERT_IN_RENDER_THREAD();
+    if(!s_seed) {
+        s_seed = time(NULL);
+    }
 
     bool ret = false;
     struct image image;
