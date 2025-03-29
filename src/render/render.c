@@ -48,6 +48,7 @@
 
 #include <assert.h>
 #include <math.h>
+#include <setjmp.h>
 
 #include <SDL.h>
 #include <GL/glew.h>
@@ -70,6 +71,8 @@ bool g_trace_gpu;
 static SDL_GLContext             s_context;
 static SDL_Window               *s_window;
 static struct render_sync_state *s_rstate; 
+
+static jmp_buf                   s_jmpbuf; 
 
 /* write-once strings. Set by render thread at initialization */
 char                 s_info_vendor[128];
@@ -498,6 +501,9 @@ static int render(void *data)
     s_rstate->arg = NULL; /* arg is stale after signalling main thread */
     render_signal_done(s_rstate, RSTAT_DONE);
 
+    if(setjmp(s_jmpbuf))
+        return 0;
+
     while(true) {
     
         quit = render_wait_cmd(s_rstate);
@@ -801,8 +807,9 @@ void R_Yield(void)
     /* Set the status */
     render_signal_done(s_rstate, RSTAT_YIELD);
 
-    /* We cannot handle a 'quit' while yielding */
-    (void)render_wait_cmd(s_rstate);
+    bool quit = render_wait_cmd(s_rstate);
+    if(quit)
+        longjmp(s_jmpbuf, 1);
 
     /* Execute the commands that were appended to the front of the queue */
     while(queue_size(ws->commands) > left) {

@@ -170,6 +170,17 @@ static void process_sdl_events(void)
 static void clear_sdl_events(void)
 {
     SDL_PumpEvents();
+    /* Always check for 'quit' events */
+    int nevents;
+    SDL_Event event;
+    do{
+        nevents = SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_KEYDOWN, SDL_KEYDOWN);
+        if(nevents) {
+            if(event.key.keysym.sym == SDLK_q && (event.key.keysym.mod & KMOD_LALT)) {
+                s_quit = true; 
+            }
+        }
+    }while(nevents > 0);
     SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
 }
 
