@@ -63,8 +63,8 @@ struct chunkpos{
 };
 
 struct splat{
-    size_t base_mat_idx;
-    size_t accent_mat_idx;
+    unsigned base_mat_idx;
+    unsigned accent_mat_idx;
 };
 
 struct splatmap{

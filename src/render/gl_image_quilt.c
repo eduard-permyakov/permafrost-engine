@@ -38,6 +38,7 @@
  * by Alexei A. Efros and William T. Freeman.
  */
 
+#include "../lib/public/windows.h"
 #include "gl_image_quilt.h"
 #include "gl_texture.h"
 #include "gl_assert.h"
@@ -139,6 +140,17 @@ static unsigned int s_seed;
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static int pf_rand(unsigned *seed)
+{
+#ifdef _WIN32
+    unsigned int ret;
+    rand_s(&ret);
+    return ret;
+#else
+    return rand_r(seed);
+#endif
+}
 
 static uint64_t coord_to_key(struct coord coord)
 {
@@ -318,8 +330,8 @@ static struct image_view random_block(struct image image)
 {
     int minx = OVERLAP_DIM, maxx = image.width - (BLOCK_DIM + OVERLAP_DIM);
     int miny = OVERLAP_DIM, maxy = image.height - (BLOCK_DIM + OVERLAP_DIM);
-    int x = rand_r(&s_seed) % (maxx + 1 - minx) + minx;
-    int y = rand_r(&s_seed) % (maxy + 1 - miny) + miny;
+    int x = pf_rand(&s_seed) % (maxx + 1 - minx) + minx;
+    int y = pf_rand(&s_seed) % (maxy + 1 - miny) + miny;
     return (struct image_view){x, y, BLOCK_DIM, BLOCK_DIM};
 }
 
@@ -529,7 +541,7 @@ static struct coord choose_sample(struct cost_image cost_image)
 
     int min_coord = 0;
     int max_coord = vec_size(&candidates) - 1;
-    int idx = rand_r(&s_seed) % (max_coord + 1 - min_coord) + min_coord;
+    int idx = pf_rand(&s_seed) % (max_coord + 1 - min_coord) + min_coord;
 
     struct coord ret = vec_AT(&candidates, idx);
     vec_coord_destroy(&candidates);

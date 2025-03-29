@@ -189,11 +189,11 @@ static bool m_al_read_splat(SDL_RWops *stream, struct splat *out_splat)
         goto fail;
 
     string = pf_strtok_r(NULL, " \t\n", &saveptr);
-    if(!sscanf(string, "%zu", &out_splat->base_mat_idx))
+    if(!sscanf(string, "%u", &out_splat->base_mat_idx))
         goto fail;
 
     string = pf_strtok_r(NULL, " \t\n", &saveptr);
-    if(!sscanf(string, "%zu", &out_splat->accent_mat_idx))
+    if(!sscanf(string, "%u", &out_splat->accent_mat_idx))
         goto fail;
 
     return true;
