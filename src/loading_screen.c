@@ -53,6 +53,7 @@ VEC_TYPE(str, const char*)
 VEC_IMPL(static inline, str, const char*)
 
 #define LOADING_SCREEN_CHANGE_PERIOD_MS (5000)
+#define MAX_STATUS_TEXT_LEN             (80)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -84,7 +85,8 @@ static void index_loading_screens(void)
         char path[NK_MAX_PATH_LEN];
         pf_snprintf(path, sizeof(path), "%s/%s", "assets/loading_screens", files[i].name);
 
-        if(pf_endswith(path, CONFIG_LOADING_SCREEN))
+        if(pf_endswith(path, CONFIG_LOADING_SCREEN)
+        || pf_endswith(path, CONFIG_LOADING_WINDOW))
             continue;
 
         if(!pf_endswith(path, ".png")
@@ -109,7 +111,8 @@ static const char *next_loading_screen(void)
     if(s_last_change_tick == 0) {
         s_last_change_tick = now;
     }
-    if(SDL_TICKS_PASSED(now, s_last_change_tick + LOADING_SCREEN_CHANGE_PERIOD_MS)) {
+    if(SDL_TICKS_PASSED(now, s_last_change_tick + LOADING_SCREEN_CHANGE_PERIOD_MS)
+    && (vec_size(&s_loading_screens) > 0)) {
         /* Make sure we don't show the same screen twice in a row */
         int next;
         do{
@@ -121,6 +124,32 @@ static const char *next_loading_screen(void)
         s_last_change_tick = now;
     }
     return ret;
+}
+
+static void draw_status_text_bounds(struct rect bounds)
+{
+    const vec2_t vres = (vec2_t){1920, 1080};
+    const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
+    struct nk_context *ctx = UI_GetContext();
+
+    struct rect padded = (struct rect){
+        (vres.x - 1400)/2, bounds.y - 8, 1400, bounds.h + 12 
+    };
+    struct rect adj_bounds = UI_BoundsForAspectRatio(padded, vres, adj_vres, ANCHOR_DEFAULT); 
+    const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
+
+    struct nk_style_item style = (struct nk_style_item){
+        .type = NK_STYLE_ITEM_TEXPATH,
+    };
+    pf_strlcpy(style.data.texpath, CONFIG_LOADING_WINDOW, sizeof(style.data.texpath));
+    nk_style_push_style_item(ctx, &ctx->style.window.fixed_background, style);
+
+    if(nk_begin_with_vres(ctx, "__loading_screen__", 
+        (struct nk_rect){adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h}, 
+        flags, (struct nk_vec2i){adj_vres.x, adj_vres.y})) {
+    }
+    nk_end(ctx);
+    nk_style_pop_style_item(ctx);
 }
 
 /*****************************************************************************/
@@ -208,7 +237,8 @@ void LoadingScreen_Shutdown(void)
 void LoadingScreen_Tick(void)
 {
     char buff[256];
-    pf_snprintf(buff, sizeof(buff), s_status_text, g_frame_idx);
+    pf_snprintf(buff, sizeof(buff), s_status_text);
+    buff[MAX_STATUS_TEXT_LEN] = '\0';
 
     char old_font[256];
     pf_strlcpy(old_font, UI_GetActiveFont(), sizeof(old_font));
@@ -216,14 +246,15 @@ void LoadingScreen_Tick(void)
 
     const vec2_t vres = (vec2_t){1920, 1080};
     const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
-    const float width = strlen(s_status_text) * 18;
+    const float width = strlen(s_status_text) * 17 + 18;
     const struct rect bounds = (struct rect){
-        .x = (adj_vres.x / 2) - width / 2,
+        .x = (adj_vres.x / 2) - (width / 2),
         .y = adj_vres.y - 45,
         .w = width,
-        .h = 40
+        .h = 36
     };
 
+    draw_status_text_bounds(bounds);
     UI_DrawText(buff, bounds, (struct rgba){255, 0, 0, 255});
     UI_LoadingScreenTick();
     UI_SetActiveFont(old_font);
