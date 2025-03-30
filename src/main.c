@@ -766,6 +766,7 @@ int main(int argc, char **argv)
     }
 
     Audio_PlayMusicFirst();
+    LoadingScreen_SetStatusText("Interpreting script: %s", argv[2]);
     S_RunFileAsync(argv[2], 0, NULL, &s_request_done);
     s_state = ENGINE_STATE_WAITING;
     enum render_status render_status = RSTAT_NONE;

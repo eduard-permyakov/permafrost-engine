@@ -271,6 +271,11 @@ static void ui_init_font_stash(struct nk_context *ctx)
     kh_value(s_fontmap, k) = s_atlas.default_font;
     s_active_font = kh_key(s_fontmap, k);
 
+    struct nk_font *default_large = nk_font_atlas_add_default(&s_atlas, 32, NULL);
+    k = kh_put(font, s_fontmap, pf_strdup("__default__.32"), &result);
+    assert(result != -1 && result != 0);
+    kh_value(s_fontmap, k) = default_large;
+
     size_t nfiles = 0;
     struct file *files = nk_file_list(fontdir, &nfiles);
 

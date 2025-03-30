@@ -63,6 +63,7 @@ static SDL_Surface *s_early_loading_screen;
 static uint32_t     s_last_change_tick = 0;
 static vec_str_t    s_loading_screens;
 static int          s_curr_index = 0;
+static char         s_status_text[512];
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -207,13 +208,23 @@ void LoadingScreen_Shutdown(void)
 void LoadingScreen_Tick(void)
 {
     char buff[256];
-    pf_snprintf(buff, sizeof(buff), "FRAME: [%lu]", g_frame_idx);
+    pf_snprintf(buff, sizeof(buff), s_status_text, g_frame_idx);
 
     char old_font[256];
     pf_strlcpy(old_font, UI_GetActiveFont(), sizeof(old_font));
-    UI_SetActiveFont("__default__");
+    UI_SetActiveFont("__default__.32");
 
-    UI_DrawText(buff, (struct rect){50, 50, 200, 50}, (struct rgba){255, 0, 0, 255});
+    const vec2_t vres = (vec2_t){1920, 1080};
+    const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
+    const float width = strlen(s_status_text) * 18;
+    const struct rect bounds = (struct rect){
+        .x = (adj_vres.x / 2) - width / 2,
+        .y = adj_vres.y - 45,
+        .w = width,
+        .h = 40
+    };
+
+    UI_DrawText(buff, bounds, (struct rgba){255, 0, 0, 255});
     UI_LoadingScreenTick();
     UI_SetActiveFont(old_font);
 
@@ -226,5 +237,14 @@ void LoadingScreen_Tick(void)
         }
     });
     R_PushCmdImmediateFront((struct rcmd){ R_GL_BeginFrame, 0 });
+}
+
+void LoadingScreen_SetStatusText(char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(s_status_text, sizeof(s_status_text), fmt, args);
+    s_status_text[sizeof(s_status_text)-1] = '\0';
+    va_end(args);
 }
 
