@@ -41,6 +41,7 @@
 #include "gl_assert.h"
 #include "gl_state.h"
 #include "gl_batch.h"
+#include "render_private.h"
 #include "../settings.h"
 #include "../main.h"
 #include "../ui.h"
@@ -474,14 +475,30 @@ static void render_dispatch_cmd(struct rcmd cmd)
     }
 }
 
+static void yield_maybe(uint32_t *timestamp)
+{
+    /* During loading, we can split the work 
+     * over multiple frames for better responsiveness.
+     */
+    if(!Engine_InRunningState()) {
+        uint32_t now = SDL_GetTicks();
+        if(SDL_TICKS_PASSED(now, *timestamp + 100)) {
+            R_Yield();
+            *timestamp = SDL_GetTicks();
+        }
+    }
+}
+
 static void render_process_cmds(queue_rcmd_t *cmds)
 {
+    uint32_t start = SDL_GetTicks();
     while(queue_size(*cmds) > 0) {
 
         struct rcmd curr;
         queue_rcmd_pop(cmds, &curr);
         render_dispatch_cmd(curr);
         GL_ASSERT_OK();
+        yield_maybe(&start);
     }
 }
 

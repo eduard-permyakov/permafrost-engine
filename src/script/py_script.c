@@ -1108,6 +1108,7 @@ static PyObject *PyPf_preload_pfobj(PyObject *self, PyObject *args)
         return NULL;
     }
     AL_PreloadPFObj(dir, filename);
+    Sched_TryYield();
     Py_RETURN_NONE;
 }
 
@@ -3927,11 +3928,11 @@ bool S_RunFile(const char *path, int argc, char **argv)
 
     /* The directory of the script file won't be automatically added by 'PyRun_SimpleFile'.
      * We add it manually to sys.path ourselves. */
-    if (!s_sys_path_add_dir(path))
+    if(!s_sys_path_add_dir(path))
         goto done;
 
     PyObject *main_module = PyImport_AddModule("__main__"); /* borrowed */
-    if (!main_module)
+    if(!main_module)
         goto done;
     
     PyObject *global_dict = PyModule_GetDict(main_module); /* borrowed */

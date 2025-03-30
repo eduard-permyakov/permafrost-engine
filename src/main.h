@@ -79,6 +79,7 @@ void Engine_FlushRenderWorkQueue(void);
 void Engine_WaitRenderWorkDone(void);
 void Engine_ClearPendingEvents(void);
 bool Engine_GetArg(const char *name, size_t maxout, char out[]);
+bool Engine_InRunningState(void);
 
 /* Present the window (from render thread only).
  */

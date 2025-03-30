@@ -717,6 +717,11 @@ void Engine_ClearPendingEvents(void)
     E_ClearPendingEvents();
 }
 
+bool Engine_InRunningState(void)
+{
+    return (s_state == ENGINE_STATE_RUNNING);
+}
+
 bool Engine_GetArg(const char *name, size_t maxout, char out[])
 {
     size_t namelen = strlen(name);
