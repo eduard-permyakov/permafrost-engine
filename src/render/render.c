@@ -791,10 +791,12 @@ void R_InitAttributes(void)
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
+#ifndef NDEBUG
     int ctx_flags = 0;
     SDL_GL_GetAttribute(SDL_GL_CONTEXT_FLAGS, &ctx_flags);
     ctx_flags |= SDL_GL_CONTEXT_DEBUG_FLAG;
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, ctx_flags);
+#endif
 }
 
 bool R_ComputeShaderSupported(void)
