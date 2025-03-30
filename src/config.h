@@ -47,6 +47,7 @@
 #define CONFIG_ARR_TEX_RES          (512)
 #define CONFIG_LOADING_SCREEN       "assets/loading_screens/default.png"
 #define CONFIG_LOADING_WINDOW       "assets/loading_screens/window.png"
+#define CONFIG_LOADING_SPRITE       "assets/loading_screens/sprite"
 
 #define CONFIG_SHADOW_MAP_RES       (2048)
 /* Determines the draw distance from the light source when creating the

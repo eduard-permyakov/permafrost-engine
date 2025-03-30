@@ -48,12 +48,15 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <stdlib.h>
+
 
 VEC_TYPE(str, const char*)
 VEC_IMPL(static inline, str, const char*)
 
 #define LOADING_SCREEN_CHANGE_PERIOD_MS (5000)
 #define MAX_STATUS_TEXT_LEN             (80)
+#define SPRITE_FPS                      (1)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -61,10 +64,15 @@ VEC_IMPL(static inline, str, const char*)
 
 /* Only used before the renderer is up */
 static SDL_Surface *s_early_loading_screen;
+
 static uint32_t     s_last_change_tick = 0;
 static vec_str_t    s_loading_screens;
 static int          s_curr_index = 0;
 static char         s_status_text[512];
+
+static vec_str_t    s_anim_sprites;
+static uint32_t     s_anim_update_tick = 0;
+static int          s_anim_index = 0;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -99,6 +107,39 @@ static void index_loading_screens(void)
             continue;
         vec_str_push(&s_loading_screens, loading_screen);
     }
+}
+
+static int compare_strings(const void *a, const void *b)
+{
+    const char *stra = *(const char**)a;
+    const char *strb = *(const char**)b;
+    return strcmp(stra, strb);
+}
+
+static void index_anim_sprites(void)
+{
+    char absdir[NK_MAX_PATH_LEN];
+    pf_snprintf(absdir, sizeof(absdir), "%s/%s", g_basepath, CONFIG_LOADING_SPRITE);
+
+    size_t nfiles = 0;
+    struct file *files = nk_file_list(absdir, &nfiles);
+
+    for(int i = 0; i < nfiles; i++) {
+        if(files[i].is_dir)
+            continue;
+
+        char path[NK_MAX_PATH_LEN];
+        pf_snprintf(path, sizeof(path), "%s/%s", CONFIG_LOADING_SPRITE, files[i].name);
+
+        if(!pf_endswith(path, ".png"))
+            continue;
+        
+        const char *sprite = pf_strdup(path);
+        if(!sprite)
+            continue;
+        vec_str_push(&s_anim_sprites, sprite);
+    }
+    qsort(s_anim_sprites.array, vec_size(&s_anim_sprites), sizeof(char*), compare_strings);
 }
 
 static const char *next_loading_screen(void)
@@ -152,6 +193,50 @@ static void draw_status_text_bounds(struct rect bounds)
     nk_style_pop_style_item(ctx);
 }
 
+static void draw_loading_animation(void)
+{
+    if(vec_size(&s_anim_sprites) == 0)
+        return;
+
+    uint32_t now = SDL_GetTicks();
+    if(s_anim_update_tick == 0) {
+        s_anim_update_tick = now;
+    }
+    int frame_period_ms = 1000.0f / SPRITE_FPS;
+    const char *curr_sprite = vec_AT(&s_anim_sprites, s_anim_index);
+    if(SDL_TICKS_PASSED(now, s_anim_update_tick + frame_period_ms)) {
+        s_anim_update_tick = now;
+        s_anim_index = (s_anim_index + 1) % vec_size(&s_anim_sprites);
+    }
+
+    const vec2_t vres = (vec2_t){1920, 1080};
+    const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
+    struct nk_context *ctx = UI_GetContext();
+
+    const float dim = 80.0f;
+    struct rect bounds = (struct rect){
+        .x = (adj_vres.x - dim) / 2,
+        .y = adj_vres.y - 220,
+        .w = dim,
+        .h = dim
+    };
+    struct rect adj_bounds = UI_BoundsForAspectRatio(bounds, vres, adj_vres, ANCHOR_DEFAULT); 
+    const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
+
+    struct nk_style_item style = (struct nk_style_item){
+        .type = NK_STYLE_ITEM_TEXPATH,
+    };
+    pf_strlcpy(style.data.texpath, curr_sprite, sizeof(style.data.texpath));
+    nk_style_push_style_item(ctx, &ctx->style.window.fixed_background, style);
+
+    if(nk_begin_with_vres(ctx, "__loading_screen_sprite__", 
+        (struct nk_rect){adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h}, 
+        flags, (struct nk_vec2i){adj_vres.x, adj_vres.y})) {
+    }
+    nk_end(ctx);
+    nk_style_pop_style_item(ctx);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -163,7 +248,10 @@ bool LoadingScreen_Init(void)
     bool ret = false;
 
     vec_str_init(&s_loading_screens);
+    vec_str_init(&s_anim_sprites);
+
     index_loading_screens();
+    index_anim_sprites();
     s_curr_index = rand() % (vec_size(&s_loading_screens)+1);
 
     char fullpath[512];
@@ -227,6 +315,13 @@ void LoadingScreen_Shutdown(void)
         PF_FREE(curr);
     }
     vec_str_destroy(&s_loading_screens);
+
+    for(int i = 0; i < vec_size(&s_anim_sprites); i++) {
+        const char *curr = vec_AT(&s_anim_sprites, i);
+        PF_FREE(curr);
+    }
+    vec_str_destroy(&s_anim_sprites);
+
     if(s_early_loading_screen) {
         SDL_FreeSurface(s_early_loading_screen);
     }
@@ -255,6 +350,7 @@ void LoadingScreen_Tick(void)
     };
 
     draw_status_text_bounds(bounds);
+    draw_loading_animation();
     UI_DrawText(buff, bounds, (struct rgba){255, 0, 0, 255});
     UI_LoadingScreenTick();
     UI_SetActiveFont(old_font);
