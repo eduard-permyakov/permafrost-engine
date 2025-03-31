@@ -105,6 +105,7 @@ static SDL_Window               *s_window;
 
 static enum engine_state         s_state = ENGINE_STATE_RUNNING;
 static struct future             s_request_done;
+static unsigned long             s_resume_tick;
 
 /* Flag to perform a single step of the simulation while the game is paused. 
  * Cleared at after performing the step. 
@@ -293,6 +294,8 @@ static void render_maybe_enable(void)
      * it - this gives us a chance to handle this event without anyone 
      * noticing. */
     if(((uint64_t)g_frame_idx) - Session_ChangeTick() <= 1)
+        return;
+    if(((uint64_t)g_frame_idx) - s_resume_tick <= 1)
         return;
     s_rstate.swap_buffers = true;
 }
@@ -841,6 +844,7 @@ int main(int argc, char **argv)
             Sched_Tick();
             render_status = render_thread_wait_done();
             if(render_status == RSTAT_DONE) {
+                s_resume_tick = g_frame_idx;
                 s_state = ENGINE_STATE_RUNNING;
             }
             break;
