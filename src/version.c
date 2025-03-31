@@ -34,7 +34,7 @@
  */
 
 #define PF_VER_MAJOR 1
-#define PF_VER_MINOR 7
+#define PF_VER_MINOR 9
 
 #define STR2(_token) #_token
 #define STR(_token) STR2(_token)
