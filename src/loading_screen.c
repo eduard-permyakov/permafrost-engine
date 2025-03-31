@@ -37,6 +37,7 @@
 #include "main.h"
 #include "config.h"
 #include "ui.h"
+#include "main.h"
 #include "render/public/render.h"
 #include "render/public/render_ctrl.h"
 #include "lib/public/vec.h"
@@ -73,6 +74,9 @@ static char         s_status_text[512];
 static vec_str_t    s_anim_sprites;
 static uint32_t     s_anim_update_tick = 0;
 static int          s_anim_index = 0;
+
+static vec_str_t    s_render_stack;
+static vec_str_t    s_main_stack;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -237,6 +241,26 @@ static void draw_loading_animation(void)
     nk_style_pop_style_item(ctx);
 }
 
+static void get_status_text(char *out, size_t maxout)
+{
+    /* render statuses have priority over simulation statuses */
+    const char *status = s_status_text;
+    if(vec_size(&s_render_stack) > 0) {
+
+        size_t last = vec_size(&s_render_stack) -1;
+        status = vec_AT(&s_render_stack, last);
+
+    }else if(vec_size(&s_main_stack) > 0) {
+
+        size_t last = vec_size(&s_main_stack) -1;
+        status = vec_AT(&s_main_stack, last);
+    }
+
+    pf_snprintf(out, maxout, "%s", status);
+    size_t idx = maxout < MAX_STATUS_TEXT_LEN ? maxout : MAX_STATUS_TEXT_LEN;
+    out[idx] = '\0';
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -249,6 +273,8 @@ bool LoadingScreen_Init(void)
 
     vec_str_init(&s_loading_screens);
     vec_str_init(&s_anim_sprites);
+    vec_str_init(&s_render_stack);
+    vec_str_init(&s_main_stack);
 
     index_loading_screens();
     index_anim_sprites();
@@ -322,6 +348,18 @@ void LoadingScreen_Shutdown(void)
     }
     vec_str_destroy(&s_anim_sprites);
 
+    for(int i = 0; i < vec_size(&s_render_stack); i++) {
+        const char *curr = vec_AT(&s_render_stack, i);
+        PF_FREE(curr);
+    }
+    vec_str_destroy(&s_render_stack);
+
+    for(int i = 0; i < vec_size(&s_main_stack); i++) {
+        const char *curr = vec_AT(&s_main_stack, i);
+        PF_FREE(curr);
+    }
+    vec_str_destroy(&s_main_stack);
+
     if(s_early_loading_screen) {
         SDL_FreeSurface(s_early_loading_screen);
     }
@@ -332,8 +370,7 @@ void LoadingScreen_Shutdown(void)
 void LoadingScreen_Tick(void)
 {
     char buff[256];
-    pf_snprintf(buff, sizeof(buff), "%s", s_status_text);
-    buff[MAX_STATUS_TEXT_LEN] = '\0';
+    get_status_text(buff, sizeof(buff));
 
     char old_font[256];
     pf_strlcpy(old_font, UI_GetActiveFont(), sizeof(old_font));
@@ -341,7 +378,7 @@ void LoadingScreen_Tick(void)
 
     const vec2_t vres = (vec2_t){1920, 1080};
     const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
-    const float width = strlen(s_status_text) * 17 + 18;
+    const float width = strlen(buff) * 17 + 18;
     const struct rect bounds = (struct rect){
         .x = (adj_vres.x / 2) - (width / 2),
         .y = adj_vres.y - 45,
@@ -373,5 +410,91 @@ void LoadingScreen_SetStatusText(char *fmt, ...)
     vsnprintf(s_status_text, sizeof(s_status_text), fmt, args);
     s_status_text[sizeof(s_status_text)-1] = '\0';
     va_end(args);
+}
+
+void LoadingScreen_PushRenderStatus(char *fmt, ...)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    if(Engine_InRunningState())
+        return;
+
+    char buff[256];
+    va_list args;
+
+    va_start(args, fmt);
+    vsnprintf(buff, sizeof(buff), fmt, args);
+    buff[sizeof(buff)-1] = '\0';
+    va_end(args);
+
+    char *copy = pf_strdup(buff);
+    if(copy) {
+        vec_str_push(&s_render_stack, copy);
+    }
+}
+
+void LoadingScreen_PopRenderStatus(void)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    if(Engine_InRunningState())
+        return;
+
+    if(vec_size(&s_render_stack) == 0)
+        return;
+
+    const char *popped = vec_str_pop(&s_render_stack);
+    PF_FREE(popped);
+}
+
+void LoadingScreen_PushSimStatus(char *fmt, ...)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(Engine_InRunningState())
+        return;
+
+    char buff[256];
+    va_list args;
+
+    va_start(args, fmt);
+    vsnprintf(buff, sizeof(buff), fmt, args);
+    buff[sizeof(buff)-1] = '\0';
+    va_end(args);
+
+    char *copy = pf_strdup(buff);
+    if(copy) {
+        vec_str_push(&s_main_stack, copy);
+    }
+}
+
+
+void LoadingScreen_PopSimStatus(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(Engine_InRunningState())
+        return;
+
+    if(vec_size(&s_main_stack) == 0)
+        return;
+
+    const char *popped = vec_str_pop(&s_main_stack);
+    PF_FREE(popped);
+}
+
+void LoadingScreen_ClearState(void)
+{
+    for(int i = 0; i < vec_size(&s_render_stack); i++) {
+        const char *curr = vec_AT(&s_render_stack, i);
+        PF_FREE(curr);
+    }
+    vec_str_reset(&s_render_stack);
+
+    for(int i = 0; i < vec_size(&s_main_stack); i++) {
+        const char *curr = vec_AT(&s_main_stack, i);
+        PF_FREE(curr);
+    }
+    vec_str_reset(&s_main_stack);
 }
 

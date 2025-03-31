@@ -44,6 +44,8 @@
 #include "../lib/public/stb_image_resize.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/mem.h"
+#include "../loading_screen.h"
 #include "../config.h"
 #include "../main.h"
 
@@ -194,7 +196,7 @@ void R_GL_Texture_Shutdown(void)
 
     kh_foreach(s_name_tex_table, key, curr, {
         glDeleteTextures(1, &curr); 
-        free((void*)key);
+        PF_FREE(key);
     });
     kh_destroy(tex, s_name_tex_table);
     glDeleteTextures(1, &s_null_tex); 
@@ -297,7 +299,7 @@ void R_GL_Texture_Free(const char *basedir, const char *name)
 
         GLuint id = kh_val(s_name_tex_table, k);
         glDeleteTextures(1, &id);
-        free((void*)kh_key(s_name_tex_table, k));
+        PF_FREE(kh_key(s_name_tex_table, k));
         kh_del(tex, s_name_tex_table, k);
     }
 
@@ -378,7 +380,7 @@ void R_GL_Texture_Dump(const struct texture *text, const char *filename)
     texture_write_ppm(filename, data, width, height);
 
     glBindTexture(GL_TEXTURE_2D, 0);
-    free(data);
+    PF_FREE(data);
 }
 
 void R_GL_Texture_DumpArray(const struct texture_arr *arr, const char *base)
@@ -424,7 +426,7 @@ void R_GL_Texture_DumpArray(const struct texture_arr *arr, const char *base)
     }
 
     glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
-    free(data);
+    PF_FREE(data);
 }
 
 void R_GL_Texture_ArrayAlloc(size_t num_elems, struct texture_arr *out, GLuint tunit)
@@ -527,20 +529,20 @@ void R_GL_Texture_ArrayMake(const struct material *mats, size_t num_mats,
 
         GLubyte *resized_data = malloc(CONFIG_ARR_TEX_RES * CONFIG_ARR_TEX_RES * 4);
         if(!resized_data) {
-            free(orig_data);
+            PF_FREE(orig_data);
             continue;
         }
         int res = stbir_resize_uint8(orig_data, w, h, 0, resized_data, CONFIG_ARR_TEX_RES, CONFIG_ARR_TEX_RES, 0, 4);
         if(res != 1) {
-            free(orig_data);
-            free(resized_data);
+            PF_FREE(orig_data);
+            PF_FREE(resized_data);
             continue;
         }
 
         glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, CONFIG_ARR_TEX_RES, 
             CONFIG_ARR_TEX_RES, 1, GL_RGBA, GL_UNSIGNED_BYTE, resized_data);
-        free(orig_data);
-        free(resized_data);
+        PF_FREE(orig_data);
+        PF_FREE(resized_data);
     }
 
     glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
@@ -589,7 +591,7 @@ void R_GL_Texture_ArrayMakeMap(const char texnames[][256], size_t num_textures,
             glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, CONFIG_TILE_TEX_RES, 
                 CONFIG_TILE_TEX_RES, 1, GL_RGB, GL_UNSIGNED_BYTE, resized_data);
             stbi_image_free(orig_data);
-            free(resized_data);
+            PF_FREE(resized_data);
         }else{
 
             GLubyte *data = malloc(CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3);
@@ -599,7 +601,7 @@ void R_GL_Texture_ArrayMakeMap(const char texnames[][256], size_t num_textures,
             memset(data, 0, CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3);
             glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, CONFIG_TILE_TEX_RES, 
                 CONFIG_TILE_TEX_RES, 1, GL_RGB, GL_UNSIGNED_BYTE, data);
-            free(data);
+            PF_FREE(data);
         }
     }
 
@@ -651,12 +653,21 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
 
         for(; i < num_textures; i++) {
 
+            /* Since generating the tilesets may take a while, invoke 
+             * an event pump on the main thread and re-present the loading
+             * screen to avoid losing responsiveness. 
+             */
+            LoadingScreen_PushRenderStatus("Generating tileset: %s", texnames[i]);
+            R_Yield();
+
             char path[512];
             pf_snprintf(path, sizeof(path), "%s/assets/map_textures/%s", g_basepath, texnames[i]);
 
             /* Move on to the next texture array, this one's full */
-            if((i * 8) >= curr_slots + slots_consumed)
+            if((i * 8) >= curr_slots + slots_consumed) {
+                LoadingScreen_PopRenderStatus();
                 break;
+            }
 
             struct texture_arr tiles;
             bool success = R_GL_ImageQuilt_MakeTileset(path, &tiles, tunit);
@@ -686,23 +697,21 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
             }else{
 
                 GLubyte *data = calloc(1, tileset_dim * tileset_dim * 3);
-                if(!data)
+                if(!data) {
+                    LoadingScreen_PopRenderStatus();
                     continue;
+                }
 
                 for(int j = 0; j < 8; j++) {
                     glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, (i * 8) + j, tileset_dim, 
                         tileset_dim, 1, GL_RGB, GL_UNSIGNED_BYTE, data);
                 }
-                free(data);
+                PF_FREE(data);
             }
 
-            /* Since generating the tilesets may take a while, invoke 
-             * an event pump on the main thread and re-present the loading
-             * screen to avoid losing responsiveness. 
-             */
-            R_Yield();
             glActiveTexture(tunit);
             glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
+            LoadingScreen_PopRenderStatus();
         }
 
         glGenerateMipmap(GL_TEXTURE_2D_ARRAY);

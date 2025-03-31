@@ -664,26 +664,23 @@ void Engine_FlushRenderWorkQueue(void)
     ASSERT_IN_MAIN_THREAD();
     enum render_status status = RSTAT_NONE;
 
-    /* Flush both queues. */
     if(Sched_ActiveTID() == NULL_TID) {
 
-        render_thread_start_work();
-        render_thread_wait_done();
         G_SwapBuffers();
+        render_thread_start_work();
+        status = render_thread_wait_done();
+        assert(status == RSTAT_DONE);
 
-        render_thread_start_work();
-        render_thread_wait_done();
-        G_SwapBuffers();
-        return;
+    }else{
+        assert(Sched_ActiveTID() != NULL_TID);
+        /* When called from task context, assume 
+         * that the render thread is started. 
+         */
+        do{
+            Sched_TryYield();
+            status = render_thread_poll();
+        }while(status != RSTAT_DONE);
     }
-
-    /* When called from task context, assume 
-     * that the render thread is started. 
-     */
-    do{
-        Sched_TryYield();
-        status = render_thread_poll();
-    }while(status != RSTAT_DONE);
 }
 
 void Engine_SetRenderThreadID(SDL_threadID id)

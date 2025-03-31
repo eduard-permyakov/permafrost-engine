@@ -49,6 +49,13 @@ void LoadingScreen_Shutdown(void);
 void LoadingScreen_DrawEarly(SDL_Window *window);
 void LoadingScreen_Tick(void);
 void LoadingScreen_SetStatusText(char *fmt, ...);
+void LoadingScreen_ClearState(void);
+
+void LoadingScreen_PushRenderStatus(char *fmt, ...);
+void LoadingScreen_PopRenderStatus(void);
+
+void LoadingScreen_PushSimStatus(char *fmt, ...);
+void LoadingScreen_PopSimStatus(void);
 
 #endif
 

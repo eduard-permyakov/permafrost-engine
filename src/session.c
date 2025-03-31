@@ -113,6 +113,7 @@ static void subsession_clear(void)
     P_Projectile_ClearState();
     UI_ClearState();
     AL_ClearState();
+    LoadingScreen_ClearState();
     E_ClearPendingEvents();
 }
 
@@ -155,19 +156,26 @@ static void subsession_flush(void)
 static bool subsession_save(SDL_RWops *stream)
 {
     subsession_flush();
+    int depth = vec_size(&s_subsession_stack);
 
+    LoadingScreen_PushSimStatus("[%d] Saving cursor state", depth);
     if(!Cursor_SaveState(stream))
-        return false;
+        goto fail_pop;
+    LoadingScreen_PopSimStatus();
 
     /* First save the state of the map, lighting, camera, etc. (everything that 
      * isn't entities). Loading this state initalizes the session. */
+    LoadingScreen_PushSimStatus("[%d] Saving global game state", depth);
     if(!G_SaveGlobalState(stream))
-        return false;
+        goto fail_pop;
+    LoadingScreen_PopSimStatus();
 
     /* All live entities have a scripting object associated with them. Loading the
      * scripting state will re-create all the entities. */
+    LoadingScreen_PushSimStatus("[%d] Saving scripting state", depth);
     if(!S_SaveState(stream))
-        return false;
+        goto fail_pop;
+    LoadingScreen_PopSimStatus();
 
     /* Roll forward the 'next_uid' so there's no collision with already loaded 
      * entities (which preserve their UIDs from the old session) */
@@ -181,40 +189,57 @@ static bool subsession_save(SDL_RWops *stream)
     /* After the entities are loaded, populate all the auxiliary entity state that
      * isn't visible via the scripting API. (animation context, pricise movement 
      * state, etc) */
+    LoadingScreen_PushSimStatus("[%d] Saving entity state", depth);
     if(!G_SaveEntityState(stream))
-        return false;
+        goto fail_pop;
+    LoadingScreen_PopSimStatus();
 
+    LoadingScreen_PushSimStatus("[%d] Saving audio state", depth);
     if(!Audio_SaveState(stream))
-        return false;
+        goto fail_pop;
+    LoadingScreen_PopSimStatus();
 
+    LoadingScreen_PushSimStatus("[%d] Saving projectile state", depth);
     if(!P_Projectile_SaveState(stream))
-        return false;
+        goto fail_pop;
+    LoadingScreen_PopSimStatus();
 
     return true;
+
+fail_pop:
+    LoadingScreen_PopSimStatus();
+    return false;
 }
 
 static bool subsession_load(SDL_RWops *stream, char *errstr, size_t errlen)
 {
     struct attr attr;
     subsession_clear();
+    int depth = vec_size(&s_subsession_stack);
 
+    LoadingScreen_PushSimStatus("[%d] Loading cursor state", depth);
     if(!Cursor_LoadState(stream)) {
         pf_snprintf(errstr, errlen, 
             "Could not de-serialize cursor state from session file");
-        goto fail;
+        goto fail_pop;
     }
+    LoadingScreen_PopSimStatus();
 
+    LoadingScreen_PushSimStatus("[%d] Loading global game state", depth);
     if(!G_LoadGlobalState(stream)) {
         pf_snprintf(errstr, errlen, 
             "Could not de-serialize map and globals state from session file");
-        goto fail;
+        goto fail_pop;
     }
+    LoadingScreen_PopSimStatus();
 
+    LoadingScreen_PushSimStatus("[%d] Loading scripting state", depth);
     if(!S_LoadState(stream)) {
         pf_snprintf(errstr, errlen, 
             "Could not de-serialize script-defined state from session file");
-        goto fail;
+        goto fail_pop;
     }
+    LoadingScreen_PopSimStatus();
 
     if(!Attr_Parse(stream, &attr, true) || attr.type != TYPE_INT) {
         pf_snprintf(errstr, errlen, 
@@ -224,23 +249,29 @@ static bool subsession_load(SDL_RWops *stream, char *errstr, size_t errlen)
     Entity_SetNextUID(attr.val.as_int);
     Sched_TryYield();
 
+    LoadingScreen_PushSimStatus("[%d] Loading entity state", depth);
     if(!G_LoadEntityState(stream)) {
         pf_snprintf(errstr, errlen, 
             "Could not de-serialize additional entity state from session file");
-        goto fail;
+        goto fail_pop;
     }
+    LoadingScreen_PopSimStatus();
 
+    LoadingScreen_PushSimStatus("[%d] Loading audio state", depth);
     if(!Audio_LoadState(stream)) {
         pf_snprintf(errstr, errlen, 
             "Could not de-serialize audio state from session file");
-        goto fail;
+        goto fail_pop;
     }
+    LoadingScreen_PopSimStatus();
 
+    LoadingScreen_PushSimStatus("[%d] Loading projectile state", depth);
     if(!P_Projectile_LoadState(stream)) {
         pf_snprintf(errstr, errlen, 
             "Could not de-serialize physics state from session file");
-        goto fail;
+        goto fail_pop;
     }
+    LoadingScreen_PopSimStatus();
 
     /* We may have loaded some assets during the session loading 
      * process - make sure the appropriate initialization is performed 
@@ -251,6 +282,8 @@ static bool subsession_load(SDL_RWops *stream, char *errstr, size_t errlen)
     G_UpdateSimStateChangeTick();
     return true;
 
+fail_pop:
+    LoadingScreen_PopSimStatus();
 fail:
     subsession_clear();
     return false;
