@@ -119,8 +119,8 @@ static void on_update_ui(void *user, void *event)
         NK_WINDOW_NO_INPUT | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR, 
         (struct nk_vec2i){adj_vres.x, adj_vres.y})) {
     
-       for(int i = 0; i < vec_size(&s_curr_frame_labels); i++)
-            ui_draw_text(vec_AT(&s_curr_frame_labels, i)); 
+        for(int i = 0; i < vec_size(&s_curr_frame_labels); i++)
+             ui_draw_text(vec_AT(&s_curr_frame_labels, i)); 
     }
     nk_end(&s_ctx);
 
@@ -705,7 +705,6 @@ bool UI_SetActiveFont(const char *name)
 void UI_ClearState(void)
 {
     UI_SetActiveFont("__default__");
-    nk_clear(&s_ctx);
 }
 
 void UI_LoadingScreenTick(void)

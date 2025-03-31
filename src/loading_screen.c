@@ -332,7 +332,7 @@ void LoadingScreen_Shutdown(void)
 void LoadingScreen_Tick(void)
 {
     char buff[256];
-    pf_snprintf(buff, sizeof(buff), s_status_text);
+    pf_snprintf(buff, sizeof(buff), "%s", s_status_text);
     buff[MAX_STATUS_TEXT_LEN] = '\0';
 
     char old_font[256];

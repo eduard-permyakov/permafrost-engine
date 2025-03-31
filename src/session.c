@@ -40,6 +40,7 @@
 #include "sched.h"
 #include "cursor.h"
 #include "asset_load.h"
+#include "loading_screen.h"
 #include "lib/public/attr.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/vec.h"
@@ -469,23 +470,29 @@ static struct result session_task(void* arg)
 
     switch(s_current) {
     case SESH_REQ_SAVE:
+        LoadingScreen_SetStatusText("Saving session: %s", s_req_path);
         result = session_save(s_req_path, s_errbuff, sizeof(s_errbuff));
         break;
     case SESH_REQ_LOAD:
+        LoadingScreen_SetStatusText("Loading session: %s", s_req_path);
         result = session_load(s_req_path, s_errbuff, sizeof(s_errbuff));
         break;
     case SESH_REQ_PUSH:
+        LoadingScreen_SetStatusText("Pushing session: %s", s_req_path);
         s_pushing = true;
         result = session_push_subsession(s_req_path, s_errbuff, sizeof(s_errbuff));
         s_pushing = false;
         break;
     case SESH_REQ_POP:
+        LoadingScreen_SetStatusText("Popping session");
         result = session_pop_subsession(s_errbuff, sizeof(s_errbuff));
         break;
     case SESH_REQ_POP_TO_ROOT:
+        LoadingScreen_SetStatusText("Popping to root session");
         result = session_pop_subsession_to_root(s_errbuff, sizeof(s_errbuff));
         break;
     case SESH_REQ_EXEC:
+        LoadingScreen_SetStatusText("Executing script: %s", s_req_path);
         result = session_exec_subsession(s_req_path, s_errbuff, sizeof(s_errbuff));
         break;
     default: assert(0);
