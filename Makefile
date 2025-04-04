@@ -29,6 +29,7 @@ GLEW_SRC = ./deps/GLEW
 SDL2_SRC = ./deps/SDL2
 PYTHON_SRC = ./deps/Python
 OPENAL_SRC = ./deps/openal-soft
+MIMALLOC_SRC = ./deps/mimalloc
 
 # ------------------------------------------------------------------------------
 # Linux
@@ -39,14 +40,17 @@ LINUX_SDL2_LIB = libSDL2-2.0.so.0
 LINUX_PYTHON_LIB = libpython2.7.so.1.0
 LINUX_PYTHON_TARGET = libpython2.7.so
 LINUX_OPENAL_LIB = libopenal.so.1
+LINUX_MIMALLOC_LIB = libmimalloc.so.2
 
 LINUX_SDL2_CONFIG = --host=x86_64-pc-linux-gnu
 LINUX_PYTHON_CONFIG = --host=x86_64-pc-linux-gnu
 LINUX_OPENAL_OPTS = "-DALSOFT_UTILS=OFF -DALSOFT_EXAMPLES=OFF"
+LIMUX_MIMALLOC_OPTS = 
 
 LINUX_CC = gcc
 LINUX_BIN = ./bin/pf
 LINUX_LDFLAGS = \
+	-l:$(MIMALLOC_LIB) \
 	-l:$(SDL2_LIB) \
 	-l:$(GLEW_LIB) \
 	-l:$(PYTHON_LIB) \
@@ -67,6 +71,7 @@ WINDOWS_GLEW_LIB = glew32.dll
 WINDOWS_SDL2_LIB = SDL2.dll
 WINDOWS_PYTHON_LIB = libpython2.7.dll
 WINDOWS_OPENAL_LIB = OpenAL32.dll
+WINDOWS_MIMALLOC_LIB = mimalloc.dll
 
 
 ifneq ($(OS),Windows_NT)
@@ -82,6 +87,7 @@ WINDOWS_OPENAL_OPTS = -DCMAKE_TOOLCHAIN_FILE=XCompile.txt -DHOST=x86_64-w64-ming
 WINDOWS_CC = x86_64-w64-mingw32-gcc
 WINDOWS_BIN = ./lib/pf.exe
 WINDOWS_LDFLAGS = \
+	-lmimalloc \
 	-lmingw32 \
 	-lSDL2 \
 	-lglew32 \
@@ -105,6 +111,7 @@ GLEW_LIB = $($(PLAT)_GLEW_LIB)
 SDL2_LIB = $($(PLAT)_SDL2_LIB)
 PYTHON_LIB = $($(PLAT)_PYTHON_LIB)
 OPENAL_LIB = $($(PLAT)_OPENAL_LIB)
+MIMALLOC_LIB = $($(PLAT)_MIMALLOC_LIB)
 
 SDL2_CONFIG = $($(PLAT)_SDL2_CONFIG)
 PYTHON_CONFIG = $($(PLAT)_PYTHON_CONFIG)
@@ -112,6 +119,10 @@ PYTHON_DEFS = $($(PLAT)_PYTHON_DEFS)
 PYTHON_TARGET = $($(PLAT)_PYTHON_TARGET)
 GLEW_OPTS = $($(PLAT)_GLEW_OPTS)
 OPENAL_OPTS = $($(PLAT)_OPENAL_OPTS)
+
+MIMALLOC_DEBUG_OPTS = -DCMAKE_BUILD_TYPE=Debug
+MIMALLOC_RELEASE_OPTS = -DCMAKE_BUILD_TYPE=Release
+MIMALLOC_OPTS = $(MIMALLOC_$(TYPE)_OPTS)
 
 WARNING_FLAGS = \
 	-Wall \
@@ -167,7 +178,8 @@ DEPS = \
 	./lib/$(GLEW_LIB) \
 	./lib/$(SDL2_LIB) \
 	./lib/$(PYTHON_LIB) \
-	./lib/$(OPENAL_LIB)
+	./lib/$(OPENAL_LIB) \
+	./lib/$(MIMALLOC_LIB)
 
 # ------------------------------------------------------------------------------
 # Targets
@@ -214,6 +226,13 @@ endif
 		&& make 
 	cp $(OPENAL_SRC)/build/$(OPENAL_LIB) $@
 
+./lib/$(MIMALLOC_LIB):
+	mkdir -p $(MIMALLOC_SRC)/build
+	cd $(MIMALLOC_SRC)/build \
+		&& cmake .. $(MIMALLOC_OPTS) \
+		&& make
+	cp $(MIMALLOC_SRC)/build/$(MIMALLOC_LIB) $@
+
 deps: $(DEPS)
 
 $(PF_SRC_OBJS): ./obj/%.o: ./src/%.c
@@ -248,6 +267,7 @@ clean_deps:
 	rm -rf deps/SDL2/build
 	rm -rf deps/Python/build
 	rm -rf deps/openal-soft/build
+	rm -rf deps/mimalloc/build
 	rm -rf ./lib/*
 
 clean:
