@@ -293,8 +293,6 @@ static void render_maybe_enable(void)
     /* Simulate a single frame after a session change without rendering 
      * it - this gives us a chance to handle this event without anyone 
      * noticing. */
-    if(((uint64_t)g_frame_idx) - Session_ChangeTick() <= 1)
-        return;
     if(((uint64_t)g_frame_idx) - s_resume_tick <= 1)
         return;
     s_rstate.swap_buffers = true;
