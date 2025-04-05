@@ -1287,7 +1287,7 @@ static PyObject *PyPf_prev_frame_ms(PyObject *self)
 
 static PyObject *PyPf_prev_frame_perfstats(PyObject *self)
 {
-    struct perf_info *infos[16];
+    struct perf_info *infos[32];
     size_t nthreads = Perf_Report(ARR_SIZE(infos), (struct perf_info **)&infos);
     int status;
 
