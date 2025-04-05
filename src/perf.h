@@ -82,6 +82,8 @@
 
 #define NFRAMES_LOGGED  (5)
 
+struct mi_stats_s;
+
 
 struct perf_info{
     char threadname[64];
@@ -113,8 +115,10 @@ bool     Perf_IsRoot(void);
 /* This returns an array of perf_info structs (one for each thread). They
  * must be 'free'd by the caller. */
 size_t   Perf_Report(size_t maxout, struct perf_info **out);
+void     Perf_GetMemoryStats(struct mi_stats_s *out);
 uint32_t Perf_LastFrameMS(void);
 uint32_t Perf_CurrFrameMS(void);
+uint64_t Perf_LastFrameAllocdBytes(void);
 
 /* The following can only be called from the main thread, making sure that 
  * none of the other threads are touching the Perf_ API concurrently */

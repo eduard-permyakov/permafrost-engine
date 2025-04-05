@@ -1061,14 +1061,14 @@ static PyObject *PyWindow_animated_button_label(PyWindowObject *self, PyObject *
 static PyObject *PyWindow_simple_chart(PyWindowObject *self, PyObject *args)
 {
     int type;
-    int min, max;
+    long min, max;
     PyObject *list, *on_click_handler = NULL;
 
     int clicked_index = -1;
     int hovered_index = -1;
     long hovered_val;
 
-    if(!PyArg_ParseTuple(args, "i(ii)O|O", &type, &min, &max, &list, &on_click_handler)) {
+    if(!PyArg_ParseTuple(args, "i(ll)O|O", &type, &min, &max, &list, &on_click_handler)) {
         PyErr_SetString(PyExc_TypeError, "3 arguments expected: an integer, a tuple of two integers, and a list object. "
             "Optionally, a callable taking exactly one integer index argument (click handler) can additionally be supplied.");
         return NULL;
@@ -1102,7 +1102,6 @@ static PyObject *PyWindow_simple_chart(PyWindowObject *self, PyObject *args)
                 clicked_index = i;
             }
         }
-        nk_chart_end(s_nk_ctx);
 
         if(hovered_index != -1)
             nk_tooltipf(s_nk_ctx, "Value: %lu", hovered_val);
@@ -1116,6 +1115,7 @@ static PyObject *PyWindow_simple_chart(PyWindowObject *self, PyObject *args)
             }
         }
     }
+    nk_chart_end(s_nk_ctx);
 
     Py_RETURN_NONE;
 }

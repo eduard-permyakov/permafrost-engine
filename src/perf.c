@@ -41,6 +41,8 @@
 #include "render/public/render.h"
 #include "render/public/render_ctrl.h"
 
+#include <mimalloc-stats.h>
+
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -113,6 +115,8 @@ static khash_t(pstate) *s_thread_state_table;
 
 static int              s_last_idx = 0;
 static unsigned         s_last_frames_ms[NFRAMES_LOGGED];
+static mi_stats_t       s_last_frames_memstats[NFRAMES_LOGGED];
+static uint64_t         s_last_frames_allocd_bytes[NFRAMES_LOGGED];
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -231,6 +235,11 @@ static bool register_gpu_state(void)
     if(!pstate_init(&kh_val(s_thread_state_table, k), GPU_STATE_NAME))
         return false;
     return true;
+}
+
+static int positive_modulo(int i, int n)
+{
+    return (i % n + n) % n;
 }
 
 /*****************************************************************************/
@@ -456,6 +465,11 @@ void Perf_FinishTick(void)
         vec_perf_reset(&curr->perf_trees[curr->perf_tree_idx]);
     }
 
+    mi_stats_get(sizeof(mi_stats_t), &s_last_frames_memstats[s_last_idx]);
+    uint64_t prev_allocd = s_last_frames_allocd_bytes[positive_modulo(s_last_idx - 1, NFRAMES_LOGGED)];
+    uint64_t curr_allocd = s_last_frames_memstats[s_last_idx].malloc_normal_count.total;
+    s_last_frames_allocd_bytes[s_last_idx] = curr_allocd;
+
     uint32_t curr_time = SDL_GetTicks();
     uint32_t last_ts = s_last_frames_ms[s_last_idx];
     s_last_frames_ms[s_last_idx] = curr_time - last_ts;
@@ -504,6 +518,12 @@ size_t Perf_Report(size_t maxout, struct perf_info **out)
     return ret;
 }
 
+void Perf_GetMemoryStats(struct mi_stats_s *out)
+{
+    int read_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
+    *out = s_last_frames_memstats[read_idx];
+}
+
 uint32_t Perf_LastFrameMS(void)
 {
     int read_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
@@ -515,5 +535,13 @@ uint32_t Perf_CurrFrameMS(void)
     uint32_t curr_time = SDL_GetTicks();
     uint32_t last_ts = s_last_frames_ms[s_last_idx];
     return curr_time - last_ts;
+}
+
+uint64_t Perf_LastFrameAllocdBytes(void)
+{
+    int read_idx_prev = positive_modulo(s_last_idx - 2, NFRAMES_LOGGED);
+    int read_idx_curr = positive_modulo(s_last_idx - 1, NFRAMES_LOGGED);
+    return s_last_frames_allocd_bytes[read_idx_curr]
+         - s_last_frames_allocd_bytes[read_idx_prev];
 }
 

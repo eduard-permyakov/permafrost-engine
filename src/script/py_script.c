@@ -76,6 +76,7 @@
 #include "../asset_load.h"
 
 #include <SDL.h>
+#include <mimalloc-stats.h>
 #include <stdio.h>
 #include <time.h>
 
@@ -116,6 +117,8 @@ static PyObject *PyPf_set_active_camera(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_prev_frame_ms(PyObject *self);
 static PyObject *PyPf_prev_frame_perfstats(PyObject *self);
+static PyObject *PyPf_prev_frame_memstats(PyObject *self);
+static PyObject *PyPf_prev_frame_allocd_bytes(PyObject *self);
 static PyObject *PyPf_get_resolution(PyObject *self);
 static PyObject *PyPf_get_native_resolution(PyObject *self);
 static PyObject *PyPf_get_basedir(PyObject *self);
@@ -358,6 +361,14 @@ static PyMethodDef pf_module_methods[] = {
     {"prev_frame_perfstats", 
     (PyCFunction)PyPf_prev_frame_perfstats, METH_NOARGS,
     "Get a dictionary of the performance data for the previous frame."},
+
+    {"prev_frame_memstats", 
+    (PyCFunction)PyPf_prev_frame_memstats, METH_NOARGS,
+    "Get a dictionary of the memory allocation and usage statistics for the previous frame."},
+
+    {"prev_frame_allocd_bytes", 
+    (PyCFunction)PyPf_prev_frame_allocd_bytes, METH_NOARGS,
+    "Get the number of bytes that were allocated with malloc during the previous frame."},
 
     {"get_resolution", 
     (PyCFunction)PyPf_get_resolution, METH_NOARGS,
@@ -1367,6 +1378,54 @@ fail:
     return NULL;
 }
 
+static PyObject *PyPf_prev_frame_memstats(PyObject *self)
+{
+    mi_stats_t stats = {0};
+    Perf_GetMemoryStats(&stats);
+
+    struct stat{
+        const char      *name;
+        mi_stat_count_t *value;
+    }published_counts[] = {
+        {"pages",            &stats.pages},
+        {"reserved",         &stats.reserved},
+        {"committed",        &stats.committed},
+        {"malloc_normal",    &stats.malloc_normal},
+        {"malloc_huge",      &stats.malloc_huge},
+        {"malloc_requested", &stats.malloc_requested},
+        {"threads",          &stats.threads}
+    };
+
+    PyObject *ret = PyDict_New();
+    if(!ret)
+        return NULL;
+
+    for(int i = 0; i < ARR_SIZE(published_counts); i++) {
+        struct stat *curr = &published_counts[i];
+        PyObject *value = Py_BuildValue("{s:l,s:l,s:l}",
+            "total", curr->value->total,
+            "peak", curr->value->peak,
+            "current", curr->value->current);
+        if(!value)
+            goto fail;
+        int status = PyDict_SetItemString(ret, curr->name, value);
+        Py_DECREF(value);
+        if(0 != status)
+            goto fail;
+    }
+    return ret;
+
+fail:
+    Py_XDECREF(ret);
+    return NULL;
+}
+
+static PyObject *PyPf_prev_frame_allocd_bytes(PyObject *self)
+{
+    uint64_t allocd = Perf_LastFrameAllocdBytes();
+    return Py_BuildValue("l", allocd);
+}
+
 static PyObject *PyPf_get_resolution(PyObject *self)
 {
     struct sval res;
@@ -1477,16 +1536,16 @@ static PyObject *PyPf_get_file_size(PyObject *self, PyObject *args)
     PyObject *file;
 
     if(!PyArg_ParseTuple(args, "O", &file)
-	|| !PyFile_Check(file)) {
+    || !PyFile_Check(file)) {
         PyErr_SetString(PyExc_TypeError, "Argument must a file object.");
         return NULL;
     }
 
-	SDL_RWops *rw = SDL_RWFromFP(((PyFileObject*)file)->f_fp, false);
-	PyObject *ret = PyLong_FromLongLong(SDL_RWsize(rw));
-	SDL_FreeRW(rw);
+    SDL_RWops *rw = SDL_RWFromFP(((PyFileObject*)file)->f_fp, false);
+    PyObject *ret = PyLong_FromLongLong(SDL_RWsize(rw));
+    SDL_FreeRW(rw);
 
-	return ret;
+    return ret;
 }
 
 static PyObject *PyPf_shift_pressed(PyObject *self)

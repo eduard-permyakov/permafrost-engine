@@ -54,6 +54,7 @@
 #include <SDL.h>
 #include <GL/glew.h>
 #include <SDL_opengl.h>
+#include <mimalloc-stats.h>
 
 
 #define EPSILON     (1.0f/1024)
@@ -532,6 +533,7 @@ static int render(void *data)
             SDL_GL_SwapWindow(s_window);
 
         render_signal_done(s_rstate, RSTAT_DONE);
+        mi_stats_merge();
     }
 
     if(initialized) {

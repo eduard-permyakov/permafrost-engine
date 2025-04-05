@@ -50,6 +50,8 @@
 #include "lib/public/block_allocator.h"
 
 #include <SDL.h>
+#include <mimalloc-stats.h>
+
 #include <inttypes.h>
 #ifdef _MSC_VER
 #include "lib/public/windows.h"
@@ -968,6 +970,7 @@ static int worker_threadfn(void *arg)
             break;
         worker_do_work(id);
         worker_notify_done(id);
+        mi_stats_merge();
     }
     return 0;
 }
