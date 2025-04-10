@@ -90,13 +90,18 @@ WINDOWS_SDL2_CONFIG = --host=x86_64-w64-mingw32
 WINDOWS_PYTHON_CONFIG = --host=x86_64-w64-mingw32
 WINDOWS_PYTHON_DEFS = "-D__USE_MINGW_ANSI_STDIO=1 -D__MINGW32__"
 WINDOWS_PYTHON_TARGET = libpython2.7.dll
-WINDOWS_OPENAL_OPTS = -DCMAKE_TOOLCHAIN_FILE=XCompile.txt -DHOST=x86_64-w64-mingw32 -DALSOFT_UTILS=OFF -DALSOFT_EXAMPLES=OFF
+WINDOWS_OPENAL_OPTS = \
+	-DCMAKE_TOOLCHAIN_FILE=XCompile.txt \
+	-DHOST=x86_64-w64-mingw32 \
+	-DALSOFT_UTILS=OFF \
+	-DALSOFT_EXAMPLES=OFF
 WINDOWS_MIMALLOC_OPTS = \
 	-DCMAKE_SYSTEM_NAME=Windows \
 	-DCMAKE_SYSTEM_PROCESSOR=x86_64 \
 	-DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
 	-DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
-	-DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres
+	-DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres \
+	-DCMAKE_LINKER=x86_64-w64-wingw32-ld
 
 WINDOWS_CC = x86_64-w64-mingw32-gcc
 WINDOWS_BIN = ./lib/pf.exe
@@ -239,7 +244,6 @@ ifeq ($(OS),Windows_NT)
 endif
 	cd $(OPENAL_SRC)/build \
 		&& export PATH="$(shell pwd)/$(OPENAL_SRC)/build:$$PATH" \
-		&& echo $$PATH \
 		&& cmake .. $(OPENAL_OPTS) \
 		-DCMAKE_CXX_FLAGS="-I. -I.. -I../include -I../alc -I../common" \
 		-DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
@@ -288,6 +292,7 @@ clean_deps:
 	cd deps/SDL2 && git clean -f -d
 	cd deps/Python && git clean -f -d
 	cd deps/openal-soft && git clean -f -d
+	cd deps/mimalloc && git clean -f -d
 	rm -rf deps/SDL2/build
 	rm -rf deps/Python/build
 	rm -rf deps/openal-soft/build
