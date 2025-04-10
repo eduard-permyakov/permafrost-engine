@@ -520,8 +520,13 @@ size_t Perf_Report(size_t maxout, struct perf_info **out)
 
 void Perf_GetMemoryStats(struct mi_stats_s *out)
 {
+#ifdef NDEBUG
+    memset(out, 0, sizeof(*out));
+    return;
+#else
     int read_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
     *out = s_last_frames_memstats[read_idx];
+#endif
 }
 
 uint32_t Perf_LastFrameMS(void)
@@ -539,9 +544,13 @@ uint32_t Perf_CurrFrameMS(void)
 
 uint64_t Perf_LastFrameAllocdBytes(void)
 {
+#ifdef NDEBUG
+    return 0;
+#else
     int read_idx_prev = positive_modulo(s_last_idx - 2, NFRAMES_LOGGED);
     int read_idx_curr = positive_modulo(s_last_idx - 1, NFRAMES_LOGGED);
     return s_last_frames_allocd_bytes[read_idx_curr]
          - s_last_frames_allocd_bytes[read_idx_prev];
+#endif
 }
 
