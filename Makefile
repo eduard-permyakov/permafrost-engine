@@ -78,8 +78,8 @@ WINDOWS_MIMALLOC_DEBUG_LIB = mimalloc-debug.dll
 WINDOWS_MIMALLOC_RELEASE_LIB = mimalloc.dll
 WINDOWS_MIMALLOC_LIB = $(WINDOWS_MIMALLOC_$(TYPE)_LIB)
 
-WINDOWS_MIMALLOC_DEBUG_LINKER_FLAG = -lmimalloc-debug
-WINDOWS_MIMALLOC_RELEASE_LINKER_FLAG = -lmimalloc
+WINDOWS_MIMALLOC_DEBUG_LINKER_FLAG = -lmimalloc-redirect -lmimalloc-debug
+WINDOWS_MIMALLOC_RELEASE_LINKER_FLAG = -lmimalloc-redirect -lmimalloc
 WINDOWS_MIMALLOC_LINKER_FLAG = $(WINDOWS_MIMALLOC_$(TYPE)_LINKER_FLAG)
 
 ifneq ($(OS),Windows_NT)
@@ -196,6 +196,10 @@ DEPS = \
 	./lib/$(OPENAL_LIB) \
 	./lib/$(MIMALLOC_LIB)
 
+ifeq ($(PLAT),WINDOWS)
+DEPS += ./lib/mimalloc-redirect.dll
+endif
+
 # ------------------------------------------------------------------------------
 # Targets
 # ------------------------------------------------------------------------------
@@ -249,6 +253,9 @@ endif
 		&& cmake .. $(MIMALLOC_OPTS) \
 		&& make
 	cp $(MIMALLOC_SRC)/build/$(MIMALLOC_LIB) $@
+
+./lib/mimalloc-redirect.dll: ./lib/$(MIMALLOC_LIB)
+	cp $(MIMALLOC_SRC)/build/$(notdir $@) $@
 
 deps: $(DEPS)
 
