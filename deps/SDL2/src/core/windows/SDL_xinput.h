@@ -211,17 +211,6 @@ typedef struct
 
 #endif /* HAVE_XINPUT_H */
 
-/* This struct is not defined in XInput headers. */
-typedef struct _XINPUT_CAPABILITIES_EX
-{
-    XINPUT_CAPABILITIES Capabilities;
-    WORD VendorId;
-    WORD ProductId;
-    WORD ProductVersion;
-    WORD unk1;
-    DWORD unk2;
-} XINPUT_CAPABILITIES_EX, *PXINPUT_CAPABILITIES_EX;
-
 /* Forward decl's for XInput API's we load dynamically and use if available */
 typedef DWORD(WINAPI *XInputGetState_t)(
     DWORD dwUserIndex,      /* [in] Index of the gamer associated with the device */

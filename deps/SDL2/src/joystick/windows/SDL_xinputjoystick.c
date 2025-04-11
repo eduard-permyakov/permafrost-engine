@@ -136,7 +136,7 @@ static SDL_bool GetXInputDeviceInfo(Uint8 userid, Uint16 *pVID, Uint16 *pPID, Ui
         *pPID = capabilities.ProductId;
     }
     if (pVersion) {
-        *pVersion = capabilities.ProductVersion;
+        *pVersion = capabilities.VersionNumber;
     }
     return SDL_TRUE;
 }
