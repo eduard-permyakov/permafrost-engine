@@ -38,7 +38,7 @@ FILE *PyWin_FindRegisteredModule(const char *moduleName,
     struct filedescr *fdp = NULL;
     FILE *fp;
     HKEY keyBase = HKEY_CURRENT_USER;
-    int modNameSize;
+    long modNameSize;
     long regStat;
 
     /* Calculate the size for the sprintf buffer.
