@@ -85,29 +85,34 @@ WINDOWS_MIMALLOC_LINKER_FLAG = $(WINDOWS_MIMALLOC_$(TYPE)_LINKER_FLAG)
 ifneq ($(OS),Windows_NT)
 WINDOWS_GLEW_OPTS = "SYSTEM=linux-mingw64"
 endif
+WINDOWS_GLEW_OPTS += LDFLAGS.EXTRA="-mcrtdll=ucrt -lucrt -nostdlib"
 
 WINDOWS_SDL2_CONFIG = --host=x86_64-w64-mingw32
 WINDOWS_PYTHON_CONFIG = --host=x86_64-w64-mingw32
 WINDOWS_PYTHON_DEFS = "-D__USE_MINGW_ANSI_STDIO=1 -D__MINGW32__"
+WINDOWS_PYTHON_LDFLAGS = "-mcrtdll=ucrt -lucrt"
 WINDOWS_PYTHON_TARGET = libpython2.7.dll
 WINDOWS_OPENAL_OPTS = \
 	-DCMAKE_TOOLCHAIN_FILE=XCompile.txt \
 	-DHOST=x86_64-w64-mingw32 \
 	-DALSOFT_UTILS=OFF \
-	-DALSOFT_EXAMPLES=OFF
+	-DALSOFT_EXAMPLES=OFF \
+	-DCMAKE_SHARED_LINKER_FLAGS="-mcrtdll=ucrt -lucrt"
 WINDOWS_MIMALLOC_OPTS = \
 	-DCMAKE_SYSTEM_NAME=Windows \
 	-DCMAKE_SYSTEM_PROCESSOR=x86_64 \
 	-DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
 	-DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
 	-DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres \
-	-DCMAKE_LINKER=x86_64-w64-wingw32-ld
+	-DCMAKE_LINKER=x86_64-w64-wingw32-ld \
+	-DCMAKE_SHARED_LINKER_FLAGS="-mcrtdll=ucrt -lucrt"
 
 WINDOWS_CC = x86_64-w64-mingw32-gcc
 WINDOWS_BIN = ./lib/pf.exe
 WINDOWS_LDFLAGS = \
 	$(WINDOWS_MIMALLOC_LINKER_FLAG) \
-	-lmingw32 \
+	-mcrtdll=ucrt \
+	-lucrt \
 	-lSDL2 \
 	-lglew32 \
 	-llibpython2.7 \
@@ -135,13 +140,14 @@ MIMALLOC_LIB = $($(PLAT)_MIMALLOC_LIB)
 SDL2_CONFIG = $($(PLAT)_SDL2_CONFIG)
 PYTHON_CONFIG = $($(PLAT)_PYTHON_CONFIG)
 PYTHON_DEFS = $($(PLAT)_PYTHON_DEFS)
+PYTHON_LDFLAGS = $($(PLAT)_PYTHON_LDFLAGS)
 PYTHON_TARGET = $($(PLAT)_PYTHON_TARGET)
 GLEW_OPTS = $($(PLAT)_GLEW_OPTS)
 OPENAL_OPTS = $($(PLAT)_OPENAL_OPTS)
 
 MIMALLOC_DEBUG_OPTS = -DCMAKE_BUILD_TYPE=Debug
 MIMALLOC_RELEASE_OPTS = -DCMAKE_BUILD_TYPE=Release
-MIMALLOC_OPTS = $(MIMALLOC_$(TYPE)_OPTS) $($(PLAT)_MIMALLOC_OPTS)
+MIMALLOC_OPTS = $(MIMALLOC_$(TYPE)_OPTS) $($(PLAT)_MIMALLOC_OPTS) -DCMAKE_C_FLAGS=-I../include
 
 WARNING_FLAGS = \
 	-Wall \
@@ -211,7 +217,7 @@ endif
 
 ./lib/$(GLEW_LIB):
 	mkdir -p ./lib
-	make -C $(GLEW_SRC) extensions
+	make -C $(GLEW_SRC) extensions 
 	make -C $(GLEW_SRC) $(GLEW_OPTS) glew.lib.shared
 	cp $(GLEW_SRC)/lib/$(GLEW_LIB) $@
 
@@ -234,7 +240,7 @@ endif
 		--without-threads \
 		--without-signal-module \
 	&& cp ./pyconfig.h ../Include/. \
-	&& make $(PYTHON_TARGET) CFLAGS=$(PYTHON_DEFS)
+	&& make $(PYTHON_TARGET) CFLAGS=$(PYTHON_DEFS) LDFLAGS=$(PYTHON_LDFLAGS)
 	cp $(PYTHON_SRC)/build/$(PYTHON_TARGET) $@
 
 ./lib/$(OPENAL_LIB):
@@ -259,7 +265,7 @@ endif
 	cp $(MIMALLOC_SRC)/build/$(MIMALLOC_LIB) $@
 
 ./lib/mimalloc-redirect.dll: ./lib/$(MIMALLOC_LIB)
-	cp $(MIMALLOC_SRC)/build/$(notdir $@) $@
+	cp $(MIMALLOC_SRC)/bin/$(notdir $@) $@
 
 deps: $(DEPS)
 
@@ -277,6 +283,10 @@ $(BIN): $(PF_OBJS)
 	@mkdir -p ./bin
 	@printf "%-8s %s\n" "[LD]" $@
 	@$(CC) $^ -o $(BIN) $(LDFLAGS)
+ifeq ($(OS),Windows_NT)
+	@./deps/mimalloc/bin/minject.exe -f $@
+	@mv ./lib/pf-mi.exe $@
+endif
 
 ./obj/version.o: .FORCE
 .FORCE:
