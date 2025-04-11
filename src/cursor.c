@@ -234,8 +234,7 @@ bool Cursor_InitDefault(const char *basedir)
     
         struct cursor_resource *curr = &s_cursors[i];
 
-        if(!curr->path 
-        || !Cursor_LoadBMP(i, curr->path, curr->hot_x, curr->hot_y)) {
+        if(!Cursor_LoadBMP(i, curr->path, curr->hot_x, curr->hot_y)) {
 
             curr->cursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
             if(!curr->cursor)

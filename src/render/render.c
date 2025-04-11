@@ -46,6 +46,7 @@
 #include "../main.h"
 #include "../ui.h"
 #include "../game/public/game.h"
+#include "../lib/public/windows.h"
 
 #include <assert.h>
 #include <math.h>
@@ -75,6 +76,7 @@ static SDL_Window               *s_window;
 static struct render_sync_state *s_rstate; 
 
 static jmp_buf                   s_jmpbuf; 
+static intptr_t                  s_jmpbuf2[5];
 
 /* write-once strings. Set by render thread at initialization */
 char                 s_info_vendor[128];
@@ -519,8 +521,13 @@ static int render(void *data)
     s_rstate->arg = NULL; /* arg is stale after signalling main thread */
     render_signal_done(s_rstate, RSTAT_DONE);
 
+#ifdef __MINGW32__
+    if(__builtin_setjmp(s_jmpbuf2))
+        return 0;
+#else
     if(setjmp(s_jmpbuf))
         return 0;
+#endif
 
     while(true) {
     
@@ -532,8 +539,8 @@ static int render(void *data)
         if(s_rstate->swap_buffers)
             SDL_GL_SwapWindow(s_window);
 
-        render_signal_done(s_rstate, RSTAT_DONE);
         mi_stats_merge();
+        render_signal_done(s_rstate, RSTAT_DONE);
     }
 
     if(initialized) {
@@ -829,8 +836,13 @@ void R_Yield(void)
     render_signal_done(s_rstate, RSTAT_YIELD);
 
     bool quit = render_wait_cmd(s_rstate);
-    if(quit)
+    if(quit) {
+#ifdef __MINGW32__
+        __builtin_longjmp(&s_jmpbuf2, 1);
+#else
         longjmp(s_jmpbuf, 1);
+#endif
+    }
 
     /* Execute the commands that were appended to the front of the queue */
     while(queue_size(ws->commands) > left) {

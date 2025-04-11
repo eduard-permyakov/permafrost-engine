@@ -292,7 +292,7 @@ void S_Error_Update(struct py_err_ctx *err_ctx)
         PyObject *repr;
 
         assert(err_ctx->type);
-        if(PyExceptionClass_Check(err_ctx->type) && PyExceptionClass_Name(err_ctx->type)) {
+        if(PyExceptionClass_Check(err_ctx->type)) {
             const char *clsname = PyExceptionClass_Name(err_ctx->type);
             char *dot = strrchr(clsname, '.');
             if(dot)

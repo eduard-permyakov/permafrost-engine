@@ -1061,14 +1061,14 @@ static PyObject *PyWindow_animated_button_label(PyWindowObject *self, PyObject *
 static PyObject *PyWindow_simple_chart(PyWindowObject *self, PyObject *args)
 {
     int type;
-    long min, max;
+    long long min, max;
     PyObject *list, *on_click_handler = NULL;
 
     int clicked_index = -1;
     int hovered_index = -1;
     long hovered_val;
 
-    if(!PyArg_ParseTuple(args, "i(ll)O|O", &type, &min, &max, &list, &on_click_handler)) {
+    if(!PyArg_ParseTuple(args, "i(LL)O|O", &type, &min, &max, &list, &on_click_handler)) {
         PyErr_SetString(PyExc_TypeError, "3 arguments expected: an integer, a tuple of two integers, and a list object. "
             "Optionally, a callable taking exactly one integer index argument (click handler) can additionally be supplied.");
         return NULL;
