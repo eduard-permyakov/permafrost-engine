@@ -144,9 +144,9 @@ static unsigned int s_seed;
 static int pf_rand(unsigned *seed)
 {
 #ifdef _WIN32
-    unsigned int ret;
+    unsigned int ret = 0;
     rand_s(&ret);
-    return ret;
+    return (ret % RAND_MAX);
 #else
     return rand_r(seed);
 #endif
