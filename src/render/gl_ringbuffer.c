@@ -39,6 +39,7 @@
 #include "gl_shader.h"
 #include "gl_state.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/mem.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -231,7 +232,7 @@ void R_GL_RingbufferDestroy(struct gl_ring *ring)
     }
     glDeleteBuffers(1, &ring->VBO);
     glDeleteTextures(1, &ring->tex_buff);
-    free(ring);
+    PF_FREE(ring);
 }
 
 bool R_GL_RingbufferPush(struct gl_ring *ring, const void *data, size_t size)

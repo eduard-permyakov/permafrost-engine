@@ -70,6 +70,7 @@ struct gl_splatmap{
 /*****************************************************************************/
 
 static size_t                 s_num_arrays;
+static uint32_t               s_materials_hash;
 static struct texture_arr     s_map_textures[4];
 static bool                   s_map_ctx_active = false;
 static struct gl_ring        *s_fog_ring;
@@ -128,6 +129,24 @@ static void create_splat_map(void)
     GL_ASSERT_OK();
 }
 
+static uint32_t materials_hash_adler32(const char map_texfiles[][256], size_t num_textures) 
+{
+    uint32_t s1 = 1;
+    uint32_t s2 = 0;
+
+    size_t i = 0;
+    while(num_textures-- > 0) {
+
+        const char *cursor = map_texfiles[i++];
+        while(*cursor) {
+            s1 = (s1 + *cursor) % 65521;
+            s2 = (s2 + s1) % 65521;
+            cursor++;
+        }
+    }
+    return (s2 << 16) | s1;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -139,15 +158,38 @@ void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures,
     ASSERT_IN_RENDER_THREAD();
 
     size_t nchunks = res->chunk_w * res->chunk_h;
-    s_fog_ring = R_GL_RingbufferInit(nchunks * TILES_PER_CHUNK_WIDTH * TILES_PER_CHUNK_HEIGHT * 3, 
-        RING_UBYTE);
+    static bool init_once_done = false;
+
+    /* Even though maps can change dynamically, most of our OpenGL resources
+     * can be re-used between different maps, so initialize them just once. 
+     */
+    if(!init_once_done) {
+
+        create_height_map();
+        create_splat_map();
+
+        s_num_arrays = R_GL_Texture_ArrayMakeMapWangTileset(map_texfiles, 
+            *num_textures, s_map_textures, GL_TEXTURE0);
+        s_materials_hash = materials_hash_adler32(map_texfiles, *num_textures);
+
+        init_once_done = true;
+    }else{
+
+        uint32_t new_materials_hash = materials_hash_adler32(map_texfiles, *num_textures);
+        if(new_materials_hash != s_materials_hash) {
+
+            for(int i = 0; i < s_num_arrays; i++) {
+                R_GL_Texture_ArrayFree(s_map_textures[i]);
+            }
+            s_num_arrays = R_GL_Texture_ArrayMakeMapWangTileset(map_texfiles, 
+                *num_textures, s_map_textures, GL_TEXTURE0);
+            s_materials_hash = new_materials_hash;
+        }
+    }
+
+    s_fog_ring = R_GL_RingbufferInit(
+        nchunks * TILES_PER_CHUNK_WIDTH * TILES_PER_CHUNK_HEIGHT * 3, RING_UBYTE);
     assert(s_fog_ring);
-
-    s_num_arrays = R_GL_Texture_ArrayMakeMapWangTileset(map_texfiles, 
-        *num_textures, s_map_textures, GL_TEXTURE0);
-
-    create_height_map();
-    create_splat_map();
 
     R_GL_StateSet(GL_U_HEIGHT_MAP, (struct uval){
         .type = UTYPE_INT,
@@ -187,15 +229,9 @@ void R_GL_MapUpdateFog(void *buff, const size_t *size)
 
 void R_GL_MapShutdown(void)
 {
-    glDeleteBuffers(1, &s_heightmap.buffer);
-    glDeleteBuffers(1, &s_heightmap.tex_buff);
-
-    glDeleteBuffers(1, &s_splatmap.buffer);
-    glDeleteBuffers(1, &s_splatmap.tex_buff);
-
-    for(int i = 0; i < s_num_arrays; i++) {
-        R_GL_Texture_ArrayFree(s_map_textures[i]);
-    }
+    /* Leave the mao textures and heightmaps. They can be
+     * reused between different maps 
+     */
     R_GL_RingbufferDestroy(s_fog_ring);
 }
 
@@ -207,7 +243,7 @@ void R_GL_MapUpdateFogClear(void)
     void *buff = malloc(size);
     memset(buff, 0x2, size);
     R_GL_RingbufferPush(s_fog_ring, buff, size);
-    free(buff);
+    PF_FREE(buff);
 }
 
 void R_GL_MapBegin(const bool *shadows, const vec2_t *pos,
