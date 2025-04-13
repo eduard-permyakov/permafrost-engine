@@ -775,12 +775,9 @@ int main(int argc, char **argv)
     enum render_status render_status = RSTAT_NONE;
 
     /* Run the first frame of the simulation, and prepare the buffers for rendering. */
-    E_ServiceQueue();
     G_Update();
     G_Render();
     G_SwapBuffers();
-    Perf_FinishTick();
-    SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
 
     while(!s_quit) {
 
@@ -841,6 +838,7 @@ int main(int argc, char **argv)
             if(render_status == RSTAT_DONE) {
                 s_resume_tick = g_frame_idx;
                 s_state = ENGINE_STATE_RUNNING;
+                SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
             }
             break;
 

@@ -817,7 +817,9 @@ bool R_ComputeShaderSupported(void)
 void R_Yield(void)
 {
     ASSERT_IN_RENDER_THREAD();
-    extern unsigned long g_frame_idx;
+
+    if(Engine_InRunningState())
+        return;
 
     struct render_workspace *ws = G_GetRenderWS();
     size_t left = queue_size(ws->commands);

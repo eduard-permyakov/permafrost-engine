@@ -2878,7 +2878,6 @@ void G_SwapBuffers(void)
     }
 
     g_remove_queued();
-    assert(queue_size(s_gs.ws[render_idx].commands) == 0);
     R_ClearWS(&s_gs.ws[render_idx]);
     s_gs.curr_ws_idx = render_idx;
 
