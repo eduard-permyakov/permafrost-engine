@@ -60,7 +60,7 @@
 #define BLOCK_DIM           (65)
 #define OVERLAP_DIM         (10)
 #define TILE_DIM            (130)
-#define OVERLAP_TOLERANCE   (0.05)
+#define OVERLAP_TOLERANCE   (0.025)
 
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
