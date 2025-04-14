@@ -3309,7 +3309,7 @@ static PyObject *PyUIHeaderStyle_new(PyTypeObject *type, PyObject *args, PyObjec
     if(!self)
         return NULL;
 
-    struct nk_context ctx;
+    static struct nk_context ctx = {0};
     nk_style_default(&ctx);
     self->style = ctx.style.window.header;
 
