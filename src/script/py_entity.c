@@ -2767,28 +2767,25 @@ static int PyBuildableEntity_init(PyBuildableEntityObject *self, PyObject *args,
 {
     PyObject *required_resources;
 
-    if(!kwds || ((required_resources = PyDict_GetItemString(kwds, "required_resources")) == NULL)) {
-        PyErr_SetString(PyExc_TypeError, 
-            "'required_resources' keyword argument required for initializing pf.BuildableEntity types.");
-        return -1;
-    }
+    if(kwds && ((required_resources = PyDict_GetItemString(kwds, "required_resources")) != NULL)) {
 
-    if(!PyDict_Check(required_resources))
-        goto fail_type;
-
-    PyObject *key, *value;
-    Py_ssize_t pos = 0;
-
-    while (PyDict_Next(required_resources, &pos, &key, &value)) {
-
-        if(!PyString_Check(key))
-            goto fail_type;
-        if(!PyInt_Check(value))
+        if(!PyDict_Check(required_resources))
             goto fail_type;
 
-        const char *rname = PyString_AS_STRING(key);
-        int ramount = PyInt_AS_LONG(value);
-        G_Building_SetRequired(self->super.ent, rname, ramount);
+        PyObject *key, *value;
+        Py_ssize_t pos = 0;
+
+        while (PyDict_Next(required_resources, &pos, &key, &value)) {
+
+            if(!PyString_Check(key))
+                goto fail_type;
+            if(!PyInt_Check(value))
+                goto fail_type;
+
+            const char *rname = PyString_AS_STRING(key);
+            int ramount = PyInt_AS_LONG(value);
+            G_Building_SetRequired(self->super.ent, rname, ramount);
+        }
     }
 
     PyObject *pathable;
