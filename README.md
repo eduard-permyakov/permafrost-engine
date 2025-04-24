@@ -95,6 +95,7 @@ Download the free demo on [Steam](https://store.steampowered.com/app/1309720/EVE
 * GLEW 2.2.0
 * python 2.7.17
 * openal-soft 1.21.1
+* mi-malloc 2.2.3
 * stb_image.h, stb_image_resize.h
 * khash.h
 * nuklear.h
@@ -182,6 +183,8 @@ Follow the development of Permafrost Engine and EVERGLORY on [YouTube](https://w
 [Indie RTS Devlog #18: Improved Map Rendering](https://www.youtube.com/watch?v=GjKUPQDtLUE)
 
 [EVERGLORY: Teaser Trailer #2 \[Indie RTS Game\]](https://youtu.be/q8bvpDb9meg)
+
+[EVERGLORY: Teaser Trailer #3 \[Indie RTS Game\]](https://www.youtube.com/watch?v=aiHjiG-feNA)
 
 ## Comments/Questions ##
 

@@ -42,6 +42,13 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Return the name of the currently playing music track, or None.
 
+    [delete_user_file]
+    ----------------------------------------------------------------------------
+    Delete a specific user-created file. The first argument is a path to a
+    directory, which may not contain sub-directories, may not be one of the
+    installation directories, and may not be empty. The second argument is the
+    filename.
+
     [disable_fog_of_war]
     ----------------------------------------------------------------------------
     Disable the fog of war.
@@ -65,6 +72,11 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Make it possible to select units with the mouse. Enable drawing of a
     selection box when dragging the mouse.
+
+    [ensure_directory]
+    ----------------------------------------------------------------------------
+    Create a directory relative to the working directory, if it does not exist
+    already.
 
     [entities_for_tag]
     ----------------------------------------------------------------------------
@@ -165,6 +177,11 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Get the size (in bytes) of a Python file object.
 
+    [get_files_in_dir]
+    ----------------------------------------------------------------------------
+    Get a list of non-directory files in the specified directory (relative to
+    the working directory).
+
     [get_hovered_unit]
     ----------------------------------------------------------------------------
     Get the closest unit under the mouse cursor, or None.
@@ -203,6 +220,10 @@ BUILT-IN FUNCTIONS
     Returns a dictionary describing the renderer context. It will have the
     string keys 'renderer', 'version', 'shading_language_version', and 'vendor'.
 
+    [get_render_settings]
+    ----------------------------------------------------------------------------
+    Returns a dictionary with the current render settings.
+
     [get_resolution]
     ----------------------------------------------------------------------------
     Get the currently set resolution of the game window.
@@ -240,9 +261,17 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Get the pf.Tile object describing the tile at the specified coordinates.
 
+    [get_time_str]
+    ----------------------------------------------------------------------------
+    Get a string of the current system date and time.
+
     [get_unit_selection]
     ----------------------------------------------------------------------------
     Returns a list of objects currently selected by the player.
+
+    [get_version_string]
+    ----------------------------------------------------------------------------
+    Brings up the interactive Python console.
 
     [global_event]
     ----------------------------------------------------------------------------
@@ -274,11 +303,16 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Import list of entities from a PFSCENE file (specified as a path string).
     Returns a tuple of the following items: list of loaded entities, list of
-    loaded regions.
+    loaded regions, list of loaded cameras.
 
     [load_session]
     ----------------------------------------------------------------------------
     Load a session previously saved with the 'save_session' call.
+
+    [map_add_splat]
+    ----------------------------------------------------------------------------
+    Set a secondary texture for a particular texture. Takes 2 integers, the
+    base material index and the accent material index.
 
     [map_height_at_point]
     ----------------------------------------------------------------------------
@@ -312,6 +346,11 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Returns the XYZ coordinate of the point of the map underneath the cursor.
     Returns 'None' if the cursor is not over the map.
+
+    [map_remove_splat]
+    ----------------------------------------------------------------------------
+    Remove a secondary texture for a particular texture. Takes 2 integers, the
+    base material index and the accent material index.
 
     [mouse_over_minimap]
     ----------------------------------------------------------------------------
@@ -364,6 +403,20 @@ BUILT-IN FUNCTIONS
     Set the specified audio track to loop in the background. The argument must
     be a name of a WAV file in the 'assets/music' folder, without the file
     extension.
+
+    [preload_pfobj]
+    ----------------------------------------------------------------------------
+    Load and cache the model and animation data from the specified PFOBJ file.
+
+    [prev_frame_allocd_bytes]
+    ----------------------------------------------------------------------------
+    Get the number of bytes that were allocated with malloc during the previous
+    frame.
+
+    [prev_frame_memstats]
+    ----------------------------------------------------------------------------
+    Get a dictionary of the memory allocation and usage statistics for the
+    previous frame.
 
     [prev_frame_ms]
     ----------------------------------------------------------------------------
@@ -540,6 +593,10 @@ BUILT-IN FUNCTIONS
     [set_simstate]
     ----------------------------------------------------------------------------
     Set the current simulation state.
+
+    [set_skybox]
+    ----------------------------------------------------------------------------
+    Set the image set to be used for the skybox.
 
     [set_storage_site_ui_border_color]
     ----------------------------------------------------------------------------
@@ -1221,6 +1278,7 @@ BUILT-IN CLASSES
     in its' constructor:                                           
                                                                    
       - mode {pf.CAM_MODE_RTS, pf.CAM_MODE_FPS, pf.CAM_MODE_FREE}  
+      - name (string)                                              
       - position (tuple of 3 floats)                               
       - pitch (float)                                              
       - yaw (float)                                                
@@ -1238,6 +1296,9 @@ BUILT-IN CLASSES
         The mode determines which controller is installed when the camera is
         activated. Can be one of pf.CAM_MODE_RTS, pf.CAM_MODE_FPS,
         pf.CAM_MODE_FREE
+
+        [name]
+        The user-provided name string for the camera.
 
         [pitch]
         The camera's pitch (in degrees)
@@ -1287,6 +1348,11 @@ BUILT-IN CLASSES
         [bounds]
         Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
         box (in OpenGL coordinates).
+
+        [corpse_model]
+        Descriptor of the corpse model to display upon entity death. Only shown
+        for entities with a death animation. Must be a tuple with 3 values:
+        directory (string), filename (string), model scale (tuple of 3 floats).
 
         [faction_id]
         Index of the faction that the entity belongs to.
@@ -2880,12 +2946,20 @@ BUILT-IN CLASSES
         The (R, G, B, A) color of header label when the window is in the
         default state.
 
+        [label_padding]
+        An (X, Y) tuple of floats specifying additional padding around the
+        header title label.
+
         [minimize_button]
         A pf.UIButtonStyle object describing the style of the minimize button.
 
         [normal]
         The look of the button in the normal state - either an (R, G, B, A)
         tuple or a string representing a path to an image.
+
+        [padding]
+        An (X, Y) tuple of floats specifying additional padding around the
+        header contents.
 
         ************************************************************************
         METHODS
@@ -3579,6 +3653,10 @@ BUILT-IN CLASSES
         [button_label]
         Add a button with a label and action.
 
+        [button_label_with_overlay]
+        Add a button with a label and action. Specify a semi-transparent image
+        that is rendered over the button.
+
         [checkbox]
         Checkbox which can be toggled. Returns True if checked.
 
@@ -3588,6 +3666,12 @@ BUILT-IN CLASSES
 
         [combo_box]
         Present a combo box with a list of selectable options.
+
+        [combo_close]
+        Close the currently active combo box.
+
+        [combo_label]
+        Present a combo box with a list of custom selectable options.
 
         [edit_focus]
         Give focus to the next active text edit widget.
