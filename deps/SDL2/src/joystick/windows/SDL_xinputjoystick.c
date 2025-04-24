@@ -135,9 +135,15 @@ static SDL_bool GetXInputDeviceInfo(Uint8 userid, Uint16 *pVID, Uint16 *pPID, Ui
     if (pPID) {
         *pPID = capabilities.ProductId;
     }
+#ifdef __MINGW32__
     if (pVersion) {
         *pVersion = capabilities.VersionNumber;
     }
+#else
+    if (pVersion) {
+        *pVersion = capabilities.ProductVersion;
+    }
+#endif
     return SDL_TRUE;
 }
 

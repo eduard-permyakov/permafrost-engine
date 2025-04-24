@@ -782,23 +782,23 @@ static void move_order(const vec_entity_t *sel, bool attack, vec3_t mouse_coord,
         vec_entity_copy(copy, (vec_entity_t*)sel);
         move_push_cmd((struct move_cmd){
             .type = MOVE_CMD_MAKE_FLOCKS,
-            .args[0] = {
+            .args[0] = (struct attr){
                 .type = TYPE_POINTER,
                 .val.as_pointer = copy
             },
-            .args[1] = {
+            .args[1] = (struct attr){
                 .type = TYPE_VEC2,
                 .val.as_vec2 = (vec2_t){mouse_coord.x, mouse_coord.z}
             },
-            .args[2] = {
+            .args[2] = (struct attr){
                 .type = TYPE_INT,
                 .val.as_int = G_Formation_PreferredForSet(copy)
             },
-            .args[3] = {
+            .args[3] = (struct attr){
                 .type = TYPE_BOOL,
                 .val.as_bool = attack
             },
-            .args[4] = {
+            .args[4] = (struct attr){
                 .type = TYPE_VEC2,
                 .val.as_vec2 = orientation
             }
@@ -3097,19 +3097,19 @@ void G_Move_AddEntity(uint32_t uid, vec3_t pos, float sel_radius, int faction_id
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_ADD,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_VEC3,
             .val.as_vec3 = pos
         },
-        .args[2] = {
+        .args[2] = (struct attr){
             .type = TYPE_FLOAT,
             .val.as_float = sel_radius
         },
-        .args[3] = {
+        .args[3] = (struct attr){
             .type = TYPE_INT,
             .val.as_float = faction_id
         }
@@ -3121,7 +3121,7 @@ void G_Move_RemoveEntity(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_REMOVE,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         }
@@ -3133,7 +3133,7 @@ void G_Move_Stop(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_STOP,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         }
@@ -3190,15 +3190,15 @@ void G_Move_SetDest(uint32_t uid, vec2_t dest_xz, bool attack)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_SET_DEST,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_VEC2,
             .val.as_vec2 = dest_xz
         },
-        .args[2] = {
+        .args[2] = (struct attr){
             .type = TYPE_BOOL,
             .val.as_bool = attack
         }
@@ -3210,11 +3210,11 @@ void G_Move_SetChangeDirection(uint32_t uid, quat_t target)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_CHANGE_DIRECTION,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_QUAT,
             .val.as_quat = target
         }
@@ -3226,15 +3226,15 @@ void G_Move_SetEnterRange(uint32_t uid, uint32_t target, float range)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_SET_ENTER_RANGE,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = target
         },
-        .args[2] = {
+        .args[2] = (struct attr){
             .type = TYPE_FLOAT,
             .val.as_float = range
         } 
@@ -3258,7 +3258,7 @@ void G_Move_SetSeekEnemies(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_SET_SEEK_ENEMIES,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         }
@@ -3270,11 +3270,11 @@ void G_Move_SetSurroundEntity(uint32_t uid, uint32_t target)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_SET_SURROUND_ENTITY,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = target
         }
@@ -3286,11 +3286,11 @@ void G_Move_UpdatePos(uint32_t uid, vec2_t pos)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_UPDATE_POS,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_VEC2,
             .val.as_vec2 = pos
         }
@@ -3302,7 +3302,7 @@ void G_Move_Unblock(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_UNBLOCK,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         }
@@ -3314,11 +3314,11 @@ void G_Move_BlockAt(uint32_t uid, vec3_t pos)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_BLOCK,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_VEC3,
             .val.as_vec3 = pos
         }
@@ -3330,15 +3330,15 @@ void G_Move_UpdateFactionID(uint32_t uid, int oldfac, int newfac)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_UPDATE_FACTION_ID,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = oldfac
         },
-        .args[2] = {
+        .args[2] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = newfac
         }
@@ -3350,11 +3350,11 @@ void G_Move_UpdateSelectionRadius(uint32_t uid, float sel_radius)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_UPDATE_SELECTION_RADIUS,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_FLOAT,
             .val.as_float  = sel_radius
         }
@@ -3399,11 +3399,11 @@ bool G_Move_SetMaxSpeed(uint32_t uid, float speed)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_SET_MAX_SPEED,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_FLOAT,
             .val.as_float = speed
         }
@@ -3421,23 +3421,23 @@ void G_Move_ArrangeInFormation(vec_entity_t *ents, vec2_t target,
 
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_MAKE_FLOCKS,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_POINTER,
             .val.as_pointer = copy
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_VEC2,
             .val.as_vec2 = target,
         },
-        .args[2] = {
+        .args[2] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = type
         },
-        .args[3] = {
+        .args[3] = (struct attr){
             .type = TYPE_BOOL,
             .val.as_bool = false
         },
-        .args[4] = {
+        .args[4] = (struct attr){
             .type = TYPE_VEC2,
             .val.as_vec2 = orientation
         }
@@ -3454,23 +3454,23 @@ void G_Move_AttackInFormation(vec_entity_t *ents, vec2_t target,
 
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_MAKE_FLOCKS,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_POINTER,
             .val.as_pointer = copy
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_VEC2,
             .val.as_vec2 = target,
         },
-        .args[2] = {
+        .args[2] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = type
         },
-        .args[3] = {
+        .args[3] = (struct attr){
             .type = TYPE_BOOL,
             .val.as_bool = true
         },
-        .args[4] = {
+        .args[4] = (struct attr){
             .type = TYPE_VEC2,
             .val.as_vec2 = orientation
         }

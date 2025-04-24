@@ -679,7 +679,7 @@ static void batching_en_commit(const struct sval *new_val)
         R_PushCmd((struct rcmd){
             .func = R_GL_Batch_Reset,
             .nargs = 0,
-            .args = {},
+            .args = {0},
         });
 
     }
@@ -2751,7 +2751,7 @@ void G_SetSkybox(const char *dir, const char *extension)
     R_PushCmd((struct rcmd){
         .func = R_GL_SkyboxFree,
         .nargs = 0,
-        .args = {}
+        .args = {0}
     });
     R_PushCmd((struct rcmd){
         .func = R_GL_SkyboxLoad,

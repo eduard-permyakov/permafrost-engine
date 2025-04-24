@@ -53,7 +53,7 @@
 #include <string.h>
 #include <assert.h>
 
-extern grammar _PyParser_Grammar;
+PyAPI_DATA(grammar) _PyParser_Grammar;
 
 #define CONSOLE_HIST_SIZE (1024)
 #define MAX_LINES         (256)

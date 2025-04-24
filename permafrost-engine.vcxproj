@@ -49,6 +49,7 @@
     <ClCompile Include="src\lib\attr.c" />
     <ClCompile Include="src\lib\debug_malloc.c" />
     <ClCompile Include="src\lib\nk_file_browser.c" />
+    <ClCompile Include="src\lib\noise.c" />
     <ClCompile Include="src\lib\nuklear.c" />
     <ClCompile Include="src\lib\pf_malloc.c" />
     <ClCompile Include="src\lib\pf_string.c" />
@@ -57,6 +58,7 @@
     <ClCompile Include="src\lib\stb_image.c" />
     <ClCompile Include="src\lib\stb_image_resize.c" />
     <ClCompile Include="src\lib\string_intern.c" />
+    <ClCompile Include="src\loading_screen.c" />
     <ClCompile Include="src\main.c" />
     <ClCompile Include="src\map\map.c" />
     <ClCompile Include="src\map\map_asset_load.c" />
@@ -72,6 +74,7 @@
     <ClCompile Include="src\phys\collision.c" />
     <ClCompile Include="src\phys\projectile.c" />
     <ClCompile Include="src\render\gl_batch.c" />
+    <ClCompile Include="src\render\gl_image_quilt.c" />
     <ClCompile Include="src\render\gl_minimap.c" />
     <ClCompile Include="src\render\gl_movement.c" />
     <ClCompile Include="src\render\gl_position.c" />
@@ -79,6 +82,7 @@
     <ClCompile Include="src\render\gl_ringbuffer.c" />
     <ClCompile Include="src\render\gl_shader.c" />
     <ClCompile Include="src\render\gl_shadows.c" />
+    <ClCompile Include="src\render\gl_skybox.c" />
     <ClCompile Include="src\render\gl_state.c" />
     <ClCompile Include="src\render\gl_statusbar.c" />
     <ClCompile Include="src\render\gl_terrain.c" />
@@ -91,6 +95,7 @@
     <ClCompile Include="src\scene.c" />
     <ClCompile Include="src\sched.c" />
     <ClCompile Include="src\script\py_camera.c" />
+    <ClCompile Include="src\script\py_console.c" />
     <ClCompile Include="src\script\py_constants.c" />
     <ClCompile Include="src\script\py_entity.c" />
     <ClCompile Include="src\script\py_error.c" />
@@ -106,6 +111,7 @@
     <ClCompile Include="src\settings.c" />
     <ClCompile Include="src\task.c" />
     <ClCompile Include="src\ui.c" />
+    <ClCompile Include="src\version.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\anim\anim_ctx.h" />
@@ -151,6 +157,7 @@
     <ClInclude Include="src\lib\public\mpool.h" />
     <ClInclude Include="src\lib\public\mpool_allocator.h" />
     <ClInclude Include="src\lib\public\nk_file_browser.h" />
+    <ClInclude Include="src\lib\public\noise.h" />
     <ClInclude Include="src\lib\public\nuklear.h" />
     <ClInclude Include="src\lib\public\pf_malloc.h" />
     <ClInclude Include="src\lib\public\pf_nuklear.h" />
@@ -164,6 +171,7 @@
     <ClInclude Include="src\lib\public\stb_image_resize.h" />
     <ClInclude Include="src\lib\public\string_intern.h" />
     <ClInclude Include="src\lib\public\vec.h" />
+    <ClInclude Include="src\loading_screen.h" />
     <ClInclude Include="src\main.h" />
     <ClInclude Include="src\map\map_private.h" />
     <ClInclude Include="src\map\pfchunk.h" />
@@ -181,6 +189,7 @@
     <ClInclude Include="src\phys\public\phys.h" />
     <ClInclude Include="src\render\gl_assert.h" />
     <ClInclude Include="src\render\gl_batch.h" />
+    <ClInclude Include="src\render\gl_image_quilt.h" />
     <ClInclude Include="src\render\gl_material.h" />
     <ClInclude Include="src\render\gl_mesh.h" />
     <ClInclude Include="src\render\gl_perf.h" />
@@ -199,6 +208,7 @@
     <ClInclude Include="src\script\private_types.h" />
     <ClInclude Include="src\script\public\script.h" />
     <ClInclude Include="src\script\py_camera.h" />
+    <ClInclude Include="src\script\py_console.h" />
     <ClInclude Include="src\script\py_constants.h" />
     <ClInclude Include="src\script\py_entity.h" />
     <ClInclude Include="src\script\py_error.h" />
@@ -274,14 +284,14 @@
     <LinkIncremental>true</LinkIncremental>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <ExternalIncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(ProjectDir)deps\GLEW\include;$(ProjectDir)deps\Python\Include;$(ProjectDir)deps/SDL2\include;$(ProjectDir)deps\openal-soft\include;</ExternalIncludePath>
+    <ExternalIncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(ProjectDir)deps\GLEW\include;$(ProjectDir)deps\Python\Include;$(ProjectDir)deps/SDL2\include;$(ProjectDir)deps\openal-soft\include;$(ProjectDir)deps\mimalloc\include</ExternalIncludePath>
     <TargetName>pf</TargetName>
     <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);$(ProjectDir)lib</LibraryPath>
     <OutDir>$(SolutionDir)lib</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);$(ProjectDir)lib</LibraryPath>
-    <ExternalIncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(ProjectDir)deps\GLEW\include;$(ProjectDir)deps\Python\Include;$(ProjectDir)deps/SDL2\include;$(ProjectDir)deps\openal-soft\include;</ExternalIncludePath>
+    <ExternalIncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(ProjectDir)deps\GLEW\include;$(ProjectDir)deps\Python\Include;$(ProjectDir)deps/SDL2\include;$(ProjectDir)deps\openal-soft\include;$(ProjectDir)deps\mimalloc\include</ExternalIncludePath>
     <OutDir>$(SolutionDir)lib</OutDir>
     <TargetName>pf</TargetName>
   </PropertyGroup>
@@ -325,20 +335,32 @@
     <ClCompile>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <PreprocessToFile>false</PreprocessToFile>
+      <PreprocessorDefinitions>DNDEBUG</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>$(SolutionDir)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;SDL2.lib;glew32d.lib;opengl32.lib;OpenAL32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;SDL2.lib;OpenAL32.lib;mimalloc.lib;opengl32.lib;glew32d.lib;python27_d.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SubSystem>NotSet</SubSystem>
+      <ForceSymbolReferences>mi_version</ForceSymbolReferences>
     </Link>
+    <PreBuildEvent>
+      <Command>
+      </Command>
+    </PreBuildEvent>
+    <PostBuildEvent>
+      <Command>$(SolutionDir)/deps/mimalloc/bin/minject.exe -f -i $(TargetPath)</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Link>
-      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;SDL2.lib;glew32.lib;opengl32.lib;OpenAL32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;SDL2.lib;OpenAL32.lib;mimalloc.lib;opengl32.lib;glew32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+      <ForceSymbolReferences>mi_version</ForceSymbolReferences>
+      <SubSystem>
+      </SubSystem>
     </Link>
     <ClCompile>
-      <Optimization>Full</Optimization>
+      <Optimization>MaxSpeed</Optimization>
     </ClCompile>
     <ClCompile>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
@@ -348,7 +370,15 @@
     </ClCompile>
     <ClCompile>
       <WholeProgramOptimization>true</WholeProgramOptimization>
+      <PreprocessorDefinitions>NDEBUG</PreprocessorDefinitions>
     </ClCompile>
+    <PreBuildEvent>
+      <Command>
+      </Command>
+    </PreBuildEvent>
+    <PostBuildEvent>
+      <Command>$(SolutionDir)/deps/mimalloc/bin/minject.exe -f -i $(TargetPath)</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

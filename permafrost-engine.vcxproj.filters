@@ -357,6 +357,24 @@
     <ClCompile Include="src\game\garrison.c">
       <Filter>Source Files\game</Filter>
     </ClCompile>
+    <ClCompile Include="src\render\gl_skybox.c">
+      <Filter>Source Files\render</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\gl_image_quilt.c">
+      <Filter>Source Files\render</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lib\noise.c">
+      <Filter>Source Files\lib</Filter>
+    </ClCompile>
+    <ClCompile Include="src\loading_screen.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\script\py_console.c">
+      <Filter>Source Files\script</Filter>
+    </ClCompile>
+    <ClCompile Include="src\version.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\asset_load.h">
@@ -673,6 +691,18 @@
     </ClInclude>
     <ClInclude Include="src\game\automation.h">
       <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\gl_image_quilt.h">
+      <Filter>Header Files\render</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\noise.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\loading_screen.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\script\py_console.h">
+      <Filter>Header Files\script</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

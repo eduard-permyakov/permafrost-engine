@@ -125,8 +125,8 @@
     <TargetName>mimalloc</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <OutDir>$(SolutionDir)..\..\out\msvc-$(Platform)\$(Configuration)\</OutDir>
-    <IntDir>$(SolutionDir)..\..\out\msvc-$(Platform)\$(ProjectName)\$(Configuration)\</IntDir>
+    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)$(Platform)\$(Configuration)\</IntDir>
     <TargetExt>.dll</TargetExt>
     <TargetName>mimalloc</TargetName>
   </PropertyGroup>
@@ -143,8 +143,8 @@
     <TargetName>mimalloc</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <OutDir>$(SolutionDir)..\..\out\msvc-$(Platform)\$(Configuration)\</OutDir>
-    <IntDir>$(SolutionDir)..\..\out\msvc-$(Platform)\$(ProjectName)\$(Configuration)\</IntDir>
+    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)$(Platform)\$(Configuration)\</IntDir>
     <TargetExt>.dll</TargetExt>
     <TargetName>mimalloc</TargetName>
   </PropertyGroup>
@@ -217,7 +217,7 @@
       <ProgramDatabaseFile>$(OutDir)$(TargetName).dll.pdb</ProgramDatabaseFile>
     </Link>
     <PostBuildEvent>
-      <Command>COPY /Y "$(ProjectDir)..\..\bin\mimalloc-redirect.dll" "$(OutputPath)"</Command>
+      <Command>xcopy "$(TargetDir)$(TargetName).dll" "$(SolutionDir)lib\$(TargetName).dll*" /d /Y &amp; xcopy "$(TargetDir)$(TargetName).dll.lib" "$(SolutionDir)lib\$(TargetName).lib*" /d /Y &amp; xcopy "$(SolutionDir)deps\mimalloc\bin\mimalloc-redirect.dll" "$(SolutionDir)lib\mimalloc-redirect.dll*" /d /Y</Command>
     </PostBuildEvent>
     <PostBuildEvent>
       <Message>copy mimalloc-redirect.dll to the output directory</Message>
@@ -345,7 +345,7 @@
       <ProgramDatabaseFile>$(OutDir)$(TargetName).dll.pdb</ProgramDatabaseFile>
     </Link>
     <PostBuildEvent>
-      <Command>COPY /Y "$(ProjectDir)..\..\bin\mimalloc-redirect.dll" "$(OutputPath)"</Command>
+      <Command>xcopy "$(TargetDir)$(TargetName).dll" "$(SolutionDir)lib\$(TargetName).dll*" /d /Y &amp; xcopy "$(TargetDir)$(TargetName).dll.lib" "$(SolutionDir)lib\$(TargetName).lib*" /d /Y &amp; xcopy "$(SolutionDir)deps\mimalloc\bin\mimalloc-redirect.dll" "$(SolutionDir)lib\mimalloc-redirect.dll*" /d /Y</Command>
     </PostBuildEvent>
     <PostBuildEvent>
       <Message>copy mimalloc-redirect.dll to the output directory</Message>

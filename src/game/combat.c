@@ -1152,7 +1152,7 @@ static void on_attack_anim_finish(void *user, void *event)
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, self, on_attack_anim_finish);
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_TRYHIT,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = self
         }
@@ -2209,7 +2209,7 @@ static void on_proj_hit(void *user, void *event)
 
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_PROJ_HIT,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_POINTER,
             .val.as_pointer = copy
         }
@@ -2315,11 +2315,11 @@ void G_Combat_AddEntity(uint32_t uid, enum combat_stance initial)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_ADD,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = initial
         }
@@ -2330,7 +2330,7 @@ void G_Combat_RemoveEntity(uint32_t uid)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_REMOVE,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         }
@@ -2341,11 +2341,11 @@ void G_Combat_SetStance(uint32_t uid, enum combat_stance stance)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_SET_STANCE,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = stance
         }
@@ -2374,7 +2374,7 @@ void G_Combat_ClearSavedMoveCmd(uint32_t uid)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_CLEAR_SAVED_MOVE_CMD,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         }
@@ -2443,11 +2443,11 @@ void G_Combat_AttackUnit(uint32_t uid, uint32_t target)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_ATTACK_UNIT,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = target
         }
@@ -2458,7 +2458,7 @@ void G_Combat_StopAttack(uint32_t uid)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_STOP_ATTACK,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         }
@@ -2469,7 +2469,7 @@ void G_Combat_AddTimeDelta(uint32_t delta)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_ADD_TIME_DELTA,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = delta
         }
@@ -2480,11 +2480,11 @@ void G_Combat_AddRef(int faction_id, vec2_t pos)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_ADD_REF,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = faction_id
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_VEC2,
             .val.as_vec2 = pos
         }
@@ -2495,11 +2495,11 @@ void G_Combat_RemoveRef(int faction_id, vec2_t pos)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_REMOVE_REF,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = faction_id
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_INT,
             .val.as_vec2 = pos
         }
@@ -2510,15 +2510,15 @@ void G_Combat_UpdateRef(int oldfac, int newfac, vec2_t pos)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_UPDATE_REF,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = oldfac
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = newfac
         },
-        .args[2] = {
+        .args[2] = (struct attr){
             .type = TYPE_VEC2,
             .val.as_vec2 = pos
         }
@@ -2556,11 +2556,11 @@ void G_Combat_SetBaseArmour(uint32_t uid, float armour_pc)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_SET_BASE_ARMOUR,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_FLOAT,
             .val.as_float = armour_pc
         }
@@ -2590,11 +2590,11 @@ void G_Combat_SetBaseDamage(uint32_t uid, int dmg)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_SET_BASE_DAMAGE,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = dmg
         }
@@ -2624,11 +2624,11 @@ void G_Combat_SetCurrentHP(uint32_t uid, int hp)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_SET_CURRENT_HP,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = hp
         }
@@ -2639,11 +2639,11 @@ void G_Combat_SetMaxHP(uint32_t uid, int hp)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_SET_MAX_HP,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = hp
         }
@@ -2673,11 +2673,11 @@ void G_Combat_SetRange(uint32_t uid, float range)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_SET_RANGE,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_FLOAT,
             .val.as_float = range
         }
@@ -2698,11 +2698,11 @@ void G_Combat_SetProjDesc(uint32_t uid, const struct proj_desc *pd)
 
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_SET_PROJ_DESC,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_POINTER,
             .val.as_pointer = copy
         }
@@ -2732,17 +2732,17 @@ void G_Combat_SetCorpseModel(uint32_t uid, const char *dir, const char *pfobj, v
 {
     struct combat_cmd cmd = (struct combat_cmd){
         .type = COMBAT_CMD_SET_CORPSE_MODEL,
-        .args[0] = {
+        .args[0] = (struct attr){
             .type = TYPE_INT,
             .val.as_int = uid
         },
-        .args[1] = {
+        .args[1] = (struct attr){
             .type = TYPE_STRING,
         },
-        .args[2] = {
+        .args[2] = (struct attr){
             .type = TYPE_STRING,
         },
-        .args[3] = {
+        .args[3] = (struct attr){
             .type = TYPE_VEC3,
             .val.as_vec3 = scale
         }
