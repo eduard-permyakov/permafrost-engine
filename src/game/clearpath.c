@@ -476,7 +476,7 @@ static void on_render_3d(void *user, void *event)
     vec3_t des_vel_dir = (vec3_t){des_v.x, 0.0f, des_v.z};
     PFM_Vec3_Normal(&des_vel_dir, &des_vel_dir);
 
-    float t = PFM_Vec2_Len(&des_v) * MOVE_TICK_RES;
+    float t = PFM_Vec2_Len(&des_v) * G_Move_GetTickHz();
     R_PushCmd((struct rcmd){
         .func = R_GL_DrawRay,
         .nargs = 5,
@@ -493,7 +493,7 @@ static void on_render_3d(void *user, void *event)
     vec3_t vel_dir = (vec3_t){v_new.x, 0.0f, v_new.z};
     PFM_Vec3_Normal(&vel_dir, &vel_dir);
 
-    t = PFM_Vec2_Len(&v_new) * MOVE_TICK_RES;
+    t = PFM_Vec2_Len(&v_new) * G_Move_GetTickHz();
     R_PushCmd((struct rcmd){
         .func = R_GL_DrawRay,
         .nargs = 5,

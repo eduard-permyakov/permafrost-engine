@@ -41,7 +41,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define MOVE_TICK_RES (20)
 enum movement_hz{
     MOVE_HZ_20,
     MOVE_HZ_10,

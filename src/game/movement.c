@@ -1207,7 +1207,7 @@ static vec2_t seek_force(uint32_t uid, vec2_t target_xz)
 
     PFM_Vec2_Sub(&target_xz, &pos_xz, &desired_velocity);
     PFM_Vec2_Normal(&desired_velocity, &desired_velocity);
-    PFM_Vec2_Scale(&desired_velocity, ms->max_speed / MOVE_TICK_RES, &desired_velocity);
+    PFM_Vec2_Scale(&desired_velocity, ms->max_speed / G_Move_GetTickHz(), &desired_velocity);
 
     PFM_Vec2_Sub(&desired_velocity, &ms->velocity, &ret);
     return ret;
@@ -1233,7 +1233,7 @@ static vec2_t arrive_force_point(uint32_t uid, vec2_t target_xz, bool has_dest_l
         PFM_Vec2_Sub(&target_xz, &pos_xz, &desired_velocity);
         distance = PFM_Vec2_Len(&desired_velocity);
         PFM_Vec2_Normal(&desired_velocity, &desired_velocity);
-        PFM_Vec2_Scale(&desired_velocity, ms->max_speed / MOVE_TICK_RES, &desired_velocity);
+        PFM_Vec2_Scale(&desired_velocity, ms->max_speed / G_Move_GetTickHz(), &desired_velocity);
 
         if(distance < ARRIVE_SLOWING_RADIUS) {
             PFM_Vec2_Scale(&desired_velocity, distance / ARRIVE_SLOWING_RADIUS, &desired_velocity);
@@ -1241,7 +1241,7 @@ static vec2_t arrive_force_point(uint32_t uid, vec2_t target_xz, bool has_dest_l
 
     }else{
 
-        PFM_Vec2_Scale(&ms->vdes, ms->max_speed / MOVE_TICK_RES, &desired_velocity);
+        PFM_Vec2_Scale(&ms->vdes, ms->max_speed / G_Move_GetTickHz(), &desired_velocity);
     }
 
     PFM_Vec2_Sub(&desired_velocity, &ms->velocity, &ret);
@@ -1262,7 +1262,7 @@ static vec2_t arrive_force_cell(uint32_t uid, vec2_t cell_xz)
     if(distance < ARRIVE_SLOWING_RADIUS) {
         PFM_Vec2_Scale(&desired_velocity, distance / ARRIVE_SLOWING_RADIUS, &desired_velocity);
     }else{
-        PFM_Vec2_Scale(&ms->vdes, ms->max_speed / MOVE_TICK_RES, &desired_velocity);
+        PFM_Vec2_Scale(&ms->vdes, ms->max_speed / G_Move_GetTickHz(), &desired_velocity);
     }
     return desired_velocity;
 }
@@ -1276,7 +1276,7 @@ static vec2_t arrive_force_enemies(uint32_t uid)
     const struct movestate *ms = movestate_get(uid);
     assert(ms);
 
-    PFM_Vec2_Scale((vec2_t*)&ms->vdes, ms->max_speed / MOVE_TICK_RES, &desired_velocity);
+    PFM_Vec2_Scale((vec2_t*)&ms->vdes, ms->max_speed / G_Move_GetTickHz(), &desired_velocity);
     PFM_Vec2_Sub(&desired_velocity, (vec2_t*)&ms->velocity, &ret);
     vec2_truncate(&ret, MAX_FORCE);
     return ret;
@@ -1566,7 +1566,7 @@ static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock,
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
-    vec2_truncate(&new_vel, speed / MOVE_TICK_RES);
+    vec2_truncate(&new_vel, speed / G_Move_GetTickHz());
 
     return new_vel;
 }
@@ -1601,9 +1601,9 @@ static vec2_t cell_arrival_seek_vpref(uint32_t uid, vec2_t cell_pos, float speed
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
-    vec2_truncate(&new_vel, speed / MOVE_TICK_RES);
+    vec2_truncate(&new_vel, speed / G_Move_GetTickHz());
     if(PFM_Vec2_Len(&drag) > EPSILON) {
-        vec2_truncate(&new_vel, (speed * 0.75) / MOVE_TICK_RES);
+        vec2_truncate(&new_vel, (speed * 0.75) / G_Move_GetTickHz());
     }
 
     return new_vel;
@@ -1620,7 +1620,7 @@ static vec2_t enemy_seek_vpref(uint32_t uid, float speed)
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
-    vec2_truncate(&new_vel, speed / MOVE_TICK_RES);
+    vec2_truncate(&new_vel, speed / G_Move_GetTickHz());
 
     return new_vel;
 }
@@ -1680,9 +1680,9 @@ static vec2_t formation_seek_vpref(uint32_t uid, const struct flock *flock, floa
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
-    vec2_truncate(&new_vel, speed / MOVE_TICK_RES);
+    vec2_truncate(&new_vel, speed / G_Move_GetTickHz());
     if(PFM_Vec2_Len(&drag) > EPSILON) {
-        vec2_truncate(&new_vel, (speed * 0.75) / MOVE_TICK_RES);
+        vec2_truncate(&new_vel, (speed * 0.75) / G_Move_GetTickHz());
     }
 
     return new_vel;
@@ -2840,7 +2840,7 @@ static void move_finish_work(void)
         PFM_Vec2_Sub(&ms->vnew, &ms->velocity, &vel_diff);
 
         PFM_Vec2_Add(&ms->velocity, &vel_diff, &ms->vnew);
-        vec2_truncate(&ms->vnew, ms->max_speed / MOVE_TICK_RES);
+        vec2_truncate(&ms->vnew, ms->max_speed / G_Move_GetTickHz());
     }
     PERF_POP();
 
