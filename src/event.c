@@ -106,6 +106,7 @@ static const char *s_event_str_table[] = {
     STR(EVENT_20HZ_TICK),
     STR(EVENT_15HZ_TICK),
     STR(EVENT_10HZ_TICK),
+    STR(EVENT_5HZ_TICK),
     STR(EVENT_1HZ_TICK),
     STR(EVENT_ANIM_FINISHED),
     STR(EVENT_ANIM_CYCLE_FINISHED),
@@ -206,6 +207,7 @@ static bool e_is_timer_event(enum eventtype type)
     || type == EVENT_20HZ_TICK
     || type == EVENT_15HZ_TICK
     || type == EVENT_10HZ_TICK
+    || type == EVENT_5HZ_TICK
     || type == EVENT_1HZ_TICK)
         return true;
     return false;

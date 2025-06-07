@@ -271,6 +271,7 @@ static void move_push_cmd(struct move_cmd cmd);
 static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack);
 static void do_stop(uint32_t uid);
 static void do_update_pos(uint32_t uid, vec2_t pos);
+static void move_tick(void *user, void *event);
 
 /* Parameters controlling steering/flocking behaviours */
 #define SEPARATION_FORCE_SCALE          (0.6f)
@@ -321,6 +322,8 @@ static struct move_work        s_move_work;
 static queue_cmd_t             s_move_commands;
 static struct memstack         s_eventargs;
 static unsigned long           s_last_tick = 0;
+static enum movement_hz        s_move_hz = MOVE_HZ_20;
+static bool                    s_move_hz_dirty = false;
 
 static const char *s_state_str[] = {
     [STATE_MOVING]              = STR(STATE_MOVING),
@@ -2904,14 +2907,71 @@ static void move_submit_work(void)
     }
 }
 
-static void on_20hz_tick(void *user, void *event)
+static void register_callback_for_hz(enum movement_hz hz)
+{
+    assert(hz >= 0 && hz <= MOVE_HZ_1);
+    const enum eventtype mapping[] = {
+        [MOVE_HZ_20] = EVENT_20HZ_TICK,
+        [MOVE_HZ_10] = EVENT_10HZ_TICK,
+        [MOVE_HZ_5 ] = EVENT_5HZ_TICK,
+        [MOVE_HZ_1 ] = EVENT_1HZ_TICK,
+    };
+    E_Global_Register(mapping[hz], move_tick, (void*)(uintptr_t)mapping[hz], G_RUNNING);
+}
+
+static void unregister_callback_for_hz(enum movement_hz hz)
+{
+    assert(hz >= 0 && hz <= MOVE_HZ_1);
+    const enum eventtype mapping[] = {
+        [MOVE_HZ_20] = EVENT_20HZ_TICK,
+        [MOVE_HZ_10] = EVENT_10HZ_TICK,
+        [MOVE_HZ_5 ] = EVENT_5HZ_TICK,
+        [MOVE_HZ_1 ] = EVENT_1HZ_TICK,
+    };
+    E_Global_Unregister(mapping[hz], move_tick);
+}
+
+static void move_handle_hz_update(enum eventtype curr)
+{
+    if(!s_move_hz_dirty)
+        return;
+
+    s_move_hz_dirty = false;
+
+    static const enum eventtype mapping[] = {
+        [MOVE_HZ_20] = EVENT_20HZ_TICK,
+        [MOVE_HZ_10] = EVENT_10HZ_TICK,
+        [MOVE_HZ_5 ] = EVENT_5HZ_TICK,
+        [MOVE_HZ_1 ] = EVENT_1HZ_TICK,
+    };
+    enum eventtype next = mapping[s_move_hz];
+
+    if(curr == next)
+        return;
+
+    static const enum movement_hz reverse[] = {
+        [EVENT_20HZ_TICK] = MOVE_HZ_20,
+        [EVENT_10HZ_TICK] = MOVE_HZ_10,
+        [EVENT_5HZ_TICK] = MOVE_HZ_5,
+        [EVENT_1HZ_TICK] = MOVE_HZ_1,
+    };
+    enum movement_hz curr_hz = reverse[curr];
+    enum movement_hz next_hz = s_move_hz;
+
+    unregister_callback_for_hz(curr_hz);
+    register_callback_for_hz(next_hz);
+}
+
+static void move_tick(void *user, void *event)
 {
     if(g_frame_idx == s_last_tick)
         return;
 
-    PERF_PUSH("movement::on_20hz_tick");
+    PERF_PUSH("movement::move_tick");
+    enum eventtype curr_event = (uintptr_t)user;
 
     move_finish_work();
+    move_handle_hz_update(curr_event);
     move_process_cmds();
     move_release_gamestate();
     disband_empty_flocks();
@@ -2930,6 +2990,10 @@ static void on_20hz_tick(void *user, void *event)
     kh_foreach_key(G_GetDynamicEntsSet(), curr, {
         request_async_field(curr);
     });
+    // TODO: this should be part of the async step
+    // we'll have a copy of the gamestate and navstate
+    // so we don't have to wait for this step before
+    // "kicking off" the rest of the work
     N_AwaitAsyncFields();
     PERF_POP();
 
@@ -3043,7 +3107,7 @@ bool G_Move_Init(const struct map *map)
     E_Global_Register(SDL_MOUSEMOTION, on_mousemotion, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, 
         G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
-    E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
+    register_callback_for_hz(s_move_hz);
 
     s_map = map;
     s_attack_on_lclick = false;
@@ -3059,7 +3123,7 @@ void G_Move_Shutdown(void)
     move_complete_work();
     s_map = NULL;
 
-    E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
+    unregister_callback_for_hz(s_move_hz);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     E_Global_Unregister(SDL_MOUSEBUTTONUP, on_mouseup);
@@ -3475,6 +3539,24 @@ void G_Move_AttackInFormation(vec_entity_t *ents, vec2_t target,
             .val.as_vec2 = orientation
         }
     });
+}
+
+void G_Move_SetTickHz(enum movement_hz hz)
+{
+    s_move_hz_dirty = (s_move_hz != hz);
+    s_move_hz = hz;
+}
+
+int G_Move_GetTickHz(void)
+{
+    switch(s_move_hz) {
+    case MOVE_HZ_20:    return 20;
+    case MOVE_HZ_10:    return 10;
+    case MOVE_HZ_5:     return 5;
+    case MOVE_HZ_1:     return 1;
+    default: assert(0);
+    }
+    return 0;
 }
 
 void G_Move_Upload(void)

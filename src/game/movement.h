@@ -42,6 +42,12 @@
 #include <stdint.h>
 
 #define MOVE_TICK_RES (20)
+enum movement_hz{
+    MOVE_HZ_20,
+    MOVE_HZ_10,
+    MOVE_HZ_5,
+    MOVE_HZ_1
+};
 
 struct map;
 struct SDL_RWops;
@@ -50,6 +56,9 @@ bool G_Move_Init(const struct map *map);
 void G_Move_Shutdown(void);
 bool G_Move_HasWork(void);
 void G_Move_FlushWork(void);
+
+void G_Move_SetTickHz(enum movement_hz hz);
+int  G_Move_GetTickHz(void);
 
 void G_Move_AddEntity(uint32_t uid, vec3_t pos, float sel_radius, int faction_id);
 void G_Move_RemoveEntity(uint32_t uid);

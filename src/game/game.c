@@ -593,6 +593,37 @@ static void cam_zoom_commit(const struct sval *new_val)
     Camera_SetPos(cam, (vec3_t){ pos.x, BASE_CAM_HEIGHT * multiplier, pos.z }); 
 }
 
+static bool move_hz_validate(const struct sval *new_val)
+{
+    if(new_val->type != ST_TYPE_INT)
+        return false;
+
+    const int allowed[] = {1,5,10,20};
+    bool found = false;
+    for(int i = 0; i < ARR_SIZE(allowed); i++) {
+        if(allowed[i] == new_val->as_int) {
+            found = true;
+            break;
+        }
+    }
+    if(!found)
+        return false;
+
+    return true;
+}
+
+static void move_hz_commit(const struct sval *new_val)
+{
+    int mapping[] = {
+        [1] = MOVE_HZ_1,
+        [5] = MOVE_HZ_5,
+        [10] = MOVE_HZ_10,
+        [20] = MOVE_HZ_20,
+    };
+    int raw = new_val->as_int;
+    G_Move_SetTickHz(mapping[raw]);
+}
+
 static bool nav_layer_validate(const struct sval *new_val)
 {
     if(new_val->type != ST_TYPE_INT)
@@ -958,6 +989,18 @@ static void g_create_settings(void)
         .prio = 0,
         .validate = cam_zoom_validate,
         .commit = cam_zoom_commit,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.game.movement_hz",
+        .val = (struct sval) {
+            .type = ST_TYPE_INT,
+            .as_int = 20
+        },
+        .prio = 0,
+        .validate = move_hz_validate,
+        .commit = move_hz_commit,
     });
     assert(status == SS_OKAY);
 
