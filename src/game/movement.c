@@ -3820,6 +3820,42 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &velocity, "velocity"));
 
+        struct attr next_pos = (struct attr){
+            .type = TYPE_VEC3,
+            .val.as_vec3 = curr.next_pos
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &next_pos, "next_pos"));
+
+        struct attr prev_pos = (struct attr){
+            .type = TYPE_VEC3,
+            .val.as_vec3 = curr.prev_pos
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &prev_pos, "prev_pos"));
+
+        struct attr next_rot = (struct attr){
+            .type = TYPE_QUAT,
+            .val.as_quat = curr.next_rot
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &next_rot, "next_rot"));
+
+        struct attr prev_rot = (struct attr){
+            .type = TYPE_QUAT,
+            .val.as_quat = curr.prev_rot
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &prev_rot, "prev_rot"));
+
+        struct attr step = (struct attr){
+            .type = TYPE_FLOAT,
+            .val.as_float = curr.step
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &step, "step"));
+
+        struct attr left = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.left
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &left, "left"));
+
         struct attr blocking = (struct attr){
             .type = TYPE_BOOL,
             .val.as_bool = curr.blocking
@@ -3992,6 +4028,30 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_VEC2);
         ms->velocity = attr.val.as_vec2;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC3);
+        ms->next_pos = attr.val.as_vec3;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC3);
+        ms->prev_pos = attr.val.as_vec3;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_QUAT);
+        ms->next_rot = attr.val.as_quat;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_QUAT);
+        ms->prev_rot = attr.val.as_quat;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        ms->step = attr.val.as_float;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        ms->left = attr.val.as_int;
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_BOOL);
