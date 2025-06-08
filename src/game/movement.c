@@ -1972,6 +1972,7 @@ static void entity_update(enum movement_hz hz, uint32_t uid, vec2_t new_vel)
     }else{
         ms->velocity = (vec2_t){0.0f, 0.0f}; 
         ms->prev_pos = G_Pos_GetFrom(s_move_work.gamestate.positions, uid);
+        ms->prev_rot = Entity_GetRot(uid);
         ms->left = 0;
     }
 

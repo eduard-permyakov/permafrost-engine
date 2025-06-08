@@ -37,6 +37,8 @@
 #include <string.h>
 #include <assert.h>
 
+#define EPSILON (1.0/1024)
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -691,21 +693,34 @@ GLfloat PFM_Quat_PitchDiff(quat_t *op1, quat_t *op2)
 
 quat_t PFM_Quat_Slerp(quat_t *op1, quat_t *op2, float t)
 {
-    float angle = acos(PFM_Quat_Dot(op1, op2));
-    float denom = sin(angle);
+    /* Based on http://www.euclideanspace.com/maths/algebra/realNormedAlgebra/quaternions/slerp/index.htm */
+    double cos_half_theta = (op1->w * op2->w) + (op1->x * op2->x) + (op1->y * op2->y) + (op1->z * op2->z);
 
-    vec4_t q1 = (vec4_t){op1->x, op1->y, op1->z, op1->w};
-    vec4_t q2 = (vec4_t){op2->x, op2->y, op2->z, op2->w};
+    /* if q1=q2 or qa=-q2 then theta = 0 and we can return qa */
+    if(fabs(cos_half_theta) >= 1.0)
+        return *op1;
 
-    float scale_q1 = sin((1-t) * angle);
-    float scale_q2 = sin(t * angle);
+    double half_theta = acos(cos_half_theta);
+    double sin_half_theta = sqrt(1.0 - cos_half_theta * cos_half_theta);
+    quat_t ret;
 
-    PFM_Vec4_Scale(&q1, scale_q1, &q1);
-    PFM_Vec4_Scale(&q2, scale_q2, &q2);
-
-    vec4_t sum;
-    PFM_Vec4_Add(&q1, &q2, &sum);
-    return (quat_t){sum.x, sum.y, sum.z, sum.w};
+    /* If theta = 180 degrees then result is not fully defined
+     * We could rotate around any axis normal to q1 or q2 */
+    if(fabs(sin_half_theta) < EPSILON) {
+        ret.w = (op1->w * 0.5 + op2->w * 0.5);
+        ret.x = (op1->x * 0.5 + op2->x * 0.5);
+        ret.y = (op1->y * 0.5 + op2->y * 0.5);
+        ret.z = (op1->z * 0.5 + op2->z * 0.5);
+    } else {
+        /* Default quaternion calculation */
+        double ratio_a = sin((1 - t) * half_theta) / sin_half_theta;
+        double ratio_b = sin(t * half_theta) / sin_half_theta;
+        ret.w = (op1->w * ratio_a + op2->w * ratio_b);
+        ret.x = (op1->x * ratio_a + op2->x * ratio_b);
+        ret.y = (op1->y * ratio_a + op2->y * ratio_b);
+        ret.z = (op1->z * ratio_a + op2->z * ratio_b);
+    }
+    return ret;
 }
 
 GLfloat PFM_BilinearInterp(GLfloat q11, GLfloat q12, GLfloat q21, GLfloat q22,
