@@ -652,6 +652,14 @@ void PFM_Quat_Inverse(quat_t *op1, quat_t *out)
     out->w =  op1->w;
 }
 
+float PFM_Quat_Dot(quat_t *op1, quat_t *op2)
+{
+    return op1->x * op2->x +
+           op1->y * op2->y +
+           op1->z * op2->z +
+           op1->w * op2->w;
+}
+
 GLfloat PFM_Quat_PitchDiff(quat_t *op1, quat_t *op2)
 {
     vec4_t front = (vec4_t){1.0f, 0.0f, 0.0f, 1.0f};
@@ -679,6 +687,25 @@ GLfloat PFM_Quat_PitchDiff(quat_t *op1, quat_t *op2)
     float dot = dir1.x * dir2.x + dir1.z * dir2.z;
     float det = dir1.x * dir2.z - dir1.z * dir2.x;
     return atan2(det, dot);
+}
+
+quat_t PFM_Quat_Slerp(quat_t *op1, quat_t *op2, float t)
+{
+    float angle = acos(PFM_Quat_Dot(op1, op2));
+    float denom = sin(angle);
+
+    vec4_t q1 = (vec4_t){op1->x, op1->y, op1->z, op1->w};
+    vec4_t q2 = (vec4_t){op2->x, op2->y, op2->z, op2->w};
+
+    float scale_q1 = sin((1-t) * angle);
+    float scale_q2 = sin(t * angle);
+
+    PFM_Vec4_Scale(&q1, scale_q1, &q1);
+    PFM_Vec4_Scale(&q2, scale_q2, &q2);
+
+    vec4_t sum;
+    PFM_Vec4_Add(&q1, &q2, &sum);
+    return (quat_t){sum.x, sum.y, sum.z, sum.w};
 }
 
 GLfloat PFM_BilinearInterp(GLfloat q11, GLfloat q12, GLfloat q21, GLfloat q22,
