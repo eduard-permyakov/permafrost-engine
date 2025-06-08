@@ -49,6 +49,7 @@
 
 
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
+#define MAX(a, b)           ((a) > (b) ? (a) : (b))
 #define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
 #define MAX_ENTS_PER_CHUNK  (4096)
 #define SEARCH_BUFFER       (16.0f)
@@ -1281,7 +1282,7 @@ static size_t field_passable_frontier(
 
     struct map_resolution res;
     N_GetResolution(priv, &res);
-    const size_t nelems = region.r * region.c;
+    const size_t nelems = pow(MAX(region.r, region.c), 2.0f);
 
     /* Allow worker threads to use thread-local workspace memory
      * for stack allocations when this routine is running in task
@@ -1343,6 +1344,9 @@ static size_t field_passable_frontier(
             if(visited[visited_idx(res, region, neighb)])
                 continue;
             visited[visited_idx(res, region, neighb)] = true;
+
+            assert(neighb.chunk_r < res.chunk_w);
+            assert(neighb.chunk_c < res.chunk_h);
             qpush(frontier, &qsize, &fhead, &ftail, nelems, neighb);
         }
     }
@@ -1847,6 +1851,8 @@ void N_FlowFieldUpdateToNearestPathable(
         chunk.r, chunk.c,
         start.r, start.c
     };
+    assert(chunk_region.base.chunk_r == start_coord.chunk_r);
+    assert(chunk_region.base.chunk_c == start_coord.chunk_c);
     size_t ninit = field_passable_frontier(priv, layer, start_coord, 
         chunk_region, init_frontier, ARR_SIZE(init_frontier), NULL, 0);
 
@@ -2122,6 +2128,8 @@ void N_CellArrivalFieldUpdateToNearestPathable(void *nav_private, size_t rdim, s
 
     size_t delta = (char*)init_frontier - (char*)workspace;
     workspace_size -= delta;
+    workspace_size -= frontier_size;
+    workspace = ((char*)init_frontier) + frontier_size;
 
     struct region clamped = clamped_region(priv, rdim, cdim, center);
     size_t ninit = field_passable_frontier(priv, layer, start, 
