@@ -207,6 +207,11 @@ static void render_refraction_tex(GLuint clr_tex, GLuint depth_tex, bool on, str
     glDrawBuffers(ARR_SIZE(draw_buffs), draw_buffs);
     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
 
+    /* Clip everything above the water surface */
+    glEnable(GL_CLIP_DISTANCE0);
+    vec4_t plane_eq = (vec4_t){0.0f, -1.0f, 0.0f, WATER_LVL};
+    R_GL_SetClipPlane(plane_eq);
+
     /* Render to the texture */
     glViewport(0, 0, texw, texh);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
