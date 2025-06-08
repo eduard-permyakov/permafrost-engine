@@ -142,6 +142,18 @@ struct movestate{
     /* The current velocity 
      */
     vec2_t             velocity;
+    /* State tracking variables for interpolating between movement ticks.
+     * During a single movement tick, the entity's position is moved to
+     * intermediate points between 'prev_pos' and 'next_pos', in increments
+     * expressed by 'step'.
+     */
+    vec3_t             next_pos;    /* The computed next movement tick position */
+    vec3_t             prev_pos;    /* The position at the start of the previous tick */
+    quat_t             next_rot;    /* The computed next movement tick rotation */
+    quat_t             prev_rot;    /* The rotation at the start of the previous tick */
+    float              step;        /* The fraction of the distance covered in a single step 
+                                     * (nsteps = 1.0/step) */
+    int                left;        /* The number of interpolation steps left (0 means the entity is at next_pos) */
     /* Flag to track whether the entiy is currently acting as a 
      * navigation blocker, and the last position where it became a blocker. 
      */
@@ -1857,11 +1869,52 @@ static float unit_height(uint32_t uid, vec2_t pos)
     return M_HeightAtPoint(s_map, pos);
 }
 
-static void entity_update(uint32_t uid, vec2_t new_vel)
+static int hz_count(enum movement_hz hz)
+{
+    switch(hz) {
+    case MOVE_HZ_20:    return 20;
+    case MOVE_HZ_10:    return 10;
+    case MOVE_HZ_5:     return 5;
+    case MOVE_HZ_1:     return 1;
+    default: assert(0);
+    }
+    return 0;
+}
+
+static vec3_t interpolate_positions(vec3_t from, vec3_t to, float fraction)
+{
+    assert(fraction >= 0.0f && fraction <= 1.0f);
+
+    if(fabs(1.0 - fraction) < EPSILON)
+        return to;
+
+    vec3_t delta;
+    PFM_Vec3_Sub(&to, &from, &delta);
+    PFM_Vec3_Scale(&delta, fraction, &delta);
+
+    vec3_t ret;
+    PFM_Vec3_Add(&from, &delta, &ret);
+    return ret;
+}
+
+static quat_t interpolate_rotations(quat_t from, quat_t to, float fraction)
+{
+    assert(fraction >= 0.0f && fraction <= 1.0f);
+
+    if(abs(1.0 - fraction) < EPSILON)
+        return to;
+
+    return PFM_Quat_Slerp(&from, &to, fraction);
+}
+
+static void entity_update(enum movement_hz hz, uint32_t uid, vec2_t new_vel)
 {
     ASSERT_IN_MAIN_THREAD();
     struct movestate *ms = movestate_get(uid);
     assert(ms);
+
+    assert(hz_count(hz) <= 20);
+    assert(20 % hz_count(hz) == 0);
 
     vec2_t new_pos_xz = new_pos_for_vel(uid, new_vel);
     float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
@@ -1879,7 +1932,19 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
     && M_NavPositionPathable(s_map, layer, new_pos_xz)) {
     
         vec3_t new_pos = (vec3_t){new_pos_xz.x, unit_height(uid, new_pos_xz), new_pos_xz.z};
-        G_Pos_Set(uid, new_pos);
+
+        ms->prev_pos = ms->next_pos;
+        ms->next_pos = new_pos;
+        ms->step = 1.0f / (20 / hz_count(hz));
+        ms->left = (20 / hz_count(hz)) - 1;
+
+        if(ms->left == 0) {
+            G_Pos_Set(uid, new_pos);
+        }else{
+            vec3_t intermediate = interpolate_positions(ms->prev_pos, ms->next_pos, ms->step);
+            G_Pos_Set(uid, intermediate);
+        }
+
         flush_update_pos_commands(uid);
         ms->velocity = new_vel;
 
@@ -1888,12 +1953,26 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
          * slightly. However, this greatly smooths the turning of the entity, giving a more 
          * natural look to the movemment. 
          */
+
+        ms->prev_rot = Entity_GetRot(uid);
         vec2_t wma = vel_wma(ms);
         if(PFM_Vec2_Len(&wma) > EPSILON) {
-            Entity_SetRot(uid, dir_quat_from_velocity(wma));
+            ms->next_rot = dir_quat_from_velocity(wma);
+        }else{
+            ms->next_rot = ms->prev_rot;
         }
+
+        if(ms->left == 0) {
+            Entity_SetRot(uid, ms->next_rot);
+        }else{
+            quat_t intermediate = interpolate_rotations(ms->prev_rot, ms->next_rot, ms->step);
+            Entity_SetRot(uid, intermediate);
+        }
+
     }else{
         ms->velocity = (vec2_t){0.0f, 0.0f}; 
+        ms->prev_pos = G_Pos_GetFrom(s_move_work.gamestate.positions, uid);
+        ms->left = 0;
     }
 
     /* If the entity's current position isn't pathable, simply keep it 'stuck' there in
@@ -2243,6 +2322,9 @@ static void do_add_entity(uint32_t uid, vec3_t pos, float selection_radius, int 
         .vel_hist_idx = 0,
         .vnew = (vec2_t){0.0f, 0.0f},
         .max_speed = 0.0f,
+        .left = 0,
+        .prev_pos = pos,
+        .next_pos = pos,
         .surround_target_prev = (vec2_t){0},
         .surround_nearest_prev = (vec2_t){0},
     };
@@ -2818,7 +2900,7 @@ static void move_update_gamestate(void)
     move_copy_gamestate();
 }
 
-static void move_finish_work(void)
+static void move_finish_work(enum movement_hz hz)
 {
     PERF_ENTER();
 
@@ -2853,7 +2935,7 @@ static void move_finish_work(void)
         /* The entity has been removed already */
         if(!G_EntityExists(key))
             continue;
-        entity_update(key, curr.vnew);
+        entity_update(hz, key, curr.vnew);
     });
     PERF_POP();
 
@@ -2908,6 +2990,17 @@ static void move_submit_work(void)
     }
 }
 
+static enum movement_hz event_to_hz(enum eventtype event)
+{
+    static const enum movement_hz mapping[] = {
+        [EVENT_20HZ_TICK] = MOVE_HZ_20,
+        [EVENT_10HZ_TICK] = MOVE_HZ_10,
+        [EVENT_5HZ_TICK] = MOVE_HZ_5,
+        [EVENT_1HZ_TICK] = MOVE_HZ_1,
+    };
+    return mapping[event];
+}
+
 static void register_callback_for_hz(enum movement_hz hz)
 {
     assert(hz >= 0 && hz <= MOVE_HZ_1);
@@ -2950,28 +3043,64 @@ static void move_handle_hz_update(enum eventtype curr)
     if(curr == next)
         return;
 
-    static const enum movement_hz reverse[] = {
-        [EVENT_20HZ_TICK] = MOVE_HZ_20,
-        [EVENT_10HZ_TICK] = MOVE_HZ_10,
-        [EVENT_5HZ_TICK] = MOVE_HZ_5,
-        [EVENT_1HZ_TICK] = MOVE_HZ_1,
-    };
-    enum movement_hz curr_hz = reverse[curr];
+    enum movement_hz curr_hz = event_to_hz(curr);
     enum movement_hz next_hz = s_move_hz;
 
     unregister_callback_for_hz(curr_hz);
     register_callback_for_hz(next_hz);
 }
 
-static void move_tick(void *user, void *event)
+static void entity_interpolation_step(uint32_t uid)
 {
+    ASSERT_IN_MAIN_THREAD();
+    struct movestate *ms = movestate_get(uid);
+    assert(ms);
+
+    if(ms->left == 0)
+        return;
+
+    ms->left--;
+    float fraction = 1.0 - (ms->step * ms->left);
+
+    vec3_t new_pos = interpolate_positions(ms->prev_pos, ms->next_pos, fraction);
+    quat_t new_rot = interpolate_rotations(ms->prev_rot, ms->next_rot, fraction);
+
+    G_Pos_Set(uid, new_pos);
+    Entity_SetRot(uid, new_rot);
+}
+
+static void interpolate_tick(void *user, void *event)
+{
+    /* Do not run the interpolation in the same tick as the move tick */
     if(g_frame_idx == s_last_tick)
         return;
 
-    PERF_PUSH("movement::move_tick");
-    enum eventtype curr_event = (uintptr_t)user;
+    PERF_ENTER();
 
-    move_finish_work();
+    /* Iterate over all the entities and advance the position forward
+     * by one interpolated step */
+    uint32_t key;
+    kh_foreach_key(s_entity_state_table, key, {
+        /* The entity has been removed already */
+        if(!G_EntityExists(key))
+            continue;
+        entity_interpolation_step(key);
+    });
+
+    PERF_RETURN_VOID();
+}
+
+static void move_tick(void *user, void *event)
+{
+    /* If we are backed up, drop excess events */
+    if(g_frame_idx == s_last_tick)
+        return;
+
+    PERF_PUSH("movement::tick");
+    enum eventtype curr_event = (uintptr_t)user;
+    enum movement_hz hz = event_to_hz(curr_event);
+
+    move_finish_work(hz);
     move_handle_hz_update(curr_event);
     move_process_cmds();
     move_release_gamestate();
@@ -2991,10 +3120,6 @@ static void move_tick(void *user, void *event)
     kh_foreach_key(G_GetDynamicEntsSet(), curr, {
         request_async_field(curr);
     });
-    // TODO: this should be part of the async step
-    // we'll have a copy of the gamestate and navstate
-    // so we don't have to wait for this step before
-    // "kicking off" the rest of the work
     N_AwaitAsyncFields();
     PERF_POP();
 
@@ -3020,7 +3145,7 @@ static void move_tick(void *user, void *event)
         vec_cp_ent_resize(dyn, 16);
         vec_cp_ent_resize(stat, 16);
 
-        vec2_t pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr);
+        vec2_t pos = (vec2_t){ms->prev_pos.x, ms->prev_pos.z};
         float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr);
 
         struct cp_ent curr_cp = (struct cp_ent) {
@@ -3109,6 +3234,7 @@ bool G_Move_Init(const struct map *map)
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, 
         G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
     register_callback_for_hz(s_move_hz);
+    E_Global_Register(EVENT_20HZ_TICK, interpolate_tick, NULL, G_RUNNING);
 
     s_map = map;
     s_attack_on_lclick = false;
@@ -3125,6 +3251,7 @@ void G_Move_Shutdown(void)
     s_map = NULL;
 
     unregister_callback_for_hz(s_move_hz);
+    E_Global_Unregister(EVENT_20HZ_TICK, interpolate_tick);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     E_Global_Unregister(SDL_MOUSEBUTTONUP, on_mouseup);
@@ -3153,7 +3280,7 @@ bool G_Move_HasWork(void)
 
 void G_Move_FlushWork(void)
 {
-    move_finish_work();
+    move_finish_work(MOVE_HZ_20);
     move_process_cmds();
 }
 
@@ -3550,14 +3677,7 @@ void G_Move_SetTickHz(enum movement_hz hz)
 
 int G_Move_GetTickHz(void)
 {
-    switch(s_move_hz) {
-    case MOVE_HZ_20:    return 20;
-    case MOVE_HZ_10:    return 10;
-    case MOVE_HZ_5:     return 5;
-    case MOVE_HZ_1:     return 1;
-    default: assert(0);
-    }
-    return 0;
+    return hz_count(s_move_hz);
 }
 
 void G_Move_Upload(void)
