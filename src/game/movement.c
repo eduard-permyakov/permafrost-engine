@@ -1901,7 +1901,7 @@ static quat_t interpolate_rotations(quat_t from, quat_t to, float fraction)
 {
     assert(fraction >= 0.0f && fraction <= 1.0f);
 
-    if(abs(1.0 - fraction) < EPSILON)
+    if(fabs(1.0 - fraction) < EPSILON)
         return to;
 
     return PFM_Quat_Slerp(&from, &to, fraction);
