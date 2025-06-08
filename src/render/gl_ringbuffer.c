@@ -137,10 +137,11 @@ static bool ring_section_free(const struct gl_ring *ring, size_t size)
 
 static void pmb_init(struct gl_ring *ring)
 {
-    GLbitfield flags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
+    GLbitfield flags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT;
     glBindBuffer(GL_TEXTURE_BUFFER, ring->VBO);
     glBufferStorage(GL_TEXTURE_BUFFER, ring->size, NULL, flags);
-    ring->user = glMapBufferRange(GL_TEXTURE_BUFFER, 0, ring->size, flags);
+    ring->user = glMapBufferRange(GL_TEXTURE_BUFFER, 0, ring->size, 
+        flags | GL_MAP_UNSYNCHRONIZED_BIT | GL_MAP_FLUSH_EXPLICIT_BIT);
     glBindBuffer(GL_TEXTURE_BUFFER, 0);
 }
 
@@ -165,13 +166,28 @@ static void *unsynch_vbo_map(struct gl_ring *ring, size_t offset, size_t size)
 {
     glBindBuffer(GL_TEXTURE_BUFFER, ring->VBO);
     return glMapBufferRange(GL_TEXTURE_BUFFER, offset, size,
-        GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
+        GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT | GL_MAP_FLUSH_EXPLICIT_BIT);
 }
 
 static void unsynch_vbo_unmap(struct gl_ring *ring)
 {
     glBindBuffer(GL_TEXTURE_BUFFER, ring->VBO);
     glUnmapBuffer(GL_TEXTURE_BUFFER);
+    glBindBuffer(GL_TEXTURE_BUFFER, 0);
+}
+
+static void flush_last_range(struct gl_ring *ring)
+{
+    size_t begin = 0, end = 0;
+    R_GL_RingbufferGetLastRange(ring, &begin, &end);
+
+    glBindBuffer(GL_TEXTURE_BUFFER, ring->VBO);
+    if(end >= begin) {
+        glFlushMappedBufferRange(GL_TEXTURE_BUFFER, begin, end - begin);
+    }else{
+        glFlushMappedBufferRange(GL_TEXTURE_BUFFER, 0, begin);
+        glFlushMappedBufferRange(GL_TEXTURE_BUFFER, end, ring->size - end);
+    }
     glBindBuffer(GL_TEXTURE_BUFFER, 0);
 }
 
@@ -384,6 +400,7 @@ void R_GL_RingbufferBindLast(struct gl_ring *ring, GLuint tunit, GLuint shader_p
         .val.as_int = bpos
     });
     R_GL_StateInstall(uname_offset, shader_prog);
+    flush_last_range(ring);
 }
 
 void R_GL_RingbufferSyncLast(struct gl_ring *ring)
