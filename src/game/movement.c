@@ -72,9 +72,10 @@
 
 /* For the purpose of movement simulation, all entities have the same mass,
  * meaning they are accelerate the same amount when applied equal forces. */
-#define ENTITY_MASS     (1.0f)
-#define EPSILON         (1.0f/1024)
-#define MAX_FORCE       (0.75f)
+#define ENTITY_MASS      (1.0f)
+#define EPSILON          (1.0f/1024)
+#define MAX_FORCE        (0.75f)
+#define SCALED_MAX_FORCE (MAX_FORCE / G_Move_GetTickHz() * 20.0)
 
 #define SIGNUM(x)    (((x) > 0) - ((x) < 0))
 #define MAX(a, b)    ((a) > (b) ? (a) : (b))
@@ -1245,7 +1246,7 @@ static vec2_t arrive_force_point(uint32_t uid, vec2_t target_xz, bool has_dest_l
     }
 
     PFM_Vec2_Sub(&desired_velocity, &ms->velocity, &ret);
-    vec2_truncate(&ret, MAX_FORCE);
+    vec2_truncate(&ret, SCALED_MAX_FORCE);
     return ret;
 }
 
@@ -1278,7 +1279,7 @@ static vec2_t arrive_force_enemies(uint32_t uid)
 
     PFM_Vec2_Scale((vec2_t*)&ms->vdes, ms->max_speed / G_Move_GetTickHz(), &desired_velocity);
     PFM_Vec2_Sub(&desired_velocity, (vec2_t*)&ms->velocity, &ret);
-    vec2_truncate(&ret, MAX_FORCE);
+    vec2_truncate(&ret, SCALED_MAX_FORCE);
     return ret;
 }
 
@@ -1321,7 +1322,7 @@ static vec2_t alignment_force(uint32_t uid, const struct flock *flock)
 
     PFM_Vec2_Scale(&ret, 1.0f / neighbour_count, &ret);
     PFM_Vec2_Sub(&ret, &ms->velocity, &ret);
-    vec2_truncate(&ret, MAX_FORCE);
+    vec2_truncate(&ret, SCALED_MAX_FORCE);
     return ret;
 }
 
@@ -1358,7 +1359,7 @@ static vec2_t cohesion_force(uint32_t uid, const struct flock *flock)
     vec2_t ret;
     PFM_Vec2_Scale(&COM, 1.0f / neighbour_count, &COM);
     PFM_Vec2_Sub(&COM, &ent_xz_pos, &ret);
-    vec2_truncate(&ret, MAX_FORCE);
+    vec2_truncate(&ret, SCALED_MAX_FORCE);
     return ret;
 }
 
@@ -1412,7 +1413,7 @@ static vec2_t separation_force(uint32_t uid, float buffer_dist)
         return (vec2_t){0.0f};
 
     PFM_Vec2_Scale(&ret, -1.0f, &ret);
-    vec2_truncate(&ret, MAX_FORCE);
+    vec2_truncate(&ret, SCALED_MAX_FORCE);
     return ret;
 }
 
@@ -1435,7 +1436,7 @@ static vec2_t point_seek_total_force(uint32_t uid, const struct flock *flock,
     PFM_Vec2_Add(&ret, &separation, &ret);
     PFM_Vec2_Add(&ret, &cohesion, &ret);
 
-    vec2_truncate(&ret, MAX_FORCE);
+    vec2_truncate(&ret, SCALED_MAX_FORCE);
     return ret;
 }
 
@@ -1466,7 +1467,7 @@ static vec2_t cell_seek_total_force(uint32_t uid, vec2_t cell_pos,
         PFM_Vec2_Add(&ret, &alignment, &ret);
     }
 
-    vec2_truncate(&ret, MAX_FORCE);
+    vec2_truncate(&ret, SCALED_MAX_FORCE);
     return ret;
 }
 
@@ -1485,7 +1486,7 @@ static vec2_t enemy_seek_total_force(uint32_t uid)
     PFM_Vec2_Add(&ret, &arrive, &ret);
     PFM_Vec2_Add(&ret, &separation, &ret);
 
-    vec2_truncate(&ret, MAX_FORCE);
+    vec2_truncate(&ret, SCALED_MAX_FORCE);
     return ret;
 }
 
@@ -1558,7 +1559,7 @@ static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock,
         }
 
         nullify_impass_components(uid, &steer_force);
-        if(PFM_Vec2_Len(&steer_force) > MAX_FORCE * 0.01)
+        if(PFM_Vec2_Len(&steer_force) > SCALED_MAX_FORCE * 0.01)
             break;
     }
 
@@ -1593,7 +1594,7 @@ static vec2_t cell_arrival_seek_vpref(uint32_t uid, vec2_t cell_pos, float speed
         }
 
         nullify_impass_components(uid, &steer_force);
-        if(PFM_Vec2_Len(&steer_force) > MAX_FORCE * 0.01)
+        if(PFM_Vec2_Len(&steer_force) > SCALED_MAX_FORCE * 0.01)
             break;
     }
 
@@ -1644,7 +1645,7 @@ static vec2_t formation_point_seek_total_force(uint32_t uid, const struct flock 
     PFM_Vec2_Add(&ret, &separation, &ret);
     PFM_Vec2_Add(&ret, &cohesion, &ret);
 
-    vec2_truncate(&ret, MAX_FORCE);
+    vec2_truncate(&ret, SCALED_MAX_FORCE);
     return ret;
 }
 
@@ -1672,7 +1673,7 @@ static vec2_t formation_seek_vpref(uint32_t uid, const struct flock *flock, floa
         }
 
         nullify_impass_components(uid, &steer_force);
-        if(PFM_Vec2_Len(&steer_force) > MAX_FORCE * 0.01)
+        if(PFM_Vec2_Len(&steer_force) > SCALED_MAX_FORCE * 0.01)
             break;
     }
 
