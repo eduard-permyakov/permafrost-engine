@@ -48,26 +48,37 @@
 /* FC GENERAL                                                                */
 /*###########################################################################*/
 
-bool N_FC_Init(void);
-void N_FC_Shutdown(void);
+struct fieldcache_ctx;
+
+struct fieldcache_ctx *N_FC_New(void);
+void N_FC_Free(struct fieldcache_ctx *ctx);
+
+bool N_FC_Init(struct fieldcache_ctx *ctx);
+void N_FC_Destroy(struct fieldcache_ctx *ctx);
 
 /* Invalidate all LOS and Flow fields for a particular chunk 
  */
-void N_FC_InvalidateAllAtChunk(struct coord chunk, enum nav_layer layer);
+void N_FC_InvalidateAllAtChunk(struct fieldcache_ctx *ctx, 
+                               struct coord chunk, 
+                               enum nav_layer layer);
 
 /* Invalidate all LOS and Flow fields for paths (identified by the dest_id) which 
  * have at least one field at the specified chunk
  */
-void N_FC_InvalidateAllThroughChunk(struct coord chunk, enum nav_layer layer);
+void N_FC_InvalidateAllThroughChunk(struct fieldcache_ctx *ctx, 
+                                    struct coord chunk, 
+                                    enum nav_layer layer);
 
 /* Invalidate 'enemy seek' fields in all chunks which are adjacent to the 
  * current one. This is because 'enemy seek' fields are also dependent
  * on the state of the units in adjacent chunks.
  */
-void N_FC_InvalidateNeighbourEnemySeekFields(int width, int height, 
-                                             struct coord chunk, enum nav_layer layer);
+void N_FC_InvalidateNeighbourEnemySeekFields(struct fieldcache_ctx *ctx, 
+                                             int width, int height, 
+                                             struct coord chunk, 
+                                             enum nav_layer layer);
 
-void N_FC_InvalidateDynamicSurroundFields(void);
+void N_FC_InvalidateDynamicSurroundFields(struct fieldcache_ctx *ctx);
 
 /*###########################################################################*/
 /* LOS FIELD CACHING                                                         */
@@ -75,10 +86,17 @@ void N_FC_InvalidateDynamicSurroundFields(void);
 
 /* Returned pointer should not be cached, as it may become invalid after eviction. 
  */
-const struct LOS_field  *N_FC_LOSFieldAt(dest_id_t id, struct coord chunk_coord);
+const struct LOS_field  *N_FC_LOSFieldAt(struct fieldcache_ctx *ctx, 
+                                         dest_id_t id, 
+                                         struct coord chunk_coord);
 
-bool                     N_FC_ContainsLOSField(dest_id_t id, struct coord chunk_coord);
-void                     N_FC_PutLOSField(dest_id_t id, struct coord chunk_coord, 
+bool                     N_FC_ContainsLOSField(struct fieldcache_ctx *ctx, 
+                                               dest_id_t id, 
+                                               struct coord chunk_coord);
+
+void                     N_FC_PutLOSField(struct fieldcache_ctx *ctx, 
+                                          dest_id_t id, 
+                                          struct coord chunk_coord, 
                                           const struct LOS_field *lf);
 
 /*###########################################################################*/
@@ -87,14 +105,21 @@ void                     N_FC_PutLOSField(dest_id_t id, struct coord chunk_coord
 
 /* Returned pointer should not be cached, as it may become invalid after eviction. 
  */
-const struct flow_field *N_FC_FlowFieldAt(ff_id_t ffid);
+const struct flow_field *N_FC_FlowFieldAt(struct fieldcache_ctx *ctx, ff_id_t ffid);
 
-bool                     N_FC_ContainsFlowField(ff_id_t ffid);
-void                     N_FC_PutFlowField(ff_id_t ffid, const struct flow_field *ff);
+bool                     N_FC_ContainsFlowField(struct fieldcache_ctx *ctx, ff_id_t ffid);
 
-bool                     N_FC_GetDestFFMapping(dest_id_t id, struct coord chunk_coord, 
+void                     N_FC_PutFlowField(struct fieldcache_ctx *ctx, 
+                                           ff_id_t ffid, const struct flow_field *ff);
+
+bool                     N_FC_GetDestFFMapping(struct fieldcache_ctx *ctx, 
+                                               dest_id_t id, 
+                                               struct coord chunk_coord, 
                                                ff_id_t *out_ff);
-void                     N_FC_PutDestFFMapping(dest_id_t dest_id, struct coord chunk_coord, 
+
+void                     N_FC_PutDestFFMapping(struct fieldcache_ctx *ctx, 
+                                               dest_id_t dest_id, 
+                                               struct coord chunk_coord, 
                                                ff_id_t ffid);
 
 /*###########################################################################*/
@@ -107,10 +132,27 @@ struct grid_path_desc{
     float cost;
 };
 
-bool N_FC_GetGridPath(struct coord local_start, struct coord local_dest,
-                      struct coord chunk, enum nav_layer layer, struct grid_path_desc *out);
-void N_FC_PutGridPath(struct coord local_start, struct coord local_dest,
-                      struct coord chunk, enum nav_layer layer, const struct grid_path_desc *in);
+bool N_FC_GetGridPath(struct fieldcache_ctx *ctx, 
+                      struct coord local_start, 
+                      struct coord local_dest,
+                      struct coord chunk, 
+                      enum nav_layer layer, 
+                      struct grid_path_desc *out);
+
+void N_FC_PutGridPath(struct fieldcache_ctx *ctx, 
+                      struct coord local_start, 
+                      struct coord local_dest,
+                      struct coord chunk, 
+                      enum nav_layer layer, 
+                      const struct grid_path_desc *in);
+
+/*###########################################################################*/
+/* STATS                                                                     */
+/*###########################################################################*/
+
+void      N_FC_ClearStats(struct fieldcache_ctx *ctx);
+void      N_FC_GetStats(struct fieldcache_ctx *ctx, struct fc_stats *out_stats);
+void      N_FC_ClearAll(struct fieldcache_ctx *ctx);
 
 #endif
 

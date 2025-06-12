@@ -1473,7 +1473,7 @@ static PyObject *PyPf_get_nav_perfstats(PyObject *self)
     }
 
     struct fc_stats stats;
-    N_FC_GetStats(&stats);
+    G_GetFieldCacheStats(&stats);
 
     int rval = 0;
     rval |= PyDict_SetItemString(ret, "los_used",           Py_BuildValue("i", stats.los_used));

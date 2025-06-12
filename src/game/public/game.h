@@ -177,6 +177,7 @@ uint16_t        G_GetPlayerControlledFactions(void);
 uint16_t        G_GetEnemyFactions(int faction_id);
 void            G_SetFactionID(uint32_t uid, int faction_id);
 int             G_GetFactionID(uint32_t uid);
+void            G_GetFieldCacheStats(struct fc_stats *out);
 
 void            G_SetVisionRange(uint32_t uid, float range);
 float           G_GetVisionRange(uint32_t uid);

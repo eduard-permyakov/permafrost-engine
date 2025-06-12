@@ -538,7 +538,7 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
         chunk_tiles[r * map->width + c] = map->chunks[r * map->width + c].tiles;
     }}
 
-    map->nav_private = N_BuildForMapData(map->width, map->height, 
+    map->nav_private = N_NewCtxForMapData(map->width, map->height, 
         TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, chunk_tiles, update_navgrid);
     STFREE(chunk_tiles);
 
@@ -597,7 +597,7 @@ void M_AL_FreePrivate(struct map *map)
 {
     R_PushCmd((struct rcmd){ .func = R_GL_MapShutdown });
     assert(map->nav_private);
-    N_FreePrivate(map->nav_private);
+    N_FreeCtx(map->nav_private);
 }
 
 size_t M_AL_ShallowCopySize(size_t nrows, size_t ncols)

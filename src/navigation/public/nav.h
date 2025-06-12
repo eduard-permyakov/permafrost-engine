@@ -114,12 +114,6 @@ enum flow_dir{
 bool      N_Init(void);
 
 /* ------------------------------------------------------------------------
- * Once per frame updates of the private navigation data.
- * ------------------------------------------------------------------------
- */
-void      N_Update(void *nav_private);
-
-/* ------------------------------------------------------------------------
  * Clean up resources acquired by 'N_Init'
  * ------------------------------------------------------------------------
  */
@@ -132,20 +126,32 @@ void      N_Shutdown(void);
 void      N_ClearState(void);
 
 /* ------------------------------------------------------------------------
+ * Once per frame updates of the private navigation data.
+ * ------------------------------------------------------------------------
+ */
+void      N_Update(void *nav_private);
+
+/* ------------------------------------------------------------------------
+ * Clear the state of the context.
+ * ------------------------------------------------------------------------
+ */
+void      N_ClearCtx(void *nav_private);
+
+/* ------------------------------------------------------------------------
  * Return a new navigation context for a map, containing pathability
  * information. 'w' and 'h' are the number of chunk columns/rows per map.
  * 'chunk_tiles' holds pointers to tile arrays for every chunk, in 
  * row-major order.
  * ------------------------------------------------------------------------
  */
-void     *N_BuildForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
-                            const struct tile **chunk_tiles, bool update);
+void     *N_NewCtxForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
+                             const struct tile **chunk_tiles, bool update);
 
 /* ------------------------------------------------------------------------
- * Clean up resources allocated by 'N_BuildForMapData'.
+ * Clean up resources allocated by 'N_NewCtxForMapData'.
  * ------------------------------------------------------------------------
  */
-void      N_FreePrivate(void *nav_private);
+void      N_FreeCtx(void *nav_private);
 
 /* ------------------------------------------------------------------------
  * Render text above a particular map position.
@@ -615,19 +621,19 @@ void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_la
  * Reset the field cache performance counters.
  * ------------------------------------------------------------------------
  */
-void      N_FC_ClearStats(void);
+void      N_FC_ClearStatsAt(void *nav_private);
 
 /* ------------------------------------------------------------------------
  * Get up-to-date performance counters for the field/path caches.
  * ------------------------------------------------------------------------
  */
-void      N_FC_GetStats(struct fc_stats *out_stats);
+void      N_FC_GetStatsAt(void *nav_private, struct fc_stats *out_stats);
 
 /* ------------------------------------------------------------------------
  * Reset the contents of all the caches.
  * ------------------------------------------------------------------------
  */
-void      N_FC_ClearAll(void);
+void      N_FC_ClearAllAt(void *nav_private);
 
 #endif
 

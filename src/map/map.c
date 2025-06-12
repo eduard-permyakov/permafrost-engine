@@ -1096,3 +1096,8 @@ bool M_NavIsAdjacentToIslandOBB(const struct map *map, enum nav_layer layer,
     return N_IsAdjacentToIslandOBB(map->nav_private, layer, map->pos, obb, island_pos);
 }
 
+void M_GetFieldCacheStats(const struct map *map, struct fc_stats *out)
+{
+    return N_FC_GetStatsAt(map->nav_private, out);
+}
+

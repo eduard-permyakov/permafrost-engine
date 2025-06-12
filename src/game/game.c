@@ -2519,6 +2519,16 @@ int G_GetFactionIDFrom(khash_t(id) *table, uint32_t uid)
     return kh_value(table, k);
 }
 
+void G_GetFieldCacheStats(struct fc_stats *out)
+{
+    ASSERT_IN_MAIN_THREAD();
+    if(!s_gs.map) {
+        memset(out, 0, sizeof(struct fc_stats));
+        return;
+    }
+    M_GetFieldCacheStats(s_gs.map, out);
+}
+
 void G_SetVisionRange(uint32_t uid, float range)
 {
     ASSERT_IN_MAIN_THREAD();

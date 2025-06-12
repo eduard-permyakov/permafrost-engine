@@ -137,15 +137,13 @@ struct field_work{
     struct future   futures[MAX_FIELD_TASKS];
 };
 
-KHASH_SET_INIT_INT(coord)
+__KHASH_IMPL(coord, static inline, khint32_t, struct coord, 1, kh_int_hash_func, kh_int_hash_equal)
 KHASH_SET_INIT_INT64(td)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static khash_t(coord)   *s_dirty_chunks[NAV_LAYER_MAX];
-static bool              s_local_islands_dirty[NAV_LAYER_MAX] = {0};
 static struct field_work s_field_work;
 
 /*****************************************************************************/
@@ -556,8 +554,8 @@ static void n_create_portals(struct nav_private *priv, enum nav_layer layer)
     assert(n_links == (priv->height)*(priv->width-1) + (priv->width)*(priv->height-1));
 }
 
-static void n_link_chunk_portals(struct nav_chunk *chunk, struct coord chunk_coord, 
-                                 enum nav_layer layer)
+static void n_link_chunk_portals(struct nav_private *priv, struct nav_chunk *chunk, 
+                                 struct coord chunk_coord, enum nav_layer layer)
 {
     vec_coord_t path;
     vec_coord_init(&path);
@@ -581,7 +579,7 @@ static void n_link_chunk_portals(struct nav_chunk *chunk, struct coord chunk_coo
             };
 
             float cost;
-            bool has_path = AStar_GridPath(a, b, chunk_coord, chunk->cost_base, 
+            bool has_path = AStar_GridPath(priv->fieldcache, a, b, chunk_coord, chunk->cost_base, 
                 layer, &path, &cost);
             if(has_path) {
                 port->edges[port->num_neighbours] = (struct edge){
@@ -956,10 +954,10 @@ static void n_update_local_island_field(struct nav_private *priv, enum nav_layer
 static void n_update_dirty_local_islands(void *nav_private, enum nav_layer layer)
 {
     struct nav_private *priv = nav_private;
-    if(!s_local_islands_dirty[layer])
+    if(!priv->local_islands_dirty[layer])
         return;
 
-    khash_t(coord) *set = s_dirty_chunks[layer];
+    khash_t(coord) *set = priv->dirty_chunks[layer];
     for(int i = kh_begin(set); i != kh_end(set); i++) {
 
         if(!kh_exist(set, i))
@@ -971,7 +969,7 @@ static void n_update_dirty_local_islands(void *nav_private, enum nav_layer layer
         struct nav_chunk *chunk = &priv->chunks[layer][IDX(curr.r, priv->width, curr.c)];
         n_update_local_islands(priv, (struct coord){curr.r, curr.c}, chunk);
     }
-    s_local_islands_dirty[layer] = false;
+    priv->local_islands_dirty[layer] = false;
 }
 
 static void n_update_blockers(struct nav_private *priv, enum nav_layer layer, int faction_id,
@@ -999,11 +997,11 @@ static void n_update_blockers(struct nav_private *priv, enum nav_layer layer, in
             uint32_t key = ((((uint32_t)curr.chunk_r) & 0xffff) << 16) 
                           | (((uint32_t)curr.chunk_c) & 0xffff);
 
-            khash_t(coord) *set = s_dirty_chunks[layer];
+            khash_t(coord) *set = priv->dirty_chunks[layer];
             kh_put(coord, set, key, &ret);
             assert(ret != -1);
 
-            s_local_islands_dirty[layer] = true;
+            priv->local_islands_dirty[layer] = true;
         }
     }
 }
@@ -1683,7 +1681,7 @@ static void n_update_portals(struct nav_private *priv, enum nav_layer layer)
             
         struct nav_chunk *curr_chunk = &priv->chunks[layer]
                                                     [IDX(chunk_r, priv->width, chunk_c)];
-        n_link_chunk_portals(curr_chunk, (struct coord){chunk_r, chunk_c}, layer);
+        n_link_chunk_portals(priv, curr_chunk, (struct coord){chunk_r, chunk_c}, layer);
         n_build_portal_travel_index(curr_chunk);
     }}
 }
@@ -1773,8 +1771,8 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
     /* Even if a mapping exists, the actual flow field may have been evicted from
      * the cache, due to space constraints or invalidation. */
     ff_id_t id;
-    if(!N_FC_GetDestFFMapping(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &id)
-    || !N_FC_ContainsFlowField(id)) {
+    if(!N_FC_GetDestFFMapping(priv->fieldcache, ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &id)
+    || !N_FC_ContainsFlowField(priv->fieldcache, id)) {
 
         struct field_target target = (struct field_target){
             .type = TARGET_TILE,
@@ -1784,24 +1782,26 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
         struct flow_field ff;
         id = N_FlowFieldID((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, target, layer);
 
-        if(!N_FC_ContainsFlowField(id)) {
+        if(!N_FC_ContainsFlowField(priv->fieldcache, id)) {
         
             struct coord chunk = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
             N_FlowFieldInit(chunk, &ff);
             N_FlowFieldUpdate(chunk, priv, faction_id, layer, target, &ff);
-            N_FC_PutFlowField(id, &ff);
+            N_FC_PutFlowField(priv->fieldcache, id, &ff);
         }
 
-        N_FC_PutDestFFMapping(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, id);
+        N_FC_PutDestFFMapping(priv->fieldcache, ret, 
+            (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, id);
     }
 
     /* Create the LOS field for the destination chunk, if necessary */
-    if(!N_FC_ContainsLOSField(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c})) {
+    if(!N_FC_ContainsLOSField(priv->fieldcache, ret, 
+        (struct coord){dst_desc.chunk_r, dst_desc.chunk_c})) {
 
         struct LOS_field lf;
         N_LOSFieldCreate(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, 
             dst_desc, priv, map_pos, &lf, NULL);
-        N_FC_PutLOSField(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &lf);
+        N_FC_PutLOSField(priv->fieldcache, ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &lf);
     }
 
     /* Source and destination positions are in the same chunk, and a path exists
@@ -1942,8 +1942,8 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
         ff_id_t exist_id;
         struct flow_field ff;
 
-        if(N_FC_GetDestFFMapping(ret, chunk_coord, &exist_id)
-        && N_FC_ContainsFlowField(exist_id)) {
+        if(N_FC_GetDestFFMapping(priv->fieldcache, ret, chunk_coord, &exist_id)
+        && N_FC_ContainsFlowField(priv->fieldcache, exist_id)) {
 
             /* The exact flow field we need has already been made */
             if(new_id == exist_id)
@@ -1953,7 +1953,7 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
              * the same chunk more than once. This can happen if a chunk is divided into
              * 'islands' by unpathable barriers. 
              */
-            const struct flow_field *exist_ff  = N_FC_FlowFieldAt(exist_id);
+            const struct flow_field *exist_ff  = N_FC_FlowFieldAt(priv->fieldcache, exist_id);
             memcpy(&ff, exist_ff, sizeof(struct flow_field));
 
             N_FlowFieldUpdate(chunk_coord, priv, faction_id, layer, target, &ff);
@@ -1962,38 +1962,38 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
              * one of the IDs, it may be possible that the same flowfield will be redundantly 
              * updated at a later time. However, this is largely inconsequential. 
              */
-            N_FC_PutDestFFMapping(ret, chunk_coord, new_id);
-            N_FC_PutFlowField(new_id, &ff);
+            N_FC_PutDestFFMapping(priv->fieldcache, ret, chunk_coord, new_id);
+            N_FC_PutFlowField(priv->fieldcache, new_id, &ff);
 
             goto ff_exists;
         }
 
-        N_FC_PutDestFFMapping(ret, chunk_coord, new_id);
-        if(!N_FC_ContainsFlowField(new_id)) {
+        N_FC_PutDestFFMapping(priv->fieldcache, ret, chunk_coord, new_id);
+        if(!N_FC_ContainsFlowField(priv->fieldcache, new_id)) {
 
             N_FlowFieldInit(chunk_coord, &ff);
             N_FlowFieldUpdate(chunk_coord, priv, faction_id, layer, target, &ff);
-            N_FC_PutFlowField(new_id, &ff);
+            N_FC_PutFlowField(priv->fieldcache, new_id, &ff);
         }
 
     ff_exists:
-        assert(N_FC_ContainsFlowField(new_id));
+        assert(N_FC_ContainsFlowField(priv->fieldcache, new_id));
         /* Reference field in the cache */
-        (void)N_FC_FlowFieldAt(new_id);
+        (void)N_FC_FlowFieldAt(priv->fieldcache, new_id);
 
-        if(!N_FC_ContainsLOSField(ret, chunk_coord)) {
+        if(!N_FC_ContainsLOSField(priv->fieldcache, ret, chunk_coord)) {
 
             assert((abs(prev_los_coord.r - chunk_coord.r) 
                   + abs(prev_los_coord.c - chunk_coord.c)) == 1);
-            assert(N_FC_ContainsLOSField(ret, prev_los_coord));
+            assert(N_FC_ContainsLOSField(priv->fieldcache, ret, prev_los_coord));
 
-            const struct LOS_field *prev_los = N_FC_LOSFieldAt(ret, prev_los_coord);
+            const struct LOS_field *prev_los = N_FC_LOSFieldAt(priv->fieldcache, ret, prev_los_coord);
             assert(prev_los);
             assert(prev_los->chunk.r == prev_los_coord.r && prev_los->chunk.c == prev_los_coord.c);
 
             struct LOS_field lf;
             N_LOSFieldCreate(ret, chunk_coord, dst_desc, priv, map_pos, &lf, prev_los);
-            N_FC_PutLOSField(ret, chunk_coord, &lf);
+            N_FC_PutLOSField(priv->fieldcache, ret, chunk_coord, &lf);
         }
 
         prev_los_coord = chunk_coord;
@@ -2043,14 +2043,6 @@ vec2_t tile_center_location(struct nav_private *priv, vec3_t map_pos, struct til
 
 bool N_Init(void)
 {
-    if(!N_FC_Init())
-        return false;
-
-    for(int i = 0; i < NAV_LAYER_MAX; i++) {
-        if((s_dirty_chunks[i] = kh_init(coord)) == NULL)
-            goto fail_alloc;
-    }
-
     memset(&s_field_work, 0, sizeof(s_field_work));
     if(!stalloc_init(&s_field_work.mem))
         goto fail_alloc;
@@ -2067,13 +2059,13 @@ void N_Update(void *nav_private)
     PERF_ENTER();
 
     struct nav_private *priv = nav_private;
-    N_FC_InvalidateDynamicSurroundFields();
+    N_FC_InvalidateDynamicSurroundFields(priv->fieldcache);
 
     for(int layer = 0; layer < NAV_LAYER_MAX; layer++) {
     
         n_update_dirty_local_islands(priv, layer);
 
-        khash_t(coord) *set = s_dirty_chunks[layer];
+        khash_t(coord) *set = priv->dirty_chunks[layer];
         bool components_dirty = false;
 
         for(int i = kh_begin(set); i != kh_end(set); i++) {
@@ -2084,8 +2076,8 @@ void N_Update(void *nav_private)
             uint32_t key = kh_key(set, i);
             struct coord curr = (struct coord){ key >> 16, key & 0xffff };
 
-            N_FC_InvalidateAllAtChunk(curr, layer);
-            N_FC_InvalidateNeighbourEnemySeekFields(priv->width, priv->height, curr, layer);
+            N_FC_InvalidateAllAtChunk(priv->fieldcache, curr, layer);
+            N_FC_InvalidateNeighbourEnemySeekFields(priv->fieldcache, priv->width, priv->height, curr, layer);
 
             struct nav_chunk *chunk = &priv->chunks[layer]
                                                    [IDX(curr.r, priv->width, curr.c)];
@@ -2093,7 +2085,7 @@ void N_Update(void *nav_private)
 
             if(nflipped) {
                 components_dirty = true;
-                N_FC_InvalidateAllThroughChunk(curr, layer);
+                N_FC_InvalidateAllThroughChunk(priv->fieldcache, curr, layer);
             }
         }
 
@@ -2111,30 +2103,72 @@ void N_Shutdown(void)
 {
     field_join_work();
     stalloc_destroy(&s_field_work.mem);
-    for(int i = 0; i < NAV_LAYER_MAX; i++) {
-        kh_destroy(coord, s_dirty_chunks[i]);
-    }
-    N_FC_Shutdown();
 }
 
 void N_ClearState(void)
 {
     field_join_work();
-    for(int i = 0; i < NAV_LAYER_MAX; i++) {
-        s_local_islands_dirty[i] = false;
-        kh_clear(coord, s_dirty_chunks[i]);
-    }
-    N_FC_ClearAll();
-    N_FC_ClearStats();
 }
 
-void *N_BuildForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
-                        const struct tile **chunk_tiles, bool update)
+void N_DestroyCtx(void *nav_private)
+{
+    assert(nav_private);
+    struct nav_private *priv = nav_private;
+
+    for(int i = 0; i < NAV_LAYER_MAX; i++) {
+        kh_destroy(coord, priv->dirty_chunks[i]);
+    }
+    N_FC_Destroy(priv->fieldcache);
+    N_FC_Free(priv->fieldcache);
+}
+
+bool N_InitCtx(void *nav_private)
+{
+    assert(nav_private);
+    struct nav_private *priv = nav_private;
+    memset(priv, 0, sizeof(struct nav_private));
+
+    if(NULL == (priv->fieldcache = N_FC_New()))
+        return false;
+
+    if(!N_FC_Init(priv->fieldcache))
+        return false;
+
+    for(int i = 0; i < NAV_LAYER_MAX; i++) {
+        if((priv->dirty_chunks[i] = kh_init(coord)) == NULL)
+            goto fail_alloc;
+    }
+    return true;
+
+fail_alloc:
+    N_DestroyCtx(priv);
+    return false;
+}
+
+void N_ClearCtx(void *nav_private)
+{
+    assert(nav_private);
+    struct nav_private *priv = nav_private;
+
+    for(int i = 0; i < NAV_LAYER_MAX; i++) {
+        priv->local_islands_dirty[i] = false;
+        kh_clear(coord, priv->dirty_chunks[i]);
+    }
+
+    N_FC_ClearAll(priv->fieldcache);
+    N_FC_ClearStats(priv->fieldcache);
+}
+
+void *N_NewCtxForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
+                         const struct tile **chunk_tiles, bool update)
 {
     struct nav_private *ret;
     ret = malloc(sizeof(struct nav_private));
     if(!ret)
         goto fail_alloc;
+
+    if(!N_InitCtx(ret))
+        goto fail_init_ctx;
 
     memset(ret->chunks, 0, sizeof(ret->chunks));
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
@@ -2183,20 +2217,23 @@ void *N_BuildForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
     return ret;
 
 fail_alloc_chunks:
-    N_FreePrivate(ret);
+fail_init_ctx:
+    N_FreeCtx(ret);
 fail_alloc:
     return NULL;
 }
 
-void N_FreePrivate(void *nav_private)
+void N_FreeCtx(void *nav_private)
 {
     assert(nav_private);
     struct nav_private *priv = nav_private;
 
+    N_DestroyCtx(priv);
+
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
-        free(priv->chunks[i]);
+        PF_FREE(priv->chunks[i]);
     }
-    free(nav_private);
+    PF_FREE(nav_private);
 }
 
 void N_RenderOverlayText(const char *text, vec4_t map_pos, 
@@ -2302,9 +2339,9 @@ void N_RenderPathFlowField(void *nav_private, const struct map *map,
     vec2_t dirs_buff[FIELD_RES_R * FIELD_RES_C];
 
     ff_id_t field_id;
-    if(!N_FC_GetDestFFMapping(id, (struct coord){chunk_r, chunk_c}, &field_id))
+    if(!N_FC_GetDestFFMapping(priv->fieldcache, id, (struct coord){chunk_r, chunk_c}, &field_id))
         return;
-    const struct flow_field *ff = N_FC_FlowFieldAt(field_id);
+    const struct flow_field *ff = N_FC_FlowFieldAt(priv->fieldcache, field_id);
     if(!ff)
         return;
 
@@ -2352,10 +2389,10 @@ void N_RenderLOSField(void *nav_private, const struct map *map, mat4x4_t *chunk_
     vec2_t corners_buff[4 * FIELD_RES_R * FIELD_RES_C];
     vec3_t colors_buff[FIELD_RES_R * FIELD_RES_C];
 
-    if(!N_FC_ContainsLOSField(id, (struct coord){chunk_r, chunk_c}))
+    if(!N_FC_ContainsLOSField(priv->fieldcache, id, (struct coord){chunk_r, chunk_c}))
         return;
 
-    const struct LOS_field *lf = N_FC_LOSFieldAt(id, (struct coord){chunk_r, chunk_c});
+    const struct LOS_field *lf = N_FC_LOSFieldAt(priv->fieldcache, id, (struct coord){chunk_r, chunk_c});
     if(!lf)
         return;
 
@@ -2425,10 +2462,10 @@ void N_RenderEnemySeekField(void *nav_private, const struct map *map, mat4x4_t *
         /* rest of the fields are unused */
     };
     ff_id_t ffid = N_FlowFieldID((struct coord){chunk_r, chunk_c}, target, layer);
-    if(!N_FC_ContainsFlowField(ffid))
+    if(!N_FC_ContainsFlowField(priv->fieldcache, ffid))
         return;
 
-    const struct flow_field *ff = N_FC_FlowFieldAt(ffid);
+    const struct flow_field *ff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
     if(!ff)
         return;
 
@@ -2506,7 +2543,7 @@ void N_RenderSurroundField(void *nav_private, const struct map *map, mat4x4_t *c
         /* rest of the fields are unused */
     };
     ff_id_t ffid = N_FlowFieldID((struct coord){chunk_r, chunk_c}, target, layer);
-    const struct flow_field *ff = N_FC_FlowFieldAt(ffid);
+    const struct flow_field *ff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
     if(!ff)
         return;
 
@@ -2687,8 +2724,8 @@ void N_RenderBuildableTiles(void *nav_private, const struct map *map,
         }
         count++;
     }
-    free(tileset);
-    free(building_tileset);
+    PF_FREE(tileset);
+    PF_FREE(building_tileset);
 
     bool on_water_surface = true;
     R_PushCmd((struct rcmd){
@@ -2823,7 +2860,7 @@ void N_RenderNavigationPortals(void *nav_private, const struct map *map,
                               : (assert(0), (vec3_t){0});
 
             float cost;
-            bool has_path = AStar_GridPath(a, b, 
+            bool has_path = AStar_GridPath(priv->fieldcache, a, b, 
                 (struct coord){chunk_r, chunk_c}, chunk->cost_base, layer, &path, &cost);
             assert(has_path);
             n_render_grid_path(chunk, chunk_model, map, &path, link_color);
@@ -2922,7 +2959,7 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
     assert(result);
 
     ff_id_t ffid;
-    if(!N_FC_GetDestFFMapping(id, (struct coord){tile.chunk_r, tile.chunk_c}, &ffid)) {
+    if(!N_FC_GetDestFFMapping(priv->fieldcache, id, (struct coord){tile.chunk_r, tile.chunk_c}, &ffid)) {
 
         dest_id_t ret;
         bool result = n_request_path(nav_private, curr_pos, xz_dest, 
@@ -2930,10 +2967,10 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
         if(!result)
             return (vec2_t){0.0f};
         assert(ret == id);
-        N_FC_GetDestFFMapping(id, (struct coord){tile.chunk_r, tile.chunk_c}, &ffid);
+        N_FC_GetDestFFMapping(priv->fieldcache, id, (struct coord){tile.chunk_r, tile.chunk_c}, &ffid);
     }
 
-    const struct flow_field *ff = N_FC_FlowFieldAt(ffid);
+    const struct flow_field *ff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
     if(!ff || ff->field[tile.tile_r][tile.tile_c].dir_idx == FD_NONE) {
 
         dest_id_t ret;
@@ -2942,10 +2979,10 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
         if(!result)
             return (vec2_t){0.0f};
         assert(ret == id);
-        N_FC_GetDestFFMapping(id, (struct coord){tile.chunk_r, tile.chunk_c}, &ffid);
+        N_FC_GetDestFFMapping(priv->fieldcache, id, (struct coord){tile.chunk_r, tile.chunk_c}, &ffid);
     }
 
-    ff = N_FC_FlowFieldAt(ffid);
+    ff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
     assert(ff);
 
     /*   1. The original path took us through another global 'island' in
@@ -2972,8 +3009,8 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
         N_FlowFieldUpdateToNearestPathable(priv, layer, 
             (struct coord){tile.chunk_r, tile.chunk_c},
             (struct coord){tile.tile_r, tile.tile_c}, faction_id, &exist_ff);
-        N_FC_PutFlowField(ffid, &exist_ff);
-        ff = N_FC_FlowFieldAt(ffid);
+        N_FC_PutFlowField(priv->fieldcache, ffid, &exist_ff);
+        ff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
         goto ff_found;
     }
 
@@ -2985,14 +3022,14 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
      */
     struct flow_field exist_ff = *ff;
     N_FlowFieldUpdateIslandToNearest(local_iid, priv, layer, faction_id, &exist_ff);
-    N_FC_PutFlowField(ffid, &exist_ff);
+    N_FC_PutFlowField(priv->fieldcache, ffid, &exist_ff);
 
     /*   4. If the direction is still FD_NONE, that means that the
      *      entity is at its' destination of maximally close to it.
      *      We have nothing left to do but pass the 'None' direction
      *      to the caller.
      */
-    ff = N_FC_FlowFieldAt(ffid);
+    ff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
 
 ff_found:
     assert(ff);
@@ -3026,16 +3063,16 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
     ff_id_t ffid = N_FlowFieldID(chunk, target, layer);
     struct flow_field ff;
 
-    if(!N_FC_ContainsFlowField(ffid)) {
+    if(!N_FC_ContainsFlowField(priv->fieldcache, ffid)) {
 
         N_FlowFieldInit(chunk, &ff);
         N_FlowFieldUpdate(chunk, priv, faction_id, layer, target, &ff);
-        N_FC_PutFlowField(ffid, &ff);
+        N_FC_PutFlowField(priv->fieldcache, ffid, &ff);
 
-        assert(N_FC_ContainsFlowField(ffid));
+        assert(N_FC_ContainsFlowField(priv->fieldcache, ffid));
     }
 
-    const struct flow_field *pff = N_FC_FlowFieldAt(ffid);
+    const struct flow_field *pff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
     assert(pff);
 
     const struct nav_chunk *nchunk = 
@@ -3059,9 +3096,9 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
         N_FlowFieldUpdateToNearestPathable(priv, layer, 
             (struct coord){curr_tile.chunk_r, curr_tile.chunk_c},
             curr, faction_id, &exist_ff);
-        N_FC_PutFlowField(ffid, &exist_ff);
+        N_FC_PutFlowField(priv->fieldcache, ffid, &exist_ff);
 
-        pff = N_FC_FlowFieldAt(ffid);
+        pff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
         goto ff_found;
     }
 
@@ -3073,9 +3110,9 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
 
         struct flow_field exist_ff = *pff;
         N_FlowFieldUpdateIslandToNearest(local_iid, priv, layer, faction_id, &exist_ff);
-        N_FC_PutFlowField(ffid, &exist_ff);
+        N_FC_PutFlowField(priv->fieldcache, ffid, &exist_ff);
 
-        pff = N_FC_FlowFieldAt(ffid);
+        pff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
         goto ff_found;
     }
 
@@ -3109,16 +3146,16 @@ vec2_t N_DesiredSurroundVelocity(vec2_t curr_pos, void *nav_private, enum nav_la
     ff_id_t ffid = N_FlowFieldID(chunk, target, layer);
     struct flow_field ff;
 
-    if(!N_FC_ContainsFlowField(ffid)) {
+    if(!N_FC_ContainsFlowField(priv->fieldcache, ffid)) {
 
         N_FlowFieldInit(chunk, &ff);
         N_FlowFieldUpdate(chunk, priv, faction_id, layer, target, &ff);
-        N_FC_PutFlowField(ffid, &ff);
+        N_FC_PutFlowField(priv->fieldcache, ffid, &ff);
 
-        assert(N_FC_ContainsFlowField(ffid));
+        assert(N_FC_ContainsFlowField(priv->fieldcache, ffid));
     }
 
-    const struct flow_field *pff = N_FC_FlowFieldAt(ffid);
+    const struct flow_field *pff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
     assert(pff);
 
     const struct nav_chunk *nchunk = 
@@ -3139,9 +3176,9 @@ vec2_t N_DesiredSurroundVelocity(vec2_t curr_pos, void *nav_private, enum nav_la
         N_FlowFieldUpdateToNearestPathable(priv, layer, 
             (struct coord){curr_tile.chunk_r, curr_tile.chunk_c},
             curr, faction_id, &exist_ff);
-        N_FC_PutFlowField(ffid, &exist_ff);
+        N_FC_PutFlowField(priv->fieldcache, ffid, &exist_ff);
 
-        pff = N_FC_FlowFieldAt(ffid);
+        pff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
         goto ff_found;
     }
 
@@ -3153,9 +3190,9 @@ vec2_t N_DesiredSurroundVelocity(vec2_t curr_pos, void *nav_private, enum nav_la
 
         struct flow_field exist_ff = *pff;
         N_FlowFieldUpdateIslandToNearest(local_iid, priv, layer, faction_id, &exist_ff);
-        N_FC_PutFlowField(ffid, &exist_ff);
+        N_FC_PutFlowField(priv->fieldcache, ffid, &exist_ff);
 
-        pff = N_FC_FlowFieldAt(ffid);
+        pff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
         goto ff_found;
     }
 
@@ -3196,7 +3233,7 @@ void N_RequestAsyncEnemySeekField(vec2_t curr_pos, void *nav_private, enum nav_l
     };
 
     ff_id_t ffid = N_FlowFieldID(chunk, target, layer);
-    if(N_FC_ContainsFlowField(ffid))
+    if(N_FC_ContainsFlowField(priv->fieldcache, ffid))
        return;
 
     /* We'll compute the missing field on-demand later */
@@ -3250,7 +3287,7 @@ void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_la
     };
 
     ff_id_t ffid = N_FlowFieldID(chunk, target, layer);
-    if(N_FC_ContainsFlowField(ffid))
+    if(N_FC_ContainsFlowField(priv->fieldcache, ffid))
        return;
 
     /* We'll compute the missing field on-demand later */
@@ -3288,7 +3325,7 @@ void N_AwaitAsyncFields(void)
     for(int i = 0; i < s_field_work.ntasks; i++) {
         struct field_work_in *in = &vec_AT(&s_field_work.in, i);
         struct field_work_out *out = &vec_AT(&s_field_work.out, i);
-        N_FC_PutFlowField(in->id, &out->field);
+        N_FC_PutFlowField(in->priv->fieldcache, in->id, &out->field);
     }
     stalloc_clear(&s_field_work.mem);
     s_field_work.nwork = 0;
@@ -3335,10 +3372,10 @@ bool N_HasDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_private, vec3_t map_p
     bool result = M_Tile_DescForPoint2D(res, map_pos, curr_pos, &tile);
     assert(result);
 
-    if(!N_FC_ContainsLOSField(id, (struct coord){tile.chunk_r, tile.chunk_c}))
+    if(!N_FC_ContainsLOSField(priv->fieldcache, id, (struct coord){tile.chunk_r, tile.chunk_c}))
         return false;
 
-    const struct LOS_field *lf = N_FC_LOSFieldAt(id, (struct coord){tile.chunk_r, tile.chunk_c});
+    const struct LOS_field *lf = N_FC_LOSFieldAt(priv->fieldcache, id, (struct coord){tile.chunk_r, tile.chunk_c});
     assert(lf);
     return lf->field[tile.tile_r][tile.tile_c].visible;
 }
@@ -4065,8 +4102,8 @@ bool N_ObjectBuildable(void *nav_private, const struct map *map, enum nav_layer 
     }
     ret = true;
 out:
-    free(tileset);
-    free(building_tileset);
+    PF_FREE(tileset);
+    PF_FREE(building_tileset);
     return ret;
 }
 
@@ -4274,5 +4311,26 @@ void N_CopyFields(void *nav_private, void *out)
         }
         cursor += layer_size;
     }
+}
+
+void N_FC_ClearStatsAt(void *nav_private)
+{
+    assert(nav_private);
+    struct nav_private *priv = (struct nav_private*)nav_private;
+    N_FC_ClearStats(priv->fieldcache);
+}
+
+void N_FC_GetStatsAt(void *nav_private, struct fc_stats *out_stats)
+{
+    assert(nav_private);
+    struct nav_private *priv = (struct nav_private*)nav_private;
+    N_FC_GetStats(priv->fieldcache, out_stats);
+}
+
+void N_FC_ClearAllAt(void *nav_private)
+{
+    assert(nav_private);
+    struct nav_private *priv = (struct nav_private*)nav_private;
+    N_FC_ClearAll(priv->fieldcache);
 }
 

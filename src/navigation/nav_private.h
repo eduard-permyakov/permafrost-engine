@@ -39,14 +39,23 @@
 #include "public/nav.h"
 #include "nav_data.h"
 #include "../map/public/tile.h"
+#include "../lib/public/khash.h"
 
 #include <stddef.h>
 
+__KHASH_TYPE(coord, khint32_t, struct coord)
+
 struct portal;
+struct fieldcache_ctx;
 
 struct nav_private{
-    size_t            width, height;
-    struct nav_chunk *chunks[NAV_LAYER_MAX];
+    size_t                 width, height;
+    struct nav_chunk      *chunks[NAV_LAYER_MAX];
+    /* Private cache for fields and other computation-heavy intermediate data */
+    struct fieldcache_ctx *fieldcache;
+    /* Data used for fieldcache invalidation */
+    khash_t(coord)        *dirty_chunks[NAV_LAYER_MAX];
+    bool                   local_islands_dirty[NAV_LAYER_MAX];
 };
 
 enum nav_layer N_DestLayer(dest_id_t id);

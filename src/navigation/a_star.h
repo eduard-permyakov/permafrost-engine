@@ -45,6 +45,7 @@
 
 
 struct nav_private;
+struct fieldcache_ctx;
 
 /* 
  * Say we have the following scenario: there are 3 chunks in a column
@@ -112,7 +113,8 @@ VEC_IMPL(static inline, portal, struct portal_hop)
  * tiles to be traversed, in order.
  * ------------------------------------------------------------------------
  */
-bool AStar_GridPath(struct coord start, struct coord finish, struct coord chunk,
+bool AStar_GridPath(struct fieldcache_ctx *cache,
+                    struct coord start, struct coord finish, struct coord chunk,
                     const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], 
                     enum nav_layer layer, vec_coord_t *out_path, float *out_cost);
 

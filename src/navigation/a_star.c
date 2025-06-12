@@ -292,7 +292,8 @@ static float portal_node_penalty(void)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool AStar_GridPath(struct coord start, struct coord finish, struct coord chunk,
+bool AStar_GridPath(struct fieldcache_ctx *cache,
+                    struct coord start, struct coord finish, struct coord chunk,
                     const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], 
                     enum nav_layer layer, vec_coord_t *out_path, float *out_cost)
 {
@@ -302,7 +303,7 @@ bool AStar_GridPath(struct coord start, struct coord finish, struct coord chunk,
     vec_coord_init(&gp.path);
     vec_coord_resize(&gp.path, 512);
 
-    if(N_FC_GetGridPath(start, finish, chunk, layer, &gp)) {
+    if(cache && N_FC_GetGridPath(cache, start, finish, chunk, layer, &gp)) {
 
         if(!gp.exists)
             PERF_RETURN(false);
@@ -394,12 +395,16 @@ bool AStar_GridPath(struct coord start, struct coord finish, struct coord chunk,
     gp.exists = true;
     vec_coord_copy(&gp.path, out_path);
     gp.cost = *out_cost;
-    N_FC_PutGridPath(start, finish, chunk, layer, &gp);
+    if(cache) {
+        N_FC_PutGridPath(cache, start, finish, chunk, layer, &gp);
+    }
     PERF_RETURN(true);
 
 fail_find_path:
     gp.exists = false;
-    N_FC_PutGridPath(start, finish, chunk, layer, &gp);
+    if(cache) {
+        N_FC_PutGridPath(cache, start, finish, chunk, layer, &gp);
+    }
 
     pq_coord_destroy(&frontier);
     kh_destroy(key_float, running_cost);

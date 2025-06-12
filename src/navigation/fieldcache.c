@@ -38,6 +38,7 @@
 #include "../lib/public/lru_cache.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"
+#include "../lib/public/mem.h"
 #include "../event.h"
 #include "../sched.h"
 #include "../config.h"
@@ -67,24 +68,7 @@ VEC_IMPL(static, id, uint64_t)
 
 KHASH_MAP_INIT_INT64(idvec, vec_id_t)
 
-/*****************************************************************************/
-/* STATIC VARIABLES                                                          */
-/*****************************************************************************/
-
-static lru(los)          s_los_cache;       /* key: (dest_id, chunk coord) */
-static lru(flow)         s_flow_cache;      /* key: (ffid) */
-/* The ffid cache maps a (dest_id, chunk coordinate) tuple to a flow field ID,
- * which could be used to retreive the relevant field from the flow cache. 
- * The reason for this is that the same flow field chunk can be shared between
- * many different paths. */
-static lru(ffid)         s_ffid_cache;      /* key: (dest_id, chunk_coord) */
-static lru(grid_path)    s_grid_path_cache; /* key: (chunk coord, tile start coord, tile dest coord) */
-
-/* The following structures are maintained for efficient invalidation of entries:*/
-static khash_t(idvec)   *s_chunk_ffield_map; /* key: (chunk coord) */
-static khash_t(idvec)   *s_chunk_lfield_map; /* key: (chunk coord) */
-
-static struct priv_fc_stats{
+struct priv_fc_stats{
     unsigned los_query;
     unsigned los_hit;
     unsigned los_invalidated;
@@ -95,7 +79,25 @@ static struct priv_fc_stats{
     unsigned ffid_hit;
     unsigned grid_path_query;
     unsigned grid_path_hit;
-}s_perfstats = {0};
+};
+
+struct fieldcache_ctx{
+    lru(los)          los_cache;       /* key: (dest_id, chunk coord) */
+    lru(flow)         flow_cache;      /* key: (ffid) */
+    /* The ffid cache maps a (dest_id, chunk coordinate) tuple to a flow field ID,
+     * which could be used to retreive the relevant field from the flow cache. 
+     * The reason for this is that the same flow field chunk can be shared between
+     * many different paths. */
+    lru(ffid)         ffid_cache;      /* key: (dest_id, chunk_coord) */
+    lru(grid_path)    grid_path_cache; /* key: (chunk coord, tile start coord, tile dest coord) */
+    
+    /* The following structures are maintained for efficient invalidation of entries:*/
+    khash_t(idvec)   *chunk_ffield_map; /* key: (chunk coord) */
+    khash_t(idvec)   *chunk_lfield_map; /* key: (chunk coord) */
+
+    /* Statistics */
+    struct priv_fc_stats perfstats;
+};
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -181,36 +183,37 @@ static bool dest_array_contains(dest_id_t *array, size_t size, dest_id_t item)
     return false;
 }
 
-static void clear_chunk_los_map(uint64_t key, enum nav_layer layer)
+static void clear_chunk_los_map(struct fieldcache_ctx *ctx, uint64_t key, enum nav_layer layer)
 {
-    khiter_t k = kh_get(idvec, s_chunk_lfield_map, key);
-    if(k == kh_end(s_chunk_lfield_map))
+    khiter_t k = kh_get(idvec, ctx->chunk_lfield_map, key);
+    if(k == kh_end(ctx->chunk_lfield_map))
         return;
 
-    vec_id_t *keys = &kh_val(s_chunk_lfield_map, k);
+    vec_id_t *keys = &kh_val(ctx->chunk_lfield_map, k);
     for(int i = vec_size(keys)-1; i >= 0; i--) {
 
         uint64_t key = vec_AT(keys, i);
         if(N_DestLayer(key_dest(key)) != layer)
             continue;
 
-        bool found = lru_los_remove(&s_los_cache, key);
-        s_perfstats.los_invalidated += !!found;
+        bool found = lru_los_remove(&ctx->los_cache, key);
+        ctx->perfstats.los_invalidated += !!found;
         vec_id_del(keys, i);
     }
     if(vec_size(keys) == 0) {
         vec_id_destroy(keys);
-        kh_del(idvec, s_chunk_lfield_map, k);
+        kh_del(idvec, ctx->chunk_lfield_map, k);
     }
 }
 
-static void clear_chunk_flow_map(uint64_t key, enum nav_layer layer, bool enemies_only)
+static void clear_chunk_flow_map(struct fieldcache_ctx *ctx, uint64_t key, 
+                                 enum nav_layer layer, bool enemies_only)
 {
-    khiter_t k = kh_get(idvec, s_chunk_ffield_map, key);
-    if(k == kh_end(s_chunk_ffield_map))
+    khiter_t k = kh_get(idvec, ctx->chunk_ffield_map, key);
+    if(k == kh_end(ctx->chunk_ffield_map))
         return;
 
-    vec_id_t *keys = &kh_val(s_chunk_ffield_map, k);
+    vec_id_t *keys = &kh_val(ctx->chunk_ffield_map, k);
     for(int i = vec_size(keys)-1; i >= 0; i--) {
 
         ff_id_t key = vec_AT(keys, i);
@@ -220,13 +223,13 @@ static void clear_chunk_flow_map(uint64_t key, enum nav_layer layer, bool enemie
         if(enemies_only && (N_FlowFieldTargetType(key) != TARGET_ENEMIES))
             continue;
 
-        bool found = lru_flow_remove(&s_flow_cache, key);
-        s_perfstats.flow_invalidated += !!found;
+        bool found = lru_flow_remove(&ctx->flow_cache, key);
+        ctx->perfstats.flow_invalidated += !!found;
         vec_id_del(keys, i);
     }
     if(vec_size(keys) == 0) {
         vec_id_destroy(keys);
-        kh_del(idvec, s_chunk_ffield_map, k);
+        kh_del(idvec, ctx->chunk_ffield_map, k);
     }
 }
 
@@ -234,180 +237,189 @@ static void clear_chunk_flow_map(uint64_t key, enum nav_layer layer, bool enemie
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool N_FC_Init(void)
+bool N_FC_Init(struct fieldcache_ctx *ctx)
 {
-    if(!lru_los_init(&s_los_cache, CONFIG_LOS_CACHE_SZ, NULL))
+    if(!lru_los_init(&ctx->los_cache, CONFIG_LOS_CACHE_SZ, NULL))
         goto fail_los;
 
-    if(!lru_flow_init(&s_flow_cache, CONFIG_FLOW_CACHE_SZ, NULL))
+    if(!lru_flow_init(&ctx->flow_cache, CONFIG_FLOW_CACHE_SZ, NULL))
         goto fail_flow;
 
-    if(!lru_ffid_init(&s_ffid_cache, CONFIG_MAPPING_CACHE_SZ, NULL))
+    if(!lru_ffid_init(&ctx->ffid_cache, CONFIG_MAPPING_CACHE_SZ, NULL))
         goto fail_ffid;
 
-    if(!lru_grid_path_init(&s_grid_path_cache, CONFIG_GRID_PATH_CACHE_SZ, on_grid_path_evict))
+    if(!lru_grid_path_init(&ctx->grid_path_cache, CONFIG_GRID_PATH_CACHE_SZ, on_grid_path_evict))
         goto fail_grid_path;
 
-    if(NULL == (s_chunk_ffield_map = kh_init(idvec)))
+    if(NULL == (ctx->chunk_ffield_map = kh_init(idvec)))
         goto fail_chunk_ffield;
 
-    if(NULL == (s_chunk_lfield_map = kh_init(idvec)))
+    if(NULL == (ctx->chunk_lfield_map = kh_init(idvec)))
         goto fail_chunk_lfield;
 
+    memset(&ctx->perfstats, 0, sizeof(ctx->perfstats));
     return true;
 
 fail_chunk_lfield:
-    kh_destroy(idvec, s_chunk_ffield_map);
+    kh_destroy(idvec, ctx->chunk_ffield_map);
 fail_chunk_ffield:
-    lru_grid_path_destroy(&s_grid_path_cache);
+    lru_grid_path_destroy(&ctx->grid_path_cache);
 fail_grid_path:
-    lru_ffid_destroy(&s_ffid_cache);
+    lru_ffid_destroy(&ctx->ffid_cache);
 fail_ffid:
-    lru_flow_destroy(&s_flow_cache);
+    lru_flow_destroy(&ctx->flow_cache);
 fail_flow:
-    lru_los_destroy(&s_los_cache);
+    lru_los_destroy(&ctx->los_cache);
 fail_los:
     return false;
 }
 
-void N_FC_Shutdown(void)
+void N_FC_Destroy(struct fieldcache_ctx *ctx)
 {
-    lru_los_destroy(&s_los_cache);
-    lru_flow_destroy(&s_flow_cache);
-    lru_ffid_destroy(&s_ffid_cache);
-    lru_grid_path_destroy(&s_grid_path_cache);
+    lru_los_destroy(&ctx->los_cache);
+    lru_flow_destroy(&ctx->flow_cache);
+    lru_ffid_destroy(&ctx->ffid_cache);
+    lru_grid_path_destroy(&ctx->grid_path_cache);
 
-    destroy_all_entries(s_chunk_ffield_map);
-    kh_destroy(idvec, s_chunk_ffield_map);
+    destroy_all_entries(ctx->chunk_ffield_map);
+    kh_destroy(idvec, ctx->chunk_ffield_map);
 
-    destroy_all_entries(s_chunk_lfield_map);
-    kh_destroy(idvec, s_chunk_lfield_map);
+    destroy_all_entries(ctx->chunk_lfield_map);
+    kh_destroy(idvec, ctx->chunk_lfield_map);
 }
 
-void N_FC_ClearAll(void)
+void N_FC_ClearAll(struct fieldcache_ctx *ctx)
 {
-    lru_los_clear(&s_los_cache);
-    lru_flow_clear(&s_flow_cache);
-    lru_ffid_clear(&s_ffid_cache);
-    lru_grid_path_clear(&s_grid_path_cache);
+    lru_los_clear(&ctx->los_cache);
+    lru_flow_clear(&ctx->flow_cache);
+    lru_ffid_clear(&ctx->ffid_cache);
+    lru_grid_path_clear(&ctx->grid_path_cache);
 
-    destroy_all_entries(s_chunk_ffield_map);
-    kh_clear(idvec, s_chunk_ffield_map);
+    destroy_all_entries(ctx->chunk_ffield_map);
+    kh_clear(idvec, ctx->chunk_ffield_map);
 
-    destroy_all_entries(s_chunk_lfield_map);
-    kh_clear(idvec, s_chunk_lfield_map);
+    destroy_all_entries(ctx->chunk_lfield_map);
+    kh_clear(idvec, ctx->chunk_lfield_map);
 }
 
-void N_FC_ClearStats(void)
+void N_FC_ClearStats(struct fieldcache_ctx *ctx)
 {
-    memset(&s_perfstats, 0, sizeof(s_perfstats));
+    memset(&ctx->perfstats, 0, sizeof(ctx->perfstats));
 }
 
-void N_FC_GetStats(struct fc_stats *out_stats)
+void N_FC_GetStats(struct fieldcache_ctx *ctx, struct fc_stats *out_stats)
 {
-    out_stats->los_used = s_los_cache.used;
-    out_stats->los_max = s_los_cache.capacity;
-    out_stats->los_hit_rate = !s_perfstats.los_query ? 0
-        : ((float)s_perfstats.los_hit) / s_perfstats.los_query;
-    out_stats->los_invalidated = s_perfstats.los_invalidated;
+    out_stats->los_used = ctx->los_cache.used;
+    out_stats->los_max = ctx->los_cache.capacity;
+    out_stats->los_hit_rate = !ctx->perfstats.los_query ? 0
+        : ((float)ctx->perfstats.los_hit) / ctx->perfstats.los_query;
+    out_stats->los_invalidated = ctx->perfstats.los_invalidated;
 
-    out_stats->flow_used = s_flow_cache.used;
-    out_stats->flow_max = s_flow_cache.capacity;
-    out_stats->flow_hit_rate = !s_perfstats.flow_query ? 0
-        : ((float)s_perfstats.flow_hit) / s_perfstats.flow_query;
-    out_stats->flow_invalidated = s_perfstats.flow_invalidated;
+    out_stats->flow_used = ctx->flow_cache.used;
+    out_stats->flow_max = ctx->flow_cache.capacity;
+    out_stats->flow_hit_rate = !ctx->perfstats.flow_query ? 0
+        : ((float)ctx->perfstats.flow_hit) / ctx->perfstats.flow_query;
+    out_stats->flow_invalidated = ctx->perfstats.flow_invalidated;
 
-    out_stats->ffid_used = s_ffid_cache.used;
-    out_stats->ffid_max = s_ffid_cache.capacity;
-    out_stats->ffid_hit_rate = !s_perfstats.ffid_hit ? 0
-        : ((float)s_perfstats.ffid_hit) / s_perfstats.ffid_query;
+    out_stats->ffid_used = ctx->ffid_cache.used;
+    out_stats->ffid_max = ctx->ffid_cache.capacity;
+    out_stats->ffid_hit_rate = !ctx->perfstats.ffid_hit ? 0
+        : ((float)ctx->perfstats.ffid_hit) / ctx->perfstats.ffid_query;
 
-    out_stats->grid_path_used = s_grid_path_cache.used;
-    out_stats->grid_path_max = s_grid_path_cache.capacity;
-    out_stats->grid_path_hit_rate = !s_perfstats.grid_path_hit ? 0
-        : ((float)s_perfstats.grid_path_hit) / s_perfstats.grid_path_query;
+    out_stats->grid_path_used = ctx->grid_path_cache.used;
+    out_stats->grid_path_max = ctx->grid_path_cache.capacity;
+    out_stats->grid_path_hit_rate = !ctx->perfstats.grid_path_hit ? 0
+        : ((float)ctx->perfstats.grid_path_hit) / ctx->perfstats.grid_path_query;
 }
 
-bool N_FC_ContainsLOSField(dest_id_t id, struct coord chunk_coord)
+bool N_FC_ContainsLOSField(struct fieldcache_ctx *ctx, dest_id_t id, 
+                           struct coord chunk_coord)
 {
     uint64_t key = key_for_dest_and_chunk(id, chunk_coord);
-    bool ret = lru_los_contains(&s_los_cache, key);
+    bool ret = lru_los_contains(&ctx->los_cache, key);
 
-    s_perfstats.los_query++;
-    s_perfstats.los_hit += !!ret;
+    ctx->perfstats.los_query++;
+    ctx->perfstats.los_hit += !!ret;
     return ret;
 }
 
-const struct LOS_field *N_FC_LOSFieldAt(dest_id_t id, struct coord chunk_coord)
+const struct LOS_field *N_FC_LOSFieldAt(struct fieldcache_ctx *ctx, dest_id_t id, 
+                                        struct coord chunk_coord)
 {
     uint64_t key = key_for_dest_and_chunk(id, chunk_coord);
-    return lru_los_at(&s_los_cache, key);
+    return lru_los_at(&ctx->los_cache, key);
 }
 
-void N_FC_PutLOSField(dest_id_t id, struct coord chunk_coord, const struct LOS_field *lf)
+void N_FC_PutLOSField(struct fieldcache_ctx *ctx, dest_id_t id, 
+                      struct coord chunk_coord, const struct LOS_field *lf)
 {
     uint64_t key = key_for_dest_and_chunk(id, chunk_coord);
-    lru_los_put(&s_los_cache, key, lf);
-    field_map_add(s_chunk_lfield_map, key_for_chunk(chunk_coord), key);
+    lru_los_put(&ctx->los_cache, key, lf);
+    field_map_add(ctx->chunk_lfield_map, key_for_chunk(chunk_coord), key);
 }
 
-bool N_FC_ContainsFlowField(ff_id_t ffid)
+bool N_FC_ContainsFlowField(struct fieldcache_ctx *ctx, ff_id_t ffid)
 {
-    bool ret = lru_flow_contains(&s_flow_cache, ffid);
+    bool ret = lru_flow_contains(&ctx->flow_cache, ffid);
 
-    s_perfstats.flow_query++;
-    s_perfstats.flow_hit += !!ret;
+    ctx->perfstats.flow_query++;
+    ctx->perfstats.flow_hit += !!ret;
     return ret;
 }
 
-const struct flow_field *N_FC_FlowFieldAt(ff_id_t ffid)
+const struct flow_field *N_FC_FlowFieldAt(struct fieldcache_ctx *ctx, ff_id_t ffid)
 {
-    return lru_flow_at(&s_flow_cache, ffid);
+    return lru_flow_at(&ctx->flow_cache, ffid);
 }
 
-void N_FC_PutFlowField(ff_id_t ffid, const struct flow_field *ff)
+void N_FC_PutFlowField(struct fieldcache_ctx *ctx, ff_id_t ffid, 
+                       const struct flow_field *ff)
 {
-    lru_flow_put(&s_flow_cache, ffid, ff);
+    lru_flow_put(&ctx->flow_cache, ffid, ff);
 
     struct coord chunk = (struct coord){(ffid >> 8) & 0xff, ffid & 0xff};
-    field_map_add(s_chunk_ffield_map, key_for_chunk(chunk), ffid);
+    field_map_add(ctx->chunk_ffield_map, key_for_chunk(chunk), ffid);
 }
 
-bool N_FC_GetDestFFMapping(dest_id_t id, struct coord chunk_coord, ff_id_t *out_ff)
+bool N_FC_GetDestFFMapping(struct fieldcache_ctx *ctx, dest_id_t id, 
+                           struct coord chunk_coord, ff_id_t *out_ff)
 {
     uint64_t key = key_for_dest_and_chunk(id, chunk_coord);
-    bool ret = lru_ffid_get(&s_ffid_cache, key, out_ff);
+    bool ret = lru_ffid_get(&ctx->ffid_cache, key, out_ff);
 
-    s_perfstats.ffid_query++;
-    s_perfstats.ffid_hit += !!ret;
+    ctx->perfstats.ffid_query++;
+    ctx->perfstats.ffid_hit += !!ret;
     return ret;
 }
 
-void N_FC_PutDestFFMapping(dest_id_t dest_id, struct coord chunk_coord, ff_id_t ffid)
+void N_FC_PutDestFFMapping(struct fieldcache_ctx *ctx, dest_id_t dest_id, 
+                           struct coord chunk_coord, ff_id_t ffid)
 {
     uint64_t key = key_for_dest_and_chunk(dest_id, chunk_coord);
-    lru_ffid_put(&s_ffid_cache, key, &ffid);
+    lru_ffid_put(&ctx->ffid_cache, key, &ffid);
 }
 
-bool N_FC_GetGridPath(struct coord local_start, struct coord local_dest,
-                      struct coord chunk, enum nav_layer layer, struct grid_path_desc *out)
+bool N_FC_GetGridPath(struct fieldcache_ctx *ctx, struct coord local_start, 
+                      struct coord local_dest, struct coord chunk, enum nav_layer layer, 
+                      struct grid_path_desc *out)
 {
     uint64_t key = grid_path_key(local_start, local_dest, chunk, layer);
-    bool ret = lru_grid_path_get(&s_grid_path_cache, key, out);
+    bool ret = lru_grid_path_get(&ctx->grid_path_cache, key, out);
 
-    s_perfstats.grid_path_query++;
-    s_perfstats.grid_path_hit += !!ret;
+    ctx->perfstats.grid_path_query++;
+    ctx->perfstats.grid_path_hit += !!ret;
     return ret;
 }
 
-void N_FC_PutGridPath(struct coord local_start, struct coord local_dest,
-                      struct coord chunk, enum nav_layer layer, const struct grid_path_desc *in)
+void N_FC_PutGridPath(struct fieldcache_ctx *ctx, struct coord local_start, 
+                      struct coord local_dest, struct coord chunk, enum nav_layer layer, 
+                      const struct grid_path_desc *in)
 {
     uint64_t key = grid_path_key(local_start, local_dest, chunk, layer);
-    lru_grid_path_put(&s_grid_path_cache, key, in);
+    lru_grid_path_put(&ctx->grid_path_cache, key, in);
 }
 
-void N_FC_InvalidateAllAtChunk(struct coord chunk, enum nav_layer layer)
+void N_FC_InvalidateAllAtChunk(struct fieldcache_ctx *ctx, struct coord chunk, enum nav_layer layer)
 {
     /* Note that chunk:field maps simply maintain a list of cache keys for 
      * which entries were set. The entries for these keys may have already 
@@ -416,11 +428,11 @@ void N_FC_InvalidateAllAtChunk(struct coord chunk, enum nav_layer layer)
      * necessarily be in the caches. */
 
     uint64_t key = key_for_chunk(chunk);
-    clear_chunk_los_map(key, layer);
-    clear_chunk_flow_map(key, layer, false);
+    clear_chunk_los_map(ctx, key, layer);
+    clear_chunk_flow_map(ctx, key, layer, false);
 }
 
-void N_FC_InvalidateAllThroughChunk(struct coord chunk, enum nav_layer layer)
+void N_FC_InvalidateAllThroughChunk(struct fieldcache_ctx *ctx, struct coord chunk, enum nav_layer layer)
 {
     assert(Sched_UsingBigStack());
 
@@ -432,7 +444,7 @@ void N_FC_InvalidateAllThroughChunk(struct coord chunk, enum nav_layer layer)
 
     /* Make sure not to actually query the caches, in order to not mess up the age history */
     /* First find all the paths going through the chunk. */
-    LRU_FOREACH_SAFE_REMOVE(ffid, &s_ffid_cache, key, ffid_val, {
+    LRU_FOREACH_SAFE_REMOVE(ffid, &ctx->ffid_cache, key, ffid_val, {
 
         (void)ffid_val;
         dest_id_t curr_dest = key_dest(key);
@@ -451,34 +463,34 @@ void N_FC_InvalidateAllThroughChunk(struct coord chunk, enum nav_layer layer)
     /* Now that we know all the paths, find and remove all the flow 
      * fields belonging to them */
     struct flow_field ff_val;
-    LRU_FOREACH_SAFE_REMOVE(flow, &s_flow_cache, key, ff_val, {
+    LRU_FOREACH_SAFE_REMOVE(flow, &ctx->flow_cache, key, ff_val, {
     
         (void)ff_val;
         dest_id_t curr_dest = key_dest(key);
 
         if(dest_array_contains(paths, npaths, curr_dest)) {
         
-            bool found = lru_flow_remove(&s_flow_cache, key);
-            s_perfstats.flow_invalidated += !!found;
+            bool found = lru_flow_remove(&ctx->flow_cache, key);
+            ctx->perfstats.flow_invalidated += !!found;
         }
     });
 
     /* And remove all the LOS fields as well */
     struct LOS_field los_val;
-    LRU_FOREACH_SAFE_REMOVE(los, &s_los_cache, key, los_val, {
+    LRU_FOREACH_SAFE_REMOVE(los, &ctx->los_cache, key, los_val, {
 
         (void)los_val;
         dest_id_t curr_dest = key_dest(key);
 
         if(dest_array_contains(paths, npaths, curr_dest)) {
         
-            bool found = lru_los_remove(&s_los_cache, key);
-            s_perfstats.los_invalidated += !!found;
+            bool found = lru_los_remove(&ctx->los_cache, key);
+            ctx->perfstats.los_invalidated += !!found;
         }
     });
 }
 
-void N_FC_InvalidateNeighbourEnemySeekFields(int width, int height, 
+void N_FC_InvalidateNeighbourEnemySeekFields(struct fieldcache_ctx *ctx, int width, int height, 
                                              struct coord chunk, enum nav_layer layer)
 {
     for(int dr = -1; dr <= +1; dr++) {
@@ -497,16 +509,16 @@ void N_FC_InvalidateNeighbourEnemySeekFields(int width, int height,
 
         struct coord curr = (struct coord){abs_r, abs_c};
         uint64_t key = key_for_chunk(curr);
-        clear_chunk_flow_map(key, layer, true);
+        clear_chunk_flow_map(ctx, key, layer, true);
     }}
 }
 
-void N_FC_InvalidateDynamicSurroundFields(void)
+void N_FC_InvalidateDynamicSurroundFields(struct fieldcache_ctx *ctx)
 {
     uint64_t key;
     struct flow_field ff_val;
 
-    LRU_FOREACH_SAFE_REMOVE(flow, &s_flow_cache, key, ff_val, {
+    LRU_FOREACH_SAFE_REMOVE(flow, &ctx->flow_cache, key, ff_val, {
     
         int type = N_FlowFieldTargetType(key);
         if(type != TARGET_ENTITY)
@@ -516,7 +528,18 @@ void N_FC_InvalidateDynamicSurroundFields(void)
         if(!(G_FlagsGet(ent) & ENTITY_FLAG_MOVABLE))
             continue;
 
-        lru_flow_remove(&s_flow_cache, key);
+        lru_flow_remove(&ctx->flow_cache, key);
     });
+}
+
+struct fieldcache_ctx *N_FC_New(void)
+{
+    return malloc(sizeof(struct fieldcache_ctx));
+}
+
+void N_FC_Free(struct fieldcache_ctx *ctx)
+{
+    assert(ctx);
+    PF_FREE(ctx);
 }
 

@@ -57,6 +57,7 @@ struct tile_desc;
 struct obb;
 enum render_pass;
 struct map_resolution;
+struct fc_stats;
 
 struct chunkpos{
     int r, c;
@@ -754,6 +755,12 @@ bool   M_AL_WritePFMap(const struct map *map, SDL_RWops *stream);
  */
 void   M_InitCopyPools(const struct map *map);
 void   M_DestroyCopyPools(void);
+
+/* ------------------------------------------------------------------------
+ * Access navigation stats.
+ * ------------------------------------------------------------------------
+ */
+void M_GetFieldCacheStats(const struct map *map, struct fc_stats *out);
 
 
 #endif
