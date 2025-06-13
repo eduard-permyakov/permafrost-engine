@@ -1904,6 +1904,12 @@ static quat_t interpolate_rotations(quat_t from, quat_t to, float fraction)
     if(fabs(1.0 - fraction) < EPSILON)
         return to;
 
+    /* For angles larger than 180 degrees, just 'snap' to them,
+     */
+    float pitch_diff = PFM_Quat_PitchDiff(&from, &to);
+    if(fabs(pitch_diff) >= M_PI)
+        return to;
+
     return PFM_Quat_Slerp(&from, &to, fraction);
 }
 
@@ -1961,18 +1967,10 @@ static void entity_update(enum movement_hz hz, uint32_t uid, vec2_t new_vel)
         }else{
             ms->next_rot = ms->prev_rot;
         }
-
-        if(ms->left == 0) {
-            Entity_SetRot(uid, ms->next_rot);
-        }else{
-            quat_t intermediate = interpolate_rotations(ms->prev_rot, ms->next_rot, ms->step);
-            Entity_SetRot(uid, intermediate);
-        }
+        Entity_SetRot(uid, ms->next_rot);
 
     }else{
         ms->velocity = (vec2_t){0.0f, 0.0f}; 
-        ms->prev_pos = G_Pos_GetFrom(s_move_work.gamestate.positions, uid);
-        ms->prev_rot = Entity_GetRot(uid);
         ms->left = 0;
     }
 
@@ -2316,6 +2314,7 @@ static void do_add_entity(uint32_t uid, vec3_t pos, float selection_radius, int 
     assert(ret != -1);
     kh_value(s_move_work.gamestate.flags, k) = G_FlagsGet(uid);
 
+    quat_t rot = Entity_GetRot(uid);
     struct movestate new_ms = (struct movestate) {
         .velocity = {0.0f}, 
         .blocking = false,
@@ -2326,6 +2325,8 @@ static void do_add_entity(uint32_t uid, vec3_t pos, float selection_radius, int 
         .left = 0,
         .prev_pos = pos,
         .next_pos = pos,
+        .prev_rot = rot,
+        .next_rot = rot,
         .surround_target_prev = (vec2_t){0},
         .surround_nearest_prev = (vec2_t){0},
     };
@@ -3062,12 +3063,10 @@ static void entity_interpolation_step(uint32_t uid)
 
     ms->left--;
     float fraction = 1.0 - (ms->step * ms->left);
+    assert(fraction >= 0.0f && fraction <= 1.0f);
 
     vec3_t new_pos = interpolate_positions(ms->prev_pos, ms->next_pos, fraction);
-    quat_t new_rot = interpolate_rotations(ms->prev_rot, ms->next_rot, fraction);
-
     G_Pos_Set(uid, new_pos);
-    Entity_SetRot(uid, new_rot);
 }
 
 static void interpolate_tick(void *user, void *event)
