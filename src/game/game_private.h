@@ -73,6 +73,7 @@ bool                   G_GetDiplomacyStateFrom(enum diplomacy_state (*table)[MAX
 
 void                   G_UpdateMap(void);
 void                   G_SwapFieldCaches(struct map *map);
+const struct map      *G_GetMap(void);
 
 #endif
 

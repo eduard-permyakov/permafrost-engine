@@ -2019,6 +2019,12 @@ void G_SwapFieldCaches(struct map *map)
     }
 }
 
+const struct map *G_GetMap(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    return s_gs.map;
+}
+
 void G_Render(void)
 {
     PERF_ENTER();

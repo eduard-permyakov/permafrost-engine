@@ -74,7 +74,7 @@
 #define SUBFORMATION_BUFFER_DIST (8.0f)
 #define SIGNUM(x)                (((x) > 0) - ((x) < 0))
 #define EPSILON                  (1.0f/1024)
-#define FIELD_RECOMPUTE_INTERVAL (1.0f) /* seconds */
+#define FIELD_RECOMPUTE_INTERVAL (3.0f) /* seconds */
 #define MAX_CELL_ASSIGNMENT_WORK (256)
 #define IDX(r, width, c)         (r * width + c)
 
@@ -191,6 +191,20 @@ struct block_event{
 
 QUEUE_TYPE(event, struct block_event)
 QUEUE_IMPL(static, event, struct block_event)
+
+enum recompute_type{
+    CELL_FIELD,
+    CELL_FIXUP
+};
+
+struct cell_recompute_desc{
+    enum recompute_type type;
+    formation_id_t      fid;
+    uint32_t            uid;
+};
+
+QUEUE_TYPE(cell_recompute, struct cell_recompute_desc)
+QUEUE_IMPL(static, cell_recompute, struct cell_recompute_desc)
 
 enum subformation_state{
     SUBFORMATION_COMPUTING_ASSIGNMENT,
@@ -323,17 +337,26 @@ static bool in_front_row(uint32_t uid, uint32_t leader, struct subformation *for
 static vec2_t entity_target_position(vec2_t anchor, vec2_t heading, float distance);
 static uint32_t unit_in_front(uint32_t uid, struct subformation *formation);
 
+static struct cell_field_work *cell_get_work(uint32_t uid);
+static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t uid,
+                               struct subformation *formation, struct cell_field_work *work, 
+                               struct cell *cell, struct result (*func)(void*));
+
+static struct result cell_field_task(void *arg);
+static struct result cell_field_fixup_task(void *arg);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static const struct map   *s_map;
-static khash_t(mapping)   *s_ent_formation_map;
-static khash_t(formation) *s_formations;
-static khash_t(type)      *s_preferred;
-static formation_id_t      s_next_id;
-static SDL_TLSID           s_workspace;
-static queue_event_t       s_events;
+static const struct map      *s_map;
+static khash_t(mapping)      *s_ent_formation_map;
+static khash_t(formation)    *s_formations;
+static khash_t(type)         *s_preferred;
+static formation_id_t         s_next_id;
+static SDL_TLSID              s_workspace;
+static queue_event_t          s_events;
+static queue_cell_recompute_t s_requests;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -1215,7 +1238,10 @@ static uint64_t map_table_key(struct formation *formation, struct subformation *
             break;
         }
     }
-    return (g_frame_idx << 8) | idx;
+    /* Only update the map once every 10 ticks */
+    unsigned long truncate = g_frame_idx - (g_frame_idx % 10);
+    unsigned long floored = g_frame_idx - truncate;
+    return (floored << 8) | idx;
 }
 
 static float average_distance_to_target(struct subformation *formation)
@@ -3025,6 +3051,45 @@ static void on_building_remove(void *user, void *event)
 
 static void on_1hz_tick(void *user, void *event)
 {
+    struct cell_recompute_desc desc;
+    while(queue_cell_recompute_pop(&s_requests, &desc)) {
+
+        khiter_t k = kh_get(formation, s_formations, desc.fid);
+        if(k == kh_end(s_formations))
+            continue;
+        struct formation *formation = &kh_val(s_formations, k);
+        struct cell_field_work *work = cell_get_work(desc.uid);
+
+        for(int i = 0; i < vec_size(&formation->subformations); i++) {
+            struct subformation *sub = &vec_AT(&formation->subformations, i);
+            khiter_t k = kh_get(assignment, sub->assignment, desc.uid);
+            if(k == kh_end(sub->assignment))
+                continue;
+
+            struct coord coord = kh_val(sub->assignment, k);
+            struct cell *cell = &vec_AT(&sub->cells,
+                CELL_IDX(coord.r, coord.c, sub->ncols));
+
+            switch(desc.type) {
+            case CELL_FIELD:
+                if(!work->consumed) {
+                    work->recompute_pending = true;
+                }else{
+                    dispatch_cell_task(formation, formation->center, desc.uid, sub, work, cell,
+                        cell_field_task);
+                }
+                break;
+            case CELL_FIXUP:
+                if(work->consumed) {
+                    dispatch_cell_task(formation, formation->center, desc.uid, sub, work, cell,
+                        cell_field_fixup_task);
+                }
+                break;
+            default: assert(0);
+            }
+        }
+    }
+
     khash_t(entity) *need_recompute = kh_init(entity);
     uint32_t ticks = SDL_GetTicks();
     struct block_event block_event;
@@ -3226,6 +3291,28 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
     }
 }
 
+static void request_cell_recompute(formation_id_t fid, uint32_t uid)
+{
+    uint32_t tick = SDL_GetTicks();
+    struct cell_recompute_desc desc = (struct cell_recompute_desc){
+        .type = CELL_FIELD,
+        .fid = fid,
+        .uid = uid
+    };
+    queue_cell_recompute_push(&s_requests, &desc);
+}
+
+static void request_cell_fixup(formation_id_t fid, uint32_t uid)
+{
+    uint32_t tick = SDL_GetTicks();
+    struct cell_recompute_desc desc = (struct cell_recompute_desc){
+        .type = CELL_FIXUP,
+        .fid = fid,
+        .uid = uid
+    };
+    queue_cell_recompute_push(&s_requests, &desc);
+}
+
 static void dispatch_cell_field_work(struct formation *parent, vec2_t center, 
                                      struct subformation *formation)
 {
@@ -3292,8 +3379,6 @@ static void on_update_start(void *user, void *event)
     /* Consume cell field work results 
      */
     kh_foreach_ptr(s_formations, formation, {
-
-        clean_up_map_snapshots(formation);
 
         for(int i = 0; i < vec_size(&formation->subformations); i++) {
             struct subformation *sub = &vec_AT(&formation->subformations, i);
@@ -3441,7 +3526,7 @@ static void recompute_cell_arrival_fields(struct formation *parent, vec2_t cente
     uint32_t uid;
     kh_foreach_key(formation->ents, uid, {
         struct cell_field_work *curr = &vec_AT(&formation->futures, i);
-        if(!curr->consumed && !Sched_FutureIsReady(&curr->future)) {
+        if(!curr->consumed) {
             curr->recompute_pending = true;
             continue;
         }
@@ -4247,6 +4332,9 @@ bool G_Formation_Init(const struct map *map)
     if(!queue_event_init(&s_events, 512))
         goto fail_tls;
 
+    if(!queue_cell_recompute_init(&s_requests, 512))
+        goto fail_requests;
+
     s_map = map;
     s_next_id = 0;
 
@@ -4260,6 +4348,8 @@ bool G_Formation_Init(const struct map *map)
     E_Global_Register(EVENT_1HZ_TICK, on_1hz_tick, NULL, G_RUNNING);
     return true;
 
+fail_requests:
+    queue_event_destroy(&s_events);
 fail_tls:
     kh_destroy(type, s_preferred);
 fail_preferred:
@@ -4288,6 +4378,7 @@ void G_Formation_Shutdown(void)
     E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
 
+    queue_cell_recompute_destroy(&s_requests);
     queue_event_destroy(&s_events);
     kh_destroy(type, s_preferred);
     kh_destroy(formation, s_formations);
@@ -4652,13 +4743,15 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
     if(!field)
         PERF_RETURN_VOID();
 
+    formation_id_t fid = G_Formation_GetForEnt(uid);
     struct formation *formation = formation_for_ent(uid);
     struct subformation *sub = subformation_for_ent(formation, uid);
+    struct cell_field_work *work = cell_get_work(uid);
 
-    struct refcounted_map *rmap = map_snapshot_get(formation, sub);
+    const struct map *map = G_GetMap();
     struct map_resolution res;
-    M_NavGetResolution(rmap->snapshot, &res);
-    vec3_t map_pos = M_GetPos(rmap->snapshot);
+    M_NavGetResolution(map, &res);
+    vec3_t map_pos = M_GetPos(map);
 
     vec2_t pos = G_Pos_GetXZ(uid);
     struct coord coord = pos_to_tile(pos, formation->center);
@@ -4668,7 +4761,6 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
     coord.c += 1;
 
     enum nav_layer layer = Entity_NavLayer(uid);
-    struct cell_field_work *work = cell_get_work(uid);
     struct cell_field_work_input *input = &work->input;
     void *workspace = get_workspace();
     size_t ws_size = workspace_size();
@@ -4680,23 +4772,21 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
     uint32_t curr = SDL_GetTicks();
     float elapsed = (curr - work->last_update_ticks) / 1000.0f;
     if(elapsed < FIELD_RECOMPUTE_INTERVAL) {
-        bool ret = SDL_AtomicDecRef(&rmap->refcount);
         PERF_RETURN_VOID();
     }
 
     /* The target cell location got blocked. Try to get as close as possible. 
      */
     struct cell *cell = cell_for_ent(formation, uid);
-    if(M_NavPositionBlocked(rmap->snapshot, layer, cell->reachable_pos)) {
+    if(M_NavPositionBlocked(map, layer, cell->reachable_pos)) {
 
         vec2_t new_reachable = cell->reachable_pos;
-        M_NavClosestPathable(rmap->snapshot, layer, cell->reachable_pos, &new_reachable);
+        M_NavClosestPathable(map, layer, cell->reachable_pos, &new_reachable);
 
         cell->reachable_pos = new_reachable;
-        dispatch_cell_task(formation, formation->center, uid, sub, work, cell, cell_field_task);
+        request_cell_recompute(fid, uid);
 
         work->last_update_ticks = curr;
-        bool ret = SDL_AtomicDecRef(&rmap->refcount);
         PERF_RETURN_VOID();
     }
 
@@ -4704,10 +4794,9 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
      * on an 'island' and can no longer reach its' target tile. In that
      * case, resort to stopping the unit at its' location.
      */
-    if(!M_NavPositionBlocked(rmap->snapshot, layer, pos)
+    if(!M_NavPositionBlocked(map, layer, pos)
     && cell_get_dir(field, coord.r, coord.c) == FD_NONE) {
         cell->reachable_pos = pos;
-        bool ret = SDL_AtomicDecRef(&rmap->refcount);
         PERF_RETURN_VOID();
     }
 
@@ -4718,11 +4807,10 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
     /* The entity may end up on a blocked tile (which is possible if a unit 
      * right next to it has 'stopped' and occupied a set of tiles under it). 
      */
-    if(M_NavPositionBlocked(rmap->snapshot, layer, pos)) {
+    if(M_NavPositionBlocked(map, layer, pos)) {
 
         work->input.curr_tile = td;
-        dispatch_cell_task(formation, formation->center, uid, sub, work, cell, 
-            cell_field_fixup_task);
+        request_cell_fixup(fid, uid);
         work->last_update_ticks = curr;
     }
     /* If the current field is leading the entity towards
@@ -4730,11 +4818,9 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
      */
     else if(will_collide(field, layer, coord, pos)) {
 
-        dispatch_cell_task(formation, formation->center, uid, sub, work, cell, cell_field_task);
+        request_cell_recompute(fid, uid);
         work->last_update_ticks = curr;
     }
-
-    bool ret = SDL_AtomicDecRef(&rmap->refcount);
     PERF_RETURN_VOID();
 }
 
