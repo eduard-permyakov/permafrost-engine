@@ -72,7 +72,8 @@ enum wang_tile_color{
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static struct block_allocator s_block_alloc;
+static struct block_allocator s_map_block_alloc;
+static struct block_allocator s_nav_block_alloc;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -613,23 +614,31 @@ void M_AL_ShallowCopy(struct map *dst, const struct map *src)
 
 struct map *M_AL_CopyWithFields(const struct map *src)
 {
-    size_t map_size = M_AL_ShallowCopySize(src->width, src->height);
-    size_t nav_size = N_DeepCopySize(src->nav_private);
     PERF_PUSH("alloc map block");
-    struct map *ret = block_alloc(&s_block_alloc);
+    struct map *ret = block_alloc(&s_map_block_alloc);
     PERF_POP();
     if(!ret)
         return NULL;
 
+    PERF_PUSH("alloc nav block");
+    void *nav = block_alloc(&s_nav_block_alloc);
+    PERF_POP();
+    if(!nav)
+        return NULL;
+
     M_AL_ShallowCopy(ret, src);
-    ret->nav_private = ret + 1;
-    N_CopyFields(src->nav_private, ret->nav_private);
+
+    N_CloneCtx(src->nav_private, nav);
+    ret->nav_private = nav;
+
     return ret;
 }
 
 void M_AL_FreeCopyWithFields(struct map *map)
 {
-    block_free(&s_block_alloc, map);
+    N_DestroyCtx(map->nav_private);
+    block_free(&s_nav_block_alloc, map->nav_private);
+    block_free(&s_map_block_alloc, map);
 }
 
 bool M_AL_WritePFMap(const struct map *map, SDL_RWops *stream)
@@ -692,12 +701,14 @@ void M_InitCopyPools(const struct map *map)
 {
     size_t map_size = M_AL_ShallowCopySize(map->width, map->height);
     size_t nav_size = N_DeepCopySize(map->nav_private);
-    size_t blocksize = map_size + nav_size;
-    block_alloc_init(&s_block_alloc, blocksize, 8);
+
+    block_alloc_init(&s_map_block_alloc, map_size, 8);
+    block_alloc_init(&s_nav_block_alloc, nav_size, 8);
 }
 
 void M_DestroyCopyPools(void)
 {
-    block_alloc_destroy(&s_block_alloc);
+    block_alloc_destroy(&s_nav_block_alloc);
+    block_alloc_destroy(&s_map_block_alloc);
 }
 

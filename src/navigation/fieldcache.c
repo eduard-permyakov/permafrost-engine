@@ -288,6 +288,89 @@ void N_FC_Destroy(struct fieldcache_ctx *ctx)
     kh_destroy(idvec, ctx->chunk_lfield_map);
 }
 
+bool N_FC_Clone(struct fieldcache_ctx *from, struct fieldcache_ctx *to)
+{
+    PERF_ENTER();
+
+    uint32_t key;
+    vec_id_t curr;
+    struct grid_path_desc path;
+
+    if(!lru_los_clone(&from->los_cache, &to->los_cache))
+        goto fail_clone_los;
+
+    if(!lru_flow_clone(&from->flow_cache, &to->flow_cache))
+        goto fail_clone_flow;
+
+    if(!lru_ffid_clone(&from->ffid_cache, &to->ffid_cache))
+        goto fail_clone_ffid;
+
+    if(!lru_grid_path_init(&to->grid_path_cache, CONFIG_GRID_PATH_CACHE_SZ, on_grid_path_evict))
+        goto fail_clone_grid;
+
+    LRU_FOREACH_SAFE_REMOVE(grid_path, &from->grid_path_cache, key, path, {
+
+        struct grid_path_desc copy = path;
+        vec_coord_init(&copy.path);
+        vec_coord_copy(&path.path, &copy.path);
+        lru_grid_path_put(&to->grid_path_cache, key, &copy);
+    });
+
+    if(NULL == (to->chunk_ffield_map = kh_init(idvec)))
+        goto fail_clone_chunk_ffield;
+    if(0 != kh_resize(idvec, to->chunk_ffield_map, kh_size(from->chunk_ffield_map)))
+        goto fail_clone_chunk_ffield_entries;
+
+    kh_foreach(from->chunk_ffield_map, key, curr, {
+        vec_id_t entry;
+        vec_id_init(&entry);
+        vec_id_copy(&entry, &curr); 
+
+        int ret;
+        kh_put(idvec, to->chunk_ffield_map, key, &ret);
+        assert(ret != -1 && ret != 0);
+        khiter_t k = kh_get(idvec, to->chunk_ffield_map, key);
+        kh_val(to->chunk_ffield_map, k) = entry;
+    });
+
+    if(NULL == (to->chunk_lfield_map = kh_init(idvec)))
+        goto fail_clone_chunk_lfield;
+    if(0 != kh_resize(idvec, to->chunk_lfield_map, kh_size(from->chunk_lfield_map)))
+        goto fail_clone_chunk_lfield_entries;
+
+    kh_foreach(from->chunk_lfield_map, key, curr, {
+        vec_id_t entry;
+        vec_id_init(&entry);
+        vec_id_copy(&entry, &curr); 
+
+        int ret;
+        kh_put(idvec, to->chunk_lfield_map, key, &ret);
+        assert(ret != -1 && ret != 0);
+        khiter_t k = kh_get(idvec, to->chunk_lfield_map, key);
+        kh_val(to->chunk_lfield_map, k) = entry;
+    });
+
+    memcpy(&to->perfstats, &from->perfstats, sizeof(struct priv_fc_stats));
+    PERF_RETURN(true);
+
+fail_clone_chunk_lfield_entries:
+    kh_destroy(idvec, to->chunk_lfield_map);
+fail_clone_chunk_lfield:
+    destroy_all_entries(to->chunk_ffield_map);
+fail_clone_chunk_ffield_entries:
+    kh_destroy(idvec, to->chunk_ffield_map);
+fail_clone_chunk_ffield:
+    lru_grid_path_destroy(&to->grid_path_cache);
+fail_clone_grid:
+    lru_ffid_destroy(&to->ffid_cache);
+fail_clone_ffid:
+    lru_flow_destroy(&to->flow_cache);
+fail_clone_flow:
+    lru_los_destroy(&to->los_cache);
+fail_clone_los:
+    PERF_RETURN(false);
+}
+
 void N_FC_ClearAll(struct fieldcache_ctx *ctx)
 {
     lru_los_clear(&ctx->los_cache);

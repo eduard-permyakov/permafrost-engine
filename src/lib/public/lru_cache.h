@@ -124,6 +124,7 @@
     scope  bool  lru_##name##_contains (lru(name) *lru, uint64_t key);                          \
     scope  void  lru_##name##_put      (lru(name) *lru, uint64_t key, const type *in);          \
     scope  bool  lru_##name##_remove   (lru(name) *lru, uint64_t key);                          \
+    scope  bool  lru_##name##_clone    (lru(name) *lru, lru(name) *to);                         \
 
 /***********************************************************************************************/
 
@@ -165,7 +166,7 @@
     }                                                                                           \
                                                                                                 \
     scope bool lru_##name##_init(lru(name) *lru, size_t capacity,                               \
-                                     void (*on_evict)(type *victim))                            \
+                                 void (*on_evict)(type *victim))                                \
     {                                                                                           \
         memset(lru, 0, sizeof(*lru));                                                           \
         lru->key_node_table = kh_init(name);                                                    \
@@ -334,6 +335,25 @@
         mp_##name##_free(&lru->node_pool, ref);                                                 \
         return true;                                                                            \
     }                                                                                           \
+                                                                                                \
+    scope bool lru_##name##_clone(lru(name) *lru, lru(name) *to)                                \
+    {                                                                                           \
+        to->capacity = lru->capacity;                                                           \
+        to->used = lru->used;                                                                   \
+        to->ilru_head = lru->ilru_head;                                                         \
+        to->ilru_tail = lru->ilru_tail;                                                         \
+        to->on_evict = lru->on_evict;                                                           \
+                                                                                                \
+        to->key_node_table = kh_copy(name, lru->key_node_table);                                \
+        if(!to->key_node_table)                                                                 \
+            return false;                                                                       \
+                                                                                                \
+        if(!mp_##name##_copy(&lru->node_pool, &to->node_pool)) {                                \
+            kh_destroy(name, to->key_node_table);                                               \
+            return false;                                                                       \
+        }                                                                                       \
+        return true;                                                                            \
+    }
 
 #endif
 

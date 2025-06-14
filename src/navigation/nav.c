@@ -4285,7 +4285,7 @@ size_t N_DeepCopySize(void *nav_private)
     return ret;
 }
 
-void N_CopyFields(void *nav_private, void *out)
+void N_CloneCtx(void *nav_private, void *out)
 {
     struct nav_private *from = (struct nav_private*)nav_private;
     struct nav_private *to = (struct nav_private*)out;
@@ -4311,6 +4311,27 @@ void N_CopyFields(void *nav_private, void *out)
         }
         cursor += layer_size;
     }
+
+    to->fieldcache = N_FC_New();
+    assert(to->fieldcache);
+    bool ret = N_FC_Clone(from->fieldcache, to->fieldcache);
+
+    for(int i = 0; i < NAV_LAYER_MAX; i++) {
+        to->dirty_chunks[i] = kh_copy(coord, from->dirty_chunks[i]);
+    }
+}
+
+void N_SwapFieldcaches(void *nav_private_a, void *nav_private_b)
+{
+    assert(nav_private_a);
+    assert(nav_private_b);
+
+    struct nav_private *a = (struct nav_private*)nav_private_a;
+    struct nav_private *b = (struct nav_private*)nav_private_b;
+
+    struct fieldcache_ctx *tmp = a->fieldcache;
+    a->fieldcache = b->fieldcache;
+    b->fieldcache = tmp;
 }
 
 void N_FC_ClearStatsAt(void *nav_private)

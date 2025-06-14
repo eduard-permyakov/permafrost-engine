@@ -757,6 +757,12 @@ void   M_InitCopyPools(const struct map *map);
 void   M_DestroyCopyPools(void);
 
 /* ------------------------------------------------------------------------
+ * Swap fieldcaches between two navigation contexts.
+ * ------------------------------------------------------------------------
+ */
+void   M_SwapCaches(struct map *a, struct map *b);
+
+/* ------------------------------------------------------------------------
  * Access navigation stats.
  * ------------------------------------------------------------------------
  */

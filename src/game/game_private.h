@@ -71,5 +71,8 @@ bool                   G_GetDiplomacyStateFrom(enum diplomacy_state (*table)[MAX
                                                int fac_id_a, int fac_id_b, 
                                                enum diplomacy_state *out);
 
+void                   G_UpdateMap(void);
+void                   G_SwapFieldCaches(struct map *map);
+
 #endif
 

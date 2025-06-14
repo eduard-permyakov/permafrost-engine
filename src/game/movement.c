@@ -234,7 +234,7 @@ struct move_gamestate{
     qt_ent_t         *postree;
     khash_t(range)   *sel_radiuses;
     khash_t(id)      *faction_ids;
-    const struct map *map;
+    struct map       *map;
 };
 
 struct move_work{
@@ -1919,6 +1919,13 @@ static void entity_update(enum movement_hz hz, uint32_t uid, vec2_t new_vel)
     struct movestate *ms = movestate_get(uid);
     assert(ms);
 
+    /* Flush the interpolation if was not completed */
+    if(ms->left > 0) {
+        Entity_SetRot(uid, ms->next_rot);
+        G_Pos_Set(uid, ms->next_pos);
+        ms->left = 0;
+    }
+
     assert(hz_count(hz) <= 20);
     assert(20 % hz_count(hz) == 0);
 
@@ -1971,7 +1978,6 @@ static void entity_update(enum movement_hz hz, uint32_t uid, vec2_t new_vel)
 
     }else{
         ms->velocity = (vec2_t){0.0f, 0.0f}; 
-        ms->left = 0;
     }
 
     /* If the entity's current position isn't pathable, simply keep it 'stuck' there in
@@ -3103,8 +3109,12 @@ static void move_tick(void *user, void *event)
     move_finish_work(hz);
     move_handle_hz_update(curr_event);
     move_process_cmds();
+    G_SwapFieldCaches(s_move_work.gamestate.map);
     move_release_gamestate();
     disband_empty_flocks();
+
+    /* Run the navigation updates synchronous to the movement tick */
+    G_UpdateMap();
 
     move_prepare_work();
     move_copy_gamestate();

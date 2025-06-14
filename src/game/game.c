@@ -1935,7 +1935,6 @@ void G_Update(void)
     ASSERT_IN_MAIN_THREAD();
 
     if(s_gs.map) {
-        M_Update(s_gs.map);
         G_Fog_UpdateVisionState();
     }
 
@@ -2000,6 +1999,22 @@ void G_Update(void)
     E_Global_NotifyImmediate(EVENT_UPDATE_UI, NULL, ES_ENGINE);
 
     PERF_RETURN_VOID();
+}
+
+void G_UpdateMap(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    if(s_gs.map) {
+        M_Update(s_gs.map);
+    }
+}
+
+void G_SwapFieldCaches(struct map *map)
+{
+    ASSERT_IN_MAIN_THREAD();
+    if(s_gs.map) {
+        M_SwapCaches(s_gs.map, map);
+    }
 }
 
 void G_Render(void)

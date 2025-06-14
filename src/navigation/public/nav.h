@@ -550,7 +550,19 @@ size_t N_DeepCopySize(void *nav_private);
  * faction refcounts.
  * ------------------------------------------------------------------------
  */
-void N_CopyFields(void *nav_private, void *out);
+void N_CloneCtx(void *nav_private, void *out);
+
+/* ------------------------------------------------------------------------
+ * Cleans up additional per-context allocations.
+ * ------------------------------------------------------------------------
+ */
+void N_DestroyCtx(void *nav_private);
+
+/* ------------------------------------------------------------------------
+ * Swaps field caches between two navigation contexts.
+ * ------------------------------------------------------------------------
+ */
+void N_SwapFieldcaches(void *nav_private_a, void *nav_private_b);
 
 /* ------------------------------------------------------------------------
  * Creates an arbitrary-resolution flow field guiding to a set of tiles.

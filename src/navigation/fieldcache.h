@@ -56,6 +56,9 @@ void N_FC_Free(struct fieldcache_ctx *ctx);
 bool N_FC_Init(struct fieldcache_ctx *ctx);
 void N_FC_Destroy(struct fieldcache_ctx *ctx);
 
+bool N_FC_Clone(struct fieldcache_ctx *from, struct fieldcache_ctx *to);
+void N_FC_Swap(struct fieldcache_ctx *a, struct fieldcache_ctx *b);
+
 /* Invalidate all LOS and Flow fields for a particular chunk 
  */
 void N_FC_InvalidateAllAtChunk(struct fieldcache_ctx *ctx, 
