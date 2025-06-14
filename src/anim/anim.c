@@ -185,6 +185,8 @@ void A_SetActiveClip(uint32_t uid, const char *name,
 
 void A_Update(void)
 {
+    PERF_ENTER();
+
     uint32_t curr_ticks = SDL_GetTicks();
     uint32_t uid;
 
@@ -212,6 +214,7 @@ void A_Update(void)
             }
         }
     });
+    PERF_RETURN_VOID();
 }
 
 void A_GetRenderState(uint32_t uid, size_t *out_njoints, 

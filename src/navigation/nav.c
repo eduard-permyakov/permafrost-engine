@@ -2019,13 +2019,14 @@ static struct result field_task(void *arg)
 static void field_join_work(void)
 {
     for(int i = 0; i < s_field_work.ntasks; i++) {
-		while(!Sched_FutureIsReady(&s_field_work.futures[i])) {
-			Sched_RunSync(s_field_work.tids[i]);
-		}
-	}
+        while(!Sched_FutureIsReady(&s_field_work.futures[i])) {
+            Sched_RunSync(s_field_work.tids[i]);
+            Sched_TryYield();
+        }
+    }
 }
 
-vec2_t tile_center_location(struct nav_private *priv, vec3_t map_pos, struct tile_desc td)
+static vec2_t tile_center_location(struct nav_private *priv, vec3_t map_pos, struct tile_desc td)
 {
     struct map_resolution res;
     N_GetResolution(priv, &res);
@@ -2035,6 +2036,48 @@ vec2_t tile_center_location(struct nav_private *priv, vec3_t map_pos, struct til
         bounds.x - bounds.width / 2.0f,
         bounds.z + bounds.height / 2.0f
     };
+}
+
+static struct portal *convert_portal_pointer(struct portal *ptr, struct nav_private *from,
+                                             struct nav_private *to)
+{
+    size_t chunks_per_layer = from->width * from->height;
+    size_t layer_size = chunks_per_layer * sizeof(struct nav_chunk);
+
+    for(int i = 0; i < NAV_LAYER_MAX; i++) {
+
+        const char *from_base = (const char*)from->chunks[i];
+        const char *to_base = (const char*)to->chunks[i];
+
+        if(((const char*)ptr) >= from_base && ((const char*)ptr) < (from_base + layer_size)) {
+            size_t offset = (uintptr_t)(((char*)ptr) - from_base);
+            assert(offset < layer_size);
+            return (struct portal*)(to_base + offset);
+        }
+    }
+    assert(0);
+    return NULL;
+}
+
+static void clone_portals(const struct nav_chunk *from, struct nav_private *from_ctx, 
+                          struct nav_chunk *to, struct nav_private *to_ctx)
+{
+    PERF_ENTER();
+
+    to->num_portals = from->num_portals;
+    for(int i = 0; i < from->num_portals; i++) {
+
+        struct portal src = from->portals[i];
+        src.connected = convert_portal_pointer(src.connected, from_ctx, to_ctx);
+
+        for(int j = 0; j < src.num_neighbours; j++) {
+
+            src.edges[j].neighbour = convert_portal_pointer(src.edges[j].neighbour,
+                from_ctx, to_ctx);
+        }
+        to->portals[i] = src;
+    }
+    PERF_RETURN_VOID();
 }
 
 /*****************************************************************************/
@@ -4287,6 +4330,8 @@ size_t N_DeepCopySize(void *nav_private)
 
 void N_CloneCtx(void *nav_private, void *out)
 {
+    PERF_ENTER();
+
     struct nav_private *from = (struct nav_private*)nav_private;
     struct nav_private *to = (struct nav_private*)out;
 
@@ -4301,6 +4346,7 @@ void N_CloneCtx(void *nav_private, void *out)
         size_t blockers_size = sizeof(((struct nav_chunk*)0)->blockers);
         size_t factions_size = sizeof(((struct nav_chunk*)0)->factions);
         size_t islands_size = sizeof(((struct nav_chunk*)0)->islands);
+        size_t loc_islands_size = sizeof(((struct nav_chunk*)0)->local_islands);
         to->chunks[i] = (struct nav_chunk*)cursor;
 
         for(int j = 0; j < chunks_per_layer; j++) {
@@ -4308,8 +4354,15 @@ void N_CloneCtx(void *nav_private, void *out)
             memcpy(to->chunks[i][j].blockers, from->chunks[i][j].blockers, blockers_size);
             memcpy(to->chunks[i][j].factions, from->chunks[i][j].factions, factions_size);
             memcpy(to->chunks[i][j].islands, from->chunks[i][j].islands, islands_size);
+            memcpy(to->chunks[i][j].local_islands, from->chunks[i][j].local_islands, loc_islands_size);
         }
         cursor += layer_size;
+    }
+
+    for(int i = 0; i < NAV_LAYER_MAX; i++) {
+        for(int j = 0; j < chunks_per_layer; j++) {
+            clone_portals(&from->chunks[i][j], from, &to->chunks[i][j], to);
+        }
     }
 
     to->fieldcache = N_FC_New();
@@ -4319,6 +4372,7 @@ void N_CloneCtx(void *nav_private, void *out)
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
         to->dirty_chunks[i] = kh_copy(coord, from->dirty_chunks[i]);
     }
+    PERF_RETURN_VOID();
 }
 
 void N_SwapFieldcaches(void *nav_private_a, void *nav_private_b)
