@@ -587,6 +587,7 @@ fail_resize:
 
 static void engine_shutdown(void)
 {
+    Sched_Flush();
     P_Projectile_Shutdown();
     Audio_Shutdown();
     S_Shutdown();

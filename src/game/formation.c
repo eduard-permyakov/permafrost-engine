@@ -3513,7 +3513,9 @@ static struct cell *cell_for_ent(struct formation *formation, uint32_t uid)
     struct subformation *sub = &vec_AT(&formation->subformations, sub_idx);
 
     khiter_t l = kh_get(assignment, sub->assignment, uid);
-    assert(l != kh_end(sub->assignment));
+    if(l == kh_end(sub->assignment))
+        return NULL;
+
     struct coord cell_coord = kh_val(sub->assignment, l);
     size_t cell_idx = cell_coord.r * sub->ncols + cell_coord.c;
     return &vec_AT(&sub->cells, cell_idx);
@@ -4586,9 +4588,12 @@ vec2_t G_Formation_ApproximateDesiredArrivalVelocity(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
 
     struct formation *formation = formation_for_ent(uid);
-    assert(formation);
+    if(!formation)
+        return (vec2_t){0};
+
     struct cell *cell = cell_for_ent(formation, uid);
-    assert(cell);
+    if(!cell)
+        return (vec2_t){0};
 
     vec2_t cell_pos = cell->reachable_pos;
     vec2_t ent_pos = G_Pos_GetXZ(uid);
@@ -4605,7 +4610,8 @@ bool G_Formation_ArrivedAtCell(uint32_t uid)
     struct formation *formation = formation_for_ent(uid);
     assert(formation);
     struct cell *cell = cell_for_ent(formation, uid);
-    assert(cell);
+    if(!cell)
+        return true;
 
     /* Check if we are within tolerance of the cell position */
     float radius = G_GetSelectionRadius(uid);
@@ -4646,7 +4652,8 @@ bool G_Formation_AssignedToCell(uint32_t uid)
     struct formation *formation = formation_for_ent(uid);
     assert(formation);
     struct cell *cell = cell_for_ent(formation, uid);
-    assert(cell);
+    if(!cell)
+        return false;
     return (cell->state == CELL_OCCUPIED);
 }
 
@@ -4655,9 +4662,11 @@ vec2_t G_Formation_CellPosition(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
 
     struct formation *formation = formation_for_ent(uid);
-    assert(formation);
+    if(!formation)
+        return (vec2_t){0};
     struct cell *cell = cell_for_ent(formation, uid);
-    assert(cell);
+    if(!cell)
+        return (vec2_t){0};
     return cell->reachable_pos;
 }
 
