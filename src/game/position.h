@@ -63,8 +63,6 @@ int       G_Pos_EntsInCircleWithPredFrom(qt_ent_t *tree, khash_t(id) *flags,
                                          bool (*predicate)(uint32_t ent, void *arg), void *arg);
 
 khash_t(pos) *G_Pos_CopyTable(void);
-vec3_t        G_Pos_GetFrom(khash_t(pos) *table, uint32_t uid);
-vec2_t        G_Pos_GetXZFrom(khash_t(pos) *table, uint32_t uid);
 
 void      G_Pos_Garrison(uint32_t uid);
 void      G_Pos_Ungarrison(uint32_t uid, vec3_t pos);

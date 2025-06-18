@@ -61,6 +61,10 @@ PQUEUE_IMPL(static, coord, struct coord)
 PQUEUE_TYPE(td, struct tile_desc)
 PQUEUE_IMPL(static, td, struct tile_desc)
 
+KHASH_MAP_INIT_INT(aabb, struct aabb)
+
+KHASH_DECLARE(id, khint32_t, int)
+
 struct box_xz{
     float x_min, x_max;
     float z_min, z_max;
@@ -121,11 +125,43 @@ static bool tile_outside_region(struct map_resolution res, struct region region,
     return false;
 }
 
-static uint16_t enemies_for_faction(int faction_id)
+static bool ents_diplomacy_state(int fac_a, int fac_b,
+                                 enum diplomacy_state *out,
+                                 struct nav_unit_query_ctx *ctx)
+{
+    if(ctx) {
+        assert(ARR_SIZE(*ctx->diptable) == MAX_FACTIONS);
+        return G_GetDiplomacyStateFrom(
+            (enum diplomacy_state (*)[MAX_FACTIONS])ctx->diptable, fac_a, fac_b, out);
+    }else{
+        return G_GetDiplomacyState(fac_a, fac_b, out);
+    }
+}
+
+static uint16_t enemy_faction_from(int faction_id, struct nav_unit_query_ctx *ctx)
+{
+    uint16_t ret = 0;
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+
+        enum diplomacy_state ds;
+        if(!ents_diplomacy_state(i, faction_id, &ds, ctx))
+            continue;
+        if(ds != DIPLOMACY_STATE_WAR)
+            continue;
+        ret |= (0x1 << i);
+    }
+    return ret;
+}
+
+static uint16_t enemies_for_faction(int faction_id, struct nav_unit_query_ctx *ctx)
 {
     uint16_t ret = 0;
     if(faction_id != FACTION_ID_NONE) {
-        ret = G_GetEnemyFactions(faction_id);
+        if(ctx) {
+            ret = enemy_faction_from(faction_id, ctx);
+        }else{
+            ret = G_GetEnemyFactions(faction_id);
+        }
     }
     return ret;
 }
@@ -155,17 +191,18 @@ static bool field_tile_passable_no_enemies(
 }
 
 static int field_neighbours_grid(
-    const struct nav_chunk *chunk, 
-    struct coord            coord, 
-    bool                    only_passable, 
-    int                     faction_id,
-    struct coord           *out_neighbours, 
-    uint8_t                *out_costs)
+    const struct nav_chunk    *chunk, 
+    struct coord               coord, 
+    bool                       only_passable, 
+    int                        faction_id,
+    struct nav_unit_query_ctx *ctx,
+    struct coord              *out_neighbours, 
+    uint8_t                   *out_costs)
 {
     int ret = 0;
     uint16_t enemies = 0;
     if(faction_id != FACTION_ID_NONE) {
-        enemies = G_GetEnemyFactions(faction_id);
+        enemies = enemies_for_faction(faction_id, ctx);
     }
 
     for(int r = -1; r <= 1; r++) {
@@ -255,17 +292,18 @@ static int field_neighbours_grid_global(
 }
 
 static int field_neighbours_grid_los(
-    const struct nav_chunk *chunk,
-    const struct LOS_field *los, 
-    int                     faction_id,
+    const struct nav_chunk    *chunk,
+    const struct LOS_field    *los, 
+    int                        faction_id,
     struct coord            coord, 
-    struct coord           *out_neighbours, 
-    uint8_t                *out_costs)
+    struct nav_unit_query_ctx *ctx,
+    struct coord              *out_neighbours, 
+    uint8_t                   *out_costs)
 {
     int ret = 0;
     uint16_t enemies = 0;
     if(faction_id != FACTION_ID_NONE) {
-        enemies = G_GetEnemyFactions(faction_id);
+        enemies = enemy_faction_from(faction_id, ctx);
     }
 
     for(int r = -1; r <= 1; r++) {
@@ -489,10 +527,11 @@ static void field_pad_wavefront(struct LOS_field *out_los)
 }
 
 static void field_build_integration(
-    pq_coord_t             *frontier, 
-    const struct nav_chunk *chunk, 
-    int                     faction_id, 
-    float                   inout[FIELD_RES_R][FIELD_RES_C])
+    pq_coord_t                *frontier, 
+    const struct nav_chunk    *chunk, 
+    int                        faction_id, 
+    struct nav_unit_query_ctx *ctx,
+    float                      inout[FIELD_RES_R][FIELD_RES_C])
 {
     while(pq_size(frontier) > 0) {
 
@@ -502,7 +541,7 @@ static void field_build_integration(
         struct coord neighbours[8];
         uint8_t neighbour_costs[8];
         int num_neighbours = field_neighbours_grid(chunk, curr, true, faction_id, 
-            neighbours, neighbour_costs);
+            ctx, neighbours, neighbour_costs);
 
         for(int i = 0; i < num_neighbours; i++) {
 
@@ -574,10 +613,11 @@ static void field_build_integration_region(
  * will be added to the frontier 
  */
 static void field_build_integration_nonpass(
-    pq_coord_t             *frontier, 
-    const struct nav_chunk *chunk, 
-    int                     faction_id, 
-    float                   inout[FIELD_RES_R][FIELD_RES_C])
+    pq_coord_t                *frontier, 
+    const struct nav_chunk    *chunk, 
+    int                        faction_id, 
+    struct nav_unit_query_ctx *ctx,
+    float                      inout[FIELD_RES_R][FIELD_RES_C])
 {
     while(pq_size(frontier) > 0) {
 
@@ -587,7 +627,7 @@ static void field_build_integration_nonpass(
         struct coord neighbours[8];
         uint8_t neighbour_costs[8];
         int num_neighbours = field_neighbours_grid(chunk, curr, false, faction_id, 
-            neighbours, neighbour_costs);
+            ctx, neighbours, neighbour_costs);
 
         for(int i = 0; i < num_neighbours; i++) {
 
@@ -803,25 +843,108 @@ static void field_chunk_bounds(vec3_t map_pos, struct coord chunk_coord, struct 
     out->z_max = out->z_min + chunk_z_dim;
 }
 
-static bool field_enemy_ent(int faction_id, uint32_t ent)
+static int ent_faction_id(uint32_t uid, struct nav_unit_query_ctx *ctx)
 {
-    if(G_GetFactionID(ent) == faction_id)
+    if(ctx) {
+        return G_GetFactionIDFrom(ctx->faction_ids, uid);
+    }else{
+        return G_GetFactionID(uid);
+    }
+}
+
+static uint32_t ent_flags(uint32_t uid, struct nav_unit_query_ctx *ctx)
+{
+    if(ctx) {
+        return G_FlagsGetFrom(ctx->flags, uid);
+    }else{
+        return G_FlagsGet(uid);
+    }
+}
+
+static bool ent_dying(uint32_t uid, struct nav_unit_query_ctx *ctx)
+{
+    if(ctx) {
+        khiter_t k = kh_get(id, ctx->dying_set, uid);
+        return (k != kh_end(ctx->dying_set));
+    }else{
+        return G_Combat_IsDying(uid);
+    }
+}
+
+static void ent_curr_obb(uint32_t uid, struct obb *out, bool identity, 
+                         struct nav_unit_query_ctx *ctx)
+{
+    if(ctx) {
+        khiter_t k = kh_get(aabb, ctx->aabbs, uid);
+        assert(k != kh_end(ctx->aabbs));
+        struct aabb *aabb = &kh_value(ctx->aabbs, k);
+
+        vec3_t pos = G_Pos_GetFrom(ctx->positions, uid);
+        vec3_t scale = Entity_GetScaleFrom(ctx->transforms, uid);
+        quat_t rot = Entity_GetRotFrom(ctx->transforms, uid);
+
+        mat4x4_t model;
+        Entity_ModelMatrixFrom(pos, rot, scale, &model);
+
+        struct obb obb;
+        Entity_CurrentOBBFrom(aabb, model, scale, out);
+    }else{
+        Entity_CurrentOBB(uid, out, identity);
+    }
+}
+
+static vec2_t ent_pos_xz(uint32_t uid, struct nav_unit_query_ctx *ctx)
+{
+    if(ctx) {
+        return G_Pos_GetXZFrom(ctx->positions, uid);
+    }else{
+        return G_Pos_GetXZ(uid);
+    }
+}
+
+static float ent_sel_radius(uint32_t uid, struct nav_unit_query_ctx *ctx)
+{
+    if(ctx) {
+        return G_GetSelectionRadiusFrom(ctx->sel_radiuses, uid);
+    }else{
+        return G_GetSelectionRadius(uid);
+    }
+}
+
+static bool ent_player_visible(uint32_t uid, struct nav_unit_query_ctx *ctx)
+{
+    if(ctx) {
+        struct obb obb;
+        ent_curr_obb(uid, &obb, false, ctx);
+
+        return G_Fog_ObjVisibleFrom(ctx->fog_state, ctx->fog_enabled, 
+            ctx->player_controllable, &obb);
+    }else{
+        struct obb obb;
+        Entity_CurrentOBB(uid, &obb, false);
+        uint16_t pmask = G_GetPlayerControlledFactions();
+
+        return G_Fog_ObjVisible(pmask, &obb);
+    }
+}
+
+static bool field_enemy_ent(int faction_id, uint32_t ent, struct nav_unit_query_ctx *ctx)
+{
+    if(ent_faction_id(ent, ctx) == faction_id)
         return false;
-    if(!(G_FlagsGet(ent) & ENTITY_FLAG_COMBATABLE))
+
+    uint32_t flags = ent_flags(ent, ctx);
+    if(!(flags & ENTITY_FLAG_COMBATABLE))
         return false;
 
     enum diplomacy_state ds;
-    bool result = G_GetDiplomacyState(faction_id, G_GetFactionID(ent), &ds);
-    assert(result);
+    if(!ents_diplomacy_state(faction_id, ent_faction_id(ent, ctx), &ds, ctx))
+        return false;
 
     if(ds != DIPLOMACY_STATE_WAR)
         return false;
 
-    struct obb obb;
-    Entity_CurrentOBB(ent, &obb, false);
-    uint16_t pmask = G_GetPlayerControlledFactions();
-
-    if(!G_Fog_ObjVisible(pmask, &obb))
+    if(!ent_player_visible(ent, ctx))
         return false;
 
     return true;
@@ -939,19 +1062,20 @@ done:
 }
 
 static size_t field_tile_initial_frontier(
-    struct coord            tile, 
-    const struct nav_chunk *chunk,
-    bool                    ignoreblock, 
-    int                     faction_id, 
-    struct coord           *out, 
-    size_t                  maxout)
+    struct coord               tile, 
+    const struct nav_chunk    *chunk,
+    bool                       ignoreblock, 
+    int                        faction_id, 
+    struct nav_unit_query_ctx *ctx,
+    struct coord              *out, 
+    size_t                     maxout)
 {
     if(maxout == 0)
         return 0;
 
     uint16_t enemies = 0;
     if(faction_id != FACTION_ID_NONE) {
-        enemies = G_GetEnemyFactions(faction_id);
+        enemies = enemies_for_faction(faction_id, ctx);
     }
 
     if(ignoreblock) {
@@ -1002,21 +1126,22 @@ static bool field_tile_adjacent_to_next_iid(
 }
 
 static size_t field_portal_initial_frontier(
-    const struct nav_private *priv,
-    enum nav_layer            layer,
-    struct portal_desc        pd,
-    const struct nav_chunk   *chunk,
-    bool                      ignoreblock, 
-    int                       faction_id, 
-    struct coord             *out, 
-    size_t                    maxout)
+    const struct nav_private  *priv,
+    enum nav_layer             layer,
+    struct portal_desc         pd,
+    const struct nav_chunk    *chunk,
+    bool                       ignoreblock, 
+    int                        faction_id, 
+    struct nav_unit_query_ctx *ctx,
+    struct coord              *out, 
+    size_t                     maxout)
 {
     if(maxout == 0)
         return 0;
 
     uint16_t enemies = 0;
     if(faction_id != FACTION_ID_NONE) {
-        enemies = G_GetEnemyFactions(faction_id);
+        enemies = enemies_for_faction(faction_id, ctx);
     }
 
     /* Set all non-blocked tiles of the portal as the frontier */
@@ -1050,14 +1175,15 @@ static size_t field_portal_initial_frontier(
 }
 
 static size_t field_enemies_initial_frontier(
-    struct enemies_desc      *enemies, 
-    const struct nav_private *priv, 
-    struct tile_desc          base,
-    int                       rdim,
-    int                       cdim,
-    enum nav_layer            layer,
-    struct tile_desc         *out, 
-    size_t                    maxout)
+    struct enemies_desc       *enemies, 
+    const struct nav_private  *priv, 
+    struct tile_desc           base,
+    int                        rdim,
+    int                        cdim,
+    enum nav_layer             layer,
+    struct nav_unit_query_ctx *ctx,
+    struct tile_desc          *out, 
+    size_t                     maxout)
 {
     assert(Sched_UsingBigStack());
 
@@ -1067,11 +1193,23 @@ static size_t field_enemies_initial_frontier(
     float zlen = bounds.z_max - bounds.z_min;
 
     STALLOC(uint32_t, ents, MAX_ENTS_PER_CHUNK);
-    size_t num_ents = G_Pos_EntsInRect(
-        (vec2_t){bounds.x_min - xlen/2.0f - SEARCH_BUFFER, bounds.z_min - zlen/2.0f - SEARCH_BUFFER},
-        (vec2_t){bounds.x_max + xlen/2.0f + SEARCH_BUFFER, bounds.z_max + zlen/2.0f + SEARCH_BUFFER},
-        ents, MAX_ENTS_PER_CHUNK
-    );
+    size_t num_ents;
+    if(ctx) {
+        num_ents = G_Pos_EntsInRectFrom(
+            ctx->postree, ctx->flags,
+            (vec2_t){bounds.x_min - xlen/2.0f - SEARCH_BUFFER, 
+                     bounds.z_min - zlen/2.0f - SEARCH_BUFFER},
+            (vec2_t){bounds.x_max + xlen/2.0f + SEARCH_BUFFER, 
+                     bounds.z_max + zlen/2.0f + SEARCH_BUFFER},
+            ents, MAX_ENTS_PER_CHUNK);
+    }else{
+        num_ents = G_Pos_EntsInRect(
+            (vec2_t){bounds.x_min - xlen/2.0f - SEARCH_BUFFER, 
+                     bounds.z_min - zlen/2.0f - SEARCH_BUFFER},
+            (vec2_t){bounds.x_max + xlen/2.0f + SEARCH_BUFFER, 
+                     bounds.z_max + zlen/2.0f + SEARCH_BUFFER},
+            ents, MAX_ENTS_PER_CHUNK);
+    }
 
     struct map_resolution res;
     N_GetResolution(priv, &res);
@@ -1082,21 +1220,21 @@ static size_t field_enemies_initial_frontier(
     for(int i = 0; i < num_ents; i++) {
     
         uint32_t curr_enemy = ents[i];
-        if(!field_enemy_ent(enemies->faction_id, curr_enemy))
+        if(!field_enemy_ent(enemies->faction_id, curr_enemy, ctx))
             continue;
-        if(G_Combat_IsDying(curr_enemy))
+        if(ent_dying(curr_enemy, ctx))
             continue;
 
         struct tile_desc tds[512];
         int ntds;
-        if(G_FlagsGet(curr_enemy) & ENTITY_FLAG_BUILDING) {
+        if(ent_flags(curr_enemy, ctx) & ENTITY_FLAG_BUILDING) {
 
             struct obb obb;
-            Entity_CurrentOBB(curr_enemy, &obb, true);
+            ent_curr_obb(curr_enemy, &obb, true, ctx);
             ntds = M_Tile_AllUnderObj(enemies->map_pos, res, &obb, tds, ARR_SIZE(tds));
         }else{
-            ntds = M_Tile_AllUnderCircle(res, G_Pos_GetXZ(curr_enemy), 
-                G_GetSelectionRadius(curr_enemy), enemies->map_pos, tds, ARR_SIZE(tds));
+            ntds = M_Tile_AllUnderCircle(res, ent_pos_xz(curr_enemy, ctx),
+                ent_sel_radius(curr_enemy, ctx), enemies->map_pos, tds, ARR_SIZE(tds));
         }
 
         if(layer >= NAV_LAYER_GROUND_3X3) {
@@ -1145,14 +1283,15 @@ out:
 }
 
 static size_t field_entity_initial_frontier(
-    struct entity_desc       *target, 
-    const struct nav_private *priv, 
-    struct tile_desc          base,
-    int                       rdim,
-    int                       cdim,
-    enum nav_layer            layer,
-    struct tile_desc         *out, 
-    size_t                    maxout)
+    struct entity_desc        *target, 
+    const struct nav_private  *priv, 
+    struct tile_desc           base,
+    int                        rdim,
+    int                        cdim,
+    enum nav_layer             layer,
+    struct nav_unit_query_ctx *ctx,
+    struct tile_desc          *out, 
+    size_t                     maxout)
 {
     struct map_resolution res;
     N_GetResolution(priv, &res);
@@ -1161,14 +1300,14 @@ static size_t field_entity_initial_frontier(
     struct tile_desc tds[512];
     uint32_t ent = target->target;
 
-    if(G_FlagsGet(ent) & ENTITY_FLAG_BUILDING) {
+    if(ent_flags(ent, ctx) & ENTITY_FLAG_BUILDING) {
 
         struct obb obb;
-        Entity_CurrentOBB(ent, &obb, true);
+        ent_curr_obb(ent, &obb, true, ctx);
         ntds = M_Tile_AllUnderObj(target->map_pos, res, &obb, tds, ARR_SIZE(tds));
     }else{
-        ntds = M_Tile_AllUnderCircle(res, G_Pos_GetXZ(ent), 
-            G_GetSelectionRadius(ent), target->map_pos, tds, ARR_SIZE(tds));
+        ntds = M_Tile_AllUnderCircle(res, ent_pos_xz(ent, ctx),
+            ent_sel_radius(ent, ctx), target->map_pos, tds, ARR_SIZE(tds));
     }
 
     if(layer == NAV_LAYER_GROUND_3X3) {
@@ -1199,27 +1338,28 @@ static size_t field_entity_initial_frontier(
 }
 
 static size_t field_initial_frontier(
-    enum nav_layer            layer,
-    struct field_target       target, 
-    const struct nav_chunk   *chunk, 
-    const struct nav_private *priv,
-    bool                      ignoreblock, 
-    int                       faction_id,
-    struct coord             *init_frontier, 
-    size_t                    maxout)
+    enum nav_layer             layer,
+    struct field_target        target, 
+    const struct nav_chunk    *chunk, 
+    const struct nav_private  *priv,
+    bool                       ignoreblock, 
+    int                        faction_id,
+    struct nav_unit_query_ctx *ctx,
+    struct coord              *init_frontier, 
+    size_t                     maxout)
 {
     size_t ninit = 0;
     switch(target.type) {
     case TARGET_PORTAL:
         
         ninit = field_portal_initial_frontier(priv, layer, target.pd, chunk, ignoreblock, 
-            faction_id, init_frontier, maxout);
+            faction_id, ctx, init_frontier, maxout);
         break;
 
     case TARGET_TILE:
 
         ninit = field_tile_initial_frontier(target.tile, chunk, ignoreblock, 
-            faction_id, init_frontier, maxout);
+            faction_id, ctx, init_frontier, maxout);
         break;
 
     case TARGET_ENEMIES:
@@ -1361,11 +1501,12 @@ static size_t field_passable_frontier(
  * specified faction.
  */
 static void field_update_enemies(
-    struct coord              chunk_coord, 
-    const struct nav_private *priv, 
-    enum nav_layer            layer, 
-    struct enemies_desc       target, 
-    struct flow_field        *inout_flow)
+    struct coord               chunk_coord, 
+    const struct nav_private  *priv, 
+    enum nav_layer             layer, 
+    struct enemies_desc        target, 
+    struct nav_unit_query_ctx *ctx,
+    struct flow_field         *inout_flow)
 {
     struct map_resolution res;
     N_GetResolution(priv, &res);
@@ -1398,7 +1539,7 @@ static void field_update_enemies(
 
     STALLOC(struct tile_desc, init_frontier, rdim * cdim);
     size_t ninit = field_enemies_initial_frontier(&target, priv, base, rdim, cdim,
-        layer, init_frontier, rdim * cdim);
+        layer, ctx, init_frontier, rdim * cdim);
 
     for(int i = 0; i < ninit; i++) {
 
@@ -1439,7 +1580,8 @@ static void field_update_entity(
     const struct nav_private *priv, 
     enum nav_layer            layer, 
     struct entity_desc        target, 
-    struct flow_field        *inout_flow)
+    struct nav_unit_query_ctx *ctx,
+    struct flow_field         *inout_flow)
 {
     struct map_resolution res;
     N_GetResolution(priv, &res);
@@ -1465,7 +1607,7 @@ static void field_update_entity(
 
     STALLOC(struct tile_desc, init_frontier, rdim * cdim);
     size_t ninit = field_entity_initial_frontier(&target, priv, base, rdim, cdim,
-        layer, init_frontier, rdim * cdim);
+        layer, ctx, init_frontier, rdim * cdim);
 
     for(int i = 0; i < ninit; i++) {
 
@@ -1624,21 +1766,22 @@ void N_FlowFieldInit(struct coord chunk_coord, struct flow_field *out)
 }
 
 void N_FlowFieldUpdate(
-    struct coord              chunk_coord, 
-    const struct nav_private *priv, 
-    int                       faction_id,
-    enum nav_layer            layer, 
-    struct field_target       target, 
-    struct flow_field        *inout_flow)
+    struct coord               chunk_coord, 
+    const struct nav_private  *priv, 
+    int                        faction_id,
+    enum nav_layer             layer, 
+    struct field_target        target, 
+    struct nav_unit_query_ctx *ctx,
+    struct flow_field         *inout_flow)
 {
     PERF_ENTER();
     if(target.type == TARGET_ENEMIES) {
-        field_update_enemies(chunk_coord, priv, layer, target.enemies, inout_flow);
+        field_update_enemies(chunk_coord, priv, layer, target.enemies, ctx, inout_flow);
         PERF_RETURN_VOID();
     }
 
     if(target.type == TARGET_ENTITY) {
-        field_update_entity(chunk_coord, priv, layer, target.ent, inout_flow);
+        field_update_entity(chunk_coord, priv, layer, target.ent, ctx, inout_flow);
         PERF_RETURN_VOID();
     }
 
@@ -1654,7 +1797,7 @@ void N_FlowFieldUpdate(
 
     struct coord init_frontier[FIELD_RES_R * FIELD_RES_C];
     size_t ninit = field_initial_frontier(layer, target, chunk, priv, false, faction_id, 
-        init_frontier, ARR_SIZE(init_frontier));
+        ctx, init_frontier, ARR_SIZE(init_frontier));
 
     for(int i = 0; i < ninit; i++) {
 
@@ -1664,7 +1807,7 @@ void N_FlowFieldUpdate(
     }
 
     inout_flow->target = target;
-    field_build_integration(&frontier, chunk, faction_id, integration_field);
+    field_build_integration(&frontier, chunk, faction_id, ctx, integration_field);
     field_build_flow(integration_field, inout_flow);
     field_fixup(target, integration_field, inout_flow, chunk);
 
@@ -1673,13 +1816,14 @@ void N_FlowFieldUpdate(
 }
 
 void N_LOSFieldCreate(
-    dest_id_t                 id, 
-    struct coord              chunk_coord, 
-    struct tile_desc          target,
-    const struct nav_private *priv, 
-    vec3_t                    map_pos, 
-    struct LOS_field         *out_los, 
-    const struct LOS_field   *prev_los)
+    dest_id_t                  id, 
+    struct coord               chunk_coord, 
+    struct tile_desc           target,
+    const struct nav_private  *priv, 
+    vec3_t                     map_pos, 
+    struct nav_unit_query_ctx *ctx,
+    struct LOS_field          *out_los, 
+    const struct LOS_field    *prev_los)
 {
     int faction_id = N_DestFactionID(id);
     out_los->chunk = chunk_coord;
@@ -1792,7 +1936,7 @@ void N_LOSFieldCreate(
         struct coord neighbours[8];
         uint8_t neighbour_costs[8];
         int num_neighbours = field_neighbours_grid_los(chunk, out_los, faction_id, 
-            curr, neighbours, neighbour_costs);
+            curr, ctx, neighbours, neighbour_costs);
 
         for(int i = 0; i < num_neighbours; i++) {
 
@@ -1834,12 +1978,13 @@ void N_LOSFieldCreate(
 }
 
 void N_FlowFieldUpdateToNearestPathable(
-    const struct nav_private *priv, 
-    enum nav_layer            layer,
-    struct coord              chunk,
-    struct coord              start, 
-    int                       faction_id, 
-    struct flow_field        *inout_flow)
+    const struct nav_private  *priv, 
+    enum nav_layer             layer,
+    struct coord               chunk,
+    struct coord               start, 
+    int                        faction_id, 
+    struct nav_unit_query_ctx *ctx,
+    struct flow_field         *inout_flow)
 {
     struct tile_desc init_frontier[FIELD_RES_R * FIELD_RES_C];
     struct region chunk_region = (struct region){
@@ -1876,7 +2021,7 @@ void N_FlowFieldUpdateToNearestPathable(
     }
 
     struct nav_chunk *navchunk = &priv->chunks[layer][chunk.r * priv->width + chunk.c];
-    field_build_integration_nonpass(&frontier, navchunk, faction_id, integration_field);
+    field_build_integration_nonpass(&frontier, navchunk, faction_id, ctx, integration_field);
 
     for(int r = 0; r < FIELD_RES_R; r++) {
     for(int c = 0; c < FIELD_RES_C; c++) {
@@ -1893,11 +2038,12 @@ void N_FlowFieldUpdateToNearestPathable(
 }
 
 void N_FlowFieldUpdateIslandToNearest(
-    uint16_t                  local_iid, 
-    const struct nav_private *priv,
-    enum nav_layer            layer, 
-    int                       faction_id, 
-    struct flow_field        *inout_flow)
+    uint16_t                   local_iid, 
+    const struct nav_private  *priv,
+    enum nav_layer             layer, 
+    int                        faction_id, 
+    struct nav_unit_query_ctx *ctx,
+    struct flow_field         *inout_flow)
 {
     struct coord chunk_coord = inout_flow->chunk;
     const struct nav_chunk *chunk = &priv->chunks[layer][IDX(chunk_coord.r, priv->width, chunk_coord.c)];
@@ -1919,7 +2065,7 @@ void N_FlowFieldUpdateIslandToNearest(
 
         struct tile_desc enemies_init_frontier[FIELD_RES_R * FIELD_RES_C];
         size_t ntds = field_enemies_initial_frontier(&inout_flow->target.enemies, priv, base, 
-            FIELD_RES_R, FIELD_RES_C, layer, enemies_init_frontier, ARR_SIZE(enemies_init_frontier));
+            FIELD_RES_R, FIELD_RES_C, layer, ctx, enemies_init_frontier, ARR_SIZE(enemies_init_frontier));
         for(int i = 0; i < ntds; i++) {
             init_frontier[ninit++] = (struct coord){
                 enemies_init_frontier[i].tile_r,
@@ -1932,7 +2078,7 @@ void N_FlowFieldUpdateIslandToNearest(
 
         struct tile_desc entity_init_frontier[FIELD_RES_R * FIELD_RES_C];
         size_t ntds = field_entity_initial_frontier(&inout_flow->target.ent, priv, base, 
-            FIELD_RES_R, FIELD_RES_C, layer, entity_init_frontier, ARR_SIZE(entity_init_frontier));
+            FIELD_RES_R, FIELD_RES_C, layer, ctx, entity_init_frontier, ARR_SIZE(entity_init_frontier));
         for(int i = 0; i < ntds; i++) {
             init_frontier[ninit++] = (struct coord){
                 entity_init_frontier[i].tile_r,
@@ -1943,12 +2089,12 @@ void N_FlowFieldUpdateIslandToNearest(
     
     }else{
         ninit = field_initial_frontier(layer, inout_flow->target, chunk, priv, false, faction_id, 
-            init_frontier, ARR_SIZE(init_frontier));
+            ctx, init_frontier, ARR_SIZE(init_frontier));
         /* If there were no tiles in the initial frontier, that means the target
          * was completely blocked off. */
         if(!ninit) {
             ninit = field_initial_frontier(layer, inout_flow->target, chunk, priv, true, faction_id, 
-                init_frontier, ARR_SIZE(init_frontier));
+                ctx, init_frontier, ARR_SIZE(init_frontier));
         }
     }
 
@@ -2006,7 +2152,7 @@ void N_FlowFieldUpdateIslandToNearest(
         integration_field[curr.r][curr.c] = 0.0f;
     }
 
-    field_build_integration(&frontier, chunk, faction_id, integration_field);
+    field_build_integration(&frontier, chunk, faction_id, ctx, integration_field);
     field_build_flow(integration_field, inout_flow);
     field_fixup(inout_flow->target, integration_field, inout_flow, chunk);
 

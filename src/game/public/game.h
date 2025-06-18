@@ -58,6 +58,9 @@ struct nk_context;
 struct nk_style_item;
 struct nk_color;
 struct proj_desc;
+struct kh_id_s;
+struct kh_pos_s;
+struct kh_range_s;
 
 struct entity_block_desc{
     uint32_t uid;
@@ -177,6 +180,7 @@ uint16_t        G_GetPlayerControlledFactions(void);
 uint16_t        G_GetEnemyFactions(int faction_id);
 void            G_SetFactionID(uint32_t uid, int faction_id);
 int             G_GetFactionID(uint32_t uid);
+int             G_GetFactionIDFrom(struct kh_id_s *table, uint32_t uid);
 void            G_GetFieldCacheStats(struct fc_stats *out);
 
 void            G_SetVisionRange(uint32_t uid, float range);
@@ -184,9 +188,13 @@ float           G_GetVisionRange(uint32_t uid);
 
 void            G_SetSelectionRadius(uint32_t uid, float range);
 float           G_GetSelectionRadius(uint32_t uid);
+float           G_GetSelectionRadiusFrom(struct kh_range_s *table, uint32_t uid);
 
 bool            G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds);
 bool            G_GetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state *out);
+bool            G_GetDiplomacyStateFrom(enum diplomacy_state (*table)[MAX_FACTIONS],
+                                        int fac_id_a, int fac_id_b, 
+                                        enum diplomacy_state *out);
 
 void            G_SetActiveCamera(struct camera *cam, enum cam_mode mode);
 struct camera  *G_GetActiveCamera(void);
@@ -226,6 +234,7 @@ uint32_t        G_EntForGPUID(uint32_t gpuid);
 
 void            G_FlagsSet(uint32_t uid, uint32_t flags);
 uint32_t        G_FlagsGet(uint32_t uid);
+uint32_t        G_FlagsGetFrom(struct kh_id_s *table, uint32_t uid);
 
 void            G_SetShowUnitIcons(bool show);
 bool            G_GetShowUnitIcons(void);
@@ -310,11 +319,19 @@ enum combat_stance G_Combat_GetStance(uint32_t uid);
 /* GAME POSITION                                                             */
 /*###########################################################################*/
 
+struct kh_id_s;
+struct qt_ent_s;
+
 bool           G_Pos_Set(uint32_t uid, vec3_t pos);
 vec3_t         G_Pos_Get(uint32_t uid);
 vec2_t         G_Pos_GetXZ(uint32_t uid);
 
+vec3_t         G_Pos_GetFrom(struct kh_pos_s *table, uint32_t uid);
+vec2_t         G_Pos_GetXZFrom(struct kh_pos_s *table, uint32_t uid);
+
 int            G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout);
+int            G_Pos_EntsInRectFrom(struct qt_ent_s *tree, struct kh_id_s *flags,
+                                    vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout);
 int            G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout,
                                         bool (*predicate)(uint32_t ent, void *arg), void *arg);
 int            G_Pos_EntsInCircle(vec2_t xz_point, float range, uint32_t *out, size_t maxout);
@@ -333,6 +350,8 @@ uint32_t       G_Pos_NearestWithPred(vec2_t xz_point,
 bool  G_Fog_ObjExplored(uint16_t fac_mask, uint32_t uid, const struct obb *obb);
 bool  G_Fog_ObjVisible(uint16_t fac_mask, const struct obb *obb);
 bool  G_Fog_Visible(int faction_id, vec2_t xz_pos);
+bool  G_Fog_ObjVisibleFrom(uint32_t *state, bool enabled, 
+                           uint16_t fac_mask, const struct obb *obb);
 bool  G_Fog_PlayerVisible(vec2_t xz_pos);
 bool  G_Fog_Explored(int faction_id, vec2_t xz_pos);
 bool  G_Fog_PlayerExplored(vec2_t xz_pos);

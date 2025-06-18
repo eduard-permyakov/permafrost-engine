@@ -58,6 +58,7 @@ struct obb;
 enum render_pass;
 struct map_resolution;
 struct fc_stats;
+struct nav_unit_query_ctx;
 
 struct chunkpos{
     int r, c;
@@ -175,6 +176,13 @@ void   M_NavRenderNavigationIslandIDs(const struct map *map, const struct camera
  */
 void   M_NavRenderNavigationLocalIslandIDs(const struct map *map, const struct camera *cam,
                                            enum nav_layer layer);
+
+/* ------------------------------------------------------------------------
+ * Set the pointer to the state which is used for making unit queries
+ * during field generation.
+ * ------------------------------------------------------------------------
+ */
+void   M_NavSetNavUnitQueryCtx(struct map *map, struct nav_unit_query_ctx *ctx);
 
 /* ------------------------------------------------------------------------
  * Centers the map at the worldspace origin.

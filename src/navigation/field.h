@@ -133,12 +133,13 @@ void    N_FlowFieldInit(struct coord       chunk_coord,
  * enemy factions will not be considered obstacles.
  * ------------------------------------------------------------------------
  */
-void    N_FlowFieldUpdate(struct coord              chunk_coord, 
-                          const struct nav_private *priv, 
-                          int                       faction_id,
-                          enum nav_layer            layer, 
-                          struct field_target       target, 
-                          struct flow_field        *inout_flow);
+void    N_FlowFieldUpdate(struct coord               chunk_coord, 
+                          const struct nav_private  *priv, 
+                          int                        faction_id,
+                          enum nav_layer             layer, 
+                          struct field_target        target, 
+                          struct nav_unit_query_ctx *ctx,
+                          struct flow_field         *inout_flow);
 
 /* ------------------------------------------------------------------------
  * Update all tiles with a specific local island ID from the
@@ -148,11 +149,12 @@ void    N_FlowFieldUpdate(struct coord              chunk_coord,
  * island (local_iid), the field will remain unchanged.
  * ------------------------------------------------------------------------
  */
-void    N_FlowFieldUpdateIslandToNearest(uint16_t                  local_iid, 
-                                         const struct nav_private *priv,
-                                         enum nav_layer            layer, 
-                                         int                       faction_id, 
-                                         struct flow_field        *inout_flow);
+void    N_FlowFieldUpdateIslandToNearest(uint16_t                   local_iid, 
+                                         const struct nav_private  *priv,
+                                         enum nav_layer             layer, 
+                                         int                        faction_id, 
+                                         struct nav_unit_query_ctx *ctx,
+                                         struct flow_field         *inout_flow);
 
 /* ------------------------------------------------------------------------
  * Update all tiles for for the 'impassable island' that start is a part of
@@ -162,12 +164,13 @@ void    N_FlowFieldUpdateIslandToNearest(uint16_t                  local_iid,
  * somehow end up on an impassable one.
  * ------------------------------------------------------------------------
  */
-void N_FlowFieldUpdateToNearestPathable(const struct nav_private *priv, 
-                                        enum nav_layer            layer,
-                                        struct coord              chunk,
-                                        struct coord              start, 
-                                        int                       faction_id, 
-                                        struct flow_field        *inout_flow);
+void N_FlowFieldUpdateToNearestPathable(const struct nav_private  *priv, 
+                                        enum nav_layer             layer,
+                                        struct coord               chunk,
+                                        struct coord               start, 
+                                        int                        faction_id, 
+                                        struct nav_unit_query_ctx *ctx,
+                                        struct flow_field         *inout_flow);
 
 /* ------------------------------------------------------------------------
  * Create a line of sight field, indicating which tiles in this chunk are 
@@ -179,13 +182,14 @@ void N_FlowFieldUpdateToNearestPathable(const struct nav_private *priv,
  * NULL) and and moving backwards along the path back to the 'source' chunk.
  * ------------------------------------------------------------------------
  */
-void    N_LOSFieldCreate(dest_id_t                 id, 
-                         struct coord              chunk_coord, 
-                         struct tile_desc          target,
-                         const struct nav_private *priv, 
-                         vec3_t                    map_pos, 
-                         struct LOS_field         *out_los, 
-                         const struct LOS_field   *prev_los);
+void    N_LOSFieldCreate(dest_id_t                  id, 
+                         struct coord               chunk_coord, 
+                         struct tile_desc           target,
+                         const struct nav_private  *priv, 
+                         vec3_t                     map_pos, 
+                         struct nav_unit_query_ctx *ctx,
+                         struct LOS_field          *out_los, 
+                         const struct LOS_field    *prev_los);
 
 #endif
 

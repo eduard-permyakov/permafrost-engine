@@ -43,6 +43,7 @@
 struct entity;
 struct SDL_RWops;
 struct map;
+struct kh_id_s;
 
 
 bool G_Combat_Init(const struct map *map);
@@ -63,6 +64,8 @@ void G_Combat_AddTimeDelta(uint32_t delta);
 
 bool G_Combat_SaveState(struct SDL_RWops *stream);
 bool G_Combat_LoadState(struct SDL_RWops *stream);
+
+struct kh_id_s *G_Combat_GetDyingSetCopy(void);
 
 #endif
 

@@ -58,18 +58,10 @@ enum ctx_action        G_CurrContextualAction(void);
 void                   G_NotifyOrderIssued(uint32_t uid, bool clear_harvester);
 
 khash_t(id)           *G_FlagsCopyTable(void);
-uint32_t               G_FlagsGetFrom(khash_t(id) *table, uint32_t uid);
-
 khash_t(range)        *G_SelectionRadiusCopyTable(void);
-float                  G_GetSelectionRadiusFrom(khash_t(range) *table, uint32_t uid);
-
 khash_t(id)           *G_FactionIDCopyTable(void);
-int                    G_GetFactionIDFrom(khash_t(id) *table, uint32_t uid);
 
 enum diplomacy_state (*G_CopyDiplomacyTable(void))[MAX_FACTIONS];
-bool                   G_GetDiplomacyStateFrom(enum diplomacy_state (*table)[MAX_FACTIONS],
-                                               int fac_id_a, int fac_id_b, 
-                                               enum diplomacy_state *out);
 
 void                   G_UpdateMap(void);
 void                   G_SwapFieldCaches(struct map *map);

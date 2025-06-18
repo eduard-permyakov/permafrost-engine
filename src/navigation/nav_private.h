@@ -56,6 +56,9 @@ struct nav_private{
     /* Data used for fieldcache invalidation */
     khash_t(coord)        *dirty_chunks[NAV_LAYER_MAX];
     bool                   local_islands_dirty[NAV_LAYER_MAX];
+    /* State for unit queries, used to store a snapshot of the unit gamestate so 
+     * that it can be queried asynchronously. */
+    struct nav_unit_query_ctx *unit_query_ctx;
 };
 
 enum nav_layer N_DestLayer(dest_id_t id);

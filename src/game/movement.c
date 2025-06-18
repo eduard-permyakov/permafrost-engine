@@ -39,6 +39,7 @@
 #include "combat.h"
 #include "clearpath.h"
 #include "position.h"
+#include "fog_of_war.h"
 #include "public/game.h"
 #include "../config.h"
 #include "../camera.h"
@@ -270,24 +271,33 @@ struct move_task_arg{
  * or even be spread over multiple frames. 
  */
 struct move_gamestate{
-    khash_t(id)      *flags;
-    khash_t(pos)     *positions;
-    qt_ent_t         *postree;
-    khash_t(range)   *sel_radiuses;
-    khash_t(id)      *faction_ids;
-    struct map       *map;
+    khash_t(id)           *flags;
+    khash_t(pos)          *positions;
+    qt_ent_t              *postree;
+    khash_t(range)        *sel_radiuses;
+    khash_t(id)           *faction_ids;
+    struct map            *map;
+    /* Additional state needed for nav_unit_query_ctx */
+    struct kh_aabb_s      *aabbs;
+    void                  *transforms;
+    bool                  fog_enabled;
+    uint32_t              *fog_state;
+    struct kh_id_s        *dying_set;
+    enum diplomacy_state (*diptable)[MAX_FACTIONS];
+    uint16_t               player_controllable;
 };
 
 struct move_work{
-    struct memstack       mem;
-    struct move_gamestate gamestate;
-    enum movement_hz      hz;
-    struct move_work_in  *in;
-    struct move_work_out *out;
-    size_t                nwork;
-    size_t                ntasks;
-    uint32_t              tids[MAX_MOVE_TASKS];
-    struct future         futures[MAX_MOVE_TASKS];
+    struct memstack           mem;
+    struct move_gamestate     gamestate;
+    struct nav_unit_query_ctx unit_query_ctx;
+    enum movement_hz          hz;
+    struct move_work_in      *in;
+    struct move_work_out     *out;
+    size_t                    nwork;
+    size_t                    ntasks;
+    uint32_t                  tids[MAX_MOVE_TASKS];
+    struct future             futures[MAX_MOVE_TASKS];
 };
 
 enum move_cmd_type{
@@ -315,6 +325,7 @@ struct move_cmd{
 };
 
 KHASH_MAP_INIT_INT(state, struct movestate)
+KHASH_MAP_INIT_INT(aabb, struct aabb)
 
 QUEUE_TYPE(cmd, struct move_cmd)
 QUEUE_IMPL(static, cmd, struct move_cmd)
@@ -1158,8 +1169,6 @@ static bool entity_exists(uint32_t uid)
 
 static void request_async_field(uint32_t uid)
 {
-    ASSERT_IN_MAIN_THREAD();
-
     struct movestate *ms = movestate_get(uid);
     if(!ms || ent_still(ms))
         return;
@@ -1198,8 +1207,6 @@ static void request_async_field(uint32_t uid)
 
 static vec2_t ent_desired_velocity(uint32_t uid, vec2_t cell_arrival_vdes)
 {
-    ASSERT_IN_MAIN_THREAD();
-
     struct movestate *ms = movestate_get(uid);
     vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
     struct flock *fl = flock_for_ent(uid);
@@ -1555,8 +1562,6 @@ static vec2_t enemy_seek_total_force(uint32_t uid, vec2_t vdes)
 
 static vec2_t new_pos_for_vel(uint32_t uid, vec2_t velocity)
 {
-    ASSERT_IN_MAIN_THREAD();
-
     vec2_t xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
     vec2_t new_pos;
 
@@ -2298,6 +2303,8 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
 
 static void entity_apply_update(uint32_t uid, const struct movestate_patch *patch)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     struct movestate *ms = movestate_get(uid);
     if(!ms)
         return;
@@ -2919,7 +2926,7 @@ static void cp_vec_free(void *ptr)
     /* no-op */
 }
 
-static void move_work(int begin_idx, int end_idx)
+static void move_velocity_work(int begin_idx, int end_idx)
 {
     for(int i = begin_idx; i <= end_idx; i++) {
     
@@ -2985,14 +2992,14 @@ static void move_work(int begin_idx, int end_idx)
     }
 }
 
-static struct result move_task(void *arg)
+static struct result move_velocity_task(void *arg)
 {
     struct move_task_arg *move_arg = arg;
     size_t ncomputed = 0;
 
     for(int i = move_arg->begin_idx; i <= move_arg->end_idx; i++) {
 
-        move_work(i, i);
+        move_velocity_work(i, i);
         ncomputed++;
 
         if(ncomputed % 32 == 0)
@@ -3001,7 +3008,7 @@ static struct result move_task(void *arg)
     return NULL_RESULT;
 }
 
-static void move_complete_work(void)
+static void move_complete_velocity_work(void)
 {
     for(int i = 0; i < s_move_work.ntasks; i++) {
         while(!Sched_FutureIsReady(&s_move_work.futures[i])) {
@@ -3009,6 +3016,41 @@ static void move_complete_work(void)
             Sched_TryYield();
         }
     }
+}
+
+static khash_t(aabb) *move_copy_aabbs(void)
+{
+    PERF_ENTER();
+    khash_t(aabb) *aabbs = kh_init(aabb);
+    if(!aabbs)
+        PERF_RETURN(NULL);
+
+    const khash_t(entity) *ents = G_GetAllEntsSet();
+
+    uint32_t uid;
+    kh_foreach_key(ents, uid, {
+        int ret;
+        khiter_t k = kh_put(aabb, aabbs, uid, &ret);
+        assert(ret != -1);
+        kh_value(aabbs, k) = AL_EntityGet(uid)->identity_aabb;
+    });
+    PERF_RETURN(aabbs);
+}
+
+static void move_init_nav_unit_query_ctx(void)
+{
+    s_move_work.unit_query_ctx.flags = s_move_work.gamestate.flags;
+    s_move_work.unit_query_ctx.positions = s_move_work.gamestate.positions;
+    s_move_work.unit_query_ctx.postree = s_move_work.gamestate.postree;
+    s_move_work.unit_query_ctx.faction_ids = s_move_work.gamestate.faction_ids;
+    s_move_work.unit_query_ctx.aabbs = s_move_work.gamestate.aabbs;
+    s_move_work.unit_query_ctx.transforms = s_move_work.gamestate.transforms;
+    s_move_work.unit_query_ctx.sel_radiuses = s_move_work.gamestate.sel_radiuses;
+    s_move_work.unit_query_ctx.fog_enabled = s_move_work.gamestate.fog_enabled;
+    s_move_work.unit_query_ctx.fog_state = s_move_work.gamestate.fog_state;
+    s_move_work.unit_query_ctx.dying_set = s_move_work.gamestate.dying_set;
+    s_move_work.unit_query_ctx.diptable = (int(*)[MAX_FACTIONS])s_move_work.gamestate.diptable;
+    s_move_work.unit_query_ctx.player_controllable = s_move_work.gamestate.player_controllable;
 }
 
 static void move_copy_gamestate(void)
@@ -3020,6 +3062,17 @@ static void move_copy_gamestate(void)
     s_move_work.gamestate.sel_radiuses = G_SelectionRadiusCopyTable();
     s_move_work.gamestate.faction_ids = G_FactionIDCopyTable();
     s_move_work.gamestate.map = M_AL_CopyWithFields(s_map);
+    s_move_work.gamestate.transforms = Entity_CopyTransforms();
+    s_move_work.gamestate.aabbs = move_copy_aabbs();
+    s_move_work.gamestate.fog_enabled = G_Fog_Enabled();
+    s_move_work.gamestate.fog_state = G_Fog_CopyState();
+    s_move_work.gamestate.dying_set = G_Combat_GetDyingSetCopy();
+    s_move_work.gamestate.diptable = G_CopyDiplomacyTable();
+    s_move_work.gamestate.player_controllable = G_GetPlayerControlledFactions();
+
+    move_init_nav_unit_query_ctx();
+    M_NavSetNavUnitQueryCtx(s_move_work.gamestate.map, &s_move_work.unit_query_ctx);
+
     PERF_RETURN_VOID();
 }
 
@@ -3049,6 +3102,26 @@ static void move_release_gamestate(void)
     if(s_move_work.gamestate.map) {
         M_AL_FreeCopyWithFields((struct map*)s_move_work.gamestate.map);
         s_move_work.gamestate.map = NULL;
+    }
+    if(s_move_work.gamestate.transforms) {
+        kh_destroy(trans, s_move_work.gamestate.transforms);
+        s_move_work.gamestate.transforms = NULL;
+    }
+    if(s_move_work.gamestate.aabbs) {
+        kh_destroy(aabb, s_move_work.gamestate.aabbs);
+        s_move_work.gamestate.aabbs = NULL;
+    }
+    if(s_move_work.gamestate.fog_state) {
+        PF_FREE(s_move_work.gamestate.fog_state);
+        s_move_work.gamestate.fog_state = NULL;
+    }
+    if(s_move_work.gamestate.dying_set) {
+        kh_destroy(id, s_move_work.gamestate.dying_set);
+        s_move_work.gamestate.dying_set = NULL;
+    }
+    if(s_move_work.gamestate.diptable) {
+        PF_FREE(s_move_work.gamestate.diptable);
+        s_move_work.gamestate.diptable = NULL;
     }
     PERF_RETURN_VOID();
 }
@@ -3097,7 +3170,7 @@ static void move_push_work(struct move_work_in in)
     s_move_work.in[s_move_work.nwork++] = in;
 }
 
-static void move_submit_work(void)
+static void move_submit_velocity_work(void)
 {
     if(s_move_work.nwork == 0)
         return;
@@ -3116,11 +3189,11 @@ static void move_submit_work(void)
         arg->end_idx = MIN(nitems * (i + 1) - 1, s_move_work.nwork-1);
 
         SDL_AtomicSet(&s_move_work.futures[s_move_work.ntasks].status, FUTURE_INCOMPLETE);
-        s_move_work.tids[s_move_work.ntasks] = Sched_Create(4, move_task, arg, 
+        s_move_work.tids[s_move_work.ntasks] = Sched_Create(4, move_velocity_task, arg, 
             &s_move_work.futures[s_move_work.ntasks], TASK_BIG_STACK);
 
         if(s_move_work.tids[s_move_work.ntasks] == NULL_TID) {
-            move_work(arg->begin_idx, arg->end_idx);
+            move_velocity_work(arg->begin_idx, arg->end_idx);
         }else{
             s_move_work.ntasks++;
         }
@@ -3131,7 +3204,7 @@ static void nav_tick_submit_work(void)
 {
     SDL_AtomicSet(&s_tick_task_future.status, FUTURE_INCOMPLETE);
     s_tick_task_tid = Sched_Create(2, navigation_tick_task, NULL, 
-            &s_tick_task_future, TASK_BIG_STACK | TASK_MAIN_THREAD_PINNED);
+            &s_tick_task_future, TASK_BIG_STACK);
     assert(s_tick_task_tid != NULL_TID);
 }
 
@@ -3246,8 +3319,6 @@ static void interpolate_tick(void *user, void *event)
 
 static void compute_async_fields(void)
 {
-    ASSERT_IN_MAIN_THREAD();
-
     /* The field computations can read various navigation state
      * from different threads. This is okay so long as nothing
      * concurrently mutates it.
@@ -3264,8 +3335,6 @@ static void compute_async_fields(void)
 
 static void compute_vdes(void)
 {
-    ASSERT_IN_MAIN_THREAD();
-
     for(int i = 0; i < s_move_work.nwork; i++) {
 
         struct move_work_in *in = &s_move_work.in[i];
@@ -3280,16 +3349,12 @@ static void compute_vdes(void)
 
 static void fork_join_velocity_computations(void)
 {
-    ASSERT_IN_MAIN_THREAD();
-
-    move_submit_work();
-    move_complete_work();
+    move_submit_velocity_work();
+    move_complete_velocity_work();
 }
 
 static void fork_join_state_updates(void)
 {
-    ASSERT_IN_MAIN_THREAD();
-
     for(int i = 0; i < s_move_work.nwork; i++) {
 
         struct move_work_in *in = &s_move_work.in[i];
@@ -3302,8 +3367,6 @@ static void fork_join_state_updates(void)
 
 static struct result navigation_tick_task(void *arg)
 {
-    ASSERT_IN_MAIN_THREAD();
-
     compute_async_fields();
     compute_vdes();
     fork_join_velocity_computations();

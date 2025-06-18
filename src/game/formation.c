@@ -3225,7 +3225,7 @@ static struct result cell_field_task(void *arg)
         input->layer, input->enemy_faction_mask, input->cell_tile, input->center_tile,
         (uint8_t*)result, workspace, size);
 
-    bool ret = SDL_AtomicDecRef(&map->refcount);
+    (void)SDL_AtomicDecRef(&map->refcount);
     PERF_RETURN(NULL_RESULT);
 }
 
@@ -3247,7 +3247,7 @@ static struct result cell_field_fixup_task(void *arg)
         CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES, input->layer, input->enemy_faction_mask,
         input->curr_tile, input->center_tile, (uint8_t*)result, workspace, size);
 
-    bool ret = SDL_AtomicDecRef(&map->refcount);
+    (void)SDL_AtomicDecRef(&map->refcount);
     PERF_RETURN(NULL_RESULT);
 }
 
@@ -3281,6 +3281,7 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
 
         if(!M_NavPositionBlocked(rmap->snapshot, formation->layer, center)) {
             work->tid = NULL_TID;
+            (void)SDL_AtomicDecRef(&rmap->refcount);
             return;
         }
     }
@@ -4294,6 +4295,9 @@ static struct result cell_assignment_task(void *arg)
 
 static void complete_cell_assignment_work(struct cell_assignment_work *work, bool yield)
 {
+    if(work->tid == NULL_TID)
+        return;
+
     while(!Sched_FutureIsReady(&work->future)) {
         Sched_RunSync(work->tid);
         if(yield) {

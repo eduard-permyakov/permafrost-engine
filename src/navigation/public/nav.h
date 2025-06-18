@@ -37,6 +37,8 @@
 #define NAV_H
 
 #include "../../pf_math.h"
+#include "../../lib/public/khash.h"
+#include "../../lib/public/quadtree.h"
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -99,6 +101,36 @@ enum flow_dir{
     FD_SW,
     FD_S,
     FD_SE
+};
+
+/* The state needed to derive unit positions and attributes which 
+ * are used for construction of some fields such as enemy surround
+ * fields. Having a copy/snapshot of this state allows us to perform
+ * the queries asynchronously.
+ */
+
+struct kh_id_s;
+struct kh_pos_s;
+struct kh_aabb_s;
+struct kh_range_s;
+struct qt_ent_s;
+
+struct nav_unit_query_ctx{
+    /* Per-entity state */
+    struct kh_id_s        *flags;
+    struct kh_pos_s       *positions;
+    struct qt_ent_s       *postree;
+    struct kh_id_s        *faction_ids;
+    struct kh_aabb_s      *aabbs;
+    void                  *transforms;
+    struct kh_range_s     *sel_radiuses;
+    /* Fog of war state for querying visibility */
+    bool                   fog_enabled;
+    uint32_t              *fog_state;
+    /* Auxiliary state for checking entity attributes */
+    struct kh_id_s        *dying_set;
+    int                  (*diptable)[15];
+    uint16_t               player_controllable;
 };
 
 #define DEST_ID_INVALID (~((uint32_t)0))
@@ -591,6 +623,13 @@ void N_CellArrivalFieldUpdateToNearestPathable(void *nav_private, size_t rdim, s
  * ------------------------------------------------------------------------
  */
 vec2_t N_FlowDir(enum flow_dir dir);
+
+/* ------------------------------------------------------------------------
+ * Set the pointer to the state which is used for making unit queries
+ * during field generation.
+ * ------------------------------------------------------------------------
+ */
+void N_SetNavUnitQueryCtx(void *nav_private, struct nav_unit_query_ctx *ctx);
 
 /*###########################################################################*/
 /* NAV ASYNC FIELD COMPUTATION                                               */

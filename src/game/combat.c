@@ -2752,6 +2752,29 @@ void G_Combat_SetCorpseModel(uint32_t uid, const char *dir, const char *pfobj, v
     combat_push_cmd(cmd);
 }
 
+struct kh_id_s *G_Combat_GetDyingSetCopy(void)
+{
+    khash_t(id) *ret = kh_init(id);
+    if(!ret)
+        return NULL;
+
+    uint32_t key;
+    struct combatstate curr;
+
+    kh_foreach(s_entity_state_table, key, curr, {
+        if(curr.state == STATE_DEATH_ANIM_PLAYING) {
+
+            int result;
+            khiter_t k = kh_put(id, ret, key, &result);
+            if(result == -1) {
+                kh_destroy(id, ret);
+                return NULL;
+            }
+        }
+    });
+    return ret;
+}
+
 bool G_Combat_SaveState(struct SDL_RWops *stream)
 {
     struct attr num_ents = (struct attr){

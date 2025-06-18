@@ -283,6 +283,12 @@ int G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout)
     PERF_RETURN(ret);
 }
 
+int G_Pos_EntsInRectFrom(qt_ent_t *tree, khash_t(id) *flags,
+                         vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout)
+{
+    return qt_ent_inrange_rect(tree, xz_min.x, xz_max.x, xz_min.z, xz_max.z, out, maxout);
+}
+
 int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout,
                              bool (*predicate)(uint32_t ent, void *arg), void *arg)
 {

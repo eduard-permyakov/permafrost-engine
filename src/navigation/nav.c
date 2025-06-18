@@ -1786,7 +1786,7 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
         
             struct coord chunk = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
             N_FlowFieldInit(chunk, &ff);
-            N_FlowFieldUpdate(chunk, priv, faction_id, layer, target, &ff);
+            N_FlowFieldUpdate(chunk, priv, faction_id, layer, target, priv->unit_query_ctx, &ff);
             N_FC_PutFlowField(priv->fieldcache, id, &ff);
         }
 
@@ -1800,7 +1800,7 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
 
         struct LOS_field lf;
         N_LOSFieldCreate(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, 
-            dst_desc, priv, map_pos, &lf, NULL);
+            dst_desc, priv, map_pos, priv->unit_query_ctx, &lf, NULL);
         N_FC_PutLOSField(priv->fieldcache, ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &lf);
     }
 
@@ -1956,7 +1956,7 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
             const struct flow_field *exist_ff  = N_FC_FlowFieldAt(priv->fieldcache, exist_id);
             memcpy(&ff, exist_ff, sizeof(struct flow_field));
 
-            N_FlowFieldUpdate(chunk_coord, priv, faction_id, layer, target, &ff);
+            N_FlowFieldUpdate(chunk_coord, priv, faction_id, layer, target, priv->unit_query_ctx, &ff);
             /* We set the updated flow field for the new (least recently used) key. Since in 
              * this case more than one flowfield ID maps to the same field but we only keep 
              * one of the IDs, it may be possible that the same flowfield will be redundantly 
@@ -1972,7 +1972,7 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
         if(!N_FC_ContainsFlowField(priv->fieldcache, new_id)) {
 
             N_FlowFieldInit(chunk_coord, &ff);
-            N_FlowFieldUpdate(chunk_coord, priv, faction_id, layer, target, &ff);
+            N_FlowFieldUpdate(chunk_coord, priv, faction_id, layer, target, priv->unit_query_ctx, &ff);
             N_FC_PutFlowField(priv->fieldcache, new_id, &ff);
         }
 
@@ -1992,7 +1992,7 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
             assert(prev_los->chunk.r == prev_los_coord.r && prev_los->chunk.c == prev_los_coord.c);
 
             struct LOS_field lf;
-            N_LOSFieldCreate(ret, chunk_coord, dst_desc, priv, map_pos, &lf, prev_los);
+            N_LOSFieldCreate(ret, chunk_coord, dst_desc, priv, map_pos, priv->unit_query_ctx, &lf, prev_los);
             N_FC_PutLOSField(priv->fieldcache, ret, chunk_coord, &lf);
         }
 
@@ -2011,7 +2011,8 @@ static struct result field_task(void *arg)
     struct field_work_out *out = &vec_AT(&s_field_work.out, *index);
 
     N_FlowFieldInit(in->chunk, &out->field);
-    N_FlowFieldUpdate(in->chunk, in->priv, in->faction_id, in->layer, in->target, &out->field);
+    N_FlowFieldUpdate(in->chunk, in->priv, in->faction_id, in->layer, in->target, 
+        in->priv->unit_query_ctx, &out->field);
 
     return NULL_RESULT;
 }
@@ -2257,6 +2258,7 @@ void *N_NewCtxForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
         n_update_local_island_field(ret, layer);
     }
 
+    ret->unit_query_ctx = NULL;
     return ret;
 
 fail_alloc_chunks:
@@ -2277,6 +2279,13 @@ void N_FreeCtx(void *nav_private)
         PF_FREE(priv->chunks[i]);
     }
     PF_FREE(nav_private);
+}
+
+void N_SetNavUnitQueryCtx(void *nav_private, struct nav_unit_query_ctx *ctx)
+{
+    assert(nav_private);
+    struct nav_private *priv = nav_private;
+    priv->unit_query_ctx = ctx;
 }
 
 void N_RenderOverlayText(const char *text, vec4_t map_pos, 
@@ -3051,7 +3060,8 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
         struct flow_field exist_ff = *ff;
         N_FlowFieldUpdateToNearestPathable(priv, layer, 
             (struct coord){tile.chunk_r, tile.chunk_c},
-            (struct coord){tile.tile_r, tile.tile_c}, faction_id, &exist_ff);
+            (struct coord){tile.tile_r, tile.tile_c}, faction_id, 
+            priv->unit_query_ctx, &exist_ff);
         N_FC_PutFlowField(priv->fieldcache, ffid, &exist_ff);
         ff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
         goto ff_found;
@@ -3064,7 +3074,7 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
      *      due to blockers).
      */
     struct flow_field exist_ff = *ff;
-    N_FlowFieldUpdateIslandToNearest(local_iid, priv, layer, faction_id, &exist_ff);
+    N_FlowFieldUpdateIslandToNearest(local_iid, priv, layer, faction_id, priv->unit_query_ctx, &exist_ff);
     N_FC_PutFlowField(priv->fieldcache, ffid, &exist_ff);
 
     /*   4. If the direction is still FD_NONE, that means that the
@@ -3109,7 +3119,7 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
     if(!N_FC_ContainsFlowField(priv->fieldcache, ffid)) {
 
         N_FlowFieldInit(chunk, &ff);
-        N_FlowFieldUpdate(chunk, priv, faction_id, layer, target, &ff);
+        N_FlowFieldUpdate(chunk, priv, faction_id, layer, target, priv->unit_query_ctx, &ff);
         N_FC_PutFlowField(priv->fieldcache, ffid, &ff);
 
         assert(N_FC_ContainsFlowField(priv->fieldcache, ffid));
@@ -3138,7 +3148,7 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
 
         N_FlowFieldUpdateToNearestPathable(priv, layer, 
             (struct coord){curr_tile.chunk_r, curr_tile.chunk_c},
-            curr, faction_id, &exist_ff);
+            curr, faction_id, priv->unit_query_ctx, &exist_ff);
         N_FC_PutFlowField(priv->fieldcache, ffid, &exist_ff);
 
         pff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
@@ -3152,7 +3162,7 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
     if(dir_idx == FD_NONE) {
 
         struct flow_field exist_ff = *pff;
-        N_FlowFieldUpdateIslandToNearest(local_iid, priv, layer, faction_id, &exist_ff);
+        N_FlowFieldUpdateIslandToNearest(local_iid, priv, layer, faction_id, priv->unit_query_ctx, &exist_ff);
         N_FC_PutFlowField(priv->fieldcache, ffid, &exist_ff);
 
         pff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
@@ -3192,7 +3202,7 @@ vec2_t N_DesiredSurroundVelocity(vec2_t curr_pos, void *nav_private, enum nav_la
     if(!N_FC_ContainsFlowField(priv->fieldcache, ffid)) {
 
         N_FlowFieldInit(chunk, &ff);
-        N_FlowFieldUpdate(chunk, priv, faction_id, layer, target, &ff);
+        N_FlowFieldUpdate(chunk, priv, faction_id, layer, target, priv->unit_query_ctx, &ff);
         N_FC_PutFlowField(priv->fieldcache, ffid, &ff);
 
         assert(N_FC_ContainsFlowField(priv->fieldcache, ffid));
@@ -3218,7 +3228,7 @@ vec2_t N_DesiredSurroundVelocity(vec2_t curr_pos, void *nav_private, enum nav_la
 
         N_FlowFieldUpdateToNearestPathable(priv, layer, 
             (struct coord){curr_tile.chunk_r, curr_tile.chunk_c},
-            curr, faction_id, &exist_ff);
+            curr, faction_id, priv->unit_query_ctx, &exist_ff);
         N_FC_PutFlowField(priv->fieldcache, ffid, &exist_ff);
 
         pff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
@@ -3232,7 +3242,7 @@ vec2_t N_DesiredSurroundVelocity(vec2_t curr_pos, void *nav_private, enum nav_la
     if(dir_idx == FD_NONE) {
 
         struct flow_field exist_ff = *pff;
-        N_FlowFieldUpdateIslandToNearest(local_iid, priv, layer, faction_id, &exist_ff);
+        N_FlowFieldUpdateIslandToNearest(local_iid, priv, layer, faction_id, priv->unit_query_ctx, &exist_ff);
         N_FC_PutFlowField(priv->fieldcache, ffid, &exist_ff);
 
         pff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
