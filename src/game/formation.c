@@ -3255,6 +3255,8 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
                                struct subformation *formation, struct cell_field_work *work, 
                                struct cell *cell, struct result (*func)(void*))
 {
+    ASSERT_IN_MAIN_THREAD();
+
     struct refcounted_map *rmap = map_snapshot_get(parent, formation);
     struct map_resolution res;
     M_NavGetResolution(rmap->snapshot, &res);
@@ -3271,6 +3273,17 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
     struct tile_desc center_td;
     exists = M_Tile_DescForPoint2D(res, map_pos, bin_to_tile(center, center), &center_td);
     assert(exists);
+
+    if(func == cell_field_fixup_task) {
+
+        struct box bounds = M_Tile_Bounds(res, map_pos, work->input.curr_tile);
+        vec2_t center = (vec2_t){bounds.x + bounds.width / 2.0, bounds.z + bounds.z / 2.0};
+
+        if(!M_NavPositionBlocked(rmap->snapshot, formation->layer, center)) {
+            work->tid = NULL_TID;
+            return;
+        }
+    }
 
     work->consumed = false;
     work->recompute_pending = false;
