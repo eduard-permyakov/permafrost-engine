@@ -89,6 +89,7 @@
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
 #define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
+#define EPSILON             (1.0f/1024)
 
 #define CHK_TRUE_RET(_pred)   \
     do{                       \
@@ -624,6 +625,41 @@ static void move_hz_commit(const struct sval *new_val)
     G_Move_SetTickHz(mapping[raw]);
 }
 
+static bool combat_hz_validate(const struct sval *new_val)
+{
+    if(new_val->type != ST_TYPE_FLOAT)
+        return false;
+
+    const float allowed[] = {0.5, 1.0, 5.0, 10.0};
+    bool found = false;
+    for(int i = 0; i < ARR_SIZE(allowed); i++) {
+        if(fabs(allowed[i] - new_val->as_float) < EPSILON) {
+            found = true;
+            break;
+        }
+    }
+    if(!found)
+        return false;
+
+    return true;
+}
+
+static void combat_hz_commit(const struct sval *new_val)
+{
+    enum combat_hz hz;
+
+    if(fabs(new_val->as_float - 0.5f) < EPSILON) {
+        hz = COMBAT_HZ_HALF;
+    }else if(fabs(new_val->as_float - 1.0f) < EPSILON) {
+        hz = COMBAT_HZ_1;
+    }else if(fabs(new_val->as_float - 5.0f) < EPSILON) {
+        hz = COMBAT_HZ_5;
+    }else{
+        hz = COMBAT_HZ_10;
+    }
+    G_Combat_SetTickHz(hz);
+}
+
 static bool nav_layer_validate(const struct sval *new_val)
 {
     if(new_val->type != ST_TYPE_INT)
@@ -1001,6 +1037,18 @@ static void g_create_settings(void)
         .prio = 0,
         .validate = move_hz_validate,
         .commit = move_hz_commit,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.game.combat_hz",
+        .val = (struct sval) {
+            .type = ST_TYPE_FLOAT,
+            .as_int = 1.0
+        },
+        .prio = 0,
+        .validate = combat_hz_validate,
+        .commit = combat_hz_commit,
     });
     assert(status == SS_OKAY);
 

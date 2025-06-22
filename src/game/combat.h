@@ -45,6 +45,12 @@ struct SDL_RWops;
 struct map;
 struct kh_id_s;
 
+enum combat_hz{
+    COMBAT_HZ_10,
+    COMBAT_HZ_5,
+    COMBAT_HZ_1,
+    COMBAT_HZ_HALF,
+};
 
 bool G_Combat_Init(const struct map *map);
 void G_Combat_Shutdown(void);
@@ -66,6 +72,9 @@ bool G_Combat_SaveState(struct SDL_RWops *stream);
 bool G_Combat_LoadState(struct SDL_RWops *stream);
 
 struct kh_id_s *G_Combat_GetDyingSetCopy(void);
+
+void  G_Combat_SetTickHz(enum combat_hz hz);
+float G_Combat_GetTickHz(void);
 
 #endif
 

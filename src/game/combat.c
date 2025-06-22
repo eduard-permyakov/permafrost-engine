@@ -267,6 +267,7 @@ static bool entity_dead(uint32_t uid);
 static struct combat_cmd *snoop_most_recent_command(enum combat_cmd_type type, void *arg,
                                                     bool (*pred)(void*, struct combat_cmd*));
 static bool uids_match(void *arg, struct combat_cmd *cmd);
+static void combat_tick(void *user, void *event);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -294,6 +295,8 @@ static uint16_t          *s_fac_refcnts[MAX_FACTIONS];
 static struct combat_work s_combat_work;
 static queue_cmd_t        s_combat_commands;
 static unsigned long      s_last_tick;
+static enum combat_hz     s_combat_hz = COMBAT_HZ_1;
+static bool               s_combat_hz_dirty = false;
 
 static khash_t(stridx)   *s_stridx;
 static mp_strbuff_t       s_stringpool;
@@ -1640,6 +1643,66 @@ static struct combat_cmd *snoop_most_recent_command(enum combat_cmd_type type, v
     return NULL;
 }
 
+static enum movement_hz event_to_hz(enum eventtype event)
+{
+    static const enum movement_hz mapping[] = {
+        [EVENT_10HZ_TICK] = COMBAT_HZ_10,
+        [EVENT_5HZ_TICK] = COMBAT_HZ_5,
+        [EVENT_1HZ_TICK] = COMBAT_HZ_1,
+        [EVENT_HALFHZ_TICK] = COMBAT_HZ_HALF,
+    };
+    return mapping[event];
+}
+
+static void register_callback_for_hz(enum combat_hz hz)
+{
+    assert(hz >= 0 && hz <= COMBAT_HZ_HALF);
+    const enum eventtype mapping[] = {
+        [COMBAT_HZ_10] = EVENT_10HZ_TICK,
+        [COMBAT_HZ_5 ] = EVENT_5HZ_TICK,
+        [COMBAT_HZ_1 ] = EVENT_1HZ_TICK,
+        [COMBAT_HZ_HALF] = EVENT_HALFHZ_TICK,
+    };
+    E_Global_Register(mapping[hz], combat_tick, (void*)(uintptr_t)mapping[hz], G_RUNNING);
+}
+
+static void unregister_callback_for_hz(enum combat_hz hz)
+{
+    assert(hz >= 0 && hz <= COMBAT_HZ_HALF);
+    const enum eventtype mapping[] = {
+        [COMBAT_HZ_10] = EVENT_10HZ_TICK,
+        [COMBAT_HZ_5 ] = EVENT_5HZ_TICK,
+        [COMBAT_HZ_1 ] = EVENT_1HZ_TICK,
+        [COMBAT_HZ_HALF] = EVENT_HALFHZ_TICK,
+    };
+    E_Global_Unregister(mapping[hz], combat_tick);
+}
+
+static void combat_handle_hz_update(enum eventtype curr)
+{
+    if(!s_combat_hz_dirty)
+        return;
+
+    s_combat_hz_dirty = false;
+
+    static const enum eventtype mapping[] = {
+        [COMBAT_HZ_10] = EVENT_10HZ_TICK,
+        [COMBAT_HZ_5 ] = EVENT_5HZ_TICK,
+        [COMBAT_HZ_1 ] = EVENT_1HZ_TICK,
+        [COMBAT_HZ_HALF] = EVENT_HALFHZ_TICK,
+    };
+    enum eventtype next = mapping[s_combat_hz];
+
+    if(curr == next)
+        return;
+
+    enum combat_hz curr_hz = event_to_hz(curr);
+    enum combat_hz next_hz = s_combat_hz;
+
+    unregister_callback_for_hz(curr_hz);
+    register_callback_for_hz(next_hz);
+}
+
 static void combat_process_cmds(void)
 {
     struct combat_cmd cmd;
@@ -1967,8 +2030,10 @@ static void combat_tick(void *user, void *event)
         return;
 
     PERF_PUSH("combat::combat_tick");
+    enum eventtype curr_event = (uintptr_t)user;
 
     combat_finish_work();
+    combat_handle_hz_update(curr_event);
     combat_process_cmds();
     combat_release_gamestate();
 
@@ -2216,6 +2281,18 @@ static void on_proj_hit(void *user, void *event)
     });
 }
 
+static float hz_count(enum combat_hz hz)
+{
+    switch(hz) {
+    case COMBAT_HZ_10:    return 10.0f;
+    case COMBAT_HZ_5:     return 5.0f;
+    case COMBAT_HZ_1:     return 1.0f;
+    case COMBAT_HZ_HALF:  return 0.5f;
+    default: assert(0);
+    }
+    return 0;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -2248,7 +2325,7 @@ bool G_Combat_Init(const struct map *map)
 
     vec_entity_init(&s_dying_ents);
     E_Global_Register(EVENT_1HZ_TICK, on_1hz_tick, NULL, G_RUNNING);
-    E_Global_Register(EVENT_1HZ_TICK, combat_tick, NULL, G_RUNNING);
+    register_callback_for_hz(s_combat_hz);
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_ALL);
     E_Global_Register(EVENT_PROJECTILE_HIT, on_proj_hit, NULL, G_RUNNING);
@@ -2276,7 +2353,7 @@ void G_Combat_Shutdown(void)
     s_map = NULL;
 
     E_Global_Unregister(EVENT_1HZ_TICK, on_1hz_tick);
-    E_Global_Unregister(EVENT_1HZ_TICK, combat_tick);
+    unregister_callback_for_hz(s_combat_hz);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     E_Global_Unregister(EVENT_PROJECTILE_HIT, on_proj_hit);
@@ -2773,6 +2850,17 @@ struct kh_id_s *G_Combat_GetDyingSetCopy(void)
         }
     });
     return ret;
+}
+
+void G_Combat_SetTickHz(enum combat_hz hz)
+{
+    s_combat_hz_dirty = (s_combat_hz != hz);
+    s_combat_hz = hz;
+}
+
+float G_Combat_GetTickHz(void)
+{
+    return hz_count(s_combat_hz);
 }
 
 bool G_Combat_SaveState(struct SDL_RWops *stream)
