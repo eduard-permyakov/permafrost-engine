@@ -1789,7 +1789,7 @@ static struct result combat_task(void *arg)
         combat_work(i, i);
         ncomputed++;
 
-        if(ncomputed % 64 == 0)
+        if(ncomputed % 16 == 0)
             Task_Yield();
     }
     return NULL_RESULT;
@@ -1961,12 +1961,12 @@ static void combat_submit_work(void)
     }
 }
 
-static void on_20hz_tick(void *user, void *event)
+static void combat_tick(void *user, void *event)
 {
     if(s_last_tick == g_frame_idx)
         return;
 
-    PERF_PUSH("combat::on_20hz_tick");
+    PERF_PUSH("combat::combat_tick");
 
     combat_finish_work();
     combat_process_cmds();
@@ -2248,7 +2248,7 @@ bool G_Combat_Init(const struct map *map)
 
     vec_entity_init(&s_dying_ents);
     E_Global_Register(EVENT_1HZ_TICK, on_1hz_tick, NULL, G_RUNNING);
-    E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
+    E_Global_Register(EVENT_1HZ_TICK, combat_tick, NULL, G_RUNNING);
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_ALL);
     E_Global_Register(EVENT_PROJECTILE_HIT, on_proj_hit, NULL, G_RUNNING);
@@ -2276,7 +2276,7 @@ void G_Combat_Shutdown(void)
     s_map = NULL;
 
     E_Global_Unregister(EVENT_1HZ_TICK, on_1hz_tick);
-    E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
+    E_Global_Unregister(EVENT_1HZ_TICK, combat_tick);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     E_Global_Unregister(EVENT_PROJECTILE_HIT, on_proj_hit);
