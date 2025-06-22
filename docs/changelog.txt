@@ -3,6 +3,16 @@
 ********************************************************************************
 
 ================================================================================
+[Version 1.11.0] - 22.06.2025
+================================================================================
+    * Allow movement and simulation to run at various frequencies, changeable
+      by a dynamic setting
+    * Allow interpolating between entity states when the movement simulation
+      is run at a lower frequency
+    * Add a greater degree of parallelism to the movement/field computations
+    * Significant performance improvements to large unit count scenarios
+
+================================================================================
 [Version 1.10.0] - 24.04.2025
 ================================================================================
     * Integrate with mi-malloc (process-wide allocator)
