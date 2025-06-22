@@ -1207,7 +1207,7 @@ static void request_async_field(uint32_t uid)
 
 static vec2_t ent_desired_velocity(uint32_t uid, vec2_t cell_arrival_vdes)
 {
-    struct movestate *ms = movestate_get(uid);
+    const struct movestate *ms = movestate_get(uid);
     vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
     struct flock *fl = flock_for_ent(uid);
 
@@ -1227,20 +1227,6 @@ static vec2_t ent_desired_velocity(uint32_t uid, vec2_t cell_arrival_vdes)
         if(!entity_exists(ms->surround_target_uid)) {
             return M_NavDesiredPointSeekVelocity(s_move_work.gamestate.map, fl->dest_id, 
                 pos_xz, fl->target_xz);
-        }
-
-        vec2_t target_pos_xz = G_Pos_GetXZ(ms->surround_target_uid);
-        float dx = fabs(target_pos_xz.x - pos_xz.x);
-        float dz = fabs(target_pos_xz.z - pos_xz.z);
-
-        if(!ms->using_surround_field) {
-            if(dx < SURROUND_LOW_WATER_X && dz < SURROUND_LOW_WATER_Z) {
-                ms->using_surround_field = true;
-            }
-        }else{
-            if(dx >= SURROUND_HIGH_WATER_X || dz >= SURROUND_HIGH_WATER_Z) {
-                ms->using_surround_field = false;
-            }
         }
 
         if(ms->using_surround_field) {
@@ -2301,6 +2287,24 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
     }
 }
 
+static void ent_update_using_surround_field(uint32_t uid, struct movestate *ms)
+{
+    vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
+    vec2_t target_pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, ms->surround_target_uid);
+    float dx = fabs(target_pos_xz.x - pos_xz.x);
+    float dz = fabs(target_pos_xz.z - pos_xz.z);
+
+    if(!ms->using_surround_field) {
+        if(dx < SURROUND_LOW_WATER_X && dz < SURROUND_LOW_WATER_Z) {
+            ms->using_surround_field = true;
+        }
+    }else{
+        if(dx >= SURROUND_HIGH_WATER_X || dz >= SURROUND_HIGH_WATER_Z) {
+            ms->using_surround_field = false;
+        }
+    }
+}
+
 static void entity_apply_update(uint32_t uid, const struct movestate_patch *patch)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -2360,6 +2364,10 @@ static void entity_apply_update(uint32_t uid, const struct movestate_patch *patc
         entity_unblock(uid);
         E_Entity_Notify(EVENT_MOTION_START, uid, NULL, ES_ENGINE);
         ms->state = patch->next_state;
+    }
+
+    if(ms->state == STATE_SURROUND_ENTITY) {
+        ent_update_using_surround_field(uid, ms);
     }
 }
 
@@ -2992,6 +3000,18 @@ static void move_velocity_work(int begin_idx, int end_idx)
     }
 }
 
+static void move_update_work(int begin_idx, int end_idx)
+{
+    for(int i = begin_idx; i <= end_idx; i++) {
+    
+        struct move_work_in *in = &s_move_work.in[i];
+        struct move_work_out *out = &s_move_work.out[i];
+
+        entity_compute_update(s_move_work.hz, out->ent_uid, out->ent_vel, 
+            out->ent_des_v, in, &out->patch);
+    }
+}
+
 static struct result move_velocity_task(void *arg)
 {
     struct move_task_arg *move_arg = arg;
@@ -3002,13 +3022,29 @@ static struct result move_velocity_task(void *arg)
         move_velocity_work(i, i);
         ncomputed++;
 
-        if(ncomputed % 32 == 0)
+        if(ncomputed % 16 == 0)
             Task_Yield();
     }
     return NULL_RESULT;
 }
 
-static void move_complete_velocity_work(void)
+static struct result move_update_task(void *arg)
+{
+    struct move_task_arg *move_arg = arg;
+    size_t ncomputed = 0;
+
+    for(int i = move_arg->begin_idx; i <= move_arg->end_idx; i++) {
+
+        move_update_work(i, i);
+        ncomputed++;
+
+        if(ncomputed % 16 == 0)
+            Task_Yield();
+    }
+    return NULL_RESULT;
+}
+
+static void move_complete_work(void)
 {
     for(int i = 0; i < s_move_work.ntasks; i++) {
         while(!Sched_FutureIsReady(&s_move_work.futures[i])) {
@@ -3170,7 +3206,7 @@ static void move_push_work(struct move_work_in in)
     s_move_work.in[s_move_work.nwork++] = in;
 }
 
-static void move_submit_velocity_work(void)
+static void move_submit_work(task_func_t code)
 {
     if(s_move_work.nwork == 0)
         return;
@@ -3189,7 +3225,7 @@ static void move_submit_velocity_work(void)
         arg->end_idx = MIN(nitems * (i + 1) - 1, s_move_work.nwork-1);
 
         SDL_AtomicSet(&s_move_work.futures[s_move_work.ntasks].status, FUTURE_INCOMPLETE);
-        s_move_work.tids[s_move_work.ntasks] = Sched_Create(4, move_velocity_task, arg, 
+        s_move_work.tids[s_move_work.ntasks] = Sched_Create(4, code, arg, 
             &s_move_work.futures[s_move_work.ntasks], TASK_BIG_STACK);
 
         if(s_move_work.tids[s_move_work.ntasks] == NULL_TID) {
@@ -3333,15 +3369,17 @@ static void compute_async_fields(void)
     N_AwaitAsyncFields();
 }
 
-static void compute_vdes(void)
+static void compute_desired_velocity(void)
 {
     for(int i = 0; i < s_move_work.nwork; i++) {
 
         struct move_work_in *in = &s_move_work.in[i];
         struct move_work_out *out = &s_move_work.out[i];
 
+        PERF_PUSH("desired velocity");
         in->ent_des_v = ent_desired_velocity(in->ent_uid, in->cell_arrival_vdes);
         out->ent_des_v = in->ent_des_v;
+        PERF_POP();
 
 		Sched_TryYield();
     }
@@ -3349,26 +3387,20 @@ static void compute_vdes(void)
 
 static void fork_join_velocity_computations(void)
 {
-    move_submit_velocity_work();
-    move_complete_velocity_work();
+    move_submit_work(move_velocity_task);
+    move_complete_work();
 }
 
 static void fork_join_state_updates(void)
 {
-    for(int i = 0; i < s_move_work.nwork; i++) {
-
-        struct move_work_in *in = &s_move_work.in[i];
-        struct move_work_out *out = &s_move_work.out[i];
-
-        entity_compute_update(s_move_work.hz, out->ent_uid, out->ent_vel, 
-            out->ent_des_v, in, &out->patch);
-    }
+    move_submit_work(move_update_task);
+    move_complete_work();
 }
 
 static struct result navigation_tick_task(void *arg)
 {
     compute_async_fields();
-    compute_vdes();
+    compute_desired_velocity();
     fork_join_velocity_computations();
     fork_join_state_updates();
 
