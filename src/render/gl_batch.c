@@ -70,6 +70,7 @@
 #define MAX_BATCHES         (256)
 #define MAX_INSTS           (16384)
 #define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
+#define MAX(a, b)           ((a) > (b) ? (a) : (b))
 
 #define CMD_RING_TUNIT      (GL_TEXTURE5)
 #define ATTR_RING_TUNIT     (GL_TEXTURE6)
@@ -309,19 +310,20 @@ static void batch_init_vao(enum batch_type type, GLuint *out, GLuint src_vbo)
     glBindVertexArray(0);
 }
 
-static bool batch_alloc_vbo(struct gl_batch *batch)
+static bool batch_alloc_vbo(struct gl_batch *batch, size_t size)
 {
     if(batch->nvbos == MAX_MESH_BUFFS)
         return false;
 
-    void *heap_meta = pf_metamalloc_init(MESH_BUFF_SZ);
+    size = MAX(size, MESH_BUFF_SZ);
+    void *heap_meta = pf_metamalloc_init(size);
     if(!heap_meta)
         return false;
 
     GLuint VBO;
     glGenBuffers(1, &VBO);
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, MESH_BUFF_SZ, NULL, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, size, NULL, GL_DYNAMIC_DRAW);
 
     GLuint VAO;
     batch_init_vao(batch->type, &VAO, VBO);
@@ -353,9 +355,6 @@ static bool batch_append_mesh(struct gl_batch *batch, GLuint VBO)
     glBindBuffer(GL_COPY_READ_BUFFER, VBO);
     glGetBufferParameteriv(GL_COPY_READ_BUFFER, GL_BUFFER_SIZE, &size);
 
-    if(size > MESH_BUFF_SZ)
-        return false;
-
     int curr_vbo_idx = 0;
     int vbo_offset = -1;
     do{
@@ -367,7 +366,7 @@ static bool batch_append_mesh(struct gl_batch *batch, GLuint VBO)
     if(vbo_offset < 0) {
         if(batch->nvbos == MAX_MESH_BUFFS)
             return false;
-        if(!batch_alloc_vbo(batch))
+        if(!batch_alloc_vbo(batch, size))
             return false;
         curr_vbo_idx = batch->nvbos-1;
         vbo_offset = pf_metamemalign(batch->vbos[curr_vbo_idx].heap_meta, alignment, size);
@@ -560,7 +559,7 @@ static struct gl_batch *batch_init(enum batch_type type)
         goto fail_tex_array;
 
     batch->nvbos = 0;
-    if(!batch_alloc_vbo(batch))
+    if(!batch_alloc_vbo(batch, MESH_BUFF_SZ))
         goto fail_vbo;
 
     GL_ASSERT_OK();
