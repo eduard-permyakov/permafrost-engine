@@ -2482,7 +2482,6 @@ static void do_add_entity(uint32_t uid, vec3_t pos, float selection_radius, int 
     assert(ret != -1);
     kh_value(s_move_work.gamestate.flags, k) = G_FlagsGet(uid);
 
-    quat_t rot = Entity_GetRot(uid);
     struct movestate new_ms = (struct movestate) {
         .velocity = {0.0f}, 
         .blocking = false,
@@ -2492,8 +2491,6 @@ static void do_add_entity(uint32_t uid, vec3_t pos, float selection_radius, int 
         .left = 0,
         .prev_pos = pos,
         .next_pos = pos,
-        .prev_rot = rot,
-        .next_rot = rot,
         .surround_target_prev = (vec2_t){0},
         .surround_nearest_prev = (vec2_t){0},
     };
