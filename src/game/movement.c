@@ -2309,6 +2309,9 @@ static void entity_apply_update(uint32_t uid, const struct movestate_patch *patc
 {
     ASSERT_IN_MAIN_THREAD();
 
+    if(!G_EntityExists(uid) || G_EntityIsZombie(uid))
+        return;
+
     struct movestate *ms = movestate_get(uid);
     if(!ms)
         return;
