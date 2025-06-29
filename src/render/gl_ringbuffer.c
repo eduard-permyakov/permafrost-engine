@@ -140,8 +140,10 @@ static void pmb_init(struct gl_ring *ring)
     GLbitfield flags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT;
     glBindBuffer(GL_TEXTURE_BUFFER, ring->VBO);
     glBufferStorage(GL_TEXTURE_BUFFER, ring->size, NULL, flags);
-    ring->user = glMapBufferRange(GL_TEXTURE_BUFFER, 0, ring->size, 
-        flags | GL_MAP_UNSYNCHRONIZED_BIT | GL_MAP_FLUSH_EXPLICIT_BIT);
+    ring->user = glMapBufferRange(GL_TEXTURE_BUFFER, 0, ring->size, flags 
+        | GL_MAP_UNSYNCHRONIZED_BIT 
+        | GL_MAP_FLUSH_EXPLICIT_BIT 
+        | GL_MAP_INVALIDATE_BUFFER_BIT);
     glBindBuffer(GL_TEXTURE_BUFFER, 0);
 }
 
@@ -166,7 +168,10 @@ static void *unsynch_vbo_map(struct gl_ring *ring, size_t offset, size_t size)
 {
     glBindBuffer(GL_TEXTURE_BUFFER, ring->VBO);
     return glMapBufferRange(GL_TEXTURE_BUFFER, offset, size,
-        GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT | GL_MAP_FLUSH_EXPLICIT_BIT);
+          GL_MAP_WRITE_BIT 
+        | GL_MAP_UNSYNCHRONIZED_BIT 
+        | GL_MAP_FLUSH_EXPLICIT_BIT
+        | GL_MAP_INVALIDATE_RANGE_BIT);
 }
 
 static void unsynch_vbo_unmap(struct gl_ring *ring)
