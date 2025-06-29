@@ -37,6 +37,8 @@
 #include "anim_private.h"
 #include "anim_data.h"
 #include "anim_ctx.h"
+#include "anim_texture.h"
+#include "../lib/public/mem.h"
 
 #include "../asset_load.h"
 #include "../lib/public/pf_string.h"
@@ -197,7 +199,7 @@ size_t A_AL_CtxBuffSize(void)
  *
  */
 
-void *A_AL_PrivFromStream(const struct pfobj_hdr *header, SDL_RWops *stream)
+void *A_AL_PrivFromStream(const char *pfobj, const struct pfobj_hdr *header, SDL_RWops *stream)
 {
     struct anim_data *ret = malloc(al_data_buffsize_from_header(header));
     if(!ret)
@@ -259,12 +261,15 @@ void *A_AL_PrivFromStream(const struct pfobj_hdr *header, SDL_RWops *stream)
         if(!al_read_anim_clip(stream, &ret->anims[i], header))
             goto fail_parse;
     }
-
     A_PrepareInvBindMatrices(&ret->skel);
+
+    if((header->num_as > 0) && !A_Texture_AppendData(pfobj, ret, &ret->texture_desc_id))
+        goto fail_parse;
+
     return ret;
 
 fail_parse:
-    free(ret);
+    PF_FREE(ret);
 fail_alloc:
     return NULL;
 }

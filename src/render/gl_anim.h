@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2023 Eduard Permyakov 
+ *  Copyright (C) 2025 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,35 +33,13 @@
  *
  */
 
-#ifndef ANIM_DATA_H
-#define ANIM_DATA_H
+#ifndef GL_ANIM_H
+#define GL_ANIM_H
 
-#include "public/skeleton.h"
-#include "../pf_math.h"
-#include "../phys/public/collision.h"
+#include <stdbool.h>
 
-#include <stddef.h>
-#include <stdint.h>
-
-#define ANIM_NAME_LEN  64
-
-struct anim_sample{
-    struct SQT  *local_joint_poses;
-    struct aabb  sample_aabb;
-};
-
-struct anim_clip{
-    char                name[ANIM_NAME_LEN];
-    struct skeleton    *skel;
-    unsigned            num_frames;
-    struct anim_sample *samples;
-};
-
-struct anim_data{
-    unsigned          num_anims;
-    struct skeleton   skel;
-    struct anim_clip *anims;
-    uint32_t          texture_desc_id;
-};
+bool R_GL_AnimInit(void);
+void R_GL_AnimShutdown(void);
 
 #endif
+

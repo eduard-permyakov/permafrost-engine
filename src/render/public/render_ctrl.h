@@ -121,6 +121,7 @@ void        R_InitAttributes(void);
 bool        R_ComputeShaderSupported(void);
 
 void       *R_PushArg(const void *src, size_t size);
+void       *R_AllocArg(size_t size);
 void        R_PushCmd(struct rcmd cmd);
 /* Pushes the command to the render queue directly. May only 
  * be called when the render thread is quiesced */

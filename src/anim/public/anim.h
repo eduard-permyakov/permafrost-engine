@@ -197,7 +197,7 @@ size_t A_AL_CtxBuffSize(void);
  * which is then returned in a malloc'd buffer.
  * ---------------------------------------------------------------------------
  */
-void  *A_AL_PrivFromStream(const struct pfobj_hdr *header, SDL_RWops *stream);
+void  *A_AL_PrivFromStream(const char *pfobj, const struct pfobj_hdr *header, SDL_RWops *stream);
 
 /* ---------------------------------------------------------------------------
  * Dumps private animation data in PF Object format.

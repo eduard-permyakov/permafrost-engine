@@ -634,5 +634,15 @@ void R_GL_DrawSkybox(const struct camera *cam);
  */
 void R_GL_SkyboxFree(void);
 
+/*###########################################################################*/
+/* RENDER ANIM                                                               */
+/*###########################################################################*/
+
+/* ---------------------------------------------------------------------------
+ * Append pose data to a buffer holding all animation poses for all models.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_AnimAppendData(GLfloat *data, size_t *size);
+
 #endif
 

@@ -37,6 +37,7 @@
 #include "anim_private.h"
 #include "anim_data.h"
 #include "anim_ctx.h"
+#include "anim_texture.h"
 #include "../entity.h"
 #include "../event.h"
 #include "../perf.h"
@@ -236,12 +237,12 @@ void A_GetRenderState(uint32_t uid, size_t *out_njoints,
     PERF_RETURN_VOID();
 }
 
-void A_GetDefaultPoseRenderState(struct anim_data *data, size_t *out_njoints,
-                                 mat4x4_t *out_curr_pose, const mat4x4_t **out_inv_bind_pose)
+void A_GetPoseRenderState(const struct anim_data *data, size_t anim_idx, size_t frame_idx, 
+                          size_t *out_njoints, mat4x4_t *out_curr_pose)
 {
     PERF_ENTER();
-    struct anim_sample *sample = &data->anims[0].samples[0];
-    struct skeleton *skel = &data->skel;
+    struct anim_sample *sample = &data->anims[anim_idx].samples[frame_idx];
+    const struct skeleton *skel = &data->skel;
 
     size_t read_joints = MIN(skel->num_joints, MAX_JOINTS_EXTENDED);
     for(int j = 0; j < read_joints; j++) {
@@ -265,9 +266,14 @@ void A_GetDefaultPoseRenderState(struct anim_data *data, size_t *out_njoints,
     }
 
     *out_njoints = read_joints;
-    *out_inv_bind_pose = data->skel.inv_bind_poses;
-
     PERF_RETURN_VOID();
+}
+
+void A_GetDefaultPoseRenderState(struct anim_data *data, size_t *out_njoints,
+                                 mat4x4_t *out_curr_pose, const mat4x4_t **out_inv_bind_pose)
+{
+    A_GetPoseRenderState(data, 0, 0, out_njoints, out_curr_pose);
+    *out_inv_bind_pose = data->skel.inv_bind_poses;
 }
 
 const struct skeleton *A_GetBindSkeleton(uint32_t uid)
@@ -455,11 +461,23 @@ void A_ClearState(void)
 bool A_Init(void)
 {
     s_anim_ctx = kh_init(ctx);
-    return (s_anim_ctx != NULL);
+    if(!s_anim_ctx)
+        goto fail_ctx;
+
+    if(!A_Texture_Init())
+        goto fail_texture;
+
+    return true;
+
+fail_texture:
+    kh_destroy(ctx, s_anim_ctx);
+fail_ctx:
+    return false;
 }
 
 void A_Shutdown(void)
 {
+    A_Texture_Shutdown();
     kh_destroy(ctx, s_anim_ctx);
 }
 

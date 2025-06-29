@@ -239,7 +239,7 @@ static bool al_get_resource(const char *path, const char *basedir,
     if(!out->render_private)
         goto fail_parse;
 
-    out->anim_private = A_AL_PrivFromStream(&header, stream);
+    out->anim_private = A_AL_PrivFromStream(path, &header, stream);
     if(!out->anim_private)
         goto fail_parse;
 

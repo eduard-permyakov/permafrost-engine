@@ -22,7 +22,7 @@
 
 #include "../../pf_math.h"
 
-#define JOINT_NAME_LEN 32
+#define JOINT_NAME_LEN 64
 
 struct SQT{
     vec3_t scale;

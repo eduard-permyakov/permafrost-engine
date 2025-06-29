@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2023 Eduard Permyakov 
+ *  Copyright (C) 2025 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,35 +33,24 @@
  *
  */
 
-#ifndef ANIM_DATA_H
-#define ANIM_DATA_H
+#ifndef ANIM_TEXTURE_H
+#define ANIM_TEXTURE_H
 
-#include "public/skeleton.h"
-#include "../pf_math.h"
-#include "../phys/public/collision.h"
+struct anim_data;
+struct anim_ctx;
 
-#include <stddef.h>
+#include <stdbool.h>
 #include <stdint.h>
 
-#define ANIM_NAME_LEN  64
-
-struct anim_sample{
-    struct SQT  *local_joint_poses;
-    struct aabb  sample_aabb;
+struct anim_pose_data_desc{
+    uint32_t inv_bind_pose_offset;
+    uint32_t curr_pose_offset;
 };
 
-struct anim_clip{
-    char                name[ANIM_NAME_LEN];
-    struct skeleton    *skel;
-    unsigned            num_frames;
-    struct anim_sample *samples;
-};
-
-struct anim_data{
-    unsigned          num_anims;
-    struct skeleton   skel;
-    struct anim_clip *anims;
-    uint32_t          texture_desc_id;
-};
+bool A_Texture_Init(void);
+void A_Texture_Shutdown(void);
+bool A_Texture_AppendData(const char *pfobj, const struct anim_data *data, uint32_t *out_id);
+bool A_Texture_CurrPoseDesc(const struct anim_ctx *ctx, struct anim_pose_data_desc *out);
 
 #endif
+

@@ -41,6 +41,7 @@
 #include "gl_assert.h"
 #include "gl_state.h"
 #include "gl_batch.h"
+#include "gl_anim.h"
 #include "render_private.h"
 #include "../settings.h"
 #include "../main.h"
@@ -364,7 +365,8 @@ static void render_init_ctx(struct render_init_arg *arg)
     if(!R_GL_Shader_InitAll(g_basepath)
     || !R_GL_Texture_Init()
     || !R_GL_StateInit()
-    || !R_GL_Batch_Init()) {
+    || !R_GL_Batch_Init()
+    || !R_GL_AnimInit()) {
 
         arg->out_success = false;
         return;
@@ -382,6 +384,7 @@ static void render_init_ctx(struct render_init_arg *arg)
 
 static void render_destroy_ctx(void)
 {
+    R_GL_AnimShutdown();
     R_GL_Batch_Shutdown();
     R_GL_StateShutdown();
     R_GL_Texture_Shutdown();
@@ -707,6 +710,13 @@ void *R_PushArg(const void *src, size_t size)
 
     memcpy(ret, src, size);
     return ret;
+}
+
+void *R_AllocArg(size_t size)
+{
+    struct render_workspace *ws = (SDL_ThreadID() == g_render_thread_id) ? G_GetRenderWS() 
+                                                                         : G_GetSimWS();
+    return stalloc(&ws->args, size);
 }
 
 void R_PushCmd(struct rcmd cmd)
