@@ -576,7 +576,7 @@ void R_GL_DrawModelToTexture(const void *render_private, const struct obb *obb,
         PFM_Mat4x4_Transpose(&tmp, &normal);
 
         R_GL_AnimSetUniforms((void*)anim_state->inv_bind_pose, anim_state->curr_pose, 
-            &normal, &anim_state->njoints);
+            &normal, &anim_state->njoints, &anim_state->desc);
     }
     const char *shader = NULL;
     if(anim_state) {

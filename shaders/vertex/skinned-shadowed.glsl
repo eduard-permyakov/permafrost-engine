@@ -98,22 +98,37 @@ uniform int curr_pose_mats_offset;
 /* PROGRAM
 /*****************************************************************************/
 
+vec4 read_vec4(int base)
+{
+    int size = textureSize(posebuff);
+    return vec4(
+        texelFetch(posebuff, (base + 0) % size).r,
+        texelFetch(posebuff, (base + 1) % size).r,
+        texelFetch(posebuff, (base + 2) % size).r,
+        texelFetch(posebuff, (base + 3) % size).r
+    );
+}
+
+mat4 read_mat4(int base)
+{
+    return mat4(
+        read_vec4(base +  0),
+        read_vec4(base +  4),
+        read_vec4(base +  8),
+        read_vec4(base + 12)
+    );
+}
+
 mat4 curr_pose_for_joint(int joint_idx)
 {
-    if(bool(extended_joints)) {
-        return anim_curr_pose_mats_buffer[joint_idx];
-    }else{
-        return anim_curr_pose_mats[joint_idx];
-    }
+	int extra_offset = joint_idx * 16;
+	return read_mat4((curr_pose_mats_offset / 4)+ extra_offset);
 }
 
 mat4 inv_bind_pose_for_joint(int joint_idx)
 {
-    if(bool(extended_joints)) {
-        return anim_inv_bind_mats_buffer[joint_idx];
-    }else{
-        return anim_inv_bind_mats[joint_idx];
-    }
+	int extra_offset = joint_idx * 16;
+	return read_mat4((inv_bind_mats_offset / 4)+ extra_offset);
 }
 
 void main()

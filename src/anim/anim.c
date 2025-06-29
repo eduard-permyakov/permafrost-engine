@@ -79,13 +79,18 @@ static struct anim_ctx *a_ctx_for_uid(uint32_t uid)
     return &kh_value(s_anim_ctx, k);
 }
 
-static const struct anim_clip *a_clip_for_name(const struct anim_data *data, const char *name)
+static const struct anim_clip *a_clip_for_name(const struct anim_data *data, const char *name,
+                                               int *out_idx)
 {
     for(int i = 0; i < data->num_anims; i++) {
 
         const struct anim_clip *curr = &data->anims[i];
-        if(!strcmp(curr->name, name)) 
+        if(!strcmp(curr->name, name)) {
+            if(out_idx) {
+                *out_idx = i;
+            }
             return curr;
+        }
     }
 
     return NULL;
@@ -163,7 +168,7 @@ static void a_make_pose_mat(uint32_t uid, int joint_idx, const struct skeleton *
 void A_SetIdleClip(uint32_t uid, const char *name, unsigned key_fps)
 {
     struct anim_ctx *ctx = a_ctx_for_uid(uid);
-    const struct anim_clip *clip = a_clip_for_name(ctx->data, name);
+    const struct anim_clip *clip = a_clip_for_name(ctx->data, name, NULL);
     assert(clip);
 
     ctx->idle = clip;
@@ -174,7 +179,7 @@ void A_SetActiveClip(uint32_t uid, const char *name,
                      enum anim_mode mode, unsigned key_fps)
 {
     struct anim_ctx *ctx = a_ctx_for_uid(uid);
-    const struct anim_clip *clip = a_clip_for_name(ctx->data, name);
+    const struct anim_clip *clip = a_clip_for_name(ctx->data, name, &ctx->curr_clip_idx);
     assert(clip);
 
     ctx->active = clip;
@@ -219,7 +224,8 @@ void A_Update(void)
 }
 
 void A_GetRenderState(uint32_t uid, size_t *out_njoints, 
-                      mat4x4_t *out_curr_pose, const mat4x4_t **out_inv_bind_pose)
+                      mat4x4_t *out_curr_pose, const mat4x4_t **out_inv_bind_pose,
+                      struct anim_pose_data_desc *out_desc)
 {
     PERF_ENTER();
 
@@ -233,6 +239,9 @@ void A_GetRenderState(uint32_t uid, size_t *out_njoints,
 
     *out_njoints = read_joints;
     *out_inv_bind_pose = data->skel.inv_bind_poses;
+
+    bool status = A_Texture_CurrPoseDesc(ctx, out_desc);
+    assert(status);
 
     PERF_RETURN_VOID();
 }
@@ -374,7 +383,7 @@ const char *A_GetClip(uint32_t uid, int idx)
 bool A_HasClip(uint32_t uid, const char *name)
 {
     struct anim_ctx *ctx = a_ctx_for_uid(uid);
-    const struct anim_clip *clip = a_clip_for_name(ctx->data, name);
+    const struct anim_clip *clip = a_clip_for_name(ctx->data, name, NULL);
     return (clip != NULL);
 }
 
@@ -424,13 +433,14 @@ bool A_LoadState(struct SDL_RWops *stream, uint32_t uid)
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_STRING);
-    const struct anim_clip *active_clip = a_clip_for_name(ctx->data, attr.val.as_string);
+    const struct anim_clip *active_clip = a_clip_for_name(ctx->data, attr.val.as_string, 
+        &ctx->curr_clip_idx);
     CHK_TRUE_RET(active_clip);
     ctx->active = active_clip;
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_STRING);
-    const struct anim_clip *idle_clip = a_clip_for_name(ctx->data, attr.val.as_string);
+    const struct anim_clip *idle_clip = a_clip_for_name(ctx->data, attr.val.as_string, NULL);
     CHK_TRUE_RET(idle_clip);
     ctx->idle = idle_clip;
 

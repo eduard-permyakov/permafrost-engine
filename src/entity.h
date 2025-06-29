@@ -41,6 +41,7 @@
 #include "lib/public/vec.h"
 #include "map/public/tile.h"
 #include "phys/public/collision.h"
+#include "anim/public/anim.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -100,6 +101,7 @@ struct ent_anim_rstate{
     mat4x4_t        model;
     bool            translucent;
     size_t          njoints;
+    struct anim_pose_data_desc desc;
     const mat4x4_t *inv_bind_pose; /* static, use shallow copy */
     mat4x4_t        curr_pose[MAX_JOINTS_EXTENDED];
 };

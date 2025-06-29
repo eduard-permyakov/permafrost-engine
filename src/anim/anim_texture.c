@@ -39,6 +39,7 @@
 #include "anim_data.h"
 #include "anim_ctx.h"
 #include "../entity.h"
+#include "../asset_load.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../lib/public/khash.h"
@@ -49,14 +50,13 @@
 #include <string.h>
 
 #define MIN(a, b)   ((a) < (b) ? (a) : (b))
-#define MAX_ANIMS   (32)
 
 struct anim_data_desc{
     uint32_t base_offset;
     uint32_t size;
     uint32_t njoints;
     uint32_t nanims;
-    uint32_t anim_set_offsets[MAX_ANIMS];
+    uint32_t anim_set_offsets[MAX_ANIM_SETS];
 };
 
 KHASH_MAP_INIT_STR(id, uint32_t)
@@ -90,9 +90,13 @@ static size_t anim_buff_size(const struct anim_data *data)
     return ret;
 }
 
-static size_t anim_buff_pose_offset(const struct anim_ctx *ctx)
+static size_t anim_buff_pose_offset(const struct anim_data_desc *ddesc,
+                                    int clip_idx, int frame_idx)
 {
-    return 0;
+    assert(clip_idx >= 0 && clip_idx < MAX_ANIM_SETS);
+    size_t frame_size = ddesc->njoints * sizeof(mat4x4_t);
+    size_t frame_offset = frame_size * frame_idx;
+    return ddesc->anim_set_offsets[clip_idx] + frame_offset;
 }
 
 static struct anim_data_desc anim_copy_data(const struct anim_data *data, GLfloat *out)
@@ -101,7 +105,7 @@ static struct anim_data_desc anim_copy_data(const struct anim_data *data, GLfloa
     struct anim_data_desc ret = (struct anim_data_desc){
         .njoints = njoints,
         .base_offset = s_next_offset,
-        .nanims = data->num_anims
+        .nanims = MIN(data->num_anims, MAX_ANIM_SETS)
     };
     size_t size = 0;
 
@@ -109,7 +113,7 @@ static struct anim_data_desc anim_copy_data(const struct anim_data *data, GLfloa
     out += (16 * njoints);
     size += sizeof(mat4x4_t) * njoints;
 
-    for(int i = 0; i < data->num_anims; i++) {
+    for(int i = 0; i < MIN(data->num_anims, MAX_ANIM_SETS); i++) {
 
         struct anim_clip *curr = &data->anims[i];
         ret.anim_set_offsets[i] = s_next_offset + size;
@@ -210,6 +214,17 @@ bool A_Texture_AppendData(const char *pfobj, const struct anim_data *data, uint3
 
 bool A_Texture_CurrPoseDesc(const struct anim_ctx *ctx, struct anim_pose_data_desc *out)
 {
+    uint32_t id = ctx->data->texture_desc_id;
+    int clip_idx = ctx->curr_clip_idx;
+    int frame_idx = ctx->curr_frame;
+
+    khiter_t k = kh_get(desc, s_id_desc_map, id);
+    if(k == kh_end(s_id_desc_map))
+        return false;
+
+    const struct anim_data_desc *ddesc = &kh_val(s_id_desc_map, k);
+    out->inv_bind_pose_offset = ddesc->base_offset;
+    out->curr_pose_offset = anim_buff_pose_offset(ddesc, clip_idx, frame_idx);
     return true;
 }
 

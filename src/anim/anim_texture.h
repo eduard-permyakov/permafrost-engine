@@ -36,16 +36,11 @@
 #ifndef ANIM_TEXTURE_H
 #define ANIM_TEXTURE_H
 
-struct anim_data;
-struct anim_ctx;
-
 #include <stdbool.h>
 #include <stdint.h>
 
-struct anim_pose_data_desc{
-    uint32_t inv_bind_pose_offset;
-    uint32_t curr_pose_offset;
-};
+struct anim_data;
+struct anim_ctx;
 
 bool A_Texture_Init(void);
 void A_Texture_Shutdown(void);

@@ -53,6 +53,13 @@ enum anim_mode{
     ANIM_MODE_ONCE,
 };
 
+/* Data needed by the animation shader to 
+ * access the pose matrices for the entity.
+ */
+struct anim_pose_data_desc{
+    uint32_t inv_bind_pose_offset;
+    uint32_t curr_pose_offset;
+};
 
 /*###########################################################################*/
 /* ANIM GENERAL                                                              */
@@ -80,7 +87,8 @@ void                   A_SetActiveClip(uint32_t uid, const char *name,
  */
 void                   A_GetRenderState(uint32_t uid, size_t *out_njoints, 
                                         mat4x4_t *out_curr_pose, 
-                                        const mat4x4_t **out_inv_bind_pose);
+                                        const mat4x4_t **out_inv_bind_pose,
+                                        struct anim_pose_data_desc *out_desc);
 
 /* ---------------------------------------------------------------------------
  * Retreive a copy of the state of the first sample of the first animation clip.

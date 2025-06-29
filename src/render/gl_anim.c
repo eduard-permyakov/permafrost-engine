@@ -166,13 +166,22 @@ void R_GL_AnimBindPoseBuff(void)
 }
 
 void R_GL_AnimSetUniforms(mat4x4_t *inv_bind_poses, mat4x4_t *curr_poses, 
-                          mat4x4_t *normal_mat, const size_t *count)
+                          mat4x4_t *normal_mat, const size_t *count,
+                          struct anim_pose_data_desc *desc)
 {
     ASSERT_IN_RENDER_THREAD();
 
     R_GL_StateSet(GL_U_POSEBUFF, (struct uval){
         .type = UTYPE_INT,
         .val.as_int = POSE_BUFF_TUNINT - GL_TEXTURE0
+    });
+    R_GL_StateSet(GL_U_INV_BIND_MAT_OFFSET, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = desc->inv_bind_pose_offset
+    });
+    R_GL_StateSet(GL_U_CURR_POSE_MAT_OFFSET, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = desc->curr_pose_offset
     });
 
     bool extended = (*count > MAX_JOINTS);

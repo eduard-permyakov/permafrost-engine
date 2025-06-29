@@ -44,6 +44,7 @@ struct anim_ctx{
     const struct anim_data *data;
     enum anim_mode          mode; 
     unsigned                key_fps;
+    int                     curr_clip_idx;
     int                     curr_frame;
     uint32_t                curr_frame_start_ticks;
 };
