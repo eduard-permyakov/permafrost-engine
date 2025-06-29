@@ -50,7 +50,6 @@ layout (location = 8) in int   in_draw_id;
 
 uniform mat4 light_space_transform;
 uniform vec4 clip_plane0;
-uniform int  max_joints;
 
 /* The per-instance static attributes have the follwing layout in the buffer:
  *
@@ -63,15 +62,16 @@ uniform int  max_joints;
  *  +--------------------------------------------------+
  *  | mat4x4_t (16 floats)                             | (normal matrix)
  *  +--------------------------------------------------+
- *  | MAX_JOINTS * mat4x4_t (1536 floats)              | (curr pose matrices)
+ *  | int (1 float)                                    | (inv. bind pose offset)
  *  +--------------------------------------------------+
- *  | MAX_JOINTS * mat4x4_t (1536 floats)              | (inverse bind pose matrices)
+ *  | int (1 float)                                    | (curr. pose offset)
  *  +--------------------------------------------------+
  *
- * In total, 3264 floats (13056 bytes) are pushed per instance.
+ * In total, 194 floats (776 bytes) are pushed per instance.
  */
 
 uniform samplerBuffer attrbuff;
+uniform samplerBuffer posebuff;
 uniform int attrbuff_offset;
 uniform int attr_stride;
 uniform int attr_offset;
@@ -88,7 +88,7 @@ int inst_attr_base(int draw_id)
     return (attrbuff_offset / 4 + inst_offset) % size;
 }
 
-vec4 read_vec4(int base)
+vec4 attr_read_vec4(int base)
 {
     int size = textureSize(attrbuff);
     return vec4(
@@ -99,32 +99,61 @@ vec4 read_vec4(int base)
     );
 }
 
-mat4 read_mat4(int base)
+mat4 attr_read_mat4(int base)
 {
     return mat4(
-        read_vec4(base +  0),
-        read_vec4(base +  4),
-        read_vec4(base +  8),
-        read_vec4(base + 12)
+        attr_read_vec4(base +  0),
+        attr_read_vec4(base +  4),
+        attr_read_vec4(base +  8),
+        attr_read_vec4(base + 12)
+    );
+}
+
+int attr_read_index(int base)
+{
+    int size = textureSize(attrbuff);
+	return int(texelFetch(attrbuff, base % size).r);
+}
+
+vec4 pose_read_vec4(int base)
+{
+    int size = textureSize(posebuff);
+    return vec4(
+        texelFetch(posebuff, (base + 0) % size).r,
+        texelFetch(posebuff, (base + 1) % size).r,
+        texelFetch(posebuff, (base + 2) % size).r,
+        texelFetch(posebuff, (base + 3) % size).r
+    );
+}
+
+mat4 pose_read_mat4(int base)
+{
+    return mat4(
+        pose_read_vec4(base +  0),
+        pose_read_vec4(base +  4),
+        pose_read_vec4(base +  8),
+        pose_read_vec4(base + 12)
     );
 }
 
 mat4 anim_curr_pose_mats(int joint_idx)
 {
-    int base = inst_attr_base(in_draw_id) + 176 + 16;
-    return read_mat4(base + (16 * joint_idx));
+    int base = inst_attr_base(in_draw_id) + 176 + 16 + 1;
+	int pose_offset = attr_read_index(base);
+    return pose_read_mat4((pose_offset / 4) + (16 * joint_idx));
 }
 
 mat4 anim_inv_bind_mats(int joint_idx)
 {
-    int base = inst_attr_base(in_draw_id) + 176 + 16 + (max_joints * 16);
-    return read_mat4(base + (16 * joint_idx));
+    int base = inst_attr_base(in_draw_id) + 176 + 16;
+	int pose_offset = attr_read_index(base);
+    return pose_read_mat4((pose_offset / 4) + (16 * joint_idx));
 }
 
 void main()
 {
     int base = inst_attr_base(in_draw_id);
-    mat4 model = read_mat4(base);
+    mat4 model = attr_read_mat4(base);
 
     float tot_weight = in_joint_weights0[0] + in_joint_weights0[1] + in_joint_weights0[2]
                      + in_joint_weights1[0] + in_joint_weights1[1] + in_joint_weights1[2];

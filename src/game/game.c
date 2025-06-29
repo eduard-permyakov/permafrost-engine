@@ -214,12 +214,9 @@ static void g_shadow_pass(struct render_input *in)
 
             R_PushCmd((struct rcmd){
                 .func = R_GL_AnimSetUniforms,
-                .nargs = 5,
+                .nargs = 2,
                 .args = {
-                    (void*)curr->inv_bind_pose, 
-                    R_PushArg(curr->curr_pose, sizeof(curr->curr_pose)),
                     R_PushArg(&normal, sizeof(normal)),
-                    R_PushArg(&curr->njoints, sizeof(curr->njoints)),
                     R_PushArg(&curr->desc, sizeof(curr->desc)),
                 },
             });
@@ -276,12 +273,9 @@ static void g_draw_pass(struct render_input *in)
 
             R_PushCmd((struct rcmd){
                 .func = R_GL_AnimSetUniforms,
-                .nargs = 5,
+                .nargs = 2,
                 .args = {
-                    (void*)curr->inv_bind_pose, 
-                    R_PushArg(curr->curr_pose, sizeof(curr->curr_pose)),
                     R_PushArg(&normal, sizeof(normal)),
-                    R_PushArg(&curr->njoints, sizeof(curr->njoints)),
                     R_PushArg(&curr->desc, sizeof(curr->desc)),
                 },
             });
@@ -458,8 +452,7 @@ static void g_make_draw_list(vec_entity_t ents, vec_rstat_t *out_stat, vec_ranim
                 .model = model,
                 .translucent = !!(flags & ENTITY_FLAG_TRANSLUCENT),
             };
-            A_GetRenderState(curr, &rstate.njoints, rstate.curr_pose, &rstate.inv_bind_pose,
-                &rstate.desc);
+            A_GetRenderState(curr, &rstate.desc);
             vec_ranim_push(out_anim, rstate);
 
         }else{

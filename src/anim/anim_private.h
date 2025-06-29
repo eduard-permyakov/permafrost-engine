@@ -48,7 +48,7 @@ struct skeleton;
  */
 void A_PrepareInvBindMatrices(const struct skeleton *skel);
 
-void A_GetPoseRenderState(const struct anim_data *data, size_t anim_idx, size_t frame_idx, 
-                          size_t *out_njoints, mat4x4_t *out_curr_pose);
+void A_GetPoseMats(const struct anim_data *data, size_t anim_idx, size_t frame_idx, 
+                   size_t *out_njoints, mat4x4_t *out_curr_pose);
 
 #endif

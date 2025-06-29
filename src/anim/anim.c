@@ -223,31 +223,19 @@ void A_Update(void)
     PERF_RETURN_VOID();
 }
 
-void A_GetRenderState(uint32_t uid, size_t *out_njoints, 
-                      mat4x4_t *out_curr_pose, const mat4x4_t **out_inv_bind_pose,
-                      struct anim_pose_data_desc *out_desc)
+void A_GetRenderState(uint32_t uid, struct anim_pose_data_desc *out_desc)
 {
     PERF_ENTER();
 
     struct anim_ctx *ctx = a_ctx_for_uid(uid);
-    const struct anim_data *data = ctx->data;
-
-    size_t read_joints = MIN(data->skel.num_joints, MAX_JOINTS_EXTENDED);
-    for(int j = 0; j < read_joints; j++) {
-        a_make_pose_mat(uid, j, &data->skel, out_curr_pose + j);
-    }
-
-    *out_njoints = read_joints;
-    *out_inv_bind_pose = data->skel.inv_bind_poses;
-
     bool status = A_Texture_CurrPoseDesc(ctx, out_desc);
     assert(status);
 
     PERF_RETURN_VOID();
 }
 
-void A_GetPoseRenderState(const struct anim_data *data, size_t anim_idx, size_t frame_idx, 
-                          size_t *out_njoints, mat4x4_t *out_curr_pose)
+void A_GetPoseMats(const struct anim_data *data, size_t anim_idx, size_t frame_idx, 
+                   size_t *out_njoints, mat4x4_t *out_curr_pose)
 {
     PERF_ENTER();
     struct anim_sample *sample = &data->anims[anim_idx].samples[frame_idx];
@@ -278,11 +266,9 @@ void A_GetPoseRenderState(const struct anim_data *data, size_t anim_idx, size_t 
     PERF_RETURN_VOID();
 }
 
-void A_GetDefaultPoseRenderState(struct anim_data *data, size_t *out_njoints,
-                                 mat4x4_t *out_curr_pose, const mat4x4_t **out_inv_bind_pose)
+void A_GetDefaultPoseRenderState(struct anim_data *data, struct anim_pose_data_desc *out_desc)
 {
-    A_GetPoseRenderState(data, 0, 0, out_njoints, out_curr_pose);
-    *out_inv_bind_pose = data->skel.inv_bind_poses;
+    A_Texture_PoseDesc(data->texture_desc_id, 0, 0, out_desc);
 }
 
 const struct skeleton *A_GetBindSkeleton(uint32_t uid)

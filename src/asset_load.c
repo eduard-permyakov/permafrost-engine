@@ -195,8 +195,7 @@ static void al_render_to_texture(struct shared_resource *res)
     struct ent_anim_rstate rstate;
     bool animated = !!(res->ent_flags & ENTITY_FLAG_ANIMATED);
     if(animated) {
-        A_GetDefaultPoseRenderState(res->anim_private, &rstate.njoints,
-            rstate.curr_pose, &rstate.inv_bind_pose);
+        A_GetDefaultPoseRenderState(res->anim_private, &rstate.desc);
     }
 
     R_PushCmd((struct rcmd){

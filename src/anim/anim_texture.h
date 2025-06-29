@@ -45,6 +45,8 @@ struct anim_ctx;
 bool A_Texture_Init(void);
 void A_Texture_Shutdown(void);
 bool A_Texture_AppendData(const char *pfobj, const struct anim_data *data, uint32_t *out_id);
+bool A_Texture_PoseDesc(uint32_t id, int clip_idx, int frame_idx, 
+                        struct anim_pose_data_desc *out);
 bool A_Texture_CurrPoseDesc(const struct anim_ctx *ctx, struct anim_pose_data_desc *out);
 
 #endif

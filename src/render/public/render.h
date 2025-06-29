@@ -642,9 +642,7 @@ void R_GL_AnimAppendData(GLfloat *data, size_t *size);
  * Set OpenGL uniforms for animation-related shader programs.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_AnimSetUniforms(mat4x4_t *inv_bind_poses, mat4x4_t *curr_poses, 
-                            mat4x4_t *normal_mat, const size_t *count,
-                            struct anim_pose_data_desc *desc);
+void   R_GL_AnimSetUniforms(mat4x4_t *normal_mat, struct anim_pose_data_desc *desc);
 
 
 #endif

@@ -71,26 +71,12 @@ uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 
-uniform mat4 anim_curr_pose_mats[MAX_JOINTS];
-uniform mat4 anim_inv_bind_mats [MAX_JOINTS];
 uniform mat4 anim_normal_mat;
 uniform vec4 clip_plane0;
-
-uniform int extended_joints;
-
-layout (std140) uniform joints_buffer
-{
-    mat4 anim_curr_pose_mats_buffer[MAX_JOINTS_EXTENDED];
-    mat4 anim_inv_bind_mats_buffer[MAX_JOINTS_EXTENDED];
-};
-
-/*****************************************************************************/
 
 uniform samplerBuffer posebuff;
 uniform int inv_bind_mats_offset;
 uniform int curr_pose_mats_offset;
-
-/*****************************************************************************/
 
 /*****************************************************************************/
 /* PROGRAM

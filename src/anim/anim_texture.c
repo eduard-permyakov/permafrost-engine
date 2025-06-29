@@ -120,7 +120,7 @@ static struct anim_data_desc anim_copy_data(const struct anim_data *data, GLfloa
 
         for(int j = 0; j < curr->num_frames; j++) {
             size_t read_joints = 0;
-            A_GetPoseRenderState(data, i, j, &read_joints, (mat4x4_t*)out);
+            A_GetPoseMats(data, i, j, &read_joints, (mat4x4_t*)out);
             assert(read_joints == njoints);
             out += (16 * read_joints);
             size += sizeof(mat4x4_t) * read_joints;
@@ -212,12 +212,9 @@ bool A_Texture_AppendData(const char *pfobj, const struct anim_data *data, uint3
     return true;
 }
 
-bool A_Texture_CurrPoseDesc(const struct anim_ctx *ctx, struct anim_pose_data_desc *out)
+bool A_Texture_PoseDesc(uint32_t id, int clip_idx, int frame_idx, 
+                        struct anim_pose_data_desc *out)
 {
-    uint32_t id = ctx->data->texture_desc_id;
-    int clip_idx = ctx->curr_clip_idx;
-    int frame_idx = ctx->curr_frame;
-
     khiter_t k = kh_get(desc, s_id_desc_map, id);
     if(k == kh_end(s_id_desc_map))
         return false;
@@ -226,5 +223,14 @@ bool A_Texture_CurrPoseDesc(const struct anim_ctx *ctx, struct anim_pose_data_de
     out->inv_bind_pose_offset = ddesc->base_offset;
     out->curr_pose_offset = anim_buff_pose_offset(ddesc, clip_idx, frame_idx);
     return true;
+}
+
+bool A_Texture_CurrPoseDesc(const struct anim_ctx *ctx, struct anim_pose_data_desc *out)
+{
+    uint32_t id = ctx->data->texture_desc_id;
+    int clip_idx = ctx->curr_clip_idx;
+    int frame_idx = ctx->curr_frame;
+
+    return A_Texture_PoseDesc(id, clip_idx, frame_idx, out);
 }
 

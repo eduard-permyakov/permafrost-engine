@@ -43,6 +43,8 @@
 #include "gl_perf.h"
 #include "gl_vertex.h"
 #include "gl_state.h"
+#include "gl_anim.h"
+#include "gl_render.h"
 #include "render_private.h"
 #include "public/render.h"
 #include "../entity.h"
@@ -136,10 +138,10 @@ KHASH_MAP_INIT_INT(mdesc, struct mesh_desc)
 KHASH_MAP_INIT_INT(tdesc, struct tex_desc)
 
 struct GL_DAI_Cmd{
-	GLuint count;
-	GLuint instance_count;
-	GLuint first_index;
-	GLuint base_instance;
+    GLuint count;
+    GLuint instance_count;
+    GLuint first_index;
+    GLuint base_instance;
 };
 
 enum batch_type{
@@ -443,7 +445,7 @@ static bool batch_append_tex(struct gl_batch *batch, GLuint tid, int idx, struct
     assert(glIsTexture(batch->textures[curr_arr_idx].arr.id));
     assert(glIsTexture(arr->id));
     R_GL_Texture_ArrayCopyElem(&batch->textures[curr_arr_idx].arr, slice_idx, arr, idx,
-		CONFIG_ARR_TEX_RES);
+        CONFIG_ARR_TEX_RES);
 
     int status;
     k = kh_put(tdesc, batch->tid_desc_map, tid, &status);
@@ -530,7 +532,7 @@ static struct gl_batch *batch_init(enum batch_type type)
 
     batch->type = type;
     batch->cmd_ring = R_GL_RingbufferInit(CMD_RING_SZ, RING_UBYTE);
-	if(!batch->cmd_ring)
+    if(!batch->cmd_ring)
         goto fail_cmd_ring;
 
     switch(type) {
@@ -577,7 +579,7 @@ fail_vbo_desc_map:
 fail_attr_ring:
     R_GL_RingbufferDestroy(batch->cmd_ring);
 fail_cmd_ring:
-	PF_FREE(batch);
+    PF_FREE(batch);
 fail_alloc:
     return NULL;
 }
@@ -600,7 +602,7 @@ static void batch_destroy(struct gl_batch *batch)
     R_GL_RingbufferDestroy(batch->attr_ring);
     R_GL_RingbufferDestroy(batch->cmd_ring);
 
-	PF_FREE(batch);
+    PF_FREE(batch);
 }
 
 static struct mesh_desc batch_mdesc_for_vbo(struct gl_batch *batch, GLuint VBO)
@@ -999,18 +1001,6 @@ static size_t batch_sort_by_vbo(struct gl_batch *batch, struct inst_group_desc *
     return ret;
 }
 
-static void filter_out_extended(vec_ranim_t *ents, vec_ranim_t *extended)
-{
-    size_t nents = vec_size(ents);
-    for(int i = nents-1; i >= 0; i--) {
-        struct ent_anim_rstate *curr = &vec_AT(ents, i); 
-        if(curr->njoints > MAX_JOINTS) {
-            vec_ranim_push(extended, *curr);
-            vec_ranim_del(ents, i);
-        }
-    }
-}
-
 static void batch_ring_append_mats(struct gl_batch *batch, struct render_private *priv)
 {
     /* Push a lookup table mapping the per-vertex material index to 
@@ -1131,7 +1121,7 @@ static void batch_push_stat_attrs_depth(struct gl_batch *batch, const struct ent
 
 static void batch_push_anim_attrs(struct gl_batch *batch, const struct ent_anim_rstate *ents,
                                   struct draw_call_desc dcall, struct inst_group_desc *descs,
-                                  size_t offset, size_t max_joints)
+                                  size_t offset)
 {
     /* The per-instance static attributes have the follwing layout in the buffer:
      *
@@ -1144,12 +1134,12 @@ static void batch_push_anim_attrs(struct gl_batch *batch, const struct ent_anim_
      *  +--------------------------------------------------+
      *  | mat4x4_t (16 floats)                             | (normal matrix)
      *  +--------------------------------------------------+
-     *  | MAX_JOINTS * mat4x4_t (1536 floats)              | (curr pose matrices)
+     *  | int (1 float)                                    | (inv. bind pose offset)
      *  +--------------------------------------------------+
-     *  | MAX_JOINTS * mat4x4_t (1536 floats)              | (inverse bind pose matrices)
+     *  | int (1 float)                                    | (curr. pose offset)
      *  +--------------------------------------------------+
      *
-     * In total, 3264 floats (13056 bytes) are pushed per instance.
+     * In total, 194 floats (776 bytes) are pushed per instance.
      */
     size_t ninsts = 0;
     for(int i = dcall.start_idx; i <= dcall.end_idx; i++) {
@@ -1170,44 +1160,28 @@ static void batch_push_anim_attrs(struct gl_batch *batch, const struct ent_anim_
             PFM_Mat4x4_Inverse((mat4x4_t*)&ents[offset + j].model, &model);
             PFM_Mat4x4_Transpose(&model, &normal);
 
+            GLfloat inv_idx = ents[offset + j].desc.inv_bind_pose_offset;
+            GLfloat curr_idx = ents[offset + j].desc.curr_pose_offset;
+
             R_GL_RingbufferAppendLast(batch->attr_ring, &ents[offset + j].model, sizeof(mat4x4_t));
-
-            const size_t njoints = ents[offset + j].njoints;
-            const size_t matsize = njoints * sizeof(mat4x4_t);
-            const size_t pad = (max_joints - njoints) * sizeof(mat4x4_t);
-            assert(max_joints >= njoints);
-
-            R_GL_RingbufferAppendLast(batch->attr_ring, ents[offset + j].curr_pose, matsize);
-            R_GL_RingbufferExtendLast(batch->attr_ring, pad);
-
-            R_GL_RingbufferAppendLast(batch->attr_ring, ents[offset + j].inv_bind_pose, matsize);
-            R_GL_RingbufferExtendLast(batch->attr_ring, pad);
+            R_GL_RingbufferAppendLast(batch->attr_ring, &inv_idx, sizeof(GLfloat));
+            R_GL_RingbufferAppendLast(batch->attr_ring, &curr_idx, sizeof(GLfloat));
         }
         ninsts += curr->end_idx - curr->start_idx + 1;
     }
 
-    size_t attr_stride;
-    if(max_joints == MAX_JOINTS) {
-        size_t begin, end;
-        R_GL_RingbufferGetLastRange(batch->attr_ring, &begin, &end);
-        assert(end > begin ? (end - begin == 13056 * ninsts)
-                           : ((ANIM_ATTR_RING_SZ - begin) + end == 13056 * ninsts));
-        attr_stride = 3264;
-    }else{
-        attr_stride = 8384;
-    }
-
     R_GL_StateSet(GL_U_ATTR_STRIDE, (struct uval){ 
         .type = UTYPE_INT, 
-        .val.as_int = attr_stride 
+        .val.as_int = 194
     });
     R_GL_StateInstall(GL_U_ATTR_STRIDE, R_GL_Shader_GetCurrActive());
 
-    R_GL_StateSet(GL_U_MAX_JOINTS, (struct uval){ 
-        .type = UTYPE_INT, 
-        .val.as_int = max_joints
+    R_GL_AnimBindPoseBuff();
+    R_GL_StateSet(GL_U_POSEBUFF, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = POSE_BUFF_TUNINT - GL_TEXTURE0
     });
-    R_GL_StateInstall(GL_U_MAX_JOINTS, R_GL_Shader_GetCurrActive());
+    R_GL_StateInstall(GL_U_POSEBUFF, R_GL_Shader_GetCurrActive());
 }
 
 static void batch_push_cmds(struct gl_batch *batch, struct draw_call_desc dcall,
@@ -1333,9 +1307,9 @@ static void batch_do_drawcall_stat(struct gl_batch *batch, const struct ent_stat
 
 static void batch_do_drawcall_anim(struct gl_batch *batch, const struct ent_anim_rstate *ents,
                                    struct draw_call_desc dcall, struct inst_group_desc *descs,
-                                   size_t offset, size_t max_joints)
+                                   size_t offset)
 {
-    batch_push_anim_attrs(batch, ents, dcall, descs, offset, max_joints);
+    batch_push_anim_attrs(batch, ents, dcall, descs, offset);
     R_GL_RingbufferBindLast(batch->attr_ring, ATTR_RING_TUNIT, R_GL_Shader_GetCurrActive(), "attrbuff");
 
     GLuint VAO = batch->vbos[dcall.vbo_idx].VAO;
@@ -1384,8 +1358,7 @@ static void batch_render_stat(struct gl_batch *batch, struct ent_stat_rstate *en
     GL_PERF_RETURN_VOID();
 }
 
-static void batch_render_anim(struct gl_batch *batch, struct ent_anim_rstate *ents, size_t nents,
-                              size_t max_joints)
+static void batch_render_anim(struct gl_batch *batch, struct ent_anim_rstate *ents, size_t nents)
 {
     GL_PERF_ENTER();
 
@@ -1409,14 +1382,13 @@ static void batch_render_anim(struct gl_batch *batch, struct ent_anim_rstate *en
         }
 
         for(int i = 0; i < ndcalls; i++) {
-            batch_do_drawcall_anim(batch, ents, dcalls[i], descs, offset, max_joints);
+            batch_do_drawcall_anim(batch, ents, dcalls[i], descs, offset);
         }
     }
     GL_PERF_RETURN_VOID();
 }
 
-static void do_render_anim_all(vec_ranim_t *ents, bool shadows, enum render_pass pass,
-                               size_t max_joints)
+static void batch_render_anim_all(vec_ranim_t *ents, bool shadows, enum render_pass pass)
 {
     size_t nanim = vec_size(ents);
     if(nanim == 0)
@@ -1439,31 +1411,15 @@ static void do_render_anim_all(vec_ranim_t *ents, bool shadows, enum render_pass
         batch_append(s_anim_batch, vec_AT(ents, i).render_private);
     }
     if(nopaque > 0) {
-        batch_render_anim(s_anim_batch, &vec_AT(ents, 0), nopaque, max_joints);
+        batch_render_anim(s_anim_batch, &vec_AT(ents, 0), nopaque);
     }
     if(ntranslucent > 0) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR);
-        batch_render_anim(s_anim_batch, &vec_AT(ents, nopaque), ntranslucent, max_joints);
+        batch_render_anim(s_anim_batch, &vec_AT(ents, nopaque), ntranslucent);
         glDisable(GL_BLEND);
     }
     GL_ASSERT_OK();
-}
-
-static void batch_render_anim_all(vec_ranim_t *ents, bool shadows, enum render_pass pass)
-{
-    /* Meshes with high bone counts are rendered separately */
-    vec_ranim_t extended_joints;
-    vec_ranim_init(&extended_joints);
-
-    size_t init_size = vec_size(ents);
-    filter_out_extended(ents, &extended_joints);
-    assert(vec_size(ents) + vec_size(&extended_joints) == init_size);
-
-    do_render_anim_all(ents, shadows, pass, MAX_JOINTS);
-    do_render_anim_all(&extended_joints, shadows, pass, MAX_JOINTS_EXTENDED);
-
-    vec_ranim_destroy(&extended_joints);
 }
 
 static void batch_render_stat_all(vec_rstat_t *ents, bool shadows, 

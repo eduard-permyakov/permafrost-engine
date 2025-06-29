@@ -100,10 +100,7 @@ struct ent_anim_rstate{
     void           *render_private;
     mat4x4_t        model;
     bool            translucent;
-    size_t          njoints;
     struct anim_pose_data_desc desc;
-    const mat4x4_t *inv_bind_pose; /* static, use shallow copy */
-    mat4x4_t        curr_pose[MAX_JOINTS_EXTENDED];
 };
 
 struct transform{

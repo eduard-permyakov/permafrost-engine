@@ -35,9 +35,6 @@
 
 #version 330 core
 
-#define MAX_JOINTS          (96)
-#define MAX_JOINTS_EXTENDED (256)
-
 layout (location = 0) in vec3  in_pos;
 layout (location = 4) in ivec3 in_joint_indices0;
 layout (location = 5) in ivec3 in_joint_indices1;
@@ -52,24 +49,9 @@ uniform mat4 model;
 uniform mat4 light_space_transform;
 uniform vec4 clip_plane0;
 
-uniform mat4 anim_curr_pose_mats[MAX_JOINTS];
-uniform mat4 anim_inv_bind_mats [MAX_JOINTS];
-
-uniform int extended_joints;
-
-layout (std140) uniform joints_buffer
-{
-    mat4 anim_curr_pose_mats_buffer[MAX_JOINTS_EXTENDED];
-    mat4 anim_inv_bind_mats_buffer[MAX_JOINTS_EXTENDED];
-};
-
-/*****************************************************************************/
-
 uniform samplerBuffer posebuff;
 uniform int inv_bind_mats_offset;
 uniform int curr_pose_mats_offset;
-
-/*****************************************************************************/
 
 /*****************************************************************************/
 /* PROGRAM                                                                   */

@@ -85,18 +85,14 @@ void                   A_SetActiveClip(uint32_t uid, const char *name,
  * Retreive a copy of the state needed to render an animated entity.
  * ---------------------------------------------------------------------------
  */
-void                   A_GetRenderState(uint32_t uid, size_t *out_njoints, 
-                                        mat4x4_t *out_curr_pose, 
-                                        const mat4x4_t **out_inv_bind_pose,
-                                        struct anim_pose_data_desc *out_desc);
+void                   A_GetRenderState(uint32_t uid, struct anim_pose_data_desc *out_desc);
 
 /* ---------------------------------------------------------------------------
  * Retreive a copy of the state of the first sample of the first animation clip.
  * ---------------------------------------------------------------------------
  */
-void                   A_GetDefaultPoseRenderState(struct anim_data *data, size_t *out_njoints,
-                                                   mat4x4_t *out_curr_pose, 
-                                                   const mat4x4_t **out_inv_bind_pose);
+void                   A_GetDefaultPoseRenderState(struct anim_data *data, 
+                                                   struct anim_pose_data_desc *out_desc);
 
 /* ---------------------------------------------------------------------------
  * Simple utility to get a reference to the skeleton structure in its' default

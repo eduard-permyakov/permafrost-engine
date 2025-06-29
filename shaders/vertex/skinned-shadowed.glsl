@@ -72,27 +72,13 @@ uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 uniform mat4 light_space_transform;
+
 uniform vec4 clip_plane0;
-
-uniform mat4 anim_curr_pose_mats[MAX_JOINTS];
-uniform mat4 anim_inv_bind_mats [MAX_JOINTS];
 uniform mat4 anim_normal_mat;
-
-uniform int extended_joints;
-
-layout (std140) uniform joints_buffer
-{
-    mat4 anim_curr_pose_mats_buffer[MAX_JOINTS_EXTENDED];
-    mat4 anim_inv_bind_mats_buffer[MAX_JOINTS_EXTENDED];
-};
-
-/*****************************************************************************/
 
 uniform samplerBuffer posebuff;
 uniform int inv_bind_mats_offset;
 uniform int curr_pose_mats_offset;
-
-/*****************************************************************************/
 
 /*****************************************************************************/
 /* PROGRAM
@@ -122,13 +108,13 @@ mat4 read_mat4(int base)
 mat4 curr_pose_for_joint(int joint_idx)
 {
 	int extra_offset = joint_idx * 16;
-	return read_mat4((curr_pose_mats_offset / 4)+ extra_offset);
+	return read_mat4((curr_pose_mats_offset / 4) + extra_offset);
 }
 
 mat4 inv_bind_pose_for_joint(int joint_idx)
 {
 	int extra_offset = joint_idx * 16;
-	return read_mat4((inv_bind_mats_offset / 4)+ extra_offset);
+	return read_mat4((inv_bind_mats_offset / 4) + extra_offset);
 }
 
 void main()
