@@ -213,7 +213,7 @@ static void g_shadow_pass(struct render_input *in)
             PFM_Mat4x4_Transpose(&model, &normal);
 
             R_PushCmd((struct rcmd){
-                .func = R_GL_SetAnimUniforms,
+                .func = R_GL_AnimSetUniforms,
                 .nargs = 4,
                 .args = {
                     (void*)curr->inv_bind_pose, 
@@ -274,7 +274,7 @@ static void g_draw_pass(struct render_input *in)
             PFM_Mat4x4_Transpose(&model, &normal);
 
             R_PushCmd((struct rcmd){
-                .func = R_GL_SetAnimUniforms,
+                .func = R_GL_AnimSetUniforms,
                 .nargs = 4,
                 .args = {
                     (void*)curr->inv_bind_pose, 

@@ -43,6 +43,7 @@
 #include "gl_perf.h"
 #include "gl_state.h"
 #include "gl_texture.h"
+#include "gl_anim.h"
 #include "public/render.h"
 #include "../entity.h"
 #include "../camera.h"
@@ -69,14 +70,6 @@
 #define MIN(a, b)                   ((a) < (b) ? (a) : (b))
 #define BG_CLR                      ((GLfloat[4]){200/256.0f, 215/256.0f, 215/256.0f, 1.0f})
 #define MODEL_TEX_DIM               (256)
-
-/*****************************************************************************/
-/* STATIC VARIABLES                                                          */
-/*****************************************************************************/
-
-/* Scratch buffer for posting extended joint data to shaders.
- */
-static GLuint s_joint_buff_ubo = 0;
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -224,6 +217,7 @@ void R_GL_Draw(const void *render_private, mat4x4_t *model, const bool *transluc
         R_GL_Texture_BindArray(&priv->material_arr, priv->shader_prog);
     }
     R_GL_ShadowMapBind();
+    R_GL_AnimBindPoseBuff();
     
     glBindVertexArray(priv->mesh.VAO);
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
@@ -292,46 +286,6 @@ void R_GL_SetClipPlane(const vec4_t plane_eq)
         .type = UTYPE_VEC4,
         .val.as_vec4 = plane_eq
     });
-}
-
-void R_GL_SetAnimUniforms(mat4x4_t *inv_bind_poses, mat4x4_t *curr_poses, 
-                          mat4x4_t *normal_mat, const size_t *count)
-{
-    ASSERT_IN_RENDER_THREAD();
-
-    bool extended = (*count > MAX_JOINTS);
-    R_GL_StateSet(GL_U_EXTENDED_JOINTS, (struct uval){
-        .type = UTYPE_INT,
-        .val.as_int = (int)extended 
-    });
-    if(extended) {
-
-        if(0 == s_joint_buff_ubo) {
-            glGenBuffers(1, &s_joint_buff_ubo);
-            glBindBuffer(GL_UNIFORM_BUFFER, s_joint_buff_ubo);
-            glBufferData(GL_UNIFORM_BUFFER, sizeof(mat4x4_t) * MAX_JOINTS_EXTENDED * 2, NULL, 
-                GL_STATIC_DRAW);
-        }
-        glBindBuffer(GL_UNIFORM_BUFFER, s_joint_buff_ubo);
-
-        glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(mat4x4_t) * MAX_JOINTS_EXTENDED, curr_poses);
-        glBufferSubData(GL_UNIFORM_BUFFER, sizeof(mat4x4_t) * MAX_JOINTS_EXTENDED, 
-            sizeof(mat4x4_t) * MAX_JOINTS_EXTENDED, inv_bind_poses);
-
-        glBindBufferBase(GL_UNIFORM_BUFFER, 0, s_joint_buff_ubo);
-        R_GL_StateSetBlockBinding(GL_U_JOINTS_BUFF, 0);
-        glBindBuffer(GL_UNIFORM_BUFFER, 0);
-
-    }else{
-        R_GL_StateSetArray(GL_U_INV_BIND_MATS, UTYPE_MAT4, *count, inv_bind_poses);
-        R_GL_StateSetArray(GL_U_CURR_POSE_MATS, UTYPE_MAT4, *count, curr_poses);
-        R_GL_StateSet(GL_U_NORMAL_MAT, (struct uval){
-            .type = UTYPE_MAT4, 
-            .val.as_mat4 = *normal_mat
-        });
-    }
-
-    GL_ASSERT_OK();
 }
 
 void R_GL_SetAmbientLightColor(const vec3_t *color)
@@ -621,7 +575,7 @@ void R_GL_DrawModelToTexture(const void *render_private, const struct obb *obb,
         PFM_Mat4x4_Inverse((mat4x4_t*)&model, &tmp);
         PFM_Mat4x4_Transpose(&tmp, &normal);
 
-        R_GL_SetAnimUniforms((void*)anim_state->inv_bind_pose, anim_state->curr_pose, 
+        R_GL_AnimSetUniforms((void*)anim_state->inv_bind_pose, anim_state->curr_pose, 
             &normal, &anim_state->njoints);
     }
     const char *shader = NULL;

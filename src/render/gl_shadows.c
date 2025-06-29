@@ -40,6 +40,7 @@
 #include "gl_assert.h"
 #include "gl_shader.h"
 #include "gl_perf.h"
+#include "gl_anim.h"
 #include "../main.h"
 #include "../pf_math.h"
 #include "../config.h"
@@ -212,6 +213,7 @@ void R_GL_RenderDepthMap(const void *render_private, mat4x4_t *model)
 
     const struct render_private *priv = render_private;
     R_GL_Shader_InstallProg(priv->shader_prog_dp);
+    R_GL_AnimBindPoseBuff();
 
     glBindVertexArray(priv->mesh.VAO);
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);

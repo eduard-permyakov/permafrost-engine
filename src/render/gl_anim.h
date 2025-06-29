@@ -40,6 +40,7 @@
 
 bool R_GL_AnimInit(void);
 void R_GL_AnimShutdown(void);
+void R_GL_AnimBindPoseBuff(void);
 
 #endif
 

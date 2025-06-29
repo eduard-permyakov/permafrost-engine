@@ -100,6 +100,9 @@
 #define GL_U_CURR_POSE_MATS_BUFF "anim_curr_pose_mats_buffer"
 #define GL_U_INV_BIND_MATS_BUFF  "anim_inv_bind_mats_buffer"
 #define GL_U_SPLATS             "splats"
+#define GL_U_POSEBUFF           "posebuff"
+#define GL_U_INV_BIND_MAT_OFFSET "inv_bind_mats_offset"
+#define GL_U_CURR_POSE_MAT_OFFSET "curr_pose_mats_offset"
 
 enum utype{
     UTYPE_FLOAT,
