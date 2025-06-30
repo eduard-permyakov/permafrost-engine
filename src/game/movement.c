@@ -389,6 +389,7 @@ static struct move_work        s_move_work;
 static queue_cmd_t             s_move_commands;
 static struct memstack         s_eventargs;
 static unsigned long           s_last_tick = 0;
+static unsigned long           s_last_interpolate_tick = 0;
 static enum movement_hz        s_move_hz = MOVE_HZ_20;
 static bool                    s_move_hz_dirty = false;
 
@@ -1801,7 +1802,7 @@ static struct move_cmd *snoop_most_recent_command(enum move_cmd_type type, void 
         struct move_cmd *curr = &s_move_commands.mem[i];
         if(!curr->deleted && curr->type == type) {
             if(pred(arg, curr)) {
-                curr->deleted = true;
+                curr->deleted = remove;
                 return curr;
             }
         }
@@ -3338,6 +3339,25 @@ static void interpolate_tick(void *user, void *event)
     if(g_frame_idx == s_last_tick)
         return;
 
+    /* Perform a maximum of one interpolation per frame. */
+    if(g_frame_idx == s_last_interpolate_tick)
+        return;
+
+    /* No need to perform the interpolation if we've got the next movement
+     * tick coming right up.
+     */
+    const enum eventtype mapping[] = {
+        [MOVE_HZ_20] = EVENT_20HZ_TICK,
+        [MOVE_HZ_10] = EVENT_10HZ_TICK,
+        [MOVE_HZ_5 ] = EVENT_5HZ_TICK,
+        [MOVE_HZ_1 ] = EVENT_1HZ_TICK,
+    };
+    enum eventtype type = mapping[s_move_hz];
+    if(E_QueuedThisFrame(type)) {
+        s_last_interpolate_tick = g_frame_idx;
+        return;
+    }
+
     PERF_ENTER();
 
     /* Iterate over all the entities and advance the position forward
@@ -3350,6 +3370,7 @@ static void interpolate_tick(void *user, void *event)
         entity_interpolation_step(key);
     });
 
+    s_last_interpolate_tick = g_frame_idx;
     PERF_RETURN_VOID();
 }
 

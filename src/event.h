@@ -157,6 +157,7 @@ void        E_ClearPendingEvents(void);
 void        E_FlushEventQueue(void);
 const char *E_EngineEventString(enum eventtype event);
 bool        E_EventsQueued(void);
+bool        E_QueuedThisFrame(enum eventtype event);
 
 /*###########################################################################*/
 /* EVENT GLOBAL                                                              */

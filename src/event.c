@@ -480,6 +480,25 @@ void E_FlushEventQueue(void)
     }
 }
 
+bool E_QueuedThisFrame(enum eventtype event)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    queue_event_t *queue = &s_event_queues[(s_front_queue_idx + 1) % 2];
+    size_t left = queue_size(*queue);
+    for(int i = queue->itail; left > 0;) {
+        struct event *curr = &queue->mem[i];
+        if(curr->type == event)
+            return true;
+        i--;
+        left--;
+        if(i < 0) {
+            i = queue->capacity - 1; /* Wrap around */
+        }
+    }
+    return false;
+}
+
 bool E_EventsQueued(void)
 {
     return (queue_size(s_event_queues[0]) > 0) 
