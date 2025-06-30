@@ -35,6 +35,7 @@ Download the free demo on [Steam](https://store.steampowered.com/app/1309720/EVE
 * OpenGL 3.3 programmable pipeline (more modern extensions used where available)
 * Custom ASCII model format with Blender export script
 * Skeletal animation with GPU skinning
+* Batching of animation pose data to a texture for performant rendering of large numbers of animated entities
 * Phong reflection model with materials
 * Directional light shadow mapping
 * Bump mapping
