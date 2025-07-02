@@ -411,6 +411,11 @@ uint32_t Task_WhoIs(const char *name, bool blocking)
     return resp;
 }
 
+void Task_RescheduleOnMain(void)
+{
+    Sched_Request((struct request){ .type = SCHED_REQ_RESCHED_ON_MAIN });
+}
+
 void Task_CreateServices(void)
 {
     ASSERT_IN_MAIN_THREAD();

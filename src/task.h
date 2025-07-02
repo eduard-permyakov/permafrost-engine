@@ -62,6 +62,7 @@ void     Task_Sleep(int ms);
 void     Task_Register(const char *name);
 void     Task_Unregister(void);
 uint32_t Task_WhoIs(const char *name, bool blocking);
+void     Task_RescheduleOnMain(void);
 
 /* The following may only be called from the main thread */
 

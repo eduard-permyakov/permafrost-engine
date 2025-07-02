@@ -475,6 +475,15 @@ static void sched_reactivate(struct task *task)
     SDL_UnlockMutex(s_ready_lock);
 }
 
+static void sched_reactivate_on_main(struct task *task)
+{
+    SDL_LockMutex(s_ready_lock); 
+    task->state = TASK_STATE_READY;
+    pq_task_push(&s_ready_queue_main, task->prio, task);
+    SDL_CondSignal(s_ready_cond);
+    SDL_UnlockMutex(s_ready_lock);
+}
+
 #ifndef _MSC_VER
 __attribute__((used)) 
 #endif
@@ -792,6 +801,9 @@ static void sched_task_service_request(struct task *task)
         break;
     case SCHED_REQ_WAIT:
         task->retval = sched_wait(task, task->req.argv[0]);
+        break;
+    case SCHED_REQ_RESCHED_ON_MAIN:
+        sched_reactivate_on_main(task);
         break;
     case _SCHED_REQ_FREE:
 
