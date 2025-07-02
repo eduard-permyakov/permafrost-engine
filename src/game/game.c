@@ -656,6 +656,11 @@ static void combat_hz_commit(const struct sval *new_val)
     G_Combat_SetTickHz(hz);
 }
 
+static void move_gpu_commit(const struct sval *new_val)
+{
+    G_Move_SetUseGPU(new_val->as_bool);
+}
+
 static bool nav_layer_validate(const struct sval *new_val)
 {
     if(new_val->type != ST_TYPE_INT)
@@ -1045,6 +1050,18 @@ static void g_create_settings(void)
         .prio = 0,
         .validate = combat_hz_validate,
         .commit = combat_hz_commit,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.game.movement_use_gpu",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = true
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = move_gpu_commit,
     });
     assert(status == SS_OKAY);
 

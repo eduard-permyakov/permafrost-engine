@@ -388,10 +388,13 @@ static dest_id_t               s_last_cmd_dest;
 static struct move_work        s_move_work;
 static queue_cmd_t             s_move_commands;
 static struct memstack         s_eventargs;
+
 static unsigned long           s_last_tick = 0;
 static unsigned long           s_last_interpolate_tick = 0;
+
 static enum movement_hz        s_move_hz = MOVE_HZ_20;
 static bool                    s_move_hz_dirty = false;
+static bool                    s_use_gpu = true;
 
 static uint32_t                s_tick_task_tid = NULL_TID;
 static struct future           s_tick_task_future;
@@ -4031,6 +4034,11 @@ void G_Move_SetTickHz(enum movement_hz hz)
 int G_Move_GetTickHz(void)
 {
     return hz_count(s_move_hz);
+}
+
+void G_Move_SetUseGPU(bool use)
+{
+    s_use_gpu = use;
 }
 
 void G_Move_Upload(void)

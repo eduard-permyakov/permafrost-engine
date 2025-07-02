@@ -58,6 +58,7 @@ void G_Move_FlushWork(void);
 
 void G_Move_SetTickHz(enum movement_hz hz);
 int  G_Move_GetTickHz(void);
+void G_Move_SetUseGPU(bool use);
 
 void G_Move_AddEntity(uint32_t uid, vec3_t pos, float sel_radius, int faction_id);
 void G_Move_RemoveEntity(uint32_t uid);
