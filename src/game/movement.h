@@ -81,7 +81,6 @@ void G_Move_BlockAt(uint32_t uid, vec3_t pos);
 
 bool G_Move_SaveState(struct SDL_RWops *stream);
 bool G_Move_LoadState(struct SDL_RWops *stream);
-void G_Move_Upload(void);
 
 #endif
 

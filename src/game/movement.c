@@ -276,6 +276,8 @@ struct move_gamestate{
     qt_ent_t              *postree;
     khash_t(range)        *sel_radiuses;
     khash_t(id)           *faction_ids;
+    khash_t(id)           *ent_gpu_id_map;
+    khash_t(id)           *gpu_id_ent_map;
     struct map            *map;
     /* Additional state needed for nav_unit_query_ctx */
     struct kh_aabb_s      *aabbs;
@@ -287,9 +289,22 @@ struct move_gamestate{
     uint16_t               player_controllable;
 };
 
+enum move_work_type{
+    WORK_TYPE_CPU,
+    WORK_TYPE_GPU
+};
+
+enum move_work_phase{
+    PHASE_START,
+    PHASE_SINGLE,
+    PHASE_TOP_HALF,
+    PHASE_BOT_HALF,
+};
+
 struct move_work{
     struct memstack           mem;
     struct move_gamestate     gamestate;
+    enum move_work_type       type;
     struct nav_unit_query_ctx unit_query_ctx;
     enum movement_hz          hz;
     struct move_work_in      *in;
@@ -297,6 +312,8 @@ struct move_work{
     size_t                    nwork;
     size_t                    ntasks;
     uint32_t                  tids[MAX_MOVE_TASKS];
+    SDL_atomic_t              gpu_velocities_ready;
+    vec2_t                   *gpu_velocities;
     struct future             futures[MAX_MOVE_TASKS];
 };
 
@@ -357,6 +374,7 @@ static struct result navigation_tick_task(void *arg);
 #define COLLISION_MAX_SEE_AHEAD         (10.0f)
 #define WAIT_TICKS                      (60)
 #define MAX_TURN_RATE                   (15.0f) /* degree/tick */
+#define MAX_NEIGHBOURS                  (32)
 
 #define SURROUND_LOW_WATER_X            (CHUNK_WIDTH/3.0f)
 #define SURROUND_HIGH_WATER_X           (CHUNK_WIDTH/2.0f)
@@ -2423,10 +2441,13 @@ static void find_neighbours(uint32_t uid,
             .radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr)
         };
 
-        if(ent_still(ms))
-            vec_cp_ent_push(out_stat, newdesc);
-        else
-            vec_cp_ent_push(out_dyn, newdesc);
+        if(ent_still(ms)) {
+            if(vec_size(out_stat) < MAX_NEIGHBOURS)
+                vec_cp_ent_push(out_stat, newdesc);
+        }else {
+            if(vec_size(out_dyn) < MAX_NEIGHBOURS)
+                vec_cp_ent_push(out_dyn, newdesc);
+        }
     }
 }
 
@@ -2921,6 +2942,7 @@ static void move_process_cmds(void)
 
 static void *cp_vec_realloc(void *ptr, size_t size)
 {
+    ASSERT_IN_MAIN_THREAD();
     if(!ptr)
         return stalloc(&s_move_work.mem, size);
 
@@ -3048,7 +3070,7 @@ static struct result move_update_task(void *arg)
     return NULL_RESULT;
 }
 
-static void move_complete_work(void)
+static void move_complete_cpu_work(void)
 {
     for(int i = 0; i < s_move_work.ntasks; i++) {
         while(!Sched_FutureIsReady(&s_move_work.futures[i])) {
@@ -3056,6 +3078,35 @@ static void move_complete_work(void)
             Sched_TryYield();
         }
     }
+    s_move_work.ntasks = 0;
+}
+
+static void move_complete_gpu_velocity_work(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    size_t nents = kh_size(s_entity_state_table);
+    size_t buffsize = nents * sizeof(vec2_t);
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_MoveReadNewVelocities,
+        .nargs = 3,
+        .args = {
+            [0] = s_move_work.gpu_velocities,
+            [1] = R_PushArg(&nents, sizeof(size_t)),
+            [2] = R_PushArg(&buffsize, sizeof(size_t))
+        }
+    });
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_MoveInvalidateData,
+        .nargs = 0
+    });
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_PositionsInvalidateData,
+        .nargs = 0
+    });
 }
 
 static khash_t(aabb) *move_copy_aabbs(void)
@@ -3101,6 +3152,8 @@ static void move_copy_gamestate(void)
     s_move_work.gamestate.postree = G_Pos_CopyQuadTree();
     s_move_work.gamestate.sel_radiuses = G_SelectionRadiusCopyTable();
     s_move_work.gamestate.faction_ids = G_FactionIDCopyTable();
+    s_move_work.gamestate.ent_gpu_id_map = G_CopyEntGPUIDMap();
+    s_move_work.gamestate.gpu_id_ent_map = G_CopyGPUIDEntMap();
     s_move_work.gamestate.map = M_AL_CopyWithFields(s_map);
     s_move_work.gamestate.transforms = Entity_CopyTransforms();
     s_move_work.gamestate.aabbs = move_copy_aabbs();
@@ -3138,6 +3191,14 @@ static void move_release_gamestate(void)
     if(s_move_work.gamestate.faction_ids) {
         kh_destroy(id, s_move_work.gamestate.faction_ids);
         s_move_work.gamestate.faction_ids = NULL;
+    }
+    if(s_move_work.gamestate.ent_gpu_id_map) {
+        kh_destroy(id, s_move_work.gamestate.ent_gpu_id_map);
+        s_move_work.gamestate.ent_gpu_id_map = NULL;
+    }
+    if(s_move_work.gamestate.gpu_id_ent_map) {
+        kh_destroy(id, s_move_work.gamestate.gpu_id_ent_map);
+        s_move_work.gamestate.gpu_id_ent_map = NULL;
     }
     if(s_move_work.gamestate.map) {
         M_AL_FreeCopyWithFields((struct map*)s_move_work.gamestate.map);
@@ -3203,6 +3264,8 @@ static void move_prepare_work(enum movement_hz hz)
     s_move_work.in = stalloc(&s_move_work.mem, ndynamic * sizeof(struct move_work_in));
     s_move_work.out = stalloc(&s_move_work.mem, ndynamic * sizeof(struct move_work_out));
     s_move_work.hz = hz;
+    s_move_work.type = (s_use_gpu ? WORK_TYPE_GPU : WORK_TYPE_CPU);
+    SDL_AtomicSet(&s_move_work.gpu_velocities_ready, 0);
 }
 
 static void move_push_work(struct move_work_in in)
@@ -3210,7 +3273,7 @@ static void move_push_work(struct move_work_in in)
     s_move_work.in[s_move_work.nwork++] = in;
 }
 
-static void move_submit_work(task_func_t code)
+static void move_submit_cpu_work(task_func_t code)
 {
     if(s_move_work.nwork == 0)
         return;
@@ -3233,30 +3296,104 @@ static void move_submit_work(task_func_t code)
             &s_move_work.futures[s_move_work.ntasks], TASK_BIG_STACK);
 
         if(s_move_work.tids[s_move_work.ntasks] == NULL_TID) {
-            move_velocity_work(arg->begin_idx, arg->end_idx);
+            code(arg);
         }else{
             s_move_work.ntasks++;
         }
     }
 }
 
+void move_upload_input(size_t nents)
+{
+    ASSERT_IN_MAIN_THREAD();
+    PERF_ENTER();
+
+    const size_t buffsize = nents * (sizeof(uint32_t) * 3 + sizeof(vec2_t));
+    struct render_workspace *ws = G_GetSimWS();
+    void *buff = stalloc(&ws->args, buffsize);
+    unsigned char *cursor = buff;
+
+    for(int gpu_id = 1; gpu_id <= nents; gpu_id++) {
+
+        uint32_t uid = G_EntForGPUIDFrom(s_move_work.gamestate.gpu_id_ent_map, gpu_id);
+        khiter_t k = kh_get(state, s_entity_state_table, uid);
+        assert(k != kh_end(s_entity_state_table));
+        const struct movestate *curr = &kh_value(s_entity_state_table, k);
+
+        const struct flock *flock;
+        uint32_t flock_id = flock_id_for_ent(uid, &flock);
+        uint32_t movestate = curr->state;
+        vec2_t pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
+        uint32_t has_dest_los = flock ? M_NavHasDestLOS(s_move_work.gamestate.map, 
+            flock->dest_id, pos) : false;
+        vec2_t dest_xz = flock ? flock->target_xz : (vec2_t){0.0f, 0.0f};
+
+        *((uint32_t*)cursor) = flock_id;        cursor += sizeof(uint32_t);
+        *((uint32_t*)cursor) = movestate;       cursor += sizeof(uint32_t);
+        *((uint32_t*)cursor) = has_dest_los;    cursor += sizeof(uint32_t);
+        *((vec2_t*)cursor) = dest_xz;           cursor += sizeof(vec2_t);
+    }
+    assert(cursor == ((unsigned char*)buff) + buffsize);
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_MoveUploadData,
+        .nargs = 3,
+        .args = {
+            buff,
+            R_PushArg(&nents, sizeof(nents)),
+            R_PushArg(&buffsize, sizeof(buffsize)),
+        },
+    });
+
+    PERF_RETURN_VOID();
+}
+
+static void move_submit_gpu_velocity_work(void)
+{
+    assert(Sched_ActiveTID() != NULL_TID);
+    Task_RescheduleOnMain();
+
+    size_t nents = G_Pos_UploadFrom(s_move_work.gamestate.positions,
+        s_move_work.gamestate.ent_gpu_id_map);
+    assert(nents == kh_size(s_entity_state_table));
+    move_upload_input(nents);
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_MoveDispatchWork,
+        .nargs = 1,
+        .args = R_PushArg(&nents, sizeof(size_t))
+    });
+    Task_Yield();
+}
+
 static void nav_tick_submit_work(void)
 {
+    ASSERT_IN_MAIN_THREAD();
+
+    if(s_move_work.type == WORK_TYPE_GPU) {
+        size_t nents = kh_size(s_entity_state_table);
+        size_t size = nents * sizeof(vec2_t);
+        s_move_work.gpu_velocities = stalloc(&s_move_work.mem, size);
+    }
+
     SDL_AtomicSet(&s_tick_task_future.status, FUTURE_INCOMPLETE);
     s_tick_task_tid = Sched_Create(2, navigation_tick_task, NULL, 
             &s_tick_task_future, TASK_BIG_STACK);
     assert(s_tick_task_tid != NULL_TID);
+    s_last_tick = g_frame_idx;
 }
 
-static void nav_tick_finish_work(void)
+static enum move_work_phase nav_tick_finish_work(void)
 {
-    if(s_tick_task_tid == NULL_TID)
-        return;
-
+    if(s_tick_task_tid == NULL_TID) {
+        return PHASE_START;
+    }
     while(!Sched_FutureIsReady(&s_tick_task_future)) {
         Sched_RunSync(s_tick_task_tid);
     }
     s_tick_task_tid = NULL_TID;
+    assert(s_tick_task_future.res.type == RESULT_INT);
+    return s_tick_task_future.res.val.as_int;
 }
 
 static enum movement_hz event_to_hz(enum eventtype event)
@@ -3270,28 +3407,29 @@ static enum movement_hz event_to_hz(enum eventtype event)
     return mapping[event];
 }
 
-static void register_callback_for_hz(enum movement_hz hz)
+static enum eventtype event_for_hz(enum movement_hz hz)
 {
     assert(hz >= 0 && hz <= MOVE_HZ_1);
-    const enum eventtype mapping[] = {
+    static const enum eventtype mapping[] = {
         [MOVE_HZ_20] = EVENT_20HZ_TICK,
         [MOVE_HZ_10] = EVENT_10HZ_TICK,
         [MOVE_HZ_5 ] = EVENT_5HZ_TICK,
         [MOVE_HZ_1 ] = EVENT_1HZ_TICK,
     };
-    E_Global_Register(mapping[hz], move_tick, (void*)(uintptr_t)mapping[hz], G_RUNNING);
+    return mapping[hz];
+}
+
+static void register_callback_for_hz(enum movement_hz hz)
+{
+    enum eventtype event = event_for_hz(hz);
+    E_Global_Register(event, move_tick, (void*)(uintptr_t)event, G_RUNNING);
 }
 
 static void unregister_callback_for_hz(enum movement_hz hz)
 {
     assert(hz >= 0 && hz <= MOVE_HZ_1);
-    const enum eventtype mapping[] = {
-        [MOVE_HZ_20] = EVENT_20HZ_TICK,
-        [MOVE_HZ_10] = EVENT_10HZ_TICK,
-        [MOVE_HZ_5 ] = EVENT_5HZ_TICK,
-        [MOVE_HZ_1 ] = EVENT_1HZ_TICK,
-    };
-    E_Global_Unregister(mapping[hz], move_tick);
+    enum eventtype event = event_for_hz(hz);
+    E_Global_Unregister(event, move_tick);
 }
 
 static void move_handle_hz_update(enum eventtype curr)
@@ -3301,13 +3439,7 @@ static void move_handle_hz_update(enum eventtype curr)
 
     s_move_hz_dirty = false;
 
-    static const enum eventtype mapping[] = {
-        [MOVE_HZ_20] = EVENT_20HZ_TICK,
-        [MOVE_HZ_10] = EVENT_10HZ_TICK,
-        [MOVE_HZ_5 ] = EVENT_5HZ_TICK,
-        [MOVE_HZ_1 ] = EVENT_1HZ_TICK,
-    };
-    enum eventtype next = mapping[s_move_hz];
+    enum eventtype next = event_for_hz(s_move_hz);
 
     if(curr == next)
         return;
@@ -3338,6 +3470,8 @@ static void entity_interpolation_step(uint32_t uid)
 
 static void interpolate_tick(void *user, void *event)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     /* Do not run the interpolation in the same tick as the move tick */
     if(g_frame_idx == s_last_tick)
         return;
@@ -3349,13 +3483,7 @@ static void interpolate_tick(void *user, void *event)
     /* No need to perform the interpolation if we've got the next movement
      * tick coming right up.
      */
-    const enum eventtype mapping[] = {
-        [MOVE_HZ_20] = EVENT_20HZ_TICK,
-        [MOVE_HZ_10] = EVENT_10HZ_TICK,
-        [MOVE_HZ_5 ] = EVENT_5HZ_TICK,
-        [MOVE_HZ_1 ] = EVENT_1HZ_TICK,
-    };
-    enum eventtype type = mapping[s_move_hz];
+    enum eventtype type = event_for_hz(s_move_hz);
     if(E_QueuedThisFrame(type)) {
         s_last_interpolate_tick = g_frame_idx;
         return;
@@ -3411,14 +3539,22 @@ static void compute_desired_velocity(void)
 
 static void fork_join_velocity_computations(void)
 {
-    move_submit_work(move_velocity_task);
-    move_complete_work();
+    switch(s_move_work.type) {
+    case WORK_TYPE_CPU:
+        move_submit_cpu_work(move_velocity_task);
+        move_complete_cpu_work();
+        break;
+    case WORK_TYPE_GPU:
+        move_submit_gpu_velocity_work();
+        break;
+    default: assert(0);
+    }
 }
 
 static void fork_join_state_updates(void)
 {
-    move_submit_work(move_update_task);
-    move_complete_work();
+    move_submit_cpu_work(move_update_task);
+    move_complete_cpu_work();
 }
 
 static struct result navigation_tick_task(void *arg)
@@ -3426,22 +3562,30 @@ static struct result navigation_tick_task(void *arg)
     compute_async_fields();
     compute_desired_velocity();
     fork_join_velocity_computations();
-    fork_join_state_updates();
 
-    return NULL_RESULT;
+    /* For GPU workloads, we will beform the remaining steps in 
+     * the bottom half, after we consume the results of the velocity
+     * computations from the GPU.
+     */
+    if(s_move_work.type == WORK_TYPE_GPU) {
+        return (struct result){ 
+            .type = RESULT_INT, 
+            .val.as_int = PHASE_TOP_HALF
+        };
+    }
+
+    fork_join_state_updates();
+    return (struct result){ 
+        .type = RESULT_INT, 
+        .val.as_int = PHASE_SINGLE
+    };
 }
 
-static void move_tick(void *user, void *event)
+static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
 {
-    /* If we are backed up, drop excess events */
-    if(g_frame_idx == s_last_tick)
-        return;
-
+    ASSERT_IN_MAIN_THREAD();
     PERF_PUSH("movement::tick");
-    enum eventtype curr_event = (uintptr_t)user;
-    enum movement_hz hz = event_to_hz(curr_event);
 
-    nav_tick_finish_work();
     move_consume_work_results();
     move_handle_hz_update(curr_event);
     move_process_cmds();
@@ -3457,7 +3601,7 @@ static void move_tick(void *user, void *event)
 
     PERF_PUSH("submit move work");
     uint32_t curr;
-    kh_foreach_key(G_GetDynamicEntsSet(), curr, {
+    kh_foreach_key(s_entity_state_table, curr, {
 
         struct movestate *ms = movestate_get(curr);
         assert(ms);
@@ -3473,8 +3617,8 @@ static void move_tick(void *user, void *event)
         vec_cp_ent_init_alloc(dyn, cp_vec_realloc, cp_vec_free);
         vec_cp_ent_init_alloc(stat, cp_vec_realloc, cp_vec_free);
 
-        vec_cp_ent_resize(dyn, 16);
-        vec_cp_ent_resize(stat, 16);
+        vec_cp_ent_resize(dyn, MAX_NEIGHBOURS);
+        vec_cp_ent_resize(stat, MAX_NEIGHBOURS);
 
         vec2_t pos = (vec2_t){ms->prev_pos.x, ms->prev_pos.z};
         float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr);
@@ -3538,15 +3682,122 @@ static void move_tick(void *user, void *event)
         });
     });
     PERF_POP();
-
-    nav_tick_submit_work();
-    s_last_tick = g_frame_idx;
     PERF_POP();
+}
+
+static void copy_gpu_results(void)
+{
+    size_t nents = kh_size(s_entity_state_table);
+    for(int i = 0; i < s_move_work.nwork; i++) {
+
+        struct move_work_in *in = &s_move_work.in[i];
+        struct move_work_out *out = &s_move_work.out[i];
+
+        uint32_t uid = in->ent_uid;
+        uint32_t gpuid = G_GPUIDForEntFrom(s_move_work.gamestate.ent_gpu_id_map, uid);
+        assert(gpuid >= 1 && gpuid <= nents);
+        vec2_t velocity = s_move_work.gpu_velocities[gpuid];
+
+        out->ent_uid = uid;
+        out->ent_vel = velocity;
+    }
+}
+
+static struct result navigation_tick_bottom_half(void *arg)
+{
+    ASSERT_IN_MAIN_THREAD();
+    assert(Sched_ActiveTID() != NULL_TID);
+
+    /* First, await the next frame, to make sure that 
+     * the render thread has completed all outstanding 
+     * commands.
+     */
+    int source;
+    Task_AwaitEvent(EVENT_UPDATE_START, &source);
+
+    copy_gpu_results();
+    fork_join_state_updates();
+
+    enum movement_hz hz = s_move_work.hz;
+    enum eventtype type = event_for_hz(hz);
+    move_do_tick(type, hz);
+
+    return (struct result){ .type = RESULT_INT, .val.as_int = PHASE_BOT_HALF };
+}
+
+static void move_schedule_bottom_half(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    SDL_AtomicSet(&s_tick_task_future.status, FUTURE_INCOMPLETE);
+    s_tick_task_tid = Sched_Create(0, navigation_tick_bottom_half, NULL, 
+            &s_tick_task_future, TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
+    assert(s_tick_task_tid != NULL_TID);
+    /* Run the task until it gets blocked on the event */
+    Sched_RunSync(s_tick_task_tid);
+    s_last_tick = g_frame_idx;
+}
+
+static void move_tick(void *user, void *event)
+{
+    /* If we are backed up, drop excess events */
+    if(g_frame_idx == s_last_tick)
+        return;
+
+    enum eventtype curr_event = (uintptr_t)user;
+    enum movement_hz hz = event_to_hz(curr_event);
+
+    /* The GPU movement work runs in 2 phases. In between phase 1
+     * and phase 2 (top half and bottom half), the main thread
+     * requests the velocity buffer download from the render thread.
+     */
+    enum move_work_phase prev_phase = nav_tick_finish_work();
+
+    switch(prev_phase) {
+    case PHASE_START:
+    case PHASE_SINGLE:
+        move_do_tick(curr_event, hz);
+        nav_tick_submit_work();
+        break;
+    case PHASE_BOT_HALF:
+        nav_tick_submit_work();
+        break;
+    case PHASE_TOP_HALF:
+        assert(s_move_work.type == WORK_TYPE_GPU);
+        move_complete_gpu_velocity_work();
+        move_schedule_bottom_half();
+        break;
+    default: assert(0);
+    }
 }
 
 static void on_update(void *user, void *event)
 {
     stalloc_clear(&s_eventargs);
+
+    /* We are not currently running a movement tick */
+    if(s_tick_task_tid == NULL_TID)
+        return;
+
+    if(!Sched_FutureIsReady(&s_tick_task_future)
+    || (s_tick_task_future.res.val.as_int != PHASE_TOP_HALF))
+        return;
+
+    /* Kick off the bottom half of the GPU work as soon as the
+     * movement shader has completed.
+     */
+    if(SDL_AtomicGet(&s_move_work.gpu_velocities_ready)) {
+        move_complete_gpu_velocity_work();
+        move_schedule_bottom_half();
+    }else{
+        R_PushCmd((struct rcmd){
+            .func = R_GL_MovePollCompletion,
+            .nargs = 1,
+            .args = {
+                [0] = &s_move_work.gpu_velocities_ready
+            }
+        });
+    }
 }
 
 /*****************************************************************************/
@@ -4039,51 +4290,6 @@ int G_Move_GetTickHz(void)
 void G_Move_SetUseGPU(bool use)
 {
     s_use_gpu = use;
-}
-
-void G_Move_Upload(void)
-{
-    ASSERT_IN_MAIN_THREAD();
-    PERF_ENTER();
-
-    const size_t nents = kh_size(G_GetDynamicEntsSet());
-    const size_t buffsize = nents * (sizeof(uint32_t) * 3 + sizeof(vec2_t));
-    struct render_workspace *ws = G_GetSimWS();
-    void *buff = stalloc(&ws->args, buffsize);
-    unsigned char *cursor = buff;
-
-    for(int gpu_id = 1; gpu_id <= nents; gpu_id++) {
-
-        uint32_t uid = G_EntForGPUID(gpu_id);
-        khiter_t k = kh_get(state, s_entity_state_table, uid);
-        assert(k != kh_end(s_entity_state_table));
-        const struct movestate *curr = &kh_value(s_entity_state_table, k);
-
-        const struct flock *flock;
-        uint32_t flock_id = flock_id_for_ent(uid, &flock);
-        uint32_t movestate = curr->state;
-        vec2_t pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
-        uint32_t has_dest_los = flock ? M_NavHasDestLOS(s_map, flock->dest_id, pos) : false;
-        vec2_t dest_xz = flock ? flock->target_xz : (vec2_t){0.0f, 0.0f};
-
-        *((uint32_t*)cursor) = flock_id;        cursor += sizeof(uint32_t);
-        *((uint32_t*)cursor) = movestate;       cursor += sizeof(uint32_t);
-        *((uint32_t*)cursor) = has_dest_los;    cursor += sizeof(uint32_t);
-        *((vec2_t*)cursor) = dest_xz;           cursor += sizeof(vec2_t);
-    }
-    assert(cursor == ((unsigned char*)buff) + buffsize);
-
-    R_PushCmd((struct rcmd){
-        .func = R_GL_MoveUploadData,
-        .nargs = 3,
-        .args = {
-            buff,
-            R_PushArg(&nents, sizeof(nents)),
-            R_PushArg(&buffsize, sizeof(buffsize)),
-        },
-    });
-
-    PERF_RETURN_VOID();
 }
 
 bool G_Move_SaveState(struct SDL_RWops *stream)

@@ -439,11 +439,12 @@ uint32_t G_Pos_Nearest(vec2_t xz_point)
     return G_Pos_NearestWithPred(xz_point, any_ent, NULL, 0.0);
 }
 
-void G_Pos_Upload(void)
+size_t G_Pos_UploadFrom(khash_t(pos) *table, khash_t(id) *ent_gpu_id_table)
 {
     PERF_ENTER();
+    ASSERT_IN_MAIN_THREAD();
 
-    const size_t max_ents = kh_size(s_postable);
+    const size_t max_ents = kh_size(table);
     struct render_workspace *ws = G_GetSimWS();
     vec3_t *buff = stalloc(&ws->args, max_ents * sizeof(vec3_t));
     uint32_t *gpu_idbuff = stalloc(&ws->args, max_ents * sizeof(uint32_t));
@@ -452,9 +453,9 @@ void G_Pos_Upload(void)
     vec3_t curr;
     size_t nents = 0;
 
-    kh_foreach(s_postable, uid, curr, {
+    kh_foreach(table, uid, curr, {
 
-        uint32_t gpu_id = G_GPUIDForEnt(uid);
+        uint32_t gpu_id = G_GPUIDForEntFrom(ent_gpu_id_table, uid);
         if(gpu_id == 0)
             continue;
 
@@ -462,7 +463,6 @@ void G_Pos_Upload(void)
         gpu_idbuff[nents] = gpu_id;
         nents++;
     });
-    assert(nents == kh_size(G_GetDynamicEntsSet()));
 
     R_PushCmd((struct rcmd){
         .func = R_GL_PositionsUploadData,
@@ -475,6 +475,6 @@ void G_Pos_Upload(void)
         },
     });
 
-    PERF_RETURN_VOID();
+    PERF_RETURN(nents);
 }
 

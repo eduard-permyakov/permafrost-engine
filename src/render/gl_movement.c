@@ -38,6 +38,7 @@
 #include "gl_perf.h"
 #include "gl_assert.h"
 #include "gl_shader.h"
+#include "../main.h"
 
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 
@@ -47,6 +48,7 @@
 
 static GLuint s_move_ssbo;
 static GLuint s_vpref_ssbo;
+static GLsync s_move_fence = 0;
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -55,6 +57,7 @@ static GLuint s_vpref_ssbo;
 void R_GL_MoveUploadData(void *buff, size_t *nents, size_t *buffsize)
 {
     GL_PERF_ENTER();
+    ASSERT_IN_RENDER_THREAD();
     assert(R_ComputeShaderSupported());
 
     glGenBuffers(1, &s_move_ssbo);
@@ -64,7 +67,7 @@ void R_GL_MoveUploadData(void *buff, size_t *nents, size_t *buffsize)
 
     glGenBuffers(1, &s_vpref_ssbo);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, s_vpref_ssbo);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, *nents * sizeof(GLfloat), NULL, GL_STREAM_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, *nents * sizeof(vec2_t), NULL, GL_STREAM_DRAW);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
     GL_ASSERT_OK();
@@ -73,6 +76,8 @@ void R_GL_MoveUploadData(void *buff, size_t *nents, size_t *buffsize)
 
 void R_GL_MoveInvalidateData(void)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     glDeleteBuffers(1, &s_move_ssbo);
     s_move_ssbo = 0;
 
@@ -83,6 +88,8 @@ void R_GL_MoveInvalidateData(void)
 void R_GL_MoveDispatchWork(const size_t *nents)
 {
     GL_PERF_ENTER();
+    ASSERT_IN_RENDER_THREAD();
+
     assert(R_ComputeShaderSupported());
     assert(s_move_ssbo > 0);
 
@@ -108,6 +115,9 @@ void R_GL_MoveDispatchWork(const size_t *nents)
         left -= dispatch_size;
     }
 
+    assert(s_move_fence == 0);
+    s_move_fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }
@@ -115,15 +125,35 @@ void R_GL_MoveDispatchWork(const size_t *nents)
 void R_GL_MoveReadNewVelocities(void *out, const size_t *nents, const size_t *maxout)
 {
     GL_PERF_ENTER();
+    ASSERT_IN_RENDER_THREAD();
 
     /* Make sure the shader has finished writing the output to the SSBO */
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, s_vpref_ssbo);
-    size_t read_size = MIN(*nents * sizeof(GLfloat), *maxout);
+    size_t read_size = MIN(*nents * sizeof(vec2_t), *maxout);
     glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, read_size, out);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    assert(s_move_fence != 0);
+    glDeleteSync(s_move_fence);
+    s_move_fence = 0;
 
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }
+
+void R_GL_MovePollCompletion(SDL_atomic_t *out)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    if(!s_move_fence)
+        return;
+
+    GLenum result = glClientWaitSync(s_move_fence, 0, 0);
+    if(result == GL_ALREADY_SIGNALED
+    || result == GL_CONDITION_SATISFIED) {
+        SDL_AtomicSet(out, 1);
+    }
+}
+

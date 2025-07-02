@@ -606,6 +606,12 @@ void R_GL_MoveDispatchWork(const size_t *nents);
  */
 void R_GL_MoveReadNewVelocities(void *out, const size_t *nents, const size_t *maxout);
 
+/* ---------------------------------------------------------------------------
+ * Poll for the completion of the movement work.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_MovePollCompletion(SDL_atomic_t *out);
+
 /*###########################################################################*/
 /* RENDER SKYBOX                                                             */
 /*###########################################################################*/

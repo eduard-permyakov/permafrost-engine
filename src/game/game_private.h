@@ -61,6 +61,11 @@ khash_t(id)           *G_FlagsCopyTable(void);
 khash_t(range)        *G_SelectionRadiusCopyTable(void);
 khash_t(id)           *G_FactionIDCopyTable(void);
 
+khash_t(id)           *G_CopyEntGPUIDMap(void);
+khash_t(id)           *G_CopyGPUIDEntMap(void);
+uint32_t               G_GPUIDForEntFrom(khash_t(id) *table, uint32_t uid);
+uint32_t               G_EntForGPUIDFrom(khash_t(id) *table, uint32_t gpuid);
+
 enum diplomacy_state (*G_CopyDiplomacyTable(void))[MAX_FACTIONS];
 
 void                   G_UpdateMap(void);

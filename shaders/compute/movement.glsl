@@ -51,12 +51,12 @@ layout(std430, binding = 0) readonly buffer in_data
 layout(r32ui, binding = 1) uniform readonly uimage2D in_pos_id_map;
 layout(std430, binding = 2) writeonly buffer o_data
 {
-    float vpref[];
+    vec2 vpref[];
 };
 
 void main()
 {
     uint idx = gl_GlobalInvocationID.x;
-    vpref[idx] = 0.0f;
+    vpref[idx] = vec2(0.0, 0.0);
 }
 

@@ -51,7 +51,7 @@ KHASH_DECLARE(pos, khint32_t, vec3_t)
 bool      G_Pos_Init(const struct map *map);
 void      G_Pos_Shutdown(void);
 void      G_Pos_Delete(uint32_t uid);
-void      G_Pos_Upload(void);
+size_t    G_Pos_UploadFrom(khash_t(pos) *table, khash_t(id) *ent_gpu_id_table);
 
 qt_ent_t *G_Pos_CopyQuadTree(void);
 void      G_Pos_DestroyQuadTree(qt_ent_t *tree);

@@ -658,7 +658,11 @@ static void combat_hz_commit(const struct sval *new_val)
 
 static void move_gpu_commit(const struct sval *new_val)
 {
-    G_Move_SetUseGPU(new_val->as_bool);
+    bool next = new_val->as_bool;
+    if(!R_ComputeShaderSupported()) {
+        next = false;
+    }
+    G_Move_SetUseGPU(next);
 }
 
 static bool nav_layer_validate(const struct sval *new_val)
@@ -1057,7 +1061,7 @@ static void g_create_settings(void)
         .name = "pf.game.movement_use_gpu",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
-            .as_bool = true
+            .as_bool = false
         },
         .prio = 0,
         .validate = bool_val_validate,
@@ -2429,6 +2433,14 @@ uint32_t G_GPUIDForEnt(uint32_t uid)
     return kh_value(s_gs.ent_gpu_id_map, k);
 }
 
+uint32_t G_GPUIDForEntFrom(khash_t(id) *table, uint32_t uid)
+{
+    khiter_t k = kh_get(id, table, uid);
+    if(k == kh_end(table))
+        return 0;
+    return kh_value(table, k);
+}
+
 uint32_t G_EntForGPUID(uint32_t gpuid)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -2436,6 +2448,24 @@ uint32_t G_EntForGPUID(uint32_t gpuid)
     khiter_t k = kh_get(id, s_gs.gpu_id_ent_map, gpuid);
     assert(k != kh_end(s_gs.gpu_id_ent_map));
     return kh_value(s_gs.gpu_id_ent_map, k);
+}
+
+uint32_t G_EntForGPUIDFrom(khash_t(id) *table, uint32_t gpuid)
+{
+    assert(gpuid >= 1 && gpuid <= kh_size(table));
+    khiter_t k = kh_get(id, table, gpuid);
+    assert(k != kh_end(table));
+    return kh_value(table, k);
+}
+
+khash_t(id) *G_CopyEntGPUIDMap(void)
+{
+    return kh_copy(id, s_gs.ent_gpu_id_map);
+}
+
+khash_t(id) *G_CopyGPUIDEntMap(void)
+{
+    return kh_copy(id, s_gs.gpu_id_ent_map);
 }
 
 bool G_AddFaction(const char *name, vec3_t color, int *out_id)
