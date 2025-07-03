@@ -994,7 +994,8 @@ bool G_Garrison_EvictAll(uint32_t garrisonable, vec2_t target)
         return false;
     work->uid = garrisonable;
     work->target = target;
-    work->tid = Sched_Create(16, evict_task, work, NULL, TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
+    work->tid = Sched_Create(16, evict_task, work, 
+        "garrison::evict_task", NULL, TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
     if(work->tid == NULL_TID) {
         free(work);
         return false;

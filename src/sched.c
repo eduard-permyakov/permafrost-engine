@@ -153,6 +153,7 @@ struct task{
     uint64_t       retval;
     void          *stackmem;
     struct future *future;
+    const char    *name;
     void          *arg;
     void         (*destructor)(void*);
     void          *darg;
@@ -520,12 +521,14 @@ void sched_task_exit(struct result ret)
 }
 
 static void sched_task_init(struct task *task, int prio, uint32_t flags, 
-                            void *code, void *arg, struct future *future, uint32_t parent)
+                            void *code, void *arg, const char *name,
+                            struct future *future, uint32_t parent)
 {
     task->prio = prio;
     task->parent_tid = parent;
     task->flags = flags;
     task->retval = 0;
+    task->name = pf_strdup(name);
     task->arg = arg;
     task->destructor = NULL;
     task->darg = NULL;
@@ -680,14 +683,14 @@ static void sched_await_event(struct task *task, int event)
     queue_tid_push(&kh_val(s_event_queues, k), &task->tid);
 }
 
-static uint32_t sched_create(int prio, task_func_t code, void *arg, struct future *result, 
-                             int flags, uint32_t parent)
+static uint32_t sched_create(int prio, task_func_t code, void *arg, const char *name,
+                             struct future *result, int flags, uint32_t parent)
 {
     struct task *task = sched_task_alloc();
     if(!task)
         return NULL_TID;
 
-    sched_task_init(task, prio, flags, code, arg, result, parent);
+    sched_task_init(task, prio, flags, code, arg, name, result, parent);
     return task->tid;
 }
 
@@ -720,7 +723,7 @@ static void sched_task_run(struct task *task)
     assert(stack_pointer_valid(task));
 
     char name[64];
-    pf_snprintf(name, sizeof(name), "Task %03u", task->tid);
+    pf_snprintf(name, sizeof(name), "Task %03u [%s]", task->tid, task->name);
     PERF_PUSH(name);
 
     if(SDL_ThreadID() == g_main_thread_id) {
@@ -746,8 +749,9 @@ static void sched_task_service_request(struct task *task)
             (int)           task->req.argv[0],
             (task_func_t)   task->req.argv[1],
             (void*)         task->req.argv[2],
-            (struct future*)task->req.argv[3],
-            (int)           task->req.argv[4],
+            (const char*)   task->req.argv[3],
+            (struct future*)task->req.argv[4],
+            (int)           task->req.argv[5],
             task->tid
         );
         sched_reactivate(task);
@@ -807,6 +811,7 @@ static void sched_task_service_request(struct task *task)
         break;
     case _SCHED_REQ_FREE:
 
+        PF_FREE(task->name);
         if(task->flags & TASK_BIG_STACK) {
             block_free(&s_bigstacks, task->stackmem);
         }
@@ -1383,10 +1388,11 @@ void Sched_Tick(void)
     PERF_RETURN_VOID();
 }
 
-uint32_t Sched_Create(int prio, task_func_t code, void *arg, struct future *result, int flags)
+uint32_t Sched_Create(int prio, task_func_t code, void *arg, const char *name, 
+                      struct future *result, int flags)
 {
     SDL_LockMutex(s_request_lock);
-    uint32_t ret = sched_create(prio, code, arg, result, flags | TASK_DETACHED, NULL_TID);
+    uint32_t ret = sched_create(prio, code, arg, name, result, flags | TASK_DETACHED, NULL_TID);
     SDL_UnlockMutex(s_request_lock);
     struct task *task = &s_tasks[ret - 1];
     return ret;
@@ -1520,7 +1526,7 @@ void Sched_TryYield(void)
 /* Like Sched_Create, but attempts to run a task to completion 
  * when it's not able to allocate a TID 
  */
-uint32_t Sched_CreateBlocking(int prio, task_func_t code, void *arg, 
+uint32_t Sched_CreateBlocking(int prio, task_func_t code, void *arg, const char *name,
                               struct future *result, int flags)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -1530,7 +1536,7 @@ uint32_t Sched_CreateBlocking(int prio, task_func_t code, void *arg,
     uint32_t ret;
 
     do{
-        ret = Sched_Create(prio, code, arg, result, flags);
+        ret = Sched_Create(prio, code, arg, name, result, flags);
 
         if(ret == NULL_TID) {
 

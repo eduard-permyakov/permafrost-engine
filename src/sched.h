@@ -100,8 +100,10 @@ void     Sched_Shutdown(void);
 void     Sched_HandleEvent(int event, void *arg, int event_source, bool immediate);
 void     Sched_StartBackgroundTasks(void);
 void     Sched_Tick(void);
-uint32_t Sched_Create(int prio, task_func_t code, void *arg, struct future *result, int flags);
-uint32_t Sched_CreateBlocking(int prio, task_func_t code, void *arg, struct future *result, int flags);
+uint32_t Sched_Create(int prio, task_func_t code, void *arg, const char *name,
+                     struct future *result, int flags);
+uint32_t Sched_CreateBlocking(int prio, task_func_t code, void *arg, const char *name,
+                              struct future *result, int flags);
 bool     Sched_RunSync(uint32_t tid);
 void     Sched_ClearState(void);
 void     Sched_Flush(void);
@@ -128,7 +130,7 @@ enum reqtype{
 
 struct request{
     enum reqtype type;
-    uint64_t     argv[5];
+    uint64_t     argv[6];
 };
 
 uint64_t Sched_Request(struct request req);

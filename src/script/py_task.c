@@ -273,6 +273,24 @@ static PyObject *pytask_call_method(void *func, PyTaskObject *self, PyObject *ar
     }
 }
 
+static uint32_t pytask_schedule(PyTaskObject *task, int prio, task_func_t code, 
+                                void *arg, struct future *result, int flags)
+{
+    PyObject *repr = PyObject_Repr((PyObject*)task);
+    char buff[256];
+    pf_snprintf(buff, sizeof(buff), "%s", PyString_AS_STRING(repr));
+
+    const char *start = strchr(buff, '<');
+    const char *end = strchr(buff, ' ');
+    if(start && end && (end > start)) {
+        size_t len = end - start;
+        memmove(buff, start + 1, len - 2);
+        buff[len - 2] = '\0';
+    }
+    Py_DECREF(repr);
+    return Sched_Create(prio, code, arg, buff, result, flags);
+}
+
 static PyObject *pytask_resume_request(PyTaskObject *self)
 {
     PyObject *args = self->req.args;
@@ -817,7 +835,7 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
             flags |= TASK_BIG_STACK;
     
         assert(ret->ts->frame->f_stacktop);
-        ret->tid = Sched_Create(16, py_task, ret, NULL, flags);
+        ret->tid = pytask_schedule(ret, 16, py_task, ret, NULL, flags);
 
         if(ret->tid == NULL_TID) {
             PyErr_SetString(PyExc_RuntimeError, "Unable to start fiber for task.");
@@ -876,7 +894,7 @@ static PyObject *PyTask_run(PyTaskObject *self)
     if(!self->small_stack)
         flags |= TASK_BIG_STACK;
 
-    self->tid = Sched_Create(16, py_task, self, NULL, flags);
+    self->tid = pytask_schedule(self, 16, py_task, self, NULL, flags);
 
     if(self->tid == NULL_TID) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to start fiber for task.");

@@ -330,7 +330,7 @@ static void on_30hz_tick(void *user, void *event)
 
         SDL_AtomicSet(&s_work.futures[s_work.ntasks].status, FUTURE_INCOMPLETE);
         s_work.tids[s_work.ntasks] = Sched_Create(4, phys_proj_task, arg, 
-            &s_work.futures[s_work.ntasks], 0);
+            "phys_proj_task", &s_work.futures[s_work.ntasks], 0);
 
         if(s_work.tids[s_work.ntasks] == NULL_TID) {
             for(int j = arg->begin_idx; j <= arg->end_idx; j++) {

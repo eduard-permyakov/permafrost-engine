@@ -3293,7 +3293,7 @@ static void move_submit_cpu_work(task_func_t code)
 
         SDL_AtomicSet(&s_move_work.futures[s_move_work.ntasks].status, FUTURE_INCOMPLETE);
         s_move_work.tids[s_move_work.ntasks] = Sched_Create(4, code, arg, 
-            &s_move_work.futures[s_move_work.ntasks], TASK_BIG_STACK);
+            "move::work", &s_move_work.futures[s_move_work.ntasks], TASK_BIG_STACK);
 
         if(s_move_work.tids[s_move_work.ntasks] == NULL_TID) {
             code(arg);
@@ -3378,7 +3378,7 @@ static void nav_tick_submit_work(void)
 
     SDL_AtomicSet(&s_tick_task_future.status, FUTURE_INCOMPLETE);
     s_tick_task_tid = Sched_Create(2, navigation_tick_task, NULL, 
-            &s_tick_task_future, TASK_BIG_STACK);
+            "navigation_tick_task", &s_tick_task_future, TASK_BIG_STACK);
     assert(s_tick_task_tid != NULL_TID);
     s_last_tick = g_frame_idx;
 }
@@ -3553,8 +3553,17 @@ static void fork_join_velocity_computations(void)
 
 static void fork_join_state_updates(void)
 {
+    PERF_PUSH("move::submit state updates");
     move_submit_cpu_work(move_update_task);
+    PERF_POP();
+
+    Sched_TryYield();
+
+    PERF_PUSH("move::complete state updates");
     move_complete_cpu_work();
+    PERF_POP();
+
+    PERF_RETURN_VOID();
 }
 
 static struct result navigation_tick_task(void *arg)
@@ -3687,6 +3696,7 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
 
 static void copy_gpu_results(void)
 {
+    PERF_ENTER();
     size_t nents = kh_size(s_entity_state_table);
     for(int i = 0; i < s_move_work.nwork; i++) {
 
@@ -3701,6 +3711,7 @@ static void copy_gpu_results(void)
         out->ent_uid = uid;
         out->ent_vel = velocity;
     }
+    PERF_RETURN_VOID();
 }
 
 static struct result navigation_tick_bottom_half(void *arg)
@@ -3731,7 +3742,8 @@ static void move_schedule_bottom_half(void)
 
     SDL_AtomicSet(&s_tick_task_future.status, FUTURE_INCOMPLETE);
     s_tick_task_tid = Sched_Create(0, navigation_tick_bottom_half, NULL, 
-            &s_tick_task_future, TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
+            "navigation_tick_bottom_half", &s_tick_task_future, 
+            TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
     assert(s_tick_task_tid != NULL_TID);
     /* Run the task until it gets blocked on the event */
     Sched_RunSync(s_tick_task_tid);

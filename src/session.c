@@ -618,7 +618,7 @@ bool Session_ServiceRequests(struct future *result)
      * task, so that the main thread can handle window events and 
      * re-draw things when the session task yields.
      */
-    uint32_t tid = Sched_Create(1, session_task, NULL, result, 
+    uint32_t tid = Sched_Create(1, session_task, NULL, "session_task", result, 
         TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK | TASK_RUN_DURING_PAUSE);
     return true;
 }

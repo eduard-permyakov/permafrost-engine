@@ -48,7 +48,8 @@ typedef struct result (*task_t)(void *);
 /* The following may only be called from task context 
  * (i.e. from the body of a task function) */
 
-uint32_t Task_Create(int prio, task_t code, void *arg, struct future *result, int flags);
+uint32_t Task_Create(int prio, task_t code, void *arg, const char *name,
+                     struct future *result, int flags);
 bool     Task_Wait(uint32_t child_tid);
 uint32_t Task_MyTid(void);
 uint32_t Task_ParentTid(void);

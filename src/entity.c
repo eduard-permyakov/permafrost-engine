@@ -389,7 +389,8 @@ void Entity_FaceTowards(uint32_t uid, vec2_t point)
 
 void Entity_Ping(uint32_t uid)
 {
-    uint32_t tid = Sched_Create(1, ping_task, (void*)(uintptr_t)uid, NULL, TASK_MAIN_THREAD_PINNED);
+    uint32_t tid = Sched_Create(1, ping_task, (void*)(uintptr_t)uid, 
+        "ping_task", NULL, TASK_MAIN_THREAD_PINNED);
     Sched_RunSync(tid);
 }
 
@@ -525,7 +526,7 @@ void Entity_DisappearAnimated(uint32_t uid, const struct map *map, void (*on_fin
         .on_finish = on_finish,
         .arg = arg,
     };
-    uint32_t tid = Sched_Create(1, disappear_task, &darg, NULL, 
+    uint32_t tid = Sched_Create(1, disappear_task, &darg, "disappear_task", NULL, 
         TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
     Sched_RunSync(tid);
 }

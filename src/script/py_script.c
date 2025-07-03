@@ -4033,8 +4033,8 @@ void S_RunFileAsync(const char *path, int argc, char **argv, struct future *resu
     arg->argc = argc;
     arg->argv = (const char**)argv;
 
-    uint32_t tid = Sched_Create(31, script_task, arg, result, 
-        TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
+    uint32_t tid = Sched_Create(31, script_task, arg, "script_task",
+        result, TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
 }
 
 bool S_GetFilePath(char *out, size_t maxout)

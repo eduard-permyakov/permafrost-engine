@@ -2014,7 +2014,7 @@ static void combat_submit_work(void)
 
         SDL_AtomicSet(&s_combat_work.futures[s_combat_work.ntasks].status, FUTURE_INCOMPLETE);
         s_combat_work.tids[s_combat_work.ntasks] = Sched_Create(4, combat_task, arg, 
-            &s_combat_work.futures[s_combat_work.ntasks], TASK_BIG_STACK);
+            "combat_task", &s_combat_work.futures[s_combat_work.ntasks], TASK_BIG_STACK);
 
         if(s_combat_work.tids[s_combat_work.ntasks] == NULL_TID) {
             combat_work(arg->begin_idx, arg->end_idx);
@@ -2059,8 +2059,8 @@ static void on_1hz_tick(void *user, void *event)
         if(curr->secs_left == 0) {
 
             uint32_t uid = curr->uid;
-            uint32_t tid = Sched_Create(1, corpse_disappear_task, 
-                (void*)(uintptr_t)uid, NULL, TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
+            uint32_t tid = Sched_Create(1, corpse_disappear_task, (void*)(uintptr_t)uid, 
+                "corpse_disappear_task", NULL, TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
             Sched_RunSync(tid);
 
             struct corpse *last = &vec_AT(&s_corpses, ncorpses-1);

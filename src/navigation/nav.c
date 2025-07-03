@@ -3312,7 +3312,7 @@ void N_RequestAsyncEnemySeekField(vec2_t curr_pos, void *nav_private, enum nav_l
 
     SDL_AtomicSet(&s_field_work.futures[s_field_work.ntasks].status, FUTURE_INCOMPLETE);
     s_field_work.tids[s_field_work.ntasks] = Sched_Create(1, field_task, arg, 
-        &s_field_work.futures[s_field_work.ntasks], TASK_BIG_STACK);
+        "nav::field_task", &s_field_work.futures[s_field_work.ntasks], TASK_BIG_STACK);
     if(s_field_work.tids[s_field_work.ntasks] != NULL_TID) {
         s_field_work.ntasks++;
     }
@@ -3366,7 +3366,7 @@ void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_la
 
     SDL_AtomicSet(&s_field_work.futures[s_field_work.ntasks].status, FUTURE_INCOMPLETE);
     s_field_work.tids[s_field_work.ntasks] = Sched_Create(1, field_task, arg, 
-        &s_field_work.futures[s_field_work.ntasks], TASK_BIG_STACK);
+        "nav::field_task", &s_field_work.futures[s_field_work.ntasks], TASK_BIG_STACK);
     if(s_field_work.tids[s_field_work.ntasks] != NULL_TID) {
         s_field_work.ntasks++;
     }

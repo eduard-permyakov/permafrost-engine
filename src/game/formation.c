@@ -3298,7 +3298,7 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
     work->input.center_tile = center_td;
 
     SDL_AtomicSet(&work->future.status, FUTURE_INCOMPLETE);
-    work->tid = Sched_Create(31, func, work, &work->future, 0);
+    work->tid = Sched_Create(31, func, work, "formation::work", &work->future, 0);
     if(work->tid == NULL_TID) {
         func(&work->result);
         SDL_AtomicSet(&work->future.status, FUTURE_COMPLETE);
@@ -4311,7 +4311,8 @@ static void dispatch_cell_assignment_task(struct cell_assignment_work *work)
     ASSERT_IN_MAIN_THREAD();
 
     SDL_AtomicSet(&work->future.status, FUTURE_INCOMPLETE);
-    work->tid = Sched_Create(16, cell_assignment_task, work, &work->future, TASK_BIG_STACK);
+    work->tid = Sched_Create(16, cell_assignment_task, work, "cell_assignment_task",
+        &work->future, TASK_BIG_STACK);
     if(work->tid == NULL_TID) {
         cell_assignment_task(work);
         SDL_AtomicSet(&work->future.status, FUTURE_COMPLETE);

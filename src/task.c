@@ -119,7 +119,7 @@ static struct result timeserver_task(void *arg)
     Task_SetDestructor(timeserver_exit, &descs);
 
     struct future res;
-    uint32_t notifier = Task_Create(0, tick_notifier, NULL, &res, 0);
+    uint32_t notifier = Task_Create(0, tick_notifier, NULL, "tick_notifier", &res, 0);
 
     while(1) {
         struct ts_req request;
@@ -350,15 +350,18 @@ void Task_SetDestructor(void (*destructor)(void*), void *darg)
     });
 }
 
-uint32_t Task_Create(int prio, task_t code, void *arg, struct future *result, int flags)
+uint32_t Task_Create(int prio, task_t code, void *arg, const char *name,
+                     struct future *result, int flags)
 {
+    assert(name);
     return Sched_Request((struct request){
         .type = SCHED_REQ_CREATE,
         .argv[0] = (uint64_t)prio,
         .argv[1] = (uint64_t)code,
         .argv[2] = (uint64_t)arg,
-        .argv[3] = (uint64_t)result,
-        .argv[4] = (uint64_t)flags,
+        .argv[3] = (uint64_t)name,
+        .argv[4] = (uint64_t)result,
+        .argv[5] = (uint64_t)flags,
     });
 }
 
@@ -419,7 +422,7 @@ void Task_RescheduleOnMain(void)
 void Task_CreateServices(void)
 {
     ASSERT_IN_MAIN_THREAD();
-    s_ns_tid = Sched_Create(0, nameserver_task, NULL, NULL, 0);
-    s_ts_tid = Sched_Create(0, timeserver_task, NULL, NULL, 0);
+    s_ns_tid = Sched_Create(0, nameserver_task, NULL, "nameserver", NULL, 0);
+    s_ts_tid = Sched_Create(0, timeserver_task, NULL, "timeserver", NULL, 0);
 }
 
