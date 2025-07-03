@@ -77,6 +77,10 @@ struct ui_vert{
 #define VERTS_PER_TILE      (4 * VERTS_PER_SIDE_FACE + VERTS_PER_TOP_FACE)
 #define TILE_DEPTH          (3)
 #define MAX_MATERIALS       (16)
+#define MAX_FLOCK_MEMBERS   (1024) /* Must match movement.glsl */
+#define FLOCK_BUFF_SIZE     ((sizeof(GLuint) * MAX_FLOCK_MEMBERS) \
+                          + sizeof(GLuint) \
+                          + (sizeof(GLfloat) * 2))
 
 
 /*###########################################################################*/
@@ -580,10 +584,11 @@ void R_GL_PositionsInvalidateData(void);
 /*###########################################################################*/
 
 /* ---------------------------------------------------------------------------
- * Upload the movement input state to a shader storage buffer object.
+ * Upload the movement input state to shader storage buffer objects.
  * ---------------------------------------------------------------------------
  */
-void R_GL_MoveUploadData(void *buff, size_t *nents, size_t *buffsize);
+void R_GL_MoveUploadData(void *ent_buff, size_t *nents, size_t *ent_buffsize,
+                         void *flock_buff, size_t *nflocks, size_t *flock_buffsize);
 
 /* ---------------------------------------------------------------------------
  * Free resources previously allocated by R_GL_MoveUploadData. This must be 
@@ -611,6 +616,12 @@ void R_GL_MoveReadNewVelocities(void *out, const size_t *nents, const size_t *ma
  * ---------------------------------------------------------------------------
  */
 void R_GL_MovePollCompletion(SDL_atomic_t *out);
+
+/* ---------------------------------------------------------------------------
+ * Clean up any OpenGL resources allocated by the movement system.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_MoveClearState(void);
 
 /*###########################################################################*/
 /* RENDER SKYBOX                                                             */

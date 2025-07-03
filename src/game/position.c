@@ -439,7 +439,8 @@ uint32_t G_Pos_Nearest(vec2_t xz_point)
     return G_Pos_NearestWithPred(xz_point, any_ent, NULL, 0.0);
 }
 
-size_t G_Pos_UploadFrom(khash_t(pos) *table, khash_t(id) *ent_gpu_id_table)
+size_t G_Pos_UploadFrom(khash_t(pos) *table, khash_t(id) *ent_gpu_id_table,
+                        const struct map *map)
 {
     PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();

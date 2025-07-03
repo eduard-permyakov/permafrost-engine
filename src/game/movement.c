@@ -2972,7 +2972,6 @@ static void move_velocity_work(int begin_idx, int end_idx)
 
         /* Compute the preferred velocity */
         vec2_t vpref = (vec2_t){NAN, NAN};
-        enum arrival_state old_state = ms->state;
         switch(ms->state) {
         case STATE_TURNING:
             vpref = (vec2_t){0.0f, 0.0f};
@@ -3086,7 +3085,7 @@ static void move_complete_gpu_velocity_work(void)
     ASSERT_IN_MAIN_THREAD();
 
     size_t nents = kh_size(s_entity_state_table);
-    size_t buffsize = nents * sizeof(vec2_t);
+    size_t attr_buffsize = nents * sizeof(vec2_t);
 
     R_PushCmd((struct rcmd){
         .func = R_GL_MoveReadNewVelocities,
@@ -3094,7 +3093,7 @@ static void move_complete_gpu_velocity_work(void)
         .args = {
             [0] = s_move_work.gpu_velocities,
             [1] = R_PushArg(&nents, sizeof(size_t)),
-            [2] = R_PushArg(&buffsize, sizeof(size_t))
+            [2] = R_PushArg(&attr_buffsize, sizeof(size_t))
         }
     });
 
@@ -3303,15 +3302,16 @@ static void move_submit_cpu_work(task_func_t code)
     }
 }
 
-void move_upload_input(size_t nents)
+static void move_upload_input(size_t nents)
 {
     ASSERT_IN_MAIN_THREAD();
     PERF_ENTER();
 
-    const size_t buffsize = nents * (sizeof(uint32_t) * 3 + sizeof(vec2_t));
+    /* Set moveattr data */
+    const size_t attr_buffsize = nents * (sizeof(uint32_t) * 3 + sizeof(GLfloat) * 2);
     struct render_workspace *ws = G_GetSimWS();
-    void *buff = stalloc(&ws->args, buffsize);
-    unsigned char *cursor = buff;
+    void *attrbuff = stalloc(&ws->args, attr_buffsize);
+    unsigned char *cursor = attrbuff;
 
     for(int gpu_id = 1; gpu_id <= nents; gpu_id++) {
 
@@ -3331,17 +3331,52 @@ void move_upload_input(size_t nents)
         *((uint32_t*)cursor) = flock_id;        cursor += sizeof(uint32_t);
         *((uint32_t*)cursor) = movestate;       cursor += sizeof(uint32_t);
         *((uint32_t*)cursor) = has_dest_los;    cursor += sizeof(uint32_t);
-        *((vec2_t*)cursor) = dest_xz;           cursor += sizeof(vec2_t);
+        *((vec2_t*)cursor)   = dest_xz;         cursor += sizeof(vec2_t);
     }
-    assert(cursor == ((unsigned char*)buff) + buffsize);
+    assert(cursor == ((unsigned char*)attrbuff) + attr_buffsize);
+
+    /* Setup flock data */
+    const size_t nflocks = vec_size(&s_flocks);
+    const size_t flock_buffsize = nflocks * FLOCK_BUFF_SIZE;
+    void *flockbuff = stalloc(&ws->args, flock_buffsize);
+    cursor = flockbuff;
+
+    for(int i = 0; i < nflocks; i++) {
+
+        struct flock *curr_flock = &vec_AT(&s_flocks, i);            
+        uint32_t uid;
+        size_t nents = 0;
+        unsigned char *tmp = cursor;
+
+        kh_foreach_key(curr_flock->ents, uid, {
+
+            *((uint32_t*)tmp) = uid; 
+            tmp += sizeof(uint32_t);
+
+            if(++nents == MAX_FLOCK_MEMBERS)
+                break;
+        });
+        cursor += MAX_FLOCK_MEMBERS * sizeof(uint32_t);
+
+        assert(nents == MIN(kh_size(curr_flock->ents), MAX_FLOCK_MEMBERS));
+        *((uint32_t*)cursor) = (uint32_t)nents; 
+        cursor += sizeof(uint32_t);
+
+        *((vec2_t*)cursor) = curr_flock->target_xz;
+        cursor += sizeof(vec2_t);
+    }
+    assert(cursor == ((unsigned char*)flockbuff) + flock_buffsize);
 
     R_PushCmd((struct rcmd){
         .func = R_GL_MoveUploadData,
-        .nargs = 3,
+        .nargs = 6,
         .args = {
-            buff,
+            attrbuff,
             R_PushArg(&nents, sizeof(nents)),
-            R_PushArg(&buffsize, sizeof(buffsize)),
+            R_PushArg(&attr_buffsize, sizeof(attr_buffsize)),
+            flockbuff,
+            R_PushArg(&nflocks, sizeof(nflocks)),
+            R_PushArg(&flock_buffsize, sizeof(flock_buffsize)),
         },
     });
 
@@ -3354,7 +3389,8 @@ static void move_submit_gpu_velocity_work(void)
     Task_RescheduleOnMain();
 
     size_t nents = G_Pos_UploadFrom(s_move_work.gamestate.positions,
-        s_move_work.gamestate.ent_gpu_id_map);
+        s_move_work.gamestate.ent_gpu_id_map,
+        s_move_work.gamestate.map);
     assert(nents == kh_size(s_entity_state_table));
     move_upload_input(nents);
 
@@ -3706,8 +3742,8 @@ static void copy_gpu_results(void)
         uint32_t uid = in->ent_uid;
         uint32_t gpuid = G_GPUIDForEntFrom(s_move_work.gamestate.ent_gpu_id_map, uid);
         assert(gpuid >= 1 && gpuid <= nents);
-        vec2_t velocity = s_move_work.gpu_velocities[gpuid];
 
+        vec2_t velocity = s_move_work.gpu_velocities[gpuid-1];
         out->ent_uid = uid;
         out->ent_vel = velocity;
     }
@@ -3812,6 +3848,17 @@ static void on_update(void *user, void *event)
     }
 }
 
+static void nav_cancel_gpu_work(void)
+{
+    /* Handle the case where the bottom half the GPU work is blocked on
+     * an event. We cannot run it yet, as the new velocity data from the
+     * GPU won't be available until the next frame. Kill off the task.
+     */
+    if(s_tick_task_tid != NULL_TID && Sched_TryCancel(s_tick_task_tid)) {
+        s_tick_task_tid = NULL_TID;
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -3865,6 +3912,7 @@ bool G_Move_Init(const struct map *map)
 
 void G_Move_Shutdown(void)
 {
+    nav_cancel_gpu_work();
     nav_tick_finish_work();
     s_map = NULL;
 

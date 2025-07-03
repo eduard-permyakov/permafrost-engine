@@ -1265,6 +1265,7 @@ bool S_Task_Init(void)
 void S_Task_Shutdown(void)
 {
     kh_destroy(task, s_tid_task_map);
+    s_tid_task_map = NULL;
     E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
 }
 
@@ -1299,8 +1300,10 @@ PyObject *S_Task_GetAll(void)
 
 void S_Task_MaybeExit(void)
 {
+    if(!s_tid_task_map)
+        return;
     uint32_t tid = Sched_ActiveTID();
-    khiter_t k= kh_get(task, s_tid_task_map, tid);
+    khiter_t k = kh_get(task, s_tid_task_map, tid);
     if(k == kh_end(s_tid_task_map))
         return;
     PyTaskObject *self = kh_value(s_tid_task_map, k);
@@ -1310,6 +1313,8 @@ void S_Task_MaybeExit(void)
 
 void S_Task_MaybeEnter(void)
 {
+    if(!s_tid_task_map)
+        return;
     uint32_t tid = Sched_ActiveTID();
     khiter_t k= kh_get(task, s_tid_task_map, tid);
     if(k == kh_end(s_tid_task_map))

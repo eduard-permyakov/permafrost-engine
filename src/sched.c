@@ -173,6 +173,7 @@ __pragma(pack(pop));
 #define BIG_STACK_SZ            (4 * 1024 * 1024)
 #define SCHED_TICK_MS           (1.0f / CONFIG_SCHED_TARGET_FPS * 1000.0f)
 #define ALIGNED(val, align)     (((val) + ((align) - 1)) & ~((align) - 1))
+#define DELETED_MARKER          (((uint32_t)0x1) << 31)
 
 PQUEUE_TYPE(task, struct task*)
 PQUEUE_IMPL(static, task, struct task*)
@@ -738,6 +739,26 @@ static void sched_task_run(struct task *task)
     sched_set_thread_tid(SDL_ThreadID(), NULL_TID);
 }
 
+static void sched_task_shutdown(struct task *task)
+{
+    PF_FREE(task->name);
+    if(task->flags & TASK_BIG_STACK) {
+        block_free(&s_bigstacks, task->stackmem);
+    }
+    if(task->flags & TASK_DETACHED) {
+        sched_task_free(task);
+    }else if(s_parent_waiting[task->tid - 1]) {
+
+        struct task *parent = &s_tasks[task->parent_tid - 1];
+        s_parent_waiting[task->tid - 1] = false;
+        assert(parent->state != TASK_STATE_EVENT_BLOCKED);
+        sched_reactivate(parent);
+        sched_task_free(task);
+    }else{
+        task->state = TASK_STATE_ZOMBIE;
+    }
+}
+
 static void sched_task_service_request(struct task *task)
 {
     assert(sched_curr_thread_tid() == NULL_TID);
@@ -810,23 +831,7 @@ static void sched_task_service_request(struct task *task)
         sched_reactivate_on_main(task);
         break;
     case _SCHED_REQ_FREE:
-
-        PF_FREE(task->name);
-        if(task->flags & TASK_BIG_STACK) {
-            block_free(&s_bigstacks, task->stackmem);
-        }
-        if(task->flags & TASK_DETACHED) {
-            sched_task_free(task);
-        }else if(s_parent_waiting[task->tid - 1]) {
-
-            struct task *parent = &s_tasks[task->parent_tid - 1];
-            s_parent_waiting[task->tid - 1] = false;
-            assert(parent->state != TASK_STATE_EVENT_BLOCKED);
-            sched_reactivate(parent);
-            sched_task_free(task);
-        }else{
-            task->state = TASK_STATE_ZOMBIE;
-        }
+        sched_task_shutdown(task);
         break;
     case _SCHED_REQ_RUN_SYNC: {
 
@@ -1291,6 +1296,9 @@ void Sched_HandleEvent(int event, void *arg, int event_source, bool immediate)
         uint32_t tid;
         queue_tid_pop(waiters, &tid);
 
+        if(tid & DELETED_MARKER)
+            continue;
+
         struct task *task = &s_tasks[tid - 1];
         assert(task->state == TASK_STATE_EVENT_BLOCKED);
 
@@ -1599,6 +1607,46 @@ bool Sched_IsReady(uint32_t tid)
     bool ret = false;
     SDL_LockMutex(s_request_lock);
     ret = s_tasks[tid - 1].state == TASK_STATE_READY;
+    SDL_UnlockMutex(s_request_lock);
+    return ret;
+}
+
+bool Sched_TryCancel(uint32_t tid)
+{
+    bool ret = false;
+    SDL_LockMutex(s_request_lock);
+
+    struct task *task = &s_tasks[tid - 1];
+    if(task->state == TASK_STATE_EVENT_BLOCKED) {
+
+        enum eventtype event;
+        queue_tid_t *queue;
+        (void)event;
+
+        kh_foreach_val_ptr(s_event_queues, event, queue, {
+
+            for(int j = queue->ihead; j != queue->itail; j = (j + 1) % queue->capacity) {
+
+                uint32_t *curr = &queue->mem[j];
+                if(*curr == tid) {
+                    *curr |= DELETED_MARKER;
+                    ret = true;
+                    break;
+                }
+            }
+        });
+    }
+    if(ret) {
+        if(task->destructor) {
+            task->destructor(task->darg);
+        }
+        if(task->erelease) {
+            task->erelease(task->earg);
+            task->erelease = NULL;
+            task->earg = NULL;
+        }
+        sched_task_shutdown(task);
+    }
     SDL_UnlockMutex(s_request_lock);
     return ret;
 }

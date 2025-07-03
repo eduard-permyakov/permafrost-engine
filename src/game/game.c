@@ -910,6 +910,7 @@ static void g_clear_map_state(void)
         Engine_WaitRenderWorkDone();
         PF_FREE(s_gs.prev_tick_map);
         s_gs.prev_tick_map = NULL;
+        R_PushCmd((struct rcmd){ R_GL_MoveClearState, 0 });
     }
 }
 

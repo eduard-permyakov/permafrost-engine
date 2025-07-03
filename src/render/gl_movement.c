@@ -47,6 +47,7 @@
 /*****************************************************************************/
 
 static GLuint s_move_ssbo;
+static GLuint s_flock_ssbo;
 static GLuint s_vpref_ssbo;
 static GLsync s_move_fence = 0;
 
@@ -54,7 +55,8 @@ static GLsync s_move_fence = 0;
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_MoveUploadData(void *buff, size_t *nents, size_t *buffsize)
+void R_GL_MoveUploadData(void *ent_buff, size_t *nents, size_t *ent_buffsize,
+                         void *flock_buff, size_t *nflocks, size_t *flock_buffsize)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -62,7 +64,12 @@ void R_GL_MoveUploadData(void *buff, size_t *nents, size_t *buffsize)
 
     glGenBuffers(1, &s_move_ssbo);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, s_move_ssbo);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, *buffsize, buff, GL_STREAM_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, *ent_buffsize, ent_buff, GL_STREAM_DRAW);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    glGenBuffers(1, &s_flock_ssbo);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, s_flock_ssbo);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, *nflocks * FLOCK_BUFF_SIZE, flock_buff, GL_STREAM_DRAW);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
     glGenBuffers(1, &s_vpref_ssbo);
@@ -81,6 +88,9 @@ void R_GL_MoveInvalidateData(void)
     glDeleteBuffers(1, &s_move_ssbo);
     s_move_ssbo = 0;
 
+    glDeleteBuffers(1, &s_flock_ssbo);
+    s_flock_ssbo = 0;
+
     glDeleteBuffers(1, &s_vpref_ssbo);
     s_vpref_ssbo = 0;
 }
@@ -93,17 +103,25 @@ void R_GL_MoveDispatchWork(const size_t *nents)
     assert(R_ComputeShaderSupported());
     assert(s_move_ssbo > 0);
 
+    enum{
+        MOVEATTRS_UNIT = 0,
+        FLOCKS_UNIT = 1,
+        POSMAP_UNIT = 2,
+        VOUT_UNIT = 3
+    };
+
     /* 1. bind the compute shader */
     R_GL_Shader_Install("movement");
 
     /* 2. Bind the approparite inputs/outputs */
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, s_move_ssbo);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, MOVEATTRS_UNIT, s_move_ssbo);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, FLOCKS_UNIT, s_flock_ssbo);
 
     GLuint pos_id_map_tex = 0;
     R_GL_PositionsGetTexture(&pos_id_map_tex);
-    glBindImageTexture(1, pos_id_map_tex, 0, GL_FALSE, 0, GL_READ_ONLY, GL_R32UI);
+    glBindImageTexture(POSMAP_UNIT, pos_id_map_tex, 0, GL_FALSE, 0, GL_READ_ONLY, GL_R32UI);
 
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, s_vpref_ssbo);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, VOUT_UNIT, s_vpref_ssbo);
 
     /* 3. kick off the compute work */
     int max_size = 0, left = *nents;
@@ -154,6 +172,29 @@ void R_GL_MovePollCompletion(SDL_atomic_t *out)
     if(result == GL_ALREADY_SIGNALED
     || result == GL_CONDITION_SATISFIED) {
         SDL_AtomicSet(out, 1);
+    }
+}
+
+void R_GL_MoveClearState(void)
+{
+    ASSERT_IN_RENDER_THREAD();
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    if(s_move_ssbo) {
+        glDeleteBuffers(1, &s_move_ssbo);
+        s_move_ssbo = 0;
+    }
+    if(s_flock_ssbo) {
+        glDeleteBuffers(1, &s_flock_ssbo);
+        s_flock_ssbo = 0;
+    }
+    if(s_vpref_ssbo) {
+        glDeleteBuffers(1, &s_vpref_ssbo);
+        s_vpref_ssbo = 0;
+    }
+    if(s_move_fence) {
+        glDeleteSync(s_move_fence);
+        s_move_fence = 0;
     }
 }
 
