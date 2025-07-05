@@ -73,10 +73,13 @@
 
 /* For the purpose of movement simulation, all entities have the same mass,
  * meaning they are accelerate the same amount when applied equal forces. */
-#define ENTITY_MASS      (1.0f)
-#define EPSILON          (1.0f/1024)
-#define MAX_FORCE        (0.75f)
-#define SCALED_MAX_FORCE (MAX_FORCE / G_Move_GetTickHz() * 20.0)
+#define ENTITY_MASS           (1.0f)
+#define EPSILON               (1.0f/1024)
+#define MAX_FORCE             (0.75f)
+#define SCALED_MAX_FORCE      (MAX_FORCE / G_Move_GetTickHz() * 20.0)
+#define VEL_HIST_LEN          (14)
+#define MAX_MOVE_TASKS        (64)
+#define MAX_GPU_FLOCK_MEMBERS (1024)  /* Must match movement.glsl */
 
 #define SIGNUM(x)    (((x) > 0) - ((x) < 0))
 #define MAX(a, b)    ((a) > (b) ? (a) : (b))
@@ -97,9 +100,6 @@
         if(!(_pred))                    \
             goto _label;                \
     }while(0)
-
-#define VEL_HIST_LEN (14)
-#define MAX_MOVE_TASKS (64)
 
 enum arrival_state{
     /* Entity is moving towards the flock's destination point */
@@ -240,6 +240,7 @@ struct movestate_patch{
 
 struct move_work_in{
     uint32_t       ent_uid;
+    enum arrival_state state; // TODO: tmp...
     vec2_t         ent_des_v;
     float          speed;
     vec2_t         cell_pos;
@@ -299,6 +300,12 @@ enum move_work_phase{
     PHASE_SINGLE,
     PHASE_TOP_HALF,
     PHASE_BOT_HALF,
+    PHASE_INCOMPLETE
+};
+
+enum tick_task_type{
+    TICK_TASK_TOP_HALF,
+    TICK_TASK_BOT_HALF
 };
 
 struct move_work{
@@ -315,6 +322,30 @@ struct move_work{
     SDL_atomic_t              gpu_velocities_ready;
     vec2_t                   *gpu_velocities;
     struct future             futures[MAX_MOVE_TASKS];
+};
+
+/* Must match movement.glsl */
+struct gpu_flock_desc{
+    GLuint  ents[MAX_GPU_FLOCK_MEMBERS];
+    GLuint  nmembers;
+    GLfloat target_x;
+    GLfloat target_z;
+};
+
+/* Must match movement.glsl */
+struct gpu_ent_desc{
+    vec2_t   dest;
+    vec2_t   vdes;
+    vec2_t   cell_pos;
+    vec2_t   formation_cohesion_force;
+    vec2_t   formation_align_force;
+    vec2_t   formation_drag_force;
+    uint32_t movestate;
+    uint32_t flock_id;
+    float    speed;
+    uint32_t has_dest_los;
+    uint32_t formation_assignment_ready;
+    float    __pad0;
 };
 
 enum move_cmd_type{
@@ -414,6 +445,7 @@ static enum movement_hz        s_move_hz = MOVE_HZ_20;
 static bool                    s_move_hz_dirty = false;
 static bool                    s_use_gpu = true;
 
+static enum tick_task_type     s_tick_task_type;
 static uint32_t                s_tick_task_tid = NULL_TID;
 static struct future           s_tick_task_future;
 
@@ -3302,13 +3334,25 @@ static void move_submit_cpu_work(task_func_t code)
     }
 }
 
+static struct move_work_in *work_input_for_uid(uint32_t uid)
+{
+    for(int i = 0; i < s_move_work.nwork; i++) {
+
+        struct move_work_in *in = &s_move_work.in[i];
+        if(in->ent_uid == uid)
+            return in;
+    }
+    return NULL;
+}
+
 static void move_upload_input(size_t nents)
 {
     ASSERT_IN_MAIN_THREAD();
     PERF_ENTER();
 
     /* Set moveattr data */
-    const size_t attr_buffsize = nents * (sizeof(uint32_t) * 3 + sizeof(GLfloat) * 2);
+    assert(sizeof(struct gpu_ent_desc) == 18 * sizeof(GLfloat));
+    const size_t attr_buffsize = nents * sizeof(struct gpu_ent_desc);
     struct render_workspace *ws = G_GetSimWS();
     void *attrbuff = stalloc(&ws->args, attr_buffsize);
     unsigned char *cursor = attrbuff;
@@ -3316,9 +3360,8 @@ static void move_upload_input(size_t nents)
     for(int gpu_id = 1; gpu_id <= nents; gpu_id++) {
 
         uint32_t uid = G_EntForGPUIDFrom(s_move_work.gamestate.gpu_id_ent_map, gpu_id);
-        khiter_t k = kh_get(state, s_entity_state_table, uid);
-        assert(k != kh_end(s_entity_state_table));
-        const struct movestate *curr = &kh_value(s_entity_state_table, k);
+        const struct movestate *curr = movestate_get(uid);
+        assert(curr);
 
         const struct flock *flock;
         uint32_t flock_id = flock_id_for_ent(uid, &flock);
@@ -3328,16 +3371,34 @@ static void move_upload_input(size_t nents)
             flock->dest_id, pos) : false;
         vec2_t dest_xz = flock ? flock->target_xz : (vec2_t){0.0f, 0.0f};
 
-        *((uint32_t*)cursor) = flock_id;        cursor += sizeof(uint32_t);
-        *((uint32_t*)cursor) = movestate;       cursor += sizeof(uint32_t);
-        *((uint32_t*)cursor) = has_dest_los;    cursor += sizeof(uint32_t);
-        *((vec2_t*)cursor)   = dest_xz;         cursor += sizeof(vec2_t);
+        struct move_work_in *work = NULL;
+        if(!ent_still(curr)) {
+            work = work_input_for_uid(uid);
+        }
+        if((work = work_input_for_uid(uid))) {
+            assert(curr->state == work->state);
+        }
+
+        *((struct gpu_ent_desc*)cursor) = (struct gpu_ent_desc){
+            .dest = dest_xz,
+            .vdes = work ? work->ent_des_v : (vec2_t){0},
+            .cell_pos = work ? work->cell_pos : (vec2_t){0},
+            .formation_cohesion_force  = work ? work->fstate.normal_cohesion_force : (vec2_t){0},
+            .formation_align_force = work ? work->fstate.normal_align_force : (vec2_t){0},
+            .formation_drag_force = work ? work->fstate.normal_drag_force : (vec2_t){0},
+            .movestate = curr->state,
+            .flock_id = flock_id,
+            .speed = work ? work->speed : 0.0f,
+            .has_dest_los = has_dest_los,
+            .formation_assignment_ready = work ? work->fstate.assignment_ready : 0,
+        };
+        cursor += sizeof(struct gpu_ent_desc);
     }
     assert(cursor == ((unsigned char*)attrbuff) + attr_buffsize);
 
     /* Setup flock data */
     const size_t nflocks = vec_size(&s_flocks);
-    const size_t flock_buffsize = nflocks * FLOCK_BUFF_SIZE;
+    const size_t flock_buffsize = nflocks * sizeof(struct gpu_flock_desc);
     void *flockbuff = stalloc(&ws->args, flock_buffsize);
     cursor = flockbuff;
 
@@ -3353,12 +3414,12 @@ static void move_upload_input(size_t nents)
             *((uint32_t*)tmp) = uid; 
             tmp += sizeof(uint32_t);
 
-            if(++nents == MAX_FLOCK_MEMBERS)
+            if(++nents == MAX_GPU_FLOCK_MEMBERS)
                 break;
         });
-        cursor += MAX_FLOCK_MEMBERS * sizeof(uint32_t);
+        cursor += MAX_GPU_FLOCK_MEMBERS * sizeof(uint32_t);
 
-        assert(nents == MIN(kh_size(curr_flock->ents), MAX_FLOCK_MEMBERS));
+        assert(nents == MIN(kh_size(curr_flock->ents), MAX_GPU_FLOCK_MEMBERS));
         *((uint32_t*)cursor) = (uint32_t)nents; 
         cursor += sizeof(uint32_t);
 
@@ -3416,6 +3477,7 @@ static void nav_tick_submit_work(void)
     s_tick_task_tid = Sched_Create(2, navigation_tick_task, NULL, 
             "navigation_tick_task", &s_tick_task_future, TASK_BIG_STACK);
     assert(s_tick_task_tid != NULL_TID);
+    s_tick_task_type = TICK_TASK_TOP_HALF;
     s_last_tick = g_frame_idx;
 }
 
@@ -3423,6 +3485,14 @@ static enum move_work_phase nav_tick_finish_work(void)
 {
     if(s_tick_task_tid == NULL_TID) {
         return PHASE_START;
+    }
+    /* If the bottom half has not yet consumed the GPU work,
+     * we are unable to run it to completion at this point.
+     * It takes 2 frames (1 frame for submission + 1 frame for
+     * execution) until we are sure we can finish it.
+     */
+    if((s_tick_task_type == TICK_TASK_BOT_HALF) && (g_frame_idx - s_last_tick) < 3) {
+        return PHASE_INCOMPLETE;
     }
     while(!Sched_FutureIsReady(&s_tick_task_future)) {
         Sched_RunSync(s_tick_task_tid);
@@ -3689,6 +3759,7 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
         formation_id_t fid = G_Formation_GetForEnt(curr);
         move_push_work((struct move_work_in){
             .ent_uid = curr,
+            .state = ms->state,
             .speed = entity_speed(curr),
             .cell_pos = cell_pos,
             .cp_ent = curr_cp,
@@ -3755,11 +3826,15 @@ static struct result navigation_tick_bottom_half(void *arg)
     ASSERT_IN_MAIN_THREAD();
     assert(Sched_ActiveTID() != NULL_TID);
 
-    /* First, await the next frame, to make sure that 
-     * the render thread has completed all outstanding 
-     * commands.
+    /* The download work is queued to run in the render thread
+     * in the next game tick. First wait until it starts running.
      */
     int source;
+    Task_AwaitEvent(EVENT_UPDATE_START, &source);
+
+    /* Then wait for the next frame, when we know that the GPU
+     * work has completed, and it is safe to read back the data.
+     */
     Task_AwaitEvent(EVENT_UPDATE_START, &source);
 
     copy_gpu_results();
@@ -3783,6 +3858,7 @@ static void move_schedule_bottom_half(void)
     assert(s_tick_task_tid != NULL_TID);
     /* Run the task until it gets blocked on the event */
     Sched_RunSync(s_tick_task_tid);
+    s_tick_task_type = TICK_TASK_BOT_HALF;
     s_last_tick = g_frame_idx;
 }
 
@@ -3815,16 +3891,20 @@ static void move_tick(void *user, void *event)
         move_complete_gpu_velocity_work();
         move_schedule_bottom_half();
         break;
+    case PHASE_INCOMPLETE:
+        /* no-op */
+        break;
     default: assert(0);
     }
 }
 
-static void on_update(void *user, void *event)
+static void start_next_phase_opportunistically(void)
 {
-    stalloc_clear(&s_eventargs);
-
     /* We are not currently running a movement tick */
     if(s_tick_task_tid == NULL_TID)
+        return;
+
+    if(s_last_tick == g_frame_idx)
         return;
 
     if(!Sched_FutureIsReady(&s_tick_task_future)
@@ -3846,6 +3926,12 @@ static void on_update(void *user, void *event)
             }
         });
     }
+}
+
+static void on_update(void *user, void *event)
+{
+    stalloc_clear(&s_eventargs);
+    start_next_phase_opportunistically();
 }
 
 static void nav_cancel_gpu_work(void)
@@ -3946,7 +4032,9 @@ bool G_Move_HasWork(void)
 
 void G_Move_FlushWork(void)
 {
-    nav_tick_finish_work();
+    enum move_work_phase prev = nav_tick_finish_work();
+    if(prev == PHASE_INCOMPLETE)
+        return;
     move_consume_work_results();
     move_process_cmds();
 }

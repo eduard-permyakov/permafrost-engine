@@ -69,7 +69,7 @@ void R_GL_MoveUploadData(void *ent_buff, size_t *nents, size_t *ent_buffsize,
 
     glGenBuffers(1, &s_flock_ssbo);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, s_flock_ssbo);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, *nflocks * FLOCK_BUFF_SIZE, flock_buff, GL_STREAM_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, *flock_buffsize, flock_buff, GL_STREAM_DRAW);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
     glGenBuffers(1, &s_vpref_ssbo);
@@ -93,6 +93,8 @@ void R_GL_MoveInvalidateData(void)
 
     glDeleteBuffers(1, &s_vpref_ssbo);
     s_vpref_ssbo = 0;
+
+    GL_ASSERT_OK();
 }
 
 void R_GL_MoveDispatchWork(const size_t *nents)
@@ -173,6 +175,7 @@ void R_GL_MovePollCompletion(SDL_atomic_t *out)
     || result == GL_CONDITION_SATISFIED) {
         SDL_AtomicSet(out, 1);
     }
+    GL_ASSERT_OK();
 }
 
 void R_GL_MoveClearState(void)
@@ -196,5 +199,6 @@ void R_GL_MoveClearState(void)
         glDeleteSync(s_move_fence);
         s_move_fence = 0;
     }
+    GL_ASSERT_OK();
 }
 

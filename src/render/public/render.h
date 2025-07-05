@@ -72,16 +72,11 @@ struct ui_vert{
     uint8_t color[4];
 };
 
-#define VERTS_PER_SIDE_FACE (6)
-#define VERTS_PER_TOP_FACE  (24)
-#define VERTS_PER_TILE      (4 * VERTS_PER_SIDE_FACE + VERTS_PER_TOP_FACE)
-#define TILE_DEPTH          (3)
-#define MAX_MATERIALS       (16)
-#define MAX_FLOCK_MEMBERS   (1024) /* Must match movement.glsl */
-#define FLOCK_BUFF_SIZE     ((sizeof(GLuint) * MAX_FLOCK_MEMBERS) \
-                          + sizeof(GLuint) \
-                          + (sizeof(GLfloat) * 2))
-
+#define VERTS_PER_SIDE_FACE  (6)
+#define VERTS_PER_TOP_FACE   (24)
+#define VERTS_PER_TILE       (4 * VERTS_PER_SIDE_FACE + VERTS_PER_TOP_FACE)
+#define TILE_DEPTH           (3)
+#define MAX_MATERIALS        (16)
 
 /*###########################################################################*/
 /* RENDER OPENGL                                                             */
