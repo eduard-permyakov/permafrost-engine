@@ -1010,23 +1010,21 @@ static bool do_run_sync(uint32_t tid, bool dequeue)
     bool ret = false;
 
     struct task *task = &s_tasks[tid - 1];
-    if(dequeue && !(task->flags & TASK_DETACHED)) {
-        goto out;
-    }
-    if(dequeue && task->state != TASK_STATE_READY) {
-        goto out;
-    }
-
-    bool found = false;
     if(dequeue) {
+        if(task->state != TASK_STATE_READY)
+            goto out;
+        if(!(task->flags & TASK_DETACHED))
+            goto out;
+
+        bool found = false;
         SDL_LockMutex(s_ready_lock);
         found = pq_task_remove(&s_ready_queue, tasks_compare, task) 
              || pq_task_remove(&s_ready_queue_main, tasks_compare, task);
         SDL_UnlockMutex(s_ready_lock);
-    }
 
-    if(dequeue && !found)
-        goto out;
+        if(!found)
+            goto out;
+    }
 
     if(sched_curr_thread_tid() == NULL_TID) {
 
@@ -1325,7 +1323,7 @@ void Sched_HandleEvent(int event, void *arg, int event_source, bool immediate)
         queue_tid_pop(&torun, &tid);
 
         assert(tid != sched_curr_thread_tid());
-        do_run_sync(tid, false);
+        do_run_sync(tid, true);
     }
 
 out:
@@ -1611,6 +1609,15 @@ bool Sched_IsReady(uint32_t tid)
     return ret;
 }
 
+bool Sched_IsEventBlocked(uint32_t tid)
+{
+    bool ret = false;
+    SDL_LockMutex(s_request_lock);
+    ret = s_tasks[tid - 1].state == TASK_STATE_EVENT_BLOCKED;
+    SDL_UnlockMutex(s_request_lock);
+    return ret;
+}
+
 bool Sched_TryCancel(uint32_t tid)
 {
     bool ret = false;
@@ -1625,7 +1632,11 @@ bool Sched_TryCancel(uint32_t tid)
 
         kh_foreach_val_ptr(s_event_queues, event, queue, {
 
-            for(int j = queue->ihead; j != queue->itail; j = (j + 1) % queue->capacity) {
+            if(queue_size(*queue) == 0)
+                continue;
+            for(int j = queue->ihead; 
+                j != (queue->itail + 1) % queue->capacity; 
+                j = (j + 1) % queue->capacity) {
 
                 uint32_t *curr = &queue->mem[j];
                 if(*curr == tid) {

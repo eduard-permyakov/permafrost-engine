@@ -416,6 +416,8 @@ uint32_t Task_WhoIs(const char *name, bool blocking)
 
 void Task_RescheduleOnMain(void)
 {
+    if(SDL_ThreadID() == g_main_thread_id)
+        return;
     Sched_Request((struct request){ .type = SCHED_REQ_RESCHED_ON_MAIN });
 }
 

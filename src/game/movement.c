@@ -240,7 +240,6 @@ struct movestate_patch{
 
 struct move_work_in{
     uint32_t       ent_uid;
-    enum arrival_state state; // TODO: tmp...
     vec2_t         ent_des_v;
     float          speed;
     vec2_t         cell_pos;
@@ -295,17 +294,9 @@ enum move_work_type{
     WORK_TYPE_GPU
 };
 
-enum move_work_phase{
-    PHASE_START,
-    PHASE_SINGLE,
-    PHASE_TOP_HALF,
-    PHASE_BOT_HALF,
-    PHASE_INCOMPLETE
-};
-
-enum tick_task_type{
-    TICK_TASK_TOP_HALF,
-    TICK_TASK_BOT_HALF
+enum move_work_status{
+    WORK_COMPLETE,
+    WORK_INCOMPLETE
 };
 
 struct move_work{
@@ -444,8 +435,8 @@ static unsigned long           s_last_interpolate_tick = 0;
 static enum movement_hz        s_move_hz = MOVE_HZ_20;
 static bool                    s_move_hz_dirty = false;
 static bool                    s_use_gpu = true;
+static bool                    s_move_tick_queued = false;
 
-static enum tick_task_type     s_tick_task_type;
 static uint32_t                s_tick_task_tid = NULL_TID;
 static struct future           s_tick_task_future;
 
@@ -3114,6 +3105,7 @@ static void move_complete_cpu_work(void)
 
 static void move_complete_gpu_velocity_work(void)
 {
+    Task_RescheduleOnMain();
     ASSERT_IN_MAIN_THREAD();
 
     size_t nents = kh_size(s_entity_state_table);
@@ -3375,9 +3367,6 @@ static void move_upload_input(size_t nents)
         if(!ent_still(curr)) {
             work = work_input_for_uid(uid);
         }
-        if((work = work_input_for_uid(uid))) {
-            assert(curr->state == work->state);
-        }
 
         *((struct gpu_ent_desc*)cursor) = (struct gpu_ent_desc){
             .dest = dest_xz,
@@ -3474,32 +3463,27 @@ static void nav_tick_submit_work(void)
     }
 
     SDL_AtomicSet(&s_tick_task_future.status, FUTURE_INCOMPLETE);
-    s_tick_task_tid = Sched_Create(2, navigation_tick_task, NULL, 
+    s_tick_task_tid = Sched_Create(0, navigation_tick_task, NULL, 
             "navigation_tick_task", &s_tick_task_future, TASK_BIG_STACK);
     assert(s_tick_task_tid != NULL_TID);
-    s_tick_task_type = TICK_TASK_TOP_HALF;
     s_last_tick = g_frame_idx;
 }
 
-static enum move_work_phase nav_tick_finish_work(void)
+static enum move_work_status nav_tick_finish_work(void)
 {
     if(s_tick_task_tid == NULL_TID) {
-        return PHASE_START;
-    }
-    /* If the bottom half has not yet consumed the GPU work,
-     * we are unable to run it to completion at this point.
-     * It takes 2 frames (1 frame for submission + 1 frame for
-     * execution) until we are sure we can finish it.
-     */
-    if((s_tick_task_type == TICK_TASK_BOT_HALF) && (g_frame_idx - s_last_tick) < 3) {
-        return PHASE_INCOMPLETE;
+        return WORK_COMPLETE;
     }
     while(!Sched_FutureIsReady(&s_tick_task_future)) {
         Sched_RunSync(s_tick_task_tid);
+        /* If the task is event-blocked waiting for GPU results,
+         * we are not able to run it to completion at this point.
+         */
+        if(Sched_IsEventBlocked(s_tick_task_tid))
+            return WORK_INCOMPLETE;
     }
     s_tick_task_tid = NULL_TID;
-    assert(s_tick_task_future.res.type == RESULT_INT);
-    return s_tick_task_future.res.val.as_int;
+    return WORK_COMPLETE;
 }
 
 static enum movement_hz event_to_hz(enum eventtype event)
@@ -3672,28 +3656,80 @@ static void fork_join_state_updates(void)
     PERF_RETURN_VOID();
 }
 
+static void await_gpu_completion(uint32_t timeout_ms)
+{
+    uint32_t begin = SDL_GetTicks();
+    while(!SDL_AtomicGet(&s_move_work.gpu_velocities_ready)) {
+
+        Task_RescheduleOnMain();
+        R_PushCmd((struct rcmd){
+            .func = R_GL_MovePollCompletion,
+            .nargs = 1,
+            .args = {
+                [0] = &s_move_work.gpu_velocities_ready
+            }
+        });
+
+        uint32_t now = SDL_GetTicks();
+        if(SDL_TICKS_PASSED(now, begin + timeout_ms))
+            break;
+
+        int source;
+        Task_AwaitEvent(EVENT_UPDATE_START, &source);
+    }
+}
+
+static void await_gpu_download(void)
+{
+    /* We need to wait for 2 frames after the download command 
+     * is queued. In one tick, it will be executed by the render
+     * thread. In 2 ticks, it is guaranteed to have completed.
+     */
+    unsigned long start_frame = g_frame_idx;
+    while((g_frame_idx - start_frame) < 2) {
+        int source;
+        Task_AwaitEvent(EVENT_UPDATE_START, &source);
+    }
+}
+
+static void copy_gpu_results(void)
+{
+    PERF_ENTER();
+    size_t nents = kh_size(s_entity_state_table);
+    for(int i = 0; i < s_move_work.nwork; i++) {
+
+        struct move_work_in *in = &s_move_work.in[i];
+        struct move_work_out *out = &s_move_work.out[i];
+
+        uint32_t uid = in->ent_uid;
+        uint32_t gpuid = G_GPUIDForEntFrom(s_move_work.gamestate.ent_gpu_id_map, uid);
+        assert(gpuid >= 1 && gpuid <= nents);
+
+        vec2_t velocity = s_move_work.gpu_velocities[gpuid-1];
+        out->ent_uid = uid;
+        out->ent_vel = velocity;
+    }
+    PERF_RETURN_VOID();
+}
+
 static struct result navigation_tick_task(void *arg)
 {
     compute_async_fields();
     compute_desired_velocity();
     fork_join_velocity_computations();
 
-    /* For GPU workloads, we will beform the remaining steps in 
-     * the bottom half, after we consume the results of the velocity
-     * computations from the GPU.
-     */
     if(s_move_work.type == WORK_TYPE_GPU) {
-        return (struct result){ 
-            .type = RESULT_INT, 
-            .val.as_int = PHASE_TOP_HALF
-        };
+
+        uint32_t period = 1.0f / hz_count(s_move_work.hz) * 1000.0f;
+        await_gpu_completion(period);
+        move_complete_gpu_velocity_work();
+
+        await_gpu_download();
+        copy_gpu_results();
     }
 
     fork_join_state_updates();
-    return (struct result){ 
-        .type = RESULT_INT, 
-        .val.as_int = PHASE_SINGLE
-    };
+    return NULL_RESULT;
 }
 
 static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
@@ -3759,7 +3795,6 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
         formation_id_t fid = G_Formation_GetForEnt(curr);
         move_push_work((struct move_work_in){
             .ent_uid = curr,
-            .state = ms->state,
             .speed = entity_speed(curr),
             .cell_pos = cell_pos,
             .cp_ent = curr_cp,
@@ -3798,68 +3833,9 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
         });
     });
     PERF_POP();
+
+    nav_tick_submit_work();
     PERF_POP();
-}
-
-static void copy_gpu_results(void)
-{
-    PERF_ENTER();
-    size_t nents = kh_size(s_entity_state_table);
-    for(int i = 0; i < s_move_work.nwork; i++) {
-
-        struct move_work_in *in = &s_move_work.in[i];
-        struct move_work_out *out = &s_move_work.out[i];
-
-        uint32_t uid = in->ent_uid;
-        uint32_t gpuid = G_GPUIDForEntFrom(s_move_work.gamestate.ent_gpu_id_map, uid);
-        assert(gpuid >= 1 && gpuid <= nents);
-
-        vec2_t velocity = s_move_work.gpu_velocities[gpuid-1];
-        out->ent_uid = uid;
-        out->ent_vel = velocity;
-    }
-    PERF_RETURN_VOID();
-}
-
-static struct result navigation_tick_bottom_half(void *arg)
-{
-    ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() != NULL_TID);
-
-    /* The download work is queued to run in the render thread
-     * in the next game tick. First wait until it starts running.
-     */
-    int source;
-    Task_AwaitEvent(EVENT_UPDATE_START, &source);
-
-    /* Then wait for the next frame, when we know that the GPU
-     * work has completed, and it is safe to read back the data.
-     */
-    Task_AwaitEvent(EVENT_UPDATE_START, &source);
-
-    copy_gpu_results();
-    fork_join_state_updates();
-
-    enum movement_hz hz = s_move_work.hz;
-    enum eventtype type = event_for_hz(hz);
-    move_do_tick(type, hz);
-
-    return (struct result){ .type = RESULT_INT, .val.as_int = PHASE_BOT_HALF };
-}
-
-static void move_schedule_bottom_half(void)
-{
-    ASSERT_IN_MAIN_THREAD();
-
-    SDL_AtomicSet(&s_tick_task_future.status, FUTURE_INCOMPLETE);
-    s_tick_task_tid = Sched_Create(0, navigation_tick_bottom_half, NULL, 
-            "navigation_tick_bottom_half", &s_tick_task_future, 
-            TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
-    assert(s_tick_task_tid != NULL_TID);
-    /* Run the task until it gets blocked on the event */
-    Sched_RunSync(s_tick_task_tid);
-    s_tick_task_type = TICK_TASK_BOT_HALF;
-    s_last_tick = g_frame_idx;
 }
 
 static void move_tick(void *user, void *event)
@@ -3871,78 +3847,47 @@ static void move_tick(void *user, void *event)
     enum eventtype curr_event = (uintptr_t)user;
     enum movement_hz hz = event_to_hz(curr_event);
 
-    /* The GPU movement work runs in 2 phases. In between phase 1
-     * and phase 2 (top half and bottom half), the main thread
-     * requests the velocity buffer download from the render thread.
-     */
-    enum move_work_phase prev_phase = nav_tick_finish_work();
-
-    switch(prev_phase) {
-    case PHASE_START:
-    case PHASE_SINGLE:
-        move_do_tick(curr_event, hz);
-        nav_tick_submit_work();
-        break;
-    case PHASE_BOT_HALF:
-        nav_tick_submit_work();
-        break;
-    case PHASE_TOP_HALF:
-        assert(s_move_work.type == WORK_TYPE_GPU);
-        move_complete_gpu_velocity_work();
-        move_schedule_bottom_half();
-        break;
-    case PHASE_INCOMPLETE:
-        /* no-op */
-        break;
-    default: assert(0);
+    enum move_work_status status = nav_tick_finish_work();
+    if(status == WORK_INCOMPLETE) {
+        s_move_tick_queued = true;
+        return;
     }
+
+    s_move_tick_queued = false;
+    move_do_tick(curr_event, hz);
 }
 
-static void start_next_phase_opportunistically(void)
+static void handle_queued_tick(void)
 {
-    /* We are not currently running a movement tick */
-    if(s_tick_task_tid == NULL_TID)
+    if(!s_move_tick_queued)
         return;
 
-    if(s_last_tick == g_frame_idx)
+    enum move_work_status status = nav_tick_finish_work();
+    if(status == WORK_INCOMPLETE)
         return;
 
-    if(!Sched_FutureIsReady(&s_tick_task_future)
-    || (s_tick_task_future.res.val.as_int != PHASE_TOP_HALF))
-        return;
+    enum movement_hz hz = s_move_work.hz;
+    enum eventtype curr_event = event_for_hz(hz);
 
-    /* Kick off the bottom half of the GPU work as soon as the
-     * movement shader has completed.
-     */
-    if(SDL_AtomicGet(&s_move_work.gpu_velocities_ready)) {
-        move_complete_gpu_velocity_work();
-        move_schedule_bottom_half();
-    }else{
-        R_PushCmd((struct rcmd){
-            .func = R_GL_MovePollCompletion,
-            .nargs = 1,
-            .args = {
-                [0] = &s_move_work.gpu_velocities_ready
-            }
-        });
-    }
+    s_move_tick_queued = false;
+    move_do_tick(curr_event, hz);
 }
 
 static void on_update(void *user, void *event)
 {
     stalloc_clear(&s_eventargs);
-    start_next_phase_opportunistically();
+    handle_queued_tick();
 }
 
 static void nav_cancel_gpu_work(void)
 {
-    /* Handle the case where the bottom half the GPU work is blocked on
-     * an event. We cannot run it yet, as the new velocity data from the
-     * GPU won't be available until the next frame. Kill off the task.
+    /* Handle the case where the work task is blocked on an event. We 
+     * cannot run it yet, as the new velocity data from the GPU won't 
+     * be available until the next frame. Kill off the task.
      */
-    if(s_tick_task_tid != NULL_TID && Sched_TryCancel(s_tick_task_tid)) {
-        s_tick_task_tid = NULL_TID;
-    }
+    assert(s_tick_task_tid != NULL_TID);
+    Sched_TryCancel(s_tick_task_tid);
+    s_tick_task_tid = NULL_TID;
 }
 
 /*****************************************************************************/
@@ -3998,8 +3943,10 @@ bool G_Move_Init(const struct map *map)
 
 void G_Move_Shutdown(void)
 {
-    nav_cancel_gpu_work();
-    nav_tick_finish_work();
+    if(nav_tick_finish_work() == WORK_INCOMPLETE) {
+        nav_cancel_gpu_work();
+    }
+    s_move_tick_queued = false;
     s_map = NULL;
 
     unregister_callback_for_hz(s_move_hz);
@@ -4032,10 +3979,11 @@ bool G_Move_HasWork(void)
 
 void G_Move_FlushWork(void)
 {
-    enum move_work_phase prev = nav_tick_finish_work();
-    if(prev == PHASE_INCOMPLETE)
-        return;
-    move_consume_work_results();
+    if(nav_tick_finish_work() == WORK_INCOMPLETE) {
+        nav_cancel_gpu_work();
+    }else{
+        move_consume_work_results();
+    }
     move_process_cmds();
 }
 
