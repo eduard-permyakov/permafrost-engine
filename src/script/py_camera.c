@@ -678,12 +678,13 @@ bool S_Camera_Init(void)
 
 void S_Camera_Shutdown(void)
 {
-    Py_CLEAR(s_loaded);
+	s_loaded = NULL;
 }
 
 void S_Camera_Clear(void)
 {
     Py_CLEAR(s_active_cam);
+    Py_CLEAR(s_loaded);
 }
 
 PyObject *S_Camera_GetActive(void)

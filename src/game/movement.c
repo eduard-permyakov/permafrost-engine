@@ -3475,11 +3475,10 @@ static enum move_work_status nav_tick_finish_work(void)
         return WORK_COMPLETE;
     }
     while(!Sched_FutureIsReady(&s_tick_task_future)) {
-        Sched_RunSync(s_tick_task_tid);
         /* If the task is event-blocked waiting for GPU results,
          * we are not able to run it to completion at this point.
          */
-        if(Sched_IsEventBlocked(s_tick_task_tid))
+        if(!Sched_RunSync(s_tick_task_tid))
             return WORK_INCOMPLETE;
     }
     s_tick_task_tid = NULL_TID;

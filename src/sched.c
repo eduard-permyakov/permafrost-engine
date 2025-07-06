@@ -170,7 +170,7 @@ __pragma(pack(pop));
 #define MAX_TASKS               (8192)
 #define MAX_WORKER_THREADS      (64)
 #define STACK_SZ                (16 * 1024)
-#define BIG_STACK_SZ            (4 * 1024 * 1024)
+#define BIG_STACK_SZ            (8 * 1024 * 1024)
 #define SCHED_TICK_MS           (1.0f / CONFIG_SCHED_TARGET_FPS * 1000.0f)
 #define ALIGNED(val, align)     (((val) + ((align) - 1)) & ~((align) - 1))
 #define DELETED_MARKER          (((uint32_t)0x1) << 31)
@@ -501,6 +501,7 @@ void sched_task_exit(struct result ret)
 
     if(task->destructor) {
         task->destructor(task->darg);
+        task->destructor = NULL;
     }
 
     if(task->erelease) {
@@ -1650,6 +1651,7 @@ bool Sched_TryCancel(uint32_t tid)
     if(ret) {
         if(task->destructor) {
             task->destructor(task->darg);
+            task->destructor = NULL;
         }
         if(task->erelease) {
             task->erelease(task->earg);
