@@ -987,7 +987,7 @@ static PyObject *PyTask_send(PyTaskObject *self, PyObject *args)
         return NULL;
     }
 
-    PyObject *recepient, *message;
+    PyObject *recepient = NULL, *message = NULL;
     if(!PyArg_ParseTuple(args, "OO", &recepient, &message)
     || !PyObject_IsInstance(recepient, (PyObject*)&PyTask_type)) {
         PyErr_SetString(PyExc_TypeError, 

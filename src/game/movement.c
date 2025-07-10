@@ -3978,11 +3978,19 @@ bool G_Move_HasWork(void)
 
 void G_Move_FlushWork(void)
 {
+    /* Discard the results of the last 
+     * movement tick. 
+     */
     if(nav_tick_finish_work() == WORK_INCOMPLETE) {
         nav_cancel_gpu_work();
-    }else{
-        move_consume_work_results();
     }
+
+    stalloc_clear(&s_move_work.mem);
+    s_move_work.in = NULL;
+    s_move_work.out = NULL;
+    s_move_work.nwork = 0;
+    s_move_work.ntasks = 0;
+
     move_process_cmds();
 }
 

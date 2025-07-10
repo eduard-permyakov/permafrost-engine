@@ -1931,7 +1931,8 @@ static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject 
     bool status;
     PyObject *ret = NULL;
     const struct entity *ent = AL_EntityGet(self->ent);
-    assert(ent);
+    if(!ent)
+        return NULL;
 
     SDL_RWops *stream = PFSDL_VectorRWOps();
     CHK_TRUE(stream, fail_alloc);
