@@ -44,9 +44,7 @@
 #include "../map/public/tile.h"
 
 
-#define PIXELS_PER_TILE (8)
 #define MIN(a, b)       ((a) < (b) ? (a) : (b))
-#define MAX_TEX_RES     (4096)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -67,8 +65,8 @@ void R_GL_PositionsUploadData(vec3_t *posbuff, uint32_t *idbuff,
     struct map_resolution res;
     M_GetResolution(map, &res);
 
-    const size_t resx = MIN(res.chunk_w * res.tile_w * PIXELS_PER_TILE, MAX_TEX_RES);
-    const size_t resy = MIN(res.chunk_h * res.tile_h * PIXELS_PER_TILE, MAX_TEX_RES);
+    const size_t resx = res.chunk_w * res.tile_w * X_COORDS_PER_TILE;
+    const size_t resy = res.chunk_h * res.tile_h * Z_COORDS_PER_TILE;
 
     /* Create a framebuffer with a resolution based on the map size */
     GLuint fbo;

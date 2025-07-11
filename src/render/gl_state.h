@@ -98,6 +98,7 @@
 #define GL_U_POSEBUFF           "posebuff"
 #define GL_U_INV_BIND_MAT_OFFSET "inv_bind_mats_offset"
 #define GL_U_CURR_POSE_MAT_OFFSET "curr_pose_mats_offset"
+#define GL_U_TICKS_HZ           "ticks_hz"
 
 enum utype{
     UTYPE_FLOAT,

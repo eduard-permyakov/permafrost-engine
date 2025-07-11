@@ -579,6 +579,12 @@ void R_GL_PositionsInvalidateData(void);
 /*###########################################################################*/
 
 /* ---------------------------------------------------------------------------
+ * Update the uniform parameters for the 'movement' shader program.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_MoveUpdateUniforms(const struct map_resolution *res, vec2_t *map_pos, int *ticks_hz);
+
+/* ---------------------------------------------------------------------------
  * Upload the movement input state to shader storage buffer objects.
  * ---------------------------------------------------------------------------
  */

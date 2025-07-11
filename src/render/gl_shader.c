@@ -572,6 +572,9 @@ static struct shader s_shaders[] = {
         .compute_path   = "shaders/compute/movement.glsl",
         .frag_path      = NULL,
         .uniforms       = (struct uniform[]){
+            { UTYPE_IVEC4,     GL_U_MAP_RES,          },
+            { UTYPE_VEC2,      GL_U_MAP_POS           },
+            { UTYPE_INT,       GL_U_TICKS_HZ          },
             {0}
         },
     },

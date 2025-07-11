@@ -1251,15 +1251,12 @@ static void batch_multidraw(struct gl_batch *batch, struct draw_call_desc dcall,
     R_GL_StateInstall(GL_U_ATTR_OFFSET, R_GL_Shader_GetCurrActive());
 
     batch_push_cmds(batch, dcall, descs);
-    GL_ASSERT_OK();
 
     GLuint cmd_vbo = R_GL_RingbufferGetVBO(batch->cmd_ring);
     glBindBuffer(GL_DRAW_INDIRECT_BUFFER, cmd_vbo);
-    GL_ASSERT_OK();
 
     size_t cmd_begin, cmd_end;
     R_GL_RingbufferGetLastRange(batch->cmd_ring, &cmd_begin, &cmd_end);
-    GL_ASSERT_OK();
 
     if(cmd_end < cmd_begin) {
 
@@ -1274,7 +1271,6 @@ static void batch_multidraw(struct gl_batch *batch, struct draw_call_desc dcall,
         size_t ncmds = dcall.end_idx - dcall.start_idx + 1;
         GL_PERF_CALL("multidraw", glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)cmd_begin, ncmds, 0));
     }
-    GL_ASSERT_OK();
 
     R_GL_RingbufferSyncLast(batch->cmd_ring);
     GL_ASSERT_OK();

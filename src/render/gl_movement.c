@@ -38,6 +38,8 @@
 #include "gl_perf.h"
 #include "gl_assert.h"
 #include "gl_shader.h"
+#include "gl_state.h"
+#include "../map/public/tile.h"
 #include "../main.h"
 
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
@@ -54,6 +56,25 @@ static GLsync s_move_fence = 0;
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
+
+void R_GL_MoveUpdateUniforms(const struct map_resolution *res, vec2_t *map_pos, int *ticks_hz)
+{
+    R_GL_StateSet(GL_U_MAP_RES, (struct uval){
+        .type = UTYPE_IVEC4,
+        .val.as_ivec4[0] = res->chunk_w, 
+        .val.as_ivec4[1] = res->chunk_h,
+        .val.as_ivec4[2] = res->tile_w,
+        .val.as_ivec4[3] = res->tile_h
+    });
+    R_GL_StateSet(GL_U_MAP_POS, (struct uval){
+        .type = UTYPE_VEC2,
+        .val.as_vec2 = *map_pos
+    });
+    R_GL_StateSet(GL_U_TICKS_HZ, (struct uval){ 
+        .type = UTYPE_INT, 
+        .val.as_int = *ticks_hz
+    });
+}
 
 void R_GL_MoveUploadData(void *ent_buff, size_t *nents, size_t *ent_buffsize,
                          void *flock_buff, size_t *nflocks, size_t *flock_buffsize)

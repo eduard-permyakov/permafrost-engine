@@ -70,13 +70,14 @@
 #include <assert.h>
 #include <SDL.h>
 
+static int hz_count(enum movement_hz hz);
 
 /* For the purpose of movement simulation, all entities have the same mass,
  * meaning they are accelerate the same amount when applied equal forces. */
 #define ENTITY_MASS           (1.0f)
 #define EPSILON               (1.0f/1024)
 #define MAX_FORCE             (0.75f)
-#define SCALED_MAX_FORCE      (MAX_FORCE / G_Move_GetTickHz() * 20.0)
+#define SCALED_MAX_FORCE      (MAX_FORCE / hz_count(s_move_work.hz) * 20.0)
 #define VEL_HIST_LEN          (14)
 #define MAX_MOVE_TASKS        (64)
 #define MAX_GPU_FLOCK_MEMBERS (1024)  /* Must match movement.glsl */
@@ -331,12 +332,16 @@ struct gpu_ent_desc{
     vec2_t   formation_cohesion_force;
     vec2_t   formation_align_force;
     vec2_t   formation_drag_force;
+    vec2_t   pos;
+    vec2_t   velocity;
     uint32_t movestate;
     uint32_t flock_id;
+    uint32_t flags;
     float    speed;
+    float    max_speed;
+    float    radius;
     uint32_t has_dest_los;
     uint32_t formation_assignment_ready;
-    float    __pad0;
 };
 
 enum move_cmd_type{
@@ -1445,8 +1450,8 @@ static vec2_t cohesion_force(uint32_t uid, const struct flock *flock)
         vec2_t curr_xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr);
         PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
 
-        float t = (PFM_Vec2_Len(&diff) 
-                - COHESION_NEIGHBOUR_RADIUS*0.75) / COHESION_NEIGHBOUR_RADIUS;
+        float t = (PFM_Vec2_Len(&diff) - COHESION_NEIGHBOUR_RADIUS*0.75) 
+                / COHESION_NEIGHBOUR_RADIUS;
         float scale = exp(-6.0f * t);
 
         PFM_Vec2_Scale(&curr_xz_pos, scale, &curr_xz_pos);
@@ -1666,7 +1671,7 @@ static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock,
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
-    vec2_truncate(&new_vel, speed / G_Move_GetTickHz());
+    vec2_truncate(&new_vel, speed / hz_count(s_move_work.hz));
 
     return new_vel;
 }
@@ -1792,7 +1797,7 @@ static void update_vel_hist(struct movestate *ms, vec2_t vnew)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    assert(ms->vel_hist >= 0 && ms->vel_hist_idx < VEL_HIST_LEN);
+    assert(ms->vel_hist_idx >= 0 && ms->vel_hist_idx < VEL_HIST_LEN);
     ms->vel_hist[ms->vel_hist_idx] = vnew;
     ms->vel_hist_idx = ((ms->vel_hist_idx+1) % VEL_HIST_LEN);
 }
@@ -1815,7 +1820,7 @@ static vec2_t vel_wma(const struct movestate *ms)
 
     for(int i = 0; i < VEL_HIST_LEN; i++) {
 
-        vec2_t term = ms->vel_hist[i];
+        vec2_t term = ms->vel_hist[(ms->vel_hist_idx + i) % VEL_HIST_LEN];
         PFM_Vec2_Scale(&term, VEL_HIST_LEN-i, &term);
         PFM_Vec2_Add(&ret, &term, &ret);
         denom += (VEL_HIST_LEN-i);
@@ -3343,7 +3348,6 @@ static void move_upload_input(size_t nents)
     PERF_ENTER();
 
     /* Set moveattr data */
-    assert(sizeof(struct gpu_ent_desc) == 18 * sizeof(GLfloat));
     const size_t attr_buffsize = nents * sizeof(struct gpu_ent_desc);
     struct render_workspace *ws = G_GetSimWS();
     void *attrbuff = stalloc(&ws->args, attr_buffsize);
@@ -3375,9 +3379,14 @@ static void move_upload_input(size_t nents)
             .formation_cohesion_force  = work ? work->fstate.normal_cohesion_force : (vec2_t){0},
             .formation_align_force = work ? work->fstate.normal_align_force : (vec2_t){0},
             .formation_drag_force = work ? work->fstate.normal_drag_force : (vec2_t){0},
+            .pos = pos,
+            .velocity = curr->velocity,
             .movestate = curr->state,
             .flock_id = flock_id,
+            .flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid),
             .speed = work ? work->speed : 0.0f,
+            .max_speed = curr->max_speed,
+            .radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid),
             .has_dest_los = has_dest_los,
             .formation_assignment_ready = work ? work->fstate.assignment_ready : 0,
         };
@@ -3400,7 +3409,8 @@ static void move_upload_input(size_t nents)
 
         kh_foreach_key(curr_flock->ents, uid, {
 
-            *((uint32_t*)tmp) = uid; 
+            uint32_t gpuid = G_GPUIDForEntFrom(s_move_work.gamestate.ent_gpu_id_map, uid);
+            *((uint32_t*)tmp) = gpuid; 
             tmp += sizeof(uint32_t);
 
             if(++nents == MAX_GPU_FLOCK_MEMBERS)
@@ -3433,6 +3443,25 @@ static void move_upload_input(size_t nents)
     PERF_RETURN_VOID();
 }
 
+static void move_update_uniforms(void)
+{
+    struct map_resolution res;
+    M_GetResolution(s_move_work.gamestate.map, &res);
+    vec3_t map_pos = M_GetPos(s_move_work.gamestate.map);
+    vec2_t map_pos_xz = (vec2_t){map_pos.x, map_pos.z};
+    int ticks = hz_count(s_move_work.hz);
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_MoveUpdateUniforms,
+        .nargs = 3,
+        .args = {
+            R_PushArg(&res, sizeof(res)),
+            R_PushArg(&map_pos_xz, sizeof(map_pos_xz)),
+            R_PushArg(&ticks, sizeof(ticks))
+        },
+    });
+}
+
 static void move_submit_gpu_velocity_work(void)
 {
     assert(Sched_ActiveTID() != NULL_TID);
@@ -3442,7 +3471,9 @@ static void move_submit_gpu_velocity_work(void)
         s_move_work.gamestate.ent_gpu_id_map,
         s_move_work.gamestate.map);
     assert(nents == kh_size(s_entity_state_table));
+
     move_upload_input(nents);
+    move_update_uniforms();
 
     R_PushCmd((struct rcmd){
         .func = R_GL_MoveDispatchWork,
