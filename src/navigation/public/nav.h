@@ -631,6 +631,17 @@ vec2_t N_FlowDir(enum flow_dir dir);
  */
 void N_SetNavUnitQueryCtx(void *nav_private, struct nav_unit_query_ctx *ctx);
 
+/* ------------------------------------------------------------------------
+ * Make packed copies of certain fields, to upload to compute shaders.
+ * ------------------------------------------------------------------------
+ */
+
+size_t N_CostBaseBufferSize(void *nav_private);
+size_t N_BlockersBufferSize(void *nav_private);
+
+size_t N_CopyCostBasePacked(void *nav_private, void *out, size_t maxout);
+size_t N_CopyBlockersPacked(void *nav_private, void *out, size_t maxout);
+
 /*###########################################################################*/
 /* NAV ASYNC FIELD COMPUTATION                                               */
 /*###########################################################################*/

@@ -589,7 +589,9 @@ void R_GL_MoveUpdateUniforms(const struct map_resolution *res, vec2_t *map_pos, 
  * ---------------------------------------------------------------------------
  */
 void R_GL_MoveUploadData(void *ent_buff, size_t *nents, size_t *ent_buffsize,
-                         void *flock_buff, size_t *nflocks, size_t *flock_buffsize);
+                         void *flock_buff, size_t *nflocks, size_t *flock_buffsize,
+                         void *cost_base_buff, size_t *cost_base_size,
+                         void *blockers_buff, size_t *blockers_size);
 
 /* ---------------------------------------------------------------------------
  * Free resources previously allocated by R_GL_MoveUploadData. This must be 

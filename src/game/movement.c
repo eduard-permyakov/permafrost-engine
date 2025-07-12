@@ -340,8 +340,10 @@ struct gpu_ent_desc{
     float    speed;
     float    max_speed;
     float    radius;
+    uint32_t layer;
     uint32_t has_dest_los;
     uint32_t formation_assignment_ready;
+    uint32_t __pad0; /* Keep aligned to vec2 size */
 };
 
 enum move_cmd_type{
@@ -3363,9 +3365,13 @@ static void move_upload_input(size_t nents)
         uint32_t flock_id = flock_id_for_ent(uid, &flock);
         uint32_t movestate = curr->state;
         vec2_t pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
+
         uint32_t has_dest_los = flock ? M_NavHasDestLOS(s_move_work.gamestate.map, 
             flock->dest_id, pos) : false;
         vec2_t dest_xz = flock ? flock->target_xz : (vec2_t){0.0f, 0.0f};
+
+        uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+        float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
 
         struct move_work_in *work = NULL;
         if(!ent_still(curr)) {
@@ -3383,10 +3389,11 @@ static void move_upload_input(size_t nents)
             .velocity = curr->velocity,
             .movestate = curr->state,
             .flock_id = flock_id,
-            .flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid),
+            .flags = flags,
             .speed = work ? work->speed : 0.0f,
             .max_speed = curr->max_speed,
-            .radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid),
+            .radius = radius,
+            .layer = Entity_NavLayerWithRadius(flags, radius),
             .has_dest_los = has_dest_los,
             .formation_assignment_ready = work ? work->fstate.assignment_ready : 0,
         };
@@ -3427,9 +3434,21 @@ static void move_upload_input(size_t nents)
     }
     assert(cursor == ((unsigned char*)flockbuff) + flock_buffsize);
 
+    /* Setup navigation data.
+     */
+    const size_t cost_base_buffsize = M_NavCostBaseBufferSize(s_move_work.gamestate.map);
+    void *cost_base_buff = stalloc(&ws->args, cost_base_buffsize);
+    M_NavCopyCostBasePacked(s_move_work.gamestate.map, cost_base_buff, cost_base_buffsize);
+
+    const size_t blockers_buffsize = M_NavBlockersBufferSize(s_move_work.gamestate.map);
+    void *blockers_buff = stalloc(&ws->args, blockers_buffsize);
+    M_NavCopyBlockersPacked(s_move_work.gamestate.map, blockers_buff, blockers_buffsize);
+
+    /* Upload everything.
+     */
     R_PushCmd((struct rcmd){
         .func = R_GL_MoveUploadData,
-        .nargs = 6,
+        .nargs = 10,
         .args = {
             attrbuff,
             R_PushArg(&nents, sizeof(nents)),
@@ -3437,6 +3456,10 @@ static void move_upload_input(size_t nents)
             flockbuff,
             R_PushArg(&nflocks, sizeof(nflocks)),
             R_PushArg(&flock_buffsize, sizeof(flock_buffsize)),
+            cost_base_buff,
+            R_PushArg(&cost_base_buffsize, sizeof(cost_base_buffsize)),
+            blockers_buff,
+            R_PushArg(&blockers_buffsize, sizeof(blockers_buffsize)),
         },
     });
 

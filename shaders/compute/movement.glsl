@@ -114,6 +114,14 @@
 #define MAX_TURN_RATE               (15.0f)
 #define MAX_NEIGHBOURS              (32)
 
+#define NUM_LAYERS                  (12)
+
+#define TILES_PER_CHUNK_HEIGHT      (32)
+#define TILES_PER_CHUNK_WIDTH       (32)
+#define FIELD_RES_R                 (64)
+#define FIELD_RES_C                 (64)
+#define X_COORDS_PER_TILE           (8)
+#define Z_COORDS_PER_TILE           (8)
 
 /*****************************************************************************/
 /* INPUT/OUTPUT                                                              */
@@ -140,8 +148,10 @@ struct move_input{
     float speed;
     float max_speed;
     float radius;
+    uint  layer;
     uint  has_dest_los;
     uint  formation_assignment_ready;
+    uint  _pad0; /* Keep aligned to vec2 size */
 };
 
 /* Must match movement.c */
@@ -152,16 +162,51 @@ struct flock{
 };
 
 layout(local_size_x = 1) in;
+
+/* Per-entitty attributes.
+ */
 layout(std430, binding = 0) readonly buffer in_movedata
 {
     move_input moveattrs[];
 };
+
+/* Collections of entities. The entity set is a flat 
+ * array containting GPU ID's of entities.
+ */
 layout(std430, binding = 1) readonly buffer in_flocks
 {
     flock flocks[];
 };
-layout(r32ui, binding = 2) uniform readonly uimage2D in_pos_id_map;
-layout(std430, binding = 3) writeonly buffer o_data
+
+/* A 2D texture, covering the entire map surface, which
+ * stores entities' GPU IDs at the location (pixel) where they 
+ * are present. Essentially, a spacial hash of all the entities'
+ * positions.
+ */
+layout(r32ui,  binding = 2) uniform readonly uimage2D in_pos_id_map;
+
+/* The cost base field of the map. Stores layers together,
+ * with chunks for each layer stored in row-major order.
+ * Each element is a single bytes.
+ */
+layout(std430, binding = 3) readonly buffer in_cost_base
+{
+    uint cost_base[];
+};
+
+/* The blockers field of the map. Stores layers together,
+ * with chunks for each layer stored in row-major order.
+ * Each element is 2 bytes.
+ */
+layout(std430, binding = 4) readonly buffer in_blockers
+{
+    uint blockers[];
+};
+
+/* Buffer for storing the output velocities to be read back
+ * by the client.
+ */
+layout(std430, binding = 5) writeonly buffer o_data
 {
     vec2 velocities[];
 };
@@ -177,6 +222,167 @@ uniform int   ticks_hz;
 /*****************************************************************************/
 /* PROGRAM                                                                   */
 /*****************************************************************************/
+
+vec2 tile_dims()
+{
+    float x_ratio = float(TILES_PER_CHUNK_WIDTH) / FIELD_RES_C;
+    float z_ratio = float(TILES_PER_CHUNK_HEIGHT) / FIELD_RES_R;
+    return vec2(
+        x_ratio * X_COORDS_PER_TILE,
+        z_ratio * Z_COORDS_PER_TILE
+    );
+}
+
+/*
+ * x = chunk_r
+ * y = chunk_c
+ * z = tile_r
+ * a = tile_c
+ */
+ivec4 nav_tile_desc_at(vec3 ws_pos)
+{
+    int chunk_w = map_resolution[0];
+    int chunk_h = map_resolution[1];
+    int tile_w = FIELD_RES_R;
+    int tile_h = FIELD_RES_C;
+    int xtile = int(tile_dims().x);
+    int ztile = int(tile_dims().y);
+
+    int chunk_x_dist = tile_w * xtile;
+    int chunk_z_dist = tile_h * ztile;
+
+    int chunk_r = int(abs(map_pos.y - ws_pos.z) / chunk_z_dist);
+    int chunk_c = int(abs(map_pos.x - ws_pos.x) / chunk_x_dist);
+
+    int chunk_base_x = int(map_pos.x - (chunk_c * chunk_x_dist));
+    int chunk_base_z = int(map_pos.y + (chunk_r * chunk_z_dist));
+
+    int tile_c = int(abs(chunk_base_x - ws_pos.x) / xtile);
+    int tile_r = int(abs(chunk_base_z - ws_pos.z) / ztile);
+
+    return ivec4(chunk_r, chunk_c, tile_r, tile_c);
+}
+
+uint extract_byte_from_dword(uint word, uint byte_idx)
+{
+    if(byte_idx == 0) {
+        return (word & 0xff);
+    }else if(byte_idx == 1) {
+        return ((word >> 8) & 0xff);
+    }else if(byte_idx == 2) {
+        return ((word >> 16) & 0xff);
+    }else if(byte_idx == 3) {
+        return ((word >> 24) & 0xff);
+    }
+    return 0;
+}
+
+uint extract_half_from_dword(uint word, uint idx)
+{
+    if(idx == 0) {
+        return (word & 0xffff);
+    }else if(idx == 1) {
+        return ((word >> 16) & 0xffff);
+    }
+    return 0;
+}
+
+bool position_pathable(uint layer, vec2 pos)
+{
+    uint chunk_bytes = (FIELD_RES_R * FIELD_RES_C);
+    uint layer_bytes = chunk_bytes * map_resolution[0] * map_resolution[1];
+    ivec4 desc = nav_tile_desc_at(vec3(pos.x, 0, pos.y));
+
+    uint layer_offset_bytes = layer_bytes * layer;
+    uint chunk_offset_bytes = (desc.x * map_resolution[0] + desc.y) * chunk_bytes;
+
+    uint layer_offset_words = layer_offset_bytes / 4;
+    uint chunk_offset_words = chunk_offset_bytes / 4;
+    uint buffer_words = (layer_bytes * NUM_LAYERS) / 4;
+
+    uint row_offset_bytes = FIELD_RES_C * desc.z;
+    uint row_offset_words = row_offset_bytes / 4;
+
+    /* Each 'cost base' tile is one byte, so we have 4 tiles packed per word.
+     * This way, 4 indices are used up per word, and the overflow can be used
+     * to extract the byte from the word.
+     */
+    uint col_idx = desc.a;
+    uint col_word_idx = (col_idx >> 2);
+    uint col_byte_idx = (col_idx & 0x3);
+
+    /* Handle cases where we are outside the map bounds */
+    uint dword_idx = layer_offset_words + chunk_offset_words + row_offset_words + col_word_idx;
+    if(dword_idx > buffer_words)
+        return false;
+
+    uint dword = cost_base[dword_idx];
+    uint byte = extract_byte_from_dword(dword, col_byte_idx);
+    return (byte != 0xff);
+}
+
+bool position_blocked(uint layer, vec2 pos)
+{
+    uint chunk_bytes = 2 * (FIELD_RES_R * FIELD_RES_C);
+    uint layer_bytes = chunk_bytes * map_resolution[0] * map_resolution[1];
+    ivec4 desc = nav_tile_desc_at(vec3(pos.x, 0, pos.y));
+
+    uint layer_offset_bytes = layer_bytes * layer;
+    uint chunk_offset_bytes = (desc.x * map_resolution[0] + desc.y) * chunk_bytes;
+
+    uint layer_offset_words = layer_offset_bytes / 4;
+    uint chunk_offset_words = chunk_offset_bytes / 4;
+    uint buffer_words = (layer_bytes * NUM_LAYERS) / 4;
+
+    uint row_offset_bytes = (2 * FIELD_RES_C) * desc.z;
+    uint row_offset_words = row_offset_bytes / 4;
+
+    /* Each 'cost base' tile is two bytes, so we have 2 tiles packed per word.
+     * This way, 2 indices are used up per word, and the overflow can be used
+     * to extract the halfword from the word.
+     */
+
+    uint col_idx = desc.a;
+    uint col_word_idx = (col_idx >> 1);
+    uint col_half_idx = (col_idx & 0x1);
+
+    /* Handle cases where we are outside the map bounds */
+    uint dword_idx = layer_offset_words + chunk_offset_words + row_offset_words + col_word_idx;
+    if(dword_idx > buffer_words)
+        return true;
+
+    uint dword = blockers[dword_idx];
+    uint halfword = extract_half_from_dword(dword, col_half_idx);
+    return (halfword > 0);
+}
+
+vec2 nullify_impass_components(uint gpuid, vec2 force)
+{
+    vec2 ret = force;
+    vec2 nt_dims = tile_dims();
+    float radius = ATTR(gpuid, radius);
+    uint layer = ATTR(gpuid, layer);
+
+    vec2 pos = ATTR_VEC2(gpuid, pos);
+    vec2 left  = vec2(pos.x + nt_dims.x, pos.y);
+    vec2 right = vec2(pos.x - nt_dims.x, pos.y);
+    vec2 top   = vec2(pos.x, pos.y + nt_dims.y);
+    vec2 bot   = vec2(pos.x, pos.y - nt_dims.y);
+
+    if(ret.x > 0 && (!position_pathable(layer, left) || position_blocked(layer, left))) {
+        ret.x = 0.0;
+    }
+    if(ret.x < 0 && (!position_pathable(layer, right) || position_blocked(layer, right))) {
+        ret.x = 0.0;
+    }
+    if(ret.y > 0 && (!position_pathable(layer, top) || position_blocked(layer, top))) {
+        ret.y = 0.0;
+    }
+    if(ret.y < 0 && (!position_pathable(layer, bot) || position_blocked(layer, bot))) {
+        ret.y = 0.0;
+    }
+    return ret;
+}
 
 float scaled_max_force()
 {
@@ -310,16 +516,13 @@ uint ents_in_circle(vec2 origin, float radius, out uint near_ents[MAX_NEAR_ENTS]
         if(z < 0 || z >= resz)
             continue;
 
-        vec2 curr_pos = vec2(
-            origin.x - dz, 
-            origin.y + dx
-        );
-        vec2 delta = curr_pos - origin;
-        if(length(delta) > radius)
-            continue;
-
         uvec4 bin_contents = imageLoad(in_pos_id_map, ivec2(x, z));
         if(bin_contents.r > 0) {
+
+            vec2 ent_pos = ATTR_VEC2(bin_contents.r, pos);
+            if(length(ent_pos - origin) > radius)
+                continue;
+
             near_ents[ret++] = bin_contents.r;
             if(ret == MAX_NEAR_ENTS)
                 break;
@@ -392,7 +595,22 @@ vec2 point_seek_total_force(uint gpuid, uint flockid, vec2 vdes, uint has_dest_l
 
 vec2 point_seek_vpref(uint gpuid, uint flockid, vec2 vdes, uint has_dest_los, float speed)
 {
-    vec2 steer_force = point_seek_total_force(gpuid, flockid, vdes, has_dest_los);
+    vec2 steer_force = vec2(0.0, 0.0);
+
+    for(int prio = 0; prio < 3; prio++) {
+
+        if(prio == 0) {
+            steer_force = point_seek_total_force(gpuid, flockid, vdes, has_dest_los);
+        }else if(prio == 1) {
+            steer_force = separation_force(gpuid, SEPARATION_BUFFER_DIST);
+        }else if(prio == 2) {
+            steer_force = arrive_force_point(gpuid, FLOCK_ATTR_VEC2(flockid, target), 
+                vdes, has_dest_los);
+        }
+        steer_force = nullify_impass_components(gpuid, steer_force);
+        if(length(steer_force) > scaled_max_force() * 0.01)
+            break;
+    }
 
     vec2 accel = steer_force * (1.0 / ENTITY_MASS);
     vec2 new_vel = ATTR_VEC2(gpuid, velocity) + accel;

@@ -2288,6 +2288,90 @@ void N_SetNavUnitQueryCtx(void *nav_private, struct nav_unit_query_ctx *ctx)
     priv->unit_query_ctx = ctx;
 }
 
+size_t N_CostBaseBufferSize(void *nav_private)
+{
+    struct nav_private *priv = nav_private;
+    size_t nlayers = NAV_LAYER_MAX;
+
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    size_t chunk_size = sizeof(((struct nav_chunk*)NULL)->cost_base);
+    return (nlayers * res.chunk_w * res.chunk_h * chunk_size);
+}
+
+size_t N_BlockersBufferSize(void *nav_private)
+{
+    struct nav_private *priv = nav_private;
+    size_t nlayers = NAV_LAYER_MAX;
+
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    size_t chunk_size = sizeof(((struct nav_chunk*)NULL)->blockers);
+    return (nlayers * res.chunk_w * res.chunk_h * chunk_size);
+}
+
+size_t N_CopyCostBasePacked(void *nav_private, void *out, size_t maxout)
+{
+    size_t ret = 0;
+    struct nav_private *priv = nav_private;
+    unsigned char *cursor = out;
+
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    for(enum nav_layer layer = 0; layer < NAV_LAYER_MAX; layer++) {
+
+        /* Store each layer's chunks in row-major order. This way
+         * we can index it later in the same way.
+         */
+        for(int chunk_r = 0; chunk_r < res.chunk_h; chunk_r++) {
+        for(int chunk_c = 0; chunk_c < res.chunk_w; chunk_c++) {
+            const struct nav_chunk *chunk = &priv->chunks[layer]
+                                                         [IDX(chunk_r, priv->width, chunk_c)];
+            size_t copy_size = sizeof(chunk->cost_base);
+            if(ret + copy_size > maxout)
+                return ret;
+
+            memcpy(cursor, &chunk->cost_base, copy_size);
+            ret += copy_size;
+            cursor += copy_size;
+        }}
+    }
+    return ret;
+}
+
+size_t N_CopyBlockersPacked(void *nav_private, void *out, size_t maxout)
+{
+    size_t ret = 0;
+    struct nav_private *priv = nav_private;
+    unsigned char *cursor = out;
+
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    for(enum nav_layer layer = 0; layer < NAV_LAYER_MAX; layer++) {
+
+        /* Store each layer's chunks in row-major order. This way
+         * we can index it later in the same way.
+         */
+        for(int chunk_r = 0; chunk_r < res.chunk_h; chunk_r++) {
+        for(int chunk_c = 0; chunk_c < res.chunk_w; chunk_c++) {
+            const struct nav_chunk *chunk = &priv->chunks[layer]
+                                                         [IDX(chunk_r, priv->width, chunk_c)];
+            size_t copy_size = sizeof(chunk->blockers);
+            if(ret + copy_size > maxout)
+                return ret;
+
+            memcpy(cursor, &chunk->blockers, copy_size);
+            ret += copy_size;
+            cursor += copy_size;
+        }}
+    }
+    return ret;
+}
+
 void N_RenderOverlayText(const char *text, vec4_t map_pos, 
                          mat4x4_t *model, mat4x4_t *view, mat4x4_t *proj)
 {

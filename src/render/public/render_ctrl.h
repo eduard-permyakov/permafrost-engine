@@ -95,7 +95,7 @@ struct render_sync_state{
     bool       swap_buffers;
 };
 
-#define MAX_ARGS 8
+#define MAX_ARGS 10
 
 struct rcmd{
     void (*func)();

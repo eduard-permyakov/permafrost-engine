@@ -476,6 +476,39 @@ static void render_dispatch_cmd(struct rcmd cmd)
             cmd.args[6],
             cmd.args[7]
         );
+    case 9:
+        ((void(*)(void*, void*,
+                  void*, void*,
+                  void*, void*,
+                  void*, void*,
+                  void*)) cmd.func)(
+            cmd.args[0],
+            cmd.args[1],
+            cmd.args[2],
+            cmd.args[3],
+            cmd.args[4],
+            cmd.args[5],
+            cmd.args[6],
+            cmd.args[7],
+            cmd.args[8]
+        );
+    case 10:
+        ((void(*)(void*, void*,
+                  void*, void*,
+                  void*, void*,
+                  void*, void*,
+                  void*, void*)) cmd.func)(
+            cmd.args[0],
+            cmd.args[1],
+            cmd.args[2],
+            cmd.args[3],
+            cmd.args[4],
+            cmd.args[5],
+            cmd.args[6],
+            cmd.args[7],
+            cmd.args[8],
+            cmd.args[9]
+        );
         break;
     default: assert(0);
     }

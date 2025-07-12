@@ -1079,6 +1079,26 @@ bool M_NavIsAdjacentToIslandOBB(const struct map *map, enum nav_layer layer,
     return N_IsAdjacentToIslandOBB(map->nav_private, layer, map->pos, obb, island_pos);
 }
 
+size_t M_NavCostBaseBufferSize(const struct map *map)
+{
+    return N_CostBaseBufferSize(map->nav_private);
+}
+
+size_t M_NavBlockersBufferSize(const struct map *map)
+{
+    return N_BlockersBufferSize(map->nav_private);
+}
+
+size_t M_NavCopyCostBasePacked(const struct map *map, void *out, size_t maxout)
+{
+    return N_CopyCostBasePacked(map->nav_private, out, maxout);
+}
+
+size_t M_NavCopyBlockersPacked(const struct map *map, void *out, size_t maxout)
+{
+    return N_CopyBlockersPacked(map->nav_private, out, maxout);
+}
+
 void M_GetFieldCacheStats(const struct map *map, struct fc_stats *out)
 {
     return N_FC_GetStatsAt(map->nav_private, out);

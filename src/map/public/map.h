@@ -518,6 +518,12 @@ bool     M_NavIsAdjacentToIsland(const struct map *map, enum nav_layer layer, ve
 bool     M_NavIsAdjacentToIslandOBB(const struct map *map, enum nav_layer layer, 
                                     const struct obb *obb, vec2_t island_pos);
 
+size_t   M_NavCostBaseBufferSize(const struct map *map);
+size_t   M_NavBlockersBufferSize(const struct map *map);
+
+size_t   M_NavCopyCostBasePacked(const struct map *map, void *out, size_t maxout);
+size_t   M_NavCopyBlockersPacked(const struct map *map, void *out, size_t maxout);
+
 /* ------------------------------------------------------------------------
  * Request an asynchronous computation of a field.
  * ------------------------------------------------------------------------
