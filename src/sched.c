@@ -1324,7 +1324,7 @@ void Sched_HandleEvent(int event, void *arg, int event_source, bool immediate)
         queue_tid_pop(&torun, &tid);
 
         assert(tid != sched_curr_thread_tid());
-        do_run_sync(tid, true);
+        do_run_sync(tid, false);
     }
 
 out:

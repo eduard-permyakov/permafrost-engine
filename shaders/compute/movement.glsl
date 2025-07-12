@@ -235,11 +235,6 @@ vec2 arrive_force_point(uint gpuid, vec2 target_xz, vec2 vdes, uint has_dest_los
     return ret;
 }
 
-vec2 alignment_force(uint gpuid, uint flockid)
-{
-    return vec2(0.0, 0.0);
-}
-
 /* Cohesion is a behaviour that causes agents to steer towards the center of mass of nearby agents.
  */
 vec2 cohesion_force(uint gpuid, uint flockid)

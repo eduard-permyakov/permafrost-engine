@@ -249,18 +249,8 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
         assert(!null);
     }
 
-    struct sval sh_setting;
-    ss_e status = Settings_Get("pf.video.shadows_enabled", &sh_setting);
-    assert(status == SS_OKAY);
-
-    const char *shader;
-    if(sh_setting.as_bool) {
-        shader = anim ? "mesh.animated.textured-phong-shadowed" 
-                      : "mesh.static.textured-phong-shadowed";
-    }else{
-        shader = anim ? "mesh.animated.textured-phong" 
-                      : "mesh.static.textured-phong";
-    }
+    const char *shader = anim ? "mesh.animated.textured-phong-shadowed" 
+                              : "mesh.static.textured-phong-shadowed";
 
     R_PushCmd((struct rcmd){
         .func = R_GL_Init,
@@ -272,13 +262,13 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
         },
     });
 
-    free(vbuff);
+    PF_FREE(vbuff);
     PERF_RETURN(priv);
 
 fail_parse:
-    free(vbuff);
+    PF_FREE(vbuff);
 fail_alloc_vbuff:
-    free(priv);
+    PF_FREE(priv);
 fail_alloc_priv:
     PERF_RETURN(NULL);
 }
@@ -375,11 +365,7 @@ bool R_AL_InitPrivFromTiles(const struct map *map, int chunk_r, int chunk_c,
         R_TileGetVertices(map, td, vert_base);
     }}
 
-    struct sval sh_setting;
-    ss_e status = Settings_Get("pf.video.shadows_enabled", &sh_setting);
-    assert(status == SS_OKAY);
-
-    const char *shader = sh_setting.as_bool ? "terrain-shadowed" : "terrain";
+    const char *shader = "terrain-shadowed";
     R_PushCmd((struct rcmd){
         .func = R_GL_Init,
         .nargs = 3,
@@ -390,7 +376,7 @@ bool R_AL_InitPrivFromTiles(const struct map *map, int chunk_r, int chunk_c,
         },
     });
 
-    free(vbuff);
+    PF_FREE(vbuff);
     PERF_RETURN(true);
 
 fail_alloc:

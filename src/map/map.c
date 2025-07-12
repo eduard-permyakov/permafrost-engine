@@ -767,23 +767,6 @@ void M_GetResolution(const struct map *map, struct map_resolution *out)
     out->field_h = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
 }
 
-void M_SetShadowsEnabled(struct map *map, bool on)
-{
-    for(int r = 0; r < map->height; r++) {
-    for(int c = 0; c < map->width;  c++) {
-
-        const struct pfchunk *chunk = &map->chunks[r * map->width + c];
-        R_PushCmd((struct rcmd){
-            .func = R_GL_SetShadowsEnabled,
-            .nargs = 2,
-            .args = {
-                chunk->render_private,
-                R_PushArg(&on, sizeof(on)),
-            },
-        });
-    }}
-}
-
 vec3_t M_GetCenterPos(const struct map *map)
 {
     struct map_resolution res;

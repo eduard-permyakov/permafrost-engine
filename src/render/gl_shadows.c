@@ -119,6 +119,7 @@ void R_GL_InitShadows(void)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
+    printf("R_GL_InitShadows SUCCESS!\n");
 
     glGenTextures(1, &s_depth_map_tex);
     glBindTexture(GL_TEXTURE_2D, s_depth_map_tex);
@@ -186,11 +187,6 @@ void R_GL_DepthPassEnd(void)
     assert(s_depth_pass_active);
     s_depth_pass_active = false;
 
-    R_GL_StateSet(GL_U_SHADOW_MAP, (struct uval){
-        .type = UTYPE_INT,
-        .val.as_int = SHADOW_MAP_TUNIT - GL_TEXTURE0
-    });
-
     glViewport(s_saved.viewport[0], s_saved.viewport[1], s_saved.viewport[2], s_saved.viewport[3]);
     glBindFramebuffer(GL_FRAMEBUFFER, s_saved.fb);
     glCullFace(GL_BACK);
@@ -222,37 +218,24 @@ void R_GL_RenderDepthMap(const void *render_private, mat4x4_t *model)
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_SetShadowsEnabled(void *render_private, const bool *on)
-{
-    GL_PERF_ENTER();
-
-    struct render_private *priv = render_private;
-    const char *map[][2] = {
-        {"terrain",                      "terrain-shadowed"},
-        {"mesh.static.textured-phong",   "mesh.static.textured-phong-shadowed"},
-        {"mesh.animated.textured-phong", "mesh.animated.textured-phong-shadowed"}
-    };
-
-    for(int i = 0; i < sizeof(map)/sizeof(map[0]); i++) {
-
-        GLuint standard = R_GL_Shader_GetProgForName(map[i][0]);
-        GLuint shadowed = R_GL_Shader_GetProgForName(map[i][1]);
-        assert(standard >= 0 && shadowed >= 0);
-
-        GLuint from = *on ? standard : shadowed;
-        GLuint to = *on ? shadowed : standard;
-
-        if(priv->shader_prog == from)
-            priv->shader_prog = to;
-    }
-
-    GL_PERF_RETURN_VOID();
-}
-
 void R_GL_ShadowMapBind(void)
 {
+    R_GL_StateSet(GL_U_SHADOW_MAP, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = SHADOW_MAP_TUNIT - GL_TEXTURE0
+    });
+    R_GL_StateInstall(GL_U_SHADOW_MAP, R_GL_Shader_GetCurrActive());
     glActiveTexture(SHADOW_MAP_TUNIT);
     glBindTexture(GL_TEXTURE_2D, s_depth_map_tex);
+    GL_ASSERT_OK();
+}
+
+void R_GL_SetShadowsEnabled(const bool *on)
+{
+    R_GL_StateSet(GL_U_SHADOWS_ON, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = *on
+    });
 }
 
 void R_LightVisibilityFrustum(const struct camera *cam, struct frustum *out)

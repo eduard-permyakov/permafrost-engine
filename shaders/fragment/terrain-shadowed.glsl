@@ -101,6 +101,8 @@ uniform vec3 view_pos;
 
 uniform samplerBuffer height_map;
 uniform samplerBuffer splat_map;
+
+uniform int shadows_on;
 uniform sampler2D shadow_map;
 
 uniform sampler2DArray tex_array0;
@@ -767,6 +769,12 @@ void main()
     vec3 specular = SPECULAR_STRENGTH * light_color * (spec * TERRAIN_SPECULAR);
 
     vec4 final_color = vec4( (ambient + diffuse + specular) * tex_color.xyz, 1.0);
+    if(!bool(shadows_on)) {
+        o_frag_color = final_color * tf;        
+        return;
+    }
+
+    /* Shadow caclulations */
     float shadow = shadow_factor_poisson(from_vertex.light_space_pos);
     if(shadow > 0.0) {
         o_frag_color = vec4(final_color.xyz * (SHADOW_MULTIPLIER + (1.0 - shadow) * (1.0 - SHADOW_MULTIPLIER)), 1.0);

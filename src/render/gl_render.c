@@ -579,9 +579,9 @@ void R_GL_DrawModelToTexture(const void *render_private, const struct obb *obb,
     }
     const char *shader = NULL;
     if(anim_state) {
-        shader = "mesh.animated.textured-phong";
+        shader = "mesh.animated.textured-phong-shadowed";
     }else{
-        shader = "mesh.static.textured-phong";
+        shader = "mesh.static.textured-phong-shadowed";
     }
     R_GL_Shader_Install(shader);
     Camera_TickFinishPerspectiveUpsideDown(cam);

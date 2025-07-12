@@ -69,6 +69,7 @@ uniform vec3 light_color;
 uniform vec3 light_pos;
 uniform vec3 view_pos;
 
+uniform int shadows_on;
 uniform sampler2D shadow_map;
 
 uniform sampler2DArray tex_array0;
@@ -203,6 +204,12 @@ void main()
     vec3 specular = SPECULAR_STRENGTH * light_color * (spec * specular_clr);
 
     vec4 final_color = vec4( (ambient * 0.55 + diffuse * 1.5 + specular * 1.5) * tex_color.xyz, 1.0);
+    if(!bool(shadows_on)) {
+        o_frag_color = final_color;
+        return;
+    }
+
+    /* Shaodow calculations */
     float shadow = shadow_factor(from_vertex.light_space_pos);
     if(shadow > 0.0) {
         o_frag_color = vec4(final_color.xyz * SHADOW_MULTIPLIER, 1.0);

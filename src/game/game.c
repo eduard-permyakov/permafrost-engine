@@ -710,25 +710,15 @@ static bool faction_id_validate(const struct sval *new_val)
 
 static void shadows_en_commit(const struct sval *new_val)
 {
-    bool on = new_val->as_bool;
-    if(s_gs.map) {
-        M_SetShadowsEnabled(s_gs.map, on);
-    }
-
     if(!s_gs.active)
         return;
 
-    uint32_t curr;
-    kh_foreach_key(s_gs.active, curr, {
-
-        R_PushCmd((struct rcmd){
-            .func = R_GL_SetShadowsEnabled,
-            .nargs = 2,
-            .args = {
-                AL_EntityGet(curr)->render_private,
-                R_PushArg(&on, sizeof(on)),
-            },
-        });
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SetShadowsEnabled,
+        .nargs = 1,
+        .args = {
+            R_PushArg(&new_val->as_bool, sizeof(bool)),
+        }
     });
 }
 

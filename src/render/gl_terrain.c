@@ -273,13 +273,9 @@ void R_GL_MapBegin(const bool *shadows, const vec2_t *pos,
         splatbuff[base_idx] = accent_idx;
     }
     R_GL_StateSetArray(GL_U_SPLATS, UTYPE_INT, MAX_MAP_TEXTURES, splatbuff);
+    R_GL_SetShadowsEnabled(shadows);
 
-    GLuint shader_prog;
-    if(*shadows) {
-        shader_prog = R_GL_Shader_GetProgForName("terrain-shadowed");
-    }else {
-        shader_prog = R_GL_Shader_GetProgForName("terrain");
-    }
+    GLuint shader_prog = R_GL_Shader_GetProgForName("terrain-shadowed");
     assert(shader_prog != -1);
     R_GL_Shader_InstallProg(shader_prog);
 

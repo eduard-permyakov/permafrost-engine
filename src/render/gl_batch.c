@@ -1565,6 +1565,7 @@ void R_GL_Batch_Draw(struct render_input *in)
     GL_PERF_ENTER();
     GL_PERF_PUSH_GROUP(0, "batch::Draw");
 
+    R_GL_ShadowMapBind();
     batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_REGULAR);
     batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_REGULAR, BATCH_ID_NULL);
 

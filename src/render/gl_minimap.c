@@ -218,6 +218,28 @@ void draw_cam_frustum(const struct camera *cam, mat4x4_t *minimap_model, const s
     GL_PERF_RETURN_VOID();
 }
 
+static void push_shadow_state(bool *old_setting)
+{
+    struct uval shadows = (struct uval){.val.as_int = false};
+    R_GL_StateGet(GL_U_SHADOWS_ON, &shadows);
+    *old_setting = shadows.val.as_int;
+
+    R_GL_StateSet(GL_U_SHADOWS_ON, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = false
+    });
+    R_GL_StateInstall(GL_U_SHADOWS_ON, R_GL_Shader_GetCurrActive());
+}
+
+static void pop_shadow_state(bool old_setting)
+{
+    R_GL_StateSet(GL_U_SHADOWS_ON, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = old_setting
+    });
+    R_GL_StateInstall(GL_U_SHADOWS_ON, R_GL_Shader_GetCurrActive());
+}
+
 static void draw_minimap_terrain(struct render_private *priv, mat4x4_t *chunk_model_mat,
                                  struct map_resolution res)
 {
@@ -238,11 +260,11 @@ static void draw_minimap_terrain(struct render_private *priv, mat4x4_t *chunk_mo
     vec4_t plane_eq = (vec4_t){0.0f, 1.0f, 0.0f, Y_COORDS_PER_TILE};
     R_GL_SetClipPlane(plane_eq);
 
-    /* Always use 'terrain' shader for rendering to not draw any shadows */
-    GLuint old_shader_prog = priv->shader_prog;
-    priv->shader_prog = R_GL_Shader_GetProgForName("terrain");
+    /* Don't draw any shadows on the minimap */
+    bool prev;
+    push_shadow_state(&prev);
     R_GL_Draw(priv, chunk_model_mat, &fval); 
-    priv->shader_prog = old_shader_prog;
+    pop_shadow_state(prev);
 
     R_GL_MapEnd();
     glDisable(GL_CLIP_DISTANCE0);
