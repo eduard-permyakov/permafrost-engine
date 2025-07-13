@@ -2043,7 +2043,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         out->next_step = 1.0f / (20 / hz_count(hz));
         out->next_left = (20 / hz_count(hz)) - 1;
 
-        if(ms->left == 0) {
+        if(out->next_left == 0) {
             out->flags |= UPDATE_SET_POSITION;
             out->next_pos = new_pos;
         }else{
@@ -2781,6 +2781,8 @@ static void do_update_pos(uint32_t uid, vec2_t pos)
     M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, faction_id, flags, s_map);
     M_NavBlockersIncref(pos, ms->last_stop_radius, faction_id, flags, s_map);
     ms->last_stop_pos = pos;
+    ms->prev_pos = newpos;
+    ms->next_pos = newpos;
 }
 
 static void do_update_faction_id(uint32_t uid, int oldfac, int newfac)
@@ -3619,6 +3621,9 @@ static void interpolate_tick(void *user, void *event)
     if(g_frame_idx == s_last_tick)
         return;
 
+    if(s_move_tick_queued)
+        return;
+
     /* Perform a maximum of one interpolation per frame. */
     if(g_frame_idx == s_last_interpolate_tick)
         return;
@@ -3773,8 +3778,7 @@ static struct result navigation_tick_task(void *arg)
 
     if(s_move_work.type == WORK_TYPE_GPU) {
 
-        uint32_t period = 1.0f / hz_count(s_move_work.hz) * 1000.0f;
-        await_gpu_completion(period);
+        await_gpu_completion(0.0f);
         move_complete_gpu_velocity_work();
 
         await_gpu_download();
