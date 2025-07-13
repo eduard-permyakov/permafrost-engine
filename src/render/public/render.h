@@ -588,8 +588,9 @@ void R_GL_MoveUpdateUniforms(const struct map_resolution *res, vec2_t *map_pos, 
  * Upload the movement input state to shader storage buffer objects.
  * ---------------------------------------------------------------------------
  */
-void R_GL_MoveUploadData(void *ent_buff, size_t *nents, size_t *ent_buffsize,
-                         void *flock_buff, size_t *nflocks, size_t *flock_buffsize,
+void R_GL_MoveUploadData(void *gpuid_buff, size_t *ndynamic_ents, 
+                         void *attr_buff, size_t *attr_buffsize,
+                         void *flock_buff, size_t *flock_buffsize,
                          void *cost_base_buff, size_t *cost_base_size,
                          void *blockers_buff, size_t *blockers_size);
 
@@ -612,7 +613,7 @@ void R_GL_MoveDispatchWork(const size_t *nents);
  * block until the work is finished and the results are read back.
  * ---------------------------------------------------------------------------
  */
-void R_GL_MoveReadNewVelocities(void *out, const size_t *nents, const size_t *maxout);
+void R_GL_MoveReadNewVelocities(void *out, const size_t *nwork, const size_t *maxout);
 
 /* ---------------------------------------------------------------------------
  * Poll for the completion of the movement work.

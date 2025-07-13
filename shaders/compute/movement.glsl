@@ -163,9 +163,20 @@ struct flock{
 
 layout(local_size_x = 1) in;
 
+/* A flat array of GPU IDs that should have new velocities
+ * calculated. The GPU IDs can be used to index the auxiliary
+ * moveattrs buffer. While we require the attributes for all
+ * moveable entities, we only need to perform the velocity
+ * calculations for those that are currently not stationary.
+ */
+layout(std430, binding = 0) readonly buffer in_dispatch_ids
+{
+    uint gpuids[];
+};
+
 /* Per-entitty attributes.
  */
-layout(std430, binding = 0) readonly buffer in_movedata
+layout(std430, binding = 1) readonly buffer in_movedata
 {
     move_input moveattrs[];
 };
@@ -173,7 +184,7 @@ layout(std430, binding = 0) readonly buffer in_movedata
 /* Collections of entities. The entity set is a flat 
  * array containting GPU ID's of entities.
  */
-layout(std430, binding = 1) readonly buffer in_flocks
+layout(std430, binding = 2) readonly buffer in_flocks
 {
     flock flocks[];
 };
@@ -183,13 +194,13 @@ layout(std430, binding = 1) readonly buffer in_flocks
  * are present. Essentially, a spacial hash of all the entities'
  * positions.
  */
-layout(r32ui,  binding = 2) uniform readonly uimage2D in_pos_id_map;
+layout(r32ui,  binding = 3) uniform readonly uimage2D in_pos_id_map;
 
 /* The cost base field of the map. Stores layers together,
  * with chunks for each layer stored in row-major order.
  * Each element is a single bytes.
  */
-layout(std430, binding = 3) readonly buffer in_cost_base
+layout(std430, binding = 4) readonly buffer in_cost_base
 {
     uint cost_base[];
 };
@@ -198,7 +209,7 @@ layout(std430, binding = 3) readonly buffer in_cost_base
  * with chunks for each layer stored in row-major order.
  * Each element is 2 bytes.
  */
-layout(std430, binding = 4) readonly buffer in_blockers
+layout(std430, binding = 5) readonly buffer in_blockers
 {
     uint blockers[];
 };
@@ -206,7 +217,7 @@ layout(std430, binding = 4) readonly buffer in_blockers
 /* Buffer for storing the output velocities to be read back
  * by the client.
  */
-layout(std430, binding = 5) writeonly buffer o_data
+layout(std430, binding = 6) writeonly buffer o_data
 {
     vec2 velocities[];
 };
@@ -764,11 +775,7 @@ bool ent_still(uint gpuid)
 void main()
 {
     uint idx = gl_GlobalInvocationID.x;
-    uint gpuid = idx + 1;
-
-    /* The result for 'still' entities is ignored */
-    if(ent_still(gpuid))
-        return;
+    uint gpuid = gpuids[idx];
 
     vec2 out_vpref = vec2(0.0, 0.0);
     uint state = ATTR(gpuid, movestate);

@@ -3117,15 +3117,15 @@ static void move_complete_gpu_velocity_work(void)
     Task_RescheduleOnMain();
     ASSERT_IN_MAIN_THREAD();
 
-    size_t nents = kh_size(s_entity_state_table);
-    size_t attr_buffsize = nents * sizeof(vec2_t);
+    size_t nwork = s_move_work.nwork;
+    size_t attr_buffsize = nwork * sizeof(vec2_t);
 
     R_PushCmd((struct rcmd){
         .func = R_GL_MoveReadNewVelocities,
         .nargs = 3,
         .args = {
             [0] = s_move_work.gpu_velocities,
-            [1] = R_PushArg(&nents, sizeof(size_t)),
+            [1] = R_PushArg(&nwork, sizeof(size_t)),
             [2] = R_PushArg(&attr_buffsize, sizeof(size_t))
         }
     });
@@ -3351,11 +3351,28 @@ static void move_upload_input(size_t nents)
     ASSERT_IN_MAIN_THREAD();
     PERF_ENTER();
 
-    /* Set moveattr data */
-    const size_t attr_buffsize = nents * sizeof(struct gpu_ent_desc);
+    /* Setup GPUID dispatch data.
+     */
     struct render_workspace *ws = G_GetSimWS();
+    const size_t gpuid_buffsize = s_move_work.nwork * sizeof(uint32_t);
+    const size_t nactive = s_move_work.nwork;
+    void *gpuid_buff = stalloc(&ws->args, gpuid_buffsize);
+    unsigned char *cursor = gpuid_buff;
+
+    for(int i = 0; i < s_move_work.nwork; i++) {
+
+        struct move_work_in *in = &s_move_work.in[i];
+        uint32_t gpuid = G_GPUIDForEntFrom(s_move_work.gamestate.ent_gpu_id_map, in->ent_uid);
+        *((uint32_t*)cursor) = gpuid;
+        cursor += sizeof(uint32_t);
+    }
+    assert(cursor == ((unsigned char*)gpuid_buff) + gpuid_buffsize);
+
+    /* Setup moveattr data.
+     */
+    const size_t attr_buffsize = nents * sizeof(struct gpu_ent_desc);
     void *attrbuff = stalloc(&ws->args, attr_buffsize);
-    unsigned char *cursor = attrbuff;
+    cursor = attrbuff;
 
     for(int gpu_id = 1; gpu_id <= nents; gpu_id++) {
 
@@ -3403,7 +3420,8 @@ static void move_upload_input(size_t nents)
     }
     assert(cursor == ((unsigned char*)attrbuff) + attr_buffsize);
 
-    /* Setup flock data */
+    /* Setup flock data.
+     */
     const size_t nflocks = vec_size(&s_flocks);
     const size_t flock_buffsize = nflocks * sizeof(struct gpu_flock_desc);
     void *flockbuff = stalloc(&ws->args, flock_buffsize);
@@ -3452,11 +3470,11 @@ static void move_upload_input(size_t nents)
         .func = R_GL_MoveUploadData,
         .nargs = 10,
         .args = {
+            gpuid_buff,
+            R_PushArg(&nactive, sizeof(nactive)),
             attrbuff,
-            R_PushArg(&nents, sizeof(nents)),
             R_PushArg(&attr_buffsize, sizeof(attr_buffsize)),
             flockbuff,
-            R_PushArg(&nflocks, sizeof(nflocks)),
             R_PushArg(&flock_buffsize, sizeof(flock_buffsize)),
             cost_base_buff,
             R_PushArg(&cost_base_buffsize, sizeof(cost_base_buffsize)),
@@ -3503,7 +3521,7 @@ static void move_submit_gpu_velocity_work(void)
     R_PushCmd((struct rcmd){
         .func = R_GL_MoveDispatchWork,
         .nargs = 1,
-        .args = R_PushArg(&nents, sizeof(size_t))
+        .args = R_PushArg(&s_move_work.nwork, sizeof(s_move_work.nwork))
     });
     Task_Yield();
 }
@@ -3513,8 +3531,8 @@ static void nav_tick_submit_work(void)
     ASSERT_IN_MAIN_THREAD();
 
     if(s_move_work.type == WORK_TYPE_GPU) {
-        size_t nents = kh_size(s_entity_state_table);
-        size_t size = nents * sizeof(vec2_t);
+        size_t nwork = s_move_work.nwork;
+        size_t size = nwork * sizeof(vec2_t);
         s_move_work.gpu_velocities = stalloc(&s_move_work.mem, size);
     }
 
@@ -3759,12 +3777,8 @@ static void copy_gpu_results(void)
         struct move_work_in *in = &s_move_work.in[i];
         struct move_work_out *out = &s_move_work.out[i];
 
-        uint32_t uid = in->ent_uid;
-        uint32_t gpuid = G_GPUIDForEntFrom(s_move_work.gamestate.ent_gpu_id_map, uid);
-        assert(gpuid >= 1 && gpuid <= nents);
-
-        vec2_t velocity = s_move_work.gpu_velocities[gpuid-1];
-        out->ent_uid = uid;
+        vec2_t velocity = s_move_work.gpu_velocities[i];
+        out->ent_uid = in->ent_uid;
         out->ent_vel = velocity;
     }
     PERF_RETURN_VOID();
