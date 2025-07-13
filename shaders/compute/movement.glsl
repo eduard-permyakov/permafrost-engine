@@ -245,11 +245,11 @@ ivec4 nav_tile_desc_at(vec3 ws_pos)
     int chunk_h = map_resolution[1];
     int tile_w = FIELD_RES_R;
     int tile_h = FIELD_RES_C;
-    int xtile = int(tile_dims().x);
-    int ztile = int(tile_dims().y);
+    float xtile = tile_dims().x;
+    float ztile = tile_dims().y;
 
-    int chunk_x_dist = tile_w * xtile;
-    int chunk_z_dist = tile_h * ztile;
+    float chunk_x_dist = tile_w * xtile;
+    float chunk_z_dist = tile_h * ztile;
 
     int chunk_r = int(abs(map_pos.y - ws_pos.z) / chunk_z_dist);
     int chunk_c = int(abs(map_pos.x - ws_pos.x) / chunk_x_dist);
@@ -397,50 +397,6 @@ vec2 truncate(vec2 vec, float max)
     return vec;
 }
 
-vec2 enemy_seek_vpref(uint gpuid, float speed, vec2 vdes)
-{
-    return vec2(0.0, 0.0);
-}
-
-vec2 cell_arrival_seek_vpref(uint gpuid, vec2 cell_pos, float speed, vec2 vdes,
-                             vec2 cohesion, vec2 alignment, vec2 drag)
-{
-    return vec2(0.0, 0.0);
-}
-
-vec2 formation_seek_vpref(uint gpuid, uint flockid, float speed, vec2 vdes, vec2 cohesion, 
-                          vec2 alignment, vec2 drag, uint has_dest_los)
-{
-    return vec2(0.0, 0.0);
-}
-
-vec2 arrive_force_point(uint gpuid, vec2 target_xz, vec2 vdes, uint has_dest_los)
-{
-    vec2 desired_velocity = vec2(0.0, 0.0);
-    vec2 pos_xz = ATTR_VEC2(gpuid, pos);
-    float max_speed = ATTR(gpuid, max_speed);
-    float scale = max_speed / ticks_hz;
-
-    if(bool(has_dest_los)) {
-
-        vec2 delta = target_xz - pos_xz;
-        float distance = length(delta);
-
-        desired_velocity = normalize(delta);
-        desired_velocity *= scale;
-
-        if(distance < ARRIVE_SLOWING_RADIUS) {
-            desired_velocity *= (distance / ARRIVE_SLOWING_RADIUS);
-        }
-    }else{
-        desired_velocity = vdes;
-        desired_velocity *= scale;
-    }
-    vec2 ret = desired_velocity - ATTR_VEC2(gpuid, velocity);
-    ret = truncate(ret, scaled_max_force());
-    return ret;
-}
-
 /* Cohesion is a behaviour that causes agents to steer towards the center of mass of nearby agents.
  */
 vec2 cohesion_force(uint gpuid, uint flockid)
@@ -572,6 +528,186 @@ vec2 separation_force(uint gpuid, float buffer_dist)
     ret *= -1.0;
     ret = truncate(ret, scaled_max_force());
     return ret;
+}
+
+vec2 arrive_force_point(uint gpuid, vec2 target_xz, vec2 vdes, uint has_dest_los)
+{
+    vec2 desired_velocity = vec2(0.0, 0.0);
+    vec2 pos_xz = ATTR_VEC2(gpuid, pos);
+    float max_speed = ATTR(gpuid, max_speed);
+    float scale = max_speed / ticks_hz;
+
+    if(bool(has_dest_los)) {
+
+        vec2 delta = target_xz - pos_xz;
+        float distance = length(delta);
+
+        desired_velocity = normalize(delta);
+        desired_velocity *= scale;
+
+        if(distance < ARRIVE_SLOWING_RADIUS) {
+            desired_velocity *= (distance / ARRIVE_SLOWING_RADIUS);
+        }
+    }else{
+        desired_velocity = vdes;
+        desired_velocity *= scale;
+    }
+    vec2 ret = desired_velocity - ATTR_VEC2(gpuid, velocity);
+    ret = truncate(ret, scaled_max_force());
+    return ret;
+}
+
+vec2 arrive_force_enemies(uint gpuid, vec2 vdes)
+{
+    vec2 pos_xz = ATTR_VEC2(gpuid, pos);
+    float max_speed = ATTR(gpuid, max_speed);
+    vec2 desired_velocity = vdes * (max_speed / ticks_hz);
+    vec2 ret = desired_velocity - ATTR_VEC2(gpuid, velocity);
+    ret = truncate(ret, scaled_max_force());
+    return ret;
+}
+
+vec2 enemy_seek_total_force(uint gpuid, vec2 vdes)
+{
+    vec2 arrive = arrive_force_enemies(gpuid, vdes);
+    vec2 separation = separation_force(gpuid, SEPARATION_BUFFER_DIST);
+
+    arrive *= MOVE_ARRIVE_FORCE_SCALE;
+    separation *= SEPARATION_FORCE_SCALE;
+
+    vec2 ret = vec2(0.0, 0.0);
+    ret += arrive;
+    ret += separation;
+
+    ret = truncate(ret, scaled_max_force());
+    return ret;
+}
+
+vec2 enemy_seek_vpref(uint gpuid, float speed, vec2 vdes)
+{
+    vec2 steer_force = enemy_seek_total_force(gpuid, vdes);
+    vec2 accel = steer_force * (1.0 / ENTITY_MASS);
+    vec2 new_vel = ATTR_VEC2(gpuid, velocity) + accel;
+    new_vel = truncate(new_vel, speed / ticks_hz);
+    return new_vel;
+}
+
+vec2 arrive_force_cell(uint gpuid, vec2 cell_pos, vec2 vdes)
+{
+    vec2 pos_xz = ATTR_VEC2(gpuid, pos);
+    vec2 desired_velocity = cell_pos - pos_xz;
+    float distance = length(desired_velocity);
+
+    if(distance < ARRIVE_SLOWING_RADIUS) {
+        desired_velocity *= (distance / ARRIVE_SLOWING_RADIUS);
+    }else{
+        float max_speed = ATTR(gpuid, max_speed);
+        desired_velocity *= (max_speed / ticks_hz);
+    }
+    return desired_velocity;
+}
+
+vec2 cell_seek_total_force(uint gpuid, vec2 cell_pos, vec2 vdes,
+                           vec2 cohesion, vec2 alignment)
+{
+    vec2 pos_xz = ATTR_VEC2(gpuid, pos);
+    vec2 delta = cell_pos - pos_xz;
+
+    vec2 arrive = arrive_force_cell(gpuid, cell_pos, vdes);
+    vec2 separation = separation_force(gpuid, SEPARATION_BUFFER_DIST);
+
+    arrive *= MOVE_ARRIVE_FORCE_SCALE;
+    separation *= SEPARATION_FORCE_SCALE;
+    cohesion *= MOVE_COHESION_FORCE_SCALE;
+    alignment *= ALIGNMENT_FORCE_SCALE;
+
+    vec2 ret = vec2(0.0, 0.0);
+    ret += arrive;
+    ret += separation;
+
+    if(length(delta) > CELL_ARRIVAL_RADIUS) {
+        ret += cohesion;
+        ret += alignment;
+    }
+
+    ret = truncate(ret, scaled_max_force());
+    return ret;
+}
+
+vec2 cell_arrival_seek_vpref(uint gpuid, vec2 cell_pos, float speed, vec2 vdes,
+                             vec2 cohesion, vec2 alignment, vec2 drag)
+{
+    vec2 steer_force = vec2(0.0, 0.0);
+    for(int prio = 0; prio < 3; prio++) {
+
+        if(prio == 0) {
+            steer_force = cell_seek_total_force(gpuid, cell_pos, vdes, cohesion, alignment);
+        }else if(prio == 1) {
+            steer_force = separation_force(gpuid, SEPARATION_BUFFER_DIST);
+        }else if(prio == 2) {
+            steer_force = arrive_force_cell(gpuid, cell_pos, vdes);
+        }
+        steer_force = nullify_impass_components(gpuid, steer_force);
+        if(length(steer_force) > scaled_max_force() * 0.01)
+            break;
+    }
+
+    vec2 accel = steer_force * (1.0 / ENTITY_MASS);
+    vec2 new_vel = ATTR_VEC2(gpuid, velocity) + accel;
+    new_vel = truncate(new_vel, speed / ticks_hz);
+    if(length(drag) > EPSILON) {
+        new_vel = truncate(new_vel, speed * 0.75 / ticks_hz);
+    }
+    return new_vel;
+}
+
+vec2 formation_point_seek_total_force(uint gpuid, uint flockid, vec2 vdes, vec2 cohesion,
+                                      vec2 alignment, uint has_dest_los)
+{
+    vec2 arrive = arrive_force_point(gpuid, FLOCK_ATTR_VEC2(flockid, target), vdes, has_dest_los);
+    vec2 separation = separation_force(gpuid, SEPARATION_BUFFER_DIST);
+
+    arrive *= MOVE_ARRIVE_FORCE_SCALE;
+    cohesion *= MOVE_COHESION_FORCE_SCALE;
+    separation *= SEPARATION_FORCE_SCALE;
+    alignment *= ALIGNMENT_FORCE_SCALE;
+
+    vec2 ret = vec2(0.0, 0.0);
+    ret += arrive;
+    ret += separation;
+    ret += cohesion;
+
+    ret = truncate(ret, scaled_max_force());
+    return ret;
+}
+
+vec2 formation_seek_vpref(uint gpuid, uint flockid, float speed, vec2 vdes, vec2 cohesion, 
+                          vec2 alignment, vec2 drag, uint has_dest_los)
+{
+    vec2 steer_force = vec2(0.0, 0.0);
+    for(int prio = 0; prio < 3; prio++) {
+
+        if(prio == 0) {
+            steer_force = formation_point_seek_total_force(gpuid, flockid, vdes, cohesion,
+                alignment, has_dest_los);
+        }else if(prio == 1) {
+            steer_force = separation_force(gpuid, SEPARATION_BUFFER_DIST);
+        }else if(prio == 2) {
+            steer_force = arrive_force_point(gpuid, FLOCK_ATTR_VEC2(flockid, target), vdes,
+                has_dest_los);
+        }
+        steer_force = nullify_impass_components(gpuid, steer_force);
+        if(length(steer_force) > scaled_max_force() * 0.01)
+            break;
+    }
+
+    vec2 accel = steer_force * (1.0 / ENTITY_MASS);
+    vec2 new_vel = ATTR_VEC2(gpuid, velocity) + accel;
+    new_vel = truncate(new_vel, speed / ticks_hz);
+    if(length(drag) > EPSILON) {
+        new_vel = truncate(new_vel, speed * 0.75 / ticks_hz);
+    }
+    return new_vel;
 }
 
 vec2 point_seek_total_force(uint gpuid, uint flockid, vec2 vdes, uint has_dest_los)
