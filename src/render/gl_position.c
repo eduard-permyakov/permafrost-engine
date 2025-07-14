@@ -44,7 +44,17 @@
 #include "../map/public/tile.h"
 
 
-#define MIN(a, b)       ((a) < (b) ? (a) : (b))
+/* Determines how many pixels of the texture are used for a 
+ * single unit of distance in the OpenGL coordinate space. 
+ * With a scale of 1, the resolution of the texture will be 
+ * the same as the length and width of the map, but we will 
+ * only be able to perform range queries with whole number 
+ * precision. Increasing the scale will increase the texture 
+ * size, but will allow making more precise range queries in 
+ * the compute shader.
+ */
+#define POSTEX_RES_SCALE (2)
+#define MIN(a, b)        ((a) < (b) ? (a) : (b))
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -65,8 +75,8 @@ void R_GL_PositionsUploadData(vec3_t *posbuff, uint32_t *idbuff,
     struct map_resolution res;
     M_GetResolution(map, &res);
 
-    const size_t resx = res.chunk_w * res.tile_w * X_COORDS_PER_TILE;
-    const size_t resy = res.chunk_h * res.tile_h * Z_COORDS_PER_TILE;
+    const size_t resx = res.chunk_w * res.tile_w * X_COORDS_PER_TILE * POSTEX_RES_SCALE;
+    const size_t resy = res.chunk_h * res.tile_h * Z_COORDS_PER_TILE * POSTEX_RES_SCALE;
 
     /* Create a framebuffer with a resolution based on the map size */
     GLuint fbo;

@@ -114,6 +114,8 @@
 #define MAX_TURN_RATE               (15.0f)
 #define MAX_NEIGHBOURS              (32)
 
+#define CLEARPATH_NEIGHBOUR_RADIUS  (10.0f)
+
 #define NUM_LAYERS                  (12)
 
 #define TILES_PER_CHUNK_HEIGHT      (32)
@@ -122,6 +124,9 @@
 #define FIELD_RES_C                 (64)
 #define X_COORDS_PER_TILE           (8)
 #define Z_COORDS_PER_TILE           (8)
+
+/* Must match gl_position.c */
+#define POSTEX_RES_SCALE            (2)
 
 /*****************************************************************************/
 /* INPUT/OUTPUT                                                              */
@@ -160,6 +165,7 @@ struct flock{
     uint  nmembers;
     float target_x, target_z;
 };
+
 
 layout(local_size_x = 1) in;
 
@@ -456,8 +462,8 @@ uint ents_in_circle(vec2 origin, float radius, out uint near_ents[MAX_NEAR_ENTS]
      * to the (+x, -z) direction. The coordinate of the top right corner
      * is (resx-1, resy-1), which correspons to the (-x, +z) direction.
      */
-    float origin_normal_x = ((origin.x - map_pos.x) / (resx) * -1);
-    float origin_normal_z = ((origin.y - map_pos.y) / (resz) * +1);
+    float origin_normal_x = ((origin.x - map_pos.x) / (resx) * -1); /* [0 -> 1] */
+    float origin_normal_z = ((origin.y - map_pos.y) / (resz) * +1); /* [0 -> 1] */
 
     int relative_origin_x = int(round(origin_normal_x * imageSize(in_pos_id_map).x));
     int relative_origin_z = int(round(origin_normal_z * imageSize(in_pos_id_map).y));
@@ -465,8 +471,8 @@ uint ents_in_circle(vec2 origin, float radius, out uint near_ents[MAX_NEAR_ENTS]
     /* Find the distance corresponding to a single pixel in 
      * the posbuff texture.
      */
-    int x_pixels_radius = int(ceil(radius));
-    int z_pixels_radius = int(ceil(radius));
+    int x_pixels_radius = int(ceil(radius)) * POSTEX_RES_SCALE;
+    int z_pixels_radius = int(ceil(radius)) * POSTEX_RES_SCALE;
 
     /* Do a grid scan.
      * Increasing x-coord -> (-z -> +z)
@@ -478,9 +484,9 @@ uint ents_in_circle(vec2 origin, float radius, out uint near_ents[MAX_NEAR_ENTS]
         int x = relative_origin_x + dx;
         int z = relative_origin_z + dz;
 
-        if(x < 0 || x >= resx)
+        if(x < 0 || x >= imageSize(in_pos_id_map).x)
             continue;
-        if(z < 0 || z >= resz)
+        if(z < 0 || z >= imageSize(in_pos_id_map).y)
             continue;
 
         uvec4 bin_contents = imageLoad(in_pos_id_map, ivec2(x, z));
@@ -772,6 +778,43 @@ bool ent_still(uint gpuid)
     return (state == STATE_ARRIVED || state == STATE_WAITING);
 }
 
+ivec2 find_neighbours(uint gpuid, 
+                     inout uint static_neighbours[MAX_NEIGHBOURS], 
+                     inout uint dynamic_neighbours[MAX_NEIGHBOURS])
+{
+    ivec2 ret = ivec2(0, 0);
+    vec2 pos_xz = ATTR_VEC2(gpuid, pos);
+    uint ent_flags = ATTR(gpuid, flags);
+
+    uint near_ents[MAX_NEAR_ENTS];
+    uint num_near = ents_in_circle(pos_xz, CLEARPATH_NEIGHBOUR_RADIUS, near_ents);
+
+    for(int i = 0; i < num_near; i++) {
+
+        uint curr_gpuid = near_ents[i];
+        uint curr_flags = ATTR(curr_gpuid, flags);
+
+        if(curr_gpuid == gpuid)
+            continue;
+
+        float radius = ATTR(curr_gpuid, radius);
+        if(radius == 0.0)
+            continue;
+
+        if((ent_flags & ENTITY_FLAG_AIR) != (curr_flags & ENTITY_FLAG_AIR))
+            continue;
+
+        if(ent_still(curr_gpuid)) {
+            if(ret.x < MAX_NEIGHBOURS)
+                static_neighbours[ret.x++] = curr_gpuid;
+        }else{
+            if(ret.y < MAX_NEIGHBOURS)
+                dynamic_neighbours[ret.y++] = curr_gpuid;
+        }
+    }
+    return ret;
+}
+
 void main()
 {
     uint idx = gl_GlobalInvocationID.x;
@@ -826,6 +869,10 @@ void main()
             ATTR(gpuid, speed)
         );
     }
+
+    uint static_neighbours[MAX_NEIGHBOURS];
+    uint dynamic_neighbours[MAX_NEIGHBOURS];
+    ivec2 num_neighbs = find_neighbours(gpuid, static_neighbours, dynamic_neighbours);
 
     out_vpref = truncate(out_vpref, ATTR(gpuid, max_speed) / ticks_hz);
     velocities[idx] = out_vpref;
