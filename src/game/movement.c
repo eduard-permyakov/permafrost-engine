@@ -1316,7 +1316,7 @@ static vec2_t seek_force(uint32_t uid, vec2_t target_xz)
 
     PFM_Vec2_Sub(&target_xz, &pos_xz, &desired_velocity);
     PFM_Vec2_Normal(&desired_velocity, &desired_velocity);
-    PFM_Vec2_Scale(&desired_velocity, ms->max_speed / G_Move_GetTickHz(), &desired_velocity);
+    PFM_Vec2_Scale(&desired_velocity, ms->max_speed / hz_count(s_move_work.hz), &desired_velocity);
 
     PFM_Vec2_Sub(&desired_velocity, &ms->velocity, &ret);
     return ret;
@@ -1342,15 +1342,14 @@ static vec2_t arrive_force_point(uint32_t uid, vec2_t target_xz, vec2_t vdes, bo
         PFM_Vec2_Sub(&target_xz, &pos_xz, &desired_velocity);
         distance = PFM_Vec2_Len(&desired_velocity);
         PFM_Vec2_Normal(&desired_velocity, &desired_velocity);
-        PFM_Vec2_Scale(&desired_velocity, ms->max_speed / G_Move_GetTickHz(), &desired_velocity);
+        PFM_Vec2_Scale(&desired_velocity, ms->max_speed / hz_count(s_move_work.hz), 
+            &desired_velocity);
 
         if(distance < ARRIVE_SLOWING_RADIUS) {
             PFM_Vec2_Scale(&desired_velocity, distance / ARRIVE_SLOWING_RADIUS, &desired_velocity);
         }
-
     }else{
-
-        PFM_Vec2_Scale(&vdes, ms->max_speed / G_Move_GetTickHz(), &desired_velocity);
+        PFM_Vec2_Scale(&vdes, ms->max_speed / hz_count(s_move_work.hz), &desired_velocity);
     }
 
     PFM_Vec2_Sub(&desired_velocity, &ms->velocity, &ret);
@@ -1371,7 +1370,7 @@ static vec2_t arrive_force_cell(uint32_t uid, vec2_t cell_xz, vec2_t vdes)
     if(distance < ARRIVE_SLOWING_RADIUS) {
         PFM_Vec2_Scale(&desired_velocity, distance / ARRIVE_SLOWING_RADIUS, &desired_velocity);
     }else{
-        PFM_Vec2_Scale(&vdes, ms->max_speed / G_Move_GetTickHz(), &desired_velocity);
+        PFM_Vec2_Scale(&vdes, ms->max_speed / hz_count(s_move_work.hz), &desired_velocity);
     }
     return desired_velocity;
 }
@@ -1385,7 +1384,7 @@ static vec2_t arrive_force_enemies(uint32_t uid, vec2_t vdes)
     const struct movestate *ms = movestate_get(uid);
     assert(ms);
 
-    PFM_Vec2_Scale(&vdes, ms->max_speed / G_Move_GetTickHz(), &desired_velocity);
+    PFM_Vec2_Scale(&vdes, ms->max_speed / hz_count(s_move_work.hz), &desired_velocity);
     PFM_Vec2_Sub(&desired_velocity, (vec2_t*)&ms->velocity, &ret);
     vec2_truncate(&ret, SCALED_MAX_FORCE);
     return ret;
@@ -1708,9 +1707,9 @@ static vec2_t cell_arrival_seek_vpref(uint32_t uid, vec2_t cell_pos, float speed
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
-    vec2_truncate(&new_vel, speed / G_Move_GetTickHz());
+    vec2_truncate(&new_vel, speed / hz_count(s_move_work.hz));
     if(PFM_Vec2_Len(&drag) > EPSILON) {
-        vec2_truncate(&new_vel, (speed * 0.75) / G_Move_GetTickHz());
+        vec2_truncate(&new_vel, (speed * 0.75) / hz_count(s_move_work.hz));
     }
 
     return new_vel;
@@ -1727,7 +1726,7 @@ static vec2_t enemy_seek_vpref(uint32_t uid, float speed, vec2_t vdes)
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
-    vec2_truncate(&new_vel, speed / G_Move_GetTickHz());
+    vec2_truncate(&new_vel, speed / hz_count(s_move_work.hz));
 
     return new_vel;
 }
@@ -1787,9 +1786,9 @@ static vec2_t formation_seek_vpref(uint32_t uid, const struct flock *flock, floa
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
-    vec2_truncate(&new_vel, speed / G_Move_GetTickHz());
+    vec2_truncate(&new_vel, speed / hz_count(s_move_work.hz));
     if(PFM_Vec2_Len(&drag) > EPSILON) {
-        vec2_truncate(&new_vel, (speed * 0.75) / G_Move_GetTickHz());
+        vec2_truncate(&new_vel, (speed * 0.75) / hz_count(s_move_work.hz));
     }
 
     return new_vel;
@@ -3384,9 +3383,6 @@ static void move_upload_input(size_t nents)
         uint32_t flock_id = flock_id_for_ent(uid, &flock);
         uint32_t movestate = curr->state;
         vec2_t pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
-
-        uint32_t has_dest_los = flock ? M_NavHasDestLOS(s_move_work.gamestate.map, 
-            flock->dest_id, pos) : false;
         vec2_t dest_xz = flock ? flock->target_xz : (vec2_t){0.0f, 0.0f};
 
         uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
@@ -3413,7 +3409,7 @@ static void move_upload_input(size_t nents)
             .max_speed = curr->max_speed,
             .radius = radius,
             .layer = Entity_NavLayerWithRadius(flags, radius),
-            .has_dest_los = has_dest_los,
+            .has_dest_los = work ? work->has_dest_los : false,
             .formation_assignment_ready = work ? work->fstate.assignment_ready : 0,
         };
         cursor += sizeof(struct gpu_ent_desc);
@@ -3746,12 +3742,12 @@ static void await_gpu_completion(uint32_t timeout_ms)
             }
         });
 
+        int source;
+        Task_AwaitEvent(EVENT_UPDATE_START, &source);
+
         uint32_t now = SDL_GetTicks();
         if(SDL_TICKS_PASSED(now, begin + timeout_ms))
             break;
-
-        int source;
-        Task_AwaitEvent(EVENT_UPDATE_START, &source);
     }
 }
 
@@ -3777,9 +3773,8 @@ static void copy_gpu_results(void)
         struct move_work_in *in = &s_move_work.in[i];
         struct move_work_out *out = &s_move_work.out[i];
 
-        vec2_t velocity = s_move_work.gpu_velocities[i];
         out->ent_uid = in->ent_uid;
-        out->ent_vel = velocity;
+        out->ent_vel = s_move_work.gpu_velocities[i];
     }
     PERF_RETURN_VOID();
 }

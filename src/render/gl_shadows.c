@@ -119,7 +119,6 @@ void R_GL_InitShadows(void)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
-    printf("R_GL_InitShadows SUCCESS!\n");
 
     glGenTextures(1, &s_depth_map_tex);
     glBindTexture(GL_TEXTURE_2D, s_depth_map_tex);

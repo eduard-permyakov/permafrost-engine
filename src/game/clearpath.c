@@ -247,6 +247,8 @@ static bool inside_pcr(const struct line_2d *vo_lr_pairs, size_t n_rays, vec2_t 
 
         vec2_t point_to_test;
         PFM_Vec2_Sub(&test, (vec2_t*)&vo_lr_pairs[i + 0].point, &point_to_test);
+        if(PFM_Vec2_Len(&point_to_test) < EPSILON)
+            continue;
         PFM_Vec2_Normal(&point_to_test, &point_to_test);
 
         float left_det = (point_to_test.z * left_dir_x) - (point_to_test.x * left_dir_z);
@@ -260,6 +262,8 @@ static bool inside_pcr(const struct line_2d *vo_lr_pairs, size_t n_rays, vec2_t 
         const float right_dir_z = vo_lr_pairs[i + 1].dir.z;
 
         PFM_Vec2_Sub(&test, (vec2_t*)&vo_lr_pairs[i + 1].point, &point_to_test);
+        if(PFM_Vec2_Len(&point_to_test) < EPSILON)
+            continue;
         PFM_Vec2_Normal(&point_to_test, &point_to_test);
 
         float right_det = (point_to_test.z * right_dir_x) - (point_to_test.x * right_dir_z);
@@ -308,22 +312,21 @@ static size_t compute_vo_xpoints(struct line_2d *rays, size_t n_rays, vec_vec2_t
 {
     size_t ret = 0;
     for(int i = 0; i < n_rays; i++) {
-        for(int j = 0; j < n_rays; j++) {
+    for(int j = 0; j < n_rays; j++) {
 
-            if(i == j) 
-                continue;
+        if(i == j) 
+            continue;
 
-            vec2_t isec_point;
-            if(!C_RayRayIntersection2D(rays[i], rays[j], &isec_point))
-                continue;
+        vec2_t isec_point;
+        if(!C_RayRayIntersection2D(rays[i], rays[j], &isec_point))
+            continue;
 
-            if(inside_pcr(rays, n_rays, isec_point))
-                continue;
+        if(inside_pcr(rays, n_rays, isec_point))
+            continue;
 
-            vec_vec2_push(inout, isec_point);
-            ret++;
-        }
-    }
+        vec_vec2_push(inout, isec_point);
+        ret++;
+    }}
 
     return ret;
 }
@@ -585,6 +588,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
 
     vec2_t des_v_ws;
     PFM_Vec2_Add(&cpent.xz_pos, &ent_des_v, &des_v_ws);
+
     if(!inside_pcr(rays, n_rays, des_v_ws)) {
 
         s_debug_saved.des_v_in_pcr = false;
@@ -611,6 +615,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
     compute_vdes_proj_points(rays, n_rays, ent_des_v, &xpoints);
 
     if(vec_size(&xpoints) == 0) {
+        vec_vec2_destroy(&xpoints);
         goto out;    
     }
 

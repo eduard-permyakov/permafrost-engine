@@ -115,6 +115,8 @@
 #define MAX_NEIGHBOURS              (32)
 
 #define CLEARPATH_NEIGHBOUR_RADIUS  (10.0f)
+#define CLEARPATH_BUFFER_RADIUS     (0.0f)
+#define CLEARPATH_MAX_XPOINTS       (32)
 
 #define NUM_LAYERS                  (12)
 
@@ -166,6 +168,31 @@ struct flock{
     float target_x, target_z;
 };
 
+/* Velocity Obstacle */
+struct VO{
+    vec2 xz_apex;
+    vec2 xz_left_side;
+    vec2 xz_right_side;
+};
+
+/* Reciprocal Velocity Obstacle */
+struct RVO{
+    vec2 xz_apex;
+    vec2 xz_left_side;
+    vec2 xz_right_side;
+};
+
+/* Hybrid Reciprocal Velocity Obstacle */
+struct HRVO{
+    vec2 xz_apex;
+    vec2 xz_left_side;
+    vec2 xz_right_side;
+};
+
+struct ray{
+    vec2 point;
+    vec2 dir;
+};
 
 layout(local_size_x = 1) in;
 
@@ -220,9 +247,6 @@ layout(std430, binding = 5) readonly buffer in_blockers
     uint blockers[];
 };
 
-/* Buffer for storing the output velocities to be read back
- * by the client.
- */
 layout(std430, binding = 6) writeonly buffer o_data
 {
     vec2 velocities[];
@@ -471,8 +495,8 @@ uint ents_in_circle(vec2 origin, float radius, out uint near_ents[MAX_NEAR_ENTS]
     /* Find the distance corresponding to a single pixel in 
      * the posbuff texture.
      */
-    int x_pixels_radius = int(ceil(radius)) * POSTEX_RES_SCALE;
-    int z_pixels_radius = int(ceil(radius)) * POSTEX_RES_SCALE;
+    int x_pixels_radius = int(ceil(radius)) * POSTEX_RES_SCALE + 1;
+    int z_pixels_radius = int(ceil(radius)) * POSTEX_RES_SCALE + 1;
 
     /* Do a grid scan.
      * Increasing x-coord -> (-z -> +z)
@@ -552,7 +576,7 @@ vec2 arrive_force_point(uint gpuid, vec2 target_xz, vec2 vdes, uint has_dest_los
     vec2 desired_velocity = vec2(0.0, 0.0);
     vec2 pos_xz = ATTR_VEC2(gpuid, pos);
     float max_speed = ATTR(gpuid, max_speed);
-    float scale = max_speed / ticks_hz;
+    float scale = max_speed / float(ticks_hz);
 
     if(bool(has_dest_los)) {
 
@@ -566,9 +590,9 @@ vec2 arrive_force_point(uint gpuid, vec2 target_xz, vec2 vdes, uint has_dest_los
             desired_velocity *= (distance / ARRIVE_SLOWING_RADIUS);
         }
     }else{
-        desired_velocity = vdes;
-        desired_velocity *= scale;
+        desired_velocity = vdes * scale;
     }
+
     vec2 ret = desired_velocity - ATTR_VEC2(gpuid, velocity);
     ret = truncate(ret, scaled_max_force());
     return ret;
@@ -619,7 +643,7 @@ vec2 arrive_force_cell(uint gpuid, vec2 cell_pos, vec2 vdes)
         desired_velocity *= (distance / ARRIVE_SLOWING_RADIUS);
     }else{
         float max_speed = ATTR(gpuid, max_speed);
-        desired_velocity *= (max_speed / ticks_hz);
+        desired_velocity = vdes * (max_speed / ticks_hz);
     }
     return desired_velocity;
 }
@@ -722,7 +746,7 @@ vec2 formation_seek_vpref(uint gpuid, uint flockid, float speed, vec2 vdes, vec2
     vec2 new_vel = ATTR_VEC2(gpuid, velocity) + accel;
     new_vel = truncate(new_vel, speed / ticks_hz);
     if(length(drag) > EPSILON) {
-        new_vel = truncate(new_vel, speed * 0.75 / ticks_hz);
+        new_vel = truncate(new_vel, (speed * 0.75) / ticks_hz);
     }
     return new_vel;
 }
@@ -749,7 +773,6 @@ vec2 point_seek_total_force(uint gpuid, uint flockid, vec2 vdes, uint has_dest_l
 vec2 point_seek_vpref(uint gpuid, uint flockid, vec2 vdes, uint has_dest_los, float speed)
 {
     vec2 steer_force = vec2(0.0, 0.0);
-
     for(int prio = 0; prio < 3; prio++) {
 
         if(prio == 0) {
@@ -778,7 +801,7 @@ bool ent_still(uint gpuid)
     return (state == STATE_ARRIVED || state == STATE_WAITING);
 }
 
-ivec2 find_neighbours(uint gpuid, 
+ivec2 find_neighbours(in uint gpuid, 
                      inout uint static_neighbours[MAX_NEIGHBOURS], 
                      inout uint dynamic_neighbours[MAX_NEIGHBOURS])
 {
@@ -815,53 +838,486 @@ ivec2 find_neighbours(uint gpuid,
     return ret;
 }
 
+bool same_position(vec2 a, vec2 b)
+{
+    vec2 delta = b - a;
+    return (length(delta) < EPSILON);
+}
+
+bool infinite_rays_intersection(in struct ray l1, 
+                                in struct ray l2, 
+                                out vec2 out_intersec_point)
+{
+    bool l1_zero = abs(l1.dir.x) < EPSILON;
+    bool l2_zero = abs(l2.dir.x) < EPSILON;
+    float l1_slope = l1_zero ? 1e30 : (l1.dir.y / l1.dir.x);
+    float l2_slope = l2_zero ? 1e30 : (l2.dir.y / l2.dir.x);
+
+    if(l1_zero && l2_zero)
+        return false;
+
+    if(abs(l1_slope - l2_slope) < EPSILON)
+        return false;
+
+    if(l1_zero && !l2_zero) {
+
+        out_intersec_point = vec2(
+            l1.point.x,
+            (l1.point.x - l2.point.x) * l2_slope + l2.point.y
+        );
+
+    }else if(!l1_zero && l2_zero) {
+
+        out_intersec_point = vec2(
+            l2.point.x,
+            (l2.point.x - l1.point.x) * l1_slope + l2.point.y
+        );
+
+    }else{
+
+        float x = (l1_slope * l1.point.x - l2_slope * l2.point.x + l2.point.y - l1.point.y) 
+                / (l1_slope - l2_slope);
+        float y = l2_slope * (x - l2.point.x) + l2.point.y;
+        out_intersec_point = vec2(x, y);
+    }
+
+    return true;
+}
+
+void compute_vo_edges(uint gpuid, uint neighb_gpuid, 
+                      out vec2 xz_right, out vec2 xz_left)
+{
+    vec2 ent_to_nb = normalize(ATTR_VEC2(neighb_gpuid, pos) - ATTR_VEC2(gpuid, pos));
+    vec2 right = vec2(-ent_to_nb.y, ent_to_nb.x);
+    right *= ATTR(neighb_gpuid, radius) + ATTR(gpuid, radius) + CLEARPATH_BUFFER_RADIUS;
+
+    vec2 right_tangent = ATTR_VEC2(neighb_gpuid, pos) + right;
+    vec2 left_tangent = ATTR_VEC2(neighb_gpuid, pos) - right;
+
+    xz_right = normalize(right_tangent - ATTR_VEC2(gpuid, pos));
+    xz_left = normalize(left_tangent - ATTR_VEC2(gpuid, pos));
+}
+
+struct VO compute_vo(uint gpuid, uint neighb_gpuid)
+{
+    struct VO ret;
+    compute_vo_edges(gpuid, neighb_gpuid, ret.xz_right_side, ret.xz_left_side);
+    ret.xz_apex = ATTR_VEC2(gpuid, pos) + ATTR_VEC2(neighb_gpuid, velocity);
+    return ret;
+}
+
+struct RVO compute_rvo(uint gpuid, uint neighb_gpuid)
+{
+    struct RVO ret;
+    compute_vo_edges(gpuid, neighb_gpuid, ret.xz_right_side, ret.xz_left_side);
+
+    vec2 apex_off = ATTR_VEC2(gpuid, velocity) + ATTR_VEC2(neighb_gpuid, velocity);
+    apex_off *= 0.5;
+    ret.xz_apex = ATTR_VEC2(gpuid, pos) + apex_off;
+
+    return ret;
+}
+
+struct HRVO compute_hrvo(uint gpuid, uint neighb_gpuid)
+{
+    struct HRVO ret;
+    struct RVO rvo = compute_rvo(gpuid, neighb_gpuid);
+
+    vec2 centerline = rvo.xz_left_side + rvo.xz_right_side;
+    vec2 intersec_point = vec2(0.0, 0.0);
+
+    vec2 vo_apex = ATTR_VEC2(gpuid, pos) + ATTR_VEC2(neighb_gpuid, velocity);
+    float det = (centerline.x * ATTR_VEC2(gpuid, velocity).y) 
+              - (centerline.y * ATTR_VEC2(gpuid, velocity).x);
+
+    if(det > EPSILON) {
+
+        struct ray l1 = ray(rvo.xz_apex, rvo.xz_left_side);
+        struct ray l2 = ray(vo_apex, rvo.xz_right_side);
+
+        bool collide = infinite_rays_intersection(l1, l2, intersec_point);
+        ret.xz_apex = intersec_point;
+
+    }else if(det < -EPSILON) {
+
+        struct ray l1 = ray(rvo.xz_apex, rvo.xz_right_side);
+        struct ray l2 = ray(vo_apex, rvo.xz_left_side);
+
+        bool collide = infinite_rays_intersection(l1, l2, intersec_point);
+        ret.xz_apex = intersec_point;
+
+    }else{
+        ret.xz_apex = rvo.xz_apex;
+    }
+
+    ret.xz_right_side = rvo.xz_right_side;
+    ret.xz_left_side = rvo.xz_left_side;
+    return ret;
+}
+
+uint compute_all_hrvos(in uint gpuid,
+                       in uint ndynamic,
+                       in uint dynamic_neighbours[MAX_NEIGHBOURS],
+                       out struct HRVO out_hrvos[MAX_NEIGHBOURS])
+{
+    uint ret = 0;
+    vec2 ent_pos = ATTR_VEC2(gpuid, pos);
+
+    for(int i = 0; i < ndynamic; i++) {
+
+        uint curr_gpuid = dynamic_neighbours[i];
+        vec2 curr_pos = ATTR_VEC2(curr_gpuid, pos);
+        if(same_position(curr_pos, ent_pos))
+            continue;
+        out_hrvos[ret++] = compute_hrvo(gpuid, curr_gpuid);
+    }
+    return ret;
+}
+
+uint compute_all_vos(in uint gpuid,
+                     in uint nstatic,
+                     in uint static_neighbours[MAX_NEIGHBOURS],
+                     out struct VO out_vos[MAX_NEIGHBOURS])
+{
+    uint ret = 0;
+    vec2 ent_pos = ATTR_VEC2(gpuid, pos);
+
+    for(int i = 0; i < nstatic; i++) {
+
+        uint curr_gpuid = static_neighbours[i];
+        vec2 curr_pos = ATTR_VEC2(curr_gpuid, pos);
+        if(same_position(curr_pos, ent_pos))
+            continue;
+        out_vos[ret++] = compute_vo(gpuid, curr_gpuid);
+    }
+    return ret;
+}
+
+void rays_repr(in uint nstatic,
+               in uint ndynamic,
+               in struct VO vos[MAX_NEIGHBOURS],
+               in struct HRVO hrvos[MAX_NEIGHBOURS],
+               out struct ray out_rays[(MAX_NEIGHBOURS + MAX_NEIGHBOURS) * 2])
+{
+    uint rays_idx = 0;
+
+    for(int i = 0; i < ndynamic; i++) {
+
+        out_rays[rays_idx + 0].point = hrvos[i].xz_apex;
+        out_rays[rays_idx + 0].dir = hrvos[i].xz_left_side;
+
+        out_rays[rays_idx + 1].point = hrvos[i].xz_apex;
+        out_rays[rays_idx + 1].dir = hrvos[i].xz_right_side;
+
+        rays_idx += 2;
+    }
+
+    for(int i = 0; i < nstatic; i++) {
+
+        out_rays[rays_idx + 0].point = vos[i].xz_apex;
+        out_rays[rays_idx + 0].dir = vos[i].xz_left_side;
+
+        out_rays[rays_idx + 1].point = vos[i].xz_apex;
+        out_rays[rays_idx + 1].dir = vos[i].xz_right_side;
+
+        rays_idx += 2;
+    }
+}
+
+bool inside_pcr(in vec2 test,
+                in uint nrays,
+                in struct ray rays[(MAX_NEIGHBOURS + MAX_NEIGHBOURS) * 2])
+{
+    uint idx = gl_GlobalInvocationID.x;
+    uint npoints = 0;
+    for(int i = 0; i < nrays; i+= 2) {
+
+        const float left_dir_x = rays[i + 0].dir.x;
+        const float left_dir_z = rays[i + 0].dir.y;
+
+        vec2 point_to_test = test - rays[i + 0].point;
+        if(length(point_to_test) < EPSILON)
+            continue;
+
+        point_to_test = normalize(point_to_test);
+        float left_det = (point_to_test.y * left_dir_x) - (point_to_test.x * left_dir_z);
+        bool left_of_vo = (left_det < EPSILON);
+
+        if(left_of_vo)
+            continue;
+
+        const float right_dir_x = rays[i + 1].dir.x;
+        const float right_dir_z = rays[i + 1].dir.y;
+
+        point_to_test = test - rays[i + 1].point;
+        if(length(point_to_test) < EPSILON)
+            continue;
+
+        point_to_test = normalize(point_to_test);
+        float right_det = (point_to_test.y * right_dir_x) - (point_to_test.x * right_dir_z);
+        bool right_of_vo = (right_det > -EPSILON);
+
+        if(right_of_vo)
+            continue;
+
+        return true;
+    }
+
+    return false;
+}
+
+bool finite_rays_intersection(struct ray l1, struct ray l2, out vec2 out_xz)
+{
+    vec2 isec_point;
+    if(!infinite_rays_intersection(l1, l2, isec_point))
+        return false;
+
+    if((isec_point.x - l1.point.x) / l1.dir.x < 0.0)
+        return false;
+
+    if((isec_point.y - l1.point.y) / l1.dir.y < 0.0)
+        return false;
+
+    if((isec_point.x - l2.point.x) / l2.dir.x < 0.0)
+        return false;
+
+    if((isec_point.y - l2.point.y) / l2.dir.y < 0.0)
+        return false;
+
+    out_xz = isec_point;
+    return true;
+}
+
+uint compute_vo_xpoints(in uint nrays,
+                        in struct ray rays[(MAX_NEIGHBOURS + MAX_NEIGHBOURS) * 2],
+                        out vec2 xpoints[CLEARPATH_MAX_XPOINTS])
+{
+    uint ret = 0;
+    for(int i = 0; i < nrays; i++) {
+    for(int j = 0; j < nrays; j++) {
+
+        if(ret == CLEARPATH_MAX_XPOINTS)
+            return ret;
+
+        if(i == j)
+            continue;
+
+        vec2 isec_point;
+        if(!finite_rays_intersection(rays[i], rays[j], isec_point))
+            continue;
+
+        if(inside_pcr(isec_point, nrays, rays))
+            continue;
+
+        xpoints[ret++] = isec_point;
+    }}
+    return ret;
+}
+
+void compute_vdes_proj_points(in uint nrays,
+                              in struct ray rays[(MAX_NEIGHBOURS + MAX_NEIGHBOURS) * 2],
+                              in vec2 vdes,
+                              inout uint nxpoints,
+                              inout vec2 xpoints[CLEARPATH_MAX_XPOINTS])
+{
+    for(int i = 0; i < nrays; i++) {
+
+        if(nxpoints == CLEARPATH_MAX_XPOINTS)
+            return;
+
+        float len = dot(rays[i].dir, vdes);
+        vec2 proj = rays[i].point + (rays[i].dir * len);
+
+        if(!inside_pcr(proj, nrays, rays)) {
+            xpoints[nxpoints++] = proj;
+        }
+    }
+}
+
+vec2 compute_vnew(in uint nxpoints,
+                  in vec2 xpoints[CLEARPATH_MAX_XPOINTS],
+                  in vec2 vdes,
+                  in vec2 pos_xz)
+{
+    float min_dist = 1e30;
+    vec2 ret = vec2(0.0, 0.0);
+
+    for(int i = 0; i < nxpoints; i++) {
+
+        vec2 curr = xpoints[i];
+        vec2 delta = curr - pos_xz;
+        vec2 diff = vdes - delta;
+        float len = length(diff);
+
+        if(len < min_dist) {
+
+            min_dist = len;
+            ret = delta;
+        }
+    }
+    return ret;
+}
+
+bool clearpath_try(uint gpuid, vec2 vdes, 
+                   uint nstatic, uint ndynamic,
+                   in uint static_neighbours[MAX_NEIGHBOURS],
+                   in uint dynamic_neighbours[MAX_NEIGHBOURS],
+                   out vec2 out_velocity)
+{
+    struct HRVO dyn_hrvos[MAX_NEIGHBOURS];
+    struct VO stat_vos[MAX_NEIGHBOURS];
+
+    uint num_hrvos = compute_all_hrvos(gpuid, ndynamic, dynamic_neighbours, dyn_hrvos);
+    uint num_vos = compute_all_vos(gpuid, nstatic, static_neighbours, stat_vos);
+
+    const uint nrays = (num_hrvos + num_vos) * 2;
+    struct ray rays[(MAX_NEIGHBOURS + MAX_NEIGHBOURS) * 2];
+    rays_repr(nstatic, ndynamic, stat_vos, dyn_hrvos, rays);
+
+    vec2 des_v_ws = ATTR_VEC2(gpuid, pos) + vdes;
+
+    if(!inside_pcr(des_v_ws, nrays, rays)) {
+        out_velocity = vdes;
+        return true;
+    }
+
+    /* There are a maximum of (nrays)^2 intersection points 
+     * However, practically speaking, we can limit the number
+     * to a constant and truncate anything after that. 
+     */
+    vec2 xpoints[CLEARPATH_MAX_XPOINTS];
+    uint nxpoints = compute_vo_xpoints(nrays, rays, xpoints);
+    compute_vdes_proj_points(nrays, rays, vdes, nxpoints, xpoints);
+
+    if(nxpoints == 0)
+        return false;
+
+    out_velocity = compute_vnew(nxpoints, xpoints, vdes, ATTR_VEC2(gpuid, pos));
+    return true;
+}
+
+bool find_furthest_maybe(in vec2 pos, 
+                         inout float max_dist,
+                         inout int max_idx,
+                         in uint nents,
+                         in uint ents[MAX_NEIGHBOURS])
+{
+    bool ret = false;
+    for(int i = 0; i < nents; i++) {
+
+        uint curr_gpuid = ents[i];
+        vec2 curr_pos = ATTR_VEC2(curr_gpuid, pos);
+        vec2 diff = pos - curr_pos;
+        float len = length(diff);
+
+        if(len > max_dist) {
+            max_dist = len;
+            max_idx = i;
+            ret = true;
+        }
+    }
+    return ret;
+}
+
+void vec_remove(in uint idx,
+                inout uint size,
+                inout uint ents[MAX_NEIGHBOURS])
+{
+    for(uint i = idx; i < size-1; i++) {
+        uint next = ents[i + 1];
+        ents[i] = next;
+    }
+    size--;
+}
+
+void remove_furthest(in vec2 pos, 
+                     inout uint nstatic, 
+                     inout uint ndynamic,
+                     inout uint static_neighbours[MAX_NEIGHBOURS],
+                     inout uint dynamic_neighbours[MAX_NEIGHBOURS])
+{
+    float max_dist = -1e30;
+    int max_idx = -1;
+
+    bool stat_found = find_furthest_maybe(pos, max_dist, max_idx, nstatic, static_neighbours);
+    bool dyn_found = find_furthest_maybe(pos, max_dist, max_idx, ndynamic, dynamic_neighbours);
+
+    if(dyn_found) {
+        vec_remove(max_idx, ndynamic, dynamic_neighbours);
+    }else if(stat_found) {
+        vec_remove(max_idx, nstatic, static_neighbours);
+    }
+}
+
+vec2 clearpath_new_velocity(in uint gpuid, 
+                            in vec2 vpref,
+                            in uint nstatic, 
+                            in uint ndynamic,
+                            in uint static_neighbours[MAX_NEIGHBOURS],
+                            in uint dynamic_neighbours[MAX_NEIGHBOURS])
+{
+    vec2 pos = ATTR_VEC2(gpuid, pos);
+    do{
+        vec2 ret = vec2(0.0, 0.0);
+        bool found = clearpath_try(gpuid, vpref, nstatic, ndynamic,
+            static_neighbours, dynamic_neighbours, ret);
+        if(found)
+            return ret;
+
+        remove_furthest(pos, nstatic, ndynamic, static_neighbours, dynamic_neighbours);
+
+    }while(nstatic > 0 && ndynamic > 0);
+
+    return vec2(0, 0);
+}
+
 void main()
 {
     uint idx = gl_GlobalInvocationID.x;
     uint gpuid = gpuids[idx];
 
-    vec2 out_vpref = vec2(0.0, 0.0);
+    vec2 vpref = vec2(0.0, 0.0);
     uint state = ATTR(gpuid, movestate);
 
     if(state == STATE_TURNING) {
-        out_vpref = vec2(0.0, 0.0);
+        vpref = vec2(0.0, 0.0);
     }else if(state == STATE_SEEK_ENEMIES) {
-        out_vpref = enemy_seek_vpref(
+        vpref = enemy_seek_vpref(
             gpuid, 
             ATTR(gpuid, speed), 
             ATTR_VEC2(gpuid, vdes)
         );
     }else if(state == STATE_ARRIVING_TO_CELL) {
         if(!bool(ATTR(gpuid, formation_assignment_ready))) {
-            velocities[idx] = vec2(0.0, 0.0);
-            return;
+            vpref = vec2(0.0, 0.0);
+        }else{
+            vpref = cell_arrival_seek_vpref(
+                gpuid,
+                ATTR_VEC2(gpuid, cell_pos),
+                ATTR(gpuid, speed),
+                ATTR_VEC2(gpuid, vdes),
+                ATTR_VEC2(gpuid, formation_cohesion_force),
+                ATTR_VEC2(gpuid, formation_align_force),
+                ATTR_VEC2(gpuid, formation_drag_force)
+            );
         }
-        out_vpref = cell_arrival_seek_vpref(
-            gpuid,
-            ATTR_VEC2(gpuid, cell_pos),
-            ATTR(gpuid, speed),
-            ATTR_VEC2(gpuid, vdes),
-            ATTR_VEC2(gpuid, formation_cohesion_force),
-            ATTR_VEC2(gpuid, formation_align_force),
-            ATTR_VEC2(gpuid, formation_drag_force)
-        );
     }else if(state == STATE_MOVING_IN_FORMATION) {
         if(!bool(ATTR(gpuid, formation_assignment_ready))) {
-            velocities[idx] = vec2(0.0, 0.0);
-            return;
+            vpref = vec2(0.0, 0.0);
+        }else{
+            vpref = formation_seek_vpref(
+                gpuid,
+                ATTR(gpuid, flock_id),
+                ATTR(gpuid, speed),
+                ATTR_VEC2(gpuid, vdes),
+                ATTR_VEC2(gpuid, formation_cohesion_force),
+                ATTR_VEC2(gpuid, formation_align_force),
+                ATTR_VEC2(gpuid, formation_drag_force),
+                ATTR(gpuid, has_dest_los)
+            );
         }
-        out_vpref = formation_seek_vpref(
-            gpuid,
-            ATTR(gpuid, flock_id),
-            ATTR(gpuid, speed),
-            ATTR_VEC2(gpuid, vdes),
-            ATTR_VEC2(gpuid, formation_cohesion_force),
-            ATTR_VEC2(gpuid, formation_align_force),
-            ATTR_VEC2(gpuid, formation_drag_force),
-            ATTR(gpuid, has_dest_los)
-        );
     }else{
-        out_vpref = point_seek_vpref(
+        vpref = point_seek_vpref(
             gpuid,
             ATTR(gpuid, flock_id),
             ATTR_VEC2(gpuid, vdes),
@@ -874,7 +1330,10 @@ void main()
     uint dynamic_neighbours[MAX_NEIGHBOURS];
     ivec2 num_neighbs = find_neighbours(gpuid, static_neighbours, dynamic_neighbours);
 
-    out_vpref = truncate(out_vpref, ATTR(gpuid, max_speed) / ticks_hz);
-    velocities[idx] = out_vpref;
+    vec2 new_vel = clearpath_new_velocity(gpuid, vpref, num_neighbs.x, num_neighbs.y,
+        static_neighbours, dynamic_neighbours);
+    new_vel = truncate(new_vel, ATTR(gpuid, max_speed) / ticks_hz);
+
+    velocities[idx] = new_vel;
 }
 

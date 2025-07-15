@@ -759,6 +759,9 @@ bool C_InfiniteLineIntersection(struct line_2d l1, struct line_2d l2, vec2_t *ou
     float l1_slope = fabs(l1.dir.raw[0]) < EPSILON ? NAN : (l1.dir.raw[1] / l1.dir.raw[0]);
     float l2_slope = fabs(l2.dir.raw[0]) < EPSILON ? NAN : (l2.dir.raw[1] / l2.dir.raw[0]);
 
+    if(isnan(l1_slope) && isnan(l2_slope))
+        return false;
+
     /* Lines are parallel or coincident */
     if(fabs(l1_slope - l2_slope) < EPSILON)
         return false;
@@ -775,6 +778,8 @@ bool C_InfiniteLineIntersection(struct line_2d l1, struct line_2d l2, vec2_t *ou
     
     }else{
     
+        assert(l1_slope != NAN);
+        assert(l2_slope != NAN);
         out_xz->raw[0] = (l1_slope * l1.point.raw[0] - l2_slope * l2.point.raw[0] 
             + l2.point.raw[1] - l1.point.raw[1]) / (l1_slope - l2_slope);
         out_xz->raw[1] = l2_slope * (out_xz->raw[0] - l2.point.raw[0]) + l2.point.raw[1];
