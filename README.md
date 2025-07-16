@@ -67,6 +67,7 @@ Download the free demo on [Steam](https://store.steampowered.com/app/1309720/EVE
 * Pathfinding of different kinds/sizes of units (using "navigation layers")
 * Pathfinding of Land, Water, and Air units
 * Movement and pathfinding computations accelerated with parallelism
+* GPU-based crowd simulation with compute shaders
 * Efficient spatial indexing using a quadtree
 * Efficient real-time tracking of entity membership to dynamic spatial regions
 * Audio system supporting positional effects and multiple channels of global effects
@@ -133,10 +134,6 @@ The compliation can either be done on a Linux host, or natively on Windows using
 
 Alternatively, a Visual Studio 2022 solution file is provided in the root directory of the project.
 
-## License ##
-
-Permafrost Engine is licensed under the GPLv3, with a special linking exception.
-
 ## Devlog ##
 
 Follow the development of Permafrost Engine and EVERGLORY on [YouTube](https://www.youtube.com/channel/UCNklkpsPnNpRhC9oVkpIpLA).
@@ -187,10 +184,18 @@ Follow the development of Permafrost Engine and EVERGLORY on [YouTube](https://w
 
 [EVERGLORY: Teaser Trailer #3 \[Indie RTS Game\]](https://www.youtube.com/watch?v=aiHjiG-feNA)
 
+## License ##
+
+The source code of Permafrost Engine is freely available under the GPLv3 license, with a special linking exception. 
+However, I may grant permission to use parts or all of the code under a different license on a case-by-case basis. 
+Please inquire by e-mail.
+
 ## Comments/Questions ##
 
-Comments or questions regarding the project or the source code? E-mail: edward.permyakov@gmail.com.
-Discuss EVERGLORY and its' development on [Discord](https://discord.gg/jSQ8M6C). If you have a _useful_ fix for a 
-_non-trivial_ engine issue, feel free to make a PR. Be warned that I will scrutinize every patch to make sure it meets my 
-personal quality standards for the engine code. It you wish to evolve the engine in some way and want the changes to be 
-upstreamed, then do get in touch to discuss it.
+You may contact me with any questions, comments, or concerns pertaining to the source code or the underlying algorithms. 
+In addition, you may solicit me regarding interesting job opportunities.
+
+Discuss EVERGLORY and its' development on [Discord](https://discord.gg/jSQ8M6C). 
+
+My e-mail is: edward.permyakov@gmail.com
+

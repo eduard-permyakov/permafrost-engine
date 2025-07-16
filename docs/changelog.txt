@@ -3,7 +3,13 @@
 ********************************************************************************
 
 ================================================================================
-[Version 1.12.0] - 22.06.2025
+[Version 1.13.0] - 16.07.2025
+================================================================================
+    * Implement GPU crowd simulation in a compute shader
+    * Implement toggle between CPU and GPU crowd simulation
+
+================================================================================
+[Version 1.12.0] - 30.06.2025
 ================================================================================
     * Batch together all animation poses into a single texture to speed up 
       rendering of large numbers of animated entities
@@ -51,15 +57,18 @@
 ================================================================================
 [Version 1.5.0] - 20.08.2024
 ================================================================================
-    * Implement programmatic synthesis of textures using the Image Quilting algorithm
-    * Implement aperiodic tiling of the map plane using the Wang Tiling algorithm
+    * Implement programmatic synthesis of textures using the Image Quilting i
+      algorithm
+    * Implement aperiodic tiling of the map plane using the Wang Tiling 
+      algorithm
 
 ================================================================================
 [Version 1.4.0] - 06.03.2024
 ================================================================================
     * Implement basic system for automation of transporters
     * Improve and fix various harvester and transporter behaviours
-    * Implement mechanism for rendering a dynamic set of 2D icons over/near entities.
+    * Implement mechanism for rendering a dynamic set of 2D icons over/near 
+      entities.
     * Fix and expand on a number of resource behaviours
     * Miscellaneous fixes and performance improvements
 
