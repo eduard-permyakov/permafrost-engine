@@ -507,6 +507,7 @@ static struct shader s_shaders[] = {
             { UTYPE_IVEC4,     GL_U_MAP_RES,          },
             { UTYPE_VEC2,      GL_U_MAP_POS           },
             { UTYPE_INT,       GL_U_TICKS_HZ          },
+            { UTYPE_INT,       GL_U_NUM_SIM_ENTS      },
             {0}
         },
     },

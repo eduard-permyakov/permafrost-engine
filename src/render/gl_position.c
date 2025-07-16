@@ -53,7 +53,7 @@
  * size, but will allow making more precise range queries in 
  * the compute shader.
  */
-#define POSTEX_RES_SCALE (2)
+#define POSTEX_RES_SCALE (1)
 #define MIN(a, b)        ((a) < (b) ? (a) : (b))
 
 /*****************************************************************************/

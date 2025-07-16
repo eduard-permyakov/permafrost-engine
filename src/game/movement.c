@@ -3489,14 +3489,16 @@ static void move_update_uniforms(void)
     vec3_t map_pos = M_GetPos(s_move_work.gamestate.map);
     vec2_t map_pos_xz = (vec2_t){map_pos.x, map_pos.z};
     int ticks = hz_count(s_move_work.hz);
+    int nwork = s_move_work.nwork;
 
     R_PushCmd((struct rcmd){
         .func = R_GL_MoveUpdateUniforms,
-        .nargs = 3,
+        .nargs = 4,
         .args = {
             R_PushArg(&res, sizeof(res)),
             R_PushArg(&map_pos_xz, sizeof(map_pos_xz)),
-            R_PushArg(&ticks, sizeof(ticks))
+            R_PushArg(&ticks, sizeof(ticks)),
+            R_PushArg(&nwork, sizeof(nwork)),
         },
     });
 }

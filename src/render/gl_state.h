@@ -100,6 +100,7 @@
 #define GL_U_CURR_POSE_MAT_OFFSET "curr_pose_mats_offset"
 #define GL_U_TICKS_HZ           "ticks_hz"
 #define GL_U_SHADOWS_ON         "shadows_on"
+#define GL_U_NUM_SIM_ENTS       "num_sim_ents"
 
 enum utype{
     UTYPE_FLOAT,

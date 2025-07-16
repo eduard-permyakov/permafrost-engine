@@ -43,6 +43,7 @@
 #include "../main.h"
 
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
+#define WORKGROUP_SIZE      (64)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -60,7 +61,8 @@ static GLsync s_move_fence = 0;
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_MoveUpdateUniforms(const struct map_resolution *res, vec2_t *map_pos, int *ticks_hz)
+void R_GL_MoveUpdateUniforms(const struct map_resolution *res, vec2_t *map_pos, 
+                             int *ticks_hz, int *nwork)
 {
     R_GL_StateSet(GL_U_MAP_RES, (struct uval){
         .type = UTYPE_IVEC4,
@@ -76,6 +78,10 @@ void R_GL_MoveUpdateUniforms(const struct map_resolution *res, vec2_t *map_pos, 
     R_GL_StateSet(GL_U_TICKS_HZ, (struct uval){ 
         .type = UTYPE_INT, 
         .val.as_int = *ticks_hz
+    });
+    R_GL_StateSet(GL_U_NUM_SIM_ENTS, (struct uval){ 
+        .type = UTYPE_INT, 
+        .val.as_int = *nwork
     });
 }
 
@@ -187,9 +193,10 @@ void R_GL_MoveDispatchWork(const size_t *nents)
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 0, &max_size);
 
     while(left) {
-        const size_t dispatch_size = MIN(left, max_size);
+        const size_t consumed = MIN(left, (unsigned long long)max_size * WORKGROUP_SIZE);
+        const size_t dispatch_size = ceil(consumed / (float)WORKGROUP_SIZE);
         glDispatchCompute(dispatch_size, 1, 1);
-        left -= dispatch_size;
+        left -= consumed;
     }
 
     assert(s_move_fence == 0);

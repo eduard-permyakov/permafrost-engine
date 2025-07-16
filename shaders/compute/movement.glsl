@@ -128,7 +128,7 @@
 #define Z_COORDS_PER_TILE           (8)
 
 /* Must match gl_position.c */
-#define POSTEX_RES_SCALE            (2)
+#define POSTEX_RES_SCALE            (1)
 
 /*****************************************************************************/
 /* INPUT/OUTPUT                                                              */
@@ -194,7 +194,7 @@ struct ray{
     vec2 dir;
 };
 
-layout(local_size_x = 1) in;
+layout(local_size_x = 64) in;
 
 /* A flat array of GPU IDs that should have new velocities
  * calculated. The GPU IDs can be used to index the auxiliary
@@ -259,6 +259,7 @@ layout(std430, binding = 6) writeonly buffer o_data
 uniform ivec4 map_resolution;
 uniform vec2  map_pos;
 uniform int   ticks_hz;
+uniform int   num_sim_ents;
 
 /*****************************************************************************/
 /* PROGRAM                                                                   */
@@ -495,8 +496,8 @@ uint ents_in_circle(vec2 origin, float radius, out uint near_ents[MAX_NEAR_ENTS]
     /* Find the distance corresponding to a single pixel in 
      * the posbuff texture.
      */
-    int x_pixels_radius = int(ceil(radius)) * POSTEX_RES_SCALE + 1;
-    int z_pixels_radius = int(ceil(radius)) * POSTEX_RES_SCALE + 1;
+    int x_pixels_radius = int(ceil(radius) * POSTEX_RES_SCALE + 1);
+    int z_pixels_radius = int(ceil(radius) * POSTEX_RES_SCALE + 1);
 
     /* Do a grid scan.
      * Increasing x-coord -> (-z -> +z)
@@ -1274,8 +1275,10 @@ vec2 clearpath_new_velocity(in uint gpuid,
 void main()
 {
     uint idx = gl_GlobalInvocationID.x;
-    uint gpuid = gpuids[idx];
+    if(idx > num_sim_ents)
+        return;
 
+    uint gpuid = gpuids[idx];
     vec2 vpref = vec2(0.0, 0.0);
     uint state = ATTR(gpuid, movestate);
 
