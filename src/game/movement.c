@@ -2667,7 +2667,8 @@ static void do_set_change_direction(uint32_t uid, quat_t target)
     ASSERT_IN_MAIN_THREAD();
 
     struct movestate *ms = movestate_get(uid);
-    assert(ms);
+    if(!ms)
+        return;
 
     if(ent_still(ms)) {
         entity_unblock(uid);
@@ -2683,7 +2684,8 @@ static void do_set_enter_range(uint32_t uid, uint32_t target, float range)
     ASSERT_IN_MAIN_THREAD();
 
     struct movestate *ms = movestate_get(uid);
-    assert(ms);
+    if(!ms)
+        return;
 
     vec2_t xz_src = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
     vec2_t xz_dst = G_Pos_GetXZFrom(s_move_work.gamestate.positions, target);
@@ -2723,7 +2725,8 @@ static void do_set_surround_entity(uint32_t uid, uint32_t target)
     ASSERT_IN_MAIN_THREAD();
 
     struct movestate *ms = movestate_get(uid);
-    assert(ms);
+    if(!ms)
+        return;
 
     do_stop(uid);
 
@@ -2739,7 +2742,8 @@ static void do_set_surround_entity(uint32_t uid, uint32_t target)
 static void do_set_seek_enemies(uint32_t uid)
 {
     struct movestate *ms = movestate_get(uid);
-    assert(ms);
+    if(!ms)
+        return;
 
     remove_from_flocks(uid);
 
@@ -2949,8 +2953,7 @@ static void move_process_cmds(void)
         case MOVE_CMD_UNBLOCK: {
             uint32_t uid = cmd.args[0].val.as_int;
             struct movestate *ms = movestate_get(uid);
-            assert(ms);
-            if(ms->blocking) {
+            if(ms && ms->blocking) {
                 entity_unblock(uid);
             }
             break;
@@ -2959,8 +2962,7 @@ static void move_process_cmds(void)
             uint32_t uid = cmd.args[0].val.as_int;
             vec3_t pos = cmd.args[1].val.as_vec3;
             struct movestate *ms = movestate_get(uid);
-            assert(ms);
-            if(!ms->blocking) {
+            if(ms && !ms->blocking) {
                 do_block(uid, pos);
             }
             break;
