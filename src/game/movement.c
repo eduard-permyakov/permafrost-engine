@@ -403,6 +403,7 @@ static struct result navigation_tick_task(void *arg);
 #define COLLISION_MAX_SEE_AHEAD         (10.0f)
 #define WAIT_TICKS                      (60)
 #define MAX_TURN_RATE                   (15.0f) /* degree/tick */
+#define SCALED_MAX_TURN_RATE            (MAX_TURN_RATE / hz_count(s_move_work.hz) * 20.0)
 #define MAX_NEIGHBOURS                  (32)
 
 #define SURROUND_LOW_WATER_X            (CHUNK_WIDTH/3.0f)
@@ -3614,7 +3615,7 @@ static void move_handle_hz_update(enum eventtype curr)
     register_callback_for_hz(next_hz);
 }
 
-static void entity_interpolation_step(uint32_t uid)
+static void entity_interpolation_step(uint32_t uid, int steps)
 {
     ASSERT_IN_MAIN_THREAD();
     struct movestate *ms = movestate_get(uid);
@@ -3623,7 +3624,8 @@ static void entity_interpolation_step(uint32_t uid)
     if(ms->left == 0)
         return;
 
-    ms->left--;
+    steps = MIN(steps, ms->left);
+    ms->left -= steps;
     float fraction = 1.0 - (ms->step * ms->left);
     assert(fraction >= 0.0f && fraction <= 1.0f);
 
@@ -3656,6 +3658,7 @@ static void interpolate_tick(void *user, void *event)
     }
 
     PERF_ENTER();
+    bool coalese = E_QueuedThisFrame(EVENT_20HZ_TICK);
 
     /* Iterate over all the entities and advance the position forward
      * by one interpolated step */
@@ -3664,7 +3667,10 @@ static void interpolate_tick(void *user, void *event)
         /* The entity has been removed already */
         if(!G_EntityExists(key))
             continue;
-        entity_interpolation_step(key);
+
+        /* Coalese together queued updates when possible */
+        int steps = coalese ? 2 : 1;
+        entity_interpolation_step(key, steps);
     });
 
     s_last_interpolate_tick = g_frame_idx;
@@ -3791,7 +3797,8 @@ static struct result navigation_tick_task(void *arg)
 
     if(s_move_work.type == WORK_TYPE_GPU) {
 
-        await_gpu_completion(0.0f);
+        uint32_t period_ms = (1.0f / hz_count(s_move_work.hz)) * 1000;
+        await_gpu_completion(period_ms);
         move_complete_gpu_velocity_work();
 
         await_gpu_download();
