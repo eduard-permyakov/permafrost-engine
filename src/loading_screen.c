@@ -369,6 +369,9 @@ void LoadingScreen_Shutdown(void)
  * commands in reverse order. */
 void LoadingScreen_Tick(void)
 {
+    R_PushCmdImmediateFront((struct rcmd){ R_GL_SwapchainPresentLast, 0 });
+    R_PushCmdImmediateFront((struct rcmd){ R_GL_EndFrame, 0 });
+
     char buff[256];
     get_status_text(buff, sizeof(buff));
 

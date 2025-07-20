@@ -36,9 +36,11 @@
 #include "gl_state.h"
 #include "gl_shader.h"
 #include "gl_assert.h"
+#include "../main.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/mpool.h"
+#include "../lib/public/vec.h"
 
 #include <assert.h>
 #include <string.h>
@@ -83,12 +85,16 @@ KHASH_MAP_INIT_STR(puval, struct puval)
 MPOOL_TYPE(buff, struct buff)
 MPOOL_IMPL(static inline, buff, struct buff)
 
+VEC_TYPE(int, int)
+VEC_IMPL(static inline, int, int)
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
 static khash_t(puval) *s_state_table;
 static mp_buff_t       s_buff_pool;
+static vec_int_t       s_render_target_stack;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -326,6 +332,7 @@ bool R_GL_StateInit(void)
     mp_buff_init(&s_buff_pool, true);
     if(!mp_buff_reserve(&s_buff_pool, 512))
         goto fail_pool;
+    vec_int_init(&s_render_target_stack);
     return true;
 
 fail_pool:
@@ -345,6 +352,7 @@ void R_GL_StateShutdown(void)
     });
     kh_destroy(puval, s_state_table);
     mp_buff_destroy(&s_buff_pool);
+    vec_int_destroy(&s_render_target_stack);
 }
 
 void R_GL_StateSet(const char *uname, struct uval val)
@@ -505,5 +513,24 @@ void R_GL_StateSetBlockBinding(const char *uname, GLuint binding)
         .val.as_int = binding
     };
     R_GL_StateSet(uname, uval);
+}
+
+void R_GL_StatePushRenderTarget(GLuint fbo)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    GLint curr;
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &curr);
+
+    vec_int_push(&s_render_target_stack, curr);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+}
+
+void R_GL_StatePopRenderTarget(void)
+{
+    ASSERT_IN_RENDER_THREAD();
+    assert(vec_size(&s_render_target_stack) > 0);
+    GLuint popped = vec_int_pop(&s_render_target_stack);
+    glBindFramebuffer(GL_FRAMEBUFFER, popped);
 }
 

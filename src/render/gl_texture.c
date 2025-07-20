@@ -40,6 +40,7 @@
 #include "gl_assert.h"
 #include "gl_material.h"
 #include "gl_image_quilt.h"
+#include "gl_swapchain.h"
 #include "../lib/public/stb_image.h"
 #include "../lib/public/stb_image_resize.h"
 #include "../lib/public/khash.h"
@@ -149,28 +150,6 @@ static size_t texture_arr_num_mip_levels(GLuint tex)
 
     glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
     return MIN(max_lvl + 1, nmips);
-}
-
-static bool texture_write_ppm(const char* filename, const unsigned char *data, int width, int height)
-{
-    FILE* file = fopen(filename, "wb");
-    if (!file)
-        return false;
-
-    fprintf(file, "P6\n%d %d\n%d\n", width, height, 255);
-    for (int i = 0; i < height; i++) {
-        for (int j = 0; j < width; j++) {
-
-            unsigned char color[3];
-            color[0] = data[3 * i * width + 3 * j + 0];
-            color[1] = data[3 * i * width + 3 * j + 1];
-            color[2] = data[3 * i * width + 3 * j + 2];
-            fwrite(color, 1, 3, file);
-        }
-    }
-
-    fclose(file);
-    return true;
 }
 
 /*****************************************************************************/
@@ -377,7 +356,7 @@ void R_GL_Texture_Dump(const struct texture *text, const char *filename)
 
     GLuint format = integer ? GL_RGB_INTEGER : GL_RGB;
     glGetTexImage(GL_TEXTURE_2D, level, format, GL_UNSIGNED_BYTE, data);
-    texture_write_ppm(filename, data, width, height);
+    R_GL_Texture_WritePPM(filename, data, width, height);
 
     glBindTexture(GL_TEXTURE_2D, 0);
     PF_FREE(data);
@@ -422,7 +401,7 @@ void R_GL_Texture_DumpArray(const struct texture_arr *arr, const char *base)
 
         char filename[512];
         pf_snprintf(filename, sizeof(filename), "%s-%d.ppm", base, i);
-        texture_write_ppm(filename, data, width, height);
+        R_GL_Texture_WritePPM(filename, data, width, height);
     }
 
     glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
@@ -475,7 +454,7 @@ void R_GL_Texture_ArrayCopyElem(struct texture_arr *dst, int dst_idx,
             GL_ASSERT_OK();
         }else{
 
-            glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+            R_GL_StatePushRenderTarget(fbo);
             glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, src->id, i, src_idx);
             glFramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, dst->id, i, dst_idx);
             glReadBuffer(GL_COLOR_ATTACHMENT0);
@@ -484,7 +463,7 @@ void R_GL_Texture_ArrayCopyElem(struct texture_arr *dst, int dst_idx,
             assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
             glBlitFramebuffer(0, 0, mip_res, mip_res, 0, 0, mip_res, mip_res, 
                               GL_COLOR_BUFFER_BIT, GL_NEAREST);
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            R_GL_StatePopRenderTarget();
             GL_ASSERT_OK();
         }
     }
@@ -678,7 +657,7 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
                     int dst_idx = (i * 8) + j - slots_consumed;
                     int src_idx = j;
 
-                    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+                    R_GL_StatePushRenderTarget(fbo);
                     glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, 
                         tiles.id, 0, src_idx);
                     glFramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, 
@@ -689,7 +668,7 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
                     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
                     glBlitFramebuffer(0, 0, tileset_dim, tileset_dim, 0, 0, tileset_dim, tileset_dim, 
                                       GL_COLOR_BUFFER_BIT, GL_NEAREST);
-                    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                    R_GL_StatePopRenderTarget();
                     GL_ASSERT_OK();
                 }
                 R_GL_Texture_ArrayFree(tiles);
@@ -787,5 +766,27 @@ void R_GL_Texture_GetOrLoad(const char *basedir, const char *name, GLuint *out)
         return;
 
     R_GL_Texture_Load(basedir, name, out);
+}
+
+bool R_GL_Texture_WritePPM(const char* filename, const unsigned char *data, int width, int height)
+{
+    FILE* file = fopen(filename, "wb");
+    if (!file)
+        return false;
+
+    fprintf(file, "P6\n%d %d\n%d\n", width, height, 255);
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+
+            unsigned char color[3];
+            color[0] = data[3 * i * width + 3 * j + 0];
+            color[1] = data[3 * i * width + 3 * j + 1];
+            color[2] = data[3 * i * width + 3 * j + 2];
+            fwrite(color, 1, 3, file);
+        }
+    }
+
+    fclose(file);
+    return true;
 }
 

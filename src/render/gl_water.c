@@ -68,6 +68,7 @@ struct render_water_ctx{
 struct water_gl_state{
     GLint    viewport[4];
     GLint    fb;
+    GLint    rbo;
     GLfloat  clear_clr[4];
     vec3_t   u_cam_pos;
     mat4x4_t u_view;
@@ -105,6 +106,7 @@ static void save_gl_state(struct water_gl_state *out)
 
     glGetIntegerv(GL_VIEWPORT, out->viewport);
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &out->fb);
+    glGetIntegerv(GL_RENDERBUFFER_BINDING, &out->rbo);
     glGetFloatv(GL_COLOR_CLEAR_VALUE, out->clear_clr);
 
     struct uval pval, tval;
@@ -123,6 +125,7 @@ static void restore_gl_state(const struct water_gl_state *in)
     ASSERT_IN_RENDER_THREAD();
 
     glBindFramebuffer(GL_FRAMEBUFFER, in->fb);
+    glBindRenderbuffer(GL_RENDERBUFFER, in->rbo);
     glViewport(in->viewport[0], in->viewport[1], in->viewport[2], in->viewport[3]);
     glClearColor(in->clear_clr[0], in->clear_clr[1], in->clear_clr[2], in->clear_clr[3]);
     R_GL_SetViewMatAndPos(&in->u_view, &in->u_cam_pos);

@@ -154,5 +154,8 @@ void R_GL_StateSetBlockBinding(const char *uname, GLuint binding);
 /* The shader program must have been used before installing the uniforms */
 void R_GL_StateInstall(const char *uname, GLuint shader_prog);
 
+void R_GL_StatePushRenderTarget(GLuint fbo);
+void R_GL_StatePopRenderTarget(void);
+
 #endif
 

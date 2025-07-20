@@ -2186,6 +2186,8 @@ void G_Render(void)
     }
 
     E_Global_NotifyImmediate(EVENT_RENDER_FINISH, NULL, ES_ENGINE);
+    R_PushCmd((struct rcmd){ R_GL_EndFrame, 0 });
+
     PERF_RETURN_VOID();
 }
 

@@ -44,6 +44,7 @@
 #include "gl_state.h"
 #include "gl_texture.h"
 #include "gl_anim.h"
+#include "gl_swapchain.h"
 #include "public/render.h"
 #include "../entity.h"
 #include "../camera.h"
@@ -234,6 +235,7 @@ void R_GL_BeginFrame(void)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
+    R_GL_SwapchainAcquireNext();
 
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
@@ -242,6 +244,11 @@ void R_GL_BeginFrame(void)
     glEnable(GL_CULL_FACE);
 
     GL_PERF_RETURN_VOID();
+}
+
+void R_GL_EndFrame(void)
+{
+    R_GL_SwapchainFinishCommands();
 }
 
 void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
@@ -363,9 +370,9 @@ void R_GL_DrawLoadingScreen(const char *path)
         vbuff[i].color[2] = 0xff;
         vbuff[i].color[3] = 0xff;
     }
-    GLuint VAO, VBO;
 
     /* OpenGL setup */
+    GLuint VAO, VBO;
     glGenVertexArrays(1, &VAO);
     glBindVertexArray(VAO);
 

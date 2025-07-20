@@ -133,6 +133,9 @@ void R_GL_InitShadows(void)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
+    GLint old;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &old);
+
     glGenFramebuffers(1, &s_depth_map_FBO);
     glBindFramebuffer(GL_FRAMEBUFFER, s_depth_map_FBO);
 
@@ -141,7 +144,7 @@ void R_GL_InitShadows(void)
     glReadBuffer(GL_NONE);
     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);  
+    glBindFramebuffer(GL_FRAMEBUFFER, old);  
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }

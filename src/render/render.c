@@ -42,6 +42,7 @@
 #include "gl_state.h"
 #include "gl_batch.h"
 #include "gl_anim.h"
+#include "gl_swapchain.h"
 #include "render_private.h"
 #include "../settings.h"
 #include "../main.h"
@@ -172,6 +173,14 @@ static void res_commit(const struct sval *new_val)
             R_PushArg(&viewport[2], sizeof(viewport[2])),
             R_PushArg(&viewport[3], sizeof(viewport[3])),
         },
+    });
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SwapchainSetRes,
+        .nargs = 2,
+        .args = {
+            R_PushArg(&viewport[2], sizeof(viewport[2])),
+            R_PushArg(&viewport[3], sizeof(viewport[3]))
+        }
     });
 }
 
@@ -366,7 +375,8 @@ static void render_init_ctx(struct render_init_arg *arg)
     || !R_GL_Texture_Init()
     || !R_GL_StateInit()
     || !R_GL_Batch_Init()
-    || !R_GL_AnimInit()) {
+    || !R_GL_AnimInit()
+    || !R_GL_SwapchainInit()) {
 
         arg->out_success = false;
         return;
@@ -384,6 +394,7 @@ static void render_init_ctx(struct render_init_arg *arg)
 
 static void render_destroy_ctx(void)
 {
+    R_GL_SwapchainShutdown();
     R_GL_AnimShutdown();
     R_GL_Batch_Shutdown();
     R_GL_StateShutdown();
@@ -572,8 +583,10 @@ static int render(void *data)
             break;
 
         render_process_cmds(&G_GetRenderWS()->commands);
-        if(s_rstate->swap_buffers)
+        if(s_rstate->swap_buffers) {
+            R_GL_SwapchainPresentLast();
             SDL_GL_SwapWindow(s_window);
+        }
 
         mi_stats_merge();
         render_signal_done(s_rstate, RSTAT_DONE);

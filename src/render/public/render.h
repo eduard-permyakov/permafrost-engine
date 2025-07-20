@@ -97,6 +97,12 @@ void   R_GL_Draw(const void *render_private, mat4x4_t *model, const bool *transl
 void   R_GL_BeginFrame(void);
 
 /* ---------------------------------------------------------------------------
+ * Mark the end of a rendered frame, invalidate render buffer.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_EndFrame(void);
+
+/* ---------------------------------------------------------------------------
  * Sets the view matrix for all relevant shader programs. 
  * ---------------------------------------------------------------------------
  */
@@ -666,6 +672,11 @@ void R_GL_AnimAppendData(GLfloat *data, size_t *size);
  */
 void   R_GL_AnimSetUniforms(mat4x4_t *normal_mat, struct anim_pose_data_desc *desc);
 
+/*###########################################################################*/
+/* RENDER SWAPCHAIN                                                          */
+/*###########################################################################*/
+
+void R_GL_SwapchainPresentLast(void);
 
 #endif
 

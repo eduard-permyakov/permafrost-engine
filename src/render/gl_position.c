@@ -87,6 +87,9 @@ void R_GL_PositionsUploadData(vec3_t *posbuff, uint32_t *idbuff,
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
+    GLint old;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &old);
+
     glGenFramebuffers(1, &fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 
@@ -151,7 +154,7 @@ void R_GL_PositionsUploadData(vec3_t *posbuff, uint32_t *idbuff,
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindTexture(GL_TEXTURE_2D, 0);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);  
+    glBindFramebuffer(GL_FRAMEBUFFER, old);  
 
     glDeleteFramebuffers(1, &fbo);
     glDeleteVertexArrays(1, &VAO);

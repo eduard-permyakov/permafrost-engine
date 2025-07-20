@@ -82,4 +82,6 @@ bool R_GL_Texture_GetForNameUnqualified(const char *name, GLuint *out);
 void R_GL_Texture_GetSize(GLuint texid, int *out_w, int *out_h, int *out_d);
 bool R_GL_Texture_AddExisting(const char *name, GLuint id);
 
+bool R_GL_Texture_WritePPM(const char* filename, const unsigned char *data, int width, int height);
+
 #endif
