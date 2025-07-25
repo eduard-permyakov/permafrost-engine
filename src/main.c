@@ -56,6 +56,7 @@
 #include "session.h"
 #include "perf.h"
 #include "sched.h"
+#include "sprite.h"
 #include "loading_screen.h"
 
 #include <stdbool.h>
@@ -539,9 +540,16 @@ static bool engine_init(void)
         goto fail_phys;
     }
 
+    if(!Sprite_Init()) {
+        fprintf(stderr, "Failed to initialize sprite susbystem\n");
+        goto fail_sprite;
+    }
+
     engine_create_settings();
     return true;
 
+fail_sprite:
+    P_Projectile_Shutdown();
 fail_phys:
     Audio_Shutdown();
 fail_audio:
@@ -588,6 +596,7 @@ fail_resize:
 static void engine_shutdown(void)
 {
     Sched_Flush();
+    Sprite_Shutdown();
     P_Projectile_Shutdown();
     Audio_Shutdown();
     S_Shutdown();

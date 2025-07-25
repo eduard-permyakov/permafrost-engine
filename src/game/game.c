@@ -75,6 +75,7 @@
 #include "../perf.h"
 #include "../cursor.h"
 #include "../sched.h"
+#include "../sprite.h"
 
 #include <assert.h> 
 
@@ -965,6 +966,7 @@ static void g_change_simstate(void)
         if(s_gs.map) {
             G_Combat_AddTimeDelta(delta);
         }
+        Sprite_AddTimeDelta(delta);
         break;
     }
     case G_PAUSED_FULL:
