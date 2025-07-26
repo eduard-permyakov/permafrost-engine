@@ -74,6 +74,7 @@
 #include "../task.h"
 #include "../sched.h"
 #include "../asset_load.h"
+#include "../sprite.h"
 
 #include <SDL.h>
 #include <mimalloc-stats.h>
@@ -260,6 +261,9 @@ static PyObject *PyPf_attack_in_formation(PyObject *self, PyObject *args);
 static PyObject *PyPf_formation_preferred_for_set(PyObject *self, PyObject *args);
 static PyObject *PyPf_show_console(PyObject *self);
 static PyObject *PyPf_get_version_string(PyObject *self);
+
+static PyObject *PyPf_spawn_sprite_static(PyObject *self, PyObject *args);
+static PyObject *PyPf_spawn_sprite_animated(PyObject *self, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -918,7 +922,21 @@ static PyMethodDef pf_module_methods[] = {
 
     {"get_version_string",
     (PyCFunction)PyPf_get_version_string, METH_NOARGS,
-    "Brings up the interactive Python console."},
+    "Returns the version of Permafrost Engine."},
+
+    {"spawn_sprite_static",
+    (PyCFunction)PyPf_spawn_sprite_static, METH_VARARGS,
+    "Spawns a sprite for a fixed duration. The first parameter is a sprite sheet descriptor "
+    "(4-tuple of a filename, the row count, the column count, and the frame count). "
+    "The additional parameters are ws_pos (worldspace position), ws_size (worldspace size), "
+    "and duration_ms (milliseconds)."},
+
+    {"spawn_sprite_animated",
+    (PyCFunction)PyPf_spawn_sprite_animated, METH_VARARGS,
+    "Spawns a sprite with a specific animation. The first parameter is a sprite sheet descriptor "
+    "(4-tuple of a filename, the row count, the column count, and the frame count). "
+    "The additional parameters are ws_pos (worldspace position), ws_size (worldspace size), "
+    "the fps (integer), and the repeat count (integer)."},
 
     {NULL}  /* Sentinel */
 };
@@ -3858,9 +3876,47 @@ static PyObject *PyPf_get_version_string(PyObject *self)
     return PyString_FromString(g_version);
 }
 
+static PyObject *PyPf_spawn_sprite_static(PyObject *self, PyObject *args)
+{
+    struct sprite_sheet_desc desc;
+    vec2_t ws_size;
+    vec3_t ws_pos;
+    float duration;
+
+    if(!PyArg_ParseTuple(args, "(snnn)(ff)(fff)f", &desc.filename, &desc.nrows, &desc.ncols,
+        &desc.nframes, &ws_size.x, &ws_size.y, &ws_pos.x, &ws_pos.y, &ws_pos.z, &duration)) {
+
+        PyErr_SetString(PyExc_TypeError, "Invalid arguments to spawn_sprite_static.");
+        return NULL;
+    }
+
+    Sprite_ShowStatic(desc, ws_size, duration, ws_pos);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_spawn_sprite_animated(PyObject *self, PyObject *args)
+{
+    struct sprite_sheet_desc desc;
+    vec2_t ws_size;
+    vec3_t ws_pos;
+    int fps;
+    int repeat_count;
+
+    if(!PyArg_ParseTuple(args, "(snnn)(ff)(fff)ii", &desc.filename, &desc.nrows, &desc.ncols,
+        &desc.nframes, &ws_size.x, &ws_size.y, &ws_pos.x, &ws_pos.y, &ws_pos.z, &fps, 
+        &repeat_count)) {
+
+        PyErr_SetString(PyExc_TypeError, "Invalid arguments to spawn_sprite_animated.");
+        return NULL;
+    }
+
+    Sprite_PlayAnim(repeat_count, fps, ws_size, desc, ws_pos);
+    Py_RETURN_NONE;
+}
+
 static void script_task_destructor(void *arg)
 {
-    free(arg);
+    PF_FREE(arg);
 }
 
 static struct result script_task(void *arg)
