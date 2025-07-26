@@ -42,6 +42,7 @@
 #define GL_U_PROJECTION         "projection"
 #define GL_U_VIEW               "view"
 #define GL_U_VIEW_POS           "view_pos"
+#define GL_U_VIEW_DIR           "view_dir"
 #define GL_U_VIEW_ROT_MAT       "view_rot"
 #define GL_U_MODEL              "model"
 #define GL_U_MATERIALS          "materials"
@@ -101,6 +102,10 @@
 #define GL_U_TICKS_HZ           "ticks_hz"
 #define GL_U_SHADOWS_ON         "shadows_on"
 #define GL_U_NUM_SIM_ENTS       "num_sim_ents"
+#define GL_U_SPRITES            "sprites"
+#define GL_U_SPRITE_SHEET       "sprite_sheet"
+#define GL_U_SPRITE_NROWS       "sprite_nrows"
+#define GL_U_SPRITE_NCOLS       "sprite_ncols"
 
 enum utype{
     UTYPE_FLOAT,

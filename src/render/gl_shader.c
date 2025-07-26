@@ -526,6 +526,24 @@ static struct shader s_shaders[] = {
             {0}
         },
     },
+    {
+        .prog_id        = (intptr_t)NULL,
+        .name           = "sprite.batched",
+        .vertex_path    = "shaders/vertex/sprite-batched.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/sprite-batched.glsl",
+        .uniforms       = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_BLOCK_BINDING,  GL_U_SPRITES      },
+            { UTYPE_INT,       GL_U_SPRITE_SHEET      },
+            { UTYPE_INT,       GL_U_SPRITE_NROWS      },
+            { UTYPE_INT,       GL_U_SPRITE_NCOLS      },
+            { UTYPE_VEC3,      GL_U_VIEW_DIR          },
+            {0}
+        },
+    },
 };
 
 /*****************************************************************************/

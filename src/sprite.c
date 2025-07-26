@@ -35,9 +35,13 @@
 
 #include "sprite.h"
 #include "event.h"
+#include "camera.h"
 #include "game/public/game.h"
+#include "render/public/render.h"
+#include "render/public/render_ctrl.h"
 #include "lib/public/vec.h"
 #include "lib/public/khash.h"
+#include "lib/public/string_intern.h"
 
 #include <assert.h>
 #include <SDL.h>
@@ -50,8 +54,8 @@ enum sprite_type{
 struct sprite_ctx{
     enum sprite_type         type;
     struct sprite_sheet_desc desc;
-    vec2_t                   size;
     int                      fps;
+    vec2_t                   ws_size;
     vec3_t                   ws_pos;
     uint32_t                 duration_ms;
     size_t                   count_left;
@@ -70,6 +74,8 @@ VEC_IMPL(static, id, uint32_t);
 
 static khash_t(sprite) *s_active;
 static uint32_t         s_next_id = 0;
+static khash_t(stridx) *s_stridx;
+static mp_strbuff_t     s_stringpool;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -122,9 +128,46 @@ static void on_update(void *user, void *event)
     vec_id_destroy(&to_delete);
 }
 
-static void on_render_ui(void *user, void *event)
+static void on_render_3d(void *user, void *event)
 {
     /* Push commands to render all active sprites as a batch */
+    struct render_workspace *ws = G_GetSimWS();
+    const size_t nsprites = kh_size(s_active);
+    const size_t buffsize = nsprites * sizeof(struct sprite_desc);
+    void *spritebuff = stalloc(&ws->args, buffsize);
+    unsigned char *cursor = spritebuff;
+    struct camera *cam = G_GetActiveCamera();
+
+    uint32_t id;
+    (void)id;
+    struct sprite_ctx *curr;
+
+    kh_foreach_val_ptr(s_active, id, curr, {
+        *((struct sprite_desc*)cursor) = (struct sprite_desc){
+            .sheet = curr->desc,
+            .frame = (curr->type == SPRITE_STATIC) ? 0 : curr->curr_frame,
+            .ws_size = curr->ws_size,
+            .ws_pos = curr->ws_pos
+        };
+        cursor += sizeof(struct sprite_desc);
+    });
+    assert(cursor == ((unsigned char*)spritebuff) + buffsize);
+
+    struct sprite_desc *descs = (struct sprite_desc*)spritebuff;
+    for(int i = 0; i < nsprites; i++) {
+        const char *string = descs[i].sheet.filename;
+        descs[i].sheet.filename = R_PushArg(string, strlen(string) + 1);
+    }
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SpriteRenderBatch,
+        .nargs = 3,
+        .args = {
+            spritebuff,
+            R_PushArg(&nsprites, sizeof(nsprites)),
+            R_PushArg(cam, g_sizeof_camera),
+        }
+    });
 }
 
 static void add_ctx(struct sprite_ctx *ctx)
@@ -145,15 +188,20 @@ bool Sprite_Init(void)
     s_next_id = 0;
     if(!(s_active = kh_init(sprite)))
         return false;
+    if(!si_init(&s_stringpool, &s_stridx, 256)) {
+        kh_destroy(sprite, s_active);
+        return false;
+    }
     E_Global_Register(EVENT_UPDATE_START, on_update, NULL, G_RUNNING);
-    E_Global_Register(EVENT_RENDER_UI, on_render_ui, NULL, G_ALL);
+    E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_ALL);
     return true;
 }
 
 void Sprite_Shutdown(void)
 {
-    E_Global_Unregister(EVENT_RENDER_UI, on_render_ui);
+    E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     E_Global_Unregister(EVENT_UPDATE_START, on_update);
+    si_shutdown(&s_stringpool, s_stridx);
     kh_destroy(sprite, s_active);
 }
 
@@ -173,14 +221,15 @@ void Sprite_AddTimeDelta(uint32_t dt)
     });
 }
 
-void Sprite_PlayAnim(size_t count, int fps, vec2_t size, 
+void Sprite_PlayAnim(size_t count, int fps, vec2_t ws_size, 
                      struct sprite_sheet_desc desc, vec3_t ws_pos)
 {
+    desc.filename = si_intern(desc.filename, &s_stringpool, s_stridx);
     add_ctx(&(struct sprite_ctx){
         .type = SPRITE_ANIM,
         .desc = desc,
-        .size = size,
         .fps = fps,
+        .ws_size = ws_size,
         .ws_pos = ws_pos,
         .count_left = count,
         .curr_frame = 0,
@@ -188,12 +237,13 @@ void Sprite_PlayAnim(size_t count, int fps, vec2_t size,
     });
 }
 
-void Sprite_ShowStatic(struct sprite_sheet_desc desc, vec2_t size, float duration, vec3_t ws_pos)
+void Sprite_ShowStatic(struct sprite_sheet_desc desc, vec2_t ws_size, float duration, vec3_t ws_pos)
 {
+    desc.filename = si_intern(desc.filename, &s_stringpool, s_stridx);
     add_ctx(&(struct sprite_ctx){
         .type = SPRITE_STATIC,
         .desc = desc,
-        .size = size,
+        .ws_size = ws_size,
         .ws_pos = ws_pos,
         .duration_ms = duration,
         .begin_tick_ms = SDL_GetTicks(),

@@ -39,6 +39,7 @@
 #include "ui.h"
 #include "sched.h"
 #include "cursor.h"
+#include "sprite.h"
 #include "asset_load.h"
 #include "loading_screen.h"
 #include "lib/public/attr.h"
@@ -110,6 +111,7 @@ static void subsession_clear(void)
     A_ClearState();
     Entity_ClearState();
     Audio_ClearState();
+    Sprite_Clear();
     P_Projectile_ClearState();
     UI_ClearState();
     AL_ClearState();

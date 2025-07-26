@@ -37,6 +37,7 @@
 #define RENDER_H
 
 #include "../../pf_math.h"
+#include "../../sprite.h"
 
 #include <stddef.h>
 #include <stdio.h>
@@ -70,6 +71,13 @@ struct ui_vert{
     vec2_t  screen_pos;
     vec2_t  uv;
     uint8_t color[4];
+};
+
+struct sprite_desc{
+    struct sprite_sheet_desc sheet;
+    size_t                   frame;
+    vec2_t                   ws_size;
+    vec3_t                   ws_pos;
 };
 
 #define VERTS_PER_SIDE_FACE  (6)
@@ -677,6 +685,13 @@ void   R_GL_AnimSetUniforms(mat4x4_t *normal_mat, struct anim_pose_data_desc *de
 /*###########################################################################*/
 
 void R_GL_SwapchainPresentLast(void);
+
+/*###########################################################################*/
+/* RENDER SPRITE                                                             */
+/*###########################################################################*/
+
+void R_GL_SpriteRenderBatch(struct sprite_desc *sprites, size_t *nsprites,
+                            const struct camera *cam);
 
 #endif
 

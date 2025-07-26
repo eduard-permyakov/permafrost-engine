@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2019-2023 Eduard Permyakov 
+ *  Copyright (C) 2025 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -38,11 +38,7 @@
 layout (location = 0) in vec3 in_pos;
 layout (location = 1) in vec2 in_uv;
 
-#define MAX_HBS   (256)
-
-/* Must match the definition in the fragment shader */
-#define CURR_HB_HEIGHT  (max(4.0/1080 * curr_res.y, 4.0))
-#define CURR_HB_WIDTH   (40.0/1080 * curr_res.y)
+#define MAX_SPRITES (1024)
 
 /*****************************************************************************/
 /* OUTPUTS                                                                   */
@@ -50,33 +46,47 @@ layout (location = 1) in vec2 in_uv;
 
 out VertexToFrag{
          vec2 uv;
-        float health_pc;
+    flat uint frame;
 }to_fragment;
 
 /*****************************************************************************/
 /* UNIFORMS                                                                  */
 /*****************************************************************************/
 
-/* Should be set up for screenspace rendering */
+/* Set up for worldspace rendering */
 uniform mat4 view;
 uniform mat4 projection;
+uniform vec3 view_dir;
 
-uniform ivec2 curr_res;
+struct sprite_desc{
+    vec3 ws_pos; /* 1 float padding after */
+    vec2 ws_size;  /* 2 float padding after */
+    uint frame_idx; /* 3 float padding after */
+};
 
-uniform vec2  ent_top_offsets_ss[MAX_HBS];
-uniform float ent_health_pc[MAX_HBS];
+layout (std140) uniform sprites
+{
+    sprite_desc descs[MAX_SPRITES];
+};
 
 /*****************************************************************************/
-/* PROGRAM
+/* PROGRAM                                                                   */
 /*****************************************************************************/
 
 void main()
 {
-    to_fragment.uv = in_uv;
-    to_fragment.health_pc = ent_health_pc[gl_InstanceID];
+    /* Find a vector that is orthogonal to 'view_dir' in the XZ plane */
+    vec3 xz = vec3(view_dir.z, 0.0, -view_dir.x);
+    vec3 cam_up_worldspace = normalize(cross(view_dir, xz));
+    vec3 cam_right_worldspace = normalize(cross(view_dir, cam_up_worldspace));
+    vec3 center_worldspace = descs[gl_InstanceID].ws_pos;
+    vec2 size_worldspace = descs[gl_InstanceID].ws_size;
+    vec3 out_pos = center_worldspace
+                 + cam_right_worldspace * in_pos.x * (size_worldspace.x/2.0)
+                 + cam_up_worldspace    * in_pos.y * (size_worldspace.y/2.0);
 
-    vec2 ss_pos = vec2(in_pos.x * CURR_HB_WIDTH, in_pos.y * CURR_HB_HEIGHT);
-    ss_pos += ent_top_offsets_ss[gl_InstanceID];
-    gl_Position = projection * view * vec4(ss_pos, 0.0, 1.0);
+    to_fragment.uv = in_uv;
+    to_fragment.frame = descs[gl_InstanceID].frame_idx;
+    gl_Position = projection * view * vec4(out_pos, 1);
 }
 

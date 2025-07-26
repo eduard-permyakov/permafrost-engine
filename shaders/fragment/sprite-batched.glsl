@@ -33,30 +33,40 @@
  *
  */
 
-#ifndef SPRITE_H
-#define SPRITE_H
+#version 330 core
 
-#include <stdbool.h>
-#include <stdint.h>
+/*****************************************************************************/
+/* INPUTS                                                                    */
+/*****************************************************************************/
 
-#include "pf_math.h"
+in VertexToFrag{
+         vec2 uv;
+    flat uint frame;
+}from_vertex;
 
-struct sprite_sheet_desc{
-    const char *filename;
-    size_t      nrows;
-    size_t      ncols;
-    size_t      nframes;
-};
+/*****************************************************************************/
+/* OUTPUTS                                                                   */
+/*****************************************************************************/
 
-bool Sprite_Init(void);
-void Sprite_Shutdown(void);
-void Sprite_Clear(void);
-void Sprite_AddTimeDelta(uint32_t dt);
+out vec4 o_frag_color;
 
-void Sprite_PlayAnim(size_t count, int fps, vec2_t ws_size, 
-                     struct sprite_sheet_desc desc, vec3_t ws_pos);
-void Sprite_ShowStatic(struct sprite_sheet_desc desc, vec2_t ws_size, 
-                       float duration, vec3_t ws_pos);
+/*****************************************************************************/
+/* UNIFORMS                                                                  */
+/*****************************************************************************/
 
-#endif
+uniform sampler2D sprite_sheet;
+uniform int sprite_nrows;
+uniform int sprite_ncols;
+
+/*****************************************************************************/
+/* PROGRAM                                                                   */
+/*****************************************************************************/
+
+void main()
+{
+    vec4 color = texture(sprite_sheet, from_vertex.uv);
+    if(color.a <= 0.5)
+        discard;
+    o_frag_color = color;
+}
 
