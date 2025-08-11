@@ -41,10 +41,17 @@
 #include "render/public/render_ctrl.h"
 #include "lib/public/vec.h"
 #include "lib/public/khash.h"
+#include "lib/public/pf_string.h"
 #include "lib/public/string_intern.h"
 
 #include <assert.h>
 #include <SDL.h>
+
+#define CHK_TRUE_RET(_pred)             \
+    do{                                 \
+        if(!(_pred))                    \
+            return false;               \
+    }while(0)
 
 enum sprite_type{
     SPRITE_STATIC,
@@ -248,5 +255,61 @@ void Sprite_ShowStatic(struct sprite_sheet_desc desc, vec2_t ws_size, float dura
         .duration_ms = duration,
         .begin_tick_ms = SDL_GetTicks(),
     });
+}
+
+bool Sprite_SaveDesc(const struct sprite_sheet_desc *desc, SDL_RWops *stream)
+{
+    struct attr filename = (struct attr){
+        .type = TYPE_STRING,
+        .val.as_string = "NULL"
+    };
+    if(desc->filename) {
+        pf_strlcpy(filename.val.as_string, desc->filename, sizeof(filename.val.as_string));
+    }
+    CHK_TRUE_RET(Attr_Write(stream, &filename, "sprite_filename"));
+
+    struct attr nrows = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = desc->nrows
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &nrows, "sprite_nrows"));
+
+    struct attr ncols = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = desc->ncols
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &ncols, "sprite_ncols"));
+
+    struct attr nframes = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = desc->nframes
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &nframes, "sprite_nframes"));
+    return true;
+}
+
+bool Sprite_LoadDesc(struct sprite_sheet_desc *desc, SDL_RWops *stream)
+{
+    struct attr attr;
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_STRING);
+    desc->filename = NULL;
+    if(strcmp(attr.val.as_string, "NULL") != 0) {
+        desc->filename = pf_strdup(attr.val.as_string);
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    desc->nrows = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    desc->ncols = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    desc->nframes = attr.val.as_int;
+
+    return true;
 }
 

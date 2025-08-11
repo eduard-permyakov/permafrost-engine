@@ -41,6 +41,8 @@
 
 #include "pf_math.h"
 
+struct SDL_RWops;
+
 struct sprite_sheet_desc{
     const char *filename;
     size_t      nrows;
@@ -57,6 +59,9 @@ void Sprite_PlayAnim(size_t count, int fps, vec2_t ws_size,
                      struct sprite_sheet_desc desc, vec3_t ws_pos);
 void Sprite_ShowStatic(struct sprite_sheet_desc desc, vec2_t ws_size, 
                        float duration, vec3_t ws_pos);
+
+bool Sprite_SaveDesc(const struct sprite_sheet_desc *desc, struct SDL_RWops *stream);
+bool Sprite_LoadDesc(struct sprite_sheet_desc *desc, struct SDL_RWops *stream);
 
 #endif
 

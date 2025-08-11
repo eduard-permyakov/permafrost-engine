@@ -734,6 +734,40 @@ bool P_Projectile_SaveState(struct SDL_RWops *stream)
         Sched_TryYield();
 
         /* No need to save the matrix - it is fully derived */
+
+        struct attr sprite_flags = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr->sprite_flags,
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &sprite_flags, "sprite_flags"));
+
+        CHK_TRUE_RET(Sprite_SaveDesc(&curr->impact_sprite, stream));
+
+        struct attr impact_size = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = curr->impact_size,
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &impact_size, "impact_size"));
+
+        CHK_TRUE_RET(Sprite_SaveDesc(&curr->trail_sprite, stream));
+
+        struct attr trail_size = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = curr->trail_size,
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &trail_size, "trail_size"));
+
+        struct attr trail_freq = (struct attr){
+            .type = TYPE_FLOAT,
+            .val.as_float = curr->trail_freq,
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &trail_freq, "trail_freq"));
+
+        struct attr prev_trail_pos = (struct attr){
+            .type = TYPE_VEC3,
+            .val.as_vec3 = curr->prev_trail_pos,
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &prev_trail_pos, "prev_trail_pos"));
     }
 
     struct attr next_uid = (struct attr){
@@ -802,7 +836,7 @@ bool P_Projectile_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(attr.type == TYPE_VEC3);
         proj.scale = attr.val.as_vec3;
 
-        /* Lastly, derive the most up-to-date model matrix */
+        /* Derive the most up-to-date model matrix */
         mat4x4_t trans, scale, rot, tmp;
         quat_t qrot = phys_velocity_dir(proj.vel);
 
@@ -812,6 +846,30 @@ bool P_Projectile_LoadState(struct SDL_RWops *stream)
 
         PFM_Mat4x4_Mult4x4(&scale, &rot, &tmp);
         PFM_Mat4x4_Mult4x4(&trans, &tmp, &proj.model);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        proj.sprite_flags = attr.val.as_int;
+
+        CHK_TRUE_RET(Sprite_LoadDesc(&proj.impact_sprite, stream));
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        proj.impact_size = attr.val.as_vec2;
+
+        CHK_TRUE_RET(Sprite_LoadDesc(&proj.trail_sprite, stream));
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        proj.trail_size = attr.val.as_vec2;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        proj.trail_freq = attr.val.as_float;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC3);
+        proj.prev_trail_pos = attr.val.as_vec3;
 
         /* Add it to the list of projectiles */
         vec_proj_push(&s_front, proj);
