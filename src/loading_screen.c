@@ -317,9 +317,18 @@ void LoadingScreen_DrawEarly(SDL_Window *window)
     if(!s_early_loading_screen)
         return;
 
+#if defined(__APPLE__)
+    if(SDL_GetWindowFlags(window) & (SDL_WINDOW_OPENGL | SDL_WINDOW_METAL))
+        return;
+#endif
+
     SDL_Surface *win_surface = SDL_GetWindowSurface(window);
+    if(!win_surface)
+        return;
+
     SDL_Renderer *sw_renderer = SDL_CreateSoftwareRenderer(win_surface);
-    assert(sw_renderer);
+    if(!sw_renderer)
+        return;
 
     SDL_SetRenderDrawColor(sw_renderer, 0x00, 0x00, 0x00, 0xff);
     SDL_RenderClear(sw_renderer);
@@ -369,8 +378,10 @@ void LoadingScreen_Shutdown(void)
  * commands in reverse order. */
 void LoadingScreen_Tick(void)
 {
-    R_PushCmdImmediateFront((struct rcmd){ R_GL_SwapchainPresentLast, 0 });
-    R_PushCmdImmediateFront((struct rcmd){ R_GL_EndFrame, 0 });
+#if PF_RENDER_BACKEND_OPENGL
+    R_PushCmdImmediateFront((struct rcmd){ R_Cmd_SwapchainPresentLast, 0 });
+#endif
+    R_PushCmdImmediateFront((struct rcmd){ R_Cmd_EndFrame, 0 });
 
     char buff[256];
     get_status_text(buff, sizeof(buff));
@@ -397,13 +408,13 @@ void LoadingScreen_Tick(void)
 
     const char *screen = next_loading_screen();
     R_PushCmdImmediateFront((struct rcmd){
-        .func = R_GL_DrawLoadingScreen,
+        .func = R_Cmd_DrawLoadingScreen,
         .nargs = 1,
         .args = {
             R_PushArg(screen, strlen(screen) + 1)
         }
     });
-    R_PushCmdImmediateFront((struct rcmd){ R_GL_BeginFrame, 0 });
+    R_PushCmdImmediateFront((struct rcmd){ R_Cmd_BeginFrame, 0 });
 }
 
 void LoadingScreen_SetStatusText(char *fmt, ...)
@@ -500,4 +511,3 @@ void LoadingScreen_ClearState(void)
     }
     vec_str_reset(&s_main_stack);
 }
-

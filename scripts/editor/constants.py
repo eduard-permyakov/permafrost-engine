@@ -32,6 +32,9 @@
 #  statement from your version.
 #
 
+import os
+import sys
+
 import pf
 
 ############################################################
@@ -44,6 +47,11 @@ UI_TAB_BAR_HEIGHT = 40
 UI_LEFT_PANE_WIDTH = 250
 UI_TAB_BAR_NUM_COLS = 5
 UI_TAB_BAR_COL_WIDTH = 120
+UI_PLATFORM_TOP_INSET = int(os.environ.get(
+    "PF_EDITOR_UI_TOP_INSET",
+    "40" if sys.platform == "darwin" else "0",
+))
+UI_TOP_PANE_Y = UI_PLATFORM_TOP_INSET + UI_TAB_BAR_HEIGHT + 1
 
 DEFAULT_FACTION_COLOR = (255, 255, 255, 255)
 DEFAULT_FACTION_NAME = "Mother Nature"
@@ -87,4 +95,3 @@ EVENT_DIPLO_FAC_NEW                = 0x20053
 
 EVENT_FILE_CHOOSER_OKAY            = 0x20060
 EVENT_FILE_CHOOSER_CANCEL          = 0x20061
-

@@ -61,8 +61,8 @@ static GLsync s_move_fence = 0;
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_MoveUpdateUniforms(const struct map_resolution *res, vec2_t *map_pos, 
-                             int *ticks_hz, int *nwork)
+void R_GL_MoveUpdateUniforms_Impl(const struct map_resolution *res, vec2_t *map_pos,
+                                  int *ticks_hz, int *nwork)
 {
     R_GL_StateSet(GL_U_MAP_RES, (struct uval){
         .type = UTYPE_IVEC4,
@@ -85,11 +85,11 @@ void R_GL_MoveUpdateUniforms(const struct map_resolution *res, vec2_t *map_pos,
     });
 }
 
-void R_GL_MoveUploadData(void *gpuid_buff, size_t *ndynamic_ents, 
-                         void *attr_buff, size_t *attr_buffsize,
-                         void *flock_buff, size_t *flock_buffsize,
-                         void *cost_base_buff, size_t *cost_base_size,
-                         void *blockers_buff, size_t *blockers_size)
+void R_GL_MoveUploadData_Impl(void *gpuid_buff, size_t *ndynamic_ents,
+                              void *attr_buff, size_t *attr_buffsize,
+                              void *flock_buff, size_t *flock_buffsize,
+                              void *cost_base_buff, size_t *cost_base_size,
+                              void *blockers_buff, size_t *blockers_size)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -129,7 +129,7 @@ void R_GL_MoveUploadData(void *gpuid_buff, size_t *ndynamic_ents,
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_MoveInvalidateData(void)
+void R_GL_MoveInvalidateData_Impl(void)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -149,12 +149,12 @@ void R_GL_MoveInvalidateData(void)
     s_cost_base_ssbo = 0;
 
     glDeleteBuffers(1, &s_blockers_ssbo);
-    s_cost_base_ssbo = 0;
+    s_blockers_ssbo = 0;
 
     GL_ASSERT_OK();
 }
 
-void R_GL_MoveDispatchWork(const size_t *nents)
+void R_GL_MoveDispatchWork_Impl(const size_t *nents)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -206,7 +206,7 @@ void R_GL_MoveDispatchWork(const size_t *nents)
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_MoveReadNewVelocities(void *out, const size_t *nwork, const size_t *maxout)
+void R_GL_MoveReadNewVelocities_Impl(void *out, const size_t *nwork, const size_t *maxout)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -227,7 +227,7 @@ void R_GL_MoveReadNewVelocities(void *out, const size_t *nwork, const size_t *ma
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_MovePollCompletion(SDL_atomic_t *out)
+void R_GL_MovePollCompletion_Impl(SDL_atomic_t *out)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -242,14 +242,16 @@ void R_GL_MovePollCompletion(SDL_atomic_t *out)
     GL_ASSERT_OK();
 }
 
-void R_GL_MoveClearState(void)
+void R_GL_MoveClearState_Impl(void)
 {
     ASSERT_IN_RENDER_THREAD();
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    if(PFGL_ComputeShaderSupported() && s_move_fence) {
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    }
 
     if(s_dispatch_ssbo) {
         glDeleteBuffers(1, &s_dispatch_ssbo);
-        s_moveattr_ssbo = 0;
+        s_dispatch_ssbo = 0;
     }
     if(s_moveattr_ssbo) {
         glDeleteBuffers(1, &s_moveattr_ssbo);
@@ -277,4 +279,3 @@ void R_GL_MoveClearState(void)
     }
     GL_ASSERT_OK();
 }
-

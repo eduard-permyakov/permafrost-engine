@@ -1099,7 +1099,7 @@ static vec2_t target_position(vec_entity_t *ents)
     vec2_t dir = formation_average_orientation(ents);
     float theta = atan2(dir.z, dir.x) - M_PI/2.0f;
 
-    float minx = INT_MAX, minz = INT_MAX, maxx = INT_MIN, maxz = INT_MIN;
+    float minx = INFINITY, minz = INFINITY, maxx = -INFINITY, maxz = -INFINITY;
     for(int i = 0; i < vec_size(ents); i++) {
         uint32_t uid = vec_AT(ents, i);
         vec2_t pos = G_Pos_GetXZ(uid);
@@ -1449,7 +1449,7 @@ static void render_cells(struct subformation *formation)
         const float width = 0.5f;
 
         R_PushCmd((struct rcmd){
-            .func = R_GL_DrawSelectionCircle,
+            .func = R_Cmd_DrawSelectionCircle,
             .nargs = 5,
             .args = {
                 R_PushArg(&pos, sizeof(pos)),
@@ -2179,7 +2179,7 @@ static void render_formations(void)
 
         vec2_t endpoints[] = {origin, end};
         R_PushCmd((struct rcmd){
-            .func = R_GL_DrawLine,
+            .func = R_Cmd_DrawLine,
             .nargs = 4,
             .args = {
                 R_PushArg(endpoints, sizeof(endpoints)),
@@ -2196,7 +2196,7 @@ static void render_formations(void)
             const float radius = 0.5f;
             const float width = 1.5f;
             R_PushCmd((struct rcmd){
-                .func = R_GL_DrawSelectionCircle,
+                .func = R_Cmd_DrawSelectionCircle,
                 .nargs = 5,
                 .args = {
                     R_PushArg(&sub->pos, sizeof(sub->pos)),
@@ -2218,7 +2218,7 @@ static void render_formations(void)
                 vec3_t cyan = (vec3_t){0.0f, 1.0f, 1.0f};
 
                 R_PushCmd((struct rcmd){
-                    .func = R_GL_DrawSelectionCircle,
+                    .func = R_Cmd_DrawSelectionCircle,
                     .nargs = 5,
                     .args = {
                         R_PushArg(&cell->ideal_raw, sizeof(cell->ideal_raw)),
@@ -2230,7 +2230,7 @@ static void render_formations(void)
                 });
 
                 R_PushCmd((struct rcmd){
-                    .func = R_GL_DrawSelectionCircle,
+                    .func = R_Cmd_DrawSelectionCircle,
                     .nargs = 5,
                     .args = {
                         R_PushArg(&cell->ideal_binned, sizeof(cell->ideal_binned)),
@@ -2242,7 +2242,7 @@ static void render_formations(void)
                 });
 
                 R_PushCmd((struct rcmd){
-                    .func = R_GL_DrawSelectionCircle,
+                    .func = R_Cmd_DrawSelectionCircle,
                     .nargs = 5,
                     .args = {
                         R_PushArg(&cell->pos, sizeof(cell->pos)),
@@ -2564,7 +2564,7 @@ static void render_formations_occupied_field(enum nav_layer layer)
             (vec2_t){center.x + field_width/2.0f, center.z + field_width/2.0f},
         };
         R_PushCmd((struct rcmd){
-            .func = R_GL_DrawQuad,
+            .func = R_Cmd_DrawQuad,
             .nargs = 4,
             .args = {
                 R_PushArg(field_corners, sizeof(field_corners)),
@@ -2638,7 +2638,7 @@ static void render_formations_occupied_field(enum nav_layer layer)
             size_t next_offset = next_chunk_range(offset, count, chunk_buff, &num_tiles);
             bool on_water_surface = false;
             R_PushCmd((struct rcmd){
-                .func = R_GL_DrawMapOverlayQuads,
+                .func = R_Cmd_DrawMapOverlayQuads,
                 .nargs = 6,
                 .args = {
                     R_PushArg(corners_buff + 4 * offset, sizeof(vec2_t) * 4 * num_tiles),
@@ -2674,7 +2674,7 @@ static void render_formation_assignment(void)
                 const float width = 0.5f;
 
                 R_PushCmd((struct rcmd){
-                    .func = R_GL_DrawLine,
+                    .func = R_Cmd_DrawLine,
                     .nargs = 4,
                     .args = {
                         R_PushArg(endpoints, sizeof(endpoints)),
@@ -2750,7 +2750,7 @@ static void render_cell_arrival_field(struct formation *formation, int index)
     }}
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_DrawFlowField,
+        .func = R_Cmd_DrawFlowField,
         .nargs = 5,
         .args = {
             R_PushArg(positions_buff, sizeof(positions_buff)),
@@ -2779,7 +2779,7 @@ static void render_formation_forces(void)
             const vec3_t green = (vec3_t){0.0, 1.0, 0.0};
 
             R_PushCmd((struct rcmd){
-                .func = R_GL_DrawSelectionCircle,
+                .func = R_Cmd_DrawSelectionCircle,
                 .nargs = 5,
                 .args = {
                     R_PushArg(&leader_pos, sizeof(leader_pos)),
@@ -2804,7 +2804,7 @@ static void render_formation_forces(void)
             vec3_t blue = (vec3_t){0.0f, 0.0f, 1.0f};
 
             R_PushCmd((struct rcmd){
-                .func = R_GL_DrawLine,
+                .func = R_Cmd_DrawLine,
                 .nargs = 4,
                 .args = {
                     R_PushArg(endpoints, sizeof(endpoints)),
@@ -2827,7 +2827,7 @@ static void render_formation_forces(void)
                     const float radius = 0.5f;
 
                     R_PushCmd((struct rcmd){
-                        .func = R_GL_DrawSelectionCircle,
+                        .func = R_Cmd_DrawSelectionCircle,
                         .nargs = 5,
                         .args = {
                             R_PushArg(&target, sizeof(target)),
@@ -2842,7 +2842,7 @@ static void render_formation_forces(void)
                     float width = 0.5f;
 
                     R_PushCmd((struct rcmd){
-                        .func = R_GL_DrawLine,
+                        .func = R_Cmd_DrawLine,
                         .nargs = 4,
                         .args = {
                             R_PushArg(endpoints, sizeof(endpoints)),
@@ -2862,7 +2862,7 @@ static void render_formation_forces(void)
                         float width = 0.5f;
 
                         R_PushCmd((struct rcmd){
-                            .func = R_GL_DrawLine,
+                            .func = R_Cmd_DrawLine,
                             .nargs = 4,
                             .args = {
                                 R_PushArg(endpoints, sizeof(endpoints)),
@@ -2886,7 +2886,7 @@ static void render_formation_forces(void)
                     }
 
                     R_PushCmd((struct rcmd){
-                        .func = R_GL_DrawSelectionCircle,
+                        .func = R_Cmd_DrawSelectionCircle,
                         .nargs = 5,
                         .args = {
                             R_PushArg(&ent_pos, sizeof(ent_pos)),
@@ -5463,4 +5463,3 @@ bool G_Formation_LoadState(struct SDL_RWops *stream)
     });
     return true;
 }
-

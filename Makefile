@@ -7,7 +7,14 @@ TYPE ?= DEBUG
 ASAN ?= 0
 TSAN ?= 0
 LTO  ?= 0
-GIT_VERSION := "$(shell git describe --always)"
+
+ifeq ($(PLAT),MACOS_ARM64)
+RENDER_BACKEND ?= METAL
+else
+RENDER_BACKEND ?= OPENGL
+endif
+
+GIT_VERSION := "$(shell git describe --always 2>/dev/null || echo archive)"
 
 # ------------------------------------------------------------------------------
 # Sources 
@@ -15,11 +22,23 @@ GIT_VERSION := "$(shell git describe --always)"
 
 PF_DIRS = $(sort $(dir $(wildcard ./src/*/), ./src/))
 PF_SRCS = $(foreach dir,$(PF_DIRS),$(wildcard $(dir)*.c))
-PF_SRC_OBJS = $(PF_SRCS:./src/%.c=./obj/%.o)
 PF_ASM = $(foreach dir,$(PF_DIRS),$(wildcard $(dir)*.S))
-PF_ASM_OBJS = $(PF_ASM:./src/%.S=./obj/%.o)
-PF_OBJS = $(PF_SRC_OBJS) $(PF_ASM_OBJS)
-PF_DEPS = $(PF_SRC_OBJS:%.o=%.d)
+PF_OBJC = $(foreach dir,$(PF_DIRS),$(wildcard $(dir)*.m))
+ifeq ($(RENDER_BACKEND),METAL)
+PF_SRCS := $(filter-out ./src/render/backend_gl.c,$(PF_SRCS))
+endif
+OBJ_DIR = ./obj/$(PLAT)-$(RENDER_BACKEND)
+PF_SRC_OBJS = $(PF_SRCS:./src/%.c=$(OBJ_DIR)/%.o)
+PF_ASM_OBJS = $(PF_ASM:./src/%.S=$(OBJ_DIR)/%.o)
+PF_OBJC_OBJS = $(PF_OBJC:./src/%.m=$(OBJ_DIR)/%.o)
+ifeq ($(RENDER_BACKEND),METAL)
+PF_BACKEND_OBJS = $(PF_OBJC_OBJS)
+else
+PF_BACKEND_OBJS =
+endif
+PF_OBJS = $(PF_SRC_OBJS) $(PF_ASM_OBJS) $(PF_BACKEND_OBJS)
+PF_DEPS = $(PF_SRC_OBJS:%.o=%.d) $(PF_OBJC_OBJS:%.o=%.d)
+BACKEND_STAMP = $(OBJ_DIR)/.backend-stamp
 
 # ------------------------------------------------------------------------------
 # Library Dependencies
@@ -30,6 +49,17 @@ SDL2_SRC = ./deps/SDL2
 PYTHON_SRC = ./deps/Python
 OPENAL_SRC = ./deps/openal-soft
 MIMALLOC_SRC = ./deps/mimalloc
+MACOS_HELPER_DIR = ./scripts/macos
+HOMEBREW_X86_64_PREFIX ?= /usr/local
+HOMEBREW_ARM64_PREFIX ?= /opt/homebrew
+HOMEBREW_X86_64_PKGCONFIG_DIRS = $(HOMEBREW_X86_64_PREFIX)/lib/pkgconfig:$(HOMEBREW_X86_64_PREFIX)/share/pkgconfig:$(HOMEBREW_X86_64_PREFIX)/opt/openal-soft/lib/pkgconfig
+HOMEBREW_ARM64_PKGCONFIG_DIRS = $(HOMEBREW_ARM64_PREFIX)/lib/pkgconfig:$(HOMEBREW_ARM64_PREFIX)/share/pkgconfig:$(HOMEBREW_ARM64_PREFIX)/opt/openal-soft/lib/pkgconfig
+VENDORED_INCLUDE_FLAGS = \
+	-I$(GLEW_SRC)/include \
+	-I$(SDL2_SRC)/include \
+	-I$(PYTHON_SRC)/Include \
+	-I$(OPENAL_SRC)/include \
+	-I$(MIMALLOC_SRC)/include
 
 # ------------------------------------------------------------------------------
 # Linux
@@ -64,6 +94,16 @@ LINUX_LDFLAGS = \
 	-Xlinker -rpath='$$ORIGIN/../lib'
 
 LINUX_DEFS = -D_DEFAULT_SOURCE
+LINUX_INCLUDE_FLAGS = $(VENDORED_INCLUDE_FLAGS)
+LINUX_CSTD = c99
+LINUX_BUILD_READY = 1
+LINUX_RUN_PREFIX =
+LINUX_DEPS = \
+	./lib/$(GLEW_LIB) \
+	./lib/$(SDL2_LIB) \
+	./lib/$(PYTHON_LIB) \
+	./lib/$(OPENAL_LIB) \
+	./lib/$(MIMALLOC_LIB)
 
 # ------------------------------------------------------------------------------
 # Windows
@@ -121,15 +161,81 @@ WINDOWS_LDFLAGS = \
 	-luuid
 
 WINDOWS_DEFS = -DMS_WIN64
+WINDOWS_INCLUDE_FLAGS = $(VENDORED_INCLUDE_FLAGS)
+WINDOWS_CSTD = c99
+WINDOWS_BUILD_READY = 1
+WINDOWS_RUN_PREFIX =
+WINDOWS_DEPS = \
+	./lib/$(GLEW_LIB) \
+	./lib/$(SDL2_LIB) \
+	./lib/$(PYTHON_LIB) \
+	./lib/$(OPENAL_LIB) \
+	./lib/$(MIMALLOC_LIB) \
+	./lib/mimalloc-redirect.dll
+
+# ------------------------------------------------------------------------------
+# macOS
+# ------------------------------------------------------------------------------
+
+MACOS_X86_64_PKG_CONFIG = env PKG_CONFIG_LIBDIR=$(HOMEBREW_X86_64_PKGCONFIG_DIRS) pkg-config
+MACOS_X86_64_PYTHON_CONFIG = $(shell $(MACOS_HELPER_DIR)/find_python_config.sh MACOS_X86_64)
+MACOS_X86_64_CC = /usr/bin/arch -x86_64 clang
+MACOS_X86_64_CXX = /usr/bin/arch -x86_64 clang++
+MACOS_X86_64_BIN = ./bin/pf
+MACOS_X86_64_RUN_PREFIX = /usr/bin/arch -x86_64
+MACOS_X86_64_LDFLAGS = \
+	$(shell $(MACOS_X86_64_PKG_CONFIG) --libs sdl2 openal 2>/dev/null) \
+	$(shell if test -n "$(MACOS_X86_64_PYTHON_CONFIG)"; then $(MACOS_X86_64_PYTHON_CONFIG) --ldflags 2>/dev/null; fi) \
+	-L$(HOMEBREW_X86_64_PREFIX)/lib \
+	-lmimalloc \
+	-Wl,-rpath,$(HOMEBREW_X86_64_PREFIX)/lib
+MACOS_X86_64_DEFS = -D_DEFAULT_SOURCE -DGL_SILENCE_DEPRECATION
+MACOS_X86_64_INCLUDE_FLAGS = \
+	$(shell $(MACOS_X86_64_PKG_CONFIG) --cflags sdl2 openal 2>/dev/null) \
+	$(shell if test -n "$(MACOS_X86_64_PYTHON_CONFIG)"; then $(MACOS_X86_64_PYTHON_CONFIG) --includes 2>/dev/null; fi) \
+	-I$(HOMEBREW_X86_64_PREFIX)/include
+MACOS_X86_64_CSTD = c99
+MACOS_X86_64_BUILD_READY = 1
+MACOS_X86_64_DEPS =
+MACOS_X86_64_DEPS_CMD = $(MACOS_HELPER_DIR)/check_deps.sh MACOS_X86_64
+
+MACOS_ARM64_PKG_CONFIG = env PKG_CONFIG_LIBDIR=$(HOMEBREW_ARM64_PKGCONFIG_DIRS) pkg-config
+MACOS_ARM64_PYTHON_CONFIG = $(shell $(MACOS_HELPER_DIR)/find_python_config.sh MACOS_ARM64)
+MACOS_ARM64_CC = clang
+MACOS_ARM64_CXX = clang++
+MACOS_ARM64_BIN = ./bin/pf-arm64
+MACOS_ARM64_RUN_PREFIX =
+MACOS_ARM64_LDFLAGS = \
+	$(shell $(MACOS_ARM64_PKG_CONFIG) --libs sdl2 openal 2>/dev/null) \
+	$(shell if test -n "$(MACOS_ARM64_PYTHON_CONFIG)"; then $(MACOS_ARM64_PYTHON_CONFIG) --ldflags --embed 2>/dev/null || $(MACOS_ARM64_PYTHON_CONFIG) --ldflags 2>/dev/null; fi) \
+	-L$(HOMEBREW_ARM64_PREFIX)/lib \
+	-lmimalloc \
+	-Wl,-rpath,$(HOMEBREW_ARM64_PREFIX)/lib
+MACOS_ARM64_DEFS = -D_DEFAULT_SOURCE -DGL_SILENCE_DEPRECATION
+MACOS_ARM64_INCLUDE_FLAGS = \
+	$(shell $(MACOS_ARM64_PKG_CONFIG) --cflags sdl2 openal 2>/dev/null) \
+	$(shell if test -n "$(MACOS_ARM64_PYTHON_CONFIG)"; then $(MACOS_ARM64_PYTHON_CONFIG) --includes 2>/dev/null; fi) \
+	-I$(HOMEBREW_ARM64_PREFIX)/include
+MACOS_ARM64_CSTD = gnu11
+MACOS_ARM64_BUILD_READY = 0
+MACOS_ARM64_DEPS =
+MACOS_ARM64_DEPS_CMD = $(MACOS_HELPER_DIR)/check_deps.sh MACOS_ARM64
 
 # ------------------------------------------------------------------------------
 # Platform-Agnostic
 # ------------------------------------------------------------------------------
 
 CC = $($(PLAT)_CC)
+CXX = $(if $($(PLAT)_CXX),$($(PLAT)_CXX),clang++)
 BIN = $($(PLAT)_BIN)
 PLAT_LDFLAGS = $($(PLAT)_LDFLAGS)
 DEFS = $($(PLAT)_DEFS) -DGIT_VERSION=\"$(GIT_VERSION)\"
+INCLUDE_FLAGS = $($(PLAT)_INCLUDE_FLAGS)
+CSTD = $($(PLAT)_CSTD)
+RUN_PREFIX = $($(PLAT)_RUN_PREFIX)
+DEPS = $($(PLAT)_DEPS)
+PLAT_DEPS_CMD = $($(PLAT)_DEPS_CMD)
+BUILD_READY = $($(PLAT)_BUILD_READY)
 
 GLEW_LIB = $($(PLAT)_GLEW_LIB)
 SDL2_LIB = $($(PLAT)_SDL2_LIB)
@@ -144,6 +250,34 @@ PYTHON_LDFLAGS = $($(PLAT)_PYTHON_LDFLAGS)
 PYTHON_TARGET = $($(PLAT)_PYTHON_TARGET)
 GLEW_OPTS = $($(PLAT)_GLEW_OPTS)
 OPENAL_OPTS = $($(PLAT)_OPENAL_OPTS)
+
+BACKEND_OPENGL_DEF = 0
+BACKEND_METAL_DEF = 0
+BACKEND_PLAT_LDFLAGS =
+
+ifeq ($(RENDER_BACKEND),OPENGL)
+BACKEND_OPENGL_DEF = 1
+ifeq ($(PLAT),MACOS_X86_64)
+BACKEND_PLAT_LDFLAGS = -framework OpenGL
+endif
+ifeq ($(PLAT),MACOS_ARM64)
+BACKEND_PLAT_LDFLAGS = -framework OpenGL
+endif
+endif
+
+ifeq ($(RENDER_BACKEND),METAL)
+BACKEND_METAL_DEF = 1
+ifeq ($(PLAT),MACOS_X86_64)
+BACKEND_PLAT_LDFLAGS = -framework Metal -framework QuartzCore -framework Foundation -Wl,-dead_strip
+endif
+ifeq ($(PLAT),MACOS_ARM64)
+BACKEND_PLAT_LDFLAGS = -framework Metal -framework QuartzCore -framework Foundation -Wl,-dead_strip
+endif
+endif
+
+DEFS += \
+	-DPF_RENDER_BACKEND_OPENGL=$(BACKEND_OPENGL_DEF) \
+	-DPF_RENDER_BACKEND_METAL=$(BACKEND_METAL_DEF)
 
 MIMALLOC_DEBUG_OPTS = -DCMAKE_BUILD_TYPE=Debug
 MIMALLOC_RELEASE_OPTS = -DCMAKE_BUILD_TYPE=Release
@@ -176,12 +310,8 @@ LTO_LDFLAGS = -flto
 endif
 
 CFLAGS = \
-	-I$(GLEW_SRC)/include \
-	-I$(SDL2_SRC)/include \
-	-I$(PYTHON_SRC)/Include \
-	-I$(OPENAL_SRC)/include \
-	-I$(MIMALLOC_SRC)/include \
-	-std=c99 \
+	$(INCLUDE_FLAGS) \
+	-std=$(CSTD) \
 	-O3 \
 	-fno-strict-aliasing \
 	-fwrapv \
@@ -198,29 +328,32 @@ LDFLAGS = \
 	$(ASAN_LDFLAGS) \
 	$(TSAN_LDFLAGS) \
 	$(LTO_LDFLAGS) \
+	$(BACKEND_PLAT_LDFLAGS) \
 	$(PLAT_LDFLAGS)
 
-DEPS = \
-	./lib/$(GLEW_LIB) \
-	./lib/$(SDL2_LIB) \
-	./lib/$(PYTHON_LIB) \
-	./lib/$(OPENAL_LIB) \
-	./lib/$(MIMALLOC_LIB)
-
-ifeq ($(PLAT),WINDOWS)
-DEPS += ./lib/mimalloc-redirect.dll
-endif
+OBJCFLAGS = \
+	$(INCLUDE_FLAGS) \
+	-x objective-c \
+	-fno-strict-aliasing \
+	-fwrapv \
+	-fobjc-arc \
+	$(WARNING_FLAGS) \
+	$(LTO_CFLAGS) \
+	$(EXTRA_FLAGS)
 
 # ------------------------------------------------------------------------------
 # Targets
 # ------------------------------------------------------------------------------
 
+ifneq ($(strip $(GLEW_LIB)),)
 ./lib/$(GLEW_LIB):
 	mkdir -p ./lib
 	make -C $(GLEW_SRC) extensions 
 	make -C $(GLEW_SRC) $(GLEW_OPTS) glew.lib.shared
 	cp $(GLEW_SRC)/lib/$(GLEW_LIB) $@
+endif
 
+ifneq ($(strip $(SDL2_LIB)),)
 ./lib/$(SDL2_LIB):
 	mkdir -p ./lib
 	mkdir -p $(SDL2_SRC)/build
@@ -228,7 +361,9 @@ endif
 		&& ../configure $(SDL2_CONFIG) \
 		&& make
 	cp $(SDL2_SRC)/build/build/.libs/$(SDL2_LIB) $@
+endif
 
+ifneq ($(strip $(PYTHON_LIB)),)
 ./lib/$(PYTHON_LIB):
 	mkdir -p $(PYTHON_SRC)/build
 	cd $(PYTHON_SRC)/build \
@@ -242,7 +377,9 @@ endif
 	&& cp ./pyconfig.h ../Include/. \
 	&& make $(PYTHON_TARGET) CFLAGS=$(PYTHON_DEFS) LDFLAGS=$(PYTHON_LDFLAGS)
 	cp $(PYTHON_SRC)/build/$(PYTHON_TARGET) $@
+endif
 
+ifneq ($(strip $(OPENAL_LIB)),)
 ./lib/$(OPENAL_LIB):
 	mkdir -p $(OPENAL_SRC)/build
 ifeq ($(OS),Windows_NT)
@@ -255,7 +392,9 @@ endif
 		-DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
 		&& make 
 	cp $(OPENAL_SRC)/build/$(OPENAL_LIB) $@
+endif
 
+ifneq ($(strip $(MIMALLOC_LIB)),)
 ./lib/$(MIMALLOC_LIB):
 	mkdir -p $(MIMALLOC_SRC)/build
 	cd $(MIMALLOC_SRC)/build \
@@ -263,26 +402,45 @@ endif
 		&& cmake .. $(MIMALLOC_OPTS) \
 		&& make
 	cp $(MIMALLOC_SRC)/build/$(MIMALLOC_LIB) $@
+endif
 
 ./lib/mimalloc-redirect.dll: ./lib/$(MIMALLOC_LIB)
 	cp $(MIMALLOC_SRC)/bin/$(notdir $@) $@
 
 deps: $(DEPS)
+ifneq ($(strip $(PLAT_DEPS_CMD)),)
+	@$(PLAT_DEPS_CMD)
+endif
 
-$(PF_SRC_OBJS): ./obj/%.o: ./src/%.c
+guard_build_ready:
+ifeq ($(BUILD_READY),0)
+	@printf "%s\n" "$(PLAT) $(RENDER_BACKEND) build support is planned but not implemented yet. See ./macos_port_plan.md for the current status."
+	@false
+endif
+
+$(BACKEND_STAMP):
+	@mkdir -p $(OBJ_DIR)
+	@touch $@
+
+$(PF_SRC_OBJS): $(OBJ_DIR)/%.o: ./src/%.c $(BACKEND_STAMP)
 	@mkdir -p $(dir $@)
 	@printf "%-8s %s\n" "[CC]" $@
-	@$(CC) -MT $@ -MMD -MP -MF ./obj/$*.d $(CFLAGS) $(DEFS) -c $< -o $@
+	@$(CC) -MT $@ -MMD -MP -MF $(OBJ_DIR)/$*.d $(CFLAGS) $(DEFS) -c $< -o $@
 
-$(PF_ASM_OBJS): ./obj/%.o: ./src/%.S
+$(PF_ASM_OBJS): $(OBJ_DIR)/%.o: ./src/%.S $(BACKEND_STAMP)
 	@mkdir -p $(dir $@)
 	@printf "%-8s %s\n" "[AS]" $@
 	@$(CC) $(CFLAGS) $(DEFS) -c $< -o $@
 
-$(BIN): $(PF_OBJS)
+$(PF_OBJC_OBJS): $(OBJ_DIR)/%.o: ./src/%.m $(BACKEND_STAMP)
+	@mkdir -p $(dir $@)
+	@printf "%-8s %s\n" "[OBJC]" $@
+	@$(CC) -MT $@ -MMD -MP -MF $(OBJ_DIR)/$*.d $(OBJCFLAGS) $(DEFS) -c $< -o $@
+
+$(BIN): .FORCE $(DEPS) $(PF_OBJS)
 	@mkdir -p ./bin
 	@printf "%-8s %s\n" "[LD]" $@
-	@$(CC) $^ -o $(BIN) $(LDFLAGS)
+	@$(CC) $(filter-out .FORCE,$^) -o $(BIN) $(LDFLAGS)
 ifeq ($(OS),Windows_NT)
 	@./deps/mimalloc/bin/minject.exe -f $@
 	@mv ./lib/pf-mi.exe $@
@@ -293,9 +451,9 @@ endif
 
 -include $(PF_DEPS)
 
-.PHONY: pf clean run run_editor clean_deps launchers .FORCE
+.PHONY: deps guard_build_ready pf clean run run_hfmp run_editor editor_app run_editor_app clean_deps launchers .FORCE
 
-pf: $(BIN)
+pf: guard_build_ready $(BIN)
 
 clean_deps:
 	cd deps/GLEW && git clean -f -d
@@ -312,11 +470,39 @@ clean_deps:
 clean:
 	rm -rf $(PF_OBJS) $(PF_DEPS) $(BIN) 
 
-run:
-	@$(BIN) ./ ./scripts/rts/main.py
+run: pf
+ifneq ($(PLAT),MACOS_ARM64)
+	@$(RUN_PREFIX) $(BIN) ./ ./scripts/rts/main.py
+else
+	@$(RUN_PREFIX) $(BIN) ./ ./scripts/rts/main.py
+endif
+
+run_hfmp: pf
+	@$(RUN_PREFIX) $(BIN) ./ ./scripts/hfmp_s2/main.py
 
 run_editor:
+ifeq ($(PLAT),MACOS_X86_64)
+	@printf "%s\n" "run_editor is not supported on macOS during the current bring-up phase."
+	@false
+else
 	@$(BIN) ./ ./scripts/editor/main.py
+endif
+
+editor_app:
+ifeq ($(PLAT),MACOS_ARM64)
+	@scripts/macos/build_editor_app_bundle.sh --backend $(RENDER_BACKEND)
+else
+	@printf "%s\n" "editor_app is only supported for PLAT=MACOS_ARM64."
+	@false
+endif
+
+run_editor_app:
+ifeq ($(PLAT),MACOS_ARM64)
+	@scripts/macos/build_editor_app_bundle.sh --backend $(RENDER_BACKEND) --launch
+else
+	@printf "%s\n" "run_editor_app is only supported for PLAT=MACOS_ARM64."
+	@false
+endif
 
 launchers:
 ifeq ($(PLAT),WINDOWS)
@@ -326,4 +512,3 @@ else
 	make -C launcher BIN_PATH=$(BIN) SCRIPT_PATH="./scripts/rts/main.py" BIN="../demo" launcher
 	make -C launcher BIN_PATH=$(BIN) SCRIPT_PATH="./scripts/editor/main.py" BIN="../editor" launcher
 endif
-

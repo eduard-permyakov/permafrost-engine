@@ -1048,7 +1048,7 @@ static void render_formation_orientation(void)
     vec3_t red = (vec3_t){230.0f / 255.0f, 64.0f / 255.0f, 85.0f / 255.0f};
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_DrawLine,
+        .func = R_Cmd_DrawLine,
         .nargs = 4,
         .args = {
             R_PushArg(endpoints, sizeof(endpoints)),
@@ -3123,7 +3123,7 @@ static void move_complete_gpu_velocity_work(void)
     size_t attr_buffsize = nwork * sizeof(vec2_t);
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_MoveReadNewVelocities,
+        .func = R_Cmd_MoveReadNewVelocities,
         .nargs = 3,
         .args = {
             [0] = s_move_work.gpu_velocities,
@@ -3133,12 +3133,12 @@ static void move_complete_gpu_velocity_work(void)
     });
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_MoveInvalidateData,
+        .func = R_Cmd_MoveInvalidateData,
         .nargs = 0
     });
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_PositionsInvalidateData,
+        .func = R_Cmd_PositionsInvalidateData,
         .nargs = 0
     });
 }
@@ -3466,7 +3466,7 @@ static void move_upload_input(size_t nents)
     /* Upload everything.
      */
     R_PushCmd((struct rcmd){
-        .func = R_GL_MoveUploadData,
+        .func = R_Cmd_MoveUploadData,
         .nargs = 10,
         .args = {
             gpuid_buff,
@@ -3495,7 +3495,7 @@ static void move_update_uniforms(void)
     int nwork = s_move_work.nwork;
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_MoveUpdateUniforms,
+        .func = R_Cmd_MoveUpdateUniforms,
         .nargs = 4,
         .args = {
             R_PushArg(&res, sizeof(res)),
@@ -3520,7 +3520,7 @@ static void move_submit_gpu_velocity_work(void)
     move_update_uniforms();
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_MoveDispatchWork,
+        .func = R_Cmd_MoveDispatchWork,
         .nargs = 1,
         .args = R_PushArg(&s_move_work.nwork, sizeof(s_move_work.nwork))
     });
@@ -3745,7 +3745,7 @@ static void await_gpu_completion(uint32_t timeout_ms)
 
         Task_RescheduleOnMain();
         R_PushCmd((struct rcmd){
-            .func = R_GL_MovePollCompletion,
+            .func = R_Cmd_MovePollCompletion,
             .nargs = 1,
             .args = {
                 [0] = &s_move_work.gpu_velocities_ready
@@ -4091,7 +4091,7 @@ void G_Move_AddEntity(uint32_t uid, vec3_t pos, float sel_radius, int faction_id
         },
         .args[3] = (struct attr){
             .type = TYPE_INT,
-            .val.as_float = faction_id
+            .val.as_int = faction_id
         }
     });
 }
@@ -4852,4 +4852,3 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
 
     return true;
 }
-

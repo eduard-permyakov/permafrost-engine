@@ -1,6 +1,6 @@
-/* 
- *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2023 Eduard Permyakov 
+/*
+ *  This file is part of Permafrost Engine.
+ *  Copyright (C) 2017-2023 Eduard Permyakov
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -11,57 +11,25 @@
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
- * 
- *  Linking this software statically or dynamically with other modules is making 
- *  a combined work based on this software. Thus, the terms and conditions of 
- *  the GNU General Public License cover the whole combination. 
- *  
- *  As a special exception, the copyright holders of Permafrost Engine give 
- *  you permission to link Permafrost Engine with independent modules to produce 
- *  an executable, regardless of the license terms of these independent 
- *  modules, and to copy and distribute the resulting executable under 
- *  terms of your choice, provided that you also meet, for each linked 
- *  independent module, the terms and conditions of the license of that 
- *  module. An independent module is a module which is not derived from 
- *  or based on Permafrost Engine. If you modify Permafrost Engine, you may 
- *  extend this exception to your version of Permafrost Engine, but you are not 
- *  obliged to do so. If you do not wish to do so, delete this exception 
- *  statement from your version.
- *
  */
 
-#include "public/render.h"
 #include "public/render_ctrl.h"
-#include "gl_shader.h"
-#include "gl_texture.h"
-#include "gl_render.h"
-#include "gl_assert.h"
-#include "gl_state.h"
-#include "gl_batch.h"
-#include "gl_anim.h"
-#include "gl_swapchain.h"
-#include "render_private.h"
+#include "public/render.h"
+#include "backend_local.h"
 #include "../settings.h"
 #include "../main.h"
-#include "../ui.h"
 #include "../game/public/game.h"
-#include "../lib/public/windows.h"
 
 #include <assert.h>
 #include <math.h>
-#include <setjmp.h>
-
-#include <SDL.h>
-#include <GL/glew.h>
-#include <SDL_opengl.h>
-#include <mimalloc-stats.h>
+#include <stdio.h>
+#include <string.h>
 
 
-#define EPSILON     (1.0f/1024)
-#define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
+#define EPSILON     (1.0f / 1024)
+
+struct render_private;
+struct vertex;
 
 /*****************************************************************************/
 /* GLOBAL VARIABLES                                                          */
@@ -69,22 +37,592 @@
 
 bool g_trace_gpu;
 
-/*****************************************************************************/
-/* STATIC VARIABLES                                                          */
-/*****************************************************************************/
+void R_Cmd_Init(struct render_private *priv, const char *shader,
+               const struct vertex *vbuff)
+{
+    (void)priv;
+    (void)shader;
+    (void)vbuff;
+    assert(!"R_Cmd_Init is a render command identity");
+}
 
-static SDL_GLContext             s_context;
-static SDL_Window               *s_window;
-static struct render_sync_state *s_rstate; 
+void R_Cmd_Draw(const void *render_private, mat4x4_t *model,
+               const bool *translucent)
+{
+    (void)render_private;
+    (void)model;
+    (void)translucent;
+    assert(!"R_Cmd_Draw is a render command identity");
+}
 
-static jmp_buf                   s_jmpbuf; 
-static intptr_t                  s_jmpbuf2[5];
+void R_Cmd_BeginFrame(void)
+{
+    assert(!"R_Cmd_BeginFrame is a render command identity");
+}
 
-/* write-once strings. Set by render thread at initialization */
-char                 s_info_vendor[128];
-char                 s_info_renderer[128];
-char                 s_info_version[128];
-char                 s_info_sl_version[128];
+void R_Cmd_EndFrame(void)
+{
+    assert(!"R_Cmd_EndFrame is a render command identity");
+}
+
+void R_Cmd_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
+{
+    (void)view;
+    (void)pos;
+    assert(!"R_Cmd_SetViewMatAndPos is a render command identity");
+}
+
+void R_Cmd_SetProj(const mat4x4_t *proj)
+{
+    (void)proj;
+    assert(!"R_Cmd_SetProj is a render command identity");
+}
+
+void R_Cmd_SetAmbientLightColor(const vec3_t *color)
+{
+    (void)color;
+    assert(!"R_Cmd_SetAmbientLightColor is a render command identity");
+}
+
+void R_Cmd_SetLightEmitColor(const vec3_t *color)
+{
+    (void)color;
+    assert(!"R_Cmd_SetLightEmitColor is a render command identity");
+}
+
+void R_Cmd_SetLightPos(const vec3_t *pos)
+{
+    (void)pos;
+    assert(!"R_Cmd_SetLightPos is a render command identity");
+}
+
+void R_Cmd_SetScreenspaceDrawMode(void)
+{
+    assert(!"R_Cmd_SetScreenspaceDrawMode is a render command identity");
+}
+
+void R_Cmd_DrawBox2D(const vec2_t *screen_pos, const vec2_t *signed_size,
+                    const vec3_t *color, const float *width)
+{
+    (void)screen_pos;
+    (void)signed_size;
+    (void)color;
+    (void)width;
+    assert(!"R_Cmd_DrawBox2D is a render command identity");
+}
+
+void R_Cmd_DrawLine(vec2_t endpoints[], const float *width, const vec3_t *color,
+                   const struct map *map)
+{
+    (void)endpoints;
+    (void)width;
+    (void)color;
+    (void)map;
+    assert(!"R_Cmd_DrawLine is a render command identity");
+}
+
+void R_Cmd_DrawQuad(vec2_t corners[], const float *width, const vec3_t *color,
+                   const struct map *map)
+{
+    (void)corners;
+    (void)width;
+    (void)color;
+    (void)map;
+    assert(!"R_Cmd_DrawQuad is a render command identity");
+}
+
+void R_Cmd_DrawOrigin(const void *render_private, mat4x4_t *model)
+{
+    (void)render_private;
+    (void)model;
+    assert(!"R_Cmd_DrawOrigin is a render command identity");
+}
+
+void R_Cmd_DrawRay(const vec3_t *origin, const vec3_t *dir, mat4x4_t *model,
+                  const vec3_t *color, const float *t)
+{
+    (void)origin;
+    (void)dir;
+    (void)model;
+    (void)color;
+    (void)t;
+    assert(!"R_Cmd_DrawRay is a render command identity");
+}
+
+void R_Cmd_DrawOBB(const struct aabb *aabb, const mat4x4_t *model)
+{
+    (void)aabb;
+    (void)model;
+    assert(!"R_Cmd_DrawOBB is a render command identity");
+}
+
+void R_Cmd_DrawSelectionCircle(const vec2_t *xz, const float *radius,
+                              const float *width, const vec3_t *color,
+                              const struct map *map)
+{
+    (void)xz;
+    (void)radius;
+    (void)width;
+    (void)color;
+    (void)map;
+    assert(!"R_Cmd_DrawSelectionCircle is a render command identity");
+}
+
+void R_Cmd_DrawSelectionRectangle(const struct obb *box, const float *width,
+                                 const vec3_t *color, const struct map *map)
+{
+    (void)box;
+    (void)width;
+    (void)color;
+    (void)map;
+    assert(!"R_Cmd_DrawSelectionRectangle is a render command identity");
+}
+
+void R_Cmd_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors,
+                              const size_t *count, mat4x4_t *model,
+                              bool *on_water_surface, const struct map *map)
+{
+    (void)xz_corners;
+    (void)colors;
+    (void)count;
+    (void)model;
+    (void)on_water_surface;
+    (void)map;
+    assert(!"R_Cmd_DrawMapOverlayQuads is a render command identity");
+}
+
+void R_Cmd_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions,
+                        const size_t *count, mat4x4_t *model,
+                        const struct map *map)
+{
+    (void)xz_positions;
+    (void)xz_directions;
+    (void)count;
+    (void)model;
+    (void)map;
+    assert(!"R_Cmd_DrawFlowField is a render command identity");
+}
+
+void R_Cmd_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays,
+                           vec2_t *right_rays, const size_t *num_vos,
+                           const struct map *map)
+{
+    (void)apexes;
+    (void)left_rays;
+    (void)right_rays;
+    (void)num_vos;
+    (void)map;
+    assert(!"R_Cmd_DrawCombinedHRVO is a render command identity");
+}
+
+void R_Cmd_DrawLoadingScreen(const char *path)
+{
+    (void)path;
+    assert(!"R_Cmd_DrawLoadingScreen is a render command identity");
+}
+
+void R_Cmd_DrawHealthbars(const size_t *num_ents, GLfloat *ent_health_pc,
+                         vec3_t *ent_top_pos_ws, int *yoffsets,
+                         const struct camera *cam)
+{
+    (void)num_ents;
+    (void)ent_health_pc;
+    (void)ent_top_pos_ws;
+    (void)yoffsets;
+    (void)cam;
+    assert(!"R_Cmd_DrawHealthbars is a render command identity");
+}
+
+void R_Cmd_DrawSkeleton(mat4x4_t *model, const struct skeleton *skel,
+                       const struct camera *cam)
+{
+    (void)model;
+    (void)skel;
+    (void)cam;
+    assert(!"R_Cmd_DrawSkeleton is a render command identity");
+}
+
+void R_Cmd_DrawModelToTexture(const void *render_private, const struct obb *obb,
+                             struct ent_anim_rstate *anim_state,
+                             const char *key)
+{
+    (void)render_private;
+    (void)obb;
+    (void)anim_state;
+    (void)key;
+    assert(!"R_Cmd_DrawModelToTexture is a render command identity");
+}
+
+void R_Cmd_DrawNormals(const void *render_private, mat4x4_t *model,
+                      const bool *anim)
+{
+    (void)render_private;
+    (void)model;
+    (void)anim;
+    assert(!"R_Cmd_DrawNormals is a render command identity");
+}
+
+void R_Cmd_DepthPassBegin(const vec3_t *light_pos, const vec3_t *cam_pos,
+                         const vec3_t *cam_dir)
+{
+    (void)light_pos;
+    (void)cam_pos;
+    (void)cam_dir;
+    assert(!"R_Cmd_DepthPassBegin is a render command identity");
+}
+
+void R_Cmd_DepthPassEnd(void)
+{
+    assert(!"R_Cmd_DepthPassEnd is a render command identity");
+}
+
+void R_Cmd_RenderDepthMap(const void *render_private, mat4x4_t *model)
+{
+    (void)render_private;
+    (void)model;
+    assert(!"R_Cmd_RenderDepthMap is a render command identity");
+}
+
+void R_Cmd_SetShadowsEnabled(const bool *on)
+{
+    (void)on;
+    assert(!"R_Cmd_SetShadowsEnabled is a render command identity");
+}
+
+void R_Cmd_Batch_RenderDepthMap(struct render_input *in)
+{
+    (void)in;
+    assert(!"R_Cmd_Batch_RenderDepthMap is a render command identity");
+}
+
+void R_Cmd_Batch_Draw(struct render_input *in)
+{
+    (void)in;
+    assert(!"R_Cmd_Batch_Draw is a render command identity");
+}
+
+void R_Cmd_Batch_DrawWithID(struct render_input *in, enum batch_id *id)
+{
+    (void)in;
+    (void)id;
+    assert(!"R_Cmd_Batch_DrawWithID is a render command identity");
+}
+
+void R_Cmd_Batch_Reset(void)
+{
+    assert(!"R_Cmd_Batch_Reset is a render command identity");
+}
+
+void R_Cmd_Batch_AllocChunks(struct map_resolution *res)
+{
+    (void)res;
+    assert(!"R_Cmd_Batch_AllocChunks is a render command identity");
+}
+
+void R_Cmd_AnimAppendData(GLfloat *data, size_t *size)
+{
+    (void)data;
+    (void)size;
+    assert(!"R_Cmd_AnimAppendData is a render command identity");
+}
+
+void R_Cmd_AnimSetUniforms(mat4x4_t *normal_mat,
+                          struct anim_pose_data_desc *desc,
+                          const uint32_t *uid)
+{
+    (void)normal_mat;
+    (void)desc;
+    (void)uid;
+    assert(!"R_Cmd_AnimSetUniforms is a render command identity");
+}
+
+void R_Cmd_SpriteRenderBatch(struct sprite_desc *sprites, size_t *nsprites,
+                            const struct camera *cam)
+{
+    (void)sprites;
+    (void)nsprites;
+    (void)cam;
+    assert(!"R_Cmd_SpriteRenderBatch is a render command identity");
+}
+
+void R_Cmd_MapInit(const char map_texfiles[][256], const size_t *num_textures,
+                  const struct map_resolution *res)
+{
+    (void)map_texfiles;
+    (void)num_textures;
+    (void)res;
+    assert(!"R_Cmd_MapInit is a render command identity");
+}
+
+void R_Cmd_MapShutdown(void)
+{
+    assert(!"R_Cmd_MapShutdown is a render command identity");
+}
+
+void R_Cmd_MapBegin(const bool *shadows, const vec2_t *pos,
+                   size_t *num_splats, const struct splatmap *splatmap,
+                   const struct map_resolution *res, const struct map *map)
+{
+    (void)shadows;
+    (void)pos;
+    (void)num_splats;
+    (void)splatmap;
+    (void)res;
+    (void)map;
+    assert(!"R_Cmd_MapBegin is a render command identity");
+}
+
+void R_Cmd_MapEnd(void)
+{
+    assert(!"R_Cmd_MapEnd is a render command identity");
+}
+
+void R_Cmd_MapUpdateFog(void *buff, const size_t *size)
+{
+    (void)buff;
+    (void)size;
+    assert(!"R_Cmd_MapUpdateFog is a render command identity");
+}
+
+void R_Cmd_MapInvalidate(void)
+{
+    assert(!"R_Cmd_MapInvalidate is a render command identity");
+}
+
+void R_Cmd_Texture_GetOrLoad(const char *basedir, const char *name, GLuint *out)
+{
+    (void)basedir;
+    (void)name;
+    (void)out;
+    assert(!"R_Cmd_Texture_GetOrLoad is a render command identity");
+}
+
+void R_Cmd_PositionsUploadData(vec3_t *posbuff, uint32_t *idbuff,
+                              const size_t *nents, const struct map *map)
+{
+    (void)posbuff;
+    (void)idbuff;
+    (void)nents;
+    (void)map;
+    assert(!"R_Cmd_PositionsUploadData is a render command identity");
+}
+
+void R_Cmd_PositionsInvalidateData(void)
+{
+    assert(!"R_Cmd_PositionsInvalidateData is a render command identity");
+}
+
+void R_Cmd_MoveUpdateUniforms(const struct map_resolution *res, vec2_t *map_pos,
+                             int *ticks_hz, int *nwork)
+{
+    (void)res;
+    (void)map_pos;
+    (void)ticks_hz;
+    (void)nwork;
+    assert(!"R_Cmd_MoveUpdateUniforms is a render command identity");
+}
+
+void R_Cmd_MoveUploadData(void *gpuid_buff, size_t *ndynamic_ents,
+                         void *attr_buff, size_t *attr_buffsize,
+                         void *flock_buff, size_t *flock_buffsize,
+                         void *cost_base_buff, size_t *cost_base_size,
+                         void *blockers_buff, size_t *blockers_size)
+{
+    (void)gpuid_buff;
+    (void)ndynamic_ents;
+    (void)attr_buff;
+    (void)attr_buffsize;
+    (void)flock_buff;
+    (void)flock_buffsize;
+    (void)cost_base_buff;
+    (void)cost_base_size;
+    (void)blockers_buff;
+    (void)blockers_size;
+    assert(!"R_Cmd_MoveUploadData is a render command identity");
+}
+
+void R_Cmd_MoveInvalidateData(void)
+{
+    assert(!"R_Cmd_MoveInvalidateData is a render command identity");
+}
+
+void R_Cmd_MoveDispatchWork(const size_t *nents)
+{
+    (void)nents;
+    assert(!"R_Cmd_MoveDispatchWork is a render command identity");
+}
+
+void R_Cmd_MoveReadNewVelocities(void *out, const size_t *nwork,
+                                const size_t *maxout)
+{
+    (void)out;
+    (void)nwork;
+    (void)maxout;
+    assert(!"R_Cmd_MoveReadNewVelocities is a render command identity");
+}
+
+void R_Cmd_MovePollCompletion(SDL_atomic_t *out)
+{
+    (void)out;
+    assert(!"R_Cmd_MovePollCompletion is a render command identity");
+}
+
+void R_Cmd_MoveClearState(void)
+{
+    assert(!"R_Cmd_MoveClearState is a render command identity");
+}
+
+void R_Cmd_WaterInit(void)
+{
+    assert(!"R_Cmd_WaterInit is a render command identity");
+}
+
+void R_Cmd_WaterShutdown(void)
+{
+    assert(!"R_Cmd_WaterShutdown is a render command identity");
+}
+
+void R_Cmd_DrawWater(const struct render_input *in, const bool *refraction,
+                    const bool *reflection)
+{
+    (void)in;
+    (void)refraction;
+    (void)reflection;
+    assert(!"R_Cmd_DrawWater is a render command identity");
+}
+
+void R_Cmd_TileDrawSelected(const struct tile_desc *in,
+                           const void *chunk_rprivate, mat4x4_t *model,
+                           const int *tiles_per_chunk_x,
+                           const int *tiles_per_chunk_z)
+{
+    (void)in;
+    (void)chunk_rprivate;
+    (void)model;
+    (void)tiles_per_chunk_x;
+    (void)tiles_per_chunk_z;
+    assert(!"R_Cmd_TileDrawSelected is a render command identity");
+}
+
+void R_Cmd_TileUpdate(void *chunk_rprivate, const struct map *map,
+                     const struct tile_desc *desc)
+{
+    (void)chunk_rprivate;
+    (void)map;
+    (void)desc;
+    assert(!"R_Cmd_TileUpdate is a render command identity");
+}
+
+void R_Cmd_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map,
+                              const struct tile_desc *tile)
+{
+    (void)chunk_rprivate;
+    (void)map;
+    (void)tile;
+    assert(!"R_Cmd_TilePatchVertsBlend is a render command identity");
+}
+
+void R_Cmd_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map,
+                               const struct tile_desc *tile)
+{
+    (void)chunk_rprivate;
+    (void)map;
+    (void)tile;
+    assert(!"R_Cmd_TilePatchVertsSmooth is a render command identity");
+}
+
+void R_Cmd_MinimapBake(const struct map *map, void **chunk_rprivates,
+                      mat4x4_t *chunk_model_mats)
+{
+    (void)map;
+    (void)chunk_rprivates;
+    (void)chunk_model_mats;
+    assert(!"R_Cmd_MinimapBake is a render command identity");
+}
+
+void R_Cmd_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate,
+                             mat4x4_t *chunk_model, const int *chunk_r,
+                             const int *chunk_c)
+{
+    (void)map;
+    (void)chunk_rprivate;
+    (void)chunk_model;
+    (void)chunk_r;
+    (void)chunk_c;
+    assert(!"R_Cmd_MinimapUpdateChunk is a render command identity");
+}
+
+void R_Cmd_MinimapRender(const struct map *map, const struct camera *cam,
+                        vec2_t *center_pos, const int *side_len_px,
+                        vec4_t *border_clr)
+{
+    (void)map;
+    (void)cam;
+    (void)center_pos;
+    (void)side_len_px;
+    (void)border_clr;
+    assert(!"R_Cmd_MinimapRender is a render command identity");
+}
+
+void R_Cmd_MinimapRenderUnits(const struct map *map, vec2_t *center_pos,
+                             const int *side_len_px, size_t *nunits,
+                             vec2_t *posbuff, vec3_t *colorbuff)
+{
+    (void)map;
+    (void)center_pos;
+    (void)side_len_px;
+    (void)nunits;
+    (void)posbuff;
+    (void)colorbuff;
+    assert(!"R_Cmd_MinimapRenderUnits is a render command identity");
+}
+
+void R_Cmd_MinimapFree(void)
+{
+    assert(!"R_Cmd_MinimapFree is a render command identity");
+}
+
+void R_Cmd_UI_Init(void)
+{
+    assert(!"R_Cmd_UI_Init is a render command identity");
+}
+
+void R_Cmd_UI_Shutdown(void)
+{
+    assert(!"R_Cmd_UI_Shutdown is a render command identity");
+}
+
+void R_Cmd_UI_Render(const struct nk_draw_list *dl)
+{
+    (void)dl;
+    assert(!"R_Cmd_UI_Render is a render command identity");
+}
+
+void R_Cmd_UI_UploadFontAtlas(void *image, const int *w, const int *h)
+{
+    (void)image;
+    (void)w;
+    (void)h;
+    assert(!"R_Cmd_UI_UploadFontAtlas is a render command identity");
+}
+
+void R_Cmd_SkyboxLoad(const char *dir, const char *extension)
+{
+    (void)dir;
+    (void)extension;
+    assert(!"R_Cmd_SkyboxLoad is a render command identity");
+}
+
+void R_Cmd_DrawSkybox(const struct camera *cam)
+{
+    (void)cam;
+    assert(!"R_Cmd_DrawSkybox is a render command identity");
+}
+
+void R_Cmd_SkyboxFree(void)
+{
+    assert(!"R_Cmd_SkyboxFree is a render command identity");
+}
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -108,24 +646,20 @@ static void ar_commit(const struct sval *new_val)
         return;
 
     assert(status == SS_OKAY);
-    float curr_ratio = res.as_vec2.x/res.as_vec2.y;
-    float new_ratio = new_val->as_vec2.x/new_val->as_vec2.y;
+    float curr_ratio = res.as_vec2.x / res.as_vec2.y;
+    float new_ratio = new_val->as_vec2.x / new_val->as_vec2.y;
     if(fabs(new_ratio - curr_ratio) < EPSILON)
         return;
 
-    /* Here, we choose to always decrease a dimension rather than 
-     * increase one so the window continues to fit on the screen */
     struct sval new_res = {.type = ST_TYPE_VEC2};
     if(new_ratio > curr_ratio) {
-
         new_res.as_vec2 = (vec2_t){
             .x = res.as_vec2.x,
-            .y = res.as_vec2.y / (new_ratio/curr_ratio)
+            .y = res.as_vec2.y / (new_ratio / curr_ratio)
         };
     }else{
-    
         new_res.as_vec2 = (vec2_t){
-            .x = res.as_vec2.x / (curr_ratio/new_ratio),
+            .x = res.as_vec2.x / (curr_ratio / new_ratio),
             .y = res.as_vec2.y
         };
     }
@@ -142,7 +676,6 @@ static bool res_validate(const struct sval *new_val)
     struct sval ar;
     ss_e status = Settings_Get("pf.video.aspect_ratio", &ar);
     if(status != SS_NO_SETTING) {
-
         assert(status == SS_OKAY);
         float set_ar = ar.as_vec2.x / ar.as_vec2.y;
         if(fabs(new_val->as_vec2.x / new_val->as_vec2.y - set_ar) > EPSILON)
@@ -150,7 +683,6 @@ static bool res_validate(const struct sval *new_val)
     }
 
     const int DIM_MIN = 360, DIM_MAX = 5120;
-
     return (new_val->as_vec2.x >= DIM_MIN && new_val->as_vec2.x <= DIM_MAX)
         && (new_val->as_vec2.y >= DIM_MIN && new_val->as_vec2.y <= DIM_MAX);
 }
@@ -162,6 +694,10 @@ static void res_commit(const struct sval *new_val)
 
     int width, height;
     Engine_WinDrawableSize(&width, &height);
+
+#if PF_RENDER_BACKEND_OPENGL
+    extern void R_GL_SetViewport(int *x, int *y, int *w, int *h);
+    extern void R_GL_SwapchainSetRes(int *x, int *y);
 
     int viewport[4] = {0, 0, width, height};
     R_PushCmd((struct rcmd){
@@ -182,6 +718,7 @@ static void res_commit(const struct sval *new_val)
             R_PushArg(&viewport[3], sizeof(viewport[3]))
         }
     });
+#endif
 }
 
 static bool dm_validate(const struct sval *new_val)
@@ -202,400 +739,39 @@ static void dm_commit(const struct sval *new_val)
 
 static bool bool_val_validate(const struct sval *new_val)
 {
-    return (new_val->type == ST_TYPE_BOOL);
-}
-
-static void render_set_swap(const bool *on)
-{
-    SDL_GL_SetSwapInterval(*on);
+    return new_val->type == ST_TYPE_BOOL;
 }
 
 static void vsync_commit(const struct sval *new_val)
 {
     R_PushCmd((struct rcmd){
-        .func = render_set_swap,
+        .func = R_Backend_CommandSetSwapInterval,
         .nargs = 1,
-        .args = { R_PushArg(&new_val->as_bool, sizeof(bool)) }
+        .args = {R_PushArg(&new_val->as_bool, sizeof(bool))},
     });
 }
 
 static bool int_val_validate(const struct sval *new_val)
 {
-    return (new_val->type == ST_TYPE_INT);
-}
-
-static void render_set_logmask(int *mask)
-{
-    if(!GLEW_KHR_debug)
-        return;
-
-    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, 
-        GL_DEBUG_SEVERITY_HIGH, 0, NULL, (*mask & 0x1) ? GL_TRUE : GL_FALSE);
-    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, 
-        GL_DEBUG_SEVERITY_MEDIUM, 0, NULL, (*mask & 0x2) ? GL_TRUE : GL_FALSE);
-    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, 
-        GL_DEBUG_SEVERITY_LOW, 0, NULL, (*mask & 0x4) ? GL_TRUE : GL_FALSE);
-    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, 
-        GL_DEBUG_SEVERITY_NOTIFICATION, 0, NULL, (*mask & 0x8) ? GL_TRUE : GL_FALSE);
+    return new_val->type == ST_TYPE_INT;
 }
 
 static void debug_logmask_commit(const struct sval *new_val)
 {
     R_PushCmd((struct rcmd){
-        .func = render_set_logmask,
+        .func = R_Backend_CommandSetDebugLogMask,
         .nargs = 1,
-        .args = { R_PushArg(&new_val->as_int, sizeof(int)) },
+        .args = {R_PushArg(&new_val->as_int, sizeof(int))},
     });
-}
-
-static void render_set_trace_gpu(const bool *on)
-{
-    g_trace_gpu = *on; 
 }
 
 static void trace_gpu_commit(const struct sval *new_val)
 {
     R_PushCmd((struct rcmd){
-        .func = render_set_trace_gpu,
+        .func = R_Backend_CommandSetTraceGPU,
         .nargs = 1,
-        .args = { R_PushArg(&new_val->as_bool, sizeof(bool)) }
+        .args = {R_PushArg(&new_val->as_bool, sizeof(bool))},
     });
-}
-
-static bool render_wait_cmd(struct render_sync_state *rstate)
-{
-    SDL_LockMutex(rstate->sq_lock);
-    while(!rstate->start && !rstate->quit)
-        SDL_CondWait(rstate->sq_cond, rstate->sq_lock);
-
-    if(rstate->quit) {
-
-        rstate->quit = false;
-        SDL_UnlockMutex(rstate->sq_lock);
-        return true;
-    }
-    
-    assert(rstate->start == true);
-    rstate->start = false;
-    SDL_UnlockMutex(rstate->sq_lock);
-    return false;
-}
-
-static void render_signal_done(struct render_sync_state *rstate, enum render_status status)
-{
-    SDL_LockMutex(rstate->done_lock);
-    rstate->status= status;
-    SDL_CondSignal(rstate->done_cond);
-    SDL_UnlockMutex(rstate->done_lock);
-}
-
-static const char *source_str(GLenum source)
-{
-    switch(source) {
-    case GL_DEBUG_SOURCE_API:             return "API";
-    case GL_DEBUG_SOURCE_WINDOW_SYSTEM:   return "Window System";
-    case GL_DEBUG_SOURCE_SHADER_COMPILER: return "Shader Compiler";
-    case GL_DEBUG_SOURCE_THIRD_PARTY:     return "Third Party";
-    case GL_DEBUG_SOURCE_APPLICATION:     return "Application";
-    case GL_DEBUG_SOURCE_OTHER:           return "Other";
-    default: assert(0); return NULL;
-    }
-}
-
-static const char *type_str(GLenum type)
-{
-    switch(type) {
-    case GL_DEBUG_TYPE_ERROR:               return "Error";
-    case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR: return "Depricated Behavior";
-    case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:  return "Undefined Behavior";
-    case GL_DEBUG_TYPE_PORTABILITY:         return "Portability";
-    case GL_DEBUG_TYPE_PERFORMANCE:         return "Performance";
-    case GL_DEBUG_TYPE_MARKER:              return "Marker";
-    case GL_DEBUG_TYPE_PUSH_GROUP:          return "Push Group";
-    case GL_DEBUG_TYPE_POP_GROUP:           return "Pop Group";
-    case GL_DEBUG_TYPE_OTHER:               return "Other";
-    default: assert(0); return NULL;
-    }
-}
-
-static const char *severity_str(GLenum severity)
-{
-    switch(severity) {
-    case GL_DEBUG_SEVERITY_HIGH:         return "High";
-    case GL_DEBUG_SEVERITY_MEDIUM:       return "Medium";
-    case GL_DEBUG_SEVERITY_LOW:          return "Low";
-    case GL_DEBUG_SEVERITY_NOTIFICATION: return "Notification";
-    default: assert(0); return NULL;
-    }
-}
-
-void debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity,
-                    GLsizei length, const GLchar *message, const void *user)
-{
-#ifdef _MSC_VER
-    char buff[512];
-    pf_snprintf(buff, sizeof(buff), " *** [%s][%s][%s] %s\n", source_str(source), type_str(type),
-        severity_str(severity), message);
-    OutputDebugString(buff);
-#else
-    fprintf(stderr, " *** [%s][%s][%s] %s\n", source_str(source), type_str(type), 
-        severity_str(severity), message);
-    fflush(stderr);
-#endif
-}
-
-static void render_init_ctx(struct render_init_arg *arg)
-{
-    SDL_GL_MakeCurrent(arg->in_window, s_context);
-
-    glewExperimental = GL_TRUE;
-    if(glewInit() != GLEW_OK) {
-        fprintf(stderr, "Failed to initialize GLEW\n");
-        arg->out_success = false;
-        return;
-    }
-
-    if(!GLEW_VERSION_3_3) {
-        fprintf(stderr, "Required OpenGL version not supported in GLEW\n");
-        arg->out_success = false;
-        return;
-    }
-
-    if(GLEW_KHR_debug) {
-        glEnable(GL_DEBUG_OUTPUT);
-        glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-        glDebugMessageCallback(debug_callback, NULL);
-    }
-
-    int vp[4] = {0 ,0, arg->in_width, arg->in_height};
-    R_GL_SetViewport(&vp[0], &vp[1], &vp[2], &vp[3]);
-    R_GL_GlobalConfig();
-
-    if(!R_GL_Shader_InitAll(g_basepath)
-    || !R_GL_Texture_Init()
-    || !R_GL_StateInit()
-    || !R_GL_Batch_Init()
-    || !R_GL_AnimInit()
-    || !R_GL_SwapchainInit()) {
-
-        arg->out_success = false;
-        return;
-    }
-
-    R_GL_InitShadows();
-
-    strncpy(s_info_vendor,     (const char*)glGetString(GL_VENDOR),   ARR_SIZE(s_info_vendor)-1);
-    strncpy(s_info_renderer,   (const char*)glGetString(GL_RENDERER), ARR_SIZE(s_info_renderer)-1);
-    strncpy(s_info_version,    (const char*)glGetString(GL_VERSION),  ARR_SIZE(s_info_version)-1);
-    strncpy(s_info_sl_version, (const char*)glGetString(GL_SHADING_LANGUAGE_VERSION), ARR_SIZE(s_info_sl_version)-1);
-
-    arg->out_success = true;
-}
-
-static void render_destroy_ctx(void)
-{
-    R_GL_SwapchainShutdown();
-    R_GL_AnimShutdown();
-    R_GL_Batch_Shutdown();
-    R_GL_StateShutdown();
-    R_GL_Texture_Shutdown();
-    SDL_GL_DeleteContext(s_context);
-}
-
-static void render_dispatch_cmd(struct rcmd cmd)
-{
-    switch(cmd.nargs) {
-    case 0:
-        ((void(*)(void)) cmd.func)();
-        break;
-    case 1:
-        ((void(*)(void*)) cmd.func)(
-            cmd.args[0]
-        );
-        break;
-    case 2:
-        ((void(*)(void*, void*)) cmd.func)(
-            cmd.args[0],
-            cmd.args[1]
-        );
-        break;
-    case 3:
-        ((void(*)(void*, void*, 
-                  void*)) cmd.func)(
-            cmd.args[0],
-            cmd.args[1],
-            cmd.args[2]
-        );
-        break;
-    case 4:
-        ((void(*)(void*, void*,
-                  void*, void*)) cmd.func)(
-            cmd.args[0],
-            cmd.args[1],
-            cmd.args[2],
-            cmd.args[3]
-        );
-        break;
-    case 5:
-        ((void(*)(void*, void*, 
-                  void*, void*, 
-                  void*)) cmd.func)(
-            cmd.args[0],
-            cmd.args[1],
-            cmd.args[2],
-            cmd.args[3],
-            cmd.args[4]
-        );
-        break;
-    case 6:
-        ((void(*)(void*, void*,
-                  void*, void*,
-                  void*, void*)) cmd.func)(
-            cmd.args[0],
-            cmd.args[1],
-            cmd.args[2],
-            cmd.args[3],
-            cmd.args[4],
-            cmd.args[5]
-        );
-        break;
-    case 7:
-        ((void(*)(void*, void*, 
-                  void*, void*, 
-                  void*, void*, 
-                  void*)) cmd.func)(
-            cmd.args[0],
-            cmd.args[1],
-            cmd.args[2],
-            cmd.args[3],
-            cmd.args[4],
-            cmd.args[5],
-            cmd.args[6]
-        );
-        break;
-    case 8:
-        ((void(*)(void*, void*,
-                  void*, void*,
-                  void*, void*,
-                  void*, void*)) cmd.func)(
-            cmd.args[0],
-            cmd.args[1],
-            cmd.args[2],
-            cmd.args[3],
-            cmd.args[4],
-            cmd.args[5],
-            cmd.args[6],
-            cmd.args[7]
-        );
-    case 9:
-        ((void(*)(void*, void*,
-                  void*, void*,
-                  void*, void*,
-                  void*, void*,
-                  void*)) cmd.func)(
-            cmd.args[0],
-            cmd.args[1],
-            cmd.args[2],
-            cmd.args[3],
-            cmd.args[4],
-            cmd.args[5],
-            cmd.args[6],
-            cmd.args[7],
-            cmd.args[8]
-        );
-    case 10:
-        ((void(*)(void*, void*,
-                  void*, void*,
-                  void*, void*,
-                  void*, void*,
-                  void*, void*)) cmd.func)(
-            cmd.args[0],
-            cmd.args[1],
-            cmd.args[2],
-            cmd.args[3],
-            cmd.args[4],
-            cmd.args[5],
-            cmd.args[6],
-            cmd.args[7],
-            cmd.args[8],
-            cmd.args[9]
-        );
-        break;
-    default: assert(0);
-    }
-}
-
-static void yield_maybe(uint32_t *timestamp)
-{
-    /* During loading, we can split the work 
-     * over multiple frames for better responsiveness.
-     */
-    if(!Engine_InRunningState()) {
-        uint32_t now = SDL_GetTicks();
-        if(SDL_TICKS_PASSED(now, *timestamp + 100)) {
-            R_Yield();
-            *timestamp = SDL_GetTicks();
-        }
-    }
-}
-
-static void render_process_cmds(queue_rcmd_t *cmds)
-{
-    uint32_t start = SDL_GetTicks();
-    while(queue_size(*cmds) > 0) {
-
-        struct rcmd curr;
-        queue_rcmd_pop(cmds, &curr);
-        render_dispatch_cmd(curr);
-        GL_ASSERT_OK();
-        yield_maybe(&start);
-    }
-}
-
-static int render(void *data)
-{
-    s_rstate = data; 
-    s_window = s_rstate->arg->in_window; /* cache window ptr */
-
-    Engine_SetRenderThreadID(SDL_ThreadID());
-    SDL_GL_MakeCurrent(s_window, s_context);
-
-    bool quit = render_wait_cmd(s_rstate);
-    assert(!quit);
-    render_init_ctx(s_rstate->arg);
-    bool initialized = s_rstate->arg->out_success;
-
-    s_rstate->arg = NULL; /* arg is stale after signalling main thread */
-    render_signal_done(s_rstate, RSTAT_DONE);
-
-#ifdef __MINGW32__
-    if(__builtin_setjmp(s_jmpbuf2))
-        return 0;
-#else
-    if(setjmp(s_jmpbuf))
-        return 0;
-#endif
-
-    while(true) {
-    
-        quit = render_wait_cmd(s_rstate);
-        if(quit)
-            break;
-
-        render_process_cmds(&G_GetRenderWS()->commands);
-        if(s_rstate->swap_buffers) {
-            R_GL_SwapchainPresentLast();
-            SDL_GL_SwapWindow(s_window);
-        }
-
-        mi_stats_merge();
-        render_signal_done(s_rstate, RSTAT_DONE);
-    }
-
-    if(initialized) {
-        render_destroy_ctx();
-    }
-    return 0;
 }
 
 /*****************************************************************************/
@@ -604,15 +780,15 @@ static int render(void *data)
 
 bool R_Init(const char *base_path)
 {
-    ss_e status;
-    (void)status;
+    (void)base_path;
 
+    ss_e status;
     SDL_DisplayMode dm;
     SDL_GetDesktopDisplayMode(0, &dm);
 
     status = Settings_Create((struct setting){
         .name = "pf.video.aspect_ratio",
-        .val = (struct sval) {
+        .val = (struct sval){
             .type = ST_TYPE_VEC2,
             .as_vec2 = (vec2_t){dm.w, dm.h}
         },
@@ -631,16 +807,16 @@ bool R_Init(const char *base_path)
     if(ar < native_ar) {
         res_default = (vec2_t){dm.h * ar, dm.h};
     }else{
-        res_default = (vec2_t){dm.w, dm.w / ar}; 
+        res_default = (vec2_t){dm.w, dm.w / ar};
     }
 
     status = Settings_Create((struct setting){
         .name = "pf.video.resolution",
-        .val = (struct sval) {
+        .val = (struct sval){
             .type = ST_TYPE_VEC2,
             .as_vec2 = res_default
         },
-        .prio = 1, /* Depends on aspect_ratio */
+        .prio = 1,
         .validate = res_validate,
         .commit = res_commit,
     });
@@ -648,7 +824,7 @@ bool R_Init(const char *base_path)
 
     status = Settings_Create((struct setting){
         .name = "pf.video.display_mode",
-        .val = (struct sval) {
+        .val = (struct sval){
             .type = ST_TYPE_INT,
             .as_int = PF_WF_BORDERLESS_WIN
         },
@@ -660,9 +836,9 @@ bool R_Init(const char *base_path)
 
     status = Settings_Create((struct setting){
         .name = "pf.video.window_always_on_top",
-        .val = (struct sval) {
+        .val = (struct sval){
             .type = ST_TYPE_BOOL,
-            .as_bool = false 
+            .as_bool = false
         },
         .prio = 0,
         .validate = bool_val_validate,
@@ -672,9 +848,9 @@ bool R_Init(const char *base_path)
 
     status = Settings_Create((struct setting){
         .name = "pf.video.vsync",
-        .val = (struct sval) {
+        .val = (struct sval){
             .type = ST_TYPE_BOOL,
-            .as_bool = false 
+            .as_bool = true
         },
         .prio = 0,
         .validate = bool_val_validate,
@@ -684,9 +860,9 @@ bool R_Init(const char *base_path)
 
     status = Settings_Create((struct setting){
         .name = "pf.video.water_reflection",
-        .val = (struct sval) {
+        .val = (struct sval){
             .type = ST_TYPE_BOOL,
-            .as_bool = true 
+            .as_bool = true
         },
         .prio = 0,
         .validate = bool_val_validate,
@@ -696,9 +872,9 @@ bool R_Init(const char *base_path)
 
     status = Settings_Create((struct setting){
         .name = "pf.video.water_refraction",
-        .val = (struct sval) {
+        .val = (struct sval){
             .type = ST_TYPE_BOOL,
-            .as_bool = true 
+            .as_bool = true
         },
         .prio = 0,
         .validate = bool_val_validate,
@@ -708,7 +884,7 @@ bool R_Init(const char *base_path)
 
     status = Settings_Create((struct setting){
         .name = "pf.debug.render_log_mask",
-        .val = (struct sval) {
+        .val = (struct sval){
             .type = ST_TYPE_INT,
             .as_int = 0x1,
         },
@@ -720,7 +896,7 @@ bool R_Init(const char *base_path)
 
     status = Settings_Create((struct setting){
         .name = "pf.debug.trace_gpu",
-        .val = (struct sval) {
+        .val = (struct sval){
             .type = ST_TYPE_BOOL,
             .as_bool = false,
         },
@@ -730,25 +906,17 @@ bool R_Init(const char *base_path)
     });
     assert(status == SS_OKAY);
 
-    return true; 
+    return true;
 }
 
 SDL_Thread *R_Run(struct render_sync_state *rstate)
 {
-    ASSERT_IN_MAIN_THREAD();
-
-    /* Create the GL context in the main thread and then hand it off to the render thread. 
-     * Certain drivers crap out when trying to make the context in the render thread directly. 
-     */
-    s_context = SDL_GL_CreateContext(rstate->arg->in_window);
-    SDL_GL_MakeCurrent(rstate->arg->in_window, NULL);
-
-    return SDL_CreateThread(render, "render", rstate);
+    return R_Backend_Run(rstate);
 }
 
 void *R_PushArg(const void *src, size_t size)
 {
-    struct render_workspace *ws = (SDL_ThreadID() == g_render_thread_id) ? G_GetRenderWS() 
+    struct render_workspace *ws = (SDL_ThreadID() == g_render_thread_id) ? G_GetRenderWS()
                                                                          : G_GetSimWS();
     void *ret = stalloc(&ws->args, size);
     if(!ret)
@@ -760,52 +928,44 @@ void *R_PushArg(const void *src, size_t size)
 
 void *R_AllocArg(size_t size)
 {
-    struct render_workspace *ws = (SDL_ThreadID() == g_render_thread_id) ? G_GetRenderWS() 
+    struct render_workspace *ws = (SDL_ThreadID() == g_render_thread_id) ? G_GetRenderWS()
                                                                          : G_GetSimWS();
     return stalloc(&ws->args, size);
 }
 
 void R_PushCmd(struct rcmd cmd)
 {
-    /* If invoking from the render thread, execute immediately
-     * as if it were a function call */
     if(SDL_ThreadID() == g_render_thread_id) {
-
-        render_dispatch_cmd(cmd);
+        R_Backend_DispatchCmd(cmd);
         return;
     }
 
-    struct render_workspace *ws = G_GetSimWS();
-    queue_rcmd_push(&ws->commands, &cmd);
+    queue_rcmd_push(&G_GetSimWS()->commands, &cmd);
 }
 
 void R_PushCmdImmediate(struct rcmd cmd)
 {
     if(SDL_ThreadID() == g_render_thread_id) {
-
-        render_dispatch_cmd(cmd);
+        R_Backend_DispatchCmd(cmd);
         return;
     }
 
-    struct render_workspace *ws = G_GetRenderWS();
-    queue_rcmd_push(&ws->commands, &cmd);
+    queue_rcmd_push(&G_GetRenderWS()->commands, &cmd);
 }
 
 void R_PushCmdImmediateFront(struct rcmd cmd)
 {
     if(SDL_ThreadID() == g_render_thread_id) {
-
-        render_dispatch_cmd(cmd);
+        R_Backend_DispatchCmd(cmd);
         return;
     }
 
-    struct render_workspace *ws = G_GetRenderWS();
-    queue_rcmd_push_front(&ws->commands, &cmd);
+    queue_rcmd_push_front(&G_GetRenderWS()->commands, &cmd);
 }
 
 bool R_InitWS(struct render_workspace *ws)
 {
-    if(!stalloc_init(&ws->args)) 
+    if(!stalloc_init(&ws->args))
         goto fail_args;
 
     if(!queue_rcmd_init(&ws->commands, 2048))
@@ -833,86 +993,35 @@ void R_ClearWS(struct render_workspace *ws)
 
 const char *R_GetInfo(enum render_info attr)
 {
-    switch(attr) {
-    case RENDER_INFO_VENDOR:        return s_info_vendor;
-    case RENDER_INFO_RENDERER:      return s_info_renderer;
-    case RENDER_INFO_VERSION:       return s_info_version;
-    case RENDER_INFO_SL_VERSION:    return s_info_sl_version;
-    default: assert(0);             return NULL;
-    }
+    return R_Backend_GetInfo(attr);
 }
 
 void R_InitAttributes(void)
 {
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_ACCELERATED_VISUAL, 1);
-
-    SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-
-#ifndef NDEBUG
-    int ctx_flags = 0;
-    SDL_GL_GetAttribute(SDL_GL_CONTEXT_FLAGS, &ctx_flags);
-    ctx_flags |= SDL_GL_CONTEXT_DEBUG_FLAG;
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, ctx_flags);
-#endif
+    R_Backend_InitAttributes();
 }
 
 bool R_ComputeShaderSupported(void)
 {
-    return (GLEW_VERSION_4_3 
-        || (GLEW_ARB_compute_shader && GLEW_ARB_shader_storage_buffer_object));
+    return R_Backend_ComputeShaderSupported();
+}
+
+Uint32 R_WindowFlags(void)
+{
+    return R_Backend_WindowFlags();
+}
+
+void R_WindowDrawableSize(SDL_Window *window, int *out_w, int *out_h)
+{
+    R_Backend_WindowDrawableSize(window, out_w, out_h);
+}
+
+void R_PresentWindow(SDL_Window *window)
+{
+    R_Backend_PresentWindow(window);
 }
 
 void R_Yield(void)
 {
-    ASSERT_IN_RENDER_THREAD();
-
-    if(Engine_InRunningState())
-        return;
-
-    struct render_workspace *ws = G_GetRenderWS();
-    size_t left = queue_size(ws->commands);
-
-    const char *stack[32] = {0};
-    size_t nitems = 0;
-    do{
-        if(nitems >= 32)
-            break;
-        Perf_Pop(&stack[nitems]);
-    }while(stack[nitems++] != NULL);
-
-    SDL_GL_SwapWindow(s_window);
-
-    /* Set the status */
-    render_signal_done(s_rstate, RSTAT_YIELD);
-
-    bool quit = render_wait_cmd(s_rstate);
-    if(quit) {
-#ifdef __MINGW32__
-        __builtin_longjmp(&s_jmpbuf2, 1);
-#else
-        longjmp(s_jmpbuf, 1);
-#endif
-    }
-
-    /* Execute the commands that were appended to the front of the queue */
-    while(queue_size(ws->commands) > left) {
-
-        struct rcmd curr = {0};
-        queue_rcmd_pop(&ws->commands, &curr);
-        render_dispatch_cmd(curr);
-        GL_ASSERT_OK();
-    }
-
-    for(int i = nitems - 2; i >= 0; i--) {
-        Perf_Push(stack[i]);
-    }
+    R_Backend_Yield();
 }
-

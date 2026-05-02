@@ -45,7 +45,7 @@
 #include "../lib/public/pf_string.h"
 #include "../lib/public/mem.h"
 
-#include <GL/glew.h>
+#include "gl_loader.h"
 #include <assert.h>
 
 
@@ -57,8 +57,9 @@
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_DrawHealthbars(const size_t *num_ents, GLfloat *ent_health_pc, 
-                         vec3_t *ent_top_pos_ws, int *yoffsets, const struct camera *cam)
+void R_GL_DrawHealthbars_Impl(const size_t *num_ents, GLfloat *ent_health_pc,
+                              vec3_t *ent_top_pos_ws, int *yoffsets,
+                              const struct camera *cam)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -161,4 +162,3 @@ void R_GL_DrawHealthbars(const size_t *num_ents, GLfloat *ent_health_pc,
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }
-

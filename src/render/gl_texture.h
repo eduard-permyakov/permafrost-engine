@@ -36,8 +36,9 @@
 #ifndef GL_TEXTURE_H
 #define GL_TEXTURE_H
 
-#include <GL/glew.h>
+#include "gl_loader.h"
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 
@@ -73,10 +74,13 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
 
 void R_GL_Texture_Bind(const struct texture *text, GLuint shader_prog);
 void R_GL_Texture_BindArray(const struct texture_arr *arr, GLuint shader_prog);
+void R_GL_Texture_BindNull(GLuint tunit);
+void R_GL_Texture_Reset2DUnits(void);
 
 bool R_GL_Texture_Load(const char *basedir, const char *name, GLuint *out);
 void R_GL_Texture_Free(const char *basedir, const char *name);
-void R_GL_Texture_GetOrLoad(const char *basedir, const char *name, GLuint *out);
+void R_Cmd_Texture_GetOrLoad(const char *basedir, const char *name, GLuint *out);
+void R_GL_Texture_GetOrLoad_Impl(const char *basedir, const char *name, GLuint *out);
 bool R_GL_Texture_GetForName(const char *basedir, const char *name, GLuint *out);
 bool R_GL_Texture_GetForNameUnqualified(const char *name, GLuint *out);
 void R_GL_Texture_GetSize(GLuint texid, int *out_w, int *out_h, int *out_d);

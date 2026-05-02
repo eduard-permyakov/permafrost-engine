@@ -81,7 +81,12 @@ static bool any_ent(uint32_t uid, void *arg)
     return true;
 }
 
-static bool uids_equal(const uint32_t *a, const uint32_t *b)
+static bool uids_equal(uint32_t *a, uint32_t *b)
+{
+    return (*a == *b);
+}
+
+static bool uids_equal_qt(const uint32_t *a, const uint32_t *b)
 {
     return (*a == *b);
 }
@@ -257,7 +262,7 @@ bool G_Pos_Init(const struct map *map)
     float zmin = center.z - (res.tile_h * res.chunk_h * Z_COORDS_PER_TILE) / 2.0f;
     float zmax = center.z + (res.tile_h * res.chunk_h * Z_COORDS_PER_TILE) / 2.0f;
 
-    qt_ent_init(&s_postree, xmin, xmax, zmin, zmax, uids_equal);
+    qt_ent_init(&s_postree, xmin, xmax, zmin, zmax, uids_equal_qt);
     if(!qt_ent_reserve(&s_postree, POSBUF_INIT_SIZE)) {
         kh_destroy(pos, s_postable);
         return false;
@@ -466,7 +471,7 @@ size_t G_Pos_UploadFrom(khash_t(pos) *table, khash_t(id) *ent_gpu_id_table,
     });
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_PositionsUploadData,
+        .func = R_Cmd_PositionsUploadData,
         .nargs = 4,
         .args = {
             buff,
@@ -478,4 +483,3 @@ size_t G_Pos_UploadFrom(khash_t(pos) *table, khash_t(id) *ent_gpu_id_table,
 
     PERF_RETURN(nents);
 }
-

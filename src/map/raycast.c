@@ -244,7 +244,7 @@ static void on_render(void *user, void *event)
             const int tpch = TILES_PER_CHUNK_HEIGHT;
 
             R_PushCmd((struct rcmd){
-                .func = R_GL_TileDrawSelected,
+                .func = R_Cmd_TileDrawSelected,
                 .nargs = 5,
                 .args = {
                     R_PushArg(&curr, sizeof(curr)),

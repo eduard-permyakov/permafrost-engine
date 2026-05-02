@@ -160,7 +160,7 @@ static void on_render_3d(void *user, void *event)
     }
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_SpriteRenderBatch,
+        .func = R_Cmd_SpriteRenderBatch,
         .nargs = 3,
         .args = {
             spritebuff,

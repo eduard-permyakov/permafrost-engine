@@ -199,7 +199,7 @@ static void al_render_to_texture(struct shared_resource *res)
     }
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_DrawModelToTexture,
+        .func = R_Cmd_DrawModelToTexture,
         .nargs = 5,
         .args = {
             (void*)res->render_private,

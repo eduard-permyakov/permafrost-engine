@@ -57,12 +57,13 @@
 #include "../ui.h"
 #include "../main.h"
 
-#include <GL/glew.h>
+#include "gl_loader.h"
 
 #include <stdlib.h>
 #include <stddef.h>
 #include <assert.h>
 #include <string.h>
+#include <stdio.h>
 
 
 #define EPSILON                     (1.0f/1024)
@@ -72,14 +73,30 @@
 #define BG_CLR                      ((GLfloat[4]){200/256.0f, 215/256.0f, 215/256.0f, 1.0f})
 #define MODEL_TEX_DIM               (256)
 
+static inline GLfloat gl_line_width_compat(GLfloat requested)
+{
+#if defined(__APPLE__) && defined(__aarch64__)
+    (void)requested;
+    return 1.0f;
+#else
+    return requested;
+#endif
+}
+
+static inline void gl_set_line_width_compat(GLfloat requested)
+{
+    glLineWidth(gl_line_width_compat(requested));
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_Init(struct render_private *priv, const char *shader, const struct vertex *vbuff)
+void R_GL_Init_Impl(struct render_private *priv, const char *shader, const struct vertex *vbuff)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
+    priv->uses_pose_buffer = (NULL != strstr(shader, "mesh.animated"));
     struct mesh *mesh = &priv->mesh;
 
     glGenVertexArrays(1, &mesh->VAO);
@@ -189,7 +206,7 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_Draw(const void *render_private, mat4x4_t *model, const bool *translucent)
+void R_GL_Draw_Impl(const void *render_private, mat4x4_t *model, const bool *translucent)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -218,8 +235,10 @@ void R_GL_Draw(const void *render_private, mat4x4_t *model, const bool *transluc
         R_GL_Texture_BindArray(&priv->material_arr, priv->shader_prog);
     }
     R_GL_ShadowMapBind();
-    R_GL_AnimBindPoseBuff();
-    
+    if(priv->uses_pose_buffer) {
+        R_GL_AnimBindPoseBuff();
+    }
+
     glBindVertexArray(priv->mesh.VAO);
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
 
@@ -231,11 +250,12 @@ void R_GL_Draw(const void *render_private, mat4x4_t *model, const bool *transluc
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_BeginFrame(void)
+void R_GL_BeginFrame_Impl(void)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
     R_GL_SwapchainAcquireNext();
+    R_GL_Texture_Reset2DUnits();
 
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
@@ -246,12 +266,12 @@ void R_GL_BeginFrame(void)
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_EndFrame(void)
+void R_GL_EndFrame_Impl(void)
 {
     R_GL_SwapchainFinishCommands();
 }
 
-void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
+void R_GL_SetViewMatAndPos_Impl(const mat4x4_t *view, const vec3_t *pos)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -265,7 +285,7 @@ void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
     });
 }
 
-void R_GL_SetProj(const mat4x4_t *proj)
+void R_GL_SetProj_Impl(const mat4x4_t *proj)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -295,7 +315,7 @@ void R_GL_SetClipPlane(const vec4_t plane_eq)
     });
 }
 
-void R_GL_SetAmbientLightColor(const vec3_t *color)
+void R_GL_SetAmbientLightColor_Impl(const vec3_t *color)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -305,7 +325,7 @@ void R_GL_SetAmbientLightColor(const vec3_t *color)
     });
 }
 
-void R_GL_SetLightEmitColor(const vec3_t *color)
+void R_GL_SetLightEmitColor_Impl(const vec3_t *color)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -315,7 +335,7 @@ void R_GL_SetLightEmitColor(const vec3_t *color)
     });
 }
 
-void R_GL_SetLightPos(const vec3_t *pos)
+void R_GL_SetLightPos_Impl(const vec3_t *pos)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -325,7 +345,7 @@ void R_GL_SetLightPos(const vec3_t *pos)
     });
 }
 
-void R_GL_SetScreenspaceDrawMode(void)
+void R_GL_SetScreenspaceDrawMode_Impl(void)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -335,12 +355,12 @@ void R_GL_SetScreenspaceDrawMode(void)
 
     mat4x4_t ortho;
     PFM_Mat4x4_MakeOrthographic(0.0f, width, height, 0.0f, -1.0f, 1.0f, &ortho);
-    R_GL_SetProj(&ortho);
+    R_GL_SetProj_Impl(&ortho);
 
     mat4x4_t identity;
     PFM_Mat4x4_Identity(&identity);
     vec3_t dummy_pos = (vec3_t){0.0f};
-    R_GL_SetViewMatAndPos(&identity, &dummy_pos);
+    R_GL_SetViewMatAndPos_Impl(&identity, &dummy_pos);
 
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
@@ -349,12 +369,12 @@ void R_GL_SetScreenspaceDrawMode(void)
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DrawLoadingScreen(const char *path)
+void R_GL_DrawLoadingScreen_Impl(const char *path)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    R_GL_SetScreenspaceDrawMode();
+    R_GL_SetScreenspaceDrawMode_Impl();
 
     int width, height;
     Engine_WinDrawableSize(&width, &height);
@@ -395,7 +415,7 @@ void R_GL_DrawLoadingScreen(const char *path)
     GLuint prog = R_GL_Shader_GetProgForName("ui");
     R_GL_Shader_InstallProg(prog);
 
-    R_GL_Texture_GetOrLoad(g_basepath, path, &tex.id);
+    R_GL_Texture_GetOrLoad_Impl(g_basepath, path, &tex.id);
     R_GL_Texture_Bind(&tex, prog);
 
     /* buffer & render */
@@ -410,7 +430,7 @@ void R_GL_DrawLoadingScreen(const char *path)
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DrawSkeleton(mat4x4_t *model, const struct skeleton *skel, const struct camera *cam)
+void R_GL_DrawSkeleton_Impl(mat4x4_t *model, const struct skeleton *skel, const struct camera *cam)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -505,8 +525,8 @@ void R_GL_DrawSkeleton(mat4x4_t *model, const struct skeleton *skel, const struc
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DrawModelToTexture(const void *render_private, const struct obb *obb, 
-                             struct ent_anim_rstate *anim_state, const char *key)
+void R_GL_DrawModelToTexture_Impl(const void *render_private, const struct obb *obb,
+                                  struct ent_anim_rstate *anim_state, const char *key)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -579,7 +599,7 @@ void R_GL_DrawModelToTexture(const void *render_private, const struct obb *obb,
         PFM_Mat4x4_Inverse((mat4x4_t*)&model, &tmp);
         PFM_Mat4x4_Transpose(&tmp, &normal);
 
-        R_GL_AnimSetUniforms(&normal, &anim_state->desc);
+        R_GL_AnimSetUniforms_Impl(&normal, &anim_state->desc, &anim_state->uid);
     }
     const char *shader = NULL;
     if(anim_state) {
@@ -589,7 +609,7 @@ void R_GL_DrawModelToTexture(const void *render_private, const struct obb *obb,
     }
     R_GL_Shader_Install(shader);
     Camera_TickFinishPerspectiveUpsideDown(cam);
-    R_GL_Draw(priv, (mat4x4_t*)&model, &translucent);
+    R_GL_Draw_Impl(priv, (mat4x4_t*)&model, &translucent);
     R_GL_Texture_AddExisting(key, tex);
 
     /* Cleanup */
@@ -610,7 +630,7 @@ void R_GL_DrawModelToTexture(const void *render_private, const struct obb *obb,
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DrawOrigin(const void *render_private, mat4x4_t *model)
+void R_GL_DrawOrigin_Impl(const void *render_private, mat4x4_t *model)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -643,7 +663,7 @@ void R_GL_DrawOrigin(const void *render_private, mat4x4_t *model)
     /* Set line width */
     GLfloat old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
-    glLineWidth(3.0f);
+    gl_set_line_width_compat(3.0f);
 
     /* Render the 3 axis lines at the origin */
     vbuff[0] = (vec3_t){0.0f, 0.0f, 0.0f};
@@ -678,7 +698,7 @@ void R_GL_DrawOrigin(const void *render_private, mat4x4_t *model)
         glBufferData(GL_ARRAY_BUFFER, 2 * sizeof(vec3_t), vbuff, GL_STREAM_DRAW);
         glDrawArrays(GL_LINES, 0, 2);
     }
-    glLineWidth(old_width);
+    gl_set_line_width_compat(old_width);
 
     /* cleanup */
     glDeleteVertexArrays(1, &VAO);
@@ -688,8 +708,8 @@ void R_GL_DrawOrigin(const void *render_private, mat4x4_t *model)
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DrawRay(const vec3_t *origin, const vec3_t *dir, mat4x4_t *model, 
-                  const vec3_t *color, const float *t)
+void R_GL_DrawRay_Impl(const vec3_t *origin, const vec3_t *dir, mat4x4_t *model,
+                       const vec3_t *color, const float *t)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -729,14 +749,14 @@ void R_GL_DrawRay(const vec3_t *origin, const vec3_t *dir, mat4x4_t *model,
 
     GLfloat old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
-    glLineWidth(5.0f);
+    gl_set_line_width_compat(5.0f);
 
     /* buffer & render */
     glBufferData(GL_ARRAY_BUFFER, 2 * sizeof(vec3_t), vbuff, GL_STREAM_DRAW);
     glDrawArrays(GL_LINES, 0, 2);
 
     /* cleanup */
-    glLineWidth(old_width);
+    gl_set_line_width_compat(old_width);
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
 
@@ -744,7 +764,7 @@ void R_GL_DrawRay(const vec3_t *origin, const vec3_t *dir, mat4x4_t *model,
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DrawOBB(const struct aabb *aabb, const mat4x4_t *model)
+void R_GL_DrawOBB_Impl(const struct aabb *aabb, const mat4x4_t *model)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -814,8 +834,8 @@ void R_GL_DrawOBB(const struct aabb *aabb, const mat4x4_t *model)
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DrawBox2D(const vec2_t *screen_pos, const vec2_t *signed_size, 
-                    const vec3_t *color, const float *width)
+void R_GL_DrawBox2D_Impl(const vec2_t *screen_pos, const vec2_t *signed_size,
+                         const vec3_t *color, const float *width)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -835,12 +855,12 @@ void R_GL_DrawBox2D(const vec2_t *screen_pos, const vec2_t *signed_size,
     /* Set view and projection matrices for rendering in screen coordinates */
     mat4x4_t ortho;
     PFM_Mat4x4_MakeOrthographic(0.0f, win_width, win_height, 0.0f, -1.0f, 1.0f, &ortho);
-    R_GL_SetProj(&ortho);
+    R_GL_SetProj_Impl(&ortho);
 
     mat4x4_t identity;
     PFM_Mat4x4_Identity(&identity);
     vec3_t dummy_pos = (vec3_t){0.0f};
-    R_GL_SetViewMatAndPos(&identity, &dummy_pos);
+    R_GL_SetViewMatAndPos_Impl(&identity, &dummy_pos);
 
     /* OpenGL setup */
     glGenVertexArrays(1, &VAO);
@@ -868,13 +888,13 @@ void R_GL_DrawBox2D(const vec2_t *screen_pos, const vec2_t *signed_size,
 
     float old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
-    glLineWidth(*width);
+    gl_set_line_width_compat(*width);
 
     /* buffer & render */
     glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STREAM_DRAW);
     glDrawArrays(GL_LINE_LOOP, 0, ARR_SIZE(vbuff));
 
-    glLineWidth(old_width);
+    gl_set_line_width_compat(old_width);
 
     /* cleanup */
     glDeleteVertexArrays(1, &VAO);
@@ -884,7 +904,7 @@ void R_GL_DrawBox2D(const vec2_t *screen_pos, const vec2_t *signed_size,
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DrawNormals(const void *render_private, mat4x4_t *model, const bool *anim)
+void R_GL_DrawNormals_Impl(const void *render_private, mat4x4_t *model, const bool *anim)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -995,17 +1015,17 @@ void R_GL_DumpFBDepth_PPM(const char *filename, const int *width, const int *hei
     PF_FREE(data);
 }
 
-void R_GL_DrawSelectionCircle(const vec2_t *xz, const float *radius, const float *width, 
-                              const vec3_t *color, const struct map *map)
+void R_GL_DrawSelectionCircle_Impl(const vec2_t *xz, const float *radius, const float *width,
+                                   const vec3_t *color, const struct map *map)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     GLuint VAO, VBO;
 
-    const int NUM_SAMPLES = 48;
-    const int nverts = NUM_SAMPLES * 2 + 2;
-    STALLOC(vec3_t, vbuff, nverts);
+    enum { NUM_SAMPLES = 48, NUM_VERTS = NUM_SAMPLES * 2 + 2 };
+    const int nverts = NUM_VERTS;
+    STALLOC(vec3_t, vbuff, NUM_VERTS);
 
     for(int i = 0; i < NUM_SAMPLES * 2; i += 2) {
 
@@ -1066,8 +1086,8 @@ void R_GL_DrawSelectionCircle(const vec2_t *xz, const float *radius, const float
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DrawSelectionRectangle(const struct obb *box, const float *width, 
-                                 const vec3_t *color, const struct map *map)
+void R_GL_DrawSelectionRectangle_Impl(const struct obb *box, const float *width,
+                                      const vec3_t *color, const struct map *map)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -1084,8 +1104,6 @@ void R_GL_DrawSelectionRectangle(const struct obb *box, const float *width,
 
     float lens[4];
     vec2_t deltas[4];
-    float tot_len = 0;
-
     PFM_Vec2_Sub(&corners[1], &corners[0], &deltas[0]);
     PFM_Vec2_Sub(&corners[2], &corners[1], &deltas[1]);
     PFM_Vec2_Sub(&corners[3], &corners[2], &deltas[2]);
@@ -1093,7 +1111,6 @@ void R_GL_DrawSelectionRectangle(const struct obb *box, const float *width,
 
     for(int i = 0; i < 4; i++) {
         lens[i] = PFM_Vec2_Len(&deltas[i]);
-        tot_len += lens[i];
         PFM_Vec2_Normal(&deltas[i], &deltas[i]);
     }
 
@@ -1179,7 +1196,7 @@ void R_GL_DrawSelectionRectangle(const struct obb *box, const float *width,
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DrawLine(vec2_t endpoints[], const float *width, const vec3_t *color, const struct map *map)
+void R_GL_DrawLine_Impl(vec2_t endpoints[], const float *width, const vec3_t *color, const struct map *map)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -1254,13 +1271,13 @@ void R_GL_DrawLine(vec2_t endpoints[], const float *width, const vec3_t *color, 
 
     float old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
-    glLineWidth(*width);
+    gl_set_line_width_compat(*width);
 
     /* buffer & render */
     glBufferData(GL_ARRAY_BUFFER, nverts * sizeof(vec3_t), vbuff, GL_STREAM_DRAW);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, nverts);
 
-    glLineWidth(old_width);
+    gl_set_line_width_compat(old_width);
 
     /* cleanup */
     glDeleteVertexArrays(1, &VAO);
@@ -1271,7 +1288,7 @@ void R_GL_DrawLine(vec2_t endpoints[], const float *width, const vec3_t *color, 
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DrawQuad(vec2_t corners[], const float *width, const vec3_t *color, const struct map *map)
+void R_GL_DrawQuad_Impl(vec2_t corners[], const float *width, const vec3_t *color, const struct map *map)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -1284,13 +1301,13 @@ void R_GL_DrawQuad(vec2_t corners[], const float *width, const vec3_t *color, co
     };
 
     for(int i = 0; i < ARR_SIZE(lines); i++)
-        R_GL_DrawLine(lines[i], width, color, map);
+        R_GL_DrawLine_Impl(lines[i], width, color, map);
 
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *count, 
-                              mat4x4_t *model, bool *on_water_surface, const struct map *map)
+void R_GL_DrawMapOverlayQuads_Impl(vec2_t *xz_corners, vec3_t *colors, const size_t *count,
+                                   mat4x4_t *model, bool *on_water_surface, const struct map *map)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -1412,11 +1429,11 @@ void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *
     /* Render outline */
     GLfloat old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
-    glLineWidth(3.0f);
+    gl_set_line_width_compat(3.0f);
 
     glBufferData(GL_ARRAY_BUFFER, line_verts * sizeof(struct colored_vert), line_vbuff, GL_STREAM_DRAW);
     glDrawArrays(GL_LINES, 0, line_verts);
-    glLineWidth(old_width);
+    gl_set_line_width_compat(old_width);
 
     /* cleanup */
     glEnable(GL_CULL_FACE);
@@ -1431,8 +1448,8 @@ void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_t *count,
-                        mat4x4_t *model, const struct map *map)
+void R_GL_DrawFlowField_Impl(vec2_t *xz_positions, vec2_t *xz_directions, const size_t *count,
+                             mat4x4_t *model, const struct map *map)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -1505,7 +1522,7 @@ void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_
 
     GLfloat old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
-    glLineWidth(5.0f);
+    gl_set_line_width_compat(5.0f);
     glPointSize(10.0f);
 
     /* buffer & render */
@@ -1516,7 +1533,7 @@ void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_
     glDrawArrays(GL_POINTS, 0, point_vbuff_size);
 
     /* cleanup */
-    glLineWidth(old_width);
+    gl_set_line_width_compat(old_width);
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
 
@@ -1527,8 +1544,8 @@ void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays, 
-                           const size_t *num_vos, const struct map *map)
+void R_GL_DrawCombinedHRVO_Impl(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays,
+                                const size_t *num_vos, const struct map *map)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -1609,14 +1626,14 @@ void R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays
 
     GLfloat old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
-    glLineWidth(2.0f);
+    gl_set_line_width_compat(2.0f);
 
     /* buffer & render */
     glBufferData(GL_ARRAY_BUFFER, vbuff_size * sizeof(vec3_t), ray_vbuff, GL_STREAM_DRAW);
     glDrawArrays(GL_LINES, 0, vbuff_size);
 
     /* cleanup */
-    glLineWidth(old_width);
+    gl_set_line_width_compat(old_width);
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
 
@@ -1643,8 +1660,13 @@ void R_GL_GlobalConfig(void)
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_TimestampForCookie(uint32_t *cookie, uint64_t *out)
+void R_Cmd_TimestampForCookie(uint32_t *cookie, uint64_t *out)
 {
+#if PF_RENDER_BACKEND_METAL
+    (void)cookie;
+    *out = 0;
+    assert(!"OpenGL timestamp query readback is not available on Metal");
+#else
     GLuint timer_query = *cookie;
 
     GLint avail = GL_FALSE;
@@ -1657,5 +1679,5 @@ void R_GL_TimestampForCookie(uint32_t *cookie, uint64_t *out)
 
     glGetQueryObjectui64v(timer_query, GL_QUERY_RESULT, out);
     glDeleteQueries(1, &timer_query);
+#endif
 }
-

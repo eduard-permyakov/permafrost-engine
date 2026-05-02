@@ -51,6 +51,24 @@ struct render_private{
     GLuint              shader_prog;
     GLuint              shader_prog_dp; /* for the depth pass */
     GLuint              vertex_stride;
+    bool                uses_pose_buffer;
+#if PF_RENDER_BACKEND_METAL
+    bool                metal_is_terrain;
+    void               *metal_terrain_verts;
+    size_t              metal_terrain_verts_size;
+    void               *metal_terrain_vertex_buffer;
+    bool                metal_is_static_mesh;
+    void               *metal_static_verts;
+    size_t              metal_static_verts_size;
+    void               *metal_static_vertex_buffer;
+    bool                metal_is_anim_mesh;
+    void               *metal_anim_verts;
+    size_t              metal_anim_verts_size;
+    void               *metal_material_texture_array;
+    size_t              metal_material_texture_count;
+    bool                metal_materials_have_cutout_alpha;
+    char                metal_asset_basedir[512];
+#endif
 };
 
 /* General */
@@ -58,5 +76,11 @@ void R_Yield(void);
 
 /* Tile */
 void R_TileGetVertices(const struct map *map, struct tile_desc td, struct terrain_vert *out);
+void R_TilePatchVertsBlend_Impl(void *chunk_rprivate, const struct map *map,
+                                const struct tile_desc *tile);
+void R_TilePatchVertsSmooth_Impl(void *chunk_rprivate, const struct map *map,
+                                 const struct tile_desc *tile);
+void R_TileUpdate_Impl(void *chunk_rprivate, const struct map *map,
+                       const struct tile_desc *desc);
 
 #endif

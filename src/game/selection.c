@@ -167,7 +167,7 @@ static void on_render_ui(void *user, void *event)
     const vec3_t color = (vec3_t){0.0f, 1.0f, 0.0f};
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_DrawBox2D,
+        .func = R_Cmd_DrawBox2D,
         .nargs = 4,
         .args = {
             R_PushArg(&s_ctx.mouse_down_coord, sizeof(s_ctx.mouse_down_coord)),
@@ -728,4 +728,3 @@ bool G_Sel_IsSelected(uint32_t uid)
     int idx = vec_entity_indexof(&s_selected, uid, entities_equal);
     return (idx != -1);
 }
-

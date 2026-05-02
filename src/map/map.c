@@ -1,6 +1,6 @@
 /*
- *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2018-2023 Eduard Permyakov 
+ *  This file is part of Permafrost Engine.
+ *  Copyright (C) 2018-2023 Eduard Permyakov
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -14,21 +14,21 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
- * 
- *  Linking this software statically or dynamically with other modules is making 
- *  a combined work based on this software. Thus, the terms and conditions of 
- *  the GNU General Public License cover the whole combination. 
- *  
- *  As a special exception, the copyright holders of Permafrost Engine give 
- *  you permission to link Permafrost Engine with independent modules to produce 
- *  an executable, regardless of the license terms of these independent 
- *  modules, and to copy and distribute the resulting executable under 
- *  terms of your choice, provided that you also meet, for each linked 
- *  independent module, the terms and conditions of the license of that 
- *  module. An independent module is a module which is not derived from 
- *  or based on Permafrost Engine. If you modify Permafrost Engine, you may 
- *  extend this exception to your version of Permafrost Engine, but you are not 
- *  obliged to do so. If you do not wish to do so, delete this exception 
+ *
+ *  Linking this software statically or dynamically with other modules is making
+ *  a combined work based on this software. Thus, the terms and conditions of
+ *  the GNU General Public License cover the whole combination.
+ *
+ *  As a special exception, the copyright holders of Permafrost Engine give
+ *  you permission to link Permafrost Engine with independent modules to produce
+ *  an executable, regardless of the license terms of these independent
+ *  modules, and to copy and distribute the resulting executable under
+ *  terms of your choice, provided that you also meet, for each linked
+ *  independent module, the terms and conditions of the license of that
+ *  module. An independent module is a module which is not derived from
+ *  or based on Permafrost Engine. If you modify Permafrost Engine, you may
+ *  extend this exception to your version of Permafrost Engine, but you are not
+ *  obliged to do so. If you do not wish to do so, delete this exception
  *  statement from your version.
  *
  */
@@ -128,37 +128,41 @@ void M_ModelMatrixForChunk(const struct map *map, struct chunkpos p, mat4x4_t *o
     int x_offset = -(p.c * TILES_PER_CHUNK_WIDTH  * X_COORDS_PER_TILE);
     int z_offset =  (p.r * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE);
     vec3_t chunk_pos = (vec3_t) {map->pos.x + x_offset, map->pos.y, map->pos.z + z_offset};
-   
+
     PFM_Mat4x4_MakeTrans(chunk_pos.x, chunk_pos.y, chunk_pos.z, out);
 }
 
 void M_RenderEntireMap(const struct map *map, bool shadows, enum render_pass pass)
 {
+    struct map_resolution res;
+    M_GetResolution(map, &res);
     vec2_t pos = (vec2_t){map->pos.x, map->pos.z};
     const bool fval = false;
 
-    R_PushCmd((struct rcmd){ 
-        .func = R_GL_MapBegin,
-        .nargs = 4,
-        .args = { 
+    R_PushCmd((struct rcmd){
+        .func = R_Cmd_MapBegin,
+        .nargs = 6,
+        .args = {
             R_PushArg(&shadows, sizeof(shadows)),
             R_PushArg(&pos, sizeof(pos)),
             R_PushArg(&map->num_splats, sizeof(map->num_splats)),
-            R_PushArg(&map->splatmap, sizeof(map->splatmap))
+            R_PushArg(&map->splatmap, sizeof(map->splatmap)),
+            R_PushArg(&res, sizeof(res)),
+            (void *)map,
         },
     });
 
     for(int r = 0; r < map->height; r++) {
     for(int c = 0; c < map->width;  c++) {
-    
+
         mat4x4_t chunk_model;
         const struct pfchunk *chunk = &map->chunks[r * map->width + c];
         M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
 
         switch(pass) {
-        case RENDER_PASS_DEPTH: 
+        case RENDER_PASS_DEPTH:
             R_PushCmd((struct rcmd){
-                .func = R_GL_RenderDepthMap,
+                .func = R_Cmd_RenderDepthMap,
                 .nargs = 2,
                 .args = {
                     chunk->render_private,
@@ -168,7 +172,7 @@ void M_RenderEntireMap(const struct map *map, bool shadows, enum render_pass pas
             break;
         case RENDER_PASS_REGULAR:
             R_PushCmd((struct rcmd){
-                .func = R_GL_Draw,
+                .func = R_Cmd_Draw,
                 .nargs = 3,
                 .args = {
                     chunk->render_private,
@@ -181,25 +185,29 @@ void M_RenderEntireMap(const struct map *map, bool shadows, enum render_pass pas
         }
     }}
 
-    R_PushCmd((struct rcmd){ R_GL_MapEnd, 0 });
+    R_PushCmd((struct rcmd){ R_Cmd_MapEnd, 0 });
 }
 
-void M_RenderVisibleMap(const struct map *map, const struct camera *cam, 
+void M_RenderVisibleMap(const struct map *map, const struct camera *cam,
                         bool shadows, enum render_pass pass)
 {
     struct frustum frustum;
+    struct map_resolution res;
     Camera_MakeFrustum(cam, &frustum);
+    M_GetResolution(map, &res);
     vec2_t pos = (vec2_t){map->pos.x, map->pos.z};
     const bool fval = false;
 
-    R_PushCmd((struct rcmd){ 
-        .func = R_GL_MapBegin, 
-        .nargs = 4, 
+    R_PushCmd((struct rcmd){
+        .func = R_Cmd_MapBegin,
+        .nargs = 6,
         .args = {
             R_PushArg(&shadows, sizeof(shadows)),
             R_PushArg(&pos, sizeof(pos)),
             R_PushArg(&map->num_splats, sizeof(map->num_splats)),
-            R_PushArg(&map->splatmap, sizeof(map->splatmap))
+            R_PushArg(&map->splatmap, sizeof(map->splatmap)),
+            R_PushArg(&res, sizeof(res)),
+            (void *)map,
         },
     });
 
@@ -209,9 +217,9 @@ void M_RenderVisibleMap(const struct map *map, const struct camera *cam,
         struct aabb chunk_aabb;
         m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
 
-        /* Due to the nature of the the map (perfect grid), the fast and greedy frustrum 
-         * intersection test will yield too many false positives. As each chunk mesh has 
-         * a high vertex count, this is undesirable. It is absolutely worth it to do the 
+        /* Due to the nature of the the map (perfect grid), the fast and greedy frustrum
+         * intersection test will yield too many false positives. As each chunk mesh has
+         * a high vertex count, this is undesirable. It is absolutely worth it to do the
          * precise frustrum intersection test. With it, the map rendering performance
          * scales great for large maps. */
         if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
@@ -222,9 +230,9 @@ void M_RenderVisibleMap(const struct map *map, const struct camera *cam,
         M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
 
         switch(pass) {
-        case RENDER_PASS_DEPTH: 
+        case RENDER_PASS_DEPTH:
             R_PushCmd((struct rcmd){
-                .func = R_GL_RenderDepthMap,
+                .func = R_Cmd_RenderDepthMap,
                 .nargs = 2,
                 .args = {
                     chunk->render_private,
@@ -234,7 +242,7 @@ void M_RenderVisibleMap(const struct map *map, const struct camera *cam,
             break;
         case RENDER_PASS_REGULAR:
             R_PushCmd((struct rcmd){
-                .func = R_GL_Draw,
+                .func = R_Cmd_Draw,
                 .nargs = 3,
                 .args = {
                     chunk->render_private,
@@ -246,7 +254,7 @@ void M_RenderVisibleMap(const struct map *map, const struct camera *cam,
         default: assert(0);
         }
     }}
-    R_PushCmd((struct rcmd){ R_GL_MapEnd, 0 });
+    R_PushCmd((struct rcmd){ R_Cmd_MapEnd, 0 });
 }
 
 void M_RenderVisiblePathableLayer(const struct map *map, const struct camera *cam, enum nav_layer layer)
@@ -265,7 +273,7 @@ void M_RenderVisiblePathableLayer(const struct map *map, const struct camera *ca
 
         mat4x4_t chunk_model;
         M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
-        N_RenderPathableChunk(map->nav_private, &chunk_model, map, r, c, layer); 
+        N_RenderPathableChunk(map->nav_private, &chunk_model, map, r, c, layer);
     }}
 }
 
@@ -296,7 +304,7 @@ void M_RenderChunkBoundaries(const struct map *map, const struct camera *cam)
         float width = 1.0f;
 
         R_PushCmd((struct rcmd){
-            .func = R_GL_DrawQuad,
+            .func = R_Cmd_DrawQuad,
             .nargs = 4,
             .args = {
                 R_PushArg(corners, sizeof(corners)),
@@ -324,7 +332,7 @@ void M_RenderChunkVisibility(const struct map *map, const struct camera *cam, in
 
         mat4x4_t chunk_model;
         M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
-        G_Fog_RenderChunkVisibility(faction_id, r, c, &chunk_model); 
+        G_Fog_RenderChunkVisibility(faction_id, r, c, &chunk_model);
     }}
 }
 
@@ -341,17 +349,17 @@ void M_RestrictRTSCamToMap(const struct map *map, struct camera *cam)
     struct bound_box bounds;
 
     /* 'Camera_RestrictPosWithBox' restricts the position of the camera to an XZ box.
-     * However, if we just let this box be the map position and dimensions, the corners will 
-     * not appear equal due to the camera tilt. For example, with yaw = 135 and pitch = -70, 
-     * less of the top center corner will be visible than the bottom center corner due to 
-     * the camera being tilted up. What we actually want is the camera ray position at ground 
-     * level to be bounded within the map box. To achieve this, we offset the camera 
-     * position bounding box by the XZ components of the difference between the camera position 
-     * and where the camera ray intersects the ground. 
+     * However, if we just let this box be the map position and dimensions, the corners will
+     * not appear equal due to the camera tilt. For example, with yaw = 135 and pitch = -70,
+     * less of the top center corner will be visible than the bottom center corner due to
+     * the camera being tilted up. What we actually want is the camera ray position at ground
+     * level to be bounded within the map box. To achieve this, we offset the camera
+     * position bounding box by the XZ components of the difference between the camera position
+     * and where the camera ray intersects the ground.
      *
      * This assumes the camera pitch, yaw, and height will not change.
      */
-    
+
     float offset_mag = cos(DEG_TO_RAD(Camera_GetPitch(cam))) * Camera_GetHeight(cam);
 
     bounds.x = map->pos.x - cos(DEG_TO_RAD(Camera_GetYaw(cam))) * offset_mag;
@@ -412,10 +420,10 @@ float M_HeightAtPoint(const struct map *map, vec2_t xz)
     float chunk_off_c = fmod(-(x - map->pos.x), TILES_PER_CHUNK_WIDTH  * X_COORDS_PER_TILE);
     assert(chunk_off_r >= 0 && chunk_off_c >= 0);
 
-    int tile_r, tile_c;    
+    int tile_r, tile_c;
     tile_r = CLAMP(chunk_off_r / Z_COORDS_PER_TILE, 0, TILES_PER_CHUNK_HEIGHT-1);
     tile_c = CLAMP(chunk_off_c / X_COORDS_PER_TILE, 0, TILES_PER_CHUNK_WIDTH-1);
-    
+
     float tile_frac_width, tile_frac_height;
     tile_frac_width =  fmod(chunk_off_c, X_COORDS_PER_TILE) / X_COORDS_PER_TILE;
     tile_frac_height = fmod(chunk_off_r, Z_COORDS_PER_TILE) / Z_COORDS_PER_TILE;
@@ -457,13 +465,13 @@ void M_NavUpdateIslandsField(const struct map *map)
     N_UpdateIslandsField(map->nav_private);
 }
 
-bool M_NavRequestPath(const struct map *map, vec2_t xz_src, vec2_t xz_dest, 
+bool M_NavRequestPath(const struct map *map, vec2_t xz_src, vec2_t xz_dest,
                       enum nav_layer layer, dest_id_t *out_dest_id)
 {
     return N_RequestPath(map->nav_private, xz_src, xz_dest, map->pos, layer, out_dest_id);
 }
 
-void M_NavRenderVisiblePathFlowField(const struct map *map, const struct camera *cam, 
+void M_NavRenderVisiblePathFlowField(const struct map *map, const struct camera *cam,
                                      dest_id_t id)
 {
     struct frustum frustum;
@@ -485,7 +493,7 @@ void M_NavRenderVisiblePathFlowField(const struct map *map, const struct camera 
     }}
 }
 
-void M_NavRenderVisibleEnemySeekField(const struct map *map, const struct camera *cam, 
+void M_NavRenderVisibleEnemySeekField(const struct map *map, const struct camera *cam,
                                      enum nav_layer layer, int faction_id)
 {
     struct frustum frustum;
@@ -506,7 +514,7 @@ void M_NavRenderVisibleEnemySeekField(const struct map *map, const struct camera
     }}
 }
 
-void M_NavRenderVisibleSurroundField(const struct map *map, const struct camera *cam, 
+void M_NavRenderVisibleSurroundField(const struct map *map, const struct camera *cam,
                                      enum nav_layer layer, const uint32_t uid)
 {
     struct frustum frustum;
@@ -547,8 +555,8 @@ void M_NavRenderNavigationBlockers(const struct map *map, const struct camera *c
     }}
 }
 
-void M_NavRenderBuildableTiles(const struct map *map, const struct camera *cam, 
-                               const struct obb *obb, enum nav_layer layer, bool blocked, 
+void M_NavRenderBuildableTiles(const struct map *map, const struct camera *cam,
+                               const struct obb *obb, enum nav_layer layer, bool blocked,
                                bool allow_shore)
 {
     struct frustum frustum;
@@ -636,13 +644,13 @@ vec2_t M_NavDesiredPointSeekVelocity(const struct map *map, dest_id_t id, vec2_t
     return N_DesiredPointSeekVelocity(id, curr_pos, xz_dest, map->nav_private, map->pos);
 }
 
-vec2_t M_NavDesiredEnemySeekVelocity(const struct map *map, enum nav_layer layer, 
+vec2_t M_NavDesiredEnemySeekVelocity(const struct map *map, enum nav_layer layer,
                                      vec2_t curr_pos, int faction_id)
 {
     return N_DesiredEnemySeekVelocity(curr_pos, map->nav_private, layer, map->pos, faction_id);
 }
 
-vec2_t M_NavDesiredSurroundVelocity(const struct map *map, enum nav_layer layer, 
+vec2_t M_NavDesiredSurroundVelocity(const struct map *map, enum nav_layer layer,
                                     vec2_t curr_pos, const uint32_t uid, int faction_id)
 {
     return N_DesiredSurroundVelocity(curr_pos, map->nav_private, layer, map->pos, uid, faction_id);
@@ -663,7 +671,7 @@ bool M_NavPositionPathable(const struct map *map, enum nav_layer layer, vec2_t x
     };
 
     if(!C_BoxPointIntersection(xz_pos.x, xz_pos.z, map_box))
-        return false; 
+        return false;
 
     return N_PositionPathable(xz_pos, layer, map->nav_private, map->pos);
 }
@@ -678,24 +686,24 @@ bool M_NavPositionBlocked(const struct map *map, enum nav_layer layer, vec2_t xz
     };
 
     if(!C_BoxPointIntersection(xz_pos.x, xz_pos.z, map_box))
-        return false; 
+        return false;
 
     return N_PositionBlocked(xz_pos, layer, map->nav_private, map->pos);
 }
 
-vec2_t M_NavClosestReachableDest(const struct map *map, enum nav_layer layer, 
+vec2_t M_NavClosestReachableDest(const struct map *map, enum nav_layer layer,
                                  vec2_t xz_src, vec2_t xz_dst)
 {
     return N_ClosestReachableDest(map->nav_private, layer, map->pos, xz_src, xz_dst);
 }
 
-bool M_NavClosestReachableAdjacentPos(const struct map *map, enum nav_layer layer, 
+bool M_NavClosestReachableAdjacentPos(const struct map *map, enum nav_layer layer,
                                       vec2_t xz_src, const uint32_t target_uid, vec2_t *out)
 {
     uint32_t flags = G_FlagsGet(target_uid);
     if(flags & ENTITY_FLAG_MOVABLE) {
 
-        return N_ClosestReachableAdjacentPosDynamic(map->nav_private, layer, map->pos, 
+        return N_ClosestReachableAdjacentPosDynamic(map->nav_private, layer, map->pos,
             xz_src, G_Pos_GetXZ(target_uid), G_GetSelectionRadius(target_uid), out);
     }else{
 
@@ -711,31 +719,31 @@ bool M_NavClosestPathable(const struct map *map, enum nav_layer layer, vec2_t xz
     return N_ClosestPathable(map->nav_private, layer, map->pos, xz_src, out);
 }
 
-bool M_NavLocationsReachable(const struct map *map, enum nav_layer layer, 
+bool M_NavLocationsReachable(const struct map *map, enum nav_layer layer,
                              vec2_t a, vec2_t b)
 {
     return N_LocationsReachable(map->nav_private, layer, map->pos, a, b);
 }
 
-void M_NavBlockersIncref(vec2_t xz_pos, float range, int faction_id, 
+void M_NavBlockersIncref(vec2_t xz_pos, float range, int faction_id,
                          uint32_t flags, const struct map *map)
 {
     N_BlockersIncref(xz_pos, range, faction_id, flags, map->pos, map->nav_private);
 }
 
-void M_NavBlockersDecref(vec2_t xz_pos, float range, int faction_id, 
+void M_NavBlockersDecref(vec2_t xz_pos, float range, int faction_id,
                          uint32_t flags, const struct map *map)
 {
     N_BlockersDecref(xz_pos, range, faction_id, flags, map->pos, map->nav_private);
 }
 
-void M_NavBlockersIncrefOBB(const struct map *map, int faction_id, 
+void M_NavBlockersIncrefOBB(const struct map *map, int faction_id,
                             uint32_t flags, const struct obb *obb)
 {
     N_BlockersIncrefOBB(map->nav_private, faction_id, flags, map->pos, obb);
 }
 
-void M_NavBlockersDecrefOBB(const struct map *map, int faction_id, 
+void M_NavBlockersDecrefOBB(const struct map *map, int faction_id,
                             uint32_t flags, const struct obb *obb)
 {
     N_BlockersDecrefOBB(map->nav_private, faction_id, flags, map->pos, obb);
@@ -844,7 +852,7 @@ bool M_RemoveSplat(struct map *map, int base_mat_idx, int accent_mat_idx)
     return true;
 }
 
-bool M_NavIsMaximallyClose(const struct map *map, enum nav_layer layer, vec2_t xz_pos, 
+bool M_NavIsMaximallyClose(const struct map *map, enum nav_layer layer, vec2_t xz_pos,
                            vec2_t xz_dest, float tolerance)
 {
     return N_IsMaximallyClose(map->nav_private, layer, map->pos, xz_pos, xz_dest, tolerance);
@@ -860,7 +868,7 @@ uint32_t M_NavDestIDForPos(const struct map *map, vec2_t xz_pos, enum nav_layer 
     return N_DestIDForPos(map->nav_private, map->pos, xz_pos, layer);
 }
 
-uint32_t M_NavDestIDForPosAttacking(const struct map *map, vec2_t xz_pos, 
+uint32_t M_NavDestIDForPosAttacking(const struct map *map, vec2_t xz_pos,
                                     enum nav_layer layer, int faction_id)
 {
     return N_DestIDForPosAttacking(map->nav_private, map->pos, xz_pos, layer, faction_id);
@@ -870,7 +878,7 @@ bool M_NavObjAdjacent(const struct map *map, uint32_t uid, uint32_t target_uid)
 {
     if(G_FlagsGet(target_uid) & ENTITY_FLAG_MOVABLE) {
 
-        return N_ObjAdjacentToDynamic(map->nav_private, map->pos, uid, 
+        return N_ObjAdjacentToDynamic(map->nav_private, map->pos, uid,
             G_Pos_GetXZ(target_uid), G_GetSelectionRadius(target_uid));
     }else{
 
@@ -880,7 +888,7 @@ bool M_NavObjAdjacent(const struct map *map, uint32_t uid, uint32_t target_uid)
     }
 }
 
-bool M_NavObjAdjacentToStaticWith(const struct map *map, vec2_t xz_pos, float radius, 
+bool M_NavObjAdjacentToStaticWith(const struct map *map, vec2_t xz_pos, float radius,
                                   const struct obb *stat)
 {
     return N_ObjAdjacentToStaticWith(map->nav_private, map->pos, xz_pos, radius, stat);
@@ -898,13 +906,13 @@ void M_NavGetResolution(const struct map *map, struct map_resolution *out)
     return N_GetResolution(map->nav_private, out);
 }
 
-bool M_NavObjectBuildable(const struct map *map, enum nav_layer layer, 
+bool M_NavObjectBuildable(const struct map *map, enum nav_layer layer,
                           bool allow_shore, const struct obb *obb)
 {
     return N_ObjectBuildable(map->nav_private, map, layer, allow_shore, map->pos, obb);
 }
 
-bool M_NavHasEntityLOS(const struct map *map, enum nav_layer layer, 
+bool M_NavHasEntityLOS(const struct map *map, enum nav_layer layer,
                        vec2_t xz_pos, uint32_t uid)
 {
     return N_HasEntityLOS(xz_pos, uid, map->nav_private, layer, map->pos);
@@ -916,13 +924,13 @@ vec2_t M_NavClosestReachableInRange(const struct map *map, enum nav_layer layer,
     return N_ClosestReachableInRange(map->nav_private, map->pos, xz_src, xz_target, range, layer);
 }
 
-void M_NavRequestAsyncEnemySeekField(const struct map *map, enum nav_layer layer, 
+void M_NavRequestAsyncEnemySeekField(const struct map *map, enum nav_layer layer,
                                      vec2_t curr_pos, int faction_id)
 {
     N_RequestAsyncEnemySeekField(curr_pos, map->nav_private, layer, map->pos, faction_id);
 }
 
-void M_NavRequestAsyncSurroundField(const struct map *map, enum nav_layer layer, 
+void M_NavRequestAsyncSurroundField(const struct map *map, enum nav_layer layer,
                                     vec2_t curr_pos, uint32_t ent, int faction_id)
 {
     N_RequestAsyncSurroundField(curr_pos, map->nav_private, layer, map->pos, ent, faction_id);
@@ -934,19 +942,19 @@ void M_NavCopyIslandsFieldView(const struct map *map, vec2_t center,
     N_CopyIslandsFieldView(map->nav_private, center, map->pos, nrows, ncols, layer, out_field);
 }
 
-void M_NavCellArrivalFieldCreate(const struct map *map, size_t rdim, size_t cdim, 
+void M_NavCellArrivalFieldCreate(const struct map *map, size_t rdim, size_t cdim,
                                  enum nav_layer layer, uint16_t enemies,
                                  struct tile_desc target, struct tile_desc center,
                                  uint8_t *out, void *workspace, size_t workspace_size)
 {
     assert(map->nav_private);
-    N_CellArrivalFieldCreate(map->nav_private, rdim, cdim, layer, enemies, 
+    N_CellArrivalFieldCreate(map->nav_private, rdim, cdim, layer, enemies,
         target, center, out, workspace, workspace_size);
 }
 
-void M_NavCellArrivalFieldUpdateToNearestPathable(const struct map *map, 
+void M_NavCellArrivalFieldUpdateToNearestPathable(const struct map *map,
                               size_t rdim, size_t cdim, enum nav_layer layer, uint16_t enemies,
-                              struct tile_desc start, struct tile_desc center, 
+                              struct tile_desc start, struct tile_desc center,
                               uint8_t *inout, void *workspace, size_t workspace_size)
 {
     assert(map->nav_private);
@@ -1059,21 +1067,21 @@ vec2_t M_NavClosestPointAdjacentToLand(const struct map *map, vec2_t pos)
     return N_ClosestPointAdjacentToLand(map, map->nav_private, map->pos, pos);
 }
 
-vec2_t M_NavClosestPointAdjacentToIsland(const struct map *map, vec2_t pos, 
+vec2_t M_NavClosestPointAdjacentToIsland(const struct map *map, vec2_t pos,
                                          vec2_t island_pos, enum nav_layer layer)
 {
-    return N_ClosestPointAdjacentToIsland(map->nav_private, map->pos, pos, 
+    return N_ClosestPointAdjacentToIsland(map->nav_private, map->pos, pos,
         island_pos, layer);
 }
 
-bool M_NavIsAdjacentToIsland(const struct map *map, enum nav_layer layer, 
+bool M_NavIsAdjacentToIsland(const struct map *map, enum nav_layer layer,
                              vec2_t xz_pos, float radius, vec2_t island_pos)
 {
-    return N_IsAdjacentToIsland(map->nav_private, layer, map->pos, xz_pos, 
+    return N_IsAdjacentToIsland(map->nav_private, layer, map->pos, xz_pos,
         radius, island_pos);
 }
 
-bool M_NavIsAdjacentToIslandOBB(const struct map *map, enum nav_layer layer, 
+bool M_NavIsAdjacentToIslandOBB(const struct map *map, enum nav_layer layer,
                                 const struct obb *obb, vec2_t island_pos)
 {
     return N_IsAdjacentToIslandOBB(map->nav_private, layer, map->pos, obb, island_pos);
@@ -1113,4 +1121,3 @@ void M_NavSetNavUnitQueryCtx(struct map *map, struct nav_unit_query_ctx *ctx)
 {
     return N_SetNavUnitQueryCtx(map->nav_private, ctx);
 }
-

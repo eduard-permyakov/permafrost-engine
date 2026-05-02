@@ -329,7 +329,7 @@ void Perf_Pop(const char **out)
     uint32_t idx = vec_idx_pop(&ps->perf_stack);
     assert(idx < vec_size(&ps->perf_trees[ps->perf_tree_idx]));
     struct perf_entry *pe = &vec_AT(&ps->perf_trees[ps->perf_tree_idx], idx);
-    pe->pc_delta = abs(SDL_GetPerformanceCounter() - pe->pc_delta);
+    pe->pc_delta = SDL_GetPerformanceCounter() - pe->pc_delta;
 
     if(out)
         *out = name_for_id(ps, pe->name_id);
@@ -389,7 +389,7 @@ void Perf_PushGPU(const char *name, uint32_t cookie)
 void Perf_PopGPU(uint32_t cookie)
 {
     khiter_t k = kh_get(pstate, s_thread_state_table, GPU_STATE_KEY);
-    if(k != kh_end(s_thread_state_table));
+    assert(k != kh_end(s_thread_state_table));
 
     struct perf_state *ps = &kh_val(s_thread_state_table, k);
     assert(vec_size(&ps->perf_stack) > 0);
@@ -406,7 +406,7 @@ void Perf_BeginTick(void)
     s_last_frames_ms[s_last_idx] = SDL_GetTicks();
 
     khiter_t k = kh_get(pstate, s_thread_state_table, GPU_STATE_KEY);
-    if(k != kh_end(s_thread_state_table));
+    assert(k != kh_end(s_thread_state_table));
 
     /* commands are just queued now, to be executed next tick when the 
      * perf_tree_idx moves forward by 1 */
@@ -418,7 +418,7 @@ void Perf_BeginTick(void)
         struct perf_entry *pe = &vec_AT(&gpu_ps->perf_trees[write_idx], i);
 
         R_PushCmd((struct rcmd){
-            .func = R_GL_TimestampForCookie,
+            .func = R_Cmd_TimestampForCookie,
             .nargs = 2,
             .args = {
                 &pe->begin.gpu_cookie,
@@ -426,7 +426,7 @@ void Perf_BeginTick(void)
             }
         });
         R_PushCmd((struct rcmd){
-            .func = R_GL_TimestampForCookie,
+            .func = R_Cmd_TimestampForCookie,
             .nargs = 2,
             .args = {
                 &pe->end.gpu_cookie,
@@ -446,9 +446,15 @@ void Perf_FinishTick(void)
             continue;
 
         struct perf_state *curr = &kh_val(s_thread_state_table, k);
+        const bool suppress_unmatched = 0 == strncmp(curr->name, "worker-", 7);
         /* The stack should always be empty, unless there is 
          * a missing pop for prior push. In that case, be nice,
          * and dump some info about where to find it.
+         *
+         * Detached worker tasks can legally span a frame boundary. The current
+         * profiler tree is frame-scoped, so those stacks must be discarded here
+         * to keep the next frame consistent. Suppress the warning for worker
+         * threads to avoid false positives like navigation_tick_task.
          */
         while(vec_size(&curr->perf_stack) > 0) {
 
@@ -457,7 +463,9 @@ void Perf_FinishTick(void)
             struct perf_entry *pe = &vec_AT(&curr->perf_trees[curr->perf_tree_idx], idx);
 
             const char *name = name_for_id(curr, pe->name_id);
-            fprintf(stderr, "Unmatched perf marker: %s\n", name);
+            if(!suppress_unmatched) {
+                fprintf(stderr, "Unmatched perf marker: %s\n", name);
+            }
         }
         assert(vec_size(&curr->perf_stack) == 0);
 
@@ -465,8 +473,7 @@ void Perf_FinishTick(void)
         vec_perf_reset(&curr->perf_trees[curr->perf_tree_idx]);
     }
 
-    mi_stats_get(sizeof(mi_stats_t), &s_last_frames_memstats[s_last_idx]);
-    uint64_t prev_allocd = s_last_frames_allocd_bytes[positive_modulo(s_last_idx - 1, NFRAMES_LOGGED)];
+    mi_stats_get(&s_last_frames_memstats[s_last_idx]);
     uint64_t curr_allocd = s_last_frames_memstats[s_last_idx].malloc_normal_count.total;
     s_last_frames_allocd_bytes[s_last_idx] = curr_allocd;
 
@@ -501,7 +508,7 @@ size_t Perf_Report(size_t maxout, struct perf_info **out)
 
             if(k == kh_get(pstate, s_thread_state_table, GPU_STATE_KEY)) {
                 uint64_t hz = GPU_TIMER_HZ;
-                uint64_t delta = abs(entry->end.gpu_ts - entry->begin.gpu_ts);
+                uint64_t delta = entry->end.gpu_ts - entry->begin.gpu_ts;
                 info->entries[i].pc_delta = delta;
                 info->entries[i].ms_delta = (delta * 1000.0 / hz);
             }else{
@@ -553,4 +560,3 @@ uint64_t Perf_LastFrameAllocdBytes(void)
          - s_last_frames_allocd_bytes[read_idx_prev];
 #endif
 }
-

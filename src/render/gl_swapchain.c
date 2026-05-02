@@ -36,6 +36,7 @@
 #include "gl_swapchain.h"
 #include "gl_assert.h"
 #include "gl_perf.h"
+#include "gl_render.h"
 #include "gl_texture.h"
 #include "gl_shader.h"
 #include "public/render.h"
@@ -146,7 +147,7 @@ static void framebuffer_blit_to_screen(struct framebuffer *fb)
      * This is the fastest way.
      */
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    R_GL_SetScreenspaceDrawMode();
+    R_GL_SetScreenspaceDrawMode_Impl();
 
     int width, height;
     Engine_WinDrawableSize(&width, &height);
@@ -289,7 +290,7 @@ void R_GL_SwapchainAcquireNext(void)
     framebuffer_bind(&s_images[s_front_idx]);
 }
 
-void R_GL_SwapchainPresentLast(void)
+void R_Cmd_SwapchainPresentLast(void)
 {
     int last_idx = s_front_idx;
     wait_frame_done(last_idx);
@@ -302,4 +303,3 @@ void R_GL_SwapchainFinishCommands(void)
     framebuffer_complete(&s_images[s_front_idx]);
     s_front_idx = (s_front_idx + 1) % FRAMES_IN_FLIGHT;
 }
-

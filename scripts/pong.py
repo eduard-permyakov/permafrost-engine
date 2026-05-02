@@ -34,6 +34,7 @@
 
 import pf
 import math
+import sys
 import traceback
 
 ############################################################
@@ -70,31 +71,34 @@ pf.set_active_camera(pong_cam)
 
 FIELD_WIDTH = 240
 FIELD_HEIGHT = 120
+HALF_FIELD_WIDTH = FIELD_WIDTH // 2
+HALF_FIELD_HEIGHT = FIELD_HEIGHT // 2
 PADDLE_HEIGHT = 16
 PLAYER_SPEED = 2.5
 COMPUTER_SPEED = 2.5
 BALL_SPEED = 5.0
+PY3_TASKS = sys.version_info[0] >= 3
 
 obelisks = []
 
 # top, bot border
-for i in range(-FIELD_WIDTH/2, FIELD_WIDTH/2, 4):
+for i in range(-HALF_FIELD_WIDTH, HALF_FIELD_WIDTH, 4):
     top = pf.Entity("assets/models/props", "obelisk_2.pfobj", "border")
-    top.pos = (-FIELD_HEIGHT/2.0, 0.0, i)
+    top.pos = (-HALF_FIELD_HEIGHT, 0.0, i)
     obelisks += [top]
 
     bot = pf.Entity("assets/models/props", "obelisk_2.pfobj", "border")
-    bot.pos = (FIELD_HEIGHT/2.0, 0.0, i)
+    bot.pos = (HALF_FIELD_HEIGHT, 0.0, i)
     obelisks += [bot]
 
 # left, right border
-for i in range(-FIELD_HEIGHT/2, FIELD_HEIGHT/2, 4):
+for i in range(-HALF_FIELD_HEIGHT, HALF_FIELD_HEIGHT, 4):
     left = pf.Entity("assets/models/props", "obelisk_2.pfobj", "border")
-    left.pos = (i, 0.0, -FIELD_WIDTH/2.0)
+    left.pos = (i, 0.0, -HALF_FIELD_WIDTH)
     obelisks += [left]
 
     right = pf.Entity("assets/models/props", "obelisk_2.pfobj", "border")
-    right.pos = (i, 0.0, FIELD_WIDTH/2.0)
+    right.pos = (i, 0.0, HALF_FIELD_WIDTH)
     obelisks += [right]
 
 ball = pf.Entity("assets/models/barrel", "barrel.pfobj", "ball")
@@ -102,11 +106,11 @@ ball.pos = (0.0, 0.0, 0.0)
 ball.scale = (8.0, 8.0, 8.0)
 
 left_paddle = pf.Entity("assets/models/props", "wood_fence_1.pfobj", "left_paddle")
-left_paddle.pos = (0.0, 0.0, -FIELD_WIDTH/2.0 * 0.8)
+left_paddle.pos = (0.0, 0.0, -HALF_FIELD_WIDTH * 0.8)
 left_paddle.scale = (2.5, 2.5, 2.5)
 
 right_paddle = pf.Entity("assets/models/props", "wood_fence_1.pfobj", "right_paddle")
-right_paddle.pos = (0.0, 0.0, FIELD_WIDTH/2.0 * 0.8)
+right_paddle.pos = (0.0, 0.0, HALF_FIELD_WIDTH * 0.8)
 right_paddle.scale = (2.5, 2.5, 2.5)
 
 ############################################################
@@ -128,22 +132,40 @@ def intersect(ball, paddle):
     return True
 
 class PlayerPaddleActor(pf.Task):
-    def __run__(self):
-        while True:
-            scancode = self.await_event(pf.SDL_KEYDOWN)[0]
-            if scancode == pf.SDL_SCANCODE_UP and left_paddle.pos[0] > -FIELD_HEIGHT/2.0 + PADDLE_HEIGHT/2.0:
-                left_paddle.pos = left_paddle.pos[0] - PLAYER_SPEED, 0.0, left_paddle.pos[2]
-            elif scancode == pf.SDL_SCANCODE_DOWN and left_paddle.pos[0] < FIELD_HEIGHT/2.0 - PADDLE_HEIGHT/2.0:
-                left_paddle.pos = left_paddle.pos[0] + PLAYER_SPEED, 0.0, left_paddle.pos[2]
+    if PY3_TASKS:
+        def __run__(self):
+            while True:
+                scancode = (yield self.await_event(pf.SDL_KEYDOWN))[0]
+                if scancode == pf.SDL_SCANCODE_UP and left_paddle.pos[0] > -HALF_FIELD_HEIGHT + PADDLE_HEIGHT/2.0:
+                    left_paddle.pos = left_paddle.pos[0] - PLAYER_SPEED, 0.0, left_paddle.pos[2]
+                elif scancode == pf.SDL_SCANCODE_DOWN and left_paddle.pos[0] < HALF_FIELD_HEIGHT - PADDLE_HEIGHT/2.0:
+                    left_paddle.pos = left_paddle.pos[0] + PLAYER_SPEED, 0.0, left_paddle.pos[2]
+    else:
+        def __run__(self):
+            while True:
+                scancode = self.await_event(pf.SDL_KEYDOWN)[0]
+                if scancode == pf.SDL_SCANCODE_UP and left_paddle.pos[0] > -HALF_FIELD_HEIGHT + PADDLE_HEIGHT/2.0:
+                    left_paddle.pos = left_paddle.pos[0] - PLAYER_SPEED, 0.0, left_paddle.pos[2]
+                elif scancode == pf.SDL_SCANCODE_DOWN and left_paddle.pos[0] < HALF_FIELD_HEIGHT - PADDLE_HEIGHT/2.0:
+                    left_paddle.pos = left_paddle.pos[0] + PLAYER_SPEED, 0.0, left_paddle.pos[2]
 
 class ComputerPaddleActor(pf.Task):
-    def __run__(self):
-        while True:
-            self.await_event(pf.EVENT_30HZ_TICK)
-            if right_paddle.pos[0] > ball.pos[0] and right_paddle.pos[0] > -FIELD_HEIGHT/2.0 + PADDLE_HEIGHT/2.0:
-                right_paddle.pos = right_paddle.pos[0] - COMPUTER_SPEED, 0.0, right_paddle.pos[2]
-            if right_paddle.pos[0] < ball.pos[0] and right_paddle.pos[0] < FIELD_HEIGHT/2.0 - PADDLE_HEIGHT/2.0:
-                right_paddle.pos = right_paddle.pos[0] + COMPUTER_SPEED, 0.0, right_paddle.pos[2]
+    if PY3_TASKS:
+        def __run__(self):
+            while True:
+                yield self.await_event(pf.EVENT_30HZ_TICK)
+                if right_paddle.pos[0] > ball.pos[0] and right_paddle.pos[0] > -HALF_FIELD_HEIGHT + PADDLE_HEIGHT/2.0:
+                    right_paddle.pos = right_paddle.pos[0] - COMPUTER_SPEED, 0.0, right_paddle.pos[2]
+                if right_paddle.pos[0] < ball.pos[0] and right_paddle.pos[0] < HALF_FIELD_HEIGHT - PADDLE_HEIGHT/2.0:
+                    right_paddle.pos = right_paddle.pos[0] + COMPUTER_SPEED, 0.0, right_paddle.pos[2]
+    else:
+        def __run__(self):
+            while True:
+                self.await_event(pf.EVENT_30HZ_TICK)
+                if right_paddle.pos[0] > ball.pos[0] and right_paddle.pos[0] > -HALF_FIELD_HEIGHT + PADDLE_HEIGHT/2.0:
+                    right_paddle.pos = right_paddle.pos[0] - COMPUTER_SPEED, 0.0, right_paddle.pos[2]
+                if right_paddle.pos[0] < ball.pos[0] and right_paddle.pos[0] < HALF_FIELD_HEIGHT - PADDLE_HEIGHT/2.0:
+                    right_paddle.pos = right_paddle.pos[0] + COMPUTER_SPEED, 0.0, right_paddle.pos[2]
 
 class BallActor(pf.Task):
     def random_vel(self):
@@ -155,37 +177,66 @@ class BallActor(pf.Task):
     def __init__(self):
         self.velocity = self.random_vel()
 
-    def __run__(self):
-        while True:
-            self.await_event(pf.EVENT_30HZ_TICK)
-            ball.pos = (ball.pos[0] + self.velocity[0], 0.0, ball.pos[2] + self.velocity[1])
-            if intersect(ball, left_paddle):
-                self.velocity[1] *= -1.0
-            if intersect(ball, right_paddle):
-                self.velocity[1] *= -1.0
-            if ball.pos[0] >= FIELD_HEIGHT/2.0 or ball.pos[0] <= -FIELD_HEIGHT/2.0:
-                self.velocity[0] *= -1.0
-            if ball.pos[2] >= FIELD_WIDTH/2.0:
-                global player_score
-                player_score += 1
-                ball.pos = (0.0, 0.0, 0.0)
-                self.velocity = self.random_vel()
-            if ball.pos[2] <= -FIELD_WIDTH/2.0:
-                global computer_score
-                computer_score += 1
-                ball.pos = (0.0, 0.0, 0.0)
-                self.velocity = self.random_vel()
+    if PY3_TASKS:
+        def __run__(self):
+            while True:
+                yield self.await_event(pf.EVENT_30HZ_TICK)
+                ball.pos = (ball.pos[0] + self.velocity[0], 0.0, ball.pos[2] + self.velocity[1])
+                if intersect(ball, left_paddle):
+                    self.velocity[1] *= -1.0
+                if intersect(ball, right_paddle):
+                    self.velocity[1] *= -1.0
+                if ball.pos[0] >= HALF_FIELD_HEIGHT or ball.pos[0] <= -HALF_FIELD_HEIGHT:
+                    self.velocity[0] *= -1.0
+                if ball.pos[2] >= HALF_FIELD_WIDTH:
+                    global player_score
+                    player_score += 1
+                    ball.pos = (0.0, 0.0, 0.0)
+                    self.velocity = self.random_vel()
+                if ball.pos[2] <= -HALF_FIELD_WIDTH:
+                    global computer_score
+                    computer_score += 1
+                    ball.pos = (0.0, 0.0, 0.0)
+                    self.velocity = self.random_vel()
+    else:
+        def __run__(self):
+            while True:
+                self.await_event(pf.EVENT_30HZ_TICK)
+                ball.pos = (ball.pos[0] + self.velocity[0], 0.0, ball.pos[2] + self.velocity[1])
+                if intersect(ball, left_paddle):
+                    self.velocity[1] *= -1.0
+                if intersect(ball, right_paddle):
+                    self.velocity[1] *= -1.0
+                if ball.pos[0] >= HALF_FIELD_HEIGHT or ball.pos[0] <= -HALF_FIELD_HEIGHT:
+                    self.velocity[0] *= -1.0
+                if ball.pos[2] >= HALF_FIELD_WIDTH:
+                    global player_score
+                    player_score += 1
+                    ball.pos = (0.0, 0.0, 0.0)
+                    self.velocity = self.random_vel()
+                if ball.pos[2] <= -HALF_FIELD_WIDTH:
+                    global computer_score
+                    computer_score += 1
+                    ball.pos = (0.0, 0.0, 0.0)
+                    self.velocity = self.random_vel()
 
 class UIActor(pf.Task):
-    def __run__(self):
-        while True:
-            global player_score, computer_score
-            self.await_event(pf.EVENT_UPDATE_START)
-            pf.draw_text("PLAYER: {}, COMPUTER: {}".format(player_score, computer_score), 
-                (25, 25, 250, 50), (255, 0, 0, 255))
+    if PY3_TASKS:
+        def __run__(self):
+            while True:
+                global player_score, computer_score
+                yield self.await_event(pf.EVENT_UPDATE_START)
+                pf.draw_text("PLAYER: {}, COMPUTER: {}".format(player_score, computer_score),
+                    (25, 25, 250, 50), (255, 0, 0, 255))
+    else:
+        def __run__(self):
+            while True:
+                global player_score, computer_score
+                self.await_event(pf.EVENT_UPDATE_START)
+                pf.draw_text("PLAYER: {}, COMPUTER: {}".format(player_score, computer_score),
+                    (25, 25, 250, 50), (255, 0, 0, 255))
 
 PlayerPaddleActor().run()
 ComputerPaddleActor().run()
 BallActor().run()
 UIActor().run()
-

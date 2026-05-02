@@ -347,7 +347,7 @@ static void ui_init_font_stash(struct nk_context *ctx)
     image = nk_font_atlas_bake(&s_atlas, &w, &h, NK_FONT_ATLAS_RGBA32);
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_UI_UploadFontAtlas,
+        .func = R_Cmd_UI_UploadFontAtlas,
         .nargs = 3,
         .args = {
             R_PushArg(image, w * h * sizeof(uint32_t)),
@@ -437,7 +437,7 @@ static void ui_render(void *user, void *event)
     switch(mode) {
     case UI_RENDER_MODE_NORMAL:
         R_PushCmd((struct rcmd){
-            .func = R_GL_UI_Render,
+            .func = R_Cmd_UI_Render,
             .nargs = 1,
             .args = {
                 push_draw_list(&s_ctx.draw_list),
@@ -446,7 +446,7 @@ static void ui_render(void *user, void *event)
         break;
     case UI_RENDER_MODE_LOADING_SCREEN:
         R_PushCmdImmediateFront((struct rcmd){
-            .func = R_GL_UI_Render,
+            .func = R_Cmd_UI_Render,
             .nargs = 1,
             .args = {
                 push_draw_list(&s_ctx.draw_list),
@@ -483,7 +483,7 @@ bool UI_Init(const char *basedir, SDL_Window *win)
     s_ctx.screen.get_drawable_size = ui_get_drawable_size;
     s_ctx.screen.get_screen_size = ui_get_screen_size;
 
-    R_PushCmd((struct rcmd) { R_GL_UI_Init, 0 });
+    R_PushCmd((struct rcmd) { R_Cmd_UI_Init, 0 });
 
     ui_init_font_stash(&s_ctx);
 
@@ -513,7 +513,7 @@ void UI_Shutdown(void)
     kh_foreach(s_fontmap, key, curr, { free((void*)key); });
     kh_destroy(font, s_fontmap);
 
-    R_PushCmd((struct rcmd){ R_GL_UI_Shutdown, 0});
+    R_PushCmd((struct rcmd){ R_Cmd_UI_Shutdown, 0});
 }
 
 void UI_InputBegin(void)

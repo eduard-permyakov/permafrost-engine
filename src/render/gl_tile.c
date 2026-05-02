@@ -51,7 +51,7 @@
 #include "../main.h"
 #include "../perf.h"
 
-#include <GL/glew.h>
+#include "gl_loader.h"
 
 #include <stdlib.h>
 #include <stddef.h>
@@ -77,6 +77,32 @@
 
 #define SAME_INDICES_32(i)          (  ((i) & 0xffff) == (((i) >> 16) & 0xffff) \
                                     && ((i) & 0xff  ) == (((i) >> 8 ) & 0xff  ) )
+
+#if PF_RENDER_BACKEND_METAL
+static void metal_copy_terrain_flat_attrs(struct terrain_vert *dst,
+                                          const struct terrain_vert *src)
+{
+    dst->material_idx = src->material_idx;
+    dst->blend_mode = src->blend_mode;
+    dst->no_bump_map = src->no_bump_map;
+    dst->middle_indices = src->middle_indices;
+    dst->c1_indices[0] = src->c1_indices[0];
+    dst->c1_indices[1] = src->c1_indices[1];
+    dst->c2_indices[0] = src->c2_indices[0];
+    dst->c2_indices[1] = src->c2_indices[1];
+    dst->tb_indices = src->tb_indices;
+    dst->lr_indices = src->lr_indices;
+    dst->wang_index = src->wang_index;
+}
+
+static void metal_expand_tile_flat_attrs(struct terrain_vert *tile_verts_base)
+{
+    for(size_t i = 0; i + 2 < VERTS_PER_TILE; i += 3) {
+        metal_copy_terrain_flat_attrs(&tile_verts_base[i + 1], &tile_verts_base[i]);
+        metal_copy_terrain_flat_attrs(&tile_verts_base[i + 2], &tile_verts_base[i]);
+    }
+}
+#endif
 
 /* We take the directions to be relative to a normal vector facing outwards
  * from the plane of the face. West is to the right, east is to the left,
@@ -544,8 +570,10 @@ static float tile_min_visible_height(const struct map *map, struct tile_desc til
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivate, mat4x4_t *model, 
-                           const int *tiles_per_chunk_x, const int *tiles_per_chunk_z)
+void R_GL_TileDrawSelected_Impl(const struct tile_desc *in,
+                                const void *chunk_rprivate, mat4x4_t *model,
+                                const int *tiles_per_chunk_x,
+                                const int *tiles_per_chunk_z)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -630,12 +658,15 @@ void R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivat
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, const struct tile_desc *tile)
+void R_TilePatchVertsBlend_Impl(void *chunk_rprivate, const struct map *map,
+                                const struct tile_desc *tile)
 {
     ASSERT_IN_RENDER_THREAD();
 
-    const struct render_private *priv = chunk_rprivate;
+    struct render_private *priv = chunk_rprivate;
+#if !PF_RENDER_BACKEND_METAL
     GLuint VBO = priv->mesh.VBO;
+#endif
 
     struct map_resolution res;
     M_GetResolution(map, &res);
@@ -793,10 +824,15 @@ void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, const
     size_t offset = VERTS_PER_TILE * (tile->tile_r * TILES_PER_CHUNK_WIDTH + tile->tile_c) * sizeof(struct terrain_vert);
     size_t length = VERTS_PER_TILE * sizeof(struct terrain_vert);
 
+#if PF_RENDER_BACKEND_METAL
+    (void)length;
+    struct terrain_vert *tile_verts_base = (struct terrain_vert*)((char*)priv->metal_terrain_verts + offset);
+#else
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     struct terrain_vert *tile_verts_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_WRITE_BIT);
     GL_ASSERT_OK();
     assert(tile_verts_base);
+#endif
 
     struct terrain_vert *south_provoking[2] = {tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 0*3,
                                                tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 1*3};
@@ -852,24 +888,36 @@ void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, const
         provoking[i]->blend_mode = optimal_blendmode(provoking[i]);
     }
 
+#if PF_RENDER_BACKEND_METAL
+    metal_expand_tile_flat_attrs(tile_verts_base);
+#else
     glUnmapBuffer(GL_ARRAY_BUFFER);
     GL_ASSERT_OK();
+#endif
 }
 
-void R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, const struct tile_desc *tile)
+void R_TilePatchVertsSmooth_Impl(void *chunk_rprivate, const struct map *map,
+                                 const struct tile_desc *tile)
 {
     ASSERT_IN_RENDER_THREAD();
 
-    const struct render_private *priv = chunk_rprivate;
+    struct render_private *priv = chunk_rprivate;
+#if !PF_RENDER_BACKEND_METAL
     GLuint VBO = priv->mesh.VBO;
+#endif
 
     size_t offset = VERTS_PER_TILE * (tile->tile_r * TILES_PER_CHUNK_WIDTH + tile->tile_c) * sizeof(struct terrain_vert);
     size_t length = VERTS_PER_TILE * sizeof(struct terrain_vert);
 
+#if PF_RENDER_BACKEND_METAL
+    (void)length;
+    union top_face_vbuff *tfvb = (union top_face_vbuff*)((char*)priv->metal_terrain_verts + offset);
+#else
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     union top_face_vbuff *tfvb = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_WRITE_BIT);
     GL_ASSERT_OK();
     assert(tfvb);
+#endif
     tfvb = (union top_face_vbuff*)(((struct terrain_vert*)tfvb) + (4 * VERTS_PER_SIDE_FACE));
 
     struct map_resolution res;
@@ -965,11 +1013,14 @@ void R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, cons
     tfvb->center6.normal = center_norm;
     tfvb->center7.normal = center_norm;
 
+#if !PF_RENDER_BACKEND_METAL
     glUnmapBuffer(GL_ARRAY_BUFFER);
     GL_ASSERT_OK();
+#endif
 }
 
-void R_GL_TileUpdate(void *chunk_rprivate, const struct map *map, const struct tile_desc *desc)
+void R_TileUpdate_Impl(void *chunk_rprivate, const struct map *map,
+                       const struct tile_desc *desc)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -982,19 +1033,28 @@ void R_GL_TileUpdate(void *chunk_rprivate, const struct map *map, const struct t
 
     size_t offset = (desc->tile_r * TILES_PER_CHUNK_WIDTH + desc->tile_c) * VERTS_PER_TILE * sizeof(struct terrain_vert);
     size_t length = VERTS_PER_TILE * sizeof(struct terrain_vert);
+#if PF_RENDER_BACKEND_METAL
+    (void)length;
+    struct terrain_vert *vert_base = (struct terrain_vert*)((char*)priv->metal_terrain_verts + offset);
+#else
     glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
     struct terrain_vert *vert_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_WRITE_BIT);
     assert(vert_base);
+#endif
     
     R_TileGetVertices(map, *desc, vert_base);
+#if !PF_RENDER_BACKEND_METAL
     glUnmapBuffer(GL_ARRAY_BUFFER);
+#endif
 
-    R_GL_TilePatchVertsBlend(chunk_rprivate, map, desc);
+    R_TilePatchVertsBlend_Impl(chunk_rprivate, map, desc);
     if(tile->blend_normals) {
-        R_GL_TilePatchVertsSmooth(chunk_rprivate, map, desc);
+        R_TilePatchVertsSmooth_Impl(chunk_rprivate, map, desc);
     }
 
+#if !PF_RENDER_BACKEND_METAL
     GL_ASSERT_OK();
+#endif
     GL_PERF_RETURN_VOID();
 }
 
@@ -1476,4 +1536,3 @@ int R_TileGetTriMesh(const struct map *map, struct tile_desc *td, mat4x4_t *mode
     assert(i % 3 == 0);
     PERF_RETURN(i);
 }
-

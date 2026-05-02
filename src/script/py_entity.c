@@ -33,7 +33,7 @@
  *
  */
 
-#include <Python.h> /* must be first */
+#include "py_compat.h"
 #include "py_entity.h" 
 #include "py_pickle.h"
 #include "../main.h"
@@ -185,7 +185,7 @@ static PyMethodDef PyEntity_methods[] = {
     "Get the set of icons displayed over the entity."},
 
     {"__pickle__", 
-    (PyCFunction)PyEntity_pickle, METH_KEYWORDS,
+    (PyCFunction)PyEntity_pickle, METH_VARARGS | METH_KEYWORDS,
     "Serialize a Permafrost Engine entity to a string."},
 
     {"__unpickle__", 
@@ -335,7 +335,7 @@ static PyMethodDef PyAnimEntity_methods[] = {
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
 
     {"__pickle__", 
-    (PyCFunction)PyAnimEntity_pickle, METH_KEYWORDS,
+    (PyCFunction)PyAnimEntity_pickle, METH_VARARGS | METH_KEYWORDS,
     "Serialize a Permafrost Engine animated entity to a string."},
 
     {"__unpickle__", 
@@ -400,7 +400,7 @@ static PyMethodDef PyCombatableEntity_methods[] = {
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
 
     {"__pickle__", 
-    (PyCFunction)PyCombatableEntity_pickle, METH_KEYWORDS,
+    (PyCFunction)PyCombatableEntity_pickle, METH_VARARGS | METH_KEYWORDS,
     "Serialize a Permafrost Engine combatable entity to a string."},
 
     {"__unpickle__", 
@@ -520,7 +520,7 @@ static PyMethodDef PyBuildableEntity_methods[] = {
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
 
     {"__pickle__", 
-    (PyCFunction)PyBuildableEntity_pickle, METH_KEYWORDS,
+    (PyCFunction)PyBuildableEntity_pickle, METH_VARARGS | METH_KEYWORDS,
     "Serialize a Permafrost Engine buildable entity to a string."},
 
     {"__unpickle__", 
@@ -606,7 +606,7 @@ static PyMethodDef PyBuilderEntity_methods[] = {
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
 
     {"__pickle__", 
-    (PyCFunction)PyBuilderEntity_pickle, METH_KEYWORDS,
+    (PyCFunction)PyBuilderEntity_pickle, METH_VARARGS | METH_KEYWORDS,
     "Serialize a Permafrost Engine builder entity to a string."},
 
     {"__unpickle__", 
@@ -669,7 +669,7 @@ static PyMethodDef PyResourceEntity_methods[] = {
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
 
     {"__pickle__", 
-    (PyCFunction)PyResourceEntity_pickle, METH_KEYWORDS,
+    (PyCFunction)PyResourceEntity_pickle, METH_VARARGS | METH_KEYWORDS,
     "Serialize a Permafrost Engine combatable entity to a string."},
 
     {"__unpickle__", 
@@ -810,7 +810,7 @@ static PyMethodDef PyHarvesterEntity_methods[] = {
     "to bring next to the target storage site."},
 
     {"__pickle__", 
-    (PyCFunction)PyHarvesterEntity_pickle, METH_KEYWORDS,
+    (PyCFunction)PyHarvesterEntity_pickle, METH_VARARGS | METH_KEYWORDS,
     "Serialize a Permafrost Engine combatable entity to a string."},
 
     {"__unpickle__", 
@@ -909,7 +909,7 @@ static PyMethodDef PyStorageSiteEntity_methods[] = {
     "Sets the target amount of the specified resource that harvesters will aim to store there."},
 
     {"__pickle__", 
-    (PyCFunction)PyStorageSiteEntity_pickle, METH_KEYWORDS,
+    (PyCFunction)PyStorageSiteEntity_pickle, METH_VARARGS | METH_KEYWORDS,
     "Serialize a Permafrost Engine combatable entity to a string."},
 
     {"__unpickle__", 
@@ -992,7 +992,7 @@ static PyMethodDef PyMovableEntity_methods[] = {
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
 
     {"__pickle__", 
-    (PyCFunction)PyMovableEntity_pickle, METH_KEYWORDS,
+    (PyCFunction)PyMovableEntity_pickle, METH_VARARGS | METH_KEYWORDS,
     "Serialize a Permafrost Engine combatable entity to a string."},
 
     {"__unpickle__", 
@@ -1034,7 +1034,7 @@ static PyMethodDef PyWaterEntity_methods[] = {
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
 
     {"__pickle__", 
-    (PyCFunction)PyWaterEntity_pickle, METH_KEYWORDS,
+    (PyCFunction)PyWaterEntity_pickle, METH_VARARGS | METH_KEYWORDS,
     "Serialize a Permafrost Engine combatable entity to a string."},
 
     {"__unpickle__", 
@@ -1076,7 +1076,7 @@ static PyMethodDef PyAirEntity_methods[] = {
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
 
     {"__pickle__", 
-    (PyCFunction)PyAirEntity_pickle, METH_KEYWORDS,
+    (PyCFunction)PyAirEntity_pickle, METH_VARARGS | METH_KEYWORDS,
     "Serialize a Permafrost Engine combatable entity to a string."},
 
     {"__unpickle__", 
@@ -1137,7 +1137,7 @@ static PyMethodDef PyGarrisonEntity_methods[] = {
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
 
     {"__pickle__", 
-    (PyCFunction)PyGarrisonEntity_pickle, METH_KEYWORDS,
+    (PyCFunction)PyGarrisonEntity_pickle, METH_VARARGS | METH_KEYWORDS,
     "Serialize a Permafrost Engine combatable entity to a string."},
 
     {"__unpickle__", 
@@ -1201,7 +1201,7 @@ static PyMethodDef PyGarrisonableEntity_methods[] = {
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
 
     {"__pickle__", 
-    (PyCFunction)PyGarrisonableEntity_pickle, METH_KEYWORDS,
+    (PyCFunction)PyGarrisonableEntity_pickle, METH_VARARGS | METH_KEYWORDS,
     "Serialize a Permafrost Engine combatable entity to a string."},
 
     {"__unpickle__", 
@@ -2392,6 +2392,9 @@ static int PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject 
 
     A_SetIdleClip(self->super.ent, PyString_AS_STRING(idle_clip), 24);
 
+#if PY_MAJOR_VERSION >= 3 && defined(__APPLE__) && defined(__aarch64__)
+    return 0;
+#else
     /* Call the next __init__ method in the MRO. This is required for all __init__ calls in the 
      * MRO to complete in cases when this class is one of multiple base classes of another type. 
      * This allows this type to be used as one of many mix-in bases. */
@@ -2400,6 +2403,7 @@ static int PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject 
         return -1; /* Exception already set */
     Py_DECREF(ret);
     return 0;
+#endif
 }
 
 static PyObject *PyAnimEntity_del(PyAnimEntityObject *self)
@@ -2628,6 +2632,9 @@ static int PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *arg
 
     G_Combat_SetCurrentHP(self->super.ent, PyInt_AS_LONG(max_hp));
 
+#if PY_MAJOR_VERSION >= 3 && defined(__APPLE__) && defined(__aarch64__)
+    return 0;
+#else
     /* Call the next __init__ method in the MRO. This is required for all __init__ calls in the 
      * MRO to complete in cases when this class is one of multiple base classes of another type. 
      * This allows this type to be used as one of many mix-in bases. */
@@ -2636,6 +2643,7 @@ static int PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *arg
         return -1; /* Exception already set */
     Py_DECREF(ret);
     return 0;
+#endif
 }
 
 static PyObject *PyCombatableEntity_del(PyCombatableEntityObject *self)
@@ -2893,6 +2901,9 @@ static int PyBuildableEntity_init(PyBuildableEntityObject *self, PyObject *args,
         }
     }
 
+#if PY_MAJOR_VERSION >= 3 && defined(__APPLE__) && defined(__aarch64__)
+    return 0;
+#else
     /* Call the next __init__ method in the MRO. This is required for all __init__ calls in the 
      * MRO to complete in cases when this class is one of multiple base classes of another type. 
      * This allows this type to be used as one of many mix-in bases. */
@@ -2902,6 +2913,7 @@ static int PyBuildableEntity_init(PyBuildableEntityObject *self, PyObject *args,
         return -1; /* Exception already set */
     Py_DECREF(ret);
     return 0;
+#endif
 
 fail_type:
     PyErr_SetString(PyExc_TypeError, 
@@ -3125,9 +3137,10 @@ static PyObject *PyBuildableEntity_get_required_resources(PyBuildableEntityObjec
         return NULL;
     }
 
-    const size_t max = 64;
-    STALLOC(char*, names, max);
-    STALLOC(int, amounts, max);
+    enum { MAX_REQUIRED_RESOURCES = 64 };
+    const size_t max = MAX_REQUIRED_RESOURCES;
+    STALLOC(char*, names, MAX_REQUIRED_RESOURCES);
+    STALLOC(int, amounts, MAX_REQUIRED_RESOURCES);
 
     size_t nreq = G_Building_GetAllRequired(self->super.ent, max, (const char**)names, amounts);
     PyObject *ret = PyDict_New();
@@ -3185,6 +3198,9 @@ static int PyBuilderEntity_init(PyBuilderEntityObject *self, PyObject *args, PyO
 
     G_Builder_SetBuildSpeed(self->super.ent, PyInt_AS_LONG(build_speed));
 
+#if PY_MAJOR_VERSION >= 3 && defined(__APPLE__) && defined(__aarch64__)
+    return 0;
+#else
     /* Call the next __init__ method in the MRO. This is required for all __init__ calls in the 
      * MRO to complete in cases when this class is one of multiple base classes of another type. 
      * This allows this type to be used as one of many mix-in bases. */
@@ -3193,6 +3209,7 @@ static int PyBuilderEntity_init(PyBuilderEntityObject *self, PyObject *args, PyO
         return -1; /* Exception already set */
     Py_DECREF(ret);
     return 0;
+#endif
 }
 
 static PyObject *PyBuilderEntity_build(PyBuilderEntityObject *self, PyObject *args)
@@ -3326,6 +3343,9 @@ static int PyResourceEntity_init(PyResourceEntityObject *self, PyObject *args, P
     G_Resource_SetName(self->super.ent, PyString_AS_STRING(name));
     G_Resource_SetAmount(self->super.ent, PyInt_AS_LONG(amount));
 
+#if PY_MAJOR_VERSION >= 3 && defined(__APPLE__) && defined(__aarch64__)
+    return 0;
+#else
     /* Call the next __init__ method in the MRO. This is required for all __init__ calls in the 
      * MRO to complete in cases when this class is one of multiple base classes of another type. 
      * This allows this type to be used as one of many mix-in bases. */
@@ -3334,6 +3354,7 @@ static int PyResourceEntity_init(PyResourceEntityObject *self, PyObject *args, P
         return -1; /* Exception already set */
     Py_DECREF(ret);
     return 0;
+#endif
 }
 
 static PyObject *PyResourceEntity_pickle(PyResourceEntityObject *self, PyObject *args, PyObject *kwargs)
@@ -4307,7 +4328,7 @@ static PyObject *PyGarrisonEntity_garrison(PyGarrisonEntityObject *self, PyObjec
         return NULL;
     }
 
-    if(!G_Garrison_Enter(self->super.ent, garrisonable->super.ent)) {
+    if(!G_Garrison_Enter(garrisonable->super.ent, self->super.ent)) {
         PyErr_SetString(PyExc_TypeError, "Unable to garrison inside specified "
             "pf.GarrisonableEntity instance.");
         return NULL;
@@ -4485,6 +4506,17 @@ static PyObject *s_entity_from_atts(const char *path, const char *name,
         return NULL;
     }
 
+    if((k = kh_get(attr, attr_table, "uid")) != kh_end(attr_table)) {
+        PyObject *uidobj = s_obj_from_attr(&kh_value(attr_table, k));
+        if(!uidobj) {
+            Py_DECREF(args);
+            Py_DECREF(kwargs);
+            return NULL;
+        }
+        PyDict_SetItemString(kwargs, "__uid__", uidobj);
+        Py_DECREF(uidobj);
+    }
+
     if((k = kh_get(attr, attr_table, "position")) != kh_end(attr_table)) {
         vec3_t pos = kh_value(attr_table, k).val.as_vec3;
         PyObject *posobj = Py_BuildValue("fff", pos.x, pos.y, pos.z);
@@ -4555,6 +4587,14 @@ static PyObject *s_new_custom_class(const char *name, const vec_attr_t *construc
         goto fail_kwargs;
 
     khiter_t k;
+    if((k = kh_get(attr, attr_table, "uid")) != kh_end(attr_table)) {
+        PyObject *uidobj = s_obj_from_attr(&kh_value(attr_table, k));
+        if(!uidobj)
+            goto fail_pos;
+        PyDict_SetItemString(kwargs, "__uid__", uidobj);
+        Py_DECREF(uidobj);
+    }
+
     if((k = kh_get(attr, attr_table, "position")) != kh_end(attr_table)) {
         vec3_t pos = kh_value(attr_table, k).val.as_vec3;
         PyObject *posobj = Py_BuildValue("fff", pos.x, pos.y, pos.z);
@@ -4569,6 +4609,9 @@ static PyObject *s_new_custom_class(const char *name, const vec_attr_t *construc
     if(ret) {
         int status = tp_class->tp_init(ret, args, NULL);
         if(status) {
+#if PY_MAJOR_VERSION >= 3 && defined(__APPLE__) && defined(__aarch64__)
+            PySys_WriteStderr("Failed to initialize custom scene class %s\n", name);
+#endif
             Py_CLEAR(ret);
         }
     }
@@ -4707,6 +4750,36 @@ script_opaque_t S_Entity_ObjForUID(uint32_t uid)
     return kh_value(s_uid_pyobj_table, k);
 }
 
+script_opaque_t S_Entity_GetAll(void)
+{
+    PyObject *ret = PyList_New(0);
+    if(!ret)
+        return NULL;
+
+    if(!s_uid_pyobj_table)
+        return ret;
+
+    for(khiter_t k = kh_begin(s_uid_pyobj_table); k != kh_end(s_uid_pyobj_table); ++k) {
+        if(!kh_exist(s_uid_pyobj_table, k))
+            continue;
+
+        uint32_t uid = kh_key(s_uid_pyobj_table, k);
+        if(G_EntityIsZombie(uid))
+            continue;
+
+        PyObject *obj = kh_value(s_uid_pyobj_table, k);
+        if(!obj)
+            continue;
+
+        if(PyList_Append(ret, obj) < 0) {
+            Py_DECREF(ret);
+            return NULL;
+        }
+    }
+
+    return ret;
+}
+
 script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
                                      const khash_t(attr) *attr_table, 
                                      const vec_attr_t *construct_args)
@@ -4728,11 +4801,31 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
         ret = s_new_custom_class(cls, construct_args, attr_table, extra_flags);
 
         if(PyErr_Occurred()) {
-            PyThreadState *tstate = PyThreadState_GET();
-            PyObject *repr = PyObject_Repr(tstate->curexc_value);
-            printf("[IMPORT] Unable to make %s instance: %s\n", cls, PyString_AS_STRING(repr));
-            Py_DECREF(repr);
-            PyErr_Clear();
+            PyObject *type = NULL, *value = NULL, *traceback = NULL;
+            PyObject *repr = NULL;
+            const char *msg = "<unrepresentable exception>";
+
+            PyErr_Fetch(&type, &value, &traceback);
+            PyErr_NormalizeException(&type, &value, &traceback);
+
+            repr = PyObject_Repr(value ? value : Py_None);
+            if(repr) {
+                const char *tmp = PyString_AS_STRING(repr);
+                if(tmp) {
+                    msg = tmp;
+                }else{
+                    PyErr_Clear();
+                }
+            }else{
+                PyErr_Clear();
+            }
+
+            printf("[IMPORT] Unable to make %s instance: %s\n", cls, msg);
+
+            Py_XDECREF(repr);
+            Py_XDECREF(type);
+            Py_XDECREF(value);
+            Py_XDECREF(traceback);
         }
     }
 
@@ -4811,4 +4904,3 @@ PyObject *S_Entity_GetLoaded(void)
     
     return ret;
 }
-

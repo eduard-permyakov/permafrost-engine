@@ -37,6 +37,11 @@ from constants import *
 
 import common.button_style_ctx as btc
 
+try:
+    string_types = (basestring,)
+except NameError:
+    string_types = (str,)
+
 class TabBarWindow(pf.Window):
     SELECTED_COLOR = (90, 90, 90, 255)
     SELECTED_HOVER_COLOR = (75, 75, 75, 255)
@@ -44,7 +49,7 @@ class TabBarWindow(pf.Window):
     def __init__(self):
         vresx, vresy = (1920, 1080)
 
-        dims = (0, 0, vresx - UI_TAB_BAR_COL_WIDTH, UI_TAB_BAR_HEIGHT)
+        dims = (0, UI_PLATFORM_TOP_INSET, vresx - UI_TAB_BAR_COL_WIDTH, UI_TAB_BAR_HEIGHT)
         super(TabBarWindow, self).__init__("TabBar", dims, pf.NK_WINDOW_NO_SCROLLBAR, (vresx, vresy),
             resize_mask = pf.ANCHOR_X_LEFT | pf.ANCHOR_X_RIGHT | pf.ANCHOR_Y_TOP)
         self.active_idx = 0
@@ -52,7 +57,7 @@ class TabBarWindow(pf.Window):
         self.child_windows = []
 
     def push_child(self, label, window):
-        assert isinstance(label, basestring)
+        assert isinstance(label, string_types)
         assert isinstance(window, pf.Window)
 
         self.labels.append(label) 
@@ -90,4 +95,3 @@ class TabBarWindow(pf.Window):
                 window.show()
             else:
                 window.hide()
-
