@@ -243,7 +243,7 @@ static void phys_proj_spawn_trails(void)
 {
     for(int i = 0; i < vec_size(&s_front); i++) {
         struct projectile *curr = &vec_AT(&s_front, i);
-        if(!(curr->flags & PROJ_HAS_TRAIL_SPRITE))
+        if(!(curr->sprite_flags & PROJ_HAS_TRAIL_SPRITE))
             continue;
         vec3_t delta;
         PFM_Vec3_Sub(&curr->pos, &curr->prev_trail_pos, &delta);
