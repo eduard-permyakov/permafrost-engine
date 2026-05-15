@@ -190,8 +190,8 @@ static void flush_last_range(struct gl_ring *ring)
     if(end >= begin) {
         glFlushMappedBufferRange(GL_TEXTURE_BUFFER, begin, end - begin);
     }else{
-        glFlushMappedBufferRange(GL_TEXTURE_BUFFER, 0, begin);
-        glFlushMappedBufferRange(GL_TEXTURE_BUFFER, end, ring->size - end);
+        glFlushMappedBufferRange(GL_TEXTURE_BUFFER, begin, ring->size - begin);
+        glFlushMappedBufferRange(GL_TEXTURE_BUFFER, 0, end);
     }
     glBindBuffer(GL_TEXTURE_BUFFER, 0);
 }
