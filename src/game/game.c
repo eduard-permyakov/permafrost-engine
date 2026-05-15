@@ -1042,7 +1042,7 @@ static void g_create_settings(void)
         .name = "pf.game.combat_hz",
         .val = (struct sval) {
             .type = ST_TYPE_FLOAT,
-            .as_int = 1.0
+            .as_float = 1.0
         },
         .prio = 0,
         .validate = combat_hz_validate,
