@@ -47,7 +47,7 @@
 
 /* How many discrete sets of data (guarded by fences) the buffer can hold */
 #define NMAXMARKERS     (256)
-#define TIMEOUT_NSEC    (((uint64_t)10) * 1000 * 1000 * 1000)
+#define TIMEOUT_NSEC    (((uint64_t)1) * 1000 * 1000 * 1000)
 
 /* On some hardware persistent mapped buffers are faster. However, they
  * are not part of OpenGL 3.3 core which we are targeting. So, fallback 
@@ -100,7 +100,7 @@ static bool ring_wait_one(struct gl_ring *ring)
     if(ring->nmarkers == 0)
         GL_PERF_RETURN(false);
 
-    GLenum result = glClientWaitSync(ring->fences[ring->imark_tail], 0, TIMEOUT_NSEC);
+    GLenum result = glClientWaitSync(ring->fences[ring->imark_tail], GL_SYNC_FLUSH_COMMANDS_BIT, TIMEOUT_NSEC);
     glDeleteSync(ring->fences[ring->imark_tail]);
     ring->fences[ring->imark_tail] = 0;
     ring->imark_tail = (ring->imark_tail + 1) % NMAXMARKERS;
