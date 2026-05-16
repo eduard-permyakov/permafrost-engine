@@ -849,6 +849,10 @@ struct sc_map_entry{
     { NULL, /*&PyGarrisonEntity_type*/      NULL },
     { NULL, /*&PyGarrisonableEntity_type*/  NULL },
     { NULL, /*&PyRegion_type*/              NULL },
+    { NULL, /*&_PyWeakref_RefType*/         NULL },
+    { NULL, /*PyExc_BaseException*/         NULL },
+    { NULL, /*PyExc_Exception*/             NULL },
+    { NULL, /*PyExc_StandardError*/         NULL },
 };
 
 /*****************************************************************************/
@@ -1245,6 +1249,10 @@ static void load_subclassable_builtin_refs(void)
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "GarrisonEntity");
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "GarrisonableEntity");
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "Region");
+    s_subclassable_builtin_map[base_idx++].builtin =  &_PyWeakref_RefType;
+    s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyExc_BaseException;
+    s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyExc_Exception;
+    s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyExc_StandardError;
 
 	assert(base_idx == ARR_SIZE(s_subclassable_builtin_map));
 }
@@ -5332,10 +5340,43 @@ static int op_ext_newinst(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
     PyTypeObject *tp_type = (PyTypeObject*)type;
 
-    /* This is assigning to __class__, but with no error checking */
-    Py_DECREF(Py_TYPE(inst));
-    Py_TYPE(inst) = tp_type;
-    Py_INCREF(Py_TYPE(inst));
+    /* When the subtype has extra C-level storage (e.g. __slots__), the base
+     * instance is too small to hold it. Allocate a properly-sized object via
+     * the base type's tp_new, then let PF_SETATTRS fill in the Python slots.
+     *
+     * For weakrefs we must extract the referent and callback from the existing
+     * instance rather than passing inst directly, because tp_new would
+     * otherwise try to create a weakref-to-a-weakref. For all other types the
+     * existing instance can be passed as a copy-constructor argument. 
+     */
+    if(tp_type->tp_basicsize > Py_TYPE(inst)->tp_basicsize
+    && Py_TYPE(inst)->tp_new) {
+
+        PyObject *args = NULL;
+        if(PyWeakref_CheckRef(inst)) {
+            PyObject *wr_obj = PyWeakref_GET_OBJECT(inst);
+            PyObject *wr_cb  = ((PyWeakReference*)inst)->wr_callback;
+            args = (wr_cb && wr_cb != Py_None) ? PyTuple_Pack(2, wr_obj, wr_cb)
+                                               : PyTuple_Pack(1, wr_obj);
+        }else {
+            args = PyTuple_Pack(1, inst);
+        }
+
+        PyObject *new_inst = Py_TYPE(inst)->tp_new(tp_type, args, NULL);
+        Py_DECREF(args);
+
+        if(!new_inst) {
+            SET_RUNTIME_EXC("PF_NEWINST: Failed allocation");
+            goto fail_typecheck;
+        }
+        Py_DECREF(inst);
+        inst = new_inst;
+    }else {
+        /* Compatible layout: safe to reassign type in-place */
+        Py_DECREF(Py_TYPE(inst));
+        Py_TYPE(inst) = tp_type;
+        Py_INCREF(Py_TYPE(inst));
+    }
 
     Py_INCREF(inst);
     vec_pobj_push(&ctx->stack, inst);
