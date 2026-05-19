@@ -76,6 +76,12 @@ enum blend_mode{
     BLEND_MODE_BLUR,
 };
 
+enum tile_cover{
+    TILE_COVER_NONE = 0,
+    TILE_COVER_GRASS_FULL,
+    TILE_COVER_GRASS_SPARSE,
+};
+
 struct tile{
     bool            pathable;    
     enum tiletype   type;
@@ -96,6 +102,7 @@ struct tile{
     bool            blend_normals;
     bool            no_bump_map;
     int             wang_idx;
+    enum tile_cover cover;
 };
 
 struct tile_desc{

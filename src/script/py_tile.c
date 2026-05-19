@@ -88,6 +88,8 @@ static PyMemberDef PyTile_members[] = {
     {"no_bump_map",    T_UBYTE, BASE + offsetof(struct tile, no_bump_map),     0,
     "A boolean which determines if the bump map is used for giving an uneven texture to the top surface."
     "('False' means that the bump map is used)."},
+    {"cover",          T_INT,   BASE + offsetof(struct tile, cover),           0,
+    "The type of surface cover (e.g. grass) to place on this tile. One of the TILE_COVER_* constants."},
     {NULL}  /* Sentinel */
 };
 #undef BASE
@@ -190,7 +192,7 @@ static PyObject *PyTile_pickle(PyTileObject *self, PyObject *args, PyObject *kwa
     SDL_RWops *stream = PFSDL_VectorRWOps();
     CHK_TRUE(stream, fail_alloc);
 
-    PyObject *attrs = Py_BuildValue("iiiiiiii", 
+    PyObject *attrs = Py_BuildValue("iiiiiiiii",
         self->tile.pathable,
         self->tile.type,
         self->tile.base_height,
@@ -198,7 +200,8 @@ static PyObject *PyTile_pickle(PyTileObject *self, PyObject *args, PyObject *kwa
         self->tile.top_mat_idx,
         self->tile.sides_mat_idx,
         self->tile.blend_mode,
-        self->tile.blend_normals
+        self->tile.blend_normals,
+        self->tile.cover
     );
     status = S_PickleObjgraph(attrs, stream);
     Py_DECREF(attrs);
@@ -238,8 +241,9 @@ static PyObject *PyTile_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
 
     int pathable;
     int blend_normals;
+    int cover;
 
-    if(!PyArg_ParseTuple(attrs, "iiiiiiii",
+    if(!PyArg_ParseTuple(attrs, "iiiiiiiii",
         &pathable,
         &tileobj->tile.type,
         &tileobj->tile.base_height,
@@ -247,11 +251,13 @@ static PyObject *PyTile_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
         &tileobj->tile.top_mat_idx,
         &tileobj->tile.sides_mat_idx,
         &tileobj->tile.blend_mode,
-        &blend_normals)) {
+        &blend_normals,
+        &cover)) {
         goto fail_tile;
     }
     tileobj->tile.pathable = !!pathable;
     tileobj->tile.blend_normals = !!blend_normals;
+    tileobj->tile.cover = (enum tile_cover)cover;
 
     Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
     ret = Py_BuildValue("(Oi)", tileobj, (int)nread);

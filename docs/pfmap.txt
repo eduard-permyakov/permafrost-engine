@@ -88,10 +88,10 @@
 
     Each 24 character tile can be broken down into the following fields:
 
-            +-+-+--+--+---+---+-+-+-+-+-------+
-    Region: |A|B|C |D |E  |F  |G|H|I|J|K      |
-    Size:   |1|1|2 |2 |3  |3  |1|1|1|1|8      |
-            +-+-+--+--+---+---+-+-+-+-+-------+
+            +-+-+--+--+---+---+-+-+-+-+-+------+
+    Region: |A|B|C |D |E  |F  |G|H|I|J|K|L     |
+    Size:   |1|1|2 |2 |3  |3  |1|1|1|1|1|7     |
+            +-+-+--+--+---+---+-+-+-+-+-+------+
             
     A - Tile Type
     This is a hexadecimal number having a legal range of values between 0 and C. 
@@ -155,7 +155,15 @@
     Has a value of either '0' or '1'. When it is '0', a bumpy texture is applied to
     the top surface of the tile.
 
-    K - Reserved
+    K - Tile Cover
+    This is a single decimal digit specifying the type of surface cover to be placed
+    on top of this tile. The decoding is the following:
+
+        TILE_COVER_NONE         = 0
+        TILE_COVER_GRASS_FULL   = 1
+        TILE_COVER_GRASS_SPARSE = 2
+
+    L - Reserved
     These characters are reserved for future expansions to the PFMAP format. They
     are ignored by the engine.
 
