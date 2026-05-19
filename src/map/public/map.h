@@ -164,6 +164,12 @@ void   M_NavRenderNavigationPortals(const struct map *map, const struct camera *
                                     enum nav_layer layer);
 
 /* ------------------------------------------------------------------------
+ * Debug rendering to show the 'cover' attribute of every map tile.
+ * ------------------------------------------------------------------------
+ */
+void   M_NavRenderMapCover(const struct map *map, const struct camera *cam);
+
+/* ------------------------------------------------------------------------
  * Debug rendering to show the global island ID over every navigation tile.
  * ------------------------------------------------------------------------
  */
@@ -776,5 +782,11 @@ void   M_SwapCaches(struct map *a, struct map *b);
  */
 void M_GetFieldCacheStats(const struct map *map, struct fc_stats *out);
 
+/*###########################################################################*/
+/* MAP COVER                                                                 */
+/*###########################################################################*/
+
+bool M_CoverInit(const struct map *map);
+void M_CoverShutdown(void);
 
 #endif

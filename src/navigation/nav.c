@@ -2772,7 +2772,69 @@ void N_RenderNavigationBlockers(void *nav_private, const struct map *map,
     });
 }
 
-void N_RenderBuildableTiles(void *nav_private, const struct map *map, 
+void N_RenderMapCover(void *nav_private, const struct map *map,
+                      mat4x4_t *chunk_model, int chunk_r, int chunk_c)
+{
+    const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+
+    vec2_t corners_buff[4 * TILES_PER_CHUNK_HEIGHT * TILES_PER_CHUNK_WIDTH];
+    vec3_t colors_buff[TILES_PER_CHUNK_HEIGHT * TILES_PER_CHUNK_WIDTH];
+
+    vec2_t *corners_base = corners_buff;
+    vec3_t *colors_base = colors_buff;
+
+    for(int r = 0; r < TILES_PER_CHUNK_HEIGHT; r++) {
+    for(int c = 0; c < TILES_PER_CHUNK_WIDTH; c++) {
+
+        float square_x_len = (1.0f / TILES_PER_CHUNK_WIDTH)  * chunk_x_dim;
+        float square_z_len = (1.0f / TILES_PER_CHUNK_HEIGHT) * chunk_z_dim;
+        float square_x = CLAMP(-(((float)c) / TILES_PER_CHUNK_WIDTH)  * chunk_x_dim, -chunk_x_dim, chunk_x_dim);
+        float square_z = CLAMP( (((float)r) / TILES_PER_CHUNK_HEIGHT) * chunk_z_dim, -chunk_z_dim, chunk_z_dim);
+
+        *corners_base++ = (vec2_t){square_x,                  square_z               };
+        *corners_base++ = (vec2_t){square_x,                  square_z + square_z_len};
+        *corners_base++ = (vec2_t){square_x - square_x_len,   square_z + square_z_len};
+        *corners_base++ = (vec2_t){square_x - square_x_len,   square_z               };
+
+        struct tile_desc td = {chunk_r, chunk_c, r, c};
+        struct tile *tile = NULL;
+        M_TileForDesc(map, td, &tile);
+        assert(tile);
+
+        switch(tile->cover) {
+        case TILE_COVER_GRASS_FULL:
+            *colors_base++ = (vec3_t){0.0f, 1.0f, 0.0f};
+            break;
+        case TILE_COVER_GRASS_SPARSE:
+            *colors_base++ = (vec3_t){1.0f, 1.0f, 0.0f};
+            break;
+        default:
+            *colors_base++ = (vec3_t){1.0f, 0.0f, 0.0f};
+            break;
+        }
+    }}
+
+    assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
+    assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
+
+    size_t count = TILES_PER_CHUNK_HEIGHT * TILES_PER_CHUNK_WIDTH;
+    bool on_water_surface = false;
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawMapOverlayQuads,
+        .nargs = 6,
+        .args = {
+            R_PushArg(corners_buff, sizeof(corners_buff)),
+            R_PushArg(colors_buff, sizeof(colors_buff)),
+            R_PushArg(&count, sizeof(count)),
+            R_PushArg(chunk_model, sizeof(*chunk_model)),
+            R_PushArg(&on_water_surface, sizeof(bool)),
+            (void*)G_GetPrevTickMap(),
+        },
+    });
+}
+
+void N_RenderBuildableTiles(void *nav_private, const struct map *map,
                             mat4x4_t *chunk_model, int chunk_r, int chunk_c,
                             const struct obb *obb, enum nav_layer layer, 
                             bool blocked, bool allow_shore)

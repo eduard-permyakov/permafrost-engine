@@ -259,11 +259,20 @@ void      N_RenderBuildableTiles(void *nav_private, const struct map *map,
                                  bool blocked, bool allows_shore);
 
 /* ------------------------------------------------------------------------
+ * Debug rendering to show the 'cover' attribute of every map tile.
+ * TILE_COVER_GRASS_FULL tiles are green, TILE_COVER_GRASS_SPARSE tiles are
+ * yellow, and TILE_COVER_NONE tiles are red.
+ * ------------------------------------------------------------------------
+ */
+void      N_RenderMapCover(void *nav_private, const struct map *map,
+                           mat4x4_t *chunk_model, int chunk_r, int chunk_c);
+
+/* ------------------------------------------------------------------------
  * Debug rendering to show the portals between chunks. 'Active' portals
  * are green and 'blocked' portals are red.
  * ------------------------------------------------------------------------
  */
-void      N_RenderNavigationPortals(void *nav_private, const struct map *map, 
+void      N_RenderNavigationPortals(void *nav_private, const struct map *map,
                                     mat4x4_t *chunk_model, int chunk_r, int chunk_c,
                                     enum nav_layer layer);
 
