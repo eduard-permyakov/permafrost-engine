@@ -41,6 +41,7 @@
 #include "gl_shader.h"
 #include "gl_perf.h"
 #include "gl_anim.h"
+#include "gl_vertex.h"
 #include "../main.h"
 #include "../pf_math.h"
 #include "../config.h"
@@ -49,8 +50,11 @@
 #include "../phys/public/collision.h"
 #include "../game/public/game.h"
 
-#include <GL/glew.h>
+#include "gl_loader.h"
 #include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 
 #define LIGHT_EXTRA_HEIGHT    (300.0f)
@@ -69,6 +73,14 @@ static GLuint         s_depth_map_FBO;
 static GLuint         s_depth_map_tex;
 static bool           s_depth_pass_active = false;
 static struct shadow_gl_state s_saved;
+static struct {
+    unsigned terrain_draws;
+    unsigned static_draws;
+    unsigned anim_draws;
+    size_t terrain_verts;
+    size_t static_verts;
+    size_t anim_verts;
+} s_caster_stats;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -149,7 +161,7 @@ void R_GL_InitShadows(void)
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DepthPassBegin(const vec3_t *light_pos, const vec3_t *cam_pos, const vec3_t *cam_dir)
+void R_GL_DepthPassBegin_Impl(const vec3_t *light_pos, const vec3_t *cam_pos, const vec3_t *cam_dir)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -157,6 +169,7 @@ void R_GL_DepthPassBegin(const vec3_t *light_pos, const vec3_t *cam_pos, const v
 
     assert(!s_depth_pass_active);
     s_depth_pass_active = true;
+    memset(&s_caster_stats, 0, sizeof(s_caster_stats));
 
     glGetIntegerv(GL_VIEWPORT, s_saved.viewport);
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &s_saved.fb);
@@ -181,13 +194,106 @@ void R_GL_DepthPassBegin(const vec3_t *light_pos, const vec3_t *cam_pos, const v
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DepthPassEnd(void)
+static float *gl_read_shadow_depth(void)
+{
+    GLint w = CONFIG_SHADOW_MAP_RES;
+    GLint h = CONFIG_SHADOW_MAP_RES;
+    float *depth = malloc((size_t)w * h * sizeof(float));
+    if(!depth)
+        return NULL;
+
+    GLint old_fb;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &old_fb);
+    glBindFramebuffer(GL_FRAMEBUFFER, s_depth_map_FBO);
+    glReadPixels(0, 0, w, h, GL_DEPTH_COMPONENT, GL_FLOAT, depth);
+    glBindFramebuffer(GL_FRAMEBUFFER, old_fb);
+    return depth;
+}
+
+static void gl_dump_shadow_depth_preview_to_file(const char *path, const float *depth)
+{
+    if(!path || !depth)
+        return;
+    GLint w = CONFIG_SHADOW_MAP_RES;
+    GLint h = CONFIG_SHADOW_MAP_RES;
+    FILE *fp = fopen(path, "wb");
+    if(fp) {
+        unsigned char *rgba = malloc((size_t)w * h * 4);
+        if(rgba) {
+            for(GLint i = 0; i < w * h; i++) {
+                float d = depth[i];
+                if(d < 0.0f) d = 0.0f;
+                if(d > 1.0f) d = 1.0f;
+                unsigned char g = (unsigned char)(d * 255.0f + 0.5f);
+                rgba[i*4 + 0] = g;
+                rgba[i*4 + 1] = g;
+                rgba[i*4 + 2] = g;
+                rgba[i*4 + 3] = 255;
+            }
+            fwrite(rgba, 1, (size_t)w * h * 4, fp);
+            free(rgba);
+        }
+        fclose(fp);
+        fprintf(stderr, "PF_GL_SHADOW_DUMP wrote %dx%d RGBA8 raw to %s\n", w, h, path);
+    }
+}
+
+static void gl_dump_shadow_depth_f32_to_file(const char *path, const float *depth)
+{
+    if(!path || !depth)
+        return;
+    GLint w = CONFIG_SHADOW_MAP_RES;
+    GLint h = CONFIG_SHADOW_MAP_RES;
+    FILE *fp = fopen(path, "wb");
+    if(!fp)
+        return;
+    fwrite(depth, sizeof(float), (size_t)w * h, fp);
+    fclose(fp);
+    fprintf(stderr, "PF_GL_SHADOW_DUMP_F32 wrote %dx%d float32 raw to %s\n", w, h, path);
+}
+
+static void gl_dump_shadow_depth_if_requested(void)
+{
+    const char *preview_path = getenv("PF_GL_SHADOW_DUMP_PATH");
+    const char *f32_path = getenv("PF_GL_SHADOW_DUMP_F32_PATH");
+    if((!preview_path || !*preview_path) && (!f32_path || !*f32_path))
+        return;
+
+    const char *min_static = getenv("PF_GL_SHADOW_DUMP_MIN_STATIC_DRAWS");
+    if(min_static && *min_static && s_caster_stats.static_draws < (unsigned)strtoul(min_static, NULL, 10))
+        return;
+    const char *min_anim = getenv("PF_GL_SHADOW_DUMP_MIN_ANIM_DRAWS");
+    if(min_anim && *min_anim && s_caster_stats.anim_draws < (unsigned)strtoul(min_anim, NULL, 10))
+        return;
+
+    float *depth = gl_read_shadow_depth();
+    if(!depth)
+        return;
+
+    if(f32_path && *f32_path)
+        gl_dump_shadow_depth_f32_to_file(f32_path, depth);
+    if(preview_path && *preview_path)
+        gl_dump_shadow_depth_preview_to_file(preview_path, depth);
+
+    free(depth);
+}
+
+void R_GL_DepthPassEnd_Impl(void)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     assert(s_depth_pass_active);
     s_depth_pass_active = false;
+
+    if(getenv("PF_GL_SHADOW_CASTER_LOG")) {
+        fprintf(stderr,
+            "PF_GL_SHADOW_CASTERS terrain=%u/%zu static=%u/%zu anim=%u/%zu\n",
+            s_caster_stats.terrain_draws, s_caster_stats.terrain_verts,
+            s_caster_stats.static_draws, s_caster_stats.static_verts,
+            s_caster_stats.anim_draws, s_caster_stats.anim_verts);
+    }
+    gl_dump_shadow_depth_if_requested();
 
     glViewport(s_saved.viewport[0], s_saved.viewport[1], s_saved.viewport[2], s_saved.viewport[3]);
     glBindFramebuffer(GL_FRAMEBUFFER, s_saved.fb);
@@ -198,7 +304,7 @@ void R_GL_DepthPassEnd(void)
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_RenderDepthMap(const void *render_private, mat4x4_t *model)
+void R_GL_RenderDepthMap_Impl(const void *render_private, mat4x4_t *model)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -210,14 +316,42 @@ void R_GL_RenderDepthMap(const void *render_private, mat4x4_t *model)
     });
 
     const struct render_private *priv = render_private;
+    if(priv->uses_pose_buffer) {
+        s_caster_stats.anim_draws++;
+        s_caster_stats.anim_verts += priv->mesh.num_verts;
+    }else if(priv->vertex_stride == sizeof(struct terrain_vert)) {
+        s_caster_stats.terrain_draws++;
+        s_caster_stats.terrain_verts += priv->mesh.num_verts;
+    }else{
+        s_caster_stats.static_draws++;
+        s_caster_stats.static_verts += priv->mesh.num_verts;
+    }
     R_GL_Shader_InstallProg(priv->shader_prog_dp);
-    R_GL_AnimBindPoseBuff();
+    if(priv->uses_pose_buffer) {
+        R_GL_AnimBindPoseBuff();
+    }
 
     glBindVertexArray(priv->mesh.VAO);
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
 
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
+}
+
+void R_GL_ShadowStatsAddStatic(unsigned draws, size_t verts)
+{
+    if(!s_depth_pass_active)
+        return;
+    s_caster_stats.static_draws += draws;
+    s_caster_stats.static_verts += verts;
+}
+
+void R_GL_ShadowStatsAddAnim(unsigned draws, size_t verts)
+{
+    if(!s_depth_pass_active)
+        return;
+    s_caster_stats.anim_draws += draws;
+    s_caster_stats.anim_verts += verts;
 }
 
 void R_GL_ShadowMapBind(void)
@@ -232,7 +366,7 @@ void R_GL_ShadowMapBind(void)
     GL_ASSERT_OK();
 }
 
-void R_GL_SetShadowsEnabled(const bool *on)
+void R_GL_SetShadowsEnabled_Impl(const bool *on)
 {
     R_GL_StateSet(GL_U_SHADOWS_ON, (struct uval){
         .type = UTYPE_INT,
@@ -258,4 +392,3 @@ void R_LightVisibilityFrustum(const struct camera *cam, struct frustum *out)
     Camera_MakeFrustum(zoomed_out, out);
     Camera_Free(zoomed_out);
 }
-

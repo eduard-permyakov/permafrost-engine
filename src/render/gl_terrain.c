@@ -96,7 +96,11 @@ static void create_height_map(void)
 
     glGenBuffers(1, &s_heightmap.buffer);
     glBindBuffer(GL_TEXTURE_BUFFER, s_heightmap.buffer);
-    glBufferStorage(GL_TEXTURE_BUFFER, buffsize, data, 0);
+    if(PFGL_BufferStorageSupported()) {
+        glBufferStorage(GL_TEXTURE_BUFFER, buffsize, data, 0);
+    }else{
+        glBufferData(GL_TEXTURE_BUFFER, buffsize, data, GL_STATIC_DRAW);
+    }
 
     glGenTextures(1, &s_heightmap.tex_buff);
     glBindTexture(GL_TEXTURE_BUFFER, s_heightmap.tex_buff);
@@ -119,7 +123,11 @@ static void create_splat_map(void)
 
     glGenBuffers(1, &s_splatmap.buffer);
     glBindBuffer(GL_TEXTURE_BUFFER, s_splatmap.buffer);
-    glBufferStorage(GL_TEXTURE_BUFFER, buffsize, data, 0);
+    if(PFGL_BufferStorageSupported()) {
+        glBufferStorage(GL_TEXTURE_BUFFER, buffsize, data, 0);
+    }else{
+        glBufferData(GL_TEXTURE_BUFFER, buffsize, data, GL_STATIC_DRAW);
+    }
 
     glGenTextures(1, &s_splatmap.tex_buff);
     glBindTexture(GL_TEXTURE_BUFFER, s_splatmap.tex_buff);
@@ -151,8 +159,8 @@ static uint32_t materials_hash_adler32(const char map_texfiles[][256], size_t nu
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures, 
-                  const struct map_resolution *res)
+void R_GL_MapInit_Impl(const char map_texfiles[][256], const size_t *num_textures,
+                       const struct map_resolution *res)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -219,7 +227,7 @@ void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures,
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_MapUpdateFog(void *buff, const size_t *size)
+void R_GL_MapUpdateFog_Impl(void *buff, const size_t *size)
 {
     GL_PERF_ENTER();
     R_GL_RingbufferPush(s_fog_ring, buff, *size);
@@ -227,7 +235,7 @@ void R_GL_MapUpdateFog(void *buff, const size_t *size)
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_MapShutdown(void)
+void R_GL_MapShutdown_Impl(void)
 {
     /* Leave the mao textures and heightmaps. They can be
      * reused between different maps 
@@ -236,7 +244,7 @@ void R_GL_MapShutdown(void)
 }
 
 /* Push a fully 'visible' field into the ringbuffer. Must be followed
- * with a matching R_GL_MapInvalidate to consume the fence. */
+ * with a matching R_Cmd_MapInvalidate to consume the fence. */
 void R_GL_MapUpdateFogClear(void)
 {
     size_t size = s_res.chunk_w * s_res.chunk_h * s_res.tile_w * s_res.tile_h;
@@ -246,13 +254,16 @@ void R_GL_MapUpdateFogClear(void)
     PF_FREE(buff);
 }
 
-void R_GL_MapBegin(const bool *shadows, const vec2_t *pos,
-                   size_t *num_splats, const struct splatmap *splatmap)
+void R_GL_MapBegin_Impl(const bool *shadows, const vec2_t *pos,
+                        size_t *num_splats, const struct splatmap *splatmap,
+                        const struct map_resolution *res, const struct map *map)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
     GL_PERF_PUSH_GROUP(0, "map");
     assert(!s_map_ctx_active);
+    (void)res;
+    (void)map;
 
     R_GL_StateSet(GL_U_MAP_POS, (struct uval){
         .type = UTYPE_VEC2,
@@ -273,9 +284,10 @@ void R_GL_MapBegin(const bool *shadows, const vec2_t *pos,
         splatbuff[base_idx] = accent_idx;
     }
     R_GL_StateSetArray(GL_U_SPLATS, UTYPE_INT, MAX_MAP_TEXTURES, splatbuff);
-    R_GL_SetShadowsEnabled(shadows);
+    R_GL_SetShadowsEnabled_Impl(shadows);
 
-    GLuint shader_prog = R_GL_Shader_GetProgForName("terrain-shadowed");
+    const char *shader_name = "terrain-shadowed";
+    GLuint shader_prog = R_GL_Shader_GetProgForName(shader_name);
     assert(shader_prog != -1);
     R_GL_Shader_InstallProg(shader_prog);
 
@@ -290,13 +302,13 @@ void R_GL_MapBegin(const bool *shadows, const vec2_t *pos,
     glActiveTexture(SPLAT_MAP_TUNIT);
     glBindTexture(GL_TEXTURE_BUFFER, s_splatmap.tex_buff);
 
-    R_GL_SkyboxBind();
+    R_GL_SkyboxBind_Impl();
 
     s_map_ctx_active = true;
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_MapEnd(void)
+void R_GL_MapEnd_Impl(void)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -308,7 +320,7 @@ void R_GL_MapEnd(void)
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_MapInvalidate(void)
+void R_GL_MapInvalidate_Impl(void)
 {
     GL_PERF_ENTER();
     R_GL_RingbufferSyncLast(s_fog_ring);
@@ -319,4 +331,3 @@ void R_GL_MapFogBindLast(GLuint tunit, GLuint shader_prog, const char *uname)
 {
     R_GL_RingbufferBindLast(s_fog_ring, tunit, shader_prog, uname);
 }
-

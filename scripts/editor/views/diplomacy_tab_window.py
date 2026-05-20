@@ -46,7 +46,7 @@ class DiplomacyTabWindow(pf.Window):
     def __init__(self):
         vresx, vresy = (1920, 1080)
         super(DiplomacyTabWindow, self).__init__("DiplomacyTab", 
-            (0, UI_TAB_BAR_HEIGHT + 1, UI_LEFT_PANE_WIDTH, vresy - UI_TAB_BAR_HEIGHT - 1), pf.NK_WINDOW_BORDER, (vresx, vresy),
+            (0, UI_TOP_PANE_Y, UI_LEFT_PANE_WIDTH, vresy - UI_TOP_PANE_Y), pf.NK_WINDOW_BORDER, (vresx, vresy),
             resize_mask = pf.ANCHOR_X_LEFT | pf.ANCHOR_Y_TOP | pf.ANCHOR_Y_BOT)
         self.selected_fac_idx = 0
 
@@ -137,4 +137,3 @@ class DiplomacyTabWindow(pf.Window):
                 self.button_label("Update Selected", lambda : None)
                 self.layout_row_dynamic(30, 1)
                 self.button_label("Add New Faction", lambda : None)
-

@@ -2,7 +2,8 @@
 
 ## ![Logo](docs/images/logo.png) ##
 
-Permafrost Engine is an OpenGL 3.3 Real Time Strategy game engine written in C. 
+Permafrost Engine is a Real Time Strategy game engine written in C, with an
+OpenGL 3.3 renderer and a native Metal renderer for macOS Apple Silicon.
 It is made in the image of old classics, but incorporating some modern ideas.
 
 ## Engine Showcase ##
@@ -33,6 +34,7 @@ Download the free demo on [Steam](https://store.steampowered.com/app/1309720/EVE
 ## Engine Summary ##
 
 * OpenGL 3.3 programmable pipeline (more modern extensions used where available)
+* Native Metal renderer for macOS Apple Silicon runtime builds
 * Custom ASCII model format with Blender export script
 * Skeletal animation with GPU skinning
 * Batching of animation pose data to a texture for performant rendering of large numbers of animated entities
@@ -49,7 +51,7 @@ Download the free demo on [Steam](https://store.steampowered.com/app/1309720/EVE
 * Programmatic synthesis of textures using the Image Quilting algorithm
 * Aperiodic tiling of the map plane using the Wang Tiling algorithm
 * Export/Import of game entites to/from ASCII files
-* Engine internals exposed to Python 2.7 for scripting
+* Engine internals exposed to Python for scripting
 * Embedded interactive Python console
 * Event system
 * UI framework (Nuklear-based)
@@ -88,14 +90,15 @@ Download the free demo on [Steam](https://store.steampowered.com/app/1309720/EVE
 * Advanced debug visualizations and profiling instrumentatation
 * Fiber system for putting work in lightweight tasks that are scheduled in userspace
 * Fiber-backed Python tasks, allowing cooperative multitasking logic in Python
-* Cross-platform (Linux and Windows)
+* Cross-platform (Linux, Windows, and macOS Apple Silicon runtime builds)
 * Windows launcher to automatically capture a minidump and stdout, stderr logs on application error
 
 ## Dependencies ##
 
 * SDL2 2.30.0
 * GLEW 2.2.0
-* python 2.7.17
+* python 2.7.17 (legacy Linux/Windows dependency flow)
+* python 3.13 (macOS Apple Silicon runtime builds)
 * openal-soft 1.21.1
 * mi-malloc 2.2.3
 * stb_image.h, stb_image_resize.h
@@ -117,6 +120,39 @@ Python is built with a subset of the default modules and packaged with a trimmed
 Now you can invoke `make run` to launch the demo or `make run_editor` to launch the map editor.
 Optionally, invoke `make launchers` to create the `./demo` and `./editor` binaries which don't 
 require any arguments.
+
+#### For macOS Apple Silicon ####
+
+The macOS Apple Silicon runtime uses Homebrew-provided dependencies and can be
+built with either the native Metal backend or the OpenGL reference backend.
+Install the expected host packages first:
+
+1. `brew install cmake pkg-config sdl2 openal-soft mimalloc python@3.13`
+2. `make deps PLAT=MACOS_ARM64`
+3. `make pf PLAT=MACOS_ARM64 MACOS_ARM64_BUILD_READY=1 RENDER_BACKEND=METAL`
+4. `./bin/pf-arm64 ./ ./scripts/rts/main.py`
+
+To build the OpenGL reference backend instead:
+
+1. `make pf PLAT=MACOS_ARM64 MACOS_ARM64_BUILD_READY=1 RENDER_BACKEND=OPENGL`
+2. `./bin/pf-arm64 ./ ./scripts/rts/main.py`
+
+The Metal backend is the default Apple Silicon runtime target. The OpenGL
+backend remains available as a visual/reference backend while the renderer port
+is validated. `make run_editor PLAT=MACOS_ARM64` launches the editor on the
+native macOS runtime path.
+
+Current macOS Apple Silicon notes:
+
+* The Metal runtime path does not link `OpenGL.framework`; the OpenGL backend is
+  kept intentionally as a reference build for visual parity testing.
+* Python scripting runs against the host Python 3.13 toolchain on arm64 macOS.
+  Legacy Python 2 interpreter-state serialization internals are not fully
+  available on this path, but gameplay, editor, task, audio, minimap, water,
+  sprite/VFX, and visual-parity probes cover the active runtime surfaces.
+* Focused macOS validation helpers live under `scripts/macos/`, including
+  OpenGL/Metal visual parity, gameplay smoke/soak, editor workflow, and editor
+  screenshot probes.
 
 #### For Windows ####
 
@@ -198,4 +234,3 @@ In addition, you may solicit me regarding interesting job opportunities.
 Discuss EVERGLORY and its' development on [Discord](https://discord.gg/jSQ8M6C). 
 
 My e-mail is: edward.permyakov@gmail.com
-

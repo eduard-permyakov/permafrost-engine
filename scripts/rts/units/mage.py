@@ -32,19 +32,26 @@
 #  statement from your version.
 #
 
-import anim_moveable as am
-import anim_combatable as ac
+from . import anim_moveable as am
+from . import anim_combatable as ac
 
 class Mage(am.AnimMoveable, ac.AnimCombatable):
 
     def __init__(self, path, pfobj, name):
-        super(Mage, self).__init__(path, pfobj, name, 
-            idle_clip=self.idle_anim(),
-            max_hp = 100,
-            base_dmg = 80,
-            base_armour = 0.10,
-            attack_range = 50.0,
-            projectile_descriptor = ("assets/models/fireball", "fireball.pfobj", (1.0, 1.0, 1.0), 75.0))
+        am.AnimMoveable.__init__(self, path, pfobj, name, idle_clip=self.idle_anim())
+        ac.AnimCombatable.__init__(self, path, pfobj, name,
+            max_hp=100,
+            base_dmg=80,
+            base_armour=0.10,
+            attack_range=50.0,
+            projectile_descriptor=(
+                "assets/models/fireball",
+                "fireball.pfobj",
+                (1.0, 1.0, 1.0),
+                75.0,
+                (("impact_burst.png", 1, 4, 4), (13.0, 13.0)),
+                (("projectile_trail.png", 1, 4, 4), (18.0, 6.0), 2.0),
+            ))
         self.speed = 20.0
 
     def idle_anim(self):
@@ -58,4 +65,3 @@ class Mage(am.AnimMoveable, ac.AnimCombatable):
 
     def death_anim(self): 
         return "Die"
-

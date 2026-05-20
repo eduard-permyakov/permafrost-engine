@@ -345,7 +345,7 @@ void Camera_TickFinishPerspective(struct camera *cam)
     PFM_Mat4x4_MakeLookAt(&cam->pos, &target, &cam->up, &view);
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_SetViewMatAndPos,
+        .func = R_Cmd_SetViewMatAndPos,
         .nargs = 2,
         .args = {
             R_PushArg(&view, sizeof(view)),
@@ -359,7 +359,7 @@ void Camera_TickFinishPerspective(struct camera *cam)
     PFM_Mat4x4_MakePerspective(DEG_TO_RAD(45.0f), ((GLfloat)w)/h, CAM_Z_NEAR_DIST, CONFIG_DRAWDIST, &proj);
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_SetProj,
+        .func = R_Cmd_SetProj,
         .nargs = 1,
         .args = { R_PushArg(&proj, sizeof(proj)) },
     });
@@ -378,7 +378,7 @@ void Camera_TickFinishPerspectiveUpsideDown(struct camera *cam)
     PFM_Mat4x4_MakeLookAt(&cam->pos, &target, &cam->up, &view);
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_SetViewMatAndPos,
+        .func = R_Cmd_SetViewMatAndPos,
         .nargs = 2,
         .args = {
             R_PushArg(&view, sizeof(view)),
@@ -399,7 +399,7 @@ void Camera_TickFinishPerspectiveUpsideDown(struct camera *cam)
     PFM_Mat4x4_Mult4x4(&scale_mat, &proj, &proj_flipped);
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_SetProj,
+        .func = R_Cmd_SetProj,
         .nargs = 1,
         .args = { R_PushArg(&proj_flipped, sizeof(proj_flipped)) },
     });
@@ -418,7 +418,7 @@ void Camera_TickFinishOrthographic(struct camera *cam, vec2_t bot_left, vec2_t t
     PFM_Mat4x4_MakeLookAt(&cam->pos, &target, &cam->up, &view);
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_SetViewMatAndPos,
+        .func = R_Cmd_SetViewMatAndPos,
         .nargs = 2,
         .args = {
             R_PushArg(&view, sizeof(view)),
@@ -429,7 +429,7 @@ void Camera_TickFinishOrthographic(struct camera *cam, vec2_t bot_left, vec2_t t
     /* Set the projection matrix for the vertex shader */
     PFM_Mat4x4_MakeOrthographic(bot_left.raw[0], top_right.raw[0], bot_left.raw[1], top_right.raw[1], CAM_Z_NEAR_DIST, CONFIG_DRAWDIST, &proj);
     R_PushCmd((struct rcmd){
-        .func = R_GL_SetProj,
+        .func = R_Cmd_SetProj,
         .nargs = 1,
         .args = { R_PushArg(&proj, sizeof(proj)) },
     });

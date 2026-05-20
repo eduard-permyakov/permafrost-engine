@@ -200,7 +200,7 @@ bool A_Texture_AppendData(const char *pfobj, const struct anim_data *data, uint3
 
     add_mappings(str, new_id, &desc);
     R_PushCmd((struct rcmd){
-        .func = R_GL_AnimAppendData,
+        .func = R_Cmd_AnimAppendData,
         .nargs = 2,
         .args = {
             buff,

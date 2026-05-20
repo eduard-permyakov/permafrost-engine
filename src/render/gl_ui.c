@@ -40,6 +40,7 @@
 #include "gl_shader.h"
 #include "gl_render.h"
 #include "gl_perf.h"
+#include "backend_local.h"
 #include "../main.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/stb_image.h"
@@ -47,7 +48,7 @@
 
 #include <assert.h>
 
-#include <GL/glew.h>
+#include "gl_loader.h"
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -109,7 +110,7 @@ static void exec_draw_commands(const struct nk_draw_list *dl, GLuint shader_prog
             case NK_COMMAND_IMAGE_TEXPATH: {
 
                 stbi_set_flip_vertically_on_load(false);
-                R_GL_Texture_GetOrLoad(g_basepath, ud->image.texpath, (GLuint*)&cmd->texture.id);
+                R_GL_Texture_GetOrLoad_Impl(g_basepath, ud->image.texpath, (GLuint*)&cmd->texture.id);
                 stbi_set_flip_vertically_on_load(true);
                 break;
             }
@@ -144,14 +145,22 @@ static void exec_draw_commands(const struct nk_draw_list *dl, GLuint shader_prog
 
 int R_UI_GetFontTexID(void)
 {
+#if PF_RENDER_BACKEND_METAL
+    if(s_ctx.font_tex == 0)
+        return 1;
+#endif
     assert(s_ctx.font_tex > 0);
     return s_ctx.font_tex;
 }
 
-void R_GL_UI_Init(void)
+void R_GL_UI_Init_Impl(void)
 {
     ASSERT_IN_RENDER_THREAD();
 
+#if PF_RENDER_BACKEND_METAL
+    assert(!"OpenGL UI implementation is not available on Metal");
+    return;
+#else
     /* buffer setup */
     GLsizei vs = sizeof(struct ui_vert);
     size_t vp = offsetof(struct ui_vert, screen_pos);
@@ -181,12 +190,18 @@ void R_GL_UI_Init(void)
     glBindVertexArray(0);
 
     GL_ASSERT_OK();
+#endif
 }
 
-void R_GL_UI_Shutdown(void)
+void R_GL_UI_Shutdown_Impl(void)
 {
     ASSERT_IN_RENDER_THREAD();
 
+#if PF_RENDER_BACKEND_METAL
+    s_ctx.font_tex = 0;
+    assert(!"OpenGL UI implementation is not available on Metal");
+    return;
+#else
     if(s_ctx.font_tex) {
         glDeleteTextures(1, &s_ctx.font_tex);
     }
@@ -195,12 +210,19 @@ void R_GL_UI_Shutdown(void)
     glDeleteVertexArrays(1, &s_ctx.VAO);
 
     GL_ASSERT_OK();
+#endif
 }
 
-void R_GL_UI_Render(const struct nk_draw_list *dl)
+void R_GL_UI_Render_Impl(const struct nk_draw_list *dl)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
+
+#if PF_RENDER_BACKEND_METAL
+    (void)dl;
+    assert(!"OpenGL UI implementation is not available on Metal");
+    GL_PERF_RETURN_VOID();
+#else
     GL_PERF_PUSH_GROUP(0, "UI");
 
     /* setup global state */
@@ -241,13 +263,22 @@ void R_GL_UI_Render(const struct nk_draw_list *dl)
     GL_PERF_POP_GROUP();
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
+#endif
 }
 
-void R_GL_UI_UploadFontAtlas(void *image, const int *w, const int *h)
+void R_GL_UI_UploadFontAtlas_Impl(void *image, const int *w, const int *h)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
+#if PF_RENDER_BACKEND_METAL
+    (void)image;
+    (void)w;
+    (void)h;
+    s_ctx.font_tex = 1;
+    assert(!"OpenGL UI implementation is not available on Metal");
+    GL_PERF_RETURN_VOID();
+#else
     glGenTextures(1, &s_ctx.font_tex);
     glBindTexture(GL_TEXTURE_2D, s_ctx.font_tex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -257,5 +288,5 @@ void R_GL_UI_UploadFontAtlas(void *image, const int *w, const int *h)
 
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
+#endif
 }
-

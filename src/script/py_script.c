@@ -33,7 +33,7 @@
  *
  */
 
-#include <Python.h> /* Must be included first */
+#include "py_compat.h"
 #include <frameobject.h>
 
 #include "py_entity.h"
@@ -81,7 +81,7 @@
 #include <stdio.h>
 #include <time.h>
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 #include <sys/stat.h>
 #endif
 
@@ -202,6 +202,8 @@ static PyObject *PyPf_set_garrison_ui_font_color(PyObject *self, PyObject *args)
 static PyObject *PyPf_set_garrison_ui_icon(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_garrison_ui_style(PyObject *self, PyObject *args);
 static PyObject *PyPf_garrison_show_ui(PyObject *self, PyObject *args);
+
+static bool s_register_pf_module(void);
 
 static PyObject *PyPf_set_move_on_left_click(PyObject *self);
 static PyObject *PyPf_set_attack_on_left_click(PyObject *self);
@@ -389,7 +391,8 @@ static PyMethodDef pf_module_methods[] = {
     {"get_render_info", 
     (PyCFunction)PyPf_get_render_info, METH_NOARGS,
     "Returns a dictionary describing the renderer context. It will have the string keys "
-    "'renderer', 'version', 'shading_language_version', and 'vendor'."},
+    "'renderer', 'version', 'shading_language_version', 'vendor', 'backend', "
+    "and the integer key 'msaa_samples'."},
 
     {"get_nav_perfstats", 
     (PyCFunction)PyPf_get_nav_perfstats, METH_NOARGS,
@@ -1078,6 +1081,14 @@ static PyObject *PyPf_load_scene(PyObject *self, PyObject *args, PyObject *kwarg
         if(PyErr_Occurred()) {
             PyObject *type, *value, *traceback;
             PyErr_Fetch(&type, &value, &traceback);
+            PyErr_NormalizeException(&type, &value, &traceback);
+#if PY_MAJOR_VERSION >= 3 && defined(__APPLE__) && defined(__aarch64__)
+            Py_XINCREF(type);
+            Py_XINCREF(value);
+            Py_XINCREF(traceback);
+            PyErr_Restore(type, value, traceback);
+            PyErr_Print();
+#endif
             PyObject *str = PyObject_Repr(value);
             pf_strlcat(errbuff, PyString_AS_STRING(str), sizeof(errbuff));
             Py_XDECREF(str);
@@ -1478,6 +1489,8 @@ static PyObject *PyPf_get_render_info(PyObject *self)
     rval |= PyDict_SetItemString(ret, "vendor",   Py_BuildValue("s", R_GetInfo(RENDER_INFO_VENDOR)));
     rval |= PyDict_SetItemString(ret, "renderer", Py_BuildValue("s", R_GetInfo(RENDER_INFO_RENDERER)));
     rval |= PyDict_SetItemString(ret, "shading_language_version", Py_BuildValue("s", R_GetInfo(RENDER_INFO_SL_VERSION)));
+    rval |= PyDict_SetItemString(ret, "backend", Py_BuildValue("s", R_GetInfo(RENDER_INFO_BACKEND)));
+    rval |= PyDict_SetItemString(ret, "msaa_samples", Py_BuildValue("i", atoi(R_GetInfo(RENDER_INFO_MSAA_SAMPLES))));
     assert(0 == rval);
 
     return ret;
@@ -1553,8 +1566,25 @@ static PyObject *PyPf_get_file_size(PyObject *self, PyObject *args)
 {
     PyObject *file;
 
-    if(!PyArg_ParseTuple(args, "O", &file)
-    || !PyFile_Check(file)) {
+    if(!PyArg_ParseTuple(args, "O", &file)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must a file object.");
+        return NULL;
+    }
+
+#if PY_MAJOR_VERSION >= 3
+    int fd = PyObject_AsFileDescriptor(file);
+    if(fd < 0)
+        return NULL;
+
+    struct stat st;
+    if(fstat(fd, &st) != 0) {
+        PyErr_SetFromErrno(PyExc_OSError);
+        return NULL;
+    }
+
+    return PyLong_FromLongLong(st.st_size);
+#else
+    if(!PyFile_Check(file)) {
         PyErr_SetString(PyExc_TypeError, "Argument must a file object.");
         return NULL;
     }
@@ -1564,6 +1594,7 @@ static PyObject *PyPf_get_file_size(PyObject *self, PyObject *args)
     SDL_FreeRW(rw);
 
     return ret;
+#endif
 }
 
 static PyObject *PyPf_shift_pressed(PyObject *self)
@@ -2996,13 +3027,20 @@ static PyObject *PyPf_rand(PyObject *self, PyObject *args)
         return NULL;
     }
     int raw = rand();
-    int ret = ((float)raw) / RAND_MAX * max;
+    int ret = (int)(((double)raw / (double)RAND_MAX) * (double)max);
     assert(ret >= 0 && ret <= max);
     return PyInt_FromLong(ret);
 }
 
 static PyObject *PyPf_pickle_object(PyObject *self, PyObject *args)
 {
+#if PY_MAJOR_VERSION >= 3
+    (void)self;
+    (void)args;
+    PyErr_SetString(PyExc_NotImplementedError,
+        "pf.pickle_object is unavailable on Python 3 in the current macOS port.");
+    return NULL;
+#else
     PyObject *obj;
     if(!PyArg_ParseTuple(args, "O", &obj)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a single object.");
@@ -3028,10 +3066,18 @@ static PyObject *PyPf_pickle_object(PyObject *self, PyObject *args)
     vops->read(vops, PyString_AS_STRING(ret), 1, vops->size(vops));
     vops->close(vops);
     return ret;
+#endif
 }
 
 static PyObject *PyPf_unpickle_object(PyObject *self, PyObject *args)
 {
+#if PY_MAJOR_VERSION >= 3
+    (void)self;
+    (void)args;
+    PyErr_SetString(PyExc_NotImplementedError,
+        "pf.unpickle_object is unavailable on Python 3 in the current macOS port.");
+    return NULL;
+#else
     PyObject *obj_str = PyTuple_GET_ITEM(args, 0);
 
     const char *str;
@@ -3052,6 +3098,7 @@ static PyObject *PyPf_unpickle_object(PyObject *self, PyObject *args)
 
     cmops->close(cmops);
     return ret;
+#endif
 }
 
 static PyObject *PyPf_save_session(PyObject *self, PyObject *args)
@@ -3062,8 +3109,14 @@ static PyObject *PyPf_save_session(PyObject *self, PyObject *args)
         return NULL;
     }
 
+#if PY_MAJOR_VERSION >= 3
+    (void)self;
     Session_RequestSave(str);
     Py_RETURN_NONE;
+#else
+    Session_RequestSave(str);
+    Py_RETURN_NONE;
+#endif
 }
 
 static PyObject *PyPf_load_session(PyObject *self, PyObject *args)
@@ -3074,8 +3127,14 @@ static PyObject *PyPf_load_session(PyObject *self, PyObject *args)
         return NULL;
     }
 
+#if PY_MAJOR_VERSION >= 3
+    (void)self;
     Session_RequestLoad(str);
     Py_RETURN_NONE;
+#else
+    Session_RequestLoad(str);
+    Py_RETURN_NONE;
+#endif
 }
 
 static PyObject *PyPf_get_files_in_dir(PyObject *self, PyObject *args)
@@ -3238,13 +3297,61 @@ static bool s_sys_path_add_dir(const char *filename)
     return true;
 }
 
+static bool s_set_sys_argv(int argc, char **argv)
+{
+#if PY_MAJOR_VERSION >= 3
+    PyObject *py_argv = PyList_New(argc);
+    if(!py_argv)
+        return false;
+
+    for(int i = 0; i < argc; i++) {
+        PyObject *item = PyUnicode_FromString(argv[i]);
+        if(!item) {
+            Py_DECREF(py_argv);
+            return false;
+        }
+        PyList_SET_ITEM(py_argv, i, item);
+    }
+
+    int ret = PySys_SetObject("argv", py_argv);
+    Py_DECREF(py_argv);
+    return ret == 0;
+#else
+    PySys_SetArgvEx(argc, argv, 0);
+    return true;
+#endif
+}
+
 static int s_tracefunc(PyObject *obj, struct _frame *frame, int what, PyObject *arg)
 {
     char name[128];
 
     switch(what) {
     case PyTrace_CALL: {
+#if PY_MAJOR_VERSION >= 3
+        const char *func_name = "<python>";
+        PyCodeObject *code = PyFrame_GetCode((PyFrameObject*)frame);
+        if(code) {
+            PyObject *co_name = PyObject_GetAttrString((PyObject*)code, "co_name");
+            if(co_name) {
+                const char *tmp = PyUnicode_AsUTF8(co_name);
+                if(tmp) {
+                    func_name = tmp;
+                }else{
+                    PyErr_Clear();
+                }
+                Py_DECREF(co_name);
+            }else{
+                PyErr_Clear();
+            }
+            Py_DECREF(code);
+        }else{
+            PyErr_Clear();
+        }
+        pf_snprintf(name, sizeof(name), "[Py] %s", func_name);
+#else
         pf_snprintf(name, sizeof(name), "[Py] %s", PyString_AS_STRING(frame->f_code->co_name));
+#endif
         Perf_Push(name);
         break;
     }
@@ -3937,6 +4044,49 @@ static struct result script_task(void *arg)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
+#if PY_MAJOR_VERSION >= 3
+
+static struct PyModuleDef s_pf_module_def = {
+    PyModuleDef_HEAD_INIT,
+    "pf",
+    NULL,
+    -1,
+    pf_module_methods,
+};
+
+PyMODINIT_FUNC PyInit_pf(void)
+{
+    PyObject *module = PyModule_Create(&s_pf_module_def);
+    if(!module)
+        return NULL;
+
+    S_Entity_PyRegister(module);
+    S_UI_PyRegister(module);
+    S_Tile_PyRegister(module);
+    S_Camera_PyRegister(module);
+    S_Task_PyRegister(module);
+    S_Region_PyRegister(module);
+    S_Constants_Expose(module);
+    return module;
+}
+
+static bool s_register_pf_module(void)
+{
+    PyObject *module = PyInit_pf();
+    if(!module)
+        return false;
+
+    if(PyDict_SetItemString(PyImport_GetModuleDict(), "pf", module) < 0) {
+        Py_DECREF(module);
+        return false;
+    }
+
+    Py_DECREF(module);
+    return true;
+}
+
+#else
+
 PyMODINIT_FUNC initpf(void)
 {
     PyObject *module;
@@ -3953,16 +4103,30 @@ PyMODINIT_FUNC initpf(void)
     S_Constants_Expose(module); 
 }
 
+static bool s_register_pf_module(void)
+{
+    initpf();
+    return !PyErr_Occurred();
+}
+
+#endif
+
 bool S_Init(const char *progname, const char *base_path, struct nk_context *ctx)
 {
+#if PY_MAJOR_VERSION < 3
     Py_NoSiteFlag = 1;
+#endif
+#if PY_MAJOR_VERSION < 3
     Py_SetProgramName((char*)progname);
+#endif
     s_progname = progname;
 
     static char script_dir[512];
     pf_snprintf(script_dir, sizeof(script_dir), "%s/%s", g_basepath, "scripts"); 
 
+#if PY_MAJOR_VERSION < 3
     Py_SetPythonHome(script_dir); /* caches passed in pointer */
+#endif
     Py_InitializeEx(0);
 
     if(!S_UI_Init(ctx))
@@ -3981,7 +4145,8 @@ bool S_Init(const char *progname, const char *base_path, struct nk_context *ctx)
     if(0 != PyList_Append(PySys_GetObject("path"), Py_BuildValue("s", script_dir)))
         return false;
 
-    initpf();
+    if(!s_register_pf_module())
+        return false;
 
     if(!S_Camera_Init())
         return false;
@@ -4065,7 +4230,8 @@ bool S_RunFile(const char *path, int argc, char **argv)
 
     Sched_TryYield();
 
-    PySys_SetArgvEx(argc + 1, cargv, 0);
+    if(!s_set_sys_argv(argc + 1, cargv))
+        goto done;
     PyObject *result = PyRun_File(script, path, Py_file_input, global_dict, global_dict);
     ret = (result != NULL);
     Py_XDECREF(result);
@@ -4195,6 +4361,7 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
     case EVENT_GAME_SIMSTATE_CHANGED:
         return Py_BuildValue("(i)", (intptr_t)arg);
 
+    case EVENT_SESSION_FAIL_SAVE:
     case EVENT_SESSION_FAIL_LOAD:
         return PyString_FromString(arg);
 
@@ -4247,9 +4414,19 @@ script_opaque_t S_UnwrapIfWeakref(script_opaque_t arg)
 {
     assert(arg);
     if(PyWeakref_Check(arg)) {
+#if PY_VERSION_HEX >= 0x030D0000
+        PyObject *ret = NULL;
+        int status = PyWeakref_GetRef(arg, &ret);
+        if(status < 0)
+            return NULL;
+        if(status == 0)
+            Py_RETURN_NONE;
+        return ret;
+#else
         PyObject *ret = PyWeakref_GetObject(arg);
         Py_INCREF(ret);
         return ret;
+#endif
     }
     Py_INCREF(arg);
     return arg;
@@ -4257,7 +4434,22 @@ script_opaque_t S_UnwrapIfWeakref(script_opaque_t arg)
 
 bool S_WeakrefDied(script_opaque_t arg)
 {
-    return (PyWeakref_Check(arg) && (PyWeakref_GetObject(arg) == Py_None));
+    if(!PyWeakref_Check(arg))
+        return false;
+#if PY_VERSION_HEX >= 0x030D0000
+    PyObject *ret = NULL;
+    int status = PyWeakref_GetRef(arg, &ret);
+    if(status < 0) {
+        PyErr_Clear();
+        return false;
+    }
+    if(status == 0)
+        return true;
+    Py_DECREF(ret);
+    return false;
+#else
+    return (PyWeakref_GetObject(arg) == Py_None);
+#endif
 }
 
 bool S_ObjectsEqual(script_opaque_t a, script_opaque_t b)
@@ -4272,8 +4464,188 @@ void S_ClearState(void)
     PyGC_Collect(); /* quick sanity check */
 }
 
+#if PY_MAJOR_VERSION >= 3
+static PyObject *py3_scene_objects_for_save(void)
+{
+    PyObject *globals_mod = PyImport_ImportModule("rts.globals");
+    if(globals_mod) {
+        PyObject *scene_objs = PyObject_GetAttrString(globals_mod, "scene_objs");
+        Py_DECREF(globals_mod);
+        if(scene_objs)
+            return scene_objs;
+        PyErr_Clear();
+    }else{
+        PyErr_Clear();
+    }
+
+    return S_Entity_GetAll();
+}
+
+static PyObject *py3_attr_from_globals_or_empty_list(const char *attr_name)
+{
+    PyObject *globals_mod = PyImport_ImportModule("rts.globals");
+    if(globals_mod) {
+        PyObject *ret = PyObject_GetAttrString(globals_mod, attr_name);
+        Py_DECREF(globals_mod);
+        if(ret)
+            return ret;
+        PyErr_Clear();
+    }else{
+        PyErr_Clear();
+    }
+
+    return PyList_New(0);
+}
+
+static void py3_optional_import(const char *module_name)
+{
+    PyObject *module = PyImport_ImportModule(module_name);
+    if(!module) {
+        PyErr_Clear();
+        return;
+    }
+    Py_DECREF(module);
+}
+
+static void py3_assign_loaded_scene(PyObject *loaded, PyObject *regions, PyObject *cameras)
+{
+    PyObject *globals_mod = PyImport_ImportModule("rts.globals");
+    if(!globals_mod) {
+        PyErr_Clear();
+        return;
+    }
+
+    if(PyObject_SetAttrString(globals_mod, "scene_objs", loaded) < 0)
+        PyErr_Clear();
+
+    if(PyObject_SetAttrString(globals_mod, "scene_regions", regions) < 0)
+        PyErr_Clear();
+
+    if(PyObject_SetAttrString(globals_mod, "scene_cameras", cameras) < 0)
+        PyErr_Clear();
+
+    Py_DECREF(globals_mod);
+}
+
+static bool py3_restore_loaded_runtime(PyObject *loaded, PyObject *regions, PyObject *cameras)
+{
+    bool ret = false;
+    PyObject *module = PyImport_ImportModule("rts.main");
+    PyObject *func = NULL;
+    PyObject *result = NULL;
+
+    if(!module)
+        goto done;
+
+    func = PyObject_GetAttrString(module, "restore_runtime_after_session_load");
+    if(!func || !PyCallable_Check(func))
+        goto done;
+
+    result = PyObject_CallFunctionObjArgs(func, loaded, regions, cameras, NULL);
+    if(!result)
+        goto done;
+
+    ret = true;
+
+done:
+    Py_XDECREF(result);
+    Py_XDECREF(func);
+    Py_XDECREF(module);
+    return ret;
+}
+#endif
+
+bool S_PostSessionLoad(void)
+{
+#if PY_MAJOR_VERSION >= 3
+    bool ret = false;
+    PyObject *globals_mod = NULL;
+    PyObject *loaded = NULL;
+    PyObject *regions = NULL;
+    PyObject *cameras = NULL;
+
+    globals_mod = PyImport_ImportModule("rts.globals");
+    if(!globals_mod)
+        goto done;
+
+    loaded = PyObject_GetAttrString(globals_mod, "scene_objs");
+    regions = PyObject_GetAttrString(globals_mod, "scene_regions");
+    cameras = PyObject_GetAttrString(globals_mod, "scene_cameras");
+    if(!loaded || !regions || !cameras)
+        goto done;
+
+    ret = py3_restore_loaded_runtime(loaded, regions, cameras);
+
+done:
+    Py_XDECREF(cameras);
+    Py_XDECREF(regions);
+    Py_XDECREF(loaded);
+    Py_XDECREF(globals_mod);
+    return ret;
+#else
+    return true;
+#endif
+}
+
 bool S_SaveState(SDL_RWops *stream)
 {
+#if PY_MAJOR_VERSION >= 3
+    bool ret = false;
+    PyObject *objects = NULL;
+    PyObject *regions = NULL;
+    PyObject *cameras = NULL;
+    PyObject *module = NULL;
+    PyObject *func = NULL;
+    PyObject *scene = NULL;
+
+    objects = py3_scene_objects_for_save();
+    if(!objects)
+        goto done;
+
+    regions = py3_attr_from_globals_or_empty_list("scene_regions");
+    if(!regions)
+        goto done;
+
+    cameras = py3_attr_from_globals_or_empty_list("scene_cameras");
+    if(!cameras)
+        goto done;
+
+    module = PyImport_ImportModule("editor.scene");
+    if(!module)
+        goto done;
+
+    func = PyObject_GetAttrString(module, "dumps_session_scene_from_state");
+    if(!func || !PyCallable_Check(func))
+        goto done;
+
+    scene = PyObject_CallFunctionObjArgs(func, objects, regions, cameras, NULL);
+    if(!scene || !PyString_Check(scene))
+        goto done;
+
+    Py_ssize_t scene_size = PyString_GET_SIZE(scene);
+    if(scene_size < 0)
+        goto done;
+
+    struct attr scene_len = {
+        .type = TYPE_INT,
+        .val.as_int = (int)scene_size,
+    };
+    if(!Attr_Write(stream, &scene_len, "scene_snapshot_len"))
+        goto done;
+    if(scene_size > 0 && SDL_RWwrite(stream, PyString_AS_STRING(scene), 1, scene_size) != scene_size)
+        goto done;
+
+    ret = true;
+
+done:
+    Py_XDECREF(scene);
+    Py_XDECREF(func);
+    Py_XDECREF(module);
+    Py_XDECREF(cameras);
+    Py_XDECREF(regions);
+    Py_XDECREF(objects);
+    return ret;
+#else
     PyGC_Collect();
 
     PyObject *modules_dict = PySys_GetObject("modules"); /* borrowed */
@@ -4331,10 +4703,58 @@ fail_handlers:
 fail_tuple:
     PF_FREE(handlers);
     return ret;
+#endif
 }
 
 bool S_LoadState(SDL_RWops *stream)
 {
+#if PY_MAJOR_VERSION >= 3
+    bool ret = false;
+    struct attr attr;
+    char *scene_buf = NULL;
+    SDL_RWops *scene_stream = NULL;
+    PyObject *loaded = NULL;
+    PyObject *regions = NULL;
+    PyObject *cameras = NULL;
+
+    if(!Attr_Parse(stream, &attr, true) || attr.type != TYPE_INT || attr.val.as_int < 0)
+        goto done;
+
+    int scene_size = attr.val.as_int;
+    scene_buf = malloc(scene_size + 1);
+    if(!scene_buf)
+        goto done;
+
+    if(scene_size > 0 && SDL_RWread(stream, scene_buf, 1, scene_size) != scene_size)
+        goto done;
+    scene_buf[scene_size] = '\0';
+
+    py3_optional_import("rts.units");
+
+    scene_stream = SDL_RWFromConstMem(scene_buf, scene_size);
+    if(!scene_stream)
+        goto done;
+    if(!Scene_LoadRWops(scene_stream))
+        goto done;
+
+    loaded = S_Entity_GetLoaded();
+    regions = S_Region_GetLoaded();
+    cameras = S_Camera_GetLoaded();
+    if(!loaded || !regions || !cameras)
+        goto done;
+
+    py3_assign_loaded_scene(loaded, regions, cameras);
+    ret = true;
+
+done:
+    Py_XDECREF(cameras);
+    Py_XDECREF(regions);
+    Py_XDECREF(loaded);
+    if(scene_stream)
+        SDL_RWclose(scene_stream);
+    PF_FREE(scene_buf);
+    return ret;
+#else
     PyInterpreterState *interp = PyThreadState_Get()->interp;
     assert(interp);
     bool ret = false;
@@ -4413,6 +4833,7 @@ bool S_LoadState(SDL_RWops *stream)
 fail:
     Py_DECREF(state);
     return ret;
+#endif
 } 
 
 void S_ShowLastError(void)
@@ -4420,6 +4841,16 @@ void S_ShowLastError(void)
     s_err_ctx.occurred = PyErr_Occurred();
     PyErr_Fetch(&s_err_ctx.type, &s_err_ctx.value, &s_err_ctx.traceback);
     PyErr_NormalizeException(&s_err_ctx.type, &s_err_ctx.value, &s_err_ctx.traceback);
+
+#if PY_MAJOR_VERSION >= 3 && defined(__APPLE__) && defined(__aarch64__)
+    if(s_err_ctx.occurred) {
+        Py_XINCREF(s_err_ctx.type);
+        Py_XINCREF(s_err_ctx.value);
+        Py_XINCREF(s_err_ctx.traceback);
+        PyErr_Restore(s_err_ctx.type, s_err_ctx.value, s_err_ctx.traceback);
+        PyErr_Print();
+    }
+#endif
 
     if(s_err_ctx.occurred) {
         s_err_ctx.prev_state = G_GetSimState();
@@ -4459,4 +4890,3 @@ int S_FormationPriority(uint32_t uid)
     Py_DECREF(attr);
     return ret;
 }
-

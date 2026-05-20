@@ -66,8 +66,8 @@ static GLuint s_posbuff_tex;
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_PositionsUploadData(vec3_t *posbuff, uint32_t *idbuff, 
-                              const size_t *nents, const struct map *map)
+void R_GL_PositionsUploadData_Impl(vec3_t *posbuff, uint32_t *idbuff,
+                                   const size_t *nents, const struct map *map)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -170,9 +170,8 @@ void R_GL_PositionsGetTexture(GLuint *out_tex_id)
     *out_tex_id = s_posbuff_tex;
 }
 
-void R_GL_PositionsInvalidateData(void)
+void R_GL_PositionsInvalidateData_Impl(void)
 {
     glDeleteTextures(1, &s_posbuff_tex);
     s_posbuff_tex = 0;
 }
-

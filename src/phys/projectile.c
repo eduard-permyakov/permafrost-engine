@@ -55,6 +55,8 @@
 
 #include <math.h>
 #include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <SDL.h>
 
 
@@ -150,7 +152,7 @@ static quat_t phys_velocity_dir(vec3_t vel)
     return rot;
 }
 
-static bool phys_proj_equal(const struct projectile *a, const struct projectile *b)
+static bool phys_proj_equal(struct projectile *a, struct projectile *b)
 {
     return (a->uid == b->uid);
 }
@@ -199,6 +201,22 @@ static void phys_show_impact_sprite(const struct projectile *curr)
 {
 }
 
+static void phys_log_sprite_event(const char *event_name, const struct projectile *curr,
+                                  const struct sprite_sheet_desc *sheet)
+{
+    const char *stats_path = getenv("PF_PROJECTILE_SPRITE_STATS_PATH");
+    if(!stats_path || !*stats_path || !event_name || !curr || !sheet || !sheet->filename)
+        return;
+
+    FILE *fp = fopen(stats_path, "a");
+    if(!fp)
+        return;
+    fprintf(fp, "event=%s proj=%u parent=%u sheet=%s pos=%.3f,%.3f,%.3f\n",
+        event_name, curr->uid, curr->ent_parent, sheet->filename,
+        curr->pos.x, curr->pos.y, curr->pos.z);
+    fclose(fp);
+}
+
 static void phys_filter_out_of_bounds(void)
 {
     for(int i = vec_size(&s_front)-1; i >= 0; i--) {
@@ -207,6 +225,7 @@ static void phys_filter_out_of_bounds(void)
         if(curr->pos.y < -Z_COORDS_PER_TILE) {
             E_Global_Notify(EVENT_PROJECTILE_DISAPPEAR, (void*)((uintptr_t)curr->uid), ES_ENGINE);
             if(curr->sprite_flags & PROJ_HAS_IMPACT_SPRITE) {
+                phys_log_sprite_event("impact_oob", curr, &curr->impact_sprite);
                 Sprite_PlayAnim(1, 24, curr->impact_size, curr->impact_sprite, curr->pos);
             }
             vec_proj_push(&s_deleted, *curr);
@@ -249,6 +268,7 @@ static void phys_proj_spawn_trails(void)
         PFM_Vec3_Sub(&curr->pos, &curr->prev_trail_pos, &delta);
         if(PFM_Vec3_Len(&delta) < curr->trail_freq)
             continue;
+        phys_log_sprite_event("trail", curr, &curr->trail_sprite);
         Sprite_PlayAnim(1, 24, curr->trail_size, curr->trail_sprite, curr->pos);
         curr->prev_trail_pos = curr->pos;
     }
@@ -331,6 +351,7 @@ static void phys_sweep_test(int front_idx)
         E_Global_Notify(EVENT_PROJECTILE_HIT, hit, ES_ENGINE);
 
         if(proj->sprite_flags & PROJ_HAS_IMPACT_SPRITE) {
+            phys_log_sprite_event("impact_hit", proj, &proj->impact_sprite);
             Sprite_PlayAnim(1, 24, proj->impact_size, proj->impact_sprite, proj->pos);
         }
 
@@ -463,7 +484,7 @@ static void on_render_3d(void *user, void *arg)
     struct render_input *pushed = phys_push_render_input(&rinput);
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_Batch_DrawWithID,
+        .func = R_Cmd_Batch_DrawWithID,
         .nargs = 2,
         .args = {
             pushed,
@@ -894,4 +915,3 @@ void P_Projectile_ClearState(void)
     vec_proj_reset(&s_added);
     vec_proj_reset(&s_deleted);
 }
-

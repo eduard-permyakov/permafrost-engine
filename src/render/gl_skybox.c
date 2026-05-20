@@ -43,8 +43,9 @@
 #include "../lib/public/pf_string.h"
 #include "../lib/public/stb_image.h"
 
-#include <GL/glew.h>
+#include "gl_loader.h"
 #include <assert.h>
+#include <stdlib.h>
 #include <string.h>
 
 
@@ -63,6 +64,16 @@ struct skybox{
 /*****************************************************************************/
 
 static struct skybox s_skybox;
+
+static bool skybox_draw_enabled(void)
+{
+#if defined(__APPLE__) && defined(__aarch64__)
+    const char *enabled = getenv("PF_GL_ENABLE_APPLE_ARM64_SKYBOX");
+    return enabled && !strcmp(enabled, "1");
+#else
+    return true;
+#endif
+}
 
 static const vec3_t s_cube_verts[] = {
     { 10.0f,  10.0f, -10.0f},
@@ -112,7 +123,7 @@ static const vec3_t s_cube_verts[] = {
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_SkyboxLoad(const char *dir, const char *extension)
+void R_GL_SkyboxLoad_Impl(const char *dir, const char *extension)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -178,9 +189,12 @@ void R_GL_SkyboxLoad(const char *dir, const char *extension)
     GL_ASSERT_OK();
 }
 
-void R_GL_SkyboxBind(void)
+void R_GL_SkyboxBind_Impl(void)
 {
     ASSERT_IN_RENDER_THREAD();
+
+    if(!skybox_draw_enabled())
+        return;
 
     glActiveTexture(SKYBOX_TUNIT);
     glBindTexture(GL_TEXTURE_CUBE_MAP, s_skybox.cubemap);
@@ -188,9 +202,12 @@ void R_GL_SkyboxBind(void)
     GL_ASSERT_OK();
 }
 
-void R_GL_DrawSkybox(const struct camera *cam)
+void R_GL_DrawSkybox_Impl(const struct camera *cam)
 {
     ASSERT_IN_RENDER_THREAD();
+    if(!skybox_draw_enabled())
+        return;
+
     GL_PERF_PUSH_GROUP(0, "skybox");
 
     mat4x4_t view_mat;
@@ -245,16 +262,19 @@ void R_GL_DrawSkybox(const struct camera *cam)
     glBindVertexArray(s_skybox.VAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
 
-    glDepthMask(old_depth_func_mode);
+    glDepthFunc(old_depth_func_mode);
     glCullFace(old_cull_face_mode);
 
     GL_PERF_POP_GROUP();
     GL_ASSERT_OK();
 }
 
-void R_GL_DrawSkyboxScaled(const struct camera *cam, float *map_width, float *map_height)
+void R_GL_DrawSkyboxScaled_Impl(const struct camera *cam, float *map_width, float *map_height)
 {
     ASSERT_IN_RENDER_THREAD();
+    if(!skybox_draw_enabled())
+        return;
+
     GL_PERF_PUSH_GROUP(0, "skybox");
 
     float scale = MAX(*map_width, *map_height) / (10.0f * 2.0f);
@@ -286,14 +306,14 @@ void R_GL_DrawSkyboxScaled(const struct camera *cam, float *map_width, float *ma
     glBindVertexArray(s_skybox.VAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
 
-    glDepthMask(old_depth_func_mode);
+    glDepthFunc(old_depth_func_mode);
     glCullFace(old_cull_face_mode);
 
     GL_PERF_POP_GROUP();
     GL_ASSERT_OK();
 }
 
-void R_GL_SkyboxFree(void)
+void R_GL_SkyboxFree_Impl(void)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -303,4 +323,3 @@ void R_GL_SkyboxFree(void)
 
     GL_ASSERT_OK();
 }
-

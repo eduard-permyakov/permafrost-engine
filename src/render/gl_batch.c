@@ -57,6 +57,7 @@
 
 #include <inttypes.h>
 #include <assert.h>
+#include <stdlib.h>
 
 
 #define MESH_BUFF_SZ        (16*1024*1024)
@@ -345,6 +346,33 @@ static bool batch_contains_mesh(struct gl_batch *batch, GLuint VBO)
     return false;
 }
 
+static bool batch_copy_mesh_vbo(GLuint src_vbo, GLuint dst_vbo, GLint dst_offset, GLsizeiptr size)
+{
+    glBindBuffer(GL_COPY_READ_BUFFER, src_vbo);
+    glBindBuffer(GL_COPY_WRITE_BUFFER, dst_vbo);
+
+#if defined(__APPLE__) && defined(__aarch64__)
+    const void *mapped = glMapBufferRange(GL_COPY_READ_BUFFER, 0, size, GL_MAP_READ_BIT);
+    if(!mapped) {
+        glBindBuffer(GL_COPY_READ_BUFFER, 0);
+        glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
+        return false;
+    }
+
+    glBufferSubData(GL_COPY_WRITE_BUFFER, dst_offset, size, mapped);
+    if(!glUnmapBuffer(GL_COPY_READ_BUFFER)) {
+        glBindBuffer(GL_COPY_READ_BUFFER, 0);
+        glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
+        return false;
+    }
+#else
+    glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, dst_offset, size);
+#endif
+    glBindBuffer(GL_COPY_READ_BUFFER, 0);
+    glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
+    return true;
+}
+
 static bool batch_append_mesh(struct gl_batch *batch, GLuint VBO)
 {
     khiter_t k = kh_get(mdesc, batch->vbo_desc_map, VBO);
@@ -379,8 +407,10 @@ static bool batch_append_mesh(struct gl_batch *batch, GLuint VBO)
     /* Perform VBO-to-VBO copy. The data should be copied without having 
      * to do a round-trip to the CPU.
      */
-    glBindBuffer(GL_COPY_WRITE_BUFFER, batch->vbos[curr_vbo_idx].VBO);
-    glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, vbo_offset, size);
+    if(!batch_copy_mesh_vbo(VBO, batch->vbos[curr_vbo_idx].VBO, vbo_offset, size)) {
+        pf_metafree(batch->vbos[curr_vbo_idx].heap_meta, vbo_offset);
+        return false;
+    }
 
     int status;
     k = kh_put(mdesc, batch->vbo_desc_map, VBO, &status);
@@ -1094,7 +1124,6 @@ static void batch_push_stat_attrs_depth(struct gl_batch *batch, const struct ent
     for(int i = dcall.start_idx; i <= dcall.end_idx; i++) {
 
         const struct inst_group_desc *curr = descs + i;
-        struct render_private *priv = curr->render_private;
 
         for(int j = curr->start_idx; j <= curr->end_idx; j++) {
      
@@ -1104,7 +1133,6 @@ static void batch_push_stat_attrs_depth(struct gl_batch *batch, const struct ent
                 R_GL_RingbufferAppendLast(batch->attr_ring, &ents[offset + j].model, sizeof(mat4x4_t));
             }
         }
-
         ninsts += curr->end_idx - curr->start_idx + 1;
     }
     size_t begin, end;
@@ -1141,7 +1169,6 @@ static void batch_push_anim_attrs(struct gl_batch *batch, const struct ent_anim_
      *
      * In total, 194 floats (776 bytes) are pushed per instance.
      */
-    size_t ninsts = 0;
     for(int i = dcall.start_idx; i <= dcall.end_idx; i++) {
 
         const struct inst_group_desc *curr = descs + i;
@@ -1167,7 +1194,6 @@ static void batch_push_anim_attrs(struct gl_batch *batch, const struct ent_anim_
             R_GL_RingbufferAppendLast(batch->attr_ring, &inv_idx, sizeof(GLfloat));
             R_GL_RingbufferAppendLast(batch->attr_ring, &curr_idx, sizeof(GLfloat));
         }
-        ninsts += curr->end_idx - curr->start_idx + 1;
     }
 
     R_GL_StateSet(GL_U_ATTR_STRIDE, (struct uval){ 
@@ -1295,7 +1321,7 @@ static void batch_do_drawcall_stat(struct gl_batch *batch, const struct ent_stat
     GLuint VAO = batch->vbos[dcall.vbo_idx].VAO;
     glBindVertexArray(VAO);
 
-    if(!GL_ARB_multi_draw_indirect) {
+    if(!PFGL_MultiDrawIndirectSupported()) {
         batch_multidraw_legacy(batch, dcall, descs);
     }else{
         batch_multidraw(batch, dcall, descs);
@@ -1315,7 +1341,7 @@ static void batch_do_drawcall_anim(struct gl_batch *batch, const struct ent_anim
     GLuint VAO = batch->vbos[dcall.vbo_idx].VAO;
     glBindVertexArray(VAO);
 
-    if(!GL_ARB_multi_draw_indirect) {
+    if(!PFGL_MultiDrawIndirectSupported()) {
         batch_multidraw_legacy(batch, dcall, descs);
     }else{
         batch_multidraw(batch, dcall, descs);
@@ -1394,12 +1420,25 @@ static void batch_render_anim_all(vec_ranim_t *ents, bool shadows, enum render_p
     if(nanim == 0)
         return;
 
+    if(pass == RENDER_PASS_DEPTH) {
+        size_t verts = 0;
+        for(int i = 0; i < nanim; i++) {
+            struct render_private *priv = vec_AT(ents, i).render_private;
+            if(priv)
+                verts += priv->mesh.num_verts;
+        }
+        R_GL_ShadowStatsAddAnim((unsigned)nanim, verts);
+    }
+
     switch(pass) {
     case RENDER_PASS_DEPTH:
         R_GL_Shader_Install("batched.mesh.animated.depth");
         break;
     case RENDER_PASS_REGULAR:
         R_GL_Shader_Install("batched.mesh.animated.textured-phong-shadowed");
+        if(shadows) {
+            R_GL_ShadowMapBind();
+        }
         break;
     default: assert(0);
     }
@@ -1437,12 +1476,28 @@ static void batch_render_stat_all(vec_rstat_t *ents, bool shadows,
     if(nbatches == 0)
         return;
 
+    if(pass == RENDER_PASS_DEPTH) {
+        size_t draws = 0;
+        size_t verts = 0;
+        for(int i = 0; i < vec_size(ents); i++) {
+            struct render_private *priv = vec_AT(ents, i).render_private;
+            if(priv) {
+                draws++;
+                verts += priv->mesh.num_verts;
+            }
+        }
+        R_GL_ShadowStatsAddStatic((unsigned)draws, verts);
+    }
+
     switch(pass) {
     case RENDER_PASS_DEPTH:
         R_GL_Shader_Install("batched.mesh.static.depth");
         break;
     case RENDER_PASS_REGULAR:
         R_GL_Shader_Install("batched.mesh.static.textured-phong-shadowed");
+        if(shadows) {
+            R_GL_ShadowMapBind();
+        }
         break;
     default: assert(0);
     }
@@ -1560,12 +1615,11 @@ void R_GL_Batch_Shutdown(void)
     glDeleteBuffers(1, &s_draw_id_vbo);
 }
 
-void R_GL_Batch_Draw(struct render_input *in)
+void R_GL_Batch_Draw_Impl(struct render_input *in)
 {
     GL_PERF_ENTER();
     GL_PERF_PUSH_GROUP(0, "batch::Draw");
 
-    R_GL_ShadowMapBind();
     batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_REGULAR);
     batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_REGULAR, BATCH_ID_NULL);
 
@@ -1573,12 +1627,11 @@ void R_GL_Batch_Draw(struct render_input *in)
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_Batch_DrawWithID(struct render_input *in, enum batch_id *id)
+void R_GL_Batch_DrawWithID_Impl(struct render_input *in, enum batch_id *id)
 {
     GL_PERF_ENTER();
     GL_PERF_PUSH_GROUP(0, "batch::DrawWithID");
 
-    R_GL_ShadowMapBind();
     batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_REGULAR);
     batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_REGULAR, *id);
 
@@ -1586,19 +1639,21 @@ void R_GL_Batch_DrawWithID(struct render_input *in, enum batch_id *id)
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_Batch_RenderDepthMap(struct render_input *in)
+void R_GL_Batch_RenderDepthMap_Impl(struct render_input *in)
 {
     GL_PERF_ENTER();
     GL_PERF_PUSH_GROUP(0, "batch::RenderDepthMap");
 
-    batch_render_anim_all(&in->light_vis_anim, true, RENDER_PASS_DEPTH);
-    batch_render_stat_all(&in->light_vis_stat, true, RENDER_PASS_DEPTH, BATCH_ID_NULL);
+    if(!getenv("PF_SHADOW_SKIP_ANIM"))
+        batch_render_anim_all(&in->light_vis_anim, true, RENDER_PASS_DEPTH);
+    if(!getenv("PF_SHADOW_SKIP_STATIC"))
+        batch_render_stat_all(&in->light_vis_stat, true, RENDER_PASS_DEPTH, BATCH_ID_NULL);
 
     GL_PERF_POP_GROUP();
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_Batch_Reset(void)
+void R_GL_Batch_Reset_Impl(void)
 {
     uint32_t key;
     struct gl_batch *curr;
@@ -1613,7 +1668,7 @@ void R_GL_Batch_Reset(void)
     s_anim_batch = batch_init(BATCH_TYPE_ANIM);
 }
 
-void R_GL_Batch_AllocChunks(struct map_resolution *res)
+void R_GL_Batch_AllocChunks_Impl(struct map_resolution *res)
 {
     GL_PERF_ENTER();
 
@@ -1633,4 +1688,3 @@ void R_GL_Batch_AllocChunks(struct map_resolution *res)
 
     GL_PERF_RETURN_VOID();
 }
-

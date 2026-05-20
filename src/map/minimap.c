@@ -166,7 +166,7 @@ static vec2_t m_minimap_mouse_coords_to_world(const struct map *map, vec2_t virt
      *      +
      *      d
      */
-    struct quad curr_bounds = m_curr_bounds(map);
+    struct quad curr_bounds = m_curr_terrain_bounds(map);
 
     /* Now project the mouse coordinates (relative to A) on the AB line segment to get the X dimension fraction
      * and project onto the AD line segment to get the Z dimension fraction. */
@@ -192,10 +192,11 @@ static vec2_t m_minimap_mouse_coords_to_world(const struct map *map, vec2_t virt
     float map_ws_len = MAX(map_ws_width, map_ws_height);
 
     vec3_t center_pos = M_GetCenterPos(map);
-    return (vec2_t) {
+    vec2_t ret = (vec2_t) {
         center_pos.x - x_frac * map_ws_len,
         center_pos.z + z_frac * map_ws_len
     };
+    return M_ClampedMapCoordinate(map, ret);
 }
 
 bool m_mouse_over_screen_rect(const struct map *map, struct quad quad)
@@ -290,7 +291,7 @@ bool M_InitMinimap(struct map *map, vec2_t center_pos)
     }}
     
     R_PushCmd((struct rcmd){
-        .func = R_GL_MinimapBake,
+        .func = R_Cmd_MinimapBake,
         .nargs = 3,
         .args = {
             (void*)G_GetPrevTickMap(),
@@ -317,7 +318,7 @@ bool M_UpdateMinimapChunk(const struct map *map, int chunk_r, int chunk_c)
     M_ModelMatrixForChunk(map, (struct chunkpos){chunk_r, chunk_c}, &model);
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_MinimapUpdateChunk,
+        .func = R_Cmd_MinimapUpdateChunk,
         .nargs = 5,
         .args = {
             (void*)G_GetPrevTickMap(),
@@ -335,7 +336,7 @@ void M_FreeMinimap(struct map *map)
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mouseclick);
     E_Global_Unregister(SDL_MOUSEMOTION,     on_mousemove);
 
-    R_PushCmd((struct rcmd){ R_GL_MinimapFree, 0 });
+    R_PushCmd((struct rcmd){ R_Cmd_MinimapFree, 0 });
     s_mouse_down_in_minimap = false;
 }
 
@@ -394,7 +395,7 @@ void M_RenderMinimap(const struct map *map, const struct camera *cam)
     int len = PFM_Vec2_Len(&ab);
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_MinimapRender,
+        .func = R_Cmd_MinimapRender,
         .nargs = 5,
         .args = {
             (void*)G_GetPrevTickMap(),
@@ -431,7 +432,7 @@ void M_RenderMinimapUnits(const struct map *map, size_t nunits, vec2_t *posbuff,
     memcpy(cbuff, colorbuff, nunits * sizeof(vec3_t));
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_MinimapRenderUnits,
+        .func = R_Cmd_MinimapRenderUnits,
         .nargs = 6,
         .args = {
             (void*)G_GetPrevTickMap(),
@@ -491,4 +492,3 @@ void M_MinimapClearBorderClr(void)
 {
     s_border_clr = (vec4_t)DEFAULT_BORDER_CLR;
 }
-

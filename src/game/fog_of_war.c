@@ -229,8 +229,8 @@ static void wf_create_blocked_line(int xrad, int zrad, bool wf[],
      * edge of the field. 
      * Multiply by 1_000 to convert slope to integer deltas, but keep 
      * 3 digits of precision after the decimal.*/
-    int dx =  abs(slope.raw[0] * 1000);
-    int dy = -abs(slope.raw[1] * 1000);
+    int dx =  (int)fabsf(slope.raw[0] * 1000.0f);
+    int dy = -(int)fabsf(slope.raw[1] * 1000.0f);
     int sx = slope.raw[0] > 0.0f ? 1 : -1;
     int sy = slope.raw[1] < 0.0f ? 1 : -1;
     int err = dx + dy, e2;
@@ -677,7 +677,7 @@ void G_Fog_RenderChunkVisibility(int faction_id, int chunk_r, int chunk_c, mat4x
     size_t count = res.tile_w * res.tile_h;
     bool on_water_surface = true;
     R_PushCmd((struct rcmd){
-        .func = R_GL_DrawMapOverlayQuads,
+        .func = R_Cmd_DrawMapOverlayQuads,
         .nargs = 6,
         .args = {
             R_PushArg(corners_buff, sizeof(corners_buff)),
@@ -737,7 +737,7 @@ void G_Fog_UpdateVisionState(void)
 
 submit:
     R_PushCmd((struct rcmd){
-        .func = R_GL_MapUpdateFog,
+        .func = R_Cmd_MapUpdateFog,
         .nargs = 2,
         .args = {
             visbuff,
@@ -972,4 +972,3 @@ bool G_Fog_Enabled(void)
 {
     return s_enabled;
 }
-

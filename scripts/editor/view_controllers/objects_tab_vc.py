@@ -41,12 +41,14 @@ import scene
 
 
 class ObjectsVC(vc.ViewController):
+    MAX_RETIRED_PREVIEWS = 16
 
     def __init__(self, view):
         self.view = view
         self.view.objects_list = [(o["path"]).split("/")[-1] for o in scene.OBJECTS_LIST]
         assert(len(scene.OBJECTS_LIST) > 0)
         self.current_object = None
+        self.retired_preview_objects = []
         self.view.mode = self.view.OBJECTS_MODE_PLACE
         self.right_mousebutton_state = pf.SDL_RELEASED
 
@@ -63,6 +65,17 @@ class ObjectsVC(vc.ViewController):
         ret.selectable = True
         return ret
 
+    def __retire_current_object(self):
+        if not self.current_object:
+            return
+
+        self.current_object.zombiefy()
+        self.retired_preview_objects.append(self.current_object)
+        self.current_object = None
+
+        if len(self.retired_preview_objects) > self.MAX_RETIRED_PREVIEWS:
+            self.retired_preview_objects = self.retired_preview_objects[-self.MAX_RETIRED_PREVIEWS:]
+
     def __set_selection_for_mode(self):
         if self.view.mode == self.view.OBJECTS_MODE_SELECT:
             pf.enable_unit_selection()
@@ -71,8 +84,9 @@ class ObjectsVC(vc.ViewController):
 
     def __on_selected_object_changed(self, event):
         self.object_index = event
-        pos = self.current_object.pos
         if self.view.mode == self.view.OBJECTS_MODE_PLACE:
+            pos = self.current_object.pos if self.current_object else (0.0, 0.0, 0.0)
+            self.__retire_current_object()
             self.current_object = self.__object_at_index(event)
             self.current_object.pos = pos
 
@@ -109,11 +123,12 @@ class ObjectsVC(vc.ViewController):
         self.__set_selection_for_mode()
         if self.view.mode == self.view.OBJECTS_MODE_PLACE:
             pf.clear_unit_selection()
+            self.__retire_current_object()
             self.current_object = self.__object_at_index(self.view.selected_object_idx)
             if pf.map_pos_under_cursor():
                 self.current_object.pos = pf.map_pos_under_cursor()
         elif self.view.mode == self.view.OBJECTS_MODE_SELECT:
-            self.current_object = None
+            self.__retire_current_object()
 
     def __on_selected_unit_picked(self, event):
         assert isinstance(event, pf.Entity)
@@ -135,6 +150,8 @@ class ObjectsVC(vc.ViewController):
             obj = sel_obj_list[0]
         else:
             obj = self.current_object
+            if not obj:
+                return
         if event[1] > 0:
             obj.rotation = pf.multiply_quaternions(obj.rotation, CCW_ROT_5DEG)
         else:
@@ -170,5 +187,4 @@ class ObjectsVC(vc.ViewController):
         pf.unregister_event_handler(EVENT_OBJECT_DELETE_SELECTION, ObjectsVC.__on_delete_selection)
         pf.clear_unit_selection()
         pf.disable_unit_selection()
-        self.current_object = None
-
+        self.__retire_current_object()

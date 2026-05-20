@@ -40,6 +40,7 @@
 #include "gl_assert.h"
 #include "gl_material.h"
 #include "gl_image_quilt.h"
+#include "gl_shader.h"
 #include "gl_swapchain.h"
 #include "../lib/public/stb_image.h"
 #include "../lib/public/stb_image_resize.h"
@@ -78,6 +79,7 @@ static bool texture_gl_init(const char *path, GLuint *out)
     ASSERT_IN_RENDER_THREAD();
 
     GLuint ret;
+    GLint prev_unpack_alignment = 4;
     int width, height, nr_channels;
     unsigned char *data;
     
@@ -93,8 +95,12 @@ static bool texture_gl_init(const char *path, GLuint *out)
         goto fail_format;
 
     GLint format = (nr_channels == 3) ? GL_RGB : GL_RGBA;
-    glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+    GLint internal_format = (nr_channels == 3) ? GL_RGB8 : GL_RGBA8;
+    glGetIntegerv(GL_UNPACK_ALIGNMENT, &prev_unpack_alignment);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, internal_format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
     glGenerateMipmap(GL_TEXTURE_2D);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, prev_unpack_alignment);
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
@@ -110,6 +116,7 @@ static bool texture_gl_init(const char *path, GLuint *out)
 fail_format:
     stbi_image_free(data);
 fail_load:
+    glPixelStorei(GL_UNPACK_ALIGNMENT, prev_unpack_alignment);
     glBindTexture(GL_TEXTURE_2D, 0);
     return false;
 }
@@ -122,17 +129,31 @@ static void texture_make_null(GLuint *out)
     glGenTextures(1, out);
     glBindTexture(GL_TEXTURE_2D, *out);
 
-    unsigned char data[] = {0, 0, 0};
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
-    glGenerateMipmap(GL_TEXTURE_2D);
+    unsigned char data[] = {0, 0, 0, 255};
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
 
     glBindTexture(GL_TEXTURE_2D, 0);
+    GL_ASSERT_OK();
+}
+
+static void texture_reset_2d_units(void)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    GLint prev_active = GL_TEXTURE0;
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &prev_active);
+
+    for(GLint tunit = GL_TEXTURE0; tunit <= GL_TEXTURE15; tunit++) {
+        glActiveTexture(tunit);
+        glBindTexture(GL_TEXTURE_2D, s_null_tex);
+    }
+
+    glActiveTexture(prev_active);
     GL_ASSERT_OK();
 }
 
@@ -162,6 +183,7 @@ bool R_GL_Texture_Init(void)
 
     s_name_tex_table = kh_init(tex);
     texture_make_null(&s_null_tex);
+    texture_reset_2d_units();
 
     return (s_name_tex_table != NULL);
 }
@@ -324,6 +346,20 @@ void R_GL_Texture_Bind(const struct texture *text, GLuint shader_prog)
     GL_ASSERT_OK();
 }
 
+void R_GL_Texture_BindNull(GLuint tunit)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    glActiveTexture(tunit);
+    glBindTexture(GL_TEXTURE_2D, s_null_tex);
+    GL_ASSERT_OK();
+}
+
+void R_GL_Texture_Reset2DUnits(void)
+{
+    texture_reset_2d_units();
+}
+
 void R_GL_Texture_Dump(const struct texture *text, const char *filename)
 {
     glBindTexture(GL_TEXTURE_2D, text->id);
@@ -393,17 +429,33 @@ void R_GL_Texture_DumpArray(const struct texture_arr *arr, const char *base)
         integer = true;
     }
     GLuint format = integer ? GL_RGB_INTEGER : GL_RGB;
+    bool direct_read_supported = PFGL_TextureSubImageSupported();
+    GLuint fbo = 0;
+    if(!direct_read_supported) {
+        glGenFramebuffers(1, &fbo);
+    }
 
     for(int i = 0; i < depth; i++) {
-    
-        glGetTextureSubImage(arr->id, 0, 0, 0, i, width, height, 1, 
-            format, GL_UNSIGNED_BYTE, width * height * 3, data);
+        if(direct_read_supported) {
+            glGetTextureSubImage(arr->id, 0, 0, 0, i, width, height, 1,
+                format, GL_UNSIGNED_BYTE, width * height * 3, data);
+        }else{
+            R_GL_StatePushRenderTarget(fbo);
+            glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, arr->id, 0, i);
+            glReadBuffer(GL_COLOR_ATTACHMENT0);
+            assert(glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+            glReadPixels(0, 0, width, height, format, GL_UNSIGNED_BYTE, data);
+            R_GL_StatePopRenderTarget();
+        }
 
         char filename[512];
         pf_snprintf(filename, sizeof(filename), "%s-%d.ppm", base, i);
         R_GL_Texture_WritePPM(filename, data, width, height);
     }
 
+    if(fbo) {
+        glDeleteFramebuffers(1, &fbo);
+    }
     glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
     PF_FREE(data);
 }
@@ -438,7 +490,7 @@ void R_GL_Texture_ArrayCopyElem(struct texture_arr *dst, int dst_idx,
                                 int maxres)
 {
     GLuint fbo;
-    if(!GLEW_ARB_copy_image) {
+    if(!PFGL_CopyImageSupported()) {
         glGenFramebuffers(1, &fbo);    
     }
     GL_ASSERT_OK();
@@ -447,7 +499,7 @@ void R_GL_Texture_ArrayCopyElem(struct texture_arr *dst, int dst_idx,
 
         size_t mip_res = pow(0.5f, i) * maxres;
     
-        if(GLEW_ARB_copy_image) {
+        if(PFGL_CopyImageSupported()) {
             glCopyImageSubData(src->id, GL_TEXTURE_2D_ARRAY, i, 0, 0, src_idx,
                                dst->id, GL_TEXTURE_2D_ARRAY, i, 0, 0, dst_idx,
                                mip_res, mip_res, 1);
@@ -468,7 +520,7 @@ void R_GL_Texture_ArrayCopyElem(struct texture_arr *dst, int dst_idx,
         }
     }
 
-    if(!GLEW_ARB_copy_image) {
+    if(!PFGL_CopyImageSupported()) {
         glDeleteFramebuffers(1, &fbo);    
     }
 }
@@ -518,7 +570,7 @@ void R_GL_Texture_ArrayMake(const struct material *mats, size_t num_mats,
             continue;
         }
 
-        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, CONFIG_ARR_TEX_RES, 
+        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, CONFIG_ARR_TEX_RES,
             CONFIG_ARR_TEX_RES, 1, GL_RGBA, GL_UNSIGNED_BYTE, resized_data);
         PF_FREE(orig_data);
         PF_FREE(resized_data);
@@ -609,8 +661,10 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
     size_t num_arrays = ceil((float)num_slots / max_layers);
     size_t slots_per_array = (max_layers / 8) * 8;
 
+#if !defined(__APPLE__) || !defined(__aarch64__)
     GLuint fbo;
     glGenFramebuffers(1, &fbo);
+#endif
 
     int i = 0;
     size_t slots_consumed = 0;
@@ -648,6 +702,37 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
                 break;
             }
 
+#if defined(__APPLE__) && defined(__aarch64__)
+            int width, height, nr_channels;
+            unsigned char *orig_data = stbi_load(path, &width, &height, &nr_channels, 4);
+            GLubyte *upload_data = NULL;
+            if(orig_data) {
+                upload_data = malloc(tileset_dim * tileset_dim * 4);
+                if(upload_data) {
+                    int res = stbir_resize_uint8(orig_data, width, height, 0,
+                        upload_data, tileset_dim, tileset_dim, 0, 4);
+                    if(res != 1) {
+                        PF_FREE(upload_data);
+                        upload_data = NULL;
+                    }
+                }
+                stbi_image_free(orig_data);
+            }
+            if(!upload_data) {
+                upload_data = calloc(1, tileset_dim * tileset_dim * 4);
+            }
+            if(!upload_data) {
+                LoadingScreen_PopRenderStatus();
+                continue;
+            }
+
+            for(int j = 0; j < 8; j++) {
+                int dst_idx = (i * 8) + j - slots_consumed;
+                glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, dst_idx, tileset_dim,
+                    tileset_dim, 1, GL_RGBA, GL_UNSIGNED_BYTE, upload_data);
+            }
+            PF_FREE(upload_data);
+#else
             struct texture_arr tiles;
             bool success = R_GL_ImageQuilt_MakeTileset(path, &tiles, tunit);
             if(success) {
@@ -687,6 +772,7 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
                 }
                 PF_FREE(data);
             }
+#endif
 
             glActiveTexture(tunit);
             glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
@@ -706,7 +792,9 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
         slots_consumed += curr_slots;
     }
 
+#if !defined(__APPLE__) || !defined(__aarch64__)
     glDeleteFramebuffers(1, &fbo);
+#endif
     glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
     GL_ASSERT_OK();
     return ret;
@@ -755,7 +843,7 @@ void R_GL_Texture_GetSize(GLuint texid, int *out_w, int *out_h, int *out_d)
     GL_ASSERT_OK();
 }
 
-void R_GL_Texture_GetOrLoad(const char *basedir, const char *name, GLuint *out)
+void R_GL_Texture_GetOrLoad_Impl(const char *basedir, const char *name, GLuint *out)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -789,4 +877,3 @@ bool R_GL_Texture_WritePPM(const char* filename, const unsigned char *data, int 
     fclose(file);
     return true;
 }
-

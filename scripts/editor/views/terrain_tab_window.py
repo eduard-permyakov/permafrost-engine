@@ -47,7 +47,7 @@ class TerrainTabWindow(pf.Window):
     def __init__(self):
         vresx, vresy = (1920, 1080)
         super(TerrainTabWindow, self).__init__("TerrainTab", 
-            (0, UI_TAB_BAR_HEIGHT + 1, UI_LEFT_PANE_WIDTH, vresy - UI_TAB_BAR_HEIGHT - 1), pf.NK_WINDOW_BORDER, (vresx, vresy),
+            (0, UI_TOP_PANE_Y, UI_LEFT_PANE_WIDTH, vresy - UI_TOP_PANE_Y), pf.NK_WINDOW_BORDER, (vresx, vresy),
             resize_mask = pf.ANCHOR_X_LEFT | pf.ANCHOR_Y_TOP | pf.ANCHOR_Y_BOT)
 
         self.selected_mat_idx = 0
@@ -179,4 +179,3 @@ class TerrainTabWindow(pf.Window):
             self.selected_side_mat_idx = self.combo_box([mat.name for mat in globals.active_map.materials], self.selected_side_mat_idx, 25, (UI_LEFT_PANE_WIDTH - 30, 200))
             if old_side_mat_idx != self.selected_side_mat_idx:
                 pf.global_event(EVENT_SIDE_MAT_SEL_CHANGED, globals.active_map.materials[self.selected_side_mat_idx])
-

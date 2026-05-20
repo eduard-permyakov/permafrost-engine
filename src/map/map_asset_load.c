@@ -216,7 +216,7 @@ static void m_al_patch_adjacency_info(struct map *map)
             const struct tile *tile = &map->chunks[r * map->width + c].tiles[tile_r * TILES_PER_CHUNK_WIDTH + tile_c];
 
             R_PushCmd((struct rcmd){
-                .func = R_GL_TilePatchVertsBlend,
+                .func = R_Cmd_TilePatchVertsBlend,
                 .nargs = 3,
                 .args = {
                     chunk_rprivate,
@@ -229,7 +229,7 @@ static void m_al_patch_adjacency_info(struct map *map)
                 continue;
 
             R_PushCmd((struct rcmd){
-                .func = R_GL_TilePatchVertsSmooth,
+                .func = R_Cmd_TilePatchVertsSmooth,
                 .nargs = 3,
                 .args = {
                     chunk_rprivate,
@@ -492,7 +492,7 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
     };
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_MapInit,
+        .func = R_Cmd_MapInit,
         .nargs = 3,
         .args = {
             R_PushArg(texnames, header->num_materials * 256),
@@ -580,7 +580,7 @@ bool M_AL_UpdateTile(struct map *map, const struct tile_desc *desc, const struct
         
             struct pfchunk *chunk = &map->chunks[curr.chunk_r * map->width + curr.chunk_c];
             R_PushCmd((struct rcmd){
-                .func = R_GL_TileUpdate,
+                .func = R_Cmd_TileUpdate,
                 .nargs = 3,
                 .args = {
                     chunk->render_private,
@@ -596,7 +596,7 @@ bool M_AL_UpdateTile(struct map *map, const struct tile_desc *desc, const struct
 
 void M_AL_FreePrivate(struct map *map)
 {
-    R_PushCmd((struct rcmd){ .func = R_GL_MapShutdown });
+    R_PushCmd((struct rcmd){ .func = R_Cmd_MapShutdown });
     assert(map->nav_private);
     N_FreeCtx(map->nav_private);
 }

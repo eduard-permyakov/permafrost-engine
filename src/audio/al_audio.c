@@ -487,7 +487,7 @@ static void on_render_3d(void *user, void *event)
     vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_DrawSelectionCircle,
+        .func = R_Cmd_DrawSelectionCircle,
         .nargs = 5,
         .args = {
             R_PushArg(&pos, sizeof(pos)),
@@ -893,7 +893,7 @@ bool Audio_LoadState(struct SDL_RWops *stream)
                         alSourceStop(s_foreground_sources[i]);
                         break;
                     }
-                    glGetError(); /* clear error state */
+                    alGetError(); /* clear error state */
                 }
             }
         }
@@ -910,4 +910,3 @@ bool Audio_LoadState(struct SDL_RWops *stream)
 
     return true;
 }
-

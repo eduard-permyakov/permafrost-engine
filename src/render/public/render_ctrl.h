@@ -57,6 +57,8 @@ enum render_info{
     RENDER_INFO_RENDERER,
     RENDER_INFO_VERSION,
     RENDER_INFO_SL_VERSION,
+    RENDER_INFO_BACKEND,
+    RENDER_INFO_MSAA_SAMPLES,
 };
 
 struct render_init_arg{
@@ -119,6 +121,9 @@ SDL_Thread *R_Run(struct render_sync_state *rstate);
 /* Must be set up before creating the window */
 void        R_InitAttributes(void);
 bool        R_ComputeShaderSupported(void);
+Uint32      R_WindowFlags(void);
+void        R_WindowDrawableSize(SDL_Window *window, int *out_w, int *out_h);
+void        R_PresentWindow(SDL_Window *window);
 
 void       *R_PushArg(const void *src, size_t size);
 void       *R_AllocArg(size_t size);
@@ -145,4 +150,3 @@ int         R_UI_GetFontTexID(void);
 
 
 #endif
-

@@ -468,7 +468,7 @@ static void on_render_3d(void *user, void *event)
         case REGION_CIRCLE: {
 
             R_PushCmd((struct rcmd){
-                .func = R_GL_DrawSelectionCircle,
+                .func = R_Cmd_DrawSelectionCircle,
                 .nargs = 5,
                 .args = {
                     R_PushArg(&reg.pos, sizeof(reg.pos)),
@@ -489,7 +489,7 @@ static void on_render_3d(void *user, void *event)
                 (vec2_t){reg.pos.x + reg.xlen/2.0f, reg.pos.z + reg.zlen/2.0f},
             };
             R_PushCmd((struct rcmd){
-                .func = R_GL_DrawQuad,
+                .func = R_Cmd_DrawQuad,
                 .nargs = 4,
                 .args = {
                     R_PushArg(corners, sizeof(corners)),
@@ -1106,4 +1106,3 @@ bool G_Region_LoadState(struct SDL_RWops *stream)
 
     return true;
 }
-

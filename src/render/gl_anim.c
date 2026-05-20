@@ -79,7 +79,18 @@ static void realloc_vbo(size_t oldsize, size_t newsize)
     /* Copy existing data from the old VBO */
     glBindBuffer(GL_COPY_READ_BUFFER, s_pose_buff_vbo);
     glBindBuffer(GL_COPY_WRITE_BUFFER, new_buffer);
+#if defined(__APPLE__) && defined(__aarch64__)
+    const void *mapped = glMapBufferRange(GL_COPY_READ_BUFFER, 0, oldsize, GL_MAP_READ_BIT);
+    if(!mapped) {
+        goto fail_copy;
+    }
+    glBufferSubData(GL_COPY_WRITE_BUFFER, 0, oldsize, mapped);
+    if(!glUnmapBuffer(GL_COPY_READ_BUFFER)) {
+        goto fail_copy;
+    }
+#else
     glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, oldsize);
+#endif
     glBindBuffer(GL_COPY_READ_BUFFER, 0);
     glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
 
@@ -93,6 +104,13 @@ static void realloc_vbo(size_t oldsize, size_t newsize)
     glTexBuffer(GL_TEXTURE_BUFFER, GL_R32F, s_pose_buff_vbo);
     glBindTexture(GL_TEXTURE_BUFFER, 0);
 
+    GL_ASSERT_OK();
+    GL_PERF_RETURN_VOID();
+
+fail_copy:
+    glBindBuffer(GL_COPY_READ_BUFFER, 0);
+    glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
+    glDeleteBuffers(1, &new_buffer);
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }
@@ -131,7 +149,7 @@ void R_GL_AnimShutdown(void)
     s_pose_buff_size = DEFAULT_POSE_BUFF_SIZE;
 }
 
-void R_GL_AnimAppendData(GLfloat *data, size_t *size)
+void R_GL_AnimAppendData_Impl(GLfloat *data, size_t *size)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -161,9 +179,10 @@ void R_GL_AnimBindPoseBuff(void)
     GL_ASSERT_OK();
 }
 
-void R_GL_AnimSetUniforms(mat4x4_t *normal_mat, struct anim_pose_data_desc *desc)
+void R_GL_AnimSetUniforms_Impl(mat4x4_t *normal_mat, struct anim_pose_data_desc *desc, const uint32_t *uid)
 {
     ASSERT_IN_RENDER_THREAD();
+    (void)uid;
 
     R_GL_StateSet(GL_U_POSEBUFF, (struct uval){
         .type = UTYPE_INT,
@@ -184,4 +203,3 @@ void R_GL_AnimSetUniforms(mat4x4_t *normal_mat, struct anim_pose_data_desc *desc
 
     GL_ASSERT_OK();
 }
-

@@ -200,7 +200,7 @@ static struct result ping_task(void *arg)
         if(flags & ENTITY_FLAG_BUILDING) {
 
             R_PushCmd((struct rcmd){
-                .func = R_GL_DrawSelectionRectangle,
+                .func = R_Cmd_DrawSelectionRectangle,
                 .nargs = 4,
                 .args = {
                     R_PushArg(&obb, sizeof(obb)),
@@ -212,7 +212,7 @@ static struct result ping_task(void *arg)
         }else{
 
             R_PushCmd((struct rcmd){
-                .func = R_GL_DrawSelectionCircle,
+                .func = R_Cmd_DrawSelectionCircle,
                 .nargs = 5,
                 .args = {
                     R_PushArg(&pos, sizeof(pos)),
@@ -275,8 +275,8 @@ static struct result disappear_task(void *arg)
         /* Add a slight shake */
         if(curr_long != prev_long) {
             prev_shift = curr_shift;
-            curr_shift.x = ((float)rand()) / RAND_MAX * 2.5f;
-            curr_shift.y = ((float)rand()) / RAND_MAX * 2.5f;
+            curr_shift.x = (float)(((double)rand() / (double)RAND_MAX) * 2.5);
+            curr_shift.y = (float)(((double)rand() / (double)RAND_MAX) * 2.5);
         }
 
         float pc = (elapsed - (prev_long * 250)) / 250;
@@ -796,4 +796,3 @@ void Entity_ClearIcons(uint32_t uid)
         kh_del(icons, s_ent_icons_map, k);
     }
 }
-

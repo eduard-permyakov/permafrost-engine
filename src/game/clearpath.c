@@ -440,7 +440,7 @@ static void on_render_3d(void *user, void *event)
 
     assert(idx == n_vos);
     R_PushCmd((struct rcmd){
-        .func = R_GL_DrawCombinedHRVO,
+        .func = R_Cmd_DrawCombinedHRVO,
         .nargs = 5,
         .args = {
             R_PushArg(apexes, n_vos * sizeof(vec2_t)),
@@ -455,7 +455,7 @@ static void on_render_3d(void *user, void *event)
     float width = 0.5f;
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_DrawSelectionCircle,
+        .func = R_Cmd_DrawSelectionCircle,
         .nargs = 5,
         .args = {
             R_PushArg(&cpent->xz_pos, sizeof(cpent->xz_pos)),
@@ -481,7 +481,7 @@ static void on_render_3d(void *user, void *event)
 
     float t = PFM_Vec2_Len(&des_v) * G_Move_GetTickHz();
     R_PushCmd((struct rcmd){
-        .func = R_GL_DrawRay,
+        .func = R_Cmd_DrawRay,
         .nargs = 5,
         .args = {
             R_PushArg(&origin_pos, sizeof(origin_pos)),
@@ -498,7 +498,7 @@ static void on_render_3d(void *user, void *event)
 
     t = PFM_Vec2_Len(&v_new) * G_Move_GetTickHz();
     R_PushCmd((struct rcmd){
-        .func = R_GL_DrawRay,
+        .func = R_Cmd_DrawRay,
         .nargs = 5,
         .args = {
             R_PushArg(&origin_pos, sizeof(origin_pos)),
@@ -515,7 +515,7 @@ static void on_render_3d(void *user, void *event)
     for(int i = 0; i < vec_size(&s_debug_saved.xpoints); i++) {
 
         R_PushCmd((struct rcmd){
-            .func = R_GL_DrawSelectionCircle,
+            .func = R_Cmd_DrawSelectionCircle,
             .nargs = 5,
             .args = {
                 R_PushArg(&vec_AT(&s_debug_saved.xpoints, i), sizeof(vec_AT(&s_debug_saved.xpoints, 0))),
@@ -703,4 +703,3 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
 
     PERF_RETURN((vec2_t){0.0f, 0.0f});
 }
-

@@ -37,17 +37,17 @@
 #define GL_PERF_H
 
 #include "../perf.h"
-#include <GL/glew.h>
+#include "gl_loader.h"
 
 #include "gl_assert.h"
 
-#ifndef NDEBUG
+#if !defined(NDEBUG) && !PF_RENDER_BACKEND_METAL
 
 extern bool g_trace_gpu;
 
 #define GL_GPU_PERF_PUSH(name)                  \
     do{                                         \
-        if(!g_trace_gpu)                        \
+        if(!g_trace_gpu || !PFGL_TimerQuerySupported()) \
             break;                              \
         GLuint cookie;                          \
         glGenQueries(1, &cookie);               \
@@ -58,7 +58,7 @@ extern bool g_trace_gpu;
 
 #define GL_GPU_PERF_POP()                       \
     do{                                         \
-        if(!g_trace_gpu)                        \
+        if(!g_trace_gpu || !PFGL_TimerQuerySupported()) \
             break;                              \
         GLuint cookie;                          \
         glGenQueries(1, &cookie);               \
@@ -89,7 +89,7 @@ extern bool g_trace_gpu;
 
 #define GL_PERF_PUSH_GROUP(id, message)                     \
     do{                                                     \
-        if(GLEW_KHR_debug) {                                \
+        if(PFGL_KHRDebugSupported()) {                      \
             glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION,   \
                 id, strlen(message), message);              \
         }                                                   \
@@ -97,7 +97,7 @@ extern bool g_trace_gpu;
 
 #define GL_PERF_POP_GROUP()                                 \
     do{                                                     \
-        if(GLEW_KHR_debug) {                                \
+        if(PFGL_KHRDebugSupported()) {                      \
             glPopDebugGroup();                              \
         }                                                   \
     }while(0)
@@ -118,4 +118,3 @@ extern bool g_trace_gpu;
 #endif //NDEBUG
 
 #endif
-

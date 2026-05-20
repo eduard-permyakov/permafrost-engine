@@ -63,6 +63,33 @@
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
+#if PF_RENDER_BACKEND_METAL
+static void al_metal_copy_terrain_flat_attrs(struct terrain_vert *dst,
+                                             const struct terrain_vert *src)
+{
+    dst->material_idx = src->material_idx;
+    dst->blend_mode = src->blend_mode;
+    dst->no_bump_map = src->no_bump_map;
+    dst->middle_indices = src->middle_indices;
+    dst->c1_indices[0] = src->c1_indices[0];
+    dst->c1_indices[1] = src->c1_indices[1];
+    dst->c2_indices[0] = src->c2_indices[0];
+    dst->c2_indices[1] = src->c2_indices[1];
+    dst->tb_indices = src->tb_indices;
+    dst->lr_indices = src->lr_indices;
+    dst->wang_index = src->wang_index;
+}
+
+static void al_metal_expand_terrain_flat_attrs(struct terrain_vert *verts,
+                                               size_t num_verts)
+{
+    for(size_t i = 0; i + 2 < num_verts; i += 3) {
+        al_metal_copy_terrain_flat_attrs(&verts[i + 1], &verts[i]);
+        al_metal_copy_terrain_flat_attrs(&verts[i + 2], &verts[i]);
+    }
+}
+#endif
+
 static bool al_read_vertex(SDL_RWops *stream, struct vertex *out, 
                            char out_weights_line[])
 {
@@ -165,7 +192,7 @@ static bool al_read_material(SDL_RWops *stream, const char *basedir, struct mate
     out->texname[sizeof(out->texname)-1] = '\0';
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_Texture_GetOrLoad,
+        .func = R_Cmd_Texture_GetOrLoad,
         .nargs = 3,
         .args = {
             R_PushArg(basedir, strlen(basedir) + 1),
@@ -187,6 +214,13 @@ size_t al_priv_buffsize_from_header(const struct pfobj_hdr *header)
 
     ret += sizeof(struct render_private);
     ret += header->num_materials * sizeof(struct material);
+#if PF_RENDER_BACKEND_METAL
+    if(header->num_as == 0) {
+        ret += header->num_verts * sizeof(struct vertex);
+    }else{
+        ret += header->num_verts * sizeof(struct anim_vert);
+    }
+#endif
 
     return ret;
 }
@@ -212,9 +246,11 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
     struct render_private *priv = malloc(al_priv_buffsize_from_header(header));
     if(!priv)
         goto fail_alloc_priv;
+    memset(priv, 0, al_priv_buffsize_from_header(header));
 
     bool anim = (header->num_as > 0);
     priv->vertex_stride = anim ? sizeof(struct anim_vert) : sizeof(struct vertex);
+    priv->uses_pose_buffer = anim;
 
     size_t vbuff_sz = header->num_verts * priv->vertex_stride;
     void *vbuff = malloc(vbuff_sz);
@@ -224,6 +260,19 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
     priv->mesh.num_verts = header->num_verts;
     priv->num_materials = header->num_materials;
     priv->materials = (void*)(priv + 1);
+#if PF_RENDER_BACKEND_METAL
+    char *unused_base = (char*)priv->materials + header->num_materials * sizeof(struct material);
+    pf_strlcpy(priv->metal_asset_basedir, base_path ? base_path : "", sizeof(priv->metal_asset_basedir));
+    if(!anim) {
+        priv->metal_is_static_mesh = true;
+        priv->metal_static_verts = unused_base;
+        priv->metal_static_verts_size = vbuff_sz;
+    }else{
+        priv->metal_is_anim_mesh = true;
+        priv->metal_anim_verts = unused_base;
+        priv->metal_anim_verts_size = vbuff_sz;
+    }
+#endif
 
     for(int i = 0; i < header->num_verts; i++) {
 
@@ -252,8 +301,16 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
     const char *shader = anim ? "mesh.animated.textured-phong-shadowed" 
                               : "mesh.static.textured-phong-shadowed";
 
+#if PF_RENDER_BACKEND_METAL
+    if(!anim) {
+        memcpy(priv->metal_static_verts, vbuff, vbuff_sz);
+    }else{
+        memcpy(priv->metal_anim_verts, vbuff, vbuff_sz);
+    }
+#endif
+
     R_PushCmd((struct rcmd){
-        .func = R_GL_Init,
+        .func = R_Cmd_Init,
         .nargs = 3,
         .args = {
             priv,
@@ -331,6 +388,9 @@ size_t R_AL_PrivBuffSizeForChunk(size_t tiles_width, size_t tiles_height, size_t
 
     ret += sizeof(struct render_private);
     ret += sizeof(struct material) * num_mats;
+#if PF_RENDER_BACKEND_METAL
+    ret += VERTS_PER_TILE * (tiles_width * tiles_height) * sizeof(struct terrain_vert);
+#endif
 
     return ret;
 }
@@ -348,6 +408,8 @@ bool R_AL_InitPrivFromTiles(const struct map *map, int chunk_r, int chunk_c,
     char *unused_base = (char*)priv_buff + sizeof(struct render_private);
     size_t vbuff_sz = num_verts * sizeof(struct terrain_vert);
 
+    memset(priv, 0, sizeof(*priv));
+
     struct terrain_vert *vbuff = malloc(vbuff_sz);
     if(!vbuff)
         goto fail_alloc;
@@ -356,6 +418,11 @@ bool R_AL_InitPrivFromTiles(const struct map *map, int chunk_r, int chunk_c,
     priv->mesh.num_verts = num_verts;
     priv->materials = (void*)unused_base;
     priv->num_materials = 0;
+#if PF_RENDER_BACKEND_METAL
+    priv->metal_is_terrain = true;
+    priv->metal_terrain_verts = unused_base;
+    priv->metal_terrain_verts_size = vbuff_sz;
+#endif
 
     for(int r = 0; r < height; r++) {
     for(int c = 0; c < width;  c++) {
@@ -365,9 +432,14 @@ bool R_AL_InitPrivFromTiles(const struct map *map, int chunk_r, int chunk_c,
         R_TileGetVertices(map, td, vert_base);
     }}
 
+#if PF_RENDER_BACKEND_METAL
+    memcpy(priv->metal_terrain_verts, vbuff, vbuff_sz);
+    al_metal_expand_terrain_flat_attrs(priv->metal_terrain_verts, num_verts);
+#endif
+
     const char *shader = "terrain-shadowed";
     R_PushCmd((struct rcmd){
-        .func = R_GL_Init,
+        .func = R_Cmd_Init,
         .nargs = 3,
         .args = {
             priv,
@@ -382,4 +454,3 @@ bool R_AL_InitPrivFromTiles(const struct map *map, int chunk_r, int chunk_c,
 fail_alloc:
     PERF_RETURN(false);
 }
-

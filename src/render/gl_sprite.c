@@ -115,7 +115,7 @@ static void do_draw_call(struct draw_call_desc desc, struct sprite_sheet_desc sh
     pf_snprintf(path, sizeof(path), "assets/sprites/%s", sheet.filename);
 
     GLuint tex;
-    R_GL_Texture_GetOrLoad(g_basepath, path, &tex);
+    R_GL_Texture_GetOrLoad_Impl(g_basepath, path, &tex);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, tex);
@@ -218,8 +218,8 @@ static void do_draw_call(struct draw_call_desc desc, struct sprite_sheet_desc sh
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_SpriteRenderBatch(struct sprite_desc *sprites, size_t *nsprites,
-                            const struct camera *cam)
+void R_GL_SpriteRenderBatch_Impl(struct sprite_desc *sprites, size_t *nsprites,
+                                 const struct camera *cam)
 {
     GL_PERF_PUSH_GROUP(0, "sprite");
     /* First sort the sprites by distinct sprite sheet */
@@ -249,4 +249,3 @@ void R_GL_SpriteRenderBatch(struct sprite_desc *sprites, size_t *nsprites,
     GL_PERF_POP_GROUP();
     GL_ASSERT_OK();
 }
-

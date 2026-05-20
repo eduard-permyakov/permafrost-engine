@@ -1,7 +1,9 @@
 /bin/
+/dist/
 /lib/
 /obj/
 /launcher/obj/
+.DS_Store
 
 /assets/*
 
@@ -14,10 +16,14 @@
 !/assets/loading_screens
 !/assets/icons
 !/assets/skyboxes
+!/assets/sprites
+!/assets/music
+!/assets/sounds
 
 *.pyc
 *.pickle
 tags
+visual_parity_captures/
 
 pf.conf
 demo.exe
@@ -58,4 +64,3 @@ deps/openal-soft/utils/alsoft-config/INSTALL.vcxproj.filters
 deps/openal-soft/utils/alsoft-config/alsoft-config.sln
 deps/openal-soft/utils/alsoft-config/cmake_install.cmake
 deps/openal-soft/version.h
-

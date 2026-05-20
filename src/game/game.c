@@ -1,6 +1,6 @@
 /*
- *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2023 Eduard Permyakov 
+ *  This file is part of Permafrost Engine.
+ *  Copyright (C) 2017-2023 Eduard Permyakov
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -14,21 +14,21 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
- * 
- *  Linking this software statically or dynamically with other modules is making 
- *  a combined work based on this software. Thus, the terms and conditions of 
- *  the GNU General Public License cover the whole combination. 
- *  
- *  As a special exception, the copyright holders of Permafrost Engine give 
- *  you permission to link Permafrost Engine with independent modules to produce 
- *  an executable, regardless of the license terms of these independent 
- *  modules, and to copy and distribute the resulting executable under 
- *  terms of your choice, provided that you also meet, for each linked 
- *  independent module, the terms and conditions of the license of that 
- *  module. An independent module is a module which is not derived from 
- *  or based on Permafrost Engine. If you modify Permafrost Engine, you may 
- *  extend this exception to your version of Permafrost Engine, but you are not 
- *  obliged to do so. If you do not wish to do so, delete this exception 
+ *
+ *  Linking this software statically or dynamically with other modules is making
+ *  a combined work based on this software. Thus, the terms and conditions of
+ *  the GNU General Public License cover the whole combination.
+ *
+ *  As a special exception, the copyright holders of Permafrost Engine give
+ *  you permission to link Permafrost Engine with independent modules to produce
+ *  an executable, regardless of the license terms of these independent
+ *  modules, and to copy and distribute the resulting executable under
+ *  terms of your choice, provided that you also meet, for each linked
+ *  independent module, the terms and conditions of the license of that
+ *  module. An independent module is a module which is not derived from
+ *  or based on Permafrost Engine. If you modify Permafrost Engine, you may
+ *  extend this exception to your version of Permafrost Engine, but you are not
+ *  obliged to do so. If you do not wish to do so, delete this exception
  *  statement from your version.
  *
  */
@@ -40,7 +40,7 @@
 #include "movement.h"
 #include "formation.h"
 #include "game_private.h"
-#include "combat.h" 
+#include "combat.h"
 #include "clearpath.h"
 #include "position.h"
 #include "fog_of_war.h"
@@ -77,7 +77,10 @@
 #include "../sched.h"
 #include "../sprite.h"
 
-#include <assert.h> 
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 
 #define BASE_CAM_HEIGHT     175.0f
@@ -115,13 +118,13 @@ static struct gamestate s_gs;
 
 static vec2_t g_default_minimap_pos(void)
 {
-    struct sval res = (struct sval){ 
-        .type = ST_TYPE_VEC2, 
+    struct sval res = (struct sval){
+        .type = ST_TYPE_VEC2,
         .as_vec2 = (vec2_t){1920, 1080}
     };
     const float PAD = 10.0f;
     int size = 256;
-    
+
     return (vec2_t) {
         (size + 2*MINIMAP_BORDER_WIDTH) / cos(M_PI/4.0f)/2 + PAD,
         res.as_vec2.y - (size + 2*MINIMAP_BORDER_WIDTH) / cos(M_PI/4.0f)/2 - PAD,
@@ -138,10 +141,10 @@ static void g_reset_camera(struct camera *cam)
     float multiplier = setting.as_int / 100.0f;
 
     Camera_SetPitchAndYaw(cam, -(90.0f - CAM_TILT_UP_DEGREES), 90.0f + 45.0f);
-    Camera_SetPos(cam, (vec3_t){ 0.0f, BASE_CAM_HEIGHT * multiplier, 0.0f }); 
+    Camera_SetPos(cam, (vec3_t){ 0.0f, BASE_CAM_HEIGHT * multiplier, 0.0f });
 }
 
-static bool g_init_camera(void) 
+static bool g_init_camera(void)
 {
     s_gs.active_cam = Camera_New();
     if(!s_gs.active_cam) {
@@ -181,32 +184,35 @@ static void g_shadow_pass(struct render_input *in)
 {
     vec3_t pos = Camera_GetPos(in->cam);
     vec3_t dir = Camera_GetDir(in->cam);
+    bool skip_terrain = getenv("PF_SHADOW_SKIP_TERRAIN") != NULL;
+    bool skip_static = getenv("PF_SHADOW_SKIP_STATIC") != NULL;
+    bool skip_anim = getenv("PF_SHADOW_SKIP_ANIM") != NULL;
 
-    R_PushCmd((struct rcmd){ 
-        .func = R_GL_DepthPassBegin, 
+    R_PushCmd((struct rcmd){
+        .func = R_Cmd_DepthPassBegin,
         .nargs = 3,
-        .args = { 
+        .args = {
             R_PushArg(&in->light_pos, sizeof(in->light_pos)),
             R_PushArg(&pos, sizeof(pos)),
             R_PushArg(&dir, sizeof(dir)),
         },
     });
 
-    if(in->map) {
+    if(in->map && !skip_terrain) {
         M_RenderVisibleMap(in->map, in->cam, true, RENDER_PASS_DEPTH);
     }
 
     if(s_gs.use_batch_rendering) {
 
         R_PushCmd((struct rcmd){
-            .func = R_GL_Batch_RenderDepthMap,
+            .func = R_Cmd_Batch_RenderDepthMap,
             .nargs = 1,
             .args = { in }
         });
 
     }else{
-        for(int i = 0; i < vec_size(&in->light_vis_anim); i++) {
-        
+        for(int i = 0; !skip_anim && i < vec_size(&in->light_vis_anim); i++) {
+
             struct ent_anim_rstate *curr = &vec_AT(&in->light_vis_anim, i);
 
             mat4x4_t model, normal;
@@ -214,16 +220,17 @@ static void g_shadow_pass(struct render_input *in)
             PFM_Mat4x4_Transpose(&model, &normal);
 
             R_PushCmd((struct rcmd){
-                .func = R_GL_AnimSetUniforms,
-                .nargs = 2,
+                .func = R_Cmd_AnimSetUniforms,
+                .nargs = 3,
                 .args = {
                     R_PushArg(&normal, sizeof(normal)),
                     R_PushArg(&curr->desc, sizeof(curr->desc)),
+                    R_PushArg(&curr->uid, sizeof(curr->uid)),
                 },
             });
 
             R_PushCmd((struct rcmd){
-                .func = R_GL_RenderDepthMap,
+                .func = R_Cmd_RenderDepthMap,
                 .nargs = 2,
                 .args = {
                     curr->render_private,
@@ -232,11 +239,11 @@ static void g_shadow_pass(struct render_input *in)
             });
         }
 
-        for(int i = 0; i < vec_size(&in->light_vis_stat); i++) {
-        
+        for(int i = 0; !skip_static && i < vec_size(&in->light_vis_stat); i++) {
+
             struct ent_stat_rstate *curr = &vec_AT(&in->light_vis_stat, i);
             R_PushCmd((struct rcmd){
-                .func = R_GL_RenderDepthMap,
+                .func = R_Cmd_RenderDepthMap,
                 .nargs = 2,
                 .args = {
                     curr->render_private,
@@ -246,7 +253,7 @@ static void g_shadow_pass(struct render_input *in)
         }
     }
 
-    R_PushCmd((struct rcmd){ R_GL_DepthPassEnd, 0 });
+    R_PushCmd((struct rcmd){ R_Cmd_DepthPassEnd, 0 });
 }
 
 static void g_draw_pass(struct render_input *in)
@@ -258,14 +265,14 @@ static void g_draw_pass(struct render_input *in)
     if(s_gs.use_batch_rendering) {
 
         R_PushCmd((struct rcmd){
-            .func = R_GL_Batch_Draw,
+            .func = R_Cmd_Batch_Draw,
             .nargs = 1,
             .args = { in }
         });
 
     }else{
         for(int i = 0; i < vec_size(&in->cam_vis_anim); i++) {
-        
+
             struct ent_anim_rstate *curr = &vec_AT(&in->cam_vis_anim, i);
 
             mat4x4_t model, normal;
@@ -273,16 +280,17 @@ static void g_draw_pass(struct render_input *in)
             PFM_Mat4x4_Transpose(&model, &normal);
 
             R_PushCmd((struct rcmd){
-                .func = R_GL_AnimSetUniforms,
-                .nargs = 2,
+                .func = R_Cmd_AnimSetUniforms,
+                .nargs = 3,
                 .args = {
                     R_PushArg(&normal, sizeof(normal)),
                     R_PushArg(&curr->desc, sizeof(curr->desc)),
+                    R_PushArg(&curr->uid, sizeof(curr->uid)),
                 },
             });
 
             R_PushCmd((struct rcmd){
-                .func = R_GL_Draw,
+                .func = R_Cmd_Draw,
                 .nargs = 3,
                 .args = {
                     curr->render_private,
@@ -293,10 +301,10 @@ static void g_draw_pass(struct render_input *in)
         }
 
         for(int i = 0; i < vec_size(&in->cam_vis_stat); i++) {
-        
+
             struct ent_stat_rstate *curr = &vec_AT(&in->cam_vis_stat, i);
             R_PushCmd((struct rcmd){
-                .func = R_GL_Draw,
+                .func = R_Cmd_Draw,
                 .nargs = 3,
                 .args = {
                     curr->render_private,
@@ -328,7 +336,7 @@ static void g_render_healthbars(void)
     STALLOC(int, ent_yoffsets, max_ents);
 
     for(int i = 0; i < max_ents; i++) {
-    
+
         uint32_t curr = vec_AT(&s_gs.visible, i);
         uint32_t flags = G_FlagsGet(curr);
 
@@ -362,7 +370,7 @@ static void g_render_healthbars(void)
     }
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_DrawHealthbars,
+        .func = R_Cmd_DrawHealthbars,
         .nargs = 5,
         .args = {
             R_PushArg(&num_combat_visible, sizeof(num_combat_visible)),
@@ -449,7 +457,7 @@ static void g_make_draw_list(vec_entity_t ents, vec_rstat_t *out_stat, vec_ranim
 
             struct ent_anim_rstate rstate = (struct ent_anim_rstate){
                 .uid = curr,
-                .render_private = ent->render_private, 
+                .render_private = ent->render_private,
                 .model = model,
                 .translucent = !!(flags & ENTITY_FLAG_TRANSLUCENT),
             };
@@ -457,7 +465,7 @@ static void g_make_draw_list(vec_entity_t ents, vec_rstat_t *out_stat, vec_ranim
             vec_ranim_push(out_anim, rstate);
 
         }else{
-        
+
             struct tile_desc td = {0};
             if(s_gs.map) {
                 M_Tile_DescForPoint2D(res, M_GetPos(s_gs.map), G_Pos_GetXZ(curr), &td);
@@ -465,7 +473,7 @@ static void g_make_draw_list(vec_entity_t ents, vec_rstat_t *out_stat, vec_ranim
 
             struct ent_stat_rstate rstate = (struct ent_stat_rstate){
                 .uid = curr,
-                .render_private = ent->render_private, 
+                .render_private = ent->render_private,
                 .model = model,
                 .translucent = !!(flags & ENTITY_FLAG_TRANSLUCENT),
                 .td = td
@@ -478,6 +486,102 @@ static void g_make_draw_list(vec_entity_t ents, vec_rstat_t *out_stat, vec_ranim
     g_sort_stat_list(out_stat);
     g_sort_anim_list(out_anim);
     PERF_RETURN_VOID();
+}
+
+static void g_log_shadow_visibility_if_requested(const vec3_t *cam_pos, const vec3_t *cam_dir,
+                                                 int visible, int light_visible,
+                                                 int light_visible_movable, int light_visible_static)
+{
+    const char *enabled = getenv("PF_SHADOW_VIS_LOG");
+    if(!enabled || !*enabled)
+        return;
+
+    static unsigned frame;
+    frame++;
+
+    unsigned max_frames = 0;
+    const char *limit = getenv("PF_SHADOW_VIS_LOG_FRAMES");
+    if(limit && *limit)
+        max_frames = (unsigned)strtoul(limit, NULL, 10);
+    if(max_frames && frame > max_frames)
+        return;
+
+    fprintf(stderr,
+        "PF_SHADOW_VIS frame=%u cam=(%.2f,%.2f,%.2f) dir=(%.4f,%.4f,%.4f) visible=%d light_visible=%d movable=%d static=%d\n",
+        frame,
+        cam_pos->x, cam_pos->y, cam_pos->z,
+        cam_dir->x, cam_dir->y, cam_dir->z,
+        visible, light_visible, light_visible_movable, light_visible_static);
+}
+
+static void g_log_shadow_render_input_if_requested(const struct render_input *in)
+{
+    const char *enabled = getenv("PF_SHADOW_RENDER_INPUT_LOG");
+    if(!enabled || !*enabled || !in)
+        return;
+
+    static unsigned frame;
+    frame++;
+
+    unsigned max_frames = 0;
+    const char *limit = getenv("PF_SHADOW_RENDER_INPUT_LOG_FRAMES");
+    if(limit && *limit)
+        max_frames = (unsigned)strtoul(limit, NULL, 10);
+    if(max_frames && frame > max_frames)
+        return;
+
+    fprintf(stderr,
+        "PF_SHADOW_RENDER_INPUT frame=%u cam_stat=%zu cam_anim=%zu light_stat=%zu light_anim=%zu shadows=%d\n",
+        frame,
+        vec_size(&in->cam_vis_stat),
+        vec_size(&in->cam_vis_anim),
+        vec_size(&in->light_vis_stat),
+        vec_size(&in->light_vis_anim),
+        in->shadows ? 1 : 0);
+}
+
+static void g_write_shadow_caster_manifest_if_requested(const struct render_input *in)
+{
+    const char *path = getenv("PF_SHADOW_CASTER_MANIFEST_PATH");
+    if(!path || !*path || !in)
+        return;
+
+    FILE *fp = fopen(path, "w");
+    if(!fp)
+        return;
+
+    fprintf(fp, "uid,kind,flags,x,z\n");
+    for(int i = 0; i < vec_size(&in->light_vis_stat); i++) {
+        const struct ent_stat_rstate *curr = &vec_AT(&in->light_vis_stat, i);
+        vec2_t pos = G_Pos_GetXZ(curr->uid);
+        fprintf(fp, "%u,static,0x%08x,%.3f,%.3f\n",
+            curr->uid, G_FlagsGet(curr->uid), pos.x, pos.z);
+    }
+    for(int i = 0; i < vec_size(&in->light_vis_anim); i++) {
+        const struct ent_anim_rstate *curr = &vec_AT(&in->light_vis_anim, i);
+        vec2_t pos = G_Pos_GetXZ(curr->uid);
+        fprintf(fp, "%u,anim,0x%08x,%.3f,%.3f\n",
+            curr->uid, G_FlagsGet(curr->uid), pos.x, pos.z);
+    }
+
+    fclose(fp);
+}
+
+static void g_filter_shadow_only_uid_if_requested(struct render_input *in)
+{
+    const char *only_uid_text = getenv("PF_SHADOW_ONLY_UID");
+    if(!only_uid_text || !*only_uid_text || !in)
+        return;
+
+    uint32_t only_uid = (uint32_t)strtoul(only_uid_text, NULL, 10);
+    for(int i = vec_size(&in->light_vis_stat) - 1; i >= 0; i--) {
+        if(vec_AT(&in->light_vis_stat, i).uid != only_uid)
+            vec_rstat_del(&in->light_vis_stat, i);
+    }
+    for(int i = vec_size(&in->light_vis_anim) - 1; i >= 0; i--) {
+        if(vec_AT(&in->light_vis_anim, i).uid != only_uid)
+            vec_ranim_del(&in->light_vis_anim, i);
+    }
 }
 
 static void *stackmalloc(size_t size)
@@ -530,6 +634,9 @@ static void g_create_render_input(struct render_input *out)
 
     g_make_draw_list(s_gs.visible, &out->cam_vis_stat, &out->cam_vis_anim, false);
     g_make_draw_list(s_gs.light_visible, &out->light_vis_stat, &out->light_vis_anim, true);
+    g_filter_shadow_only_uid_if_requested(out);
+    g_log_shadow_render_input_if_requested(out);
+    g_write_shadow_caster_manifest_if_requested(out);
 
     PERF_RETURN_VOID();
 }
@@ -546,20 +653,20 @@ static void *g_push_render_input(struct render_input in)
     ret->cam = R_PushArg(in.cam, g_sizeof_camera);
 
     if(in.cam_vis_stat.size) {
-        ret->cam_vis_stat.array = R_PushArg(in.cam_vis_stat.array, 
+        ret->cam_vis_stat.array = R_PushArg(in.cam_vis_stat.array,
             in.cam_vis_stat.size * sizeof(struct ent_stat_rstate));
     }
     if(in.cam_vis_anim.size) {
-        ret->cam_vis_anim.array = R_PushArg(in.cam_vis_anim.array, 
+        ret->cam_vis_anim.array = R_PushArg(in.cam_vis_anim.array,
             in.cam_vis_anim.size * sizeof(struct ent_anim_rstate));
     }
 
     if(in.light_vis_stat.size) {
-        ret->light_vis_stat.array = R_PushArg(in.light_vis_stat.array, 
+        ret->light_vis_stat.array = R_PushArg(in.light_vis_stat.array,
             in.light_vis_stat.size * sizeof(struct ent_stat_rstate));
     }
     if(in.light_vis_anim.size) {
-        ret->light_vis_anim.array = R_PushArg(in.light_vis_anim.array, 
+        ret->light_vis_anim.array = R_PushArg(in.light_vis_anim.array,
             in.light_vis_anim.size * sizeof(struct ent_anim_rstate));
     }
 
@@ -588,7 +695,7 @@ static void cam_zoom_commit(const struct sval *new_val)
 
     struct camera *cam = G_GetActiveCamera();
     vec3_t pos = Camera_GetPos(cam);
-    Camera_SetPos(cam, (vec3_t){ pos.x, BASE_CAM_HEIGHT * multiplier, pos.z }); 
+    Camera_SetPos(cam, (vec3_t){ pos.x, BASE_CAM_HEIGHT * multiplier, pos.z });
 }
 
 static bool move_hz_validate(const struct sval *new_val)
@@ -715,7 +822,7 @@ static void shadows_en_commit(const struct sval *new_val)
         return;
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_SetShadowsEnabled,
+        .func = R_Cmd_SetShadowsEnabled,
         .nargs = 1,
         .args = {
             R_PushArg(&new_val->as_bool, sizeof(bool)),
@@ -731,7 +838,7 @@ static void batching_en_commit(const struct sval *new_val)
             struct map_resolution res;
             M_GetResolution(s_gs.map, &res);
             R_PushCmd((struct rcmd){
-                .func = R_GL_Batch_AllocChunks,
+                .func = R_Cmd_Batch_AllocChunks,
                 .nargs = 1,
                 .args = {
                     R_PushArg(&res, sizeof(res)),
@@ -740,7 +847,7 @@ static void batching_en_commit(const struct sval *new_val)
         }
     }else{
         R_PushCmd((struct rcmd){
-            .func = R_GL_Batch_Reset,
+            .func = R_Cmd_Batch_Reset,
             .nargs = 0,
             .args = {0},
         });
@@ -765,7 +872,7 @@ static bool g_save_anim_state(SDL_RWops *stream)
     });
 
     struct attr num_anim = (struct attr){
-        .type = TYPE_INT, 
+        .type = TYPE_INT,
         .val.as_int = nanim
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_anim, "num_anim"));
@@ -896,12 +1003,12 @@ static void g_clear_map_state(void)
     }
 
     if(s_gs.prev_tick_map) {
-        /* The render thread still owns the previous tick map. Wait 
+        /* The render thread still owns the previous tick map. Wait
          * for it to complete before we free the buffer. */
         Engine_WaitRenderWorkDone();
         PF_FREE(s_gs.prev_tick_map);
         s_gs.prev_tick_map = NULL;
-        R_PushCmd((struct rcmd){ R_GL_MoveClearState, 0 });
+        R_PushCmd((struct rcmd){ R_Cmd_MoveClearState, 0 });
     }
 }
 
@@ -956,7 +1063,7 @@ static void g_change_simstate(void)
         uint32_t delta = curr_tick - s_gs.ss_change_tick;
         uint32_t curr;
         kh_foreach_key(s_gs.active, curr, {
-           
+
             uint32_t flags = G_FlagsGet(curr);
             if(!(flags & ENTITY_FLAG_ANIMATED))
                 continue;
@@ -1066,7 +1173,7 @@ static void g_create_settings(void)
         .name = "pf.video.shadows_enabled",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
-            .as_bool = true 
+            .as_bool = true
         },
         .prio = 0,
         .validate = bool_val_validate,
@@ -1078,7 +1185,7 @@ static void g_create_settings(void)
         .name = "pf.video.use_batch_rendering",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
-            .as_bool = true 
+            .as_bool = true
         },
         .prio = 0,
         .validate = bool_val_validate,
@@ -1138,7 +1245,7 @@ static void g_create_settings(void)
         .name = "pf.debug.show_first_sel_combined_hrvo",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
-            .as_bool = false 
+            .as_bool = false
         },
         .prio = 0,
         .validate = bool_val_validate,
@@ -1149,7 +1256,7 @@ static void g_create_settings(void)
         .name = "pf.debug.show_enemy_seek_fields",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
-            .as_bool = false 
+            .as_bool = false
         },
         .prio = 0,
         .validate = bool_val_validate,
@@ -1171,7 +1278,7 @@ static void g_create_settings(void)
         .name = "pf.debug.show_navigation_blockers",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
-            .as_bool = false 
+            .as_bool = false
         },
         .prio = 0,
         .validate = bool_val_validate,
@@ -1182,7 +1289,7 @@ static void g_create_settings(void)
         .name = "pf.debug.show_navigation_portals",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
-            .as_bool = false 
+            .as_bool = false
         },
         .prio = 0,
         .validate = bool_val_validate,
@@ -1193,7 +1300,7 @@ static void g_create_settings(void)
         .name = "pf.debug.show_navigation_island_ids",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
-            .as_bool = false 
+            .as_bool = false
         },
         .prio = 0,
         .validate = bool_val_validate,
@@ -1204,7 +1311,7 @@ static void g_create_settings(void)
         .name = "pf.debug.show_navigation_local_island_ids",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
-            .as_bool = false 
+            .as_bool = false
         },
         .prio = 0,
         .validate = bool_val_validate,
@@ -1215,7 +1322,7 @@ static void g_create_settings(void)
         .name = "pf.debug.show_chunk_boundaries",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
-            .as_bool = false 
+            .as_bool = false
         },
         .prio = 0,
         .validate = bool_val_validate,
@@ -1361,7 +1468,7 @@ static void g_render_minimap_units(void)
     kh_foreach_key(s_gs.active, curr, {
 
         uint32_t flags = G_FlagsGet(curr);
-        if(!s_gs.minimap_render_all 
+        if(!s_gs.minimap_render_all
         && !(flags & (ENTITY_FLAG_MOVABLE | ENTITY_FLAG_BUILDING)))
             continue;
         vec2_t xz_pos = G_Pos_GetXZ(curr);
@@ -1459,7 +1566,7 @@ void g_delete_gpuid(uint32_t uid)
     assert(k != kh_end(s_gs.gpu_id_ent_map));
     kh_del(id, s_gs.gpu_id_ent_map, k);
 
-    /* Make sure all existing values in the GPU ID table 
+    /* Make sure all existing values in the GPU ID table
      * are in the range of [1:table_size] */
     k = kh_get(id, s_gs.gpu_id_ent_map, old_size);
     if(k != kh_end(s_gs.gpu_id_ent_map)) {
@@ -1523,12 +1630,12 @@ static void on_update_ui(void *user, void *event)
         const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
 
         struct rect adj_bounds = UI_BoundsForAspectRatio(
-            (struct rect){pos.x, pos.y, width, height}, 
+            (struct rect){pos.x, pos.y, width, height},
             vres, adj_vres, ANCHOR_DEFAULT
         );
 
-        if(nk_begin_with_vres(ctx, name, 
-            (struct nk_rect){adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h}, 
+        if(nk_begin_with_vres(ctx, name,
+            (struct nk_rect){adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h},
             flags, (struct nk_vec2i){adj_vres.x, adj_vres.y})) {
 
             nk_layout_row_begin(ctx, NK_STATIC, 32, nicons);
@@ -1598,7 +1705,7 @@ bool G_Init(void)
         goto fail_ent_flag_map;
 
     if(!g_init_camera())
-        goto fail_cam; 
+        goto fail_cam;
 
     if(!R_InitWS(&s_gs.ws[0]))
         goto fail_ws;
@@ -1615,10 +1722,10 @@ bool G_Init(void)
     G_Timer_Init();
     G_StorageSite_Init();
 
-    R_PushCmd((struct rcmd){ R_GL_WaterInit, 0 });
+    R_PushCmd((struct rcmd){ R_Cmd_WaterInit, 0 });
 
     G_SetLightPos((vec3_t){120.0f, 150.0f, 120.0f});
-    G_SetAmbientLightColor((vec3_t){1.0f, 1.0f, 1.0f}); 
+    G_SetAmbientLightColor((vec3_t){1.0f, 1.0f, 1.0f});
     G_SetEmitLightColor((vec3_t){1.0f, 1.0f, 1.0f});
     G_SetSkybox("", "");
 
@@ -1627,7 +1734,7 @@ bool G_Init(void)
     s_gs.ss = G_RUNNING;
     s_gs.requested_ss = G_RUNNING;
 
-    E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, 
+    E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL,
         G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
     return true;
 
@@ -1678,7 +1785,7 @@ bool G_LoadMap(SDL_RWops *stream, bool update_navgrid)
         struct map_resolution res;
         M_GetResolution(s_gs.map, &res);
         R_PushCmd((struct rcmd){
-            .func = R_GL_Batch_AllocChunks,
+            .func = R_Cmd_Batch_AllocChunks,
             .nargs = 1,
             .args = {
                 R_PushArg(&res, sizeof(res)),
@@ -1734,17 +1841,17 @@ void G_ClearState(void)
 
     vec3_t white = (vec3_t){1.0f, 1.0f, 1.0f};
     R_PushCmd((struct rcmd){
-        .func = R_GL_SetAmbientLightColor,
+        .func = R_Cmd_SetAmbientLightColor,
         .nargs = 1,
         .args = { R_PushArg(&white, sizeof(white)) },
     });
     R_PushCmd((struct rcmd){
-        .func = R_GL_SetLightEmitColor,
+        .func = R_Cmd_SetLightEmitColor,
         .nargs = 1,
         .args = { R_PushArg(&white, sizeof(white)) },
     });
     G_SetLightPos((vec3_t){1.0f, 1.0f, 1.0f});
-    R_PushCmd((struct rcmd) { R_GL_Batch_Reset, 0 });
+    R_PushCmd((struct rcmd) { R_Cmd_Batch_Reset, 0 });
 
     PERF_RETURN_VOID();
 }
@@ -1964,7 +2071,7 @@ void G_Shutdown(void)
     R_DestroyWS(&s_gs.ws[0]);
     R_DestroyWS(&s_gs.ws[1]);
 
-    R_PushCmd((struct rcmd){ R_GL_WaterShutdown, 0 });
+    R_PushCmd((struct rcmd){ R_Cmd_WaterShutdown, 0 });
 
     G_StorageSite_Shutdown();
     G_Timer_Shutdown();
@@ -2011,6 +2118,10 @@ void G_Update(void)
 
     uint16_t pm = g_player_mask();
     uint32_t curr;
+    int visible_count = 0;
+    int light_visible_count = 0;
+    int light_visible_movable = 0;
+    int light_visible_static = 0;
 
     if(s_gs.ss == G_RUNNING) {
         A_Update();
@@ -2031,6 +2142,7 @@ void G_Update(void)
             if(vis) {
                 vec_entity_push(&s_gs.visible, curr);
                 vec_obb_push(&s_gs.visible_obbs, obb);
+                visible_count++;
             }
         }
 
@@ -2039,12 +2151,20 @@ void G_Update(void)
                 vis = g_ent_visible(pm, curr, &obb);
             }
             uint32_t flags = G_FlagsGet(curr);
-            if(vis || !(flags & ENTITY_FLAG_MOVABLE)) {
+            const char *include_hidden_static = getenv("PF_SHADOW_CASTERS_INCLUDE_UNREVEALED_STATIC");
+            if(vis || (include_hidden_static && !(flags & ENTITY_FLAG_MOVABLE))) {
                 vec_entity_push(&s_gs.light_visible, curr);
+                light_visible_count++;
+                if(flags & ENTITY_FLAG_MOVABLE)
+                    light_visible_movable++;
+                else
+                    light_visible_static++;
             }
         }
     });
     PERF_POP();
+    g_log_shadow_visibility_if_requested(&pos, &dir, visible_count, light_visible_count,
+        light_visible_movable, light_visible_static);
 
     if(s_gs.map) {
         G_Region_Update();
@@ -2090,7 +2210,7 @@ void G_Render(void)
     ss_e status;
     (void)status;
 
-    R_PushCmd((struct rcmd){ R_GL_BeginFrame, 0 });
+    R_PushCmd((struct rcmd){ R_Cmd_BeginFrame, 0 });
     E_Global_NotifyImmediate(EVENT_RENDER_3D_PRE, NULL, ES_ENGINE);
 
     struct render_input in;
@@ -2113,9 +2233,9 @@ void G_Render(void)
         struct render_input *water_rcopy = g_push_render_input(in);
 
         R_PushCmd((struct rcmd){
-            .func = R_GL_DrawWater,
+            .func = R_Cmd_DrawWater,
             .nargs = 3,
-            .args = { 
+            .args = {
                 water_rcopy,
                 R_PushArg(&refract_setting.as_bool, sizeof(bool)),
                 R_PushArg(&reflect_setting.as_bool, sizeof(bool)),
@@ -2138,7 +2258,7 @@ void G_Render(void)
             struct obb obb;
             Entity_CurrentOBB(curr, &obb, false);
             R_PushCmd((struct rcmd){
-                .func = R_GL_DrawSelectionRectangle,
+                .func = R_Cmd_DrawSelectionRectangle,
                 .nargs = 4,
                 .args = {
                     R_PushArg(&obb, sizeof(obb)),
@@ -2151,7 +2271,7 @@ void G_Render(void)
 
             float sel_radius = G_GetSelectionRadius(curr);
             R_PushCmd((struct rcmd){
-                .func = R_GL_DrawSelectionCircle,
+                .func = R_Cmd_DrawSelectionCircle,
                 .nargs = 5,
                 .args = {
                     R_PushArg(&curr_pos, sizeof(curr_pos)),
@@ -2165,7 +2285,7 @@ void G_Render(void)
     }
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_DrawSkybox,
+        .func = R_Cmd_DrawSkybox,
         .nargs = 1,
         .args = {
             R_PushArg(s_gs.active_cam, g_sizeof_camera)
@@ -2173,7 +2293,7 @@ void G_Render(void)
     });
 
     E_Global_NotifyImmediate(EVENT_RENDER_3D_POST, NULL, ES_ENGINE);
-    R_PushCmd((struct rcmd) { R_GL_SetScreenspaceDrawMode, 0 });
+    R_PushCmd((struct rcmd) { R_Cmd_SetScreenspaceDrawMode, 0 });
 
     if(!s_gs.hide_healthbars) {
         g_render_healthbars();
@@ -2184,11 +2304,11 @@ void G_Render(void)
     if(s_gs.map) {
         M_RenderMinimap(s_gs.map, s_gs.active_cam);
         g_render_minimap_units();
-        R_PushCmd((struct rcmd){ R_GL_MapInvalidate, 0 });
+        R_PushCmd((struct rcmd){ R_Cmd_MapInvalidate, 0 });
     }
 
     E_Global_NotifyImmediate(EVENT_RENDER_FINISH, NULL, ES_ENGINE);
-    R_PushCmd((struct rcmd){ R_GL_EndFrame, 0 });
+    R_PushCmd((struct rcmd){ R_Cmd_EndFrame, 0 });
 
     PERF_RETURN_VOID();
 }
@@ -2293,7 +2413,7 @@ bool G_AddEntity(uint32_t uid, uint32_t flags, vec3_t pos)
         G_Garrison_AddGarrisonable(uid);
 
     if(flags & ENTITY_FLAG_MOVABLE) {
-    
+
         k = kh_put(entity, s_gs.dynamic, uid, &ret);
         assert(ret != -1 && ret != 0);
 
@@ -2477,7 +2597,7 @@ bool G_AddFaction(const char *name, vec3_t color, int *out_id)
     s_gs.factions[new_fac_id].color = color;
     s_gs.factions[new_fac_id].controllable = true;
 
-    /* By default, a new faction is mutually at peace with 
+    /* By default, a new faction is mutually at peace with
      * every other faction. */
     for(int i = 0; i < MAX_FACTIONS; i++) {
         if(!(s_gs.factions_allocd & (0x1 << i)))
@@ -2540,7 +2660,7 @@ uint16_t G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors, b
 
         if(!(s_gs.factions_allocd & (0x1 << i)))
             continue;
-    
+
         if(out_names) {
             pf_strlcpy(out_names[i], s_gs.factions[i].name, MAX_FAC_NAME_LEN);
         }
@@ -2747,7 +2867,7 @@ void G_SetActiveCamera(struct camera *cam, enum cam_mode mode)
     M_Raycast_Uninstall();
 
     switch(mode) {
-    case CAM_MODE_RTS:  
+    case CAM_MODE_RTS:
 
         CamControl_RTS_Install(cam);
         if(s_gs.map) {
@@ -2755,12 +2875,12 @@ void G_SetActiveCamera(struct camera *cam, enum cam_mode mode)
         }
         break;
 
-    case CAM_MODE_FPS:  
+    case CAM_MODE_FPS:
 
         CamControl_FPS_Install(cam);
         break;
 
-    case CAM_MODE_FREE: 
+    case CAM_MODE_FREE:
 
         CamControl_Free_Install(cam);
         break;
@@ -2800,7 +2920,7 @@ void G_MoveActiveCamera(vec2_t xz_ground_pos)
     vec3_t new_pos = (vec3_t) {
         xz_ground_pos.x - cos(DEG_TO_RAD(Camera_GetYaw(s_gs.active_cam))) * offset_mag,
         old_pos.y,
-        xz_ground_pos.z + sin(DEG_TO_RAD(Camera_GetYaw(s_gs.active_cam))) * offset_mag 
+        xz_ground_pos.z + sin(DEG_TO_RAD(Camera_GetYaw(s_gs.active_cam))) * offset_mag
     };
 
     Camera_SetPos(s_gs.active_cam, new_pos);
@@ -2842,9 +2962,9 @@ void G_SetSimState(enum simstate ss)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    /* Only change the simulation states at frame boundaries. This has some nice 
+    /* Only change the simulation states at frame boundaries. This has some nice
      * guarantees, such as that all handlers for a particular event will run, even
-     * if some handler requests a change of the simulation state state midway. 
+     * if some handler requests a change of the simulation state state midway.
      */
     s_gs.requested_ss = ss;
 }
@@ -2861,7 +2981,7 @@ void G_SetLightPos(vec3_t pos)
 
     s_gs.light_pos = pos;
     R_PushCmd((struct rcmd){
-        .func = R_GL_SetLightPos,
+        .func = R_Cmd_SetLightPos,
         .nargs = 1,
         .args = { R_PushArg(&pos, sizeof(pos)) },
     });
@@ -2873,7 +2993,7 @@ void G_SetAmbientLightColor(vec3_t color)
 
     s_gs.ambient_light_color = color;
     R_PushCmd((struct rcmd){
-        .func = R_GL_SetAmbientLightColor,
+        .func = R_Cmd_SetAmbientLightColor,
         .nargs = 1,
         .args = { R_PushArg(&color, sizeof(color)) },
     });
@@ -2891,7 +3011,7 @@ void G_SetEmitLightColor(vec3_t color)
 
     s_gs.emit_light_color = color;
     R_PushCmd((struct rcmd){
-        .func = R_GL_SetLightEmitColor,
+        .func = R_Cmd_SetLightEmitColor,
         .nargs = 1,
         .args = { R_PushArg(&color, sizeof(color)) },
     });
@@ -2907,20 +3027,26 @@ void G_SetSkybox(const char *dir, const char *extension)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    pf_strlcpy(s_gs.skybox_directory, dir, sizeof(s_gs.skybox_directory));
-    pf_strlcpy(s_gs.skybox_extension, extension, sizeof(s_gs.skybox_extension));
+    const char *skybox_dir = dir ? dir : "";
+    const char *skybox_ext = extension ? extension : "";
+
+    pf_strlcpy(s_gs.skybox_directory, skybox_dir, sizeof(s_gs.skybox_directory));
+    pf_strlcpy(s_gs.skybox_extension, skybox_ext, sizeof(s_gs.skybox_extension));
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_SkyboxFree,
+        .func = R_Cmd_SkyboxFree,
         .nargs = 0,
         .args = {0}
     });
+    if(!skybox_dir[0] || !skybox_ext[0])
+        return;
+
     R_PushCmd((struct rcmd){
-        .func = R_GL_SkyboxLoad,
+        .func = R_Cmd_SkyboxLoad,
         .nargs = 2,
         .args = {
-            R_PushArg(dir, strlen(dir)),
-            R_PushArg(extension, strlen(extension)),
+            R_PushArg(skybox_dir, strlen(skybox_dir) + 1),
+            R_PushArg(skybox_ext, strlen(skybox_ext) + 1),
         }
     });
 }
@@ -3137,7 +3263,7 @@ bool G_SaveGlobalState(SDL_RWops *stream)
     ASSERT_IN_MAIN_THREAD();
 
     struct attr hasmap = (struct attr){
-        .type = TYPE_BOOL, 
+        .type = TYPE_BOOL,
         .val.as_bool = (s_gs.map != NULL)
     };
     CHK_TRUE_RET(Attr_Write(stream, &hasmap, "has_map"));
@@ -3146,18 +3272,18 @@ bool G_SaveGlobalState(SDL_RWops *stream)
         return false;
 
     if(hasmap.val.as_bool) {
-    
+
         vec2_t mm_pos;
         G_GetMinimapPos(&mm_pos.x, &mm_pos.y);
 
         struct attr minimap_pos = (struct attr){
-            .type = TYPE_VEC2, 
+            .type = TYPE_VEC2,
             .val.as_vec2 = mm_pos
         };
         CHK_TRUE_RET(Attr_Write(stream, &minimap_pos, "minimap_pos"));
 
         struct attr minimap_border_clr = (struct attr){
-            .type = TYPE_QUAT, 
+            .type = TYPE_QUAT,
             .val.as_quat = M_MinimapGetBorderClr()
         };
         CHK_TRUE_RET(Attr_Write(stream, &minimap_border_clr, "minimap_border_clr"));
@@ -3165,13 +3291,13 @@ bool G_SaveGlobalState(SDL_RWops *stream)
         int mm_size = 0;
         G_GetMinimapSize(&mm_size);
         struct attr minimap_size = (struct attr){
-            .type = TYPE_INT, 
+            .type = TYPE_INT,
             .val.as_int = mm_size
         };
         CHK_TRUE_RET(Attr_Write(stream, &minimap_size, "minimap_size"));
 
         struct attr highlight_size = (struct attr){
-            .type = TYPE_INT, 
+            .type = TYPE_INT,
             .val.as_int = M_Raycast_GetHighlightSize()
         };
         CHK_TRUE_RET(Attr_Write(stream, &highlight_size, "highlight_size"));
@@ -3182,41 +3308,41 @@ bool G_SaveGlobalState(SDL_RWops *stream)
     Sched_TryYield();
 
     struct attr ss = (struct attr){
-        .type = TYPE_INT, 
+        .type = TYPE_INT,
         .val.as_int = s_gs.ss
     };
     CHK_TRUE_RET(Attr_Write(stream, &ss, "simstate"));
 
     struct attr light_pos = (struct attr){
-        .type = TYPE_VEC3, 
+        .type = TYPE_VEC3,
         .val.as_vec3 = s_gs.light_pos
     };
     CHK_TRUE_RET(Attr_Write(stream, &light_pos, "light_pos"));
 
     struct attr ambient_light_color = (struct attr){
-        .type = TYPE_VEC3, 
+        .type = TYPE_VEC3,
         .val.as_vec3 = s_gs.ambient_light_color
     };
     CHK_TRUE_RET(Attr_Write(stream, &ambient_light_color, "ambient_light_color"));
 
     struct attr emit_light_color = (struct attr){
-        .type = TYPE_VEC3, 
+        .type = TYPE_VEC3,
         .val.as_vec3 = s_gs.emit_light_color
     };
     CHK_TRUE_RET(Attr_Write(stream, &emit_light_color, "emit_light_color"));
 
     struct attr skybox_directory = (struct attr){ .type = TYPE_STRING, };
-    pf_snprintf(skybox_directory.val.as_string, sizeof(skybox_directory.val.as_string), 
+    pf_snprintf(skybox_directory.val.as_string, sizeof(skybox_directory.val.as_string),
         "%s", s_gs.skybox_directory);
     CHK_TRUE_RET(Attr_Write(stream, &skybox_directory, "skybox_directory"));
 
     struct attr skybox_extension = (struct attr){ .type = TYPE_STRING, };
-    pf_snprintf(skybox_extension.val.as_string, sizeof(skybox_extension.val.as_string), 
+    pf_snprintf(skybox_extension.val.as_string, sizeof(skybox_extension.val.as_string),
         "%s", s_gs.skybox_extension);
     CHK_TRUE_RET(Attr_Write(stream, &skybox_extension, "skybox_extension"));
 
     struct attr num_factions = (struct attr){
-        .type = TYPE_INT, 
+        .type = TYPE_INT,
         .val.as_int = g_num_factions()
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_factions, "num_factions"));
@@ -3230,13 +3356,13 @@ bool G_SaveGlobalState(SDL_RWops *stream)
         struct faction fac = s_gs.factions[i];
 
         struct attr fac_id = (struct attr){
-            .type = TYPE_INT, 
+            .type = TYPE_INT,
             .val.as_int = i
         };
         CHK_TRUE_RET(Attr_Write(stream, &fac_id, "fac_id"));
 
         struct attr fac_color = (struct attr){
-            .type = TYPE_VEC3, 
+            .type = TYPE_VEC3,
             .val.as_vec3 = fac.color
         };
         CHK_TRUE_RET(Attr_Write(stream, &fac_color, "fac_color"));
@@ -3297,7 +3423,7 @@ bool G_SaveGlobalState(SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Write(stream, &cam_pos, "cam_position"));
 
     struct attr active_cam_mode = (struct attr){
-        .type = TYPE_INT, 
+        .type = TYPE_INT,
         .val.as_int = s_gs.active_cam_mode
     };
     CHK_TRUE_RET(Attr_Write(stream, &active_cam_mode, "active_cam_mode"));
@@ -3305,25 +3431,25 @@ bool G_SaveGlobalState(SDL_RWops *stream)
     Sched_TryYield();
 
     struct attr active_font = (struct attr){
-        .type = TYPE_STRING, 
+        .type = TYPE_STRING,
     };
     pf_strlcpy(active_font.val.as_string, UI_GetActiveFont(), sizeof(active_font.val.as_string));
     CHK_TRUE_RET(Attr_Write(stream, &active_font, "active_font"));
 
     struct attr hide_healthbars = (struct attr){
-        .type = TYPE_BOOL, 
+        .type = TYPE_BOOL,
         .val.as_bool = s_gs.hide_healthbars
     };
     CHK_TRUE_RET(Attr_Write(stream, &hide_healthbars, "hide_healthbars"));
 
     struct attr show_unit_icons = (struct attr){
-        .type = TYPE_BOOL, 
+        .type = TYPE_BOOL,
         .val.as_bool = s_gs.show_unit_icons
     };
     CHK_TRUE_RET(Attr_Write(stream, &show_unit_icons, "show_unit_icons"));
 
     struct attr minimap_render_all = (struct attr){
-        .type = TYPE_BOOL, 
+        .type = TYPE_BOOL,
         .val.as_bool = s_gs.minimap_render_all
     };
     CHK_TRUE_RET(Attr_Write(stream, &minimap_render_all, "minimap_render_all"));
@@ -3407,7 +3533,7 @@ bool G_LoadGlobalState(SDL_RWops *stream)
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
-        fac_id = attr.val.as_int; 
+        fac_id = attr.val.as_int;
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_VEC3);
@@ -3445,11 +3571,11 @@ bool G_LoadGlobalState(SDL_RWops *stream)
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_FLOAT);
-    float pitch = attr.val.as_float; 
+    float pitch = attr.val.as_float;
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_FLOAT);
-    float yaw = attr.val.as_float; 
+    float yaw = attr.val.as_float;
     Camera_SetPitchAndYaw(s_gs.active_cam, pitch, yaw);
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
@@ -3500,7 +3626,7 @@ bool G_SaveEntityState(SDL_RWops *stream)
     /* Movement, combat, etc. state is only saved for sessions with a loaded map */
     if(!s_gs.map)
         return true;
-    
+
     if(!G_Move_SaveState(stream))
         return false;
 
@@ -3607,4 +3733,3 @@ bool G_LoadEntityState(SDL_RWops *stream)
 
     return true;
 }
-
