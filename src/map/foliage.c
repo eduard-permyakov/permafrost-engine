@@ -208,7 +208,7 @@ static void on_render_3d(void *user, void *event)
     ss_e status;
     (void)status;
 
-    status = Settings_Get("pf.game.show_map_cover", &setting);
+    status = Settings_Get("pf.game.show_map_foliage", &setting);
     assert(status == SS_OKAY);
     if(setting.as_bool) {
         M_NavRenderMapCover(s_map, cam);
@@ -216,7 +216,7 @@ static void on_render_3d(void *user, void *event)
 
     static const float s_scale = COVER_SCALE;
     R_PushCmd((struct rcmd){
-        .func  = R_GL_MapCoverDraw,
+        .func  = R_GL_MapFoliageDraw,
         .nargs = 2,
         .args  = {
             R_PushArg(cam, g_sizeof_camera),
@@ -229,7 +229,7 @@ static void on_render_3d(void *user, void *event)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool M_CoverInit(const struct map *map)
+bool M_FoliageInit(const struct map *map)
 {
     s_map = map;
 
@@ -244,7 +244,7 @@ bool M_CoverInit(const struct map *map)
     generate_positions(map, &positions, &rotations, &count);
 
     R_PushCmd((struct rcmd){
-        .func  = R_GL_MapCoverInit,
+        .func  = R_GL_MapFoliageInit,
         .nargs = 4,
         .args  = {
             priv,
@@ -262,10 +262,10 @@ bool M_CoverInit(const struct map *map)
     return true;
 }
 
-void M_CoverShutdown(void)
+void M_FoliageShutdown(void)
 {
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
-    R_PushCmd((struct rcmd){ .func = R_GL_MapCoverShutdown, .nargs = 0 });
+    R_PushCmd((struct rcmd){ .func = R_GL_MapFoliageShutdown, .nargs = 0 });
     s_map = NULL;
 }
 

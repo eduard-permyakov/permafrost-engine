@@ -786,7 +786,7 @@ void M_GetFieldCacheStats(const struct map *map, struct fc_stats *out);
 /* MAP COVER                                                                 */
 /*###########################################################################*/
 
-bool M_CoverInit(const struct map *map);
-void M_CoverShutdown(void);
+bool M_FoliageInit(const struct map *map);
+void M_FoliageShutdown(void);
 
 #endif

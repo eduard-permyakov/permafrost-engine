@@ -424,24 +424,24 @@ void  R_GL_MapUpdateFog(void *buff, const size_t *size);
 void  R_GL_MapInvalidate(void);
 
 /* ---------------------------------------------------------------------------
- * Initialize the cover (foliage) rendering context. Must be called once after
+ * Initialize the foliage rendering context. Must be called once after
  * the map is loaded. 'priv' is the render_private of the cover mesh.
  * ---------------------------------------------------------------------------
  */
-void  R_GL_MapCoverInit(void *priv, const vec3_t *positions,
+void  R_GL_MapFoliageInit(void *priv, const vec3_t *positions,
                         const float *rotations, const size_t *count);
 
 /* ---------------------------------------------------------------------------
- * Free all resources claimed by R_GL_MapCoverInit.
+ * Free all resources claimed by R_GL_MapFoliageInit.
  * ---------------------------------------------------------------------------
  */
-void  R_GL_MapCoverShutdown(void);
+void  R_GL_MapFoliageShutdown(void);
 
 /* ---------------------------------------------------------------------------
- * Draw all cover (foliage) instances for the current frame.
+ * Draw all foliage instances for the current frame.
  * ---------------------------------------------------------------------------
  */
-void  R_GL_MapCoverDraw(const struct camera *cam, const float *scale);
+void  R_GL_MapFoliageDraw(const struct camera *cam, const float *scale);
 
 /*###########################################################################*/
 /* RENDER SHADOWS                                                            */

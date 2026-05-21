@@ -546,11 +546,11 @@ static struct shader s_shaders[] = {
     },
     {
         .prog_id        = (intptr_t)NULL,
-        .name           = "cover",
-        .vertex_path    = "shaders/vertex/cover-instanced.glsl",
+        .name           = "foliage",
+        .vertex_path    = "shaders/vertex/foliage-instanced.glsl",
         .geo_path       = NULL,
         .compute_path   = NULL,
-        .frag_path      = "shaders/fragment/cover.glsl",
+        .frag_path      = "shaders/fragment/foliage.glsl",
         .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },

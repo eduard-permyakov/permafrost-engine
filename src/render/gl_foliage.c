@@ -68,7 +68,7 @@ static GLuint  s_grass_tex     = 0;
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_MapCoverInit(void *priv_arg, const vec3_t *positions,
+void R_GL_MapFoliageInit(void *priv_arg, const vec3_t *positions,
                        const float *rotations, const size_t *count)
 {
     ASSERT_IN_RENDER_THREAD();
@@ -82,7 +82,7 @@ void R_GL_MapCoverInit(void *priv_arg, const vec3_t *positions,
     if(s_num_instances == 0)
         return;
 
-    /* Create a cover VAO that combines the shared mesh VBO with a new
+    /* Create a foliage VAO that combines the shared mesh VBO with a new
      * per-instance data VBO. We set up attributes 0-3 from the mesh
      * VBO identically to how R_GL_Init does it for static meshes. */
     glGenVertexArrays(1, &s_cover_vao);
@@ -146,7 +146,7 @@ fail_alloc:
     s_num_instances = 0;
 }
 
-void R_GL_MapCoverShutdown(void)
+void R_GL_MapFoliageShutdown(void)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -163,19 +163,19 @@ void R_GL_MapCoverShutdown(void)
     s_grass_tex     = 0;
 }
 
-void R_GL_MapCoverDraw(const struct camera *cam, const float *scale)
+void R_GL_MapFoliageDraw(const struct camera *cam, const float *scale)
 {
     ASSERT_IN_RENDER_THREAD();
 
     if(!s_cover_vao || s_num_instances == 0 || s_grass_tex == 0)
         return;
 
-    GL_PERF_PUSH_GROUP(0, "map_cover");
+    GL_PERF_PUSH_GROUP(0, "map_foliage");
 
     /* Ensure view/projection are set from this frame's camera */
     Camera_TickFinishPerspective((struct camera*)cam);
 
-    R_GL_Shader_Install("cover");
+    R_GL_Shader_Install("foliage");
     GLuint prog = R_GL_Shader_GetCurrActive();
 
     R_GL_StateInstall(GL_U_VIEW,          prog);

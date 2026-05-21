@@ -160,7 +160,7 @@ static void g_init_map(void)
     M_RestrictRTSCamToMap(s_gs.map, s_gs.active_cam);
     M_Raycast_Install(s_gs.map, s_gs.active_cam);
     M_InitMinimap(s_gs.map, g_default_minimap_pos());
-    M_CoverInit(s_gs.map);
+    M_FoliageInit(s_gs.map);
     M_InitCopyPools(s_gs.map);
     G_Pos_Init(s_gs.map);
     G_Building_Init(s_gs.map);
@@ -890,7 +890,7 @@ static void g_clear_map_state(void)
         G_Automation_Shutdown();
         G_ClearPath_Shutdown();
         G_Pos_Shutdown();
-        M_CoverShutdown();
+        M_FoliageShutdown();
         M_DestroyCopyPools();
 
         AL_MapFree(s_gs.map);
@@ -1065,7 +1065,7 @@ static void g_create_settings(void)
     assert(status == SS_OKAY);
 
     status = Settings_Create((struct setting){
-        .name = "pf.game.show_map_cover",
+        .name = "pf.game.show_map_foliage",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
             .as_bool = false
