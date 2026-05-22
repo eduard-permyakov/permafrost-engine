@@ -43,10 +43,10 @@
 #include "gl_material.h"
 #include "../camera.h"
 #include "../main.h"
+#include "../lib/public/mem.h"
 
 #include <GL/glew.h>
 
-#include <stdlib.h>
 #include <string.h>
 #include <assert.h>
 
@@ -56,81 +56,127 @@
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-/* VAO that combines the grass mesh VBO with the per-instance data VBO */
-static GLuint  s_cover_vao     = 0;
-/* VBO holding interleaved per-instance [vec3 pos | float rot_y] data */
-static GLuint  s_instance_vbo  = 0;
-static size_t  s_num_instances = 0;
-static GLsizei s_num_verts     = 0;
-static GLuint  s_grass_tex     = 0;
+/* Shared mesh VBO and its stride; set once in Init, used in every SetChunk */
+static GLuint   s_mesh_vbo      = 0;
+static GLsizei  s_vertex_stride = 0;
+
+/* Per-chunk VAOs: each has attribs 0-3 (mesh) + 4-5 (instances) fully set up */
+static GLuint  *s_chunk_vaos    = NULL;
+/* Per-chunk instance VBOs (interleaved vec3 pos | float rot_y) */
+static GLuint  *s_instance_vbos = NULL;
+static size_t  *s_chunk_counts  = NULL;
+static size_t   s_num_chunks    = 0;
+static GLsizei  s_num_verts     = 0;
+static GLuint   s_grass_tex     = 0;
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_MapFoliageInit(void *priv_arg, const vec3_t *positions,
-                       const float *rotations, const size_t *count)
+void R_GL_MapFoliageInit(void *priv_arg, const size_t *num_chunks)
 {
     ASSERT_IN_RENDER_THREAD();
 
     const struct render_private *priv = (const struct render_private *)priv_arg;
 
-    s_num_instances = *count;
+    s_num_chunks    = *num_chunks;
     s_num_verts     = (GLsizei)priv->mesh.num_verts;
     s_grass_tex     = priv->materials[0].texture.id;
+    s_mesh_vbo      = priv->mesh.VBO;
+    s_vertex_stride = (GLsizei)priv->vertex_stride;
 
-    if(s_num_instances == 0)
+    s_chunk_vaos    = calloc(s_num_chunks, sizeof(GLuint));
+    s_instance_vbos = calloc(s_num_chunks, sizeof(GLuint));
+    s_chunk_counts  = calloc(s_num_chunks, sizeof(size_t));
+    if(!s_chunk_vaos || !s_instance_vbos || !s_chunk_counts)
+        goto fail_alloc;
+
+    GL_ASSERT_OK();
+    return;
+
+fail_alloc:
+    PF_FREE(s_chunk_vaos);
+    PF_FREE(s_instance_vbos);
+    PF_FREE(s_chunk_counts);
+    s_chunk_vaos    = NULL;
+    s_instance_vbos = NULL;
+    s_chunk_counts  = NULL;
+    s_num_chunks    = 0;
+}
+
+void R_GL_MapFoliageSetChunk(const size_t *chunk_idx, const vec3_t *positions,
+                             const float *rotations, const size_t *count)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    size_t idx = *chunk_idx;
+    size_t n   = *count;
+    assert(idx < s_num_chunks);
+
+    s_chunk_counts[idx] = n;
+
+    if(n == 0) {
+        if(s_instance_vbos[idx]) {
+            glDeleteBuffers(1, &s_instance_vbos[idx]);
+            s_instance_vbos[idx] = 0;
+        }
+        if(s_chunk_vaos[idx]) {
+            glDeleteVertexArrays(1, &s_chunk_vaos[idx]);
+            s_chunk_vaos[idx] = 0;
+        }
         return;
+    }
 
-    /* Create a foliage VAO that combines the shared mesh VBO with a new
-     * per-instance data VBO. We set up attributes 0-3 from the mesh
-     * VBO identically to how R_GL_Init does it for static meshes. */
-    glGenVertexArrays(1, &s_cover_vao);
-    glBindVertexArray(s_cover_vao);
+    /* Upload interleaved [vec3 pos | float rot_y] instance data */
+    const size_t inst_stride = sizeof(vec3_t) + sizeof(float);
+    STALLOC(char, inst_data, n * inst_stride);
 
-    /* Bind the mesh VBO and configure per-vertex attributes */
-    glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
+    for(size_t i = 0; i < n; i++) {
+        char *base = inst_data + i * inst_stride;
+        memcpy(base,                  &positions[i], sizeof(vec3_t));
+        memcpy(base + sizeof(vec3_t), &rotations[i], sizeof(float));
+    }
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, priv->vertex_stride, (void*)0);
+    if(!s_instance_vbos[idx])
+        glGenBuffers(1, &s_instance_vbos[idx]);
+
+    glBindBuffer(GL_ARRAY_BUFFER, s_instance_vbos[idx]);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(n * inst_stride), inst_data, GL_STATIC_DRAW);
+    STFREE(inst_data);
+
+    /* (Re)build the per-chunk VAO with all 6 attribs fully configured */
+    if(!s_chunk_vaos[idx])
+        glGenVertexArrays(1, &s_chunk_vaos[idx]);
+
+    glBindVertexArray(s_chunk_vaos[idx]);
+
+    /* Attribs 0-3: per-vertex data from the shared mesh VBO */
+    glBindBuffer(GL_ARRAY_BUFFER, s_mesh_vbo);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, s_vertex_stride, (void*)0);
     glEnableVertexAttribArray(0);
 
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, priv->vertex_stride,
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, s_vertex_stride,
         (void*)offsetof(struct vertex, uv));
     glEnableVertexAttribArray(1);
 
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, priv->vertex_stride,
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, s_vertex_stride,
         (void*)offsetof(struct vertex, normal));
     glEnableVertexAttribArray(2);
 
-    glVertexAttribIPointer(3, 1, GL_INT, priv->vertex_stride,
+    glVertexAttribIPointer(3, 1, GL_INT, s_vertex_stride,
         (void*)offsetof(struct vertex, material_idx));
     glEnableVertexAttribArray(3);
 
-    /* Build interleaved per-instance buffer: [vec3 pos][float rot_y] */
-    const size_t inst_stride = sizeof(vec3_t) + sizeof(float);
-    char *inst_data = malloc(s_num_instances * inst_stride);
-    if(!inst_data)
-        goto fail_alloc;
+    /* Attribs 4-5: per-instance data from this chunk's instance VBO */
+    const GLsizei inst_stride_gl = (GLsizei)(sizeof(vec3_t) + sizeof(float));
+    glBindBuffer(GL_ARRAY_BUFFER, s_instance_vbos[idx]);
 
-    for(size_t i = 0; i < s_num_instances; i++) {
-        char *base = inst_data + i * inst_stride;
-        memcpy(base,                    &positions[i], sizeof(vec3_t));
-        memcpy(base + sizeof(vec3_t),   &rotations[i], sizeof(float));
-    }
-
-    glGenBuffers(1, &s_instance_vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, s_instance_vbo);
-    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(s_num_instances * inst_stride),
-        inst_data, GL_STATIC_DRAW);
-    free(inst_data);
-
-    /* Attrib 4: per-instance world position (vec3), advance once per instance */
-    glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, (GLsizei)inst_stride, (void*)0);
+    glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, inst_stride_gl, (void*)0);
     glEnableVertexAttribArray(4);
     glVertexAttribDivisor(4, 1);
 
-    /* Attrib 5: per-instance Y rotation (float), advance once per instance */
-    glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, (GLsizei)inst_stride,
+    glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, inst_stride_gl,
         (void*)sizeof(vec3_t));
     glEnableVertexAttribArray(5);
     glVertexAttribDivisor(5, 1);
@@ -138,75 +184,82 @@ void R_GL_MapFoliageInit(void *priv_arg, const vec3_t *positions,
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     GL_ASSERT_OK();
-    return;
-
-fail_alloc:
-    glDeleteVertexArrays(1, &s_cover_vao);
-    s_cover_vao = 0;
-    s_num_instances = 0;
 }
 
 void R_GL_MapFoliageShutdown(void)
 {
     ASSERT_IN_RENDER_THREAD();
 
-    if(s_instance_vbo) {
-        glDeleteBuffers(1, &s_instance_vbo);
-        s_instance_vbo = 0;
+    for(size_t i = 0; i < s_num_chunks; i++) {
+        if(s_instance_vbos[i]) {
+            glDeleteBuffers(1, &s_instance_vbos[i]);
+            s_instance_vbos[i] = 0;
+        }
+        if(s_chunk_vaos[i]) {
+            glDeleteVertexArrays(1, &s_chunk_vaos[i]);
+            s_chunk_vaos[i] = 0;
+        }
     }
-    if(s_cover_vao) {
-        glDeleteVertexArrays(1, &s_cover_vao);
-        s_cover_vao = 0;
-    }
-    s_num_instances = 0;
+    PF_FREE(s_chunk_vaos);
+    PF_FREE(s_instance_vbos);
+    PF_FREE(s_chunk_counts);
+    s_chunk_vaos    = NULL;
+    s_instance_vbos = NULL;
+    s_chunk_counts  = NULL;
+
+    s_num_chunks    = 0;
     s_num_verts     = 0;
     s_grass_tex     = 0;
+    s_mesh_vbo      = 0;
+    s_vertex_stride = 0;
 }
 
-void R_GL_MapFoliageDraw(const struct camera *cam, const float *scale)
+void R_GL_MapFoliageBeginDraw(const struct camera *cam, const float *scale)
 {
     ASSERT_IN_RENDER_THREAD();
 
-    if(!s_cover_vao || s_num_instances == 0 || s_grass_tex == 0)
-        return;
-
     GL_PERF_PUSH_GROUP(0, "map_foliage");
 
-    /* Ensure view/projection are set from this frame's camera */
     Camera_TickFinishPerspective((struct camera*)cam);
 
-    R_GL_Shader_Install("foliage");
-    GLuint prog = R_GL_Shader_GetCurrActive();
-
-    R_GL_StateInstall(GL_U_VIEW,          prog);
-    R_GL_StateInstall(GL_U_PROJECTION,    prog);
-    R_GL_StateInstall(GL_U_LS_TRANS,      prog);
-    R_GL_StateInstall(GL_U_AMBIENT_COLOR, prog);
-    R_GL_StateInstall(GL_U_LIGHT_POS,     prog);
-    R_GL_StateInstall(GL_U_LIGHT_COLOR,   prog);
-    R_GL_StateInstall(GL_U_SHADOWS_ON,    prog);
-    R_GL_StateInstall(GL_U_SHADOW_MAP,    prog);
-
     R_GL_StateSet("cover_scale", (struct uval){
-        .type       = UTYPE_FLOAT,
+        .type         = UTYPE_FLOAT,
         .val.as_float = *scale,
     });
-    R_GL_StateInstall("cover_scale", prog);
+    R_GL_StateSet(GL_U_TEXTURE0, (struct uval){
+        .type       = UTYPE_INT,
+        .val.as_int = 0,
+    });
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, s_grass_tex);
-    R_GL_StateSet(GL_U_TEXTURE0, (struct uval){
-        .type    = UTYPE_INT,
-        .val.as_int = 0,
-    });
-    R_GL_StateInstall(GL_U_TEXTURE0, prog);
 
-    /* Grass cross-quads need both face directions lit */
+    R_GL_Shader_Install("foliage");
+    R_GL_ShadowMapBind();
+
     glDisable(GL_CULL_FACE);
+}
 
-    glBindVertexArray(s_cover_vao);
-    glDrawArraysInstanced(GL_TRIANGLES, 0, s_num_verts, (GLsizei)s_num_instances);
+void R_GL_MapFoliageDrawChunk(const size_t *chunk_idx)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    size_t idx = *chunk_idx;
+    assert(idx < s_num_chunks);
+
+    size_t n = s_chunk_counts[idx];
+    if(n == 0 || !s_chunk_vaos[idx])
+        return;
+
+    glBindVertexArray(s_chunk_vaos[idx]);
+    glDrawArraysInstanced(GL_TRIANGLES, 0, s_num_verts, (GLsizei)n);
     glBindVertexArray(0);
+    GL_ASSERT_OK();
+}
+
+void R_GL_MapFoliageEndDraw(void)
+{
+    ASSERT_IN_RENDER_THREAD();
 
     glEnable(GL_CULL_FACE);
     glBindTexture(GL_TEXTURE_2D, 0);
@@ -214,3 +267,4 @@ void R_GL_MapFoliageDraw(const struct camera *cam, const float *scale)
     GL_PERF_POP_GROUP();
     GL_ASSERT_OK();
 }
+

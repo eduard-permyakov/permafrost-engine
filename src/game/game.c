@@ -2826,7 +2826,10 @@ bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile)
 
     if(!s_gs.map)
         return false;
-    return M_AL_UpdateTile(s_gs.map, desc, tile);
+    if(!M_AL_UpdateTile(s_gs.map, desc, tile))
+        return false;
+    M_FoliageUpdateTile(*desc);
+    return true;
 }
 
 bool G_GetTile(const struct tile_desc *desc, struct tile *out)

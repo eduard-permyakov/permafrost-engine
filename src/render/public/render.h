@@ -424,12 +424,20 @@ void  R_GL_MapUpdateFog(void *buff, const size_t *size);
 void  R_GL_MapInvalidate(void);
 
 /* ---------------------------------------------------------------------------
- * Initialize the foliage rendering context. Must be called once after
- * the map is loaded. 'priv' is the render_private of the cover mesh.
+ * Initialize the foliage rendering context. Sets up the shared mesh VAO and
+ * allocates per-chunk VBO slots. 'priv' is the render_private of the cover
+ * mesh; 'num_chunks' is the total map chunk count.
  * ---------------------------------------------------------------------------
  */
-void  R_GL_MapFoliageInit(void *priv, const vec3_t *positions,
-                        const float *rotations, const size_t *count);
+void  R_GL_MapFoliageInit(void *priv, const size_t *num_chunks);
+
+/* ---------------------------------------------------------------------------
+ * Upload or update instance data for one chunk. 'positions' and 'rotations'
+ * may be NULL when *count is 0.
+ * ---------------------------------------------------------------------------
+ */
+void  R_GL_MapFoliageSetChunk(const size_t *chunk_idx, const vec3_t *positions,
+                              const float *rotations, const size_t *count);
 
 /* ---------------------------------------------------------------------------
  * Free all resources claimed by R_GL_MapFoliageInit.
@@ -438,10 +446,13 @@ void  R_GL_MapFoliageInit(void *priv, const vec3_t *positions,
 void  R_GL_MapFoliageShutdown(void);
 
 /* ---------------------------------------------------------------------------
- * Draw all foliage instances for the current frame.
+ * Per-frame draw sequence: call BeginDraw once, then DrawChunk for each
+ * visible chunk, then EndDraw.
  * ---------------------------------------------------------------------------
  */
-void  R_GL_MapFoliageDraw(const struct camera *cam, const float *scale);
+void  R_GL_MapFoliageBeginDraw(const struct camera *cam, const float *scale);
+void  R_GL_MapFoliageDrawChunk(const size_t *chunk_idx);
+void  R_GL_MapFoliageEndDraw(void);
 
 /*###########################################################################*/
 /* RENDER SHADOWS                                                            */

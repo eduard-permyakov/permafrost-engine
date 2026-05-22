@@ -788,5 +788,6 @@ void M_GetFieldCacheStats(const struct map *map, struct fc_stats *out);
 
 bool M_FoliageInit(const struct map *map);
 void M_FoliageShutdown(void);
+void M_FoliageUpdateTile(struct tile_desc td);
 
 #endif
