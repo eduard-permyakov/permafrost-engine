@@ -41,6 +41,8 @@
 #include "../lib/public/pf_string.h"
 #include "../lib/public/mem.h"
 
+#include <SDL.h>
+
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
@@ -100,7 +102,10 @@ static bool ring_wait_one(struct gl_ring *ring)
     if(ring->nmarkers == 0)
         GL_PERF_RETURN(false);
 
+    Uint64 wait_start = SDL_GetPerformanceCounter();
     GLenum result = glClientWaitSync(ring->fences[ring->imark_tail], GL_SYNC_FLUSH_COMMANDS_BIT, TIMEOUT_NSEC);
+    R_GL_PerfStallRecordWait(GL_STALL_RING, result, SDL_GetPerformanceCounter() - wait_start);
+
     glDeleteSync(ring->fences[ring->imark_tail]);
     ring->fences[ring->imark_tail] = 0;
     ring->imark_tail = (ring->imark_tail + 1) % NMAXMARKERS;

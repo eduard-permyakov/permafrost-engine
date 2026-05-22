@@ -42,6 +42,7 @@
 #include "../main.h"
 #include "../lib/public/mem.h"
 
+#include <SDL.h>
 #include <assert.h>
 
 #define FRAMES_IN_FLIGHT (2)
@@ -231,12 +232,16 @@ static void wait_frame_done(int i)
         return;
 
     GL_GPU_PERF_PUSH("wait for renderbuffer");
-    GLenum result;
-    GLenum flags = GL_SYNC_FLUSH_COMMANDS_BIT;
-    do{
-        result = glClientWaitSync(s_done_fences[i], flags, TIMEOUT_NS);
-        flags = 0;
-    }while((result != GL_ALREADY_SIGNALED) && (result != GL_CONDITION_SATISFIED));
+
+    Uint64 wait_start = SDL_GetPerformanceCounter();
+    GLenum result = glClientWaitSync(s_done_fences[i], GL_SYNC_FLUSH_COMMANDS_BIT, TIMEOUT_NS);
+    GLenum first_result = result;
+    while((result != GL_ALREADY_SIGNALED) && (result != GL_CONDITION_SATISFIED)) {
+        result = glClientWaitSync(s_done_fences[i], 0, TIMEOUT_NS);
+    }
+    R_GL_PerfStallRecordWait(GL_STALL_SWAPCHAIN, first_result,
+        SDL_GetPerformanceCounter() - wait_start);
+
     GL_GPU_PERF_POP();
 }
 

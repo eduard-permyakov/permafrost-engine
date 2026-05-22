@@ -164,7 +164,7 @@ static GLuint make_new_tex(int width, int height)
     GLuint ret;
     glGenTextures(1, &ret);
     glBindTexture(GL_TEXTURE_2D, ret);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, 0);
+    R_GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, 0));
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
@@ -180,8 +180,8 @@ static GLuint make_new_depth_tex(int width, int height)
     GLuint ret;
     glGenTextures(1, &ret);
     glBindTexture(GL_TEXTURE_2D, ret);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32, width, height, 0, 
-        GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    R_GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32, width, height, 0,
+        GL_DEPTH_COMPONENT, GL_FLOAT, NULL));
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -275,7 +275,7 @@ static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
     GLuint depth_rb;
     glGenRenderbuffers(1, &depth_rb);
     glBindRenderbuffer(GL_RENDERBUFFER, depth_rb);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, texw, texh);
+    R_GL_CALL(glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, texw, texh));
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_rb);
     glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, tex, 0);
 
@@ -635,9 +635,9 @@ void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
 
-    glDeleteTextures(1, &refract_tex);
-    glDeleteTextures(1, &refract_depth);
-    glDeleteTextures(1, &reflect_tex);
+    R_GL_CALL(glDeleteTextures(1, &refract_tex));
+    R_GL_CALL(glDeleteTextures(1, &refract_depth));
+    R_GL_CALL(glDeleteTextures(1, &reflect_tex));
 
     GL_PERF_POP_GROUP();
     GL_ASSERT_OK();

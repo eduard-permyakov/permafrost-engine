@@ -39,6 +39,7 @@
 #include "gl_texture.h"
 #include "gl_render.h"
 #include "gl_assert.h"
+#include "gl_perf.h"
 #include "gl_state.h"
 #include "gl_batch.h"
 #include "gl_anim.h"
@@ -257,6 +258,20 @@ static void trace_gpu_commit(const struct sval *new_val)
 {
     R_PushCmd((struct rcmd){
         .func = render_set_trace_gpu,
+        .nargs = 1,
+        .args = { R_PushArg(&new_val->as_bool, sizeof(bool)) }
+    });
+}
+
+static void render_set_trace_stalls(const bool *on)
+{
+    g_trace_stalls = *on;
+}
+
+static void trace_stalls_commit(const struct sval *new_val)
+{
+    R_PushCmd((struct rcmd){
+        .func = render_set_trace_stalls,
         .nargs = 1,
         .args = { R_PushArg(&new_val->as_bool, sizeof(bool)) }
     });
@@ -588,6 +603,7 @@ static int render(void *data)
             SDL_GL_SwapWindow(s_window);
         }
 
+        R_GL_PerfStallFrameReport();
         mi_stats_merge();
         render_signal_done(s_rstate, RSTAT_DONE);
     }
@@ -730,7 +746,19 @@ bool R_Init(const char *base_path)
     });
     assert(status == SS_OKAY);
 
-    return true; 
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.trace_gpu_stalls",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false,
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = trace_stalls_commit,
+    });
+    assert(status == SS_OKAY);
+
+    return true;
 }
 
 SDL_Thread *R_Run(struct render_sync_state *rstate)

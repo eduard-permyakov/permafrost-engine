@@ -41,6 +41,73 @@
 
 #include "gl_assert.h"
 
+#include <stdbool.h>
+#include <stdint.h>
+
+/*****************************************************************************/
+/* GPU-STALL INSTRUMENTATION                                                 */
+/*****************************************************************************/
+/*
+ * Unlike the GL_PERF_* macros below, this is compiled into release builds as
+ * well (it issues no GL profiling calls of its own) and is gated at runtime by
+ * 'g_trace_stalls'. Its purpose is to measure how much render-thread time is
+ * lost blocking inside glClientWaitSync - i.e. the CPU waiting for the GPU to
+ * release a buffer or framebuffer.
+ */
+
+enum gl_stall_site{
+    GL_STALL_RING,        /* gl_ringbuffer.c : ring_wait_one()   */
+    GL_STALL_SWAPCHAIN,   /* gl_swapchain.c  : wait_frame_done() */
+    GL_STALL_NUM_SITES
+};
+
+extern bool g_trace_stalls;
+
+/* Called on the render thread immediately after a glClientWaitSync.
+ * 'first_result' is the return value of the (first) wait call;
+ * 'elapsed_ticks' is an SDL_GetPerformanceCounter() delta. */
+void R_GL_PerfStallRecordWait(enum gl_stall_site site, GLenum first_result,
+                              uint64_t elapsed_ticks);
+
+/* Called once per frame on the render thread. Logs the accumulated per-frame
+ * stall stats (when g_trace_stalls is set) and resets the counters. */
+void R_GL_PerfStallFrameReport(void);
+
+/* Default threshold (milliseconds) above which a single instrumented GL call
+ * is logged immediately as a likely implicit-synchronization stall. */
+#define GL_CALL_STALL_THRESHOLD_MS  (0.2)
+
+/*
+ * Wraps a single GL call (or any statement) to measure its CPU wall-clock
+ * cost. Use it to catch driver-side implicit synchronization hidden inside an
+ * otherwise cheap GL call - e.g. a glTexImage2D or glDeleteTextures that
+ * blocks because the driver had to wait on an in-flight resource or perform
+ * an internal allocation. For calls that return a value, assign the result
+ * into a variable declared beforehand:
+ *
+ *     GLenum status;
+ *     R_GL_CALL(status = glCheckFramebufferStatus(GL_FRAMEBUFFER));
+ *
+ * The file using this macro must #include <SDL.h>.
+ *
+ * Zero-overhead when tracing is off: it expands to the bare statement plus a
+ * single predicted branch on g_trace_stalls. SDL_GetPerformanceCounter() and
+ * R_GL_PerfCallRecord() are only invoked while tracing is enabled.
+ */
+#define R_GL_CALL(_stmt)                                          \
+    do{                                                           \
+        uint64_t _glc_t0 = g_trace_stalls                         \
+                         ? SDL_GetPerformanceCounter() : 0;       \
+        _stmt;                                                    \
+        if(g_trace_stalls) {                                      \
+            R_GL_PerfCallRecord(#_stmt, __FILE__, __LINE__,       \
+                SDL_GetPerformanceCounter() - _glc_t0);           \
+        }                                                         \
+    }while(0)
+
+void R_GL_PerfCallRecord(const char *expr, const char *file, int line,
+                         uint64_t elapsed_ticks);
+
 #ifndef NDEBUG
 
 extern bool g_trace_gpu;
