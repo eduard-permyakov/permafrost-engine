@@ -63,6 +63,18 @@ struct render_water_ctx{
     struct texture normal;
     GLfloat        move_factor;
     uint32_t       prev_frame_tick;
+    /* Persistent render targets for the reflection/refraction passes. They
+     * are created lazily and rebuilt only when the viewport-derived size
+     * changes, so that no GL objects are created or destroyed on the
+     * per-frame path. */
+    int            rt_width;
+    int            rt_height;
+    GLuint         refract_fbo;
+    GLuint         refract_tex;        /* colour                              */
+    GLuint         refract_depth_tex;  /* depth - sampled by the water shader */
+    GLuint         reflect_fbo;
+    GLuint         reflect_tex;        /* colour                              */
+    GLuint         reflect_depth_rbo;  /* depth - not sampled                 */
 };
 
 struct water_gl_state{
@@ -191,29 +203,106 @@ static GLuint make_new_depth_tex(int width, int height)
     GL_PERF_RETURN(ret);
 }
 
-static void render_refraction_tex(GLuint clr_tex, GLuint depth_tex, bool on, struct render_input in)
+static void water_alloc_targets(int width, int height)
+{
+    GL_PERF_ENTER();
+    ASSERT_IN_RENDER_THREAD();
+
+    s_ctx.rt_width = width;
+    s_ctx.rt_height = height;
+
+    GLenum draw_buffs[1] = {GL_COLOR_ATTACHMENT0};
+
+    /* Refraction target: a colour texture plus a depth texture. The depth is
+     * a sampleable texture because the water shader reads it for the
+     * soft-edge (shoreline) effect. */
+    s_ctx.refract_tex = make_new_tex(width, height);
+    s_ctx.refract_depth_tex = make_new_depth_tex(width, height);
+
+    glGenFramebuffers(1, &s_ctx.refract_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, s_ctx.refract_fbo);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, s_ctx.refract_depth_tex, 0);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, s_ctx.refract_tex, 0);
+    glDrawBuffers(ARR_SIZE(draw_buffs), draw_buffs);
+    assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+
+    /* Reflection target: a colour texture plus a depth renderbuffer (the
+     * depth is not sampled, so a renderbuffer is sufficient). */
+    s_ctx.reflect_tex = make_new_tex(width, height);
+
+    glGenRenderbuffers(1, &s_ctx.reflect_depth_rbo);
+    glBindRenderbuffer(GL_RENDERBUFFER, s_ctx.reflect_depth_rbo);
+    R_GL_CALL(glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, width, height));
+
+    glGenFramebuffers(1, &s_ctx.reflect_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, s_ctx.reflect_fbo);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER,
+        s_ctx.reflect_depth_rbo);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, s_ctx.reflect_tex, 0);
+    glDrawBuffers(ARR_SIZE(draw_buffs), draw_buffs);
+    assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    GL_ASSERT_OK();
+    GL_PERF_RETURN_VOID();
+}
+
+static void water_free_targets(void)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    if(s_ctx.refract_fbo)
+        glDeleteFramebuffers(1, &s_ctx.refract_fbo);
+    if(s_ctx.reflect_fbo)
+        glDeleteFramebuffers(1, &s_ctx.reflect_fbo);
+    if(s_ctx.reflect_depth_rbo)
+        glDeleteRenderbuffers(1, &s_ctx.reflect_depth_rbo);
+    if(s_ctx.refract_tex)
+        glDeleteTextures(1, &s_ctx.refract_tex);
+    if(s_ctx.refract_depth_tex)
+        glDeleteTextures(1, &s_ctx.refract_depth_tex);
+    if(s_ctx.reflect_tex)
+        glDeleteTextures(1, &s_ctx.reflect_tex);
+
+    s_ctx.refract_fbo = 0;
+    s_ctx.reflect_fbo = 0;
+    s_ctx.reflect_depth_rbo = 0;
+    s_ctx.refract_tex = 0;
+    s_ctx.refract_depth_tex = 0;
+    s_ctx.reflect_tex = 0;
+    s_ctx.rt_width = 0;
+    s_ctx.rt_height = 0;
+
+    GL_ASSERT_OK();
+}
+
+/* Make sure the persistent reflection/refraction render targets exist and
+ * match the current viewport-derived size. The targets are (re)created only
+ * on the first call and on a resolution change - never on the steady-state
+ * per-frame path. */
+static void water_ensure_targets(void)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    int width = wbuff_width();
+    int height = wbuff_height(width);
+
+    if(width == s_ctx.rt_width && height == s_ctx.rt_height)
+        return;
+
+    water_free_targets();
+    water_alloc_targets(width, height);
+}
+
+static void render_refraction_tex(bool on, struct render_input in)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
     GL_PERF_PUSH_GROUP(0, "water::render_refraction_tex");
     in.shadows = false;
 
-    GLint texw, texh;
-    glBindTexture(GL_TEXTURE_2D, clr_tex);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texw);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texh);
-
-    /* Create framebuffer object */
-    GLuint fb;
-    glGenFramebuffers(1, &fb);
-    glBindFramebuffer(GL_FRAMEBUFFER, fb);
-
-    glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depth_tex, 0);
-    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, clr_tex, 0);
-
-    GLenum draw_buffs[1] = {GL_COLOR_ATTACHMENT0};
-    glDrawBuffers(ARR_SIZE(draw_buffs), draw_buffs);
-    assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+    glBindFramebuffer(GL_FRAMEBUFFER, s_ctx.refract_fbo);
 
     /* Clip everything above the water surface */
     glEnable(GL_CLIP_DISTANCE0);
@@ -221,7 +310,7 @@ static void render_refraction_tex(GLuint clr_tex, GLuint depth_tex, bool on, str
     R_GL_SetClipPlane(plane_eq);
 
     /* Render to the texture */
-    glViewport(0, 0, texw, texh);
+    glViewport(0, 0, s_ctx.rt_width, s_ctx.rt_height);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     if(on) {
@@ -230,8 +319,6 @@ static void render_refraction_tex(GLuint clr_tex, GLuint depth_tex, bool on, str
         GL_PERF_POP_GROUP();
     }
 
-    /* Clean up framebuffer */
-    glDeleteFramebuffers(1, &fb);
     glDisable(GL_CLIP_DISTANCE0);
 
     GL_PERF_POP_GROUP();
@@ -255,46 +342,24 @@ static void render_non_parallax_skybox(const struct camera *cam, const struct re
     R_GL_DrawSkyboxScaled(cam, &map_size.x, &map_size.z);
 }
 
-static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
+static void render_reflection_tex(bool on, struct render_input in)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
     GL_PERF_PUSH_GROUP(0, "water::render_reflection_tex");
     in.shadows = false;
 
-    GLint texw, texh;
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texw);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texh);
-
-    /* Create framebuffer object */
-    GLuint fb;
-    glGenFramebuffers(1, &fb);
-    glBindFramebuffer(GL_FRAMEBUFFER, fb);
-
-    GLuint depth_rb;
-    glGenRenderbuffers(1, &depth_rb);
-    glBindRenderbuffer(GL_RENDERBUFFER, depth_rb);
-    R_GL_CALL(glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, texw, texh));
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_rb);
-    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, tex, 0);
-
-    GLenum draw_buffs[1] = {GL_COLOR_ATTACHMENT0};
-    glDrawBuffers(ARR_SIZE(draw_buffs), draw_buffs);
-    assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+    glBindFramebuffer(GL_FRAMEBUFFER, s_ctx.reflect_fbo);
 
     /* Clear buffers */
-    glViewport(0, 0, texw, texh);
+    glViewport(0, 0, s_ctx.rt_width, s_ctx.rt_height);
     glClearColor(SKY_CLR[0], SKY_CLR[1], SKY_CLR[2], SKY_CLR[3]);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     if(!on) {
-
-        glDeleteRenderbuffers(1, &depth_rb);
-        glDeleteFramebuffers(1, &fb);
         GL_PERF_POP_GROUP();
         GL_ASSERT_OK();
-        GL_PERF_RETURN_VOID(); 
+        GL_PERF_RETURN_VOID();
     }
 
     /* Flip camera over the water's surface */
@@ -323,9 +388,6 @@ static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
     GL_PERF_POP_GROUP();
     render_non_parallax_skybox(cam, &in);
 
-    /* Clean up framebuffer */
-    glDeleteRenderbuffers(1, &depth_rb);
-    glDeleteFramebuffers(1, &fb);
     glDisable(GL_CLIP_DISTANCE0);
     glEnable(GL_CULL_FACE);
 
@@ -583,6 +645,7 @@ void R_GL_WaterShutdown(void)
 
     glDeleteVertexArrays(1, &s_ctx.surface.VAO);
     glDeleteBuffers(1, &s_ctx.surface.VBO);
+    water_free_targets();
     memset(&s_ctx, 0, sizeof(s_ctx));
 
     GL_PERF_RETURN_VOID();
@@ -597,20 +660,10 @@ void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const
     struct water_gl_state state;
     save_gl_state(&state);
 
-    int w = wbuff_width();
-    int h = wbuff_height(w);
+    water_ensure_targets();
 
-    GLuint refract_tex = make_new_tex(w, h);
-    assert(refract_tex > 0);
-
-    GLuint refract_depth = make_new_depth_tex(w, h);
-    assert(refract_depth > 0);
-
-    render_refraction_tex(refract_tex, refract_depth, *refraction, *in);
-
-    GLuint reflect_tex = make_new_tex(w, h);
-    assert(reflect_tex > 0);
-    render_reflection_tex(reflect_tex, *reflection, *in);
+    render_refraction_tex(*refraction, *in);
+    render_reflection_tex(*reflection, *in);
 
     restore_gl_state(&state);
 
@@ -619,7 +672,8 @@ void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const
 
     setup_map_uniforms(shader_prog);
     setup_cam_uniforms(shader_prog);
-    setup_texture_uniforms(shader_prog, refract_tex, refract_depth, reflect_tex);
+    setup_texture_uniforms(shader_prog, s_ctx.refract_tex, s_ctx.refract_depth_tex,
+        s_ctx.reflect_tex);
     setup_fog_uniforms(shader_prog, in->map);
     setup_model_mat(shader_prog, in->map);
     setup_move_factor(shader_prog);
@@ -634,10 +688,6 @@ void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const
 
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
-
-    R_GL_CALL(glDeleteTextures(1, &refract_tex));
-    R_GL_CALL(glDeleteTextures(1, &refract_depth));
-    R_GL_CALL(glDeleteTextures(1, &reflect_tex));
 
     GL_PERF_POP_GROUP();
     GL_ASSERT_OK();
