@@ -72,6 +72,7 @@ struct water_gl_state{
     GLfloat  clear_clr[4];
     vec3_t   u_cam_pos;
     mat4x4_t u_view;
+    bool     shadows;
 };
 
 
@@ -109,12 +110,14 @@ static void save_gl_state(struct water_gl_state *out)
     glGetIntegerv(GL_RENDERBUFFER_BINDING, &out->rbo);
     glGetFloatv(GL_COLOR_CLEAR_VALUE, out->clear_clr);
 
-    struct uval pval, tval;
+    struct uval pval, tval, sval;
     R_GL_StateGet(GL_U_VIEW_POS, &pval);
     R_GL_StateGet(GL_U_VIEW, &tval);
+    R_GL_StateGet(GL_U_SHADOWS_ON, &sval);
 
     out->u_cam_pos = pval.val.as_vec3;
     out->u_view = tval.val.as_mat4;
+    out->shadows = (bool)sval.val.as_int;
 
     GL_PERF_RETURN_VOID();
 }
@@ -129,6 +132,7 @@ static void restore_gl_state(const struct water_gl_state *in)
     glViewport(in->viewport[0], in->viewport[1], in->viewport[2], in->viewport[3]);
     glClearColor(in->clear_clr[0], in->clear_clr[1], in->clear_clr[2], in->clear_clr[3]);
     R_GL_SetViewMatAndPos(&in->u_view, &in->u_cam_pos);
+    R_GL_SetShadowsEnabled(&in->shadows);
 
     GL_PERF_RETURN_VOID();
 }
@@ -192,6 +196,7 @@ static void render_refraction_tex(GLuint clr_tex, GLuint depth_tex, bool on, str
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
     GL_PERF_PUSH_GROUP(0, "water::render_refraction_tex");
+    in.shadows = false;
 
     GLint texw, texh;
     glBindTexture(GL_TEXTURE_2D, clr_tex);
@@ -255,6 +260,7 @@ static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
     GL_PERF_PUSH_GROUP(0, "water::render_reflection_tex");
+    in.shadows = false;
 
     GLint texw, texh;
     glBindTexture(GL_TEXTURE_2D, tex);
