@@ -47,6 +47,7 @@
 #include "../lib/public/block_allocator.h"
 #include "../ui.h"
 #include "../perf.h"
+#include "../event.h"
 
 #include <stdlib.h>
 #include <assert.h>
@@ -74,6 +75,17 @@ enum wang_tile_color{
 
 static struct block_allocator s_map_block_alloc;
 static struct block_allocator s_nav_block_alloc;
+
+/* Tile updates (from M_AL_UpdateTile) are not dispatched to the renderer
+ * immediately. Instead, the affected tiles are accumulated in a dirty set and
+ * flushed in a single per-chunk batch once per frame - see al_flush_dirty_tiles.
+ * This amortizes the cost of mapping/unmapping the chunk vertex buffers when
+ * many tiles are painted in the same frame. */
+static const struct map *s_dirty_map     = NULL;
+static bool              *s_tile_dirty    = NULL;  /* one flag per map tile    */
+static bool              *s_chunk_dirty   = NULL;  /* one flag per map chunk   */
+static struct tile_desc  *s_flush_scratch = NULL;  /* holds one chunk of descs */
+static bool               s_dirty_pending = false;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -450,6 +462,77 @@ static void set_minimap_defaults(struct map *map)
     map->minimap_resize_mask = ANCHOR_X_LEFT | ANCHOR_Y_BOT;
 }
 
+static void al_mark_tile_dirty(struct map_resolution res, struct tile_desc td)
+{
+    assert(s_tile_dirty && s_chunk_dirty);
+
+    size_t chunk_idx = (size_t)td.chunk_r * res.chunk_w + td.chunk_c;
+    size_t tile_idx  = chunk_idx * ((size_t)res.tile_w * res.tile_h)
+                     + (size_t)td.tile_r * res.tile_w + td.tile_c;
+
+    s_tile_dirty[tile_idx]   = true;
+    s_chunk_dirty[chunk_idx] = true;
+    s_dirty_pending          = true;
+}
+
+/* Dispatches a single batched R_GL_TileUpdate command for every chunk that has
+ * dirty tiles, then clears the dirty set. Invoked once per frame. */
+static void al_flush_dirty_tiles(void)
+{
+    if(!s_dirty_pending)
+        return;
+
+    struct map_resolution res;
+    M_GetResolution(s_dirty_map, &res);
+
+    size_t tiles_per_chunk = (size_t)res.tile_w * res.tile_h;
+    const struct map *prev_map = G_GetPrevTickMap();
+
+    for(int cr = 0; cr < res.chunk_h; cr++) {
+    for(int cc = 0; cc < res.chunk_w; cc++) {
+
+        size_t chunk_idx = (size_t)cr * res.chunk_w + cc;
+        if(!s_chunk_dirty[chunk_idx])
+            continue;
+        s_chunk_dirty[chunk_idx] = false;
+
+        bool *chunk_bits = &s_tile_dirty[chunk_idx * tiles_per_chunk];
+        size_t ndescs = 0;
+
+        for(int tr = 0; tr < res.tile_h; tr++) {
+        for(int tc = 0; tc < res.tile_w; tc++) {
+
+            size_t in_chunk = (size_t)tr * res.tile_w + tc;
+            if(!chunk_bits[in_chunk])
+                continue;
+            chunk_bits[in_chunk] = false;
+            s_flush_scratch[ndescs++] = (struct tile_desc){cr, cc, tr, tc};
+        }}
+
+        if(ndescs == 0)
+            continue;
+
+        const struct pfchunk *chunk = &s_dirty_map->chunks[chunk_idx];
+        R_PushCmd((struct rcmd){
+            .func = R_GL_TileUpdate,
+            .nargs = 4,
+            .args = {
+                chunk->render_private,
+                (void*)prev_map,
+                R_PushArg(s_flush_scratch, ndescs * sizeof(struct tile_desc)),
+                R_PushArg(&ndescs, sizeof(ndescs)),
+            },
+        });
+    }}
+
+    s_dirty_pending = false;
+}
+
+static void on_render_3d_pre(void *user, void *event)
+{
+    al_flush_dirty_tiles();
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -573,27 +656,67 @@ bool M_AL_UpdateTile(struct map *map, const struct tile_desc *desc, const struct
     struct map_resolution res;
     M_GetResolution(map, &res);
 
+    /* The painted tile and its 8 neighbors (which carry the adjacency/blend
+     * information) need their render-side vertex data refreshed. We don't
+     * dispatch the buffer updates here; instead the affected tiles are added
+     * to a dirty set that is flushed as a single per-chunk batch once per
+     * frame by al_flush_dirty_tiles. */
     for(int dr = -1; dr <= 1; dr++) {
     for(int dc = -1; dc <= 1; dc++) {
-    
+
         struct tile_desc curr = *desc;
-        int ret = M_Tile_RelativeDesc(res, &curr, dc, dr);
-        if(ret) {
-        
-            struct pfchunk *chunk = &map->chunks[curr.chunk_r * map->width + curr.chunk_c];
-            R_PushCmd((struct rcmd){
-                .func = R_GL_TileUpdate,
-                .nargs = 3,
-                .args = {
-                    chunk->render_private,
-                    (void*)G_GetPrevTickMap(),
-                    R_PushArg(&curr, sizeof(curr)),
-                },
-            });
-        }
+        if(M_Tile_RelativeDesc(res, &curr, dc, dr))
+            al_mark_tile_dirty(res, curr);
     }}
 
     return true;
+}
+
+bool M_AL_InitTileUpdateBuffer(const struct map *map)
+{
+    struct map_resolution res;
+    M_GetResolution(map, &res);
+
+    size_t nchunks         = (size_t)res.chunk_w * res.chunk_h;
+    size_t tiles_per_chunk = (size_t)res.tile_w * res.tile_h;
+    size_t ntiles          = nchunks * tiles_per_chunk;
+
+    s_tile_dirty    = calloc(ntiles, sizeof(bool));
+    s_chunk_dirty   = calloc(nchunks, sizeof(bool));
+    s_flush_scratch = malloc(tiles_per_chunk * sizeof(struct tile_desc));
+    if(!s_tile_dirty || !s_chunk_dirty || !s_flush_scratch)
+        goto fail;
+
+    s_dirty_map     = map;
+    s_dirty_pending = false;
+
+    E_Global_Register(EVENT_RENDER_3D_PRE, on_render_3d_pre, NULL,
+        G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
+    return true;
+
+fail:
+    PF_FREE(s_tile_dirty);
+    PF_FREE(s_chunk_dirty);
+    PF_FREE(s_flush_scratch);
+    s_tile_dirty    = NULL;
+    s_chunk_dirty   = NULL;
+    s_flush_scratch = NULL;
+    return false;
+}
+
+void M_AL_DestroyTileUpdateBuffer(void)
+{
+    E_Global_Unregister(EVENT_RENDER_3D_PRE, on_render_3d_pre);
+
+    PF_FREE(s_tile_dirty);
+    PF_FREE(s_chunk_dirty);
+    PF_FREE(s_flush_scratch);
+
+    s_tile_dirty    = NULL;
+    s_chunk_dirty   = NULL;
+    s_flush_scratch = NULL;
+    s_dirty_map     = NULL;
+    s_dirty_pending = false;
 }
 
 void M_AL_FreePrivate(struct map *map)

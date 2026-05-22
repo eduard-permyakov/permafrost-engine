@@ -732,8 +732,23 @@ void   M_AL_FreePrivate(struct map *map);
 bool   M_AL_UpdateChunkMats(const struct map *map, int chunk_r, int chunk_c, 
                             const char *mats_string);
 
-bool   M_AL_UpdateTile(struct map *map, const struct tile_desc *desc, 
+/* ------------------------------------------------------------------------
+ * Update a single tile's attributes. The affected tile and its neighbours are
+ * added to a dirty set; the renderer-side vertex data is refreshed in a batch
+ * once per frame. Requires 'M_AL_InitTileUpdateBuffer' to have been called.
+ * ------------------------------------------------------------------------
+ */
+bool   M_AL_UpdateTile(struct map *map, const struct tile_desc *desc,
                        const struct tile *tile);
+
+/* ------------------------------------------------------------------------
+ * Set up / tear down the per-frame buffering of tile updates for the map.
+ * 'M_AL_InitTileUpdateBuffer' registers a render-event handler that flushes
+ * the accumulated tile updates as batched draw commands once per frame.
+ * ------------------------------------------------------------------------
+ */
+bool   M_AL_InitTileUpdateBuffer(const struct map *map);
+void   M_AL_DestroyTileUpdateBuffer(void);
 
 /* ------------------------------------------------------------------------
  * The size (in bytes) needed to store a shallow copy of the map.

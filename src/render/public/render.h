@@ -313,11 +313,13 @@ void   R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rpriv
 
 
 /* ---------------------------------------------------------------------------
- * Update a specific tile with new attributes and buffer the new vertex data.
- * Will also update surrounding tiles with new adjacency data.
+ * Update a batch of tiles with new attributes and buffer the new vertex data.
+ * All 'num_descs' tile descriptors must belong to the chunk identified by
+ * 'chunk_rprivate'; the whole batch is serviced with a single buffer mapping.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_TileUpdate(void *chunk_rprivate, const struct map *map, const struct tile_desc *desc);
+void   R_GL_TileUpdate(void *chunk_rprivate, const struct map *map,
+                       const struct tile_desc *descs, const size_t *num_descs);
 
 /*###########################################################################*/
 /* RENDER MINIMAP                                                            */

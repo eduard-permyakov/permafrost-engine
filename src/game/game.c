@@ -161,6 +161,7 @@ static void g_init_map(void)
     M_Raycast_Install(s_gs.map, s_gs.active_cam);
     M_InitMinimap(s_gs.map, g_default_minimap_pos());
     M_FoliageInit(s_gs.map);
+    M_AL_InitTileUpdateBuffer(s_gs.map);
     M_InitCopyPools(s_gs.map);
     G_Pos_Init(s_gs.map);
     G_Building_Init(s_gs.map);
@@ -891,6 +892,7 @@ static void g_clear_map_state(void)
         G_ClearPath_Shutdown();
         G_Pos_Shutdown();
         M_FoliageShutdown();
+        M_AL_DestroyTileUpdateBuffer();
         M_DestroyCopyPools();
 
         AL_MapFree(s_gs.map);
