@@ -567,7 +567,8 @@ enum batch_id{
 void R_GL_Batch_Draw(struct render_input *in);
 
 /* ---------------------------------------------------------------------------
- * Like 'R_GL_Batch_Draw' but using the specified batch instead of per-chunk batches.
+ * Like 'R_GL_Batch_Draw' but using the specified batch instead of the default
+ * shared static batch.
  * ---------------------------------------------------------------------------
  */
 void R_GL_Batch_DrawWithID(struct render_input *in, enum batch_id *id);
@@ -581,18 +582,22 @@ void R_GL_Batch_DrawWithID(struct render_input *in, enum batch_id *id);
 void R_GL_Batch_RenderDepthMap(struct render_input *in);
 
 /* ---------------------------------------------------------------------------
- * Free all the resources used by live batches. Free all the per-chunk batches,
- * resetting the state of the module to that at initialization time.
+ * Free all the resources used by live batches, resetting the state of the
+ * module to that at initialization time. Both shared batches (created by
+ * R_GL_Batch_Prep) are destroyed; R_GL_Batch_Prep must be called again
+ * before the next batched draw.
  * ---------------------------------------------------------------------------
  */
 void R_GL_Batch_Reset(void);
 
 /* ---------------------------------------------------------------------------
- * Allocate a new batch for every chunk of the map. Allocating batch
- * resources has significant overhead so it's advantageous to do this upfront.
+ * Ensure the shared static and animated batches are allocated. Allocating
+ * batch resources has significant overhead so it's advantageous to do this
+ * upfront, on map load. Safe to call repeatedly - a no-op for any batch that
+ * already exists.
  * ---------------------------------------------------------------------------
  */
-void R_GL_Batch_AllocChunks(struct map_resolution *res);
+void R_GL_Batch_Prep(void);
 
 
 /*###########################################################################*/

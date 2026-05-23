@@ -66,11 +66,11 @@
 #define MAX_MESH_BUFFS      (16)
 
 #define CMD_RING_SZ         (4 * 1024 * sizeof(struct GL_DAI_Cmd))
-#define STAT_ATTR_RING_SZ   (4*1024*1024)
+#define STAT_ATTR_RING_SZ   (32*1024*1024)
 #define ANIM_ATTR_RING_SZ   (32*1024*1024)
 
 #define MAX_BATCHES         (256)
-#define MAX_INSTS           (16384)
+#define MAX_INSTS           (65536)
 #define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
 
@@ -108,12 +108,6 @@ struct vbo_desc{
     void   *heap_meta;
     GLuint  VBO;
     GLuint  VAO;
-};
-
-struct chunk_batch_desc{
-    int chunk_r, chunk_c; 
-    int start_idx;
-    int end_idx;
 };
 
 struct inst_group_desc{
@@ -194,25 +188,13 @@ static struct mesh_desc batch_mdesc_for_vbo(struct gl_batch *batch, GLuint VBO);
 /*****************************************************************************/
 
 static struct gl_batch *s_anim_batch;
-static khash_t(batch)  *s_chunk_batches;
+static struct gl_batch *s_stat_batch;
 static khash_t(batch)  *s_id_batches;
 static GLuint           s_draw_id_vbo;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
-
-uint32_t batch_td_key(struct tile_desc td)
-{
-    return ((( ((uint32_t)td.chunk_r) & 0xffff) << 16)
-         |  (( ((uint32_t)td.chunk_c) & 0xffff) <<  0));
-}
-
-uint32_t batch_chunk_key(int chunk_r, int chunk_c)
-{
-    return ((( ((uint32_t)chunk_r) & 0xffff) << 16)
-         |  (( ((uint32_t)chunk_c) & 0xffff) <<  0));
-}
 
 static int batch_first_free_idx(uint32_t mask)
 {
@@ -633,62 +615,6 @@ static struct tex_desc batch_tdesc_for_tid(struct gl_batch *batch, GLuint tid)
     return (struct tex_desc){0};
 }
 
-static bool batch_chunk_compare(struct tile_desc a, struct tile_desc b)
-{
-    uint32_t ia = batch_td_key(a);
-    uint32_t ib = batch_td_key(b);
-    return ia > ib;
-}
-
-/* Sort the 'ents' array in-place by the chunk coordinate of the entities. Fill
- * 'out' with a list of descriptors about what subrange of the sorted array 
- * corresponds to which chunk */
-static size_t batch_sort_by_chunk(vec_rstat_t *ents, struct chunk_batch_desc *out, size_t maxout)
-{
-    if(vec_size(ents) == 0)
-        return 0;
-
-    int i = 1;
-    while(i < vec_size(ents)) {
-        int j = i;
-        while(j > 0 && batch_chunk_compare(vec_AT(ents, j - 1).td, vec_AT(ents, j).td)) {
-
-            struct ent_stat_rstate tmp = vec_AT(ents, j - 1);
-            vec_AT(ents, j - 1) = vec_AT(ents, j);
-            vec_AT(ents, j) = tmp;
-            j--;
-        }
-        i++;
-    }
-
-    size_t ret = 0;
-
-    struct chunk_batch_desc curr = (struct chunk_batch_desc){
-        .chunk_r = vec_AT(ents, 0).td.chunk_r,
-        .chunk_c = vec_AT(ents, 0).td.chunk_c,
-        .start_idx = 0,
-    };
-    for(int i = 1; i < vec_size(ents); i++) {
-    
-        if(batch_td_key(vec_AT(ents, i - 1).td) != batch_td_key(vec_AT(ents, i).td)) {
-            curr.end_idx = i - 1;
-            out[ret++] = curr;
-            curr = (struct chunk_batch_desc){
-                .chunk_r = vec_AT(ents, i).td.chunk_r,
-                .chunk_c = vec_AT(ents, i).td.chunk_c,
-                .start_idx = i,
-            };
-        }
-        if(ret == maxout)
-            break;
-    }
-
-    curr.end_idx = i - 1;
-    out[ret++] = curr;
-
-    return ret;
-}
-
 static size_t batch_sort_by_batch_stat(struct gl_batch *batch, struct ent_stat_rstate *ents, 
                                        size_t nents, struct batch_draw_desc *out, size_t maxout)
 {
@@ -803,16 +729,15 @@ static size_t batch_sort_by_batch_anim(struct gl_batch *batch, struct ent_anim_r
     return ret;
 }
 
-static size_t batch_sort_by_transparency(vec_rstat_t *ents, const struct chunk_batch_desc *desc)
+static size_t batch_sort_by_transparency(vec_rstat_t *ents, size_t nents)
 {
     if(vec_size(ents) == 0)
         return 0;
 
-    int i = desc->start_idx;
-    while(i <= desc->end_idx) {
+    int i = 0;
+    while(i < nents) {
         int j = i;
-        while(j > desc->start_idx 
-            && (vec_AT(ents, j - 1).translucent && !vec_AT(ents, j).translucent)) {
+        while(j > 0 && (vec_AT(ents, j - 1).translucent && !vec_AT(ents, j).translucent)) {
 
             struct ent_stat_rstate tmp = vec_AT(ents, j - 1);
             vec_AT(ents, j - 1) = vec_AT(ents, j);
@@ -823,7 +748,7 @@ static size_t batch_sort_by_transparency(vec_rstat_t *ents, const struct chunk_b
     }
 
     size_t ret = 0;
-    for(int i = desc->start_idx; i <= desc->end_idx; i++) {
+    for(int i = 0; i < nents; i++) {
         struct ent_stat_rstate *curr = &vec_AT(ents, i);
         if(curr->translucent)
             ret++;
@@ -1340,11 +1265,11 @@ static void batch_render_stat(struct gl_batch *batch, struct ent_stat_rstate *en
         size_t len = bdescs[bi].end_idx - bdescs[bi].start_idx + 1;
         struct gl_batch *batch = bdescs[bi].batch;
 
-        struct inst_group_desc descs[MAX_BATCHES];
-        size_t ninsts = batch_sort_by_inst_stat(ents + offset, len, descs, ARR_SIZE(descs));
+        STALLOC(struct inst_group_desc, descs, len);
+        size_t ninsts = batch_sort_by_inst_stat(ents + offset, len, descs, len);
 
-        struct draw_call_desc dcalls[MAX_BATCHES];
-        size_t ndcalls = batch_sort_by_vbo(batch, descs, ninsts, dcalls, ARR_SIZE(dcalls));
+        STALLOC(struct draw_call_desc, dcalls, len);
+        size_t ndcalls = batch_sort_by_vbo(batch, descs, ninsts, dcalls, len);
 
         for(int i = 0; i < batch->ntexarrs; i++) {
             assert(batch->textures[i].arr.tunit == GL_TEXTURE0 + i);
@@ -1354,6 +1279,9 @@ static void batch_render_stat(struct gl_batch *batch, struct ent_stat_rstate *en
         for(int i = 0; i < ndcalls; i++) {
             batch_do_drawcall_stat(batch, ents, dcalls[i], descs, pass, offset);
         }
+
+        STFREE(dcalls);
+        STFREE(descs);
     }
     GL_PERF_RETURN_VOID();
 }
@@ -1371,11 +1299,11 @@ static void batch_render_anim(struct gl_batch *batch, struct ent_anim_rstate *en
         size_t len = bdescs[bi].end_idx - bdescs[bi].start_idx + 1;
         struct gl_batch *batch = bdescs[bi].batch;
 
-        struct inst_group_desc descs[MAX_BATCHES];
-        size_t ninsts = batch_sort_by_inst_anim(ents + offset, len, descs, ARR_SIZE(descs));
+        STALLOC(struct inst_group_desc, descs, len);
+        size_t ninsts = batch_sort_by_inst_anim(ents + offset, len, descs, len);
 
-        struct draw_call_desc dcalls[MAX_BATCHES];
-        size_t ndcalls = batch_sort_by_vbo(batch, descs, ninsts, dcalls, ARR_SIZE(dcalls));
+        STALLOC(struct draw_call_desc, dcalls, len);
+        size_t ndcalls = batch_sort_by_vbo(batch, descs, ninsts, dcalls, len);
 
         for(int i = 0; i < batch->ntexarrs; i++) {
             R_GL_Texture_BindArray(&batch->textures[i].arr, R_GL_Shader_GetCurrActive());
@@ -1384,6 +1312,9 @@ static void batch_render_anim(struct gl_batch *batch, struct ent_anim_rstate *en
         for(int i = 0; i < ndcalls; i++) {
             batch_do_drawcall_anim(batch, ents, dcalls[i], descs, offset);
         }
+
+        STFREE(dcalls);
+        STFREE(descs);
     }
     GL_PERF_RETURN_VOID();
 }
@@ -1392,6 +1323,9 @@ static void batch_render_anim_all(vec_ranim_t *ents, bool shadows, enum render_p
 {
     size_t nanim = vec_size(ents);
     if(nanim == 0)
+        return;
+    /* No map loaded yet: R_GL_Batch_Prep hasn't run. */
+    if(!s_anim_batch)
         return;
 
     switch(pass) {
@@ -1422,20 +1356,31 @@ static void batch_render_anim_all(vec_ranim_t *ents, bool shadows, enum render_p
     GL_ASSERT_OK();
 }
 
-static void batch_render_stat_all(vec_rstat_t *ents, bool shadows, 
+static void batch_render_stat_all(vec_rstat_t *ents, bool shadows,
                                   enum render_pass pass, int batch_id)
 {
-    struct chunk_batch_desc descs[MAX_BATCHES];
-    size_t nbatches = vec_size(ents) > 0 ? 1 : 0;
-    descs[0].start_idx = 0;
-    descs[0].end_idx = vec_size(ents) - 1;
-
-    if(batch_id == 0) {
-        nbatches = batch_sort_by_chunk(ents, descs, ARR_SIZE(descs));
-    }
-
-    if(nbatches == 0)
+    size_t nents = vec_size(ents);
+    if(nents == 0)
         return;
+
+    struct gl_batch *batch = NULL;
+    if(batch_id == 0) {
+        /* No map loaded yet: R_GL_Batch_PrepStatic hasn't run. */
+        if(!s_stat_batch)
+            return;
+        batch = s_stat_batch;
+    }else{
+        uint32_t key = batch_id;
+        khiter_t k = kh_get(batch, s_id_batches, key);
+        if(k == kh_end(s_id_batches)) {
+            int status;
+            k = kh_put(batch, s_id_batches, key, &status);
+            assert(status != -1 && status != 0);
+            kh_value(s_id_batches, k) = batch_init(BATCH_TYPE_STAT);
+        }
+        batch = kh_value(s_id_batches, k);
+    }
+    assert(batch);
 
     switch(pass) {
     case RENDER_PASS_DEPTH:
@@ -1447,62 +1392,24 @@ static void batch_render_stat_all(vec_rstat_t *ents, bool shadows,
     default: assert(0);
     }
 
-    for(int i = 0; i < nbatches; i++) {
-    
-        const struct chunk_batch_desc *curr = &descs[i];
-        struct gl_batch *batch = NULL;
+    /* Partition the whole static set into opaque|translucent and draw each
+     * group separately - translucency requires pipeline state changes. */
+    size_t ntranslucent = batch_sort_by_transparency(ents, nents);
+    size_t nopaque = nents - ntranslucent;
 
-        /* Further subdivide each batch into translucent and opaque entities, 
-         * and draw each one as separate draw calls, as this requires pipeline
-         * state changes.
-         */
-        size_t ntranslucent = batch_sort_by_transparency(ents, curr);
-
-        if(batch_id == 0) {
-        
-            uint32_t key = batch_chunk_key(curr->chunk_r, curr->chunk_c);
-            khiter_t k = kh_get(batch, s_chunk_batches, key);
-
-            if(k == kh_end(s_chunk_batches)) {
-                int status;
-                k = kh_put(batch, s_chunk_batches, key, &status);
-                assert(status != -1 && status != 0);
-                kh_value(s_chunk_batches, k) = batch_init(BATCH_TYPE_STAT);
-            }
-            batch = kh_value(s_chunk_batches, k);
-        }else{
-        
-            uint32_t key = batch_id;
-            khiter_t k = kh_get(batch, s_id_batches, key);
-
-            if(k == kh_end(s_id_batches)) {
-                int status;
-                k = kh_put(batch, s_id_batches, key, &status);
-                assert(status != -1 && status != 0);
-                kh_value(s_id_batches, k) = batch_init(BATCH_TYPE_STAT);
-            }
-            batch = kh_value(s_id_batches, k);
-        }
-
-        assert(batch);
-        size_t ndraw = curr->end_idx - curr->start_idx + 1;
-        size_t nopaque = ndraw - ntranslucent;
-
-        for(int i = 0; i < ndraw; i++) {
-            batch_append(batch, vec_AT(ents, curr->start_idx + i).render_private);
-        }
-        if(nopaque > 0) {
-            batch_render_stat(batch, &vec_AT(ents, curr->start_idx), nopaque, pass);
-        }
-        if(ntranslucent > 0) {
-            size_t start = curr->start_idx + nopaque;
-
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR);
-            batch_render_stat(batch, &vec_AT(ents, start), ntranslucent, pass);
-            glDisable(GL_BLEND);
-        }
+    for(int i = 0; i < nents; i++) {
+        batch_append(batch, vec_AT(ents, i).render_private);
     }
+    if(nopaque > 0) {
+        batch_render_stat(batch, &vec_AT(ents, 0), nopaque, pass);
+    }
+    if(ntranslucent > 0) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR);
+        batch_render_stat(batch, &vec_AT(ents, nopaque), ntranslucent, pass);
+        glDisable(GL_BLEND);
+    }
+    GL_ASSERT_OK();
 }
 
 /*****************************************************************************/
@@ -1511,19 +1418,17 @@ static void batch_render_stat_all(vec_rstat_t *ents, bool shadows,
 
 bool R_GL_Batch_Init(void)
 {
-    s_anim_batch = batch_init(BATCH_TYPE_ANIM);
-    if(!s_anim_batch)
-        goto fail_anim_batch;
-    s_chunk_batches = kh_init(batch);
-    if(!s_chunk_batches)
-        goto fail_chunk_batches;
     s_id_batches = kh_init(batch);
     if(!s_id_batches)
         goto fail_id_batches;
 
+    /* The shared static and animated batches are allocated lazily by
+     * R_GL_Batch_Prep (typically called on map load). Both left NULL here so
+     * that no GPU memory is reserved when batched rendering is disabled. */
+
     GLint draw_id_buff[MAX_INSTS];
     for(int i = 0; i < MAX_INSTS; i++)
-        draw_id_buff[i] = i; 
+        draw_id_buff[i] = i;
 
     glGenBuffers(1, &s_draw_id_vbo);
     glBindBuffer(GL_ARRAY_BUFFER, s_draw_id_vbo);
@@ -1532,25 +1437,23 @@ bool R_GL_Batch_Init(void)
     return true;
 
 fail_id_batches:
-    kh_destroy(batch, s_chunk_batches);
-fail_chunk_batches:
-    batch_destroy(s_anim_batch);
-fail_anim_batch:
     return false;
 }
 
 void R_GL_Batch_Shutdown(void)
 {
-    batch_destroy(s_anim_batch);
+    if(s_anim_batch) {
+        batch_destroy(s_anim_batch);
+        s_anim_batch = NULL;
+    }
+    if(s_stat_batch) {
+        batch_destroy(s_stat_batch);
+        s_stat_batch = NULL;
+    }
 
     uint32_t key;
     struct gl_batch *curr;
     (void)key;
-
-    kh_foreach(s_chunk_batches, key, curr, {
-        batch_destroy(curr);
-    });
-    kh_destroy(batch, s_chunk_batches);
 
     kh_foreach(s_id_batches, key, curr, {
         batch_destroy(curr);
@@ -1600,36 +1503,26 @@ void R_GL_Batch_RenderDepthMap(struct render_input *in)
 
 void R_GL_Batch_Reset(void)
 {
-    uint32_t key;
-    struct gl_batch *curr;
-    (void)key;
-
-    kh_foreach(s_chunk_batches, key, curr, {
-        batch_destroy(curr);
-    });
-    kh_clear(batch, s_chunk_batches);
-
-    batch_destroy(s_anim_batch);
-    s_anim_batch = batch_init(BATCH_TYPE_ANIM);
+    if(s_stat_batch) {
+        batch_destroy(s_stat_batch);
+        s_stat_batch = NULL;
+    }
+    if(s_anim_batch) {
+        batch_destroy(s_anim_batch);
+        s_anim_batch = NULL;
+    }
 }
 
-void R_GL_Batch_AllocChunks(struct map_resolution *res)
+void R_GL_Batch_Prep(void)
 {
     GL_PERF_ENTER();
 
-    for(int r = 0; r < res->chunk_h; r++) {
-    for(int c = 0; c < res->chunk_w; c++) {
-    
-        uint32_t key = batch_chunk_key(r, c);
-        khiter_t k = kh_get(batch, s_chunk_batches, key);
-
-        if(k == kh_end(s_chunk_batches)) {
-            int status;
-            k = kh_put(batch, s_chunk_batches, key, &status);
-            assert(status != -1 && status != 0);
-            kh_value(s_chunk_batches, k) = batch_init(BATCH_TYPE_STAT);
-        }
-    }}
+    if(!s_stat_batch) {
+        s_stat_batch = batch_init(BATCH_TYPE_STAT);
+    }
+    if(!s_anim_batch) {
+        s_anim_batch = batch_init(BATCH_TYPE_ANIM);
+    }
 
     GL_PERF_RETURN_VOID();
 }

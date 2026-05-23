@@ -730,14 +730,10 @@ static void batching_en_commit(const struct sval *new_val)
     bool on = new_val->as_bool;
     if(on) {
         if(s_gs.map) {
-            struct map_resolution res;
-            M_GetResolution(s_gs.map, &res);
             R_PushCmd((struct rcmd){
-                .func = R_GL_Batch_AllocChunks,
-                .nargs = 1,
-                .args = {
-                    R_PushArg(&res, sizeof(res)),
-                }
+                .func = R_GL_Batch_Prep,
+                .nargs = 0,
+                .args = {0},
             });
         }
     }else{
@@ -1691,14 +1687,10 @@ bool G_LoadMap(SDL_RWops *stream, bool update_navgrid)
     E_Global_Notify(EVENT_NEW_GAME, s_gs.map, ES_ENGINE);
 
     if(s_gs.use_batch_rendering) {
-        struct map_resolution res;
-        M_GetResolution(s_gs.map, &res);
         R_PushCmd((struct rcmd){
-            .func = R_GL_Batch_AllocChunks,
-            .nargs = 1,
-            .args = {
-                R_PushArg(&res, sizeof(res)),
-            }
+            .func = R_GL_Batch_Prep,
+            .nargs = 0,
+            .args = {0},
         });
     }
 
