@@ -58,7 +58,7 @@ struct perf_entry{
     union{
         uint64_t pc_delta;
         struct{
-            union{
+            struct{
                 uint32_t gpu_cookie;
                 uint64_t gpu_ts;
             }begin, end;
@@ -103,6 +103,9 @@ struct perf_state{
      */
     int               perf_tree_idx;
     vec_perf_t        perf_trees[NFRAMES_LOGGED];
+    /* GPU-only: size of each tree slot when its cookies were last
+     * scheduled for read. Prevents double-consume on wraparound. */
+    size_t            last_read_size[NFRAMES_LOGGED];
 };
 
 KHASH_MAP_INIT_INT64(pstate, struct perf_state)
@@ -186,6 +189,7 @@ static bool pstate_init(struct perf_state *out, const char *name)
 
     pf_strlcpy(out->name, name, sizeof(out->name));
     out->perf_tree_idx = 0;
+    memset(out->last_read_size, 0, sizeof(out->last_read_size));
     return true;
 
 fail_perf_trees:
@@ -389,10 +393,12 @@ void Perf_PushGPU(const char *name, uint32_t cookie)
 void Perf_PopGPU(uint32_t cookie)
 {
     khiter_t k = kh_get(pstate, s_thread_state_table, GPU_STATE_KEY);
-    if(k != kh_end(s_thread_state_table));
+    if(k == kh_end(s_thread_state_table))
+        return;
 
     struct perf_state *ps = &kh_val(s_thread_state_table, k);
-    assert(vec_size(&ps->perf_stack) > 0);
+    if(vec_size(&ps->perf_stack) == 0)
+        return;
 
     uint32_t idx = vec_idx_pop(&ps->perf_stack);
     assert(idx < vec_size(&ps->perf_trees[ps->perf_tree_idx]));
@@ -406,22 +412,34 @@ void Perf_BeginTick(void)
     s_last_frames_ms[s_last_idx] = SDL_GetTicks();
 
     khiter_t k = kh_get(pstate, s_thread_state_table, GPU_STATE_KEY);
-    if(k != kh_end(s_thread_state_table));
+    if(k == kh_end(s_thread_state_table))
+        return;
 
-    /* commands are just queued now, to be executed next tick when the 
-     * perf_tree_idx moves forward by 1 */
     struct perf_state *gpu_ps = &kh_val(s_thread_state_table, k);
+
+    /* commands are just queued now, to be executed next tick when the
+     * perf_tree_idx moves forward by 1 */
     int write_idx = (gpu_ps->perf_tree_idx + 3) % NFRAMES_LOGGED;
 
-    for(int i = 0; i < vec_size(&gpu_ps->perf_trees[write_idx]); i++) {
-    
+    size_t curr = vec_size(&gpu_ps->perf_trees[write_idx]);
+    size_t prev = gpu_ps->last_read_size[write_idx];
+    if(curr == prev)
+        return;
+
+    for(size_t i = prev; i < curr; i++) {
+
         struct perf_entry *pe = &vec_AT(&gpu_ps->perf_trees[write_idx], i);
+
+        /* Cookie copied by value so a later slot reset can't re-target
+         * the queued read at a freshly-generated cookie. */
+        uint32_t bcookie = pe->begin.gpu_cookie;
+        uint32_t ecookie = pe->end.gpu_cookie;
 
         R_PushCmd((struct rcmd){
             .func = R_GL_TimestampForCookie,
             .nargs = 2,
             .args = {
-                &pe->begin.gpu_cookie,
+                R_PushArg(&bcookie, sizeof(uint32_t)),
                 &pe->begin.gpu_ts,
             }
         });
@@ -429,11 +447,12 @@ void Perf_BeginTick(void)
             .func = R_GL_TimestampForCookie,
             .nargs = 2,
             .args = {
-                &pe->end.gpu_cookie,
+                R_PushArg(&ecookie, sizeof(uint32_t)),
                 &pe->end.gpu_ts,
             }
         });
     }
+    gpu_ps->last_read_size[write_idx] = curr;
 }
 
 void Perf_FinishTick(void)
@@ -446,23 +465,15 @@ void Perf_FinishTick(void)
             continue;
 
         struct perf_state *curr = &kh_val(s_thread_state_table, k);
-        /* The stack should always be empty, unless there is 
-         * a missing pop for prior push. In that case, be nice,
-         * and dump some info about where to find it.
-         */
-        while(vec_size(&curr->perf_stack) > 0) {
 
-            uint32_t idx = vec_idx_pop(&curr->perf_stack);
-            assert(idx < vec_size(&curr->perf_trees[curr->perf_tree_idx]));
-            struct perf_entry *pe = &vec_AT(&curr->perf_trees[curr->perf_tree_idx], idx);
-
-            const char *name = name_for_id(curr, pe->name_id);
-            fprintf(stderr, "Unmatched perf marker: %s\n", name);
-        }
-        assert(vec_size(&curr->perf_stack) == 0);
+        /* A non-empty stack means the owning thread is mid-function;
+         * advancing perf_tree_idx would invalidate the stack's indices. */
+        if(vec_size(&curr->perf_stack) > 0)
+            continue;
 
         curr->perf_tree_idx = (curr->perf_tree_idx + 1) % NFRAMES_LOGGED;
         vec_perf_reset(&curr->perf_trees[curr->perf_tree_idx]);
+        curr->last_read_size[curr->perf_tree_idx] = 0;
     }
 
     mi_stats_get(sizeof(mi_stats_t), &s_last_frames_memstats[s_last_idx]);
