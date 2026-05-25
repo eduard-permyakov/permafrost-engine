@@ -50,6 +50,7 @@
 #include "../game/public/game.h"
 
 #include <GL/glew.h>
+#include <SDL.h>
 #include <assert.h>
 
 
@@ -210,11 +211,11 @@ void R_GL_RenderDepthMap(const void *render_private, mat4x4_t *model)
     });
 
     const struct render_private *priv = render_private;
-    R_GL_Shader_InstallProg(priv->shader_prog_dp);
-    R_GL_AnimBindPoseBuff();
+    R_GL_CALL(R_GL_Shader_InstallProg(priv->shader_prog_dp));
+    R_GL_CALL(R_GL_AnimBindPoseBuff());
 
-    glBindVertexArray(priv->mesh.VAO);
-    glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
+    R_GL_CALL(glBindVertexArray(priv->mesh.VAO));
+    R_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts));
 
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
