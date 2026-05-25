@@ -683,6 +683,8 @@ static struct pickle_entry s_pf_dispatch_table[] = {
     {.type = NULL, /* PyAirEntity_type */                 .picklefunc = custom_pickle   },
     {.type = NULL, /* PyGarrisonEntity_type */            .picklefunc = custom_pickle   },
     {.type = NULL, /* PyGarrisonableEntity_type */        .picklefunc = custom_pickle   },
+    {.type = NULL, /* PyPopulationContributorEntity_type */      .picklefunc = custom_pickle },
+    {.type = NULL, /* PyPopulationLimitContributorEntity_type */ .picklefunc = custom_pickle },
     {.type = NULL, /* PyRegion_type*/                     .picklefunc = custom_pickle   },
 };
 
@@ -848,6 +850,8 @@ struct sc_map_entry{
     { NULL, /*&PyAirEntity_type*/           NULL },
     { NULL, /*&PyGarrisonEntity_type*/      NULL },
     { NULL, /*&PyGarrisonableEntity_type*/  NULL },
+    { NULL, /*&PyPopulationContributorEntity_type*/      NULL },
+    { NULL, /*&PyPopulationLimitContributorEntity_type*/ NULL },
     { NULL, /*&PyRegion_type*/              NULL },
     { NULL, /*&_PyWeakref_RefType*/         NULL },
     { NULL, /*PyExc_BaseException*/         NULL },
@@ -1248,6 +1252,8 @@ static void load_subclassable_builtin_refs(void)
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "AirEntity");
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "GarrisonEntity");
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "GarrisonableEntity");
+    s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "PopulationContributorEntity");
+    s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "PopulationLimitContributorEntity");
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "Region");
     s_subclassable_builtin_map[base_idx++].builtin =  &_PyWeakref_RefType;
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyExc_BaseException;
@@ -1361,6 +1367,8 @@ static void load_engine_builtin_types(void)
     s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "AirEntity");
     s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "GarrisonEntity");
     s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "GarrisonableEntity");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "PopulationContributorEntity");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "PopulationLimitContributorEntity");
     s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Region");
 
     for(int i = 0; i < ARR_SIZE(s_pf_dispatch_table); i++) {

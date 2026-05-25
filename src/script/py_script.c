@@ -49,6 +49,7 @@
 #include "public/script.h"
 #include "../entity.h"
 #include "../game/public/game.h"
+#include "../game/population.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../navigation/public/nav.h"
@@ -174,6 +175,13 @@ static PyObject *PyPf_update_faction(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_faction_controllable(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_diplomacy_state(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_diplomacy_state(PyObject *self, PyObject *args);
+
+static PyObject *PyPf_get_population(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_population_limit(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_allied_population(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_enemy_population(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_player_population(PyObject *self);
+static PyObject *PyPf_get_player_population_limit(PyObject *self);
 
 static PyObject *PyPf_get_tile(PyObject *self, PyObject *args);
 static PyObject *PyPf_update_tile(PyObject *self, PyObject *args);
@@ -581,6 +589,31 @@ static PyMethodDef pf_module_methods[] = {
     {"get_diplomacy_state",
     (PyCFunction)PyPf_get_diplomacy_state, METH_VARARGS,
     "Query the diplomacy state of the specified two faction IDs."},
+
+    {"get_population",
+    (PyCFunction)PyPf_get_population, METH_VARARGS,
+    "Returns the current population count for the specified faction ID."},
+
+    {"get_population_limit",
+    (PyCFunction)PyPf_get_population_limit, METH_VARARGS,
+    "Returns the current population limit for the specified faction ID."},
+
+    {"get_allied_population",
+    (PyCFunction)PyPf_get_allied_population, METH_VARARGS,
+    "Returns the total population of factions at peace with the specified faction ID, "
+    "excluding the faction itself."},
+
+    {"get_enemy_population",
+    (PyCFunction)PyPf_get_enemy_population, METH_VARARGS,
+    "Returns the total population of factions at war with the specified faction ID."},
+
+    {"get_player_population",
+    (PyCFunction)PyPf_get_player_population, METH_NOARGS,
+    "Returns the total population of all player-controllable factions."},
+
+    {"get_player_population_limit",
+    (PyCFunction)PyPf_get_player_population_limit, METH_NOARGS,
+    "Returns the total population limit of all player-controllable factions."},
 
     {"get_tile", 
     (PyCFunction)PyPf_get_tile, METH_VARARGS,
@@ -2113,6 +2146,56 @@ static PyObject *PyPf_get_diplomacy_state(PyObject *self, PyObject *args)
         PyErr_SetString(PyExc_TypeError, "Invalid faction ID(s).");
         return NULL;
     }
+}
+
+static PyObject *PyPf_get_population(PyObject *self, PyObject *args)
+{
+    int faction_id;
+    if(!PyArg_ParseTuple(args, "i", &faction_id)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer faction ID.");
+        return NULL;
+    }
+    return PyInt_FromLong(G_Population_Get(faction_id));
+}
+
+static PyObject *PyPf_get_population_limit(PyObject *self, PyObject *args)
+{
+    int faction_id;
+    if(!PyArg_ParseTuple(args, "i", &faction_id)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer faction ID.");
+        return NULL;
+    }
+    return PyInt_FromLong(G_Population_GetLimit(faction_id));
+}
+
+static PyObject *PyPf_get_allied_population(PyObject *self, PyObject *args)
+{
+    int faction_id;
+    if(!PyArg_ParseTuple(args, "i", &faction_id)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer faction ID.");
+        return NULL;
+    }
+    return PyInt_FromLong(G_Population_GetAllied(faction_id));
+}
+
+static PyObject *PyPf_get_enemy_population(PyObject *self, PyObject *args)
+{
+    int faction_id;
+    if(!PyArg_ParseTuple(args, "i", &faction_id)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer faction ID.");
+        return NULL;
+    }
+    return PyInt_FromLong(G_Population_GetEnemy(faction_id));
+}
+
+static PyObject *PyPf_get_player_population(PyObject *self)
+{
+    return PyInt_FromLong(G_Population_GetPlayer());
+}
+
+static PyObject *PyPf_get_player_population_limit(PyObject *self)
+{
+    return PyInt_FromLong(G_Population_GetPlayerLimit());
 }
 
 static PyObject *PyPf_get_tile(PyObject *self, PyObject *args)

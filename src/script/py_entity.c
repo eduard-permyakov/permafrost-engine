@@ -42,6 +42,7 @@
 #include "../asset_load.h"
 #include "../anim/public/anim.h"
 #include "../game/public/game.h"
+#include "../game/population.h"
 #include "../phys/public/phys.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/SDL_vec_rwops.h"
@@ -1215,13 +1216,116 @@ static PyMethodDef PyGarrisonableEntity_methods[] = {
 static PyTypeObject PyGarrisonableEntity_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name      = "pf.GarrisonableEntity",
-    .tp_basicsize = sizeof(PyGarrisonableEntityObject), 
+    .tp_basicsize = sizeof(PyGarrisonableEntityObject),
     .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_doc       = "Permafrost Engine entity that is able to hold a garrison of units. "
                     "This is a subclass of pf.Entity.",
     .tp_methods   = PyGarrisonableEntity_methods,
     .tp_getset    = PyGarrisonableEntity_getset,
     .tp_base      = &PyEntity_type,
+};
+
+/*****************************************************************************/
+/* pf.PopulationContributorEntity                                            */
+/*****************************************************************************/
+
+typedef struct {
+    PyEntityObject super;
+}PyPopulationContributorEntityObject;
+
+static PyObject *PyPopulationContributorEntity_del(PyPopulationContributorEntityObject *self);
+static PyObject *PyPopulationContributorEntity_pickle(PyPopulationContributorEntityObject *self,
+                                                      PyObject *args, PyObject *kwargs);
+static PyObject *PyPopulationContributorEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
+
+static PyMethodDef PyPopulationContributorEntity_methods[] = {
+
+    {"__del__",
+    (PyCFunction)PyPopulationContributorEntity_del, METH_NOARGS,
+    "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
+
+    {"__pickle__",
+    (PyCFunction)PyPopulationContributorEntity_pickle, METH_KEYWORDS,
+    "Serialize a Permafrost Engine population contributor entity to a string."},
+
+    {"__unpickle__",
+    (PyCFunction)PyPopulationContributorEntity_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
+    "Create a new pf.PopulationContributorEntity instance from a string earlier returned from a __pickle__ method. "
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyPopulationContributorEntity_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name      = "pf.PopulationContributorEntity",
+    .tp_basicsize = sizeof(PyPopulationContributorEntityObject),
+    .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc       = "Permafrost Engine entity that counts towards its faction's population total. "
+                    "This is a subclass of pf.Entity.",
+    .tp_methods   = PyPopulationContributorEntity_methods,
+    .tp_base      = &PyEntity_type,
+};
+
+/*****************************************************************************/
+/* pf.PopulationLimitContributorEntity                                       */
+/*****************************************************************************/
+
+typedef struct {
+    PyEntityObject super;
+}PyPopulationLimitContributorEntityObject;
+
+static int       PyPopulationLimitContributorEntity_init(PyPopulationLimitContributorEntityObject *self,
+                                                         PyObject *args, PyObject *kwds);
+static PyObject *PyPopulationLimitContributorEntity_del(PyPopulationLimitContributorEntityObject *self);
+static PyObject *PyPopulationLimitContributorEntity_pickle(PyPopulationLimitContributorEntityObject *self,
+                                                           PyObject *args, PyObject *kwargs);
+static PyObject *PyPopulationLimitContributorEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
+
+static PyObject *PyPopulationLimitContributorEntity_get_limit(
+    PyPopulationLimitContributorEntityObject *self, void *closure);
+static int       PyPopulationLimitContributorEntity_set_limit(
+    PyPopulationLimitContributorEntityObject *self, PyObject *value, void *closure);
+
+static PyGetSetDef PyPopulationLimitContributorEntity_getset[] = {
+    {"population_limit",
+    (getter)PyPopulationLimitContributorEntity_get_limit,
+    (setter)PyPopulationLimitContributorEntity_set_limit,
+    "The amount this entity contributes to its faction's population limit once it is completed.",
+    NULL},
+    {NULL}  /* Sentinel */
+};
+
+static PyMethodDef PyPopulationLimitContributorEntity_methods[] = {
+
+    {"__del__",
+    (PyCFunction)PyPopulationLimitContributorEntity_del, METH_NOARGS,
+    "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
+
+    {"__pickle__",
+    (PyCFunction)PyPopulationLimitContributorEntity_pickle, METH_KEYWORDS,
+    "Serialize a Permafrost Engine population limit contributor entity to a string."},
+
+    {"__unpickle__",
+    (PyCFunction)PyPopulationLimitContributorEntity_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
+    "Create a new pf.PopulationLimitContributorEntity instance from a string earlier returned from a __pickle__ method. "
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyPopulationLimitContributorEntity_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name      = "pf.PopulationLimitContributorEntity",
+    .tp_basicsize = sizeof(PyPopulationLimitContributorEntityObject),
+    .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc       = "Permafrost Engine entity that raises its faction's population limit by a fixed "
+                    "amount once it has been completed. Requires a 'population_limit' keyword argument "
+                    "to __init__. This is a subclass of pf.Entity.",
+    .tp_methods   = PyPopulationLimitContributorEntity_methods,
+    .tp_getset    = PyPopulationLimitContributorEntity_getset,
+    .tp_base      = &PyEntity_type,
+    .tp_init      = (initproc)PyPopulationLimitContributorEntity_init,
 };
 
 /*****************************************************************************/
@@ -1390,6 +1494,12 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
     if(!zombie && PyType_IsSubtype(type, &PyGarrisonableEntity_type))
         extra_flags |= ENTITY_FLAG_GARRISONABLE;
+
+    if(!zombie && PyType_IsSubtype(type, &PyPopulationContributorEntity_type))
+        extra_flags |= ENTITY_FLAG_POPULATION;
+
+    if(!zombie && PyType_IsSubtype(type, &PyPopulationLimitContributorEntity_type))
+        extra_flags |= ENTITY_FLAG_POPULATION_LIMIT;
 
     if(collision)
         extra_flags |= ENTITY_FLAG_COLLISION;
@@ -4409,7 +4519,7 @@ static int PyGarrisonableEntity_set_capacity(PyGarrisonableEntityObject *self,
     return 0;
 }
 
-static PyObject *PyGarrisonableEntity_get_current(PyGarrisonableEntityObject *self, 
+static PyObject *PyGarrisonableEntity_get_current(PyGarrisonableEntityObject *self,
                                                   void *closure)
 {
     if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
@@ -4419,6 +4529,170 @@ static PyObject *PyGarrisonableEntity_get_current(PyGarrisonableEntityObject *se
 
     int current = G_Garrison_GetCurrentGarrisoned(self->super.ent);
     return PyInt_FromLong(current);
+}
+
+static PyObject *PyPopulationContributorEntity_del(PyPopulationContributorEntityObject *self)
+{
+    return s_super_del((PyObject*)self, &PyPopulationContributorEntity_type);
+}
+
+static PyObject *PyPopulationContributorEntity_pickle(PyPopulationContributorEntityObject *self,
+                                                      PyObject *args, PyObject *kwargs)
+{
+    return s_call_super_method("__pickle__", (PyObject*)&PyPopulationContributorEntity_type,
+        (PyObject*)self, args, kwargs);
+}
+
+static PyObject *PyPopulationContributorEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
+{
+    return s_call_super_method("__unpickle__", (PyObject*)&PyPopulationContributorEntity_type,
+        cls, args, kwargs);
+}
+
+static PyObject *PyPopulationLimitContributorEntity_del(PyPopulationLimitContributorEntityObject *self)
+{
+    return s_super_del((PyObject*)self, &PyPopulationLimitContributorEntity_type);
+}
+
+static int PyPopulationLimitContributorEntity_init(PyPopulationLimitContributorEntityObject *self,
+                                                   PyObject *args, PyObject *kwds)
+{
+    PyObject *limit;
+
+    if(!kwds || ((limit = PyDict_GetItemString(kwds, "population_limit")) == NULL)) {
+        PyErr_SetString(PyExc_TypeError,
+            "'population_limit' keyword argument required for initializing pf.PopulationLimitContributorEntity types.");
+        return -1;
+    }
+
+    if(!PyInt_Check(limit)) {
+        PyErr_SetString(PyExc_TypeError, "'population_limit' keyword argument must be an integer.");
+        return -1;
+    }
+
+    G_Population_SetEntityLimit(self->super.ent, PyInt_AS_LONG(limit));
+
+    PyObject *ret = s_call_super_method("__init__",
+        (PyObject*)&PyPopulationLimitContributorEntity_type, (PyObject*)self, args, kwds);
+    if(!ret)
+        return -1;
+    Py_DECREF(ret);
+    return 0;
+}
+
+static PyObject *PyPopulationLimitContributorEntity_pickle(PyPopulationLimitContributorEntityObject *self,
+                                                           PyObject *args, PyObject *kwargs)
+{
+    PyObject *ret = s_call_super_method("__pickle__",
+        (PyObject*)&PyPopulationLimitContributorEntity_type, (PyObject*)self, args, kwargs);
+
+    assert(PyString_Check(ret));
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_stream);
+    CHK_TRUE(SDL_RWwrite(stream, PyString_AS_STRING(ret), PyString_GET_SIZE(ret), 1), fail_stream);
+
+    if(!(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE)) {
+
+        PyObject *limit = PyInt_FromLong(G_Population_GetEntityLimit(self->super.ent));
+        CHK_TRUE(limit, fail_pickle);
+        bool status = S_PickleObjgraph(limit, stream);
+        Py_DECREF(limit);
+        CHK_TRUE(status, fail_pickle);
+    }
+
+    Py_DECREF(ret);
+    ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
+    SDL_RWclose(stream);
+    return ret;
+
+fail_pickle:
+    SDL_RWclose(stream);
+fail_stream:
+    Py_XDECREF(ret);
+    PyErr_SetString(PyExc_RuntimeError, "Unable to pickle pf.PopulationLimitContributorEntity state");
+    return NULL;
+}
+
+static PyObject *PyPopulationLimitContributorEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
+{
+    char tmp;
+    PyObject *ret = NULL;
+
+    PyObject *tuple = s_call_super_method("__unpickle__",
+        (PyObject*)&PyPopulationLimitContributorEntity_type, cls, args, kwargs);
+    if(!tuple)
+        return NULL;
+
+    PyObject *ent;
+    int nread;
+    if(!PyArg_ParseTuple(tuple, "Oi", &ent, &nread)) {
+        Py_DECREF(tuple);
+        return NULL;
+    }
+    Py_INCREF(ent);
+    Py_DECREF(tuple);
+
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_stream);
+
+    PyObject *str = PyTuple_GET_ITEM(args, 0); /* borrowed */
+    CHK_TRUE(SDL_RWwrite(stream, PyString_AS_STRING(str), PyString_GET_SIZE(str), 1), fail_unpickle);
+    PyObject *limit = NULL;
+
+    if(!(G_FlagsGet(((PyPopulationLimitContributorEntityObject*)ent)->super.ent) & ENTITY_FLAG_ZOMBIE)) {
+
+        SDL_RWseek(stream, nread, RW_SEEK_SET);
+        limit = S_UnpickleObjgraph(stream);
+        SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+        CHK_TRUE(limit, fail_unpickle);
+        CHK_TRUE(PyInt_Check(limit), fail_parse);
+
+        nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+        G_Population_SetEntityLimit(((PyPopulationLimitContributorEntityObject*)ent)->super.ent,
+            PyInt_AS_LONG(limit));
+    }
+
+    ret = Py_BuildValue("Oi", ent, nread);
+
+fail_parse:
+    Py_XDECREF(limit);
+fail_unpickle:
+    SDL_RWclose(stream);
+fail_stream:
+    Py_DECREF(ent);
+    if(!ret && !PyErr_Occurred()) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to unpickle pf.PopulationLimitContributorEntity state");
+    }
+    return ret;
+}
+
+static PyObject *PyPopulationLimitContributorEntity_get_limit(
+    PyPopulationLimitContributorEntityObject *self, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
+    int limit = G_Population_GetEntityLimit(self->super.ent);
+    return PyInt_FromLong(limit);
+}
+
+static int PyPopulationLimitContributorEntity_set_limit(
+    PyPopulationLimitContributorEntityObject *self, PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Attribute must be an integer.");
+        return -1;
+    }
+
+    G_Population_SetEntityLimit(self->super.ent, PyInt_AS_LONG(value));
+    return 0;
 }
 
 static PyObject *s_obj_from_attr(const struct attr *attr)
@@ -4653,6 +4927,18 @@ void S_Entity_PyRegister(PyObject *module)
         Py_FatalError("Can't initialize pf.GarrisonableEntity type");
     Py_INCREF(&PyGarrisonableEntity_type);
     PyModule_AddObject(module, "GarrisonableEntity", (PyObject*)&PyGarrisonableEntity_type);
+
+    if(PyType_Ready(&PyPopulationContributorEntity_type) < 0)
+        Py_FatalError("Can't initialize pf.PopulationContributorEntity type");
+    Py_INCREF(&PyPopulationContributorEntity_type);
+    PyModule_AddObject(module, "PopulationContributorEntity",
+        (PyObject*)&PyPopulationContributorEntity_type);
+
+    if(PyType_Ready(&PyPopulationLimitContributorEntity_type) < 0)
+        Py_FatalError("Can't initialize pf.PopulationLimitContributorEntity type");
+    Py_INCREF(&PyPopulationLimitContributorEntity_type);
+    PyModule_AddObject(module, "PopulationLimitContributorEntity",
+        (PyObject*)&PyPopulationLimitContributorEntity_type);
 }
 
 bool S_Entity_Init(void)
