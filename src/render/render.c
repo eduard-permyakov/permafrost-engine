@@ -758,6 +758,18 @@ bool R_Init(const char *base_path)
     });
     assert(status == SS_OKAY);
 
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.log_call_graphs",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false,
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
     return true;
 }
 

@@ -40,6 +40,7 @@
 #include "lib/public/pf_string.h"
 #include "render/public/render.h"
 #include "render/public/render_ctrl.h"
+#include "settings.h"
 
 #include <mimalloc-stats.h>
 
@@ -53,6 +54,7 @@
 #define GPU_STATE_NAME  "GPU"
 #define GPU_STATE_KEY   UINT64_MAX
 #define GPU_TIMER_HZ    (1 * 1000 * 1000 * 1000)
+#define LOG_FREQUENCY   (60)
 
 struct perf_entry{
     union{
@@ -244,6 +246,44 @@ static bool register_gpu_state(void)
 static int positive_modulo(int i, int n)
 {
     return (i % n + n) % n;
+}
+
+/* Pretty-print every thread's call tree from a Perf_Report result to stdout.
+ * Each line is prefixed with "[call-graph]" so the lines can be grepped out
+ * of the rest of the engine's stdout. */
+static void perf_log_call_graph(size_t nthreads, struct perf_info **infos)
+{
+    fprintf(stdout, "[call-graph] === frame ===\n");
+
+    for(size_t i = 0; i < nthreads; i++) {
+
+        struct perf_info *info = infos[i];
+
+        double total = 0.0;
+        for(size_t j = 0; j < info->nentries; j++) {
+            if(info->entries[j].parent_idx < 0)
+                total += info->entries[j].ms_delta;
+        }
+
+        fprintf(stdout, "[call-graph] thread '%s' (%zu entries, %.3fms total)\n",
+            info->threadname, info->nentries, total);
+
+        for(size_t j = 0; j < info->nentries; j++) {
+
+            int depth = 0;
+            int p = info->entries[j].parent_idx;
+            while(p >= 0 && depth < 64) {
+                depth++;
+                p = info->entries[p].parent_idx;
+            }
+
+            fprintf(stdout, "[call-graph]   %*s%-40s %8.3fms\n",
+                depth * 2, "", info->entries[j].funcname,
+                info->entries[j].ms_delta);
+        }
+    }
+
+    fflush(stdout);
 }
 
 /*****************************************************************************/
@@ -485,6 +525,19 @@ void Perf_FinishTick(void)
     uint32_t last_ts = s_last_frames_ms[s_last_idx];
     s_last_frames_ms[s_last_idx] = curr_time - last_ts;
     s_last_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
+
+    struct sval log_setting;
+    if(Settings_Get("pf.debug.log_call_graphs", &log_setting) == SS_OKAY
+    && log_setting.as_bool) {
+        static unsigned s_call_graph_counter = 0;
+        if((s_call_graph_counter++ % LOG_FREQUENCY) == 0) {
+            struct perf_info *infos[32];
+            size_t nthreads = Perf_Report(sizeof(infos)/sizeof(infos[0]), infos);
+            perf_log_call_graph(nthreads, infos);
+            for(size_t i = 0; i < nthreads; i++)
+                free(infos[i]);
+        }
+    }
 }
 
 size_t Perf_Report(size_t maxout, struct perf_info **out)
@@ -526,6 +579,7 @@ size_t Perf_Report(size_t maxout, struct perf_info **out)
         }
         out[ret++] = info;
     }
+
     return ret;
 }
 
