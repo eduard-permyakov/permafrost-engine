@@ -97,6 +97,9 @@ struct render_input{
     const struct camera *cam;
     const struct map    *map;
     bool                 shadows;
+    /* Restrict terrain rendering to chunks at or adjacent to a water chunk.
+     * Set by the water reflection/refraction passes. */
+    bool                 water_only;
     vec3_t               light_pos;
     /* The visible entities to render */
     vec_rstat_t         cam_vis_stat;

@@ -301,6 +301,7 @@ static void render_refraction_tex(bool on, struct render_input in)
     ASSERT_IN_RENDER_THREAD();
     GL_PERF_PUSH_GROUP(0, "water::render_refraction_tex");
     in.shadows = false;
+    in.water_only = true;
 
     glBindFramebuffer(GL_FRAMEBUFFER, s_ctx.refract_fbo);
 
@@ -348,6 +349,7 @@ static void render_reflection_tex(bool on, struct render_input in)
     ASSERT_IN_RENDER_THREAD();
     GL_PERF_PUSH_GROUP(0, "water::render_reflection_tex");
     in.shadows = false;
+    in.water_only = true;
 
     glBindFramebuffer(GL_FRAMEBUFFER, s_ctx.reflect_fbo);
 

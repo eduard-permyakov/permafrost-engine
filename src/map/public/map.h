@@ -103,8 +103,8 @@ void   M_ModelMatrixForChunk(const struct map *map, struct chunkpos p, mat4x4_t 
  * type, this will perform a different action.
  * ------------------------------------------------------------------------
  */
-void   M_RenderVisibleMap(const struct map *map, const struct camera *cam, 
-                          bool shadows, enum render_pass pass);
+void   M_RenderVisibleMap(const struct map *map, const struct camera *cam,
+                          bool shadows, enum render_pass pass, bool near_water_only);
 
 /* ------------------------------------------------------------------------
  * Render a layer over the visible map surface showing which regions are 

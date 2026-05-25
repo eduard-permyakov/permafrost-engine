@@ -60,6 +60,9 @@ struct pfchunk{
      * ------------------------------------------------------------------------
      */
     struct tile     tiles[TILES_PER_CHUNK_HEIGHT * TILES_PER_CHUNK_WIDTH];
+    /* True iff any tile has base_height < 0. Maintained by
+     * M_AL_InitMapFromStream and M_AL_UpdateTile. */
+    bool            has_water;
 };
 
 #endif

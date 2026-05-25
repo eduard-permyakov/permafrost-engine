@@ -598,6 +598,18 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
             return false;
     }
 
+    for(int i = 0; i < num_chunks; i++) {
+
+        struct pfchunk *chunk = &map->chunks[i];
+        chunk->has_water = false;
+        for(int j = 0; j < TILES_PER_CHUNK_HEIGHT * TILES_PER_CHUNK_WIDTH; j++) {
+            if(chunk->tiles[j].base_height < 0) {
+                chunk->has_water = true;
+                break;
+            }
+        }
+    }
+
     generate_wang_indices(map);
 
     for(int i = 0; i < num_chunks; i++) {
@@ -652,6 +664,14 @@ bool M_AL_UpdateTile(struct map *map, const struct tile_desc *desc, const struct
     int old_wang_idx = chunk->tiles[desc->tile_r * TILES_PER_CHUNK_WIDTH + desc->tile_c].wang_idx;
     chunk->tiles[desc->tile_r * TILES_PER_CHUNK_WIDTH + desc->tile_c] = *tile;
     chunk->tiles[desc->tile_r * TILES_PER_CHUNK_WIDTH + desc->tile_c].wang_idx = old_wang_idx;
+
+    chunk->has_water = false;
+    for(int j = 0; j < TILES_PER_CHUNK_HEIGHT * TILES_PER_CHUNK_WIDTH; j++) {
+        if(chunk->tiles[j].base_height < 0) {
+            chunk->has_water = true;
+            break;
+        }
+    }
 
     struct map_resolution res;
     M_GetResolution(map, &res);

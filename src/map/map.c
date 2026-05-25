@@ -84,12 +84,16 @@ static void m_aabb_for_chunk(const struct map *map, struct chunkpos p, struct aa
     assert(out->z_max >= out->z_min);
 }
 
-static bool m_chunk_has_water(const struct pfchunk *chunk)
+static bool m_chunk_or_neighbour_has_water(const struct map *map, int r, int c)
 {
-    for(int i = 0; i < TILES_PER_CHUNK_HEIGHT * TILES_PER_CHUNK_WIDTH; i++) {
-        if(chunk->tiles[i].base_height < 0)
+    for(int dr = -1; dr <= 1; dr++) {
+    for(int dc = -1; dc <= 1; dc++) {
+        int nr = r + dr, nc = c + dc;
+        if(nr < 0 || nr >= map->height || nc < 0 || nc >= map->width)
+            continue;
+        if(map->chunks[nr * map->width + nc].has_water)
             return true;
-    }
+    }}
     return false;
 }
 
@@ -184,17 +188,17 @@ void M_RenderEntireMap(const struct map *map, bool shadows, enum render_pass pas
     R_PushCmd((struct rcmd){ R_GL_MapEnd, 0 });
 }
 
-void M_RenderVisibleMap(const struct map *map, const struct camera *cam, 
-                        bool shadows, enum render_pass pass)
+void M_RenderVisibleMap(const struct map *map, const struct camera *cam,
+                        bool shadows, enum render_pass pass, bool near_water_only)
 {
     struct frustum frustum;
     Camera_MakeFrustum(cam, &frustum);
     vec2_t pos = (vec2_t){map->pos.x, map->pos.z};
     const bool fval = false;
 
-    R_PushCmd((struct rcmd){ 
-        .func = R_GL_MapBegin, 
-        .nargs = 4, 
+    R_PushCmd((struct rcmd){
+        .func = R_GL_MapBegin,
+        .nargs = 4,
         .args = {
             R_PushArg(&shadows, sizeof(shadows)),
             R_PushArg(&pos, sizeof(pos)),
@@ -205,6 +209,9 @@ void M_RenderVisibleMap(const struct map *map, const struct camera *cam,
 
     for(int r = 0; r < map->height; r++) {
     for(int c = 0; c < map->width;  c++) {
+
+        if(near_water_only && !m_chunk_or_neighbour_has_water(map, r, c))
+            continue;
 
         struct aabb chunk_aabb;
         m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
@@ -820,7 +827,7 @@ bool M_WaterMaybeVisible(const struct map *map, const struct camera *cam)
             continue;
 
         const struct pfchunk *chunk = &map->chunks[r * map->width + c];
-        if(m_chunk_has_water(chunk))
+        if(chunk->has_water)
             PERF_RETURN(true);
     }}
     PERF_RETURN(false);

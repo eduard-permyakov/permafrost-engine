@@ -195,7 +195,7 @@ static void g_shadow_pass(struct render_input *in)
     });
 
     if(in->map) {
-        M_RenderVisibleMap(in->map, in->cam, true, RENDER_PASS_DEPTH);
+        M_RenderVisibleMap(in->map, in->cam, true, RENDER_PASS_DEPTH, false);
     }
 
     if(s_gs.use_batch_rendering) {
@@ -254,7 +254,7 @@ static void g_shadow_pass(struct render_input *in)
 static void g_draw_pass(struct render_input *in)
 {
     if(in->map) {
-        M_RenderVisibleMap(in->map, in->cam, in->shadows, RENDER_PASS_REGULAR);
+        M_RenderVisibleMap(in->map, in->cam, in->shadows, RENDER_PASS_REGULAR, in->water_only);
     }
 
     if(s_gs.use_batch_rendering) {
@@ -516,6 +516,7 @@ static void g_create_render_input(struct render_input *out)
     out->cam = s_gs.active_cam;
     out->map = s_gs.prev_tick_map;
     out->shadows = shadows_setting.as_bool;
+    out->water_only = false;
     out->light_pos = s_gs.light_pos;
 
     vec_rstat_init_alloc(&out->cam_vis_stat, stackrealloc, stackfree);
