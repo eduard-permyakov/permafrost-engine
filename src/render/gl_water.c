@@ -108,6 +108,9 @@ struct water_gl_state{
 
 static struct render_water_ctx s_ctx;
 
+/* Render-thread mirror of pf.video.water_rt_scale. */
+float g_water_rt_scale = 0.25f;
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -155,7 +158,7 @@ static int wbuff_width(void)
 
     int viewport[4];
     glGetIntegerv(GL_VIEWPORT, viewport);
-    return viewport[2] / 2.5f;
+    return (int)(viewport[2] * g_water_rt_scale);
 }
 
 static int wbuff_height(int width)

@@ -225,6 +225,13 @@ static bool int_val_validate(const struct sval *new_val)
     return (new_val->type == ST_TYPE_INT);
 }
 
+static bool water_rt_scale_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_FLOAT)
+        && (new_val->as_float >= 0.1f)
+        && (new_val->as_float <= 1.0f);
+}
+
 static void render_set_logmask(int *mask)
 {
     if(!GLEW_KHR_debug)
@@ -251,7 +258,21 @@ static void debug_logmask_commit(const struct sval *new_val)
 
 static void render_set_trace_gpu(const bool *on)
 {
-    g_trace_gpu = *on; 
+    g_trace_gpu = *on;
+}
+
+static void render_set_water_rt_scale(const float *v)
+{
+    g_water_rt_scale = *v;
+}
+
+static void water_rt_scale_commit(const struct sval *new_val)
+{
+    R_PushCmd((struct rcmd){
+        .func = render_set_water_rt_scale,
+        .nargs = 1,
+        .args = { R_PushArg(&new_val->as_float, sizeof(float)) }
+    });
 }
 
 static void trace_gpu_commit(const struct sval *new_val)
@@ -714,11 +735,23 @@ bool R_Init(const char *base_path)
         .name = "pf.video.water_refraction",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
-            .as_bool = true 
+            .as_bool = true
         },
         .prio = 0,
         .validate = bool_val_validate,
         .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.video.water_rt_scale",
+        .val = (struct sval) {
+            .type = ST_TYPE_FLOAT,
+            .as_float = 0.25f
+        },
+        .prio = 0,
+        .validate = water_rt_scale_validate,
+        .commit = water_rt_scale_commit,
     });
     assert(status == SS_OKAY);
 

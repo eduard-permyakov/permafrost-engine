@@ -53,6 +53,10 @@ struct render_private{
     GLuint              vertex_stride;
 };
 
+/* Render-thread mirror of pf.video.water_rt_scale, written via its
+ * commit callback. Defined in gl_water.c. */
+extern float g_water_rt_scale;
+
 /* General */
 void R_Yield(void);
 
