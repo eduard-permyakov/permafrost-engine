@@ -52,6 +52,7 @@
 #include "region.h"
 #include "garrison.h"
 #include "automation.h"
+#include "population.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../anim/public/anim.h"
@@ -1627,6 +1628,7 @@ bool G_Init(void)
     G_Sel_Enable();
     G_Timer_Init();
     G_StorageSite_Init();
+    G_Population_Init();
 
     R_PushCmd((struct rcmd){ R_GL_WaterInit, 0 });
 
@@ -1735,6 +1737,7 @@ void G_ClearState(void)
     G_Sel_Enable();
     G_Fog_Enable();
     G_StorageSite_ClearState();
+    G_Population_ClearState();
 
     s_gs.factions_allocd = 0;
     s_gs.hide_healthbars = false;
@@ -1975,6 +1978,7 @@ void G_Shutdown(void)
 
     R_PushCmd((struct rcmd){ R_GL_WaterShutdown, 0 });
 
+    G_Population_Shutdown();
     G_StorageSite_Shutdown();
     G_Timer_Shutdown();
     G_Sel_Shutdown();
@@ -2301,6 +2305,12 @@ bool G_AddEntity(uint32_t uid, uint32_t flags, vec3_t pos)
     if(flags & ENTITY_FLAG_GARRISONABLE)
         G_Garrison_AddGarrisonable(uid);
 
+    if(flags & ENTITY_FLAG_POPULATION)
+        G_Population_AddContributor(uid);
+
+    if(flags & ENTITY_FLAG_POPULATION_LIMIT)
+        G_Population_AddLimitContributor(uid);
+
     if(flags & ENTITY_FLAG_MOVABLE) {
     
         k = kh_put(entity, s_gs.dynamic, uid, &ret);
@@ -2369,6 +2379,8 @@ bool G_RemoveEntity(uint32_t uid)
     G_StorageSite_RemoveEntity(uid);
     G_Garrison_RemoveGarrison(uid);
     G_Garrison_RemoveGarrisonable(uid);
+    G_Population_RemoveContributor(uid);
+    G_Population_RemoveLimitContributor(uid);
     G_Automation_RemoveEntity(uid);
     G_Region_RemoveEnt(uid);
     G_Pos_Delete(uid);
@@ -2616,6 +2628,7 @@ void G_SetFactionID(uint32_t uid, int faction_id)
     G_StorageSite_UpdateFaction(uid, old, faction_id);
     G_Resource_UpdateFactionID(uid, old, faction_id);
     G_Building_UpdateFactionID(uid, old, faction_id);
+    G_Population_UpdateFaction(uid, old, faction_id);
 }
 
 int G_GetFactionID(uint32_t uid)
@@ -2978,6 +2991,8 @@ void G_Zombiefy(uint32_t uid, bool invis)
     G_StorageSite_RemoveEntity(uid);
     G_Garrison_RemoveGarrison(uid);
     G_Garrison_RemoveGarrisonable(uid);
+    G_Population_RemoveContributor(uid);
+    G_Population_RemoveLimitContributor(uid);
     G_Automation_RemoveEntity(uid);
 
     G_SetVisionRange(uid, 0.0f);
@@ -2997,6 +3012,8 @@ void G_Zombiefy(uint32_t uid, bool invis)
     flags &= ~ENTITY_FLAG_GARRISON;
     flags &= ~ENTITY_FLAG_GARRISONABLE;
     flags &= ~ENTITY_FLAG_GARRISONED;
+    flags &= ~ENTITY_FLAG_POPULATION;
+    flags &= ~ENTITY_FLAG_POPULATION_LIMIT;
 
     flags |= ENTITY_FLAG_ZOMBIE;
 

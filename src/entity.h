@@ -73,7 +73,9 @@ enum{
     ENTITY_FLAG_AIR                 = (1 << 15),
     ENTITY_FLAG_GARRISON            = (1 << 16),
     ENTITY_FLAG_GARRISONABLE        = (1 << 17),
-    ENTITY_FLAG_GARRISONED          = (1 << 18)
+    ENTITY_FLAG_GARRISONED          = (1 << 18),
+    ENTITY_FLAG_POPULATION          = (1 << 19),
+    ENTITY_FLAG_POPULATION_LIMIT    = (1 << 20)
 };
 
 struct entity{
