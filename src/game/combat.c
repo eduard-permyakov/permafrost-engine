@@ -2850,6 +2850,9 @@ void G_Combat_SetProjDesc(uint32_t uid, const struct proj_desc *pd)
     if(pd->flags & PROJ_HAS_IMPACT_SPRITE) {
         copy->impact_sprite.filename = pf_strdup(pd->impact_sprite.filename);
     }
+    if(pd->flags & PROJ_HAS_TRAIL_SPRITE) {
+        copy->trail_sprite.filename = pf_strdup(pd->trail_sprite.filename);
+    }
 
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_SET_PROJ_DESC,
