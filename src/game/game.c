@@ -86,7 +86,6 @@
 #define CAM_SPEED           0.20f
 #define CAM_SENS            0.05f
 #define MAX_VIS_RANGE       150.0f
-#define WATER_ADJ_DISTANCE  25.0f
 
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
@@ -1407,49 +1406,38 @@ static void g_remove_queued(void)
     vec_entity_reset(&s_gs.removed);
 }
 
+/* Cheap chunk-granularity prune: drop entities whose chunk (and its 8
+ * neighbours) have no water at all. False positives are acceptable here. */
 static void g_prune_water_input(struct render_input *in)
 {
     PERF_ENTER();
 
     assert(s_gs.map);
-    uint16_t pm = g_player_mask();
 
     for(int i = vec_size(&in->cam_vis_stat) - 1; i >= 0; i--) {
-
         const struct ent_stat_rstate *rstate = &vec_AT(&in->cam_vis_stat, i);
-        vec2_t xz_pos = G_Pos_GetXZ(rstate->uid);
-
-        if(!G_Fog_NearVisibleWater(pm, xz_pos, WATER_ADJ_DISTANCE)) {
+        if(!M_PointHasNearbyWater(s_gs.map, G_Pos_GetXZ(rstate->uid))) {
             vec_rstat_del(&in->cam_vis_stat, i);
         }
     }
 
     for(int i = vec_size(&in->light_vis_stat) - 1; i >= 0; i--) {
-
         const struct ent_stat_rstate *rstate = &vec_AT(&in->light_vis_stat, i);
-        vec2_t xz_pos = G_Pos_GetXZ(rstate->uid);
-
-        if(!G_Fog_NearVisibleWater(pm, xz_pos, WATER_ADJ_DISTANCE)) {
+        if(!M_PointHasNearbyWater(s_gs.map, G_Pos_GetXZ(rstate->uid))) {
             vec_rstat_del(&in->light_vis_stat, i);
         }
     }
 
     for(int i = vec_size(&in->cam_vis_anim) - 1; i >= 0; i--) {
-
         const struct ent_anim_rstate *rstate = &vec_AT(&in->cam_vis_anim, i);
-        vec2_t xz_pos = G_Pos_GetXZ(rstate->uid);
-
-        if(!G_Fog_NearVisibleWater(pm, xz_pos, WATER_ADJ_DISTANCE)) {
+        if(!M_PointHasNearbyWater(s_gs.map, G_Pos_GetXZ(rstate->uid))) {
             vec_ranim_del(&in->cam_vis_anim, i);
         }
     }
 
     for(int i = vec_size(&in->light_vis_anim) - 1; i >= 0; i--) {
-
         const struct ent_anim_rstate *rstate = &vec_AT(&in->light_vis_anim, i);
-        vec2_t xz_pos = G_Pos_GetXZ(rstate->uid);
-
-        if(!G_Fog_NearVisibleWater(pm, xz_pos, WATER_ADJ_DISTANCE)) {
+        if(!M_PointHasNearbyWater(s_gs.map, G_Pos_GetXZ(rstate->uid))) {
             vec_ranim_del(&in->light_vis_anim, i);
         }
     }

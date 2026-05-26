@@ -390,6 +390,13 @@ bool M_PointInsideMap(const struct map *map, vec2_t xz)
         && (xz.z >= map->pos.z && xz.z <= map->pos.z + height);
 }
 
+bool M_PointHasNearbyWater(const struct map *map, vec2_t xz_pos)
+{
+    int chunk_r = CLAMP( (xz_pos.z - map->pos.z) / (TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE), 0, map->height-1);
+    int chunk_c = CLAMP(-(xz_pos.x - map->pos.x) / (TILES_PER_CHUNK_WIDTH  * X_COORDS_PER_TILE), 0, map->width-1);
+    return m_chunk_or_neighbour_has_water(map, chunk_r, chunk_c);
+}
+
 vec2_t M_ClampedMapCoordinate(const struct map *map, vec2_t xz)
 {
     const float EPSILON = (1.0f/1024);

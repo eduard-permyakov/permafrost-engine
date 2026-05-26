@@ -272,6 +272,16 @@ bool   M_PointOverWater(const struct map *map, vec2_t pos);
 bool   M_PointOverLand(const struct map *map, vec2_t pos);
 
 /* ------------------------------------------------------------------------
+ * Conservative chunk-granularity test for whether xz_pos is near any
+ * water tile. Returns true if the chunk containing xz_pos or any of its
+ * 8 neighbours has water. False positives possible (chunk size >> the
+ * actual proximity threshold); intended for cheap pruning where extra
+ * positives are acceptable.
+ * ------------------------------------------------------------------------
+ */
+bool   M_PointHasNearbyWater(const struct map *map, vec2_t xz_pos);
+
+/* ------------------------------------------------------------------------
  * Returns true if the tile has at least one adjacent tile over water.
  * ------------------------------------------------------------------------
  */
