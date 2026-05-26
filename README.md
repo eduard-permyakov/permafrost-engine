@@ -68,7 +68,7 @@ Download the free demo on [Steam](https://store.steampowered.com/app/1309720/EVE
 * Pathfinding of Land, Water, and Air units
 * Movement and pathfinding computations accelerated with parallelism
 * GPU-based crowd simulation with compute shaders
-* Efficient spatial indexing using a quadtree
+* Efficient spatial indexing using a SIMD-accelerated bitmap grid
 * Efficient real-time tracking of entity membership to dynamic spatial regions
 * Audio system supporting positional effects and multiple channels of global effects
 * RTS minimap
