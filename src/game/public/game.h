@@ -333,7 +333,7 @@ float G_Combat_GetRange(uint32_t uid);
 void  G_Combat_SetProjDesc(uint32_t uid, const struct proj_desc *pd);
 void  G_Combat_SetProjFireDesc(uint32_t uid, const struct proj_fire_desc *fd);
 void  G_Combat_SetCorpseModel(uint32_t uid, const char *dir, const char *pfobj, vec3_t scale);
-
+bool  G_Combat_GetHPDisplay(uint32_t uid, int *out_curr, int *out_max);
 enum combat_stance G_Combat_GetStance(uint32_t uid);
 
 /*###########################################################################*/

@@ -2460,6 +2460,18 @@ bool G_Combat_HasWork(void)
     return (queue_size(s_combat_commands) > 0);
 }
 
+bool G_Combat_GetHPDisplay(uint32_t uid, int *out_curr, int *out_max)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct combatstate *cs = combatstate_get(uid);
+    if(!cs)
+        return false;
+    *out_curr = cs->current_hp;
+    *out_max  = cs->stats.max_hp;
+    return true;
+}
+
 void G_Combat_FlushWork(void)
 {
     combat_finish_work();

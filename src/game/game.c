@@ -330,7 +330,7 @@ static void g_render_healthbars(void)
     STALLOC(int, ent_yoffsets, max_ents);
 
     for(int i = 0; i < max_ents; i++) {
-    
+
         uint32_t curr = vec_AT(&s_gs.visible, i);
         uint32_t flags = G_FlagsGet(curr);
 
@@ -343,8 +343,8 @@ static void g_render_healthbars(void)
         if(flags & ENTITY_FLAG_ZOMBIE)
             continue;
 
-        int max_health = G_Combat_GetMaxHP(curr);
-        int curr_health = G_Combat_GetCurrentHP(curr);
+        int curr_health = 0, max_health = 0;
+        G_Combat_GetHPDisplay(curr, &curr_health, &max_health);
 
         if(curr_health == 0 || max_health == 0)
             continue;
@@ -352,7 +352,7 @@ static void g_render_healthbars(void)
             continue;
 
         int yoffset = -20;
-        if((G_FlagsGet(curr) & ENTITY_FLAG_STORAGE_SITE) && G_StorageSite_GetShowUI()) {
+        if((flags & ENTITY_FLAG_STORAGE_SITE) && G_StorageSite_GetShowUI()) {
             yoffset += G_StorageSite_GetWindowHeight(curr) / 8.0f;
         }
 
