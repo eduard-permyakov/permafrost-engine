@@ -46,7 +46,7 @@
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 #include "../lib/public/vec.h"
-#include "../lib/public/quadtree.h"
+#include "../lib/public/bitmap_grid.h"
 #include "../lib/public/pf_string.h"
 
 #include <stdint.h>
@@ -78,16 +78,16 @@ struct al_effect{
 VEC_TYPE(effect, struct al_effect)
 VEC_IMPL(static inline, effect, struct al_effect)
 
-QUADTREE_TYPE(effect, struct al_effect)
-QUADTREE_PROTOTYPES(static, effect, struct al_effect)
-QUADTREE_IMPL(static, effect, struct al_effect)
+BITMAP_GRID_TYPE(effect, struct al_effect)
+BITMAP_GRID_PROTOTYPES(static, effect, struct al_effect)
+BITMAP_GRID_IMPL(static, effect, struct al_effect)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
 static vec_effect_t     s_effects;
-static qt_effect_t      s_effect_tree;
+static bg_effect_t      s_effect_tree;
 static vec_effect_t     s_active;
 static ALfloat          s_effect_volume = 5.0f;
 
@@ -113,7 +113,7 @@ static void audio_update_active_set(vec_effect_t *active)
 
     vec2_t center = Audio_ListenerPosXZ();
     struct al_effect potential[512];
-    size_t npotential = qt_effect_inrange_circle(&s_effect_tree, center.x, center.z, HEARING_RANGE,
+    size_t npotential = bg_effect_inrange_circle(&s_effect_tree, center.x, center.z, HEARING_RANGE,
         potential, ARR_SIZE(potential));
 
     for(int i = 0; i < npotential; i++) {
@@ -205,6 +205,11 @@ static void on_update_start(void *user, void *event)
 {
     PERF_PUSH("audio_effect::on_update_start");
 
+    /* Pack the effect bitmap-grid once per frame so range queries (used to
+     * select active sources) hit the warm packed runs.
+     */
+    bg_effect_cleanup(&s_effect_tree);
+
     vec_effect_t prev, added, removed;
     vec_effect_init(&prev);
     vec_effect_init(&added);
@@ -268,9 +273,9 @@ static void on_new_map(void *user, void *event)
     float zmin = center.z - (res.tile_h * res.chunk_h * Z_COORDS_PER_TILE) / 2.0f;
     float zmax = center.z + (res.tile_h * res.chunk_h * Z_COORDS_PER_TILE) / 2.0f;
 
-    qt_effect_destroy(&s_effect_tree);
-    qt_effect_init(&s_effect_tree, xmin, xmax, zmin, zmax, effects_equal);
-    qt_effect_reserve(&s_effect_tree, 4096);
+    bg_effect_destroy(&s_effect_tree);
+    bg_effect_init(&s_effect_tree, xmin, xmax, zmin, zmax, effects_equal);
+    bg_effect_reserve(&s_effect_tree, 4096);
 }
 
 static void on_1hz_tick(void *user, void *event)
@@ -289,7 +294,7 @@ static void on_1hz_tick(void *user, void *event)
 
         alDeleteSources(1, &curr.source);
         vec_effect_del(&s_effects, i);
-        qt_effect_delete(&s_effect_tree, curr.pos.x, curr.pos.z, curr);
+        bg_effect_delete(&s_effect_tree, curr.pos.x, curr.pos.z, curr);
     }
 
     assert(s_effect_tree.nrecs == vec_size(&s_effects));
@@ -479,7 +484,7 @@ static bool audio_load_effect(SDL_RWops *stream)
             .source = source
         };
         vec_effect_push(&s_effects, effect);
-        qt_effect_insert(&s_effect_tree, pos.x, pos.z, effect);
+        bg_effect_insert(&s_effect_tree, pos.x, pos.z, effect);
 
         if(state == AL_PLAYING || state == AL_PAUSED) {
             vec_effect_push(&s_active, effect);
@@ -498,15 +503,15 @@ bool Audio_Effect_Init(void)
     if(!vec_effect_resize(&s_effects, 4096))
         goto fail_vec;
 
-    /* When no map is loaded, pick some arbitrary bounds for the 
-     * quadtree. They will be updated for the map size when it is 
-     * loaded. 
+    /* When no map is loaded, pick some arbitrary bounds for the
+     * bitmap_grid. They will be updated for the map size when it is
+     * loaded.
      */
     const float min = -1024.0;
     const float max = 1024.0;
 
-    qt_effect_init(&s_effect_tree, min, max, min, max, effects_equal);
-    if(!qt_effect_reserve(&s_effect_tree, 4096))
+    bg_effect_init(&s_effect_tree, min, max, min, max, effects_equal);
+    if(!bg_effect_reserve(&s_effect_tree, 4096))
         goto fail_tree;
 
     vec_effect_init(&s_active);
@@ -522,7 +527,7 @@ bool Audio_Effect_Init(void)
     return true;
 
 fail_active:
-    qt_effect_destroy(&s_effect_tree);
+    bg_effect_destroy(&s_effect_tree);
 fail_tree:
     vec_effect_destroy(&s_effects);
 fail_vec:
@@ -549,7 +554,7 @@ void Audio_Effect_Shutdown(void)
 
     vec_effect_destroy(&s_active);
     vec_effect_destroy(&s_effects);
-    qt_effect_destroy(&s_effect_tree);
+    bg_effect_destroy(&s_effect_tree);
 }
 
 bool Audio_Effect_Add(vec3_t pos, const char *track)
@@ -576,7 +581,7 @@ bool Audio_Effect_Add(vec3_t pos, const char *track)
     };
 
     vec_effect_push(&s_effects, effect);
-    qt_effect_insert(&s_effect_tree, pos.x, pos.z, effect);
+    bg_effect_insert(&s_effect_tree, pos.x, pos.z, effect);
     return true;
 }
 
@@ -615,7 +620,7 @@ void Audio_EffectClearState(void)
     }
     vec_effect_reset(&s_active);
     vec_effect_reset(&s_effects);
-    qt_effect_clear(&s_effect_tree);
+    bg_effect_clear(&s_effect_tree);
 }
 
 bool Audio_EffectSaveState(struct SDL_RWops *stream)

@@ -43,6 +43,7 @@
 #include "region.h"
 #include "public/game.h"
 #include "../main.h"
+#include "../event.h"
 #include "../perf.h"
 #include "../sched.h"
 #include "../lib/public/mem.h"
@@ -55,7 +56,7 @@
 #include <float.h>
 
 
-QUADTREE_IMPL(extern, ent, uint32_t)
+BITMAP_GRID_IMPL(extern, ent, uint32_t)
 __KHASH_IMPL(pos,  extern, khint32_t, vec3_t, 1, kh_int_hash_func, kh_int_hash_equal)
 
 #define POSBUF_INIT_SIZE (16384)
@@ -69,8 +70,8 @@ __KHASH_IMPL(pos,  extern, khint32_t, vec3_t, 1, kh_int_hash_func, kh_int_hash_e
 /*****************************************************************************/
 
 static khash_t(pos) *s_postable;
-/* The quadtree is always synchronized with the postable, at function call boundaries */
-static qt_ent_t      s_postree;
+/* The bitmap_grid is always synchronized with the postable, at function call boundaries */
+static bg_ent_t      s_postree;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -121,7 +122,7 @@ bool G_Pos_Set(uint32_t uid, vec3_t pos)
 
     if(overwrite) {
         vec3_t old_pos = kh_val(s_postable, k);
-        bool ret = qt_ent_delete(&s_postree, old_pos.x, old_pos.z, uid);
+        bool ret = bg_ent_delete(&s_postree, old_pos.x, old_pos.z, uid);
         assert(ret);
 
         G_Combat_RemoveRef(G_GetFactionID(uid), (vec2_t){old_pos.x, old_pos.z});
@@ -129,14 +130,14 @@ bool G_Pos_Set(uint32_t uid, vec3_t pos)
         G_Fog_RemoveVision((vec2_t){old_pos.x, old_pos.z}, G_GetFactionID(uid), vrange);
     }
 
-    if(!qt_ent_insert(&s_postree, pos.x, pos.z, uid))
+    if(!bg_ent_insert(&s_postree, pos.x, pos.z, uid))
         return false;
 
     if(!overwrite) {
         int ret;
         kh_put(pos, s_postable, uid, &ret); 
         if(ret == -1) {
-            qt_ent_delete(&s_postree, pos.x, pos.z, uid);
+            bg_ent_delete(&s_postree, pos.x, pos.z, uid);
             return false;
         }
         k = kh_get(pos, s_postable, uid);
@@ -200,7 +201,7 @@ void G_Pos_Delete(uint32_t uid)
     vec3_t pos = kh_val(s_postable, k);
     kh_del(pos, s_postable, k);
 
-    bool ret = qt_ent_delete(&s_postree, pos.x, pos.z, uid);
+    bool ret = bg_ent_delete(&s_postree, pos.x, pos.z, uid);
     assert(ret);
     assert(kh_size(s_postable) == s_postree.nrecs);
 }
@@ -227,8 +228,8 @@ void G_Pos_Ungarrison(uint32_t uid, vec3_t pos)
     assert(k != kh_end(s_postable));
 
     vec3_t old_pos = kh_val(s_postable, k);
-    qt_ent_delete(&s_postree, old_pos.x, old_pos.z, uid);
-    qt_ent_insert(&s_postree, pos.x, pos.z, uid);
+    bg_ent_delete(&s_postree, old_pos.x, old_pos.z, uid);
+    bg_ent_insert(&s_postree, pos.x, pos.z, uid);
 
     kh_val(s_postable, k) = pos;
     float vrange = G_GetVisionRange(uid);
@@ -236,6 +237,18 @@ void G_Pos_Ungarrison(uint32_t uid, vec3_t pos)
     G_Combat_AddRef(G_GetFactionID(uid), (vec2_t){pos.x, pos.z});
     G_Region_AddRef(uid, (vec2_t){pos.x, pos.z});
     G_Fog_AddVision((vec2_t){pos.x, pos.z}, G_GetFactionID(uid), vrange);
+}
+
+/* Once-per-frame hook: pack the pool back into a contiguous cell-major layout
+ * and prune stale coarse-bitmap bits. Lets the wide-query fast path stay
+ * armed on the steady state and keeps the per-cell scans hitting the warm
+ * packed runs instead of overflow chains.
+ */
+static void on_update_start(void *user, void *event)
+{
+    PERF_PUSH("position::on_update_start");
+    bg_ent_cleanup(&s_postree);
+    PERF_POP();
 }
 
 bool G_Pos_Init(const struct map *map)
@@ -257,12 +270,13 @@ bool G_Pos_Init(const struct map *map)
     float zmin = center.z - (res.tile_h * res.chunk_h * Z_COORDS_PER_TILE) / 2.0f;
     float zmax = center.z + (res.tile_h * res.chunk_h * Z_COORDS_PER_TILE) / 2.0f;
 
-    qt_ent_init(&s_postree, xmin, xmax, zmin, zmax, uids_equal);
-    if(!qt_ent_reserve(&s_postree, POSBUF_INIT_SIZE)) {
+    bg_ent_init(&s_postree, xmin, xmax, zmin, zmax, uids_equal);
+    if(!bg_ent_reserve(&s_postree, POSBUF_INIT_SIZE)) {
         kh_destroy(pos, s_postable);
         return false;
     }
 
+    E_Global_Register(EVENT_UPDATE_START, on_update_start, NULL, G_ALL);
     return true;
 }
 
@@ -270,23 +284,24 @@ void G_Pos_Shutdown(void)
 {
     ASSERT_IN_MAIN_THREAD();
 
+    E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
     kh_destroy(pos, s_postable);
-    qt_ent_destroy(&s_postree);
+    bg_ent_destroy(&s_postree);
 }
 
 int G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout)
 {
     PERF_ENTER();
-    int ret = qt_ent_inrange_rect(&s_postree, 
+    int ret = bg_ent_inrange_rect(&s_postree, 
         xz_min.x, xz_max.x, xz_min.z, xz_max.z, out, maxout);
     ret = filter_garrisoned(NULL, out, ret);
     PERF_RETURN(ret);
 }
 
-int G_Pos_EntsInRectFrom(qt_ent_t *tree, khash_t(id) *flags,
+int G_Pos_EntsInRectFrom(bg_ent_t *tree, khash_t(id) *flags,
                          vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout)
 {
-    return qt_ent_inrange_rect(tree, xz_min.x, xz_max.x, xz_min.z, xz_max.z, out, maxout);
+    return bg_ent_inrange_rect(tree, xz_min.x, xz_max.x, xz_min.z, xz_max.z, out, maxout);
 }
 
 int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout,
@@ -297,7 +312,7 @@ int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t
 
     STALLOC(uint32_t, ent_ids, maxout);
 
-    int ntotal = qt_ent_inrange_rect(&s_postree, 
+    int ntotal = bg_ent_inrange_rect(&s_postree, 
         xz_min.x, xz_max.x, xz_min.z, xz_max.z, ent_ids, maxout);
     ntotal = filter_garrisoned(NULL, ent_ids, ntotal);
     int ret = 0;
@@ -318,7 +333,7 @@ int G_Pos_EntsInCircle(vec2_t xz_point, float range, uint32_t *out, size_t maxou
 {
     PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
-    int ret = qt_ent_inrange_circle(&s_postree, 
+    int ret = bg_ent_inrange_circle(&s_postree, 
         xz_point.x, xz_point.z, range, out, maxout);
     ret = filter_garrisoned(NULL, out, ret);
     PERF_RETURN(ret);
@@ -331,31 +346,36 @@ int G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, uint32_t *out, size
     return G_Pos_EntsInCircleWithPredFrom(&s_postree, NULL, xz_point, range, out, maxout, predicate, arg);
 }
 
-qt_ent_t *G_Pos_CopyQuadTree(void)
+bg_ent_t *G_Pos_CopyBitmapGrid(void)
 {
-    qt_ent_t *ret = malloc(sizeof(qt_ent_t));
+    ASSERT_IN_MAIN_THREAD();
+    /* Pack before snapshotting so the worker's copy keeps the wide-query
+     * fast path armed and avoids per-cell overflow walks.
+     */
+    bg_ent_cleanup(&s_postree);
+    bg_ent_t *ret = malloc(sizeof(bg_ent_t));
     if(!ret)
         return NULL;
-    qt_ent_copy(&s_postree, ret);
+    bg_ent_copy(&s_postree, ret);
     return ret;
 }
 
-void G_Pos_DestroyQuadTree(qt_ent_t *tree)
+void G_Pos_DestroyBitmapGrid(bg_ent_t *tree)
 {
-    qt_ent_destroy(tree);
+    bg_ent_destroy(tree);
     free(tree);
 }
 
-int G_Pos_EntsInCircleFrom(qt_ent_t *tree, khash_t(id) *flags, vec2_t xz_point, float range, 
+int G_Pos_EntsInCircleFrom(bg_ent_t *tree, khash_t(id) *flags, vec2_t xz_point, float range, 
                            uint32_t *out, size_t maxout)
 {
     PERF_ENTER();
-    int ret = qt_ent_inrange_circle(tree, xz_point.x, xz_point.z, range, out, maxout);
+    int ret = bg_ent_inrange_circle(tree, xz_point.x, xz_point.z, range, out, maxout);
     ret = filter_garrisoned(flags, out, ret);
     PERF_RETURN(ret);
 }
 
-int G_Pos_EntsInCircleWithPredFrom(qt_ent_t *tree, khash_t(id) *flags, vec2_t xz_point, float range, 
+int G_Pos_EntsInCircleWithPredFrom(bg_ent_t *tree, khash_t(id) *flags, vec2_t xz_point, float range, 
                                    uint32_t *out, size_t maxout,
                                    bool (*predicate)(uint32_t ent, void *arg), void *arg)
 {
@@ -364,7 +384,7 @@ int G_Pos_EntsInCircleWithPredFrom(qt_ent_t *tree, khash_t(id) *flags, vec2_t xz
 
     STALLOC(uint32_t, ent_ids, maxout);
 
-    int ntotal = qt_ent_inrange_circle(tree, 
+    int ntotal = bg_ent_inrange_circle(tree, 
         xz_point.x, xz_point.z, range, ent_ids, maxout);
     ntotal = filter_garrisoned(flags, ent_ids, ntotal);
     int ret = 0;
@@ -391,20 +411,20 @@ uint32_t G_Pos_NearestWithPred(vec2_t xz_point,
     assert(Sched_UsingBigStack());
 
     uint32_t ent_ids[MAX_SEARCH_ENTS];
-    const float qt_len = MAX(s_postree.xmax - s_postree.xmin, s_postree.ymax - s_postree.ymin);
+    const float bg_len = MAX(s_postree.xmax - s_postree.xmin, s_postree.ymax - s_postree.ymin);
     float len = (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE) / 8.0f;
 
     if(max_range == 0.0) {
-        max_range = qt_len;
+        max_range = bg_len;
     }
-    max_range = MIN(qt_len, max_range);
+    max_range = MIN(bg_len, max_range);
 
     while(len <= max_range) {
 
         float min_dist = FLT_MAX;
         uint32_t ret = NULL_UID;
 
-        int num_cands = qt_ent_inrange_circle(&s_postree, xz_point.x, xz_point.z,
+        int num_cands = bg_ent_inrange_circle(&s_postree, xz_point.x, xz_point.z,
             len, ent_ids, ARR_SIZE(ent_ids));
         num_cands = filter_garrisoned(NULL, ent_ids, num_cands);
 

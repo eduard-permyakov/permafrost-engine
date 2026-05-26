@@ -341,7 +341,7 @@ enum combat_stance G_Combat_GetStance(uint32_t uid);
 /*###########################################################################*/
 
 struct kh_id_s;
-struct qt_ent_s;
+struct bg_ent_s;
 
 bool           G_Pos_Set(uint32_t uid, vec3_t pos);
 vec3_t         G_Pos_Get(uint32_t uid);
@@ -351,7 +351,7 @@ vec3_t         G_Pos_GetFrom(struct kh_pos_s *table, uint32_t uid);
 vec2_t         G_Pos_GetXZFrom(struct kh_pos_s *table, uint32_t uid);
 
 int            G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout);
-int            G_Pos_EntsInRectFrom(struct qt_ent_s *tree, struct kh_id_s *flags,
+int            G_Pos_EntsInRectFrom(struct bg_ent_s *tree, struct kh_id_s *flags,
                                     vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout);
 int            G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout,
                                         bool (*predicate)(uint32_t ent, void *arg), void *arg);

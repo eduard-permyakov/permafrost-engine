@@ -39,12 +39,12 @@
 #include "game_private.h"
 #include "../pf_math.h"
 #include "../lib/public/khash.h"
-#include "../lib/public/quadtree.h"
+#include "../lib/public/bitmap_grid.h"
 
 struct map;
 
-QUADTREE_TYPE(ent, uint32_t)
-QUADTREE_PROTOTYPES(extern, ent, uint32_t)
+BITMAP_GRID_TYPE(ent, uint32_t)
+BITMAP_GRID_PROTOTYPES(extern, ent, uint32_t)
 
 KHASH_DECLARE(pos, khint32_t, vec3_t)
 
@@ -54,11 +54,11 @@ void      G_Pos_Delete(uint32_t uid);
 size_t    G_Pos_UploadFrom(khash_t(pos) *table, khash_t(id) *ent_gpu_id_table,
                            const struct map *map);
 
-qt_ent_t *G_Pos_CopyQuadTree(void);
-void      G_Pos_DestroyQuadTree(qt_ent_t *tree);
-int       G_Pos_EntsInCircleFrom(qt_ent_t *tree, khash_t(id) *flags, vec2_t xz_point, float range, 
+bg_ent_t *G_Pos_CopyBitmapGrid(void);
+void      G_Pos_DestroyBitmapGrid(bg_ent_t *tree);
+int       G_Pos_EntsInCircleFrom(bg_ent_t *tree, khash_t(id) *flags, vec2_t xz_point, float range, 
                                  uint32_t *out, size_t maxout);
-int       G_Pos_EntsInCircleWithPredFrom(qt_ent_t *tree, khash_t(id) *flags, 
+int       G_Pos_EntsInCircleWithPredFrom(bg_ent_t *tree, khash_t(id) *flags, 
                                          vec2_t xz_point, float range, 
                                          uint32_t *out, size_t maxout,
                                          bool (*predicate)(uint32_t ent, void *arg), void *arg);

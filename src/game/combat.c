@@ -198,7 +198,7 @@ struct combat_gamestate{
     bool                   fog_enabled;
     khash_t(id)           *flags;
     khash_t(pos)          *positions;
-    qt_ent_t              *postree;
+    bg_ent_t              *postree;
     void                  *transforms;
     khash_t(range)        *sel_radiuses;
     khash_t(id)           *faction_ids;
@@ -1972,7 +1972,7 @@ static void combat_copy_gamestate(void)
     s_combat_work.gamestate.fog_enabled = G_Fog_Enabled();
     s_combat_work.gamestate.flags = G_FlagsCopyTable();
     s_combat_work.gamestate.positions = G_Pos_CopyTable();
-    s_combat_work.gamestate.postree = G_Pos_CopyQuadTree();
+    s_combat_work.gamestate.postree = G_Pos_CopyBitmapGrid();
     s_combat_work.gamestate.transforms = Entity_CopyTransforms();
     s_combat_work.gamestate.sel_radiuses = G_SelectionRadiusCopyTable();
     s_combat_work.gamestate.faction_ids = G_FactionIDCopyTable();
@@ -1995,7 +1995,7 @@ static void combat_release_gamestate(void)
         s_combat_work.gamestate.positions = NULL;
     }
     if(s_combat_work.gamestate.postree) {
-        G_Pos_DestroyQuadTree(s_combat_work.gamestate.postree);
+        G_Pos_DestroyBitmapGrid(s_combat_work.gamestate.postree);
         s_combat_work.gamestate.postree = NULL;
     }
     if(s_combat_work.gamestate.transforms) {

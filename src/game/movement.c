@@ -274,7 +274,7 @@ struct move_task_arg{
 struct move_gamestate{
     khash_t(id)           *flags;
     khash_t(pos)          *positions;
-    qt_ent_t              *postree;
+    bg_ent_t              *postree;
     khash_t(range)        *sel_radiuses;
     khash_t(id)           *faction_ids;
     khash_t(id)           *ent_gpu_id_map;
@@ -2526,7 +2526,7 @@ static void do_add_entity(uint32_t uid, vec3_t pos, float selection_radius, int 
     assert(ret != -1);
     kh_val(s_move_work.gamestate.positions, k) = pos;
 
-    qt_ent_insert(s_move_work.gamestate.postree, pos.x, pos.z, uid);
+    bg_ent_insert(s_move_work.gamestate.postree, pos.x, pos.z, uid);
 
     k = kh_put(range, s_move_work.gamestate.sel_radiuses, uid, &ret);
     assert(ret != -1);
@@ -2773,8 +2773,8 @@ static void do_update_pos(uint32_t uid, vec2_t pos)
     khiter_t k = kh_get(pos, s_move_work.gamestate.positions, uid);
     assert(k != kh_end(s_move_work.gamestate.positions));
     vec3_t oldpos = kh_val(s_move_work.gamestate.positions, k);
-    qt_ent_delete(s_move_work.gamestate.postree, oldpos.x, oldpos.z, uid);
-    qt_ent_insert(s_move_work.gamestate.postree, newpos.x, newpos.z, uid);
+    bg_ent_delete(s_move_work.gamestate.postree, oldpos.x, oldpos.z, uid);
+    bg_ent_insert(s_move_work.gamestate.postree, newpos.x, newpos.z, uid);
     kh_val(s_move_work.gamestate.positions, k) = newpos;
 
     if(!ms->blocking)
@@ -2845,8 +2845,8 @@ static void do_block(uint32_t uid, vec3_t newpos)
     khiter_t k = kh_get(pos, s_move_work.gamestate.positions, uid);
     assert(k != kh_end(s_move_work.gamestate.positions));
     vec3_t oldpos = kh_val(s_move_work.gamestate.positions, k);
-    qt_ent_delete(s_move_work.gamestate.postree, oldpos.x, oldpos.z, uid);
-    qt_ent_insert(s_move_work.gamestate.postree, newpos.x, newpos.z, uid);
+    bg_ent_delete(s_move_work.gamestate.postree, oldpos.x, oldpos.z, uid);
+    bg_ent_insert(s_move_work.gamestate.postree, newpos.x, newpos.z, uid);
     kh_val(s_move_work.gamestate.positions, k) = newpos;
 
     entity_block(uid);
@@ -3183,7 +3183,7 @@ static void move_copy_gamestate(void)
     PERF_ENTER();
     s_move_work.gamestate.flags = G_FlagsCopyTable();
     s_move_work.gamestate.positions = G_Pos_CopyTable();
-    s_move_work.gamestate.postree = G_Pos_CopyQuadTree();
+    s_move_work.gamestate.postree = G_Pos_CopyBitmapGrid();
     s_move_work.gamestate.sel_radiuses = G_SelectionRadiusCopyTable();
     s_move_work.gamestate.faction_ids = G_FactionIDCopyTable();
     s_move_work.gamestate.ent_gpu_id_map = G_CopyEntGPUIDMap();
@@ -3215,7 +3215,7 @@ static void move_release_gamestate(void)
         s_move_work.gamestate.positions = NULL;
     }
     if(s_move_work.gamestate.postree) {
-        G_Pos_DestroyQuadTree(s_move_work.gamestate.postree);
+        G_Pos_DestroyBitmapGrid(s_move_work.gamestate.postree);
         s_move_work.gamestate.postree = NULL;
     }
     if(s_move_work.gamestate.sel_radiuses) {

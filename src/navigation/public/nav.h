@@ -38,7 +38,7 @@
 
 #include "../../pf_math.h"
 #include "../../lib/public/khash.h"
-#include "../../lib/public/quadtree.h"
+#include "../../lib/public/bitmap_grid.h"
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -113,13 +113,13 @@ struct kh_id_s;
 struct kh_pos_s;
 struct kh_aabb_s;
 struct kh_range_s;
-struct qt_ent_s;
+struct bg_ent_s;
 
 struct nav_unit_query_ctx{
     /* Per-entity state */
     struct kh_id_s        *flags;
     struct kh_pos_s       *positions;
-    struct qt_ent_s       *postree;
+    struct bg_ent_s       *postree;
     struct kh_id_s        *faction_ids;
     struct kh_aabb_s      *aabbs;
     void                  *transforms;
