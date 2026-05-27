@@ -1085,7 +1085,7 @@ static PyObject *PyWindow_simple_chart(PyWindowObject *self, PyObject *args)
         for(int i = 0; i < num_datapoints; i++) {
         
             PyObject *elem = PyList_GetItem(list, i);
-            if(!PyInt_Check(elem)) {
+            if(!PyInt_Check(elem) && !PyLong_Check(elem)) {
                 PyErr_SetString(PyExc_TypeError, "List elements must be integers.");
                 return NULL;
             }
