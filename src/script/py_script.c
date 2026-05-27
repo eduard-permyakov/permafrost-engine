@@ -46,6 +46,7 @@
 #include "py_region.h"
 #include "py_error.h"
 #include "py_console.h"
+#include "py_perf.h"
 #include "public/script.h"
 #include "../entity.h"
 #include "../game/public/game.h"
@@ -372,7 +373,7 @@ static PyMethodDef pf_module_methods[] = {
 
     {"prev_frame_perfstats", 
     (PyCFunction)PyPf_prev_frame_perfstats, METH_NOARGS,
-    "Get a dictionary of the performance data for the previous frame."},
+    "Get a tuple of the performance data for the previous frame."},
 
     {"prev_frame_memstats", 
     (PyCFunction)PyPf_prev_frame_memstats, METH_NOARGS,
@@ -1340,93 +1341,25 @@ static PyObject *PyPf_prev_frame_perfstats(PyObject *self)
 {
     struct perf_info *infos[32];
     size_t nthreads = Perf_Report(ARR_SIZE(infos), (struct perf_info **)&infos);
-    int status;
 
-    PyObject *ret = PyDict_New();
-    if(!ret)
+    PyObject *ret = PyTuple_New(nthreads);
+    if(!ret) {
+        for(size_t i = 0; i < nthreads; i++)
+            PF_FREE(infos[i]);
         return NULL;
-
-    for(int i = 0; i < nthreads; i++) {
-
-        struct perf_info *curr_info = infos[i];
-        STALLOC(PyObject*, parents, curr_info->nentries + 1);
-
-        PyObject *thread_dict = PyDict_New();
-        if(!thread_dict)
-            goto fail;
-        if(0 != PyDict_SetItemString(ret, curr_info->threadname, thread_dict))
-            goto fail;
-        Py_DECREF(thread_dict);
-
-        PyObject *children = PyList_New(0);
-        if(!children)
-            goto fail;
-
-        if(0 != PyDict_SetItemString(thread_dict, "children", children))
-            goto fail;
-        Py_DECREF(children);
-
-        parents[0] = thread_dict;
-        for(int j = 0; j < curr_info->nentries; j++) {
-
-            PyObject *newdict = PyDict_New();
-            if(!newdict)
-                goto fail;
-
-            int parent_idx = (curr_info->entries[j].parent_idx == ~((uint32_t)0)) ? 0 : curr_info->entries[j].parent_idx + 1;
-            PyObject *parent = parents[parent_idx];
-            assert(parent && PyDict_Check(parent));
-
-            if(0 != PyList_Append(PyDict_GetItemString(parent, "children"), newdict))
-                goto fail;
-            parents[j + 1] = newdict;
-            Py_DECREF(newdict);
-
-            PyObject *name = PyString_FromString(curr_info->entries[j].funcname);
-            if(!name)
-                goto fail;
-            status = PyDict_SetItemString(newdict, "name", name);
-            Py_DECREF(name);
-            if(0 != status)
-                goto fail;
-
-            PyObject *ms_delta = PyFloat_FromDouble(curr_info->entries[j].ms_delta);
-            if(!ms_delta)
-                goto fail;
-            status = PyDict_SetItemString(newdict, "ms_delta", ms_delta);
-            Py_DECREF(ms_delta);
-            if(0 != status)
-                goto fail;
-
-            PyObject *pc_delta = PyLong_FromUnsignedLongLong(curr_info->entries[j].pc_delta);
-            if(!pc_delta)
-                goto fail;
-            status = PyDict_SetItemString(newdict, "pc_delta", pc_delta);
-            Py_DECREF(pc_delta);
-            if(0 != status)
-                goto fail;
-
-            PyObject *children = PyList_New(0);
-            if(!children)
-                goto fail;
-            status = PyDict_SetItemString(newdict, "children", children);
-            Py_DECREF(children);
-            if(0 != status)
-                goto fail;
-        }
     }
 
-    for(int i = 0; i < nthreads; i++) {
-        PF_FREE(infos[i]);
+    for(size_t i = 0; i < nthreads; i++) {
+        PyObject *pi = S_PerfInfo_New(infos[i]);
+        if(!pi) {
+            for(size_t j = i; j < nthreads; j++)
+                PF_FREE(infos[j]);
+            Py_DECREF(ret);
+            return NULL;
+        }
+        PyTuple_SET_ITEM(ret, i, pi);
     }
     return ret;
-
-fail:
-    Py_XDECREF(ret);
-    for(int i = 0; i < nthreads; i++) {
-        PF_FREE(infos[i]);
-    }
-    return NULL;
 }
 
 static PyObject *PyPf_prev_frame_memstats(PyObject *self)
@@ -4033,7 +3966,8 @@ PyMODINIT_FUNC initpf(void)
     S_Camera_PyRegister(module);
     S_Task_PyRegister(module);
     S_Region_PyRegister(module);
-    S_Constants_Expose(module); 
+    S_PerfInfo_PyRegister(module);
+    S_Constants_Expose(module);
 }
 
 bool S_Init(const char *progname, const char *base_path, struct nk_context *ctx)
@@ -4089,7 +4023,7 @@ void S_Shutdown(void)
 {
     E_Global_Unregister(EVENT_UPDATE_START, s_on_update);
 
-    /* Free any globaly retained Python objects before finalizing 
+    /* Free any globaly retained Python objects before finalizing
      * the session */
     s_err_clear();
     S_Pickle_Clear();
