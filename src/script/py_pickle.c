@@ -686,6 +686,7 @@ static struct pickle_entry s_pf_dispatch_table[] = {
     {.type = NULL, /* PyPopulationContributorEntity_type */      .picklefunc = custom_pickle },
     {.type = NULL, /* PyPopulationLimitContributorEntity_type */ .picklefunc = custom_pickle },
     {.type = NULL, /* PyRegion_type*/                     .picklefunc = custom_pickle   },
+    {.type = NULL, /* PyPerfInfo_type*/                   .picklefunc = custom_pickle   },
 };
 
 static unpickle_func_t s_op_dispatch_table[256] = {
@@ -1370,6 +1371,7 @@ static void load_engine_builtin_types(void)
     s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "PopulationContributorEntity");
     s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "PopulationLimitContributorEntity");
     s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Region");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "PerfInfo");
 
     for(int i = 0; i < ARR_SIZE(s_pf_dispatch_table); i++) {
         assert(s_pf_dispatch_table[i].type);

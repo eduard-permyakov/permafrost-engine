@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine.
- *  Copyright (C) 2020-2023 Eduard Permyakov
+ *  Copyright (C) 2026 Eduard Permyakov
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -46,6 +46,7 @@ typedef struct{
 }PyPerfInfoObject;
 
 
+static PyObject *PyPerfInfo_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static void       PyPerfInfo_dealloc(PyPerfInfoObject *self);
 static Py_ssize_t PyPerfInfo_length(PyPerfInfoObject *self);
 
@@ -60,6 +61,9 @@ static PyObject *PyPerfInfo_hw_llc_miss(PyPerfInfoObject *self, PyObject *args);
 
 static PyObject *PyPerfInfo_get_threadname(PyPerfInfoObject *self, void *closure);
 static PyObject *PyPerfInfo_get_nentries(PyPerfInfoObject *self, void *closure);
+
+static PyObject *PyPerfInfo_pickle(PyPerfInfoObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPerfInfo_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -98,6 +102,15 @@ static PyMethodDef PyPerfInfo_methods[] = {
     {"hw_llc_miss",
     (PyCFunction)PyPerfInfo_hw_llc_miss, METH_VARARGS,
     "Returns the LLC-miss rate (percent) of the entry at the given index."},
+
+    {"__pickle__",
+    (PyCFunction)PyPerfInfo_pickle, METH_KEYWORDS,
+    "Serialize a Permafrost Engine PerfInfo to a string."},
+
+    {"__unpickle__",
+    (PyCFunction)PyPerfInfo_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
+    "Create a new pf.PerfInfo instance from a string earlier returned from a __pickle__ method. "
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
 
     {NULL}  /* Sentinel */
 };
@@ -149,7 +162,7 @@ static PyTypeObject PyPerfInfo_type = {
     0,                              /* tp_getattro */
     0,                              /* tp_setattro */
     0,                              /* tp_as_buffer */
-    Py_TPFLAGS_DEFAULT,             /* tp_flags */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, /* tp_flags */
     "Zero-copy view over a struct perf_info produced by the engine's perf system. "
     "Field accessors read directly from the underlying C buffer; no per-entry "
     "Python objects are eagerly allocated. The buffer is freed when the wrapper "
@@ -171,12 +184,21 @@ static PyTypeObject PyPerfInfo_type = {
     0,                              /* tp_dictoffset */
     0,                              /* tp_init */
     0,                              /* tp_alloc */
-    0,                              /* tp_new */
+    PyPerfInfo_new,                 /* tp_new */
 };
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static PyObject *PyPerfInfo_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+    PyPerfInfoObject *self = (PyPerfInfoObject*)type->tp_alloc(type, 0);
+    if(self) {
+        self->info = NULL;
+    }
+    return (PyObject*)self;
+}
 
 static void PyPerfInfo_dealloc(PyPerfInfoObject *self)
 {
@@ -288,6 +310,26 @@ static PyObject *PyPerfInfo_get_nentries(PyPerfInfoObject *self, void *closure)
     if(!self->info)
         return PyInt_FromLong(0);
     return PyInt_FromSsize_t((Py_ssize_t)self->info->nentries);
+}
+
+static PyObject *PyPerfInfo_pickle(PyPerfInfoObject *self, PyObject *args, PyObject *kwargs)
+{
+    return PyString_FromStringAndSize("", 0);
+}
+
+static PyObject *PyPerfInfo_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
+{
+    PyObject *new_args = PyTuple_New(0);
+    if(!new_args)
+        return NULL;
+    PyPerfInfoObject *piobj = (PyPerfInfoObject*)((PyTypeObject*)cls)->tp_new(
+        (PyTypeObject*)cls, new_args, NULL);
+    Py_DECREF(new_args);
+    if(!piobj)
+        return NULL;
+    PyObject *ret = Py_BuildValue("(Oi)", piobj, 0);
+    Py_DECREF(piobj);
+    return ret;
 }
 
 /*****************************************************************************/
