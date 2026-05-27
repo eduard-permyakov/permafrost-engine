@@ -82,7 +82,18 @@
 
 #define NFRAMES_LOGGED  (5)
 
-struct mi_stats_s;
+
+/* Curated memory snapshot mixing mimalloc internal counters with OS-level
+ * accounting. The Vm* fields are populated only on Linux debug builds and
+ * read as zero otherwise. */
+struct perf_mem_stats{
+    int64_t  mi_malloc_normal_current;
+    int64_t  mi_malloc_normal_total;
+    int64_t  mi_pages_current;
+    int64_t  mi_threads_current;
+    uint64_t vm_rss_kb;
+    uint64_t vm_size_kb;
+};
 
 
 struct perf_info{
@@ -122,7 +133,7 @@ bool     Perf_IsRoot(void);
 /* This returns an array of perf_info structs (one for each thread). They
  * must be 'free'd by the caller. */
 size_t   Perf_Report(size_t maxout, struct perf_info **out);
-void     Perf_GetMemoryStats(struct mi_stats_s *out);
+void     Perf_GetMemoryStats(struct perf_mem_stats *out);
 uint32_t Perf_LastFrameMS(void);
 uint32_t Perf_CurrFrameMS(void);
 uint64_t Perf_LastFrameAllocdBytes(void);

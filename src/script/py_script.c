@@ -1364,44 +1364,15 @@ static PyObject *PyPf_prev_frame_perfstats(PyObject *self)
 
 static PyObject *PyPf_prev_frame_memstats(PyObject *self)
 {
-    mi_stats_t stats = {0};
+    struct perf_mem_stats stats = {0};
     Perf_GetMemoryStats(&stats);
 
-    struct stat{
-        const char      *name;
-        mi_stat_count_t *value;
-    }published_counts[] = {
-        {"pages",            &stats.pages},
-        {"reserved",         &stats.reserved},
-        {"committed",        &stats.committed},
-        {"malloc_normal",    &stats.malloc_normal},
-        {"malloc_huge",      &stats.malloc_huge},
-        {"malloc_requested", &stats.malloc_requested},
-        {"threads",          &stats.threads}
-    };
-
-    PyObject *ret = PyDict_New();
-    if(!ret)
-        return NULL;
-
-    for(int i = 0; i < ARR_SIZE(published_counts); i++) {
-        struct stat *curr = &published_counts[i];
-        PyObject *value = Py_BuildValue("{s:l,s:l,s:l}",
-            "total", curr->value->total,
-            "peak", curr->value->peak,
-            "current", curr->value->current);
-        if(!value)
-            goto fail;
-        int status = PyDict_SetItemString(ret, curr->name, value);
-        Py_DECREF(value);
-        if(0 != status)
-            goto fail;
-    }
-    return ret;
-
-fail:
-    Py_XDECREF(ret);
-    return NULL;
+    return Py_BuildValue("{s:L,s:L,s:L,s:K,s:K}",
+        "mi_malloc_normal_current", (long long)stats.mi_malloc_normal_current,
+        "mi_pages_current",         (long long)stats.mi_pages_current,
+        "mi_threads_current",       (long long)stats.mi_threads_current,
+        "vm_rss_kb",                (unsigned long long)stats.vm_rss_kb,
+        "vm_size_kb",               (unsigned long long)stats.vm_size_kb);
 }
 
 static PyObject *PyPf_prev_frame_allocd_bytes(PyObject *self)

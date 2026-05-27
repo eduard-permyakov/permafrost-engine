@@ -153,10 +153,10 @@ KHASH_MAP_INIT_INT64(pstate, struct perf_state)
 
 static khash_t(pstate) *s_thread_state_table;
 
-static int              s_last_idx = 0;
-static unsigned         s_last_frames_ms[NFRAMES_LOGGED];
-static mi_stats_t       s_last_frames_memstats[NFRAMES_LOGGED];
-static uint64_t         s_last_frames_allocd_bytes[NFRAMES_LOGGED];
+static int                    s_last_idx = 0;
+static unsigned               s_last_frames_ms[NFRAMES_LOGGED];
+static struct perf_mem_stats  s_last_frames_memstats[NFRAMES_LOGGED];
+static uint64_t               s_last_frames_allocd_bytes[NFRAMES_LOGGED];
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -268,7 +268,37 @@ static void hw_perf_read_thread(struct perf_state *ps, uint64_t out[PE_COUNT])
         out[i] = buf[1 + i];
 }
 
+static void read_proc_statm(struct perf_mem_stats *out)
+{
+    FILE *f = fopen("/proc/self/statm", "r");
+    if(!f)
+        return;
+    unsigned long size_pages = 0, rss_pages = 0;
+    if(fscanf(f, "%lu %lu", &size_pages, &rss_pages) == 2) {
+        long pgsz = sysconf(_SC_PAGESIZE);
+        out->vm_size_kb = ((uint64_t)size_pages * (uint64_t)pgsz) / 1024;
+        out->vm_rss_kb  = ((uint64_t)rss_pages  * (uint64_t)pgsz) / 1024;
+    }
+    fclose(f);
+}
+
 #endif /* defined(__linux__) && !defined(NDEBUG) */
+
+static void gather_mem_stats(struct perf_mem_stats *out)
+{
+    memset(out, 0, sizeof(*out));
+
+    mi_stats_t mi = {0};
+    mi_stats_get(sizeof(mi_stats_t), &mi);
+    out->mi_malloc_normal_current = mi.malloc_normal.current;
+    out->mi_malloc_normal_total   = mi.malloc_normal.total;
+    out->mi_pages_current         = mi.pages.current;
+    out->mi_threads_current       = mi.threads.current;
+
+#if defined(__linux__) && !defined(NDEBUG)
+    read_proc_statm(out);
+#endif
+}
 
 static uint64_t tid_to_key(SDL_threadID tid)
 {
@@ -694,9 +724,9 @@ void Perf_FinishTick(void)
         curr->last_read_size[curr->perf_tree_idx] = 0;
     }
 
-    mi_stats_get(sizeof(mi_stats_t), &s_last_frames_memstats[s_last_idx]);
+    gather_mem_stats(&s_last_frames_memstats[s_last_idx]);
     uint64_t prev_allocd = s_last_frames_allocd_bytes[positive_modulo(s_last_idx - 1, NFRAMES_LOGGED)];
-    uint64_t curr_allocd = s_last_frames_memstats[s_last_idx].malloc_normal_count.total;
+    uint64_t curr_allocd = (uint64_t)s_last_frames_memstats[s_last_idx].mi_malloc_normal_total;
     s_last_frames_allocd_bytes[s_last_idx] = curr_allocd;
 
     uint32_t curr_time = SDL_GetTicks();
@@ -716,6 +746,7 @@ void Perf_FinishTick(void)
                 free(infos[i]);
         }
     }
+
 }
 
 size_t Perf_Report(size_t maxout, struct perf_info **out)
@@ -781,7 +812,7 @@ size_t Perf_Report(size_t maxout, struct perf_info **out)
     return ret;
 }
 
-void Perf_GetMemoryStats(struct mi_stats_s *out)
+void Perf_GetMemoryStats(struct perf_mem_stats *out)
 {
 #ifdef NDEBUG
     memset(out, 0, sizeof(*out));
