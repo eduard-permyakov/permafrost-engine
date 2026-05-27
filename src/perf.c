@@ -473,6 +473,27 @@ static void perf_log_call_graph(size_t nthreads, struct perf_info **infos)
     fflush(stdout);
 }
 
+/* Dump the curated memory snapshot. Each line is prefixed with "[mem-stats]"
+ * so the lines can be grepped out of the rest of the engine's stdout. */
+static void perf_log_mem_stats(void)
+{
+    int read_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
+    const struct perf_mem_stats *s = &s_last_frames_memstats[read_idx];
+
+    fprintf(stdout, "[mem-stats] === frame ===\n");
+    fprintf(stdout, "[mem-stats]   mi_malloc_normal_current  %12lld bytes\n",
+        (long long)s->mi_malloc_normal_current);
+    fprintf(stdout, "[mem-stats]   mi_pages_current          %12lld\n",
+        (long long)s->mi_pages_current);
+    fprintf(stdout, "[mem-stats]   mi_threads_current        %12lld\n",
+        (long long)s->mi_threads_current);
+    fprintf(stdout, "[mem-stats]   vm_rss                    %12llu kB\n",
+        (unsigned long long)s->vm_rss_kb);
+    fprintf(stdout, "[mem-stats]   vm_size                   %12llu kB\n",
+        (unsigned long long)s->vm_size_kb);
+    fflush(stdout);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -747,6 +768,13 @@ void Perf_FinishTick(void)
         }
     }
 
+    if(Settings_Get("pf.debug.log_mem_stats", &log_setting) == SS_OKAY
+    && log_setting.as_bool) {
+        static unsigned s_mem_stats_counter = 0;
+        if((s_mem_stats_counter++ % LOG_FREQUENCY) == 0) {
+            perf_log_mem_stats();
+        }
+    }
 }
 
 size_t Perf_Report(size_t maxout, struct perf_info **out)
