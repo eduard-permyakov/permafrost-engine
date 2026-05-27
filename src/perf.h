@@ -93,6 +93,13 @@ struct perf_info{
         uint64_t    pc_delta;
         double      ms_delta;
         int         parent_idx;
+        /* Extra hardware performance counters for 
+         * more in-depth insight. Available on Linux
+         * builds. */
+        float       hw_ipc;         /* Instructions per cycle */ 
+        float       hw_br_miss;     /* Branch miss rate */
+        float       hw_l1d_miss;    /* L1D miss rate */
+        float       hw_llc_miss;    /* LLC miss rate */
     }entries[];
 };
 

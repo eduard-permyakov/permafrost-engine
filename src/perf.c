@@ -49,12 +49,34 @@
 #include <string.h>
 #include <stdint.h>
 
+#if defined(__linux__) && !defined(NDEBUG)
+#include <linux/perf_event.h>
+#include <sys/syscall.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+#include <errno.h>
+#endif
+
 
 #define PARENT_NONE     ~((uint32_t)0)
 #define GPU_STATE_NAME  "GPU"
 #define GPU_STATE_KEY   UINT64_MAX
 #define GPU_TIMER_HZ    (1 * 1000 * 1000 * 1000)
 #define LOG_FREQUENCY   (60)
+
+#if defined(__linux__) && !defined(NDEBUG)
+enum {
+    PE_CYCLES = 0,
+    PE_INSTR,
+    PE_BRANCH,
+    PE_BRANCH_MISS,
+    PE_L1D_REF,
+    PE_L1D_MISS,
+    PE_LLC_REF,
+    PE_LLC_MISS,
+    PE_COUNT
+};
+#endif
 
 struct perf_entry{
     union{
@@ -68,6 +90,11 @@ struct perf_entry{
     };
     uint32_t parent_idx;
     uint32_t name_id;
+#if defined(__linux__) && !defined(NDEBUG)
+    /* Start values at Push, deltas at Pop. Counter group is opened
+     * lazily per OS thread; zeros when fds are unavailable. */
+    uint64_t hw_counters[PE_COUNT];
+#endif
 };
 
 #ifndef NDEBUG
@@ -108,6 +135,14 @@ struct perf_state{
     /* GPU-only: size of each tree slot when its cookies were last
      * scheduled for read. Prevents double-consume on wraparound. */
     size_t            last_read_size[NFRAMES_LOGGED];
+#if defined(__linux__) && !defined(NDEBUG)
+    /* perf_event_open group leader + 7 followers; opened lazily by the
+     * thread itself on its first Perf_Push so the kernel attaches them
+     * to the right task. */
+    int               hw_fds[PE_COUNT];
+    bool              hw_fds_inited;
+    bool              hw_init_attempted;
+#endif
 };
 
 KHASH_MAP_INIT_INT64(pstate, struct perf_state)
@@ -126,6 +161,114 @@ static uint64_t         s_last_frames_allocd_bytes[NFRAMES_LOGGED];
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+#if defined(__linux__) && !defined(NDEBUG)
+
+static long perf_event_open_sys(struct perf_event_attr *attr, pid_t pid,
+                                int cpu, int group_fd, unsigned long flags)
+{
+    return syscall(__NR_perf_event_open, attr, pid, cpu, group_fd, flags);
+}
+
+static uint64_t hw_cache_cfg(uint32_t id, uint32_t op, uint32_t result)
+{
+    return (uint64_t)id | ((uint64_t)op << 8) | ((uint64_t)result << 16);
+}
+
+static int hw_perf_open_one(uint32_t type, uint64_t config, int group_fd)
+{
+    struct perf_event_attr attr;
+    memset(&attr, 0, sizeof(attr));
+    attr.type           = type;
+    attr.size           = sizeof(attr);
+    attr.config         = config;
+    attr.disabled       = (group_fd == -1) ? 1 : 0; /* only leader starts disabled */
+    attr.exclude_kernel = 1;
+    attr.exclude_hv     = 1;
+    attr.read_format    = PERF_FORMAT_GROUP;
+    /* pid=0 attaches the event to the calling thread. */
+    return (int)perf_event_open_sys(&attr, 0, -1, group_fd, 0);
+}
+
+static void hw_perf_open_thread(struct perf_state *ps)
+{
+    struct{
+        uint32_t type; 
+        uint64_t cfg; 
+        const char *name; 
+    }evts[PE_COUNT] = {
+
+        [PE_CYCLES]      = { PERF_TYPE_HARDWARE, PERF_COUNT_HW_CPU_CYCLES,         "cycles" },
+        [PE_INSTR]       = { PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS,       "instructions" },
+        [PE_BRANCH]      = { PERF_TYPE_HARDWARE, PERF_COUNT_HW_BRANCH_INSTRUCTIONS,"branches" },
+        [PE_BRANCH_MISS] = { PERF_TYPE_HARDWARE, PERF_COUNT_HW_BRANCH_MISSES,      "branch misses" },
+        [PE_L1D_REF]     = { PERF_TYPE_HW_CACHE,
+            hw_cache_cfg(PERF_COUNT_HW_CACHE_L1D, PERF_COUNT_HW_CACHE_OP_READ,
+                         PERF_COUNT_HW_CACHE_RESULT_ACCESS), "L1D refs" },
+        [PE_L1D_MISS]    = { PERF_TYPE_HW_CACHE,
+            hw_cache_cfg(PERF_COUNT_HW_CACHE_L1D, PERF_COUNT_HW_CACHE_OP_READ,
+                         PERF_COUNT_HW_CACHE_RESULT_MISS),   "L1D misses" },
+        [PE_LLC_REF]     = { PERF_TYPE_HW_CACHE,
+            hw_cache_cfg(PERF_COUNT_HW_CACHE_LL, PERF_COUNT_HW_CACHE_OP_READ,
+                         PERF_COUNT_HW_CACHE_RESULT_ACCESS), "LLC refs" },
+        [PE_LLC_MISS]    = { PERF_TYPE_HW_CACHE,
+            hw_cache_cfg(PERF_COUNT_HW_CACHE_LL, PERF_COUNT_HW_CACHE_OP_READ,
+                         PERF_COUNT_HW_CACHE_RESULT_MISS),   "LLC misses" },
+    };
+
+    for(int i = 0; i < PE_COUNT; i++)
+        ps->hw_fds[i] = -1;
+
+    for(int i = 0; i < PE_COUNT; i++) {
+        int group_fd = (i == 0) ? -1 : ps->hw_fds[0];
+        ps->hw_fds[i] = hw_perf_open_one(evts[i].type, evts[i].cfg, group_fd);
+        if(ps->hw_fds[i] < 0) {
+            fprintf(stderr,
+                "perf_event_open(%s) failed for thread '%s': %s\n",
+                evts[i].name, ps->name, strerror(errno));
+            for(int j = 0; j < PE_COUNT; j++) {
+                if(ps->hw_fds[j] >= 0)
+                    close(ps->hw_fds[j]);
+                ps->hw_fds[j] = -1;
+            }
+            return;
+        }
+    }
+
+    ioctl(ps->hw_fds[0], PERF_EVENT_IOC_RESET,  PERF_IOC_FLAG_GROUP);
+    ioctl(ps->hw_fds[0], PERF_EVENT_IOC_ENABLE, PERF_IOC_FLAG_GROUP);
+    ps->hw_fds_inited = true;
+}
+
+static void hw_perf_close_thread(struct perf_state *ps)
+{
+    if(!ps->hw_fds_inited)
+        return;
+    for(int i = 0; i < PE_COUNT; i++) {
+        if(ps->hw_fds[i] >= 0) close(ps->hw_fds[i]);
+        ps->hw_fds[i] = -1;
+    }
+    ps->hw_fds_inited = false;
+}
+
+static void hw_perf_read_thread(struct perf_state *ps, uint64_t out[PE_COUNT])
+{
+    if(!ps->hw_fds_inited) {
+        memset(out, 0, sizeof(uint64_t) * PE_COUNT);
+        return;
+    }
+    /* PERF_FORMAT_GROUP layout: nr, val0, val1, ... */
+    uint64_t buf[1 + PE_COUNT];
+    ssize_t n = read(ps->hw_fds[0], buf, sizeof(buf));
+    if(n != (ssize_t)sizeof(buf)) {
+        memset(out, 0, sizeof(uint64_t) * PE_COUNT);
+        return;
+    }
+    for(int i = 0; i < PE_COUNT; i++)
+        out[i] = buf[1 + i];
+}
+
+#endif /* defined(__linux__) && !defined(NDEBUG) */
 
 static uint64_t tid_to_key(SDL_threadID tid)
 {
@@ -192,6 +335,12 @@ static bool pstate_init(struct perf_state *out, const char *name)
     pf_strlcpy(out->name, name, sizeof(out->name));
     out->perf_tree_idx = 0;
     memset(out->last_read_size, 0, sizeof(out->last_read_size));
+#if defined(__linux__) && !defined(NDEBUG)
+    for(int i = 0; i < PE_COUNT; i++)
+        out->hw_fds[i] = -1;
+    out->hw_fds_inited = false;
+    out->hw_init_attempted = false;
+#endif
     return true;
 
 fail_perf_trees:
@@ -212,6 +361,10 @@ fail_name_id:
 
 static void pstate_destroy(struct perf_state *in)
 {
+#if defined(__linux__) && !defined(NDEBUG)
+    hw_perf_close_thread(in);
+#endif
+
     for(int i = 0; i < NFRAMES_LOGGED; i++) {
         vec_perf_destroy(&in->perf_trees[i]);
     }
@@ -248,13 +401,13 @@ static int positive_modulo(int i, int n)
     return (i % n + n) % n;
 }
 
-/* Pretty-print every thread's call tree from a Perf_Report result to stdout.
- * Each line is prefixed with "[call-graph]" so the lines can be grepped out
- * of the rest of the engine's stdout. */
+/* Pretty-print every thread's call tree result to stdout. Each line is 
+ * prefixed with "[call-graph]" so the lines can be grepped out of the 
+ * rest of the engine's stdout. 
+ */
 static void perf_log_call_graph(size_t nthreads, struct perf_info **infos)
 {
     fprintf(stdout, "[call-graph] === frame ===\n");
-
     for(size_t i = 0; i < nthreads; i++) {
 
         struct perf_info *info = infos[i];
@@ -277,12 +430,16 @@ static void perf_log_call_graph(size_t nthreads, struct perf_info **infos)
                 p = info->entries[p].parent_idx;
             }
 
-            fprintf(stdout, "[call-graph]   %*s%-40s %8.3fms\n",
+            fprintf(stdout, "[call-graph]   %*s%-40s %8.3fms"
+                " ipc=%.2f br_miss=%.2f%% l1d_miss=%.2f%% llc_miss=%.2f%%\n",
                 depth * 2, "", info->entries[j].funcname,
-                info->entries[j].ms_delta);
+                info->entries[j].ms_delta,
+                info->entries[j].hw_ipc,
+                info->entries[j].hw_br_miss,
+                info->entries[j].hw_l1d_miss,
+                info->entries[j].hw_llc_miss);
         }
     }
-
     fflush(stdout);
 }
 
@@ -343,6 +500,17 @@ void Perf_Push(const char *name)
         return;
 
     struct perf_state *ps = &kh_val(s_thread_state_table, k);
+
+#if defined(__linux__) && !defined(NDEBUG)
+    /* Lazy-init the calling thread's HW counters on first Push so that
+     * perf_event_open() runs on the right thread. 
+     */
+    if(!ps->hw_init_attempted) {
+        ps->hw_init_attempted = true;
+        hw_perf_open_thread(ps);
+    }
+#endif
+
     const size_t ssize = vec_size(&ps->perf_stack);
     uint32_t parent_idx = ssize > 0 ? vec_AT(&ps->perf_stack, ssize-1) : PARENT_NONE;
 
@@ -353,6 +521,9 @@ void Perf_Push(const char *name)
     });
 
     uint32_t new_idx = vec_size(&ps->perf_trees[ps->perf_tree_idx])-1;
+#if defined(__linux__) && !defined(NDEBUG)
+    hw_perf_read_thread(ps, vec_AT(&ps->perf_trees[ps->perf_tree_idx], new_idx).hw_counters);
+#endif
     vec_idx_push(&ps->perf_stack, new_idx);
 }
 
@@ -374,6 +545,13 @@ void Perf_Pop(const char **out)
     assert(idx < vec_size(&ps->perf_trees[ps->perf_tree_idx]));
     struct perf_entry *pe = &vec_AT(&ps->perf_trees[ps->perf_tree_idx], idx);
     pe->pc_delta = abs(SDL_GetPerformanceCounter() - pe->pc_delta);
+
+#if defined(__linux__) && !defined(NDEBUG)
+    uint64_t hw_end[PE_COUNT];
+    hw_perf_read_thread(ps, hw_end);
+    for(int i = 0; i < PE_COUNT; i++)
+        pe->hw_counters[i] = hw_end[i] - pe->hw_counters[i];
+#endif
 
     if(out)
         *out = name_for_id(ps, pe->name_id);
@@ -576,6 +754,26 @@ size_t Perf_Report(size_t maxout, struct perf_info **out)
 
             info->entries[i].funcname = name_for_id(ps, entry->name_id);
             info->entries[i].parent_idx = entry->parent_idx;
+
+#if defined(__linux__) && !defined(NDEBUG)
+            uint64_t cyc = entry->hw_counters[PE_CYCLES];
+            uint64_t ins = entry->hw_counters[PE_INSTR];
+            uint64_t br  = entry->hw_counters[PE_BRANCH];
+            uint64_t brm = entry->hw_counters[PE_BRANCH_MISS];
+            uint64_t l1r = entry->hw_counters[PE_L1D_REF];
+            uint64_t l1m = entry->hw_counters[PE_L1D_MISS];
+            uint64_t llr = entry->hw_counters[PE_LLC_REF];
+            uint64_t llm = entry->hw_counters[PE_LLC_MISS];
+            info->entries[i].hw_ipc      = cyc ? (float)ins / cyc        : 0.0f;
+            info->entries[i].hw_br_miss  = br  ? 100.0f * brm / br       : 0.0f;
+            info->entries[i].hw_l1d_miss = l1r ? 100.0f * l1m / l1r      : 0.0f;
+            info->entries[i].hw_llc_miss = llr ? 100.0f * llm / llr      : 0.0f;
+#else
+            info->entries[i].hw_ipc      = 0.0f;
+            info->entries[i].hw_br_miss  = 0.0f;
+            info->entries[i].hw_l1d_miss = 0.0f;
+            info->entries[i].hw_llc_miss = 0.0f;
+#endif
         }
         out[ret++] = info;
     }
