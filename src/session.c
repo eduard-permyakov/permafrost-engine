@@ -237,7 +237,7 @@ static bool subsession_load(SDL_RWops *stream, char *errstr, size_t errlen)
 
     LoadingScreen_PushSimStatus("[%d] Loading scripting state", depth);
     if(!S_LoadState(stream)) {
-        pf_snprintf(errstr, errlen, 
+        pf_snprintf(errstr, errlen,
             "Could not de-serialize script-defined state from session file");
         goto fail_pop;
     }
@@ -331,13 +331,18 @@ static bool session_load(const char *file, char *errstr, size_t errlen)
     }
 
     for(int i = 0; i < attr.val.as_int; i++) {
-    
+
         if(!subsession_load(stream, errstr, errlen)) {
 
             bool result = subsession_load(current, errstr, errlen);
             assert(result);
             goto fail_parse;
         }
+
+        /* The active sesion is not on the stack */
+        bool last = (i == attr.val.as_int - 1);
+        if(last)
+            continue;
 
         SDL_RWops *sub = PFSDL_VectorRWOps();
         PFSDL_VectorRWOpsReserve(sub, 64 * 1024 * 1024);
@@ -354,7 +359,6 @@ static bool session_load(const char *file, char *errstr, size_t errlen)
         SDL_RWclose(stream);
     }
 
-    SDL_RWclose(vec_stream_pop(&loaded));
     vec_stream_copy(&s_subsession_stack, &loaded);
     ret = true;
 
