@@ -4405,6 +4405,10 @@ fail:
 
 void S_ShowLastError(void)
 {
+    Py_CLEAR(s_err_ctx.type);
+    Py_CLEAR(s_err_ctx.value);
+    Py_CLEAR(s_err_ctx.traceback);
+
     s_err_ctx.occurred = PyErr_Occurred();
     PyErr_Fetch(&s_err_ctx.type, &s_err_ctx.value, &s_err_ctx.traceback);
     PyErr_NormalizeException(&s_err_ctx.type, &s_err_ctx.value, &s_err_ctx.traceback);
