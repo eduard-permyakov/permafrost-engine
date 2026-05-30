@@ -4056,8 +4056,11 @@ bool G_Move_HasWork(void)
 
 void G_Move_FlushWork(void)
 {
-    /* Discard the results of the last 
-     * movement tick. 
+    if(!s_map)
+        return;
+
+    /* Discard the results of the last
+     * movement tick.
      */
     if(nav_tick_finish_work() == WORK_INCOMPLETE) {
         nav_cancel_gpu_work();

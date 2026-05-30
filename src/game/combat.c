@@ -2474,6 +2474,8 @@ bool G_Combat_GetHPDisplay(uint32_t uid, int *out_curr, int *out_max)
 
 void G_Combat_FlushWork(void)
 {
+    if(!s_map)
+        return;
     combat_finish_work();
     combat_process_cmds();
 }

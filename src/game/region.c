@@ -887,11 +887,14 @@ bool G_Region_SaveState(struct SDL_RWops *stream)
 
     struct attr num_regions = (struct attr){
         .type = TYPE_INT,
-        .val.as_int = kh_size(s_regions)
+        .val.as_int = s_regions ? kh_size(s_regions) : 0
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_regions, "num_regions"));
 
     Sched_TryYield();
+
+    if(!s_regions)
+        return true;
 
     const char *name;
     struct region curr;
