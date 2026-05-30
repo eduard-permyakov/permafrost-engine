@@ -1398,23 +1398,30 @@ void Sched_Tick(void)
     /* Use a do-while to ensure we're always making at least _some_ forward progress */
     do{
         int nwaiters = 0;
+        int idle = 0;
         struct task *curr = NULL;
 
-        while(!work_exists()
+        /* The predicate, the cond-wait, and the s_quiesce update all share
+         * s_ready_lock. Holding it across the loop prevents a sched_reactivate
+         * signal from racing the wait's enqueue and being lost. */
+        SDL_LockMutex(s_ready_lock);
+        while(pq_size(&s_ready_queue_main) == 0
+           && pq_size(&s_ready_queue) == 0
            && ((nwaiters = s_nwaiters) < s_nworkers)
-           && (s_idle_workers < s_nworkers)
+           && ((idle = s_idle_workers) < s_nworkers)
            && !s_flushing) {
 
-            size_t left = (Perf_CurrFrameMS() < SCHED_TICK_MS) 
-                        ? SCHED_TICK_MS - Perf_CurrFrameMS() 
+            size_t left = (Perf_CurrFrameMS() < SCHED_TICK_MS)
+                        ? SCHED_TICK_MS - Perf_CurrFrameMS()
                         : 0;
 
             SDL_CondWaitTimeout(s_ready_cond, s_ready_lock, left);
             if(left == 0) {
                 s_quiesce = true;
-                SDL_CondBroadcast(s_ready_cond); 
+                SDL_CondBroadcast(s_ready_cond);
             }
         }
+        SDL_UnlockMutex(s_ready_lock);
 
         /* When the ready queue is empty and all the workers are in a state of waiting, 
          * there is no more work to be done. In that case, let's not waste any more time. 
@@ -1422,7 +1429,7 @@ void Sched_Tick(void)
         curr = next_main_thread_task();
         if(curr == NULL && nwaiters == s_nworkers)
             break;
-        if(curr == NULL && s_idle_workers == s_nworkers)
+        if(curr == NULL && idle == s_nworkers)
             break;
         if(curr == NULL)
             continue;
