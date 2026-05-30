@@ -36,6 +36,8 @@
 #ifndef PERF_H
 #define PERF_H
 
+#include "lib/public/mem.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <SDL_thread.h>
@@ -134,6 +136,7 @@ bool     Perf_IsRoot(void);
  * must be 'free'd by the caller. */
 size_t   Perf_Report(size_t maxout, struct perf_info **out);
 void     Perf_GetMemoryStats(struct perf_mem_stats *out);
+void     Perf_GetMemoryAccounting(struct mem_accounting *out);
 uint32_t Perf_LastFrameMS(void);
 uint32_t Perf_CurrFrameMS(void);
 uint64_t Perf_LastFrameAllocdBytes(void);

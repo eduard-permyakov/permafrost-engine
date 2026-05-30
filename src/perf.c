@@ -91,8 +91,6 @@ struct perf_entry{
     uint32_t parent_idx;
     uint32_t name_id;
 #if defined(__linux__) && !defined(NDEBUG)
-    /* Start values at Push, deltas at Pop. Counter group is opened
-     * lazily per OS thread; zeros when fds are unavailable. */
     uint64_t hw_counters[PE_COUNT];
 #endif
 };
@@ -156,6 +154,8 @@ static khash_t(pstate) *s_thread_state_table;
 static int                    s_last_idx = 0;
 static unsigned               s_last_frames_ms[NFRAMES_LOGGED];
 static struct perf_mem_stats  s_last_frames_memstats[NFRAMES_LOGGED];
+static struct mem_accounting
+                              s_last_frames_accounting[NFRAMES_LOGGED];
 static uint64_t               s_last_frames_allocd_bytes[NFRAMES_LOGGED];
 
 /*****************************************************************************/
@@ -431,10 +431,6 @@ static int positive_modulo(int i, int n)
     return (i % n + n) % n;
 }
 
-/* Pretty-print every thread's call tree result to stdout. Each line is 
- * prefixed with "[call-graph]" so the lines can be grepped out of the 
- * rest of the engine's stdout. 
- */
 static void perf_log_call_graph(size_t nthreads, struct perf_info **infos)
 {
     fprintf(stdout, "[call-graph] === frame ===\n");
@@ -473,8 +469,6 @@ static void perf_log_call_graph(size_t nthreads, struct perf_info **infos)
     fflush(stdout);
 }
 
-/* Dump the curated memory snapshot. Each line is prefixed with "[mem-stats]"
- * so the lines can be grepped out of the rest of the engine's stdout. */
 static void perf_log_mem_stats(void)
 {
     int read_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
@@ -746,6 +740,7 @@ void Perf_FinishTick(void)
     }
 
     gather_mem_stats(&s_last_frames_memstats[s_last_idx]);
+    Mem_GetAccounting(&s_last_frames_accounting[s_last_idx]);
     uint64_t prev_allocd = s_last_frames_allocd_bytes[positive_modulo(s_last_idx - 1, NFRAMES_LOGGED)];
     uint64_t curr_allocd = (uint64_t)s_last_frames_memstats[s_last_idx].mi_malloc_normal_total;
     s_last_frames_allocd_bytes[s_last_idx] = curr_allocd;
@@ -849,6 +844,12 @@ void Perf_GetMemoryStats(struct perf_mem_stats *out)
     int read_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
     *out = s_last_frames_memstats[read_idx];
 #endif
+}
+
+void Perf_GetMemoryAccounting(struct mem_accounting *out)
+{
+    int read_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
+    *out = s_last_frames_accounting[read_idx];
 }
 
 uint32_t Perf_LastFrameMS(void)
