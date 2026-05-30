@@ -43,6 +43,7 @@
 #include "lib/public/vec.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/noise.h"
+#include "lib/public/mem.h"
 #include "script/public/script.h"
 #include "game/public/game.h"
 #include "navigation/public/nav.h"
@@ -370,6 +371,11 @@ fail_surface:
 
 static bool engine_init(void)
 {
+    if(!Mem_Init()) {
+        fprintf(stderr, "Failed to initialize memory module.\n");
+        return false;
+    }
+
     g_main_thread_id = SDL_ThreadID();
     Noise_Init();
 
@@ -634,6 +640,7 @@ static void engine_shutdown(void)
     SDL_Quit();
 
     Settings_Shutdown();
+    Mem_Shutdown();
 }
 
 /*****************************************************************************/
