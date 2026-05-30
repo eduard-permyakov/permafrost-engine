@@ -458,7 +458,14 @@ void E_ServiceQueue(void)
 
 void E_ClearPendingEvents(void)
 {
-    queue_event_clear(&s_event_queues[s_front_queue_idx]);
+    for(int q = 0; q < 2; q++) {
+        queue_event_t *queue = &s_event_queues[q];
+        struct event event;
+        while(queue_event_pop(queue, &event)) {
+            if(event.source == ES_SCRIPT)
+                S_Release(event.arg);
+        }
+    }
 }
 
 void E_FlushEventQueue(void)

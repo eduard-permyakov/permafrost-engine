@@ -56,6 +56,7 @@
 
 #include <SDL.h> /* for SDL_RWops */
 #include <assert.h>
+#include <mimalloc.h>
 
 
 #define PFSAVE_VERSION  (1.0f)
@@ -101,8 +102,15 @@ static char            s_saved_argv[MAX_ARGC + 1][128];
 
 static void subsession_clear(void)
 {
+    /* Unwind blocked scripting tasks before clearing the scheduler so their
+     * frames release local refs back to the interpreter. Drain the event 
+     * queue (which holds script-sourced object args) before S_ClearState, 
+     * so those refs are released while the interpreter is still alive. 
+     */
+    S_Task_KillAll();
     Sched_ClearState();
     E_DeleteScriptHandlers();
+    E_ClearPendingEvents();
     Cursor_ClearState();
     N_ClearState();
     S_ClearState();
@@ -116,7 +124,7 @@ static void subsession_clear(void)
     UI_ClearState();
     AL_ClearState();
     LoadingScreen_ClearState();
-    E_ClearPendingEvents();
+    mi_collect(true);
 }
 
 static void subsession_save_args(void)

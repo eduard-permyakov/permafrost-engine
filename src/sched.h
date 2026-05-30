@@ -83,7 +83,8 @@ enum{
     TASK_MAIN_THREAD_PINNED = (1 << 0),
     TASK_DETACHED           = (1 << 1),
     TASK_BIG_STACK          = (1 << 2),
-    TASK_RUN_DURING_PAUSE   = (1 << 3)
+    TASK_RUN_DURING_PAUSE   = (1 << 3),
+    TASK_SCRIPT             = (1 << 4)
 };
 
 typedef struct result (*task_func_t)(void *);
@@ -111,6 +112,7 @@ bool     Sched_HasBlocked(void);
 bool     Sched_IsReady(uint32_t tid);
 bool     Sched_IsEventBlocked(uint32_t tid);
 bool     Sched_TryCancel(uint32_t tid);
+bool     Sched_AbortScriptBlocked(uint32_t tid);
 
 /* The following may only be called from task context 
  * (i.e. from the body of a task function) */

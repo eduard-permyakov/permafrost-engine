@@ -188,6 +188,7 @@ KHASH_MAP_INIT_INT(tqueue, queue_tid_t)
 uint64_t    sched_switch_ctx(struct context *save, struct context *restore, uint64_t retval, void *arg);
 void        sched_task_exit_trampoline(void);
 void        sched_task_exit(struct result ret);
+static void sched_task_cleanup(const struct task *task);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -580,13 +581,53 @@ static void sched_send(struct task *task, uint32_t tid, void *msg, size_t msglen
     }
 }
 
+static void drain_deleted_messages(queue_tid_t *queue)
+{
+    while(queue_size(*queue) > 0 && (queue->mem[queue->ihead] & DELETED_MARKER)) {
+        uint32_t dump;
+        queue_tid_pop(queue, &dump);
+    }
+}
+
+static bool mark_deleted_in_queue(queue_tid_t *queue, uint32_t tid)
+{
+    if(queue_size(*queue) == 0)
+        return false;
+
+    for(int j = queue->ihead;
+        j != (queue->itail + 1) % queue->capacity;
+        j = (j + 1) % queue->capacity) {
+
+        if(queue->mem[j] == tid) {
+            queue->mem[j] |= DELETED_MARKER;
+            return true;
+        }
+    }
+    return false;
+}
+
+static void cleanup_queued_tasks(queue_tid_t *queue)
+{
+    for(int i = 0; i < queue_size(*queue); i++) {
+        uint32_t tid = queue->mem[i];
+        if(tid & DELETED_MARKER)
+            continue;
+        sched_task_cleanup(&s_tasks[tid - 1]);
+    }
+    queue_tid_clear(queue);
+}
+
 static void sched_receive(struct task *task, uint32_t *out_tid, void *msg, size_t msglen)
 {
-    if(queue_size(s_msg_queues[task->tid - 1]) > 0) {
-    
+    assert(task->state != TASK_STATE_SEND_BLOCKED);
+
+    queue_tid_t *queue = &s_msg_queues[task->tid - 1];
+    drain_deleted_messages(queue);
+
+    if(queue_size(*queue) > 0) {
+
         uint32_t send_tid = 0;
-        assert(task->state != TASK_STATE_SEND_BLOCKED);
-        queue_tid_pop(&s_msg_queues[task->tid - 1], &send_tid);
+        queue_tid_pop(queue, &send_tid);
         assert(send_tid > 0);
 
         struct task *send_task = &s_tasks[send_tid - 1];
@@ -1434,27 +1475,15 @@ void Sched_ClearState(void)
     for(khiter_t k = kh_begin(s_event_queues); k != kh_end(s_event_queues); k++) {
         if(!kh_exist(s_event_queues, k))
             continue;
-
-        queue_tid_t *queue = &kh_val(s_event_queues, k);
-        for(int i = 0; i < queue_size(*queue); i++) {
-            struct task *curr = &s_tasks[queue->mem[i] - 1];
-            sched_task_cleanup(curr);
-        }
-        queue_tid_clear(queue);
+        cleanup_queued_tasks(&kh_val(s_event_queues, k));
     }
 
     for(int i = 0; i < MAX_TASKS; i++) {
 
-        queue_tid_t *queue = &s_msg_queues[i];
-        for(int i = 0; i < queue_size(*queue); i++) {
-            struct task *curr = &s_tasks[queue->mem[i] - 1];
-            sched_task_cleanup(curr);
-        }
-        queue_tid_clear(queue);
+        cleanup_queued_tasks(&s_msg_queues[i]);
 
         if(s_tasks[i].state == TASK_STATE_SEND_BLOCKED) {
-            struct task *curr = &s_tasks[i];
-            sched_task_cleanup(curr);
+            sched_task_cleanup(&s_tasks[i]);
         }
         s_parent_waiting[i] = false;
         s_tasks[i].state = TASK_STATE_ACTIVE;
@@ -1660,6 +1689,64 @@ bool Sched_TryCancel(uint32_t tid)
         }
         sched_task_shutdown(task);
     }
+    SDL_UnlockMutex(s_request_lock);
+    return ret;
+}
+
+/* Wake a blocked script-owned task with a NULL retval so the awaiter resumes
+ * and can propagate any pending Python exception. Only safe for TASK_SCRIPT
+ * tasks since the wake-up returns garbage from the underlying Task_X call;
+ * engine-side C task code is not prepared to handle that.
+ */
+bool Sched_AbortScriptBlocked(uint32_t tid)
+{
+    ASSERT_IN_MAIN_THREAD();
+    bool ret = false;
+    SDL_LockMutex(s_request_lock);
+
+    struct task *task = &s_tasks[tid - 1];
+    assert(task->flags & TASK_SCRIPT);
+
+    switch((int)task->state) {
+    case TASK_STATE_EVENT_BLOCKED: {
+
+        enum eventtype event;
+        queue_tid_t *queue;
+        (void)event;
+
+        kh_foreach_val_ptr(s_event_queues, event, queue, {
+            if(mark_deleted_in_queue(queue, tid)) {
+                ret = true;
+                break;
+            }
+        });
+
+        if(ret) {
+            int *source = (void*)task->req.argv[1];
+            if(source)
+                *source = ES_ENGINE;
+            task->retval = 0;
+            sched_reactivate(task);
+        }
+        break;
+    }
+    case TASK_STATE_RECV_BLOCKED: {
+
+        uint32_t target = (uint32_t)task->req.argv[0];
+        ret = mark_deleted_in_queue(&s_msg_queues[target - 1], tid);
+        if(ret)
+            sched_reactivate(task);
+        break;
+    }
+    case TASK_STATE_SEND_BLOCKED:
+    case TASK_STATE_REPLY_BLOCKED:
+        sched_reactivate(task);
+        ret = true;
+        break;
+    default:
+        break;
+    }
+
     SDL_UnlockMutex(s_request_lock);
     return ret;
 }

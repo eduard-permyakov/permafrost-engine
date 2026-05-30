@@ -119,5 +119,11 @@ script_opaque_t S_Region_ObjFromAtts(const char *name, int type, vec2_t pos,
 script_opaque_t S_Camera_ObjFromAtts(const char *name, vec3_t pos, 
                                      float pitch, float yaw);
 
+/*###########################################################################*/
+/* SCRIPT TASK                                                               */
+/*###########################################################################*/
+
+void            S_Task_KillAll(void);
+
 #endif
 

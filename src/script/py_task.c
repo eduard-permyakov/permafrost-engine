@@ -369,6 +369,121 @@ static void pytask_pop_ctx(PyTaskObject *self)
     assert(ts == self->ts);
 }
 
+static bool pytask_handle_abort(PyTaskObject *self, PyObject *req_result, PyObject **out_ret)
+{
+    bool aborted = !req_result && PyErr_Occurred() && PyErr_ExceptionMatches(PyExc_SystemExit);
+    if(!aborted)
+        return false;
+
+    /* EvalFrameEx exits via tstate->frame = f->f_back without DECREF'ing the
+     * previous frame; hold our own reference to release after. */
+    PyFrameObject *fr = self->ts->frame;
+    if(!_PyObject_GC_IS_TRACKED((PyObject*)fr))
+        PyObject_GC_Track((PyObject*)fr);
+    *out_ret = PyEval_EvalFrameEx(fr, 1);
+    Py_DECREF(fr);
+    return true;
+}
+
+static PyObject *pytask_resume(PyTaskObject *self)
+{
+    if(self->regname) {
+        Task_Register(self->regname);
+    }
+
+    PyObject *req_result = pytask_resume_request(self);
+    assert(self->ts->frame);
+
+    PyObject *ret = NULL;
+    if(pytask_handle_abort(self, req_result, &ret))
+        return ret;
+
+    if(req_result) {
+
+        /* Implementation details from Python/ceval.c
+         */
+        const unsigned char *bytecode = (unsigned char *)PyString_AS_STRING(self->ts->frame->f_code->co_code);
+        const int lasti = self->ts->frame->f_lasti;
+        PyObject_GC_UnTrack(self->ts->frame);
+
+        int opcode = bytecode[lasti];
+        int oparg = (bytecode[lasti + 2] << 8) + bytecode[lasti + 1];
+        self->ts->frame->f_lasti += 2;
+
+        assert(opcode == CALL_FUNCTION
+            || opcode == CALL_FUNCTION_VAR
+            || opcode == CALL_FUNCTION_KW
+            || opcode == CALL_FUNCTION_VAR_KW);
+
+        int na = oparg & 0xff;
+        int nk = (oparg >> 8) & 0xff;
+        int n = na + 2 * nk;
+
+        if(opcode != CALL_FUNCTION) {
+            int flags = (opcode - CALL_FUNCTION) & 3;
+            if (flags & CALL_FLAG_VAR)
+                n++;
+            if (flags & CALL_FLAG_KW)
+                n++;
+        }
+
+        PyObject **pfunc = (self->ts->frame->f_stacktop) - n - 1;
+
+        /* Clear the stack of the function object. Also removes
+         * the arguments in case they weren't consumed already.
+         */
+        while((self->ts->frame->f_stacktop) > pfunc) {
+            PyObject *w = *(--self->ts->frame->f_stacktop);
+            Py_DECREF(w);
+        }
+        assert(self->ts->frame->f_stacktop >= self->ts->frame->f_valuestack);
+
+        /* Push the result of the function call onto the evaluation stack.
+         */
+        Py_INCREF(req_result);
+        *(self->ts->frame->f_stacktop++) = req_result;
+
+        PyFrameObject *fr = self->ts->frame;
+        if(!_PyObject_GC_IS_TRACKED((PyObject*)fr))
+            PyObject_GC_Track((PyObject*)fr);
+        ret = PyEval_EvalFrameEx(fr, 0);
+        /* EvalFrameEx nulls tstate->frame on exit without DECREF; release
+         * the owned reference unpickle (or our task setup) put on it. */
+        Py_DECREF(fr);
+    }else{
+        /* We've failed to resume the request. There are a couple of legitimate
+         * cases when this can occur: when the task was send-blocked or reply-blocked
+         * on another task that has subsequently finished running. Effectively this puts
+         * the resumed task into a state where it can never be unblocked. Such a "hung"
+         * task is definitely an example of sloppy scripting but, nonetheless, shouldn't
+         * prevent us from resuming our session.
+         */
+        PyErr_Clear();
+        Py_CLEAR(self->ts->frame);
+    }
+    Py_XDECREF(req_result);
+    return ret;
+}
+
+static PyObject *pytask_launch(PyTaskObject *self)
+{
+    assert(self->state == PYTASK_STATE_NOT_STARTED);
+    assert(!self->ts->frame);
+    assert(self->ts->recursion_depth == 0);
+
+    self->state = PYTASK_STATE_RUNNING;
+
+    return PyEval_EvalCodeEx(
+        (PyCodeObject *)PyFunction_GET_CODE(self->runfunc),
+        PyFunction_GET_GLOBALS(self->runfunc),
+        NULL,
+        (PyObject**)&self, 1,
+        NULL, 0,
+        NULL, 0,
+        PyFunction_GET_CLOSURE(self->runfunc)
+    );
+}
+
 static struct result py_task(void *arg)
 {
     PyTaskObject *self = (PyTaskObject*)arg;
@@ -380,92 +495,9 @@ static struct result py_task(void *arg)
     PyObject *ret = NULL;
 
     if(self->state == PYTASK_STATE_RUNNING) {
-
-        if(self->regname) {
-            Task_Register(self->regname);
-        }
-
-        PyObject *req_result = pytask_resume_request(self);
-        assert(self->ts->frame);
-
-        if(req_result) {
-
-            /* Implementation details from Python/ceval.c
-             */
-            const unsigned char *bytecode = (unsigned char *)PyString_AS_STRING(self->ts->frame->f_code->co_code);
-            const int lasti = self->ts->frame->f_lasti;
-            PyObject_GC_UnTrack(self->ts->frame);
-
-            int opcode = bytecode[lasti];
-            int oparg = (bytecode[lasti + 2] << 8) + bytecode[lasti + 1];
-            self->ts->frame->f_lasti += 2;
-
-            assert(opcode == CALL_FUNCTION
-                || opcode == CALL_FUNCTION_VAR
-                || opcode == CALL_FUNCTION_KW
-                || opcode == CALL_FUNCTION_VAR_KW);
-
-            int na = oparg & 0xff;
-            int nk = (oparg >> 8) & 0xff;
-            int n = na + 2 * nk;
-
-            if(opcode != CALL_FUNCTION) {
-                int flags = (opcode - CALL_FUNCTION) & 3;
-                if (flags & CALL_FLAG_VAR)
-                    n++;
-                if (flags & CALL_FLAG_KW)
-                    n++;
-            }
-
-            PyObject **pfunc = (self->ts->frame->f_stacktop) - n - 1;
-
-            /* Clear the stack of the function object. Also removes
-             * the arguments in case they weren't consumed already.  
-             */
-            while((self->ts->frame->f_stacktop) > pfunc) {
-                PyObject *w = *(--self->ts->frame->f_stacktop);
-                Py_DECREF(w);
-            }
-            assert(self->ts->frame->f_stacktop >= self->ts->frame->f_valuestack);
-
-            /* Push the result of the function call onto the evaluation stack. 
-             */
-            Py_INCREF(req_result);
-            *(self->ts->frame->f_stacktop++) = req_result;
-
-            if(!_PyObject_GC_IS_TRACKED(self->ts->frame))
-                PyObject_GC_Track(self->ts->frame);
-            ret = PyEval_EvalFrameEx(self->ts->frame, 0);
-        }else{
-            /* We've failed to resume the request. There are a couple of legitimate 
-             * cases when this can occur: when the task was send-blocked or reply-blocked 
-             * on another task that has subsequently finished running. Effectively this puts 
-             * the resumed task into a state where it can never be unblocked. Such a "hung"
-             * task is definitely an example of sloppy scripting but, nonetheless, shouldn't 
-             * prevent us from resuming our session.
-             */
-            PyErr_Clear();
-        }
-        Py_CLEAR(self->ts->frame);
-        Py_XDECREF(req_result);
-
+        ret = pytask_resume(self);
     }else{
-
-        assert(self->state == PYTASK_STATE_NOT_STARTED);
-        assert(!self->ts->frame);
-        assert(self->ts->recursion_depth == 0);
-
-        self->state = PYTASK_STATE_RUNNING;
-
-        ret = PyEval_EvalCodeEx(
-            (PyCodeObject *)PyFunction_GET_CODE(self->runfunc),
-            PyFunction_GET_GLOBALS(self->runfunc), 
-            NULL,
-            (PyObject**)&self, 1,
-            NULL, 0, 
-            NULL, 0,
-            PyFunction_GET_CLOSURE(self->runfunc)
-        );
+        ret = pytask_launch(self);
     }
 
     if(ret) {
@@ -830,10 +862,10 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
 
     if(ret->state == PYTASK_STATE_RUNNING) {
 
-        int flags = TASK_MAIN_THREAD_PINNED;
+        int flags = TASK_MAIN_THREAD_PINNED | TASK_SCRIPT;
         if(!ret->small_stack)
             flags |= TASK_BIG_STACK;
-    
+
         assert(ret->ts->frame->f_stacktop);
         ret->tid = pytask_schedule(ret, 16, py_task, ret, NULL, flags);
 
@@ -890,7 +922,7 @@ static PyObject *PyTask_run(PyTaskObject *self)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    int flags = TASK_MAIN_THREAD_PINNED;
+    int flags = TASK_MAIN_THREAD_PINNED | TASK_SCRIPT;
     if(!self->small_stack)
         flags |= TASK_BIG_STACK;
 
@@ -939,16 +971,21 @@ static PyObject *PyTask_wait(PyTaskObject *self, PyObject *args)
     pytask_req_set(self, NULL, NULL, PYREQ_YIELD);
     pytask_pop_ctx(self);
 
-    PyObject *arg;
+    PyObject *arg = NULL;
     int source;
     do{
         arg = Task_AwaitEvent(EVENT_SCRIPT_TASK_FINISHED, &source);
+        if(arg == NULL)
+            break;
         if(!PyTuple_Check(arg) || PyTuple_GET_SIZE(arg) != 2)
             continue;
     }while(PyTuple_GET_ITEM(arg, 0) != task);
 
     pytask_push_ctx(self);
     pytask_req_clear(self);
+
+    if(PyErr_Occurred())
+        return NULL;
 
     PyObject *ret = PyTuple_GET_ITEM(arg, 1);
     Py_INCREF(ret);
@@ -1012,6 +1049,9 @@ static PyObject *PyTask_send(PyTaskObject *self, PyObject *args)
     pytask_push_ctx(self);
     pytask_req_clear(self);
 
+    if(PyErr_Occurred())
+        return NULL;
+
     return reply; /* steal the reply object reference */
 }
 
@@ -1035,6 +1075,9 @@ static PyObject *PyTask_receive(PyTaskObject *self)
 
     pytask_push_ctx(self);
     pytask_req_clear(self);
+
+    if(PyErr_Occurred())
+        return NULL;
 
     khiter_t k = kh_get(task, s_tid_task_map, from_tid);
     assert(k != kh_end(s_tid_task_map));
@@ -1086,6 +1129,9 @@ static PyObject *PyTask_reply(PyTaskObject *self, PyObject *args)
     pytask_push_ctx(self);
     pytask_req_clear(self);
 
+    if(PyErr_Occurred())
+        return NULL;
+
     Py_RETURN_NONE;
 }
 
@@ -1113,6 +1159,11 @@ static PyObject *PyTask_await_event(PyTaskObject *self, PyObject *args)
 
     pytask_push_ctx(self);
     pytask_req_clear(self);
+
+    /* A pending exception in the thread state signals an abort injected by
+     * S_Task_KillAll; propagate it instead of consuming the (NULL) event arg. */
+    if(PyErr_Occurred())
+        return NULL;
 
     if(source == ES_ENGINE) {
         return S_WrapEngineEventArg(event, arg);
@@ -1146,6 +1197,9 @@ static PyObject *PyTask_sleep(PyTaskObject *self, PyObject *args)
     pytask_push_ctx(self);
     pytask_req_clear(self);
 
+    if(PyErr_Occurred())
+        return NULL;
+
     Py_RETURN_NONE;
 }
 
@@ -1174,6 +1228,9 @@ static PyObject *PyTask_register(PyTaskObject *self, PyObject *args)
 
     pytask_push_ctx(self);
     pytask_req_clear(self);
+
+    if(PyErr_Occurred())
+        return NULL;
 
     Py_RETURN_NONE;
 }
@@ -1205,8 +1262,11 @@ static PyObject *PyTask_who_is(PyTaskObject *self, PyObject *args, PyObject *kwa
     pytask_push_ctx(self);
     pytask_req_clear(self);
 
+    if(PyErr_Occurred())
+        return NULL;
+
     if(tid == NULL_TID) {
-        Py_RETURN_NONE;    
+        Py_RETURN_NONE;
     }
 
     khiter_t k = kh_get(task, s_tid_task_map, tid);
@@ -1267,6 +1327,55 @@ void S_Task_Shutdown(void)
     kh_destroy(task, s_tid_task_map);
     s_tid_task_map = NULL;
     E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
+}
+
+/* Unwind every blocked task by injecting SystemExit into its thread state and
+ * reactivating it via the scheduler. The Python frame propagates the exception,
+ * __run__ exits, and the task removes itself from s_tid_task_map. */
+void S_Task_KillAll(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    if(!s_tid_task_map)
+        return;
+
+    int safety = 16;
+    while(kh_size(s_tid_task_map) > 0 && safety-- > 0) {
+
+        size_t cap = kh_size(s_tid_task_map);
+        uint32_t *tids = malloc(cap * sizeof(uint32_t));
+        if(!tids)
+            return;
+
+        size_t ntids = 0;
+        PyTaskObject *curr;
+        uint32_t key;
+        (void)key;
+
+        kh_foreach(s_tid_task_map, key, curr, {
+            if(curr->state == PYTASK_STATE_RUNNING) {
+                PyThreadState *saved = PyThreadState_Swap(curr->ts);
+                PyErr_SetNone(PyExc_SystemExit);
+                PyThreadState_Swap(saved);
+                tids[ntids++] = curr->tid;
+            }
+        });
+
+        if(ntids == 0) {
+            PF_FREE(tids);
+            break;
+        }
+
+        size_t naborted = 0;
+        for(size_t i = 0; i < ntids; i++) {
+            if(Sched_AbortScriptBlocked(tids[i]))
+                naborted++;
+        }
+        PF_FREE(tids);
+
+        if(naborted == 0)
+            break;
+        S_Task_Flush();
+    }
 }
 
 void S_Task_Clear(void)
