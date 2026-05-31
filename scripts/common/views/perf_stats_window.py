@@ -1,6 +1,6 @@
 #
 #  This file is part of Permafrost Engine.
-#  Copyright (C) 2018-2023 Eduard Permyakov
+#  Copyright (C) 2018-2026 Eduard Permyakov
 #
 #  Permafrost Engine is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -41,9 +41,9 @@ class PerfStatsWindow(pf.Window):
 
     def __init__(self):
         vresx, vresy = (1920, 1080)
-        super(PerfStatsWindow, self).__init__("Performance",
-            (vresx/2 - PerfStatsWindow.WIDTH/2, vresy/2 - PerfStatsWindow.HEIGHT/2, PerfStatsWindow.WIDTH, PerfStatsWindow.HEIGHT),
-            pf.NK_WINDOW_BORDER | pf.NK_WINDOW_MOVABLE | pf.NK_WINDOW_MINIMIZABLE | pf.NK_WINDOW_TITLE |
+        super(PerfStatsWindow, self).__init__("Performance", 
+            (vresx/2 - PerfStatsWindow.WIDTH/2, vresy/2 - PerfStatsWindow.HEIGHT/2, PerfStatsWindow.WIDTH, PerfStatsWindow.HEIGHT), 
+            pf.NK_WINDOW_BORDER | pf.NK_WINDOW_MOVABLE | pf.NK_WINDOW_MINIMIZABLE | pf.NK_WINDOW_TITLE | 
             pf.NK_WINDOW_CLOSABLE, (vresx, vresy))
         self.tickindex = 0
         self.ticksum_ms = 0
@@ -53,6 +53,8 @@ class PerfStatsWindow(pf.Window):
         self.frame_allocd_bytes = [0]*100
         self.frame_memstats = [{}]*100
         self.frame_mem_usage = [0]*100
+        self.frame_mem_accounting = [{}]*100
+        self.frame_thread_roots = [None]*100
         self.selected_perfstats = ()
         self.expanded_paths = set()
         self.paused = False
@@ -196,13 +198,13 @@ class PerfStatsWindow(pf.Window):
 
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("[LOS Field Cache]   Used: {used:04d}/{cap:04d}  Hit Rate: {hr:02.03f} Invalidated: {inv:04d}" \
-            .format(used=nav_stats["los_used"], cap=nav_stats["los_max"],
+            .format(used=nav_stats["los_used"], cap=nav_stats["los_max"], 
             hr=nav_stats["los_hit_rate"], inv=nav_stats["los_invalidated"]), \
             (0, 255, 0))
 
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("[Flow Field Cache]   Used: {used:04d}/{cap:04d}   Hit Rate: {hr:02.03f} Invalidated: {inv:04d}" \
-            .format(used=nav_stats["flow_used"], cap=nav_stats["flow_max"],
+            .format(used=nav_stats["flow_used"], cap=nav_stats["flow_max"], 
             hr=nav_stats["flow_hit_rate"], inv=nav_stats["flow_invalidated"]), \
             (0, 255, 0))
 
@@ -221,26 +223,164 @@ class PerfStatsWindow(pf.Window):
         if not current:
             return
 
-        def thread_root_sum(stats_tuple, thread_name):
-            for pi in stats_tuple:
-                if pi.threadname != thread_name:
+        nframes = len(self.frame_perfstats)
+        roots_per_frame = self.frame_thread_roots
+        frame_ms        = self.frame_times_ms
+
+        def avg_active(thread_name):
+            s = 0.0
+            n = 0
+            for i in range(nframes):
+                rs = roots_per_frame[i]
+                if rs is None:
                     continue
-                total = 0.0
-                for j in range(pi.nentries):
-                    if pi.parent_idx(j) < 0:
-                        total += pi.ms_delta(j)
-                return total
-            return 0.0
+                fm = frame_ms[i]
+                if fm <= 0:
+                    continue
+                s += (rs.get(thread_name, 0.0) / fm) * 100.0
+                n += 1
+            return s / n if n else 0.0
+
+        worker_names = [pi.threadname for pi in current
+            if pi.threadname.startswith("worker-")]
+        worker_avgs = [avg_active(n) for n in worker_names]
+        worker_util = sum(worker_avgs) / len(worker_avgs) if worker_avgs else 0.0
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Worker Utilization: {:.2f}%".format(worker_util),
+            (255, 220, 0))
+
+        cur_roots = roots_per_frame[self.tickindex] or {}
+        cur_frame = frame_ms[self.tickindex]
 
         for pi_curr in current:
             thread_name = pi_curr.threadname
-            t_frame_times = [int(thread_root_sum(self.frame_perfstats[i], thread_name))
-                for i in range(100)]
+            is_worker = thread_name.startswith("worker-")
+            t_frame_times = [int((roots_per_frame[i] or {}).get(thread_name, 0))
+                for i in range(nframes)]
 
             self.layout_row_dynamic(20, 1)
             self.label_colored_wrap(thread_name, (255, 255, 0))
+            if is_worker:
+                curr_pct = (cur_roots.get(thread_name, 0.0) / cur_frame * 100.0) if cur_frame > 0 else 0.0
+                avg_pct  = avg_active(thread_name)
+                self.layout_row_dynamic(20, 1)
+                self.label_colored_wrap("Active: ({:.2f}% / {:.2f}%)".format(curr_pct, avg_pct),
+                    (200, 200, 200))
             self.layout_row_dynamic(40, 1)
             self.simple_chart(pf.NK_CHART_LINES, (0, 200), t_frame_times, lambda idx: None)
+
+    def mem_accounting_section(self):
+        acc = self.frame_mem_accounting[self.tickindex]
+        if not acc:
+            return
+
+        LABEL_W    = 240
+        TRI_W      = 20
+        INDENT_W   = 16
+        BAR_W      = 260
+        VAL_W      = 100
+        COUNT_W    = 70
+        ROW_H      = 20
+
+        HEADER_COLOR = (100, 180, 255)
+        SYS_COLOR    = (255, 255, 255)
+        SUB_COLOR    = (200, 200, 200)
+        VAL_COLOR    = (255, 220, 0)
+        TOTAL_COLOR  = (180, 220, 255)
+
+        bar_max = 0
+        total_bytes = 0
+        total_count = 0
+        for entry in acc.values():
+            if entry["bytes"] > bar_max:
+                bar_max = entry["bytes"]
+            total_bytes += entry["bytes"]
+            total_count += entry["count"]
+        if bar_max <= 0:
+            bar_max = 1
+
+        def fmt_bytes(b):
+            if b >= 1024 ** 3:
+                return "{:.2f} GB".format(b / float(1024 ** 3))
+            if b >= 1024 ** 2:
+                return "{:.2f} MB".format(b / float(1024 ** 2))
+            if b >= 1024:
+                return "{:.2f} kB".format(b / float(1024))
+            return "{:d} B".format(int(b))
+
+        def render_row(depth, name, bytes_, count_, has_children, path, color):
+            expanded = path in self.expanded_paths
+            self.layout_row_begin(pf.NK_STATIC, ROW_H, 6)
+
+            indent_px = max(depth * INDENT_W, 1)
+            self.layout_row_push(indent_px)
+            self.label_colored("", pf.NK_TEXT_LEFT, color)
+
+            self.layout_row_push(TRI_W)
+            if has_children:
+                sym = pf.NK_SYMBOL_TRIANGLE_DOWN if expanded else pf.NK_SYMBOL_TRIANGLE_RIGHT
+                new_state = self.selectable_symbol_label(sym, " ", pf.NK_TEXT_LEFT, expanded)
+                if new_state != expanded:
+                    if new_state:
+                        self.expanded_paths.add(path)
+                    else:
+                        self.expanded_paths.discard(path)
+            else:
+                self.label_colored("", pf.NK_TEXT_LEFT, color)
+
+            name_w = max(LABEL_W - indent_px - TRI_W, 1)
+            self.layout_row_push(name_w)
+            self.label_colored(name, pf.NK_TEXT_LEFT, color)
+
+            self.layout_row_push(BAR_W)
+            frac = 0 if bar_max <= 0 else min(1000, int((bytes_ * 1000) // bar_max))
+            self.progress(frac, 1000, False)
+
+            self.layout_row_push(VAL_W)
+            self.label_colored(fmt_bytes(bytes_), pf.NK_TEXT_RIGHT, VAL_COLOR)
+
+            self.layout_row_push(COUNT_W)
+            self.label_colored("{:d}".format(int(count_)), pf.NK_TEXT_RIGHT, color)
+
+            self.layout_row_end()
+
+        def render_header():
+            self.layout_row_begin(pf.NK_STATIC, ROW_H, 5)
+            self.layout_row_push(1 + TRI_W)
+            self.label_colored("", pf.NK_TEXT_LEFT, HEADER_COLOR)
+            self.layout_row_push(LABEL_W - 1 - TRI_W)
+            self.label_colored("system / subsystem", pf.NK_TEXT_LEFT, HEADER_COLOR)
+            self.layout_row_push(BAR_W)
+            self.label_colored("", pf.NK_TEXT_LEFT, HEADER_COLOR)
+            self.layout_row_push(VAL_W)
+            self.label_colored("bytes", pf.NK_TEXT_RIGHT, HEADER_COLOR)
+            self.layout_row_push(COUNT_W)
+            self.label_colored("count", pf.NK_TEXT_RIGHT, HEADER_COLOR)
+            self.layout_row_end()
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Per-system memory accounting", (255, 255, 0))
+
+        render_header()
+
+        for sys_name in sorted(acc.keys(), key=lambda k: -acc[k]["bytes"]):
+            entry = acc[sys_name]
+            subs = entry.get("subsystems", {})
+            named_subs = any(isinstance(k, str) for k in subs.keys())
+            path = ("acc", sys_name)
+            render_row(0, sys_name, entry["bytes"], entry["count"],
+                named_subs, path, SYS_COLOR)
+
+            if path in self.expanded_paths and subs:
+                named = [k for k in subs.keys() if isinstance(k, str)]
+                for sub_id in sorted(named, key=lambda k: -subs[k]["bytes"]):
+                    sub_entry = subs[sub_id]
+                    sub_path = ("acc", sys_name, sub_id)
+                    render_row(1, sub_id, sub_entry["bytes"], sub_entry["count"],
+                        False, sub_path, SUB_COLOR)
+
+        render_row(0, "TOTAL", total_bytes, total_count, False, ("acc", "__total"), TOTAL_COLOR)
 
     def memory_tab(self):
         alloc_values = [v // (1024 * 1024) for v in self.frame_allocd_bytes]
@@ -295,8 +435,25 @@ class PerfStatsWindow(pf.Window):
         row("Mimalloc pages",            "{:d}".format(memstats["mi_pages_current"]))
         row("Threads",                   "{:d}".format(memstats["mi_threads_current"]))
 
+        self.mem_accounting_section()
+
     def on_chart_click(self, index):
         self.selected_perfstats = self.frame_perfstats[index]
+
+    def __pickle__(self, **kwargs):
+        self.frame_times_ms = [0]*100
+        self.frame_perfstats = [()]*100
+        self.frame_allocd_bytes = [0]*100
+        self.frame_memstats = [{}]*100
+        self.frame_mem_usage = [0]*100
+        self.frame_mem_accounting = [{}]*100
+        self.frame_thread_roots = [None]*100
+        self.selected_perfstats = ()
+        self.expanded_paths = set()
+        self.tickindex = 0
+        self.ticksum_ms = 0
+        self.max_frame_latency = 0
+        return pf.Window.__pickle__(self, **kwargs)
 
     def update(self):
 
@@ -308,6 +465,7 @@ class PerfStatsWindow(pf.Window):
             newstats = pf.prev_frame_perfstats()
             new_allocd = pf.prev_frame_allocd_bytes()
             new_memstats = pf.prev_frame_memstats()
+            new_mem_accounting = pf.prev_frame_mem_accounting()
             curr_total_mem = new_memstats["vm_rss_kb"]
 
             if newtick > self.max_frame_latency:
@@ -320,7 +478,19 @@ class PerfStatsWindow(pf.Window):
             self.frame_allocd_bytes[self.tickindex] = new_allocd
             self.frame_memstats[self.tickindex] = new_memstats
             self.frame_mem_usage[self.tickindex] = curr_total_mem
+            self.frame_mem_accounting[self.tickindex] = new_mem_accounting
             self.selected_perfstats = newstats
+
+            roots = {}
+            for pi in newstats:
+                total = 0.0
+                for j in range(pi.nentries):
+                    if pi.parent_idx(j) >= 0:
+                        continue
+                    total += pi.ms_delta(j)
+                roots[pi.threadname] = total
+            self.frame_thread_roots[self.tickindex] = roots
+
             self.tickindex = (self.tickindex + 1) % len(self.frame_times_ms)
 
         self.layout_row_dynamic(100, 1)
@@ -328,11 +498,11 @@ class PerfStatsWindow(pf.Window):
 
         self.layout_row_dynamic(20, 1)
         avg_frame_latency_ms = float(self.ticksum_ms)/len(self.frame_times_ms)
-
+        
         try:
             fps = 1000/avg_frame_latency_ms
             self.label_colored_wrap("FPS: {0}".format(int(fps)), (255, 255, 0))
-        except:
+        except: 
             pass
 
         self.layout_row_dynamic(20, 2)
