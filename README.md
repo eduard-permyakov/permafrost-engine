@@ -86,6 +86,7 @@ Download the free demo on [Steam](https://store.steampowered.com/app/1309720/EVE
 * Saving and restoring of any engine session, including all Python-defined state
 * Multithreaded: simulation and rendering in a 2-stage pipeline
 * Advanced debug visualizations and profiling instrumentatation
+* Lightweight memory accounting for realtime tracking of allocations
 * Fiber system for putting work in lightweight tasks that are scheduled in userspace
 * Fiber-backed Python tasks, allowing cooperative multitasking logic in Python
 * Cross-platform (Linux and Windows)
