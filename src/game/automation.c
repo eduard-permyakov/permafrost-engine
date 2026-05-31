@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_GAME
+#define MEM_FILE_SUB MEM_SUB_GAME_AUTOMATION
+
 #include "automation.h"
 #include "movement.h"
 #include "harvester.h"
@@ -54,6 +57,15 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <assert.h>
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_GAME, MEM_SUB_GAME_AUTOMATION)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_GAME, MEM_SUB_GAME_AUTOMATION)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_AUTOMATION)
 
 #define TRANSIENT_STATE_TICKS        (2) 
 #define TRANSPORT_UNIT_COST_DISTANCE (150)

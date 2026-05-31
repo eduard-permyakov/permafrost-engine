@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_UI
+#define MEM_FILE_SUB 0
+
 #include "ui.h"
 #include "config.h"
 #include "event.h"
@@ -52,6 +55,13 @@
 #include <string.h>
 #include <assert.h>
 
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_UI, 0)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_UI, 0)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_UI, 0)
+
 #define MAX_VERTEX_MEMORY   (2 * 1024* 1024)
 #define MAX_ELEMENT_MEMORY      (512 * 1024)
 
@@ -70,6 +80,26 @@ VEC_TYPE(td, struct text_desc)
 VEC_IMPL(static inline, td, struct text_desc)
 
 KHASH_MAP_INIT_STR(font, struct nk_font*)
+
+static void *ui_nk_alloc(nk_handle h, void *old, nk_size n)
+{
+    (void)old;
+    uint16_t sys = (uint16_t)((unsigned)h.id >> 16);
+    uint16_t sub = (uint16_t)((unsigned)h.id & 0xFFFF);
+    return Mem_MallocTagged(n, sys, sub);
+}
+
+static void ui_nk_free(nk_handle h, void *p)
+{
+    (void)h;
+    Mem_Free(p);
+}
+
+static struct nk_allocator s_nk_alloc = {
+    .userdata.id = ((int)MEM_FILE_SYS << 16) | (int)MEM_FILE_SUB,
+    .alloc       = ui_nk_alloc,
+    .free        = ui_nk_free,
+};
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -260,7 +290,7 @@ static void ui_init_font_stash(struct nk_context *ctx)
     char fontdir[NK_MAX_PATH_LEN];
     pf_snprintf(fontdir, sizeof(fontdir), "%s/%s", g_basepath, "assets/fonts");
 
-    nk_font_atlas_init_default(&s_atlas);
+    nk_font_atlas_init(&s_atlas, &s_nk_alloc);
     nk_font_atlas_begin(&s_atlas);
 
     s_atlas.default_font = nk_font_atlas_add_default(&s_atlas, 16, NULL);
@@ -374,7 +404,7 @@ static void ui_clipboard_copy(nk_handle usr, const char *text, int len)
     char *str = 0;
     if(!len) 
         return;
-    str = (char*)malloc((size_t)len+1);
+    str = (char*)PF_MALLOC((size_t)len+1);
     if(!str) 
         return;
     memcpy(str, text, (size_t)len);
@@ -430,7 +460,7 @@ static void ui_render(void *user, void *event)
     /* setup buffers to load vertices and elements */
     nk_buffer_init_fixed(&vbuf, vbuff, MAX_VERTEX_MEMORY);
     nk_buffer_init_fixed(&ebuf, ebuff, MAX_ELEMENT_MEMORY);
-    nk_buffer_init_default(&cmds);
+    nk_buffer_init(&cmds, &s_nk_alloc, 4096);
 
     nk_convert(&s_ctx, &cmds, &vbuf, &ebuf, &config);
 
@@ -476,7 +506,7 @@ bool UI_Init(const char *basedir, SDL_Window *win)
         return false;
     }
 
-    nk_init_default(&s_ctx, 0);
+    nk_init(&s_ctx, &s_nk_alloc, 0);
     s_ctx.clip.copy = ui_clipboard_copy;
     s_ctx.clip.paste = ui_clipboard_paste;
     s_ctx.clip.userdata = nk_handle_ptr(0);
@@ -510,7 +540,7 @@ void UI_Shutdown(void)
     struct nk_font *curr;
     (void)curr;
 
-    kh_foreach(s_fontmap, key, curr, { free((void*)key); });
+    kh_foreach(s_fontmap, key, curr, { PF_FREE(key); });
     kh_destroy(font, s_fontmap);
 
     R_PushCmd((struct rcmd){ R_GL_UI_Shutdown, 0});

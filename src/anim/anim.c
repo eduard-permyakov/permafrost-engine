@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_ANIM
+#define MEM_FILE_SUB MEM_SUB_ANIM_DISPATCH
+
 #include "public/anim.h"
 #include "anim_private.h"
 #include "anim_data.h"
@@ -51,6 +54,15 @@
 
 #include <string.h>
 #include <assert.h>
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_ANIM, MEM_SUB_ANIM_DISPATCH)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_ANIM, MEM_SUB_ANIM_DISPATCH)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_ANIM, MEM_SUB_ANIM_DISPATCH)
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define CHK_TRUE_RET(_pred)   \
@@ -298,7 +310,7 @@ const struct skeleton *A_GetCurrPoseSkeleton(uint32_t uid)
     size_t alloc_sz = sizeof(struct skeleton) + 
                       num_joints * (sizeof(struct joint) + sizeof(struct SQT) + sizeof(mat4x4_t));
 
-    struct skeleton *ret = malloc(alloc_sz);
+    struct skeleton *ret = PF_MALLOC(alloc_sz);
     if(!ret)
         return NULL;
 

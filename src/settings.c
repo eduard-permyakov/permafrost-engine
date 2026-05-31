@@ -34,6 +34,9 @@
  */
 
 
+#define MEM_FILE_SYS MEM_SYS_SETTINGS
+#define MEM_FILE_SUB 0
+
 #include "settings.h"
 #include "config.h"
 #include "asset_load.h"
@@ -46,6 +49,13 @@
 #include <string.h>
 #include <assert.h>
 #include <stdlib.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_SETTINGS, 0)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_SETTINGS, 0)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_SETTINGS, 0)
 
 #define STR2(x) #x
 #define STR(x)  STR2(x)
@@ -219,7 +229,7 @@ void Settings_Shutdown(void)
 
     kh_foreach(s_settings_table, key, curr, {
         (void)curr;
-        free((char*)key);
+        PF_FREE(key);
     });
     kh_destroy(setting, s_settings_table);
     kh_destroy(settpriv, s_priv_table);
@@ -268,7 +278,7 @@ ss_e Settings_Delete(const char *name)
     if(k == kh_end(s_settings_table))
         return SS_NO_SETTING;
 
-    free((char*)kh_key(s_settings_table, k));
+    PF_FREE(kh_key(s_settings_table, k));
     kh_del(setting, s_settings_table, k);
     return SS_OKAY; 
 }

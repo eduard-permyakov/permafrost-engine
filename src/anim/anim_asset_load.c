@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_ANIM
+#define MEM_FILE_SUB MEM_SUB_ANIM_ASSET_LOAD
+
 #include "public/anim.h"
 #include "anim_private.h"
 #include "anim_data.h"
@@ -44,6 +47,13 @@
 #include "../lib/public/pf_string.h"
 
 #include <string.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_ANIM, MEM_SUB_ANIM_ASSET_LOAD)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_ANIM, MEM_SUB_ANIM_ASSET_LOAD)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_ANIM, MEM_SUB_ANIM_ASSET_LOAD)
 
 
 /*****************************************************************************/
@@ -201,7 +211,7 @@ size_t A_AL_CtxBuffSize(void)
 
 void *A_AL_PrivFromStream(const char *pfobj, const struct pfobj_hdr *header, SDL_RWops *stream)
 {
-    struct anim_data *ret = malloc(al_data_buffsize_from_header(header));
+    struct anim_data *ret = PF_MALLOC(al_data_buffsize_from_header(header));
     if(!ret)
         goto fail_alloc;
 

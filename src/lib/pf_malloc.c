@@ -33,11 +33,22 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_LIB
+#define MEM_FILE_SUB MEM_SUB_LIB_PF_MALLOC
+
 #include "public/pf_malloc.h"
+#include "public/mem.h"
 
 #include <stdint.h>
 #include <assert.h>
 #include <stdlib.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_LIB, MEM_SUB_LIB_PF_MALLOC)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_LIB, MEM_SUB_LIB_PF_MALLOC)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_LIB, MEM_SUB_LIB_PF_MALLOC)
 
 /* The maximum number of discrete allocations from 
  * a single slab. */
@@ -297,7 +308,7 @@ void pf_free(void *slab, void *ptr)
 void *pf_metamalloc_init(size_t size)
 {
     size_t metasize = sizeof(struct memheap) + MAX_HEAP_SZ * sizeof(struct memblock);
-    struct memheap *heap = malloc(metasize);
+    struct memheap *heap = PF_MALLOC(metasize);
     if(!heap)
         return NULL;
 
@@ -315,7 +326,7 @@ void *pf_metamalloc_init(size_t size)
 
 void pf_metamalloc_destroy(void *meta)
 {
-    free(meta);
+    PF_FREE(meta);
 }
 
 int pf_metamalloc(void *meta, size_t size)

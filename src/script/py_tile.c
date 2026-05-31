@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_SCRIPT
+#define MEM_FILE_SUB MEM_SUB_SCRIPT_TILE
+
 #include "py_tile.h"
 #include "py_pickle.h"
 #include "../game/public/game.h"
@@ -41,6 +44,15 @@
 #include "../lib/public/SDL_vec_rwops.h"
 
 #include <structmember.h>
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_TILE)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_TILE)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_TILE)
 
 
 #define CHK_TRUE(_pred, _label) do{ if(!(_pred)) goto _label; }while(0)

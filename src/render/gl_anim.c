@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_RENDER
+#define MEM_FILE_SUB MEM_SUB_RENDER_GL_ANIM
+
 #include "render_private.h"
 #include "gl_anim.h"
 #include "gl_mesh.h"
@@ -47,6 +50,15 @@
 #include "public/render.h"
 #include "../main.h"
 #include "../entity.h"
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_ANIM)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_ANIM)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_ANIM)
 
 #define MAX(a, b)               ((a) > (b) ? (a) : (b))
 #define DEFAULT_POSE_BUFF_SIZE  (16*1024*1024)

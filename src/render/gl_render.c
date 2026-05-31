@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_RENDER
+#define MEM_FILE_SUB MEM_SUB_RENDER_GL_RENDER
+
 #include "render_private.h"
 #include "gl_render.h"
 #include "gl_mesh.h"
@@ -63,6 +66,13 @@
 #include <stddef.h>
 #include <assert.h>
 #include <string.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_RENDER)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_RENDER)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_RENDER)
 
 
 #define EPSILON                     (1.0f/1024)
@@ -426,7 +436,7 @@ void R_GL_DrawSkeleton(mat4x4_t *model, const struct skeleton *skel, const struc
      * | joint root 0   | joint tip 0 | joint root 1 | ...
      * +----------------+-------------+--------------+-----
      */
-    vbuff = calloc(skel->num_joints * 2, sizeof(vec3_t));
+    vbuff = PF_CALLOC(skel->num_joints * 2, sizeof(vec3_t));
 
     for(int i = 0, vbuff_idx = 0; i < skel->num_joints; i++, vbuff_idx +=2) {
 
@@ -917,7 +927,7 @@ void R_GL_DumpFBColor_PPM(const char *filename, const int *width, const int *hei
     ASSERT_IN_RENDER_THREAD();
 
     long img_size = (*width) * (*height) * 3;
-    unsigned char *data = malloc(img_size);
+    unsigned char *data = PF_MALLOC(img_size);
     if(!data) {
         return;
     }
@@ -954,7 +964,7 @@ void R_GL_DumpFBDepth_PPM(const char *filename, const int *width, const int *hei
     ASSERT_IN_RENDER_THREAD();
 
     long img_size = (*width) * (*height) * sizeof(GLfloat);
-    GLfloat *data = malloc(img_size);
+    GLfloat *data = PF_MALLOC(img_size);
     if(!data) {
         return;
     }

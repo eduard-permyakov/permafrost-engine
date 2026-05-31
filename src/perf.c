@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_PERF
+#define MEM_FILE_SUB 0
+
 #include "perf.h"
 #include "main.h"
 #include "lib/public/khash.h"
@@ -56,6 +59,15 @@
 #include <unistd.h>
 #include <errno.h>
 #endif
+
+#include "lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_PERF, 0)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_PERF, 0)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_PERF, 0)
 
 
 #define PARENT_NONE     ~((uint32_t)0)
@@ -83,7 +95,7 @@ struct perf_entry{
         uint64_t pc_delta;
         struct{
             struct{
-                uint32_t gpu_cookie;
+                uint64_t gpu_cookie;
                 uint64_t gpu_ts;
             }begin, end;
         };
@@ -136,7 +148,7 @@ struct perf_state{
 #if defined(__linux__) && !defined(NDEBUG)
     /* perf_event_open group leader + 7 followers; opened lazily by the
      * thread itself on its first Perf_Push so the kernel attaches them
-     * to the right task. */
+     * to the right thread. */
     int               hw_fds[PE_COUNT];
     bool              hw_fds_inited;
     bool              hw_init_attempted;
@@ -405,7 +417,7 @@ static void pstate_destroy(struct perf_state *in)
     (void)key;
 
     kh_foreach(in->id_name_table, key, curr, {
-        free((char*)curr);
+        PF_FREE(curr);
     });
 
     kh_destroy(id_name, in->id_name_table);
@@ -759,7 +771,7 @@ void Perf_FinishTick(void)
             size_t nthreads = Perf_Report(sizeof(infos)/sizeof(infos[0]), infos);
             perf_log_call_graph(nthreads, infos);
             for(size_t i = 0; i < nthreads; i++)
-                free(infos[i]);
+                PF_FREE(infos[i]);
         }
     }
 
@@ -784,7 +796,7 @@ size_t Perf_Report(size_t maxout, struct perf_info **out)
 
         struct perf_state *ps = &kh_val(s_thread_state_table, k);
         int read_idx = (ps->perf_tree_idx + 1) % NFRAMES_LOGGED;
-        struct perf_info *info = malloc(sizeof(struct perf_info) + vec_size(&ps->perf_trees[read_idx]) * sizeof(info->entries[0]));
+        struct perf_info *info = PF_MALLOC(sizeof(struct perf_info) + vec_size(&ps->perf_trees[read_idx]) * sizeof(info->entries[0]));
         if(!info)
             break;
 

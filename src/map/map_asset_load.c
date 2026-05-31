@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_MAP
+#define MEM_FILE_SUB MEM_SUB_MAP_ASSET_LOAD
+
 #include "public/map.h"
 #include "pfchunk.h"
 #include "map_private.h"
@@ -52,6 +55,13 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <string.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_MAP, MEM_SUB_MAP_ASSET_LOAD)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_MAP, MEM_SUB_MAP_ASSET_LOAD)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_MAP, MEM_SUB_MAP_ASSET_LOAD)
 
 /* ASCII to integer - argument must be an ascii digit */
 #define A2I(_a) ((_a) - '0')
@@ -701,9 +711,9 @@ bool M_AL_InitTileUpdateBuffer(const struct map *map)
     size_t tiles_per_chunk = (size_t)res.tile_w * res.tile_h;
     size_t ntiles          = nchunks * tiles_per_chunk;
 
-    s_tile_dirty    = calloc(ntiles, sizeof(bool));
-    s_chunk_dirty   = calloc(nchunks, sizeof(bool));
-    s_flush_scratch = malloc(tiles_per_chunk * sizeof(struct tile_desc));
+    s_tile_dirty    = PF_CALLOC(ntiles, sizeof(bool));
+    s_chunk_dirty   = PF_CALLOC(nchunks, sizeof(bool));
+    s_flush_scratch = PF_MALLOC(tiles_per_chunk * sizeof(struct tile_desc));
     if(!s_tile_dirty || !s_chunk_dirty || !s_flush_scratch)
         goto fail;
 

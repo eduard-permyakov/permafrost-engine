@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_MAP
+#define MEM_FILE_SUB MEM_SUB_MAP_FOLIAGE
+
 #include "public/map.h"
 #include "public/tile.h"
 #include "map_private.h"
@@ -53,6 +56,13 @@
 #include <assert.h>
 #include <string.h>
 #include <math.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_MAP, MEM_SUB_MAP_FOLIAGE)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_MAP, MEM_SUB_MAP_FOLIAGE)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_MAP, MEM_SUB_MAP_FOLIAGE)
 
 
 #define GRASS_MODEL_DIR          "assets/models/foliage"
@@ -168,8 +178,8 @@ static void generate_chunk_positions(const struct map *map, int cr, int cc,
     if(total == 0)
         return;
 
-    vec3_t *positions = malloc(total * sizeof(vec3_t));
-    float  *rotations = malloc(total * sizeof(float));
+    vec3_t *positions = PF_MALLOC(total * sizeof(vec3_t));
+    float  *rotations = PF_MALLOC(total * sizeof(float));
     if(!positions || !rotations) {
         PF_FREE(positions);
         PF_FREE(rotations);
@@ -336,7 +346,7 @@ bool M_FoliageInit(const struct map *map)
     s_noise_w = (size_t)(res.chunk_w * res.tile_w);
     s_noise_h = (size_t)(res.chunk_h * res.tile_h);
 
-    s_noise = malloc(s_noise_w * s_noise_h * sizeof(float));
+    s_noise = PF_MALLOC(s_noise_w * s_noise_h * sizeof(float));
     if(!s_noise)
         return false;
 
@@ -345,8 +355,8 @@ bool M_FoliageInit(const struct map *map)
     Noise_Normalize2D(s_noise_w, s_noise_h, s_noise);
 
     s_num_chunks = (size_t)(res.chunk_h * res.chunk_w);
-    s_chunks = calloc(s_num_chunks, sizeof(struct chunk_foliage));
-    s_dirty  = calloc(s_num_chunks, sizeof(bool));
+    s_chunks = PF_CALLOC(s_num_chunks, sizeof(struct chunk_foliage));
+    s_dirty  = PF_CALLOC(s_num_chunks, sizeof(bool));
     if(!s_chunks || !s_dirty)
         goto fail_alloc;
 

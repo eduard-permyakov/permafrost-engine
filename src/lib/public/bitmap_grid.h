@@ -394,16 +394,16 @@ static inline uint64_t bg_keep_bits_below(uint64_t w, int bit_hi)
             if(next <= new_cap) return false; /* int32 overflow */                             \
             new_cap = next;                                                                    \
         }                                                                                      \
-        int32_t *nxs = (int32_t*)realloc(bg->xs, (size_t)new_cap * sizeof(int32_t));           \
+        int32_t *nxs = (int32_t*)PF_REALLOC(bg->xs, (size_t)new_cap * sizeof(int32_t));           \
         if(!nxs) return false;                                                                 \
         bg->xs = nxs;                                                                          \
-        int32_t *nys = (int32_t*)realloc(bg->ys, (size_t)new_cap * sizeof(int32_t));           \
+        int32_t *nys = (int32_t*)PF_REALLOC(bg->ys, (size_t)new_cap * sizeof(int32_t));           \
         if(!nys) return false;                                                                 \
         bg->ys = nys;                                                                          \
-        int32_t *nn  = (int32_t*)realloc(bg->nexts, (size_t)new_cap * sizeof(int32_t));        \
+        int32_t *nn  = (int32_t*)PF_REALLOC(bg->nexts, (size_t)new_cap * sizeof(int32_t));        \
         if(!nn) return false;                                                                  \
         bg->nexts = nn;                                                                        \
-        type    *nr  = (type*)   realloc(bg->records, (size_t)new_cap * sizeof(type));         \
+        type    *nr  = (type*)   PF_REALLOC(bg->records, (size_t)new_cap * sizeof(type));         \
         if(!nr) return false;                                                                  \
         bg->records = nr;                                                                      \
         bg->elts_cap = new_cap;                                                                \
@@ -989,7 +989,7 @@ static inline uint64_t bg_keep_bits_below(uint64_t w, int bit_hi)
         /* Cell metadata table. 12 bytes per cell, so even a 256x256 grid                  */  \
         /* fits comfortably (768 KB).                                                      */  \
         size_t ncells = (size_t)bg->grid_w * (size_t)bg->grid_h;                               \
-        bg->cells = (bg_cell(name)*)malloc(ncells * sizeof(bg_cell(name)));                    \
+        bg->cells = (bg_cell(name)*)PF_MALLOC(ncells * sizeof(bg_cell(name)));                    \
         if(!bg->cells) return false;                                                           \
         for(size_t i = 0; i < ncells; i++) {                                                   \
             bg->cells[i].packed_start = -1;                                                    \
@@ -1007,10 +1007,10 @@ static inline uint64_t bg_keep_bits_below(uint64_t w, int bit_hi)
         {                                                                                      \
             size_t nu_fine   = (size_t)bg->bm_fine_row_u64   * (size_t)bg->grid_h;             \
             size_t nu_coarse = (size_t)bg->bm_coarse_row_u64 * (size_t)bg->coarse_h;           \
-            bg->bm_fine   = (uint64_t*)calloc(nu_fine,   sizeof(uint64_t));                    \
-            bg->bm_coarse = (uint64_t*)calloc(nu_coarse, sizeof(uint64_t));                    \
+            bg->bm_fine   = (uint64_t*)PF_CALLOC(nu_fine,   sizeof(uint64_t));                    \
+            bg->bm_coarse = (uint64_t*)PF_CALLOC(nu_coarse, sizeof(uint64_t));                    \
             if(!bg->bm_fine || !bg->bm_coarse) {                                               \
-                free(bg->cells); free(bg->bm_fine); free(bg->bm_coarse);                       \
+                PF_FREE(bg->cells); PF_FREE(bg->bm_fine); PF_FREE(bg->bm_coarse);                       \
                 memset(bg, 0, sizeof(*bg));                                                    \
                 return false;                                                                  \
             }                                                                                  \
@@ -1021,9 +1021,9 @@ static inline uint64_t bg_keep_bits_below(uint64_t w, int bit_hi)
                                                                                                \
     scope void bg_##name##_destroy(bg(name) *bg)                                               \
     {                                                                                          \
-        free(bg->cells);                                                                       \
-        free(bg->xs); free(bg->ys); free(bg->nexts); free(bg->records);                        \
-        free(bg->bm_fine); free(bg->bm_coarse);                                                \
+        PF_FREE(bg->cells);                                                                       \
+        PF_FREE(bg->xs); PF_FREE(bg->ys); PF_FREE(bg->nexts); PF_FREE(bg->records);                        \
+        PF_FREE(bg->bm_fine); PF_FREE(bg->bm_coarse);                                                \
         memset(bg, 0, sizeof(*bg));                                                            \
     }                                                                                          \
                                                                                                \
@@ -1063,15 +1063,15 @@ static inline uint64_t bg_keep_bits_below(uint64_t w, int bit_hi)
         to->bm_fine = NULL; to->bm_coarse = NULL;                                              \
                                                                                                \
         size_t ncells = (size_t)from->grid_w * (size_t)from->grid_h;                           \
-        to->cells = (bg_cell(name)*)malloc(ncells * sizeof(bg_cell(name)));                    \
+        to->cells = (bg_cell(name)*)PF_MALLOC(ncells * sizeof(bg_cell(name)));                    \
         if(!to->cells) goto fail;                                                              \
         memcpy(to->cells, from->cells, ncells * sizeof(bg_cell(name)));                        \
                                                                                                \
         if(from->elts_cap > 0) {                                                               \
-            to->xs      = (int32_t*)malloc((size_t)from->elts_cap * sizeof(int32_t));          \
-            to->ys      = (int32_t*)malloc((size_t)from->elts_cap * sizeof(int32_t));          \
-            to->nexts   = (int32_t*)malloc((size_t)from->elts_cap * sizeof(int32_t));          \
-            to->records = (type*)   malloc((size_t)from->elts_cap * sizeof(type));             \
+            to->xs      = (int32_t*)PF_MALLOC((size_t)from->elts_cap * sizeof(int32_t));          \
+            to->ys      = (int32_t*)PF_MALLOC((size_t)from->elts_cap * sizeof(int32_t));          \
+            to->nexts   = (int32_t*)PF_MALLOC((size_t)from->elts_cap * sizeof(int32_t));          \
+            to->records = (type*)   PF_MALLOC((size_t)from->elts_cap * sizeof(type));             \
             if(!to->xs || !to->ys || !to->nexts || !to->records) goto fail;                    \
             memcpy(to->xs,      from->xs,      (size_t)from->elts_size * sizeof(int32_t));     \
             memcpy(to->ys,      from->ys,      (size_t)from->elts_size * sizeof(int32_t));     \
@@ -1081,22 +1081,22 @@ static inline uint64_t bg_keep_bits_below(uint64_t w, int bit_hi)
                                                                                                \
         if(from->bm_fine) {                                                                    \
             size_t nu = (size_t)from->bm_fine_row_u64 * (size_t)from->grid_h;                  \
-            to->bm_fine = (uint64_t*)malloc(nu * sizeof(uint64_t));                            \
+            to->bm_fine = (uint64_t*)PF_MALLOC(nu * sizeof(uint64_t));                            \
             if(!to->bm_fine) goto fail;                                                        \
             memcpy(to->bm_fine, from->bm_fine, nu * sizeof(uint64_t));                         \
         }                                                                                      \
         if(from->bm_coarse) {                                                                  \
             size_t nu = (size_t)from->bm_coarse_row_u64 * (size_t)from->coarse_h;              \
-            to->bm_coarse = (uint64_t*)malloc(nu * sizeof(uint64_t));                          \
+            to->bm_coarse = (uint64_t*)PF_MALLOC(nu * sizeof(uint64_t));                          \
             if(!to->bm_coarse) goto fail;                                                      \
             memcpy(to->bm_coarse, from->bm_coarse, nu * sizeof(uint64_t));                     \
         }                                                                                      \
         return true;                                                                           \
                                                                                                \
     fail:                                                                                      \
-        free(to->cells);                                                                       \
-        free(to->xs); free(to->ys); free(to->nexts); free(to->records);                        \
-        free(to->bm_fine); free(to->bm_coarse);                                                \
+        PF_FREE(to->cells);                                                                       \
+        PF_FREE(to->xs); PF_FREE(to->ys); PF_FREE(to->nexts); PF_FREE(to->records);                        \
+        PF_FREE(to->bm_fine); PF_FREE(to->bm_coarse);                                                \
         memset(to, 0, sizeof(*to));                                                            \
         return false;                                                                          \
     }                                                                                          \
@@ -1481,12 +1481,12 @@ static inline uint64_t bg_keep_bits_below(uint64_t w, int bit_hi)
             int32_t *nxs = NULL, *nys = NULL, *nn = NULL;                                      \
             type    *nrec = NULL;                                                              \
             if(live > 0) {                                                                     \
-                nxs  = (int32_t*)malloc((size_t)live * sizeof(int32_t));                       \
-                nys  = (int32_t*)malloc((size_t)live * sizeof(int32_t));                       \
-                nn   = (int32_t*)malloc((size_t)live * sizeof(int32_t));                       \
-                nrec = (type*)   malloc((size_t)live * sizeof(type));                          \
+                nxs  = (int32_t*)PF_MALLOC((size_t)live * sizeof(int32_t));                       \
+                nys  = (int32_t*)PF_MALLOC((size_t)live * sizeof(int32_t));                       \
+                nn   = (int32_t*)PF_MALLOC((size_t)live * sizeof(int32_t));                       \
+                nrec = (type*)   PF_MALLOC((size_t)live * sizeof(type));                          \
                 if(!nxs || !nys || !nn || !nrec) {                                             \
-                    free(nxs); free(nys); free(nn); free(nrec);                                \
+                    PF_FREE(nxs); PF_FREE(nys); PF_FREE(nn); PF_FREE(nrec);                                \
                     /* OOM -- leave the pool dirty. Queries still work; the                */  \
                     /* wide-query fast path will just stay disabled until next             */  \
                     /* successful cleanup.                                                 */  \
@@ -1531,7 +1531,7 @@ static inline uint64_t bg_keep_bits_below(uint64_t w, int bit_hi)
                 c->overflow_head = -1;                                                         \
             }                                                                                  \
             assert(cursor == live);                                                            \
-            free(bg->xs); free(bg->ys); free(bg->nexts); free(bg->records);                    \
+            PF_FREE(bg->xs); PF_FREE(bg->ys); PF_FREE(bg->nexts); PF_FREE(bg->records);                    \
             bg->xs = nxs; bg->ys = nys; bg->nexts = nn; bg->records = nrec;                    \
             bg->elts_cap = live;                                                               \
             bg->elts_size = live;                                                              \

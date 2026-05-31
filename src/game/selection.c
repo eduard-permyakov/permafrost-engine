@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_GAME
+#define MEM_FILE_SUB MEM_SUB_GAME_SELECTION
+
 #include "selection.h"
 #include "game_private.h"
 #include "public/game.h"
@@ -52,6 +55,15 @@
 #include <float.h>
 
 #include <SDL.h>
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_GAME, MEM_SUB_GAME_SELECTION)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_GAME, MEM_SUB_GAME_SELECTION)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_SELECTION)
 
 #define MIN(a, b)     ((a) < (b) ? (a) : (b))
 #define MAX(a, b)     ((a) > (b) ? (a) : (b))

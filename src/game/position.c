@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_GAME
+#define MEM_FILE_SUB MEM_SUB_GAME_POSITION
+
 #include "position.h"
 #include "game_private.h"
 #include "movement.h"
@@ -54,6 +57,13 @@
 
 #include <assert.h>
 #include <float.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_GAME, MEM_SUB_GAME_POSITION)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_GAME, MEM_SUB_GAME_POSITION)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_POSITION)
 
 
 BITMAP_GRID_IMPL(extern, ent, uint32_t)
@@ -353,7 +363,7 @@ bg_ent_t *G_Pos_CopyBitmapGrid(void)
      * fast path armed and avoids per-cell overflow walks.
      */
     bg_ent_cleanup(&s_postree);
-    bg_ent_t *ret = malloc(sizeof(bg_ent_t));
+    bg_ent_t *ret = PF_MALLOC(sizeof(bg_ent_t));
     if(!ret)
         return NULL;
     bg_ent_copy(&s_postree, ret);
@@ -363,7 +373,7 @@ bg_ent_t *G_Pos_CopyBitmapGrid(void)
 void G_Pos_DestroyBitmapGrid(bg_ent_t *tree)
 {
     bg_ent_destroy(tree);
-    free(tree);
+    PF_FREE(tree);
 }
 
 int G_Pos_EntsInCircleFrom(bg_ent_t *tree, khash_t(id) *flags, vec2_t xz_point, float range, 

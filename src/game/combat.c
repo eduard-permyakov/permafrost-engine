@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_GAME
+#define MEM_FILE_SUB MEM_SUB_GAME_COMBAT
+
 #include "combat.h"
 #include "game_private.h"
 #include "movement.h"
@@ -65,6 +68,13 @@
 #include <assert.h>
 #include <float.h>
 #include <SDL.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_GAME, MEM_SUB_GAME_COMBAT)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_GAME, MEM_SUB_GAME_COMBAT)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_COMBAT)
 
 
 #define TARGET_ACQUISITION_RANGE     (75.0f)
@@ -2345,7 +2355,7 @@ static void on_render_3d(void *user, void *event)
 static void on_proj_hit(void *user, void *event)
 {
     struct proj_hit *hit = event;
-    struct proj_hit *copy = malloc(sizeof(struct proj_hit));
+    struct proj_hit *copy = PF_MALLOC(sizeof(struct proj_hit));
     if(!copy)
         return;
     *copy = *hit;
@@ -2394,7 +2404,7 @@ bool G_Combat_Init(const struct map *map)
     M_GetResolution(map, &res);
 
     for(int i = 0; i < MAX_FACTIONS; i++) {
-        s_fac_refcnts[i] = calloc((res.chunk_w * X_BINS_PER_CHUNK) 
+        s_fac_refcnts[i] = PF_CALLOC((res.chunk_w * X_BINS_PER_CHUNK) 
                                 * (res.chunk_h * Z_BINS_PER_CHUNK) 
                                 * sizeof(uint16_t), 1);
         if(!s_fac_refcnts[i])
@@ -2855,7 +2865,7 @@ void G_Combat_SetRange(uint32_t uid, float range)
 
 void G_Combat_SetProjDesc(uint32_t uid, const struct proj_desc *pd)
 {
-    struct proj_desc *copy = malloc(sizeof(struct proj_desc));
+    struct proj_desc *copy = PF_MALLOC(sizeof(struct proj_desc));
     if(!copy)
         return;
     *copy = *pd;
@@ -2883,7 +2893,7 @@ void G_Combat_SetProjDesc(uint32_t uid, const struct proj_desc *pd)
 
 void G_Combat_SetProjFireDesc(uint32_t uid, const struct proj_fire_desc *fd)
 {
-    struct proj_fire_desc *copy = malloc(sizeof(struct proj_fire_desc));
+    struct proj_fire_desc *copy = PF_MALLOC(sizeof(struct proj_fire_desc));
     if(!copy)
         return;
     *copy = *fd;

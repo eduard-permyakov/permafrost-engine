@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_GAME
+#define MEM_FILE_SUB MEM_SUB_GAME_GARRISON
+
 #include "garrison.h"
 #include "game_private.h"
 #include "fog_of_war.h"
@@ -52,6 +55,15 @@
 #include "../lib/public/pf_string.h"
 
 #include <assert.h>
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_GAME, MEM_SUB_GAME_GARRISON)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_GAME, MEM_SUB_GAME_GARRISON)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_GARRISON)
 
 #define EVICT_DELAY_MS          (1000)
 #define GARRISON_THRESHOLD_DIST (25.0f)
@@ -607,7 +619,7 @@ static struct result evict_task(void *arg)
     }
 
 out:
-    free(arg);
+    PF_FREE(arg);
     return NULL_RESULT;
 }
 
@@ -989,7 +1001,7 @@ bool G_Garrison_EvictAll(uint32_t garrisonable, vec2_t target)
 {
     if(transport_move(garrisonable, target))
         return true;
-    struct evict_work *work = malloc(sizeof(struct evict_work));
+    struct evict_work *work = PF_MALLOC(sizeof(struct evict_work));
     if(!work)
         return false;
     work->uid = garrisonable;
@@ -997,7 +1009,7 @@ bool G_Garrison_EvictAll(uint32_t garrisonable, vec2_t target)
     work->tid = Sched_Create(16, evict_task, work, 
         "garrison::evict_task", NULL, TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
     if(work->tid == NULL_TID) {
-        free(work);
+        PF_FREE(work);
         return false;
     }
     Sched_RunSync(work->tid);

@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_LIB
+#define MEM_FILE_SUB MEM_SUB_LIB_STALLOC
+
 #include "public/stalloc.h"
 
 #include <stdlib.h>
@@ -41,13 +44,24 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_LIB, MEM_SUB_LIB_STALLOC)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_LIB, MEM_SUB_LIB_STALLOC)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_LIB, MEM_SUB_LIB_STALLOC)
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool stalloc_init(struct memstack *st)
+bool stalloc_init_tagged(struct memstack *st, uint16_t sys, uint16_t sub)
 {
-    st->head = malloc(sizeof(struct st_mem));
+    st->mem_sys = sys;
+    st->mem_sub = sub;
+    st->head = Mem_MallocTagged(sizeof(struct st_mem), sys, sub);
     if(!st->head)
         return false;
 
@@ -62,7 +76,7 @@ void stalloc_destroy(struct memstack *st)
     struct st_mem *curr = st->head, *tmp;
     while(curr) {
         tmp = curr->next;
-        free(curr);
+        Mem_Free(curr);
         curr = tmp;
     }
     memset(st, 0, sizeof(*st));
@@ -93,7 +107,7 @@ void *stalloc(struct memstack *st, size_t size)
         return ret;
     }
 
-    st->tail->next = malloc(sizeof(struct st_mem));
+    st->tail->next = Mem_MallocTagged(sizeof(struct st_mem), st->mem_sys, st->mem_sub);
     if(!st->tail->next)
         return NULL;
 
@@ -114,7 +128,7 @@ void stalloc_clear(struct memstack *st)
     struct st_mem *curr = st->head->next, *tmp;
     while(curr) {
         tmp = curr->next;
-        free(curr);
+        Mem_Free(curr);
         curr = tmp;
     }
 
@@ -123,10 +137,12 @@ void stalloc_clear(struct memstack *st)
     st->tail = st->head;
 }
 
-bool sstalloc_init(struct smemstack *st)
+bool sstalloc_init_tagged(struct smemstack *st, uint16_t sys, uint16_t sub)
 {
     st->top = st->mem;
     memset(&st->extra, 0, sizeof(st->extra));
+    st->extra.mem_sys = sys;
+    st->extra.mem_sub = sub;
     return true;
 }
 
@@ -157,7 +173,7 @@ void *sstalloc(struct smemstack *st, size_t size)
         return ret;
     }
 
-    if(!stalloc_init(&st->extra))
+    if(!stalloc_init_tagged(&st->extra, st->extra.mem_sys, st->extra.mem_sub))
         return NULL;
 
     st->top = NULL;

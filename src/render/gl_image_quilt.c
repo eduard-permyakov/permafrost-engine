@@ -38,6 +38,9 @@
  * by Alexei A. Efros and William T. Freeman.
  */
 
+#define MEM_FILE_SYS MEM_SYS_RENDER
+#define MEM_FILE_SUB MEM_SUB_RENDER_GL_IMAGE_QUILT
+
 #include "../lib/public/windows.h"
 #include "gl_image_quilt.h"
 #include "gl_texture.h"
@@ -56,6 +59,15 @@
 #include <stdio.h>
 #include <limits.h>
 #include <time.h>
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_IMAGE_QUILT)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_IMAGE_QUILT)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_IMAGE_QUILT)
 
 #define BLOCK_DIM           (65)
 #define OVERLAP_DIM         (10)
@@ -338,7 +350,7 @@ static struct image_view random_block(struct image image)
 static bool copy_view(const struct image image, struct image_view view, struct image_patch *patch)
 {
     size_t patch_size = image.nr_channels * view.width * view.height;
-    patch->pixels = malloc(patch_size);
+    patch->pixels = PF_MALLOC(patch_size);
     if(!patch->pixels)
         return false;
 
@@ -389,7 +401,7 @@ static bool copy_overlap(const struct image image, struct image_view *views,
                          enum constraint constraint, struct image_patch *template)
 {
     size_t patch_size = image.nr_channels * views[0].width * views[0].height;
-    template->pixels = malloc(patch_size);
+    template->pixels = PF_MALLOC(patch_size);
     if(!template->pixels)
         return false;
 
@@ -555,7 +567,7 @@ static bool match_next_block(struct image image, struct image_view *views,
     size_t cost_width = image.width - (BLOCK_DIM + OVERLAP_DIM * 2) + 1;
     size_t cost_height = image.height - (BLOCK_DIM + OVERLAP_DIM * 2) + 1;
     struct cost_image cost_image = (struct cost_image){
-        .data = malloc(sizeof(int) * cost_width * cost_height),
+        .data = PF_MALLOC(sizeof(int) * cost_width * cost_height),
         .width = cost_width,
         .height = cost_height,
     };
@@ -581,9 +593,9 @@ static bool match_next_block(struct image image, struct image_view *views,
     assert(out_view->y >= 0);
     ret = true;
 
-    free(template.pixels);
+    PF_FREE(template.pixels);
 fail_template:
-    free(cost_image.data);
+    PF_FREE(cost_image.data);
 fail_cost_image:
     return ret;
 }
@@ -759,16 +771,16 @@ static bool seam_mask_from_err_surface(struct cost_image err_surface, struct sea
                                        enum direction dir)
 {
     size_t mask_size = err_surface.width * err_surface.height;
-    out->bits = malloc(mask_size);
+    out->bits = PF_MALLOC(mask_size);
     if(!out->bits)
         return false;
 
     /* Find the minimum path accross the surface.
      */
     size_t pathlen = MAX(err_surface.width, err_surface.height);
-    struct coord *path = malloc(pathlen * sizeof(struct coord));
+    struct coord *path = PF_MALLOC(pathlen * sizeof(struct coord));
     if(!path) {
-        free(out->bits);
+        PF_FREE(out->bits);
         return false;
     }
     seam_path(err_surface, dir, path);
@@ -794,7 +806,7 @@ static bool seam_mask_from_err_surface(struct cost_image err_surface, struct sea
         }
     }
 
-    free(path);
+    PF_FREE(path);
     return true;
 }
 
@@ -806,7 +818,7 @@ static bool find_seam(struct image image, struct image_view a, struct image_view
     size_t height = (dir == DIRECTION_HORIZONTAL) ? OVERLAP_DIM * 2 : a.height + OVERLAP_DIM;
     size_t patch_size = width * height * sizeof(int);
     struct cost_image patch = (struct cost_image){
-        .data = malloc(patch_size),
+        .data = PF_MALLOC(patch_size),
         .width = width,
         .height = height
     };
@@ -861,7 +873,7 @@ static bool find_seam(struct image image, struct image_view a, struct image_view
     }}
 
     struct cost_image min_err_surface = (struct cost_image){
-        .data = malloc(patch_size),
+        .data = PF_MALLOC(patch_size),
         .width = width,
         .height = height
     };
@@ -875,9 +887,9 @@ static bool find_seam(struct image image, struct image_view a, struct image_view
 
     ret = true;
 fail_seam:
-    free(min_err_surface.data);
+    PF_FREE(min_err_surface.data);
 fail_err_surface:
-    free(patch.data);
+    PF_FREE(patch.data);
 fail_patch:
     return ret;
 }
@@ -1042,7 +1054,7 @@ static bool paste_block(struct image image, enum tile_patch patch, struct image_
 {
     struct seam_mask patch_mask;
     size_t patch_mask_size = (BLOCK_DIM + OVERLAP_DIM) * (BLOCK_DIM + OVERLAP_DIM);
-    patch_mask.bits = malloc(patch_mask_size);
+    patch_mask.bits = PF_MALLOC(patch_mask_size);
     if(!patch_mask.bits)
         return false;
 
@@ -1115,7 +1127,7 @@ static bool paste_block(struct image image, enum tile_patch patch, struct image_
         }
     }}
 
-    free(patch_mask.bits);
+    PF_FREE(patch_mask.bits);
     return true;
 }
 
@@ -1159,7 +1171,7 @@ static bool quilt_tile(struct image image, struct image_tile *tile)
     if(!find_seam(image, views[2], views[3], DIRECTION_VERTICAL, &seams[3]))
         goto fail_seams;
 
-    tile->pixels = malloc(image.nr_channels * TILE_DIM * TILE_DIM);
+    tile->pixels = PF_MALLOC(image.nr_channels * TILE_DIM * TILE_DIM);
     if(!tile->pixels)
         goto fail_seams;
 
@@ -1175,11 +1187,11 @@ static bool quilt_tile(struct image image, struct image_tile *tile)
     ret = true;
 fail_paste:
     if(!ret) {
-        free(tile->pixels);
+        PF_FREE(tile->pixels);
     }
 fail_seams:
     for(int i = 0; i < 4; i++) {
-        free(seams[i].bits);
+        PF_FREE(seams[i].bits);
     }
 fail_block:
     return ret;
@@ -1198,7 +1210,7 @@ static bool stitch_samples(struct image image, struct image_view *views, struct 
     if(!find_seam(image, views[2], views[3], DIRECTION_VERTICAL, &seams[3]))
         goto fail_seams;
 
-    tile->pixels = malloc(image.nr_channels * TILE_DIM * TILE_DIM);
+    tile->pixels = PF_MALLOC(image.nr_channels * TILE_DIM * TILE_DIM);
     if(!tile->pixels)
         goto fail_seams;
 
@@ -1214,11 +1226,11 @@ static bool stitch_samples(struct image image, struct image_view *views, struct 
     ret = true;
 fail_paste:
     if(!ret) {
-        free(tile->pixels);
+        PF_FREE(tile->pixels);
     }
 fail_seams:
     for(int i = 0; i < 4; i++) {
-        free(seams[i].bits);
+        PF_FREE(seams[i].bits);
     }
     return ret;
 }
@@ -1228,11 +1240,11 @@ static bool sample_diamond(size_t nr_channels, const struct image_tile *tile,
 {
     bool ret = false;
     size_t rotated_size = ceil(TILE_DIM * cos(M_PI/4)) * 2;
-    char *rotbuff = calloc(1, rotated_size * rotated_size * nr_channels);
+    char *rotbuff = PF_CALLOC(1, rotated_size * rotated_size * nr_channels);
     if(!rotbuff)
         goto fail_rotbuff;
     size_t diamond_size = (TILE_DIM/2) / cos(M_PI/4);
-    out->pixels = malloc(nr_channels * diamond_size * diamond_size);
+    out->pixels = PF_MALLOC(nr_channels * diamond_size * diamond_size);
     if(!out->pixels)
         goto fail_patchbuff;
     out->width = diamond_size;
@@ -1310,7 +1322,7 @@ static bool sample_diamond(size_t nr_channels, const struct image_tile *tile,
 
     ret = true;
 fail_patchbuff:
-    free(rotbuff);
+    PF_FREE(rotbuff);
 fail_rotbuff:
     return ret;
 }
@@ -1460,11 +1472,11 @@ bool R_GL_ImageQuilt_MakeTileset(const char *source, struct texture_arr *out, GL
 
 fail_diamond:
     for(int i = 0; i < 8; i++) {
-        free(diamonds[i].pixels);
+        PF_FREE(diamonds[i].pixels);
     }
 fail_stitch:
     for(int i = 0; i < 8; i++) {
-        free(tiles[i].pixels);
+        PF_FREE(tiles[i].pixels);
     }
 fail_block:
     free(image.data);

@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_RENDER
+#define MEM_FILE_SUB MEM_SUB_RENDER_GL_SWAPCHAIN
+
 #include "gl_swapchain.h"
 #include "gl_assert.h"
 #include "gl_perf.h"
@@ -44,6 +47,13 @@
 
 #include <SDL.h>
 #include <assert.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_SWAPCHAIN)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_SWAPCHAIN)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_SWAPCHAIN)
 
 #define FRAMES_IN_FLIGHT (2)
 #define TIMEOUT_NS       (1*1000*1000*1000)
@@ -214,7 +224,7 @@ static void framebuffer_dump_color_ppm(struct framebuffer *fb, const char *path)
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &height);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &iformat);
 
-    unsigned char *data = malloc(width * height * 3);
+    unsigned char *data = PF_MALLOC(width * height * 3);
     if(!data)
         return;
 

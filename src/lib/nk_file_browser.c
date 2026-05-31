@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_LIB
+#define MEM_FILE_SUB MEM_SUB_LIB_NK_FILE_BROWSER
+
 #include "public/nk_file_browser.h"
 #include "public/pf_string.h"
 #include "public/mem.h"
@@ -50,6 +53,13 @@
 #include <dirent.h>
 #include <pwd.h>
 #endif
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_LIB, MEM_SUB_LIB_NK_FILE_BROWSER)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_LIB, MEM_SUB_LIB_NK_FILE_BROWSER)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_LIB, MEM_SUB_LIB_NK_FILE_BROWSER)
 
 
 #define DEFAULT_FOLDER_ICON     "assets/icons/folder-icon.png"
@@ -78,7 +88,7 @@ static void fb_path_fix_separator(char *path)
 static struct file *fb_get_list(const char *dir, size_t *out_size)
 {
     size_t capacity = 256;
-    struct file *files = malloc(sizeof(struct file) * capacity);
+    struct file *files = PF_MALLOC(sizeof(struct file) * capacity);
     if(!files)
         return NULL;
 
@@ -95,17 +105,17 @@ static struct file *fb_get_list(const char *dir, size_t *out_size)
 
     handle = FindFirstFile(wdir, &entry);
     if(handle == INVALID_HANDLE_VALUE) {
-        free(files);
+        PF_FREE(files);
         return NULL;
     }
 
     do{
         if(nfiles == capacity) {
             capacity *= 2;
-            struct file *rfiles = realloc(files, sizeof(struct file) * capacity);
+            struct file *rfiles = PF_REALLOC(files, sizeof(struct file) * capacity);
             if(!rfiles) {
                 FindClose(handle);
-                free(files);
+                PF_FREE(files);
                 return NULL;
             }else{
                 files = rfiles;
@@ -206,7 +216,7 @@ static size_t fb_get_places(size_t maxout, char out[][NK_MAX_PATH_LEN],
 static struct file *fb_get_list(const char *dir, size_t *out_size)
 {
     size_t capacity = 256;
-    struct file *files = malloc(sizeof(struct file) * capacity);
+    struct file *files = PF_MALLOC(sizeof(struct file) * capacity);
     if(!files)
         return NULL;
 
@@ -217,10 +227,10 @@ static struct file *fb_get_list(const char *dir, size_t *out_size)
         while((entry = readdir(d)) != NULL) {
             if(nfiles == capacity) {
                 capacity *= 2;
-                struct file *rfiles = realloc(files, sizeof(struct file) * capacity);
+                struct file *rfiles = PF_REALLOC(files, sizeof(struct file) * capacity);
                 if(!rfiles) {
                     closedir(d);
-                    free(files);
+                    PF_FREE(files);
                     return NULL;
                 }else{
                     files = rfiles;
@@ -232,7 +242,7 @@ static struct file *fb_get_list(const char *dir, size_t *out_size)
         }
         closedir(d);
     }else{
-        free(files);
+        PF_FREE(files);
         return NULL;
     }
 
@@ -421,7 +431,7 @@ static void fb_file_list(struct nk_context *ctx, struct nk_fb_state *state)
         state->selected[0] = '\0';
     }
 
-    free(files);
+    PF_FREE(files);
 }
 
 static void fb_places_list(struct nk_context *ctx, struct nk_fb_state *state)

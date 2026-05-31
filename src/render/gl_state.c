@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_RENDER
+#define MEM_FILE_SUB MEM_SUB_RENDER_GL_STATE
+
 #include "gl_state.h"
 #include "gl_shader.h"
 #include "gl_assert.h"
@@ -44,6 +47,15 @@
 
 #include <assert.h>
 #include <string.h>
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_STATE)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_STATE)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_STATE)
 
 
 #define NINSTALLED_CACHE (32)
@@ -348,7 +360,7 @@ void R_GL_StateShutdown(void)
     (void)curr;
 
     kh_foreach(s_state_table, key, curr, {
-        free((void*)key);
+        PF_FREE(key);
     });
     kh_destroy(puval, s_state_table);
     mp_buff_destroy(&s_buff_pool);

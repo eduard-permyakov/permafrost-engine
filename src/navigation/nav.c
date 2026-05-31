@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_NAV
+#define MEM_FILE_SUB MEM_SUB_NAV_DISPATCH
+
 #include "public/nav.h"
 #include "nav_private.h"
 #include "a_star.h"
@@ -60,6 +63,13 @@
 #include <assert.h>
 #include <string.h>
 #include <float.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_NAV, MEM_SUB_NAV_DISPATCH)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_NAV, MEM_SUB_NAV_DISPATCH)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_NAV, MEM_SUB_NAV_DISPATCH)
 
 bool M_TileAdjacentToWater(const struct map *map, const struct tile_desc *td);
 bool M_TileAdjacentToLand(const struct map *map, const struct tile_desc *td);
@@ -2207,7 +2217,7 @@ void *N_NewCtxForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
                          const struct tile **chunk_tiles, bool update)
 {
     struct nav_private *ret;
-    ret = malloc(sizeof(struct nav_private));
+    ret = PF_MALLOC(sizeof(struct nav_private));
     if(!ret)
         goto fail_alloc;
 
@@ -2216,7 +2226,7 @@ void *N_NewCtxForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
 
     memset(ret->chunks, 0, sizeof(ret->chunks));
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
-        ret->chunks[i] = malloc(w * h * sizeof(struct nav_chunk));
+        ret->chunks[i] = PF_MALLOC(w * h * sizeof(struct nav_chunk));
         if(!ret->chunks[i])
             goto fail_alloc_chunks;
     }

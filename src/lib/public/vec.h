@@ -37,12 +37,14 @@
 #define VEC_H
 
 #include <stddef.h>
+#include <stdint.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
 #include "../../perf.h"
+#include "mem.h"
 
 /***********************************************************************************************/
 
@@ -54,6 +56,8 @@
         type *array;                                                                            \
         void *(*vrealloc)(void *ptr, size_t size);                                              \
         void  (*vfree)(void *ptr);                                                              \
+        uint16_t mem_sys;                                                                       \
+        uint16_t mem_sub;                                                                       \
     } vec_##name##_t;
 
 /***********************************************************************************************/
@@ -97,8 +101,10 @@
         vec->size = 0;                                                                          \
         vec->capacity = 0;                                                                      \
         vec->array = NULL;                                                                      \
-        vec->vrealloc = realloc;                                                                \
-        vec->vfree = free;                                                                      \
+        vec->vrealloc = NULL;                                                                   \
+        vec->vfree = NULL;                                                                      \
+        vec->mem_sys = MEM_FILE_SYS;                                                            \
+        vec->mem_sub = MEM_FILE_SUB;                                                            \
     }                                                                                           \
                                                                                                 \
     scope void vec_##name##_init_alloc(vec(name) *vec,                                          \
@@ -110,6 +116,8 @@
         vec->array = NULL;                                                                      \
         vec->vrealloc = vrealloc;                                                               \
         vec->vfree = vfree;                                                                     \
+        vec->mem_sys = MEM_SYS_UNKNOWN;                                                         \
+        vec->mem_sub = 0;                                                                       \
     }                                                                                           \
                                                                                                 \
     scope bool vec_##name##_resize(vec(name) *vec, size_t new_cap)                              \
@@ -118,7 +126,12 @@
         if(vec->capacity >= new_cap)                                                            \
             PERF_RETURN(true);                                                                  \
                                                                                                 \
-        type *new_array = (type*)vec->vrealloc(vec->array, new_cap * sizeof(type));             \
+        type *new_array;                                                                        \
+        if(vec->vrealloc)                                                                       \
+            new_array = (type*)vec->vrealloc(vec->array, new_cap * sizeof(type));               \
+        else                                                                                    \
+            new_array = (type*)Mem_ReallocTagged(vec->array,                                    \
+                new_cap * sizeof(type), vec->mem_sys, vec->mem_sub);                            \
         if(!new_array)                                                                          \
             PERF_RETURN(false);                                                                 \
                                                                                                 \
@@ -129,7 +142,10 @@
                                                                                                 \
     scope void vec_##name##_destroy(vec(name) *vec)                                             \
     {                                                                                           \
-        vec->vfree(vec->array);                                                                 \
+        if(vec->vfree)                                                                          \
+            vec->vfree(vec->array);                                                             \
+        else                                                                                    \
+            Mem_Free(vec->array);                                                               \
         memset(vec, 0, sizeof(*vec));                                                           \
     }                                                                                           \
                                                                                                 \

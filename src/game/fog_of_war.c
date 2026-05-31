@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_GAME
+#define MEM_FILE_SUB MEM_SUB_GAME_FOG_OF_WAR
+
 #include "fog_of_war.h"
 #include "public/game.h"
 #include "position.h"
@@ -53,6 +56,13 @@
 #include <stdint.h>
 #include <assert.h>
 #include <SDL.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_GAME, MEM_SUB_GAME_FOG_OF_WAR)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_GAME, MEM_SUB_GAME_FOG_OF_WAR)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_FOG_OF_WAR)
 
 
 #define MIN(a, b)               ((a) < (b) ? (a) : (b))
@@ -479,12 +489,12 @@ bool G_Fog_Init(const struct map *map)
     M_GetResolution(map, &res);
     const size_t ntiles = res.chunk_w * res.chunk_h * res.tile_w * res.tile_h;
 
-    s_fog_state = calloc(sizeof(s_fog_state[0]), ntiles);
+    s_fog_state = PF_CALLOC(sizeof(s_fog_state[0]), ntiles);
     if(!s_fog_state)
         goto fail;
 
     for(int i = 0; i < MAX_FACTIONS; i++) {
-        s_vision_refcnts[i] = calloc(sizeof(s_vision_refcnts[0]), ntiles);
+        s_vision_refcnts[i] = PF_CALLOC(sizeof(s_vision_refcnts[0]), ntiles);
         if(!s_vision_refcnts[i])
             goto fail;
     }
@@ -941,7 +951,7 @@ uint32_t *G_Fog_CopyState(void)
     M_GetResolution(s_map, &res);
     const size_t ntiles = res.chunk_w * res.chunk_h * res.tile_w * res.tile_h;
 
-    uint32_t *ret = malloc(sizeof(s_fog_state[0]) * ntiles);
+    uint32_t *ret = PF_MALLOC(sizeof(s_fog_state[0]) * ntiles);
     if(!ret)
         return NULL;
 

@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_RENDER
+#define MEM_FILE_SUB MEM_SUB_RENDER_GL_FOLIAGE
+
 #include "render_private.h"
 #include "gl_render.h"
 #include "gl_shader.h"
@@ -49,6 +52,13 @@
 
 #include <string.h>
 #include <assert.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_FOLIAGE)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_FOLIAGE)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_FOLIAGE)
 
 #define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
 
@@ -85,9 +95,9 @@ void R_GL_MapFoliageInit(void *priv_arg, const size_t *num_chunks)
     s_mesh_vbo      = priv->mesh.VBO;
     s_vertex_stride = (GLsizei)priv->vertex_stride;
 
-    s_chunk_vaos    = calloc(s_num_chunks, sizeof(GLuint));
-    s_instance_vbos = calloc(s_num_chunks, sizeof(GLuint));
-    s_chunk_counts  = calloc(s_num_chunks, sizeof(size_t));
+    s_chunk_vaos    = PF_CALLOC(s_num_chunks, sizeof(GLuint));
+    s_instance_vbos = PF_CALLOC(s_num_chunks, sizeof(GLuint));
+    s_chunk_counts  = PF_CALLOC(s_num_chunks, sizeof(size_t));
     if(!s_chunk_vaos || !s_instance_vbos || !s_chunk_counts)
         goto fail_alloc;
 

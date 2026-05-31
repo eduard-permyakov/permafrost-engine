@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_AUDIO
+#define MEM_FILE_SUB MEM_SUB_AUDIO_DISPATCH
+
 #include "public/audio.h"
 #include "al_effect.h"
 #include "al_assert.h"
@@ -57,6 +60,13 @@
 #include <AL/al.h>
 #include <AL/alc.h>
 #include <SDL.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_AUDIO, MEM_SUB_AUDIO_DISPATCH)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_AUDIO, MEM_SUB_AUDIO_DISPATCH)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_AUDIO, MEM_SUB_AUDIO_DISPATCH)
 
 
 #define MIN(a, b)       ((a) < (b) ? (a) : (b))
@@ -224,14 +234,14 @@ static void audio_index_directory(const char *prefix, const char *dir, khash_t(b
         int status;
         khiter_t k = kh_put(buffer, table, key, &status);
         if(status == -1) {
-            free((void*)key);
+            PF_FREE(key);
             audio_free_buffer(&audio);
             continue;
         }
         kh_value(table, k) = audio;
     }
 
-    free(files);
+    PF_FREE(files);
 }
 
 static bool audio_volume_validate(const struct sval *val)
@@ -568,13 +578,13 @@ void Audio_Shutdown(void)
     Audio_Effect_Shutdown();
 
     kh_foreach(s_music, name, curr, {
-        free((void*)name);
+        PF_FREE(name);
         audio_free_buffer(&curr);
     });
     kh_destroy(buffer, s_music);
 
     kh_foreach(s_effects, name, curr, {
-        free((void*)name);
+        PF_FREE(name);
         audio_free_buffer(&curr);
     });
     kh_destroy(buffer, s_effects);

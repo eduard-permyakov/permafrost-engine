@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_ASSET_LOAD
+#define MEM_FILE_SUB 0
+
 #include "asset_load.h"
 #include "entity.h"
 #include "main.h"
@@ -56,6 +59,13 @@
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h> 
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_ASSET_LOAD, 0)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_ASSET_LOAD, 0)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_ASSET_LOAD, 0)
 
 
 #define CHK_TRUE_RET(_pred)             \
@@ -463,7 +473,7 @@ struct map *AL_MapFromPFMapStream(SDL_RWops *stream, bool update_navgrid)
     if(!al_parse_pfmap_header(stream, &header))
         goto fail_parse;
 
-    ret = malloc(M_AL_BuffSizeFromHeader(&header));
+    ret = PF_MALLOC(M_AL_BuffSizeFromHeader(&header));
     if(!ret)
         goto fail_alloc;
 

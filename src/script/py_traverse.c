@@ -33,9 +33,21 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_SCRIPT
+#define MEM_FILE_SUB MEM_SUB_SCRIPT_TRAVERSE
+
 #include "py_traverse.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/queue.h"
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_TRAVERSE)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_TRAVERSE)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_TRAVERSE)
 
 
 KHASH_SET_INIT_INT64(id)
@@ -245,7 +257,7 @@ static int visit_index_qualname(PyObject *obj, void *ctx)
     if(!vctx->parent) {
 
         assert(PyModule_Check(obj)); 
-        qname = strdup(PyModule_GetName(obj));
+        qname = pf_strdup(PyModule_GetName(obj));
 
     }else{
 
@@ -255,7 +267,7 @@ static int visit_index_qualname(PyObject *obj, void *ctx)
         k = kh_get(str, id_qualname_map, pid);
         assert(k != kh_end(id_qualname_map));
 
-        qname = strdup(kh_value(id_qualname_map, k));
+        qname = pf_strdup(kh_value(id_qualname_map, k));
         qname = pf_strapp(qname, ".");
         qname = pf_strapp(qname, vctx->attrname);
     }

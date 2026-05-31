@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_RENDER
+#define MEM_FILE_SUB MEM_SUB_RENDER_GL_STATUSBAR
+
 #include "gl_vertex.h"
 #include "gl_shader.h"
 #include "gl_state.h"
@@ -47,6 +50,13 @@
 
 #include <GL/glew.h>
 #include <assert.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_STATUSBAR)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_STATUSBAR)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_STATUSBAR)
 
 
 #define ARR_SIZE(a) (sizeof(a)/sizeof((a)[0]))

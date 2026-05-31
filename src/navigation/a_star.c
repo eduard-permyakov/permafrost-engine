@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_NAV
+#define MEM_FILE_SUB MEM_SUB_NAV_A_STAR
+
 #include "a_star.h"
 #include "nav_private.h"
 #include "../perf.h"
@@ -45,6 +48,15 @@
 #include <stdlib.h>
 #include <math.h>
 #include <float.h>
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_NAV, MEM_SUB_NAV_A_STAR)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_NAV, MEM_SUB_NAV_A_STAR)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_NAV, MEM_SUB_NAV_A_STAR)
 
 
 PQUEUE_TYPE(coord, struct coord)

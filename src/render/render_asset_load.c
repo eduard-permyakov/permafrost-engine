@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_RENDER
+#define MEM_FILE_SUB MEM_SUB_RENDER_ASSET_LOAD
+
 #include "public/render.h"
 #include "public/render_ctrl.h"
 #include "render_private.h"
@@ -52,6 +55,15 @@
 #include <assert.h>
 #include <ctype.h>
 #include <string.h>
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_RENDER, MEM_SUB_RENDER_ASSET_LOAD)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_ASSET_LOAD)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_ASSET_LOAD)
 
 #define STREVAL(a) STR(a)
 #define STR(a) #a
@@ -209,7 +221,7 @@ size_t al_priv_buffsize_from_header(const struct pfobj_hdr *header)
 void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header, SDL_RWops *stream)
 {
     PERF_ENTER();
-    struct render_private *priv = malloc(al_priv_buffsize_from_header(header));
+    struct render_private *priv = PF_MALLOC(al_priv_buffsize_from_header(header));
     if(!priv)
         goto fail_alloc_priv;
 
@@ -217,7 +229,7 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
     priv->vertex_stride = anim ? sizeof(struct anim_vert) : sizeof(struct vertex);
 
     size_t vbuff_sz = header->num_verts * priv->vertex_stride;
-    void *vbuff = malloc(vbuff_sz);
+    void *vbuff = PF_MALLOC(vbuff_sz);
     if(!vbuff)
         goto fail_alloc_vbuff;
 
@@ -348,7 +360,7 @@ bool R_AL_InitPrivFromTiles(const struct map *map, int chunk_r, int chunk_c,
     char *unused_base = (char*)priv_buff + sizeof(struct render_private);
     size_t vbuff_sz = num_verts * sizeof(struct terrain_vert);
 
-    struct terrain_vert *vbuff = malloc(vbuff_sz);
+    struct terrain_vert *vbuff = PF_MALLOC(vbuff_sz);
     if(!vbuff)
         goto fail_alloc;
 

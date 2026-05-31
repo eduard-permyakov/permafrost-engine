@@ -41,6 +41,9 @@
  *         (http://gamma.cs.unc.edu/HRVO/HRVO-T-RO.pdf)
  */
 
+#define MEM_FILE_SYS MEM_SYS_GAME
+#define MEM_FILE_SUB MEM_SUB_GAME_CLEARPATH
+
 #include "clearpath.h"
 #include "public/game.h"
 #include "movement.h"
@@ -61,6 +64,13 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <string.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_GAME, MEM_SUB_GAME_CLEARPATH)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_GAME, MEM_SUB_GAME_CLEARPATH)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_CLEARPATH)
 
 
 #define EPSILON         (1.0/1024)

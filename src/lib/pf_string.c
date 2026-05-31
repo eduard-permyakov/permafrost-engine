@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_LIB
+#define MEM_FILE_SUB MEM_SUB_LIB_PF_STRING
+
 #include "public/pf_string.h"
 
 #include <string.h>
@@ -40,6 +43,15 @@
 #include <assert.h>
 #include <stdarg.h>
 #include <stdio.h>
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_LIB, MEM_SUB_LIB_PF_STRING)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_LIB, MEM_SUB_LIB_PF_STRING)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_LIB, MEM_SUB_LIB_PF_STRING)
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -74,7 +86,7 @@ char *pf_strtok_r(char *str, const char *delim, char **saveptr)
 
 char *pf_strdup(const char *str)
 {
-    char *ret = malloc(strlen(str) + 1);
+    char *ret = PF_MALLOC(strlen(str) + 1);
     if(ret)
         strcpy(ret, str);
     return ret;
@@ -83,7 +95,7 @@ char *pf_strdup(const char *str)
 char *pf_strapp(char *str, const char *append)
 {
     size_t len = strlen(str) + strlen(append) + 1;
-    char *ret = realloc((void*)str, len);
+    char *ret = PF_REALLOC((void*)str, len);
     if(!ret)
         return NULL;
     strcat(ret, append);

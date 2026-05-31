@@ -35,6 +35,9 @@
 
 /* Some of the code is derived from the cPickle module implementation */
 
+#define MEM_FILE_SYS MEM_SYS_SCRIPT
+#define MEM_FILE_SUB MEM_SUB_SCRIPT_PICKLE
+
 #include "py_pickle.h"
 #include "py_traverse.h"
 #include "private_types.h"
@@ -52,6 +55,13 @@ typedef void *mod_ty; //symtable.h wants this
 #include <symtable.h>
 
 #include <assert.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_PICKLE)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_PICKLE)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_PICKLE)
 
 
 #define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
@@ -2014,7 +2024,7 @@ static int bytearray_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw
     char *buff = PyByteArray_AS_STRING(obj);
     size_t len = PyByteArray_GET_SIZE(obj);
 
-    Py_UNICODE *uni = malloc(Py_UNICODE_SIZE * len);
+    Py_UNICODE *uni = PF_MALLOC(Py_UNICODE_SIZE * len);
     for(int i = 0; i < len; i++)
         uni[i] = buff[i];
     PyObject *uniobj = PyUnicode_FromUnicode(uni, len);
@@ -4799,7 +4809,7 @@ static int op_ext_bytearray(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
     PyObject *raw = PyUnicode_DecodeUTF7(PyString_AS_STRING(encoded), PyString_GET_SIZE(encoded), "strict");
     size_t len = PyUnicode_GET_SIZE(raw);
-    char *buff = malloc(PyUnicode_GET_SIZE(raw));
+    char *buff = PF_MALLOC(PyUnicode_GET_SIZE(raw));
 
     for(int i = 0; i < len; i++) {
         assert(PyUnicode_AS_UNICODE(raw)[i] < (Py_UNICODE)256);
@@ -4815,7 +4825,7 @@ static int op_ext_bytearray(struct unpickle_ctx *ctx, SDL_RWops *rw)
     ret = 0;
 
 fail_ba:
-    free(buff);
+    PF_FREE(buff);
     Py_DECREF(raw);
 fail_typecheck:
     Py_DECREF(encoded);

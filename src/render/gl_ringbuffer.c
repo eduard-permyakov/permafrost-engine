@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_RENDER
+#define MEM_FILE_SUB MEM_SUB_RENDER_GL_RINGBUFFER
+
 #include "gl_ringbuffer.h"
 #include "gl_assert.h"
 #include "gl_perf.h"
@@ -46,6 +49,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_RINGBUFFER)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_RINGBUFFER)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_RINGBUFFER)
 
 /* How many discrete sets of data (guarded by fences) the buffer can hold */
 #define NMAXMARKERS     (256)
@@ -207,7 +217,7 @@ static void flush_last_range(struct gl_ring *ring)
 
 struct gl_ring *R_GL_RingbufferInit(size_t size, enum ring_format fmt)
 {
-    struct gl_ring *ret = malloc(sizeof(struct gl_ring));
+    struct gl_ring *ret = PF_MALLOC(sizeof(struct gl_ring));
     if(!ret)
         return NULL;
 

@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_SCRIPT
+#define MEM_FILE_SUB MEM_SUB_SCRIPT_TASK
+
 #include <Python.h> /* Must be first */
 #include <frameobject.h>
 #include <opcode.h>
@@ -53,6 +56,13 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_TASK)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_TASK)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_TASK)
 
 
 #define CALL_FLAG_VAR   1
@@ -249,7 +259,7 @@ static uint32_t       s_pause_tick;
  * interpreter core. The returned pointer must be free'd with pytask_ts_delete'. */
 static PyThreadState *pytask_ts_new(PyInterpreterState *interp)
 {
-    PyThreadState *tstate = calloc(1, sizeof(PyThreadState));
+    PyThreadState *tstate = PF_CALLOC(1, sizeof(PyThreadState));
     if(tstate) {
         tstate->interp = interp;
     }
@@ -259,7 +269,7 @@ static PyThreadState *pytask_ts_new(PyInterpreterState *interp)
 static void pytask_ts_delete(PyThreadState *tstate)
 {
     PyThreadState_Clear(tstate);
-    free(tstate);
+    PF_FREE(tstate);
 }
 
 static PyObject *pytask_call_method(void *func, PyTaskObject *self, PyObject *args, PyObject *kwargs)
@@ -1342,7 +1352,7 @@ void S_Task_KillAll(void)
     while(kh_size(s_tid_task_map) > 0 && safety-- > 0) {
 
         size_t cap = kh_size(s_tid_task_map);
-        uint32_t *tids = malloc(cap * sizeof(uint32_t));
+        uint32_t *tids = PF_MALLOC(cap * sizeof(uint32_t));
         if(!tids)
             return;
 

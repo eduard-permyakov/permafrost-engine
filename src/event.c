@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_EVENT
+#define MEM_FILE_SUB 0
+
 #include "event.h"
 #include "main.h"
 #include "perf.h"
@@ -44,6 +47,13 @@
 #include "game/public/game.h"
 
 #include <assert.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_EVENT, 0)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_EVENT, 0)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_EVENT, 0)
 
 
 enum handler_type{

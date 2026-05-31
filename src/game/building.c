@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_GAME
+#define MEM_FILE_SUB MEM_SUB_GAME_BUILDING
+
 #include "building.h"
 #include "game_private.h"
 #include "storage_site.h"
@@ -56,6 +59,13 @@
 
 #include <assert.h>
 #include <stdint.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_GAME, MEM_SUB_GAME_BUILDING)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_GAME, MEM_SUB_GAME_BUILDING)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_BUILDING)
 
 
 static void *pmalloc(size_t size);
@@ -124,10 +134,10 @@ MPOOL_ALLOCATOR_IMPL(static, buff, buff_t)
 #undef krealloc
 #undef kfree
 
-#define kmalloc  malloc
-#define kcalloc  calloc
-#define krealloc realloc
-#define kfree    free
+#define kmalloc  PF_MALLOC
+#define kcalloc  PF_CALLOC
+#define krealloc PF_REALLOC
+#define kfree    PF_FREE
 
 KHASH_MAP_INIT_INT(state, struct buildstate)
 KHASH_SET_INIT_INT64(td)
@@ -733,7 +743,7 @@ bool G_Building_Found(uint32_t uid, bool blocking)
     E_Entity_Register(EVENT_STORAGE_SITE_AMOUNT_CHANGED, uid, on_amount_changed, 
         (void*)((uintptr_t)uid), G_RUNNING);
 
-    struct entity_block_desc *desc = malloc(sizeof(struct entity_block_desc));
+    struct entity_block_desc *desc = PF_MALLOC(sizeof(struct entity_block_desc));
     *desc = (struct entity_block_desc){
         .uid = uid,
         .radius = G_GetSelectionRadius(uid),

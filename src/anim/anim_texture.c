@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_ANIM
+#define MEM_FILE_SUB MEM_SUB_ANIM_TEXTURE
+
 #include "public/anim.h"
 #include "anim_texture.h"
 #include "anim_private.h"
@@ -48,6 +51,15 @@
 
 #include <assert.h>
 #include <string.h>
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_ANIM, MEM_SUB_ANIM_TEXTURE)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_ANIM, MEM_SUB_ANIM_TEXTURE)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_ANIM, MEM_SUB_ANIM_TEXTURE)
 
 #define MIN(a, b)   ((a) < (b) ? (a) : (b))
 

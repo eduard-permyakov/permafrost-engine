@@ -52,7 +52,7 @@ static inline void block_alloc_init(struct block_allocator *alloc, size_t size, 
     alloc->blocksize = size;
 
     for(int i = 0; i < init_capacity; i++) {
-        void *block = malloc(size);
+        void *block = Mem_MallocTagged(size, MEM_FILE_SYS, MEM_FILE_SUB);
         vec_block_push(&alloc->blockstack, block);
     }
 }
@@ -61,7 +61,7 @@ static inline void block_alloc_destroy(struct block_allocator *alloc)
 {
     for(int i = 0; i < vec_size(&alloc->blockstack); i++) {
         void *block = vec_AT(&alloc->blockstack, i);
-        free(block);
+        Mem_Free(block);
     }
     vec_block_destroy(&alloc->blockstack);
 }
@@ -70,7 +70,7 @@ static inline void *block_alloc(struct block_allocator *alloc)
 {
     if(vec_size(&alloc->blockstack) > 0)
         return vec_block_pop(&alloc->blockstack);
-    return malloc(alloc->blocksize);
+    return Mem_MallocTagged(alloc->blocksize, MEM_FILE_SYS, MEM_FILE_SUB);
 }
 
 static inline void block_free(struct block_allocator *alloc, void *block)

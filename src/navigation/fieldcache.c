@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_NAV
+#define MEM_FILE_SUB MEM_SUB_NAV_FIELDCACHE
+
 #include "fieldcache.h"
 #include "nav_private.h"
 #include "../lib/public/lru_cache.h"
@@ -44,6 +47,13 @@
 #include "../config.h"
 
 #include <assert.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_NAV, MEM_SUB_NAV_FIELDCACHE)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_NAV, MEM_SUB_NAV_FIELDCACHE)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_NAV, MEM_SUB_NAV_FIELDCACHE)
 
 
 LRU_CACHE_TYPE(los, struct LOS_field)
@@ -617,7 +627,7 @@ void N_FC_InvalidateDynamicSurroundFields(struct fieldcache_ctx *ctx)
 
 struct fieldcache_ctx *N_FC_New(void)
 {
-    return malloc(sizeof(struct fieldcache_ctx));
+    return PF_MALLOC(sizeof(struct fieldcache_ctx));
 }
 
 void N_FC_Free(struct fieldcache_ctx *ctx)

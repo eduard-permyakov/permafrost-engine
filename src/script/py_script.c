@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_SCRIPT
+#define MEM_FILE_SUB MEM_SUB_SCRIPT_DISPATCH
+
 #include <Python.h> /* Must be included first */
 #include <frameobject.h>
 
@@ -87,6 +90,13 @@
 #include <sys/stat.h>
 #endif
 
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_DISPATCH)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_DISPATCH)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_DISPATCH)
+
 
 #define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
 
@@ -121,6 +131,8 @@ static PyObject *PyPf_set_active_camera(PyObject *self, PyObject *args);
 static PyObject *PyPf_prev_frame_ms(PyObject *self);
 static PyObject *PyPf_prev_frame_perfstats(PyObject *self);
 static PyObject *PyPf_prev_frame_memstats(PyObject *self);
+static PyObject *PyPf_prev_frame_mem_accounting(PyObject *self);
+static PyObject *PyPf_mem_audit(PyObject *self);
 static PyObject *PyPf_prev_frame_allocd_bytes(PyObject *self);
 static PyObject *PyPf_get_resolution(PyObject *self);
 static PyObject *PyPf_get_native_resolution(PyObject *self);
@@ -378,6 +390,19 @@ static PyMethodDef pf_module_methods[] = {
     {"prev_frame_memstats", 
     (PyCFunction)PyPf_prev_frame_memstats, METH_NOARGS,
     "Get a dictionary of the memory allocation and usage statistics for the previous frame."},
+
+    {"prev_frame_mem_accounting",
+    (PyCFunction)PyPf_prev_frame_mem_accounting, METH_NOARGS,
+    "Get a dictionary of per-system memory accounting for the previous frame. "
+    "Keys are system name strings; values are dicts of {bytes, count, subsystems} "
+    "where 'subsystems' maps subsystem id (int) to {bytes, count}."},
+
+    {"mem_audit",
+    (PyCFunction)PyPf_mem_audit, METH_NOARGS,
+    "Walks mimalloc's heap to count live bytes in tagged blocks per system. "
+    "Returns {sys_name: alive_bytes}. Compare with prev_frame_mem_accounting() "
+    "to find bare-free leaks: counter > alive means tagged pointers freed "
+    "without going through Mem_Free."},
 
     {"prev_frame_allocd_bytes", 
     (PyCFunction)PyPf_prev_frame_allocd_bytes, METH_NOARGS,
@@ -1373,6 +1398,77 @@ static PyObject *PyPf_prev_frame_memstats(PyObject *self)
         "mi_threads_current",       (long long)stats.mi_threads_current,
         "vm_rss_kb",                (unsigned long long)stats.vm_rss_kb,
         "vm_size_kb",               (unsigned long long)stats.vm_size_kb);
+}
+
+static PyObject *mem_accounting_to_dict(const struct mem_accounting *acc)
+{
+    PyObject *result = PyDict_New();
+    if(!result)
+        return NULL;
+
+    for(int sys = 0; sys < MEM_SYS_COUNT; sys++) {
+        PyObject *subs = PyDict_New();
+        if(!subs)
+            goto fail;
+
+        for(int sub = 0; sub < MEM_SUB_MAX_PER_SYS; sub++) {
+            if(acc->sub_bytes[sys][sub] == 0 && acc->sub_count[sys][sub] == 0)
+                continue;
+            PyObject *sub_entry = Py_BuildValue("{s:L,s:L}",
+                "bytes", (long long)acc->sub_bytes[sys][sub],
+                "count", (long long)acc->sub_count[sys][sub]);
+            if(!sub_entry) {
+                Py_DECREF(subs);
+                goto fail;
+            }
+            const char *sub_name = Mem_SubName(sys, sub);
+            int rc;
+            if(sub_name) {
+                rc = PyDict_SetItemString(subs, sub_name, sub_entry);
+            }else{
+                PyObject *key = PyLong_FromLong(sub);
+                rc = (key ? PyDict_SetItem(subs, key, sub_entry) : -1);
+                Py_XDECREF(key);
+            }
+            Py_DECREF(sub_entry);
+            if(rc != 0) {
+                Py_DECREF(subs);
+                goto fail;
+            }
+        }
+
+        PyObject *sys_entry = Py_BuildValue("{s:L,s:L,s:O}",
+            "bytes",      (long long)acc->sys_bytes[sys],
+            "count",      (long long)acc->sys_count[sys],
+            "subsystems", subs);
+        Py_DECREF(subs);
+        if(!sys_entry)
+            goto fail;
+
+        int rc = PyDict_SetItemString(result, Mem_SysName(sys), sys_entry);
+        Py_DECREF(sys_entry);
+        if(rc != 0)
+            goto fail;
+    }
+    return result;
+
+fail:
+    Py_DECREF(result);
+    return NULL;
+}
+
+static PyObject *PyPf_prev_frame_mem_accounting(PyObject *self)
+{
+    struct mem_accounting acc;
+    Perf_GetMemoryAccounting(&acc);
+    return mem_accounting_to_dict(&acc);
+}
+
+static PyObject *PyPf_mem_audit(PyObject *self)
+{
+    struct mem_accounting acc;
+    Mem_AuditTaggedBytes(&acc);
+    return mem_accounting_to_dict(&acc);
 }
 
 static PyObject *PyPf_prev_frame_allocd_bytes(PyObject *self)
@@ -4069,7 +4165,7 @@ done:
 
 void S_RunFileAsync(const char *path, int argc, char **argv, struct future *result)
 {
-    struct script_arg *arg = malloc(sizeof(struct script_arg));
+    struct script_arg *arg = PF_MALLOC(sizeof(struct script_arg));
     if(!arg)
         return;
 
@@ -4269,7 +4365,7 @@ bool S_SaveState(SDL_RWops *stream)
     bool ret = false;
 
     const size_t max_handlers = 65536;
-    struct script_handler *handlers = malloc(max_handlers * sizeof(struct script_handler));
+    struct script_handler *handlers = PF_MALLOC(max_handlers * sizeof(struct script_handler));
     if(!handlers)
         return false;
     size_t nhandlers = E_GetScriptHandlers(max_handlers, handlers);

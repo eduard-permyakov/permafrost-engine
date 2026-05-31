@@ -40,6 +40,7 @@
 #include "../../perf.h"
 
 #include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <assert.h>
 #include <string.h>
@@ -54,6 +55,8 @@
         int ihead;                                                                              \
         int itail;                                                                              \
         type *mem;                                                                              \
+        uint16_t mem_sys;                                                                       \
+        uint16_t mem_sub;                                                                       \
     } queue_##name##_t;                                                                         \
 
 /***********************************************************************************************/
@@ -83,7 +86,8 @@
     static bool _queue_##name##_resize(queue(name) *queue, size_t new_cap)                      \
     {                                                                                           \
         PERF_ENTER();                                                                           \
-        type *new_mem = realloc((void*)queue->mem, sizeof(type) * new_cap);                     \
+        type *new_mem = (type*)Mem_ReallocTagged(queue->mem,                                    \
+            sizeof(type) * new_cap, queue->mem_sys, queue->mem_sub);                            \
         if(!new_mem)                                                                            \
             PERF_RETURN(false);                                                                 \
                                                                                                 \
@@ -106,11 +110,12 @@
             size_t bot = queue->capacity - queue->ihead;                                        \
             assert(top + bot == queue->size);                                                   \
                                                                                                 \
-            type *tmp = malloc(sizeof(type) * top);                                             \
+            type *tmp = (type*)Mem_MallocTagged(sizeof(type) * top,                             \
+                queue->mem_sys, queue->mem_sub);                                                \
             memcpy(tmp, new_mem, sizeof(type) * top);                                           \
             memmove(new_mem, new_mem + queue->ihead, sizeof(type) * bot);                       \
             memcpy(new_mem + bot, tmp, sizeof(type) * top);                                     \
-            free(tmp);                                                                          \
+            Mem_Free(tmp);                                                                      \
                                                                                                 \
             queue->ihead = 0;                                                                   \
             queue->itail = top + bot - 1;                                                       \
@@ -125,12 +130,14 @@
     {                                                                                           \
         memset(queue, 0, sizeof(*queue));                                                       \
         queue->itail = -1;                                                                      \
+        queue->mem_sys = MEM_FILE_SYS;                                                          \
+        queue->mem_sub = MEM_FILE_SUB;                                                          \
         return _queue_##name##_resize(queue, init_cap);                                         \
     }                                                                                           \
                                                                                                 \
     scope void queue_##name##_destroy(queue(name) *queue)                                       \
     {                                                                                           \
-        free((void*)queue->mem);                                                                \
+        Mem_Free(queue->mem);                                                                   \
         memset(queue, 0, sizeof(*queue));                                                       \
     }                                                                                           \
                                                                                                 \

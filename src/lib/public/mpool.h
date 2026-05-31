@@ -102,7 +102,7 @@ typedef uint32_t mp_ref_t;
         if(new_cap <= old_cap)                                                                  \
             return true;                                                                        \
                                                                                                 \
-        mp_##name##_node_t *new_entry = realloc(mp->pool,                                       \
+        mp_##name##_node_t *new_entry = PF_REALLOC(mp->pool,                                       \
             (new_cap + 1) * sizeof(mp_##name##_node_t));                                        \
         if(!new_entry)                                                                          \
             return false;                                                                       \
@@ -128,7 +128,7 @@ typedef uint32_t mp_ref_t;
                                                                                                 \
     scope void mp_##name##_destroy(mp(name) *mp)                                                \
     {                                                                                           \
-        free(mp->pool);                                                                         \
+        PF_FREE(mp->pool);                                                                         \
         memset(mp, 0, sizeof(*mp));                                                             \
     }                                                                                           \
                                                                                                 \
@@ -190,7 +190,7 @@ typedef uint32_t mp_ref_t;
     scope bool mp_##name##_copy(const mp(name) *from, mp(name) *to)                             \
     {                                                                                           \
         size_t size = (from->capacity + 1)* sizeof(mp_##name##_node_t);                         \
-        to->pool = malloc(size);                                                                \
+        to->pool = PF_MALLOC(size);                                                                \
         if(!to->pool)                                                                           \
             return false;                                                                       \
         memcpy(to->pool, from->pool, size);                                                     \

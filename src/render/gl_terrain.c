@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_RENDER
+#define MEM_FILE_SUB MEM_SUB_RENDER_GL_TERRAIN
+
 #include "gl_render.h"
 #include "gl_texture.h"
 #include "gl_shader.h"
@@ -50,6 +53,13 @@
 
 #include <assert.h>
 #include <string.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_TERRAIN)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_TERRAIN)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_TERRAIN)
 
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
 #define HEIGHT_MAP_RES  (2048)
@@ -87,7 +97,7 @@ static void create_height_map(void)
     ASSERT_IN_RENDER_THREAD();
     
     size_t buffsize = sizeof(float) * HEIGHT_MAP_RES * HEIGHT_MAP_RES;
-    float *data = malloc(buffsize);
+    float *data = PF_MALLOC(buffsize);
     if(!data)
         return;
 
@@ -111,7 +121,7 @@ static void create_splat_map(void)
     ASSERT_IN_RENDER_THREAD();
     
     size_t buffsize = sizeof(float) * SPLAT_MAP_RES * SPLAT_MAP_RES;
-    float *data = malloc(buffsize);
+    float *data = PF_MALLOC(buffsize);
     if(!data)
         return;
 
@@ -240,7 +250,7 @@ void R_GL_MapShutdown(void)
 void R_GL_MapUpdateFogClear(void)
 {
     size_t size = s_res.chunk_w * s_res.chunk_h * s_res.tile_w * s_res.tile_h;
-    void *buff = malloc(size);
+    void *buff = PF_MALLOC(size);
     memset(buff, 0x2, size);
     R_GL_RingbufferPush(s_fog_ring, buff, size);
     PF_FREE(buff);

@@ -33,11 +33,23 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_LIB
+#define MEM_FILE_SUB MEM_SUB_LIB_SDL_VEC_RWOPS
+
 #include "public/SDL_vec_rwops.h"
 #include "public/vec.h"
 
 #include <stdlib.h>
 #include <assert.h>
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_LIB, MEM_SUB_LIB_SDL_VEC_RWOPS)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_LIB, MEM_SUB_LIB_SDL_VEC_RWOPS)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_LIB, MEM_SUB_LIB_SDL_VEC_RWOPS)
 
 VEC_TYPE(uchar, unsigned char)
 VEC_IMPL(static inline, uchar, unsigned char)
@@ -114,7 +126,7 @@ static int rw_vec_close(SDL_RWops *ctx)
 {
     assert(ctx->type == SDL_RWOPS_VEC);
     vec_uchar_destroy(ctx->hidden.unknown.data1);
-    free(ctx);
+    PF_FREE(ctx);
     return 0;
 }
 
@@ -124,7 +136,7 @@ static int rw_vec_close(SDL_RWops *ctx)
 
 SDL_RWops *PFSDL_VectorRWOps(void)
 {
-    SDL_RWops *ret = malloc(sizeof(SDL_RWops) + sizeof(vec_uchar_t));
+    SDL_RWops *ret = PF_MALLOC(sizeof(SDL_RWops) + sizeof(vec_uchar_t));
     if(!ret)
         return ret;
 

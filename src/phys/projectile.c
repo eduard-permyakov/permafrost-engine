@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_PHYS
+#define MEM_FILE_SUB MEM_SUB_PHYS_PROJECTILE
+
 #include "public/phys.h"
 #include "public/collision.h"
 #include "../main.h"
@@ -56,6 +59,15 @@
 #include <math.h>
 #include <assert.h>
 #include <SDL.h>
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_PHYS, MEM_SUB_PHYS_PROJECTILE)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_PHYS, MEM_SUB_PHYS_PROJECTILE)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_PHYS, MEM_SUB_PHYS_PROJECTILE)
 
 
 #define PHYS_HZ         (30)

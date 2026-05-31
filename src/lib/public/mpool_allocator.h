@@ -37,6 +37,7 @@
 #define MPOOL_ALLOCATOR_H
 
 #include "mpool.h"
+#include "mem.h"
 
 #include <stdio.h>
 
@@ -87,7 +88,7 @@
                                                                                                 \
     scope bool mpa_##name##_init(mpa(name) *mpa, size_t chunk_size, size_t max_chunks)          \
     {                                                                                           \
-        mpa->chunks = malloc(sizeof(mp_##name##_t));                                            \
+        mpa->chunks = PF_MALLOC(sizeof(mp_##name##_t));                                            \
         if(!mpa->chunks)                                                                        \
             return false;                                                                       \
                                                                                                 \
@@ -110,7 +111,7 @@
                                                                                                 \
             if(mpa->max_chunks != 0 && mpa->num_chunks == mpa->max_chunks)                      \
                 return false;                                                                   \
-            mp_##name##_t *newchunks = realloc(mpa->chunks,                                     \
+            mp_##name##_t *newchunks = PF_REALLOC(mpa->chunks,                                     \
                 (mpa->num_chunks + 1) * sizeof(mp_##name##_t));                                 \
             if(!newchunks)                                                                      \
                 return false;                                                                   \
@@ -129,7 +130,7 @@
         for(int i = 0; i < mpa->num_chunks; i++) {                                              \
             mp_##name##_destroy(&mpa->chunks[i]);                                               \
         }                                                                                       \
-        free(mpa->chunks);                                                                      \
+        PF_FREE(mpa->chunks);                                                                      \
         memset(mpa, 0, sizeof(*mpa));                                                           \
     }                                                                                           \
                                                                                                 \

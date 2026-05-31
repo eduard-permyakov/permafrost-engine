@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_RENDER
+#define MEM_FILE_SUB MEM_SUB_RENDER_GL_UI
+
 #include "public/render.h"
 #include "gl_texture.h"
 #include "gl_assert.h"
@@ -48,6 +51,13 @@
 #include <assert.h>
 
 #include <GL/glew.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_UI)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_UI)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_UI)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -103,7 +113,7 @@ static void exec_draw_commands(const struct nk_draw_list *dl, GLuint shader_prog
                 });
                 R_GL_StateInstall(GL_U_PROJECTION, R_GL_Shader_GetCurrActive());
 
-                PF_FREE(ud);
+                free(ud);
                 continue;
             }
             case NK_COMMAND_IMAGE_TEXPATH: {
@@ -116,7 +126,7 @@ static void exec_draw_commands(const struct nk_draw_list *dl, GLuint shader_prog
             default: assert(0);
             }
 
-            PF_FREE(ud);
+            free(ud);
         }
 
         if(!cmd->elem_count) 

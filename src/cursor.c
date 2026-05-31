@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_CURSOR
+#define MEM_FILE_SUB 0
+
 #include "cursor.h"
 #include "config.h"
 #include "event.h"
@@ -46,6 +49,15 @@
 
 #include <string.h>
 #include <assert.h>
+
+#include "lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_CURSOR, 0)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_CURSOR, 0)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_CURSOR, 0)
 
 #define CHK_TRUE_RET(_pred)   \
     do{                       \
@@ -256,7 +268,7 @@ void Cursor_FreeAll(void)
     struct cursor_resource curr;
 
     kh_foreach(s_named_cursors, key, curr, {
-        free((void*)key);
+        PF_FREE(key);
         SDL_FreeSurface(curr.surface);
         SDL_FreeCursor(curr.cursor);
     });

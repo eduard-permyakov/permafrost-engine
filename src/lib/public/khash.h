@@ -124,6 +124,7 @@ int main() {
  */
 
 #include "../../perf.h"
+#include "mem.h"
 
 #define AC_VERSION_KHASH_H "0.2.8"
 
@@ -179,16 +180,16 @@ typedef khint_t khiter_t;
 #endif
 
 #ifndef kcalloc
-#define kcalloc(N,Z) calloc(N,Z)
+#define kcalloc(N,Z) PF_CALLOC(N,Z)
 #endif
 #ifndef kmalloc
-#define kmalloc(Z) malloc(Z)
+#define kmalloc(Z) PF_MALLOC(Z)
 #endif
 #ifndef krealloc
-#define krealloc(P,Z) realloc(P,Z)
+#define krealloc(P,Z) PF_REALLOC(P,Z)
 #endif
 #ifndef kfree
-#define kfree(P) free(P)
+#define kfree(P) PF_FREE(P)
 #endif
 #ifndef kmemcpy
 #define kmemcpy(D, S, N) memcpy(D, S, N)
@@ -223,8 +224,8 @@ static const double __ac_HASH_UPPER = 0.77;
     SCOPE void kh_destroy_##name(kh_##name##_t *h)                                              \
     {                                                                                           \
         if (h) {                                                                                \
-            kfree((void *)h->keys); kfree(h->flags);                                            \
-            kfree((void *)h->vals);                                                             \
+            kfree(h->keys); kfree(h->flags);                                            \
+            kfree(h->vals);                                                             \
             kfree(h);                                                                           \
         }                                                                                       \
     }                                                                                           \

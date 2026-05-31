@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_CAM_CONTROL
+#define MEM_FILE_SUB 0
+
 #include "cam_control.h"
 #include "config.h"
 #include "event.h"
@@ -43,6 +46,15 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <string.h>
+
+#include "lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_CAM_CONTROL, 0)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_CAM_CONTROL, 0)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_CAM_CONTROL, 0)
 
 
 #define KEYUP_TICKS_TIMEOUT (1)

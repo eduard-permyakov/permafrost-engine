@@ -33,10 +33,22 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_LIB
+#define MEM_FILE_SUB MEM_SUB_LIB_STRING_INTERN
+
 #include "public/string_intern.h"
 #include "public/pf_string.h"
 
 #include <string.h>
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_LIB, MEM_SUB_LIB_STRING_INTERN)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_LIB, MEM_SUB_LIB_STRING_INTERN)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_LIB, MEM_SUB_LIB_STRING_INTERN)
 
 MPOOL_PROTOTYPES(static, strbuff, strbuff_t)
 MPOOL_IMPL(static, strbuff, strbuff_t)

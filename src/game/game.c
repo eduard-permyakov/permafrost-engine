@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_GAME
+#define MEM_FILE_SUB MEM_SUB_GAME_DISPATCH
+
 #include "public/game.h"
 #include "gamestate.h"
 #include "selection.h"
@@ -79,6 +82,13 @@
 #include "../sprite.h"
 
 #include <assert.h> 
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_GAME, MEM_SUB_GAME_DISPATCH)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_GAME, MEM_SUB_GAME_DISPATCH)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_DISPATCH)
 
 
 #define BASE_CAM_HEIGHT     175.0f
@@ -1676,7 +1686,7 @@ bool G_LoadMap(SDL_RWops *stream, bool update_navgrid)
     g_clear_map_state();
 
     size_t copysize = AL_MapShallowCopySize(stream);
-    s_gs.prev_tick_map = malloc(copysize);
+    s_gs.prev_tick_map = PF_MALLOC(copysize);
     if(!s_gs.prev_tick_map)
         PERF_RETURN(false);
 
@@ -2745,7 +2755,7 @@ bool G_GetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state *out)
 
 enum diplomacy_state (*G_CopyDiplomacyTable(void))[MAX_FACTIONS]
 {
-    void *ret = malloc(sizeof(s_gs.diplomacy_table));
+    void *ret = PF_MALLOC(sizeof(s_gs.diplomacy_table));
     if(!ret)
         return NULL;
     memcpy(ret, s_gs.diplomacy_table, sizeof(s_gs.diplomacy_table));

@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_GAME
+#define MEM_FILE_SUB MEM_SUB_GAME_FORMATION
+
 #include "formation.h"
 #include "position.h"
 #include "movement.h"
@@ -58,6 +61,15 @@
 
 #include <SDL.h>
 #include <assert.h>
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_GAME, MEM_SUB_GAME_FORMATION)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_GAME, MEM_SUB_GAME_FORMATION)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_FORMATION)
 
 #define COLUMN_WIDTH_RATIO       (4.0f)
 #define RANK_WIDTH_RATIO         (0.25f)
@@ -376,11 +388,11 @@ static void *get_workspace(void)
         return ret;
 
     size_t sz = workspace_size();
-    ret = malloc(sz);
+    ret = PF_MALLOC(sz);
     if(!ret)
         return NULL;
-    if(0 != SDL_TLSSet(s_workspace, ret, free)) {
-        free(ret);
+    if(0 != SDL_TLSSet(s_workspace, ret, Mem_Free)) {
+        PF_FREE(ret);
         return NULL;
     }
     return ret;
@@ -1355,7 +1367,7 @@ static struct refcounted_map *map_snapshot_get(struct formation *formation,
         k = kh_put(map, formation->map_snapshots, key, &ret);
         assert(ret != -1);
 
-        struct refcounted_map *rmap = malloc(sizeof(struct refcounted_map));
+        struct refcounted_map *rmap = PF_MALLOC(sizeof(struct refcounted_map));
         rmap->snapshot = M_AL_CopyWithFields(s_map);
         map_add_blockers(rmap->snapshot, formation, sub);
         SDL_AtomicSet(&rmap->refcount, 0);

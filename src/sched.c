@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_SCHED
+#define MEM_FILE_SUB 0
+
 #include "sched.h"
 #include "config.h"
 #include "perf.h"
@@ -56,6 +59,13 @@
 #ifdef _MSC_VER
 #include "lib/public/windows.h"
 #endif
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_SCHED, 0)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_SCHED, 0)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_SCHED, 0)
 
 
 enum taskstate{
@@ -675,20 +685,20 @@ static uint64_t sched_retain_arg(struct task *task, int event, int event_source,
         ret = arg;
     }else{
         if(event < SDL_LASTEVENT) {
-            ret = malloc(sizeof(SDL_Event));
+            ret = PF_MALLOC(sizeof(SDL_Event));
             if(arg) {
                 memcpy(ret, arg, sizeof(SDL_Event));
             }
-            task->erelease = free;
+            task->erelease = Mem_Free;
         }else if(event == EVENT_ENTERED_REGION || event == EVENT_EXITED_REGION) {
             ret = pf_strdup(arg);
-            task->erelease = free;
+            task->erelease = Mem_Free;
         }else if(event == EVENT_PROJECTILE_HIT) {
-            ret = malloc(sizeof(struct proj_hit));
+            ret = PF_MALLOC(sizeof(struct proj_hit));
             if(arg) {
                 memcpy(ret, arg, sizeof(struct proj_hit));
             }
-            task->erelease = free;
+            task->erelease = Mem_Free;
         }else{
             /* We'd better be sure that the pointer won't have been 'free'd or something 
              * by the time the waiting task finally runs... */
@@ -1530,12 +1540,33 @@ uint64_t Sched_Request(struct request req)
 
     task->req = req;
 
+    /* Save every entry the task pushed above its `Task NNN` wrapper. The
+     * wrapper's matching PERF_POP runs inside sched_task_run when we yield,
+     * and it pops the topmost entry — so anything left above the wrapper
+     * would be popped instead of the wrapper itself, scrambling the stack
+     * for both this task's resumption and any other task that runs in the
+     * meantime. Names live in the per-thread name_id_table and are stable. */
+    const char *saved[64];
+    int nsaved = 0;
+    while(!Perf_IsRoot() && nsaved < (int)(sizeof(saved)/sizeof(saved[0]))) {
+        const char *name = NULL;
+        Perf_Pop(&name);
+        saved[nsaved++] = name;
+    }
+
+    uint64_t ret;
     if(SDL_ThreadID() == g_main_thread_id) {
-        return sched_switch_ctx(&task->ctx, &s_main_ctx, 0, NULL);
+        ret = sched_switch_ctx(&task->ctx, &s_main_ctx, 0, NULL);
     }else{
         int id = sched_curr_thread_worker_id();
-        return sched_switch_ctx(&task->ctx, &s_worker_contexts[id], 0, NULL);
+        ret = sched_switch_ctx(&task->ctx, &s_worker_contexts[id], 0, NULL);
     }
+
+    for(int i = nsaved - 1; i >= 0; i--) {
+        if(saved[i])
+            Perf_Push(saved[i]);
+    }
+    return ret;
 }
 
 uint32_t Sched_ActiveTID(void)
@@ -1554,16 +1585,7 @@ void Sched_TryYield(void)
     if(tid == NULL_TID)
         return;
 
-    const char *name = NULL;
-    if(!Perf_IsRoot()) {
-        PERF_POP_NAME(&name);
-    }
-
     Sched_Request((struct request) { .type = SCHED_REQ_YIELD });
-
-    if(name) {
-        PERF_PUSH(name);
-    }
 }
 
 /* Like Sched_Create, but attempts to run a task to completion 

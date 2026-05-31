@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_GAME
+#define MEM_FILE_SUB MEM_SUB_GAME_MOVEMENT
+
 #include "movement.h"
 #include "game_private.h"
 #include "formation.h"
@@ -69,6 +72,15 @@
 
 #include <assert.h>
 #include <SDL.h>
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_GAME, MEM_SUB_GAME_MOVEMENT)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_GAME, MEM_SUB_GAME_MOVEMENT)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_MOVEMENT)
 
 static int hz_count(enum movement_hz hz);
 
@@ -902,7 +914,7 @@ static void move_order(const vec_entity_t *sel, bool attack, vec3_t mouse_coord,
 
     if(nmoved) {
         move_marker_add(mouse_coord, attack);
-        vec_entity_t *copy = malloc(sizeof(vec_entity_t));
+        vec_entity_t *copy = PF_MALLOC(sizeof(vec_entity_t));
         vec_entity_init(copy);
         vec_entity_copy(copy, (vec_entity_t*)sel);
         move_push_cmd((struct move_cmd){
@@ -3725,6 +3737,7 @@ static void fork_join_velocity_computations(void)
 
 static void fork_join_state_updates(void)
 {
+    PERF_ENTER();
     PERF_PUSH("move::submit state updates");
     move_submit_cpu_work(move_update_task);
     PERF_POP();
@@ -4398,7 +4411,7 @@ void G_Move_ArrangeInFormation(vec_entity_t *ents, vec2_t target,
                                vec2_t orientation, enum formation_type type)
 {
     ASSERT_IN_MAIN_THREAD();
-    vec_entity_t *copy = malloc(sizeof(vec_entity_t));
+    vec_entity_t *copy = PF_MALLOC(sizeof(vec_entity_t));
     vec_entity_init(copy);
     vec_entity_copy(copy, ents);
 
@@ -4431,7 +4444,7 @@ void G_Move_AttackInFormation(vec_entity_t *ents, vec2_t target,
                               vec2_t orientation, enum formation_type type)
 {
     ASSERT_IN_MAIN_THREAD();
-    vec_entity_t *copy = malloc(sizeof(vec_entity_t));
+    vec_entity_t *copy = PF_MALLOC(sizeof(vec_entity_t));
     vec_entity_init(copy);
     vec_entity_copy(copy, ents);
 

@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_RENDER
+#define MEM_FILE_SUB MEM_SUB_RENDER_GL_MOVEMENT
+
 #include "public/render.h"
 #include "public/render_ctrl.h"
 #include "gl_perf.h"
@@ -41,6 +44,15 @@
 #include "gl_state.h"
 #include "../map/public/tile.h"
 #include "../main.h"
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_MOVEMENT)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_MOVEMENT)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_MOVEMENT)
 
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define WORKGROUP_SIZE      (64)

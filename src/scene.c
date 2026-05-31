@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_SCENE
+#define MEM_FILE_SUB 0
+
 #include "scene.h"
 #include "sched.h"
 #include "asset_load.h"
@@ -45,6 +48,15 @@
 #include <stdio.h>
 #include <SDL.h>
 #include <assert.h>
+
+#include "lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_SCENE, 0)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_SCENE, 0)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_SCENE, 0)
 
 
 #define PFSCENE_VERSION_MAJOR (1)
@@ -145,7 +157,7 @@ static bool scene_load_entity(struct version version, SDL_RWops *stream)
     struct attr val;
     kh_foreach(attr_table, key, val, { 
         (void)val;
-        free((void*)key);
+        PF_FREE(key);
     });
     
     kh_destroy(attr, attr_table);

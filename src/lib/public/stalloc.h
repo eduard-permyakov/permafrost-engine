@@ -38,7 +38,9 @@
 
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdint.h>
 
+#include "mem.h"
 
 #define STATIC_BUFF_SZ (512*1024)
 #define MEMBLOCK_SZ    (64*1024*1024)
@@ -67,13 +69,17 @@ struct memstack{
     struct st_mem *head;
     struct st_mem *tail;
     void          *top; /* Empty Ascending stack */
+    uint16_t       mem_sys;
+    uint16_t       mem_sub;
 };
 
-bool  stalloc_init(struct memstack *st);
+bool  stalloc_init_tagged(struct memstack *st, uint16_t sys, uint16_t sub);
 void  stalloc_destroy(struct memstack *st);
 
 void *stalloc(struct memstack *st, size_t size);
 void  stalloc_clear(struct memstack *st);
+
+#define stalloc_init(st) stalloc_init_tagged((st), MEM_FILE_SYS, MEM_FILE_SUB)
 
 /* The smemstack is just like the memstack, except that the first 'STATIC_BUFF_SZ' 
  * bytes of allocations will be from the local 'mem' buffer, which can be declared 
@@ -86,11 +92,13 @@ struct smemstack{
     struct memstack  extra;
 };
 
-bool  sstalloc_init(struct smemstack *st);
+bool  sstalloc_init_tagged(struct smemstack *st, uint16_t sys, uint16_t sub);
 void  sstalloc_destroy(struct smemstack *st);
 
 void *sstalloc(struct smemstack *st, size_t size);
 void  sstalloc_clear(struct smemstack *st);
+
+#define sstalloc_init(st) sstalloc_init_tagged((st), MEM_FILE_SYS, MEM_FILE_SUB)
 
 #endif
 

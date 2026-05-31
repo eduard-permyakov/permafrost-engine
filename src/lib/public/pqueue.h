@@ -37,10 +37,13 @@
 #define PQUEUE_H
 
 #include <stddef.h>
+#include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "mem.h"
 
 /***********************************************************************************************/
 
@@ -57,6 +60,8 @@
         size_t size;                                                                            \
         void *(*prealloc)(void *ptr, size_t size);                                              \
         void  (*pfree)(void *ptr);                                                              \
+        uint16_t mem_sys;                                                                       \
+        uint16_t mem_sub;                                                                       \
     } pq_##name##_t;                                                                            \
 
 /***********************************************************************************************/
@@ -129,8 +134,10 @@
         pqueue->nodes = NULL;                                                                   \
         pqueue->capacity = 0;                                                                   \
         pqueue->size = 0;                                                                       \
-        pqueue->prealloc = realloc;                                                             \
-        pqueue->pfree = free;                                                                   \
+        pqueue->prealloc = NULL;                                                                \
+        pqueue->pfree = NULL;                                                                   \
+        pqueue->mem_sys = MEM_FILE_SYS;                                                         \
+        pqueue->mem_sub = MEM_FILE_SUB;                                                         \
     }                                                                                           \
                                                                                                 \
     scope void pq_##name##_init_alloc(pq(name) *pqueue,                                         \
@@ -142,11 +149,16 @@
         pqueue->size = 0;                                                                       \
         pqueue->prealloc = prealloc;                                                            \
         pqueue->pfree = pfree;                                                                  \
+        pqueue->mem_sys = MEM_SYS_UNKNOWN;                                                      \
+        pqueue->mem_sub = 0;                                                                    \
     }                                                                                           \
                                                                                                 \
     scope void pq_##name##_destroy(pq(name) *pqueue)                                            \
     {                                                                                           \
-        free(pqueue->nodes);                                                                    \
+        if(pqueue->pfree)                                                                       \
+            pqueue->pfree(pqueue->nodes);                                                       \
+        else                                                                                    \
+            Mem_Free(pqueue->nodes);                                                            \
         memset(pqueue, 0, sizeof(*pqueue));                                                     \
     }                                                                                           \
                                                                                                 \
@@ -155,8 +167,14 @@
         if(pqueue->size + 1 >= pqueue->capacity) {                                              \
                                                                                                 \
             pqueue->capacity = pqueue->capacity ? pqueue->capacity * 2 : 32;                    \
-            void *nodes = pqueue->prealloc(pqueue->nodes,                                       \
-                pqueue->capacity * sizeof(pq_##name##_node_t));                                 \
+            void *nodes;                                                                        \
+            if(pqueue->prealloc)                                                                \
+                nodes = pqueue->prealloc(pqueue->nodes,                                         \
+                    pqueue->capacity * sizeof(pq_##name##_node_t));                             \
+            else                                                                                \
+                nodes = Mem_ReallocTagged(pqueue->nodes,                                        \
+                    pqueue->capacity * sizeof(pq_##name##_node_t),                              \
+                    pqueue->mem_sys, pqueue->mem_sub);                                          \
             if(!nodes)                                                                          \
                 return false;                                                                   \
             pqueue->nodes = nodes;                                                              \
@@ -252,8 +270,14 @@
         if(pqueue->capacity < cap) {                                                            \
                                                                                                 \
             pqueue->capacity = cap;                                                             \
-            void *nodes = pqueue->prealloc(pqueue->nodes,                                       \
-                pqueue->capacity * sizeof(pq_##name##_node_t));                                 \
+            void *nodes;                                                                        \
+            if(pqueue->prealloc)                                                                \
+                nodes = pqueue->prealloc(pqueue->nodes,                                         \
+                    pqueue->capacity * sizeof(pq_##name##_node_t));                             \
+            else                                                                                \
+                nodes = Mem_ReallocTagged(pqueue->nodes,                                        \
+                    pqueue->capacity * sizeof(pq_##name##_node_t),                              \
+                    pqueue->mem_sys, pqueue->mem_sub);                                          \
             if(!nodes)                                                                          \
                 return false;                                                                   \
             pqueue->nodes = nodes;                                                              \

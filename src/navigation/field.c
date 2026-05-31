@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_NAV
+#define MEM_FILE_SUB MEM_SUB_NAV_FIELD
+
 #include "field.h"
 #include "nav_private.h"
 #include "../entity.h"
@@ -46,6 +49,13 @@
 #include <string.h>
 #include <assert.h>
 #include <math.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_NAV, MEM_SUB_NAV_FIELD)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_NAV, MEM_SUB_NAV_FIELD)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_NAV, MEM_SUB_NAV_FIELD)
 
 
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
@@ -1431,8 +1441,8 @@ static size_t field_passable_frontier(
     bool *visited = NULL;
     struct tile_desc *frontier = NULL;
     if(!workspace) {
-        visited = malloc(sizeof(bool) * nelems);
-        frontier = malloc(sizeof(struct tile_desc) * nelems);
+        visited = PF_MALLOC(sizeof(bool) * nelems);
+        frontier = PF_MALLOC(sizeof(struct tile_desc) * nelems);
     }else{
         assert(ws_size >= (sizeof(bool) + sizeof(struct tile_desc)) * nelems + 16);
         visited = workspace;

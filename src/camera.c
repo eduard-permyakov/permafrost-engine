@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_CAMERA
+#define MEM_FILE_SUB 0
+
 #include "camera.h"
 #include "config.h"
 #include "main.h"
@@ -46,6 +49,15 @@
 #include <stddef.h>
 #include <string.h>
 #include <assert.h>
+
+#include "lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_CAMERA, 0)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_CAMERA, 0)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_CAMERA, 0)
 
 struct camera {
     float    speed;
@@ -103,7 +115,7 @@ static void camera_move_within_bounds(struct camera *cam)
 
 struct camera *Camera_New(void)
 {
-    struct camera *ret = calloc(1, sizeof(struct camera));
+    struct camera *ret = PF_CALLOC(1, sizeof(struct camera));
     if(!ret)
         return NULL;
 
@@ -112,7 +124,7 @@ struct camera *Camera_New(void)
 
 void Camera_Free(struct camera *cam)
 {
-    free(cam);
+    PF_FREE(cam);
 }
 
 void Camera_SetPos(struct camera *cam, vec3_t pos)

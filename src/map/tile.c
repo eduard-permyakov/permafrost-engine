@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_MAP
+#define MEM_FILE_SUB MEM_SUB_MAP_TILE
+
 #include "public/tile.h"
 #include "public/map.h"
 #include "../pf_math.h"
@@ -44,6 +47,13 @@
 #include <assert.h>
 #include <string.h>
 #include <limits.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_MAP, MEM_SUB_MAP_TILE)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_MAP, MEM_SUB_MAP_TILE)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_MAP, MEM_SUB_MAP_TILE)
 
 
 #define EPSILON            (1.0f / 1024.0)

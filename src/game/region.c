@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_GAME
+#define MEM_FILE_SUB MEM_SUB_GAME_REGION
+
 #include "region.h"
 #include "game_private.h"
 #include "position.h"
@@ -54,6 +57,13 @@
 #include <SDL.h>
 #include <assert.h>
 #include <math.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_GAME, MEM_SUB_GAME_REGION)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_GAME, MEM_SUB_GAME_REGION)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_REGION)
 
 
 #define MAX(a, b)    ((a) > (b) ? (a) : (b))
@@ -531,7 +541,7 @@ bool G_Region_Init(const struct map *map)
     struct map_resolution res;
     M_GetResolution(map, &res);
 
-    s_intersecting = calloc(res.chunk_w * res.chunk_h, sizeof(vec_str_t));
+    s_intersecting = PF_CALLOC(res.chunk_w * res.chunk_h, sizeof(vec_str_t));
     if(!s_intersecting)
         goto fail_intersecting;
 

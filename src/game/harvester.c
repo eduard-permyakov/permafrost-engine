@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_GAME
+#define MEM_FILE_SUB MEM_SUB_GAME_HARVESTER
+
 #include "harvester.h"
 #include "movement.h"
 #include "resource.h"
@@ -55,6 +58,15 @@
 #include <stddef.h>
 #include <assert.h>
 #include <string.h>
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_GAME, MEM_SUB_GAME_HARVESTER)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_GAME, MEM_SUB_GAME_HARVESTER)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_HARVESTER)
 
 
 #define UID_NONE            (~((uint32_t)0))
@@ -154,10 +166,10 @@ MPOOL_ALLOCATOR_IMPL(static, buff, buff_t)
 #undef krealloc
 #undef kfree
 
-#define kmalloc  malloc
-#define kcalloc  calloc
-#define krealloc realloc
-#define kfree    free
+#define kmalloc  PF_MALLOC
+#define kcalloc  PF_CALLOC
+#define krealloc PF_REALLOC
+#define kfree    PF_FREE
 
 KHASH_MAP_INIT_INT(state, struct hstate)
 

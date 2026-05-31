@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_TASK
+#define MEM_FILE_SUB 0
+
 #include "task.h"
 #include "sched.h"
 #include "event.h"
@@ -44,6 +47,15 @@
 
 #include <SDL.h>
 #include <assert.h>
+
+#include "lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_TASK, 0)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_TASK, 0)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_TASK, 0)
 
 struct delay_desc{
     uint32_t tid;
@@ -173,12 +185,12 @@ static void nameserver_exit(void *arg)
     (void)tid;
 
     kh_foreach(names, key, tid, {
-        free((void*)key);
+        PF_FREE(key);
     });
     kh_destroy(tid, names);
 
     kh_foreach(waiters, key, queue, {
-        free((void*)key);
+        PF_FREE(key);
         queue_tid_destroy(&queue);
     });
     kh_destroy(tidq, waiters);
@@ -264,7 +276,7 @@ static struct result nameserver_task(void *arg)
 
                     khiter_t k = kh_get(tid, names, key);
                     assert(k != kh_end(names));
-                    free((void*)key);
+                    PF_FREE(key);
                     kh_del(tid, names, k);
                     break;
                 }

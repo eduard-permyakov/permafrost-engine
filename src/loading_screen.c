@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_LOADING_SCREEN
+#define MEM_FILE_SUB 0
+
 #include "loading_screen.h"
 #include "main.h"
 #include "config.h"
@@ -50,6 +53,13 @@
 #include <string.h>
 #include <assert.h>
 #include <stdlib.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_LOADING_SCREEN, 0)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_LOADING_SCREEN, 0)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_LOADING_SCREEN, 0)
 
 
 VEC_TYPE(str, const char*)

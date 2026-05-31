@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_AUDIO
+#define MEM_FILE_SUB MEM_SUB_AUDIO_EFFECT
+
 #include "al_effect.h"
 #include "al_private.h"
 #include "al_assert.h"
@@ -55,6 +58,15 @@
 
 #include <AL/al.h>
 #include <AL/alc.h>
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_AUDIO, MEM_SUB_AUDIO_EFFECT)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_AUDIO, MEM_SUB_AUDIO_EFFECT)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_AUDIO, MEM_SUB_AUDIO_EFFECT)
 
 
 #define MIN(a, b)       ((a) < (b) ? (a) : (b))

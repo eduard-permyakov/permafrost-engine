@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_SCRIPT
+#define MEM_FILE_SUB MEM_SUB_SCRIPT_CONSOLE
+
 #include <Python.h> /* Must be included first */
 #include <node.h>
 #include <grammar.h>
@@ -52,6 +55,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_CONSOLE)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_CONSOLE)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_CONSOLE)
 
 PyAPI_DATA(grammar) _PyParser_Grammar;
 
@@ -184,7 +194,7 @@ static bool try_run_multiline(const char *next)
     }
     tot_size += 1;
 
-    char *buff = malloc(tot_size);
+    char *buff = PF_MALLOC(tot_size);
     if(!buff)
         return false;
 
@@ -241,7 +251,7 @@ static enum code_status try_compile(const char *next, bool append)
     tot_size += strlen(next);
     tot_size += 3;
 
-    char *buff = malloc(tot_size);
+    char *buff = PF_MALLOC(tot_size);
     if(!buff)
         return INVALID;
 

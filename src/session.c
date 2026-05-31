@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_SESSION
+#define MEM_FILE_SUB 0
+
 #include "session.h"
 #include "event.h"
 #include "main.h"
@@ -57,6 +60,13 @@
 #include <SDL.h> /* for SDL_RWops */
 #include <assert.h>
 #include <mimalloc.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_SESSION, 0)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_SESSION, 0)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_SESSION, 0)
 
 
 #define PFSAVE_VERSION  (1.0f)

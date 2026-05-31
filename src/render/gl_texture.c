@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_RENDER
+#define MEM_FILE_SUB MEM_SUB_RENDER_GL_TEXTURE
+
 #include "public/render.h"
 #include "render_private.h"
 #include "gl_texture.h"
@@ -53,6 +56,13 @@
 #include <string.h>
 #include <assert.h>
 #include <math.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_TEXTURE)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_TEXTURE)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_TEXTURE)
 
 
 #define MIN(a, b)       ((a) < (b) ? (a) : (b))
@@ -333,7 +343,7 @@ void R_GL_Texture_Dump(const struct texture *text, const char *filename)
     glGetTexLevelParameteriv(GL_TEXTURE_2D, level, GL_TEXTURE_HEIGHT, &height);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, level, GL_TEXTURE_INTERNAL_FORMAT, &iformat);
 
-    unsigned char* data = malloc(width * height * 3);
+    unsigned char* data = PF_MALLOC(width * height * 3);
     if(!data)
         return;
 
@@ -372,7 +382,7 @@ void R_GL_Texture_DumpArray(const struct texture_arr *arr, const char *base)
     glGetTexLevelParameteriv(GL_TEXTURE_2D_ARRAY, 0, GL_TEXTURE_DEPTH, &depth);
     glGetTexLevelParameteriv(GL_TEXTURE_2D_ARRAY, 0, GL_TEXTURE_INTERNAL_FORMAT, &iformat);
 
-    unsigned char *data = malloc(width * height * 3);
+    unsigned char *data = PF_MALLOC(width * height * 3);
     if (!data)
         return;
 
@@ -500,13 +510,13 @@ void R_GL_Texture_ArrayMake(const struct material *mats, size_t num_mats,
         glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
         glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
 
-        GLubyte *orig_data = malloc(w * h * 4);
+        GLubyte *orig_data = PF_MALLOC(w * h * 4);
         if(!orig_data) {
             continue;
         }
         glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, orig_data);
 
-        GLubyte *resized_data = malloc(CONFIG_ARR_TEX_RES * CONFIG_ARR_TEX_RES * 4);
+        GLubyte *resized_data = PF_MALLOC(CONFIG_ARR_TEX_RES * CONFIG_ARR_TEX_RES * 4);
         if(!resized_data) {
             PF_FREE(orig_data);
             continue;
@@ -560,7 +570,7 @@ void R_GL_Texture_ArrayMakeMap(const char texnames[][256], size_t num_textures,
         unsigned char *orig_data = stbi_load(path, &width, &height, &nr_channels, 0);
         if(orig_data) {
         
-            GLubyte *resized_data = malloc(CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3);
+            GLubyte *resized_data = PF_MALLOC(CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3);
             if(!resized_data)
                 continue;
 
@@ -573,7 +583,7 @@ void R_GL_Texture_ArrayMakeMap(const char texnames[][256], size_t num_textures,
             PF_FREE(resized_data);
         }else{
 
-            GLubyte *data = malloc(CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3);
+            GLubyte *data = PF_MALLOC(CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3);
             if(!data)
                 continue;
 
@@ -675,7 +685,7 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
 
             }else{
 
-                GLubyte *data = calloc(1, tileset_dim * tileset_dim * 3);
+                GLubyte *data = PF_CALLOC(1, tileset_dim * tileset_dim * 3);
                 if(!data) {
                     LoadingScreen_PopRenderStatus();
                     continue;

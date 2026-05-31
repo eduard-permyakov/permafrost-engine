@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_RENDER
+#define MEM_FILE_SUB MEM_SUB_RENDER_GL_SHADER
+
 #include "public/render_ctrl.h"
 #include "gl_shader.h"
 #include "gl_assert.h"
@@ -47,6 +50,15 @@
 #include <string.h>
 #include <assert.h>
 #include <stdio.h>
+
+#include "../lib/public/mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_SHADER)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_SHADER)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_SHADER)
 
 #define SHADER_PATH_LEN 128
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
@@ -581,7 +593,7 @@ const char *shader_text_load(const char *path)
     }
 
     const Sint64 fsize = SDL_RWsize(stream);    
-    char *ret = malloc(fsize + 1);
+    char *ret = PF_MALLOC(fsize + 1);
     if(!ret) {
         SDL_RWclose(stream);
         return NULL; 
@@ -649,11 +661,11 @@ static bool shader_load_and_init(const char *path, GLuint *out, GLint type)
         goto fail;
     }
 
-    free((char*)text);
+    PF_FREE(text);
     return true;
 
 fail:
-    free((char*)text);
+    PF_FREE(text);
     return false;
 }
 

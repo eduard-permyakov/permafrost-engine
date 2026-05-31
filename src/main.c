@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_MAIN
+#define MEM_FILE_SUB 0
+
 #include "main.h"
 #include "asset_load.h"
 #include "config.h"
@@ -68,6 +71,13 @@
 #if defined(_WIN32)
 #include "lib/public/windows.h"
 #endif
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_MAIN, 0)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_MAIN, 0)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_MAIN, 0)
 
 #define EVENT_VEC_SIZE (32768)
 
@@ -366,7 +376,7 @@ static void engine_set_icon(void)
     SDL_SetWindowIcon(s_window, surface);
     SDL_FreeSurface(surface);
 fail_surface:
-    free(image);
+    PF_FREE(image);
 }
 
 static bool engine_init(void)

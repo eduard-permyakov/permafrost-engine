@@ -244,19 +244,11 @@ void  Mem_PopScope     (void);
 #define MEM_PUSH_SCOPE(_sys, _sub)       Mem_PushScope((_sys), (_sub))
 #define MEM_POP_SCOPE()                  Mem_PopScope()
 
-#ifdef MEM_USE_FREE
 #define PF_FREE(...)                                    \
     do{                                                 \
         Mem_Free((void*)__VA_ARGS__);                   \
         __VA_ARGS__ = (void*)((uintptr_t)0xDEADBEEF);   \
     }while(0)
-#else
-#define PF_FREE(...)                                    \
-    do{                                                 \
-        free((void*)__VA_ARGS__);                       \
-        __VA_ARGS__ = (void*)((uintptr_t)0xDEADBEEF);   \
-    }while(0)
-#endif
 
 #else /* NDEBUG */
 

@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_RENDER
+#define MEM_FILE_SUB MEM_SUB_RENDER_GL_BATCH
+
 #include "gl_batch.h"
 #include "gl_ringbuffer.h"
 #include "gl_texture.h"
@@ -57,6 +60,13 @@
 
 #include <inttypes.h>
 #include <assert.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_BATCH)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_BATCH)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_BATCH)
 
 
 #define MESH_BUFF_SZ        (16*1024*1024)
@@ -508,7 +518,7 @@ static bool batch_append(struct gl_batch *batch, struct render_private *priv)
 
 static struct gl_batch *batch_init(enum batch_type type)
 {
-    struct gl_batch *batch = malloc(sizeof(struct gl_batch));
+    struct gl_batch *batch = PF_MALLOC(sizeof(struct gl_batch));
     if(!batch)
         goto fail_alloc;
 
