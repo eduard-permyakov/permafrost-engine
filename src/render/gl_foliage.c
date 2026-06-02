@@ -46,6 +46,7 @@
 #include "gl_material.h"
 #include "../camera.h"
 #include "../main.h"
+#include "../map/public/tile.h"
 #include "../lib/public/mem.h"
 
 #include <GL/glew.h>
@@ -224,7 +225,8 @@ void R_GL_MapFoliageShutdown(void)
     s_vertex_stride = 0;
 }
 
-void R_GL_MapFoliageBeginDraw(const struct camera *cam, const float *scale)
+void R_GL_MapFoliageBeginDraw(const struct camera *cam, const float *scale,
+                              const struct map_resolution *res, const vec2_t *map_pos)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -246,6 +248,23 @@ void R_GL_MapFoliageBeginDraw(const struct camera *cam, const float *scale)
 
     R_GL_Shader_Install("foliage");
     R_GL_ShadowMapBind();
+
+    /* Bind the fog-of-war state so the shader can hide/dim fogged foliage. */
+    GLuint prog = R_GL_Shader_GetProgForName("foliage");
+    R_GL_StateSet(GL_U_MAP_RES, (struct uval){
+        .type            = UTYPE_IVEC4,
+        .val.as_ivec4[0] = res->chunk_w,
+        .val.as_ivec4[1] = res->chunk_h,
+        .val.as_ivec4[2] = res->tile_w,
+        .val.as_ivec4[3] = res->tile_h,
+    });
+    R_GL_StateInstall(GL_U_MAP_RES, prog);
+    R_GL_StateSet(GL_U_MAP_POS, (struct uval){
+        .type        = UTYPE_VEC2,
+        .val.as_vec2 = *map_pos,
+    });
+    R_GL_StateInstall(GL_U_MAP_POS, prog);
+    R_GL_MapFogBindLast(GL_TEXTURE5, prog, "visbuff");
 
     glDisable(GL_CULL_FACE);
 }

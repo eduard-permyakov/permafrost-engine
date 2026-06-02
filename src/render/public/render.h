@@ -452,7 +452,8 @@ void  R_GL_MapFoliageShutdown(void);
  * visible chunk, then EndDraw.
  * ---------------------------------------------------------------------------
  */
-void  R_GL_MapFoliageBeginDraw(const struct camera *cam, const float *scale);
+void  R_GL_MapFoliageBeginDraw(const struct camera *cam, const float *scale,
+                               const struct map_resolution *res, const vec2_t *map_pos);
 void  R_GL_MapFoliageDrawChunk(const size_t *chunk_idx);
 void  R_GL_MapFoliageEndDraw(void);
 

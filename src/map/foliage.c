@@ -293,6 +293,9 @@ static void on_render_3d(void *user, void *event)
     struct map_resolution res;
     M_GetResolution(s_map, &res);
 
+    vec3_t map_world_pos = M_GetPos(s_map);
+    vec2_t map_pos = (vec2_t){map_world_pos.x, map_world_pos.z};
+
     struct frustum frustum;
     Camera_MakeFrustum(cam, &frustum);
 
@@ -311,10 +314,12 @@ static void on_render_3d(void *user, void *event)
         if(!any_visible) {
             R_PushCmd((struct rcmd){
                 .func  = R_GL_MapFoliageBeginDraw,
-                .nargs = 2,
+                .nargs = 4,
                 .args  = {
                     R_PushArg(cam, g_sizeof_camera),
                     R_PushArg(&s_scale, sizeof(s_scale)),
+                    R_PushArg(&res, sizeof(res)),
+                    R_PushArg(&map_pos, sizeof(map_pos)),
                 },
             });
             any_visible = true;
