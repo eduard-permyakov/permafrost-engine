@@ -56,7 +56,7 @@
 enum mem_system{
     MEM_SYS_UNKNOWN = 0,
 
-    /* Folder systems */
+    /* Systems with subsystems */
     MEM_SYS_ANIM,
     MEM_SYS_AUDIO,
     MEM_SYS_GAME,
@@ -67,7 +67,7 @@ enum mem_system{
     MEM_SYS_RENDER,
     MEM_SYS_SCRIPT,
 
-    /* Root-file systems */
+    /* Single-file systems */
     MEM_SYS_ASSET_LOAD,
     MEM_SYS_CAM_CONTROL,
     MEM_SYS_CAMERA,
@@ -85,6 +85,9 @@ enum mem_system{
     MEM_SYS_SPRITE,
     MEM_SYS_TASK,
     MEM_SYS_UI,
+
+    /* Embedded Python runtime (pymalloc arena footprint) */
+    MEM_SYS_PYTHON,
 
     MEM_SYS_COUNT
 };
@@ -199,6 +202,11 @@ enum mem_sub_script{
     MEM_SUB_SCRIPT_UI_STYLE
 };
 
+enum mem_sub_python{
+    MEM_SUB_PYTHON_ARENAS = 0,
+    MEM_SUB_PYTHON_LARGE_ALLOCS
+};
+
 struct mem_accounting{
     int64_t sys_bytes[MEM_SYS_COUNT];
     int64_t sys_count[MEM_SYS_COUNT];
@@ -220,6 +228,8 @@ const char *Mem_SysName(uint16_t sys);
 const char *Mem_SubName(uint16_t sys, uint16_t sub);
 
 void        Mem_AuditTaggedBytes(struct mem_accounting *out);
+void        Mem_SetPythonStats(int64_t arena_bytes, int64_t arena_count,
+                               int64_t raw_bytes, int64_t raw_count);
 
 #ifndef NDEBUG
 

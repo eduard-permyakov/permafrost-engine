@@ -109,6 +109,11 @@ static int64_t atomic_load64(int64_t *p)
     return (int64_t)(intptr_t)SDL_AtomicGetPtr((void**)p);
 }
 
+static void atomic_store64(int64_t *p, int64_t val)
+{
+    SDL_AtomicSetPtr((void**)p, (void*)(intptr_t)val);
+}
+
 static struct mem_scope_stack *scope_get_or_create(void)
 {
     struct mem_scope_stack *s = SDL_TLSGet(s_scope_tls);
@@ -327,6 +332,17 @@ void Mem_GetAccounting(struct mem_accounting *out)
     }
 }
 
+void Mem_SetPythonStats(int64_t arena_bytes, int64_t arena_count,
+                        int64_t raw_bytes, int64_t raw_count)
+{
+    atomic_store64(&s_sys_bytes[MEM_SYS_PYTHON], arena_bytes + raw_bytes);
+    atomic_store64(&s_sys_count[MEM_SYS_PYTHON], arena_count + raw_count);
+    atomic_store64(&s_sub_bytes[MEM_SYS_PYTHON][MEM_SUB_PYTHON_ARENAS], arena_bytes);
+    atomic_store64(&s_sub_count[MEM_SYS_PYTHON][MEM_SUB_PYTHON_ARENAS], arena_count);
+    atomic_store64(&s_sub_bytes[MEM_SYS_PYTHON][MEM_SUB_PYTHON_LARGE_ALLOCS], raw_bytes);
+    atomic_store64(&s_sub_count[MEM_SYS_PYTHON][MEM_SUB_PYTHON_LARGE_ALLOCS], raw_count);
+}
+
 #else /* NDEBUG */
 
 bool Mem_Init(void)
@@ -342,6 +358,15 @@ void Mem_Shutdown(void)
 void Mem_GetAccounting(struct mem_accounting *out)
 {
     memset(out, 0, sizeof *out);
+}
+
+void Mem_SetPythonStats(int64_t arena_bytes, int64_t arena_count,
+                        int64_t raw_bytes, int64_t raw_count)
+{
+    (void)arena_bytes;
+    (void)arena_count;
+    (void)raw_bytes;
+    (void)raw_count;
 }
 
 #endif /* NDEBUG */
@@ -376,6 +401,7 @@ const char *Mem_SysName(uint16_t sys)
         [MEM_SYS_SPRITE]         = "sprite",
         [MEM_SYS_TASK]           = "task",
         [MEM_SYS_UI]             = "ui",
+        [MEM_SYS_PYTHON]         = "python",
     };
     if(sys >= MEM_SYS_COUNT)
         return NULL;
@@ -483,6 +509,10 @@ const char *Mem_SubName(uint16_t sys, uint16_t sub)
         [MEM_SUB_SCRIPT_UI]        = "ui",
         [MEM_SUB_SCRIPT_UI_STYLE]  = "ui_style",
     };
+    static const char *python_subs[] = {
+        [MEM_SUB_PYTHON_ARENAS]   = "arenas",
+        [MEM_SUB_PYTHON_LARGE_ALLOCS] = "large allocations",
+    };
 
     const char **table;
     size_t       n;
@@ -496,6 +526,7 @@ const char *Mem_SubName(uint16_t sys, uint16_t sub)
     case MEM_SYS_PHYS:   table = phys_subs;   n = ARR_SIZE(phys_subs);   break;
     case MEM_SYS_RENDER: table = render_subs; n = ARR_SIZE(render_subs); break;
     case MEM_SYS_SCRIPT: table = script_subs; n = ARR_SIZE(script_subs); break;
+    case MEM_SYS_PYTHON: table = python_subs; n = ARR_SIZE(python_subs); break;
     default: return NULL;
     }
     if(sub >= n)

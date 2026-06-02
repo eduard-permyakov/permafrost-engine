@@ -1018,6 +1018,10 @@ static void s_err_clear(void)
 static void s_on_update(void *user, void *event)
 {
     S_Error_Update(&s_err_ctx);
+
+    Py_ssize_t arena_b = 0, arena_c = 0, raw_b = 0, raw_c = 0;
+    _PyObject_MemStats(&arena_b, &arena_c, &raw_b, &raw_c);
+    Mem_SetPythonStats((int64_t)arena_b, (int64_t)arena_c, (int64_t)raw_b, (int64_t)raw_c);
 }
 
 static PyObject *PyPf_load_map(PyObject *self, PyObject *args, PyObject *kwargs)
