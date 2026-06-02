@@ -499,26 +499,12 @@ static void try_apply_ground_texture(const struct buildstate *bs, const char *te
     struct tile_desc tds[2048];
     size_t ntiles = M_Tile_AllUnderObj(M_GetPos(s_map), res, &bs->obb, tds, ARR_SIZE(tds));
 
-    size_t nchunks = res.chunk_w * res.chunk_h;
-    STALLOC(bool, dirty_chunks, nchunks);
-    memset(dirty_chunks, 0, nchunks);
-
     for(int i = 0; i < ntiles; i++) {
         struct tile *tile = NULL;
         M_TileForDesc(s_map, tds[i], &tile);
         tile->top_mat_idx = mat_idx;
         G_UpdateTile(&tds[i], tile);
-        dirty_chunks[tds[i].chunk_r * res.chunk_w + tds[i].chunk_c] = true;
     }
-
-    for(int i = 0; i < nchunks; i++) {
-        if(dirty_chunks[i] == false)
-            continue;
-        int chunk_r = i / res.chunk_w;
-        int chunk_c = i % res.chunk_w;
-        G_UpdateMinimapChunk(chunk_r, chunk_c);
-    }
-    STFREE(dirty_chunks);
 }
 
 /*****************************************************************************/

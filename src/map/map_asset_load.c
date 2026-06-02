@@ -90,7 +90,9 @@ static struct block_allocator s_nav_block_alloc;
  * immediately. Instead, the affected tiles are accumulated in a dirty set and
  * flushed in a single per-chunk batch once per frame - see al_flush_dirty_tiles.
  * This amortizes the cost of mapping/unmapping the chunk vertex buffers when
- * many tiles are painted in the same frame. */
+ * many tiles are painted in the same frame. The minimap redraw for each dirty
+ * chunk is coalesced into the same flush, so a chunk is redrawn at most once
+ * per frame regardless of how many of its tiles changed. */
 static const struct map *s_dirty_map     = NULL;
 static bool              *s_tile_dirty    = NULL;  /* one flag per map tile    */
 static bool              *s_chunk_dirty   = NULL;  /* one flag per map chunk   */
@@ -533,12 +535,14 @@ static void al_flush_dirty_tiles(void)
                 R_PushArg(&ndescs, sizeof(ndescs)),
             },
         });
+
+        M_UpdateMinimapChunk(s_dirty_map, cr, cc);
     }}
 
     s_dirty_pending = false;
 }
 
-static void on_render_3d_pre(void *user, void *event)
+static void on_update_end(void *user, void *event)
 {
     al_flush_dirty_tiles();
 }
@@ -720,7 +724,11 @@ bool M_AL_InitTileUpdateBuffer(const struct map *map)
     s_dirty_map     = map;
     s_dirty_pending = false;
 
-    E_Global_Register(EVENT_RENDER_3D_PRE, on_render_3d_pre, NULL,
+    /* Flush at EVENT_UPDATE_END - after this tick's tile edits but before the
+     * per-frame fog buffer is pushed in G_Update. The minimap redraw pushes and
+     * fences a transient 'fully visible' range onto the fog ringbuffer.
+     */
+    E_Global_Register(EVENT_UPDATE_END, on_update_end, NULL,
         G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
     return true;
 
@@ -736,7 +744,7 @@ fail:
 
 void M_AL_DestroyTileUpdateBuffer(void)
 {
-    E_Global_Unregister(EVENT_RENDER_3D_PRE, on_render_3d_pre);
+    E_Global_Unregister(EVENT_UPDATE_END, on_update_end);
 
     PF_FREE(s_tile_dirty);
     PF_FREE(s_chunk_dirty);

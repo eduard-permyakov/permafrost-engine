@@ -1964,18 +1964,6 @@ void G_BakeNavDataForScene(void)
     PERF_RETURN_VOID();
 }
 
-bool G_UpdateMinimapChunk(int chunk_r, int chunk_c)
-{
-    PERF_ENTER();
-    ASSERT_IN_MAIN_THREAD();
-
-    if(!s_gs.map)
-        PERF_RETURN(false);
-
-    bool ret = M_UpdateMinimapChunk(s_gs.map, chunk_r, chunk_c);
-    PERF_RETURN(ret);
-}
-
 void G_Shutdown(void)
 {
     ASSERT_IN_MAIN_THREAD();

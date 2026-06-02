@@ -2230,11 +2230,6 @@ static PyObject *PyPf_update_tile(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    if(!G_UpdateMinimapChunk(desc.chunk_r, desc.chunk_c)) {
-        PyErr_SetString(PyExc_RuntimeError, "Could not update minimap chunk.");
-        return NULL;
-    }
-
     Py_RETURN_NONE;
 }
 

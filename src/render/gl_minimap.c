@@ -568,6 +568,36 @@ static void restore_lighting(vec3_t old_ambient, vec3_t old_emit, vec3_t old_pos
     R_GL_StateSet(GL_U_LIGHT_POS, (struct uval){.type = UTYPE_VEC3, .val.as_vec3 = old_pos });
 }
 
+static void push_camera_state(mat4x4_t *old_view, vec3_t *old_view_pos,
+                              mat4x4_t *old_proj, vec4_t *old_clip)
+{
+    struct uval oldv = {0};
+
+    PFM_Mat4x4_Identity(old_view);
+    if(R_GL_StateGet(GL_U_VIEW, &oldv))
+        *old_view = oldv.val.as_mat4;
+
+    *old_view_pos = (vec3_t){0.0f, 0.0f, 0.0f};
+    if(R_GL_StateGet(GL_U_VIEW_POS, &oldv))
+        *old_view_pos = oldv.val.as_vec3;
+
+    PFM_Mat4x4_Identity(old_proj);
+    if(R_GL_StateGet(GL_U_PROJECTION, &oldv))
+        *old_proj = oldv.val.as_mat4;
+
+    *old_clip = (vec4_t){0.0f, 0.0f, 0.0f, 0.0f};
+    if(R_GL_StateGet(GL_U_CLIP_PLANE0, &oldv))
+        *old_clip = oldv.val.as_vec4;
+}
+
+static void restore_camera_state(mat4x4_t old_view, vec3_t old_view_pos,
+                                 mat4x4_t old_proj, vec4_t old_clip)
+{
+    R_GL_SetViewMatAndPos(&old_view, &old_view_pos);
+    R_GL_SetProj(&old_proj);
+    R_GL_SetClipPlane(old_clip);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -616,6 +646,11 @@ void R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate,
     vec3_t old_ambient, old_emit, old_pos;
     push_default_lighting(&old_ambient, &old_emit, &old_pos);
 
+    mat4x4_t old_view, old_proj;
+    vec3_t old_view_pos;
+    vec4_t old_clip;
+    push_camera_state(&old_view, &old_view_pos, &old_proj, &old_clip);
+
     struct map_resolution res;
     M_GetResolution(map, &res);
 
@@ -648,6 +683,7 @@ void R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate,
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDeleteFramebuffers(1, &fb);
     restore_lighting(old_ambient, old_emit, old_pos);
+    restore_camera_state(old_view, old_view_pos, old_proj, old_clip);
 
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();

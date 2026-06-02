@@ -204,7 +204,6 @@ struct camera  *G_GetActiveCamera(void);
 enum cam_mode   G_GetCameraMode(void);
 void            G_MoveActiveCamera(vec2_t xz_ground_pos);
 
-bool            G_UpdateMinimapChunk(int chunk_r, int chunk_c);
 bool            G_UpdateTile(const struct tile_desc *desc, const struct tile *tile);
 bool            G_GetTile(const struct tile_desc *desc, struct tile *out);
 
