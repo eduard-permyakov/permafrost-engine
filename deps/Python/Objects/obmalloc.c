@@ -658,6 +658,76 @@ new_arena(void)
     return arenaobj;
 }
 
+/* Permafrost Engine: track the live Python heap for the engine's memory
+ * accounting. Two parts: pymalloc's arenas (small objects, at 256 KB arena
+ * granularity, via narenas_currently_allocated) and the "long-tail" of
+ * allocations that bypass the arenas -- large PyObject blocks and everything
+ * from the PyMem_* API -- accounted below via the allocator's usable size.
+ * Using usable size (rather than a header) leaves pointers untouched, so the
+ * accounting can never corrupt an allocation; at worst a counter drifts. */
+#if defined(MS_WINDOWS)
+#  include <malloc.h>
+#  define PF_USABLE_SIZE(p) _msize(p)
+#else
+extern size_t malloc_usable_size(void *);
+#  define PF_USABLE_SIZE(p) malloc_usable_size(p)
+#endif
+
+static size_t pf_rawmem_bytes = 0;
+static size_t pf_rawmem_count = 0;
+
+static void *
+pf_acct_malloc(size_t nbytes)
+{
+    void *p = malloc(nbytes);
+    if (p) {
+        pf_rawmem_bytes += PF_USABLE_SIZE(p);
+        pf_rawmem_count += 1;
+    }
+    return p;
+}
+
+static void *
+pf_acct_realloc(void *p, size_t nbytes)
+{
+    size_t oldsz = p ? PF_USABLE_SIZE(p) : 0;
+    void *np = realloc(p, nbytes);
+    if (np) {
+        if (p)
+            pf_rawmem_bytes -= oldsz;   /* old block released */
+        else
+            pf_rawmem_count += 1;       /* was a fresh allocation */
+        pf_rawmem_bytes += PF_USABLE_SIZE(np);
+    }
+    /* On failure (np == NULL) the original block is still live: leave it. */
+    return np;
+}
+
+static void
+pf_acct_free(void *p)
+{
+    if (p) {
+        pf_rawmem_bytes -= PF_USABLE_SIZE(p);
+        pf_rawmem_count -= 1;
+    }
+    free(p);
+}
+
+/* Report the live Python heap. Any out-pointer may be NULL. */
+void
+_PyObject_MemStats(Py_ssize_t *arena_bytes, Py_ssize_t *arena_count,
+                   Py_ssize_t *raw_bytes, Py_ssize_t *raw_count)
+{
+    if (arena_bytes)
+        *arena_bytes = (Py_ssize_t)narenas_currently_allocated * ARENA_SIZE;
+    if (arena_count)
+        *arena_count = (Py_ssize_t)narenas_currently_allocated;
+    if (raw_bytes)
+        *raw_bytes = (Py_ssize_t)pf_rawmem_bytes;
+    if (raw_count)
+        *raw_count = (Py_ssize_t)pf_rawmem_count;
+}
+
 /*
 Py_ADDRESS_IN_RANGE(P, POOL)
 
@@ -989,7 +1059,7 @@ redirect:
      */
     if (nbytes == 0)
         nbytes = 1;
-    return (void *)malloc(nbytes);
+    return (void *)pf_acct_malloc(nbytes);
 }
 
 /* free */
@@ -1217,7 +1287,7 @@ PyObject_Free(void *p)
 redirect:
 #endif
     /* We didn't allocate this address. */
-    free(p);
+    pf_acct_free(p);
 }
 
 /* realloc.  If p is NULL, this acts like malloc(nbytes).  Else if nbytes==0,
@@ -1296,14 +1366,14 @@ PyObject_Realloc(void *p, size_t nbytes)
      * at p.  Instead we punt:  let C continue to manage this block.
      */
     if (nbytes)
-        return realloc(p, nbytes);
+        return pf_acct_realloc(p, nbytes);
     /* C doesn't define the result of realloc(p, 0) (it may or may not
      * return NULL then), but Python's docs promise that nbytes==0 never
      * returns NULL.  We don't pass 0 to realloc(), to avoid that endcase
      * to begin with.  Even then, we can't be sure that realloc() won't
      * return NULL.
      */
-    bp = realloc(p, 1);
+    bp = pf_acct_realloc(p, 1);
     return bp ? bp : p;
 }
 
@@ -1329,6 +1399,17 @@ void
 PyObject_Free(void *p)
 {
     PyMem_FREE(p);
+}
+
+/* Permafrost Engine: no pymalloc heap to report. */
+void
+_PyObject_MemStats(Py_ssize_t *arena_bytes, Py_ssize_t *arena_count,
+                   Py_ssize_t *raw_bytes, Py_ssize_t *raw_count)
+{
+    if (arena_bytes) *arena_bytes = 0;
+    if (arena_count) *arena_count = 0;
+    if (raw_bytes)   *raw_bytes = 0;
+    if (raw_count)   *raw_count = 0;
 }
 #endif /* WITH_PYMALLOC */
 
@@ -1428,7 +1509,7 @@ _PyMem_Malloc(size_t nbytes)
     if (nbytes == 0) {
         nbytes = 1;
     }
-    return malloc(nbytes);
+    return pf_acct_malloc(nbytes);
 }
 
 static void *
@@ -1440,14 +1521,14 @@ _PyMem_Realloc(void *p, size_t nbytes)
     if (nbytes == 0) {
         nbytes = 1;
     }
-    return realloc(p, nbytes);
+    return pf_acct_realloc(p, nbytes);
 }
 
 
 static void
 _PyMem_Free(void *p)
 {
-    free(p);
+    pf_acct_free(p);
 }
 
 

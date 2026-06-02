@@ -98,6 +98,9 @@ PyAPI_FUNC(void *) PyObject_Malloc(size_t);
 PyAPI_FUNC(void *) PyObject_Realloc(void *, size_t);
 PyAPI_FUNC(void) PyObject_Free(void *);
 
+/* Permafrost Engine: live Python heap (arena + long-tail), for memory accounting. */
+PyAPI_FUNC(void) _PyObject_MemStats(Py_ssize_t *, Py_ssize_t *, Py_ssize_t *, Py_ssize_t *);
+
 
 /* Macros */
 #ifdef WITH_PYMALLOC
