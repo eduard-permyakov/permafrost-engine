@@ -159,27 +159,23 @@ float tf_for_state(uint state)
     return 1.0;
 }
 
+/* Clamps on the absolute tile index, so a neighbour past the map edge resolves
+ * to the edge tile itself rather than wrapping to a far tile in the same chunk.
+ * This keeps an unexplored map border reading as unexplored. */
 ivec4 tile_relative_desc(ivec4 desc, int dr, int dc)
 {
-    ivec4 ret = desc;
+    int abs_r = desc.x * map_resolution.z + desc.z + dr;
+    int abs_c = desc.y * map_resolution.a + desc.a + dc;
 
-    if(desc.z + dr >= map_resolution.z)
-        ret.x += 1;
-    else if(desc.z + dr < 0)
-        ret.x += -1;
+    abs_r = clamp(abs_r, 0, map_resolution.x * map_resolution.z - 1);
+    abs_c = clamp(abs_c, 0, map_resolution.y * map_resolution.a - 1);
 
-    if(desc.a + dc >= map_resolution.a)
-        ret.y += 1;
-    else if(desc.a + dc < 0)
-        ret.y += -1;
-
-    ret.x = clamp(ret.x, 0, map_resolution.x - 1);
-    ret.y = clamp(ret.y, 0, map_resolution.y - 1);
-
-    ret.z = int(mod(ret.z + dr, map_resolution.z));
-    ret.a = int(mod(ret.a + dc, map_resolution.a));
-
-    return ret;
+    return ivec4(
+        abs_r / map_resolution.z,
+        abs_c / map_resolution.a,
+        int(mod(abs_r, map_resolution.z)),
+        int(mod(abs_c, map_resolution.a))
+    );
 }
 
 /* (0,0) is the bottom-left corner, (1,1) the top-right. */
@@ -242,6 +238,16 @@ float fog_tint_factor(vec3 ws_pos)
 
 void main()
 {
+    /* Clip foliage to the map bounds. Billboards on the edge tiles can extend a
+     * little past the map, where they would otherwise poke through the fog. */
+    vec2 map_delta = vec2(map_pos.x - from_vertex.world_pos.x,
+                          from_vertex.world_pos.z - map_pos.y);
+    vec2 map_extent = vec2(map_resolution[0] * map_resolution[2] * X_COORDS_PER_TILE,
+                           map_resolution[1] * map_resolution[3] * Z_COORDS_PER_TILE);
+    if(map_delta.x < 0.0 || map_delta.x > map_extent.x
+    || map_delta.y < 0.0 || map_delta.y > map_extent.y)
+        discard;
+
     /* Foliage is terrain decoration: hide it in unexplored areas and dim it in
      * fog, blended across tile boundaries to mirror the terrain beneath it. */
     float fog_tf = fog_tint_factor(from_vertex.world_pos);
