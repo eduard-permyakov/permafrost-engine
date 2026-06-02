@@ -51,6 +51,7 @@
 #include "../settings.h"
 #include "../main.h"
 #include "../ui.h"
+#include "../config.h"
 #include "../game/public/game.h"
 #include "../lib/public/windows.h"
 
@@ -580,7 +581,7 @@ static void yield_maybe(uint32_t *timestamp)
      */
     if(!Engine_InRunningState()) {
         uint32_t now = SDL_GetTicks();
-        if(SDL_TICKS_PASSED(now, *timestamp + 100)) {
+        if(SDL_TICKS_PASSED(now, *timestamp + (uint32_t)(1000.f / CONFIG_SCHED_TARGET_FPS))) {
             R_Yield();
             *timestamp = SDL_GetTicks();
         }
