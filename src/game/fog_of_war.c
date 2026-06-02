@@ -283,6 +283,7 @@ static void fog_update_visible(int faction_id, vec2_t xz_pos, float radius, int 
 {
     if(radius == 0.0f)
         return;
+    PERF_ENTER();
 
     struct map_resolution res;
     M_GetResolution(s_map, &res);
@@ -363,6 +364,7 @@ static void fog_update_visible(int faction_id, vec2_t xz_pos, float radius, int 
 
     STFREE(wf_blocked);
     STFREE(visited);
+    PERF_RETURN_VOID();
 }
 
 static bool fog_obj_matches(uint32_t *state, uint16_t fac_mask, const struct obb *obj, 
