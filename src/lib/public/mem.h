@@ -231,8 +231,6 @@ void        Mem_AuditTaggedBytes(struct mem_accounting *out);
 void        Mem_SetPythonStats(int64_t arena_bytes, int64_t arena_count,
                                int64_t raw_bytes, int64_t raw_count);
 
-#ifndef NDEBUG
-
 void *Mem_Malloc        (size_t n);
 void *Mem_Calloc        (size_t c, size_t n);
 void *Mem_Realloc       (void *p, size_t n);
@@ -240,6 +238,8 @@ void *Mem_MallocTagged  (size_t n, uint16_t sys, uint16_t sub);
 void *Mem_CallocTagged  (size_t c, size_t n, uint16_t sys, uint16_t sub);
 void *Mem_ReallocTagged (void *p, size_t n, uint16_t sys, uint16_t sub);
 void  Mem_Free          (void *p);
+
+#ifndef NDEBUG
 
 void  Mem_PushScope    (uint16_t sys, uint16_t sub);
 void  Mem_PopScope     (void);

@@ -355,7 +355,50 @@ void Mem_Shutdown(void)
     /* no-op */
 }
 
+void *Mem_Malloc(size_t n)
+{
+    return malloc(n);
+}
+
+void *Mem_Calloc(size_t c, size_t n)
+{
+    return calloc(c, n);
+}
+
+void *Mem_Realloc(void *p, size_t n)
+{
+    return realloc(p, n);
+}
+
+void *Mem_MallocTagged(size_t n, uint16_t sys, uint16_t sub)
+{
+    (void)sys; (void)sub;
+    return malloc(n);
+}
+
+void *Mem_CallocTagged(size_t c, size_t n, uint16_t sys, uint16_t sub)
+{
+    (void)sys; (void)sub;
+    return calloc(c, n);
+}
+
+void *Mem_ReallocTagged(void *p, size_t n, uint16_t sys, uint16_t sub)
+{
+    (void)sys; (void)sub;
+    return realloc(p, n);
+}
+
+void Mem_Free(void *p)
+{
+    free(p);
+}
+
 void Mem_GetAccounting(struct mem_accounting *out)
+{
+    memset(out, 0, sizeof *out);
+}
+
+void Mem_AuditTaggedBytes(struct mem_accounting *out)
 {
     memset(out, 0, sizeof *out);
 }
