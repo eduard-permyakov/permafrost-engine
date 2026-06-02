@@ -55,6 +55,8 @@
 
 #include <stdint.h>
 #include <assert.h>
+#include <limits.h>
+#include <math.h>
 #include <SDL.h>
 
 #undef PF_MALLOC
@@ -94,6 +96,10 @@ KHASH_SET_INIT_INT(uid)
 /*****************************************************************************/
 
 static const struct map *s_map;
+/* Map resolution and origin are constant for the map's lifetime; cache them at
+ * init so the hot vision path never re-fetches them per tile. */
+static struct map_resolution s_res;
+static vec3_t                s_map_pos;
 /* Holds a 32-bit value for every tile of the map. The chunks are stored in row-major
  * order. Within a chunk, the tiles are in row-major order. Each 32-bit value encodes
  * a 2-bit faction state for up to 16 factions. */
@@ -103,6 +109,46 @@ static uint8_t          *s_vision_refcnts[MAX_FACTIONS];
 /* Cache all the entities that have been explored by the player, for faster queries */
 static khash_t(uid)     *s_explored_cache;
 static bool              s_enabled = true;
+
+/* Vision updates are batched: G_Fog_AddVision/RemoveVision enqueue a descriptor
+ * and return immediately; the queue is drained once per frame (or on the first
+ * state read) by fog_flush_pending. Main-thread only -- no locking. */
+struct vis_update{
+    int    faction_id;
+    vec2_t pos;
+    float  radius;
+    int    delta;
+};
+static struct vis_update *s_updates;
+static size_t             s_nupdates;
+static size_t             s_updates_cap;
+
+/* Frontier + flood scratch, reused across every flood (wavefront fallback path,
+ * used only where terrain can block LOS). */
+static pq_td_t  s_frontier;
+static bool    *s_wf_blocked;
+static bool    *s_visited;
+static size_t   s_scratch_cap;
+
+/* Precomputed vision disc: per-row contiguous [dcmin,dcmax] tile-offset runs
+ * whose center is within radius. On open terrain this is exactly the wavefront's
+ * visible set, applied as a cheap forward scan. Cached per distinct radius. */
+#define STAMP_MAX_ROWS  256
+#define MAX_STAMP_CACHE  16
+struct disc_stamp{
+    float radius;
+    int   nrows;
+    int   dr[STAMP_MAX_ROWS];
+    int   dcmin[STAMP_MAX_ROWS];
+    int   dcmax[STAMP_MAX_ROWS];
+};
+static struct disc_stamp s_stamps[MAX_STAMP_CACHE];
+static int               s_nstamps;
+
+/* Per-chunk maximum tile base height. Lets fog_flush_pending decide cheaply
+ * whether a unit's vision box is fully open (stamp) or may contain an LOS
+ * blocker (wavefront fallback). Computed at init from static terrain. */
+static int *s_chunk_maxh;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -127,8 +173,7 @@ static void fog_set_state(uint32_t *inout_tileval, int faction_id, enum fog_stat
 
 static int td_index(struct tile_desc td)
 {
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    struct map_resolution res = s_res;
 
     size_t tiles_per_chunk = res.tile_w * res.tile_h;
     return td.chunk_r * (res.chunk_w * tiles_per_chunk) + td.chunk_c * tiles_per_chunk
@@ -153,8 +198,7 @@ static size_t neighbours(struct tile_desc curr, struct tile_desc *out)
 {
     size_t ret = 0;
 
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    struct map_resolution res = s_res;
 
     for(int dr = -1; dr <= 1; dr++) {
     for(int dc = -1; dc <= 1; dc++) {
@@ -174,10 +218,9 @@ static size_t neighbours(struct tile_desc curr, struct tile_desc *out)
 
 static vec2_t tile_center_pos(struct tile_desc td)
 {
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    struct map_resolution res = s_res;
 
-    struct box box = M_Tile_Bounds(res, M_GetPos(s_map), td);
+    struct box box = M_Tile_Bounds(res, s_map_pos, td);
     return (vec2_t){
         box.x - box.width / 2.0f,
         box.z + box.height / 2.0f
@@ -196,8 +239,7 @@ static bool td_is_los_corner(struct tile_desc td, int ref_height)
     if(!td_los_blocked(td, ref_height))
         return false;
 
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    struct map_resolution res = s_res;
 
     struct tile_desc left = td, right = td;
     if(M_Tile_RelativeDesc(res, &left,  -1, 0)
@@ -221,8 +263,7 @@ static bool td_is_los_corner(struct tile_desc td, int ref_height)
 static void wf_create_blocked_line(int xrad, int zrad, bool wf[], 
                                    struct tile_desc origin, int delta_r, int delta_c)
 {
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    struct map_resolution res = s_res;
 
     struct tile_desc corner;
     M_Tile_RelativeDesc(res, &corner, delta_c, delta_r);
@@ -266,8 +307,7 @@ static void wf_create_blocked_line(int xrad, int zrad, bool wf[],
 
 void td_delta(struct tile_desc a, struct tile_desc b, int *out_dr, int *out_dc)
 {
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    struct map_resolution res = s_res;
 
     int ar = a.chunk_r * res.tile_h + a.tile_r;
     int ac = a.chunk_c * res.tile_w + a.tile_c;
@@ -279,49 +319,154 @@ void td_delta(struct tile_desc a, struct tile_desc b, int *out_dr, int *out_dc)
     *out_dc = bc - ac;
 }
 
-static void fog_update_visible(int faction_id, vec2_t xz_pos, float radius, int delta)
+static void enqueue_update(int faction_id, vec2_t pos, float radius, int delta)
 {
-    if(radius == 0.0f)
-        return;
-    PERF_ENTER();
+    if(s_nupdates == s_updates_cap) {
+        s_updates_cap = s_updates_cap ? s_updates_cap * 2 : 4096;
+        s_updates = PF_REALLOC(s_updates, s_updates_cap * sizeof(*s_updates));
+        assert(s_updates);
+    }
+    s_updates[s_nupdates++] = (struct vis_update){faction_id, pos, radius, delta};
+}
 
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+/* Build per-row disc runs using the SAME float distance test as the wavefront
+ * (origin_delta = (-dc*X, dr*Z), len <= radius), so the stamp's tile set is
+ * identical to the wavefront's on open terrain. */
+static void build_disc_stamp(struct disc_stamp *st, float radius)
+{
+    int zrad = (int)ceil(radius / Z_COORDS_PER_TILE) + 1;
+    int xrad = (int)ceil(radius / X_COORDS_PER_TILE) + 1;
 
-    struct tile_desc origin;
-    bool status = M_Tile_DescForPoint2D(res, M_GetPos(s_map), xz_pos, &origin);
-    assert(status);
+    st->radius = radius;
+    st->nrows  = 0;
 
-    struct tile *tile;
-    M_TileForDesc(s_map, origin, &tile);
-    int origin_height = M_Tile_BaseHeight(tile);
+    for(int dr = -zrad; dr <= zrad && st->nrows < STAMP_MAX_ROWS; dr++) {
+        int found = 0, dcmin = 0, dcmax = 0;
+        for(int dc = -xrad; dc <= xrad; dc++) {
+            float dx = (float)(-dc * X_COORDS_PER_TILE);
+            float dz = (float)( dr * Z_COORDS_PER_TILE);
+            if(sqrtf(dx * dx + dz * dz) <= radius) {
+                if(!found) { dcmin = dc; found = 1; }
+                dcmax = dc;
+            }
+        }
+        if(found) {
+            st->dr[st->nrows]    = dr;
+            st->dcmin[st->nrows] = dcmin;
+            st->dcmax[st->nrows] = dcmax;
+            st->nrows++;
+        }
+    }
+}
 
+/* Look up (or build + cache) the disc stamp for a radius. Distinct radii are few
+ * (one per unit type), so a small linear cache suffices. */
+static const struct disc_stamp *get_stamp(float radius)
+{
+    for(int i = 0; i < s_nstamps; i++) {
+        if(s_stamps[i].radius == radius)
+            return &s_stamps[i];
+    }
+    int slot = (s_nstamps < MAX_STAMP_CACHE) ? s_nstamps++ : 0;
+    build_disc_stamp(&s_stamps[slot], radius);
+    return &s_stamps[slot];
+}
+
+/* Fast path: stamp the precomputed disc, computing each tile's chunk-blocked
+ * index inline. Mirrors update_tile's refcnt -> state transition per tile. */
+static void fog_stamp_disc(int faction_id, struct tile_desc origin,
+                           const struct disc_stamp *stamp, int delta)
+{
+    struct map_resolution res = s_res;
+    int total_rows = res.chunk_h * res.tile_h;
+    int total_cols = res.chunk_w * res.tile_w;
+    size_t tiles_per_chunk = res.tile_w * res.tile_h;
+    int abs_r0 = origin.chunk_r * res.tile_h + origin.tile_r;
+    int abs_c0 = origin.chunk_c * res.tile_w + origin.tile_c;
+
+    uint8_t *refcnt = s_vision_refcnts[faction_id];
+
+    for(int k = 0; k < stamp->nrows; k++) {
+        int abs_r = abs_r0 + stamp->dr[k];
+        if(abs_r < 0 || abs_r >= total_rows)
+            continue;
+        int cmin = abs_c0 + stamp->dcmin[k];
+        int cmax = abs_c0 + stamp->dcmax[k];
+        if(cmin < 0) cmin = 0;
+        if(cmax >= total_cols) cmax = total_cols - 1;
+
+        int chunk_r  = abs_r / res.tile_h;
+        int tile_r   = abs_r % res.tile_h;
+        int row_base = chunk_r * (res.chunk_w * tiles_per_chunk) + tile_r * res.tile_w;
+
+        for(int abs_c = cmin; abs_c <= cmax; abs_c++) {
+            int idx = row_base + (abs_c / res.tile_w) * tiles_per_chunk + (abs_c % res.tile_w);
+
+            uint8_t nv = (uint8_t)(refcnt[idx] + delta);
+            refcnt[idx] = nv;
+            fog_set_state(&s_fog_state[idx], faction_id, nv ? STATE_VISIBLE : STATE_IN_FOG);
+        }
+    }
+}
+
+/* True iff no chunk spanned by the vision box can hold a tile that blocks LOS
+ * from origin_height (conservative: chunk max <= origin_height+1 => no blocker).
+ * When true the stamp is exactly the wavefront result. */
+static bool box_is_open(struct tile_desc origin, float radius, int origin_height)
+{
+    struct map_resolution res = s_res;
+    int zrad = (int)ceil(radius / Z_COORDS_PER_TILE) + 1;
+    int xrad = (int)ceil(radius / X_COORDS_PER_TILE) + 1;
+    int abs_r0 = origin.chunk_r * res.tile_h + origin.tile_r;
+    int abs_c0 = origin.chunk_c * res.tile_w + origin.tile_c;
+
+    int rmin = abs_r0 - zrad, rmax = abs_r0 + zrad;
+    int cmin = abs_c0 - xrad, cmax = abs_c0 + xrad;
+    if(rmin < 0) rmin = 0;
+    if(cmin < 0) cmin = 0;
+    if(rmax >= res.chunk_h * res.tile_h) rmax = res.chunk_h * res.tile_h - 1;
+    if(cmax >= res.chunk_w * res.tile_w) cmax = res.chunk_w * res.tile_w - 1;
+
+    int cr0 = rmin / res.tile_h, cr1 = rmax / res.tile_h;
+    int cc0 = cmin / res.tile_w, cc1 = cmax / res.tile_w;
+    for(int cr = cr0; cr <= cr1; cr++) {
+    for(int cc = cc0; cc <= cc1; cc++) {
+        if(s_chunk_maxh[cr * res.chunk_w + cc] > origin_height + 1)
+            return false;
+    }}
+    return true;
+}
+
+/* LOS-aware flood for boxes that may contain blockers. Origin and its height are
+ * resolved once by the caller. Frontier + scratch are module-static and reused. */
+static void fog_flood_wavefront(int faction_id, struct tile_desc origin, int origin_height,
+                                float radius, int delta)
+{
     const int tile_x_radius = ceil(radius / X_COORDS_PER_TILE) + 1;
     const int tile_z_radius = ceil(radius / Z_COORDS_PER_TILE) + 1;
     assert(tile_x_radius && tile_z_radius);
 
-    /* Declare a byte for every tile within a box having a half-length of 'radius' 
-     * that surrounds the position. When the position is near the map edge, some
-     * elements may be unused.  wf_blocked[tile_x_radius][tile_z_radius] gives the 
-     * byte corresponding to the origin-most tile. */
+    /* A byte for every tile within the radius box, reused across floods. */
     const size_t count = (2 * tile_x_radius + 1) * (2 * tile_z_radius + 1);
-    STALLOC(bool, wf_blocked, sizeof(bool) * count);
-    memset(wf_blocked, 0, sizeof(bool) * count);
+    if(count > s_scratch_cap) {
+        s_scratch_cap = count;
+        s_wf_blocked = PF_REALLOC(s_wf_blocked, count);
+        s_visited    = PF_REALLOC(s_visited, count);
+        assert(s_wf_blocked && s_visited);
+    }
+    bool *wf_blocked = s_wf_blocked;
+    bool *visited    = s_visited;
+    memset(wf_blocked, 0, count);
+    memset(visited, 0, count);
 
-    STALLOC(bool, visited, sizeof(bool) * count);
-    memset(visited, 0, sizeof(bool) * count);
-
-    pq_td_t frontier;
-    pq_td_init(&frontier);
-
-    pq_td_push(&frontier, 0.0f, origin);
+    pq_td_push(&s_frontier, 0.0f, origin);
     visited[IDX(tile_x_radius, 2 * tile_x_radius + 1, tile_z_radius)] = true;
     update_tile(faction_id, origin, delta);
 
-    while(pq_size(&frontier) > 0) {
+    while(pq_size(&s_frontier) > 0) {
 
         struct tile_desc curr;
-        pq_td_pop(&frontier, &curr);
+        pq_td_pop(&s_frontier, &curr);
 
         struct tile_desc neighbs[8];
         size_t num_neighbs = neighbours(curr, neighbs);
@@ -356,14 +501,39 @@ static void fog_update_visible(int faction_id, vec2_t xz_pos, float radius, int 
                 continue;
 
             update_tile(faction_id, neighbs[i], delta);
-            pq_td_push(&frontier, PFM_Vec2_Len(&origin_delta), neighbs[i]);
+            pq_td_push(&s_frontier, PFM_Vec2_Len(&origin_delta), neighbs[i]);
         }
     }
+    /* s_frontier is drained to empty by the loop; scratch is reused. */
+}
 
-    pq_td_destroy(&frontier);
+/* Drain the batched vision-update queue in one pipelined pass: resolve each
+ * origin once, then stamp (open box) or fall back to the LOS wavefront. */
+static void fog_flush_pending(void)
+{
+    if(s_nupdates == 0)
+        return;
+    PERF_ENTER();
 
-    STFREE(wf_blocked);
-    STFREE(visited);
+    for(size_t i = 0; i < s_nupdates; i++) {
+        struct vis_update *u = &s_updates[i];
+        if(u->radius == 0.0f)
+            continue;
+
+        struct tile_desc origin;
+        if(!M_Tile_DescForPoint2D(s_res, s_map_pos, u->pos, &origin))
+            continue;
+
+        struct tile *tile;
+        M_TileForDesc(s_map, origin, &tile);
+        int origin_height = M_Tile_BaseHeight(tile);
+
+        if(box_is_open(origin, u->radius, origin_height))
+            fog_stamp_disc(u->faction_id, origin, get_stamp(u->radius), u->delta);
+        else
+            fog_flood_wavefront(u->faction_id, origin, origin_height, u->radius, u->delta);
+    }
+    s_nupdates = 0;
     PERF_RETURN_VOID();
 }
 
@@ -372,9 +542,8 @@ static bool fog_obj_matches(uint32_t *state, uint16_t fac_mask, const struct obb
 {
     assert(Sched_UsingBigStack());
 
-    vec3_t pos = M_GetPos(s_map);
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    vec3_t pos = s_map_pos;
+    struct map_resolution res = s_res;
 
     uint32_t facstate_mask = 0;
     for(int i = 0; fac_mask; fac_mask >>= 1, i++) {
@@ -404,9 +573,8 @@ static bool fog_circle_matches(uint16_t fac_mask, vec2_t xz_center, float radius
 {
     assert(Sched_UsingBigStack());
 
-    vec3_t pos = M_GetPos(s_map);
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    vec3_t pos = s_map_pos;
+    struct map_resolution res = s_res;
 
     uint32_t facstate_mask = 0;
     for(int i = 0; fac_mask; fac_mask >>= 1, i++) {
@@ -416,7 +584,7 @@ static bool fog_circle_matches(uint16_t fac_mask, vec2_t xz_center, float radius
     }
 
     struct tile_desc tds[4096];
-    size_t ntiles = M_Tile_AllUnderCircle(res, xz_center, radius, M_GetPos(s_map), tds, ARR_SIZE(tds));
+    size_t ntiles = M_Tile_AllUnderCircle(res, xz_center, radius, s_map_pos, tds, ARR_SIZE(tds));
 
     for(int i = 0; i < ntiles; i++) {
 
@@ -436,9 +604,8 @@ static bool fog_rect_matches(uint16_t fac_mask, vec2_t xz_center, float halfx, f
 {
     assert(Sched_UsingBigStack());
 
-    vec3_t pos = M_GetPos(s_map);
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    vec3_t pos = s_map_pos;
+    struct map_resolution res = s_res;
 
     uint32_t facstate_mask = 0;
     for(int i = 0; fac_mask; fac_mask >>= 1, i++) {
@@ -449,7 +616,7 @@ static bool fog_rect_matches(uint16_t fac_mask, vec2_t xz_center, float halfx, f
 
     struct tile_desc tds[4096];
     size_t ntiles = M_Tile_AllUnderAABB(res, xz_center, halfx, halfz, 
-        M_GetPos(s_map), tds, ARR_SIZE(tds));
+        s_map_pos, tds, ARR_SIZE(tds));
 
     for(int i = 0; i < ntiles; i++) {
 
@@ -506,12 +673,35 @@ bool G_Fog_Init(const struct map *map)
         goto fail;
 
     s_map = map;
+    s_res = res;
+    s_map_pos = M_GetPos(map);
+    pq_td_init(&s_frontier);
+
+    /* Per-chunk max base height for the open-box fast-path test. Computed from
+     * the (static) terrain; kept current by G_Fog_OnTileUpdated on edits. */
+    s_chunk_maxh = PF_CALLOC(sizeof(s_chunk_maxh[0]), res.chunk_w * res.chunk_h);
+    if(!s_chunk_maxh)
+        goto fail;
+    for(int cr = 0; cr < res.chunk_h; cr++) {
+    for(int cc = 0; cc < res.chunk_w; cc++) {
+        int maxh = INT_MIN;
+        for(int tr = 0; tr < res.tile_h; tr++) {
+        for(int tc = 0; tc < res.tile_w; tc++) {
+            struct tile *tile;
+            M_TileForDesc(map, (struct tile_desc){cr, cc, tr, tc}, &tile);
+            int h = M_Tile_BaseHeight(tile);
+            if(h > maxh) maxh = h;
+        }}
+        s_chunk_maxh[cr * res.chunk_w + cc] = maxh;
+    }}
+
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
     return true;
 
 fail:
     kh_destroy(uid, s_explored_cache);
     PF_FREE(s_fog_state);
+    PF_FREE(s_chunk_maxh);
     for(int i = 0; i < MAX_FACTIONS; i++) {
         PF_FREE(s_vision_refcnts[i]);
     }
@@ -529,28 +719,64 @@ void G_Fog_Shutdown(void)
         PF_FREE(s_vision_refcnts[i]);
     }
     memset(s_vision_refcnts, 0, sizeof(s_vision_refcnts));
+
+    pq_td_destroy(&s_frontier);
+    PF_FREE(s_updates);
+    PF_FREE(s_wf_blocked);
+    PF_FREE(s_visited);
+    PF_FREE(s_chunk_maxh);
+    s_updates = NULL;
+    s_wf_blocked = NULL;
+    s_visited = NULL;
+    s_chunk_maxh = NULL;
+    s_nupdates = s_updates_cap = s_scratch_cap = 0;
+    s_nstamps = 0;
     s_map = NULL;
 }
 
 void G_Fog_AddVision(vec2_t xz_pos, int faction_id, float radius)
 {
-    fog_update_visible(faction_id, xz_pos, radius, +1);
+    enqueue_update(faction_id, xz_pos, radius, +1);
 }
 
 void G_Fog_RemoveVision(vec2_t xz_pos, int faction_id, float radius)
 {
-    fog_update_visible(faction_id, xz_pos, radius, -1);
+    enqueue_update(faction_id, xz_pos, radius, -1);
+}
+
+/* Flush all pending vision updates immediately. Must be called on the main
+ * thread (mutates shared fog state). Called at the movement-apply boundary and
+ * before the per-frame vision-state upload. */
+void G_Fog_FlushUpdates(void)
+{
+    fog_flush_pending();
+}
+
+/* Keep the per-chunk max-height cache current after a runtime terrain edit so
+ * box_is_open stays correct (an under-estimate would wrongly skip LOS). */
+void G_Fog_OnTileUpdated(int chunk_r, int chunk_c)
+{
+    if(!s_chunk_maxh)
+        return;
+    int maxh = INT_MIN;
+    for(int tr = 0; tr < s_res.tile_h; tr++) {
+    for(int tc = 0; tc < s_res.tile_w; tc++) {
+        struct tile *tile;
+        M_TileForDesc(s_map, (struct tile_desc){chunk_r, chunk_c, tr, tc}, &tile);
+        int h = M_Tile_BaseHeight(tile);
+        if(h > maxh) maxh = h;
+    }}
+    s_chunk_maxh[chunk_r * s_res.chunk_w + chunk_c] = maxh;
 }
 
 void G_Fog_ExploreCircle(vec2_t xz_pos, int faction_id, float radius)
 {
     assert(Sched_UsingBigStack());
 
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    struct map_resolution res = s_res;
 
     struct tile_desc tds[4096];
-    size_t ntiles = M_Tile_AllUnderCircle(res, xz_pos, radius, M_GetPos(s_map), tds, ARR_SIZE(tds));
+    size_t ntiles = M_Tile_AllUnderCircle(res, xz_pos, radius, s_map_pos, tds, ARR_SIZE(tds));
 
     for(int i = 0; i < ntiles; i++) {
         update_tile(faction_id, tds[i], +1);
@@ -562,11 +788,10 @@ void G_Fog_ExploreRectangle(vec2_t xz_pos, int faction_id, float halfx, float ha
 {
     assert(Sched_UsingBigStack());
 
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    struct map_resolution res = s_res;
 
     struct tile_desc tds[4096];
-    size_t ntiles = M_Tile_AllUnderAABB(res, xz_pos, halfx, halfz, M_GetPos(s_map), tds, ARR_SIZE(tds));
+    size_t ntiles = M_Tile_AllUnderAABB(res, xz_pos, halfx, halfz, s_map_pos, tds, ARR_SIZE(tds));
 
     for(int i = 0; i < ntiles; i++) {
         update_tile(faction_id, tds[i], +1);
@@ -576,11 +801,10 @@ void G_Fog_ExploreRectangle(vec2_t xz_pos, int faction_id, float halfx, float ha
 
 bool G_Fog_Visible(int faction_id, vec2_t xz_pos)
 {
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    struct map_resolution res = s_res;
 
     struct tile_desc td;
-    if(!M_Tile_DescForPoint2D(res, M_GetPos(s_map), xz_pos, &td))
+    if(!M_Tile_DescForPoint2D(res, s_map_pos, xz_pos, &td))
         return false;
 
     return (FAC_STATE(s_fog_state[td_index(td)], faction_id) == STATE_VISIBLE);
@@ -591,11 +815,10 @@ bool G_Fog_PlayerVisible(vec2_t xz_pos)
     if(!s_enabled)
         return true;
 
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    struct map_resolution res = s_res;
 
     struct tile_desc td;
-    if(!M_Tile_DescForPoint2D(res, M_GetPos(s_map), xz_pos, &td))
+    if(!M_Tile_DescForPoint2D(res, s_map_pos, xz_pos, &td))
         return false;
 
     bool controllable[MAX_FACTIONS];
@@ -613,11 +836,10 @@ bool G_Fog_PlayerVisible(vec2_t xz_pos)
 
 bool G_Fog_Explored(int faction_id, vec2_t xz_pos)
 {
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    struct map_resolution res = s_res;
 
     struct tile_desc td;
-    if(!M_Tile_DescForPoint2D(res, M_GetPos(s_map), xz_pos, &td))
+    if(!M_Tile_DescForPoint2D(res, s_map_pos, xz_pos, &td))
         return false;
 
     return (FAC_STATE(s_fog_state[td_index(td)], faction_id) != STATE_UNEXPLORED);
@@ -628,11 +850,10 @@ bool G_Fog_PlayerExplored(vec2_t xz_pos)
     if(!s_enabled)
         return true;
 
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    struct map_resolution res = s_res;
 
     struct tile_desc td;
-    if(!M_Tile_DescForPoint2D(res, M_GetPos(s_map), xz_pos, &td))
+    if(!M_Tile_DescForPoint2D(res, s_map_pos, xz_pos, &td))
         return false;
 
     bool controllable[MAX_FACTIONS];
@@ -650,8 +871,7 @@ bool G_Fog_PlayerExplored(vec2_t xz_pos)
 
 void G_Fog_RenderChunkVisibility(int faction_id, int chunk_r, int chunk_c, mat4x4_t *model)
 {
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    struct map_resolution res = s_res;
 
     const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
     const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
@@ -708,6 +928,8 @@ void G_Fog_RenderChunkVisibility(int faction_id, int chunk_r, int chunk_c, mat4x
 void G_Fog_UpdateVisionState(void)
 {
     PERF_ENTER();
+    fog_flush_pending();
+
     bool controllable[MAX_FACTIONS];
     uint16_t facs = G_GetFactions(NULL, NULL, controllable);
 
@@ -717,8 +939,7 @@ void G_Fog_UpdateVisionState(void)
             player_mask |= (0x3 << (i * 2));
     }
 
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    struct map_resolution res = s_res;
 
     size_t size = res.chunk_h * res.tile_h * res.chunk_w * res.tile_w;
     unsigned char *visbuff = stalloc(&G_GetSimWS()->args, size);
@@ -808,9 +1029,8 @@ bool G_Fog_RectExplored(uint16_t fac_mask, vec2_t xz_pos, float halfx, float hal
 
 bool G_Fog_NearVisibleWater(uint16_t fac_mask, vec2_t xz_pos, float radius)
 {
-    vec3_t pos = M_GetPos(s_map);
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    vec3_t pos = s_map_pos;
+    struct map_resolution res = s_res;
 
     uint32_t facstate_mask = 0;
     for(int i = 0; fac_mask; fac_mask >>= 1, i++) {
@@ -820,7 +1040,7 @@ bool G_Fog_NearVisibleWater(uint16_t fac_mask, vec2_t xz_pos, float radius)
     }
 
     struct tile_desc tds[4096];
-    size_t ntiles = M_Tile_AllUnderCircle(res, xz_pos, radius, M_GetPos(s_map), tds, ARR_SIZE(tds));
+    size_t ntiles = M_Tile_AllUnderCircle(res, xz_pos, radius, s_map_pos, tds, ARR_SIZE(tds));
 
     for(int i = 0; i < ntiles; i++) {
 
@@ -862,8 +1082,9 @@ void G_Fog_ClearExploredCache(void)
 
 bool G_Fog_SaveState(struct SDL_RWops *stream)
 {
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    fog_flush_pending();
+
+    struct map_resolution res = s_res;
     const size_t ntiles = res.chunk_w * res.chunk_h * res.tile_w * res.tile_h;
 
     struct attr enabled = (struct attr){
@@ -902,6 +1123,10 @@ bool G_Fog_SaveState(struct SDL_RWops *stream)
 
 bool G_Fog_LoadState(struct SDL_RWops *stream)
 {
+    /* Discard any updates enqueued before the load; the stream fully defines
+     * the fog state and must not be overwritten by stale pending floods. */
+    s_nupdates = 0;
+
     struct attr attr;
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
@@ -924,8 +1149,7 @@ bool G_Fog_LoadState(struct SDL_RWops *stream)
 
 void G_Fog_ExploreMap(int faction_id)
 {
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    struct map_resolution res = s_res;
 
     for(int chunk_c = 0; chunk_c < res.chunk_w; chunk_c++) {
     for(int chunk_r = 0; chunk_r < res.chunk_h; chunk_r++) {
@@ -949,8 +1173,7 @@ void G_Fog_ExploreMap(int faction_id)
 
 uint32_t *G_Fog_CopyState(void)
 {
-    struct map_resolution res;
-    M_GetResolution(s_map, &res);
+    struct map_resolution res = s_res;
     const size_t ntiles = res.chunk_w * res.chunk_h * res.tile_w * res.tile_h;
 
     uint32_t *ret = PF_MALLOC(sizeof(s_fog_state[0]) * ntiles);

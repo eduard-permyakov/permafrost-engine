@@ -2835,6 +2835,7 @@ bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile)
     if(!M_AL_UpdateTile(s_gs.map, desc, tile))
         return false;
     M_FoliageUpdateTile(*desc);
+    G_Fog_OnTileUpdated(desc->chunk_r, desc->chunk_c);
     return true;
 }
 

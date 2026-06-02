@@ -3293,6 +3293,10 @@ static void move_consume_work_results(void)
         entity_apply_update(out->ent_uid, &out->patch);
     }
 
+    /* All this tick's position changes are enqueued; apply the batched fog
+     * vision updates in one pipelined pass before any reader runs. */
+    G_Fog_FlushUpdates();
+
     PERF_POP();
 
     stalloc_clear(&s_move_work.mem);
