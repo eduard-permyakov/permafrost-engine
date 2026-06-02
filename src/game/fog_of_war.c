@@ -46,10 +46,10 @@
 #include "../perf.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
-#include "../lib/public/pqueue.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/attr.h"
 #include "../lib/public/mem.h"
+#include "../lib/public/simd.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 
@@ -86,9 +86,6 @@ enum fog_state{
     STATE_VISIBLE,
 };
 
-PQUEUE_TYPE(td, struct tile_desc)
-PQUEUE_IMPL(static, td, struct tile_desc)
-
 KHASH_SET_INIT_INT(uid)
 
 /*****************************************************************************/
@@ -123,16 +120,9 @@ static struct vis_update *s_updates;
 static size_t             s_nupdates;
 static size_t             s_updates_cap;
 
-/* Frontier + flood scratch, reused across every flood (wavefront fallback path,
- * used only where terrain can block LOS). */
-static pq_td_t  s_frontier;
-static bool    *s_wf_blocked;
-static bool    *s_visited;
-static size_t   s_scratch_cap;
-
 /* Precomputed vision disc: per-row contiguous [dcmin,dcmax] tile-offset runs
- * whose center is within radius. On open terrain this is exactly the wavefront's
- * visible set, applied as a cheap forward scan. Cached per distinct radius. */
+ * whose center is within radius -- the full unoccluded visible set on open
+ * terrain, applied as a cheap forward scan. Cached per distinct radius. */
 #define STAMP_MAX_ROWS  256
 #define MAX_STAMP_CACHE  16
 struct disc_stamp{
@@ -146,9 +136,13 @@ static struct disc_stamp s_stamps[MAX_STAMP_CACHE];
 static int               s_nstamps;
 
 /* Per-chunk maximum tile base height. Lets fog_flush_pending decide cheaply
- * whether a unit's vision box is fully open (stamp) or may contain an LOS
- * blocker (wavefront fallback). Computed at init from static terrain. */
+ * whether a unit's vision box is fully open (disc stamp) or may contain an LOS
+ * blocker (the LOS-aware stamp). Computed at init from static terrain. */
 static int *s_chunk_maxh;
+
+/* LOS-aware stamp (recursive shadowcasting): per-box visible mask, reused. */
+static uint8_t *s_los_vis;
+static size_t   s_los_cap;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -194,131 +188,6 @@ static void update_tile(int faction_id, struct tile_desc td, int delta)
     s_vision_refcnts[faction_id][td_index(td)] = new;
 }
 
-static size_t neighbours(struct tile_desc curr, struct tile_desc *out)
-{
-    size_t ret = 0;
-
-    struct map_resolution res = s_res;
-
-    for(int dr = -1; dr <= 1; dr++) {
-    for(int dc = -1; dc <= 1; dc++) {
-
-        if(dr == 0 && dc == 0)
-            continue;
-
-        struct tile_desc cand = curr;
-        bool exists = M_Tile_RelativeDesc(res, &cand, dc, dr);
-        if(!exists)
-            continue;
-        out[ret++] = cand;
-    }}
-
-    return ret;
-}
-
-static vec2_t tile_center_pos(struct tile_desc td)
-{
-    struct map_resolution res = s_res;
-
-    struct box box = M_Tile_Bounds(res, s_map_pos, td);
-    return (vec2_t){
-        box.x - box.width / 2.0f,
-        box.z + box.height / 2.0f
-    };
-}
-
-static bool td_los_blocked(struct tile_desc td, int ref_height)
-{
-    struct tile *tile;
-    M_TileForDesc(s_map, td, &tile);
-    return (M_Tile_BaseHeight(tile) - ref_height > 1);
-}
-
-static bool td_is_los_corner(struct tile_desc td, int ref_height)
-{
-    if(!td_los_blocked(td, ref_height))
-        return false;
-
-    struct map_resolution res = s_res;
-
-    struct tile_desc left = td, right = td;
-    if(M_Tile_RelativeDesc(res, &left,  -1, 0)
-    && M_Tile_RelativeDesc(res, &right, +1, 0)) {
-
-        if(td_los_blocked(left, ref_height) ^ td_los_blocked(right, ref_height))
-            return true;
-    }
-
-    struct tile_desc top = td, bot = td;
-    if(M_Tile_RelativeDesc(res, &top, 0, -1)
-    && M_Tile_RelativeDesc(res, &bot, 0, +1)) {
-
-        if(td_los_blocked(top, ref_height) ^ td_los_blocked(bot, ref_height))
-            return true;
-    }
-
-    return false;
-}
-
-static void wf_create_blocked_line(int xrad, int zrad, bool wf[], 
-                                   struct tile_desc origin, int delta_r, int delta_c)
-{
-    struct map_resolution res = s_res;
-
-    struct tile_desc corner;
-    M_Tile_RelativeDesc(res, &corner, delta_c, delta_r);
-
-    vec2_t origin_center = tile_center_pos(origin);
-    vec2_t corner_center = tile_center_pos(corner);
-
-    vec2_t slope;
-    PFM_Vec2_Sub(&origin_center, &corner_center, &slope);
-    PFM_Vec2_Normal(&slope, &slope);
-
-    /* Now use Bresenham's line drawing algorithm to follow a line 
-     * of the computed slope starting at the 'corner' until we hit the 
-     * edge of the field. 
-     * Multiply by 1_000 to convert slope to integer deltas, but keep 
-     * 3 digits of precision after the decimal.*/
-    int dx =  abs(slope.raw[0] * 1000);
-    int dy = -abs(slope.raw[1] * 1000);
-    int sx = slope.raw[0] > 0.0f ? 1 : -1;
-    int sy = slope.raw[1] < 0.0f ? 1 : -1;
-    int err = dx + dy, e2;
-
-    int curr_dr = delta_r, curr_dc = delta_c;
-    do {
-
-        fflush(stdout);
-        wf[IDX(zrad + curr_dr, xrad * 2 + 1, xrad + curr_dc)] = true;
-
-        e2 = 2 * err;
-        if(e2 >= dy) {
-            err += dy;
-            curr_dc  += sx;
-        }
-        if(e2 <= dx) {
-            err += dx;
-            curr_dr += sy;
-        }
-
-    }while(abs(curr_dr) <= zrad && abs(curr_dc) <= xrad);
-}
-
-void td_delta(struct tile_desc a, struct tile_desc b, int *out_dr, int *out_dc)
-{
-    struct map_resolution res = s_res;
-
-    int ar = a.chunk_r * res.tile_h + a.tile_r;
-    int ac = a.chunk_c * res.tile_w + a.tile_c;
-
-    int br = b.chunk_r * res.tile_h + b.tile_r;
-    int bc = b.chunk_c * res.tile_w + b.tile_c;
-
-    *out_dr = br - ar;
-    *out_dc = bc - ac;
-}
-
 static void enqueue_update(int faction_id, vec2_t pos, float radius, int delta)
 {
     if(s_nupdates == s_updates_cap) {
@@ -329,9 +198,8 @@ static void enqueue_update(int faction_id, vec2_t pos, float radius, int delta)
     s_updates[s_nupdates++] = (struct vis_update){faction_id, pos, radius, delta};
 }
 
-/* Build per-row disc runs using the SAME float distance test as the wavefront
- * (origin_delta = (-dc*X, dr*Z), len <= radius), so the stamp's tile set is
- * identical to the wavefront's on open terrain. */
+/* Build per-row disc runs from the tile-center distance test (origin_delta =
+ * (-dc*X, dr*Z), len <= radius): every tile within radius, as contiguous runs. */
 static void build_disc_stamp(struct disc_stamp *st, float radius)
 {
     int zrad = (int)ceil(radius / Z_COORDS_PER_TILE) + 1;
@@ -372,18 +240,122 @@ static const struct disc_stamp *get_stamp(float radius)
     return &s_stamps[slot];
 }
 
-/* Fast path: stamp the precomputed disc, computing each tile's chunk-blocked
- * index inline. Mirrors update_tile's refcnt -> state transition per tile. */
+/* Update a contiguous run of n tiles: refcnt[i] += delta (uint8 wrap), then set
+ * faction 'shift'/'clearmask' bits of fog_state[i] to VISIBLE if the new refcnt
+ * != 0 else IN_FOG. Bit-identical to update_tile. The concrete variant is bound
+ * once in G_Fog_Init via simd_*_supported(). */
+typedef void (*stamp_row_fn)(uint8_t *rc, uint32_t *fs, int n, int shift,
+                             uint32_t clearmask, int delta);
+
+static void stamp_row_scalar(uint8_t *rc, uint32_t *fs, int n, int shift,
+                             uint32_t clearmask, int delta)
+{
+    for(int i = 0; i < n; i++) {
+        uint8_t nv = (uint8_t)(rc[i] + delta);
+        rc[i] = nv;
+        fs[i] = (fs[i] & clearmask) | ((uint32_t)(nv ? STATE_VISIBLE : STATE_IN_FOG) << shift);
+    }
+}
+
+SIMD_TARGET_AVX2
+static void stamp_row_avx2(uint8_t *rc, uint32_t *fs, int n, int shift,
+                           uint32_t clearmask, int delta)
+{
+    const __m256i vclear = _mm256_set1_epi32((int)clearmask);
+    const __m128i vdelta = _mm_set1_epi8((char)delta);
+    const __m128i vone   = _mm_set1_epi8(1);
+    const __m128i vshift = _mm_cvtsi32_si128(shift);
+    int i = 0;
+    for(; i + 8 <= n; i += 8) {
+        __m128i r8  = _mm_loadl_epi64((const __m128i*)(rc + i));
+        __m128i nv8 = _mm_add_epi8(r8, vdelta);
+        _mm_storel_epi64((__m128i*)(rc + i), nv8);
+        __m128i isz   = _mm_cmpeq_epi8(nv8, _mm_setzero_si128());
+        __m128i state = _mm_add_epi8(vone, _mm_andnot_si128(isz, vone));
+        __m256i sbits = _mm256_sll_epi32(_mm256_cvtepu8_epi32(state), vshift);
+        __m256i f     = _mm256_loadu_si256((const __m256i*)(fs + i));
+        f = _mm256_or_si256(_mm256_and_si256(f, vclear), sbits);
+        _mm256_storeu_si256((__m256i*)(fs + i), f);
+    }
+    stamp_row_scalar(rc + i, fs + i, n - i, shift, clearmask, delta);
+}
+
+SIMD_TARGET_AVX512F
+static void stamp_row_avx512(uint8_t *rc, uint32_t *fs, int n, int shift,
+                             uint32_t clearmask, int delta)
+{
+    const __m512i vclear  = _mm512_set1_epi32((int)clearmask);
+    const __m256i vclear2 = _mm256_set1_epi32((int)clearmask);
+    const __m128i vdelta  = _mm_set1_epi8((char)delta);
+    const __m128i vone    = _mm_set1_epi8(1);
+    const __m128i vshift  = _mm_cvtsi32_si128(shift);
+    int i = 0;
+    for(; i + 16 <= n; i += 16) {
+        __m128i r16  = _mm_loadu_si128((const __m128i*)(rc + i));
+        __m128i nv16 = _mm_add_epi8(r16, vdelta);
+        _mm_storeu_si128((__m128i*)(rc + i), nv16);
+        __m128i isz   = _mm_cmpeq_epi8(nv16, _mm_setzero_si128());
+        __m128i state = _mm_add_epi8(vone, _mm_andnot_si128(isz, vone));
+        __m512i sbits = _mm512_sll_epi32(_mm512_cvtepu8_epi32(state), vshift);
+        __m512i f     = _mm512_loadu_si512((const void*)(fs + i));
+        f = _mm512_or_si512(_mm512_and_si512(f, vclear), sbits);
+        _mm512_storeu_si512((void*)(fs + i), f);
+    }
+    for(; i + 8 <= n; i += 8) {
+        __m128i r8  = _mm_loadl_epi64((const __m128i*)(rc + i));
+        __m128i nv8 = _mm_add_epi8(r8, vdelta);
+        _mm_storel_epi64((__m128i*)(rc + i), nv8);
+        __m128i isz   = _mm_cmpeq_epi8(nv8, _mm_setzero_si128());
+        __m128i state = _mm_add_epi8(vone, _mm_andnot_si128(isz, vone));
+        __m256i sbits = _mm256_sll_epi32(_mm256_cvtepu8_epi32(state), vshift);
+        __m256i f     = _mm256_loadu_si256((const __m256i*)(fs + i));
+        f = _mm256_or_si256(_mm256_and_si256(f, vclear2), sbits);
+        _mm256_storeu_si256((__m256i*)(fs + i), f);
+    }
+    stamp_row_scalar(rc + i, fs + i, n - i, shift, clearmask, delta);
+}
+
+/* Bound once in G_Fog_Init from the runtime CPU query. s_stamp_row covers
+ * short/medium runs; s_stamp_row_long the >=16-tile runs where AVX-512 wins. */
+static stamp_row_fn s_stamp_row      = stamp_row_scalar;
+static stamp_row_fn s_stamp_row_long = stamp_row_scalar;
+
+/* Apply a run of n tiles starting at (abs_r, abs_c). The fog arrays are
+ * chunk-blocked, so a run is contiguous only within a chunk -- split it into
+ * per-chunk segments and SIMD each. */
+static void stamp_run(uint8_t *refcnt, int abs_r, int abs_c, int n, int shift,
+                      uint32_t clearmask, int delta)
+{
+    struct map_resolution res = s_res;
+    size_t tiles_per_chunk = res.tile_w * res.tile_h;
+    int chunk_r  = abs_r / res.tile_h;
+    int tile_r   = abs_r % res.tile_h;
+    int row_base = chunk_r * (res.chunk_w * tiles_per_chunk) + tile_r * res.tile_w;
+
+    int c = abs_c, end = abs_c + n;
+    while(c < end) {
+        int chunk_c = c / res.tile_w;
+        int seg_end = (chunk_c + 1) * res.tile_w;   /* first column of next chunk */
+        if(seg_end > end) seg_end = end;
+        int idx0 = row_base + chunk_c * tiles_per_chunk + (c % res.tile_w);
+        int seg_n = seg_end - c;
+        (seg_n >= 16 ? s_stamp_row_long : s_stamp_row)
+            (refcnt + idx0, s_fog_state + idx0, seg_n, shift, clearmask, delta);
+        c = seg_end;
+    }
+}
+
 static void fog_stamp_disc(int faction_id, struct tile_desc origin,
                            const struct disc_stamp *stamp, int delta)
 {
     struct map_resolution res = s_res;
     int total_rows = res.chunk_h * res.tile_h;
     int total_cols = res.chunk_w * res.tile_w;
-    size_t tiles_per_chunk = res.tile_w * res.tile_h;
     int abs_r0 = origin.chunk_r * res.tile_h + origin.tile_r;
     int abs_c0 = origin.chunk_c * res.tile_w + origin.tile_c;
 
+    const int      shift = faction_id * 2;
+    const uint32_t clearmask = ~(0x3u << shift);
     uint8_t *refcnt = s_vision_refcnts[faction_id];
 
     for(int k = 0; k < stamp->nrows; k++) {
@@ -394,24 +366,14 @@ static void fog_stamp_disc(int faction_id, struct tile_desc origin,
         int cmax = abs_c0 + stamp->dcmax[k];
         if(cmin < 0) cmin = 0;
         if(cmax >= total_cols) cmax = total_cols - 1;
-
-        int chunk_r  = abs_r / res.tile_h;
-        int tile_r   = abs_r % res.tile_h;
-        int row_base = chunk_r * (res.chunk_w * tiles_per_chunk) + tile_r * res.tile_w;
-
-        for(int abs_c = cmin; abs_c <= cmax; abs_c++) {
-            int idx = row_base + (abs_c / res.tile_w) * tiles_per_chunk + (abs_c % res.tile_w);
-
-            uint8_t nv = (uint8_t)(refcnt[idx] + delta);
-            refcnt[idx] = nv;
-            fog_set_state(&s_fog_state[idx], faction_id, nv ? STATE_VISIBLE : STATE_IN_FOG);
-        }
+        if(cmax >= cmin)
+            stamp_run(refcnt, abs_r, cmin, cmax - cmin + 1, shift, clearmask, delta);
     }
 }
 
 /* True iff no chunk spanned by the vision box can hold a tile that blocks LOS
  * from origin_height (conservative: chunk max <= origin_height+1 => no blocker).
- * When true the stamp is exactly the wavefront result. */
+ * When true the disc stamp needs no occlusion and is exactly correct. */
 static bool box_is_open(struct tile_desc origin, float radius, int origin_height)
 {
     struct map_resolution res = s_res;
@@ -437,78 +399,146 @@ static bool box_is_open(struct tile_desc origin, float radius, int origin_height
     return true;
 }
 
-/* LOS-aware flood for boxes that may contain blockers. Origin and its height are
- * resolved once by the caller. Frontier + scratch are module-static and reused. */
-static void fog_flood_wavefront(int faction_id, struct tile_desc origin, int origin_height,
-                                float radius, int delta)
+/* Octant transforms for recursive shadowcasting (xx, xy, yx, yy per octant). */
+static const int s_oct_mult[4][8] = {
+    {1, 0, 0, -1, -1,  0,  0,  1},
+    {0, 1, -1, 0,  0, -1,  1,  0},
+    {0, 1,  1, 0,  0, -1, -1,  0},
+    {1, 0,  0, 1, -1,  0,  0, -1},
+};
+
+static bool los_blocked_abs(int abs_r, int abs_c, int origin_height)
 {
-    const int tile_x_radius = ceil(radius / X_COORDS_PER_TILE) + 1;
-    const int tile_z_radius = ceil(radius / Z_COORDS_PER_TILE) + 1;
-    assert(tile_x_radius && tile_z_radius);
+    struct map_resolution res = s_res;
+    if(abs_r < 0 || abs_c < 0 || abs_r >= res.chunk_h * res.tile_h
+                              || abs_c >= res.chunk_w * res.tile_w)
+        return false;
+    struct tile_desc td = {abs_r / res.tile_h, abs_c / res.tile_w,
+                           abs_r % res.tile_h, abs_c % res.tile_w};
+    struct tile *t;
+    M_TileForDesc(s_map, td, &t);
+    return (M_Tile_BaseHeight(t) - origin_height > 1);
+}
 
-    /* A byte for every tile within the radius box, reused across floods. */
-    const size_t count = (2 * tile_x_radius + 1) * (2 * tile_z_radius + 1);
-    if(count > s_scratch_cap) {
-        s_scratch_cap = count;
-        s_wf_blocked = PF_REALLOC(s_wf_blocked, count);
-        s_visited    = PF_REALLOC(s_visited, count);
-        assert(s_wf_blocked && s_visited);
+static void los_mark(uint8_t *mask, int abs_r, int abs_c, int abs_r0, int abs_c0,
+                     int rad, int box_w)
+{
+    struct map_resolution res = s_res;
+    if(abs_r < 0 || abs_c < 0 || abs_r >= res.chunk_h * res.tile_h
+                              || abs_c >= res.chunk_w * res.tile_w)
+        return;
+    mask[(abs_r - abs_r0 + rad) * box_w + (abs_c - abs_c0 + rad)] = 1;
+}
+
+/* Recursive shadowcasting (Bjorn Bergstrom's algorithm): light one octant,
+ * recursing past each blocker to carve its shadow. O(visible tiles), no PQ. */
+static void cast_light(uint8_t *mask, int abs_r0, int abs_c0, int maxdist, float radius2,
+                       int origin_height, int rad, int box_w, int row,
+                       float start, float end, int xx, int xy, int yx, int yy)
+{
+    if(start < end)
+        return;
+    for(int j = row; j <= maxdist; j++) {
+        int dx = -j - 1, dy = -j;
+        bool blocked = false;
+        float new_start = 0.0f;
+        while(dx <= 0) {
+            dx += 1;
+            int mc = abs_c0 + dx * xx + dy * xy;
+            int mr = abs_r0 + dx * yx + dy * yy;
+            float l_slope = (dx - 0.5f) / (dy + 0.5f);
+            float r_slope = (dx + 0.5f) / (dy - 0.5f);
+            if(start < r_slope)
+                continue;
+            else if(end > l_slope)
+                break;
+
+            bool blk = los_blocked_abs(mr, mc, origin_height);
+            /* A blocking tile occludes but is not itself revealed (a unit
+             * doesn't see one tile up onto higher ground). Only light
+             * non-blockers within radius. */
+            if(!blk && (float)(dx * dx + dy * dy) <= radius2)
+                los_mark(mask, mr, mc, abs_r0, abs_c0, rad, box_w);
+
+            if(blocked) {
+                if(blk) {
+                    new_start = r_slope;
+                    continue;
+                }else{
+                    blocked = false;
+                    start = new_start;
+                }
+            }else{
+                if(blk && j < maxdist) {
+                    blocked = true;
+                    cast_light(mask, abs_r0, abs_c0, maxdist, radius2, origin_height,
+                               rad, box_w, j + 1, start, l_slope, xx, xy, yx, yy);
+                    new_start = r_slope;
+                }
+            }
+        }
+        if(blocked)
+            break;
     }
-    bool *wf_blocked = s_wf_blocked;
-    bool *visited    = s_visited;
-    memset(wf_blocked, 0, count);
-    memset(visited, 0, count);
+}
 
-    pq_td_push(&s_frontier, 0.0f, origin);
-    visited[IDX(tile_x_radius, 2 * tile_x_radius + 1, tile_z_radius)] = true;
-    update_tile(faction_id, origin, delta);
+/* LOS fast path for blocked boxes: shadowcast a visible mask, then apply it as
+ * forward-scan runs through stamp_run. */
+static void fog_los_stamp(int faction_id, struct tile_desc origin, int origin_height,
+                          float radius, int delta)
+{
+    struct map_resolution res = s_res;
+    int total_rows = res.chunk_h * res.tile_h;
+    int total_cols = res.chunk_w * res.tile_w;
+    int abs_r0 = origin.chunk_r * res.tile_h + origin.tile_r;
+    int abs_c0 = origin.chunk_c * res.tile_w + origin.tile_c;
 
-    while(pq_size(&s_frontier) > 0) {
+    int   rad     = (int)ceil(radius / X_COORDS_PER_TILE) + 1;
+    float radius2 = (radius / X_COORDS_PER_TILE) * (radius / X_COORDS_PER_TILE);
+    int   box_w   = 2 * rad + 1;
+    size_t box_n  = (size_t)box_w * box_w;
 
-        struct tile_desc curr;
-        pq_td_pop(&s_frontier, &curr);
+    if(box_n > s_los_cap) {
+        s_los_cap = box_n;
+        s_los_vis = PF_REALLOC(s_los_vis, box_n);
+        assert(s_los_vis);
+    }
+    memset(s_los_vis, 0, box_n);
+    s_los_vis[rad * box_w + rad] = 1;   /* origin always visible */
 
-        struct tile_desc neighbs[8];
-        size_t num_neighbs = neighbours(curr, neighbs);
+    for(int oct = 0; oct < 8; oct++) {
+        cast_light(s_los_vis, abs_r0, abs_c0, rad, radius2, origin_height, rad, box_w,
+                   1, 1.0f, 0.0f,
+                   s_oct_mult[0][oct], s_oct_mult[1][oct],
+                   s_oct_mult[2][oct], s_oct_mult[3][oct]);
+    }
 
-        for(int i = 0; i < num_neighbs; i++) {
+    const int      shift = faction_id * 2;
+    const uint32_t clearmask = ~(0x3u << shift);
+    uint8_t *refcnt = s_vision_refcnts[faction_id];
 
-            int dr, dc;
-            td_delta(origin, neighbs[i], &dr, &dc);
-            assert(abs(dr) <= tile_z_radius);
-            assert(abs(dc) <= tile_x_radius);
-
-            if(visited[IDX(tile_x_radius + dr, 2 * tile_x_radius + 1, tile_z_radius + dc)])
-                continue;
-            visited[IDX(tile_x_radius + dr, 2 * tile_x_radius + 1, tile_z_radius + dc)] = true;
-
-            if(wf_blocked[IDX(tile_x_radius + dr, 2 * tile_x_radius + 1, tile_z_radius + dc)])
-                continue;
-
-            vec2_t origin_pos = tile_center_pos(origin);
-            vec2_t neighb_pos = tile_center_pos(neighbs[i]);
-
-            vec2_t origin_delta;
-            PFM_Vec2_Sub(&neighb_pos, &origin_pos, &origin_delta);
-
-            if(PFM_Vec2_Len(&origin_delta) > radius)
-                continue;
-
-            if(td_is_los_corner(neighbs[i], origin_height))
-                wf_create_blocked_line(tile_x_radius, tile_z_radius, wf_blocked, origin, dr, dc);
-
-            if(td_los_blocked(neighbs[i], origin_height))
-                continue;
-
-            update_tile(faction_id, neighbs[i], delta);
-            pq_td_push(&s_frontier, PFM_Vec2_Len(&origin_delta), neighbs[i]);
+    for(int rr = 0; rr < box_w; rr++) {
+        int abs_r = abs_r0 - rad + rr;
+        if(abs_r < 0 || abs_r >= total_rows)
+            continue;
+        uint8_t *mrow = s_los_vis + (size_t)rr * box_w;
+        int cc = 0;
+        while(cc < box_w) {
+            if(!mrow[cc]) { cc++; continue; }
+            int run0 = cc;
+            while(cc < box_w && mrow[cc]) cc++;
+            int start = abs_c0 - rad + run0;
+            int cnt   = cc - run0;
+            if(start < 0) { cnt += start; start = 0; }
+            if(start + cnt > total_cols) cnt = total_cols - start;
+            if(cnt > 0)
+                stamp_run(refcnt, abs_r, start, cnt, shift, clearmask, delta);
         }
     }
-    /* s_frontier is drained to empty by the loop; scratch is reused. */
 }
 
 /* Drain the batched vision-update queue in one pipelined pass: resolve each
- * origin once, then stamp (open box) or fall back to the LOS wavefront. */
+ * origin once, then the disc stamp (open box) or the LOS-aware stamp. */
 static void fog_flush_pending(void)
 {
     if(s_nupdates == 0)
@@ -531,7 +561,7 @@ static void fog_flush_pending(void)
         if(box_is_open(origin, u->radius, origin_height))
             fog_stamp_disc(u->faction_id, origin, get_stamp(u->radius), u->delta);
         else
-            fog_flood_wavefront(u->faction_id, origin, origin_height, u->radius, u->delta);
+            fog_los_stamp(u->faction_id, origin, origin_height, u->radius, u->delta);
     }
     s_nupdates = 0;
     PERF_RETURN_VOID();
@@ -675,7 +705,9 @@ bool G_Fog_Init(const struct map *map)
     s_map = map;
     s_res = res;
     s_map_pos = M_GetPos(map);
-    pq_td_init(&s_frontier);
+
+    s_stamp_row      = simd_avx2_supported()   ? stamp_row_avx2   : stamp_row_scalar;
+    s_stamp_row_long = simd_avx512_supported() ? stamp_row_avx512 : s_stamp_row;
 
     /* Per-chunk max base height for the open-box fast-path test. Computed from
      * the (static) terrain; kept current by G_Fog_OnTileUpdated on edits. */
@@ -720,16 +752,13 @@ void G_Fog_Shutdown(void)
     }
     memset(s_vision_refcnts, 0, sizeof(s_vision_refcnts));
 
-    pq_td_destroy(&s_frontier);
     PF_FREE(s_updates);
-    PF_FREE(s_wf_blocked);
-    PF_FREE(s_visited);
     PF_FREE(s_chunk_maxh);
+    PF_FREE(s_los_vis);
     s_updates = NULL;
-    s_wf_blocked = NULL;
-    s_visited = NULL;
     s_chunk_maxh = NULL;
-    s_nupdates = s_updates_cap = s_scratch_cap = 0;
+    s_los_vis = NULL;
+    s_nupdates = s_updates_cap = s_los_cap = 0;
     s_nstamps = 0;
     s_map = NULL;
 }
