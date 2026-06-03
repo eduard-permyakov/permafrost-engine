@@ -68,6 +68,7 @@ enum mem_system{
     MEM_SYS_SCRIPT,
 
     /* Single-file systems */
+    MEM_SYS_ASSET_CACHE,
     MEM_SYS_ASSET_LOAD,
     MEM_SYS_CAM_CONTROL,
     MEM_SYS_CAMERA,

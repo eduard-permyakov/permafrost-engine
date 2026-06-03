@@ -427,6 +427,7 @@ const char *Mem_SysName(uint16_t sys)
         [MEM_SYS_PHYS]           = "phys",
         [MEM_SYS_RENDER]         = "render",
         [MEM_SYS_SCRIPT]         = "script",
+        [MEM_SYS_ASSET_CACHE]    = "asset_cache",
         [MEM_SYS_ASSET_LOAD]     = "asset_load",
         [MEM_SYS_CAM_CONTROL]    = "cam_control",
         [MEM_SYS_CAMERA]         = "camera",

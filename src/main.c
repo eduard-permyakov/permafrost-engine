@@ -38,6 +38,7 @@
 
 #include "main.h"
 #include "asset_load.h"
+#include "asset_cache.h"
 #include "config.h"
 #include "cursor.h"
 #include "render/public/render.h"
@@ -497,6 +498,10 @@ static bool engine_init(void)
         goto fail_al;
     }
 
+    if(!AssetCache_Init()) {
+        fprintf(stderr, "Failed to initialize asset-cache module; asset caching disabled.\n");
+    }
+
     if(!Cursor_InitDefault(g_basepath)) {
         fprintf(stderr, "Failed to initialize cursor module\n");
         goto fail_cursor;
@@ -586,6 +591,7 @@ fail_event:
 fail_render:
     Cursor_FreeAll();
 fail_cursor:
+    AssetCache_Shutdown();
     AL_Shutdown();
 fail_al:
     Session_Shutdown();
@@ -636,6 +642,7 @@ static void engine_shutdown(void)
     N_Shutdown();
 
     Cursor_FreeAll();
+    AssetCache_Shutdown();
     AL_Shutdown();
     E_Shutdown();
     Session_Shutdown();
