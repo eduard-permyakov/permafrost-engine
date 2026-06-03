@@ -52,6 +52,7 @@
 #include "../loading_screen.h"
 #include "../config.h"
 #include "../main.h"
+#include "../asset_cache.h"
 
 #include <string.h>
 #include <assert.h>
@@ -69,6 +70,10 @@
 #define MAX(a, b)       ((a) > (b) ? (a) : (b))
 #define MAX3(a, b, c)   (MAX((a), MAX((b), (c))))
 #define ARR_SIZE(a)     (sizeof(a)/sizeof((a)[0]))
+
+/* Wang tilesets are baked at 8 RGBA layers, matching the final on-GPU format */
+#define TILESET_NUM_TILES       (8)
+#define TILESET_CACHE_CHANNELS  (4)
 
 KHASH_MAP_INIT_STR(tex, GLuint)
 
@@ -605,6 +610,73 @@ void R_GL_Texture_ArrayMakeMap(const char texnames[][256], size_t num_textures,
     GL_ASSERT_OK();
 }
 
+static bool wang_tileset_load_cached(const char *name, uint64_t tag, size_t tileset_dim,
+                                     struct texture_arr *out, GLuint tunit)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    struct tileset_cache cached;
+    if(!AssetCache_TilesetLoad(name, tag, &cached))
+        return false;
+
+    /* Reject entries baked with a different tile geometry or pixel format */
+    if(cached.width != (int)tileset_dim || cached.height != (int)tileset_dim
+    || cached.num_tiles != TILESET_NUM_TILES || cached.nr_channels != TILESET_CACHE_CHANNELS) {
+        PF_FREE(cached.pixels);
+        return false;
+    }
+
+    glActiveTexture(tunit);
+    out->tunit = tunit;
+    glGenTextures(1, &out->id);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, tileset_dim, tileset_dim,
+        TILESET_NUM_TILES, 0, GL_RGBA, GL_UNSIGNED_BYTE, cached.pixels);
+
+    glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+
+    PF_FREE(cached.pixels);
+    GL_ASSERT_OK();
+    return true;
+}
+
+static void wang_tileset_store_cached(const char *name, uint64_t tag, size_t tileset_dim,
+                                      const struct texture_arr *arr)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    size_t nbytes = tileset_dim * tileset_dim * TILESET_NUM_TILES * TILESET_CACHE_CHANNELS;
+    void *pixels = PF_MALLOC(nbytes);
+    if(!pixels)
+        return;
+
+    glActiveTexture(arr->tunit);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, arr->id);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glGetTexImage(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+
+    struct tileset_cache cached = {
+        .width = tileset_dim,
+        .height = tileset_dim,
+        .num_tiles = TILESET_NUM_TILES,
+        .nr_channels = TILESET_CACHE_CHANNELS,
+        .pixels = pixels
+    };
+    AssetCache_TilesetStore(name, tag, &cached);
+
+    PF_FREE(pixels);
+    GL_ASSERT_OK();
+}
+
 size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t num_textures, 
                                             struct texture_arr *out, GLuint tunit)
 {
@@ -658,8 +730,14 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
                 break;
             }
 
+            uint64_t tag = AssetCache_SourceTag(path);
             struct texture_arr tiles;
-            bool success = R_GL_ImageQuilt_MakeTileset(path, &tiles, tunit);
+            bool success = wang_tileset_load_cached(texnames[i], tag, tileset_dim, &tiles, tunit);
+            if(!success) {
+                success = R_GL_ImageQuilt_MakeTileset(path, &tiles, tunit);
+                if(success)
+                    wang_tileset_store_cached(texnames[i], tag, tileset_dim, &tiles);
+            }
             if(success) {
 
                 for(int j = 0; j < 8; j++) {
