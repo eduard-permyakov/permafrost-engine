@@ -72,7 +72,11 @@
 #define BLOCK_DIM           (65)
 #define OVERLAP_DIM         (10)
 #define TILE_DIM            (130)
-#define OVERLAP_TOLERANCE   (0.025)
+#define OVERLAP_TOLERANCE   (0.1)
+#define CANDIDATE_MIN_SEP   (BLOCK_DIM / 2)
+#define PHASE_TOL           (1)
+#define PERIOD_MIN_LAG      (8)
+#define PERIOD_MIN_CORR     (0.5)
 
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
@@ -136,6 +140,11 @@ struct diamond_patch{
 
 struct coord{
     int r, c;
+};
+
+struct phase_lock{
+    int px, py;   /* source period per axis; 0 when that axis is aperiodic */
+    int rx, ry;   /* phase of the first block: its position modulo the period */
 };
 
 VEC_TYPE(coord, struct coord)
@@ -520,48 +529,188 @@ static void ssd_patch(struct image image, struct cost_image out_cost_image,
     }}
 }
 
+static int dominant_period(const double *profile, int n)
+{
+    double mean = 0;
+    for(int i = 0; i < n; i++)
+        mean += profile[i];
+    mean /= n;
+
+    double energy = 0;
+    for(int i = 0; i < n; i++) {
+        double d = profile[i] - mean;
+        energy += d * d;
+    }
+    if(energy == 0)
+        return 0;
+
+    /* Return the lag of the strongest autocorrelation peak above the threshold,
+     * or 0 when the profile has no clear period.
+     */
+    int best = 0;
+    double best_corr = PERIOD_MIN_CORR;
+    for(int k = PERIOD_MIN_LAG; k < n/2; k++) {
+        double sum = 0;
+        for(int i = 0; i + k < n; i++)
+            sum += (profile[i] - mean) * (profile[i+k] - mean);
+        sum /= energy;
+        if(sum > best_corr) {
+            best_corr = sum;
+            best = k;
+        }
+    }
+    return best;
+}
+
+static void estimate_period(struct image image, int *out_px, int *out_py)
+{
+    *out_px = 0;
+    *out_py = 0;
+
+    double *rows = PF_MALLOC(image.height * sizeof(double));
+    double *cols = PF_MALLOC(image.width * sizeof(double));
+    if(!rows || !cols) {
+        PF_FREE(rows);
+        PF_FREE(cols);
+        return;
+    }
+
+    /* Average brightness profiles along each axis; the autocorrelation of each
+     * reveals the dominant repeat, such as the brick course height.
+     */
+    for(int y = 0; y < image.height; y++) {
+        double sum = 0;
+        for(int x = 0; x < image.width; x++)
+        for(int k = 0; k < image.nr_channels; k++)
+            sum += image.data[(y * image.width + x) * image.nr_channels + k];
+        rows[y] = sum / (image.width * image.nr_channels);
+    }
+    for(int x = 0; x < image.width; x++) {
+        double sum = 0;
+        for(int y = 0; y < image.height; y++)
+        for(int k = 0; k < image.nr_channels; k++)
+            sum += image.data[(y * image.width + x) * image.nr_channels + k];
+        cols[x] = sum / (image.height * image.nr_channels);
+    }
+
+    *out_py = dominant_period(rows, image.height);
+    *out_px = dominant_period(cols, image.width);
+
+    PF_FREE(rows);
+    PF_FREE(cols);
+}
+
+static struct phase_lock make_phase_lock(struct image image, struct image_view first)
+{
+    int px = 0, py = 0;
+    estimate_period(image, &px, &py);
+    return (struct phase_lock){
+        .px = px,
+        .py = py,
+        .rx = px ? (first.x % px) : 0,
+        .ry = py ? (first.y % py) : 0
+    };
+}
+
+static bool phase_compatible(const struct phase_lock *lock, int r, int c)
+{
+    if(!lock)
+        return true;
+
+    /* The candidate block is sampled OVERLAP_DIM past (r, c) in the source; keep
+     * it only if it shares the first block's phase along each periodic axis.
+     */
+    int sx = c + OVERLAP_DIM;
+    int sy = r + OVERLAP_DIM;
+    if(lock->px > 0) {
+        int d = ((sx - lock->rx) % lock->px + lock->px) % lock->px;
+        d = MIN(d, lock->px - d);
+        if(d > PHASE_TOL)
+            return false;
+    }
+    if(lock->py > 0) {
+        int d = ((sy - lock->ry) % lock->py + lock->py) % lock->py;
+        d = MIN(d, lock->py - d);
+        if(d > PHASE_TOL)
+            return false;
+    }
+    return true;
+}
+
 /* choose_sample takes as input the cost image (each pixel's value is the cost of
  * selecting the patch centered at that pixel) and selects a randomly sampled patch
- * with low cost.
+ * with low cost. When the texture is periodic, only positions sharing the first
+ * block's phase are eligible, so the base blocks tile cleanly in every arrangement.
  */
-static struct coord choose_sample(struct cost_image cost_image)
+static struct coord choose_sample(struct cost_image cost_image, const struct phase_lock *lock)
 {
     vec_coord_t candidates;
     vec_coord_init(&candidates);
 
     int min = INT_MAX;
-    int max = INT_MIN;
-
     for(int r = 0; r < cost_image.height; r++) {
     for(int c = 0; c < cost_image.width; c++) {
-        size_t offset = r * cost_image.width + c;
-        min = MIN(min, cost_image.data[offset]);
-        max = MAX(max, cost_image.data[offset]);
+        if(!phase_compatible(lock, r, c))
+            continue;
+        min = MIN(min, cost_image.data[r * cost_image.width + c]);
     }}
-    int range = max - min;
+    if(min == INT_MAX) {
+        /* No phase-compatible position; drop the constraint rather than fail. */
+        lock = NULL;
+        for(int r = 0; r < cost_image.height; r++) {
+        for(int c = 0; c < cost_image.width; c++) {
+            min = MIN(min, cost_image.data[r * cost_image.width + c]);
+        }}
+    }
 
+    /* Accept any patch within OVERLAP_TOLERANCE of the best match, relative to
+     * the minimum rather than the min-max range, so the candidate pool stays
+     * stable across textures and always admits at least the best match.
+     */
+    double threshold = (double)min * (1.0 + OVERLAP_TOLERANCE);
     for(int r = 0; r < cost_image.height; r++) {
     for(int c = 0; c < cost_image.width; c++) {
-        size_t offset = r * cost_image.width + c;
-        int value = cost_image.data[offset];
-        float percent = ((float)(value - min)) / range;
-        if(percent <= OVERLAP_TOLERANCE) {
+        if(!phase_compatible(lock, r, c))
+            continue;
+        if((double)cost_image.data[r * cost_image.width + c] <= threshold) {
             vec_coord_push(&candidates, (struct coord){r, c});
         }
     }}
     assert(vec_size(&candidates) > 0);
 
-    int min_coord = 0;
-    int max_coord = vec_size(&candidates) - 1;
-    int idx = pf_rand(&s_seed) % (max_coord + 1 - min_coord) + min_coord;
+    /* Greedily keep a spatially spread subset so the random pick is not drawn
+     * from a cluster of near-identical neighbouring positions.
+     */
+    vec_coord_t spread;
+    vec_coord_init(&spread);
+    for(int i = 0; i < vec_size(&candidates); i++) {
+        struct coord cand = vec_AT(&candidates, i);
+        bool isolated = true;
+        for(int j = 0; j < vec_size(&spread); j++) {
+            struct coord other = vec_AT(&spread, j);
+            int dr = cand.r - other.r;
+            int dc = cand.c - other.c;
+            if(dr * dr + dc * dc < CANDIDATE_MIN_SEP * CANDIDATE_MIN_SEP) {
+                isolated = false;
+                break;
+            }
+        }
+        if(isolated)
+            vec_coord_push(&spread, cand);
+    }
+    assert(vec_size(&spread) > 0);
 
-    struct coord ret = vec_AT(&candidates, idx);
+    int idx = pf_rand(&s_seed) % vec_size(&spread);
+    struct coord ret = vec_AT(&spread, idx);
+
+    vec_coord_destroy(&spread);
     vec_coord_destroy(&candidates);
     return ret;
 }
 
-static bool match_next_block(struct image image, struct image_view *views, 
-                             enum constraint constraint, struct image_view *out_view)
+static bool match_next_block(struct image image, struct image_view *views,
+                             enum constraint constraint, const struct phase_lock *lock,
+                             struct image_view *out_view)
 {
     bool ret = false;
     size_t cost_width = image.width - (BLOCK_DIM + OVERLAP_DIM * 2) + 1;
@@ -582,7 +731,7 @@ static bool match_next_block(struct image image, struct image_view *views,
     create_mask(constraint, &mask);
 
     ssd_patch(image, cost_image, &template, &mask);
-    struct coord sample = choose_sample(cost_image);
+    struct coord sample = choose_sample(cost_image, lock);
     *out_view = (struct image_view){
         .x = sample.c + OVERLAP_DIM,
         .y = sample.r + OVERLAP_DIM,
@@ -862,8 +1011,8 @@ static bool find_seam(struct image image, struct image_view a, struct image_view
     for(int c = 0; c < width; c++) {
 
         size_t offset_dst = (r * width + c);
-        size_t offset_a = ((overlap_a.y + r) * image.width) + (overlap_a.x + c);
-        size_t offset_b = ((overlap_b.y + r) * image.width) + (overlap_b.x + c);
+        size_t offset_a = (((overlap_a.y + r) * image.width) + (overlap_a.x + c)) * image.nr_channels;
+        size_t offset_b = (((overlap_b.y + r) * image.width) + (overlap_b.x + c)) * image.nr_channels;
 
         int diff_magnitude_squared = 0;
         for(int i = 0; i < image.nr_channels; i++) {
@@ -1148,17 +1297,18 @@ static bool quilt_tile(struct image image, struct image_tile *tile)
     bool ret = false;
     struct image_view views[4] = {0};
     views[0] = random_block(image);
+    struct phase_lock lock = make_phase_lock(image, views[0]);
 
     struct image_view b1_views[] = {views[0]};
-    if(!match_next_block(image, b1_views, CONSTRAIN_LEFT, &views[1]))
+    if(!match_next_block(image, b1_views, CONSTRAIN_LEFT, &lock, &views[1]))
         goto fail_block;
 
     struct image_view b2_views[] = {views[0]};
-    if(!match_next_block(image, b2_views, CONSTRAIN_TOP, &views[2]))
+    if(!match_next_block(image, b2_views, CONSTRAIN_TOP, &lock, &views[2]))
         goto fail_block;
 
     struct image_view b3_views[] = {views[2], views[1]};
-    if(!match_next_block(image, b3_views, CONSTRAIN_TOP_LEFT, &views[3]))
+    if(!match_next_block(image, b3_views, CONSTRAIN_TOP_LEFT, &lock, &views[3]))
         goto fail_block;
 
     struct seam_mask seams[4] = {0};
@@ -1238,93 +1388,49 @@ fail_seams:
 static bool sample_diamond(size_t nr_channels, const struct image_tile *tile, 
                            struct diamond_patch *out)
 {
-    bool ret = false;
     size_t rotated_size = ceil(TILE_DIM * cos(M_PI/4)) * 2;
-    char *rotbuff = PF_CALLOC(1, rotated_size * rotated_size * nr_channels);
-    if(!rotbuff)
-        goto fail_rotbuff;
-    size_t diamond_size = (TILE_DIM/2) / cos(M_PI/4);
+    size_t diamond_size = round(TILE_DIM / 2.0 / cos(M_PI/4));
     out->pixels = PF_MALLOC(nr_channels * diamond_size * diamond_size);
     if(!out->pixels)
-        goto fail_patchbuff;
+        return false;
     out->width = diamond_size;
     out->height = diamond_size;
 
-    /* First, rotate the original tile by 45 degrees */
-    const int center[2] = {TILE_DIM/2, TILE_DIM/2};
-    for(int r = 0; r < TILE_DIM; r++) {
-    for(int c = 0; c < TILE_DIM; c++) {
+    /* The diamond is the central square of the tile rotated by 45 degrees. For
+     * each destination pixel, inverse-map it back into the tile and bilinearly
+     * sample, which avoids the holes left by a forward-mapped rotation.
+     */
+    const double c45 = cos(M_PI/4), s45 = sin(M_PI/4);
+    const double tile_center = TILE_DIM / 2.0;
+    const double rot_center = rotated_size / 2.0;
+    const int padding = (rotated_size - diamond_size) / 2;
 
-        int relr = r - center[0];
-        int relc = c - center[1];
-        int rc = rotated_size/2 + round(relc * cos(-M_PI/4) - relr * sin(-M_PI/4));
-        int rr = rotated_size/2 + round(relr * cos(-M_PI/4) + relc * sin(-M_PI/4));
-        assert(rr >= 0 && rr < rotated_size);
-        assert(rc >= 0 && rc < rotated_size);
+    for(int dr = 0; dr < diamond_size; dr++) {
+    for(int dc = 0; dc < diamond_size; dc++) {
 
-        char *src = tile->pixels + (r * TILE_DIM * nr_channels) + c * nr_channels;
-        char *dst = rotbuff + (rr * rotated_size * nr_channels) + rc * nr_channels;
-        memcpy(dst, src, nr_channels);
-    }}
+        double rc = (dc + padding) - rot_center;
+        double rr = (dr + padding) - rot_center;
+        double sc = rc * c45 - rr * s45 + tile_center;
+        double sr = rc * s45 + rr * c45 + tile_center;
 
-    /* Then cut out the middle part of the rotated image, and perform some
-     * bare-bones anti-aliasing */
-    size_t padding = (rotated_size - diamond_size) / 2;
-    for(int r = 0; r < diamond_size; r++) {
-    for(int c = 0; c < diamond_size; c++) {
+        int c0 = (int)floor(sc), r0 = (int)floor(sr);
+        double fc = sc - c0, fr = sr - r0;
+        int c1 = MAX(0, MIN(c0 + 1, TILE_DIM - 1));
+        int r1 = MAX(0, MIN(r0 + 1, TILE_DIM - 1));
+        c0 = MAX(0, MIN(c0, TILE_DIM - 1));
+        r0 = MAX(0, MIN(r0, TILE_DIM - 1));
 
-        int fr = r + padding;
-        int fc = c + padding;
-
-        char *src = rotbuff + (fr * rotated_size * nr_channels) + fc * nr_channels;
-        char *dst = out->pixels + (r * diamond_size * nr_channels) + c * nr_channels;
-        assert(src >= rotbuff 
-            && src < rotbuff + (rotated_size * rotated_size * nr_channels));
-        assert(dst >= out->pixels 
-            && dst < out->pixels + (diamond_size * diamond_size * nr_channels));
-
-        /* Add some basic anti-aliasing: In cases where we didn't write a pixel in
-         * the rotated image due to aliasing, simply take the average of the nearby 
-         * pixels.
-         */
-        char zero[4] = {0};
-        if(0 != memcmp(src, zero, nr_channels)) {
-            memcpy(dst, src, nr_channels);
-        }else{
-            size_t neighb_count = 0;
-            unsigned int average[4] = {0};
-            for(int dr = -1; dr <= 1; dr++) {
-            for(int dc = -1; dc <= 1; dc++) {
-                if(dr == 0 && dc == 0)
-                    continue;
-                int sample_r = fr + dr;
-                int sample_c = fc + dc;
-                if((sample_r >= 0 && sample_r < rotated_size)
-                && (sample_c >= 0 && sample_c < rotated_size)) {
-                    unsigned char *pixel = (unsigned char*)rotbuff 
-                                         + (sample_r * rotated_size * nr_channels) 
-                                         + sample_c * nr_channels;
-                    if(0 != memcmp(pixel, zero, nr_channels)) {
-                        for(int i = 0; i < nr_channels; i++)
-                            average[i] += (int)pixel[i];
-                        neighb_count++;
-                    }
-                }
-            }}
-            if(neighb_count > 0) {
-                for(int i = 0; i < nr_channels; i++)
-                    average[i] /= (float)neighb_count;
-                char newpixel[4] = {average[0], average[1], average[2], average[3]};
-                memcpy(dst, newpixel, nr_channels);
-            }
+        const unsigned char *px = (const unsigned char*)tile->pixels;
+        char *dst = out->pixels + (dr * diamond_size + dc) * nr_channels;
+        for(int i = 0; i < nr_channels; i++) {
+            double top = px[(r0 * TILE_DIM + c0) * nr_channels + i] * (1.0 - fc)
+                       + px[(r0 * TILE_DIM + c1) * nr_channels + i] * fc;
+            double bot = px[(r1 * TILE_DIM + c0) * nr_channels + i] * (1.0 - fc)
+                       + px[(r1 * TILE_DIM + c1) * nr_channels + i] * fc;
+            dst[i] = (unsigned char)(top * (1.0 - fr) + bot * fr + 0.5);
         }
     }}
-
-    ret = true;
-fail_patchbuff:
-    PF_FREE(rotbuff);
-fail_rotbuff:
-    return ret;
+    return true;
 }
 
 /*****************************************************************************/
@@ -1394,17 +1500,18 @@ bool R_GL_ImageQuilt_MakeTileset(const char *source, struct texture_arr *out, GL
     /* For Wang tileset generation, first pick 4 sample images */
     struct image_view views[4] = {0};
     views[0] = random_block(image);
+    struct phase_lock lock = make_phase_lock(image, views[0]);
 
     struct image_view b1_views[] = {views[0]};
-    if(!match_next_block(image, b1_views, CONSTRAIN_LEFT, &views[1]))
+    if(!match_next_block(image, b1_views, CONSTRAIN_LEFT, &lock, &views[1]))
         goto fail_block;
 
     struct image_view b2_views[] = {views[0]};
-    if(!match_next_block(image, b2_views, CONSTRAIN_TOP, &views[2]))
+    if(!match_next_block(image, b2_views, CONSTRAIN_TOP, &lock, &views[2]))
         goto fail_block;
 
     struct image_view b3_views[] = {views[2], views[1]};
-    if(!match_next_block(image, b3_views, CONSTRAIN_TOP_LEFT, &views[3]))
+    if(!match_next_block(image, b3_views, CONSTRAIN_TOP_LEFT, &lock, &views[3]))
         goto fail_block;
 
     /* Next, generate an 8-tile Wang tileset by stitching the sample images
@@ -1463,8 +1570,8 @@ bool R_GL_ImageQuilt_MakeTileset(const char *source, struct texture_arr *out, GL
     glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
 
     glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
@@ -1487,6 +1594,6 @@ fail_load:
 
 size_t R_GL_ImageQuilt_TilesetDim(void)
 {
-    return (TILE_DIM/2) / cos(M_PI/4);
+    return round(TILE_DIM / 2.0 / cos(M_PI/4));
 }
 
