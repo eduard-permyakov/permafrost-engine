@@ -38,7 +38,7 @@ Download the free demo on [Steam](https://store.steampowered.com/app/1309720/EVE
 * Batching of animation pose data to a texture for performant rendering of large numbers of animated entities
 * Phong reflection model with materials
 * Directional light shadow mapping
-* Bump mapping
+* Bump mapping, normal mapping, parallax mapping
 * Terrain texture splatting
 * Skybox
 * Batched rendering with dynamic batches

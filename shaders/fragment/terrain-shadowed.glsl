@@ -65,6 +65,7 @@
 #define HEIGHT_MAP_WEIGHT 0.107
 #define NORMAL_MAP_WEIGHT 0.7
 #define NORMAL_DIFFUSE_GAIN 2.8   /* steepen the relief for diffuse shading -> wider light/shadow range */
+#define PARALLAX_SCALE      0.18  /* UV-offset depth for parallax from the alpha height map */
 #define MAX_TEXTURES      (256)
 #define SPLAT_NONE        (-1)
 #define MAX_MATERIALS     (16)
@@ -324,27 +325,27 @@ vec4 texture_val_raw(int mat_idx, int wang_idx, vec2 uv)
     return vec4(0, 0, 0, 0);
 }
 
-/* Sample the per-texture normal map (parallel to texture_val_raw). Materials
- * without a normal map sample a flat (128,128,255) entry, i.e. no perturbation. */
-vec3 normal_val_raw(int mat_idx, int wang_idx, vec2 uv)
+/* Sample the per-texture normal map: rgb = tangent-space normal, a = parallax height.
+ * Materials without a normal map return a flat normal at mid height (no perturbation). */
+vec4 normal_val_raw(int mat_idx, int wang_idx, vec2 uv)
 {
     int idx = mat_idx * 8;
     int size = textureSize(norm_array0, 0).z;
     if(idx < size)
-        return texture(norm_array0, vec3(uv.x, 1.0 - uv.y, idx + wang_idx)).rgb;
+        return texture(norm_array0, vec3(uv.x, 1.0 - uv.y, idx + wang_idx));
     idx -= size;
     size = textureSize(norm_array1, 0).z;
     if(idx < size)
-        return texture(norm_array1, vec3(uv.x, 1.0 - uv.y, idx + wang_idx)).rgb;
+        return texture(norm_array1, vec3(uv.x, 1.0 - uv.y, idx + wang_idx));
     idx -= size;
     size = textureSize(norm_array2, 0).z;
     if(idx < size)
-        return texture(norm_array2, vec3(uv.x, 1.0 - uv.y, idx + wang_idx)).rgb;
+        return texture(norm_array2, vec3(uv.x, 1.0 - uv.y, idx + wang_idx));
     idx -= size;
     size = textureSize(norm_array3, 0).z;
     if(idx < size)
-        return texture(norm_array3, vec3(uv.x, 1.0 - uv.y, idx + wang_idx)).rgb;
-    return vec3(0.5, 0.5, 1.0);
+        return texture(norm_array3, vec3(uv.x, 1.0 - uv.y, idx + wang_idx));
+    return vec4(0.5, 0.5, 1.0, 0.5);
 }
 
 vec4 texture_val(int mat_idx, int wang_idx, vec2 uv)
@@ -753,11 +754,18 @@ void main()
         return;
     }
 
+    /* Parallax: offset the sampling UV along the tangent-space view by the alpha height,
+     * so raised relief occludes recessed. The terrain UV maps to world XZ (normal = +Y),
+     * so the tangent-space view is a swizzle of the world view direction. */
+    vec3 pview = normalize(view_pos - from_vertex.world_pos);
+    float pheight = normal_val_raw(from_vertex.mat_idx, from_vertex.wang_index, from_vertex.uv).a;
+    vec2 puv = from_vertex.uv - (vec2(pview.x, pview.z) / max(pview.y, 0.3)) * (pheight - 0.5) * PARALLAX_SCALE;
+
     vec4 tex_color;
 
     switch(from_vertex.blend_mode) {
     case BLEND_MODE_NOBLEND:
-        tex_color = texture_val(from_vertex.mat_idx, from_vertex.wang_index, from_vertex.uv);
+        tex_color = texture_val(from_vertex.mat_idx, from_vertex.wang_index, puv);
         break;
     case BLEND_MODE_BLUR:
         tex_color = blended_texture_val();
@@ -787,7 +795,7 @@ void main()
         normal = normalize(normal + heightmap_normal * HEIGHT_MAP_WEIGHT);
     }
 
-    vec3 tn = normal_val_raw(from_vertex.mat_idx, from_vertex.wang_index, from_vertex.uv) * 2.0 - 1.0;
+    vec3 tn = normal_val_raw(from_vertex.mat_idx, from_vertex.wang_index, puv).rgb * 2.0 - 1.0;
     /* Tangent frame for the Y-up terrain surface (uv maps to world XZ), built from the
      * current normal so it also works on ramps. */
     vec3 tangent = normalize(cross(vec3(0.0, 0.0, 1.0), normal));
