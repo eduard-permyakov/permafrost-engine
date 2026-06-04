@@ -215,6 +215,7 @@ static PyObject *PyPf_map_nearest_pathable_water(PyObject *self, PyObject *args,
 static PyObject *PyPf_map_nearest_pathable_air(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_map_pos_under_cursor(PyObject *self);
 static PyObject *PyPf_draw_text(PyObject *self, PyObject *args);
+static PyObject *PyPf_dump_framebuffer(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_storage_site_ui_style(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_storage_site_ui_border_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_storage_site_ui_font_color(PyObject *self, PyObject *args);
@@ -771,6 +772,10 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_draw_text, METH_VARARGS,
     "Draw a text label with the specified bounds (X, Y, W, H) )and with the specified color (R, G, B, A). "
     "The label lasts for one frame, meaning this should be called every tick to keep the label fixed."},
+
+    {"dump_framebuffer",
+    (PyCFunction)PyPf_dump_framebuffer, METH_VARARGS,
+    "Dump the current color framebuffer to a PPM (P6) file at the specified path. For debugging/automation."},
 
     {"set_storage_site_ui_style",
     (PyCFunction)PyPf_set_storage_site_ui_style, METH_VARARGS,
@@ -2607,6 +2612,29 @@ static PyObject *PyPf_draw_text(PyObject *self, PyObject *args)
 
     UI_DrawText(text, shifted_rect, (struct rgba){tint_r, tint_g, tint_b, tint_a});
     UI_DrawText(text, adj_rect, (struct rgba){r, g, b, a});
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_dump_framebuffer(PyObject *self, PyObject *args)
+{
+    const char *path;
+    if(!PyArg_ParseTuple(args, "s", &path)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting a single string argument: the output PPM file path.");
+        return NULL;
+    }
+
+    int width, height;
+    Engine_WinDrawableSize(&width, &height);
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DumpFBColor_PPM,
+        .nargs = 3,
+        .args = {
+            R_PushArg(path, strlen(path) + 1),
+            R_PushArg(&width, sizeof(width)),
+            R_PushArg(&height, sizeof(height)),
+        },
+    });
     Py_RETURN_NONE;
 }
 

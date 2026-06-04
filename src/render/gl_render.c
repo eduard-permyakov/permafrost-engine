@@ -942,7 +942,8 @@ void R_GL_DumpFBColor_PPM(const char *filename, const int *width, const int *hei
     }
 
     fprintf(file, "P6\n%d %d\n%d\n", *width, *height, 255);
-    for(int i = 0; i < *height; i++) {
+    /* glReadPixels returns rows bottom-up; emit them top-down so the image isn't flipped. */
+    for(int i = *height - 1; i >= 0; i--) {
         for(int j = 0; j < *width; j++) {
 
             static unsigned char color[3];
