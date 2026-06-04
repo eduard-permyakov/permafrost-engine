@@ -57,7 +57,7 @@ class TerrainTabWindow(pf.Window):
         self.selected_tile = None
         self.heights = [h for h in range(0, 10)]
         self.selected_height_idx = 0
-        self.blend_textures = True
+        self.blend_mode_idx = pf.BLEND_MODE_BLUR
         self.blend_normals = True
         self.selected_side_mat_idx = 1
 
@@ -73,13 +73,18 @@ class TerrainTabWindow(pf.Window):
 
         # Blend options
         self.layout_row_dynamic(20, 1)
-        self.label_colored_wrap("Blending Options:", (255, 255, 255))
+        self.label_colored_wrap("Blending Mode:", (255, 255, 255))
 
-        old_blend_textures = self.blend_textures
-        self.layout_row_dynamic(20, 1)
-        self.blend_textures = self.checkbox("Blend Textures", self.blend_textures)
-        if old_blend_textures != self.blend_textures:
-            pf.global_event(EVENT_TERRAIN_TEX_BLEND_CHANGED, self.blend_textures)
+        old_blend_mode_idx = self.blend_mode_idx
+        self.layout_row_dynamic(20, 3)
+        if self.option_label("None", self.blend_mode_idx == pf.BLEND_MODE_NOBLEND):
+            self.blend_mode_idx = pf.BLEND_MODE_NOBLEND
+        if self.option_label("Blur", self.blend_mode_idx == pf.BLEND_MODE_BLUR):
+            self.blend_mode_idx = pf.BLEND_MODE_BLUR
+        if self.option_label("Edge", self.blend_mode_idx == pf.BLEND_MODE_EDGE):
+            self.blend_mode_idx = pf.BLEND_MODE_EDGE
+        if old_blend_mode_idx != self.blend_mode_idx:
+            pf.global_event(EVENT_TERRAIN_BLEND_MODE_CHANGED, self.blend_mode_idx)
 
         old_blend_normals = self.blend_normals
         self.layout_row_dynamic(20, 1)

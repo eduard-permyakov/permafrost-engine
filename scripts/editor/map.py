@@ -39,6 +39,22 @@ import copy
 
 EDITOR_PFMAP_VERSION = 1.0
 
+# Per-tile blend mode is packed 2 bits per side into a single byte. The side
+# order matches 'enum tile_side' in src/map/public/tile.h.
+SIDE_TOP   = 0  # north
+SIDE_RIGHT = 1  # east
+SIDE_BOT   = 2  # south
+SIDE_LEFT  = 3  # west
+
+def blend_get(byte, side):
+    return (byte >> (side * 2)) & 0x3
+
+def blend_set(byte, side, mode):
+    return (byte & ~(0x3 << (side * 2))) | ((mode & 0x3) << (side * 2))
+
+def blend_uniform(mode):
+    return (mode & 0x3) * 0x55
+
 
 def tile_to_string(tile):
     ret = ""
@@ -55,12 +71,18 @@ def tile_to_string(tile):
     ret += "{0:03d}".format(tile.sides_mat_idx)
     assert tile.pathable >= 0 and tile.pathable <= 1
     ret += str(tile.pathable)
-    assert tile.blend_mode in [pf.BLEND_MODE_BLUR, pf.BLEND_MODE_NOBLEND]
-    ret += str(tile.blend_mode)
+    # Position 13: top-side mode, kept for readers that predate per-side blending.
+    top_mode = blend_get(tile.blend_mode, SIDE_TOP)
+    assert top_mode in [pf.BLEND_MODE_NOBLEND, pf.BLEND_MODE_BLUR, pf.BLEND_MODE_EDGE]
+    ret += str(top_mode)
     assert tile.blend_normals >= 0 and tile.blend_normals <= 1
     ret += str(tile.blend_normals)
-    # The rest of the 24 characters are reserved for future expansion
-    ret += "000000000"
+    # Positions 15-16 (no_bump_map, cover) are managed by the engine; leave them 0.
+    # Positions 17-20 hold the per-side blend modes (top, right, bot, left).
+    ret += "00"
+    for side in (SIDE_TOP, SIDE_RIGHT, SIDE_BOT, SIDE_LEFT):
+        ret += str(blend_get(tile.blend_mode, side))
+    ret += "000"
     assert len(ret) == 24
     return ret
 
@@ -75,7 +97,16 @@ def tile_from_string(string):
     ret.top_mat_idx = int(string[6:9])
     ret.sides_mat_idx = int(string[9:12])
     ret.pathable = int(string[12])
-    ret.blend_mode = int(string[13])
+    legacy = int(string[13])
+    sides = [int(string[17]), int(string[18]), int(string[19]), int(string[20])]
+    if all(s == 0 for s in sides) and legacy != 0:
+        sides = [legacy] * 4
+    packed = 0
+    packed = blend_set(packed, SIDE_TOP,   sides[0])
+    packed = blend_set(packed, SIDE_RIGHT, sides[1])
+    packed = blend_set(packed, SIDE_BOT,   sides[2])
+    packed = blend_set(packed, SIDE_LEFT,  sides[3])
+    ret.blend_mode = packed
     ret.blend_normals = int(string[14])
     return ret
 
@@ -199,10 +230,11 @@ class Map(object):
         tile = chunk.tiles[tile_coords[1][0]][tile_coords[1][1]]
 
         tile.top_mat_idx = self.materials.index(top_material)
-        tile.blend_mode = blend_mode
+        tile.blend_mode = blend_uniform(blend_mode)
         tile.blend_normals = blend_normals
 
         pf.update_tile(tile_coords[0], tile_coords[1], tile)
+        self.__update_edge_neighbours(tile_coords, blend_mode)
 
     def update_tile(self, tile_coords, newheight, newtype, new_side_mat, new_ramp_height, new_blend_mode, new_blend_normals):
         chunk = self.chunks[tile_coords[0][0]][tile_coords[0][1]]
@@ -211,9 +243,38 @@ class Map(object):
         tile.type = newtype
         tile.sides_mat_idx = self.materials.index(new_side_mat)
         tile.ramp_height = new_ramp_height
-        tile.blend_mode = new_blend_mode
+        tile.blend_mode = blend_uniform(new_blend_mode)
         tile.blend_normals = new_blend_normals
         pf.update_tile(tile_coords[0], tile_coords[1], tile)
+        self.__update_edge_neighbours(tile_coords, new_blend_mode)
+
+    def update_tile_geom(self, tile_coords, newheight, newtype, new_side_mat, new_ramp_height, new_blend_normals):
+        """Update a tile's geometry while preserving its existing per-side blend modes."""
+        chunk = self.chunks[tile_coords[0][0]][tile_coords[0][1]]
+        tile = chunk.tiles[tile_coords[1][0]][tile_coords[1][1]]
+        tile.base_height = newheight
+        tile.type = newtype
+        tile.sides_mat_idx = self.materials.index(new_side_mat)
+        tile.ramp_height = new_ramp_height
+        tile.blend_normals = new_blend_normals
+        pf.update_tile(tile_coords[0], tile_coords[1], tile)
+
+    def __update_edge_neighbours(self, tile_coords, mode):
+        """Set the facing side of each of the 4 cardinal neighbours to 'mode', so that
+           both sides of every shared edge always carry the same blend mode."""
+        global_r = tile_coords[0][0] * pf.TILES_PER_CHUNK_HEIGHT + tile_coords[1][0]
+        global_c = tile_coords[0][1] * pf.TILES_PER_CHUNK_WIDTH  + tile_coords[1][1]
+        for dr, dc, facing in [
+            (-1,  0, SIDE_BOT),    # north neighbour faces south
+            ( 1,  0, SIDE_TOP),    # south neighbour faces north
+            ( 0,  1, SIDE_LEFT),   # east neighbour faces west
+            ( 0, -1, SIDE_RIGHT)]: # west neighbour faces east
+            ntc = self.relative_tile_coords(global_r, global_c, dr, dc)
+            if ntc is None:
+                continue
+            ntile = self.tile_at_coords(*ntc)
+            ntile.blend_mode = blend_set(ntile.blend_mode, facing, mode)
+            pf.update_tile(ntc[0], ntc[1], ntile)
 
     def relative_tile_coords(self, global_r, global_c, dr, dc):
 
