@@ -843,11 +843,30 @@ static void tile_patch_verts_blend(struct terrain_vert *tile_verts_base,
     );
 
     struct terrain_vert *provoking[] = {
-        south_provoking[0], south_provoking[1], 
-        north_provoking[0], north_provoking[1], 
-        west_provoking[0],  west_provoking[1], 
+        south_provoking[0], south_provoking[1],
+        north_provoking[0], north_provoking[1],
+        west_provoking[0],  west_provoking[1],
         east_provoking[0],  east_provoking[1]
     };
+
+    /* Each side's provoking vertices carry this tile's own mode for that side in
+     * the low 2 bits and the cardinally-adjacent tile's facing-side mode in the
+     * next 2 bits, so the shader can draw an incoming EDGE spill. */
+    uint8_t north_bm = TILE_BLEND_GET(curr_tile->blend_mode, TILE_SIDE_TOP)
+                     | (top_tile   ? (TILE_BLEND_GET(top_tile->blend_mode,   TILE_SIDE_BOT)   << 2) : 0);
+    uint8_t south_bm = TILE_BLEND_GET(curr_tile->blend_mode, TILE_SIDE_BOT)
+                     | (bot_tile   ? (TILE_BLEND_GET(bot_tile->blend_mode,   TILE_SIDE_TOP)   << 2) : 0);
+    uint8_t west_bm  = TILE_BLEND_GET(curr_tile->blend_mode, TILE_SIDE_LEFT)
+                     | (left_tile  ? (TILE_BLEND_GET(left_tile->blend_mode,  TILE_SIDE_RIGHT) << 2) : 0);
+    uint8_t east_bm  = TILE_BLEND_GET(curr_tile->blend_mode, TILE_SIDE_RIGHT)
+                     | (right_tile ? (TILE_BLEND_GET(right_tile->blend_mode, TILE_SIDE_LEFT)  << 2) : 0);
+
+    for(int i = 0; i < 2; i++) {
+        south_provoking[i]->blend_mode = south_bm;
+        north_provoking[i]->blend_mode = north_bm;
+        west_provoking[i]->blend_mode  = west_bm;
+        east_provoking[i]->blend_mode  = east_bm;
+    }
 
     for(int i = 0; i < ARR_SIZE(provoking); i++) {
 
@@ -1501,11 +1520,18 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct terrai
 
         curr_provoking->blend_mode = BLEND_MODE_NOBLEND;
     }
-    for(struct terrain_vert *curr_provoking = out + (4 * VERTS_PER_SIDE_FACE); 
-        curr_provoking < out + VERTS_PER_TILE; 
-        curr_provoking += 3) {
-
-        curr_provoking->blend_mode = tile->blend_mode;
+    /* Each of the 8 top-face triangles belongs to one cardinal quadrant; give its
+     * provoking vertex that side's own blend mode. The neighbour-facing mode is
+     * folded into the upper bits later by tile_patch_verts_blend. */
+    static const enum tile_side s_quadrant_side[8] = {
+        TILE_SIDE_BOT,   TILE_SIDE_BOT,    /* south */
+        TILE_SIDE_LEFT,  TILE_SIDE_LEFT,   /* west  */
+        TILE_SIDE_TOP,   TILE_SIDE_TOP,    /* north */
+        TILE_SIDE_RIGHT, TILE_SIDE_RIGHT,  /* east  */
+    };
+    struct terrain_vert *top_face = out + (4 * VERTS_PER_SIDE_FACE);
+    for(int k = 0; k < 8; k++) {
+        top_face[k * 3].blend_mode = TILE_BLEND_GET(tile->blend_mode, s_quadrant_side[k]);
     }
 
     PERF_RETURN_VOID();

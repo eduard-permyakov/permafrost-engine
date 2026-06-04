@@ -38,6 +38,7 @@
 
 #include "../../phys/public/collision.h"
 #include <stdbool.h>
+#include <stdint.h>
 
 #define X_COORDS_PER_TILE 8 
 #define Y_COORDS_PER_TILE 4 
@@ -74,6 +75,18 @@ enum tiletype{
 enum blend_mode{
     BLEND_MODE_NOBLEND = 0,
     BLEND_MODE_BLUR,
+    BLEND_MODE_EDGE,
+};
+
+/* Each of a tile's 4 sides carries its own blend mode, packed 2 bits per side
+ * into 'struct tile.blend_mode'. The side ordering matches the top-face quadrants
+ * in gl_tile.c 
+ */
+enum tile_side{
+    TILE_SIDE_TOP = 0,   /* north neighbour (row - 1) */
+    TILE_SIDE_RIGHT,     /* east  neighbour (col + 1) */
+    TILE_SIDE_BOT,       /* south neighbour (row + 1) */
+    TILE_SIDE_LEFT,      /* west  neighbour (col - 1) */
 };
 
 enum tile_cover{
@@ -98,7 +111,8 @@ struct tile{
      */
     int             top_mat_idx;
     int             sides_mat_idx;
-    enum blend_mode blend_mode;
+    /* 2 bits per side; index with enum tile_side via the TILE_BLEND_* macros. */
+    uint8_t         blend_mode;
     bool            blend_normals;
     bool            no_bump_map;
     int             wang_idx;
@@ -115,6 +129,13 @@ struct map_resolution{
     int tile_w, tile_h;
     float field_w, field_h;
 };
+
+#define TILE_BLEND_GET(_byte, _side) \
+    (((_byte) >> ((_side) * 2)) & 0x3)
+#define TILE_BLEND_SET(_byte, _side, _mode) \
+    (((_byte) & ~(0x3u << ((_side) * 2))) | (((_mode) & 0x3u) << ((_side) * 2)))
+#define TILE_BLEND_UNIFORM(_mode) \
+    ((uint8_t)(((_mode) & 0x3u) * 0x55u))
 
 #define TILETYPE_IS_RAMP(t) \
     (  ((t) == TILETYPE_RAMP_SN ) \

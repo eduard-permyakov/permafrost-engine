@@ -50,6 +50,7 @@
 
 #define BLEND_MODE_NOBLEND  0
 #define BLEND_MODE_BLUR     1
+#define BLEND_MODE_EDGE     2
 
 #define TERRAIN_AMBIENT     float(0.7)
 #define TERRAIN_DIFFUSE     vec3(0.9, 0.9, 0.9)
@@ -69,6 +70,8 @@
 #define MAX_TEXTURES      (256)
 #define SPLAT_NONE        (-1)
 #define MAX_MATERIALS     (16)
+#define TILESET_LAYERS    (9)   /* array layers per material: 8 Wang tiles + 1 edge-seam mask */
+#define TILESET_WANG      (8)
 
 /*****************************************************************************/
 /* INPUTS                                                                    */
@@ -302,7 +305,7 @@ vec4 wang_texture_val(int wang_idx, vec2 uv)
 
 vec4 texture_val_raw(int mat_idx, int wang_idx, vec2 uv)
 {
-    int idx = mat_idx * 8;
+    int idx = mat_idx * TILESET_LAYERS;
     int size = textureSize(tex_array0, 0).z;
     if(idx < size) {
         return texture(tex_array0, vec3(uv.x, 1.0 - uv.y, idx + wang_idx));
@@ -329,7 +332,7 @@ vec4 texture_val_raw(int mat_idx, int wang_idx, vec2 uv)
  * Materials without a normal map return a flat normal at mid height (no perturbation). */
 vec4 normal_val_raw(int mat_idx, int wang_idx, vec2 uv)
 {
-    int idx = mat_idx * 8;
+    int idx = mat_idx * TILESET_LAYERS;
     int size = textureSize(norm_array0, 0).z;
     if(idx < size)
         return texture(norm_array0, vec3(uv.x, 1.0 - uv.y, idx + wang_idx));
@@ -346,6 +349,31 @@ vec4 normal_val_raw(int mat_idx, int wang_idx, vec2 uv)
     if(idx < size)
         return texture(norm_array3, vec3(uv.x, 1.0 - uv.y, idx + wang_idx));
     return vec4(0.5, 0.5, 1.0, 0.5);
+}
+
+/* Sample a material's edge-seam mask (the final layer of its tileset block). The
+ * 4 channels hold the per-direction fringe masks (R=north, G=east, B=south,
+ * A=west); a channel is ~1 inside the material's fringe near that edge. 'img_uv'
+ * is in image space (y = 0 is the top/north row), matching how the masks are baked. */
+vec4 edge_mask_at(int mat_idx, vec2 img_uv)
+{
+    int idx = mat_idx * TILESET_LAYERS + TILESET_WANG;
+    int size = textureSize(tex_array0, 0).z;
+    if(idx < size)
+        return texture(tex_array0, vec3(img_uv.x, img_uv.y, idx));
+    idx -= size;
+    size = textureSize(tex_array1, 0).z;
+    if(idx < size)
+        return texture(tex_array1, vec3(img_uv.x, img_uv.y, idx));
+    idx -= size;
+    size = textureSize(tex_array2, 0).z;
+    if(idx < size)
+        return texture(tex_array2, vec3(img_uv.x, img_uv.y, idx));
+    idx -= size;
+    size = textureSize(tex_array3, 0).z;
+    if(idx < size)
+        return texture(tex_array3, vec3(img_uv.x, img_uv.y, idx));
+    return vec4(0.0);
 }
 
 vec4 texture_val(int mat_idx, int wang_idx, vec2 uv)
@@ -763,16 +791,54 @@ void main()
 
     vec4 tex_color;
 
-    switch(from_vertex.blend_mode) {
+    switch(from_vertex.blend_mode & 0x3) {
     case BLEND_MODE_NOBLEND:
         tex_color = texture_val(from_vertex.mat_idx, from_vertex.wang_index, puv);
         break;
     case BLEND_MODE_BLUR:
         tex_color = blended_texture_val();
         break;
+    case BLEND_MODE_EDGE:
+        /* This tile keeps its own material crisp; the noisy boundary is drawn as
+         * the neighbour's material spilling in (handled below). */
+        tex_color = texture_val(from_vertex.mat_idx, from_vertex.wang_index, puv);
+        break;
     default:
         o_frag_color = vec4(1.0, 0.0, 1.0, 1.0);
         return;
+    }
+
+    /* Noisy hard edge: where the cardinally-adjacent tile across this side has EDGE
+     * mode (the upper bits of blend_mode), its material spills over the shared edge
+     * along the baked minimum-error seam, hard-overwriting this tile's colour in a
+     * thin fringe. The side is the top-face quadrant the fragment falls in. */
+    if(((from_vertex.blend_mode >> 2) & 0x3) == BLEND_MODE_EDGE) {
+
+        vec2 uv = from_vertex.uv;
+        bool e_bot  = (uv.x > uv.y) && (1.0 - uv.x > uv.y);
+        bool e_top  = (uv.x < uv.y) && (1.0 - uv.x < uv.y);
+        bool e_left = (uv.x < uv.y) && (1.0 - uv.x > uv.y);
+
+        int nbr_mat;
+        float seam;
+        if(e_top) {
+            nbr_mat = (from_vertex.tb_indices >> 16) & 0xff;  /* north neighbour edge-centre */
+            seam = edge_mask_at(nbr_mat, vec2(uv.x, uv.y)).b; /* its south fringe */
+        }else if(e_bot) {
+            nbr_mat = (from_vertex.tb_indices >> 0) & 0xff;   /* south neighbour */
+            seam = edge_mask_at(nbr_mat, vec2(uv.x, uv.y)).r; /* its north fringe */
+        }else if(e_left) {
+            nbr_mat = (from_vertex.lr_indices >> 16) & 0xff;  /* west neighbour */
+            seam = edge_mask_at(nbr_mat, vec2(1.0 - uv.x, uv.y)).g; /* its east fringe */
+        }else {
+            nbr_mat = (from_vertex.lr_indices >> 0) & 0xff;   /* east neighbour */
+            seam = edge_mask_at(nbr_mat, vec2(1.0 - uv.x, uv.y)).a; /* its west fringe */
+        }
+        /* Single seam: only the higher-indexed material overlaps across the edge,
+         * so the two textures don't both spill into each other and create stripes.
+         * The neighbour shows its own texture cleanly up to this one seam. */
+        if(seam > 0.5 && nbr_mat > from_vertex.mat_idx)
+            tex_color = texture_val(nbr_mat, from_vertex.wang_index, puv);
     }
 
     /* Simple alpha test to reject transparent pixels (with mipmapping) */

@@ -66,7 +66,7 @@
 /* ASCII to integer - argument must be an ascii digit */
 #define A2I(_a) ((_a) - '0')
 #define MINIMAP_DFLT_SZ (256)
-#define PFMAP_VER       (1.1f)
+#define PFMAP_VER       (1.2f)
 #define CHK_TRUE(_pred, _label) do{ if(!(_pred)) goto _label; }while(0)
 
 /* The Wang tiling algorithm is based on the paper "Wang Tiles for Image and Texture Generation"
@@ -117,10 +117,17 @@ static bool m_al_parse_tile(const char *str, struct tile *out)
     out->top_mat_idx   = (int)           (100 * A2I(str[6]) + 10 * A2I(str[7 ]) + A2I(str[8 ]));
     out->sides_mat_idx = (int)           (100 * A2I(str[9]) + 10 * A2I(str[10]) + A2I(str[11]));
     out->pathable      = (bool)          A2I(str[12]);
-    out->blend_mode    = (int)           A2I(str[13]);
     out->blend_normals = (bool)          A2I(str[14]);
     out->no_bump_map   = (bool)          A2I(str[15]);
     out->cover         = (enum tile_cover) A2I(str[16]);
+
+    /* Per-side blend modes at positions 17-20 (top, right, bot, left). */
+    uint8_t packed = 0;
+    packed = TILE_BLEND_SET(packed, TILE_SIDE_TOP,   A2I(str[17]));
+    packed = TILE_BLEND_SET(packed, TILE_SIDE_RIGHT, A2I(str[18]));
+    packed = TILE_BLEND_SET(packed, TILE_SIDE_BOT,   A2I(str[19]));
+    packed = TILE_BLEND_SET(packed, TILE_SIDE_LEFT,  A2I(str[20]));
+    out->blend_mode = packed;
 
     return true;
 }
@@ -128,7 +135,9 @@ static bool m_al_parse_tile(const char *str, struct tile *out)
 static bool m_al_write_tile(const struct tile *tile, SDL_RWops *stream)
 {
     char buff[MAX_LINE_LEN];
-    pf_snprintf(buff, sizeof(buff), "%01X%c%02d%02d%03d%03d%01d%01d%01d%01d%01d0000000",
+    /* Per-side blend modes (top, right, bot, left) at positions 17-20; position 13
+     * is reserved. */
+    pf_snprintf(buff, sizeof(buff), "%01X%c%02d%02d%03d%03d%01d0%01d%01d%01d%01d%01d%01d%01d000",
         tile->type,
         tile->base_height >= 0 ? '+' : '-',
         abs(tile->base_height),
@@ -136,10 +145,13 @@ static bool m_al_write_tile(const struct tile *tile, SDL_RWops *stream)
         tile->top_mat_idx,
         tile->sides_mat_idx,
         tile->pathable,
-        tile->blend_mode,
         tile->blend_normals,
         tile->no_bump_map,
-        tile->cover);
+        tile->cover,
+        TILE_BLEND_GET(tile->blend_mode, TILE_SIDE_TOP),
+        TILE_BLEND_GET(tile->blend_mode, TILE_SIDE_RIGHT),
+        TILE_BLEND_GET(tile->blend_mode, TILE_SIDE_BOT),
+        TILE_BLEND_GET(tile->blend_mode, TILE_SIDE_LEFT));
 
     return SDL_RWwrite(stream, buff, strlen(buff), 1);
 }

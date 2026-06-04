@@ -42,6 +42,12 @@
 struct texture_arr;
 struct texture;
 
+/* A baked map tileset has one array layer per Wang tile plus a final layer that
+ * packs the four per-direction minimum-error edge-seam masks (R=north, G=east,
+ * B=south, A=west) consumed by BLEND_MODE_EDGE. */
+#define TILESET_WANG_TILES  (8)
+#define TILESET_NUM_TILES   (TILESET_WANG_TILES + 1)
+
 bool   R_GL_ImageQuilt_MakeTile(const char *source, struct texture *out, GLuint tunit);
 bool   R_GL_ImageQuilt_MakeTileset(const char *source, struct texture_arr *out, GLuint tunit);
 

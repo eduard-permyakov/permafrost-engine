@@ -13,7 +13,11 @@
 * 1. VERSION AND CHANGELOG                                                     *
 ********************************************************************************
 
-    Current version: 1.1 
+    Current version: 1.2
+
+    Jun 2026:
+        * Replace the single per-tile blend mode (field H) with independent
+          per-edge blend modes (field M); add the 'Edge' blend mode.
 
     Nov 2024:
         * Add support for 'splat maps'
@@ -88,10 +92,10 @@
 
     Each 24 character tile can be broken down into the following fields:
 
-            +-+-+--+--+---+---+-+-+-+-+-+------+
-    Region: |A|B|C |D |E  |F  |G|H|I|J|K|L     |
-    Size:   |1|1|2 |2 |3  |3  |1|1|1|1|1|7     |
-            +-+-+--+--+---+---+-+-+-+-+-+------+
+            +-+-+--+--+---+---+-+-+-+-+-+----+---+
+    Region: |A|B|C |D |E  |F  |G|H|I|J|K|M   |N  |
+    Size:   |1|1|2 |2 |3  |3  |1|1|1|1|1|4   |3  |
+            +-+-+--+--+---+---+-+-+-+-+-+----+---+
             
     A - Tile Type
     This is a hexadecimal number having a legal range of values between 0 and C. 
@@ -143,9 +147,8 @@
     Has a value of either '0' or '1'. When it is '1', the tile is passable when it 
     has no obstructions, otherwise it is always impassable.
 
-    H - Blend Mode
-    This is one of 'BLEND_MODE_NOBLEND' (0) or 'BLEND_MODE_BLUR' (1). This controls 
-    how the texture on the tile's top face is blended with adjacent tiles.
+    H - Reserved
+    This character is reserved and ignored by the engine.
 
     I - Normal Blending Flag
     Has a value of either '0' or '1'. When it is '1', the normals of the tile's top 
@@ -163,7 +166,20 @@
         TILE_COVER_GRASS_FULL   = 1
         TILE_COVER_GRASS_SPARSE = 2
 
-    L - Reserved
+    M - Per-Edge Blend Modes
+    Four single decimal digits, one per edge of the tile's top face, in the order
+    Top (North), Right (East), Bottom (South), Left (West). Each digit selects how
+    that edge blends with the cardinally adjacent tile's texture:
+
+        BLEND_MODE_NOBLEND = 0    (hard, straight boundary)
+        BLEND_MODE_BLUR    = 1    (the two textures are averaged across the edge)
+        BLEND_MODE_EDGE    = 2    (a noisy hard boundary cut along a baked minimum-
+                                   error seam; the higher-indexed material overlaps)
+
+    The editor keeps both sides of a shared edge in agreement, so a tile and its
+    neighbour name the same mode for the edge between them.
+
+    N - Reserved
     These characters are reserved for future expansions to the PFMAP format. They
     are ignored by the engine.
 

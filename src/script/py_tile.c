@@ -92,8 +92,8 @@ static PyMemberDef PyTile_members[] = {
     "Material index for the side faces of the tile."},
     {"ramp_height",     T_INT, BASE + offsetof(struct tile, ramp_height),      0,
     "The height of the top edge of the ramp or corner above the base_height."},
-    {"blend_mode",      T_INT, BASE + offsetof(struct tile, blend_mode),       0,
-    "The mode which determines how this tile's texture is blended with adjacent tiles' textures."},
+    {"blend_mode",      T_UBYTE, BASE + offsetof(struct tile, blend_mode),     0,
+    "Packed per-side blend modes - 2 bits per side. Each side is one of the BLEND_MODE_* constants."},
     {"blend_normals",   T_UBYTE, BASE + offsetof(struct tile, blend_normals),  0,
     "A boolean which determines if this tile's normals are averaged together with adjacent normals "
     "to create a 'smooth' terrain look."},
@@ -164,7 +164,7 @@ static int PyTile_init(PyTileObject *self, PyObject *args)
     self->tile.ramp_height = 0;
     self->tile.top_mat_idx = 0;
     self->tile.sides_mat_idx = 1;
-    self->tile.blend_mode = BLEND_MODE_BLUR;
+    self->tile.blend_mode = TILE_BLEND_UNIFORM(BLEND_MODE_BLUR);
     self->tile.blend_normals = true;
 
     return 0;
@@ -252,6 +252,7 @@ static PyObject *PyTile_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
     CHK_TRUE(tileobj, fail_tile);
 
     int pathable;
+    int blend_mode;
     int blend_normals;
     int cover;
 
@@ -262,12 +263,13 @@ static PyObject *PyTile_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
         &tileobj->tile.ramp_height,
         &tileobj->tile.top_mat_idx,
         &tileobj->tile.sides_mat_idx,
-        &tileobj->tile.blend_mode,
+        &blend_mode,
         &blend_normals,
         &cover)) {
         goto fail_tile;
     }
     tileobj->tile.pathable = !!pathable;
+    tileobj->tile.blend_mode = (uint8_t)blend_mode;
     tileobj->tile.blend_normals = !!blend_normals;
     tileobj->tile.cover = (enum tile_cover)cover;
 

@@ -830,6 +830,7 @@ static void s_expose_map_constants(PyObject *module)
 
     PY_EXPOSE_ENUM(module, BLEND_MODE_NOBLEND);
     PY_EXPOSE_ENUM(module, BLEND_MODE_BLUR);
+    PY_EXPOSE_ENUM(module, BLEND_MODE_EDGE);
 
     PY_EXPOSE_ENUM(module, TILE_COVER_NONE);
     PY_EXPOSE_ENUM(module, TILE_COVER_GRASS_FULL);

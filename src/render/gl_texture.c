@@ -72,8 +72,8 @@
 #define MAX3(a, b, c)   (MAX((a), MAX((b), (c))))
 #define ARR_SIZE(a)     (sizeof(a)/sizeof((a)[0]))
 
-/* Wang tilesets are baked at 8 RGBA layers, matching the final on-GPU format */
-#define TILESET_NUM_TILES       (8)
+/* Tilesets are baked as RGBA layers (TILESET_NUM_TILES per material, from
+ * gl_image_quilt.h), matching the final on-GPU format. */
 #define TILESET_CACHE_CHANNELS  (4)
 
 KHASH_MAP_INIT_STR(tex, GLuint)
@@ -709,12 +709,12 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
 
     size_t ret = 0;
     size_t tileset_dim = R_GL_ImageQuilt_TilesetDim();
-    size_t num_slots = num_textures * 8;
+    size_t num_slots = num_textures * TILESET_NUM_TILES;
 
     GLint max_layers;
     glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &max_layers);
     size_t num_arrays = ceil((float)num_slots / max_layers);
-    size_t slots_per_array = (max_layers / 8) * 8;
+    size_t slots_per_array = (max_layers / TILESET_NUM_TILES) * TILESET_NUM_TILES;
 
     GLuint fbo;
     glGenFramebuffers(1, &fbo);
@@ -777,7 +777,7 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
                 g_basepath, texnames[i]);
 
             /* Move on to the next texture array, this one's full */
-            if((i * 8) >= curr_slots + slots_consumed) {
+            if((i * TILESET_NUM_TILES) >= curr_slots + slots_consumed) {
                 LoadingScreen_PopRenderStatus();
                 break;
             }
@@ -807,8 +807,8 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
             }
             if(success) {
 
-                for(int j = 0; j < 8; j++) {
-                    int dst_idx = (i * 8) + j - slots_consumed;
+                for(int j = 0; j < TILESET_NUM_TILES; j++) {
+                    int dst_idx = (i * TILESET_NUM_TILES) + j - slots_consumed;
                     blit_tile_layer(fbo, tiles.id, j, out->id, dst_idx, tileset_dim);
                     if(out_norm && ntiles.id)
                         blit_tile_layer(fbo, ntiles.id, j, out_norm->id, dst_idx, tileset_dim);
@@ -826,8 +826,8 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
                 }
                 glActiveTexture(tunit);
                 glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
-                for(int j = 0; j < 8; j++) {
-                    glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, (i * 8) + j - slots_consumed,
+                for(int j = 0; j < TILESET_NUM_TILES; j++) {
+                    glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, (i * TILESET_NUM_TILES) + j - slots_consumed,
                         tileset_dim, tileset_dim, 1, GL_RGB, GL_UNSIGNED_BYTE, data);
                 }
                 PF_FREE(data);

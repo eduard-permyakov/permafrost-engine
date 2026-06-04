@@ -1451,6 +1451,145 @@ static bool sample_diamond(size_t nr_channels, const struct image_tile *tile,
     return true;
 }
 
+enum edge_dir{
+    EDGE_NORTH,
+    EDGE_EAST,
+    EDGE_SOUTH,
+    EDGE_WEST
+};
+
+/* Local 'visibility' cost of cutting through a texel: the gradient magnitude to
+ * its right and lower neighbours. The minimum-error seam prefers low-gradient
+ * (smooth) texels so the hard edge it produces is least conspicuous. */
+static int diamond_gradient(const struct diamond_patch *d, int nr_channels, int r, int c)
+{
+    int dim = d->width;
+    const unsigned char *px = (const unsigned char*)d->pixels;
+    int r1 = MIN(r + 1, dim - 1);
+    int c1 = MIN(c + 1, dim - 1);
+    int grad = 0;
+    for(int k = 0; k < nr_channels; k++) {
+        int here = px[(r * dim + c) * nr_channels + k];
+        grad += abs(px[(r1 * dim + c) * nr_channels + k] - here);
+        grad += abs(px[(r * dim + c1) * nr_channels + k] - here);
+    }
+    return grad + 1;
+}
+
+/* Find the minimum-error seam for one edge of the tile and return, per position
+ * along that edge, the depth (in texels, inward from the edge) of the material
+ * fringe that overlaps the neighbouring tile. A mild bias keeps the seam near
+ * the middle of the overlap band while the gradient term lets it wander through
+ * the smoothest texels. */
+static bool edge_seam_depths(const struct diamond_patch *src, int nr_channels,
+                             enum edge_dir which, int seam_depth, int *out_depths)
+{
+    bool ret = false;
+    int dim = src->width;
+    bool horizontal = (which == EDGE_NORTH || which == EDGE_SOUTH);
+    int along = dim;
+
+    int w = horizontal ? along : seam_depth;
+    int h = horizontal ? seam_depth : along;
+    struct cost_image cost = {.data = PF_MALLOC(sizeof(int) * w * h), .width = w, .height = h};
+    struct cost_image surf = {.data = PF_MALLOC(sizeof(int) * w * h), .width = w, .height = h};
+    struct coord *path = PF_MALLOC(MAX(w, h) * sizeof(struct coord));
+    if(!cost.data || !surf.data || !path)
+        goto out;
+
+    long sum = 0;
+    for(int a = 0; a < along; a++) {
+    for(int d = 0; d < seam_depth; d++) {
+        int r, c;
+        switch(which) {
+        case EDGE_NORTH: r = d;             c = a;             break;
+        case EDGE_SOUTH: r = dim - 1 - d;   c = a;             break;
+        case EDGE_WEST:  r = a;             c = d;             break;
+        default:         r = a;             c = dim - 1 - d;   break; /* EDGE_EAST */
+        }
+        int g = diamond_gradient(src, nr_channels, r, c);
+        cost.data[horizontal ? (d * w + a) : (a * w + d)] = g;
+        sum += g;
+    }}
+
+    int mid = seam_depth / 2;
+    double gavg = (double)sum / ((double)along * seam_depth);
+    double bias = (mid > 0) ? (2.0 * gavg / (double)(mid * mid)) : 0.0;
+    for(int a = 0; a < along; a++) {
+    for(int d = 0; d < seam_depth; d++) {
+        int dd = d - mid;
+        cost.data[horizontal ? (d * w + a) : (a * w + d)] += (int)(bias * dd * dd);
+    }}
+
+    enum direction dir = horizontal ? DIRECTION_HORIZONTAL : DIRECTION_VERTICAL;
+    if(!compute_min_err_surface(cost, surf, dir))
+        goto out;
+    seam_path(surf, dir, path);
+
+    for(int a = 0; a < along; a++)
+        out_depths[a] = horizontal ? path[a].r : path[a].c;
+    ret = true;
+
+out:
+    PF_FREE(path);
+    PF_FREE(surf.data);
+    PF_FREE(cost.data);
+    return ret;
+}
+
+/* Build the edge-seam mask layer for one material: a single RGBA diamond whose
+ * channels hold the four per-direction fringe masks (R=north, G=east, B=south,
+ * A=west). A channel is 255 inside the fringe (between the edge and its
+ * minimum-error seam) and 0 elsewhere. */
+static bool make_edge_mask(const struct diamond_patch *src, int nr_channels,
+                           struct diamond_patch *out)
+{
+    bool ret = false;
+    int dim = src->width;
+    /* Overlap band the minimum-error seam is computed over; the fringe lands near
+     * its middle. Deeper => wider edge pieces and a lower-frequency, more natural
+     * boundary. */
+    int seam_depth = MAX(2, (dim * 2) / 3);
+
+    int *north = PF_MALLOC(sizeof(int) * dim);
+    int *east  = PF_MALLOC(sizeof(int) * dim);
+    int *south = PF_MALLOC(sizeof(int) * dim);
+    int *west  = PF_MALLOC(sizeof(int) * dim);
+    out->pixels = PF_MALLOC(dim * dim * 4);
+    out->width = dim;
+    out->height = dim;
+    if(!north || !east || !south || !west || !out->pixels)
+        goto out;
+
+    if(!edge_seam_depths(src, nr_channels, EDGE_NORTH, seam_depth, north)
+    || !edge_seam_depths(src, nr_channels, EDGE_EAST,  seam_depth, east)
+    || !edge_seam_depths(src, nr_channels, EDGE_SOUTH, seam_depth, south)
+    || !edge_seam_depths(src, nr_channels, EDGE_WEST,  seam_depth, west))
+        goto out;
+
+    unsigned char *px = (unsigned char*)out->pixels;
+    for(int r = 0; r < dim; r++) {
+    for(int c = 0; c < dim; c++) {
+        unsigned char *dst = px + (r * dim + c) * 4;
+        dst[0] = (r < north[c])           ? 255 : 0; /* R: north fringe (rows near top)    */
+        dst[1] = (c > dim - 1 - east[r])  ? 255 : 0; /* G: east fringe  (cols near right)   */
+        dst[2] = (r > dim - 1 - south[c]) ? 255 : 0; /* B: south fringe (rows near bottom)  */
+        dst[3] = (c < west[r])            ? 255 : 0; /* A: west fringe  (cols near left)    */
+    }}
+    ret = true;
+
+out:
+    PF_FREE(north);
+    PF_FREE(east);
+    PF_FREE(south);
+    PF_FREE(west);
+    if(!ret) {
+        PF_FREE(out->pixels);
+        out->pixels = NULL;
+    }
+    return ret;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1501,18 +1640,28 @@ fail_load:
 }
 
 static void upload_tile_array(struct texture_arr *out, GLuint tunit, int nr_channels,
-                              size_t dim, const struct diamond_patch *diamonds)
+                              size_t dim, const struct diamond_patch *diamonds,
+                              const void *edge_mask)
 {
     glActiveTexture(tunit);
     out->tunit = tunit;
     glGenTextures(1, &out->id);
     glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
 
-    GLint format = (nr_channels == 3) ? GL_RGB : GL_RGBA;
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, format, dim, dim, 8, 0, format, GL_UNSIGNED_BYTE, 0);
-    for(int i = 0; i < 8; i++) {
+    /* Always allocate RGBA so the trailing edge-seam layer can carry all 4 of its
+     * mask channels, regardless of the source texture's channel count. */
+    GLint src_format = (nr_channels == 3) ? GL_RGB : GL_RGBA;
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, dim, dim, TILESET_NUM_TILES, 0,
+        GL_RGBA, GL_UNSIGNED_BYTE, 0);
+    for(int i = 0; i < TILESET_WANG_TILES; i++) {
         glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, dim, dim, 1,
-            format, GL_UNSIGNED_BYTE, diamonds[i].pixels);
+            src_format, GL_UNSIGNED_BYTE, diamonds[i].pixels);
+    }
+    /* Final layer: the per-direction edge-seam masks. Normal-map tilesets pass
+     * NULL since the spill reuses the receiving tile's relief. */
+    if(edge_mask) {
+        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, TILESET_WANG_TILES, dim, dim, 1,
+            GL_RGBA, GL_UNSIGNED_BYTE, edge_mask);
     }
 
     glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
@@ -1582,6 +1731,7 @@ static bool make_tileset_impl(const char *diffuse_src, const char *normal_src,
 
     struct diamond_patch diamonds[8] = {0};
     struct diamond_patch ndiamonds[8] = {0};
+    struct diamond_patch edge_mask = {0};
     for(int i = 0; i < 8; i++) {
         if(!sample_diamond(image.nr_channels, &tiles[i], &diamonds[i]))
             goto fail_diamond;
@@ -1590,12 +1740,18 @@ static bool make_tileset_impl(const char *diffuse_src, const char *normal_src,
     }
     size_t diamond_dim = diamonds[0].width;
 
-    upload_tile_array(out, tunit, image.nr_channels, diamond_dim, diamonds);
+    /* The edge-seam masks are derived from a representative Wang tile; one mask
+     * set serves the whole material. */
+    if(!make_edge_mask(&diamonds[0], image.nr_channels, &edge_mask))
+        goto fail_diamond;
+
+    upload_tile_array(out, tunit, image.nr_channels, diamond_dim, diamonds, edge_mask.pixels);
     if(normal_ptr)
-        upload_tile_array(out_norm, tunit_norm, normal.nr_channels, diamond_dim, ndiamonds);
+        upload_tile_array(out_norm, tunit_norm, normal.nr_channels, diamond_dim, ndiamonds, NULL);
     ret = true;
 
 fail_diamond:
+    PF_FREE(edge_mask.pixels);
     for(int i = 0; i < 8; i++) {
         PF_FREE(diamonds[i].pixels);
         if(normal_ptr)
