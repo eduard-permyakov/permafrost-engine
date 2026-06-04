@@ -36,8 +36,11 @@
 #version 330 core
 
 
-#define SPECULAR_STRENGTH  0.5
-#define SPECULAR_SHININESS 2
+#define SPECULAR_STRENGTH  0.9
+#define SPECULAR_SHININESS 12.0
+#define SPECULAR_DEPTH_LO  0.20
+#define SPECULAR_DEPTH_HI  0.42
+#define SPECULAR_VIEW_EDGE 0.92   /* glint fades from the view centre to 0 at this view-axis cos */
 
 #define Y_COORDS_PER_TILE  4 
 #define X_COORDS_PER_TILE  8 
@@ -50,7 +53,7 @@
 
 #define TERRAIN_AMBIENT     float(0.7)
 #define TERRAIN_DIFFUSE     vec3(0.9, 0.9, 0.9)
-#define TERRAIN_SPECULAR    vec3(0.1, 0.1, 0.1)
+#define TERRAIN_SPECULAR    vec3(1.0, 0.96, 0.88)
 
 #define SHADOW_MAP_BIAS 0.002
 #define SHADOW_MULTIPLIER 0.55
@@ -59,7 +62,9 @@
 #define STATE_IN_FOG     1
 #define STATE_VISIBLE    2
 
-#define HEIGHT_MAP_WEIGHT 0.075
+#define HEIGHT_MAP_WEIGHT 0.107
+#define NORMAL_MAP_WEIGHT 0.7
+#define NORMAL_DIFFUSE_GAIN 2.8   /* steepen the relief for diffuse shading -> wider light/shadow range */
 #define MAX_TEXTURES      (256)
 #define SPLAT_NONE        (-1)
 #define MAX_MATERIALS     (16)
@@ -98,6 +103,7 @@ uniform vec3 ambient_color;
 uniform vec3 light_color;
 uniform vec3 light_pos;
 uniform vec3 view_pos;
+uniform mat4 view;
 
 uniform samplerBuffer height_map;
 uniform samplerBuffer splat_map;
@@ -109,6 +115,11 @@ uniform sampler2DArray tex_array0;
 uniform sampler2DArray tex_array1;
 uniform sampler2DArray tex_array2;
 uniform sampler2DArray tex_array3;
+
+uniform sampler2DArray norm_array0;
+uniform sampler2DArray norm_array1;
+uniform sampler2DArray norm_array2;
+uniform sampler2DArray norm_array3;
 
 uniform usamplerBuffer visbuff;
 uniform int visbuff_offset;
@@ -311,6 +322,29 @@ vec4 texture_val_raw(int mat_idx, int wang_idx, vec2 uv)
         return texture(tex_array3, vec3(uv.x, 1.0 - uv.y, idx + wang_idx));
     }
     return vec4(0, 0, 0, 0);
+}
+
+/* Sample the per-texture normal map (parallel to texture_val_raw). Materials
+ * without a normal map sample a flat (128,128,255) entry, i.e. no perturbation. */
+vec3 normal_val_raw(int mat_idx, int wang_idx, vec2 uv)
+{
+    int idx = mat_idx * 8;
+    int size = textureSize(norm_array0, 0).z;
+    if(idx < size)
+        return texture(norm_array0, vec3(uv.x, 1.0 - uv.y, idx + wang_idx)).rgb;
+    idx -= size;
+    size = textureSize(norm_array1, 0).z;
+    if(idx < size)
+        return texture(norm_array1, vec3(uv.x, 1.0 - uv.y, idx + wang_idx)).rgb;
+    idx -= size;
+    size = textureSize(norm_array2, 0).z;
+    if(idx < size)
+        return texture(norm_array2, vec3(uv.x, 1.0 - uv.y, idx + wang_idx)).rgb;
+    idx -= size;
+    size = textureSize(norm_array3, 0).z;
+    if(idx < size)
+        return texture(norm_array3, vec3(uv.x, 1.0 - uv.y, idx + wang_idx)).rgb;
+    return vec3(0.5, 0.5, 1.0);
 }
 
 vec4 texture_val(int mat_idx, int wang_idx, vec2 uv)
@@ -745,30 +779,47 @@ void main()
     /* Ambient calculations */
     vec3 ambient = (TERRAIN_AMBIENT + height * EXTRA_AMBIENT_PER_LEVEL) * ambient_color;
 
-    /* Add variance to our normal using bump-mapping */
-    vec3 normal;
-    if(from_vertex.no_bump_map != 0) {
-        normal = from_vertex.normal;
-    }else{
+    /* Perturb the geometric normal with the heightmap slope (gated by no_bump_map); the
+     * per-texture relief is blended in below. A flat (0,0,1) sample is a no-op. */
+    vec3 normal = from_vertex.normal;
+    if(from_vertex.no_bump_map == 0) {
         vec3 heightmap_normal = normal_at_pos(from_vertex.world_pos);
-        vec3 vertex_normal = from_vertex.normal;
-        normal = normalize(vertex_normal + heightmap_normal * HEIGHT_MAP_WEIGHT);
+        normal = normalize(normal + heightmap_normal * HEIGHT_MAP_WEIGHT);
     }
+
+    vec3 tn = normal_val_raw(from_vertex.mat_idx, from_vertex.wang_index, from_vertex.uv) * 2.0 - 1.0;
+    /* Tangent frame for the Y-up terrain surface (uv maps to world XZ), built from the
+     * current normal so it also works on ramps. */
+    vec3 tangent = normalize(cross(vec3(0.0, 0.0, 1.0), normal));
+    vec3 bitangent = normalize(cross(normal, tangent));
+    vec3 tex_normal = normalize(tangent * tn.x + bitangent * tn.y + normal * tn.z);
+    /* Steepen the relief for the diffuse normal to widen its light/shadow range; the
+     * specular below uses the unscaled tex_normal. */
+    vec3 diff_normal = normalize(tangent * (tn.x * NORMAL_DIFFUSE_GAIN)
+                               + bitangent * (tn.y * NORMAL_DIFFUSE_GAIN) + normal * tn.z);
+    normal = normalize(mix(normal, diff_normal, NORMAL_MAP_WEIGHT));
 
     /* Diffuse calculations */
     /* Always use light direction relative to world origin. Otherwise different parts of a
      * large map have too distinct differences in lighting */
-    vec3 light_dir = normalize(light_pos); 
+    vec3 light_dir = normalize(light_pos);
     float diff = max(dot(normal, light_dir), 0.0);
     vec3 diffuse = light_color * (diff * TERRAIN_DIFFUSE);
 
-    /* Specular calculations */
+    /* Stylised crevice glint: a Blinn-Phong highlight off the relief, gated to the deep
+     * (steep) parts of the normal map so it lands on grooves and cracks, not flat areas. */
     vec3 view_dir = normalize(view_pos - from_vertex.world_pos);
-    vec3 reflect_dir = reflect(-light_dir, normal);
-    float spec = pow(max(dot(view_dir, reflect_dir), 0.0), SPECULAR_SHININESS);
-    vec3 specular = SPECULAR_STRENGTH * light_color * (spec * TERRAIN_SPECULAR);
+    vec3 halfway = normalize(light_dir + view_dir);
+    float spec = pow(max(dot(tex_normal, halfway), 0.0), SPECULAR_SHININESS);
+    float crevice = smoothstep(SPECULAR_DEPTH_LO, SPECULAR_DEPTH_HI, length(tn.xy));
+    /* Fade by angle from the camera's view axis: full at the screen centre, zero past
+     * SPECULAR_VIEW_EDGE. */
+    vec3 cam_fwd = -normalize(vec3(view[0][2], view[1][2], view[2][2]));
+    float centered = dot(cam_fwd, normalize(from_vertex.world_pos - view_pos));
+    float center_falloff = smoothstep(SPECULAR_VIEW_EDGE, 1.0, centered);
+    vec3 specular = SPECULAR_STRENGTH * light_color * spec * crevice * center_falloff * TERRAIN_SPECULAR;
 
-    vec4 final_color = vec4( (ambient + diffuse + specular) * tex_color.xyz, 1.0);
+    vec4 final_color = vec4( (ambient + diffuse) * tex_color.xyz + specular, 1.0);
     if(!bool(shadows_on)) {
         o_frag_color = final_color * tf;        
         return;

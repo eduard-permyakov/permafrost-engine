@@ -44,6 +44,7 @@
 #include "gl_material.h"
 #include "gl_image_quilt.h"
 #include "gl_swapchain.h"
+#include "gl_render.h"
 #include "../lib/public/stb_image.h"
 #include "../lib/public/stb_image_resize.h"
 #include "../lib/public/khash.h"
@@ -677,8 +678,32 @@ static void wang_tileset_store_cached(const char *name, uint64_t tag, size_t til
     GL_ASSERT_OK();
 }
 
-size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t num_textures, 
-                                            struct texture_arr *out, GLuint tunit)
+static void array_set_params(void)
+{
+    glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
+}
+
+static void blit_tile_layer(GLuint fbo, GLuint src, int src_layer, GLuint dst, int dst_layer, size_t dim)
+{
+    R_GL_StatePushRenderTarget(fbo);
+    glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, src, 0, src_layer);
+    glFramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, dst, 0, dst_layer);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glDrawBuffer(GL_COLOR_ATTACHMENT1);
+    assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+    glBlitFramebuffer(0, 0, dim, dim, 0, 0, dim, dim, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    R_GL_StatePopRenderTarget();
+    GL_ASSERT_OK();
+}
+
+size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t num_textures,
+                                            struct texture_arr *out, struct texture_arr *out_norm,
+                                            GLuint tunit)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -693,6 +718,7 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
 
     GLuint fbo;
     glGenFramebuffers(1, &fbo);
+    GLuint norm_tunit = NORM_ARRAY0_TUNIT;
 
     int i = 0;
     size_t slots_consumed = 0;
@@ -706,23 +732,49 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
         glGenTextures(1, &out->id);
         glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
 
-        glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, 
+        glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8,
             tileset_dim, tileset_dim, curr_slots, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+
+        /* Parallel normal-map array, pre-filled with a flat normal (128,128,255) so
+         * that materials without a normal map are a no-op in the shader. */
+        if(out_norm) {
+            glActiveTexture(norm_tunit);
+            out_norm->tunit = norm_tunit;
+            glGenTextures(1, &out_norm->id);
+            glBindTexture(GL_TEXTURE_2D_ARRAY, out_norm->id);
+            glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8,
+                tileset_dim, tileset_dim, curr_slots, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+
+            size_t fbytes = tileset_dim * tileset_dim * 4;
+            GLubyte *flat = PF_MALLOC(fbytes);
+            if(flat) {
+                for(size_t p = 0; p < fbytes; p += 4) {
+                    flat[p+0] = 128; flat[p+1] = 128; flat[p+2] = 255; flat[p+3] = 255;
+                }
+                for(int s = 0; s < (int)curr_slots; s++) {
+                    glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, s, tileset_dim, tileset_dim, 1,
+                        GL_RGBA, GL_UNSIGNED_BYTE, flat);
+                }
+                PF_FREE(flat);
+            }
+        }
 
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glPixelStorei(GL_PACK_ALIGNMENT, 1);
 
         for(; i < num_textures; i++) {
 
-            /* Since generating the tilesets may take a while, invoke 
+            /* Since generating the tilesets may take a while, invoke
              * an event pump on the main thread and re-present the loading
-             * screen to avoid losing responsiveness. 
+             * screen to avoid losing responsiveness.
              */
             LoadingScreen_PushRenderStatus("Generating tileset: %s", texnames[i]);
             R_Yield();
 
-            char path[512];
+            char path[512], npath[512];
             pf_snprintf(path, sizeof(path), "%s/assets/map_textures/%s", g_basepath, texnames[i]);
+            pf_snprintf(npath, sizeof(npath), "%s/assets/map_textures/normals/%s",
+                g_basepath, texnames[i]);
 
             /* Move on to the next texture array, this one's full */
             if((i * 8) >= curr_slots + slots_consumed) {
@@ -731,35 +783,39 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
             }
 
             uint64_t tag = AssetCache_SourceTag(path);
-            struct texture_arr tiles;
-            bool success = wang_tileset_load_cached(texnames[i], tag, tileset_dim, &tiles, tunit);
+            uint64_t ntag = out_norm ? AssetCache_SourceTag(npath) : 0;
+            bool has_norm = (ntag != 0);
+            char nname[300];
+            pf_snprintf(nname, sizeof(nname), "%s-nrm", texnames[i]);
+
+            struct texture_arr tiles = {0}, ntiles = {0};
+            bool dhit = wang_tileset_load_cached(texnames[i], tag, tileset_dim, &tiles, tunit);
+            bool nhit = !has_norm || wang_tileset_load_cached(nname, ntag, tileset_dim, &ntiles, tunit);
+            bool success = dhit && nhit;
             if(!success) {
-                success = R_GL_ImageQuilt_MakeTileset(path, &tiles, tunit);
-                if(success)
+                if(dhit) R_GL_Texture_ArrayFree(tiles);
+                if(nhit && has_norm && ntiles.id) R_GL_Texture_ArrayFree(ntiles);
+                tiles = (struct texture_arr){0};
+                ntiles = (struct texture_arr){0};
+                success = R_GL_ImageQuilt_MakeTilesetN(path, has_norm ? npath : NULL,
+                    &tiles, &ntiles, tunit, tunit);
+                if(success) {
                     wang_tileset_store_cached(texnames[i], tag, tileset_dim, &tiles);
+                    if(ntiles.id)
+                        wang_tileset_store_cached(nname, ntag, tileset_dim, &ntiles);
+                }
             }
             if(success) {
 
                 for(int j = 0; j < 8; j++) {
-
                     int dst_idx = (i * 8) + j - slots_consumed;
-                    int src_idx = j;
-
-                    R_GL_StatePushRenderTarget(fbo);
-                    glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, 
-                        tiles.id, 0, src_idx);
-                    glFramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, 
-                        out->id, 0, dst_idx);
-                    glReadBuffer(GL_COLOR_ATTACHMENT0);
-                    glDrawBuffer(GL_COLOR_ATTACHMENT1);
-
-                    assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
-                    glBlitFramebuffer(0, 0, tileset_dim, tileset_dim, 0, 0, tileset_dim, tileset_dim, 
-                                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
-                    R_GL_StatePopRenderTarget();
-                    GL_ASSERT_OK();
+                    blit_tile_layer(fbo, tiles.id, j, out->id, dst_idx, tileset_dim);
+                    if(out_norm && ntiles.id)
+                        blit_tile_layer(fbo, ntiles.id, j, out_norm->id, dst_idx, tileset_dim);
                 }
                 R_GL_Texture_ArrayFree(tiles);
+                if(ntiles.id)
+                    R_GL_Texture_ArrayFree(ntiles);
 
             }else{
 
@@ -768,10 +824,11 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
                     LoadingScreen_PopRenderStatus();
                     continue;
                 }
-
+                glActiveTexture(tunit);
+                glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
                 for(int j = 0; j < 8; j++) {
-                    glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, (i * 8) + j, tileset_dim, 
-                        tileset_dim, 1, GL_RGB, GL_UNSIGNED_BYTE, data);
+                    glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, (i * 8) + j - slots_consumed,
+                        tileset_dim, tileset_dim, 1, GL_RGB, GL_UNSIGNED_BYTE, data);
                 }
                 PF_FREE(data);
             }
@@ -781,16 +838,22 @@ size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t n
             LoadingScreen_PopRenderStatus();
         }
 
-        glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
-        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
+        glActiveTexture(tunit);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
+        array_set_params();
+        if(out_norm) {
+            glActiveTexture(norm_tunit);
+            glBindTexture(GL_TEXTURE_2D_ARRAY, out_norm->id);
+            array_set_params();
+        }
 
         ret++;
         out++;
         tunit++;
+        if(out_norm) {
+            out_norm++;
+            norm_tunit++;
+        }
         slots_consumed += curr_slots;
     }
 
@@ -824,6 +887,31 @@ void R_GL_Texture_BindArray(const struct texture_arr *arr, GLuint shader_prog)
     R_GL_StateSet(unit_name[idx], (struct uval){
         .type = UTYPE_INT,
         .val.as_int = idx
+    });
+    R_GL_StateInstall(unit_name[idx], shader_prog);
+
+    GL_ASSERT_OK();
+}
+
+void R_GL_Texture_BindArrayNormal(const struct texture_arr *arr, GLuint shader_prog)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    int idx = (arr->tunit - NORM_ARRAY0_TUNIT);
+    const char *unit_name[] = {
+        GL_U_NORM_ARRAY0,
+        GL_U_NORM_ARRAY1,
+        GL_U_NORM_ARRAY2,
+        GL_U_NORM_ARRAY3,
+    };
+    assert(idx >= 0 && idx < ARR_SIZE(unit_name));
+
+    glActiveTexture(arr->tunit);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, arr->id);
+
+    R_GL_StateSet(unit_name[idx], (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = arr->tunit - GL_TEXTURE0
     });
     R_GL_StateInstall(unit_name[idx], shader_prog);
 

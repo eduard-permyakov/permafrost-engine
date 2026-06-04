@@ -158,6 +158,13 @@ KHASH_MAP_INIT_INT64(coord, int)
 
 static unsigned int s_seed;
 
+/* Wang tile combinations: each of the 8 output tiles is stitched from the 4
+ * sample blocks (BLUE/RED/YELLOW/GREEN) in a fixed arrangement. */
+static const int s_wang_combos[8][4] = {
+    {0, 1, 3, 2}, {0, 3, 3, 0}, {2, 1, 1, 2}, {2, 3, 1, 0},
+    {2, 1, 3, 0}, {2, 3, 3, 2}, {0, 1, 1, 0}, {0, 3, 1, 2},
+};
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1347,38 +1354,49 @@ fail_block:
     return ret;
 }
 
-static bool stitch_samples(struct image image, struct image_view *views, struct image_tile *tile)
+/* Stitch one Wang tile from the four sample blocks. The minimum-error seams are
+ * found from the diffuse image; an optional paired normal map ('normal'/'norm_tile')
+ * is pasted with the identical blocks and seams so it stays pixel-aligned with the
+ * diffuse tile. On failure the (partially) allocated tiles are left for the caller
+ * to free. */
+static bool stitch_samples(struct image image, const struct image *normal,
+                           struct image_view *views, struct image_tile *tile,
+                           struct image_tile *norm_tile)
 {
     bool ret = false;
     struct seam_mask seams[4] = {0};
     if(!find_seam(image, views[0], views[1], DIRECTION_VERTICAL, &seams[0]))
-        goto fail_seams;
+        goto out;
     if(!find_seam(image, views[0], views[2], DIRECTION_HORIZONTAL, &seams[1]))
-        goto fail_seams;
+        goto out;
     if(!find_seam(image, views[1], views[3], DIRECTION_HORIZONTAL, &seams[2]))
-        goto fail_seams;
+        goto out;
     if(!find_seam(image, views[2], views[3], DIRECTION_VERTICAL, &seams[3]))
-        goto fail_seams;
+        goto out;
 
     tile->pixels = PF_MALLOC(image.nr_channels * TILE_DIM * TILE_DIM);
     if(!tile->pixels)
-        goto fail_seams;
-
-    if(!paste_block(image, TOP_LEFT, views[0], &seams[0], &seams[1], tile))
-        goto fail_paste;
-    if(!paste_block(image, TOP_RIGHT, views[1], &seams[0], &seams[2], tile))
-        goto fail_paste;
-    if(!paste_block(image, BOT_LEFT, views[2], &seams[3], &seams[1], tile))
-        goto fail_paste;
-    if(!paste_block(image, BOT_RIGHT, views[3], &seams[3], &seams[2], tile))
-        goto fail_paste;
-
-    ret = true;
-fail_paste:
-    if(!ret) {
-        PF_FREE(tile->pixels);
+        goto out;
+    if(normal) {
+        norm_tile->pixels = PF_MALLOC(normal->nr_channels * TILE_DIM * TILE_DIM);
+        if(!norm_tile->pixels)
+            goto out;
     }
-fail_seams:
+
+    if(!paste_block(image, TOP_LEFT,  views[0], &seams[0], &seams[1], tile)
+    || !paste_block(image, TOP_RIGHT, views[1], &seams[0], &seams[2], tile)
+    || !paste_block(image, BOT_LEFT,  views[2], &seams[3], &seams[1], tile)
+    || !paste_block(image, BOT_RIGHT, views[3], &seams[3], &seams[2], tile))
+        goto out;
+    if(normal) {
+        if(!paste_block(*normal, TOP_LEFT,  views[0], &seams[0], &seams[1], norm_tile)
+        || !paste_block(*normal, TOP_RIGHT, views[1], &seams[0], &seams[2], norm_tile)
+        || !paste_block(*normal, BOT_LEFT,  views[2], &seams[3], &seams[1], norm_tile)
+        || !paste_block(*normal, BOT_RIGHT, views[3], &seams[3], &seams[2], norm_tile))
+            goto out;
+    }
+    ret = true;
+out:
     for(int i = 0; i < 4; i++) {
         PF_FREE(seams[i].bits);
     }
@@ -1482,89 +1500,19 @@ fail_load:
     return ret;
 }
 
-bool R_GL_ImageQuilt_MakeTileset(const char *source, struct texture_arr *out, GLuint tunit)
+static void upload_tile_array(struct texture_arr *out, GLuint tunit, int nr_channels,
+                              size_t dim, const struct diamond_patch *diamonds)
 {
-    ASSERT_IN_RENDER_THREAD();
-    if(!s_seed) {
-        s_seed = time(NULL);
-    }
-
-    bool ret = false;
-    struct image image;
-    if(!load_image(source, &image))
-        goto fail_load;
-
-    if(image.nr_channels != 3 && image.nr_channels != 4)
-        goto fail_block;
-
-    /* For Wang tileset generation, first pick 4 sample images */
-    struct image_view views[4] = {0};
-    views[0] = random_block(image);
-    struct phase_lock lock = make_phase_lock(image, views[0]);
-
-    struct image_view b1_views[] = {views[0]};
-    if(!match_next_block(image, b1_views, CONSTRAIN_LEFT, &lock, &views[1]))
-        goto fail_block;
-
-    struct image_view b2_views[] = {views[0]};
-    if(!match_next_block(image, b2_views, CONSTRAIN_TOP, &lock, &views[2]))
-        goto fail_block;
-
-    struct image_view b3_views[] = {views[2], views[1]};
-    if(!match_next_block(image, b3_views, CONSTRAIN_TOP_LEFT, &lock, &views[3]))
-        goto fail_block;
-
-    /* Next, generate an 8-tile Wang tileset by stitching the sample images
-     * together in different combinations */
-    const int BLUE = 0, RED = 1, YELLOW = 2, GREEN = 3;
-    struct image_tile tiles[8] = {0};
-
-    if(!stitch_samples(image, (struct image_view[4]){
-        views[BLUE], views[RED], views[GREEN], views[YELLOW]}, &tiles[0]))
-        goto fail_stitch;
-    if(!stitch_samples(image, (struct image_view[4]){
-        views[BLUE], views[GREEN], views[GREEN], views[BLUE]}, &tiles[1]))
-        goto fail_stitch;
-    if(!stitch_samples(image, (struct image_view[4]){
-        views[YELLOW], views[RED], views[RED], views[YELLOW]}, &tiles[2]))
-        goto fail_stitch;
-    if(!stitch_samples(image, (struct image_view[4]){
-        views[YELLOW], views[GREEN], views[RED], views[BLUE]}, &tiles[3]))
-        goto fail_stitch;
-    if(!stitch_samples(image, (struct image_view[4]){
-        views[YELLOW], views[RED], views[GREEN], views[BLUE]}, &tiles[4]))
-        goto fail_stitch;
-    if(!stitch_samples(image, (struct image_view[4]){
-        views[YELLOW], views[GREEN], views[GREEN], views[YELLOW]}, &tiles[5]))
-        goto fail_stitch;
-    if(!stitch_samples(image, (struct image_view[4]){
-        views[BLUE], views[RED], views[RED], views[BLUE]}, &tiles[6]))
-        goto fail_stitch;
-    if(!stitch_samples(image, (struct image_view[4]){
-        views[BLUE], views[GREEN], views[RED], views[YELLOW]}, &tiles[7]))
-        goto fail_stitch;
-
-    /* Sample the middle diamond from each of the generated tiles */
-    struct diamond_patch diamonds[8] = {0};
-    for(int i = 0; i < 8; i++) {
-        if(!sample_diamond(image.nr_channels, &tiles[i], &diamonds[i]))
-            goto fail_diamond;
-    }
-    size_t diamond_dim = diamonds[0].width;
-
-    /* Generate a texture array from the created tiles */
     glActiveTexture(tunit);
     out->tunit = tunit;
     glGenTextures(1, &out->id);
     glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
 
-    GLint format = (image.nr_channels == 3) ? GL_RGB : GL_RGBA;
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, format, 
-        diamond_dim, diamond_dim, 8, 0, format, GL_UNSIGNED_BYTE, 0);
-
+    GLint format = (nr_channels == 3) ? GL_RGB : GL_RGBA;
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, format, dim, dim, 8, 0, format, GL_UNSIGNED_BYTE, 0);
     for(int i = 0; i < 8; i++) {
-        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, diamond_dim, 
-            diamond_dim, 1, format, GL_UNSIGNED_BYTE, diamonds[i].pixels);
+        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, dim, dim, 1,
+            format, GL_UNSIGNED_BYTE, diamonds[i].pixels);
     }
 
     glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
@@ -1573,23 +1521,112 @@ bool R_GL_ImageQuilt_MakeTileset(const char *source, struct texture_arr *out, GL
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
-
     glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+}
+
+/* Generate the diffuse Wang tileset and, when a matching normal map is supplied,
+ * a paired normal tileset quilted with the identical blocks and seams. */
+static bool make_tileset_impl(const char *diffuse_src, const char *normal_src,
+                              struct texture_arr *out, struct texture_arr *out_norm,
+                              GLuint tunit, GLuint tunit_norm)
+{
+    ASSERT_IN_RENDER_THREAD();
+    if(!s_seed) {
+        s_seed = time(NULL);
+    }
+
+    bool ret = false;
+    struct image image, normal = {0};
+    const struct image *normal_ptr = NULL;
+
+    if(!load_image(diffuse_src, &image))
+        goto fail_load;
+    if(image.nr_channels != 3 && image.nr_channels != 4)
+        goto fail_block;
+
+    if(normal_src && out_norm) {
+        if(load_image(normal_src, &normal)
+        && (normal.nr_channels == 3 || normal.nr_channels == 4)
+        && normal.width == image.width && normal.height == image.height) {
+            normal_ptr = &normal;
+        }else if(normal.data) {
+            free(normal.data);
+            normal.data = NULL;
+        }
+    }
+
+    struct image_view views[4] = {0};
+    views[0] = random_block(image);
+    struct phase_lock lock = make_phase_lock(image, views[0]);
+
+    struct image_view b1_views[] = {views[0]};
+    if(!match_next_block(image, b1_views, CONSTRAIN_LEFT, &lock, &views[1]))
+        goto fail_block;
+    struct image_view b2_views[] = {views[0]};
+    if(!match_next_block(image, b2_views, CONSTRAIN_TOP, &lock, &views[2]))
+        goto fail_block;
+    struct image_view b3_views[] = {views[2], views[1]};
+    if(!match_next_block(image, b3_views, CONSTRAIN_TOP_LEFT, &lock, &views[3]))
+        goto fail_block;
+
+    struct image_tile tiles[8] = {0};
+    struct image_tile ntiles[8] = {0};
+    for(int i = 0; i < 8; i++) {
+        struct image_view cv[4] = {
+            views[s_wang_combos[i][0]], views[s_wang_combos[i][1]],
+            views[s_wang_combos[i][2]], views[s_wang_combos[i][3]]
+        };
+        if(!stitch_samples(image, normal_ptr, cv, &tiles[i], &ntiles[i]))
+            goto fail_stitch;
+    }
+
+    struct diamond_patch diamonds[8] = {0};
+    struct diamond_patch ndiamonds[8] = {0};
+    for(int i = 0; i < 8; i++) {
+        if(!sample_diamond(image.nr_channels, &tiles[i], &diamonds[i]))
+            goto fail_diamond;
+        if(normal_ptr && !sample_diamond(normal.nr_channels, &ntiles[i], &ndiamonds[i]))
+            goto fail_diamond;
+    }
+    size_t diamond_dim = diamonds[0].width;
+
+    upload_tile_array(out, tunit, image.nr_channels, diamond_dim, diamonds);
+    if(normal_ptr)
+        upload_tile_array(out_norm, tunit_norm, normal.nr_channels, diamond_dim, ndiamonds);
     ret = true;
 
 fail_diamond:
     for(int i = 0; i < 8; i++) {
         PF_FREE(diamonds[i].pixels);
+        if(normal_ptr)
+            PF_FREE(ndiamonds[i].pixels);
     }
 fail_stitch:
     for(int i = 0; i < 8; i++) {
         PF_FREE(tiles[i].pixels);
+        if(normal_ptr)
+            PF_FREE(ntiles[i].pixels);
     }
 fail_block:
     free(image.data);
+    if(normal.data)
+        free(normal.data);
 fail_load:
     GL_ASSERT_OK();
     return ret;
+}
+
+bool R_GL_ImageQuilt_MakeTileset(const char *source, struct texture_arr *out, GLuint tunit)
+{
+    return make_tileset_impl(source, NULL, out, NULL, tunit, 0);
+}
+
+bool R_GL_ImageQuilt_MakeTilesetN(const char *diffuse, const char *normal,
+                                  struct texture_arr *out, struct texture_arr *out_norm,
+                                  GLuint tunit, GLuint tunit_norm)
+{
+    out_norm->id = 0;
+    return make_tileset_impl(diffuse, normal, out, out_norm, tunit, tunit_norm);
 }
 
 size_t R_GL_ImageQuilt_TilesetDim(void)

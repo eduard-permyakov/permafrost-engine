@@ -82,6 +82,7 @@ struct gl_splatmap{
 static size_t                 s_num_arrays;
 static uint32_t               s_materials_hash;
 static struct texture_arr     s_map_textures[4];
+static struct texture_arr     s_map_normals[4];
 static bool                   s_map_ctx_active = false;
 static struct gl_ring        *s_fog_ring;
 static struct gl_heightmap    s_heightmap;
@@ -178,8 +179,8 @@ void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures,
         create_height_map();
         create_splat_map();
 
-        s_num_arrays = R_GL_Texture_ArrayMakeMapWangTileset(map_texfiles, 
-            *num_textures, s_map_textures, GL_TEXTURE0);
+        s_num_arrays = R_GL_Texture_ArrayMakeMapWangTileset(map_texfiles,
+            *num_textures, s_map_textures, s_map_normals, GL_TEXTURE0);
         s_materials_hash = materials_hash_adler32(map_texfiles, *num_textures);
 
         init_once_done = true;
@@ -190,9 +191,10 @@ void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures,
 
             for(int i = 0; i < s_num_arrays; i++) {
                 R_GL_Texture_ArrayFree(s_map_textures[i]);
+                R_GL_Texture_ArrayFree(s_map_normals[i]);
             }
-            s_num_arrays = R_GL_Texture_ArrayMakeMapWangTileset(map_texfiles, 
-                *num_textures, s_map_textures, GL_TEXTURE0);
+            s_num_arrays = R_GL_Texture_ArrayMakeMapWangTileset(map_texfiles,
+                *num_textures, s_map_textures, s_map_normals, GL_TEXTURE0);
             s_materials_hash = new_materials_hash;
         }
     }
@@ -291,6 +293,7 @@ void R_GL_MapBegin(const bool *shadows, const vec2_t *pos,
 
     for(int i = 0; i < s_num_arrays; i++) {
         R_GL_Texture_BindArray(&s_map_textures[i], shader_prog);
+        R_GL_Texture_BindArrayNormal(&s_map_normals[i], shader_prog);
     }
     R_GL_RingbufferBindLast(s_fog_ring, GL_TEXTURE5, shader_prog, "visbuff");
 

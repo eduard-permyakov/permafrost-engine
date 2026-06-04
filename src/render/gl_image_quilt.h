@@ -44,6 +44,14 @@ struct texture;
 
 bool   R_GL_ImageQuilt_MakeTile(const char *source, struct texture *out, GLuint tunit);
 bool   R_GL_ImageQuilt_MakeTileset(const char *source, struct texture_arr *out, GLuint tunit);
+
+/* Like MakeTileset, but also quilts a paired normal map ('normal') with the same
+ * blocks/seams into 'out_norm'. If 'normal' is missing/mismatched, out_norm->id is
+ * left 0 and only the diffuse tileset is produced. */
+bool   R_GL_ImageQuilt_MakeTilesetN(const char *diffuse, const char *normal,
+                                    struct texture_arr *out, struct texture_arr *out_norm,
+                                    GLuint tunit, GLuint tunit_norm);
+
 size_t R_GL_ImageQuilt_TilesetDim(void);
 
 #endif

@@ -68,11 +68,13 @@ void R_GL_Texture_ArrayMake(const struct material *mats, size_t num_mats,
                             struct texture_arr *out, GLuint tunit);
 void R_GL_Texture_ArrayMakeMap(const char texnames[][256], size_t num_textures, 
                                struct texture_arr *out, GLuint tunit);
-size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t num_textures, 
-                                            struct texture_arr *out, GLuint tunit);
+size_t R_GL_Texture_ArrayMakeMapWangTileset(const char texnames[][256], size_t num_textures,
+                                            struct texture_arr *out, struct texture_arr *out_norm,
+                                            GLuint tunit);
 
 void R_GL_Texture_Bind(const struct texture *text, GLuint shader_prog);
 void R_GL_Texture_BindArray(const struct texture_arr *arr, GLuint shader_prog);
+void R_GL_Texture_BindArrayNormal(const struct texture_arr *arr, GLuint shader_prog);
 
 bool R_GL_Texture_Load(const char *basedir, const char *name, GLuint *out);
 void R_GL_Texture_Free(const char *basedir, const char *name);
