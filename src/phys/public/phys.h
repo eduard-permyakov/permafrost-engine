@@ -72,6 +72,7 @@ struct proj_desc{
     struct sprite_sheet_desc trail_sprite;
     vec2_t                   trail_size;
     float                    trail_freq; /* In distance travelled */
+    int                      trail_fps;  /* Playback rate of each trail sprite */
 };
 
 enum proj_fire_mode{

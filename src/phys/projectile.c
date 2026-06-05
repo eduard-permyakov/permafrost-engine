@@ -103,6 +103,7 @@ struct projectile{
     struct sprite_sheet_desc trail_sprite;
     vec2_t                   trail_size;
     float                    trail_freq;
+    int                      trail_fps;
     vec3_t                   prev_trail_pos;
 };
 
@@ -261,7 +262,7 @@ static void phys_proj_spawn_trails(void)
         PFM_Vec3_Sub(&curr->pos, &curr->prev_trail_pos, &delta);
         if(PFM_Vec3_Len(&delta) < curr->trail_freq)
             continue;
-        Sprite_PlayAnim(1, 24, curr->trail_size, curr->trail_sprite, curr->pos);
+        Sprite_PlayAnim(1, curr->trail_fps, curr->trail_size, curr->trail_sprite, curr->pos);
         curr->prev_trail_pos = curr->pos;
     }
 }
@@ -508,6 +509,7 @@ uint32_t P_Projectile_Add(vec3_t origin, vec3_t velocity, uint32_t ent_parent, i
         .trail_sprite = pd.trail_sprite,
         .trail_size = pd.trail_size,
         .trail_freq = pd.trail_freq,
+        .trail_fps = pd.trail_fps,
         .prev_trail_pos = origin
     };
     if(pd.flags & PROJ_HAS_IMPACT_SPRITE) {
@@ -773,6 +775,12 @@ bool P_Projectile_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &trail_freq, "trail_freq"));
 
+        struct attr trail_fps = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr->trail_fps,
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &trail_fps, "trail_fps"));
+
         struct attr prev_trail_pos = (struct attr){
             .type = TYPE_VEC3,
             .val.as_vec3 = curr->prev_trail_pos,
@@ -876,6 +884,10 @@ bool P_Projectile_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_FLOAT);
         proj.trail_freq = attr.val.as_float;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        proj.trail_fps = attr.val.as_int;
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_VEC3);

@@ -2709,20 +2709,21 @@ static int PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *arg
         struct sprite_sheet_desc trail_sprite = {0};
         vec2_t trail_size = (vec2_t){0};
         float trail_freq = 0.0f;
+        int trail_fps = 24;
         if(trail_sprite_obj == NULL) {
             /* No-op */
         }else if(PyTuple_Check(trail_sprite_obj) 
-        && PyArg_ParseTuple(trail_sprite_obj, "(snnn)(ff)f",
+        && PyArg_ParseTuple(trail_sprite_obj, "(snnn)(ff)f|i",
             &trail_sprite.filename, &trail_sprite.nrows, &trail_sprite.ncols, 
-            &trail_sprite.nframes, &trail_size.x, &trail_size.y, &trail_freq)) {
+            &trail_sprite.nframes, &trail_size.x, &trail_size.y, &trail_freq, &trail_fps)) {
 
             proj_flags |= PROJ_HAS_TRAIL_SPRITE;
 
         }else if(trail_sprite_obj != Py_None) {
             PyErr_SetString(PyExc_TypeError, "The trail sprite descriptor must be a tuple of "
-                "3 objects. The first tuple is (filename, nrows, ncols, nframes), the second "
-                "tuple is (size_x, size_y), and the last object is the trail spawn frequency "
-                "in OpenGL distance units.");
+                "3 objects (with an optional 4th). The first tuple is (filename, nrows, ncols, "
+                "nframes), the second tuple is (size_x, size_y), the third is the trail spawn "
+                "frequency in OpenGL distance units, and the optional fourth is the playback FPS.");
             return -1;
         }
 
@@ -2736,7 +2737,8 @@ static int PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *arg
             .impact_size = impact_size,
             .trail_sprite = trail_sprite,
             .trail_size = trail_size,
-            .trail_freq = trail_freq
+            .trail_freq = trail_freq,
+            .trail_fps = trail_fps
         };
         G_Combat_SetProjDesc(self->super.ent, &pd);
     }
