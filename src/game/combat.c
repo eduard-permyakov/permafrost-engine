@@ -1210,10 +1210,11 @@ static vec3_t projectile_spawn_pos(uint32_t uid)
             PFM_Mat4x4_Mult4x1(&pose_mat, &offset_homo, &bone_pos_homo);
             PFM_Mat4x4_Mult4x1(&model, &bone_pos_homo, &proj_pos);
         }else{
+            /* Entity_CenterPos is already in world space, so the offset is
+             * applied directly without re-transforming by the model matrix. */
             vec3_t center = Entity_CenterPos(uid);
             PFM_Vec3_Add(&center, &fd->offset, &center);
-            vec4_t offset_homo = (vec4_t){center.x, center.y, center.z, 1.0f};
-            PFM_Mat4x4_Mult4x1(&model, &offset_homo, &proj_pos);
+            proj_pos = (vec4_t){center.x, center.y, center.z, 1.0f};
         }
     }
     return (vec3_t){proj_pos.x, proj_pos.y, proj_pos.z};
