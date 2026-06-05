@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2018-2023 Eduard Permyakov 
+ *  Copyright (C) 2018-2026 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -144,6 +144,10 @@ enum arrival_state{
 
 struct movestate{
     enum arrival_state state;
+    /* Set between a sent EVENT_MOTION_START and its matching EVENT_MOTION_END so
+     * that the two are always emitted as a pair; clients may assert the pairing.
+     */
+    bool               motion_notified;
     /* The base movement speed in units of OpenGL coords / second 
      */
     float              max_speed;
@@ -394,6 +398,8 @@ VEC_IMPL(static inline, flock, struct flock)
 static void move_push_cmd(struct move_cmd cmd);
 static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack);
 static void do_stop(uint32_t uid);
+static void move_notify_motion_start(uint32_t uid, struct movestate *ms);
+static void move_notify_motion_end(uint32_t uid, struct movestate *ms);
 static void do_update_pos(uint32_t uid, vec2_t pos);
 static void move_tick(void *user, void *event);
 static struct result navigation_tick_task(void *arg);
@@ -633,6 +639,24 @@ static float entity_speed(uint32_t uid)
     return ms->max_speed;
 }
 
+/* The motion start/end notifications are emitted in strict pairs. 'motion_notified'
+ * tracks whether a start is outstanding; the callers only trigger a start when the
+ * entity is still and an end when it was moving, so the asserts turn any break in
+ * the pairing into a hard error here rather than a silent desync for the scripts. */
+static void move_notify_motion_start(uint32_t uid, struct movestate *ms)
+{
+    assert(!ms->motion_notified);
+    ms->motion_notified = true;
+    E_Entity_Notify(EVENT_MOTION_START, uid, NULL, ES_ENGINE);
+}
+
+static void move_notify_motion_end(uint32_t uid, struct movestate *ms)
+{
+    assert(ms->motion_notified);
+    ms->motion_notified = false;
+    E_Entity_Notify(EVENT_MOTION_END, uid, NULL, ES_ENGINE);
+}
+
 static void entity_finish_moving(uint32_t uid, enum arrival_state newstate, bool block)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -641,7 +665,7 @@ static void entity_finish_moving(uint32_t uid, enum arrival_state newstate, bool
     assert(!ent_still(ms));
     uint32_t flags = G_FlagsGet(uid);
 
-    E_Entity_Notify(EVENT_MOTION_END, uid, NULL, ES_ENGINE);
+    move_notify_motion_end(uid, ms);
     if(flags & ENTITY_FLAG_COMBATABLE
     && (newstate != STATE_TURNING)) {
         G_Combat_SetStance(uid, COMBAT_STANCE_AGGRESSIVE);
@@ -778,7 +802,7 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
 
         if(ent_still(ms)) {
             entity_unblock(curr_ent); 
-            E_Entity_Notify(EVENT_MOTION_START, curr_ent, NULL, ES_ENGINE);
+            move_notify_motion_start(curr_ent, ms);
         }
 
         flock_add(&new_flock, curr_ent);
@@ -2373,7 +2397,7 @@ static void entity_apply_update(uint32_t uid, const struct movestate_patch *patc
 {
     ASSERT_IN_MAIN_THREAD();
 
-    if(!G_EntityExists(uid) || G_EntityIsZombie(uid))
+    if(!G_EntityExists(uid) || G_EntityIsZombie(uid) || G_EntityIsGarrisoned(uid))
         return;
 
     struct movestate *ms = movestate_get(uid);
@@ -2429,7 +2453,7 @@ static void entity_apply_update(uint32_t uid, const struct movestate_patch *patc
 
     if(patch->flags & UPDATE_SET_MOVING) {
         entity_unblock(uid);
-        E_Entity_Notify(EVENT_MOTION_START, uid, NULL, ES_ENGINE);
+        move_notify_motion_start(uid, ms);
         ms->state = patch->next_state;
     }
 
@@ -2636,7 +2660,7 @@ static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack)
         assert(ms);
         if(ent_still(ms)) {
             entity_unblock(uid);
-            E_Entity_Notify(EVENT_MOTION_START, uid, NULL, ES_ENGINE);
+            move_notify_motion_start(uid, ms);
         }
         ms->state = STATE_MOVING;
         return;
@@ -2652,7 +2676,7 @@ static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack)
         assert(ms);
         if(ent_still(ms)) {
             entity_unblock(uid);
-            E_Entity_Notify(EVENT_MOTION_START, uid, NULL, ES_ENGINE);
+            move_notify_motion_start(uid, ms);
         }
         ms->state = STATE_MOVING;
         assert(flock_for_ent(uid));
@@ -2685,7 +2709,7 @@ static void do_set_change_direction(uint32_t uid, quat_t target)
 
     if(ent_still(ms)) {
         entity_unblock(uid);
-        E_Entity_Notify(EVENT_MOTION_START, uid, NULL, ES_ENGINE);
+        move_notify_motion_start(uid, ms);
     }
 
     ms->state = STATE_TURNING;
@@ -2762,7 +2786,7 @@ static void do_set_seek_enemies(uint32_t uid)
 
     if(ent_still(ms)) {
         entity_unblock(uid);
-        E_Entity_Notify(EVENT_MOTION_START, uid, NULL, ES_ENGINE);
+        move_notify_motion_start(uid, ms);
     }
 
     ms->state = STATE_SEEK_ENEMIES;
@@ -3636,6 +3660,11 @@ static void entity_interpolation_step(uint32_t uid, int steps)
     ASSERT_IN_MAIN_THREAD();
     struct movestate *ms = movestate_get(uid);
     assert(ms);
+
+    /* Garrisoned entities are off the map with their faction ref removed; a
+     * G_Pos_Set here would double-remove it (see entity_apply_update). */
+    if(G_EntityIsGarrisoned(uid))
+        return;
 
     if(ms->left == 0)
         return;
@@ -4866,6 +4895,13 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_QUAT);
         ms->target_dir = attr.val.as_quat;
+
+        /* Re-establish the motion-notified invariant for an entity reloaded mid-move
+         * and re-emit the start so the client scripts resume the movement animation.
+         */
+        if(!ent_still(ms)) {
+            move_notify_motion_start(uid, ms);
+        }
 
         Sched_TryYield();
     }

@@ -38,6 +38,7 @@
 
 #include "garrison.h"
 #include "game_private.h"
+#include "combat.h"
 #include "fog_of_war.h"
 #include "selection.h"
 #include "movement.h"
@@ -377,6 +378,7 @@ static void do_garrison(uint32_t uid, uint32_t target)
     uint32_t flags = G_FlagsGet(uid);
     flags |= ENTITY_FLAG_GARRISONED;
     G_FlagsSet(uid, flags);
+    G_Combat_StopAttack(uid);
     G_Move_Unblock(uid);
     G_Pos_Garrison(uid);
 }

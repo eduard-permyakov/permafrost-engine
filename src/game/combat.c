@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2018-2023 Eduard Permyakov 
+ *  Copyright (C) 2018-2026 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -151,6 +151,10 @@ struct combatstate{
         STATE_ATTACKING,
         STATE_TURNING_TO_TARGET,
     }state;
+    /* Set between a sent EVENT_ATTACK_START and its matching EVENT_ATTACK_END so
+     * that the two are always emitted as a pair; clients may assert the pairing.
+     */
+    bool               attack_notified;
     bool               sticky;
     uint32_t           target_uid;
     /* If the target gained a target while moving, save and restore
@@ -277,6 +281,8 @@ static void on_attack_anim_tick(void *user, void *event);
 static void on_death_anim_finish(void *user, void *event);
 static void do_stop_attack(uint32_t uid);
 static bool entity_dead(uint32_t uid);
+static void combat_notify_attack_start(uint32_t uid, struct combatstate *cs);
+static void combat_notify_attack_end(uint32_t uid, struct combatstate *cs);
 static struct combat_cmd *snoop_most_recent_command(enum combat_cmd_type type, void *arg,
                                                     bool (*pred)(void*, struct combat_cmd*));
 static bool uids_match(void *arg, struct combat_cmd *cmd);
@@ -617,6 +623,24 @@ static quat_t entity_turn_dir(uint32_t uid, uint32_t target)
     return quat_from_vec(ent_to_target);
 }
 
+/* The attack start/end notifications are emitted in strict pairs. 'attack_notified'
+ * tracks whether a start is outstanding; the callers only ever trigger a start when
+ * idle and an end when attacking, so the asserts turn any break in the pairing into
+ * a hard error here rather than a silent desync the scripts trip over later. */
+static void combat_notify_attack_start(uint32_t uid, struct combatstate *cs)
+{
+    assert(!cs->attack_notified);
+    cs->attack_notified = true;
+    E_Entity_Notify(EVENT_ATTACK_START, uid, NULL, ES_ENGINE);
+}
+
+static void combat_notify_attack_end(uint32_t uid, struct combatstate *cs)
+{
+    assert(cs->attack_notified);
+    cs->attack_notified = false;
+    E_Entity_Notify(EVENT_ATTACK_END, uid, NULL, ES_ENGINE);
+}
+
 static void entity_turn_to_target(uint32_t uid, uint32_t target)
 {
     struct combat_gamestate *gs = &s_combat_work.gamestate;
@@ -632,6 +656,7 @@ static void entity_turn_to_target(uint32_t uid, uint32_t target)
     uint32_t flags = G_FlagsGetFrom(gs->flags, uid);
     if(!(flags & ENTITY_FLAG_MOVABLE)) {
         cs->state = STATE_CAN_ATTACK;
+        combat_notify_attack_start(uid, cs);
     }else{
         quat_t rot = entity_turn_dir(uid, target);
         G_Move_SetChangeDirection(uid, rot);
@@ -651,6 +676,12 @@ static void on_disappear_finish(void *arg)
 static void entity_die(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
+
+    struct combatstate *cs = combatstate_get(uid);
+    if(cs) {
+        cs->attack_notified = false;
+        cs->state = STATE_NOT_IN_COMBAT;
+    }
 
     G_Move_Stop(uid);
 
@@ -686,7 +717,6 @@ static void entity_die(uint32_t uid)
     && !(flags & ENTITY_FLAG_WATER)
     && !(flags & ENTITY_FLAG_AIR)) {
 
-        struct combatstate *cs = combatstate_get(uid);
         cs->state = STATE_DEATH_ANIM_PLAYING;
         E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, uid, on_death_anim_finish, 
             (void*)((uintptr_t)uid), G_RUNNING);
@@ -868,7 +898,7 @@ static void do_remove_entity(uint32_t uid)
 
     if(cs->state == STATE_ATTACK_ANIM_PLAYING
     || cs->state == STATE_CAN_ATTACK) {
-        E_Entity_Notify(EVENT_ATTACK_END, uid, NULL, ES_ENGINE);
+        combat_notify_attack_end(uid, cs);
     }
 
     PF_FREE(cs->pd.basedir);
@@ -897,6 +927,12 @@ static void do_tryhit(uint32_t uid, vec3_t proj_pos)
     || cs->state == STATE_NOT_IN_COMBAT)
         return;
 
+    /* A stale hit can arrive after the unit left its attack (re-targeted, moved off
+     * to garrison, etc.); don't resurrect the attack state without a paired start.
+     */
+    if(!cs->attack_notified)
+        return;
+
     cs->state = STATE_CAN_ATTACK;
     if(entity_dead(cs->target_uid) || garrisoned(cs->target_uid)) {
         return; /* Our target already got 'killed' */
@@ -915,7 +951,7 @@ static void do_tryhit(uint32_t uid, vec3_t proj_pos)
 
     if(RAD_TO_DEG(fabs(angle_diff)) > 5.0f) {
 
-        E_Entity_Notify(EVENT_ATTACK_END, uid, NULL, ES_ENGINE);
+        combat_notify_attack_end(uid, cs);
         entity_turn_to_target(uid, cs->target_uid);
         return;
     }
@@ -1002,6 +1038,7 @@ static void do_attack_unit(uint32_t uid, uint32_t target)
         cs->sticky = true;
         cs->target_uid = target;
         cs->state = STATE_CAN_ATTACK;
+        combat_notify_attack_start(uid, cs);
     }
 }
 
@@ -1017,8 +1054,7 @@ static void do_stop_attack(uint32_t uid)
 
     if(cs->state == STATE_ATTACK_ANIM_PLAYING
     || cs->state == STATE_CAN_ATTACK) {
-
-        E_Entity_Notify(EVENT_ATTACK_END, uid, NULL, ES_ENGINE);
+        combat_notify_attack_end(uid, cs);
     }
 
     cs->state = STATE_NOT_IN_COMBAT;
@@ -1281,6 +1317,10 @@ static void entity_target_enemy(uint32_t uid, uint32_t enemy)
             cs->move_cmd_interrupted = true; 
         }
         G_Move_SetSeekEnemies(uid);
+    }else{
+        /* Can neither attack nor chase the target (e.g. a stationary unit whose enemy
+         * is out of range); leave combat so the state matches the cleared notification. */
+        cs->state = STATE_NOT_IN_COMBAT;
     }
 }
 
@@ -1361,6 +1401,12 @@ static void entity_compute_update(uint32_t uid, struct combat_work_out *out)
     out->action = COMBAT_ACTION_NONE;
     out->notify_attack_end = false;
     out->ent_uid = uid;
+
+    /* Garrisoned units are off the battlefield: freeze their combat state so they
+     * can't re-engage and desync the attack-notified pairing while inside a carrier.
+     * do_garrison cleanly disengages combat when they enter. */
+    if(flags & ENTITY_FLAG_GARRISONED)
+        return;
 
     switch(curr->state) {
     case STATE_NOT_IN_COMBAT: 
@@ -1622,7 +1668,7 @@ static void entity_apply_update(struct combat_work_out *out)
     *cs = out->next_state;
 
     if(out->notify_attack_end) {
-        E_Entity_Notify(EVENT_ATTACK_END, uid, NULL, ES_ENGINE);
+        combat_notify_attack_end(uid, cs);
     }
 
     switch(out->action) {
@@ -1676,7 +1722,7 @@ static void entity_apply_update(struct combat_work_out *out)
         assert(old_uid == uid);
         if(G_Move_Still(uid)) {
             cs->state = STATE_CAN_ATTACK;
-            E_Entity_Notify(EVENT_ATTACK_START, uid, NULL, ES_ENGINE);
+            combat_notify_attack_start(uid, cs);
         }
         break;
     }
@@ -3291,6 +3337,14 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
             CHK_TRUE_RET(G_EntityExists(uid));
             E_Entity_Register(EVENT_UPDATE_START, uid, on_attack_anim_tick, 
                 (void*)((uintptr_t)uid), G_RUNNING);
+        }
+
+        /* Re-establish the attack-notified invariant for an entity reloaded mid-attack
+         * and re-emit the start so the client scripts resume the attack animation. The
+         * event only reaches the G_RUNNING-masked handlers when running, but the flag
+         * must track the state regardless so the pairing asserts hold. */
+        if(cs->state == STATE_CAN_ATTACK || cs->state == STATE_ATTACK_ANIM_PLAYING) {
+            combat_notify_attack_start(uid, cs);
         }
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
