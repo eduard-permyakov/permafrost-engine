@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2023 Eduard Permyakov 
+ *  Copyright (C) 2017-2026 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -738,24 +738,7 @@ static void shadows_en_commit(const struct sval *new_val)
 
 static void batching_en_commit(const struct sval *new_val)
 {
-    bool on = new_val->as_bool;
-    if(on) {
-        if(s_gs.map) {
-            R_PushCmd((struct rcmd){
-                .func = R_GL_Batch_Prep,
-                .nargs = 0,
-                .args = {0},
-            });
-        }
-    }else{
-        R_PushCmd((struct rcmd){
-            .func = R_GL_Batch_Reset,
-            .nargs = 0,
-            .args = {0},
-        });
-
-    }
-    s_gs.use_batch_rendering = on;
+    s_gs.use_batch_rendering = new_val->as_bool;
 }
 
 static bool g_save_anim_state(SDL_RWops *stream)
@@ -1699,14 +1682,6 @@ bool G_LoadMap(SDL_RWops *stream, bool update_navgrid)
 
     E_Global_Notify(EVENT_NEW_GAME, s_gs.map, ES_ENGINE);
 
-    if(s_gs.use_batch_rendering) {
-        R_PushCmd((struct rcmd){
-            .func = R_GL_Batch_Prep,
-            .nargs = 0,
-            .args = {0},
-        });
-    }
-
     PERF_RETURN(true);
 }
 
@@ -1766,7 +1741,6 @@ void G_ClearState(void)
         .args = { R_PushArg(&white, sizeof(white)) },
     });
     G_SetLightPos((vec3_t){1.0f, 1.0f, 1.0f});
-    R_PushCmd((struct rcmd) { R_GL_Batch_Reset, 0 });
 
     PERF_RETURN_VOID();
 }

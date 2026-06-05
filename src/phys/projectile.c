@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2021-2023 Eduard Permyakov 
+ *  Copyright (C) 2021-2026 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -471,15 +471,13 @@ static void on_render_3d(void *user, void *arg)
     struct render_input rinput;
     phys_create_render_input(&rinput);
 
-    enum batch_id id = BATCH_ID_PROJECTILE;
     struct render_input *pushed = phys_push_render_input(&rinput);
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_Batch_DrawWithID,
-        .nargs = 2,
+        .func = R_GL_Batch_Draw,
+        .nargs = 1,
         .args = {
             pushed,
-            R_PushArg(&id, sizeof(id)),
         },
     });
 

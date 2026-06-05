@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2023 Eduard Permyakov 
+ *  Copyright (C) 2017-2026 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -47,7 +47,6 @@ struct render_private{
     struct mesh         mesh;
     size_t              num_materials;
     struct material    *materials;
-    struct texture_arr  material_arr;
     GLuint              shader_prog;
     GLuint              shader_prog_dp; /* for the depth pass */
     GLuint              vertex_stride;

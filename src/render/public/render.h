@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2023 Eduard Permyakov 
+ *  Copyright (C) 2017-2026 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -58,6 +58,7 @@ struct nk_draw_list;
 struct map_resolution;
 struct obb;
 struct aabb;
+struct ent_stat_rstate;
 struct ent_anim_rstate;
 struct anim_pose_data_desc;
 struct splatmap;
@@ -553,26 +554,14 @@ void R_GL_UI_UploadFontAtlas(void *image, const int *w, const int *h);
 /* RENDER BATCH                                                              */
 /*###########################################################################*/
 
-enum batch_id{
-    /* ID of 0 has a special meaning */
-    BATCH_ID_PROJECTILE = 0x1,
-};
-
 /* ---------------------------------------------------------------------------
- * Draw all the camera-visible entities in the render input, making use of 
- * draw command batching to reduce driver overhead. This is equivalent to calling
- * R_GL_Draw(...) for every camera-visible entitiy. Meshes and textures that are 
- * not part of any batch will be added to the batches dynamically.
+ * Draw all the camera-visible entities in the render input, coalescing the
+ * draw commands into instanced multi-draws to reduce driver overhead. The
+ * vertex and texture data is sourced from the shared batch storage, into which
+ * every entity mesh is uploaded at load time.
  * ---------------------------------------------------------------------------
  */
 void R_GL_Batch_Draw(struct render_input *in);
-
-/* ---------------------------------------------------------------------------
- * Like 'R_GL_Batch_Draw' but using the specified batch instead of the default
- * shared static batch.
- * ---------------------------------------------------------------------------
- */
-void R_GL_Batch_DrawWithID(struct render_input *in, enum batch_id *id);
 
 /* ---------------------------------------------------------------------------
  * Update the depth map for every light-visible entity in the render input.
@@ -581,24 +570,6 @@ void R_GL_Batch_DrawWithID(struct render_input *in, enum batch_id *id);
  * ---------------------------------------------------------------------------
  */
 void R_GL_Batch_RenderDepthMap(struct render_input *in);
-
-/* ---------------------------------------------------------------------------
- * Free all the resources used by live batches, resetting the state of the
- * module to that at initialization time. Both shared batches (created by
- * R_GL_Batch_Prep) are destroyed; R_GL_Batch_Prep must be called again
- * before the next batched draw.
- * ---------------------------------------------------------------------------
- */
-void R_GL_Batch_Reset(void);
-
-/* ---------------------------------------------------------------------------
- * Ensure the shared static and animated batches are allocated. Allocating
- * batch resources has significant overhead so it's advantageous to do this
- * upfront, on map load. Safe to call repeatedly - a no-op for any batch that
- * already exists.
- * ---------------------------------------------------------------------------
- */
-void R_GL_Batch_Prep(void);
 
 
 /*###########################################################################*/

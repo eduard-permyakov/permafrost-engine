@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2023 Eduard Permyakov 
+ *  Copyright (C) 2017-2026 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -38,12 +38,27 @@
 
 #include "../pf_math.h"
 
+#include <stddef.h>
+
 struct vertex;
+struct gl_batch;
+
+enum mesh_type{
+    MESH_TYPE_NORMAL,           /* owns its VBO/VAO directly (e.g. terrain chunks) */
+    MESH_TYPE_BATCHED_INDIRECT, /* vertices/textures reside in the shared batch */
+};
 
 struct mesh{
-    unsigned num_verts;
-    GLuint   VBO;
-    GLuint   VAO;
+    enum mesh_type   type;
+    unsigned         num_verts;
+    /* Used by MESH_TYPE_NORMAL meshes. */
+    GLuint           VBO;
+    GLuint           VAO;
+    /* Used by MESH_TYPE_BATCHED_INDIRECT meshes; locate the vertices within
+     * the owning batch node. */
+    struct gl_batch *batch;
+    int              vbo_idx;
+    size_t           offset;
 };
 
 #endif

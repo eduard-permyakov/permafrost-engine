@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2018-2023 Eduard Permyakov 
+ *  Copyright (C) 2018-2026 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -39,6 +39,7 @@
 #include "public/render.h"
 #include "render_private.h"
 #include "gl_render.h"
+#include "gl_batch.h"
 #include "gl_state.h"
 #include "gl_assert.h"
 #include "gl_shader.h"
@@ -226,8 +227,13 @@ void R_GL_RenderDepthMap(const void *render_private, mat4x4_t *model)
     R_GL_CALL(R_GL_Shader_InstallProg(priv->shader_prog_dp));
     R_GL_CALL(R_GL_AnimBindPoseBuff());
 
-    R_GL_CALL(glBindVertexArray(priv->mesh.VAO));
-    R_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts));
+    GLint first = 0;
+    if(priv->mesh.type == MESH_TYPE_BATCHED_INDIRECT) {
+        first = R_GL_Batch_MeshBindVAO(priv);
+    }else{
+        R_GL_CALL(glBindVertexArray(priv->mesh.VAO));
+    }
+    R_GL_CALL(glDrawArrays(GL_TRIANGLES, first, priv->mesh.num_verts));
 
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();

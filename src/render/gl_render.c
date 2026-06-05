@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2023 Eduard Permyakov 
+ *  Copyright (C) 2017-2026 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -47,6 +47,7 @@
 #include "gl_state.h"
 #include "gl_texture.h"
 #include "gl_anim.h"
+#include "gl_batch.h"
 #include "gl_swapchain.h"
 #include "public/render.h"
 #include "../entity.h"
@@ -86,12 +87,43 @@
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_Init(struct render_private *priv, const char *shader, const struct vertex *vbuff)
+static void init_shader_progs(struct render_private *priv, const char *shader)
+{
+    priv->shader_prog = R_GL_Shader_GetProgForName(shader);
+    if(strstr(shader, "animated")) {
+        priv->shader_prog_dp = R_GL_Shader_GetProgForName("mesh.animated.depth");
+    }else {
+        priv->shader_prog_dp = R_GL_Shader_GetProgForName("mesh.static.depth");
+    }
+    assert(priv->shader_prog != -1 && priv->shader_prog_dp != -1);
+}
+
+void R_GL_InitObject(struct render_private *priv, const char *shader, const struct vertex *vbuff)
+{
+    GL_PERF_ENTER();
+    ASSERT_IN_RENDER_THREAD();
+
+    init_shader_progs(priv, shader);
+
+    /* Entity meshes keep their single copy of the vertex and texture data in
+     * the shared batch storage; they are never given their own VBO/VAO. */
+    priv->mesh.type = MESH_TYPE_BATCHED_INDIRECT;
+    bool ok = R_GL_Batch_AppendMesh(priv, vbuff);
+    assert(ok);
+
+    GL_ASSERT_OK();
+    GL_PERF_RETURN_VOID();
+}
+
+void R_GL_InitChunk(struct render_private *priv, const char *shader, const struct vertex *vbuff)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
     struct mesh *mesh = &priv->mesh;
 
+    init_shader_progs(priv, shader);
+
+    mesh->type = MESH_TYPE_NORMAL;
     glGenVertexArrays(1, &mesh->VAO);
     glBindVertexArray(mesh->VAO);
 
@@ -118,82 +150,47 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
         (void*)offsetof(struct vertex, material_idx));
     glEnableVertexAttribArray(3);
 
-    if(strstr(shader, "animated")) {
+    /* Attribute 4 - blend mode */
+    glVertexAttribIPointer(4, 1, GL_BYTE, priv->vertex_stride,
+        (void*)offsetof(struct terrain_vert, blend_mode));
+    glEnableVertexAttribArray(4);
 
-        /* Here, we use 2 attributes to pass in an array of size 6 since we are 
-         * limited to a maximum of 4 components per attribute. */
+    /* Attribute 5 - flag if bump map should be used */
+    glVertexAttribIPointer(5, 1, GL_BYTE, priv->vertex_stride,
+        (void*)offsetof(struct terrain_vert, no_bump_map));
+    glEnableVertexAttribArray(5);
 
-        /* Attribute 4/5 - joint indices */
-        glVertexAttribIPointer(4, 3, GL_UNSIGNED_BYTE, priv->vertex_stride,
-            (void*)offsetof(struct anim_vert, joint_indices));
-        glEnableVertexAttribArray(4);  
-        glVertexAttribIPointer(5, 3, GL_UNSIGNED_BYTE, priv->vertex_stride,
-            (void*)(offsetof(struct anim_vert, joint_indices) + 3*sizeof(GLubyte)));
-        glEnableVertexAttribArray(5);
+    /* Attribute 6 - middle material indices packed together */
+    glVertexAttribIPointer(6, 1, GL_SHORT, priv->vertex_stride,
+      (void*)offsetof(struct terrain_vert, middle_indices));
+    glEnableVertexAttribArray(6);
 
-        /* Attribute 6/7 - joint weights */
-        glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, priv->vertex_stride,
-            (void*)offsetof(struct anim_vert, weights));
-        glEnableVertexAttribArray(6);  
-        glVertexAttribPointer(7, 3, GL_FLOAT, GL_FALSE, priv->vertex_stride,
-            (void*)(offsetof(struct anim_vert, weights) + 3*sizeof(GLfloat)));
-        glEnableVertexAttribArray(7);  
+    /* Attribute 7 - corner 1 material indices packed together */
+    glVertexAttribIPointer(7, 2, GL_INT, priv->vertex_stride,
+        (void*)offsetof(struct terrain_vert, c1_indices));
+    glEnableVertexAttribArray(7);
 
-    }else if(strstr(shader, "terrain")) {
+    /* Attribute 8 - corner 2 material indices packed together */
+    glVertexAttribIPointer(8, 2, GL_INT, priv->vertex_stride,
+        (void*)offsetof(struct terrain_vert, c2_indices));
+    glEnableVertexAttribArray(8);
 
-        /* Attribute 4 - blend mode */
-        glVertexAttribIPointer(4, 1, GL_BYTE, priv->vertex_stride, 
-            (void*)offsetof(struct terrain_vert, blend_mode));
-        glEnableVertexAttribArray(4);
+    /* Attribute 9 - tile top and bottom material indices packed together */
+    glVertexAttribIPointer(9, 1, GL_INT, priv->vertex_stride,
+        (void*)offsetof(struct terrain_vert, tb_indices));
+    glEnableVertexAttribArray(9);
 
-        /* Attribute 5 - flag if bump map should be used */
-        glVertexAttribIPointer(5, 1, GL_BYTE, priv->vertex_stride, 
-            (void*)offsetof(struct terrain_vert, no_bump_map));
-        glEnableVertexAttribArray(5);
+    /* Attribute 10 - tile left and right material indices packed together */
+    glVertexAttribIPointer(10, 1, GL_INT, priv->vertex_stride,
+        (void*)offsetof(struct terrain_vert, lr_indices));
+    glEnableVertexAttribArray(10);
 
-        /* Attribute 6 - middle material indices packed together */
-        glVertexAttribIPointer(6, 1, GL_SHORT, priv->vertex_stride, 
-          (void*)offsetof(struct terrain_vert, middle_indices));
-        glEnableVertexAttribArray(6);
+    /* Attribute 11 - the index of the Wang tile in the corresponding tileset */
+    glVertexAttribIPointer(11, 1, GL_INT, priv->vertex_stride,
+        (void*)offsetof(struct terrain_vert, wang_index));
+    glEnableVertexAttribArray(11);
 
-        /* Attribute 7 - corner 1 material indices packed together */
-        glVertexAttribIPointer(7, 2, GL_INT, priv->vertex_stride, 
-            (void*)offsetof(struct terrain_vert, c1_indices));
-        glEnableVertexAttribArray(7);
-
-        /* Attribute 8 - corner 2 material indices packed together */
-        glVertexAttribIPointer(8, 2, GL_INT, priv->vertex_stride, 
-            (void*)offsetof(struct terrain_vert, c2_indices));
-        glEnableVertexAttribArray(8);
-
-        /* Attribute 9 - tile top and bottom material indices packed together */
-        glVertexAttribIPointer(9, 1, GL_INT, priv->vertex_stride, 
-            (void*)offsetof(struct terrain_vert, tb_indices));
-        glEnableVertexAttribArray(9);
-
-        /* Attribute 10 - tile left and right material indices packed together */
-        glVertexAttribIPointer(10, 1, GL_INT, priv->vertex_stride, 
-            (void*)offsetof(struct terrain_vert, lr_indices));
-        glEnableVertexAttribArray(10);
-
-        /* Attribute 11 - the index of the Wang tile in the corresponding tileset */
-        glVertexAttribIPointer(11, 1, GL_INT, priv->vertex_stride, 
-            (void*)offsetof(struct terrain_vert, wang_index));
-        glEnableVertexAttribArray(11);
-    }
-
-    priv->shader_prog = R_GL_Shader_GetProgForName(shader);
-
-    if(strstr(shader, "animated")) {
-        priv->shader_prog_dp = R_GL_Shader_GetProgForName("mesh.animated.depth");
-    }else {
-        priv->shader_prog_dp = R_GL_Shader_GetProgForName("mesh.static.depth");
-    }
-    assert(priv->shader_prog != -1 && priv->shader_prog_dp != -1);
-
-    if(priv->num_materials > 0) {
-        R_GL_Texture_ArrayMake(priv->materials, priv->num_materials, &priv->material_arr, GL_TEXTURE0);
-    }
+    glBindVertexArray(0);
 
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
@@ -219,19 +216,24 @@ void R_GL_Draw(const void *render_private, mat4x4_t *model, const bool *transluc
         { "ambient_intensity",   UTYPE_FLOAT,    offsetof(struct material, ambient_intensity) },
         { "diffuse_clr",         UTYPE_VEC3,     offsetof(struct material, diffuse_clr)       },
         { "specular_clr",        UTYPE_VEC3,     offsetof(struct material, specular_clr)      },
+        { "tex_array",           UTYPE_INT,      offsetof(struct material, tex_arr_idx)       },
+        { "tex_slot",            UTYPE_INT,      offsetof(struct material, tex_slot)          },
         {0}
     }, sizeof(struct material), priv->num_materials, priv->materials);
 
     R_GL_Shader_InstallProg(priv->shader_prog);
 
-    if(priv->num_materials > 0) {
-        R_GL_Texture_BindArray(&priv->material_arr, priv->shader_prog);
-    }
     R_GL_ShadowMapBind();
     R_GL_AnimBindPoseBuff();
     
-    glBindVertexArray(priv->mesh.VAO);
-    glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
+    GLint first = 0;
+    if(priv->mesh.type == MESH_TYPE_BATCHED_INDIRECT) {
+        R_GL_Batch_MeshBindTextures(priv, priv->shader_prog);
+        first = R_GL_Batch_MeshBindVAO(priv);
+    }else{
+        glBindVertexArray(priv->mesh.VAO);
+    }
+    glDrawArrays(GL_TRIANGLES, first, priv->mesh.num_verts);
 
     if(*translucent) {
         glDisable(GL_BLEND);
@@ -586,20 +588,12 @@ void R_GL_DrawModelToTexture(const void *render_private, const struct obb *obb,
     bool translucent = false;
     if(anim_state) {
         mat4x4_t tmp, normal;
-        PFM_Mat4x4_Inverse((mat4x4_t*)&model, &tmp);
+        PFM_Mat4x4_Inverse(&model, &tmp);
         PFM_Mat4x4_Transpose(&tmp, &normal);
-
         R_GL_AnimSetUniforms(&normal, &anim_state->desc);
     }
-    const char *shader = NULL;
-    if(anim_state) {
-        shader = "mesh.animated.textured-phong-shadowed";
-    }else{
-        shader = "mesh.static.textured-phong-shadowed";
-    }
-    R_GL_Shader_Install(shader);
     Camera_TickFinishPerspectiveUpsideDown(cam);
-    R_GL_Draw(priv, (mat4x4_t*)&model, &translucent);
+    R_GL_Draw(priv, &model, &translucent);
     R_GL_Texture_AddExisting(key, tex);
 
     /* Cleanup */
@@ -915,8 +909,13 @@ void R_GL_DrawNormals(const void *render_private, mat4x4_t *model, const bool *a
                                        : "mesh.static.normals.colored";
     R_GL_Shader_Install(normals_shader);
 
-    glBindVertexArray(priv->mesh.VAO);
-    glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
+    GLint first = 0;
+    if(priv->mesh.type == MESH_TYPE_BATCHED_INDIRECT) {
+        first = R_GL_Batch_MeshBindVAO(priv);
+    }else{
+        glBindVertexArray(priv->mesh.VAO);
+    }
+    glDrawArrays(GL_TRIANGLES, first, priv->mesh.num_verts);
 
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();

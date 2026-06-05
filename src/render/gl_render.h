@@ -61,7 +61,8 @@ struct map;
 
 /* General */
 
-void   R_GL_Init(struct render_private *priv, const char *shader, const struct vertex *vbuff);
+void   R_GL_InitChunk(struct render_private *priv, const char *shader, const struct vertex *vbuff);
+void   R_GL_InitObject(struct render_private *priv, const char *shader, const struct vertex *vbuff);
 void   R_GL_GlobalConfig(void);
 void   R_GL_SetViewport(int *x, int *y, int *w, int *h);
 

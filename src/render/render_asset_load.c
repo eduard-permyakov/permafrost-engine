@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2023 Eduard Permyakov 
+ *  Copyright (C) 2017-2026 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -42,6 +42,7 @@
 #include "gl_vertex.h"
 #include "gl_material.h"
 #include "gl_render.h"
+#include "gl_batch.h"
 #include "gl_assert.h"
 #include "gl_shader.h"
 
@@ -265,7 +266,7 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
                               : "mesh.static.textured-phong-shadowed";
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_Init,
+        .func = R_GL_InitObject,
         .nargs = 3,
         .args = {
             priv,
@@ -288,8 +289,16 @@ fail_alloc_priv:
 void R_AL_DumpPrivate(FILE *stream, void *priv_data)
 {
     struct render_private *priv = priv_data;
-    glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
-    struct vertex *vbuff = glMapBuffer(GL_ARRAY_BUFFER, GL_READ_ONLY);
+
+    /* Entity meshes keep their vertex data in the shared batch; terrain meshes
+     * own a VBO directly. */
+    const struct vertex *vbuff;
+    if(priv->mesh.type == MESH_TYPE_BATCHED_INDIRECT) {
+        vbuff = R_GL_Batch_MeshVertsMap(priv);
+    }else{
+        glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
+        vbuff = glMapBuffer(GL_ARRAY_BUFFER, GL_READ_ONLY);
+    }
     assert(vbuff);
 
     /* Write verticies */
@@ -316,7 +325,11 @@ void R_AL_DumpPrivate(FILE *stream, void *priv_data)
         fprintf(stream, "vm %d\n", v->material_idx); 
     }
 
-    glUnmapBuffer(GL_ARRAY_BUFFER);
+    if(priv->mesh.type == MESH_TYPE_BATCHED_INDIRECT) {
+        R_GL_Batch_MeshVertsUnmap(priv);
+    }else{
+        glUnmapBuffer(GL_ARRAY_BUFFER);
+    }
 
     /* Write materials */
     for(int i = 0; i < priv->num_materials; i++) {
@@ -379,7 +392,7 @@ bool R_AL_InitPrivFromTiles(const struct map *map, int chunk_r, int chunk_c,
 
     const char *shader = "terrain-shadowed";
     R_PushCmd((struct rcmd){
-        .func = R_GL_Init,
+        .func = R_GL_InitChunk,
         .nargs = 3,
         .args = {
             priv,

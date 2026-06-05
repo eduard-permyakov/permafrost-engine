@@ -1,6 +1,6 @@
 /* 
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2019-2023 Eduard Permyakov 
+ *  Copyright (C) 2019-2026 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -36,12 +36,35 @@
 #ifndef GL_BATCH_H
 #define GL_BATCH_H
 
+#include <GL/glew.h>
 #include <stdbool.h>
 
 struct render_input;
+struct render_private;
 
 bool R_GL_Batch_Init(void);
 void R_GL_Batch_Shutdown(void);
+
+/* Upload a static or animated mesh's vertices and textures into the shared
+ * batch storage, recording the location in 'priv->mesh.batch'. */
+bool R_GL_Batch_AppendMesh(struct render_private *priv, const void *vbuff);
+
+/* Map/unmap a batched mesh's vertex data for CPU read-back. The returned
+ * pointer is offset to the start of the mesh's vertices. */
+const void *R_GL_Batch_MeshVertsMap(const struct render_private *priv);
+void        R_GL_Batch_MeshVertsUnmap(const struct render_private *priv);
+
+/* Bind the VAO holding a batched mesh and return the index of its first vertex. */
+GLint R_GL_Batch_MeshBindVAO(const struct render_private *priv);
+
+/* Return the buffer object and the byte offset at which a mesh's vertex data
+ * begins, for callers that build their own VAOs. The offset is 0 for
+ * standalone meshes. */
+void R_GL_Batch_MeshGetStorage(const struct render_private *priv, GLuint *out_vbo, size_t *out_offset);
+
+/* Bind the texture arrays holding a batched mesh's textures. The per-material
+ * array/slot indices are carried in the material uniforms. */
+void R_GL_Batch_MeshBindTextures(const struct render_private *priv, GLuint shader_prog);
 
 #endif
 

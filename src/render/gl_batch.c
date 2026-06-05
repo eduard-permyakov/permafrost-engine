@@ -1,6 +1,6 @@
 /* 
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2019-2023 Eduard Permyakov 
+ *  Copyright (C) 2019-2026 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -86,7 +86,6 @@
 
 #define CMD_RING_TUNIT      (GL_TEXTURE5)
 #define ATTR_RING_TUNIT     (GL_TEXTURE6)
-#define BATCH_ID_NULL       (0)
 
 #define GL_PERF_CALL(name, ...)     \
     do{                             \
@@ -95,12 +94,6 @@
         GL_GPU_PERF_POP();          \
     }while(0)
 
-
-struct mesh_desc{
-    struct gl_batch *batch;
-    int              vbo_idx;
-    size_t           offset;
-};
 
 struct tex_desc{
     struct gl_batch *batch;
@@ -138,7 +131,6 @@ struct batch_draw_desc{
     int end_idx;
 };
 
-KHASH_MAP_INIT_INT(mdesc, struct mesh_desc)
 KHASH_MAP_INIT_INT(tdesc, struct tex_desc)
 
 struct GL_DAI_Cmd{
@@ -160,9 +152,6 @@ struct gl_batch{
     /* Ringbuffer for for per-instance attributes associated
      * with the draw commands */
     struct gl_ring     *attr_ring;
-    /* A mapping of the mesh's VBO to its' position 
-     * within the batch buffer list. */
-    khash_t(mdesc)     *vbo_desc_map;
     /* A mapping of onne of the mesh's texture IDs to its
      * position within the texture array list. */
     khash_t(tdesc)     *tid_desc_map;
@@ -187,24 +176,24 @@ struct gl_batch{
     struct gl_batch    *next;
 };
 
-KHASH_MAP_INIT_INT(batch, struct gl_batch*)
-
-static struct gl_batch *batch_init(enum batch_type type);
-static void batch_destroy(struct gl_batch *batch);
-static struct mesh_desc batch_mdesc_for_vbo(struct gl_batch *batch, GLuint VBO);
-
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
 static struct gl_batch *s_anim_batch;
 static struct gl_batch *s_stat_batch;
-static khash_t(batch)  *s_id_batches;
 static GLuint           s_draw_id_vbo;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static size_t batch_vert_alignment(enum batch_type type)
+{
+    return type == BATCH_TYPE_STAT ? sizeof(struct vertex)
+         : type == BATCH_TYPE_ANIM ? sizeof(struct anim_vert)
+                                   : (assert(0), 0);
+}
 
 static int batch_first_free_idx(uint32_t mask)
 {
@@ -215,24 +204,6 @@ static int batch_first_free_idx(uint32_t mask)
         ret++, mask >>= 1;
     }
     return -1;
-}
-
-static bool batch_alloc_texarray(struct gl_batch *batch)
-{
-    if(batch->ntexarrs == MAX_TEX_ARRS)
-        return false;
-
-    R_GL_Texture_ArrayAlloc(TEX_ARR_SZ, &batch->textures[batch->ntexarrs].arr, GL_TEXTURE0 + batch->ntexarrs);
-    batch->textures[batch->ntexarrs].free = ~((uint32_t)0);
-    batch->ntexarrs++;
-    return true;
-}
-
-static size_t batch_vert_alignment(enum batch_type type)
-{
-    return type == BATCH_TYPE_STAT ? sizeof(struct vertex)
-         : type == BATCH_TYPE_ANIM ? sizeof(struct anim_vert)
-                                   : (assert(0), 0);
 }
 
 static void batch_init_vao(enum batch_type type, GLuint *out, GLuint src_vbo)
@@ -304,6 +275,17 @@ static void batch_init_vao(enum batch_type type, GLuint *out, GLuint src_vbo)
     glBindVertexArray(0);
 }
 
+static bool batch_alloc_texarray(struct gl_batch *batch)
+{
+    if(batch->ntexarrs == MAX_TEX_ARRS)
+        return false;
+
+    R_GL_Texture_ArrayAlloc(TEX_ARR_SZ, &batch->textures[batch->ntexarrs].arr, GL_TEXTURE0 + batch->ntexarrs);
+    batch->textures[batch->ntexarrs].free = ~((uint32_t)0);
+    batch->ntexarrs++;
+    return true;
+}
+
 static bool batch_alloc_vbo(struct gl_batch *batch, size_t size)
 {
     if(batch->nvbos == MAX_MESH_BUFFS)
@@ -327,195 +309,6 @@ static bool batch_alloc_vbo(struct gl_batch *batch, size_t size)
     return true;
 }
 
-static bool batch_contains_mesh(struct gl_batch *batch, GLuint VBO)
-{
-    do{
-        khiter_t k = kh_get(mdesc, batch->vbo_desc_map, VBO);
-        if(k != kh_end(batch->vbo_desc_map))
-            return true;
-    }while((batch = batch->next));
-    return false;
-}
-
-static bool batch_append_mesh(struct gl_batch *batch, GLuint VBO)
-{
-    khiter_t k = kh_get(mdesc, batch->vbo_desc_map, VBO);
-    if(k != kh_end(batch->vbo_desc_map))
-        return true; /* VBO already in the batch */
-
-    size_t alignment = batch_vert_alignment(batch->type);
-
-    GLint size;
-    glBindBuffer(GL_COPY_READ_BUFFER, VBO);
-    glGetBufferParameteriv(GL_COPY_READ_BUFFER, GL_BUFFER_SIZE, &size);
-
-    int curr_vbo_idx = 0;
-    int vbo_offset = -1;
-    do{
-        vbo_offset = pf_metamemalign(batch->vbos[curr_vbo_idx].heap_meta, alignment, size);
-        if(vbo_offset >= 0)
-            break;
-    }while(++curr_vbo_idx < batch->nvbos);
-
-    if(vbo_offset < 0) {
-        if(batch->nvbos == MAX_MESH_BUFFS)
-            return false;
-        if(!batch_alloc_vbo(batch, size))
-            return false;
-        curr_vbo_idx = batch->nvbos-1;
-        vbo_offset = pf_metamemalign(batch->vbos[curr_vbo_idx].heap_meta, alignment, size);
-    }
-    assert(curr_vbo_idx >= 0 && curr_vbo_idx < batch->nvbos);
-    assert(vbo_offset >= 0);
-
-    /* Perform VBO-to-VBO copy. The data should be copied without having 
-     * to do a round-trip to the CPU.
-     */
-    glBindBuffer(GL_COPY_WRITE_BUFFER, batch->vbos[curr_vbo_idx].VBO);
-    glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, vbo_offset, size);
-
-    int status;
-    k = kh_put(mdesc, batch->vbo_desc_map, VBO, &status);
-    if(status == -1) {
-        pf_metafree(batch->vbos[curr_vbo_idx].heap_meta, vbo_offset);
-        return false;
-    }
-
-    kh_value(batch->vbo_desc_map, k) = (struct mesh_desc){batch, curr_vbo_idx, vbo_offset};
-
-    GL_ASSERT_OK();
-    return true;
-}
-
-static void batch_free_mesh(struct gl_batch *batch, GLuint VBO)
-{
-    khiter_t k = kh_get(mdesc, batch->vbo_desc_map, VBO);
-    assert(k != kh_end(batch->vbo_desc_map));
-
-    struct mesh_desc md = kh_value(batch->vbo_desc_map, k);
-    pf_metafree(batch->vbos[md.vbo_idx].heap_meta, md.offset);
-    kh_del(mdesc, batch->vbo_desc_map, k);
-}
-
-static bool batch_contains_tex(struct gl_batch *batch, GLuint tid)
-{
-    do{
-        khiter_t k = kh_get(tdesc, batch->tid_desc_map, tid);
-        if(k != kh_end(batch->tid_desc_map))
-            return true;
-    }while((batch = batch->next));
-    return false;
-}
-
-static bool batch_append_tex(struct gl_batch *batch, GLuint tid, int idx, struct texture_arr *arr)
-{
-    khiter_t k = kh_get(tdesc, batch->tid_desc_map, tid);
-    if(k != kh_end(batch->tid_desc_map))
-        return true; /* texture already in the batch */
-
-    int curr_arr_idx = 0;
-    int slice_idx = -1;
-    do{
-        if(batch->textures[curr_arr_idx].free == 0)
-            continue;
-        slice_idx = batch_first_free_idx(batch->textures[curr_arr_idx].free);
-        break;
-    }while(++curr_arr_idx < batch->ntexarrs);
-
-    if(slice_idx == -1) {
-        if(curr_arr_idx == MAX_TEX_ARRS)
-            return false;
-        if(!batch_alloc_texarray(batch))
-            return false;
-        curr_arr_idx = batch->ntexarrs-1;
-        slice_idx = batch_first_free_idx(batch->textures[curr_arr_idx].free);
-    }
-    assert(curr_arr_idx >= 0 && curr_arr_idx < batch->ntexarrs);
-    assert(slice_idx >= 0 && slice_idx < 32);
-
-    R_GL_Texture_BindArray(&batch->textures[curr_arr_idx].arr, R_GL_Shader_GetCurrActive());
-    assert(glIsTexture(batch->textures[curr_arr_idx].arr.id));
-    assert(glIsTexture(arr->id));
-    R_GL_Texture_ArrayCopyElem(&batch->textures[curr_arr_idx].arr, slice_idx, arr, idx,
-        CONFIG_ARR_TEX_RES);
-
-    int status;
-    k = kh_put(tdesc, batch->tid_desc_map, tid, &status);
-    if(status == -1) {
-        return false;
-    }
-
-    kh_value(batch->tid_desc_map, k) = (struct tex_desc){batch, curr_arr_idx, slice_idx};
-    batch->textures[curr_arr_idx].free &= ~(((uint32_t)0x1) << slice_idx);
-
-    GL_ASSERT_OK();
-    return true;
-}
-
-static void batch_free_tex(struct gl_batch *batch, GLuint id)
-{
-    khiter_t k = kh_get(tdesc, batch->tid_desc_map, id);
-    if(k != kh_end(batch->tid_desc_map)) {
-        struct tex_desc td = kh_value(batch->tid_desc_map, k);
-        batch->textures[td.arr_idx].free |= (0x1 << td.tex_idx);
-        kh_del(tdesc, batch->tid_desc_map, k);
-    }
-}
-
-static bool batch_grow(struct gl_batch *batch)
-{
-    struct gl_batch *next = batch_init(batch->type);
-    if(!next)
-        return false;
-
-    while(batch->next) {
-        batch = batch->next;
-    }
-    batch->next = next;
-    return true;
-}
-
-static bool batch_append(struct gl_batch *batch, struct render_private *priv)
-{
-    struct gl_batch *curr = batch;
-    const size_t ntries = 2;
-    for(int i = 0; i < ntries; i++) {
-
-        if(!batch_contains_mesh(batch, priv->mesh.VBO) && !batch_append_mesh(curr, priv->mesh.VBO))
-            goto fail_append_mesh;
-
-        /* Meshes and textures must be in the same batch */
-        struct gl_batch *mesh_batch = batch_mdesc_for_vbo(batch, priv->mesh.VBO).batch;
-
-        int tex_idx = 0;
-        for(; tex_idx < priv->num_materials; tex_idx++) {
-            if(!batch_append_tex(mesh_batch, priv->materials[tex_idx].texture.id, tex_idx, &priv->material_arr))
-                goto fail_append_tex;
-        }
-
-        GL_ASSERT_OK();
-        return true;
-
-    fail_append_tex:
-        while(--tex_idx >= 0) {
-            assert(tex_idx >= 0 && tex_idx < priv->num_materials);
-            batch_free_tex(mesh_batch, priv->materials[tex_idx].texture.id);
-        }
-        batch_free_mesh(mesh_batch, priv->mesh.VBO);
-    fail_append_mesh:
-        if(!batch_grow(curr)) {
-
-            GL_ASSERT_OK();
-            return false;
-        }else{
-            curr = curr->next;
-        }
-    }
-
-    GL_ASSERT_OK();
-    return false;
-}
-
 static struct gl_batch *batch_init(enum batch_type type)
 {
     struct gl_batch *batch = PF_MALLOC(sizeof(struct gl_batch));
@@ -523,41 +316,30 @@ static struct gl_batch *batch_init(enum batch_type type)
         goto fail_alloc;
 
     batch->type = type;
+    batch->ntexarrs = 0;
+    batch->nvbos = 0;
+    batch->next = NULL;
+
     batch->cmd_ring = R_GL_RingbufferInit(CMD_RING_SZ, RING_UBYTE);
     if(!batch->cmd_ring)
         goto fail_cmd_ring;
 
-    switch(type) {
-    case BATCH_TYPE_STAT: 
-        batch->attr_ring = R_GL_RingbufferInit(STAT_ATTR_RING_SZ, RING_FLOAT);
-        break;
-    case BATCH_TYPE_ANIM: 
-        batch->attr_ring = R_GL_RingbufferInit(ANIM_ATTR_RING_SZ, RING_FLOAT);
-        break;
-    default: assert(0);
-    }
-
+    size_t attr_sz = (type == BATCH_TYPE_ANIM) ? ANIM_ATTR_RING_SZ : STAT_ATTR_RING_SZ;
+    batch->attr_ring = R_GL_RingbufferInit(attr_sz, RING_FLOAT);
     if(!batch->attr_ring)
         goto fail_attr_ring;
-
-    batch->vbo_desc_map = kh_init(mdesc);
-    if(!batch->vbo_desc_map)
-        goto fail_vbo_desc_map;
         
     batch->tid_desc_map = kh_init(tdesc);
     if(!batch->tid_desc_map)
         goto fail_tid_desc_map;
 
-    batch->ntexarrs = 0;
     if(!batch_alloc_texarray(batch))
         goto fail_tex_array;
 
-    batch->nvbos = 0;
     if(!batch_alloc_vbo(batch, MESH_BUFF_SZ))
         goto fail_vbo;
 
     GL_ASSERT_OK();
-    batch->next = NULL;
     return batch;
 
 fail_vbo:
@@ -565,8 +347,6 @@ fail_vbo:
 fail_tex_array:
     kh_destroy(tdesc, batch->tid_desc_map);
 fail_tid_desc_map:
-    kh_destroy(mdesc, batch->vbo_desc_map);
-fail_vbo_desc_map:
     R_GL_RingbufferDestroy(batch->attr_ring);
 fail_attr_ring:
     R_GL_RingbufferDestroy(batch->cmd_ring);
@@ -585,48 +365,180 @@ static void batch_destroy(struct gl_batch *batch)
         R_GL_Texture_ArrayFree(batch->textures[i].arr);
     }
     for(int i = 0; i < batch->nvbos; i++) {
+        glDeleteVertexArrays(1, &batch->vbos[i].VAO);
         glDeleteBuffers(1, &batch->vbos[i].VBO);
+        pf_metamalloc_destroy(batch->vbos[i].heap_meta);
     }
-
     kh_destroy(tdesc, batch->tid_desc_map);
-    kh_destroy(mdesc, batch->vbo_desc_map);
-
     R_GL_RingbufferDestroy(batch->attr_ring);
     R_GL_RingbufferDestroy(batch->cmd_ring);
-
     PF_FREE(batch);
 }
 
-static struct mesh_desc batch_mdesc_for_vbo(struct gl_batch *batch, GLuint VBO)
+static bool batch_grow(struct gl_batch *batch)
 {
-    struct gl_batch *curr = batch;
-    do{
-        khiter_t k = kh_get(mdesc, curr->vbo_desc_map, VBO);
-        if(k != kh_end(curr->vbo_desc_map)) {
-            return kh_value(curr->vbo_desc_map, k);
-        }
-    }while((curr = curr->next));
+    struct gl_batch *next = batch_init(batch->type);
+    if(!next)
+        return false;
 
-    assert(0);
-    return (struct mesh_desc){0};
+    while(batch->next) {
+        batch = batch->next;
+    }
+    batch->next = next;
+    return true;
+}
+
+static bool batch_append_mesh(struct gl_batch *batch, const void *vbuff, size_t size,
+                              size_t alignment, int *out_vbo_idx, int *out_offset)
+{
+    int vbo_idx = 0;
+    int offset = -1;
+    do{
+        offset = pf_metamemalign(batch->vbos[vbo_idx].heap_meta, alignment, size);
+        if(offset >= 0)
+            break;
+    }while(++vbo_idx < batch->nvbos);
+
+    if(offset < 0) {
+        if(!batch_alloc_vbo(batch, size))
+            return false;
+        vbo_idx = batch->nvbos - 1;
+        offset = pf_metamemalign(batch->vbos[vbo_idx].heap_meta, alignment, size);
+        if(offset < 0)
+            return false;
+    }
+    assert(vbo_idx >= 0 && vbo_idx < batch->nvbos);
+    assert(offset >= 0);
+
+    glBindBuffer(GL_ARRAY_BUFFER, batch->vbos[vbo_idx].VBO);
+    glBufferSubData(GL_ARRAY_BUFFER, offset, size, vbuff);
+
+    *out_vbo_idx = vbo_idx;
+    *out_offset = offset;
+
+    GL_ASSERT_OK();
+    return true;
+}
+
+static void batch_free_mesh(struct gl_batch *batch, int vbo_idx, int offset)
+{
+    pf_metafree(batch->vbos[vbo_idx].heap_meta, offset);
+}
+
+static bool batch_append_tex(struct gl_batch *batch, GLuint tid, struct texture_arr *src,
+                             int src_idx, bool *out_new)
+{
+    *out_new = false;
+
+    khiter_t k = kh_get(tdesc, batch->tid_desc_map, tid);
+    if(k != kh_end(batch->tid_desc_map))
+        return true; /* texture already in the batch */
+
+    int arr_idx = 0;
+    int slice_idx = -1;
+    do{
+        if(batch->textures[arr_idx].free == 0)
+            continue;
+        slice_idx = batch_first_free_idx(batch->textures[arr_idx].free);
+        break;
+    }while(++arr_idx < batch->ntexarrs);
+
+    if(slice_idx == -1) {
+        if(!batch_alloc_texarray(batch))
+            return false;
+        arr_idx = batch->ntexarrs - 1;
+        slice_idx = batch_first_free_idx(batch->textures[arr_idx].free);
+    }
+    assert(arr_idx >= 0 && arr_idx < batch->ntexarrs);
+    assert(slice_idx >= 0 && slice_idx < 32);
+
+    assert(glIsTexture(batch->textures[arr_idx].arr.id));
+    assert(glIsTexture(src->id));
+    R_GL_Texture_ArrayCopyElem(&batch->textures[arr_idx].arr, slice_idx, src, src_idx,
+        CONFIG_ARR_TEX_RES);
+
+    int status;
+    k = kh_put(tdesc, batch->tid_desc_map, tid, &status);
+    if(status == -1)
+        return false;
+
+    kh_value(batch->tid_desc_map, k) = (struct tex_desc){batch, arr_idx, slice_idx};
+    batch->textures[arr_idx].free &= ~(((uint32_t)0x1) << slice_idx);
+
+    *out_new = true;
+    GL_ASSERT_OK();
+    return true;
+}
+
+static void batch_free_tex(struct gl_batch *batch, GLuint tid)
+{
+    khiter_t k = kh_get(tdesc, batch->tid_desc_map, tid);
+    if(k != kh_end(batch->tid_desc_map)) {
+        struct tex_desc td = kh_value(batch->tid_desc_map, k);
+        batch->textures[td.arr_idx].free |= (0x1 << td.tex_idx);
+        kh_del(tdesc, batch->tid_desc_map, k);
+    }
 }
 
 static struct tex_desc batch_tdesc_for_tid(struct gl_batch *batch, GLuint tid)
 {
-    struct gl_batch *curr = batch;
-    do{
-        khiter_t k = kh_get(tdesc, curr->tid_desc_map, tid);
-        if(k != kh_end(curr->tid_desc_map)) {
-            return kh_value(curr->tid_desc_map, k);
-        }
-    }while((curr = curr->next));
-
+    khiter_t k = kh_get(tdesc, batch->tid_desc_map, tid);
+    if(k != kh_end(batch->tid_desc_map)) {
+        return kh_value(batch->tid_desc_map, k);
+    }
     assert(0);
     return (struct tex_desc){0};
 }
 
-static size_t batch_sort_by_batch_stat(struct gl_batch *batch, struct ent_stat_rstate *ents, 
-                                       size_t nents, struct batch_draw_desc *out, size_t maxout)
+/* Try to place a mesh and all of its textures into a single batch node. On
+ * success the mesh's descriptor is filled in and 'true' is returned; on failure
+ * any partial allocation is rolled back. */
+static bool batch_try_place(struct gl_batch *batch, struct render_private *priv,
+                            const void *vbuff, size_t size, struct texture_arr *src_tex)
+{
+    size_t alignment = batch_vert_alignment(batch->type);
+
+    int vbo_idx, offset;
+    if(!batch_append_mesh(batch, vbuff, size, alignment, &vbo_idx, &offset))
+        return false;
+
+    GLuint new_tids[MAX_MATERIALS];
+    int nnew = 0;
+    int i = 0;
+    for(; i < priv->num_materials; i++) {
+        bool isnew;
+        if(!batch_append_tex(batch, priv->materials[i].texture.id, src_tex, i, &isnew))
+            goto fail_tex;
+        if(isnew)
+            new_tids[nnew++] = priv->materials[i].texture.id;
+    }
+
+    /* Record where each material's texture landed so the non-batched draw path
+     * can sample the correct array/slot. */
+    for(int k = 0; k < priv->num_materials; k++) {
+        struct tex_desc td = batch_tdesc_for_tid(batch, priv->materials[k].texture.id);
+        priv->materials[k].tex_arr_idx = td.arr_idx;
+        priv->materials[k].tex_slot = td.tex_idx;
+    }
+
+    priv->mesh.batch = batch;
+    priv->mesh.vbo_idx = vbo_idx;
+    priv->mesh.offset = offset;
+    GL_ASSERT_OK();
+    return true;
+
+fail_tex:
+    /* Only roll back textures that this call actually added; shared textures
+     * placed by earlier meshes must remain. */
+    for(int j = 0; j < nnew; j++) {
+        batch_free_tex(batch, new_tids[j]);
+    }
+    batch_free_mesh(batch, vbo_idx, offset);
+    return false;
+}
+
+static size_t batch_sort_by_batch_stat(struct ent_stat_rstate *ents, size_t nents,
+                                       struct batch_draw_desc *out, size_t maxout)
 {
     if(nents == 0)
         return 0;
@@ -634,14 +546,11 @@ static size_t batch_sort_by_batch_stat(struct gl_batch *batch, struct ent_stat_r
     int i = 1;
     while(i < nents) {
         int j = i;
-
-        GLuint VBO1 = ((struct render_private*)ents[j - 1].render_private)->mesh.VBO;
-        GLuint VBO2 = ((struct render_private*)ents[j].render_private)->mesh.VBO;
-        struct mesh_desc md1 = batch_mdesc_for_vbo(batch, VBO1);
-        struct mesh_desc md2 = batch_mdesc_for_vbo(batch, VBO2);
-
-        while(j > 0 && (md1.batch > md2.batch)) {
-
+        while(j > 0) {
+            struct gl_batch *b1 = ((struct render_private*)ents[j - 1].render_private)->mesh.batch;
+            struct gl_batch *b2 = ((struct render_private*)ents[j].render_private)->mesh.batch;
+            if((uintptr_t)b1 <= (uintptr_t)b2)
+                break;
             struct ent_stat_rstate tmp = ents[j - 1];
             ents[j - 1] = ents[j];
             ents[j] = tmp;
@@ -651,26 +560,16 @@ static size_t batch_sort_by_batch_stat(struct gl_batch *batch, struct ent_stat_r
     }
 
     size_t ret = 0;
-
-    GLuint VBO = ((struct render_private*)ents[0].render_private)->mesh.VBO;
     struct batch_draw_desc curr = (struct batch_draw_desc){
-        .batch = batch_mdesc_for_vbo(batch, VBO).batch,
+        .batch = ((struct render_private*)ents[0].render_private)->mesh.batch,
         .start_idx = 0
     };
-
     for(i = 0; i < nents; i++) {
-        struct ent_stat_rstate *rstate = &ents[i];
-        GLuint VBO = ((struct render_private*)rstate->render_private)->mesh.VBO;
-        struct gl_batch *cbatch = batch_mdesc_for_vbo(batch, VBO).batch;
-        if(cbatch != curr.batch) {
-
+        struct gl_batch *b = ((struct render_private*)ents[i].render_private)->mesh.batch;
+        if(b != curr.batch) {
             curr.end_idx = i - 1;
             out[ret++] = curr;
-
-            curr = (struct batch_draw_desc){
-                .batch = cbatch,
-                .start_idx = i
-            };
+            curr = (struct batch_draw_desc){ .batch = b, .start_idx = i };
         }
         if(ret == maxout)
             break;
@@ -678,12 +577,11 @@ static size_t batch_sort_by_batch_stat(struct gl_batch *batch, struct ent_stat_r
 
     curr.end_idx = i - 1;
     out[ret++] = curr;
-
     return ret;
 }
 
-static size_t batch_sort_by_batch_anim(struct gl_batch *batch, struct ent_anim_rstate *ents, 
-                                       size_t nents, struct batch_draw_desc *out, size_t maxout)
+static size_t batch_sort_by_batch_anim(struct ent_anim_rstate *ents, size_t nents,
+                                       struct batch_draw_desc *out, size_t maxout)
 {
     if(nents == 0)
         return 0;
@@ -691,14 +589,11 @@ static size_t batch_sort_by_batch_anim(struct gl_batch *batch, struct ent_anim_r
     int i = 1;
     while(i < nents) {
         int j = i;
-
-        GLuint VBO1 = ((struct render_private*)ents[j - 1].render_private)->mesh.VBO;
-        GLuint VBO2 = ((struct render_private*)ents[j].render_private)->mesh.VBO;
-        struct mesh_desc md1 = batch_mdesc_for_vbo(batch, VBO1);
-        struct mesh_desc md2 = batch_mdesc_for_vbo(batch, VBO2);
-
-        while(j > 0 && (md1.batch > md2.batch)) {
-
+        while(j > 0) {
+            struct gl_batch *b1 = ((struct render_private*)ents[j - 1].render_private)->mesh.batch;
+            struct gl_batch *b2 = ((struct render_private*)ents[j].render_private)->mesh.batch;
+            if((uintptr_t)b1 <= (uintptr_t)b2)
+                break;
             struct ent_anim_rstate tmp = ents[j - 1];
             ents[j - 1] = ents[j];
             ents[j] = tmp;
@@ -708,26 +603,16 @@ static size_t batch_sort_by_batch_anim(struct gl_batch *batch, struct ent_anim_r
     }
 
     size_t ret = 0;
-
-    GLuint VBO = ((struct render_private*)ents[0].render_private)->mesh.VBO;
     struct batch_draw_desc curr = (struct batch_draw_desc){
-        .batch = batch_mdesc_for_vbo(batch, VBO).batch,
+        .batch = ((struct render_private*)ents[0].render_private)->mesh.batch,
         .start_idx = 0
     };
-
     for(i = 0; i < nents; i++) {
-        struct ent_anim_rstate *rstate = &ents[i];
-        GLuint VBO = ((struct render_private*)rstate->render_private)->mesh.VBO;
-        struct gl_batch *cbatch = batch_mdesc_for_vbo(batch, VBO).batch;
-        if(cbatch != curr.batch) {
-
+        struct gl_batch *b = ((struct render_private*)ents[i].render_private)->mesh.batch;
+        if(b != curr.batch) {
             curr.end_idx = i - 1;
             out[ret++] = curr;
-
-            curr = (struct batch_draw_desc){
-                .batch = cbatch,
-                .start_idx = i
-            };
+            curr = (struct batch_draw_desc){ .batch = b, .start_idx = i };
         }
         if(ret == maxout)
             break;
@@ -735,7 +620,6 @@ static size_t batch_sort_by_batch_anim(struct gl_batch *batch, struct ent_anim_r
 
     curr.end_idx = i - 1;
     out[ret++] = curr;
-
     return ret;
 }
 
@@ -879,20 +763,17 @@ static size_t batch_sort_by_inst_anim(struct ent_anim_rstate *ents, size_t nents
     return ret;
 }
 
-static size_t batch_sort_by_vbo(struct gl_batch *batch, struct inst_group_desc *descs, 
-                                size_t ndescs, struct draw_call_desc *out, size_t maxout)
+static size_t batch_sort_by_vbo(struct inst_group_desc *descs, size_t ndescs,
+                                struct draw_call_desc *out, size_t maxout)
 {
     int i = 1;
     while(i < ndescs) {
         int j = i;
-
-        GLuint VBO1 = ((struct render_private*)descs[j - 1].render_private)->mesh.VBO;
-        GLuint VBO2 = ((struct render_private*)descs[j].render_private)->mesh.VBO;
-        struct mesh_desc md1 = batch_mdesc_for_vbo(batch, VBO1);
-        struct mesh_desc md2 = batch_mdesc_for_vbo(batch, VBO2);
-
-        while(j > 0 && (md1.vbo_idx > md2.vbo_idx)) {
-
+        while(j > 0) {
+            int v1 = ((struct render_private*)descs[j - 1].render_private)->mesh.vbo_idx;
+            int v2 = ((struct render_private*)descs[j].render_private)->mesh.vbo_idx;
+            if(v1 <= v2)
+                break;
             struct inst_group_desc tmp = descs[j - 1];
             descs[j - 1] = descs[j];
             descs[j] = tmp;
@@ -902,29 +783,16 @@ static size_t batch_sort_by_vbo(struct gl_batch *batch, struct inst_group_desc *
     }
 
     size_t ret = 0;
-
-    GLuint VBO = ((struct render_private*)descs[0].render_private)->mesh.VBO;
-    struct mesh_desc md = batch_mdesc_for_vbo(batch, VBO);
-
     struct draw_call_desc curr = (struct draw_call_desc){
-        .vbo_idx = md.vbo_idx,
+        .vbo_idx = ((struct render_private*)descs[0].render_private)->mesh.vbo_idx,
         .start_idx = 0,
     };
     for(int i = 1; i < ndescs; i++) {
-    
-        GLuint VBO1 = ((struct render_private*)descs[i - 1].render_private)->mesh.VBO;
-        GLuint VBO2 = ((struct render_private*)descs[i].render_private)->mesh.VBO;
-        struct mesh_desc md1 = batch_mdesc_for_vbo(batch, VBO1);
-        struct mesh_desc md2 = batch_mdesc_for_vbo(batch, VBO2);
-
-        if(md1.vbo_idx != md2.vbo_idx) {
-
+        int v = ((struct render_private*)descs[i].render_private)->mesh.vbo_idx;
+        if(v != curr.vbo_idx) {
             curr.end_idx = i - 1;
             out[ret++] = curr;
-            curr = (struct draw_call_desc){
-                .vbo_idx = md2.vbo_idx,
-                .start_idx = i,
-            };
+            curr = (struct draw_call_desc){ .vbo_idx = v, .start_idx = i };
         }
         if(ret == maxout)
             break;
@@ -1029,7 +897,6 @@ static void batch_push_stat_attrs_depth(struct gl_batch *batch, const struct ent
     for(int i = dcall.start_idx; i <= dcall.end_idx; i++) {
 
         const struct inst_group_desc *curr = descs + i;
-        struct render_private *priv = curr->render_private;
 
         for(int j = curr->start_idx; j <= curr->end_idx; j++) {
      
@@ -1122,17 +989,17 @@ static void batch_push_anim_attrs(struct gl_batch *batch, const struct ent_anim_
 static void batch_push_cmds(struct gl_batch *batch, struct draw_call_desc dcall,
                             struct inst_group_desc *descs)
 {
+    size_t alignment = batch_vert_alignment(batch->type);
     size_t inst_idx = 0;
     for(int i = dcall.start_idx; i <= dcall.end_idx; i++) {
 
         struct render_private *priv = descs[i].render_private;
-        struct mesh_desc mdesc = batch_mdesc_for_vbo(batch, priv->mesh.VBO);
-        assert(mdesc.offset % batch_vert_alignment(batch->type) == 0);
+        assert(priv->mesh.offset % alignment == 0);
 
         struct GL_DAI_Cmd cmd = (struct GL_DAI_Cmd){
             .count = priv->mesh.num_verts,
             .instance_count = descs[i].end_idx - descs[i].start_idx + 1,
-            .first_index = mdesc.offset / batch_vert_alignment(batch->type),
+            .first_index = priv->mesh.offset / alignment,
             .base_instance = inst_idx,
         };
 
@@ -1154,12 +1021,12 @@ static void batch_push_cmds(struct gl_batch *batch, struct draw_call_desc dcall,
 static void batch_multidraw_legacy(struct gl_batch *batch, struct draw_call_desc dcall,
                                    struct inst_group_desc *descs)
 {
+    size_t alignment = batch_vert_alignment(batch->type);
     size_t inst_idx = 0;
     for(int i = dcall.start_idx; i <= dcall.end_idx; i++) {
 
         const struct inst_group_desc *curr = descs + i;
         struct render_private *priv = curr->render_private;
-        struct mesh_desc mdesc = batch_mdesc_for_vbo(batch, priv->mesh.VBO);
 
         R_GL_StateSet(GL_U_ATTR_OFFSET, (struct uval){ 
             .type = UTYPE_INT, 
@@ -1167,7 +1034,7 @@ static void batch_multidraw_legacy(struct gl_batch *batch, struct draw_call_desc
         });
         R_GL_StateInstall(GL_U_ATTR_OFFSET, R_GL_Shader_GetCurrActive());
 
-        GLint first = mdesc.offset / batch_vert_alignment(batch->type);
+        GLint first = priv->mesh.offset / alignment;
         GLint count = priv->mesh.num_verts;
         size_t instcount = curr->end_idx - curr->start_idx + 1;
 
@@ -1261,13 +1128,12 @@ static void batch_do_drawcall_anim(struct gl_batch *batch, const struct ent_anim
     GL_ASSERT_OK();
 }
 
-static void batch_render_stat(struct gl_batch *batch, struct ent_stat_rstate *ents, 
-                              size_t nents, enum render_pass pass)
+static void batch_render_stat(struct ent_stat_rstate *ents, size_t nents, enum render_pass pass)
 {
     GL_PERF_ENTER();
 
     struct batch_draw_desc bdescs[MAX_BATCHES];
-    size_t nbatches = batch_sort_by_batch_stat(batch, ents, nents, bdescs, ARR_SIZE(bdescs));
+    size_t nbatches = batch_sort_by_batch_stat(ents, nents, bdescs, ARR_SIZE(bdescs));
 
     for(int bi = 0; bi < nbatches; bi++) {
 
@@ -1279,7 +1145,7 @@ static void batch_render_stat(struct gl_batch *batch, struct ent_stat_rstate *en
         size_t ninsts = batch_sort_by_inst_stat(ents + offset, len, descs, len);
 
         STALLOC(struct draw_call_desc, dcalls, len);
-        size_t ndcalls = batch_sort_by_vbo(batch, descs, ninsts, dcalls, len);
+        size_t ndcalls = batch_sort_by_vbo(descs, ninsts, dcalls, len);
 
         for(int i = 0; i < batch->ntexarrs; i++) {
             assert(batch->textures[i].arr.tunit == GL_TEXTURE0 + i);
@@ -1296,12 +1162,12 @@ static void batch_render_stat(struct gl_batch *batch, struct ent_stat_rstate *en
     GL_PERF_RETURN_VOID();
 }
 
-static void batch_render_anim(struct gl_batch *batch, struct ent_anim_rstate *ents, size_t nents)
+static void batch_render_anim(struct ent_anim_rstate *ents, size_t nents, enum render_pass pass)
 {
     GL_PERF_ENTER();
 
     struct batch_draw_desc bdescs[MAX_BATCHES];
-    size_t nbatches = batch_sort_by_batch_anim(batch, ents, nents, bdescs, ARR_SIZE(bdescs));
+    size_t nbatches = batch_sort_by_batch_anim(ents, nents, bdescs, ARR_SIZE(bdescs));
 
     for(int bi = 0; bi < nbatches; bi++) {
 
@@ -1313,7 +1179,7 @@ static void batch_render_anim(struct gl_batch *batch, struct ent_anim_rstate *en
         size_t ninsts = batch_sort_by_inst_anim(ents + offset, len, descs, len);
 
         STALLOC(struct draw_call_desc, dcalls, len);
-        size_t ndcalls = batch_sort_by_vbo(batch, descs, ninsts, dcalls, len);
+        size_t ndcalls = batch_sort_by_vbo(descs, ninsts, dcalls, len);
 
         for(int i = 0; i < batch->ntexarrs; i++) {
             R_GL_Texture_BindArray(&batch->textures[i].arr, R_GL_Shader_GetCurrActive());
@@ -1334,9 +1200,6 @@ static void batch_render_anim_all(vec_ranim_t *ents, bool shadows, enum render_p
     size_t nanim = vec_size(ents);
     if(nanim == 0)
         return;
-    /* No map loaded yet: R_GL_Batch_Prep hasn't run. */
-    if(!s_anim_batch)
-        return;
 
     switch(pass) {
     case RENDER_PASS_DEPTH:
@@ -1351,46 +1214,23 @@ static void batch_render_anim_all(vec_ranim_t *ents, bool shadows, enum render_p
     size_t ntranslucent = batch_anim_sort_by_transparency(ents, nanim);
     size_t nopaque = nanim - ntranslucent;
 
-    for(int i = 0; i < nanim; i++) {
-        batch_append(s_anim_batch, vec_AT(ents, i).render_private);
-    }
     if(nopaque > 0) {
-        batch_render_anim(s_anim_batch, &vec_AT(ents, 0), nopaque);
+        batch_render_anim(&vec_AT(ents, 0), nopaque, pass);
     }
     if(ntranslucent > 0) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR);
-        batch_render_anim(s_anim_batch, &vec_AT(ents, nopaque), ntranslucent);
+        batch_render_anim(&vec_AT(ents, nopaque), ntranslucent, pass);
         glDisable(GL_BLEND);
     }
     GL_ASSERT_OK();
 }
 
-static void batch_render_stat_all(vec_rstat_t *ents, bool shadows,
-                                  enum render_pass pass, int batch_id)
+static void batch_render_stat_all(vec_rstat_t *ents, bool shadows, enum render_pass pass)
 {
     size_t nents = vec_size(ents);
     if(nents == 0)
         return;
-
-    struct gl_batch *batch = NULL;
-    if(batch_id == 0) {
-        /* No map loaded yet: R_GL_Batch_PrepStatic hasn't run. */
-        if(!s_stat_batch)
-            return;
-        batch = s_stat_batch;
-    }else{
-        uint32_t key = batch_id;
-        khiter_t k = kh_get(batch, s_id_batches, key);
-        if(k == kh_end(s_id_batches)) {
-            int status;
-            k = kh_put(batch, s_id_batches, key, &status);
-            assert(status != -1 && status != 0);
-            kh_value(s_id_batches, k) = batch_init(BATCH_TYPE_STAT);
-        }
-        batch = kh_value(s_id_batches, k);
-    }
-    assert(batch);
 
     switch(pass) {
     case RENDER_PASS_DEPTH:
@@ -1407,16 +1247,13 @@ static void batch_render_stat_all(vec_rstat_t *ents, bool shadows,
     size_t ntranslucent = batch_sort_by_transparency(ents, nents);
     size_t nopaque = nents - ntranslucent;
 
-    for(int i = 0; i < nents; i++) {
-        batch_append(batch, vec_AT(ents, i).render_private);
-    }
     if(nopaque > 0) {
-        batch_render_stat(batch, &vec_AT(ents, 0), nopaque, pass);
+        batch_render_stat(&vec_AT(ents, 0), nopaque, pass);
     }
     if(ntranslucent > 0) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR);
-        batch_render_stat(batch, &vec_AT(ents, nopaque), ntranslucent, pass);
+        batch_render_stat(&vec_AT(ents, nopaque), ntranslucent, pass);
         glDisable(GL_BLEND);
     }
     GL_ASSERT_OK();
@@ -1428,14 +1265,6 @@ static void batch_render_stat_all(vec_rstat_t *ents, bool shadows,
 
 bool R_GL_Batch_Init(void)
 {
-    s_id_batches = kh_init(batch);
-    if(!s_id_batches)
-        goto fail_id_batches;
-
-    /* The shared static and animated batches are allocated lazily by
-     * R_GL_Batch_Prep (typically called on map load). Both left NULL here so
-     * that no GPU memory is reserved when batched rendering is disabled. */
-
     GLint draw_id_buff[MAX_INSTS];
     for(int i = 0; i < MAX_INSTS; i++)
         draw_id_buff[i] = i;
@@ -1444,33 +1273,135 @@ bool R_GL_Batch_Init(void)
     glBindBuffer(GL_ARRAY_BUFFER, s_draw_id_vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(draw_id_buff), draw_id_buff, GL_STATIC_DRAW);
 
+    /* Allocated unconditionally up front: every entity mesh's vertex and texture
+     * data lives here for its lifetime, regardless of the 'use_batch_rendering'
+     * setting. */
+    s_stat_batch = batch_init(BATCH_TYPE_STAT);
+    if(!s_stat_batch)
+        goto fail_stat_batch;
+
+    s_anim_batch = batch_init(BATCH_TYPE_ANIM);
+    if(!s_anim_batch)
+        goto fail_anim_batch;
+
+    GL_ASSERT_OK();
     return true;
 
-fail_id_batches:
+fail_anim_batch:
+    batch_destroy(s_stat_batch);
+    s_stat_batch = NULL;
+fail_stat_batch:
+    glDeleteBuffers(1, &s_draw_id_vbo);
     return false;
 }
 
 void R_GL_Batch_Shutdown(void)
 {
-    if(s_anim_batch) {
-        batch_destroy(s_anim_batch);
-        s_anim_batch = NULL;
-    }
-    if(s_stat_batch) {
-        batch_destroy(s_stat_batch);
-        s_stat_batch = NULL;
-    }
-
-    uint32_t key;
-    struct gl_batch *curr;
-    (void)key;
-
-    kh_foreach(s_id_batches, key, curr, {
-        batch_destroy(curr);
-    });
-    kh_destroy(batch, s_id_batches);
+    batch_destroy(s_anim_batch);
+    batch_destroy(s_stat_batch);
+    s_anim_batch = NULL;
+    s_stat_batch = NULL;
 
     glDeleteBuffers(1, &s_draw_id_vbo);
+}
+
+bool R_GL_Batch_AppendMesh(struct render_private *priv, const void *vbuff)
+{
+    GL_PERF_ENTER();
+
+    enum batch_type type;
+    if(priv->vertex_stride == sizeof(struct vertex)) {
+        type = BATCH_TYPE_STAT;
+    }else if(priv->vertex_stride == sizeof(struct anim_vert)) {
+        type = BATCH_TYPE_ANIM;
+    }else{
+        assert(0);
+        GL_PERF_RETURN(false);
+    }
+
+    struct gl_batch *batch = (type == BATCH_TYPE_STAT) ? s_stat_batch : s_anim_batch;
+    size_t size = priv->mesh.num_verts * priv->vertex_stride;
+
+    /* Gather the materials into a transient array so the not-yet-resident
+     * slices can be copied into the shared storage, then free it. */
+    struct texture_arr src_tex = {0};
+    bool have_tex = (priv->num_materials > 0);
+    if(have_tex) {
+        R_GL_Texture_ArrayMake(priv->materials, priv->num_materials, &src_tex, GL_TEXTURE0);
+    }
+
+    bool ok = false;
+    for(struct gl_batch *node = batch; node != NULL; node = node->next) {
+        if(batch_try_place(node, priv, vbuff, size, have_tex ? &src_tex : NULL)) {
+            ok = true;
+            break;
+        }
+        if(node->next == NULL && !batch_grow(node))
+            break;
+    }
+
+    if(have_tex) {
+        R_GL_Texture_ArrayFree(src_tex);
+    }
+
+    priv->mesh.VBO = 0;
+    priv->mesh.VAO = 0;
+    if(!ok) {
+        priv->mesh.batch = NULL;
+    }
+
+    GL_ASSERT_OK();
+    GL_PERF_RETURN(ok);
+}
+
+const void *R_GL_Batch_MeshVertsMap(const struct render_private *priv)
+{
+    struct gl_batch *batch = priv->mesh.batch;
+    assert(batch);
+
+    glBindBuffer(GL_ARRAY_BUFFER, batch->vbos[priv->mesh.vbo_idx].VBO);
+    char *base = glMapBuffer(GL_ARRAY_BUFFER, GL_READ_ONLY);
+    if(!base)
+        return NULL;
+    return base + priv->mesh.offset;
+}
+
+void R_GL_Batch_MeshVertsUnmap(const struct render_private *priv)
+{
+    struct gl_batch *batch = priv->mesh.batch;
+    assert(batch);
+
+    glBindBuffer(GL_ARRAY_BUFFER, batch->vbos[priv->mesh.vbo_idx].VBO);
+    glUnmapBuffer(GL_ARRAY_BUFFER);
+}
+
+GLint R_GL_Batch_MeshBindVAO(const struct render_private *priv)
+{
+    struct gl_batch *batch = priv->mesh.batch;
+    assert(batch);
+
+    glBindVertexArray(batch->vbos[priv->mesh.vbo_idx].VAO);
+    return priv->mesh.offset / batch_vert_alignment(batch->type);
+}
+
+void R_GL_Batch_MeshGetStorage(const struct render_private *priv, GLuint *out_vbo, size_t *out_offset)
+{
+    if(priv->mesh.type == MESH_TYPE_BATCHED_INDIRECT) {
+        *out_vbo = priv->mesh.batch->vbos[priv->mesh.vbo_idx].VBO;
+        *out_offset = priv->mesh.offset;
+    }else{
+        *out_vbo = priv->mesh.VBO;
+        *out_offset = 0;
+    }
+}
+
+void R_GL_Batch_MeshBindTextures(const struct render_private *priv, GLuint shader_prog)
+{
+    struct gl_batch *batch = priv->mesh.batch;
+    assert(batch);
+    for(int i = 0; i < batch->ntexarrs; i++) {
+        R_GL_Texture_BindArray(&batch->textures[i].arr, shader_prog);
+    }
 }
 
 void R_GL_Batch_Draw(struct render_input *in)
@@ -1480,20 +1411,7 @@ void R_GL_Batch_Draw(struct render_input *in)
 
     R_GL_ShadowMapBind();
     batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_REGULAR);
-    batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_REGULAR, BATCH_ID_NULL);
-
-    GL_PERF_POP_GROUP();
-    GL_PERF_RETURN_VOID();
-}
-
-void R_GL_Batch_DrawWithID(struct render_input *in, enum batch_id *id)
-{
-    GL_PERF_ENTER();
-    GL_PERF_PUSH_GROUP(0, "batch::DrawWithID");
-
-    R_GL_ShadowMapBind();
-    batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_REGULAR);
-    batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_REGULAR, *id);
+    batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_REGULAR);
 
     GL_PERF_POP_GROUP();
     GL_PERF_RETURN_VOID();
@@ -1505,35 +1423,8 @@ void R_GL_Batch_RenderDepthMap(struct render_input *in)
     GL_PERF_PUSH_GROUP(0, "batch::RenderDepthMap");
 
     batch_render_anim_all(&in->light_vis_anim, true, RENDER_PASS_DEPTH);
-    batch_render_stat_all(&in->light_vis_stat, true, RENDER_PASS_DEPTH, BATCH_ID_NULL);
+    batch_render_stat_all(&in->light_vis_stat, true, RENDER_PASS_DEPTH);
 
     GL_PERF_POP_GROUP();
     GL_PERF_RETURN_VOID();
 }
-
-void R_GL_Batch_Reset(void)
-{
-    if(s_stat_batch) {
-        batch_destroy(s_stat_batch);
-        s_stat_batch = NULL;
-    }
-    if(s_anim_batch) {
-        batch_destroy(s_anim_batch);
-        s_anim_batch = NULL;
-    }
-}
-
-void R_GL_Batch_Prep(void)
-{
-    GL_PERF_ENTER();
-
-    if(!s_stat_batch) {
-        s_stat_batch = batch_init(BATCH_TYPE_STAT);
-    }
-    if(!s_anim_batch) {
-        s_anim_batch = batch_init(BATCH_TYPE_ANIM);
-    }
-
-    GL_PERF_RETURN_VOID();
-}
-

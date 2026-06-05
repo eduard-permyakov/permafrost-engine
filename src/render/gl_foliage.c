@@ -38,6 +38,7 @@
 
 #include "render_private.h"
 #include "gl_render.h"
+#include "gl_batch.h"
 #include "gl_shader.h"
 #include "gl_state.h"
 #include "gl_vertex.h"
@@ -67,8 +68,10 @@
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-/* Shared mesh VBO and its stride; set once in Init, used in every SetChunk */
+/* The grass mesh lives in the shared batch storage, so it generally starts at
+ * a non-zero byte offset within s_mesh_vbo. */
 static GLuint   s_mesh_vbo      = 0;
+static size_t   s_mesh_offset   = 0;
 static GLsizei  s_vertex_stride = 0;
 
 /* Per-chunk VAOs: each has attribs 0-3 (mesh) + 4-5 (instances) fully set up */
@@ -93,8 +96,8 @@ void R_GL_MapFoliageInit(void *priv_arg, const size_t *num_chunks)
     s_num_chunks    = *num_chunks;
     s_num_verts     = (GLsizei)priv->mesh.num_verts;
     s_grass_tex     = priv->materials[0].texture.id;
-    s_mesh_vbo      = priv->mesh.VBO;
     s_vertex_stride = (GLsizei)priv->vertex_stride;
+    R_GL_Batch_MeshGetStorage(priv, &s_mesh_vbo, &s_mesh_offset);
 
     s_chunk_vaos    = PF_CALLOC(s_num_chunks, sizeof(GLuint));
     s_instance_vbos = PF_CALLOC(s_num_chunks, sizeof(GLuint));
@@ -161,22 +164,24 @@ void R_GL_MapFoliageSetChunk(const size_t *chunk_idx, const vec3_t *positions,
 
     glBindVertexArray(s_chunk_vaos[idx]);
 
-    /* Attribs 0-3: per-vertex data from the shared mesh VBO */
+    /* Bias the pointers by the mesh's byte offset within the shared batch
+     * buffer so the draw can still start from vertex 0. */
     glBindBuffer(GL_ARRAY_BUFFER, s_mesh_vbo);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, s_vertex_stride, (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, s_vertex_stride,
+        (void*)(s_mesh_offset));
     glEnableVertexAttribArray(0);
 
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, s_vertex_stride,
-        (void*)offsetof(struct vertex, uv));
+        (void*)(s_mesh_offset + offsetof(struct vertex, uv)));
     glEnableVertexAttribArray(1);
 
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, s_vertex_stride,
-        (void*)offsetof(struct vertex, normal));
+        (void*)(s_mesh_offset + offsetof(struct vertex, normal)));
     glEnableVertexAttribArray(2);
 
     glVertexAttribIPointer(3, 1, GL_INT, s_vertex_stride,
-        (void*)offsetof(struct vertex, material_idx));
+        (void*)(s_mesh_offset + offsetof(struct vertex, material_idx)));
     glEnableVertexAttribArray(3);
 
     /* Attribs 4-5: per-instance data from this chunk's instance VBO */
@@ -222,6 +227,7 @@ void R_GL_MapFoliageShutdown(void)
     s_num_verts     = 0;
     s_grass_tex     = 0;
     s_mesh_vbo      = 0;
+    s_mesh_offset   = 0;
     s_vertex_stride = 0;
 }
 

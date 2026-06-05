@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2023 Eduard Permyakov 
+ *  Copyright (C) 2017-2026 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -45,6 +45,10 @@ struct material{
     vec3_t         specular_clr;
     struct texture texture;
     char           texname[64];
+    /* Location of this material's texture within the shared batch storage,
+     * resolved when the mesh is appended. */
+    GLint          tex_arr_idx;
+    GLint          tex_slot;
 };
 
 #endif

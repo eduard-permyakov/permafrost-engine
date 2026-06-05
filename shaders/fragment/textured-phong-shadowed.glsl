@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2018-2023 Eduard Permyakov 
+ *  Copyright (C) 2018-2026 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -73,12 +73,20 @@ uniform vec3 view_pos;
 uniform int shadows_on;
 uniform sampler2D shadow_map;
 
+/* The mesh's textures are resident in the shared batch storage and may be
+ * spread across several arrays; each material carries the (array, slot) at
+ * which its texture lives. */
 uniform sampler2DArray tex_array0;
+uniform sampler2DArray tex_array1;
+uniform sampler2DArray tex_array2;
+uniform sampler2DArray tex_array3;
 
 struct material{
     float ambient_intensity;
     vec3  diffuse_clr;
     vec3  specular_clr;
+    int   tex_array;
+    int   tex_slot;
 };
 
 uniform material materials[MAX_MATERIALS];
@@ -86,6 +94,17 @@ uniform material materials[MAX_MATERIALS];
 /*****************************************************************************/
 /* PROGRAM                                                                   */
 /*****************************************************************************/
+
+vec4 sample_material(int mat_idx, vec2 uv)
+{
+    int slice = materials[mat_idx].tex_slot;
+    switch(materials[mat_idx].tex_array) {
+    case 1:  return texture(tex_array1, vec3(uv, slice));
+    case 2:  return texture(tex_array2, vec3(uv, slice));
+    case 3:  return texture(tex_array3, vec3(uv, slice));
+    default: return texture(tex_array0, vec3(uv, slice));
+    }
+}
 
 float shadow_factor(vec4 light_space_pos)
 {
@@ -108,7 +127,7 @@ float shadow_factor(vec4 light_space_pos)
 
 void main()
 {
-    vec4 tex_color = texture(tex_array0, vec3(from_vertex.uv, from_vertex.mat_idx));
+    vec4 tex_color = sample_material(from_vertex.mat_idx, from_vertex.uv);
 
     /* Simple alpha test to reject transparent pixels (with mipmapping) */
     tex_color.rgb *= tex_color.a;
