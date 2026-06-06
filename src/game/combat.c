@@ -623,10 +623,16 @@ static quat_t entity_turn_dir(uint32_t uid, uint32_t target)
     return quat_from_vec(ent_to_target);
 }
 
-/* The attack start/end notifications are emitted in strict pairs. 'attack_notified'
- * tracks whether a start is outstanding; the callers only ever trigger a start when
- * idle and an end when attacking, so the asserts turn any break in the pairing into
- * a hard error here rather than a silent desync the scripts trip over later. */
+static vec3_t entity_facing_dir(uint32_t uid)
+{
+    /* Recover the horizontal heading from the entity's Y-axis rotation - the inverse of
+     * quat_from_vec, which is how units are turned to face their targets.
+     */
+    quat_t rot = Entity_GetRot(uid);
+    float angle = 2.0f * atan2(rot.y, rot.w);
+    return (vec3_t){ -sin(angle), 0.0f, cos(angle) };
+}
+
 static void combat_notify_attack_start(uint32_t uid, struct combatstate *cs)
 {
     assert(!cs->attack_notified);
@@ -756,18 +762,27 @@ static void entity_ranged_attack(uint32_t uid, uint32_t target, vec3_t proj_pos)
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
 
-    vec3_t target_pos = Entity_CenterPos(target);
-    float ent_dmg = cs->stats.base_dmg;
-
-    vec3_t vel;
-    if(!P_Projectile_VelocityForTarget(proj_pos, target_pos, cs->pd.speed, 
-        cs->fd.fire_mode, &vel)) {
-        /* We resort to just shooting nothing when we can't hit our target. This case 
-         * should never be hit so long as the initial velocity is high enough */
-        return;
+    /* Once the fire frame plays we always loose a projectile. Aim at the target while it
+     * still exists (even while it is dying); if it is already gone, lob a shot in the
+     * direction we are facing - which is where the target was.
+     */
+    vec3_t target_pos;
+    if(G_EntityExists(target)) {
+        target_pos = Entity_CenterPos(target);
+    }else{
+        vec3_t fwd = entity_facing_dir(uid);
+        PFM_Vec3_Scale(&fwd, cs->stats.attack_range, &fwd);
+        PFM_Vec3_Add(&proj_pos, &fwd, &target_pos);
     }
 
-    P_Projectile_Add(proj_pos, vel, uid, G_GetFactionIDFrom(gs->faction_ids, uid), 
+    float ent_dmg = cs->stats.base_dmg;
+    vec3_t vel;
+    if(!P_Projectile_VelocityForTarget(proj_pos, target_pos, cs->pd.speed,
+        cs->fd.fire_mode, &vel)) {
+        return; /* Degenerate: the target is right on top of the muzzle. */
+    }
+
+    P_Projectile_Add(proj_pos, vel, uid, G_GetFactionIDFrom(gs->faction_ids, uid),
         ent_dmg, PROJ_ONLY_HIT_COMBATABLE | PROJ_ONLY_HIT_ENEMIES, cs->pd);
 }
 
@@ -934,20 +949,24 @@ static void do_tryhit(uint32_t uid, vec3_t proj_pos)
         return;
 
     cs->state = STATE_CAN_ATTACK;
+
+    /* Ranged units always loose their projectile once the fire frame is reached - even if
+     * the target has since died or slipped out of range; entity_ranged_attack lobs a
+     * best-effort shot in those cases.
+     */
+    if(cs->stats.attack_range > 0.0f) {
+        entity_ranged_attack(uid, cs->target_uid, proj_pos);
+        return;
+    }
+
     if(entity_dead(cs->target_uid) || garrisoned(cs->target_uid)) {
-        return; /* Our target already got 'killed' */
+        return; /* Our (melee) target already got 'killed' */
     }
 
     struct combatstate *target_cs = combatstate_get(cs->target_uid);
     quat_t target_dir = entity_turn_dir(uid, cs->target_uid);
     quat_t ent_rot = Entity_GetRot(uid);
     float angle_diff = PFM_Quat_PitchDiff(&ent_rot, &target_dir);
-
-    /* Ranged units fire their shot regardless */
-    if(cs->stats.attack_range > 0.0f) {
-        entity_ranged_attack(uid, cs->target_uid, proj_pos);
-        return;
-    }
 
     if(RAD_TO_DEG(fabs(angle_diff)) > 5.0f) {
 

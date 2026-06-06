@@ -72,7 +72,7 @@
 
 #define PHYS_HZ         (30)
 #define UNITS_PER_METER (7.5f)
-#define GRAVITY         (5.00f * UNITS_PER_METER / (PHYS_HZ * PHYS_HZ))
+#define GRAVITY         (9.81f * UNITS_PER_METER / (PHYS_HZ * PHYS_HZ))
 #define EPSILON         (1.0f/1024)
 #define MIN(a, b)       ((a) < (b) ? (a) : (b))
 #define MAX(a, b)       ((a) > (b) ? (a) : (b))
@@ -622,27 +622,33 @@ bool P_Projectile_VelocityForTarget(vec3_t src, vec3_t dst, float init_speed,
      */
 
     float descriminant = pow(v, 4) - g * (g * pow(x, 2) + 2 * y * pow(v, 2));
-    if(descriminant < -EPSILON) {
-        /* No real solutions */
-        return false;
-    }
-
-    size_t nsolutions = 1;
-    if(fabs(descriminant) > EPSILON) {
-        nsolutions = 2;
-    }
 
     float t1, t2, tan_theta;
-    t1 = pow(v, 2) + sqrt(descriminant);
-    if(nsolutions > 1) {
-        t2 = pow(v, 2) - sqrt(descriminant);
-        if(mode == FIRE_MODE_LOW) {
-            tan_theta = MIN(t1, t2) / (g * x);
-        }else{
-            tan_theta = MAX(t1, t2) / (g * x);
-        }
+    if(descriminant < -EPSILON) {
+
+        /* The target is out of reach at this speed - there is no launch angle that lands
+         * on it. Fall back to the angle of maximum range (45 degrees) so we still loose a
+         * best-effort shot in its direction rather than nothing at all. */
+        tan_theta = 1.0f;
+
     }else{
-        tan_theta = t1 / (g * x);
+
+        size_t nsolutions = 1;
+        if(fabs(descriminant) > EPSILON) {
+            nsolutions = 2;
+        }
+
+        t1 = pow(v, 2) + sqrt(descriminant);
+        if(nsolutions > 1) {
+            t2 = pow(v, 2) - sqrt(descriminant);
+            if(mode == FIRE_MODE_LOW) {
+                tan_theta = MIN(t1, t2) / (g * x);
+            }else{
+                tan_theta = MAX(t1, t2) / (g * x);
+            }
+        }else{
+            tan_theta = t1 / (g * x);
+        }
     }
 
     /* Theta is the angle of motion up from the ground along the angle of motion.
