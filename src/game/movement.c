@@ -2129,7 +2129,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         vec2_t wma = vel_wma(ms);
         if(PFM_Vec2_Len(&wma) > EPSILON) {
             out->flags |= UPDATE_SET_NEXT_ROT;
-            out->next_nrot = turn_toward(ms->next_rot, dir_quat_from_velocity(wma), MAX_TURN_RATE);
+            out->next_nrot = turn_toward(ms->next_rot, dir_quat_from_velocity(wma), SCALED_MAX_TURN_RATE);
         }else{
             out->flags |= UPDATE_SET_NEXT_ROT;
             out->next_nrot = ms->prev_rot;
@@ -2337,7 +2337,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         }
 
         /* If not, turn towards the target by at most the turn rate */
-        quat_t final = turn_toward(ent_rot, ms->target_dir, MAX_TURN_RATE);
+        quat_t final = turn_toward(ent_rot, ms->target_dir, SCALED_MAX_TURN_RATE);
 
         out->flags |= UPDATE_SET_ROTATION | UPDATE_SET_PREV_ROT;
         out->next_rot = final;
