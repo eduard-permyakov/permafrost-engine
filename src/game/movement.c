@@ -220,20 +220,21 @@ struct formation_state{
 };
 
 enum movestate_flags{
-    UPDATE_SET_STATE       = (1 << 0),
-    UPDATE_SET_VELOCITY    = (1 << 1),
-    UPDATE_SET_POSITION    = (1 << 2),
-    UPDATE_SET_ROTATION    = (1 << 3),
-    UPDATE_SET_NEXT_POS    = (1 << 4),
-    UPDATE_SET_PREV_POS    = (1 << 5),
-    UPDATE_SET_STEP        = (1 << 6),
-    UPDATE_SET_LEFT        = (1 << 7),
-    UPDATE_SET_NEXT_ROT    = (1 << 8),
-    UPDATE_SET_PREV_ROT    = (1 << 9),
-    UPDATE_SET_DEST        = (1 << 10),
-    UPDATE_SET_TARGET_PREV = (1 << 11),
-    UPDATE_SET_MOVING      = (1 << 12),
-    UPDATE_SET_TARGET_DIR  = (1 << 13)
+    UPDATE_SET_STATE        = (1 << 0),
+    UPDATE_SET_VELOCITY     = (1 << 1),
+    UPDATE_SET_POSITION     = (1 << 2),
+    UPDATE_SET_ROTATION     = (1 << 3),
+    UPDATE_SET_NEXT_POS     = (1 << 4),
+    UPDATE_SET_PREV_POS     = (1 << 5),
+    UPDATE_SET_STEP         = (1 << 6),
+    UPDATE_SET_LEFT         = (1 << 7),
+    UPDATE_SET_NEXT_ROT     = (1 << 8),
+    UPDATE_SET_PREV_ROT     = (1 << 9),
+    UPDATE_SET_DEST         = (1 << 10),
+    UPDATE_SET_TARGET_PREV  = (1 << 11),
+    UPDATE_SET_MOVING       = (1 << 12),
+    UPDATE_SET_TARGET_DIR   = (1 << 13),
+    UPDATE_TURNING_IN_PLACE = (1 << 14)
 };
 
 struct movestate_patch{
@@ -422,6 +423,8 @@ static struct result navigation_tick_task(void *arg);
 #define WAIT_TICKS                      (60)
 #define MAX_TURN_RATE                   (15.0f) /* degree/tick */
 #define SCALED_MAX_TURN_RATE            (MAX_TURN_RATE / hz_count(s_move_work.hz) * 20.0)
+#define MOVE_HEADING_HALT               (90.0f) /* degrees; halt a moving unit to re-aim past this */
+#define MOVE_HEADING_RESUME             (10.0f) /* degrees; resume/start a halted unit within this */
 #define MAX_NEIGHBOURS                  (32)
 
 #define SURROUND_LOW_WATER_X            (CHUNK_WIDTH/3.0f)
@@ -2057,6 +2060,22 @@ static quat_t turn_toward(quat_t cur, quat_t target, float max_deg)
     return final;
 }
 
+/* In these states translation is gated on heading: the unit must be facing
+ * within MOVE_HEADING_TOLERANCE of its direction of travel before it may move.
+ */
+static bool move_gated_by_heading(enum arrival_state state)
+{
+    switch(state) {
+    case STATE_MOVING:
+    case STATE_SEEK_ENEMIES:
+    case STATE_SURROUND_ENTITY:
+    case STATE_ENTER_ENTITY_RANGE:
+        return true;
+    default:
+        return false;
+    }
+}
+
 /* Derive the patch that should be applied onto the movestate 
  * as a result of the current navigation tick. The patch can be
  * generated asynchronously, but applied synchronously.
@@ -2078,6 +2097,26 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
 
     assert(hz_count(hz) <= 20);
     assert(20 % hz_count(hz) == 0);
+
+    /* Gate translation on heading so a unit never slides sideways out of a stop: a
+     * halted unit pivots in place until facing within MOVE_HEADING_RESUME of its
+     * travel direction before moving, and once moving it commits, only halting to
+     * re-aim if the target swings past MOVE_HEADING_HALT (a near-reversal). The wide
+     * gap between the two is hysteresis, keyed off whether the unit is presently
+     * moving, so ordinary course corrections are taken in stride.
+     */
+    bool turn_to_move = false;
+    quat_t travel_dir = ms->next_rot;
+    if(PFM_Vec2_Len(&new_vel) > EPSILON && move_gated_by_heading(ms->state)) {
+        travel_dir = dir_quat_from_velocity(new_vel);
+        float heading_err = fabs(RAD_TO_DEG(PFM_Quat_PitchDiff(&ms->next_rot, &travel_dir)));
+        float tolerance = (PFM_Vec2_Len(&ms->velocity) > EPSILON) ? MOVE_HEADING_HALT
+                                                                  : MOVE_HEADING_RESUME;
+        if(heading_err > tolerance) {
+            turn_to_move = true;
+            new_vel = (vec2_t){0.0f, 0.0f};
+        }
+    }
 
     vec2_t new_pos_xz = new_pos_for_vel(uid, new_vel);
     float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
@@ -2117,12 +2156,10 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         out->flags |= UPDATE_SET_VELOCITY;
         out->next_velocity = new_vel;
 
-        /* Use a weighted average of past velocities ot set the entity's orientation. 
-         * This means that the entity's visible orientation lags behind its' true orientation 
-         * slightly. However, this greatly smooths the turning of the entity, giving a more 
-         * natural look to the movemment. 
+        /* Orient off a weighted average of past velocities, so the visible facing
+         * lags the true heading slightly but turns smoothly. The gate above has
+         * already ensured the unit is roughly aligned before it got moving.
          */
-
         out->flags |= UPDATE_SET_PREV_ROT;
         out->next_prot = ms->next_rot;
 
@@ -2131,8 +2168,10 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
             out->flags |= UPDATE_SET_NEXT_ROT;
             out->next_nrot = turn_toward(ms->next_rot, dir_quat_from_velocity(wma), SCALED_MAX_TURN_RATE);
         }else{
+            /* No recent velocity to derive a heading from; hold the current facing
+             * rather than reverting to the staler prev_rot. */
             out->flags |= UPDATE_SET_NEXT_ROT;
-            out->next_nrot = ms->prev_rot;
+            out->next_nrot = ms->next_rot;
         }
         out->flags |= UPDATE_SET_ROTATION;
         out->next_rot = ms->next_rot;
@@ -2140,6 +2179,14 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
     }else{
         out->flags |= UPDATE_SET_VELOCITY;
         out->next_velocity = (vec2_t){0.0f, 0.0f};
+
+        if(turn_to_move) {
+            out->flags |= UPDATE_SET_PREV_ROT | UPDATE_SET_NEXT_ROT | UPDATE_SET_ROTATION;
+            out->flags |= UPDATE_TURNING_IN_PLACE;
+            out->next_prot = ms->next_rot;
+            out->next_nrot = turn_toward(ms->next_rot, travel_dir, SCALED_MAX_TURN_RATE);
+            out->next_rot = ms->next_rot;
+        }
     }
 
     /* If the entity's current position isn't pathable, simply keep it 'stuck' there in
@@ -2430,7 +2477,12 @@ static void entity_apply_update(uint32_t uid, const struct movestate_patch *patc
 
     if(patch->flags & UPDATE_SET_VELOCITY) {
         ms->velocity = patch->next_velocity;
-        update_vel_hist(ms, ms->velocity);
+        /* While pivoting in place, wipe the velocity history so the orientation
+         * doesn't chase the stale pre-order heading once movement resumes. */
+        if(patch->flags & UPDATE_TURNING_IN_PLACE)
+            memset(ms->vel_hist, 0, sizeof(ms->vel_hist));
+        else
+            update_vel_hist(ms, ms->velocity);
     }
 
     if(patch->flags & UPDATE_SET_POSITION)
