@@ -2032,6 +2032,31 @@ static quat_t interpolate_rotations(quat_t from, quat_t to, float fraction)
     return PFM_Quat_Slerp(&from, &to, fraction);
 }
 
+/* Rotate 'cur' towards 'target' by at most 'max_deg' degrees about the Y axis,
+ * picking a stable direction even when the orientations are antipodal.
+ */
+static quat_t turn_toward(quat_t cur, quat_t target, float max_deg)
+{
+    float angle_deg = RAD_TO_DEG(PFM_Quat_PitchDiff(&cur, &target));
+
+    /* Near 180 degrees the shortest-arc direction is undefined: the cross-product
+     * term collapses to zero and its sign is pure noise. Force a fixed sweep so the
+     * unit never flips.
+     */
+    if(180.0f - fabs(angle_deg) < 1.0f)
+        angle_deg = 180.0f;
+
+    float turn_deg = MIN(max_deg, fabs(angle_deg)) * -SIGNUM(angle_deg);
+    mat4x4_t rotmat;
+    PFM_Mat4x4_MakeRotY(DEG_TO_RAD(turn_deg), &rotmat);
+
+    quat_t rot, final;
+    PFM_Quat_FromRotMat(&rotmat, &rot);
+    PFM_Quat_MultQuat(&rot, &cur, &final);
+    PFM_Quat_Normal(&final, &final);
+    return final;
+}
+
 /* Derive the patch that should be applied onto the movestate 
  * as a result of the current navigation tick. The patch can be
  * generated asynchronously, but applied synchronously.
@@ -2104,7 +2129,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         vec2_t wma = vel_wma(ms);
         if(PFM_Vec2_Len(&wma) > EPSILON) {
             out->flags |= UPDATE_SET_NEXT_ROT;
-            out->next_nrot = dir_quat_from_velocity(wma);
+            out->next_nrot = turn_toward(ms->next_rot, dir_quat_from_velocity(wma), MAX_TURN_RATE);
         }else{
             out->flags |= UPDATE_SET_NEXT_ROT;
             out->next_nrot = ms->prev_rot;
@@ -2311,18 +2336,8 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
             break;
         }
 
-        /* If not, find the amount we should turn by around the Y axis */
-        float turn_deg = MIN(MAX_TURN_RATE, fabs(degrees)) * -SIGNUM(degrees);
-        float turn_rad = DEG_TO_RAD(turn_deg);
-        mat4x4_t rotmat;
-        PFM_Mat4x4_MakeRotY(turn_rad, &rotmat);
-        quat_t rot;
-        PFM_Quat_FromRotMat(&rotmat, &rot);
-
-        /* Turn */
-        quat_t final;
-        PFM_Quat_MultQuat(&rot, &ent_rot, &final);
-        PFM_Quat_Normal(&final, &final);
+        /* If not, turn towards the target by at most the turn rate */
+        quat_t final = turn_toward(ent_rot, ms->target_dir, MAX_TURN_RATE);
 
         out->flags |= UPDATE_SET_ROTATION | UPDATE_SET_PREV_ROT;
         out->next_rot = final;
@@ -2585,6 +2600,8 @@ static void do_add_entity(uint32_t uid, vec3_t pos, float selection_radius, int 
         .left = 0,
         .prev_pos = pos,
         .next_pos = pos,
+        .prev_rot = Entity_GetRot(uid),
+        .next_rot = Entity_GetRot(uid),
         .surround_target_prev = (vec2_t){0},
         .surround_nearest_prev = (vec2_t){0},
     };
