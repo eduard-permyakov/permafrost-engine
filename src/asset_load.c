@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB 0
 
 #include "asset_load.h"
+#include "asset_cache.h"
 #include "entity.h"
 #include "main.h"
 
@@ -220,16 +221,58 @@ static void al_render_to_texture(struct shared_resource *res)
     });
 }
 
+static void al_commit_resource(const char *path, const char *basedir,
+                               const char *pfobj_name, struct shared_resource *out)
+{
+    out->basedir = pf_strdup(basedir);
+    out->filename = pf_strdup(pfobj_name);
+
+    int put_ret;
+    khiter_t k = kh_put(entity_res, s_name_resource_table, pf_strdup(path), &put_ret);
+    assert(put_ret != -1 && put_ret != 0);
+    kh_value(s_name_resource_table, k) = *out;
+
+    al_render_to_texture(out);
+}
+
 static bool al_get_resource(const char *path, const char *basedir, 
                             const char *pfobj_name, struct shared_resource *out)
 {
     SDL_RWops *stream;
     struct pfobj_hdr header;
+    void *vbuff = NULL;
+    size_t vbuff_size = 0;
 
     khiter_t k = kh_get(entity_res, s_name_resource_table, path);
     if(k != kh_end(s_name_resource_table)) {
 
         *out = kh_value(s_name_resource_table, k);
+        return true;
+    }
+
+    char abs_basedir[512];
+    pf_snprintf(abs_basedir, sizeof(abs_basedir), "%s/%s", g_basepath, basedir);
+
+    char rel_path[512];
+    pf_snprintf(rel_path, sizeof(rel_path), "%s/%s", basedir, pfobj_name);
+
+    uint64_t tag = AssetCache_SourceTag(path);
+
+    /* Fast path: restore the engine-ready model straight from the cache,
+     * skipping the ASCII parse and buffer assembly entirely. */
+    struct pfobj_cache cached;
+    if(tag && AssetCache_PFObjLoad(rel_path, tag, &cached)) {
+
+        out->ent_flags = cached.ent_flags;
+        out->aabb = cached.aabb;
+        out->render_private = R_AL_PrivFromCache(abs_basedir, &cached);
+        out->anim_private = A_AL_PrivFromCache(path, &cached);
+        AssetCache_PFObjRelease(&cached);
+
+        if(!out->render_private || !out->anim_private)
+            return false;
+
+        al_commit_resource(path, basedir, pfobj_name, out);
         return true;
     }
 
@@ -240,17 +283,14 @@ static bool al_get_resource(const char *path, const char *basedir,
     if(!al_parse_pfobj_header(stream, &header))
         goto fail_parse;
 
-    char abs_basedir[512];
-    pf_snprintf(abs_basedir, sizeof(abs_basedir), "%s/%s", g_basepath, basedir);
-
     out->ent_flags = 0;
-    out->render_private = R_AL_PrivFromStream(abs_basedir, &header, stream);
+    out->render_private = R_AL_PrivFromStream(abs_basedir, &header, stream, &vbuff, &vbuff_size);
     if(!out->render_private)
         goto fail_parse;
 
     out->anim_private = A_AL_PrivFromStream(path, &header, stream);
     if(!out->anim_private)
-        goto fail_parse;
+        goto fail_vbuff;
 
     if(header.num_as > 0) {
         out->ent_flags |= ENTITY_FLAG_ANIMATED;
@@ -258,25 +298,36 @@ static bool al_get_resource(const char *path, const char *basedir,
 
     if(!header.has_collision) {
         fprintf(stderr, "Imported entities required to have bounding boxes.\n");
-        goto fail_parse;
+        goto fail_vbuff;
     }
 
     if(!AL_ParseAABB(stream, &out->aabb))
-        goto fail_parse;
+        goto fail_vbuff;
 
-    out->basedir = pf_strdup(basedir);
-    out->filename = pf_strdup(pfobj_name);
+    /* Persist the engine-ready model so subsequent loads can take the fast path. */
+    if(tag) {
+        struct pfobj_cache store = {
+            .hdr              = header,
+            .ent_flags        = out->ent_flags,
+            .aabb             = out->aabb,
+            .verts            = vbuff,
+            .verts_size       = vbuff_size,
+            .render_priv      = out->render_private,
+            .render_priv_size = R_AL_PrivBuffSize(&header),
+            .anim_data        = out->anim_private,
+            .anim_size        = A_AL_DataBuffSize(&header),
+        };
+        AssetCache_PFObjStore(rel_path, tag, &store);
+    }
+    PF_FREE(vbuff);
 
-    int put_ret;
-    k = kh_put(entity_res, s_name_resource_table, pf_strdup(path), &put_ret);
-    assert(put_ret != -1 && put_ret != 0);
-    kh_value(s_name_resource_table, k) = *out;
-
-    al_render_to_texture(out);
+    al_commit_resource(path, basedir, pfobj_name, out);
 
     SDL_RWclose(stream);
     return true;
 
+fail_vbuff:
+    PF_FREE(vbuff);
 fail_parse:
     SDL_RWclose(stream);
 fail_init:

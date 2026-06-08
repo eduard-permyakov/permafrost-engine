@@ -45,6 +45,7 @@
 #include <SDL.h> /* for SDL_RWops */
 
 struct pfobj_hdr;
+struct pfobj_cache;
 struct skeleton;
 struct anim_data;
 
@@ -214,6 +215,20 @@ size_t A_AL_CtxBuffSize(void);
  * ---------------------------------------------------------------------------
  */
 void  *A_AL_PrivFromStream(const char *pfobj, const struct pfobj_hdr *header, SDL_RWops *stream);
+
+/* ---------------------------------------------------------------------------
+ * Rebuilds the private animation data from a cached blob: the contiguous buffer
+ * is copied verbatim, its run-local pointers re-based, and the pose texture
+ * re-appended, skipping the stream parse entirely.
+ * ---------------------------------------------------------------------------
+ */
+void  *A_AL_PrivFromCache(const char *pfobj, const struct pfobj_cache *cache);
+
+/* ---------------------------------------------------------------------------
+ * Returns the size (in bytes) of the animation data buffer for a model header.
+ * ---------------------------------------------------------------------------
+ */
+size_t A_AL_DataBuffSize(const struct pfobj_hdr *header);
 
 /* ---------------------------------------------------------------------------
  * Dumps private animation data in PF Object format.

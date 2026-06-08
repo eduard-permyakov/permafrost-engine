@@ -44,6 +44,7 @@
 #include "../lib/public/mem.h"
 
 #include "../asset_load.h"
+#include "../asset_cache.h"
 #include "../lib/public/pf_string.h"
 
 #include <string.h>
@@ -150,7 +151,7 @@ fail:
     return false;
 }
 
-size_t al_data_buffsize_from_header(const struct pfobj_hdr *header)
+size_t A_AL_DataBuffSize(const struct pfobj_hdr *header)
 {
     size_t ret = 0;
 
@@ -209,18 +210,8 @@ size_t A_AL_CtxBuffSize(void)
  *
  */
 
-void *A_AL_PrivFromStream(const char *pfobj, const struct pfobj_hdr *header, SDL_RWops *stream)
+static void a_al_init_anim_data(struct anim_data *ret, const struct pfobj_hdr *header)
 {
-    struct anim_data *ret = PF_MALLOC(al_data_buffsize_from_header(header));
-    if(!ret)
-        goto fail_alloc;
-
-    /*-----------------------------------------------------------
-     * First divide up the buffer betwen data members,
-     * set counts and pointers 
-     *-----------------------------------------------------------
-     */
-
     char *unused_base = (char*)(ret + 1);
 
     ret->num_anims = header->num_as; 
@@ -255,6 +246,16 @@ void *A_AL_PrivFromStream(const char *pfobj, const struct pfobj_hdr *header, SDL
             unused_base += sizeof(struct SQT) * header->num_joints;
         }
     }
+}
+
+void *A_AL_PrivFromStream(const char *pfobj, const struct pfobj_hdr *header, SDL_RWops *stream)
+{
+    struct anim_data *ret = PF_MALLOC(A_AL_DataBuffSize(header));
+    if(!ret)
+        goto fail_alloc;
+
+    /* Divide the buffer between data members, setting counts and pointers. */
+    a_al_init_anim_data(ret, header);
 
     /*---------------------------------------------------------------
      * Then we populate priv members with the file data 
@@ -272,6 +273,37 @@ void *A_AL_PrivFromStream(const char *pfobj, const struct pfobj_hdr *header, SDL
             goto fail_parse;
     }
     A_PrepareInvBindMatrices(&ret->skel);
+
+    if((header->num_as > 0) && !A_Texture_AppendData(pfobj, ret, &ret->texture_desc_id))
+        goto fail_parse;
+
+    return ret;
+
+fail_parse:
+    PF_FREE(ret);
+fail_alloc:
+    return NULL;
+}
+
+void *A_AL_PrivFromCache(const char *pfobj, const struct pfobj_cache *cache)
+{
+    const struct pfobj_hdr *header = &cache->hdr;
+
+    /* Reject a blob that isn't exactly the buffer the header describes. */
+    if(cache->anim_size != A_AL_DataBuffSize(header))
+        return NULL;
+
+    struct anim_data *ret = PF_MALLOC(cache->anim_size);
+    if(!ret)
+        goto fail_alloc;
+
+    memcpy(ret, cache->anim_data, cache->anim_size);
+
+    /* The copied buffer's interior pointers are run-local; re-derive them from
+     * the header. Every data member (joints, inv-bind poses, clip names, samples)
+     * is preserved by the copy and left untouched, so the bind matrices need not
+     * be recomputed. */
+    a_al_init_anim_data(ret, header);
 
     if((header->num_as > 0) && !A_Texture_AppendData(pfobj, ret, &ret->texture_desc_id))
         goto fail_parse;

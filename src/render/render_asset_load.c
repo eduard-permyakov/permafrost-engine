@@ -49,6 +49,7 @@
 #include "../main.h"
 #include "../perf.h"
 #include "../asset_load.h"
+#include "../asset_cache.h"
 #include "../map/public/tile.h"
 #include "../settings.h"
 #include "../lib/public/pf_string.h"
@@ -178,7 +179,7 @@ static bool al_read_material(SDL_RWops *stream, const char *basedir, struct mate
     out->texname[sizeof(out->texname)-1] = '\0';
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_Texture_GetOrLoad,
+        .func = R_GL_Texture_GetOrLoadBaked,
         .nargs = 3,
         .args = {
             R_PushArg(basedir, strlen(basedir) + 1),
@@ -194,7 +195,7 @@ fail:
     return false;
 }
 
-size_t al_priv_buffsize_from_header(const struct pfobj_hdr *header)
+size_t R_AL_PrivBuffSize(const struct pfobj_hdr *header)
 {
     size_t ret = 0;
 
@@ -219,10 +220,11 @@ size_t al_priv_buffsize_from_header(const struct pfobj_hdr *header)
  *
  */
 
-void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header, SDL_RWops *stream)
+void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header, SDL_RWops *stream,
+                          void **out_vbuff, size_t *out_vbuff_size)
 {
     PERF_ENTER();
-    struct render_private *priv = PF_MALLOC(al_priv_buffsize_from_header(header));
+    struct render_private *priv = PF_MALLOC(R_AL_PrivBuffSize(header));
     if(!priv)
         goto fail_alloc_priv;
 
@@ -275,7 +277,14 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
         },
     });
 
-    PF_FREE(vbuff);
+    /* The push above copied the verts into the command stream; hand our copy
+     * back for caching if the caller wants it, otherwise drop it. */
+    if(out_vbuff) {
+        *out_vbuff = vbuff;
+        *out_vbuff_size = vbuff_sz;
+    }else{
+        PF_FREE(vbuff);
+    }
     PERF_RETURN(priv);
 
 fail_parse:
@@ -284,6 +293,57 @@ fail_alloc_vbuff:
     PF_FREE(priv);
 fail_alloc_priv:
     PERF_RETURN(NULL);
+}
+
+void *R_AL_PrivFromCache(const char *base_path, const struct pfobj_cache *cache)
+{
+    PERF_ENTER();
+
+    /* A consistent blob is exactly the buffer the header describes; reject a
+     * mismatch rather than read materials past the end of a corrupt entry. */
+    if(cache->render_priv_size != R_AL_PrivBuffSize(&cache->hdr))
+        PERF_RETURN(NULL);
+
+    struct render_private *priv = PF_MALLOC(cache->render_priv_size);
+    if(!priv)
+        PERF_RETURN(NULL);
+
+    memcpy(priv, cache->render_priv, cache->render_priv_size);
+
+    /* The cached 'materials' pointer is run-local; re-base it. The mesh, shader
+     * and batch fields are re-derived by R_GL_InitObject, exactly as on a parse. */
+    priv->materials = (void*)(priv + 1);
+
+    for(int i = 0; i < cache->hdr.num_materials; i++) {
+
+        priv->materials[i].texture.tunit = GL_TEXTURE0 + i;
+        priv->materials[i].texture.id = -1;
+        R_PushCmd((struct rcmd){
+            .func = R_GL_Texture_GetOrLoadBaked,
+            .nargs = 3,
+            .args = {
+                R_PushArg(base_path, strlen(base_path) + 1),
+                R_PushArg(priv->materials[i].texname, strlen(priv->materials[i].texname) + 1),
+                &priv->materials[i].texture.id,
+            },
+        });
+    }
+
+    bool anim = (cache->hdr.num_as > 0);
+    const char *shader = anim ? "mesh.animated.textured-phong-shadowed"
+                              : "mesh.static.textured-phong-shadowed";
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_InitObject,
+        .nargs = 3,
+        .args = {
+            priv,
+            (void*)shader,
+            R_PushArg(cache->verts, cache->verts_size),
+        },
+    });
+
+    PERF_RETURN(priv);
 }
 
 void R_AL_DumpPrivate(FILE *stream, void *priv_data)

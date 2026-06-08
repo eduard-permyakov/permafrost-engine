@@ -40,15 +40,34 @@
 #include <SDL_rwops.h>
 
 struct pfobj_hdr;
+struct pfobj_cache;
 struct map;
 struct tile;
 
 /* ---------------------------------------------------------------------------
  * Consumes lines of the stream and uses them to populate a new private context
  * for the model. The context is returned in a malloc'd buffer.
+ *
+ * When 'out_vbuff' is non-NULL the parsed vertex buffer is handed back (with
+ * its size in 'out_vbuff_size') instead of being freed, transferring ownership
+ * to the caller so it may be persisted to the asset cache.
  * ---------------------------------------------------------------------------
  */
-void  *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header, SDL_RWops *stream);
+void  *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header, SDL_RWops *stream,
+                           void **out_vbuff, size_t *out_vbuff_size);
+
+/* ---------------------------------------------------------------------------
+ * Rebuilds the render private context from a cached blob, re-issuing the same
+ * texture-load and object-init commands the stream path would have.
+ * ---------------------------------------------------------------------------
+ */
+void  *R_AL_PrivFromCache(const char *base_path, const struct pfobj_cache *cache);
+
+/* ---------------------------------------------------------------------------
+ * Gives the size (in bytes) of the render private buffer for a model header.
+ * ---------------------------------------------------------------------------
+ */
+size_t R_AL_PrivBuffSize(const struct pfobj_hdr *header);
 
 /* ---------------------------------------------------------------------------
  * Dumps private render data in PF Object format.

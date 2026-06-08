@@ -36,6 +36,9 @@
 #ifndef ASSET_CACHE_H
 #define ASSET_CACHE_H
 
+#include "asset_load.h"
+#include "phys/public/collision.h"
+
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -58,6 +61,43 @@ struct tileset_cache{
     void *pixels;
 };
 
+/* A baked PFOBJ model: the engine-ready blocks that loading a model from its
+ * ASCII source would otherwise have to parse and assemble. The three blobs are
+ * contiguous and restored with a plain memcpy:
+ *
+ *   'verts'       - the interleaved vertex buffer, ready to upload to the batch
+ *   'render_priv' - the 'struct render_private' + trailing 'struct material[]'
+ *   'anim_data'   - the 'struct anim_data' buffer (skeleton, clips, samples)
+ *
+ * The pointer-bearing blobs carry stale, run-local pointers; the consumer
+ * re-bases them from 'hdr' after the copy.
+ */
+struct pfobj_cache{
+    struct pfobj_hdr hdr;
+    uint32_t         ent_flags;
+    struct aabb      aabb;
+    void            *verts;
+    size_t           verts_size;
+    void            *render_priv;
+    size_t           render_priv_size;
+    void            *anim_data;
+    size_t           anim_size;
+};
+
+/* A baked texture: 'pixels' is a tightly-packed 'width' x 'height'
+ * image at 'channels' bytes per texel, already downscaled to the batch's slice
+ * resolution so it can be uploaded with a single glTexSubImage3D. The store is
+ * content-addressed: byte-identical results across different source paths share
+ * one on-disk blob, so the expensive resize is performed at most once per
+ * distinct image.
+ */
+struct texture_cache{
+    int   width;
+    int   height;
+    int   channels;
+    void *pixels;
+};
+
 bool AssetCache_Init(void);
 void AssetCache_Shutdown(void);
 
@@ -67,5 +107,24 @@ uint64_t AssetCache_SourceTag(const char *path);
 bool AssetCache_TilesetExists(const char *name);
 bool AssetCache_TilesetLoad(const char *name, uint64_t tag, struct tileset_cache *out);
 bool AssetCache_TilesetStore(const char *name, uint64_t tag, const struct tileset_cache *in);
+
+/* 'name' is the model's base-path-relative path (e.g. 'assets/foo/bar.pfobj'),
+ * which also identifies the source for tag validation. A successful Load fills
+ * 'out' with freshly-allocated blobs that the caller must hand to PFObjRelease
+ * once they have been copied into engine-owned storage.
+ */
+bool AssetCache_PFObjLoad(const char *name, uint64_t tag, struct pfobj_cache *out);
+bool AssetCache_PFObjStore(const char *name, uint64_t tag, const struct pfobj_cache *in);
+void AssetCache_PFObjRelease(struct pfobj_cache *cache);
+
+/* 'src_name' is the base-path-relative path of the source image, used both as
+ * the lookup key and (with 'tag') for invalidation. A successful Load fills
+ * 'out' with a freshly-allocated pixel buffer the caller must hand to
+ * TextureRelease. Store content-addresses 'in->pixels' so identical results are
+ * not duplicated on disk.
+ */
+bool AssetCache_TextureLoad(const char *src_name, uint64_t tag, struct texture_cache *out);
+bool AssetCache_TextureStore(const char *src_name, uint64_t tag, const struct texture_cache *in);
+void AssetCache_TextureRelease(struct texture_cache *cache);
 
 #endif

@@ -489,7 +489,37 @@ void R_GL_Texture_ArrayCopyElem(struct texture_arr *dst, int dst_idx,
     }
 }
 
-void R_GL_Texture_ArrayMake(const struct material *mats, size_t num_mats, 
+/* Resolve a material texture to its base-path-relative cache key and source tag,
+ * mirroring the search order of R_GL_Texture_Load (model directory, then the
+ * shared map_textures directory). Returns false if the source can't be found. */
+static bool texture_cache_key(const char *basedir, const char *name,
+                              char *out_key, size_t size, uint64_t *out_tag)
+{
+    char abspath[512];
+
+    pf_snprintf(abspath, sizeof(abspath), "%s/%s", basedir, name);
+    uint64_t tag = AssetCache_SourceTag(abspath);
+    if(tag != 0) {
+        const char *rel = basedir;
+        size_t blen = strlen(g_basepath);
+        if(strncmp(basedir, g_basepath, blen) == 0 && basedir[blen] == '/')
+            rel = basedir + blen + 1;
+        pf_snprintf(out_key, size, "%s/%s", rel, name);
+        *out_tag = tag;
+        return true;
+    }
+
+    pf_snprintf(abspath, sizeof(abspath), "%s/assets/map_textures/%s", g_basepath, name);
+    tag = AssetCache_SourceTag(abspath);
+    if(tag != 0) {
+        pf_snprintf(out_key, size, "assets/map_textures/%s", name);
+        *out_tag = tag;
+        return true;
+    }
+    return false;
+}
+
+void R_GL_Texture_ArrayMake(const struct material *mats, size_t num_mats,
                             struct texture_arr *out, GLuint tunit)
 {
     ASSERT_IN_RENDER_THREAD();
@@ -499,11 +529,16 @@ void R_GL_Texture_ArrayMake(const struct material *mats, size_t num_mats,
     glGenTextures(1, &out->id);
     glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
 
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, 
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8,
         CONFIG_ARR_TEX_RES, CONFIG_ARR_TEX_RES, num_mats, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
+
+    /* glCopyImageSubData requires a complete destination, but the mip chain is
+     * only built once every slice is in place. A non-mipmap min filter keeps the
+     * array complete with just level 0 until then. */
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
     for(int i = 0; i < num_mats; i++) {
 
@@ -515,6 +550,15 @@ void R_GL_Texture_ArrayMake(const struct material *mats, size_t num_mats,
         int w, h;
         glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
         glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
+
+        /* A baked source is already array-shaped; copy it straight into the slice
+         * on the GPU. Anything else is read back and downscaled on the way in. */
+        if(GLEW_ARB_copy_image && w == CONFIG_ARR_TEX_RES && h == CONFIG_ARR_TEX_RES) {
+            glCopyImageSubData(mats[i].texture.id, GL_TEXTURE_2D, 0, 0, 0, 0,
+                               out->id, GL_TEXTURE_2D_ARRAY, 0, 0, 0, i,
+                               CONFIG_ARR_TEX_RES, CONFIG_ARR_TEX_RES, 1);
+            continue;
+        }
 
         GLubyte *orig_data = PF_MALLOC(w * h * 4);
         if(!orig_data) {
@@ -534,7 +578,7 @@ void R_GL_Texture_ArrayMake(const struct material *mats, size_t num_mats,
             continue;
         }
 
-        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, CONFIG_ARR_TEX_RES, 
+        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, CONFIG_ARR_TEX_RES,
             CONFIG_ARR_TEX_RES, 1, GL_RGBA, GL_UNSIGNED_BYTE, resized_data);
         PF_FREE(orig_data);
         PF_FREE(resized_data);
@@ -942,6 +986,101 @@ void R_GL_Texture_GetOrLoad(const char *basedir, const char *name, GLuint *out)
         return;
 
     R_GL_Texture_Load(basedir, name, out);
+}
+
+/* Produce a CONFIG_ARR_TEX_RES-square RGBA texture from the cache when possible,
+ * decoding and downscaling the source only on a miss. This is the baked size the
+ * batch consumes, so the costly full-resolution decode + mipmap of the original
+ * image is avoided entirely on a warm cache. */
+static bool texture_gl_init_baked(const char *relkey, uint64_t tag, GLuint *out)
+{
+    const int res = CONFIG_ARR_TEX_RES;
+    struct texture_cache tc;
+
+    bool have = AssetCache_TextureLoad(relkey, tag, &tc);
+    if(have && (tc.width != res || tc.height != res || tc.channels != 4)) {
+        AssetCache_TextureRelease(&tc);
+        have = false;
+    }
+
+    GLubyte *pixels;
+    if(have) {
+        pixels = tc.pixels;
+    }else{
+        char abspath[512];
+        pf_snprintf(abspath, sizeof(abspath), "%s/%s", g_basepath, relkey);
+
+        int w, h, n;
+        GLubyte *data = stbi_load(abspath, &w, &h, &n, 4);
+        if(!data)
+            return false;
+
+        pixels = PF_MALLOC((size_t)res * res * 4);
+        if(!pixels) {
+            stbi_image_free(data);
+            return false;
+        }
+        int ok = stbir_resize_uint8(data, w, h, 0, pixels, res, res, 0, 4);
+        stbi_image_free(data);
+        if(!ok) {
+            PF_FREE(pixels);
+            return false;
+        }
+
+        struct texture_cache baked = {res, res, 4, pixels};
+        AssetCache_TextureStore(relkey, tag, &baked);
+    }
+
+    glActiveTexture(GL_TEXTURE0);
+    glGenTextures(1, out);
+    glBindTexture(GL_TEXTURE_2D, *out);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, res, res, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    if(have)
+        AssetCache_TextureRelease(&tc);
+    else
+        PF_FREE(pixels);
+    return true;
+}
+
+void R_GL_Texture_GetOrLoadBaked(const char *basedir, const char *name, GLuint *out)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    char relkey[512];
+    uint64_t tag;
+    if(!texture_cache_key(basedir, name, relkey, sizeof(relkey), &tag)) {
+        R_GL_Texture_GetOrLoad(basedir, name, out);
+        return;
+    }
+
+    /* The 'baked:' namespace keeps these downscaled entries distinct from the
+     * full-resolution textures the rest of the engine loads by path. */
+    char bakedkey[520];
+    pf_snprintf(bakedkey, sizeof(bakedkey), "baked:%s", relkey);
+
+    khiter_t k = kh_get(tex, s_name_tex_table, bakedkey);
+    if(k != kh_end(s_name_tex_table)) {
+        *out = kh_value(s_name_tex_table, k);
+        return;
+    }
+
+    GLuint id;
+    if(!texture_gl_init_baked(relkey, tag, &id)) {
+        R_GL_Texture_GetOrLoad(basedir, name, out);
+        return;
+    }
+
+    int put_ret;
+    k = kh_put(tex, s_name_tex_table, pf_strdup(bakedkey), &put_ret);
+    assert(put_ret != -1 && put_ret != 0);
+    kh_value(s_name_tex_table, k) = id;
+    *out = id;
 }
 
 bool R_GL_Texture_WritePPM(const char* filename, const unsigned char *data, int width, int height)
