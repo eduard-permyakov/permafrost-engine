@@ -3745,6 +3745,9 @@ static void entity_interpolation_step(uint32_t uid, int steps)
 
     vec3_t new_pos = interpolate_positions(ms->prev_pos, ms->next_pos, fraction);
     G_Pos_Set(uid, new_pos);
+
+    quat_t new_rot = interpolate_rotations(ms->prev_rot, ms->next_rot, fraction);
+    Entity_SetRot(uid, new_rot);
 }
 
 static void interpolate_tick(void *user, void *event)
