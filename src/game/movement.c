@@ -1661,24 +1661,29 @@ static void nullify_impass_components(uint32_t uid, vec2_t *inout_force)
     vec2_t top =   (vec2_t){pos.x, pos.z + nt_dims.z};
     vec2_t bot =   (vec2_t){pos.x, pos.z - nt_dims.z};
 
+    /* A unit already sitting on a blocked tile must be allowed to steer toward
+     * blocked neighbours so it can slide off the blocked region; only impassable
+     * terrain is forbidden in that case. */
+    bool on_blocked = M_NavPositionBlocked(s_move_work.gamestate.map, layer, pos);
+
     if(inout_force->x > 0 
     && (!M_NavPositionPathable(s_move_work.gamestate.map, layer, left)  
-      || M_NavPositionBlocked(s_move_work.gamestate.map, layer, left)))
+      || (!on_blocked && M_NavPositionBlocked(s_move_work.gamestate.map, layer, left))))
         inout_force->x = 0.0f;
 
     if(inout_force->x < 0 
     && (!M_NavPositionPathable(s_move_work.gamestate.map, layer, right) 
-     || M_NavPositionBlocked(s_move_work.gamestate.map, layer, right)))
+     || (!on_blocked && M_NavPositionBlocked(s_move_work.gamestate.map, layer, right))))
         inout_force->x = 0.0f;
 
     if(inout_force->z > 0 
     && (!M_NavPositionPathable(s_move_work.gamestate.map, layer, top) 
-      || M_NavPositionBlocked(s_move_work.gamestate.map, layer, top)))
+      || (!on_blocked && M_NavPositionBlocked(s_move_work.gamestate.map, layer, top))))
         inout_force->z = 0.0f;
 
     if(inout_force->z < 0 
     && (!M_NavPositionPathable(s_move_work.gamestate.map, layer, bot) 
-      || M_NavPositionBlocked(s_move_work.gamestate.map, layer, bot)))
+      || (!on_blocked && M_NavPositionBlocked(s_move_work.gamestate.map, layer, bot))))
         inout_force->z = 0.0f;
 }
 
