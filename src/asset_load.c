@@ -283,6 +283,14 @@ static bool al_get_resource(const char *path, const char *basedir,
     if(!al_parse_pfobj_header(stream, &header))
         goto fail_parse;
 
+    /* Surface this cold bake on the loading screen; warm loads skip the slow
+     * path entirely and don't need it. */
+    R_PushCmd((struct rcmd){
+        .func = R_GL_LoadingScreenPushModel,
+        .nargs = 1,
+        .args = { R_PushArg(pfobj_name, strlen(pfobj_name) + 1) },
+    });
+
     out->ent_flags = 0;
     out->render_private = R_AL_PrivFromStream(abs_basedir, &header, stream, &vbuff, &vbuff_size);
     if(!out->render_private)
@@ -322,6 +330,8 @@ static bool al_get_resource(const char *path, const char *basedir,
     PF_FREE(vbuff);
 
     al_commit_resource(path, basedir, pfobj_name, out);
+
+    R_PushCmd((struct rcmd){ .func = R_GL_LoadingScreenPopModel, .nargs = 0 });
 
     SDL_RWclose(stream);
     return true;

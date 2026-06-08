@@ -164,6 +164,15 @@ void   R_GL_DrawModelToTexture(const void *render_private, const struct obb *obb
                                struct ent_anim_rstate *anim_state, const char *key);
 
 /* ---------------------------------------------------------------------------
+ * Push/pop a per-model loading-screen status line ("Loading model: <name>")
+ * while a cold model is baked. Render-thread commands; the push re-presents the
+ * loading screen so the status is shown before the model's slices are baked.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_LoadingScreenPushModel(const char *name);
+void   R_GL_LoadingScreenPopModel(void);
+
+/* ---------------------------------------------------------------------------
  * Debugging utility to draw X(red), Y(green), Z(blue) axes at the origin
  * ---------------------------------------------------------------------------
  */

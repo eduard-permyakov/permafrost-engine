@@ -60,6 +60,7 @@
 #include "../lib/public/pf_string.h"
 #include "../ui.h"
 #include "../main.h"
+#include "../loading_screen.h"
 
 #include <GL/glew.h>
 
@@ -113,6 +114,17 @@ void R_GL_InitObject(struct render_private *priv, const char *shader, const stru
 
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
+}
+
+void R_GL_LoadingScreenPushModel(const char *name)
+{
+    LoadingScreen_PushRenderStatus("Loading model: %s", name);
+    R_Yield();
+}
+
+void R_GL_LoadingScreenPopModel(void)
+{
+    LoadingScreen_PopRenderStatus();
 }
 
 void R_GL_InitChunk(struct render_private *priv, const char *shader, const struct vertex *vbuff)
