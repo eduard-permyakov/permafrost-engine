@@ -234,18 +234,18 @@ static void on_mouseclick(void *user, void *event)
     if(map->minimap_sz == 0)
         return;
 
-    if(!m_mouse_over_screen_rect(map, m_curr_terrain_bounds(map))){
-        s_mouse_down_in_minimap = false;
+    s_mouse_down_in_minimap = false;
+
+    if(!m_mouse_over_screen_rect(map, m_curr_terrain_bounds(map)))
         return;
-    }else{
-        s_mouse_down_in_minimap = true; 
-    }
 
     if(mouse_event->button.button != SDL_BUTTON_LEFT)
         return;
 
     if(G_MouseInTargetMode())
         return;
+
+    s_mouse_down_in_minimap = true;
 
     int w, h;
     Engine_WinDrawableSize(&w, &h);
