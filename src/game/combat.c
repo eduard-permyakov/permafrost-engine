@@ -281,6 +281,7 @@ static void on_attack_anim_tick(void *user, void *event);
 static void on_death_anim_finish(void *user, void *event);
 static void do_stop_attack(uint32_t uid);
 static bool entity_dead(uint32_t uid);
+static bool garrisoned(uint32_t uid);
 static void combat_notify_attack_start(uint32_t uid, struct combatstate *cs);
 static void combat_notify_attack_end(uint32_t uid, struct combatstate *cs);
 static struct combat_cmd *snoop_most_recent_command(enum combat_cmd_type type, void *arg,
@@ -742,6 +743,9 @@ static void entity_die(uint32_t uid)
 static void entity_melee_attack(uint32_t uid, uint32_t target)
 {
     ASSERT_IN_MAIN_THREAD();
+
+    if(entity_dead(target) || garrisoned(target))
+        return;
 
     struct combatstate *cs = combatstate_get(uid);
     struct combatstate *target_cs = combatstate_get(cs->target_uid);
