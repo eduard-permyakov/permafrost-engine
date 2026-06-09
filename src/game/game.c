@@ -901,6 +901,12 @@ static void g_clear_map_state(void)
 
 static void g_set_contextual_cursor(void)
 {
+    /* The orientation drag has already picked its target, so show the plain pointer. */
+    if(G_Move_InOrderDrag()) {
+        Cursor_SetRTSPointer(CURSOR_POINTER);
+        return;
+    }
+
     if(G_MouseInTargetMode()) {
         Cursor_SetRTSPointer(CURSOR_TARGET);
         return;

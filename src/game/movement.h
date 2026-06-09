@@ -75,6 +75,7 @@ void G_Move_SetEnterRange(uint32_t uid, uint32_t target, float range);
 void G_Move_UpdatePos(uint32_t uid, vec2_t pos);
 void G_Move_UpdateFactionID(uint32_t uid, int oldfac, int newfac);
 bool G_Move_InTargetMode(void);
+bool G_Move_InOrderDrag(void);
 
 void G_Move_Unblock(uint32_t uid);
 void G_Move_BlockAt(uint32_t uid, vec3_t pos);

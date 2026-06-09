@@ -4472,6 +4472,12 @@ bool G_Move_InTargetMode(void)
     return (s_move_on_lclick || s_attack_on_lclick);
 }
 
+/* True while the user drags to orient a formation, before the order is issued on mouse-up. */
+bool G_Move_InOrderDrag(void)
+{
+    return s_mouse_dragged;
+}
+
 void G_Move_SetClickEnabled(bool on)
 {
     s_click_move_enabled = on;

@@ -39,6 +39,7 @@
 #include "selection.h"
 #include "game_private.h"
 #include "public/game.h"
+#include "movement.h"
 #include "../pf_math.h"
 #include "../event.h"
 #include "../render/public/render.h"
@@ -134,7 +135,7 @@ static void on_mousedown(void *user, void *event)
     if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
         return;
 
-    if(G_MouseInTargetMode())
+    if(G_MouseInTargetMode() || G_Move_InOrderDrag())
         return;
 
     int w, h;
