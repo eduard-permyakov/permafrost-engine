@@ -54,6 +54,7 @@
 #include "../lib/public/pf_string.h"
 #include "../lib/public/stalloc.h"
 #include "../lib/public/attr.h"
+#include "../lib/public/shared_ptr.h"
 #include "../navigation/public/nav.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
@@ -168,9 +169,10 @@ struct cell_field_work_input{
 };
 
 struct refcounted_map{
-    SDL_atomic_t  refcount;
+    SHARED_PTR_HEADER;
     struct map   *snapshot;
 };
+SHARED_PTR_ASSERT_LAYOUT(struct refcounted_map, sp);
 
 struct cell_field_work{
     bool                         consumed;
@@ -1355,7 +1357,15 @@ static void compute_all_blocked(struct formation *formation)
     }
 }
 
-static struct refcounted_map *map_snapshot_get(struct formation *formation, 
+static void refcounted_map_destroy(void *owner)
+{
+    ASSERT_IN_MAIN_THREAD();
+    struct refcounted_map *rmap = owner;
+    M_AL_FreeCopyWithFields(rmap->snapshot);
+    PF_FREE(rmap);
+}
+
+static struct refcounted_map *map_snapshot_get(struct formation *formation,
                                                struct subformation *sub)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -1370,11 +1380,11 @@ static struct refcounted_map *map_snapshot_get(struct formation *formation,
         struct refcounted_map *rmap = PF_MALLOC(sizeof(struct refcounted_map));
         rmap->snapshot = M_AL_CopyWithFields(s_map);
         map_add_blockers(rmap->snapshot, formation, sub);
-        SDL_AtomicSet(&rmap->refcount, 0);
+        sp_init(rmap, refcounted_map_destroy);
         kh_val(formation->map_snapshots, k) = rmap;
     }
     struct refcounted_map *rmap = kh_val(formation->map_snapshots, k);
-    SDL_AtomicIncRef(&rmap->refcount);
+    sp_retain(rmap);
     return rmap;
 }
 
@@ -1390,8 +1400,8 @@ static void clean_up_map_snapshots(struct formation *formation)
     kh_foreach(formation->map_snapshots, key, rmap, {
         if(ndel == ARR_SIZE(todel))
             break;
-        int refcnt = SDL_AtomicGet(&rmap->refcount);
-        if(refcnt == 0) {
+        int refcnt = sp_refcount(rmap);
+        if(refcnt == 1) {
             todel[ndel++] = key;
         }
     });
@@ -1400,9 +1410,8 @@ static void clean_up_map_snapshots(struct formation *formation)
         khiter_t k = kh_get(map, formation->map_snapshots, todel[i]);
         assert(k != kh_end(formation->map_snapshots));
         struct refcounted_map *rmap = kh_val(formation->map_snapshots, k);
-        M_AL_FreeCopyWithFields(rmap->snapshot);
-        PF_FREE(rmap);
         kh_del(map, formation->map_snapshots, k);
+        sp_release(rmap);
     }
 }
 
@@ -3237,7 +3246,7 @@ static struct result cell_field_task(void *arg)
         input->layer, input->enemy_faction_mask, input->cell_tile, input->center_tile,
         (uint8_t*)result, workspace, size);
 
-    (void)SDL_AtomicDecRef(&map->refcount);
+    sp_release(map);
     PERF_RETURN(NULL_RESULT);
 }
 
@@ -3259,7 +3268,7 @@ static struct result cell_field_fixup_task(void *arg)
         CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES, input->layer, input->enemy_faction_mask,
         input->curr_tile, input->center_tile, (uint8_t*)result, workspace, size);
 
-    (void)SDL_AtomicDecRef(&map->refcount);
+    sp_release(map);
     PERF_RETURN(NULL_RESULT);
 }
 
@@ -3293,7 +3302,7 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
 
         if(!M_NavPositionBlocked(rmap->snapshot, formation->layer, center)) {
             work->tid = NULL_TID;
-            (void)SDL_AtomicDecRef(&rmap->refcount);
+            sp_release(rmap);
             return;
         }
     }
