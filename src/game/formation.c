@@ -198,9 +198,9 @@ QUEUE_TYPE(coord, struct coord)
 QUEUE_IMPL(static, coord, struct coord)
 
 struct block_event{
-    enum eventtype type;
-    void          *arg;
-    uint32_t       tick_recorded;
+    enum eventtype           type;
+    struct entity_block_desc desc;
+    uint32_t                 tick_recorded;
 };
 
 QUEUE_TYPE(event, struct block_event)
@@ -2992,7 +2992,7 @@ static void on_render_3d(void *user, void *event)
 
 static bool event_triggered_recalculate(struct formation *formation, struct block_event *event)
 {
-    struct entity_block_desc *desc = event->arg;
+    struct entity_block_desc *desc = &event->desc;
     if(!G_EntityExists(desc->uid))
         return false;
 
@@ -3027,11 +3027,10 @@ static bool event_triggered_recalculate(struct formation *formation, struct bloc
 
 static void on_entity_unblock(void *user, void *event)
 {
-    uint32_t uid = (uintptr_t)event;
     uint32_t tick = SDL_GetTicks();
     struct block_event block_event = (struct block_event){
         .type = EVENT_MOVABLE_ENTITY_UNBLOCK,
-        .arg = event,
+        .desc = *(struct entity_block_desc*)event,
         .tick_recorded = tick
     };
     queue_event_push(&s_events, &block_event);
@@ -3042,7 +3041,7 @@ static void on_entity_block(void *user, void *event)
     uint32_t tick = SDL_GetTicks();
     struct block_event block_event = (struct block_event){
         .type = EVENT_MOVABLE_ENTITY_BLOCK,
-        .arg = event,
+        .desc = *(struct entity_block_desc*)event,
         .tick_recorded = tick
     };
     queue_event_push(&s_events, &block_event);
@@ -3053,7 +3052,7 @@ static void on_building_found(void *user, void *event)
     uint32_t tick = SDL_GetTicks();
     struct block_event block_event = (struct block_event){
         .type = EVENT_MOVABLE_ENTITY_BLOCK,
-        .arg = event,
+        .desc = *(struct entity_block_desc*)event,
         .tick_recorded = tick
     };
     queue_event_push(&s_events, &block_event);
@@ -3064,7 +3063,7 @@ static void on_building_remove(void *user, void *event)
     uint32_t tick = SDL_GetTicks();
     struct block_event block_event = (struct block_event){
         .type = EVENT_MOVABLE_ENTITY_UNBLOCK,
-        .arg = event,
+        .desc = *(struct entity_block_desc*)event,
         .tick_recorded = tick
     };
     queue_event_push(&s_events, &block_event);
@@ -3155,16 +3154,6 @@ static void destroy_subformation(struct subformation *formation)
     kh_destroy(assignment, formation->assignment);
     kh_destroy(reverse, formation->reverse);
     kh_destroy(entity, formation->ents);
-}
-
-static void clear_mappings(struct formation *formation)
-{
-    uint32_t uid;
-    kh_foreach_key(formation->ents, uid, {
-        khiter_t k = kh_get(formation, s_formations, uid);
-        assert(k != kh_end(s_formations));
-        kh_del(formation, s_formations, k);
-    });
 }
 
 static void destroy_formation(struct formation *formation)
@@ -3321,14 +3310,13 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
     SDL_AtomicSet(&work->future.status, FUTURE_INCOMPLETE);
     work->tid = Sched_Create(31, func, work, "formation::work", &work->future, 0);
     if(work->tid == NULL_TID) {
-        func(&work->result);
+        func(work);
         SDL_AtomicSet(&work->future.status, FUTURE_COMPLETE);
     }
 }
 
 static void request_cell_recompute(formation_id_t fid, uint32_t uid)
 {
-    uint32_t tick = SDL_GetTicks();
     struct cell_recompute_desc desc = (struct cell_recompute_desc){
         .type = CELL_FIELD,
         .fid = fid,
@@ -3339,7 +3327,6 @@ static void request_cell_recompute(formation_id_t fid, uint32_t uid)
 
 static void request_cell_fixup(formation_id_t fid, uint32_t uid)
 {
-    uint32_t tick = SDL_GetTicks();
     struct cell_recompute_desc desc = (struct cell_recompute_desc){
         .type = CELL_FIXUP,
         .fid = fid,
@@ -3420,7 +3407,7 @@ static void on_update_start(void *user, void *event)
             for(int j = 0; j < vec_size(&sub->futures); j++) {
                 struct cell_field_work *curr = &vec_AT(&sub->futures, j);
                 uint32_t uid = curr->uid;
-                if(curr->recompute_pending) {
+                if(curr->recompute_pending && Sched_FutureIsReady(&curr->future)) {
                     khiter_t k = kh_get(assignment, sub->assignment, uid);
                     assert(k != kh_end(sub->assignment));
                     struct coord coord = kh_val(sub->assignment, k);
@@ -3563,6 +3550,7 @@ static void recompute_cell_arrival_fields(struct formation *parent, vec2_t cente
     uint32_t uid;
     kh_foreach_key(formation->ents, uid, {
         struct cell_field_work *curr = &vec_AT(&formation->futures, i);
+        i++;
         if(!curr->consumed) {
             curr->recompute_pending = true;
             continue;
@@ -3574,8 +3562,6 @@ static void recompute_cell_arrival_fields(struct formation *parent, vec2_t cente
         struct cell *cell = &vec_AT(&formation->cells,
             CELL_IDX(coord.r, coord.c, formation->ncols));
         dispatch_cell_task(parent, center, uid, formation, curr, cell, cell_field_task);
-
-        i++;
     });
 }
 
@@ -4407,7 +4393,6 @@ void G_Formation_Shutdown(void)
 
     struct formation *formation;
     kh_foreach_ptr(s_formations, formation, {
-        clear_mappings(formation);
         destroy_formation(formation);
     });
 
@@ -4598,6 +4583,8 @@ bool G_Formation_CanUseArrivalField(uint32_t uid)
 
 bool G_Formation_InRangeOfCell(uint32_t uid)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     struct formation *formation = formation_for_ent(uid);
     vec2_t pos = G_Pos_GetXZ(uid);
     return inside_arrival_field_bounds(formation, pos);
