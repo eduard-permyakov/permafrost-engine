@@ -887,6 +887,8 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
     struct coord curr_tile;
 
     struct coord dest_coord = pos_to_tile(center, target);
+    dest_coord.r = CLAMP(dest_coord.r, 0, OCCUPIED_FIELD_RES - 1);
+    dest_coord.c = CLAMP(dest_coord.c, 0, OCCUPIED_FIELD_RES - 1);
     uint16_t iid = islands[layer][dest_coord.r][dest_coord.c];
     /* This case should not be hit under normal conditions, as 
      * the 'target' position should be on the same island as the 
@@ -4600,9 +4602,10 @@ vec2_t G_Formation_DesiredArrivalVelocity(uint32_t uid)
     vec2_t pos = G_Pos_GetXZ(uid);
     struct coord coord = pos_to_tile(pos, formation->center);
     /* Account for the difference between OCCUPIED_FIELD_RES
-     * and CELL_ARRIVAL_FIELD_RES */
-    coord.r += 1;
-    coord.c += 1;
+     * and CELL_ARRIVAL_FIELD_RES. Clamp in case the position lies
+     * outside the field footprint. */
+    coord.r = CLAMP(coord.r + 1, 0, CELL_ARRIVAL_FIELD_RES - 1);
+    coord.c = CLAMP(coord.c + 1, 0, CELL_ARRIVAL_FIELD_RES - 1);
 
     struct cell_arrival_field *field = cell_get_field(uid);
     enum flow_dir dir = cell_get_dir(field, coord.r, coord.c);
@@ -4791,9 +4794,10 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
     vec2_t pos = G_Pos_GetXZ(uid);
     struct coord coord = pos_to_tile(pos, formation->center);
     /* Account for the difference between OCCUPIED_FIELD_RES
-     * and CELL_ARRIVAL_FIELD_RES */
-    coord.r += 1;
-    coord.c += 1;
+     * and CELL_ARRIVAL_FIELD_RES. Clamp in case the position lies
+     * outside the field footprint. */
+    coord.r = CLAMP(coord.r + 1, 0, CELL_ARRIVAL_FIELD_RES - 1);
+    coord.c = CLAMP(coord.c + 1, 0, CELL_ARRIVAL_FIELD_RES - 1);
 
     enum nav_layer layer = Entity_NavLayer(uid);
     struct cell_field_work_input *input = &work->input;
