@@ -3287,7 +3287,7 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
     if(func == cell_field_fixup_task) {
 
         struct box bounds = M_Tile_Bounds(res, map_pos, work->input.curr_tile);
-        vec2_t center = (vec2_t){bounds.x + bounds.width / 2.0, bounds.z + bounds.z / 2.0};
+        vec2_t center = (vec2_t){bounds.x - bounds.width / 2.0, bounds.z + bounds.height / 2.0};
 
         if(!M_NavPositionBlocked(rmap->snapshot, formation->layer, center)) {
             work->tid = NULL_TID;
