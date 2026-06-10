@@ -1,5 +1,0 @@
-EGL_NV_triple_buffer
-https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
-EGL_NV_triple_buffer
-
-	EGL_TRIPLE_BUFFER_NV 0x3230

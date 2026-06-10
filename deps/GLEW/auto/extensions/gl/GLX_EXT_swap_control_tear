@@ -1,5 +1,0 @@
-GLX_EXT_swap_control_tear
-https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
-GLX_EXT_swap_control_tear
-
-	GLX_LATE_SWAPS_TEAR_EXT 0x20F3

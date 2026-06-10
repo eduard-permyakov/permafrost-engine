@@ -1,6 +1,0 @@
-GL_SGIX_vertex_preclip
-https://www.khronos.org/registry/OpenGL/extensions/SGIX/SGIX_vertex_preclip.txt
-GL_SGIX_vertex_preclip
-
-	GL_VERTEX_PRECLIP_SGIX 0x83EE
-	GL_VERTEX_PRECLIP_HINT_SGIX 0x83EF

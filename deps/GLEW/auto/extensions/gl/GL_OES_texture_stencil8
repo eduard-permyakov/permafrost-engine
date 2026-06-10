@@ -1,6 +1,0 @@
-GL_OES_texture_stencil8
-https://www.khronos.org/registry/OpenGL/extensions/OES/OES_texture_stencil8.txt
-GL_OES_texture_stencil8
-
-	GL_STENCIL_INDEX 0x1901
-	GL_STENCIL_INDEX8 0x8D48

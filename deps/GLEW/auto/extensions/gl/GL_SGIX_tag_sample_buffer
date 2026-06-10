@@ -1,5 +1,0 @@
-GL_SGIX_tag_sample_buffer
-https://www.khronos.org/registry/OpenGL/extensions/SGIX/SGIX_tag_sample_buffer.txt
-GL_SGIX_tag_sample_buffer
-
-	void glTagSampleBufferSGIX (void)

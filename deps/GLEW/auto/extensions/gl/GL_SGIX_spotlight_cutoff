@@ -1,5 +1,0 @@
-GL_SGIX_spotlight_cutoff
-https://www.khronos.org/registry/OpenGL/extensions/SGIX/SGIX_spotlight_cutoff.txt
-GL_SGIX_spotlight_cutoff
-
-	GL_SPOT_CUTOFF_DELTA_SGIX 0x8193

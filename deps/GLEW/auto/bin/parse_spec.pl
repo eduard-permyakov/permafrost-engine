@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 ##
-## Copyright (C) 2008-2019, Nigel Stewart <nigels[]users sourceforge net>
+## Copyright (C) 2008-2025, Nigel Stewart <nigels[]nigels com>
 ## Copyright (C) 2002-2008, Marcelo E. Magallon <mmagallo[]debian org>
 ## Copyright (C) 2002-2008, Milan Ikits <milan ikits[]ieee org>
 ##
@@ -44,6 +44,8 @@ my %typemap = (
     sizei    => "GLsizei",
     ubyte    => "GLubyte",
     uint     => "GLuint",
+    # raw C 'unsigned int' (NV_query_resource); without this it becomes 'unsigned GLint'
+    "unsigned int" => "GLuint",
     ushort   => "GLushort",
     DMbuffer => "void *",
     # Nvidia video output fsck up
@@ -158,7 +160,7 @@ my %regex = (
     eofnc    => qr/(?:\);?$|^$)/, # )$ | );$ | ^$
     extname  => qr/^[A-Z][A-Za-z0-9_]+$/,
     none     => qr/^\(none\)$/,
-    function => qr/^(.+) ([a-z][a-z0-9_]*) \((.+)\)$/i,
+    function => qr/^(.+) ([a-z][a-z0-9_]*) \((.*)\)$/i,
     prefix   => qr/^(?:[aw]?gl|glX|egl)/, # gl | agl | wgl | glX
     tprefix  => qr/^(?:[AW]?GL|GLX|EGL)_/, # GL_ | AGL_ | WGL_ | GLX_
     section  => compile_regex('^(', join('|', @sections), ')$'), # sections in spec
@@ -258,6 +260,10 @@ sub parse_spec($)
                             $parms =~ s/$regex{voidtype}/$voidtypemap{$1}/og;
                             $parms =~ s/GLvoid/void/og;
                             $parms =~ s/ void\* / void */og;
+                            if ($parms eq "")
+                            {
+                                $parms = "void";  # NVX_progress_fence and others
+                            }
                         }
                         # add to functions hash
                         $functions{$name} = {

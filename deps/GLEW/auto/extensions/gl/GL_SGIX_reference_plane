@@ -1,5 +1,0 @@
-GL_SGIX_reference_plane
-https://www.khronos.org/registry/OpenGL/extensions/SGIX/SGIX_reference_plane.txt
-GL_SGIX_reference_plane
-
-	void glReferencePlaneSGIX (const GLdouble* equation)

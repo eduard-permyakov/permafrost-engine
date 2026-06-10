@@ -1,5 +1,0 @@
-GL_ARB_texture_border_clamp
-https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_texture_border_clamp.txt
-GL_ARB_texture_border_clamp
-
-	GL_CLAMP_TO_BORDER_ARB 0x812D

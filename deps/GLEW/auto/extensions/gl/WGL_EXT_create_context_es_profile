@@ -1,5 +1,0 @@
-WGL_EXT_create_context_es_profile
-https://www.khronos.org/registry/OpenGL/extensions/EXT/WGL_EXT_create_context_es_profile.txt
-WGL_EXT_create_context_es_profile
-
-	WGL_CONTEXT_ES_PROFILE_BIT_EXT 0x00000004

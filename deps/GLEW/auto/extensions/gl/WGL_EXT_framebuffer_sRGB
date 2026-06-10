@@ -1,5 +1,0 @@
-WGL_EXT_framebuffer_sRGB
-https://www.khronos.org/registry/OpenGL/extensions/EXT/WGL_EXT_framebuffer_sRGB.txt
-WGL_EXT_framebuffer_sRGB
-
-	WGL_FRAMEBUFFER_SRGB_CAPABLE_EXT 0x20A9

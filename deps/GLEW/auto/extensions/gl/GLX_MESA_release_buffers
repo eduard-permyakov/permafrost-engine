@@ -1,5 +1,0 @@
-GLX_MESA_release_buffers
-https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
-GLX_MESA_release_buffers
-
-	Bool glXReleaseBuffersMESA (Display* dpy, GLXDrawable drawable)

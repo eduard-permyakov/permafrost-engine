@@ -1,6 +1,0 @@
-GLX_SGI_make_current_read
-https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
-GLX_SGI_make_current_read
-
-	GLXDrawable glXGetCurrentReadDrawableSGI (void)
-	Bool glXMakeCurrentReadSGI (Display* dpy, GLXDrawable draw, GLXDrawable read, GLXContext ctx)

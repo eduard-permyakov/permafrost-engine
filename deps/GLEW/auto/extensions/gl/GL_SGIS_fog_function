@@ -1,6 +1,0 @@
-GL_SGIS_fog_function
-https://www.khronos.org/registry/OpenGL/extensions/SGIS/SGIS_fog_function.txt
-GL_SGIS_fog_function
-
-	void glFogFuncSGIS (GLsizei n, const GLfloat* points)
-	void glGetFogFuncSGIS (GLfloat* points)

@@ -1,5 +1,0 @@
-GL_ARB_stencil_texturing
-https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_stencil_texturing.txt
-GL_ARB_stencil_texturing
-
-	GL_DEPTH_STENCIL_TEXTURE_MODE 0x90EA

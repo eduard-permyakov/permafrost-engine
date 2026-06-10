@@ -1,6 +1,0 @@
-GLX_ARB_multisample
-https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
-GLX_ARB_multisample
-
-	GLX_SAMPLE_BUFFERS_ARB 100000
-	GLX_SAMPLES_ARB 100001

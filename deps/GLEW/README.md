@@ -2,20 +2,23 @@
 
 The OpenGL Extension Wrangler Library (GLEW) is a cross-platform open-source C/C++ extension loading library. GLEW provides efficient run-time mechanisms for determining which OpenGL extensions are supported on the target platform. OpenGL core and extension functionality is exposed in a single header file. GLEW has been tested on a variety of operating systems, including Windows, Linux, Mac OS X, FreeBSD, Irix, and Solaris.
 
-![](http://glew.sourceforge.net/glew.png)
-
-http://glew.sourceforge.net/
+[![](http://glew.sourceforge.net/glew.png)](https://github.com/nigels-com/glew)
 
 https://github.com/nigels-com/glew
 
-[![Build Status](https://travis-ci.org/nigels-com/glew.svg?branch=master)](https://travis-ci.org/nigels-com/glew)
-[![Gitter](https://badges.gitter.im/nigels-com/glew.svg)](https://gitter.im/nigels-com/glew?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
-[![Download](https://img.shields.io/sourceforge/dm/glew.svg)](https://sourceforge.net/projects/glew/files/latest/download)
+[![GitHub Stars](https://img.shields.io/github/stars/nigels-com/glew)](https://github.com/nigels-com/glew)
+![Contributors](https://img.shields.io/github/contributors/nigels-com/glew)
+[![Commits since release](https://img.shields.io/github/commits-since/nigels-com/glew/latest)](https://github.com/nigels-com/glew/commits/master/)
+[![Issues](https://img.shields.io/github/issues/nigels-com/glew)](https://github.com/nigels-com/glew/issues)
+[![Pull Requests](https://img.shields.io/github/issues-pr/nigels-com/glew)](https://github.com/nigels-com/glew/pulls)
+
+[![GitHub Downloads](https://img.shields.io/github/downloads/nigels-com/glew/latest/total)](https://github.com/nigels-com/glew/releases)
+[![SourceForge Downloads](https://img.shields.io/sourceforge/dm/glew.svg)](https://sourceforge.net/projects/glew/files/latest/download)
+[![Health](https://codebuild.ap-southeast-2.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiZ0cxMFNORFBPTGQ5Z1MyRUsxRnU5V1ZyOUNUWmZZRFJwNWdBNng5MnNtdFFObGNsTEJkQkxZa0lHYmtMNEZRREZaZmdvMUh2bDMxVjhFc3c2L29odFQ4PSIsIml2UGFyYW1ldGVyU3BlYyI6InhLVlFqWXVaMEZRVFh6c1QiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master)](https://ap-southeast-2.codebuild.aws.amazon.com/project/eyJlbmNyeXB0ZWREYXRhIjoiK3RLWndGOVVkMWthbXRQZCtVTTNOQ0w2dEpxakZ1cVBTNDZ1UldGODdqUERSdkx0U21Nd0RFaGhQL1kycVlmNzh2OXpEYnRKV3hXTVJJdjUvVStCbTl0dkliZm5jRTFsc0VBPSIsIml2UGFyYW1ldGVyU3BlYyI6ImZ0ekRoMkNjaU0rRUt5K2UiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D)
 
 ## Table of Contents
 
 * [Downloads](#downloads)
-	* [Recent snapshots](#recent-snapshots)
 * [Build](#build)
 	* [Linux and Mac](#linux-and-mac)
 		* [Using GNU Make](#using-gnu-make)
@@ -39,20 +42,14 @@ https://github.com/nigels-com/glew
 
 ## Downloads
 
-Current release is [2.2.0](https://github.com/nigels-com/glew/releases/tag/glew-2.2.0).
+Current release is [2.3.1](https://github.com/nigels-com/glew/releases/tag/glew-2.3.1).
 [(Change Log)](http://glew.sourceforge.net/log.html)
 
 Sources available as
-[ZIP](https://github.com/nigels-com/glew/releases/download/glew-2.2.0/glew-2.2.0.zip) or
-[TGZ](https://github.com/nigels-com/glew/releases/download/glew-2.2.0/glew-2.2.0.tgz).
+[ZIP](https://github.com/nigels-com/glew/releases/download/glew-2.3.1/glew-2.3.1.zip) or
+[TGZ](https://github.com/nigels-com/glew/releases/download/glew-2.3.1/glew-2.3.1.tgz).
 
-Windows binaries for [32-bit and 64-bit](https://github.com/nigels-com/glew/releases/download/glew-2.2.0/glew-2.2.0-win32.zip).
-
-### Recent snapshots
-
-Snapshots may contain new features, bug-fixes or new OpenGL extensions ahead of tested, official releases.
-
-<!--- [glew-20190928.tgz](https://sourceforge.net/projects/glew/files/glew/snapshots/glew-20190928.tgz/download) *GLEW 2.2.0 RC2: New extensions, bug fixes* -->
+Windows binaries for [32-bit and 64-bit](https://github.com/nigels-com/glew/releases/download/glew-2.3.1/glew-2.3.1-win32.zip).
 
 ## Build
 
@@ -110,7 +107,7 @@ The cmake build is mostly contributor maintained.
 Due to the multitude of use cases this is maintained on a _best effort_ basis.
 Pull requests are welcome.
 
-*CMake 2.8.12 or higher is required.*
+*CMake 3.16 or higher is required.*
 
 ##### Install build tools
 
@@ -140,6 +137,7 @@ RedHat/CentOS/Fedora: `$ sudo yum install libXmu-devel libXi-devel libGL-devel c
 | GLEW_REGAL      | Build in Regal mode. |
 | GLEW_OSMESA     | Build in off-screen Mesa mode. |
 | BUILD_FRAMEWORK | Build as MacOSX Framework.  Setting `CMAKE_INSTALL_PREFIX` to `/Library/Frameworks` is recommended. |
+| CLANG_TIDY      | clang-tidy linting mode |
 
 ### Windows
 

@@ -1,6 +1,0 @@
-GL_EXT_multisample_compatibility
-https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_multisample_compatibility.txt
-GL_EXT_multisample_compatibility
-
-	GL_MULTISAMPLE_EXT 0x809D
-	GL_SAMPLE_ALPHA_TO_ONE_EXT 0x809F

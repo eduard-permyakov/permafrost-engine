@@ -1,6 +1,0 @@
-EGL_EXT_image_gl_colorspace
-https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
-EGL_EXT_image_gl_colorspace
-
-	EGL_GL_COLORSPACE 0x309D
-	EGL_GL_COLORSPACE_DEFAULT_EXT 0x314D

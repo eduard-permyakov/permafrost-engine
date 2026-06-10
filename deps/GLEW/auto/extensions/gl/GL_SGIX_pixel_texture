@@ -1,5 +1,0 @@
-GL_SGIX_pixel_texture
-https://www.khronos.org/registry/OpenGL/extensions/SGIX/SGIX_pixel_texture.txt
-GL_SGIX_pixel_texture
-
-	void glPixelTexGenSGIX (GLenum mode)

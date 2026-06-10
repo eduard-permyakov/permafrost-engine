@@ -1,5 +1,0 @@
-WGL_ARB_pixel_format_float
-https://www.khronos.org/registry/OpenGL/extensions/ARB/WGL_ARB_pixel_format_float.txt
-WGL_ARB_pixel_format_float
-
-	WGL_TYPE_RGBA_FLOAT_ARB 0x21A0

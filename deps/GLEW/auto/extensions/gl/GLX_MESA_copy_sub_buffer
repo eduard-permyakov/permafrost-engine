@@ -1,5 +1,0 @@
-GLX_MESA_copy_sub_buffer
-https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
-GLX_MESA_copy_sub_buffer
-
-	void glXCopySubBufferMESA (Display* dpy, GLXDrawable drawable, int x, int y, int width, int height)

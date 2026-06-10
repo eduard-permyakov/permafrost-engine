@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 ##
-## Copyright (C) 2008-2019, Nigel Stewart <nigels[]users sourceforge net>
+## Copyright (C) 2008-2025, Nigel Stewart <nigels[]nigels com>
 ## Copyright (C) 2002-2008, Marcelo E. Magallon <mmagallo[]debian org>
 ## Copyright (C) 2002-2008, Milan Ikits <milan ikits[]ieee org>
 ##
@@ -38,7 +38,7 @@ if (@ARGV)
 		#print "#ifdef $extname\n\n";
 		if (keys %$functions)
 		{
-			print "static GLboolean _glewInit_$extname ();\n";
+			print "static GLboolean _glewInit_$extname (void);\n";
 		}
 		#print "#endif /* $extname */\n\n";
 	}

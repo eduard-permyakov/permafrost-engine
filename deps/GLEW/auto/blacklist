@@ -4,6 +4,7 @@ EXT/vertex_array_set.alt.txt
 EXT/vertex_array_set.txt
 EXT/nurbs_tessellator.txt
 EXT/object_space_tess.txt
+MESA/MESA_sampler_objects.txt
 SGI/filter4_parameters.txt
 SGIS/SGIS_texture_color_mask.txt
 SGIX/SGIX_dmbuffer.txt
@@ -13,7 +14,6 @@ SGIX/SGIX_hyperpipe_group.txt
 OES/OES_fixed_point.txt
 OES/OES_query_matrix.txt
 IMG/IMG_user_clip_plane.txt
-NV/NV_query_resource.txt
 NV/EGL_NV_coverage_sample.txt
 OES/OES_draw_elements_base_vertex.txt
 OES/OES_viewport_array.txt

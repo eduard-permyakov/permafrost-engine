@@ -35,7 +35,7 @@ MIMALLOC_SRC = ./deps/mimalloc
 # Linux
 # ------------------------------------------------------------------------------
 
-LINUX_GLEW_LIB = libGLEW.so.2.2
+LINUX_GLEW_LIB = libGLEW.so.2.3
 LINUX_SDL2_LIB = libSDL2-2.0.so.0
 LINUX_PYTHON_LIB = libpython2.7.so.1.0
 LINUX_PYTHON_TARGET = libpython2.7.so

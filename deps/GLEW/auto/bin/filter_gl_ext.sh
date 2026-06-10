@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ##
-## Copyright (C) 2008-2019, Nigel Stewart <nigels[]users sourceforge net>
+## Copyright (C) 2008-2025, Nigel Stewart <nigels[]nigels com>
 ## Copyright (C) 2002-2008, Marcelo E. Magallon <mmagallo[]debian org>
 ## Copyright (C) 2002-2008, Milan Ikits <milan ikits[]ieee org>
 ##
@@ -115,19 +115,6 @@ EOT
 # fix WGL_EXT_make_current_read
     cat >> $1/WGL_EXT_make_current_read <<EOT
 	ERROR_INVALID_PIXEL_TYPE_EXT 0x2043
-EOT
-
-# add typedefs to GL_ARB_vertex_buffer_object; (from personal communication
-# with Marco Fabbricatore).
-#
-# Rationale.  The spec says:
-#
-#   "Both types are defined as signed integers large enough to contain
-#   any pointer value [...] The idea of making these types unsigned was
-#   considered, but was ultimately rejected ..."
-    cat >> $1/GL_ARB_vertex_buffer_object <<EOT
-	typedef ptrdiff_t GLsizeiptrARB
-	typedef ptrdiff_t GLintptrARB
 EOT
 
 # add typedefs to GLX_EXT_import_context
@@ -378,6 +365,30 @@ EOT
     void glVertexArrayVertexAttribDivisorEXT (GLuint vaobj, GLuint index, GLuint divisor)
 EOT
 
+# add missing functions to GL_EXT_direct_state_access (GL_ARB_sparse_texture related)
+# https://github.com/nigels-com/glew/issues/445
+    cat >> $1/GL_EXT_direct_state_access <<EOT
+    void glTexturePageCommitmentEXT (GLuint texture, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLboolean commit)
+EOT
+
+# add missing functions to GL_EXT_direct_state_access (GL_EXT_buffer_storage related)
+# https://github.com/nigels-com/glew/issues/454
+    cat >> $1/GL_EXT_direct_state_access <<EOT
+    void glNamedBufferStorageEXT (GLuint buffer, GLsizeiptr size, const void *data, GLbitfield flags)
+EOT
+
+# add missing functions to GL_EXT_direct_state_access (GL_ARB_sparse_buffer related)
+# https://github.com/nigels-com/glew/issues/470
+    cat >> $1/GL_EXT_direct_state_access <<EOT
+    void glNamedBufferPageCommitmentEXT (GLuint buffer, GLintptr offset, GLsizeiptr size, GLboolean commit)
+EOT
+
+# add missing functions to GL_ARB_direct_state_access (GL_ARB_sparse_buffer related)
+# https://github.com/nigels-com/glew/issues/470
+    cat >> $1/GL_ARB_direct_state_access <<EOT
+    void glNamedBufferPageCommitmentARB (GLuint buffer, GLintptr offset, GLsizeiptr size, GLboolean commit)
+EOT
+
 # Filter out GL_UNSIGNED_INT and GL_FLOAT from GL_AMD_performance_monitor
     grep -v 'GL_UNSIGNED_INT ' $1/GL_AMD_performance_monitor > tmp
     mv tmp $1/GL_AMD_performance_monitor
@@ -481,8 +492,9 @@ EOT
     head -n4 $1/GL_AMD_gpu_shader_int64 > tmp
     mv tmp $1/GL_AMD_gpu_shader_int64
 
-# Filter out GL_NO_ERROR enum from GL_KHR_robustness
-    grep -v 'GL_NO_ERROR' $1/GL_KHR_robustness > tmp
+# Filter out GL_NO_ERROR enum and glGetGraphicsResetStatus from GL_KHR_robustness
+    grep -v 'GL_NO_ERROR'              $1/GL_KHR_robustness |
+    grep -v 'glGetGraphicsResetStatus' > tmp
     mv tmp $1/GL_KHR_robustness
 
 # Filter out all enums from GL_KHR_blend_equation_advanced_coherent
@@ -602,6 +614,16 @@ EOT
     cat >> $1/GL_NV_draw_vulkan_image <<EOT
     typedef void (APIENTRY *GLVULKANPROCNV)(void)
 EOT
+
+# remove duplicates in GL_EXT_fragment_shading_rate and GL_EXT_fragment_shading_rate_primitive
+    tail -n +5 $1/GL_EXT_fragment_shading_rate_primitive > patterns
+    grep -v -F -f patterns $1/GL_EXT_fragment_shading_rate_primitive > tmp
+    mv tmp $1/GL_EXT_fragment_shading_rate_primitive
+
+# remove duplicates in GL_EXT_fragment_shading_rate and GL_EXT_fragment_shading_rate_attachment
+    tail -n +5 $1/GL_EXT_fragment_shading_rate_attachment > patterns
+    grep -v -F -f patterns $1/GL_EXT_fragment_shading_rate_attachment > tmp
+    mv tmp $1/GL_EXT_fragment_shading_rate_attachment
 
 # GLU extensions are not relevant here
     rm -f $1/GL_GLU_*

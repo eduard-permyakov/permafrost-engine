@@ -1,5 +1,0 @@
-GL_NV_multisample_filter_hint
-https://www.khronos.org/registry/OpenGL/extensions/NV/NV_multisample_filter_hint.txt
-GL_NV_multisample_filter_hint
-
-	GL_MULTISAMPLE_FILTER_HINT_NV 0x8534

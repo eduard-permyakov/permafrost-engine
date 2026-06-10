@@ -1,5 +1,0 @@
-EGL_EXT_gl_colorspace_scrgb
-https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
-EGL_EXT_gl_colorspace_scrgb
-
-	EGL_GL_COLORSPACE_SCRGB_EXT 0x3351

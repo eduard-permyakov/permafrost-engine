@@ -1,6 +1,0 @@
-GL_SGIS_detail_texture
-https://www.khronos.org/registry/OpenGL/extensions/SGIS/SGIS_detail_texture.txt
-GL_SGIS_detail_texture
-
-	void glDetailTexFuncSGIS (GLenum target, GLsizei n, const GLfloat* points)
-	void glGetDetailTexFuncSGIS (GLenum target, GLfloat* points)

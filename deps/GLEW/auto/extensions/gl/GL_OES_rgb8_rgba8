@@ -1,6 +1,0 @@
-GL_OES_rgb8_rgba8
-https://www.khronos.org/registry/OpenGL/extensions/OES/OES_rgb8_rgba8.txt
-GL_OES_rgb8_rgba8
-
-	GL_RGB8_OES 0x8051
-	GL_RGBA8_OES 0x8058

@@ -1,7 +1,0 @@
-GL_OES_packed_depth_stencil
-https://www.khronos.org/registry/OpenGL/extensions/OES/OES_packed_depth_stencil.txt
-GL_OES_packed_depth_stencil
-
-	GL_DEPTH_STENCIL_OES 0x84F9
-	GL_UNSIGNED_INT_24_8_OES 0x84FA
-	GL_DEPTH24_STENCIL8_OES 0x88F0

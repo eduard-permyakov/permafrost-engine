@@ -1,7 +1,0 @@
-EGL_EXT_client_sync
-https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
-EGL_EXT_client_sync
-
-	EGL_SYNC_CLIENT_EXT 0x3364
-	EGL_SYNC_CLIENT_SIGNAL_EXT 0x3365
-	EGLBoolean eglClientSignalSyncEXT (EGLDisplay dpy, EGLSync sync, const EGLAttrib* attrib_list)

@@ -1,6 +1,0 @@
-EGL_ARM_image_format
-https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
-EGL_ARM_image_format
-
-	EGL_COLOR_COMPONENT_TYPE_UNSIGNED_INTEGER_ARM 0x3287
-	EGL_COLOR_COMPONENT_TYPE_INTEGER_ARM 0x3288

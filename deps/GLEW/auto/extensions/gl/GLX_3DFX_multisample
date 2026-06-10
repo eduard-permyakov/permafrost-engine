@@ -1,6 +1,0 @@
-GLX_3DFX_multisample
-https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
-GLX_3DFX_multisample
-
-	GLX_SAMPLE_BUFFERS_3DFX 0x8050
-	GLX_SAMPLES_3DFX 0x8051

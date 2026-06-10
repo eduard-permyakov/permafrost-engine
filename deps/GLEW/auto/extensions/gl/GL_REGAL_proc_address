@@ -1,5 +1,0 @@
-GL_REGAL_proc_address
-https://www.khronos.org/registry/OpenGL/extensions/REGAL/proc_address.txt
-GL_REGAL_proc_address
-
-	void * glGetProcAddressREGAL (const GLchar *name)

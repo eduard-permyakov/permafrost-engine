@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 ##
-## Copyright (C) 2008-2019, Nigel Stewart <nigels[]users sourceforge net>
+## Copyright (C) 2008-2025, Nigel Stewart <nigels[]nigels com>
 ## Copyright (C) 2002-2008, Marcelo E. Magallon <mmagallo[]debian org>
 ## Copyright (C) 2002-2008, Milan Ikits <milan ikits[]ieee org>
 ##
@@ -51,7 +51,7 @@ if (@ARGV)
 		if (keys %$functions or keys @$reuse)
 		{
 			print "#ifdef $extname\n\n";
-			print "static GLboolean _glewInit_$extname ()\n{\n  GLboolean r = GL_FALSE;\n";
+			print "static GLboolean _glewInit_$extname (void)\n{\n  GLboolean r = GL_FALSE;\n";
 			output_reuse($reuse, \&make_reuse_call);
 			output_decls($functions, \&make_pfn_def_init);
 			print "\n  return r;\n}\n\n";

@@ -1,8 +1,0 @@
-WGL_EXT_make_current_read
-https://www.khronos.org/registry/OpenGL/extensions/EXT/WGL_EXT_make_current_read.txt
-WGL_EXT_make_current_read
-
-	ERROR_INVALID_PIXEL_TYPE_EXT 0x2043
-	HDC wglGetCurrentReadDCEXT (void)
-	BOOL wglMakeContextCurrentEXT (HDC hDrawDC, HDC hReadDC, HGLRC hglrc)
-	ERROR_INVALID_PIXEL_TYPE_EXT 0x2043

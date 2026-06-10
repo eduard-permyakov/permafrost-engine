@@ -1,6 +1,0 @@
-GL_EXT_primitive_bounding_box
-https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_primitive_bounding_box.txt
-GL_EXT_primitive_bounding_box
-
-	GL_PRIMITIVE_BOUNDING_BOX_EXT 0x92BE
-	void glPrimitiveBoundingBoxEXT (GLfloat minX, GLfloat minY, GLfloat minZ, GLfloat minW, GLfloat maxX, GLfloat maxY, GLfloat maxZ, GLfloat maxW)

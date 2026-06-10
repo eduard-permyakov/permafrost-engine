@@ -31,7 +31,7 @@
 include config/version
 
 SHELL = /bin/sh
-SYSTEM ?= $(shell config/config.guess | cut -d - -f 3 | sed -e 's/[0-9\.]//g;')
+SYSTEM ?= $(shell config/config.guess | cut -d - -f 3 | sed -e 's/\.//g' -e 's/[0-9]\{1,\}.*//')
 SYSTEM.SUPPORTED = $(shell test -f config/Makefile.$(SYSTEM) && echo 1)
 
 ifeq ($(SYSTEM.SUPPORTED), 1)
@@ -44,7 +44,8 @@ GLEW_PREFIX ?= /usr/local
 GLEW_DEST ?= /usr/local
 BINDIR    ?= $(GLEW_DEST)/bin
 LIBDIR    ?= $(GLEW_DEST)/lib
-INCDIR    ?= $(GLEW_DEST)/include/GL
+INCLUDEDIR ?= $(GLEW_DEST)/include
+INCDIR    ?= $(INCLUDEDIR)/GL
 PKGDIR    ?= $(GLEW_DEST)/lib/pkgconfig
 
 ifneq ($(GLEW_NO_GLU), -DGLEW_NO_GLU)
@@ -146,7 +147,7 @@ glew.pc: glew.pc.in
 		-e "s|@prefix@|$(GLEW_PREFIX)|g" \
 		-e "s|@libdir@|$(LIBDIR)|g" \
 		-e "s|@exec_prefix@|$(BINDIR)|g" \
-		-e "s|@includedir@|$(INCDIR)|g" \
+		-e "s|@includedir@|$(INCLUDEDIR)|g" \
 		-e "s|@version@|$(GLEW_VERSION)|g" \
 		-e "s|@cflags@||g" \
 		-e "s|@libname@|$(NAME)|g" \
@@ -232,6 +233,7 @@ install.bin: glew.bin
 
 install.include:
 	$(INSTALL) -d -m 0755 "$(DESTDIR)$(INCDIR)"
+	$(INSTALL) -m 0644 include/GL/eglew.h "$(DESTDIR)$(INCDIR)/"
 	$(INSTALL) -m 0644 include/GL/wglew.h "$(DESTDIR)$(INCDIR)/"
 	$(INSTALL) -m 0644 include/GL/glew.h "$(DESTDIR)$(INCDIR)/"
 	$(INSTALL) -m 0644 include/GL/glxew.h "$(DESTDIR)$(INCDIR)/"
@@ -243,6 +245,7 @@ install.pkgconfig: glew.pc
 	$(INSTALL) -m 0644 glew.pc "$(DESTDIR)$(PKGDIR)/"
 
 uninstall:
+	$(RM) "$(DESTDIR)$(INCDIR)/eglew.h"
 	$(RM) "$(DESTDIR)$(INCDIR)/wglew.h"
 	$(RM) "$(DESTDIR)$(INCDIR)/glew.h"
 	$(RM) "$(DESTDIR)$(INCDIR)/glxew.h"
@@ -348,7 +351,7 @@ dist-src:
 	find $(DIST_DIR) -name '*.pm' | xargs $(DOS2UNIX)
 	find $(DIST_DIR) -name '*.rc' | xargs $(DOS2UNIX)
 	rm -f $(DIST_SRC_TGZ)
-	cd $(DIST_DIR)/.. && env GZIP=-9 tar czf $(DIST_SRC_TGZ) $(DIST_NAME)
+	cd $(DIST_DIR)/.. && tar -cf - $(DIST_NAME) | gzip -9 > $(DIST_SRC_TGZ)
 	$(RM) -r $(DIST_DIR)
 
 extensions:

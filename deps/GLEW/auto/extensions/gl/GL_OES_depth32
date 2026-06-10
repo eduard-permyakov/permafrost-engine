@@ -1,5 +1,0 @@
-GL_OES_depth32
-https://www.khronos.org/registry/OpenGL/extensions/OES/OES_depth32.txt
-GL_OES_depth32
-
-	GL_DEPTH_COMPONENT32_OES 0x81A7

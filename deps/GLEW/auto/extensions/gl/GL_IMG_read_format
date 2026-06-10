@@ -1,6 +1,0 @@
-GL_IMG_read_format
-https://www.khronos.org/registry/OpenGL/extensions/IMG/IMG_read_format.txt
-GL_IMG_read_format
-
-	GL_BGRA_IMG 0x80E1
-	GL_UNSIGNED_SHORT_4_4_4_4_REV_IMG 0x8365

@@ -1,5 +1,0 @@
-GLX_ARB_framebuffer_sRGB
-https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
-GLX_ARB_framebuffer_sRGB
-
-	GLX_FRAMEBUFFER_SRGB_CAPABLE_ARB 0x20B2

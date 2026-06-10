@@ -1,6 +1,0 @@
-GL_EXT_protected_textures
-https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_protected_textures.txt
-GL_EXT_protected_textures
-
-	GL_CONTEXT_FLAG_PROTECTED_CONTENT_BIT_EXT 0x00000010
-	GL_TEXTURE_PROTECTED_EXT 0x8BFA

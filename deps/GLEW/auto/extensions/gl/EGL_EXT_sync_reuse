@@ -1,5 +1,0 @@
-EGL_EXT_sync_reuse
-https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
-EGL_EXT_sync_reuse
-
-	EGLBoolean eglUnsignalSyncEXT (EGLDisplay dpy, EGLSync sync, const EGLAttrib* attrib_list)

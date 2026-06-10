@@ -4,7 +4,7 @@
 ** Copyright (C) Nate Robins, 1997
 **               Michael Wimmer, 1999
 **               Milan Ikits, 2002-2008
-**               Nigel Stewart, 2008-2021
+**               Nigel Stewart, 2008-2025
 **
 ** visualinfo is a small utility that displays all available visuals,
 ** aka. pixelformats, in an OpenGL system along with renderer version
@@ -36,6 +36,9 @@
 #include <GL/glew.h>
 #if defined(GLEW_OSMESA)
 #define GLAPI extern
+#ifndef APIENTRY
+#define APIENTRY
+#endif
 #include <GL/osmesa.h>
 #elif defined(GLEW_EGL)
 #include <GL/eglew.h>
@@ -260,6 +263,7 @@ void PrintExtensions (const char* s)
 void
 VisualInfo (GLContext* ctx)
 {
+  (void) ctx; /* not used */
 }
 
 #elif defined(_WIN32)
@@ -1027,7 +1031,7 @@ GLboolean CreateContext (GLContext* ctx)
   {
     osmPixels = (GLubyte *) calloc(osmWidth*osmHeight*4, 1);
   }
-  if (!OSMesaMakeCurrent(ctx->ctx, osmPixels, GL_UNSIGNED_BYTE, osmWidth, osmHeight))
+  if (!OSMesaMakeCurrent(ctx->ctx, osmPixels, osmFormat, osmWidth, osmHeight))
   {
       return GL_TRUE;
   }
@@ -1049,13 +1053,13 @@ void InitContext (GLContext* ctx)
 
 GLboolean CreateContext (GLContext* ctx)
 {
+  (void) ctx; /* not used */
   return GL_FALSE;
 }
 
 void DestroyContext (GLContext* ctx)
 {
-  if (NULL == ctx) return;
-  return;
+  (void) ctx; /* not used */
 }
 
 /* ------------------------------------------------------------------------ */

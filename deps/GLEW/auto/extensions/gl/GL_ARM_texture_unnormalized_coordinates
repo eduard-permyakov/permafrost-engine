@@ -1,5 +1,0 @@
-GL_ARM_texture_unnormalized_coordinates
-https://www.khronos.org/registry/OpenGL/extensions/ARM/ARM_texture_unnormalized_coordinates.txt
-GL_ARM_texture_unnormalized_coordinates
-
-	GL_TEXTURE_UNNORMALIZED_COORDINATES_ARM 0x8F6A

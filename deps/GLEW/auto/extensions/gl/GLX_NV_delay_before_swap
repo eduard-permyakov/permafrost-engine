@@ -1,5 +1,0 @@
-GLX_NV_delay_before_swap
-https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
-GLX_NV_delay_before_swap
-
-	Bool glXDelayBeforeSwapNV (Display* dpy, GLXDrawable drawable, GLfloat seconds)
