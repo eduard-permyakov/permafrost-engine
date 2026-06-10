@@ -396,6 +396,8 @@ QUEUE_IMPL(static, cmd, struct move_cmd)
 VEC_TYPE(flock, struct flock)
 VEC_IMPL(static inline, flock, struct flock)
 
+SHARED_PTR_ASSERT_LAYOUT(struct refcounted_map, sp);
+
 static void move_push_cmd(struct move_cmd cmd);
 static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack);
 static void do_stop(uint32_t uid);
@@ -462,6 +464,7 @@ static unsigned long           s_last_tick = 0;
 static unsigned long           s_last_interpolate_tick = 0;
 
 static enum movement_hz        s_move_hz = MOVE_HZ_20;
+static struct refcounted_map  *s_nav_snapshot;
 static bool                    s_move_hz_dirty = false;
 static bool                    s_use_gpu = true;
 static bool                    s_move_tick_queued = false;
@@ -3288,6 +3291,26 @@ static void move_init_nav_unit_query_ctx(void)
     s_move_work.unit_query_ctx.player_controllable = s_move_work.gamestate.player_controllable;
 }
 
+static void refcounted_map_destroy(void *owner)
+{
+    /* Runs on whichever thread drops the last reference; PF_FREE is thread-safe. */
+    struct refcounted_map *rmap = owner;
+    M_AL_FreeCopyWithFields(rmap->snapshot);
+    PF_FREE(rmap);
+}
+
+struct refcounted_map *G_Move_NavSnapshotAcquire(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    if(!s_nav_snapshot)
+        return NULL;
+    /* No resurrection race: main-thread-only, and s_nav_snapshot always holds
+     * movement's reference, so refcount >= 1 here (workers only release).
+     */
+    sp_retain(s_nav_snapshot);
+    return s_nav_snapshot;
+}
+
 static void move_copy_gamestate(void)
 {
     PERF_ENTER();
@@ -3298,7 +3321,11 @@ static void move_copy_gamestate(void)
     s_move_work.gamestate.faction_ids = G_FactionIDCopyTable();
     s_move_work.gamestate.ent_gpu_id_map = G_CopyEntGPUIDMap();
     s_move_work.gamestate.gpu_id_ent_map = G_CopyGPUIDEntMap();
-    s_move_work.gamestate.map = M_AL_CopyWithFields(s_map);
+    struct refcounted_map *snap = PF_MALLOC(sizeof(struct refcounted_map));
+    snap->snapshot = M_AL_CopyWithFields(s_map);
+    sp_init(snap, refcounted_map_destroy);
+    s_nav_snapshot = snap;
+    s_move_work.gamestate.map = snap->snapshot;
     s_move_work.gamestate.transforms = Entity_CopyTransforms();
     s_move_work.gamestate.aabbs = move_copy_aabbs();
     s_move_work.gamestate.fog_enabled = G_Fog_Enabled();
@@ -3344,9 +3371,11 @@ static void move_release_gamestate(void)
         kh_destroy(id, s_move_work.gamestate.gpu_id_ent_map);
         s_move_work.gamestate.gpu_id_ent_map = NULL;
     }
-    if(s_move_work.gamestate.map) {
-        M_AL_FreeCopyWithFields((struct map*)s_move_work.gamestate.map);
-        s_move_work.gamestate.map = NULL;
+    s_move_work.gamestate.map = NULL;
+    /* Release before the next tick allocates so the freed block is recycled. */
+    if(s_nav_snapshot) {
+        sp_release(s_nav_snapshot);
+        s_nav_snapshot = NULL;
     }
     if(s_move_work.gamestate.transforms) {
         kh_destroy(trans, s_move_work.gamestate.transforms);
@@ -4137,6 +4166,7 @@ bool G_Move_Init(const struct map *map)
     s_move_on_lclick = false;
     s_mouse_dragged = false;
     s_drag_attacking = false;
+    s_nav_snapshot = NULL;
     move_copy_gamestate();
     return true;
 }

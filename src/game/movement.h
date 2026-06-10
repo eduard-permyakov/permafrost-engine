@@ -40,6 +40,7 @@
 #include "../pf_math.h"
 #include <stdbool.h>
 #include <stdint.h>
+#include "../lib/public/shared_ptr.h"
 
 enum movement_hz{
     MOVE_HZ_20,
@@ -50,6 +51,15 @@ enum movement_hz{
 
 struct map;
 struct SDL_RWops;
+
+/* Reference-counted nav snapshot; borrowers must treat the grid as read-only. */
+struct refcounted_map{
+    SHARED_PTR_HEADER;
+    struct map *snapshot;
+};
+
+/* Borrow movement's current nav snapshot (NULL if not running); release with sp_release. */
+struct refcounted_map *G_Move_NavSnapshotAcquire(void);
 
 bool G_Move_Init(const struct map *map);
 void G_Move_Shutdown(void);

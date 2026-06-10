@@ -791,13 +791,6 @@ void        M_AL_FreeCopyWithFields(struct map *map);
 bool   M_AL_WritePFMap(const struct map *map, SDL_RWops *stream);
 
 /* ------------------------------------------------------------------------
- * Manage memory pools used for 'deep' copies of the map.
- * ------------------------------------------------------------------------
- */
-void   M_InitCopyPools(const struct map *map);
-void   M_DestroyCopyPools(void);
-
-/* ------------------------------------------------------------------------
  * Swap fieldcaches between two navigation contexts.
  * ------------------------------------------------------------------------
  */

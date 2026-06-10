@@ -88,7 +88,6 @@
 #define SIGNUM(x)                (((x) > 0) - ((x) < 0))
 #define EPSILON                  (1.0f/1024)
 #define FIELD_RECOMPUTE_INTERVAL (3.0f) /* seconds */
-#define NAV_SNAPSHOT_REFRESH_MS  (1000)
 #define MAX_CELL_ASSIGNMENT_WORK (256)
 #define IDX(r, width, c)         (r * width + c)
 
@@ -172,12 +171,6 @@ struct cell_field_work_input{
     struct tile_desc curr_tile;
 };
 
-struct refcounted_map{
-    SHARED_PTR_HEADER;
-    struct map   *snapshot;
-};
-SHARED_PTR_ASSERT_LAYOUT(struct refcounted_map, sp);
-
 struct cell_field_work{
     bool                         consumed;
     bool                         recompute_pending;
@@ -197,8 +190,6 @@ VEC_IMPL(static inline, work, struct cell_field_work)
 KHASH_MAP_INIT_INT(assignment, struct coord)
 KHASH_MAP_INIT_INT(reverse, uint32_t);
 KHASH_MAP_INIT_INT(result, struct cell_arrival_field*)
-VEC_TYPE(rcmap, struct refcounted_map*)
-VEC_IMPL(static inline, rcmap, struct refcounted_map*)
 
 QUEUE_TYPE(coord, struct coord)
 QUEUE_IMPL(static, coord, struct coord)
@@ -372,9 +363,6 @@ static khash_t(mapping)      *s_ent_formation_map;
 static khash_t(formation)    *s_formations;
 static khash_t(type)         *s_preferred;
 static formation_id_t         s_next_id;
-static struct refcounted_map *s_nav_snapshot;
-static uint32_t               s_nav_snapshot_tick;
-static vec_rcmap_t            s_nav_snapshots;
 static SDL_TLSID              s_workspace;
 static queue_event_t          s_events;
 static queue_cell_recompute_t s_requests;
@@ -1344,42 +1332,6 @@ static void compute_all_blocked(struct formation *formation)
         struct subformation *curr = &vec_AT(&formation->subformations, i);
         curr->blocked = compute_blocked(formation, curr);
     }
-}
-
-static void refcounted_map_destroy(void *owner)
-{
-    ASSERT_IN_MAIN_THREAD();
-    struct refcounted_map *rmap = owner;
-    M_AL_FreeCopyWithFields(rmap->snapshot);
-    PF_FREE(rmap);
-}
-
-static struct refcounted_map *nav_snapshot_acquire(void)
-{
-    ASSERT_IN_MAIN_THREAD();
-
-    for(int i = 0; i < vec_size(&s_nav_snapshots);) {
-        struct refcounted_map *curr = vec_AT(&s_nav_snapshots, i);
-        if(curr != s_nav_snapshot && sp_refcount(curr) == 1) {
-            sp_release(curr);
-            vec_rcmap_del(&s_nav_snapshots, i);
-        }else{
-            i++;
-        }
-    }
-
-    uint32_t now = SDL_GetTicks();
-    if(!s_nav_snapshot || SDL_TICKS_PASSED(now, s_nav_snapshot_tick + NAV_SNAPSHOT_REFRESH_MS)) {
-        struct refcounted_map *fresh = PF_MALLOC(sizeof(struct refcounted_map));
-        fresh->snapshot = M_AL_CopyWithFields(s_map);
-        sp_init(fresh, refcounted_map_destroy);
-        vec_rcmap_push(&s_nav_snapshots, fresh);
-        s_nav_snapshot = fresh;
-        s_nav_snapshot_tick = now;
-    }
-
-    sp_retain(s_nav_snapshot);
-    return s_nav_snapshot;
 }
 
 static void mark_unused_cells(struct subformation *formation)
@@ -3233,7 +3185,11 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
 {
     ASSERT_IN_MAIN_THREAD();
 
-    struct refcounted_map *rmap = nav_snapshot_acquire();
+    struct refcounted_map *rmap = G_Move_NavSnapshotAcquire();
+    if(!rmap) {
+        work->tid = NULL_TID;
+        return;
+    }
     struct map_resolution res;
     M_NavGetResolution(rmap->snapshot, &res);
     vec3_t map_pos = M_GetPos(rmap->snapshot);
@@ -4335,8 +4291,6 @@ bool G_Formation_Init(const struct map *map)
 
     s_map = map;
     s_next_id = 0;
-    s_nav_snapshot = NULL;
-    vec_rcmap_init(&s_nav_snapshots);
 
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, 
         G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
@@ -4368,11 +4322,6 @@ void G_Formation_Shutdown(void)
     kh_foreach_ptr(s_formations, formation, {
         destroy_formation(formation);
     });
-
-    for(int i = 0; i < vec_size(&s_nav_snapshots); i++)
-        sp_release(vec_AT(&s_nav_snapshots, i));
-    vec_rcmap_destroy(&s_nav_snapshots);
-    s_nav_snapshot = NULL;
 
     E_Global_Unregister(EVENT_1HZ_TICK, on_1hz_tick);
     E_Global_Unregister(EVENT_BUILDING_FOUNDED, on_building_found);

@@ -47,7 +47,6 @@
 #include "../game/public/game.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/mem.h"
-#include "../lib/public/block_allocator.h"
 #include "../ui.h"
 #include "../perf.h"
 #include "../event.h"
@@ -82,9 +81,6 @@ enum wang_tile_color{
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
-
-static struct block_allocator s_map_block_alloc;
-static struct block_allocator s_nav_block_alloc;
 
 /* Tile updates (from M_AL_UpdateTile) are not dispatched to the renderer
  * immediately. Instead, the affected tiles are accumulated in a dirty set and
@@ -789,17 +785,15 @@ void M_AL_ShallowCopy(struct map *dst, const struct map *src)
 
 struct map *M_AL_CopyWithFields(const struct map *src)
 {
-    PERF_PUSH("alloc map block");
-    struct map *ret = block_alloc(&s_map_block_alloc);
-    PERF_POP();
+    struct map *ret = PF_MALLOC(M_AL_ShallowCopySize(src->width, src->height));
     if(!ret)
         return NULL;
 
-    PERF_PUSH("alloc nav block");
-    void *nav = block_alloc(&s_nav_block_alloc);
-    PERF_POP();
-    if(!nav)
+    void *nav = PF_MALLOC(N_DeepCopySize(src->nav_private));
+    if(!nav) {
+        PF_FREE(ret);
         return NULL;
+    }
 
     M_AL_ShallowCopy(ret, src);
 
@@ -812,8 +806,8 @@ struct map *M_AL_CopyWithFields(const struct map *src)
 void M_AL_FreeCopyWithFields(struct map *map)
 {
     N_DestroyCtx(map->nav_private);
-    block_free(&s_nav_block_alloc, map->nav_private);
-    block_free(&s_map_block_alloc, map);
+    PF_FREE(map->nav_private);
+    PF_FREE(map);
 }
 
 bool M_AL_WritePFMap(const struct map *map, SDL_RWops *stream)
@@ -870,20 +864,5 @@ bool M_AL_WritePFMap(const struct map *map, SDL_RWops *stream)
 
 fail:
     return false;
-}
-
-void M_InitCopyPools(const struct map *map)
-{
-    size_t map_size = M_AL_ShallowCopySize(map->width, map->height);
-    size_t nav_size = N_DeepCopySize(map->nav_private);
-
-    block_alloc_init(&s_map_block_alloc, map_size, 1);
-    block_alloc_init(&s_nav_block_alloc, nav_size, 1);
-}
-
-void M_DestroyCopyPools(void)
-{
-    block_alloc_destroy(&s_nav_block_alloc);
-    block_alloc_destroy(&s_map_block_alloc);
 }
 
