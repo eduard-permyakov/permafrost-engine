@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_RENDER_GL_PERF
 
 #include "gl_perf.h"
+#include "public/render.h"
 
 #include <SDL.h>
 #include <string.h>
@@ -140,6 +141,19 @@ void R_GL_PerfCallRecord(const char *expr, const char *file, int line,
             fflush(stderr);
         }
     }
+}
+
+void R_GL_ReadVramStats(struct vram_stats *out)
+{
+    memset(out, 0, sizeof(*out));
+    if(!GLEW_NVX_gpu_memory_info)
+        return;
+
+    glGetIntegerv(GL_GPU_MEMORY_INFO_DEDICATED_VIDMEM_NVX,         &out->dedicated_kb);
+    glGetIntegerv(GL_GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX,   &out->total_available_kb);
+    glGetIntegerv(GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX, &out->current_available_kb);
+    glGetIntegerv(GL_GPU_MEMORY_INFO_EVICTION_COUNT_NVX,           &out->eviction_count);
+    glGetIntegerv(GL_GPU_MEMORY_INFO_EVICTED_MEMORY_NVX,           &out->evicted_kb);
 }
 
 void R_GL_PerfStallFrameReport(void)

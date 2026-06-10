@@ -169,6 +169,7 @@ static struct perf_mem_stats  s_last_frames_memstats[NFRAMES_LOGGED];
 static struct mem_accounting
                               s_last_frames_accounting[NFRAMES_LOGGED];
 static uint64_t               s_last_frames_allocd_bytes[NFRAMES_LOGGED];
+static struct vram_stats      s_vram[NFRAMES_LOGGED];
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -686,6 +687,12 @@ void Perf_BeginTick(void)
     ASSERT_IN_MAIN_THREAD();
     s_last_frames_ms[s_last_idx] = SDL_GetTicks();
 
+    R_PushCmd((struct rcmd){
+        .func = R_GL_ReadVramStats,
+        .nargs = 1,
+        .args = { &s_vram[s_last_idx] }
+    });
+
     khiter_t k = kh_get(pstate, s_thread_state_table, GPU_STATE_KEY);
     if(k == kh_end(s_thread_state_table))
         return;
@@ -856,6 +863,12 @@ void Perf_GetMemoryStats(struct perf_mem_stats *out)
     int read_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
     *out = s_last_frames_memstats[read_idx];
 #endif
+}
+
+void Perf_GetVramStats(struct vram_stats *out)
+{
+    int read_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
+    *out = s_vram[read_idx];
 }
 
 void Perf_GetMemoryAccounting(struct mem_accounting *out)

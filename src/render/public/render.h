@@ -310,6 +310,14 @@ void   R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_ra
  */
 void   R_GL_TimestampForCookie(uint32_t *cookie, uint64_t *out);
 
+/* ---------------------------------------------------------------------------
+ * Read the GPU's VRAM usage counters (NVX_gpu_memory_info) into 'out', or
+ * zeroes if the extension is unavailable.
+ * ---------------------------------------------------------------------------
+ */
+struct vram_stats;
+void   R_GL_ReadVramStats(struct vram_stats *out);
+
 /*###########################################################################*/
 /* RENDER TILES                                                              */
 /*###########################################################################*/

@@ -97,6 +97,16 @@ struct perf_mem_stats{
     uint64_t vm_size_kb;
 };
 
+/* GPU video memory counters (NVX_gpu_memory_info), in KB; zeroes if the
+ * extension is unavailable. */
+struct vram_stats{
+    int dedicated_kb;
+    int total_available_kb;
+    int current_available_kb;
+    int eviction_count;
+    int evicted_kb;
+};
+
 
 struct perf_info{
     char threadname[64];
@@ -136,6 +146,7 @@ bool     Perf_IsRoot(void);
  * must be 'free'd by the caller. */
 size_t   Perf_Report(size_t maxout, struct perf_info **out);
 void     Perf_GetMemoryStats(struct perf_mem_stats *out);
+void     Perf_GetVramStats(struct vram_stats *out);
 void     Perf_GetMemoryAccounting(struct mem_accounting *out);
 uint32_t Perf_LastFrameMS(void);
 uint32_t Perf_CurrFrameMS(void);
