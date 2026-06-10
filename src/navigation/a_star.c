@@ -461,7 +461,7 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_til
 
         if(N_PortalReachableFromTile(port, tile_coord, bchunk)) {
 
-            float cost = bchunk->portal_travel_costs[i][tile_coord.r][tile_coord.c];
+            float cost = portal_cost_unpack(bchunk->portal_travel_costs[i][tile_coord.r][tile_coord.c]);
             if(cost != FLT_MAX) {
 
                 struct portal_hop hop = (struct portal_hop){port, start_liid};

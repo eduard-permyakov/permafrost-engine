@@ -38,6 +38,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <float.h>
 #include "../game/public/game.h" /* MAX_FACTIONS */
 
 #define MAX_PORTALS_PER_CHUNK 64
@@ -46,6 +47,28 @@
 #define COST_IMPASSABLE       0xff
 #define ISLAND_NONE           0xffff
 #define FACTION_ID_NONE       0xf
+
+/* portal_travel_costs are octile distances within a chunk (max ~5800), stored as
+ * 16-bit fixed-point with 3 fractional bits; UNREACHABLE is the 'no path' sentinel. */
+#define PORTAL_COST_SCALE        8
+#define PORTAL_COST_UNREACHABLE  ((uint16_t)0xffff)
+
+static inline uint16_t portal_cost_pack(float cost)
+{
+    if(cost == FLT_MAX)
+        return PORTAL_COST_UNREACHABLE;
+    float scaled = cost * PORTAL_COST_SCALE + 0.5f;
+    if(scaled >= PORTAL_COST_UNREACHABLE)
+        return PORTAL_COST_UNREACHABLE - 1;
+    return (uint16_t)scaled;
+}
+
+static inline float portal_cost_unpack(uint16_t packed)
+{
+    if(packed == PORTAL_COST_UNREACHABLE)
+        return FLT_MAX;
+    return (float)packed / PORTAL_COST_SCALE;
+}
 
 struct coord{
     int r, c;
@@ -84,10 +107,11 @@ struct nav_chunk{
      * cost may never be reached.
      */
     uint8_t         cost_base[FIELD_RES_R][FIELD_RES_C]; 
-    /* Per-tile cost to reach each portal (synchronized with cost_base). Points
-     * into nav_private's backing; snapshots share the live map's read-only.
+    /* Per-tile cost to reach each portal (octile distance, synced with cost_base),
+     * 16-bit fixed-point — use portal_cost_pack/unpack. Points into nav_private's
+     * backing; snapshots share the live map's read-only.
      */
-    float           (*portal_travel_costs)[FIELD_RES_R][FIELD_RES_C];
+    uint16_t        (*portal_travel_costs)[FIELD_RES_R][FIELD_RES_C];
     /* Every tile in the 'blockers' holds a reference count for
      * how many stationary entities are currently 'retaining' that 
      * tile by being positioned on it. 'Blocked' tiles are treated 

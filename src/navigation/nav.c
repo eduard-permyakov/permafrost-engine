@@ -1292,7 +1292,7 @@ static void n_build_portal_travel_index(struct nav_chunk *chunk)
         for(int r = 0; r < FIELD_RES_R; r++) {
         for(int c = 0; c < FIELD_RES_C; c++) {
 
-            chunk->portal_travel_costs[pi][r][c] = FLT_MAX;
+            chunk->portal_travel_costs[pi][r][c] = PORTAL_COST_UNREACHABLE;
         }}
 
         const struct portal *port = &chunk->portals[pi];
@@ -1309,7 +1309,7 @@ static void n_build_portal_travel_index(struct nav_chunk *chunk)
             struct cost_coord curr;
             queue_cc_pop(&frontier, &curr);
 
-            chunk->portal_travel_costs[pi][curr.coord.r][curr.coord.c] = curr.cost;
+            chunk->portal_travel_costs[pi][curr.coord.r][curr.coord.c] = portal_cost_pack(curr.cost);
 
             struct coord neighbours[8];
             float costs[8];
@@ -1339,7 +1339,7 @@ static const struct portal *n_closest_reachable_portal(const struct nav_chunk *c
     for(int i = 0; i < chunk->num_portals; i++) {
 
         const struct portal *curr = &chunk->portals[i];
-        float cost = chunk->portal_travel_costs[i][start.r][start.c];
+        float cost = portal_cost_unpack(chunk->portal_travel_costs[i][start.r][start.c]);
 
         if(unblocked && !N_PortalReachableFromTile(curr, start, chunk))
             continue;
@@ -1500,8 +1500,8 @@ static bool n_normally_reachable(const struct nav_chunk *chunk, struct coord a, 
 {
     for(int i = 0; i < chunk->num_portals; i++) {
     
-        bool areach = (chunk->portal_travel_costs[i][a.r][a.c] != FLT_MAX);
-        bool breach = (chunk->portal_travel_costs[i][b.r][b.c] != FLT_MAX);
+        bool areach = (chunk->portal_travel_costs[i][a.r][a.c] != PORTAL_COST_UNREACHABLE);
+        bool breach = (chunk->portal_travel_costs[i][b.r][b.c] != PORTAL_COST_UNREACHABLE);
         if(areach != breach)
             return false;
     }
