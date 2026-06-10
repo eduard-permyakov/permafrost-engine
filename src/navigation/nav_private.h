@@ -51,6 +51,10 @@ struct fieldcache_ctx;
 struct nav_private{
     size_t                 width, height;
     struct nav_chunk      *chunks[NAV_LAYER_MAX];
+    /* Owns the backing storage for portal_travel_costs (live map only; NULL in
+     * snapshots, which share the live map's chunk pointers read-only).
+     */
+    float                (*portal_travel_costs_mem)[FIELD_RES_R][FIELD_RES_C];
     /* Private cache for fields and other computation-heavy intermediate data */
     struct fieldcache_ctx *fieldcache;
     /* Data used for fieldcache invalidation */

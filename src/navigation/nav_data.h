@@ -84,11 +84,10 @@ struct nav_chunk{
      * cost may never be reached.
      */
     uint8_t         cost_base[FIELD_RES_R][FIELD_RES_C]; 
-    /* Holds the cost to travel from every tile to every portal,
-     * when the portal is reachable from the tile. This field is 
-     * synchronized with the 'cost_base' field.
+    /* Per-tile cost to reach each portal (synchronized with cost_base). Points
+     * into nav_private's backing; snapshots share the live map's read-only.
      */
-    float           portal_travel_costs[MAX_PORTALS_PER_CHUNK][FIELD_RES_R][FIELD_RES_C];
+    float           (*portal_travel_costs)[FIELD_RES_R][FIELD_RES_C];
     /* Every tile in the 'blockers' holds a reference count for
      * how many stationary entities are currently 'retaining' that 
      * tile by being positioned on it. 'Blocked' tiles are treated 

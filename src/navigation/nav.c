@@ -2234,6 +2234,17 @@ void *N_NewCtxForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
     ret->width = w;
     ret->height = h;
 
+    ret->portal_travel_costs_mem = PF_MALLOC(NAV_LAYER_MAX * w * h * MAX_PORTALS_PER_CHUNK
+                                           * sizeof(*ret->portal_travel_costs_mem));
+    if(!ret->portal_travel_costs_mem)
+        goto fail_alloc_chunks;
+    for(int layer = 0; layer < NAV_LAYER_MAX; layer++) {
+        for(size_t idx = 0; idx < w * h; idx++) {
+            ret->chunks[layer][idx].portal_travel_costs =
+                &ret->portal_travel_costs_mem[(layer * w * h + idx) * MAX_PORTALS_PER_CHUNK];
+        }
+    }
+
     assert(FIELD_RES_R >= chunk_h && FIELD_RES_R % chunk_h == 0);
     assert(FIELD_RES_C >= chunk_w && FIELD_RES_C % chunk_w == 0);
 
@@ -2288,6 +2299,7 @@ void N_FreeCtx(void *nav_private)
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
         PF_FREE(priv->chunks[i]);
     }
+    PF_FREE(priv->portal_travel_costs_mem);
     PF_FREE(nav_private);
 }
 
@@ -4502,6 +4514,7 @@ void N_CloneCtx(void *nav_private, void *out)
     struct nav_private *to = (struct nav_private*)out;
 
     *to = *from;
+    to->portal_travel_costs_mem = NULL;
     unsigned char *cursor = (unsigned char*)(to + 1);
     size_t chunks_per_layer = from->width * from->height;
     size_t layer_size = chunks_per_layer * sizeof(struct nav_chunk);
@@ -4521,6 +4534,7 @@ void N_CloneCtx(void *nav_private, void *out)
             memcpy(to->chunks[i][j].factions, from->chunks[i][j].factions, factions_size);
             memcpy(to->chunks[i][j].islands, from->chunks[i][j].islands, islands_size);
             memcpy(to->chunks[i][j].local_islands, from->chunks[i][j].local_islands, loc_islands_size);
+            to->chunks[i][j].portal_travel_costs = from->chunks[i][j].portal_travel_costs;
         }
         cursor += layer_size;
     }
