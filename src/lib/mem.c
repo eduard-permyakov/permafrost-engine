@@ -357,40 +357,40 @@ void Mem_Shutdown(void)
 
 void *Mem_Malloc(size_t n)
 {
-    return malloc(n);
+    return mi_malloc(n);
 }
 
 void *Mem_Calloc(size_t c, size_t n)
 {
-    return calloc(c, n);
+    return mi_calloc(c, n);
 }
 
 void *Mem_Realloc(void *p, size_t n)
 {
-    return realloc(p, n);
+    return mi_realloc(p, n);
 }
 
 void *Mem_MallocTagged(size_t n, uint16_t sys, uint16_t sub)
 {
     (void)sys; (void)sub;
-    return malloc(n);
+    return mi_malloc(n);
 }
 
 void *Mem_CallocTagged(size_t c, size_t n, uint16_t sys, uint16_t sub)
 {
     (void)sys; (void)sub;
-    return calloc(c, n);
+    return mi_calloc(c, n);
 }
 
 void *Mem_ReallocTagged(void *p, size_t n, uint16_t sys, uint16_t sub)
 {
     (void)sys; (void)sub;
-    return realloc(p, n);
+    return mi_realloc(p, n);
 }
 
 void Mem_Free(void *p)
 {
-    free(p);
+    mi_free(p);
 }
 
 void Mem_GetAccounting(struct mem_accounting *out)
