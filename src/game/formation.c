@@ -88,6 +88,7 @@
 #define SIGNUM(x)                (((x) > 0) - ((x) < 0))
 #define EPSILON                  (1.0f/1024)
 #define FIELD_RECOMPUTE_INTERVAL (3.0f) /* seconds */
+#define NAV_SNAPSHOT_REFRESH_MS  (1000)
 #define MAX_CELL_ASSIGNMENT_WORK (256)
 #define IDX(r, width, c)         (r * width + c)
 
@@ -160,6 +161,9 @@ struct cell_arrival_field{
 VEC_TYPE(cell, struct cell)
 VEC_IMPL(static inline, cell, struct cell)
 
+VEC_TYPE(tile, struct tile_desc)
+VEC_IMPL(static inline, tile, struct tile_desc)
+
 struct cell_field_work_input{
     enum nav_layer   layer;
     uint16_t         enemy_faction_mask;
@@ -183,6 +187,7 @@ struct cell_field_work{
     uint32_t                     uid;
     struct future                future;
     struct cell_field_work_input input;
+    struct nav_cell_overlay      overlay;
     struct cell_arrival_field    result;
 };
 
@@ -192,7 +197,8 @@ VEC_IMPL(static inline, work, struct cell_field_work)
 KHASH_MAP_INIT_INT(assignment, struct coord)
 KHASH_MAP_INIT_INT(reverse, uint32_t);
 KHASH_MAP_INIT_INT(result, struct cell_arrival_field*)
-KHASH_MAP_INIT_INT64(map, struct refcounted_map*)
+VEC_TYPE(rcmap, struct refcounted_map*)
+VEC_IMPL(static inline, rcmap, struct refcounted_map*)
 
 QUEUE_TYPE(coord, struct coord)
 QUEUE_IMPL(static, coord, struct coord)
@@ -262,6 +268,7 @@ struct subformation{
      */
     khash_t(result)     *results;
     vec_work_t           futures;
+    vec_tile_t           blocked_tiles;
 };
 
 VEC_TYPE(subformation, struct subformation)
@@ -312,9 +319,6 @@ struct formation{
      */
     struct subformation *root;
     vec_subformation_t   subformations;
-    /* Map snapshots to be used for asynchronous field computation.
-     */
-    khash_t(map)        *map_snapshots;
     /* The map tiles which have already been allocated to cells.
      * Centered at the target position.
      */
@@ -368,6 +372,9 @@ static khash_t(mapping)      *s_ent_formation_map;
 static khash_t(formation)    *s_formations;
 static khash_t(type)         *s_preferred;
 static formation_id_t         s_next_id;
+static struct refcounted_map *s_nav_snapshot;
+static uint32_t               s_nav_snapshot_tick;
+static vec_rcmap_t            s_nav_snapshots;
 static SDL_TLSID              s_workspace;
 static queue_event_t          s_events;
 static queue_cell_recompute_t s_requests;
@@ -1244,22 +1251,6 @@ static void place_subformation(struct subformation *formation, vec2_t center,
     PERF_RETURN_VOID();
 }
 
-static uint64_t map_table_key(struct formation *formation, struct subformation *sub)
-{
-    uint64_t idx = 0;
-    for(int i = 0; i < vec_size(&formation->subformations); i++) {
-        struct subformation *curr = &vec_AT(&formation->subformations, i);
-        if(curr == sub) {
-            idx = i;
-            break;
-        }
-    }
-    /* Only update the map once every 10 ticks */
-    unsigned long truncate = g_frame_idx - (g_frame_idx % 10);
-    unsigned long floored = g_frame_idx - truncate;
-    return (floored << 8) | idx;
-}
-
 static float average_distance_to_target(struct subformation *formation)
 {
     /* Find the entity center of mass for the subformation */
@@ -1294,33 +1285,29 @@ static float average_distance_to_target(struct subformation *formation)
     return PFM_Vec2_Len(&delta);
 }
 
-static void map_block_cells(struct map *map, struct subformation *sub)
+/* Lower-priority subformations closer to their target are blocked out so
+ * entities route around them rather than colliding through. */
+static void build_blocked_overlay(struct formation *parent, struct subformation *sub)
 {
-    int faction_id = sub->faction_id;
-    float radius = sub->unit_radius;
+    vec_tile_reset(&sub->blocked_tiles);
 
-    for(int i = 0; i < vec_size(&sub->cells); i++) {
-        struct cell *cell = &vec_AT(&sub->cells, i);
-        if(cell->state != CELL_OCCUPIED)
+    struct map_resolution res;
+    M_NavGetResolution(s_map, &res);
+    vec3_t map_pos = M_GetPos(s_map);
+
+    for(int i = 0; i < vec_size(&parent->subformations); i++) {
+        if(!(sub->blocked & (((uint64_t)0x1) << i)))
             continue;
-        M_NavBlockersIncref(cell->pos, radius, faction_id, 0, map);
-        M_NavBlockersIncref(cell->pos, radius, faction_id, ENTITY_FLAG_WATER, map);
-    }
-}
-
-/* Block out all cells for lower priority subformations that are (on average) 
- * closer to their target location than the current subformation. This will
- * cause entities to go around the whole subformation area, instead of attempting
- * to go directly through it and resulting in a lot of unit collisions and field 
- * re-computations that will then, anyways, lead the units around the lower priority 
- * subformation.
- */
-static void map_add_blockers(struct map *map, struct formation *formation, struct subformation *sub)
-{
-    for(int i = 0; i < vec_size(&formation->subformations); i++) {
-        struct subformation *curr = &vec_AT(&formation->subformations, i);
-        if(sub->blocked & (((uint64_t)0x1) << i)) {
-            map_block_cells(map, curr);
+        struct subformation *curr = &vec_AT(&parent->subformations, i);
+        for(int j = 0; j < vec_size(&curr->cells); j++) {
+            struct cell *cell = &vec_AT(&curr->cells, j);
+            if(cell->state != CELL_OCCUPIED)
+                continue;
+            struct tile_desc tiles[256];
+            size_t n = M_Tile_AllUnderCircle(res, cell->pos, curr->unit_radius,
+                map_pos, tiles, ARR_SIZE(tiles));
+            for(size_t k = 0; k < n; k++)
+                vec_tile_push(&sub->blocked_tiles, tiles[k]);
         }
     }
 }
@@ -1367,54 +1354,32 @@ static void refcounted_map_destroy(void *owner)
     PF_FREE(rmap);
 }
 
-static struct refcounted_map *map_snapshot_get(struct formation *formation,
-                                               struct subformation *sub)
+static struct refcounted_map *nav_snapshot_acquire(void)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    uint64_t key = map_table_key(formation, sub);
-    khiter_t k = kh_get(map, formation->map_snapshots, key);
-    if(k == kh_end(formation->map_snapshots)) {
-        int ret;
-        k = kh_put(map, formation->map_snapshots, key, &ret);
-        assert(ret != -1);
-
-        struct refcounted_map *rmap = PF_MALLOC(sizeof(struct refcounted_map));
-        rmap->snapshot = M_AL_CopyWithFields(s_map);
-        map_add_blockers(rmap->snapshot, formation, sub);
-        sp_init(rmap, refcounted_map_destroy);
-        kh_val(formation->map_snapshots, k) = rmap;
-    }
-    struct refcounted_map *rmap = kh_val(formation->map_snapshots, k);
-    sp_retain(rmap);
-    return rmap;
-}
-
-static void clean_up_map_snapshots(struct formation *formation)
-{
-    ASSERT_IN_MAIN_THREAD();
-
-    uint64_t todel[1024];
-    size_t ndel = 0;
-
-    uint64_t key;
-    struct refcounted_map *rmap;
-    kh_foreach(formation->map_snapshots, key, rmap, {
-        if(ndel == ARR_SIZE(todel))
-            break;
-        int refcnt = sp_refcount(rmap);
-        if(refcnt == 1) {
-            todel[ndel++] = key;
+    for(int i = 0; i < vec_size(&s_nav_snapshots);) {
+        struct refcounted_map *curr = vec_AT(&s_nav_snapshots, i);
+        if(curr != s_nav_snapshot && sp_refcount(curr) == 1) {
+            sp_release(curr);
+            vec_rcmap_del(&s_nav_snapshots, i);
+        }else{
+            i++;
         }
-    });
-
-    for(int i = 0; i < ndel; i++) {
-        khiter_t k = kh_get(map, formation->map_snapshots, todel[i]);
-        assert(k != kh_end(formation->map_snapshots));
-        struct refcounted_map *rmap = kh_val(formation->map_snapshots, k);
-        kh_del(map, formation->map_snapshots, k);
-        sp_release(rmap);
     }
+
+    uint32_t now = SDL_GetTicks();
+    if(!s_nav_snapshot || SDL_TICKS_PASSED(now, s_nav_snapshot_tick + NAV_SNAPSHOT_REFRESH_MS)) {
+        struct refcounted_map *fresh = PF_MALLOC(sizeof(struct refcounted_map));
+        fresh->snapshot = M_AL_CopyWithFields(s_map);
+        sp_init(fresh, refcounted_map_destroy);
+        vec_rcmap_push(&s_nav_snapshots, fresh);
+        s_nav_snapshot = fresh;
+        s_nav_snapshot_tick = now;
+    }
+
+    sp_retain(s_nav_snapshot);
+    return s_nav_snapshot;
 }
 
 static void mark_unused_cells(struct subformation *formation)
@@ -1595,6 +1560,7 @@ static void init_subformation(vec2_t target, struct subformation *formation,
     }}
     formation->results = kh_init(result);
     vec_work_init(&formation->futures);
+    vec_tile_init(&formation->blocked_tiles);
 }
 
 static void init_subformations(struct formation *formation)
@@ -3151,6 +3117,7 @@ static void destroy_subformation(struct subformation *formation)
 {
     complete_cell_field_work(formation, false);
     vec_work_destroy(&formation->futures);
+    vec_tile_destroy(&formation->blocked_tiles);
     vec_cell_destroy(&formation->cells);
     kh_destroy(result, formation->results);
     kh_destroy(assignment, formation->assignment);
@@ -3170,9 +3137,6 @@ static void destroy_formation(struct formation *formation)
         destroy_subformation(sub);
     }
     vec_assignment_work_destroy(&formation->work);
-    clean_up_map_snapshots(formation);
-    assert(kh_size(formation->map_snapshots) == 0);
-    kh_destroy(map, formation->map_snapshots);
     kh_destroy(entity, formation->ents);
     vec_subformation_destroy(&formation->subformations);
     kh_destroy(assignment, formation->sub_assignment);
@@ -3235,7 +3199,7 @@ static struct result cell_field_task(void *arg)
 
     M_NavCellArrivalFieldCreate(map->snapshot, CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES, 
         input->layer, input->enemy_faction_mask, input->cell_tile, input->center_tile,
-        (uint8_t*)result, workspace, size);
+        (uint8_t*)result, workspace, size, &work->overlay);
 
     sp_release(map);
     PERF_RETURN(NULL_RESULT);
@@ -3254,10 +3218,10 @@ static struct result cell_field_fixup_task(void *arg)
 
     M_NavCellArrivalFieldCreate(map->snapshot, CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES, 
         input->layer, input->enemy_faction_mask, input->cell_tile, input->center_tile,
-        (uint8_t*)result, workspace, size);
+        (uint8_t*)result, workspace, size, &work->overlay);
     M_NavCellArrivalFieldUpdateToNearestPathable(map->snapshot, 
         CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES, input->layer, input->enemy_faction_mask,
-        input->curr_tile, input->center_tile, (uint8_t*)result, workspace, size);
+        input->curr_tile, input->center_tile, (uint8_t*)result, workspace, size, &work->overlay);
 
     sp_release(map);
     PERF_RETURN(NULL_RESULT);
@@ -3269,7 +3233,7 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
 {
     ASSERT_IN_MAIN_THREAD();
 
-    struct refcounted_map *rmap = map_snapshot_get(parent, formation);
+    struct refcounted_map *rmap = nav_snapshot_acquire();
     struct map_resolution res;
     M_NavGetResolution(rmap->snapshot, &res);
     vec3_t map_pos = M_GetPos(rmap->snapshot);
@@ -3301,6 +3265,8 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
     work->consumed = false;
     work->recompute_pending = false;
     work->map = rmap;
+    work->overlay = (struct nav_cell_overlay){formation->blocked_tiles.array,
+        vec_size(&formation->blocked_tiles)};
     work->uid = uid;
     work->last_update_ticks = SDL_GetTicks();
 
@@ -3347,6 +3313,8 @@ static void dispatch_cell_field_work(struct formation *parent, vec2_t center,
     size_t nents = kh_size(formation->ents);
     vec_work_resize(&formation->futures, nents);
     formation->futures.size = nents;
+
+    build_blocked_overlay(parent, formation);
 
     int i = 0;
     uint32_t uid;
@@ -4037,6 +4005,7 @@ static bool subformation_load_state(struct formation *parent, struct subformatio
     sub->ents = kh_init(entity);
     vec_cell_init(&sub->cells);
     vec_work_init(&sub->futures);
+    vec_tile_init(&sub->blocked_tiles);
 
     struct attr attr;
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
@@ -4366,6 +4335,8 @@ bool G_Formation_Init(const struct map *map)
 
     s_map = map;
     s_next_id = 0;
+    s_nav_snapshot = NULL;
+    vec_rcmap_init(&s_nav_snapshots);
 
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, 
         G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
@@ -4397,6 +4368,11 @@ void G_Formation_Shutdown(void)
     kh_foreach_ptr(s_formations, formation, {
         destroy_formation(formation);
     });
+
+    for(int i = 0; i < vec_size(&s_nav_snapshots); i++)
+        sp_release(vec_AT(&s_nav_snapshots, i));
+    vec_rcmap_destroy(&s_nav_snapshots);
+    s_nav_snapshot = NULL;
 
     E_Global_Unregister(EVENT_1HZ_TICK, on_1hz_tick);
     E_Global_Unregister(EVENT_BUILDING_FOUNDED, on_building_found);
@@ -4476,8 +4452,7 @@ void G_Formation_Create(vec2_t target, vec2_t orientation,
         .ents = copy_vector(ents),
         .speed = formation_speed(ents),
         .created_tick = SDL_GetTicks(),
-        .sub_assignment = kh_init(assignment),
-        .map_snapshots = kh_init(map)
+        .sub_assignment = kh_init(assignment)
     };
     init_subformations(new);
 
@@ -5053,8 +5028,7 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
         .ents = copy_vector(ents),
         .speed = formation_speed(ents),
         .created_tick = SDL_GetTicks(),
-        .sub_assignment = kh_init(assignment),
-        .map_snapshots = kh_init(map)
+        .sub_assignment = kh_init(assignment)
     };
     init_subformations(&formation);
     vec_assignment_work_init(&formation.work);
@@ -5311,8 +5285,7 @@ bool G_Formation_LoadState(struct SDL_RWops *stream)
 
         *new = (struct formation){
             .ents = kh_init(entity),
-            .sub_assignment = kh_init(assignment),
-            .map_snapshots = kh_init(map)
+            .sub_assignment = kh_init(assignment)
         };
         vec_subformation_init(&new->subformations);
 
@@ -5431,7 +5404,6 @@ bool G_Formation_LoadState(struct SDL_RWops *stream)
             destroy_subformation(curr);
         }
     fail_load_formation:
-        kh_destroy(map, new->map_snapshots);
         kh_destroy(entity, new->ents);
         vec_subformation_destroy(&new->subformations);
         kh_destroy(assignment, new->sub_assignment);

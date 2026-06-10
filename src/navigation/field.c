@@ -569,13 +569,30 @@ static void field_build_integration(
 /* Like 'field_build_integration', but supporting any sized square region 
  * which may straddle chunk boundaries.
  */
+static void build_overlay_mask(const struct nav_cell_overlay *overlay,
+                               struct map_resolution res, struct tile_desc base,
+                               size_t rdim, size_t cdim, bool *out_mask)
+{
+    memset(out_mask, 0, rdim * cdim * sizeof(bool));
+    if(!overlay)
+        return;
+    for(size_t i = 0; i < overlay->nblocked; i++) {
+        int dr, dc;
+        struct tile_desc tile = overlay->blocked[i];
+        M_Tile_Distance(res, &base, &tile, &dr, &dc);
+        if(dr >= 0 && dr < (int)rdim && dc >= 0 && dc < (int)cdim)
+            out_mask[dr * rdim + dc] = true;
+    }
+}
+
 static void field_build_integration_region(
     pq_td_t                  *frontier,
     const struct nav_private *priv,
     enum nav_layer            layer,
     uint16_t                  enemies,
     struct region             region,
-    float                     inout[])
+    float                     inout[],
+    const bool               *overlay_mask)
 {
     struct map_resolution res;
     N_GetResolution(priv, &res);
@@ -605,8 +622,11 @@ static void field_build_integration_region(
             assert(neighb_dr >= 0 && neighb_dr < region.r);
             assert(neighb_dc >= 0 && neighb_dc < region.c);
 
-            assert(manhattan_dist((struct coord){dr, dc}, 
+            assert(manhattan_dist((struct coord){dr, dc},
                 (struct coord){neighb_dr, neighb_dc}) == 1);
+
+            if(overlay_mask && overlay_mask[neighb_dr * region.r + neighb_dc])
+                continue;
 
             float total_cost = inout[dr * region.r+ dc] + neighbour_costs[i];
             if(total_cost < inout[neighb_dr * region.r + neighb_dc]) {
@@ -664,7 +684,8 @@ static void field_build_integration_nonpass_region(
     enum nav_layer            layer,
     uint16_t                  enemies,
     struct region             region,
-    float                     inout[])
+    float                     inout[],
+    const bool               *overlay_mask)
 {
     struct map_resolution res;
     N_GetResolution(priv, &res);
@@ -690,16 +711,18 @@ static void field_build_integration_nonpass_region(
             if(tile_outside_region(res, region, neighb))
                 continue;
 
-            struct nav_chunk *curr_chunk = 
-                &priv->chunks[layer][neighb.chunk_r * priv->width + neighb.chunk_c];
-            struct coord curr_coord = (struct coord){neighb.tile_r, neighb.tile_c};
-            if(field_tile_passable(curr_chunk, curr_coord))
-                continue;
-
             int neighb_dr, neighb_dc;
             M_Tile_Distance(res, &region.base, &neighb, &neighb_dr, &neighb_dc);
             assert(neighb_dr >= 0 && neighb_dr < region.r);
             assert(neighb_dc >= 0 && neighb_dc < region.c);
+
+            bool overlay_blocked = overlay_mask
+                                && overlay_mask[neighb_dr * region.r + neighb_dc];
+            struct nav_chunk *curr_chunk =
+                &priv->chunks[layer][neighb.chunk_r * priv->width + neighb.chunk_c];
+            struct coord curr_coord = (struct coord){neighb.tile_r, neighb.tile_c};
+            if(field_tile_passable(curr_chunk, curr_coord) && !overlay_blocked)
+                continue;
 
             float total_cost = inout[dr * region.r + dc] + neighbour_costs[i];
             if(total_cost < inout[neighb_dr * region.r + neighb_dc]) {
@@ -1573,8 +1596,8 @@ static void field_update_enemies(
     const int coff = (chunk_coord.c > 0) ? FIELD_RES_C / 2 + (FIELD_RES_C % 2) : 0;
 
     struct region region = (struct region){base, rdim, cdim};
-    field_build_integration_region(&frontier, priv, layer, 0, 
-        region, integration_field);
+    field_build_integration_region(&frontier, priv, layer, 0,
+        region, integration_field, NULL);
     field_build_flow_region(rdim, cdim, roff, coff, integration_field, inout_flow);
 
     STFREE(integration_field);
@@ -1641,7 +1664,7 @@ static void field_update_entity(
     const int coff = (chunk_coord.c > 0) ? FIELD_RES_C / 2 + (FIELD_RES_C % 2) : 0;
 
     struct region region = (struct region){base, rdim, cdim};
-    field_build_integration_region(&frontier, priv, layer, 0, region, integration_field);
+    field_build_integration_region(&frontier, priv, layer, 0, region, integration_field, NULL);
     field_build_flow_region(rdim, cdim, roff, coff, integration_field, inout_flow);
 
     STFREE(integration_field);
@@ -2185,10 +2208,11 @@ vec2_t N_FlowDir(enum flow_dir dir)
     return s_flow_dir_lookup[dir];
 }
 
-void N_CellArrivalFieldCreate(void *nav_private, size_t rdim, size_t cdim, 
+void N_CellArrivalFieldCreate(void *nav_private, size_t rdim, size_t cdim,
                               enum nav_layer layer, uint16_t enemies,
-                              struct tile_desc target, struct tile_desc center, 
-                              uint8_t *out, void *workspace, size_t workspace_size)
+                              struct tile_desc target, struct tile_desc center,
+                              uint8_t *out, void *workspace, size_t workspace_size,
+                              const struct nav_cell_overlay *overlay)
 {
     PERF_ENTER();
     assert(rdim % 2 == 0);
@@ -2248,17 +2272,27 @@ void N_CellArrivalFieldCreate(void *nav_private, size_t rdim, size_t cdim,
     integration_field[dr * rdim + dc] = 0.0f;
 
     struct region region = (struct region){base, rdim, cdim};
-    field_build_integration_region(&frontier, priv, layer, enemies, region, integration_field);
+
+    bool *overlay_mask = NULL;
+    if(overlay && overlay->nblocked > 0) {
+        assert(workspace_size >= integration_field_size + rdim * cdim * sizeof(bool));
+        overlay_mask = (bool*)(integration_field + rdim * cdim);
+        build_overlay_mask(overlay, res, base, rdim, cdim, overlay_mask);
+    }
+
+    field_build_integration_region(&frontier, priv, layer, enemies, region,
+        integration_field, overlay_mask);
     field_build_flow_unaligned(rdim, cdim, integration_field, out);
 
     pq_td_destroy(&frontier);
     PERF_RETURN_VOID();
 }
 
-void N_CellArrivalFieldUpdateToNearestPathable(void *nav_private, size_t rdim, size_t cdim, 
+void N_CellArrivalFieldUpdateToNearestPathable(void *nav_private, size_t rdim, size_t cdim,
                               enum nav_layer layer, uint16_t enemies,
-                              struct tile_desc start, struct tile_desc center, 
-                              uint8_t *inout, void *workspace, size_t workspace_size)
+                              struct tile_desc start, struct tile_desc center,
+                              uint8_t *inout, void *workspace, size_t workspace_size,
+                              const struct nav_cell_overlay *overlay)
 {
     struct nav_private *priv = nav_private;
     size_t integration_field_size = sizeof(float) * rdim * cdim;
@@ -2331,8 +2365,16 @@ void N_CellArrivalFieldUpdateToNearestPathable(void *nav_private, size_t rdim, s
     }
 
     struct region region = (struct region){base, rdim, cdim};
-    field_build_integration_nonpass_region(&frontier, priv, layer, enemies, 
-        region, integration_field);
+
+    bool *overlay_mask = NULL;
+    if(overlay && overlay->nblocked > 0) {
+        assert(workspace_size >= rdim * cdim * sizeof(bool));
+        overlay_mask = (bool*)workspace;
+        build_overlay_mask(overlay, res, base, rdim, cdim, overlay_mask);
+    }
+
+    field_build_integration_nonpass_region(&frontier, priv, layer, enemies,
+        region, integration_field, overlay_mask);
 
     for(int r = 0; r < rdim; r++) {
     for(int c = 0; c < cdim; c++) {

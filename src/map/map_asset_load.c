@@ -877,8 +877,8 @@ void M_InitCopyPools(const struct map *map)
     size_t map_size = M_AL_ShallowCopySize(map->width, map->height);
     size_t nav_size = N_DeepCopySize(map->nav_private);
 
-    block_alloc_init(&s_map_block_alloc, map_size, 8);
-    block_alloc_init(&s_nav_block_alloc, nav_size, 8);
+    block_alloc_init(&s_map_block_alloc, map_size, 1);
+    block_alloc_init(&s_nav_block_alloc, nav_size, 1);
 }
 
 void M_DestroyCopyPools(void)

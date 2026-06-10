@@ -609,12 +609,21 @@ void N_SwapFieldcaches(void *nav_private_a, void *nav_private_b);
  * Creates an arbitrary-resolution flow field guiding to a set of tiles.
  * The 'out' array holds a (rdim * cdim) 2-dimensional row-major 
  * array with each element being a 4-bit direction index.
+ *
+ * 'overlay' (may be NULL) is an auxiliary read-only set of additionally
+ * blocked tiles, applied during the walk without mutating the nav grid.
  * ------------------------------------------------------------------------
  */
-void N_CellArrivalFieldCreate(void *nav_private, size_t rdim, size_t cdim, 
+struct nav_cell_overlay{
+    const struct tile_desc *blocked;
+    size_t                  nblocked;
+};
+
+void N_CellArrivalFieldCreate(void *nav_private, size_t rdim, size_t cdim,
                               enum nav_layer layer, uint16_t enemies,
-                              struct tile_desc target, struct tile_desc center, 
-                              uint8_t *out, void *workspace, size_t workspace_size);
+                              struct tile_desc target, struct tile_desc center,
+                              uint8_t *out, void *workspace, size_t workspace_size,
+                              const struct nav_cell_overlay *overlay);
 
 /* ------------------------------------------------------------------------
  * Updates a field previously created by N_CellArrivalFieldCreate to 
@@ -622,10 +631,11 @@ void N_CellArrivalFieldCreate(void *nav_private, size_t rdim, size_t cdim,
  * ------------------------------------------------------------------------
  */
 
-void N_CellArrivalFieldUpdateToNearestPathable(void *nav_private, size_t rdim, size_t cdim, 
+void N_CellArrivalFieldUpdateToNearestPathable(void *nav_private, size_t rdim, size_t cdim,
                               enum nav_layer layer, uint16_t enemies,
-                              struct tile_desc start, struct tile_desc center, 
-                              uint8_t *inout, void *workspace, size_t workspace_size);
+                              struct tile_desc start, struct tile_desc center,
+                              uint8_t *inout, void *workspace, size_t workspace_size,
+                              const struct nav_cell_overlay *overlay);
 
 /* ------------------------------------------------------------------------
  * Convert a 'flow_dir' enum value to an XZ vector.
