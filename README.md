@@ -48,7 +48,6 @@ Download the free demo on [Steam](https://store.steampowered.com/app/1309720/EVE
 * Water rendering (including reflection, refraction, soft edge effects)
 * Programmatic synthesis of textures using the Image Quilting algorithm
 * Aperiodic tiling of the map plane using the Wang Tiling algorithm
-* Export/Import of game entites to/from ASCII files
 * Engine internals exposed to Python 2.7 for scripting
 * Embedded interactive Python console
 * Event system
@@ -95,7 +94,7 @@ Download the free demo on [Steam](https://store.steampowered.com/app/1309720/EVE
 ## Dependencies ##
 
 * SDL2 2.30.0
-* GLEW 2.2.0
+* GLEW 2.3.1
 * python 2.7.17
 * openal-soft 1.21.1
 * mi-malloc 2.2.3
