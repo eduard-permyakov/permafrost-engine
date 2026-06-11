@@ -43,8 +43,8 @@
 
 /* The far end of the camera's clipping frustrum, in OpenGL coordinates */
 #define CONFIG_DRAWDIST             (1000)
-#define CONFIG_TILE_TEX_RES         (128)
-#define CONFIG_ARR_TEX_RES          (512)
+#define CONFIG_TILE_TEX_RES         (64)
+#define CONFIG_ARR_TEX_RES          (128)
 #define CONFIG_LOADING_SCREEN       "assets/loading_screens/default.png"
 #define CONFIG_LOADING_WINDOW       "assets/loading_screens/window.png"
 #define CONFIG_LOADING_SPRITE       "assets/loading_screens/sprite"
