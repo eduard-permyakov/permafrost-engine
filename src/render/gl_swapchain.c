@@ -38,6 +38,9 @@
 
 #include "gl_swapchain.h"
 #include "gl_assert.h"
+
+#define GPU_MEM_FILE_SYS GPU_MEM_SYS_GL_SWAPCHAIN
+#include "gl_mem.h"
 #include "gl_perf.h"
 #include "gl_texture.h"
 #include "gl_shader.h"

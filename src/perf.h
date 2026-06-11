@@ -81,9 +81,9 @@
 
 #endif
 
-
 #define NFRAMES_LOGGED  (5)
 
+struct gpu_mem_accounting;
 
 /* Curated memory snapshot mixing mimalloc internal counters with OS-level
  * accounting. The Vm* fields are populated only on Linux debug builds and
@@ -106,7 +106,6 @@ struct vram_stats{
     int eviction_count;
     int evicted_kb;
 };
-
 
 struct perf_info{
     char threadname[64];
@@ -148,6 +147,7 @@ size_t   Perf_Report(size_t maxout, struct perf_info **out);
 void     Perf_GetMemoryStats(struct perf_mem_stats *out);
 void     Perf_GetVramStats(struct vram_stats *out);
 void     Perf_GetMemoryAccounting(struct mem_accounting *out);
+void     Perf_GetGpuMemoryAccounting(struct gpu_mem_accounting *out);
 uint32_t Perf_LastFrameMS(void);
 uint32_t Perf_CurrFrameMS(void);
 uint64_t Perf_LastFrameAllocdBytes(void);

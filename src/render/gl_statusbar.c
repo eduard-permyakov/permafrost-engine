@@ -40,6 +40,9 @@
 #include "gl_shader.h"
 #include "gl_state.h"
 #include "gl_assert.h"
+
+#define GPU_MEM_FILE_SYS GPU_MEM_SYS_GL_STATUSBAR
+#include "gl_mem.h"
 #include "gl_perf.h"
 #include "../camera.h"
 #include "../pf_math.h"

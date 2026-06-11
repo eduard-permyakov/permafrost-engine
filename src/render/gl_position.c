@@ -39,6 +39,9 @@
 #include "public/render.h"
 #include "gl_perf.h"
 #include "gl_assert.h"
+
+#define GPU_MEM_FILE_SYS GPU_MEM_SYS_GL_POSITION
+#include "gl_mem.h"
 #include "gl_shader.h"
 #include "gl_texture.h"
 #include "gl_state.h"

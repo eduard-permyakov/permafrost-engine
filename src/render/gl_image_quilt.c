@@ -45,6 +45,9 @@
 #include "gl_image_quilt.h"
 #include "gl_texture.h"
 #include "gl_assert.h"
+
+#define GPU_MEM_FILE_SYS GPU_MEM_SYS_GL_IMAGE_QUILT
+#include "gl_mem.h"
 #include "../main.h"
 #include "../pf_math.h"
 #include "../lib/public/stb_image.h"

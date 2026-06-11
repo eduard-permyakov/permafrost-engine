@@ -62,6 +62,7 @@ struct ent_stat_rstate;
 struct ent_anim_rstate;
 struct anim_pose_data_desc;
 struct splatmap;
+struct gpu_mem_accounting;
 
 enum render_pass{
     RENDER_PASS_DEPTH,
@@ -317,6 +318,14 @@ void   R_GL_TimestampForCookie(uint32_t *cookie, uint64_t *out);
  */
 struct vram_stats;
 void   R_GL_ReadVramStats(struct vram_stats *out);
+
+/* ---------------------------------------------------------------------------
+ * Snapshot the engine's tracked GPU allocations (per render-file system, split
+ * into texture/renderbuffer/bufferobject) into 'out'. The counters are
+ * maintained by the gl_mem.h wrapper macros as GL objects are allocated/freed.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_GetMemoryAccounting(struct gpu_mem_accounting *out);
 
 /*###########################################################################*/
 /* RENDER TILES                                                              */

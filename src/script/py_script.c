@@ -56,6 +56,7 @@
 #include "../game/population.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
+#include "../render/gl_mem.h"
 #include "../navigation/public/nav.h"
 #include "../audio/public/audio.h"
 #include "../map/public/map.h"
@@ -133,6 +134,7 @@ static PyObject *PyPf_prev_frame_perfstats(PyObject *self);
 static PyObject *PyPf_prev_frame_memstats(PyObject *self);
 static PyObject *PyPf_prev_frame_vramstats(PyObject *self);
 static PyObject *PyPf_prev_frame_mem_accounting(PyObject *self);
+static PyObject *PyPf_prev_frame_gpu_mem_accounting(PyObject *self);
 static PyObject *PyPf_mem_audit(PyObject *self);
 static PyObject *PyPf_prev_frame_allocd_bytes(PyObject *self);
 static PyObject *PyPf_get_resolution(PyObject *self);
@@ -402,6 +404,12 @@ static PyMethodDef pf_module_methods[] = {
     "Get a dictionary of per-system memory accounting for the previous frame. "
     "Keys are system name strings; values are dicts of {bytes, count, subsystems} "
     "where 'subsystems' maps subsystem id (int) to {bytes, count}."},
+
+    {"prev_frame_gpu_mem_accounting",
+    (PyCFunction)PyPf_prev_frame_gpu_mem_accounting, METH_NOARGS,
+    "Get a dictionary of the engine's tracked GPU memory for the previous "
+    "frame, keyed by render-file system; each value is {bytes, count, "
+    "subsystems} where subsystems splits into texture/renderbuffer/bufferobject."},
 
     {"mem_audit",
     (PyCFunction)PyPf_mem_audit, METH_NOARGS,
@@ -1489,6 +1497,65 @@ static PyObject *PyPf_prev_frame_mem_accounting(PyObject *self)
     struct mem_accounting acc;
     Perf_GetMemoryAccounting(&acc);
     return mem_accounting_to_dict(&acc);
+}
+
+static PyObject *gpu_mem_accounting_to_dict(const struct gpu_mem_accounting *acc)
+{
+    PyObject *result = PyDict_New();
+    if(!result)
+        return NULL;
+
+    for(int sys = 0; sys < GPU_MEM_SYS_COUNT; sys++) {
+        if(acc->sys_bytes[sys] == 0 && acc->sys_count[sys] == 0)
+            continue;
+
+        PyObject *subs = PyDict_New();
+        if(!subs)
+            goto fail;
+
+        for(int sub = 0; sub < GPU_MEM_SUB_COUNT; sub++) {
+            if(acc->sub_bytes[sys][sub] == 0 && acc->sub_count[sys][sub] == 0)
+                continue;
+            PyObject *sub_entry = Py_BuildValue("{s:L,s:L}",
+                "bytes", (long long)acc->sub_bytes[sys][sub],
+                "count", (long long)acc->sub_count[sys][sub]);
+            if(!sub_entry) {
+                Py_DECREF(subs);
+                goto fail;
+            }
+            int rc = PyDict_SetItemString(subs, gpu_mem_sub_name(sub), sub_entry);
+            Py_DECREF(sub_entry);
+            if(rc != 0) {
+                Py_DECREF(subs);
+                goto fail;
+            }
+        }
+
+        PyObject *sys_entry = Py_BuildValue("{s:L,s:L,s:O}",
+            "bytes",      (long long)acc->sys_bytes[sys],
+            "count",      (long long)acc->sys_count[sys],
+            "subsystems", subs);
+        Py_DECREF(subs);
+        if(!sys_entry)
+            goto fail;
+
+        int rc = PyDict_SetItemString(result, gpu_mem_sys_name(sys), sys_entry);
+        Py_DECREF(sys_entry);
+        if(rc != 0)
+            goto fail;
+    }
+    return result;
+
+fail:
+    Py_DECREF(result);
+    return NULL;
+}
+
+static PyObject *PyPf_prev_frame_gpu_mem_accounting(PyObject *self)
+{
+    struct gpu_mem_accounting acc;
+    Perf_GetGpuMemoryAccounting(&acc);
+    return gpu_mem_accounting_to_dict(&acc);
 }
 
 static PyObject *PyPf_mem_audit(PyObject *self)

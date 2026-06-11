@@ -41,6 +41,9 @@
 #include "gl_texture.h"
 #include "gl_state.h"
 #include "gl_assert.h"
+
+#define GPU_MEM_FILE_SYS GPU_MEM_SYS_GL_TEXTURE
+#include "gl_mem.h"
 #include "gl_material.h"
 #include "gl_image_quilt.h"
 #include "gl_swapchain.h"

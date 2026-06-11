@@ -43,6 +43,7 @@
 #include "lib/public/pf_string.h"
 #include "render/public/render.h"
 #include "render/public/render_ctrl.h"
+#include "render/gl_mem.h"
 #include "settings.h"
 
 #include <mimalloc-stats.h>
@@ -170,6 +171,7 @@ static struct mem_accounting
                               s_last_frames_accounting[NFRAMES_LOGGED];
 static uint64_t               s_last_frames_allocd_bytes[NFRAMES_LOGGED];
 static struct vram_stats      s_vram[NFRAMES_LOGGED];
+static struct gpu_mem_accounting s_gpu_accounting[NFRAMES_LOGGED];
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -692,6 +694,11 @@ void Perf_BeginTick(void)
         .nargs = 1,
         .args = { &s_vram[s_last_idx] }
     });
+    R_PushCmd((struct rcmd){
+        .func = R_GL_GetMemoryAccounting,
+        .nargs = 1,
+        .args = { &s_gpu_accounting[s_last_idx] }
+    });
 
     khiter_t k = kh_get(pstate, s_thread_state_table, GPU_STATE_KEY);
     if(k == kh_end(s_thread_state_table))
@@ -875,6 +882,12 @@ void Perf_GetMemoryAccounting(struct mem_accounting *out)
 {
     int read_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
     *out = s_last_frames_accounting[read_idx];
+}
+
+void Perf_GetGpuMemoryAccounting(struct gpu_mem_accounting *out)
+{
+    int read_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
+    *out = s_gpu_accounting[read_idx];
 }
 
 uint32_t Perf_LastFrameMS(void)
