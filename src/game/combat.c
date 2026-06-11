@@ -39,6 +39,7 @@
 #include "combat.h"
 #include "game_private.h"
 #include "movement.h"
+#include "formation.h"
 #include "building.h"
 #include "fog_of_war.h"
 #include "position.h"
@@ -77,7 +78,7 @@
 #define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_COMBAT)
 
 
-#define TARGET_ACQUISITION_RANGE     (75.0f)
+#define TARGET_ACQUISITION_RANGE     (100.0f)
 #define PROJECTILE_DEFAULT_SPEED     (100.0f)
 #define EPSILON                      (1.0f/1024)
 #define DEFAULT_ATTACK_PERIOD        (4.0f/3.0f)
@@ -432,12 +433,14 @@ static bool maybe_enemy_near(uint32_t uid)
 {
     PERF_ENTER();
     struct combat_gamestate *gs = &s_combat_work.gamestate;
+    const struct combatstate *cs = combatstate_get(uid);
     vec2_t pos = G_Pos_GetXZFrom(gs->positions, uid);
+    float range = MAX(TARGET_ACQUISITION_RANGE, cs->stats.attack_range);
     int binlen = MAX(
         (float)(X_COORDS_PER_TILE * TILES_PER_CHUNK_WIDTH)  / X_BINS_PER_CHUNK,
         (float)(Z_COORDS_PER_TILE * TILES_PER_CHUNK_HEIGHT) / Z_BINS_PER_CHUNK
     );
-    int binrange = ceil(TARGET_ACQUISITION_RANGE / binlen);
+    int binrange = ceil(range / binlen);
 
     struct map_resolution mapres;
     M_GetResolution(s_map, &mapres);
@@ -654,13 +657,25 @@ static void entity_turn_to_target(uint32_t uid, uint32_t target)
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
 
-    if(!cs->move_cmd_interrupted 
+    uint32_t flags = G_FlagsGetFrom(gs->flags, uid);
+
+    /* A unit advancing as part of a formation holds its ground and fires without
+     * leaving the formation; the movement system keeps it stationary while it has a
+     * target (ENTITY_FLAG_COMBAT_HELD), so it resumes the advance once it disengages.
+     */
+    if((flags & ENTITY_FLAG_MOVABLE) && G_Formation_GetForEnt(uid) != NULL_FID) {
+        G_Move_SetCombatFacing(uid, entity_turn_dir(uid, target));
+        cs->state = STATE_CAN_ATTACK;
+        combat_notify_attack_start(uid, cs);
+        return;
+    }
+
+    if(!cs->move_cmd_interrupted
     && G_Move_GetDest(uid, &cs->move_cmd_xz, &cs->move_cmd_attacking)) {
-        cs->move_cmd_interrupted = true; 
+        cs->move_cmd_interrupted = true;
     }
     G_Move_Stop(uid);
 
-    uint32_t flags = G_FlagsGetFrom(gs->flags, uid);
     if(!(flags & ENTITY_FLAG_MOVABLE)) {
         cs->state = STATE_CAN_ATTACK;
         combat_notify_attack_start(uid, cs);
@@ -1357,6 +1372,11 @@ static void entity_stop_combat(uint32_t uid)
     if(!(flags & ENTITY_FLAG_MOVABLE))
         return;
 
+    /* A unit that held its ground as part of a formation is still a member; leave its
+     * movement state alone so it resumes the formation's advance once the hold lifts. */
+    if(G_Formation_GetForEnt(uid) != NULL_FID)
+        return;
+
     struct combat_cmd *cmd = snoop_most_recent_command(COMBAT_CMD_SET_RANGE,
         (void*)(uintptr_t)uid, uids_match);
 
@@ -1374,42 +1394,9 @@ uint32_t closest_eligible_entity(uint32_t uid)
     struct combatstate *cs = combatstate_get(uid);
     vec2_t pos = G_Pos_GetXZFrom(gs->positions, uid);
     float range = MAX(TARGET_ACQUISITION_RANGE, cs->stats.attack_range);
-    int faction_id = G_GetFactionIDFrom(gs->faction_ids, uid);
 
-    uint32_t ents[128];
-    size_t nents = G_Pos_EntsInCircleWithPredFrom(
-        gs->postree, gs->flags, pos, range, ents, 
-        ARR_SIZE(ents), valid_enemy, (void*)((uintptr_t)uid));
-
-    if(!nents)
-        return NULL_UID;
-
-    float min_dist = INFINITY;
-    uint32_t ret = NULL_UID;
-
-    for(int i = 0; i < nents; i++) {
-    
-        if(entities_adjacent(uid, ents[i]))
-            return ents[i];
-
-        vec2_t enemy_pos = G_Pos_GetXZFrom(gs->positions, ents[i]);
-        vec2_t delta;
-        PFM_Vec2_Sub(&pos, &enemy_pos, &delta);
-        float dist = PFM_Vec2_Len(&delta);
-
-        if(dist < min_dist) {
-
-            struct obb obb;
-            current_obb_from_gamestate(ents[i], &obb);
-
-            uint16_t pmask = gs->player_factions;
-            if(G_Fog_ObjVisibleFrom(gs->fog_state, gs->fog_enabled, pmask, &obb)) {
-                min_dist = dist;
-                ret = ents[i];
-            }
-        }
-    }
-    return ret;
+    return G_Pos_NearestWithPredFrom(gs->postree, gs->positions, gs->flags,
+        pos, valid_enemy, (void*)((uintptr_t)uid), range);
 }
 
 static void entity_compute_update(uint32_t uid, struct combat_work_out *out)
@@ -1757,6 +1744,21 @@ static void entity_apply_update(struct combat_work_out *out)
     }
     default:
         assert(0);
+    }
+
+    /* Hold the unit in place while it is committed to attacking a target; the movement
+     * system reads ENTITY_FLAG_COMBAT_HELD to keep it stationary without dropping it
+     * from any formation it belongs to, so it resumes the advance once it disengages.
+     */
+    bool engaged = (cs->state == STATE_TURNING_TO_TARGET || cs->state == STATE_CAN_ATTACK
+                 || cs->state == STATE_ATTACK_ANIM_PLAYING || cs->state == STATE_ATTACKING);
+    uint32_t eflags = G_FlagsGet(uid);
+    if(engaged && !(eflags & ENTITY_FLAG_COMBAT_HELD)) {
+        G_FlagsSet(uid, eflags | ENTITY_FLAG_COMBAT_HELD);
+        G_Move_SetCombatHeld(uid, true);
+    }else if(!engaged && (eflags & ENTITY_FLAG_COMBAT_HELD)) {
+        G_FlagsSet(uid, eflags & ~ENTITY_FLAG_COMBAT_HELD);
+        G_Move_SetCombatHeld(uid, false);
     }
 }
 

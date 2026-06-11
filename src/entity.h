@@ -75,7 +75,11 @@ enum{
     ENTITY_FLAG_GARRISONABLE        = (1 << 17),
     ENTITY_FLAG_GARRISONED          = (1 << 18),
     ENTITY_FLAG_POPULATION          = (1 << 19),
-    ENTITY_FLAG_POPULATION_LIMIT    = (1 << 20)
+    ENTITY_FLAG_POPULATION_LIMIT    = (1 << 20),
+    /* Set by the combat system while a unit is holding its ground to attack a target;
+     * the movement system keeps such a unit stationary without dropping it from its
+     * formation, so it resumes the advance once it disengages. */
+    ENTITY_FLAG_COMBAT_HELD         = (1 << 21)
 };
 
 struct entity{

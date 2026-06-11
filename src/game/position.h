@@ -62,6 +62,10 @@ int       G_Pos_EntsInCircleWithPredFrom(bg_ent_t *tree, khash_t(id) *flags,
                                          vec2_t xz_point, float range, 
                                          uint32_t *out, size_t maxout,
                                          bool (*predicate)(uint32_t ent, void *arg), void *arg);
+uint32_t  G_Pos_NearestWithPredFrom(bg_ent_t *tree, khash_t(pos) *positions,
+                                    khash_t(id) *flags, vec2_t xz_point,
+                                    bool (*predicate)(uint32_t ent, void *arg), void *arg,
+                                    float max_range);
 
 khash_t(pos) *G_Pos_CopyTable(void);
 

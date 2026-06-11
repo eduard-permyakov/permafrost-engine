@@ -462,6 +462,56 @@ uint32_t G_Pos_NearestWithPred(vec2_t xz_point,
     PERF_RETURN(NULL_UID);
 }
 
+uint32_t G_Pos_NearestWithPredFrom(bg_ent_t *tree, khash_t(pos) *positions,
+                                   khash_t(id) *flags, vec2_t xz_point,
+                                   bool (*predicate)(uint32_t ent, void *arg), void *arg,
+                                   float max_range)
+{
+    PERF_ENTER();
+    assert(Sched_UsingBigStack());
+
+    uint32_t ent_ids[MAX_SEARCH_ENTS];
+    const float bg_len = MAX(tree->xmax - tree->xmin, tree->ymax - tree->ymin);
+    float len = (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE) / 8.0f;
+
+    if(max_range == 0.0) {
+        max_range = bg_len;
+    }
+    max_range = MIN(bg_len, max_range);
+
+    while(len <= max_range) {
+
+        float min_dist = FLT_MAX;
+        uint32_t ret = NULL_UID;
+
+        int num_cands = bg_ent_inrange_circle(tree, xz_point.x, xz_point.z,
+            len, ent_ids, ARR_SIZE(ent_ids));
+        num_cands = filter_garrisoned(flags, ent_ids, num_cands);
+
+        for(int i = 0; i < num_cands; i++) {
+
+            uint32_t curr = ent_ids[i];
+            vec2_t delta, can_pos_xz = G_Pos_GetXZFrom(positions, curr);
+            PFM_Vec2_Sub(&xz_point, &can_pos_xz, &delta);
+
+            if(PFM_Vec2_Len(&delta) < min_dist && predicate(curr, arg)) {
+                min_dist = PFM_Vec2_Len(&delta);
+                ret = curr;
+            }
+        }
+
+        if(ret != NULL_UID)
+            PERF_RETURN(ret);
+
+        if(len == max_range)
+            break;
+
+        len *= 2.0f;
+        len = MIN(max_range, len);
+    }
+    PERF_RETURN(NULL_UID);
+}
+
 uint32_t G_Pos_Nearest(vec2_t xz_point)
 {
     ASSERT_IN_MAIN_THREAD();

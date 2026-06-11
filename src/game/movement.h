@@ -75,6 +75,8 @@ void G_Move_RemoveEntity(uint32_t uid);
 
 bool G_Move_GetDest(uint32_t uid, vec2_t *out_xz, bool *out_attack);
 bool G_Move_GetSurrounding(uint32_t uid, uint32_t *out_uid);
+void G_Move_SetCombatHeld(uint32_t uid, bool held);
+void G_Move_SetCombatFacing(uint32_t uid, quat_t dir);
 
 void G_Move_Stop(uint32_t uid);
 void G_Move_SetSeekEnemies(uint32_t uid);
