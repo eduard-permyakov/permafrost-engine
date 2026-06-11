@@ -1,35 +1,7 @@
 #
-#  This file is part of Permafrost Engine.
-#  Copyright (C) 2018-2026 Eduard Permyakov
-#
-#  Permafrost Engine is free software: you can redistribute it and/or modify
-#  it under the terms of the GNU General Public License as published by
-#  the Free Software Foundation, either version 3 of the License, or
-#  (at your option) any later version.
-#
-#  Permafrost Engine is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-#  Linking this software statically or dynamically with other modules is making
-#  a combined work based on this software. Thus, the terms and conditions of
-#  the GNU General Public License cover the whole combination.
-#
-#  As a special exception, the copyright holders of Permafrost Engine give
-#  you permission to link Permafrost Engine with independent modules to produce
-#  an executable, regardless of the license terms of these independent
-#  modules, and to copy and distribute the resulting executable under
-#  terms of your choice, provided that you also meet, for each linked
-#  independent module, the terms and conditions of the license of that
-#  module. An independent module is a module which is not derived from
-#  or based on Permafrost Engine. If you modify Permafrost Engine, you may
-#  extend this exception to your version of Permafrost Engine, but you are not
-#  obliged to do so. If you do not wish to do so, delete this exception
-#  statement from your version.
+#  This file is part of EVERGLORY
+#  Copyright (C) 2020 Eduard Permyakov 
+#  All rights reserved.
 #
 
 import pf
@@ -437,6 +409,145 @@ class PerfStatsWindow(pf.Window):
 
         self.mem_accounting_section()
 
+    def video_memory_tab(self):
+        vram = pf.prev_frame_vramstats()
+
+        def fmt_bytes(b):
+            if b >= 1024 ** 3:
+                return "{:.2f} GB".format(b / float(1024 ** 3))
+            return "{:.2f} MB".format(b / float(1024 ** 2))
+
+        LABEL_W      = 300
+        VALUE_W      = 180
+        ROW_H        = 20
+        LABEL_COLOR  = (180, 220, 255)
+        VALUE_COLOR  = (255, 255, 0)
+
+        def row(label, value):
+            self.layout_row_begin(pf.NK_STATIC, ROW_H, 2)
+            self.layout_row_push(LABEL_W)
+            self.label_colored(label, pf.NK_TEXT_LEFT, LABEL_COLOR)
+            self.layout_row_push(VALUE_W)
+            self.label_colored(value, pf.NK_TEXT_RIGHT, VALUE_COLOR)
+            self.layout_row_end()
+
+        row("Dedicated video memory",     fmt_bytes(vram["dedicated_kb"] * 1024))
+        row("Total available memory",     fmt_bytes(vram["total_available_kb"] * 1024))
+        row("Used video memory",          fmt_bytes((vram["total_available_kb"] - vram["current_available_kb"]) * 1024))
+        row("Evicted memory",             fmt_bytes(vram["evicted_kb"] * 1024))
+        row("Eviction count",             "{:d}".format(vram["eviction_count"]))
+
+        self.gpu_accounting_section()
+
+    def gpu_accounting_section(self):
+        acc = pf.prev_frame_gpu_mem_accounting()
+        if not acc:
+            return
+
+        LABEL_W    = 240
+        TRI_W      = 20
+        INDENT_W   = 16
+        BAR_W      = 260
+        VAL_W      = 100
+        COUNT_W    = 70
+        ROW_H      = 20
+
+        HEADER_COLOR = (100, 180, 255)
+        SYS_COLOR    = (255, 255, 255)
+        SUB_COLOR    = (200, 200, 200)
+        VAL_COLOR    = (255, 220, 0)
+        TOTAL_COLOR  = (180, 220, 255)
+
+        bar_max = 0
+        total_bytes = 0
+        total_count = 0
+        for entry in acc.values():
+            if entry["bytes"] > bar_max:
+                bar_max = entry["bytes"]
+            total_bytes += entry["bytes"]
+            total_count += entry["count"]
+        if bar_max <= 0:
+            bar_max = 1
+
+        def fmt_bytes(b):
+            if b >= 1024 ** 3:
+                return "{:.2f} GB".format(b / float(1024 ** 3))
+            if b >= 1024 ** 2:
+                return "{:.2f} MB".format(b / float(1024 ** 2))
+            if b >= 1024:
+                return "{:.2f} kB".format(b / float(1024))
+            return "{:d} B".format(int(b))
+
+        def render_row(depth, name, bytes_, count_, has_children, path, color):
+            expanded = path in self.expanded_paths
+            self.layout_row_begin(pf.NK_STATIC, ROW_H, 6)
+
+            indent_px = max(depth * INDENT_W, 1)
+            self.layout_row_push(indent_px)
+            self.label_colored("", pf.NK_TEXT_LEFT, color)
+
+            self.layout_row_push(TRI_W)
+            if has_children:
+                sym = pf.NK_SYMBOL_TRIANGLE_DOWN if expanded else pf.NK_SYMBOL_TRIANGLE_RIGHT
+                new_state = self.selectable_symbol_label(sym, " ", pf.NK_TEXT_LEFT, expanded)
+                if new_state != expanded:
+                    if new_state:
+                        self.expanded_paths.add(path)
+                    else:
+                        self.expanded_paths.discard(path)
+            else:
+                self.label_colored("", pf.NK_TEXT_LEFT, color)
+
+            name_w = max(LABEL_W - indent_px - TRI_W, 1)
+            self.layout_row_push(name_w)
+            self.label_colored(name, pf.NK_TEXT_LEFT, color)
+
+            self.layout_row_push(BAR_W)
+            frac = 0 if bar_max <= 0 else min(1000, int((bytes_ * 1000) // bar_max))
+            self.progress(frac, 1000, False)
+
+            self.layout_row_push(VAL_W)
+            self.label_colored(fmt_bytes(bytes_), pf.NK_TEXT_RIGHT, VAL_COLOR)
+
+            self.layout_row_push(COUNT_W)
+            self.label_colored("{:d}".format(int(count_)), pf.NK_TEXT_RIGHT, color)
+
+            self.layout_row_end()
+
+        def render_header():
+            self.layout_row_begin(pf.NK_STATIC, ROW_H, 5)
+            self.layout_row_push(1 + TRI_W)
+            self.label_colored("", pf.NK_TEXT_LEFT, HEADER_COLOR)
+            self.layout_row_push(LABEL_W - 1 - TRI_W)
+            self.label_colored("system / subsystem", pf.NK_TEXT_LEFT, HEADER_COLOR)
+            self.layout_row_push(BAR_W)
+            self.label_colored("", pf.NK_TEXT_LEFT, HEADER_COLOR)
+            self.layout_row_push(VAL_W)
+            self.label_colored("bytes", pf.NK_TEXT_RIGHT, HEADER_COLOR)
+            self.layout_row_push(COUNT_W)
+            self.label_colored("count", pf.NK_TEXT_RIGHT, HEADER_COLOR)
+            self.layout_row_end()
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("GPU allocations (per render file)", (255, 255, 0))
+
+        render_header()
+
+        for sys_name in sorted(acc.keys(), key=lambda k: -acc[k]["bytes"]):
+            entry = acc[sys_name]
+            subs = entry.get("subsystems", {})
+            path = ("gpuacc", sys_name)
+            render_row(0, sys_name, entry["bytes"], entry["count"],
+                bool(subs), path, SYS_COLOR)
+            if path in self.expanded_paths and subs:
+                for sub_id in sorted(subs.keys(), key=lambda k: -subs[k]["bytes"]):
+                    sub_entry = subs[sub_id]
+                    render_row(1, sub_id, sub_entry["bytes"], sub_entry["count"],
+                        False, ("gpuacc", sys_name, sub_id), SUB_COLOR)
+
+        render_row(0, "TOTAL", total_bytes, total_count, False,
+            ("gpuacc", "__total"), TOTAL_COLOR)
+
     def on_chart_click(self, index):
         self.selected_perfstats = self.frame_perfstats[index]
 
@@ -531,6 +642,7 @@ class PerfStatsWindow(pf.Window):
         self.button_label(text(self.paused), on_pause_resume)
 
         self.tree(pf.NK_TREE_TAB, "Memory", pf.NK_MINIMIZED, self.memory_tab)
+        self.tree(pf.NK_TREE_TAB, "Video Memory", pf.NK_MINIMIZED, self.video_memory_tab)
         self.tree(pf.NK_TREE_TAB, "Frame Performance", pf.NK_MINIMIZED, self.frame_perf_tab)
         self.tree(pf.NK_TREE_TAB, "Threads", pf.NK_MINIMIZED, self.threads_tab)
         self.tree(pf.NK_TREE_TAB, "Renderer Info", pf.NK_MINIMIZED, self.render_info_tab)
