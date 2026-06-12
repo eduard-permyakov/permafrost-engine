@@ -144,10 +144,6 @@ enum arrival_state{
 
 struct movestate{
     enum arrival_state state;
-    /* Set between a sent EVENT_MOTION_START and its matching EVENT_MOTION_END so
-     * that the two are always emitted as a pair; clients may assert the pairing.
-     */
-    bool               motion_notified;
     /* The base movement speed in units of OpenGL coords / second 
      */
     float              max_speed;
@@ -199,9 +195,7 @@ struct movestate{
     /* The target direction for 'turning' entities 
      */
     quat_t             target_dir;
-    /* The direction a combat-held unit should face (set independently of 'target_dir',
-     * which the formation system also writes, so the combat facing is never clobbered).
-     */
+    /* Heading a combat-held unit pivots to; separate from target_dir (also written by formation). */
     quat_t             combat_facing;
 };
 
@@ -382,7 +376,9 @@ enum move_cmd_type{
     MOVE_CMD_SET_MAX_SPEED,
     MOVE_CMD_MAKE_FLOCKS,
     MOVE_CMD_UNBLOCK,
-    MOVE_CMD_BLOCK
+    MOVE_CMD_BLOCK,
+    MOVE_CMD_SET_COMBAT_FACING,
+    MOVE_CMD_SET_COMBAT_HELD
 };
 
 struct move_cmd{
@@ -406,7 +402,7 @@ static void move_push_cmd(struct move_cmd cmd);
 static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack);
 static void do_stop(uint32_t uid);
 static void move_notify_motion_start(uint32_t uid, struct movestate *ms);
-static void move_notify_motion_end(uint32_t uid, struct movestate *ms);
+static void move_notify_motion_end(uint32_t uid);
 static void do_update_pos(uint32_t uid, vec2_t pos);
 static void move_tick(void *user, void *event);
 static struct result navigation_tick_task(void *arg);
@@ -649,28 +645,19 @@ static float entity_speed(uint32_t uid)
     return ms->max_speed;
 }
 
-/* The motion start/end notifications are emitted in strict pairs to the scripts, tracked
- * by 'motion_notified'. A unit holding its ground for combat (ENTITY_FLAG_COMBAT_HELD)
- * ends its motion while remaining in a moving state, so these helpers may be reached
- * redundantly when it is later stopped or removed: a redundant call is a no-op, and a
- * start is suppressed while a unit is held so it keeps its idle/attack clip rather than
- * its walk clip.
+/* Callers emit these only at motion transitions, in matched start/end pairs. A start is
+ * suppressed while COMBAT_HELD so a held unit keeps its idle/attack clip, not its walk clip.
  */
 static void move_notify_motion_start(uint32_t uid, struct movestate *ms)
 {
-    if(ms->motion_notified)
-        return;
     if(G_FlagsGet(uid) & ENTITY_FLAG_COMBAT_HELD)
         return;
-    ms->motion_notified = true;
+    memset(ms->vel_hist, 0, sizeof(ms->vel_hist));
     E_Entity_Notify(EVENT_MOTION_START, uid, NULL, ES_ENGINE);
 }
 
-static void move_notify_motion_end(uint32_t uid, struct movestate *ms)
+static void move_notify_motion_end(uint32_t uid)
 {
-    if(!ms->motion_notified)
-        return;
-    ms->motion_notified = false;
     E_Entity_Notify(EVENT_MOTION_END, uid, NULL, ES_ENGINE);
 }
 
@@ -682,7 +669,8 @@ static void entity_finish_moving(uint32_t uid, enum arrival_state newstate, bool
     assert(!ent_still(ms));
     uint32_t flags = G_FlagsGet(uid);
 
-    move_notify_motion_end(uid, ms);
+    if(!(flags & ENTITY_FLAG_COMBAT_HELD))
+        move_notify_motion_end(uid);
     if(flags & ENTITY_FLAG_COMBATABLE
     && (newstate != STATE_TURNING)) {
         G_Combat_SetStance(uid, COMBAT_STANCE_AGGRESSIVE);
@@ -1862,6 +1850,28 @@ static void update_vel_hist(struct movestate *ms, vec2_t vnew)
     ms->vel_hist_idx = ((ms->vel_hist_idx+1) % VEL_HIST_LEN);
 }
 
+static bool vel_hist_empty(const struct movestate *ms)
+{
+    for(int i = 0; i < VEL_HIST_LEN; i++)
+        if(PFM_Vec2_Len((vec2_t*)&ms->vel_hist[i]) > EPSILON)
+            return false;
+    return true;
+}
+
+static vec2_t facing_dir(quat_t rot)
+{
+    float theta = 2.0 * atan2(rot.y, rot.w);
+    return (vec2_t){-sin(theta), cos(theta)};
+}
+
+static void seed_vel_hist_facing(struct movestate *ms)
+{
+    vec2_t dir = facing_dir(ms->next_rot);
+    PFM_Vec2_Scale(&dir, PFM_Vec2_Len(&ms->velocity), &dir);
+    for(int i = 0; i < VEL_HIST_LEN; i++)
+        ms->vel_hist[i] = dir;
+}
+
 /* Simple Moving Average */
 static vec2_t vel_sma(const struct movestate *ms)
 {
@@ -2099,6 +2109,19 @@ static bool move_gated_by_heading(enum arrival_state state)
  * as a result of the current navigation tick. The patch can be
  * generated asynchronously, but applied synchronously.
  */
+static vec2_t intended_heading(vec2_t vdes, vec2_t new_vel)
+{
+    return (PFM_Vec2_Len(&vdes) > EPSILON) ? vdes : new_vel;
+}
+
+static quat_t orient_to_velocity_history(const struct movestate *ms)
+{
+    vec2_t wma = vel_wma(ms);
+    if(PFM_Vec2_Len(&wma) > EPSILON)
+        return turn_toward(ms->next_rot, dir_quat_from_velocity(wma), SCALED_MAX_TURN_RATE);
+    return ms->next_rot;
+}
+
 static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_vel, vec2_t vdes,
                                   const struct move_work_in *in, struct movestate_patch *out)
 {
@@ -2127,7 +2150,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
     bool turn_to_move = false;
     quat_t travel_dir = ms->next_rot;
     if(PFM_Vec2_Len(&new_vel) > EPSILON && move_gated_by_heading(ms->state)) {
-        travel_dir = dir_quat_from_velocity(new_vel);
+        travel_dir = dir_quat_from_velocity(intended_heading(vdes, new_vel));
         float heading_err = fabs(RAD_TO_DEG(PFM_Quat_PitchDiff(&ms->next_rot, &travel_dir)));
         float tolerance = (PFM_Vec2_Len(&ms->velocity) > EPSILON) ? MOVE_HEADING_HALT
                                                                   : MOVE_HEADING_RESUME;
@@ -2182,16 +2205,8 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         out->flags |= UPDATE_SET_PREV_ROT;
         out->next_prot = ms->next_rot;
 
-        vec2_t wma = vel_wma(ms);
-        if(PFM_Vec2_Len(&wma) > EPSILON) {
-            out->flags |= UPDATE_SET_NEXT_ROT;
-            out->next_nrot = turn_toward(ms->next_rot, dir_quat_from_velocity(wma), SCALED_MAX_TURN_RATE);
-        }else{
-            /* No recent velocity to derive a heading from; hold the current facing
-             * rather than reverting to the staler prev_rot. */
-            out->flags |= UPDATE_SET_NEXT_ROT;
-            out->next_nrot = ms->next_rot;
-        }
+        out->flags |= UPDATE_SET_NEXT_ROT;
+        out->next_nrot = orient_to_velocity_history(ms);
         out->flags |= UPDATE_SET_ROTATION;
         out->next_rot = ms->next_rot;
 
@@ -2199,8 +2214,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         out->flags |= UPDATE_SET_VELOCITY;
         out->next_velocity = (vec2_t){0.0f, 0.0f};
 
-        /* A unit holding its ground to attack pivots in place to face its target
-         * (direction set via G_Move_SetCombatFacing) rather than its travel heading. */
+        /* A combat-held unit pivots toward its combat facing, not its travel heading. */
         if(G_FlagsGetFrom(s_move_work.gamestate.flags, uid) & ENTITY_FLAG_COMBAT_HELD) {
             out->flags |= UPDATE_SET_PREV_ROT | UPDATE_SET_NEXT_ROT | UPDATE_SET_ROTATION;
             out->flags |= UPDATE_TURNING_IN_PLACE;
@@ -2506,10 +2520,13 @@ static void entity_apply_update(uint32_t uid, const struct movestate_patch *patc
         ms->velocity = patch->next_velocity;
         /* While pivoting in place, wipe the velocity history so the orientation
          * doesn't chase the stale pre-order heading once movement resumes. */
-        if(patch->flags & UPDATE_TURNING_IN_PLACE)
+        if(patch->flags & UPDATE_TURNING_IN_PLACE) {
             memset(ms->vel_hist, 0, sizeof(ms->vel_hist));
-        else
+        }else{
+            if(vel_hist_empty(ms) && PFM_Vec2_Len(&ms->velocity) > EPSILON)
+                seed_vel_hist_facing(ms);
             update_vel_hist(ms, ms->velocity);
+        }
     }
 
     if(patch->flags & UPDATE_SET_POSITION)
@@ -2813,6 +2830,39 @@ static void do_set_change_direction(uint32_t uid, quat_t target)
     ms->target_dir = target;
 }
 
+static void do_set_combat_facing(uint32_t uid, quat_t dir)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct movestate *ms = movestate_get(uid);
+    if(!ms)
+        return;
+    ms->combat_facing = dir;
+}
+
+static void do_set_combat_held(uint32_t uid, bool held)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct movestate *ms = movestate_get(uid);
+    if(!ms)
+        return;
+
+    uint32_t flags = G_FlagsGet(uid);
+    if(held == (bool)(flags & ENTITY_FLAG_COMBAT_HELD))
+        return;
+    G_FlagsSet(uid, held ? (flags | ENTITY_FLAG_COMBAT_HELD)
+                         : (flags & ~ENTITY_FLAG_COMBAT_HELD));
+
+    if(ent_still(ms))
+        return;
+
+    if(held)
+        move_notify_motion_end(uid);
+    else
+        move_notify_motion_start(uid, ms);
+}
+
 static void do_set_enter_range(uint32_t uid, uint32_t target, float range)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -3101,6 +3151,18 @@ static void move_process_cmds(void)
             }
             break;
         }
+        case MOVE_CMD_SET_COMBAT_FACING: {
+            uint32_t uid = cmd.args[0].val.as_int;
+            quat_t dir = cmd.args[1].val.as_quat;
+            do_set_combat_facing(uid, dir);
+            break;
+        }
+        case MOVE_CMD_SET_COMBAT_HELD: {
+            uint32_t uid = cmd.args[0].val.as_int;
+            bool held = cmd.args[1].val.as_bool;
+            do_set_combat_held(uid, held);
+            break;
+        }
         default:
             assert(0);
         }
@@ -3136,9 +3198,7 @@ static void move_velocity_work(int begin_idx, int end_idx)
 
         const struct movestate *ms = movestate_get(in->ent_uid);
 
-        /* A unit holding its ground to attack stays put without leaving its formation:
-         * keep its movement state and cell assignment, but zero its velocity so it does
-         * not advance until combat clears the flag. */
+        /* COMBAT_HELD: keep the move state/cell but zero velocity so the unit holds position. */
         if(G_FlagsGetFrom(s_move_work.gamestate.flags, in->ent_uid) & ENTITY_FLAG_COMBAT_HELD) {
             out->ent_uid = in->ent_uid;
             out->ent_vel = (vec2_t){0.0f, 0.0f};
@@ -3991,9 +4051,7 @@ static struct result navigation_tick_task(void *arg)
     return NULL_RESULT;
 }
 
-/* Held units that are already stopped (e.g. arrived at their formation cell) are not part
- * of the per-tick movement work, so they would never pivot. Turn them in place toward
- * their combat target here, mirroring the in-work held-turn for the moving ones. */
+/* Stopped held units aren't in the per-tick work; pivot them toward their combat facing here. */
 static void pivot_held_still_units(void)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -4377,34 +4435,37 @@ bool G_Move_Still(uint32_t uid)
     return snoop_still(uid);
 }
 
-/* Pause/resume a unit's movement animation while it holds position to attack 
- * a target without leaving its formation.
- */
+/* Pause/resume the unit's move animation while it holds position to attack. */
 void G_Move_SetCombatHeld(uint32_t uid, bool held)
 {
     ASSERT_IN_MAIN_THREAD();
-
-    struct movestate *ms = movestate_get(uid);
-    if(!ms)
-        return;
-
-    if(held) {
-        if(ms->motion_notified)
-            move_notify_motion_end(uid, ms);
-    }else{
-        if(!ms->motion_notified && !ent_still(ms))
-            move_notify_motion_start(uid, ms);
-    }
+    move_push_cmd((struct move_cmd){
+        .type = MOVE_CMD_SET_COMBAT_HELD,
+        .args[0] = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = uid
+        },
+        .args[1] = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = held
+        }
+    });
 }
 
 void G_Move_SetCombatFacing(uint32_t uid, quat_t dir)
 {
     ASSERT_IN_MAIN_THREAD();
-
-    struct movestate *ms = movestate_get(uid);
-    if(!ms)
-        return;
-    ms->combat_facing = dir;
+    move_push_cmd((struct move_cmd){
+        .type = MOVE_CMD_SET_COMBAT_FACING,
+        .args[0] = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = uid
+        },
+        .args[1] = (struct attr){
+            .type = TYPE_QUAT,
+            .val.as_quat = dir
+        }
+    });
 }
 
 void G_Move_SetDest(uint32_t uid, vec2_t dest_xz, bool attack)
@@ -5105,9 +5166,8 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(attr.type == TYPE_QUAT);
         ms->combat_facing = attr.val.as_quat;
 
-        /* Re-establish the motion-notified invariant for an entity reloaded mid-move
-         * and re-emit the start so the client scripts resume the movement animation.
-         */
+        /* Re-emit the start for an entity reloaded mid-move so client scripts resume
+         * the movement animation. */
         if(!ent_still(ms)) {
             move_notify_motion_start(uid, ms);
         }
