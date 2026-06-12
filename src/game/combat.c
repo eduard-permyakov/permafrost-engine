@@ -82,6 +82,7 @@
 #define PROJECTILE_DEFAULT_SPEED     (100.0f)
 #define EPSILON                      (1.0f/1024)
 #define DEFAULT_ATTACK_PERIOD        (4.0f/3.0f)
+#define COMBAT_FIRE_FACING_TOLERANCE (15.0f)
 #define MAX(a, b)                    ((a) > (b) ? (a) : (b))
 #define MIN(a, b)                    ((a) < (b) ? (a) : (b))
 #define ARR_SIZE(a)                  (sizeof(a)/sizeof(a[0]))
@@ -637,6 +638,19 @@ static vec3_t entity_facing_dir(uint32_t uid)
     return (vec3_t){ -sin(angle), 0.0f, cos(angle) };
 }
 
+static bool fires_from_formation(uint32_t uid)
+{
+    return (G_FlagsGet(uid) & ENTITY_FLAG_MOVABLE)
+        && (G_Formation_GetForEnt(uid) != NULL_FID);
+}
+
+static bool faces_target(uint32_t uid, uint32_t target)
+{
+    quat_t cur = Entity_GetRot(uid);
+    quat_t want = entity_turn_dir(uid, target);
+    return RAD_TO_DEG(fabs(PFM_Quat_PitchDiff(&cur, &want))) <= COMBAT_FIRE_FACING_TOLERANCE;
+}
+
 static void combat_notify_attack_start(uint32_t uid, struct combatstate *cs)
 {
     assert(!cs->attack_notified);
@@ -659,14 +673,10 @@ static void entity_turn_to_target(uint32_t uid, uint32_t target)
 
     uint32_t flags = G_FlagsGetFrom(gs->flags, uid);
 
-    /* A unit advancing as part of a formation holds its ground and fires without
-     * leaving the formation; the movement system keeps it stationary while it has a
-     * target (ENTITY_FLAG_COMBAT_HELD), so it resumes the advance once it disengages.
-     */
-    if((flags & ENTITY_FLAG_MOVABLE) && G_Formation_GetForEnt(uid) != NULL_FID) {
+    /* Formation members hold their ground and fire without leaving the formation. */
+    if(fires_from_formation(uid)) {
         G_Move_SetCombatFacing(uid, entity_turn_dir(uid, target));
-        cs->state = STATE_CAN_ATTACK;
-        combat_notify_attack_start(uid, cs);
+        cs->state = STATE_TURNING_TO_TARGET;
         return;
     }
 
@@ -1372,8 +1382,7 @@ static void entity_stop_combat(uint32_t uid)
     if(!(flags & ENTITY_FLAG_MOVABLE))
         return;
 
-    /* A unit that held its ground as part of a formation is still a member; leave its
-     * movement state alone so it resumes the formation's advance once the hold lifts. */
+    /* Formation members keep their move state so they rejoin the advance once the hold lifts. */
     if(G_Formation_GetForEnt(uid) != NULL_FID)
         return;
 
@@ -1645,6 +1654,10 @@ static void entity_compute_update(uint32_t uid, struct combat_work_out *out)
             .type = TYPE_INT,
             .val.as_int = uid
         };
+        out->action_args[1] = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr->target_uid
+        };
         break;
     }
     case STATE_ATTACKING: {
@@ -1730,7 +1743,10 @@ static void entity_apply_update(struct combat_work_out *out)
         uint32_t old_uid = uid;
         uint32_t uid = out->action_args[0].val.as_int;
         assert(old_uid == uid);
-        if(G_Move_Still(uid)) {
+
+        uint32_t target = out->action_args[1].val.as_int;
+        bool ready = fires_from_formation(uid) ? faces_target(uid, target) : G_Move_Still(uid);
+        if(ready) {
             cs->state = STATE_CAN_ATTACK;
             combat_notify_attack_start(uid, cs);
         }
@@ -1746,18 +1762,15 @@ static void entity_apply_update(struct combat_work_out *out)
         assert(0);
     }
 
-    /* Hold the unit in place while it is committed to attacking a target; the movement
-     * system reads ENTITY_FLAG_COMBAT_HELD to keep it stationary without dropping it
-     * from any formation it belongs to, so it resumes the advance once it disengages.
-     */
+    /* Keep engaged formation members held in place so they fire without leaving the formation. */
     bool engaged = (cs->state == STATE_TURNING_TO_TARGET || cs->state == STATE_CAN_ATTACK
                  || cs->state == STATE_ATTACK_ANIM_PLAYING || cs->state == STATE_ATTACKING);
     uint32_t eflags = G_FlagsGet(uid);
-    if(engaged && !(eflags & ENTITY_FLAG_COMBAT_HELD)) {
-        G_FlagsSet(uid, eflags | ENTITY_FLAG_COMBAT_HELD);
+
+    bool hold = engaged && fires_from_formation(uid);
+    if(hold && !(eflags & ENTITY_FLAG_COMBAT_HELD)) {
         G_Move_SetCombatHeld(uid, true);
-    }else if(!engaged && (eflags & ENTITY_FLAG_COMBAT_HELD)) {
-        G_FlagsSet(uid, eflags & ~ENTITY_FLAG_COMBAT_HELD);
+    }else if(!hold && (eflags & ENTITY_FLAG_COMBAT_HELD)) {
         G_Move_SetCombatHeld(uid, false);
     }
 }
