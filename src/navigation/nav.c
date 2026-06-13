@@ -1207,9 +1207,9 @@ static int n_closest_island_tiles(const struct nav_private *priv,
     STALLOC(bool, visited, count);
     memset(visited, 0, count);
 
-    const size_t stride_a = res.chunk_h * res.chunk_w * res.tile_h;
-    const size_t stride_b = res.chunk_h * res.tile_h;
-    const size_t stride_c = res.chunk_h;
+    const size_t stride_a = res.chunk_w * res.tile_h * res.tile_w;
+    const size_t stride_b = res.tile_h * res.tile_w;
+    const size_t stride_c = res.tile_w;
 
     visited[target.chunk_r * stride_a + target.chunk_c * stride_b 
           + target.tile_r  * stride_c + target.tile_c] = true;
