@@ -1029,8 +1029,12 @@ static void do_set_stance(uint32_t uid, enum combat_stance stance)
 {
     ASSERT_IN_MAIN_THREAD();
 
+    /* The stance command is deferred, so the entity may have been removed
+     * (e.g. despawned by a script) before this is processed.
+     */
     struct combatstate *cs = combatstate_get(uid);
-    assert(cs);
+    if(!cs)
+        return;
 
     if(stance == cs->stance)
         return;
