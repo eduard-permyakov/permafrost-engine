@@ -131,6 +131,14 @@ void   M_NavRenderVisibleEnemySeekField(const struct map *map, const struct came
                                         enum nav_layer layer, int faction_id);
 
 /* ------------------------------------------------------------------------
+ * Debug rendering of a flock's shared arrival field (a goal-centred zone of
+ * open tiles), over every visible chunk.
+ * ------------------------------------------------------------------------
+ */
+void   M_NavRenderVisibleGroupArrivalField(const struct map *map, const struct camera *cam,
+                                           enum nav_layer layer, vec2_t centre_pos, uint16_t radius);
+
+/* ------------------------------------------------------------------------
  * Debug rendering of fields that guide units to surround a specific target.
  * ------------------------------------------------------------------------
  */
@@ -469,6 +477,14 @@ bool M_NavClosestPathable(const struct map *map, enum nav_layer layer,
                           vec2_t xz_src, vec2_t *out);
 
 /* ------------------------------------------------------------------------
+ * Writes up to 'maxout' worldspace XZ tile centres to 'out' - the nearest
+ * pathable tiles around 'xz_center', sorted by distance. Returns the count.
+ * ------------------------------------------------------------------------
+ */
+int M_NavClosestConnectedPathableTiles(const struct map *map, enum nav_layer layer,
+                               vec2_t xz_center, vec2_t *out, int maxout);
+
+/* ------------------------------------------------------------------------
  * Returns the closest position to 'pos' that is adjacent to a land tile.
  * ------------------------------------------------------------------------
  */
@@ -531,6 +547,11 @@ void     M_NavCellArrivalFieldUpdateToNearestPathable(const struct map *map,
                                   struct tile_desc start, struct tile_desc center,
                                   uint8_t *inout, void *workspace, size_t workspace_size,
                                   const struct nav_cell_overlay *overlay);
+void     M_NavGroupArrivalFieldCreate(const struct map *map, size_t rdim, size_t cdim,
+                                      enum nav_layer layer, uint16_t enemies,
+                                      const vec2_t *targets, size_t ntargets, vec2_t center,
+                                      uint8_t *out, void *workspace, size_t workspace_size,
+                                      const struct nav_cell_overlay *overlay);
 bool     M_NavIsAdjacentToIsland(const struct map *map, enum nav_layer layer, vec2_t xz_pos, 
                                  float radius, vec2_t island_pos);
 bool     M_NavIsAdjacentToIslandOBB(const struct map *map, enum nav_layer layer, 
@@ -551,6 +572,8 @@ void M_NavRequestAsyncEnemySeekField(const struct map *map, enum nav_layer layer
                                      vec2_t curr_pos, int faction_id);
 void M_NavRequestAsyncSurroundField(const struct map *map, enum nav_layer layer, 
                                     vec2_t curr_pos, uint32_t ent, int faction_id);
+void M_NavRequestAsyncGroupArrivalField(const struct map *map, enum nav_layer layer,
+                                        vec2_t centre_pos, uint16_t radius);
 
 /* ------------------------------------------------------------------------
  * Returns true if the tiles under the entity selection cirlce overlap or 

@@ -1672,6 +1672,165 @@ static void field_update_entity(
     pq_td_destroy(&frontier);
 }
 
+/* The cost-zero frontier for a zone field: the open (passable, unoccupied)
+ * tiles within 'radius' of the centre, reached from the centre through other
+ * open tiles. Flooding only through open tiles keeps the seeds a single
+ * connected component, so a static obstacle can't seed an unreachable pocket
+ * behind it.
+ */
+static size_t field_zone_initial_frontier(
+    const struct zone_desc    *zone,
+    const struct nav_private  *priv,
+    struct tile_desc           base,
+    int                        rdim,
+    int                        cdim,
+    enum nav_layer             layer,
+    struct tile_desc          *out,
+    size_t                     maxout)
+{
+    assert(Sched_UsingBigStack());
+
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct region region = (struct region){base, rdim, cdim};
+    struct tile_desc centre = zone->centre;
+
+    /* Start the flood from the region tile nearest the centre. For a chunk
+     * neighbouring the goal, the centre may lie outside this chunk's padded
+     * region; the radius test still gates on the true centre, so a region that
+     * doesn't reach the disc just yields no seeds.
+     */
+    int cdr, cdc;
+    M_Tile_Distance(res, &base, &centre, &cdr, &cdc);
+    int sdr = MAX(0, MIN(cdr, rdim - 1));
+    int sdc = MAX(0, MIN(cdc, cdim - 1));
+    struct tile_desc start = base;
+    M_Tile_RelativeDesc(res, &start, sdc, sdr);
+
+    pq_td_t frontier;
+    pq_td_init(&frontier);
+
+    STALLOC(bool, visited, rdim * cdim);
+    memset(visited, 0, sizeof(bool) * rdim * cdim);
+
+    visited[sdr * rdim + sdc] = true;
+    pq_td_push(&frontier, 0.0f, start);
+
+    const struct coord deltas[] = {
+        { 0, -1}, { 0, +1}, {-1,  0}, {+1,  0},
+        {-1, -1}, {-1, +1}, {+1, -1}, {+1, +1},
+    };
+    const int radius_sq = ((int)zone->radius) * ((int)zone->radius);
+
+    size_t ret = 0;
+    while(pq_size(&frontier) > 0 && ret < maxout) {
+
+        struct tile_desc curr;
+        pq_td_pop(&frontier, &curr);
+
+        int zdr, zdc;
+        M_Tile_Distance(res, &centre, &curr, &zdr, &zdc);
+        if(zdr * zdr + zdc * zdc > radius_sq)
+            continue;
+
+        const struct nav_chunk *chunk =
+            &priv->chunks[layer][IDX(curr.chunk_r, priv->width, curr.chunk_c)];
+        if(field_tile_passable(chunk, (struct coord){curr.tile_r, curr.tile_c})) {
+            out[ret++] = curr;
+        }
+
+        for(int i = 0; i < ARR_SIZE(deltas); i++) {
+
+            struct tile_desc neighb = curr;
+            if(!M_Tile_RelativeDesc(res, &neighb, deltas[i].c, deltas[i].r))
+                continue;
+            if(tile_outside_region(res, region, neighb))
+                continue;
+
+            int dr, dc;
+            M_Tile_Distance(res, &base, &neighb, &dr, &dc);
+            if(visited[dr * rdim + dc])
+                continue;
+            visited[dr * rdim + dc] = true;
+
+            const struct nav_chunk *nchunk =
+                &priv->chunks[layer][IDX(neighb.chunk_r, priv->width, neighb.chunk_c)];
+            if(!field_tile_passable(nchunk, (struct coord){neighb.tile_r, neighb.tile_c}))
+                continue;
+
+            pq_td_push(&frontier, (float)(dr * dr + dc * dc), neighb);
+        }
+    }
+
+    STFREE(visited);
+    pq_td_destroy(&frontier);
+    return ret;
+}
+
+static void field_update_zone(
+    struct coord              chunk_coord,
+    const struct nav_private *priv,
+    enum nav_layer            layer,
+    struct zone_desc          target,
+    struct flow_field         *inout_flow)
+{
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    pq_td_t frontier;
+    pq_td_init(&frontier);
+
+    const int rdim = (priv->height > 1) ? FIELD_RES_R * 2 + (FIELD_RES_R % 2) : FIELD_RES_R;
+    const int cdim = (priv->width  > 1) ? FIELD_RES_C * 2 + (FIELD_RES_C % 2) : FIELD_RES_C;
+
+    STALLOC(float, integration_field, rdim * cdim);
+    for(int r = 0; r < rdim; r++) {
+    for(int c = 0; c < cdim; c++) {
+        integration_field[r * rdim + c] = INFINITY;
+    }}
+
+    struct tile_desc base = (struct tile_desc){
+        .chunk_r = (chunk_coord.r > 0) ? chunk_coord.r - 1 : chunk_coord.r,
+        .chunk_c = (chunk_coord.c > 0) ? chunk_coord.c - 1 : chunk_coord.c,
+        .tile_r  = (chunk_coord.r > 0) ? FIELD_RES_R / 2 + (FIELD_RES_R % 2) : 0,
+        .tile_c  = (chunk_coord.c > 0) ? FIELD_RES_C / 2 + (FIELD_RES_C % 2) : 0,
+    };
+
+    STALLOC(struct tile_desc, init_frontier, rdim * cdim);
+    size_t ninit = field_zone_initial_frontier(&target, priv, base, rdim, cdim,
+        layer, init_frontier, rdim * cdim);
+
+    for(int i = 0; i < ninit; i++) {
+
+        struct tile_desc curr = init_frontier[i];
+
+        int dr, dc;
+        M_Tile_Distance(res, &base, &curr, &dr, &dc);
+        assert(dr >= 0 && dr < rdim);
+        assert(dc >= 0 && dc < cdim);
+
+        pq_td_push(&frontier, 0.0f, curr);
+        integration_field[dr * rdim + dc] = 0.0f;
+    }
+
+    inout_flow->target = (struct field_target){
+        .type = TARGET_ZONE,
+        .zone = target
+    };
+
+    const int roff = (chunk_coord.r > 0) ? FIELD_RES_R / 2 + (FIELD_RES_R % 2) : 0;
+    const int coff = (chunk_coord.c > 0) ? FIELD_RES_C / 2 + (FIELD_RES_C % 2) : 0;
+
+    struct region region = (struct region){base, rdim, cdim};
+    field_build_integration_region(&frontier, priv, layer, 0, region, integration_field, NULL);
+    field_build_flow_region(rdim, cdim, roff, coff, integration_field, inout_flow);
+
+    STFREE(integration_field);
+    STFREE(init_frontier);
+    pq_td_destroy(&frontier);
+}
+
 static struct region clamped_region(struct nav_private *priv, size_t rdim, size_t cdim,
                                     struct tile_desc center)
 {
@@ -1772,6 +1931,18 @@ ff_id_t N_FlowFieldID(struct coord chunk, struct field_target target, enum nav_l
              | (((uint64_t)chunk.r)                        <<  8)
              | (((uint64_t)chunk.c)                        <<  0);
 
+    }else if(target.type == TARGET_ZONE) {
+
+        return (((uint64_t)layer)                              << 60)
+             | (((uint64_t)target.type)                        << 56)
+             | (((uint64_t)(target.zone.radius        & 0xff)) << 44)
+             | (((uint64_t)(target.zone.centre.tile_c  & 0x3f)) << 38)
+             | (((uint64_t)(target.zone.centre.tile_r  & 0x3f)) << 32)
+             | (((uint64_t)(target.zone.centre.chunk_c & 0xff)) << 24)
+             | (((uint64_t)(target.zone.centre.chunk_r & 0xff)) << 16)
+             | (((uint64_t)chunk.r)                            <<  8)
+             | (((uint64_t)chunk.c)                            <<  0);
+
     }else {
         assert(0);
         return 0;
@@ -1815,6 +1986,11 @@ void N_FlowFieldUpdate(
 
     if(target.type == TARGET_ENTITY) {
         field_update_entity(chunk_coord, priv, layer, target.ent, ctx, inout_flow);
+        PERF_RETURN_VOID();
+    }
+
+    if(target.type == TARGET_ZONE) {
+        field_update_zone(chunk_coord, priv, layer, target.zone, inout_flow);
         PERF_RETURN_VOID();
     }
 
@@ -2272,6 +2448,84 @@ void N_CellArrivalFieldCreate(void *nav_private, size_t rdim, size_t cdim,
     integration_field[dr * rdim + dc] = 0.0f;
 
     struct region region = (struct region){base, rdim, cdim};
+
+    bool *overlay_mask = NULL;
+    if(overlay && overlay->nblocked > 0) {
+        assert(workspace_size >= integration_field_size + rdim * cdim * sizeof(bool));
+        overlay_mask = (bool*)(integration_field + rdim * cdim);
+        build_overlay_mask(overlay, res, base, rdim, cdim, overlay_mask);
+    }
+
+    field_build_integration_region(&frontier, priv, layer, enemies, region,
+        integration_field, overlay_mask);
+    field_build_flow_unaligned(rdim, cdim, integration_field, out);
+
+    pq_td_destroy(&frontier);
+    PERF_RETURN_VOID();
+}
+
+void N_GroupArrivalFieldCreate(void *nav_private, size_t rdim, size_t cdim,
+                               enum nav_layer layer, uint16_t enemies, vec3_t map_pos,
+                               const vec2_t *targets, size_t ntargets, vec2_t center,
+                               uint8_t *out, void *workspace, size_t workspace_size,
+                               const struct nav_cell_overlay *overlay)
+{
+    PERF_ENTER();
+    assert(rdim % 2 == 0);
+    assert(cdim % 2 == 0);
+
+    size_t out_size = (rdim * cdim) / 2;
+    memset(out, 0, out_size);
+
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    pq_td_t frontier;
+    pq_td_init(&frontier);
+
+    size_t integration_field_size = sizeof(float) * rdim * cdim;
+    assert(workspace_size >= integration_field_size);
+    float *integration_field = workspace;
+    assert(((uintptr_t)integration_field) % sizeof(float) == 0);
+
+    for(int r = 0; r < rdim; r++) {
+    for(int c = 0; c < cdim; c++) {
+        integration_field[r * rdim + c] = INFINITY;
+    }}
+
+    struct tile_desc center_td;
+    if(!M_Tile_DescForPoint2D(res, map_pos, center, &center_td)) {
+        pq_td_destroy(&frontier);
+        PERF_RETURN_VOID();
+    }
+
+    int base_abs_r = center_td.chunk_r * res.tile_h + center_td.tile_r - (rdim / 2);
+    int base_abs_c = center_td.chunk_c * res.tile_w + center_td.tile_c - (cdim / 2);
+
+    /* The 'base' coordinate may fall outside the map bounds. */
+    struct tile_desc base = (struct tile_desc){
+        base_abs_r / res.tile_h,
+        base_abs_c / res.tile_w,
+        base_abs_r % res.tile_h,
+        base_abs_c % res.tile_w,
+    };
+    struct region region = (struct region){base, rdim, cdim};
+
+    /* Seed the frontier with every target (open slot) at cost 0, so the field
+     * flows to the nearest one.
+     */
+    for(size_t i = 0; i < ntargets; i++) {
+        struct tile_desc target;
+        if(!M_Tile_DescForPoint2D(res, map_pos, targets[i], &target))
+            continue;
+        if(tile_outside_region(res, region, target))
+            continue;
+        int dr, dc;
+        M_Tile_Distance(res, &base, &target, &dr, &dc);
+        pq_td_push(&frontier, 0.0f, target);
+        integration_field[dr * rdim + dc] = 0.0f;
+    }
 
     bool *overlay_mask = NULL;
     if(overlay && overlay->nblocked > 0) {

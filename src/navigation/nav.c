@@ -47,6 +47,7 @@
 #include "../render/public/render_ctrl.h"
 #include "../lib/public/mem.h"
 #include "../lib/public/queue.h"
+#include "../lib/public/pqueue.h"
 #include "../lib/public/pf_string.h"
 #include "../phys/public/collision.h"
 #include "../pf_math.h"
@@ -102,6 +103,9 @@ bool M_TileAdjacentToLand(const struct map *map, const struct tile_desc *td);
 
 QUEUE_TYPE(td, struct tile_desc)
 QUEUE_IMPL(static, td, struct tile_desc)
+
+PQUEUE_TYPE(td, struct tile_desc)
+PQUEUE_IMPL(static, td, struct tile_desc)
 
 struct cost_coord{
     float        cost;
@@ -2682,6 +2686,103 @@ void N_RenderEnemySeekField(void *nav_private, const struct map *map, mat4x4_t *
     });
 }
 
+void N_RenderGroupArrivalField(void *nav_private, vec3_t map_pos, mat4x4_t *chunk_model,
+                               int chunk_r, int chunk_c, enum nav_layer layer,
+                               vec2_t centre_pos, uint16_t radius)
+{
+    const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+
+    const struct nav_private *priv = nav_private;
+    assert(chunk_r < priv->height);
+    assert(chunk_c < priv->width);
+
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct tile_desc centre_tile;
+    if(!M_Tile_DescForPoint2D(res, map_pos, centre_pos, &centre_tile))
+        return;
+
+    struct field_target target = (struct field_target){
+        .type = TARGET_ZONE,
+        .zone.centre = centre_tile,
+        .zone.radius = radius
+    };
+    ff_id_t ffid = N_FlowFieldID((struct coord){chunk_r, chunk_c}, target, layer);
+    if(!N_FC_ContainsFlowField(priv->fieldcache, ffid))
+        return;
+
+    const struct flow_field *ff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
+    if(!ff)
+        return;
+
+    vec2_t positions_buff[FIELD_RES_R * FIELD_RES_C];
+    vec2_t dirs_buff[FIELD_RES_R * FIELD_RES_C];
+
+    vec2_t corners_buff[4 * FIELD_RES_R * FIELD_RES_C];
+    vec3_t colors_buff[FIELD_RES_R * FIELD_RES_C];
+
+    vec2_t *corners_base = corners_buff;
+    vec3_t *colors_base = colors_buff;
+
+    for(int r = 0; r < FIELD_RES_R; r++) {
+    for(int c = 0; c < FIELD_RES_C; c++) {
+
+        float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim;
+        float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim;
+        float square_x = CLAMP(-(((float)c) / FIELD_RES_C) * chunk_x_dim,
+                               -chunk_x_dim, chunk_x_dim);
+        float square_z = CLAMP((((float)r) / FIELD_RES_R) * chunk_z_dim,
+                               -chunk_z_dim, chunk_z_dim);
+
+        positions_buff[r * FIELD_RES_C + c] = (vec2_t){
+            square_x - square_x_len / 2.0f,
+            square_z + square_z_len / 2.0f
+        };
+        dirs_buff[r * FIELD_RES_C + c] = N_FlowDir(ff->field[r][c].dir_idx);
+
+        *corners_base++ = (vec2_t){square_x, square_z};
+        *corners_base++ = (vec2_t){square_x, square_z + square_z_len};
+        *corners_base++ = (vec2_t){square_x - square_x_len, square_z + square_z_len};
+        *corners_base++ = (vec2_t){square_x - square_x_len, square_z};
+
+        /* Blue marks the cost-zero sinks (the open arrival slots); green marks
+         * tiles that flow toward them. */
+        *colors_base++ = ff->field[r][c].dir_idx == FD_NONE ? (vec3_t){0.0f, 0.0f, 1.0f}
+                                                            : (vec3_t){0.0f, 1.0f, 0.0f};
+    }}
+
+    assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
+    assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
+
+    size_t count = FIELD_RES_R * FIELD_RES_C;
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawFlowField,
+        .nargs = 5,
+        .args = {
+            R_PushArg(positions_buff, sizeof(positions_buff)),
+            R_PushArg(dirs_buff, sizeof(dirs_buff)),
+            R_PushArg(&count, sizeof(count)),
+            R_PushArg(chunk_model, sizeof(*chunk_model)),
+            (void*)G_GetPrevTickMap(),
+        },
+    });
+    bool on_water_surface = false;
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawMapOverlayQuads,
+        .nargs = 6,
+        .args = {
+            R_PushArg(corners_buff, sizeof(corners_buff)),
+            R_PushArg(colors_buff, sizeof(colors_buff)),
+            R_PushArg(&count, sizeof(count)),
+            R_PushArg(chunk_model, sizeof(*chunk_model)),
+            R_PushArg(&on_water_surface, sizeof(bool)),
+            (void*)G_GetPrevTickMap(),
+        },
+    });
+}
+
 void N_RenderSurroundField(void *nav_private, const struct map *map, mat4x4_t *chunk_model, 
                            int chunk_r, int chunk_c, enum nav_layer layer, uint32_t ent)
 {
@@ -3540,6 +3641,76 @@ void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_la
     }
 }
 
+static void request_zone_field_chunk(struct nav_private *priv, struct coord chunk,
+                                     struct field_target target, enum nav_layer layer)
+{
+    ff_id_t ffid = N_FlowFieldID(chunk, target, layer);
+    if(N_FC_ContainsFlowField(priv->fieldcache, ffid))
+        return;
+
+    /* We'll compute the missing field on-demand later */
+    if(s_field_work.nwork == MAX_FIELD_TASKS)
+        return;
+
+    for(int i = 0; i < s_field_work.nwork; i++) {
+        /* We already have a job for this field */
+        if(vec_AT(&s_field_work.in, i).id == ffid)
+            return;
+    }
+
+    vec_in_push(&s_field_work.in, (struct field_work_in){
+        .priv = priv,
+        .chunk = chunk,
+        .target = target,
+        .faction_id = 0,
+        .layer = layer,
+        .id = ffid
+    });
+    size_t *arg = stalloc(&s_field_work.mem, sizeof(size_t));
+    *arg = s_field_work.nwork++;
+
+    SDL_AtomicSet(&s_field_work.futures[s_field_work.ntasks].status, FUTURE_INCOMPLETE);
+    s_field_work.tids[s_field_work.ntasks] = Sched_Create(1, field_task, arg,
+        "nav::field_task", &s_field_work.futures[s_field_work.ntasks], TASK_BIG_STACK);
+    if(s_field_work.tids[s_field_work.ntasks] != NULL_TID) {
+        s_field_work.ntasks++;
+    }
+}
+
+void N_RequestAsyncGroupArrivalField(vec2_t centre_pos, void *nav_private, enum nav_layer layer,
+                                     vec3_t map_pos, uint16_t radius)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    n_update_dirty_local_islands(nav_private, layer);
+
+    struct tile_desc centre_tile;
+    if(!M_Tile_DescForPoint2D(res, map_pos, centre_pos, &centre_tile))
+        return;
+
+    struct field_target target = (struct field_target){
+        .type = TARGET_ZONE,
+        .zone.centre = centre_tile,
+        .zone.radius = radius
+    };
+
+    /* The arrival disc may span several chunks; request a field for every chunk
+     * it overlaps. Each is keyed, cached and invalidated independently. */
+    int centre_gr = centre_tile.chunk_r * (int)res.tile_h + centre_tile.tile_r;
+    int centre_gc = centre_tile.chunk_c * (int)res.tile_w + centre_tile.tile_c;
+    int min_cr = CLAMP((centre_gr - radius) / (int)res.tile_h, 0, (int)res.chunk_h - 1);
+    int max_cr = CLAMP((centre_gr + radius) / (int)res.tile_h, 0, (int)res.chunk_h - 1);
+    int min_cc = CLAMP((centre_gc - radius) / (int)res.tile_w, 0, (int)res.chunk_w - 1);
+    int max_cc = CLAMP((centre_gc + radius) / (int)res.tile_w, 0, (int)res.chunk_w - 1);
+
+    for(int cr = min_cr; cr <= max_cr; cr++) {
+    for(int cc = min_cc; cc <= max_cc; cc++) {
+        request_zone_field_chunk(priv, (struct coord){cr, cc}, target, layer);
+    }}
+}
+
 void N_AwaitAsyncFields(void)
 {
     field_join_work();
@@ -3736,6 +3907,80 @@ done:
     kh_destroy(td, visited);
     queue_td_destroy(&frontier);
     return ret;
+}
+
+int N_ClosestConnectedPathableTiles(void *nav_private, enum nav_layer layer,
+                            vec3_t map_pos, vec2_t xz_center, vec2_t *out, int maxout)
+{
+    if(maxout <= 0)
+        return 0;
+
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct tile_desc center;
+    if(!M_Tile_DescForPoint2D(res, map_pos, xz_center, &center))
+        return 0;
+
+    vec2_t tile_dims = N_TileDims();
+
+    /* Best-first flood from the goal that only expands through reachable (non-
+     * blocked) tiles, popping the nearest by Euclidean distance. This yields a
+     * single connected, round disk that bends to fit the reachable side of an
+     * obstacle - the allocation is never severed by a blocker, and the goal tile
+     * itself is included.
+     */
+    pq_td_t frontier;
+    pq_td_init(&frontier);
+    khash_t(td) *visited = kh_init(td);
+
+    int status;
+    kh_put(td, visited, td_key(&center), &status);
+    pq_td_push(&frontier, 0.0f, center);
+
+    const struct coord deltas[] = {
+        { 0, -1}, { 0, +1}, {-1, 0}, {+1, 0},
+        {-1, -1}, {-1, +1}, {+1, -1}, {+1, +1},
+    };
+
+    int n = 0;
+    while(pq_size(&frontier) > 0 && n < maxout) {
+
+        struct tile_desc curr;
+        pq_td_pop(&frontier, &curr);
+
+        if(!n_tile_blocked(priv, layer, curr)) {
+            out[n++] = (vec2_t){
+                map_pos.x - (curr.chunk_c * FIELD_RES_C + curr.tile_c + 0.5f) * tile_dims.x,
+                map_pos.z + (curr.chunk_r * FIELD_RES_R + curr.tile_r + 0.5f) * tile_dims.z,
+            };
+        }
+
+        for(int i = 0; i < ARR_SIZE(deltas); i++) {
+
+            struct tile_desc nb = curr;
+            if(!M_Tile_RelativeDesc(res, &nb, deltas[i].c, deltas[i].r))
+                continue;
+            if(kh_get(td, visited, td_key(&nb)) != kh_end(visited))
+                continue;
+            kh_put(td, visited, td_key(&nb), &status);
+            if(n_tile_blocked(priv, layer, nb))
+                continue;
+
+            vec2_t p = (vec2_t){
+                map_pos.x - (nb.chunk_c * FIELD_RES_C + nb.tile_c + 0.5f) * tile_dims.x,
+                map_pos.z + (nb.chunk_r * FIELD_RES_R + nb.tile_r + 0.5f) * tile_dims.z,
+            };
+            float dx = p.x - xz_center.x;
+            float dz = p.z - xz_center.z;
+            pq_td_push(&frontier, dx * dx + dz * dz, nb);
+        }
+    }
+
+    kh_destroy(td, visited);
+    pq_td_destroy(&frontier);
+    return n;
 }
 
 vec2_t N_ClosestPointAdjacentToLand(const struct map *map, void *nav_private, 

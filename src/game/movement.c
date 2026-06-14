@@ -93,6 +93,7 @@ static int hz_count(enum movement_hz hz);
 #define VEL_HIST_LEN          (14)
 #define MAX_MOVE_TASKS        (64)
 #define MAX_GPU_FLOCK_MEMBERS (1024)  /* Must match movement.glsl */
+#define ARRIVAL_FIELD_PLAN_RADIUS (150.0f) /* Plan the arrival zone once a member is this close to the goal */
 
 #define SIGNUM(x)    (((x) > 0) - ((x) < 0))
 #define MAX(a, b)    ((a) > (b) ? (a) : (b))
@@ -203,6 +204,13 @@ struct flock{
     khash_t(entity) *ents;
     vec2_t           target_xz; 
     dest_id_t        dest_id;
+    /* Lean descriptor of the shared arrival zone (a goal-centred disc of open
+     * tiles), recomputed on the main thread as a member nears the goal.
+     */
+    bool             arrival_active;
+    enum nav_layer   arrival_layer;
+    vec2_t           arrival_centre;
+    uint16_t         arrival_radius;
 };
 
 struct formation_state{
@@ -835,6 +843,7 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
         uint32_t curr;
         kh_foreach_key(new_flock.ents, curr, { flock_add(merge_flock, curr); });
         kh_destroy(entity, new_flock.ents);
+        merge_flock->arrival_active = false;
     
     }else{
         formation_id_t fid;
@@ -845,6 +854,72 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
     s_last_cmd_dest_valid = true;
     s_last_cmd_dest = new_flock.dest_id;
     return true;
+}
+
+static uint16_t arrival_zone_radius(const struct flock *flock, float unit_radius)
+{
+    /* A disc large enough to hold the group given the unit footprint: each unit
+     * of radius r occupies roughly (2r / tile)^2 nav tiles.
+     */
+    struct map_resolution res;
+    M_NavGetResolution(s_map, &res);
+    float tile_dim = (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE) / (float)res.tile_w;
+    float per_unit = (2.0f * unit_radius) / tile_dim;
+    per_unit *= per_unit;
+    if(per_unit < 1.0f)
+        per_unit = 1.0f;
+    float ntiles = kh_size(flock->ents) * per_unit;
+    return (uint16_t)(ceilf(sqrtf(ntiles / M_PI)) + 1);
+}
+
+static bool flock_near_goal(const struct flock *flock)
+{
+    uint32_t uid;
+    kh_foreach_key(flock->ents, uid, {
+        vec2_t pos = G_Pos_GetXZ(uid);
+        vec2_t delta;
+        PFM_Vec2_Sub((vec2_t*)&flock->target_xz, &pos, &delta);
+        if(PFM_Vec2_Len(&delta) < ARRIVAL_FIELD_PLAN_RADIUS)
+            return true;
+    });
+    return false;
+}
+
+static void update_flock_arrival_fields(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    for(int i = 0; i < vec_size(&s_flocks); i++) {
+        struct flock *flock = &vec_AT(&s_flocks, i);
+        flock->arrival_active = false;
+
+        /* The arrival zone is for the bare-movement 'flock' case only; units
+         * moving in a formation arrive via the formation's own cell fields.
+         */
+        uint32_t first = NULL_UID;
+        kh_foreach_key(flock->ents, first, { break; });
+        if(first == NULL_UID || G_Formation_GetForEnt(first) != NULL_FID)
+            continue;
+        if(!flock_near_goal(flock))
+            continue;
+
+        float radius = G_GetSelectionRadius(first);
+        uint32_t flags = G_FlagsGet(first);
+        flock->arrival_layer = Entity_NavLayerWithRadius(flags, radius);
+        flock->arrival_centre = flock->target_xz;
+        flock->arrival_radius = arrival_zone_radius(flock, radius);
+        flock->arrival_active = true;
+    }
+}
+
+static void request_flock_arrival_fields(void)
+{
+    for(int i = 0; i < vec_size(&s_flocks); i++) {
+        const struct flock *flock = &vec_AT(&s_flocks, i);
+        if(!flock->arrival_active)
+            continue;
+        M_NavRequestAsyncGroupArrivalField(s_move_work.gamestate.map,
+            flock->arrival_layer, flock->arrival_centre, flock->arrival_radius);
+    }
 }
 
 static void make_flocks(const vec_entity_t *sel, vec2_t target_xz, vec2_t target_orientation, 
@@ -1239,6 +1314,18 @@ static void on_render_3d(void *user, void *event)
     assert(status == SS_OKAY);
     if(setting.as_bool) {
         M_NavRenderNavigationLocalIslandIDs(s_map, cam, layer);
+    }
+
+    status = Settings_Get("pf.debug.show_group_arrival_field", &setting);
+    assert(status == SS_OKAY);
+    if(setting.as_bool) {
+        for(int i = 0; i < vec_size(&s_flocks); i++) {
+            const struct flock *flock = &vec_AT(&s_flocks, i);
+            if(!flock->arrival_active)
+                continue;
+            M_NavRenderVisibleGroupArrivalField(s_map, cam, flock->arrival_layer,
+                flock->arrival_centre, flock->arrival_radius);
+        }
     }
 }
 
@@ -3931,6 +4018,7 @@ static void compute_async_fields(void)
         request_async_field(in->ent_uid);
         Sched_TryYield();
     }
+    request_flock_arrival_fields();
     N_AwaitAsyncFields();
 }
 
@@ -4086,6 +4174,7 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
     G_SwapFieldCaches(s_move_work.gamestate.map);
     move_release_gamestate();
     disband_empty_flocks();
+    update_flock_arrival_fields();
 
     /* Run the navigation updates synchronous to the movement tick */
     G_UpdateMap();

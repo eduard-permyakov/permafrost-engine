@@ -71,6 +71,11 @@ struct portal_desc{
     uint16_t             next_iid;
 };
 
+struct zone_desc{
+    struct tile_desc centre;
+    uint16_t         radius;
+};
+
 struct field_target{
     enum{
         TARGET_PORTAL,
@@ -80,6 +85,10 @@ struct field_target{
          * that the portal at that index is 'eligible'. */
         TARGET_PORTALMASK,
         TARGET_ENTITY,
+        /* Guide to the nearest open (passable, unoccupied) tile within a
+         * radius of a centre tile. The open tiles are re-derived on every
+         * rebuild, so the field self-heals as units settle and block tiles. */
+        TARGET_ZONE,
     }type;
     union{
         struct portal_desc   pd;
@@ -87,6 +96,7 @@ struct field_target{
         struct enemies_desc  enemies;
         uint64_t             portalmask;
         struct entity_desc   ent;
+        struct zone_desc     zone;
     };
 };
 

@@ -1333,6 +1333,17 @@ static void g_create_settings(void)
     });
 
     status = Settings_Create((struct setting){
+        .name = "pf.debug.show_group_arrival_field",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+
+    status = Settings_Create((struct setting){
         .name = "pf.debug.show_formations_forces",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,

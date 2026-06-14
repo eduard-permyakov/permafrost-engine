@@ -532,6 +532,28 @@ void M_NavRenderVisibleEnemySeekField(const struct map *map, const struct camera
     }}
 }
 
+void M_NavRenderVisibleGroupArrivalField(const struct map *map, const struct camera *cam,
+                                         enum nav_layer layer, vec2_t centre_pos, uint16_t radius)
+{
+    struct frustum frustum;
+    Camera_MakeFrustum(cam, &frustum);
+
+    for(int r = 0; r < map->height; r++) {
+    for(int c = 0; c < map->width;  c++) {
+
+        struct aabb chunk_aabb;
+        m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+
+        if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
+            continue;
+
+        mat4x4_t chunk_model;
+        M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+        N_RenderGroupArrivalField(map->nav_private, map->pos, &chunk_model, r, c, layer,
+            centre_pos, radius);
+    }}
+}
+
 void M_NavRenderVisibleSurroundField(const struct map *map, const struct camera *cam, 
                                      enum nav_layer layer, const uint32_t uid)
 {
@@ -757,6 +779,12 @@ bool M_NavClosestPathable(const struct map *map, enum nav_layer layer, vec2_t xz
     return N_ClosestPathable(map->nav_private, layer, map->pos, xz_src, out);
 }
 
+int M_NavClosestConnectedPathableTiles(const struct map *map, enum nav_layer layer,
+                               vec2_t xz_center, vec2_t *out, int maxout)
+{
+    return N_ClosestConnectedPathableTiles(map->nav_private, layer, map->pos, xz_center, out, maxout);
+}
+
 bool M_NavLocationsReachable(const struct map *map, enum nav_layer layer, 
                              vec2_t a, vec2_t b)
 {
@@ -974,6 +1002,12 @@ void M_NavRequestAsyncSurroundField(const struct map *map, enum nav_layer layer,
     N_RequestAsyncSurroundField(curr_pos, map->nav_private, layer, map->pos, ent, faction_id);
 }
 
+void M_NavRequestAsyncGroupArrivalField(const struct map *map, enum nav_layer layer,
+                                        vec2_t centre_pos, uint16_t radius)
+{
+    N_RequestAsyncGroupArrivalField(centre_pos, map->nav_private, layer, map->pos, radius);
+}
+
 void M_NavCopyIslandsFieldView(const struct map *map, vec2_t center,
                                int nrows, int ncols, enum nav_layer layer, uint16_t *out_field)
 {
@@ -1000,6 +1034,17 @@ void M_NavCellArrivalFieldUpdateToNearestPathable(const struct map *map,
     assert(map->nav_private);
     N_CellArrivalFieldUpdateToNearestPathable(map->nav_private, rdim, cdim, layer, enemies,
         start, center, inout, workspace, workspace_size, overlay);
+}
+
+void M_NavGroupArrivalFieldCreate(const struct map *map, size_t rdim, size_t cdim,
+                                  enum nav_layer layer, uint16_t enemies,
+                                  const vec2_t *targets, size_t ntargets, vec2_t center,
+                                  uint8_t *out, void *workspace, size_t workspace_size,
+                                  const struct nav_cell_overlay *overlay)
+{
+    assert(map->nav_private);
+    N_GroupArrivalFieldCreate(map->nav_private, rdim, cdim, layer, enemies, map->pos,
+        targets, ntargets, center, out, workspace, workspace_size, overlay);
 }
 
 bool M_PointOverWater(const struct map *map, vec2_t pos)

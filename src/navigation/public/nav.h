@@ -231,6 +231,15 @@ void      N_RenderEnemySeekField(void *nav_private, const struct map *map,
                                  enum nav_layer layer, int faction_id);
 
 /* ------------------------------------------------------------------------
+ * Debug rendering of a flock's shared arrival field (a goal-centred zone of
+ * open tiles) for a single chunk.
+ * ------------------------------------------------------------------------
+ */
+void      N_RenderGroupArrivalField(void *nav_private, vec3_t map_pos, mat4x4_t *chunk_model,
+                                    int chunk_r, int chunk_c, enum nav_layer layer,
+                                    vec2_t centre_pos, uint16_t radius);
+
+/* ------------------------------------------------------------------------
  * Debug rendering of the fields that guide enemies towards an entity.
  * ------------------------------------------------------------------------
  */
@@ -254,7 +263,7 @@ void      N_RenderNavigationBlockers(void *nav_private, const struct map *map,
  * ------------------------------------------------------------------------
  */
 void      N_RenderBuildableTiles(void *nav_private, const struct map *map, 
-                                 mat4x4_t *chunk_model, int chunk_r, int chunk_c,
+                                 mat4x4_t *chunk_model, int chunk_r, int chunk_c, 
                                  const struct obb *obb, enum nav_layer layer,
                                  bool blocked, bool allows_shore);
 
@@ -456,6 +465,15 @@ bool N_ClosestPathable(void *nav_private, enum nav_layer layer,
                        vec3_t map_pos, vec2_t xz_src, vec2_t *out);
 
 /* ------------------------------------------------------------------------
+ * Writes up to 'maxout' worldspace XZ tile centres to 'out' - the nearest
+ * pathable (reachable, currently unblocked) tiles around 'xz_center', sorted
+ * by distance. The centre tile itself is not included. Returns the count.
+ * ------------------------------------------------------------------------
+ */
+int N_ClosestConnectedPathableTiles(void *nav_private, enum nav_layer layer,
+                            vec3_t map_pos, vec2_t xz_center, vec2_t *out, int maxout);
+
+/* ------------------------------------------------------------------------
  * Returns the closest position to 'pos' that is adjacent to a land tile.
  * ------------------------------------------------------------------------
  */
@@ -638,6 +656,20 @@ void N_CellArrivalFieldUpdateToNearestPathable(void *nav_private, size_t rdim, s
                               const struct nav_cell_overlay *overlay);
 
 /* ------------------------------------------------------------------------
+ * Like N_CellArrivalFieldCreate, but seeds the integration field from a SET
+ * of target points ('targets', worldspace XZ) instead of one - producing a
+ * single shared field that flows to the nearest target. Used to arrive a
+ * whole flock into the open slots around a goal with one field, not one per
+ * unit.
+ * ------------------------------------------------------------------------
+ */
+void N_GroupArrivalFieldCreate(void *nav_private, size_t rdim, size_t cdim,
+                               enum nav_layer layer, uint16_t enemies, vec3_t map_pos,
+                               const vec2_t *targets, size_t ntargets, vec2_t center,
+                               uint8_t *out, void *workspace, size_t workspace_size,
+                               const struct nav_cell_overlay *overlay);
+
+/* ------------------------------------------------------------------------
  * Convert a 'flow_dir' enum value to an XZ vector.
  * ------------------------------------------------------------------------
  */
@@ -693,6 +725,14 @@ void N_RequestAsyncEnemySeekField(vec2_t curr_pos, void *nav_private, enum nav_l
  */
 void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_layer layer,
                                  vec3_t map_pos, uint32_t ent, int faction_id);
+
+/* ------------------------------------------------------------------------
+ * Start an async job computing the required TARGET_ZONE arrival field for a
+ * flock, if it is not in the cache and has not been started already.
+ * ------------------------------------------------------------------------
+ */
+void N_RequestAsyncGroupArrivalField(vec2_t centre_pos, void *nav_private, enum nav_layer layer,
+                                     vec3_t map_pos, uint16_t radius);
 
 /*###########################################################################*/
 /* NAV FIELD CACHE                                                           */
