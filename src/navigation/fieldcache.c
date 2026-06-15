@@ -217,7 +217,7 @@ static void clear_chunk_los_map(struct fieldcache_ctx *ctx, uint64_t key, enum n
 }
 
 static void clear_chunk_flow_map(struct fieldcache_ctx *ctx, uint64_t key, 
-                                 enum nav_layer layer, bool enemies_only)
+                                 enum nav_layer layer, int only_target_type)
 {
     khiter_t k = kh_get(idvec, ctx->chunk_ffield_map, key);
     if(k == kh_end(ctx->chunk_ffield_map))
@@ -230,7 +230,7 @@ static void clear_chunk_flow_map(struct fieldcache_ctx *ctx, uint64_t key,
         if(N_FlowFieldLayer(key) != layer)
             continue;
 
-        if(enemies_only && (N_FlowFieldTargetType(key) != TARGET_ENEMIES))
+        if(only_target_type >= 0 && (N_FlowFieldTargetType(key) != only_target_type))
             continue;
 
         bool found = lru_flow_remove(&ctx->flow_cache, key);
@@ -522,7 +522,13 @@ void N_FC_InvalidateAllAtChunk(struct fieldcache_ctx *ctx, struct coord chunk, e
 
     uint64_t key = key_for_chunk(chunk);
     clear_chunk_los_map(ctx, key, layer);
-    clear_chunk_flow_map(ctx, key, layer, false);
+    clear_chunk_flow_map(ctx, key, layer, -1);
+}
+
+void N_FC_InvalidateZoneFieldsAtChunk(struct fieldcache_ctx *ctx, struct coord chunk,
+                                      enum nav_layer layer)
+{
+    clear_chunk_flow_map(ctx, key_for_chunk(chunk), layer, TARGET_ZONE);
 }
 
 void N_FC_InvalidateAllThroughChunk(struct fieldcache_ctx *ctx, struct coord chunk, enum nav_layer layer)
@@ -602,7 +608,7 @@ void N_FC_InvalidateNeighbourEnemySeekFields(struct fieldcache_ctx *ctx, int wid
 
         struct coord curr = (struct coord){abs_r, abs_c};
         uint64_t key = key_for_chunk(curr);
-        clear_chunk_flow_map(ctx, key, layer, true);
+        clear_chunk_flow_map(ctx, key, layer, TARGET_ENEMIES);
     }}
 }
 

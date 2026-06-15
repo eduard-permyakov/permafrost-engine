@@ -136,7 +136,8 @@ void   M_NavRenderVisibleEnemySeekField(const struct map *map, const struct came
  * ------------------------------------------------------------------------
  */
 void   M_NavRenderVisibleGroupArrivalField(const struct map *map, const struct camera *cam,
-                                           enum nav_layer layer, vec2_t centre_pos, uint16_t radius);
+                                           enum nav_layer layer, vec2_t centre_pos, uint16_t radius,
+                                           dest_id_t dest_id);
 
 /* ------------------------------------------------------------------------
  * Debug rendering of fields that guide units to surround a specific target.
@@ -407,13 +408,16 @@ vec2_t M_NavDesiredEnemySeekVelocity(const struct map *map, enum nav_layer layer
  */
 vec2_t M_NavDesiredSurroundVelocity(const struct map *map, enum nav_layer layer, 
                                     vec2_t curr_pos, const uint32_t uid, int faction_id);
+bool   M_NavDesiredGroupArrivalVelocity(const struct map *map, enum nav_layer layer, vec2_t curr_pos,
+                                        vec2_t centre_pos, uint16_t radius,
+                                        vec2_t *out_vel, bool *out_at_slot);
 
 /* ------------------------------------------------------------------------
  * Returns true if the specified coordinate is in direct line of sight of 
  * the specified destination.
  * ------------------------------------------------------------------------
  */
-bool   M_NavHasDestLOS(const struct map *map, dest_id_t id, vec2_t curr_pos);
+bool   M_NavHasDestLOS(const struct map *map, dest_id_t id, vec2_t curr_pos, vec2_t xz_dest);
 
 /* ------------------------------------------------------------------------
  * Returns true if the particular entity is in direct line of sight of the 
@@ -482,7 +486,33 @@ bool M_NavClosestPathable(const struct map *map, enum nav_layer layer,
  * ------------------------------------------------------------------------
  */
 int M_NavClosestConnectedPathableTiles(const struct map *map, enum nav_layer layer,
-                               vec2_t xz_center, vec2_t *out, int maxout);
+                               vec2_t xz_center, vec2_t *out, int maxout, float max_radius);
+
+/* ------------------------------------------------------------------------
+ * Convert world positions to a sorted set of tile keys for membership queries
+ * by M_NavSegmentWithinRegion. Returns the number of keys written.
+ * ------------------------------------------------------------------------
+ */
+size_t M_NavTileKeysForPositions(const struct map *map, const vec2_t *positions,
+                                 size_t n, uint64_t *out);
+
+/* ------------------------------------------------------------------------
+ * Returns true if every tile the segment from 'a' to 'b' crosses is in the
+ * sorted tile key set 'keys'.
+ * ------------------------------------------------------------------------
+ */
+bool   M_NavSegmentWithinRegion(const struct map *map, vec2_t a, vec2_t b,
+                                const uint64_t *keys, size_t num);
+
+/* ------------------------------------------------------------------------
+ * Geodesic distance in tiles, for each query position, from the region tile
+ * nearest 'entry', flooded through the sorted key set 'keys'. Ranks region
+ * slots farthest-from-entry-first. Returns the largest distance written.
+ * ------------------------------------------------------------------------
+ */
+int    M_NavRegionGeodesicDist(const struct map *map, const uint64_t *keys, size_t num_keys,
+                               vec2_t entry, const vec2_t *queries, size_t num_queries,
+                               int *out_dist);
 
 /* ------------------------------------------------------------------------
  * Returns the closest position to 'pos' that is adjacent to a land tile.
@@ -574,6 +604,7 @@ void M_NavRequestAsyncSurroundField(const struct map *map, enum nav_layer layer,
                                     vec2_t curr_pos, uint32_t ent, int faction_id);
 void M_NavRequestAsyncGroupArrivalField(const struct map *map, enum nav_layer layer,
                                         vec2_t centre_pos, uint16_t radius);
+void M_NavInvalidateZoneFieldsAt(const struct map *map, vec2_t xz_pos, enum nav_layer layer);
 
 /* ------------------------------------------------------------------------
  * Returns true if the tiles under the entity selection cirlce overlap or 

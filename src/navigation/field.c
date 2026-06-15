@@ -1696,17 +1696,17 @@ static size_t field_zone_initial_frontier(
     struct region region = (struct region){base, rdim, cdim};
     struct tile_desc centre = zone->centre;
 
-    /* Start the flood from the region tile nearest the centre. For a chunk
-     * neighbouring the goal, the centre may lie outside this chunk's padded
-     * region; the radius test still gates on the true centre, so a region that
-     * doesn't reach the disc just yields no seeds.
+    /* Start the flood from the centre. A neighbouring chunk whose padded build
+     * region does not even contain the centre cannot hold part of a footprint grown
+     * from it, so it yields no seeds; otherwise its flood would start at a clamped
+     * edge and seed tiles unrelated to the goal.
      */
     int cdr, cdc;
     M_Tile_Distance(res, &base, &centre, &cdr, &cdc);
-    int sdr = MAX(0, MIN(cdr, rdim - 1));
-    int sdc = MAX(0, MIN(cdc, cdim - 1));
-    struct tile_desc start = base;
-    M_Tile_RelativeDesc(res, &start, sdc, sdr);
+    if(cdr < 0 || cdr >= rdim || cdc < 0 || cdc >= cdim)
+        return 0;
+    struct tile_desc centre_tile = base;
+    M_Tile_RelativeDesc(res, &centre_tile, cdc, cdr);
 
     pq_td_t frontier;
     pq_td_init(&frontier);
@@ -1714,14 +1714,68 @@ static size_t field_zone_initial_frontier(
     STALLOC(bool, visited, rdim * cdim);
     memset(visited, 0, sizeof(bool) * rdim * cdim);
 
-    visited[sdr * rdim + sdc] = true;
-    pq_td_push(&frontier, 0.0f, start);
-
     const struct coord deltas[] = {
         { 0, -1}, { 0, +1}, {-1,  0}, {+1,  0},
         {-1, -1}, {-1, +1}, {+1, -1}, {+1, +1},
     };
-    const int radius_sq = ((int)zone->radius) * ((int)zone->radius);
+
+    /* Snap to the single nearest open tile, stepping through blockers from an occupied or
+     * walled centre (settling units may have filled the goal, or the goal may be on a
+     * blocker). Committing to one open seed keeps the footprint on one side of a wall;
+     * seeding every open tile the step-through reaches would straddle it.
+     */
+    visited[cdr * rdim + cdc] = true;
+    pq_td_push(&frontier, 0.0f, centre_tile);
+    struct tile_desc start;
+    bool have_start = false;
+    while(pq_size(&frontier) > 0) {
+
+        struct tile_desc curr;
+        pq_td_pop(&frontier, &curr);
+
+        const struct nav_chunk *chunk =
+            &priv->chunks[layer][IDX(curr.chunk_r, priv->width, curr.chunk_c)];
+        if(field_tile_passable(chunk, (struct coord){curr.tile_r, curr.tile_c})) {
+            start = curr;
+            have_start = true;
+            break;
+        }
+
+        for(int i = 0; i < ARR_SIZE(deltas); i++) {
+
+            struct tile_desc neighb = curr;
+            if(!M_Tile_RelativeDesc(res, &neighb, deltas[i].c, deltas[i].r))
+                continue;
+            if(tile_outside_region(res, region, neighb))
+                continue;
+
+            int dr, dc;
+            M_Tile_Distance(res, &base, &neighb, &dr, &dc);
+            if(visited[dr * rdim + dc])
+                continue;
+            visited[dr * rdim + dc] = true;
+
+            int ndr, ndc;
+            M_Tile_Distance(res, &centre, &neighb, &ndr, &ndc);
+            pq_td_push(&frontier, (float)(ndr * ndr + ndc * ndc), neighb);
+        }
+    }
+
+    if(!have_start) {
+        STFREE(visited);
+        pq_td_destroy(&frontier);
+        return 0;
+    }
+
+    /* Flood the connected open footprint from that single seed, best-first by distance
+     * from the centre and open-only, so it bends around a wall but never crosses one.
+     */
+    pq_td_clear(&frontier);
+    memset(visited, 0, sizeof(bool) * rdim * cdim);
+    int sdr, sdc;
+    M_Tile_Distance(res, &base, &start, &sdr, &sdc);
+    visited[sdr * rdim + sdc] = true;
+    pq_td_push(&frontier, 0.0f, start);
 
     size_t ret = 0;
     while(pq_size(&frontier) > 0 && ret < maxout) {
@@ -1729,16 +1783,10 @@ static size_t field_zone_initial_frontier(
         struct tile_desc curr;
         pq_td_pop(&frontier, &curr);
 
-        int zdr, zdc;
-        M_Tile_Distance(res, &centre, &curr, &zdr, &zdc);
-        if(zdr * zdr + zdc * zdc > radius_sq)
-            continue;
-
         const struct nav_chunk *chunk =
             &priv->chunks[layer][IDX(curr.chunk_r, priv->width, curr.chunk_c)];
-        if(field_tile_passable(chunk, (struct coord){curr.tile_r, curr.tile_c})) {
+        if(field_tile_passable(chunk, (struct coord){curr.tile_r, curr.tile_c}))
             out[ret++] = curr;
-        }
 
         for(int i = 0; i < ARR_SIZE(deltas); i++) {
 
@@ -1759,7 +1807,9 @@ static size_t field_zone_initial_frontier(
             if(!field_tile_passable(nchunk, (struct coord){neighb.tile_r, neighb.tile_c}))
                 continue;
 
-            pq_td_push(&frontier, (float)(dr * dr + dc * dc), neighb);
+            int ndr, ndc;
+            M_Tile_Distance(res, &centre, &neighb, &ndr, &ndc);
+            pq_td_push(&frontier, (float)(ndr * ndr + ndc * ndc), neighb);
         }
     }
 
@@ -1797,9 +1847,16 @@ static void field_update_zone(
         .tile_c  = (chunk_coord.c > 0) ? FIELD_RES_C / 2 + (FIELD_RES_C % 2) : 0,
     };
 
+    /* Collect a constant tile budget (the ideal disc's area) rather than radius-clipping,
+     * so a wall cutting the disc reshapes the footprint into adjoining open space instead
+     * of shrinking it. Matches the movement-side slot flood (arrival_region_area). */
+    size_t budget = (size_t)(M_PI * target.radius * target.radius + 0.5);
+    if(budget > (size_t)(rdim * cdim))
+        budget = rdim * cdim;
+
     STALLOC(struct tile_desc, init_frontier, rdim * cdim);
     size_t ninit = field_zone_initial_frontier(&target, priv, base, rdim, cdim,
-        layer, init_frontier, rdim * cdim);
+        layer, init_frontier, budget);
 
     for(int i = 0; i < ninit; i++) {
 

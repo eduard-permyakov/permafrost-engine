@@ -65,6 +65,13 @@ void N_FC_InvalidateAllAtChunk(struct fieldcache_ctx *ctx,
                                struct coord chunk, 
                                enum nav_layer layer);
 
+/* Invalidate only the TARGET_ZONE (arrival) flow fields for a particular chunk,
+ * leaving transit, portal and enemy-seek fields intact.
+ */
+void N_FC_InvalidateZoneFieldsAtChunk(struct fieldcache_ctx *ctx,
+                                      struct coord chunk,
+                                      enum nav_layer layer);
+
 /* Invalidate all LOS and Flow fields for paths (identified by the dest_id) which 
  * have at least one field at the specified chunk
  */

@@ -2688,7 +2688,7 @@ void N_RenderEnemySeekField(void *nav_private, const struct map *map, mat4x4_t *
 
 void N_RenderGroupArrivalField(void *nav_private, vec3_t map_pos, mat4x4_t *chunk_model,
                                int chunk_r, int chunk_c, enum nav_layer layer,
-                               vec2_t centre_pos, uint16_t radius)
+                               vec2_t centre_pos, uint16_t radius, dest_id_t dest_id)
 {
     const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
     const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
@@ -2704,28 +2704,45 @@ void N_RenderGroupArrivalField(void *nav_private, vec3_t map_pos, mat4x4_t *chun
     if(!M_Tile_DescForPoint2D(res, map_pos, centre_pos, &centre_tile))
         return;
 
+    /* The LOS field (tiles visible from the goal) is planned with the path, so it is
+     * cached well before the zone field, which is only built for chunks a unit actually
+     * pulls it in (and in-LOS units go straight, so they never do). Render the two
+     * independently: the yellow LOS wedge shows during the approach, the green flow and
+     * blue sinks appear once the zone field exists.
+     */
+    const struct LOS_field *lf = NULL;
+    if(N_FC_ContainsLOSField(priv->fieldcache, dest_id, (struct coord){chunk_r, chunk_c}))
+        lf = N_FC_LOSFieldAt(priv->fieldcache, dest_id, (struct coord){chunk_r, chunk_c});
+
     struct field_target target = (struct field_target){
         .type = TARGET_ZONE,
         .zone.centre = centre_tile,
         .zone.radius = radius
     };
     ff_id_t ffid = N_FlowFieldID((struct coord){chunk_r, chunk_c}, target, layer);
-    if(!N_FC_ContainsFlowField(priv->fieldcache, ffid))
-        return;
+    const struct flow_field *ff = NULL;
+    if(N_FC_ContainsFlowField(priv->fieldcache, ffid)) {
+        ff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
+        /* A degenerate field (every cell a sink) means no reachable seeds; ignore it. */
+        bool has_flow = false;
+        for(int r = 0; ff && r < FIELD_RES_R && !has_flow; r++) {
+        for(int c = 0; c < FIELD_RES_C && !has_flow; c++) {
+            if(ff->field[r][c].dir_idx != FD_NONE)
+                has_flow = true;
+        }}
+        if(!has_flow)
+            ff = NULL;
+    }
 
-    const struct flow_field *ff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
-    if(!ff)
+    if(!ff && !lf)
         return;
 
     vec2_t positions_buff[FIELD_RES_R * FIELD_RES_C];
     vec2_t dirs_buff[FIELD_RES_R * FIELD_RES_C];
-
     vec2_t corners_buff[4 * FIELD_RES_R * FIELD_RES_C];
     vec3_t colors_buff[FIELD_RES_R * FIELD_RES_C];
 
-    vec2_t *corners_base = corners_buff;
-    vec3_t *colors_base = colors_buff;
-
+    int nquads = 0;
     for(int r = 0; r < FIELD_RES_R; r++) {
     for(int c = 0; c < FIELD_RES_C; c++) {
 
@@ -2740,47 +2757,71 @@ void N_RenderGroupArrivalField(void *nav_private, vec3_t map_pos, mat4x4_t *chun
             square_x - square_x_len / 2.0f,
             square_z + square_z_len / 2.0f
         };
-        dirs_buff[r * FIELD_RES_C + c] = N_FlowDir(ff->field[r][c].dir_idx);
+        dirs_buff[r * FIELD_RES_C + c] = ff ? N_FlowDir(ff->field[r][c].dir_idx)
+                                            : (vec2_t){0.0f, 0.0f};
 
-        *corners_base++ = (vec2_t){square_x, square_z};
-        *corners_base++ = (vec2_t){square_x, square_z + square_z_len};
-        *corners_base++ = (vec2_t){square_x - square_x_len, square_z + square_z_len};
-        *corners_base++ = (vec2_t){square_x - square_x_len, square_z};
+        /* Blue: cost-zero sinks (open goal tiles). Red: blocked or impassable tiles,
+         * which a unit can never stand on. Both carry FD_NONE in the flow field, so they
+         * are split here by an explicit blocked test. Yellow: tiles in line of sight of
+         * the goal. Green: tiles that flow toward the sinks. A tile with neither a flow
+         * field nor LOS is left undrawn.
+         */
+        vec3_t color;
+        bool draw = true;
+        if(ff && ff->field[r][c].dir_idx == FD_NONE) {
+            struct tile_desc td = {.chunk_r = chunk_r, .chunk_c = chunk_c,
+                                   .tile_r = r, .tile_c = c};
+            color = n_tile_blocked((struct nav_private*)nav_private, layer, td)
+                  ? (vec3_t){1.0f, 0.0f, 0.0f}
+                  : (vec3_t){0.0f, 0.0f, 1.0f};
+        }
+        else if(lf && lf->field[r][c].visible)
+            color = (vec3_t){1.0f, 1.0f, 0.0f};
+        else if(ff)
+            color = (vec3_t){0.0f, 1.0f, 0.0f};
+        else
+            draw = false;
 
-        /* Blue marks the cost-zero sinks (the open arrival slots); green marks
-         * tiles that flow toward them. */
-        *colors_base++ = ff->field[r][c].dir_idx == FD_NONE ? (vec3_t){0.0f, 0.0f, 1.0f}
-                                                            : (vec3_t){0.0f, 1.0f, 0.0f};
+        if(draw) {
+            corners_buff[nquads * 4 + 0] = (vec2_t){square_x, square_z};
+            corners_buff[nquads * 4 + 1] = (vec2_t){square_x, square_z + square_z_len};
+            corners_buff[nquads * 4 + 2] = (vec2_t){square_x - square_x_len, square_z + square_z_len};
+            corners_buff[nquads * 4 + 3] = (vec2_t){square_x - square_x_len, square_z};
+            colors_buff[nquads] = color;
+            nquads++;
+        }
     }}
 
-    assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
-    assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
-
-    size_t count = FIELD_RES_R * FIELD_RES_C;
-    R_PushCmd((struct rcmd){
-        .func = R_GL_DrawFlowField,
-        .nargs = 5,
-        .args = {
-            R_PushArg(positions_buff, sizeof(positions_buff)),
-            R_PushArg(dirs_buff, sizeof(dirs_buff)),
-            R_PushArg(&count, sizeof(count)),
-            R_PushArg(chunk_model, sizeof(*chunk_model)),
-            (void*)G_GetPrevTickMap(),
-        },
-    });
-    bool on_water_surface = false;
-    R_PushCmd((struct rcmd){
-        .func = R_GL_DrawMapOverlayQuads,
-        .nargs = 6,
-        .args = {
-            R_PushArg(corners_buff, sizeof(corners_buff)),
-            R_PushArg(colors_buff, sizeof(colors_buff)),
-            R_PushArg(&count, sizeof(count)),
-            R_PushArg(chunk_model, sizeof(*chunk_model)),
-            R_PushArg(&on_water_surface, sizeof(bool)),
-            (void*)G_GetPrevTickMap(),
-        },
-    });
+    if(ff) {
+        size_t count = FIELD_RES_R * FIELD_RES_C;
+        R_PushCmd((struct rcmd){
+            .func = R_GL_DrawFlowField,
+            .nargs = 5,
+            .args = {
+                R_PushArg(positions_buff, sizeof(positions_buff)),
+                R_PushArg(dirs_buff, sizeof(dirs_buff)),
+                R_PushArg(&count, sizeof(count)),
+                R_PushArg(chunk_model, sizeof(*chunk_model)),
+                (void*)G_GetPrevTickMap(),
+            },
+        });
+    }
+    if(nquads > 0) {
+        bool on_water_surface = false;
+        size_t qcount = nquads;
+        R_PushCmd((struct rcmd){
+            .func = R_GL_DrawMapOverlayQuads,
+            .nargs = 6,
+            .args = {
+                R_PushArg(corners_buff, sizeof(vec2_t) * 4 * nquads),
+                R_PushArg(colors_buff, sizeof(vec3_t) * nquads),
+                R_PushArg(&qcount, sizeof(qcount)),
+                R_PushArg(chunk_model, sizeof(*chunk_model)),
+                R_PushArg(&on_water_surface, sizeof(bool)),
+                (void*)G_GetPrevTickMap(),
+            },
+        });
+    }
 }
 
 void N_RenderSurroundField(void *nav_private, const struct map *map, mat4x4_t *chunk_model, 
@@ -3359,6 +3400,48 @@ ff_found:
     return N_FlowDir(dir_idx);
 }
 
+bool N_DesiredGroupArrivalVelocity(vec2_t curr_pos, void *nav_private, enum nav_layer layer,
+                                   vec3_t map_pos, vec2_t centre_pos, uint16_t radius,
+                                   vec2_t *out_vel, bool *out_at_slot)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    *out_vel = (vec2_t){0.0f, 0.0f};
+    *out_at_slot = false;
+
+    struct tile_desc tile, centre_tile;
+    if(!M_Tile_DescForPoint2D(res, map_pos, curr_pos, &tile))
+        return false;
+    if(!M_Tile_DescForPoint2D(res, map_pos, centre_pos, &centre_tile))
+        return false;
+
+    struct field_target target = (struct field_target){
+        .type = TARGET_ZONE,
+        .zone.centre = centre_tile,
+        .zone.radius = radius
+    };
+    ff_id_t ffid = N_FlowFieldID((struct coord){tile.chunk_r, tile.chunk_c}, target, layer);
+    if(!N_FC_ContainsFlowField(priv->fieldcache, ffid))
+        return false;
+
+    const struct flow_field *ff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
+    if(!ff)
+        return false;
+
+    enum flow_dir dir = ff->field[tile.tile_r][tile.tile_c].dir_idx;
+    *out_vel = N_FlowDir(dir);
+
+    /* A sink (no outgoing direction) within the disc is an open arrival slot. */
+    if(dir == FD_NONE) {
+        int dr, dc;
+        M_Tile_Distance(res, &centre_tile, &tile, &dr, &dc);
+        *out_at_slot = (dr * dr + dc * dc) <= ((int)radius * (int)radius);
+    }
+    return true;
+}
+
 vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_layer layer, 
                                   vec3_t map_pos, int faction_id)
 {
@@ -3696,14 +3779,17 @@ void N_RequestAsyncGroupArrivalField(vec2_t centre_pos, void *nav_private, enum 
         .zone.radius = radius
     };
 
-    /* The arrival disc may span several chunks; request a field for every chunk
-     * it overlaps. Each is keyed, cached and invalidated independently. */
+    /* The footprint may span several chunks; request a field for every chunk it
+     * overlaps. Each is keyed, cached and invalidated independently. The constant-area
+     * flood can spill past the nominal radius when a wall boxes it in (up to roughly 2x
+     * into a corner), so the request reach is widened to cover the spilled tiles. */
+    int reach = 2 * radius;
     int centre_gr = centre_tile.chunk_r * (int)res.tile_h + centre_tile.tile_r;
     int centre_gc = centre_tile.chunk_c * (int)res.tile_w + centre_tile.tile_c;
-    int min_cr = CLAMP((centre_gr - radius) / (int)res.tile_h, 0, (int)res.chunk_h - 1);
-    int max_cr = CLAMP((centre_gr + radius) / (int)res.tile_h, 0, (int)res.chunk_h - 1);
-    int min_cc = CLAMP((centre_gc - radius) / (int)res.tile_w, 0, (int)res.chunk_w - 1);
-    int max_cc = CLAMP((centre_gc + radius) / (int)res.tile_w, 0, (int)res.chunk_w - 1);
+    int min_cr = CLAMP((centre_gr - reach) / (int)res.tile_h, 0, (int)res.chunk_h - 1);
+    int max_cr = CLAMP((centre_gr + reach) / (int)res.tile_h, 0, (int)res.chunk_h - 1);
+    int min_cc = CLAMP((centre_gc - reach) / (int)res.tile_w, 0, (int)res.chunk_w - 1);
+    int max_cc = CLAMP((centre_gc + reach) / (int)res.tile_w, 0, (int)res.chunk_w - 1);
 
     for(int cr = min_cr; cr <= max_cr; cr++) {
     for(int cc = min_cc; cc <= max_cc; cc++) {
@@ -3722,6 +3808,31 @@ void N_AwaitAsyncFields(void)
     stalloc_clear(&s_field_work.mem);
     s_field_work.nwork = 0;
     s_field_work.ntasks = 0;
+}
+
+void N_InvalidateZoneFieldsAt(void *nav_private, vec3_t map_pos, vec2_t xz_pos,
+                              enum nav_layer layer)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct tile_desc td;
+    if(!M_Tile_DescForPoint2D(res, map_pos, xz_pos, &td))
+        return;
+
+    /* A zone field is built over a padded region reaching into the neighbouring
+     * chunks, so a blocker change here can stale the arrival fields of the whole
+     * 3x3 block of chunks around it. */
+    for(int dr = -1; dr <= 1; dr++) {
+    for(int dc = -1; dc <= 1; dc++) {
+
+        int cr = td.chunk_r + dr;
+        int cc = td.chunk_c + dc;
+        if(cr < 0 || cr >= (int)res.chunk_h || cc < 0 || cc >= (int)res.chunk_w)
+            continue;
+        N_FC_InvalidateZoneFieldsAtChunk(priv->fieldcache, (struct coord){cr, cc}, layer);
+    }}
 }
 
 bool N_HasEntityLOS(vec2_t curr_pos, uint32_t ent, void *nav_private, 
@@ -3754,7 +3865,7 @@ out:
     return result;
 }
 
-bool N_HasDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_private, vec3_t map_pos)
+bool N_HasDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_private, vec3_t map_pos, vec2_t xz_dest)
 {
     struct nav_private *priv = nav_private;
     struct map_resolution res;
@@ -3764,10 +3875,21 @@ bool N_HasDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_private, vec3_t map_p
     bool result = M_Tile_DescForPoint2D(res, map_pos, curr_pos, &tile);
     assert(result);
 
-    if(!N_FC_ContainsLOSField(priv->fieldcache, id, (struct coord){tile.chunk_r, tile.chunk_c}))
-        return false;
+    struct coord chunk = (struct coord){tile.chunk_r, tile.chunk_c};
 
-    const struct LOS_field *lf = N_FC_LOSFieldAt(priv->fieldcache, id, (struct coord){tile.chunk_r, tile.chunk_c});
+    /* Build the dest's LOS (and flow) field for the chunk the unit is on, on-demand, as a
+     * point move does when entering a new chunk. An in-region arrival unit beelines to its
+     * slot rather than point-seeking, so it never triggers this build itself; without it the
+     * chunk's LOS stays unbuilt and the arrival deceleration breaks at the chunk seam. */
+    if(!N_FC_ContainsLOSField(priv->fieldcache, id, chunk)) {
+        dest_id_t ret;
+        if(!n_request_path(priv, curr_pos, xz_dest, N_DestFactionID(id), map_pos,
+                           N_DestLayer(id), &ret)
+        || !N_FC_ContainsLOSField(priv->fieldcache, id, chunk))
+            return false;
+    }
+
+    const struct LOS_field *lf = N_FC_LOSFieldAt(priv->fieldcache, id, chunk);
     assert(lf);
     return lf->field[tile.tile_r][tile.tile_c].visible;
 }
@@ -3910,7 +4032,8 @@ done:
 }
 
 int N_ClosestConnectedPathableTiles(void *nav_private, enum nav_layer layer,
-                            vec3_t map_pos, vec2_t xz_center, vec2_t *out, int maxout)
+                            vec3_t map_pos, vec2_t xz_center, vec2_t *out, int maxout,
+                            float max_radius)
 {
     if(maxout <= 0)
         return 0;
@@ -3950,6 +4073,19 @@ int N_ClosestConnectedPathableTiles(void *nav_private, enum nav_layer layer,
         struct tile_desc curr;
         pq_td_pop(&frontier, &curr);
 
+        /* Best-first pops nearest-first, so once the closest remaining tile is past the
+         * cap every later one is too: stop. This keeps the footprint a compact blob
+         * adjoining the goal rather than spilling a thin arm around a wall (which stranded
+         * surplus units without a reachable slot); when boxed in it yields less than the
+         * full area budget instead of wrapping the obstacle. */
+        if(max_radius > 0.0f) {
+            float cx = map_pos.x - (curr.chunk_c * FIELD_RES_C + curr.tile_c + 0.5f) * tile_dims.x;
+            float cz = map_pos.z + (curr.chunk_r * FIELD_RES_R + curr.tile_r + 0.5f) * tile_dims.z;
+            float dx = cx - xz_center.x, dz = cz - xz_center.z;
+            if(dx * dx + dz * dz > max_radius * max_radius)
+                break;
+        }
+
         if(!n_tile_blocked(priv, layer, curr)) {
             out[n++] = (vec2_t){
                 map_pos.x - (curr.chunk_c * FIELD_RES_C + curr.tile_c + 0.5f) * tile_dims.x,
@@ -3983,7 +4119,189 @@ int N_ClosestConnectedPathableTiles(void *nav_private, enum nav_layer layer,
     return n;
 }
 
-vec2_t N_ClosestPointAdjacentToLand(const struct map *map, void *nav_private, 
+static int cmp_u64(const void *a, const void *b)
+{
+    uint64_t ka = *(const uint64_t*)a, kb = *(const uint64_t*)b;
+    return (ka > kb) - (ka < kb);
+}
+
+static bool region_keys_contain(const uint64_t *keys, size_t num, uint64_t k)
+{
+    size_t lo = 0, hi = num;
+    while(lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if(keys[mid] == k)
+            return true;
+        if(keys[mid] < k)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return false;
+}
+
+/* Convert each world position to its tile key, writing a sorted set for membership
+ * queries by N_SegmentWithinRegion. Positions off the map are dropped. Returns the
+ * number of keys written. */
+size_t N_TileKeysForPositions(void *nav_private, vec3_t map_pos, const vec2_t *positions,
+                              size_t n, uint64_t *out)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    size_t cnt = 0;
+    for(size_t i = 0; i < n; i++) {
+        struct tile_desc td;
+        if(!M_Tile_DescForPoint2D(res, map_pos, positions[i], &td))
+            continue;
+        out[cnt++] = td_key(&td);
+    }
+    qsort(out, cnt, sizeof(uint64_t), cmp_u64);
+    return cnt;
+}
+
+/* True if every tile the segment from 'a' to 'b' crosses is in the sorted key set
+ * 'keys'. The set is the static-open footprint snapshot, so settling units (inside it)
+ * never make this fail, while a wall (outside it) does: used to decide whether a unit
+ * can head straight to its slot or must route around. */
+bool N_SegmentWithinRegion(void *nav_private, vec3_t map_pos, vec2_t a, vec2_t b,
+                           const uint64_t *keys, size_t num)
+{
+    if(num == 0)
+        return false;
+
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct tile_desc tda, tdb;
+    if(!M_Tile_DescForPoint2D(res, map_pos, a, &tda))
+        return false;
+    if(!M_Tile_DescForPoint2D(res, map_pos, b, &tdb))
+        return false;
+
+    int dr, dc;
+    M_Tile_Distance(res, &tda, &tdb, &dr, &dc);
+    size_t count = (size_t)(abs(dr) + abs(dc)) + 2;
+
+    struct line_seg_2d line = (struct line_seg_2d){a.x, a.z, b.x, b.z};
+    STALLOC(struct tile_desc, tds, count);
+    size_t ntds = M_Tile_LineSupercoverTilesSorted(res, map_pos, line, tds, count);
+
+    bool result = true;
+    for(size_t i = 0; i < ntds; i++) {
+        if(!region_keys_contain(keys, num, td_key(&tds[i]))) {
+            result = false;
+            break;
+        }
+    }
+    STFREE(tds);
+    return result;
+}
+
+static void td_from_key(uint64_t k, struct tile_desc *out)
+{
+    out->chunk_r = (int)((k >> 48) & 0xffff);
+    out->chunk_c = (int)((k >> 32) & 0xffff);
+    out->tile_r  = (int)((k >> 16) & 0xffff);
+    out->tile_c  = (int)((k >>  0) & 0xffff);
+}
+
+static int region_key_index(const uint64_t *keys, size_t num, uint64_t k)
+{
+    size_t lo = 0, hi = num;
+    while(lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if(keys[mid] == k)
+            return (int)mid;
+        if(keys[mid] < k)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return -1;
+}
+
+/* For each query position, the 4-connected geodesic distance (in tiles) of its tile from
+ * the region tile nearest 'entry', flooding only through tiles of the sorted key set
+ * 'keys'. The flood follows the walkable footprint around corners and holes, so a caller
+ * can rank slots farthest-from-entry-first. Off-region or unreachable queries get -1;
+ * returns the largest distance written (-1 if none). */
+int N_RegionGeodesicDist(void *nav_private, vec3_t map_pos,
+                         const uint64_t *keys, size_t num_keys, vec2_t entry,
+                         const vec2_t *queries, size_t num_queries, int *out_dist)
+{
+    for(size_t i = 0; i < num_queries; i++)
+        out_dist[i] = -1;
+    if(num_keys == 0)
+        return -1;
+
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+    vec2_t tile_dims = N_TileDims();
+
+    /* Source = the region tile whose centre is nearest where the units enter. */
+    int src = 0;
+    float bestd = INFINITY;
+    for(size_t i = 0; i < num_keys; i++) {
+        struct tile_desc td;
+        td_from_key(keys[i], &td);
+        float cx = map_pos.x - (td.chunk_c * FIELD_RES_C + td.tile_c + 0.5f) * tile_dims.x;
+        float cz = map_pos.z + (td.chunk_r * FIELD_RES_R + td.tile_r + 0.5f) * tile_dims.z;
+        float dx = cx - entry.x, dz = cz - entry.z;
+        float dd = dx * dx + dz * dz;
+        if(dd < bestd) {
+            bestd = dd;
+            src = (int)i;
+        }
+    }
+
+    STALLOC(int, dist, num_keys);
+    STALLOC(int, queue, num_keys);
+    for(size_t i = 0; i < num_keys; i++)
+        dist[i] = -1;
+    int head = 0, tail = 0;
+    dist[src] = 0;
+    queue[tail++] = src;
+
+    const struct coord deltas[] = {{0, -1}, {0, +1}, {-1, 0}, {+1, 0}};
+    while(head < tail) {
+        int ci = queue[head++];
+        struct tile_desc td;
+        td_from_key(keys[ci], &td);
+        for(int d = 0; d < 4; d++) {
+            struct tile_desc nb = td;
+            if(!M_Tile_RelativeDesc(res, &nb, deltas[d].c, deltas[d].r))
+                continue;
+            int ni = region_key_index(keys, num_keys, td_key(&nb));
+            if(ni < 0 || dist[ni] >= 0)
+                continue;
+            dist[ni] = dist[ci] + 1;
+            queue[tail++] = ni;
+        }
+    }
+
+    int result = -1;
+    for(size_t q = 0; q < num_queries; q++) {
+        struct tile_desc td;
+        if(!M_Tile_DescForPoint2D(res, map_pos, queries[q], &td))
+            continue;
+        int idx = region_key_index(keys, num_keys, td_key(&td));
+        if(idx >= 0 && dist[idx] >= 0) {
+            out_dist[q] = dist[idx];
+            if(dist[idx] > result)
+                result = dist[idx];
+        }
+    }
+
+    STFREE(queue);
+    STFREE(dist);
+    return result;
+}
+
+vec2_t N_ClosestPointAdjacentToLand(const struct map *map, void *nav_private,
                                     vec3_t map_pos, vec2_t pos)
 {
     struct nav_private *priv = nav_private;

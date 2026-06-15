@@ -533,7 +533,8 @@ void M_NavRenderVisibleEnemySeekField(const struct map *map, const struct camera
 }
 
 void M_NavRenderVisibleGroupArrivalField(const struct map *map, const struct camera *cam,
-                                         enum nav_layer layer, vec2_t centre_pos, uint16_t radius)
+                                         enum nav_layer layer, vec2_t centre_pos, uint16_t radius,
+                                         dest_id_t dest_id)
 {
     struct frustum frustum;
     Camera_MakeFrustum(cam, &frustum);
@@ -550,7 +551,7 @@ void M_NavRenderVisibleGroupArrivalField(const struct map *map, const struct cam
         mat4x4_t chunk_model;
         M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
         N_RenderGroupArrivalField(map->nav_private, map->pos, &chunk_model, r, c, layer,
-            centre_pos, radius);
+            centre_pos, radius, dest_id);
     }}
 }
 
@@ -716,9 +717,17 @@ vec2_t M_NavDesiredSurroundVelocity(const struct map *map, enum nav_layer layer,
     return N_DesiredSurroundVelocity(curr_pos, map->nav_private, layer, map->pos, uid, faction_id);
 }
 
-bool M_NavHasDestLOS(const struct map *map, dest_id_t id, vec2_t curr_pos)
+bool M_NavDesiredGroupArrivalVelocity(const struct map *map, enum nav_layer layer, vec2_t curr_pos,
+                                      vec2_t centre_pos, uint16_t radius,
+                                      vec2_t *out_vel, bool *out_at_slot)
 {
-    return N_HasDestLOS(id, curr_pos, map->nav_private, map->pos);
+    return N_DesiredGroupArrivalVelocity(curr_pos, map->nav_private, layer, map->pos,
+        centre_pos, radius, out_vel, out_at_slot);
+}
+
+bool M_NavHasDestLOS(const struct map *map, dest_id_t id, vec2_t curr_pos, vec2_t xz_dest)
+{
+    return N_HasDestLOS(id, curr_pos, map->nav_private, map->pos, xz_dest);
 }
 
 bool M_NavPositionPathable(const struct map *map, enum nav_layer layer, vec2_t xz_pos)
@@ -780,9 +789,30 @@ bool M_NavClosestPathable(const struct map *map, enum nav_layer layer, vec2_t xz
 }
 
 int M_NavClosestConnectedPathableTiles(const struct map *map, enum nav_layer layer,
-                               vec2_t xz_center, vec2_t *out, int maxout)
+                               vec2_t xz_center, vec2_t *out, int maxout, float max_radius)
 {
-    return N_ClosestConnectedPathableTiles(map->nav_private, layer, map->pos, xz_center, out, maxout);
+    return N_ClosestConnectedPathableTiles(map->nav_private, layer, map->pos, xz_center, out,
+                                           maxout, max_radius);
+}
+
+size_t M_NavTileKeysForPositions(const struct map *map, const vec2_t *positions,
+                                 size_t n, uint64_t *out)
+{
+    return N_TileKeysForPositions(map->nav_private, map->pos, positions, n, out);
+}
+
+bool M_NavSegmentWithinRegion(const struct map *map, vec2_t a, vec2_t b,
+                              const uint64_t *keys, size_t num)
+{
+    return N_SegmentWithinRegion(map->nav_private, map->pos, a, b, keys, num);
+}
+
+int M_NavRegionGeodesicDist(const struct map *map, const uint64_t *keys, size_t num_keys,
+                            vec2_t entry, const vec2_t *queries, size_t num_queries,
+                            int *out_dist)
+{
+    return N_RegionGeodesicDist(map->nav_private, map->pos, keys, num_keys, entry,
+                                queries, num_queries, out_dist);
 }
 
 bool M_NavLocationsReachable(const struct map *map, enum nav_layer layer, 
@@ -1006,6 +1036,11 @@ void M_NavRequestAsyncGroupArrivalField(const struct map *map, enum nav_layer la
                                         vec2_t centre_pos, uint16_t radius)
 {
     N_RequestAsyncGroupArrivalField(centre_pos, map->nav_private, layer, map->pos, radius);
+}
+
+void M_NavInvalidateZoneFieldsAt(const struct map *map, vec2_t xz_pos, enum nav_layer layer)
+{
+    N_InvalidateZoneFieldsAt(map->nav_private, map->pos, xz_pos, layer);
 }
 
 void M_NavCopyIslandsFieldView(const struct map *map, vec2_t center,

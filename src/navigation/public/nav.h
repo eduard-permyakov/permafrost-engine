@@ -237,7 +237,7 @@ void      N_RenderEnemySeekField(void *nav_private, const struct map *map,
  */
 void      N_RenderGroupArrivalField(void *nav_private, vec3_t map_pos, mat4x4_t *chunk_model,
                                     int chunk_r, int chunk_c, enum nav_layer layer,
-                                    vec2_t centre_pos, uint16_t radius);
+                                    vec2_t centre_pos, uint16_t radius, dest_id_t dest_id);
 
 /* ------------------------------------------------------------------------
  * Debug rendering of the fields that guide enemies towards an entity.
@@ -397,6 +397,18 @@ vec2_t N_DesiredSurroundVelocity(vec2_t curr_pos, void *nav_private, enum nav_la
                                  vec3_t map_pos, const uint32_t ent, int faction_id);
 
 /* ------------------------------------------------------------------------
+ * Read a flock's shared arrival (TARGET_ZONE) field at 'curr_pos'. Returns
+ * false if the field isn't cached for the position's chunk (caller should
+ * fall back to the goal dest-field). On success, '*out_vel' is the flow
+ * direction toward the nearest open slot, and '*out_at_slot' is true when
+ * 'curr_pos' is on an open slot (a cost-zero sink within the disc).
+ * ------------------------------------------------------------------------
+ */
+bool   N_DesiredGroupArrivalVelocity(vec2_t curr_pos, void *nav_private, enum nav_layer layer,
+                                     vec3_t map_pos, vec2_t centre_pos, uint16_t radius,
+                                     vec2_t *out_vel, bool *out_at_slot);
+
+/* ------------------------------------------------------------------------
  * Returns true if the particular entity is in direct line of sight of the 
  * specified position.
  * ------------------------------------------------------------------------
@@ -411,7 +423,7 @@ bool      N_HasEntityLOS(vec2_t curr_pos, const uint32_t ent,
  * ------------------------------------------------------------------------
  */
 bool      N_HasDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_private, 
-                       vec3_t map_pos);
+                       vec3_t map_pos, vec2_t xz_dest);
 
 /* ------------------------------------------------------------------------
  * Returns true if the specified XZ position is pathable.
@@ -471,7 +483,35 @@ bool N_ClosestPathable(void *nav_private, enum nav_layer layer,
  * ------------------------------------------------------------------------
  */
 int N_ClosestConnectedPathableTiles(void *nav_private, enum nav_layer layer,
-                            vec3_t map_pos, vec2_t xz_center, vec2_t *out, int maxout);
+                            vec3_t map_pos, vec2_t xz_center, vec2_t *out, int maxout,
+                            float max_radius);
+
+/* ------------------------------------------------------------------------
+ * Convert world positions to a sorted set of tile keys for membership queries
+ * by N_SegmentWithinRegion. Returns the number of keys written.
+ * ------------------------------------------------------------------------
+ */
+size_t N_TileKeysForPositions(void *nav_private, vec3_t map_pos, const vec2_t *positions,
+                              size_t n, uint64_t *out);
+
+/* ------------------------------------------------------------------------
+ * Returns true if every tile the segment from 'a' to 'b' crosses is in the
+ * sorted tile key set 'keys'.
+ * ------------------------------------------------------------------------
+ */
+bool N_SegmentWithinRegion(void *nav_private, vec3_t map_pos, vec2_t a, vec2_t b,
+                           const uint64_t *keys, size_t num);
+
+/* ------------------------------------------------------------------------
+ * Geodesic (path) distance in tiles, for each query position, from the region
+ * tile nearest 'entry', flooded only through the sorted key set 'keys'. Follows
+ * the walkable footprint around corners; off-region/unreachable queries get -1.
+ * Returns the largest distance written. Ranks slots farthest-from-entry-first.
+ * ------------------------------------------------------------------------
+ */
+int N_RegionGeodesicDist(void *nav_private, vec3_t map_pos,
+                         const uint64_t *keys, size_t num_keys, vec2_t entry,
+                         const vec2_t *queries, size_t num_queries, int *out_dist);
 
 /* ------------------------------------------------------------------------
  * Returns the closest position to 'pos' that is adjacent to a land tile.
@@ -733,6 +773,15 @@ void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_la
  */
 void N_RequestAsyncGroupArrivalField(vec2_t centre_pos, void *nav_private, enum nav_layer layer,
                                      vec3_t map_pos, uint16_t radius);
+
+/* ------------------------------------------------------------------------
+ * Drop the cached TARGET_ZONE arrival fields overlapping 'xz_pos' so they are
+ * rebuilt against current blockers, e.g. after a unit settles into the goal
+ * region, so approaching units route around the filled rim rather than into it.
+ * ------------------------------------------------------------------------
+ */
+void N_InvalidateZoneFieldsAt(void *nav_private, vec3_t map_pos, vec2_t xz_pos,
+                              enum nav_layer layer);
 
 /*###########################################################################*/
 /* NAV FIELD CACHE                                                           */
