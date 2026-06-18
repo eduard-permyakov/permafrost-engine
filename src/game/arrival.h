@@ -1,0 +1,138 @@
+/*
+ *  This file is part of Permafrost Engine.
+ *  Copyright (C) 2026 Eduard Permyakov
+ *
+ *  Permafrost Engine is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  Permafrost Engine is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *  Linking this software statically or dynamically with other modules is making
+ *  a combined work based on this software. Thus, the terms and conditions of
+ *  the GNU General Public License cover the whole combination.
+ *
+ *  As a special exception, the copyright holders of Permafrost Engine give
+ *  you permission to link Permafrost Engine with independent modules to produce
+ *  an executable, regardless of the license terms of these independent
+ *  modules, and to copy and distribute the resulting executable under
+ *  terms of your choice, provided that you also meet, for each linked
+ *  independent module, the terms and conditions of the license of that
+ *  module. An independent module is a module which is not derived from
+ *  or based on Permafrost Engine. If you modify Permafrost Engine, you may
+ *  extend this exception to your version of Permafrost Engine, but you are not
+ *  obliged to do so. If you do not wish to do so, delete this exception
+ *  statement from your version.
+ *
+ */
+
+#ifndef ARRIVAL_H
+#define ARRIVAL_H
+
+#include "../pf_math.h"
+#include "../navigation/public/nav.h"
+#include <stdbool.h>
+#include <stdint.h>
+
+struct map;
+struct camera;
+
+#define ARRIVAL_MAX_SLOTS (4096)   /* Cap on the reachable open-slot set per flock */
+
+/* Per-flock arrival state: a fixed-area, single-connected footprint of reachable tiles about
+ * 'centre' (a blocker reshapes it, never shrinks it), thinned to unit-spaced 'slots' filled
+ * farthest-from-entry first so the corridor to the deep slots stays open past a wall.
+ */
+struct arrival_state{
+    bool             active;
+    bool             slots_valid;
+    bool             assigned;
+    enum nav_layer   layer;
+    vec2_t           centre;
+    vec2_t           axis;
+    /* COM of the slots + a dest field toward it: the fallback seek target. */
+    vec2_t           com;
+    dest_id_t        com_dest_id;
+    uint16_t         radius;
+    int              num_slots;
+    int              active_row;
+    int              realloc_counter;
+    int              stall_counter;
+    int              prev_occ;
+    float            fill_frac;
+    int              num_rows;
+    float            row_height;
+    vec2_t           slots[ARRIVAL_MAX_SLOTS];
+    /* Per-slot fill rank: ring 0 = farthest (geodesic) from where the flock enters the
+     * footprint, filled first. Recomputed from the live entry until the fill commits. */
+    int              slot_ring[ARRIVAL_MAX_SLOTS];
+    /* Sorted tile keys of the static-open footprint (snapshot at build). Lets the fine tier
+     * tell a wall (cross it -> route around) from a settled teammate (sits on it). */
+    int              num_region;
+    uint64_t         region_keys[ARRIVAL_MAX_SLOTS];
+};
+
+/* Per-unit fine-arrival state: the assigned slot ('sink', live once committed && sink_valid)
+ * the unit seeks and settles on. Reset on a new move order.
+ */
+struct arrival_unit_state{
+    bool   committed;
+    bool   sink_valid;
+    vec2_t sink;
+    int    stuck;
+    /* Wedge anchor: 'stuck' counts ticks spent within ARRIVAL_STUCK_DISP of it, so a unit
+     * oscillating in place accrues the wedge while one making headway re-seeds. */
+    vec2_t progress_anchor;
+    bool   progress_anchored;
+    /* Debounced bee-line vs around-the-wall stage: the raw LOS test flickers on a wall seam,
+     * so the latch flips only after it disagrees for ARRIVAL_LOS_HYST ticks. */
+    bool   los_latched;
+    int    los_hyst;
+    /* Start grace: a unit must travel ARRIVAL_ENGAGE_DIST from here before proximity-settling
+     * can fire, so one ordered amongst arrived units heads for its goal first. */
+    vec2_t order_pos;
+    bool   engaged;
+};
+
+/* Plain-data view of a flock member, built by the caller so this module never reaches into
+ * the movement gamestate. 'us' points at the member's live per-unit state.
+ */
+struct arrival_member{
+    vec2_t                     pos;
+    bool                       settled;
+    struct arrival_unit_state *us;
+};
+
+void G_Arrival_InitFlock(struct arrival_state *as);
+void G_Arrival_Deactivate(struct arrival_state *as);
+void G_Arrival_InitUnit(struct arrival_unit_state *us, vec2_t order_pos);
+
+void G_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2_t target_xz,
+                           enum nav_layer layer, float unit_radius, int total_members,
+                           const struct arrival_member *members, int nmembers);
+void G_Arrival_RequestField(const struct arrival_state *as, const struct map *map);
+
+bool G_Arrival_DesiredVelocity(const struct arrival_state *as, struct arrival_unit_state *us,
+                               const struct map *region_map, const struct map *nav_map,
+                               vec2_t pos, vec2_t velocity, bool has_dest_los, vec2_t *out_vel);
+bool G_Arrival_ShouldSettle(const struct arrival_state *as, struct arrival_unit_state *us,
+                            const struct map *region_map, const struct map *nav_map,
+                            vec2_t new_pos, vec2_t velocity, float radius, int nsettled);
+vec2_t G_Arrival_SeekTarget(const struct arrival_state *as, const struct arrival_unit_state *us,
+                            vec2_t target_xz);
+bool G_Arrival_NeighbourSettling(const struct arrival_unit_state *us, vec2_t neighb_pos,
+                                 float radius);
+
+void G_Arrival_RenderDebug(const struct arrival_state *as, const struct camera *cam,
+                           const struct map *map, dest_id_t dest_id, vec3_t color,
+                           const struct arrival_member *members, int nmembers);
+
+#endif
+

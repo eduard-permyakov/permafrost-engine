@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_GAME_MOVEMENT
 
 #include "movement.h"
+#include "arrival.h"
 #include "game_private.h"
 #include "formation.h"
 #include "combat.h"
@@ -93,26 +94,6 @@ static int hz_count(enum movement_hz hz);
 #define VEL_HIST_LEN          (14)
 #define MAX_MOVE_TASKS        (64)
 #define MAX_GPU_FLOCK_MEMBERS (1024)  /* Must match movement.glsl */
-#define ARRIVAL_MAX_SLOTS         (4096)   /* Cap on the reachable open-slot set per flock */
-#define ARRIVAL_FIELD_PLAN_RADIUS (150.0f) /* Plan the arrival zone once a member is this close to the goal */
-#define ARRIVAL_MIN_UNITS         (4)      /* Below this a flock just seeks the goal; no ball fill */
-#define ARRIVAL_STUCK_SPEED       (0.1f)   /* Per-tick speed below which an arriving unit counts as wedged */
-#define ARRIVAL_STUCK_LIMIT       (12)     /* Wedged this many ticks short of its sink -> settle in place */
-#define ARRIVAL_STUCK_DISP        (1.5f)   /* Travel under this over the wedge window counts as no progress */
-#define ARRIVAL_LOS_HYST          (12)     /* Consecutive opposite-LOS ticks before the approach stage flips */
-#define ARRIVAL_ENGAGE_DIST       (4.0f)   /* Travel this far from the order point before proximity-settling */
-#define ARRIVAL_REALLOC_PERIOD    (4)      /* Re-balance the assignment + advance the frontier every this many ticks */
-#define ARRIVAL_ROW_FILL_THRESH   (1.0f)   /* A depth row this full -> advance the fill frontier toward the entry */
-#define ARRIVAL_ROW_STALL_TICKS   (80)     /* Frontier flat this many ticks -> force it past an unfillable row */
-#define ARRIVAL_REORIENT_FREEZE   (0.25f)  /* Re-orient the fill toward the actual entry until the ball is this full */
-#define ARRIVAL_COMPACT_FACTOR    (1.5f)   /* Cap the footprint at this multiple of the disc radius: spill into adjoining space, never wrap a wall */
-#define ARRIVAL_PROP_ENABLED      (1)      /* Settle-on-contact propagation, gated to units that reached the frontier row */
-#define ARRIVAL_SETTLE_CONTACTS   (3)      /* Ringed by this many settled neighbours -> settle */
-#define ARRIVAL_FILL_RELAX_2      (0.75f)  /* Ball at least this full -> settle on 2 neighbours */
-#define ARRIVAL_FILL_RELAX_1      (0.90f)  /* Ball at least this full -> settle on 1 neighbour */
-#define ARRIVAL_SINK_TOLERANCE    (1.5f)   /* at_sink fires within this xradius of the assigned slot; >1 so the front stops before overshooting */
-#define ARRIVAL_SLOT_SPACING      (1.85f)  /* Inter-slot spacing as a multiple of unit radius; the disc is sized to this so the ball fills to the rim */
-#define ARRIVAL_ZONE_PAD          (3)      /* Tiles of open 'goal' border kept around the packed ball, for a roomier goal region */
 
 #define SIGNUM(x)    (((x) > 0) - ((x) < 0))
 #define MAX(a, b)    ((a) > (b) ? (a) : (b))
@@ -134,7 +115,7 @@ static int hz_count(enum movement_hz hz);
             goto _label;                \
     }while(0)
 
-enum arrival_state{
+enum move_state{
     /* Entity is moving towards the flock's destination point */
     STATE_MOVING,
     /* Like STATE_MOVING, but the entity is also constrained by
@@ -163,7 +144,7 @@ enum arrival_state{
 };
 
 struct movestate{
-    enum arrival_state state;
+    enum move_state state;
     /* The base movement speed in units of OpenGL coords / second 
      */
     float              max_speed;
@@ -190,7 +171,7 @@ struct movestate{
     float              last_stop_radius;
     /* Information for waking up from the 'WAITING' state 
      */
-    enum arrival_state wait_prev;
+    enum move_state wait_prev;
     int                wait_ticks_left;
     /* History of the previous ticks' velocities. Used for velocity smoothing. 
      */
@@ -217,80 +198,16 @@ struct movestate{
     quat_t             target_dir;
     /* Heading a combat-held unit pivots to; separate from target_dir (also written by formation). */
     quat_t             combat_facing;
-    /* Per-unit fine-arrival state. The flock hands each member a distinct slot in the
-     * goal region ('arrival_sink', live once 'arrival_committed' && 'arrival_sink_valid');
-     * the unit seeks it and settles on reaching it. 'arrival_stuck' counts consecutive
-     * ticks it wants to advance toward the slot but is wedged, so it can give up in
-     * place. Reset on a new move order. */
-    bool               arrival_committed;
-    bool               arrival_sink_valid;
-    vec2_t             arrival_sink;
-    int                arrival_stuck;
-    /* Net-progress wedge anchor: the reference point arrival_stuck counts ticks away from,
-     * re-seeded once the unit has travelled ARRIVAL_STUCK_DISP from it (so a unit oscillating
-     * in place accrues the wedge while one making real headway does not). */
-    vec2_t             arrival_progress_anchor;
-    bool               arrival_progress_anchored;
-    /* Latched approach-path stage, debouncing the bee-line vs around-the-wall choice: the
-     * static-LOS test flickers on a wall seam and the two stages point ~opposite there, so a
-     * raw per-tick switch oscillates the unit in place. The latch flips only after the raw LOS
-     * has disagreed for ARRIVAL_LOS_HYST consecutive ticks. Reset on a new move order. */
-    bool               arrival_los_latched;
-    int                arrival_los_hyst;
-    /* Start grace: a unit must travel ARRIVAL_ENGAGE_DIST from where it was ordered before the
-     * proximity settles (by_prop/by_contact/wedge) may fire, so one ordered amongst already
-     * arrived units heads for its goal rather than stopping on the first tick. */
-    vec2_t             arrival_order_pos;
-    bool               arrival_engaged;
+    /* Per-unit fine-arrival state (see arrival.h). */
+    struct arrival_unit_state arrival;
 };
 
 struct flock{
     khash_t(entity) *ents;
     vec2_t           target_xz; 
     dest_id_t        dest_id;
-    /* The goal arrival region: a fixed-area footprint of reachable tiles about
-     * 'arrival_centre'. On activation it is flooded as a single connected component
-     * (never severed into pockets across a wall) holding a constant tile budget: where
-     * a blocker eats into the ideal disc of 'arrival_radius' the flood bends past it
-     * into the adjoining open space, so the area stays constant. The flood is thinned
-     * to a set of unit-spaced, centred slots ('arrival_slots'); each is ranked into a fill
-     * ring ('arrival_slot_ring') by geodesic distance from where the flock actually enters
-     * the footprint, farthest-first, and each member is assigned a distinct slot. Units
-     * approach on the broad TARGET_ZONE field until the one-time assignment lands
-     * ('arrival_assigned'), then each seeks its slot. Filling farthest-from-entry first
-     * keeps the corridor to the deep slots open, so the ball fills back-to-front even
-     * when the path wraps a wall or bends around an obstacle.
-     */
-    bool             arrival_active;
-    bool             arrival_slots_valid;
-    bool             arrival_assigned;
-    enum nav_layer   arrival_layer;
-    vec2_t           arrival_centre;
-    vec2_t           arrival_axis;
-    /* Slots' centre of mass and a dest field toward it: the seek target for an arrival unit
-     * the live zone field cannot route (its tile cut off by the settling cluster). Pinned with
-     * the region; only the cached field behind the id adapts to live blockers. */
-    vec2_t           arrival_com;
-    dest_id_t        arrival_com_dest_id;
-    uint16_t         arrival_radius;
-    int              num_arrival_slots;
-    int              arrival_active_row;
-    int              arrival_realloc_counter;
-    int              arrival_stall_counter;
-    int              arrival_prev_occ;
-    float            arrival_fill_frac;
-    int              arrival_num_rows;
-    float            arrival_row_height;
-    vec2_t           arrival_slots[ARRIVAL_MAX_SLOTS];
-    /* Per-slot fill rank: ring 0 = farthest (geodesic) from where the flock enters the
-     * footprint, filled first. Recomputed from the live entry until the fill commits. */
-    int              arrival_slot_ring[ARRIVAL_MAX_SLOTS];
-    /* Sorted tile keys of the static-open footprint, snapshotted at build before
-     * settling units arrive. A unit heads straight to its slot only when the segment
-     * to it stays within this set (no wall crossed); else it routes around the wall on
-     * the dest field. Settling units sit on footprint tiles, so they never trip it. */
-    int              num_arrival_region;
-    uint64_t         arrival_region_keys[ARRIVAL_MAX_SLOTS];
+    /* Group-arrival state: goal region, slots, and per-member assignment. */
+    struct arrival_state arrival;
 };
 
 struct formation_state{
@@ -325,7 +242,7 @@ enum movestate_flags{
 
 struct movestate_patch{
     enum movestate_flags flags;
-    enum arrival_state   next_state;
+    enum move_state   next_state;
     vec2_t               next_velocity;
     vec3_t               next_pos;
     quat_t               next_rot;
@@ -754,7 +671,7 @@ static void move_notify_motion_end(uint32_t uid)
     E_Entity_Notify(EVENT_MOTION_END, uid, NULL, ES_ENGINE);
 }
 
-static void entity_finish_moving(uint32_t uid, enum arrival_state newstate, bool block)
+static void entity_finish_moving(uint32_t uid, enum move_state newstate, bool block)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -905,14 +822,8 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
 
         flock_add(&new_flock, curr_ent);
         ms->state = (type == FORMATION_NONE) ? STATE_MOVING : STATE_MOVING_IN_FORMATION;
-        ms->arrival_committed = false;
-        ms->arrival_los_latched = false;
-        ms->arrival_los_hyst = 0;
-        ms->arrival_sink_valid = false;
-        ms->arrival_stuck = 0;
-        ms->arrival_progress_anchored = false;
-        ms->arrival_order_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr_ent);
-        ms->arrival_engaged = false;
+        G_Arrival_InitUnit(&ms->arrival,
+            G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr_ent));
     }
 
     /* The flow fields will be computed on-demand during the next movement update tick */
@@ -936,9 +847,7 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
         uint32_t curr;
         kh_foreach_key(new_flock.ents, curr, { flock_add(merge_flock, curr); });
         kh_destroy(entity, new_flock.ents);
-        merge_flock->arrival_active = false;
-        merge_flock->arrival_slots_valid = false;
-        merge_flock->arrival_assigned = false;
+        G_Arrival_InitFlock(&merge_flock->arrival);
 
     }else{
         formation_id_t fid;
@@ -951,492 +860,26 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
     return true;
 }
 
-static uint16_t arrival_zone_radius(const struct flock *flock, float unit_radius)
+/* Build a plain-data snapshot of the flock's live members (existing entities only) for the
+ * arrival module, which never touches the movement gamestate itself. Returns the count. */
+static int build_arrival_members(const struct flock *flock, struct arrival_member *out, int max)
 {
-    /* A disc sized to the slot packing (slots sit ARRIVAL_SLOT_SPACING*r apart),
-     * plus ARRIVAL_ZONE_PAD tiles of open 'goal' border around the packed ball.
-     */
-    struct map_resolution res;
-    M_NavGetResolution(s_map, &res);
-    float tile_dim = (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE) / (float)res.tile_w;
-    float per_unit = (ARRIVAL_SLOT_SPACING * unit_radius) / tile_dim;
-    per_unit *= per_unit;
-    if(per_unit < 1.0f)
-        per_unit = 1.0f;
-    float ntiles = kh_size(flock->ents) * per_unit;
-    return (uint16_t)(ceilf(sqrtf(ntiles / M_PI)) + ARRIVAL_ZONE_PAD);
-}
-
-static bool flock_near_goal(const struct flock *flock)
-{
+    int n = 0;
     uint32_t uid;
     kh_foreach_key(flock->ents, uid, {
-        vec2_t pos = G_Pos_GetXZ(uid);
-        vec2_t delta;
-        PFM_Vec2_Sub((vec2_t*)&flock->target_xz, &pos, &delta);
-        if(PFM_Vec2_Len(&delta) < ARRIVAL_FIELD_PLAN_RADIUS)
-            return true;
-    });
-    return false;
-}
-
-/* True if 'pos' is inside the goal region (the arrival disc). Outside it units
- * approach on the broad TARGET_ZONE field; only inside do they switch to the
- * per-unit far-sink fine guidance. */
-static bool group_arrival_in_region(const struct flock *flock, vec2_t pos)
-{
-    /* In-region means standing on the flooded footprint itself (the blue region), not
-     * inside a nominal disc about the centre: a wall reshapes the footprint into a
-     * non-circular spill, so a unit on a spilled tile sits past the disc radius. Tested
-     * against the disc it reads as outside, drops to the dest field, and routes back out
-     * around the wall; tested against the footprint it stays in the fine tier and snuggles
-     * onto the cluster.
-     */
-    return M_NavSegmentWithinRegion(s_map, pos, pos,
-        flock->arrival_region_keys, flock->num_arrival_region);
-}
-
-/* Like group_arrival_in_region but with a one-tile pad around the footprint. A unit pinned
- * right against the blue edge cannot stand on a footprint tile when the ball fills them, so
- * strict membership reads it as outside and it never latches/settles. The pad's overlap
- * counts that edge case as 'on the blue' so it gets the in-region behaviour and the settle. */
-static bool group_arrival_near_region(const struct flock *flock, vec2_t pos)
-{
-    if(group_arrival_in_region(flock, pos))
-        return true;
-    struct map_resolution res;
-    M_NavGetResolution(s_map, &res);
-    float td = (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE) / (float)res.tile_w;
-    for(int dz = -1; dz <= 1; dz++) {
-    for(int dx = -1; dx <= 1; dx++) {
-        if(dx == 0 && dz == 0)
-            continue;
-        if(group_arrival_in_region(flock, (vec2_t){pos.x + dx * td, pos.z + dz * td}))
-            return true;
-    }}
-    return false;
-}
-
-/* The fixed tile budget the arrival region fills: the tile count of the ideal disc of
- * 'arrival_radius'. The flood collects exactly this many reachable tiles, so a blocker
- * cutting into the disc reshapes the footprint into adjoining open space rather than
- * shrinking it. */
-static int arrival_region_area(const struct flock *flock)
-{
-    int area = (int)(M_PI * flock->arrival_radius * flock->arrival_radius + 0.5f);
-    return (area < ARRIVAL_MAX_SLOTS) ? area : ARRIVAL_MAX_SLOTS;
-}
-
-/* Flood the reachable open tiles about the goal into arrival_slots[]; the raw candidate
- * set, later thinned to a centred unit-spaced subset by flock_thin_centered_slots. The
- * flood expands only through passable tiles, so the footprint is a single connected
- * component with no pocket stranded across a wall, and it takes the constant
- * arrival_region_area budget so blockers reshape rather than shrink it.
- * Main thread, done once while the region is empty. */
-static void flock_build_arrival_slots(struct flock *flock)
-{
-    int n = M_NavClosestConnectedPathableTiles(s_map, flock->arrival_layer,
-        flock->arrival_centre, flock->arrival_slots, arrival_region_area(flock), 0.0f);
-
-    /* Snapshot the footprint as a sorted tile key set while it is still empty of this
-     * flock's units, so the fine tier can tell a wall from a teammate (see the field). */
-    flock->num_arrival_region = M_NavTileKeysForPositions(s_map, flock->arrival_slots, n,
-        flock->arrival_region_keys);
-
-    flock->num_arrival_slots = n;
-    flock->arrival_slots_valid = true;
-}
-
-/* Reference frame for the slot/member sorts below. Set and read only on the main
- * thread (update_flock_arrival_fields), so plain statics are safe and let the qsort
- * comparators see them without capturing. 'ref' is the region centre; 'axis' the
- * approach direction (depth); 'perp' the lateral; 'band' the depth-band width. */
-static vec2_t s_slot_sort_ref;
-static vec2_t s_slot_sort_axis;
-static vec2_t s_slot_sort_perp;
-static float  s_slot_sort_band;
-
-static int slot_cmp_near_ref(const void *a, const void *b)
-{
-    vec2_t da, db;
-    PFM_Vec2_Sub((vec2_t*)a, &s_slot_sort_ref, &da);
-    PFM_Vec2_Sub((vec2_t*)b, &s_slot_sort_ref, &db);
-    float la = PFM_Vec2_Dot(&da, &da), lb = PFM_Vec2_Dot(&db, &db);
-    return (la > lb) - (la < lb);   /* ascending distance from the ref point */
-}
-
-/* Far->near by depth band, then lateral within a band. Banding the depth (rather than
- * a strict projection sort) is what makes the lateral order bite: slots in the same
- * row share a band and get ordered across the width, so a member zipped onto the k-th
- * slot lands on the same side it came from instead of crossing the ball. */
-static int slot_cmp_far_banded(const void *a, const void *b)
-{
-    vec2_t ra, rb;
-    PFM_Vec2_Sub((vec2_t*)a, &s_slot_sort_ref, &ra);
-    PFM_Vec2_Sub((vec2_t*)b, &s_slot_sort_ref, &rb);
-    int ba = (int)floorf(PFM_Vec2_Dot(&ra, &s_slot_sort_axis) / s_slot_sort_band);
-    int bb = (int)floorf(PFM_Vec2_Dot(&rb, &s_slot_sort_axis) / s_slot_sort_band);
-    if(ba != bb)
-        return (ba < bb) - (ba > bb);   /* deeper band first */
-    float la = PFM_Vec2_Dot(&ra, &s_slot_sort_perp);
-    float lb = PFM_Vec2_Dot(&rb, &s_slot_sort_perp);
-    return (la > lb) - (la < lb);        /* lateral ascending within the band */
-}
-
-/* Thin the raw in-disc slot flood down to the 'target' slots nearest the centre that
- * are mutually at least 'spacing' apart. Processing nearest-first keeps the result a
- * centred disc at the unit packing density: a unit can actually reach its assigned
- * slot (so at_sink fires, not the stuck fallback), and there are no surplus rim slots
- * left over to seal into a ring. 'spacing' is the inter-unit settle distance and must
- * land in the nav grid's diagonal band (> tile_dim, <= tile_dim*sqrt2) so it keeps a
- * checkerboard (~1.1 slots/unit); too large drops to a 2-tile lattice and starves a
- * tail of members of slots. Compacts the kept slots to the front in place. */
-static void flock_thin_centered_slots(struct flock *flock, int target, float spacing)
-{
-    if(flock->num_arrival_slots == 0)
-        return;
-    /* Bias the anchor toward the far edge: leaders reach the rim, pad sits behind. */
-    struct map_resolution res;
-    M_NavGetResolution(s_map, &res);
-    float tile_dim = (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE) / (float)res.tile_w;
-    float fwd = (ARRIVAL_ZONE_PAD - 1) * tile_dim;
-    s_slot_sort_ref = (vec2_t){
-        flock->arrival_centre.x + flock->arrival_axis.x * fwd,
-        flock->arrival_centre.z + flock->arrival_axis.z * fwd
-    };
-    qsort(flock->arrival_slots, flock->num_arrival_slots, sizeof(vec2_t), slot_cmp_near_ref);
-
-    float sp2 = spacing * spacing;
-    int kept = 0;
-    for(int i = 0; i < flock->num_arrival_slots && kept < target; i++) {
-        vec2_t cand = flock->arrival_slots[i];
-        bool ok = true;
-        for(int j = 0; j < kept; j++) {
-            vec2_t d;
-            PFM_Vec2_Sub(&cand, &flock->arrival_slots[j], &d);
-            if(PFM_Vec2_Dot(&d, &d) < sp2) {
-                ok = false;
-                break;
-            }
-        }
-        if(ok)
-            flock->arrival_slots[kept++] = cand;
-    }
-    flock->num_arrival_slots = kept;
-}
-
-/* Order the kept slots far->near (then lateral within a band). The caller has set the
- * s_slot_sort_* frame. This is the fill order the assignment hands out, so the ball
- * fills like a progress bar, each row across its width. */
-static void flock_order_slots_far_near(struct flock *flock)
-{
-    qsort(flock->arrival_slots, flock->num_arrival_slots, sizeof(vec2_t), slot_cmp_far_banded);
-}
-
-/* Rank every slot into a fill ring by geodesic (path) distance from where the flock
- * actually enters the footprint, farthest-first (ring 0 = deepest). The flood follows the
- * walkable region around corners and obstacles, so the entry side fills last and never
- * seals off the slots behind it. The entry is the centroid of the still-moving members;
- * recomputed during the approach (see realloc_flock_slots) until the fill commits, so a
- * path that wraps a wall re-points the order to the side units truly come from. Ranks over
- * the static footprint ('arrival_region_keys'), so settling blockers don't perturb it. */
-static void flock_compute_geodesic_rings(struct flock *flock)
-{
-    int M = flock->num_arrival_slots;
-    flock->arrival_num_rows = 0;
-    if(M == 0)
-        return;
-
-    vec2_t entry = (vec2_t){0.0f, 0.0f};
-    int cnt = 0;
-    uint32_t uid;
-    kh_foreach_key(flock->ents, uid, {
-        if(!G_EntityExists(uid))
-            continue;
-        const struct movestate *ms = movestate_get(uid);
-        if(ms && ms->state == STATE_ARRIVED)
-            continue;
-        vec2_t p = G_Pos_GetXZ(uid);
-        PFM_Vec2_Add(&entry, &p, &entry);
-        cnt++;
-    });
-    if(cnt > 0)
-        PFM_Vec2_Scale(&entry, 1.0f / cnt, &entry);
-    else
-        entry = flock->arrival_centre;
-
-    STALLOC(int, gdist, M);
-    int maxd = M_NavRegionGeodesicDist(s_map, flock->arrival_region_keys,
-        flock->num_arrival_region, entry, flock->arrival_slots, M, gdist);
-    if(maxd < 0)
-        maxd = 0;
-
-    struct map_resolution res;
-    M_NavGetResolution(s_map, &res);
-    float tile_dim = (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE) / (float)res.tile_w;
-    int ring_w = (int)(flock->arrival_row_height / tile_dim + 0.5f);
-    if(ring_w < 1)
-        ring_w = 1;
-
-    flock->arrival_num_rows = maxd / ring_w + 1;
-    for(int i = 0; i < M; i++) {
-        /* Unreachable from the entry (shouldn't happen on a connected footprint) -> last. */
-        int g = (gdist[i] >= 0) ? gdist[i] : 0;
-        int r = (maxd - g) / ring_w;
-        if(r < 0)
-            r = 0;
-        if(r >= flock->arrival_num_rows)
-            r = flock->arrival_num_rows - 1;
-        flock->arrival_slot_ring[i] = r;
-    }
-    STFREE(gdist);
-}
-
-/* Nearest currently-unblocked chosen slot to 'from'. Recovery for when a unit's
- * assigned slot gets blocked mid-fill (a stray unit or building parks on it): it
- * re-targets the closest open slot rather than chase a blocked tile. */
-static bool flock_nearest_open_slot(const struct flock *flock, vec2_t from, vec2_t *out)
-{
-    float best = INFINITY;
-    bool found = false;
-    for(int i = 0; i < flock->num_arrival_slots; i++) {
-        if(flock->arrival_slot_ring[i] > flock->arrival_active_row)
-            continue;
-        if(M_NavPositionBlocked(s_move_work.gamestate.map, flock->arrival_layer,
-            flock->arrival_slots[i]))
-            continue;
-        vec2_t d;
-        PFM_Vec2_Sub((vec2_t*)&flock->arrival_slots[i], &from, &d);
-        float dd = PFM_Vec2_Dot(&d, &d);
-        if(dd < best) {
-            best = dd;
-            *out = flock->arrival_slots[i];
-            found = true;
-        }
-    }
-    return found;
-}
-
-/* True if 'pos' is within 'tol' of an open slot at or behind the fill frontier. Checked
- * every tick, so a unit that has drifted over any claimable slot settles on it at once,
- * not just on the slot the last reallocation assigned it.
- */
-static bool near_open_slot(const struct flock *flock, vec2_t pos, float tol)
-{
-    float tol2 = tol * tol;
-    for(int i = 0; i < flock->num_arrival_slots; i++) {
-        if(flock->arrival_slot_ring[i] > flock->arrival_active_row)
-            continue;
-        vec2_t d;
-        PFM_Vec2_Sub((vec2_t*)&flock->arrival_slots[i], &pos, &d);
-        if(PFM_Vec2_Dot(&d, &d) > tol2)
-            continue;
-        if(M_NavPositionBlocked(s_move_work.gamestate.map, flock->arrival_layer,
-            flock->arrival_slots[i]))
-            continue;
-        return true;
-    }
-    return false;
-}
-
-/* Position of the slot nearest 'from' at or behind the fill frontier, occupied or not. A unit
- * with no open slot to claim (all taken, blocked, or its own walled off) heads straight for
- * it: the slots are where the ball forms, so this carries the unit onto the cluster, where it
- * stops on the first contact (see the settle logic), rather than onto a bare nearest tile or
- * the empty centre. */
-static bool flock_nearest_slot(const struct flock *flock, vec2_t from, vec2_t *out)
-{
-    float best = INFINITY;
-    bool found = false;
-    for(int i = 0; i < flock->num_arrival_slots; i++) {
-        if(flock->arrival_slot_ring[i] > flock->arrival_active_row)
-            continue;
-        vec2_t d;
-        PFM_Vec2_Sub((vec2_t*)&flock->arrival_slots[i], &from, &d);
-        float dd = PFM_Vec2_Dot(&d, &d);
-        if(dd < best) {
-            best = dd;
-            *out = flock->arrival_slots[i];
-            found = true;
-        }
-    }
-    return found;
-}
-
-/* The flock's approach direction: from the members' centroid toward the goal. Slots
- * are ranked 'far' by projection along this, so the ball fills from the edge the
- * group is moving toward. Degenerate (group already on the goal) -> any fixed axis;
- * there is no oval to squish in that case. */
-static vec2_t flock_approach_axis(const struct flock *flock)
-{
-    vec2_t centroid = (vec2_t){0.0f, 0.0f};
-    int cnt = 0;
-    uint32_t uid;
-    kh_foreach_key(flock->ents, uid, {
-        if(!G_EntityExists(uid))
-            continue;
-        vec2_t p = G_Pos_GetXZ(uid);
-        PFM_Vec2_Add(&centroid, &p, &centroid);
-        cnt++;
-    });
-    if(cnt > 0)
-        PFM_Vec2_Scale(&centroid, 1.0f / cnt, &centroid);
-
-    vec2_t axis;
-    PFM_Vec2_Sub((vec2_t*)&flock->target_xz, &centroid, &axis);
-    if(PFM_Vec2_Len(&axis) > EPSILON)
-        PFM_Vec2_Normal(&axis, &axis);
-    else
-        axis = (vec2_t){0.0f, 1.0f};
-    return axis;
-}
-
-/* Periodic many-to-one fill: each in-region unsettled unit is aimed at its nearest open
- * slot at or behind the frontier (active_row), which advances once a row is full. Several
- * units may share a slot, so whoever reaches it first fills it and the row fills robustly.
- */
-static void realloc_flock_slots(struct flock *flock)
-{
-    flock->arrival_assigned = true;
-    int M = flock->num_arrival_slots;
-    if(M == 0 || flock->arrival_num_rows == 0)
-        return;
-
-    /* Re-orient the fill toward where units actually enter the footprint, until the ball
-     * commits: a path that wraps a wall makes them arrive from a side the initial order
-     * did not anticipate, and a stale order packs the entry side and seals the rest off.
-     * Reset the frontier so the advance below re-derives it from the fresh rings; once
-     * enough have settled the order freezes so live assignments do not reshuffle. */
-    if(flock->arrival_fill_frac < ARRIVAL_REORIENT_FREEZE) {
-        flock_compute_geodesic_rings(flock);
-        flock->arrival_active_row = 0;
-    }
-
-    int R = flock->arrival_num_rows;
-    STALLOC(bool, occupied, M);
-    STALLOC(int, occ, R);
-    STALLOC(int, cap, R);
-    memset(occupied, 0, sizeof(bool) * M);
-    memset(occ, 0, sizeof(int) * R);
-    memset(cap, 0, sizeof(int) * R);
-    for(int i = 0; i < M; i++)
-        cap[flock->arrival_slot_ring[i]]++;
-
-    /* A slot a blocker now sits on (a settled unit, a building) can never be filled; mark it
-     * allocated so re-allocation never hands it out, and so it counts toward its row's fill.
-     * Otherwise a unit assigned to it cannot reach it and detours around the blocked-off goal
-     * instead of taking a remaining open slot, and the frontier stalls on the blocked row. */
-    for(int i = 0; i < M; i++) {
-        if(M_NavPositionBlocked(s_map, flock->arrival_layer, flock->arrival_slots[i]))
-            occupied[i] = true;
-    }
-
-    uint32_t uid;
-    kh_foreach_key(flock->ents, uid, {
-        if(!G_EntityExists(uid))
-            continue;
-        const struct movestate *ms = movestate_get(uid);
-        if(!ms || ms->state != STATE_ARRIVED)
-            continue;
-        vec2_t pos = G_Pos_GetXZ(uid);
-        /* Attribute the settled unit to the slot it actually sits on: its nearest slot of all,
-         * not its nearest still-open one. A unit on its slot already had that slot marked by the
-         * blocked-tile pass; skipping occupied slots here would make it instead claim a distant
-         * open slot (a packed-in unit "occupying" a far empty one), inflating the fill and hiding
-         * open slots from the assignment. So mark its nearest slot only when that slot is open. */
-        int best = -1;
-        float bestd = INFINITY;
-        for(int i = 0; i < M; i++) {
-            vec2_t d;
-            PFM_Vec2_Sub((vec2_t*)&flock->arrival_slots[i], &pos, &d);
-            float dd = PFM_Vec2_Dot(&d, &d);
-            if(dd < bestd) {
-                bestd = dd;
-                best = i;
-            }
-        }
-        if(best >= 0 && !occupied[best])
-            occupied[best] = true;
-    });
-    for(int i = 0; i < M; i++)
-        if(occupied[i])
-            occ[flock->arrival_slot_ring[i]]++;
-
-    int total_occ = 0;
-    for(int r = 0; r < R; r++)
-        total_occ += occ[r];
-    flock->arrival_fill_frac = (M > 0) ? (float)total_occ / M : 0.0f;
-
-    int crowd = 0;
-    kh_foreach_key(flock->ents, uid, {
-        if(!G_EntityExists(uid))
-            continue;
-        const struct movestate *ms = movestate_get(uid);
-        if(!ms || ms->state == STATE_ARRIVED)
-            continue;
-        if(group_arrival_in_region(flock, G_Pos_GetXZ(uid)))
-            crowd++;
-    });
-
-    bool rising = occ[flock->arrival_active_row] > flock->arrival_prev_occ;
-    bool advanced = false;
-    while(flock->arrival_active_row < R - 1
-       && occ[flock->arrival_active_row] >= ARRIVAL_ROW_FILL_THRESH * cap[flock->arrival_active_row]) {
-        flock->arrival_active_row++;
-        advanced = true;
-    }
-    if(advanced || rising || crowd == 0)
-        flock->arrival_stall_counter = 0;
-    else if(++flock->arrival_stall_counter >= ARRIVAL_ROW_STALL_TICKS / ARRIVAL_REALLOC_PERIOD
-         && flock->arrival_active_row < R - 1) {
-        flock->arrival_active_row++;
-        flock->arrival_stall_counter = 0;
-    }
-    flock->arrival_prev_occ = occ[flock->arrival_active_row];
-
-    kh_foreach_key(flock->ents, uid, {
+        if(n >= max)
+            break;
         if(!G_EntityExists(uid))
             continue;
         struct movestate *ms = movestate_get(uid);
-        if(!ms || ms->state == STATE_ARRIVED)
+        if(!ms)
             continue;
-        vec2_t pos = G_Pos_GetXZ(uid);
-        if(!group_arrival_in_region(flock, pos)) {
-            ms->arrival_sink_valid = false;
-            continue;
-        }
-        /* On the footprint: latch to in-region behaviour until a new order, even with no
-         * slot to claim now (its slot is boxed in, or the ball is momentarily full). It then
-         * never drops to the dest field; jostled a tile off the blue, it heads back to the
-         * cluster and stops on contact rather than routing out around a wall.
-         */
-        ms->arrival_committed = true;
-        int best = -1;
-        float bestd = INFINITY;
-        for(int i = 0; i < M; i++) {
-            if(occupied[i])
-                continue;
-            if(flock->arrival_slot_ring[i] > flock->arrival_active_row)
-                continue;
-            vec2_t d;
-            PFM_Vec2_Sub((vec2_t*)&flock->arrival_slots[i], &pos, &d);
-            float dd = PFM_Vec2_Dot(&d, &d);
-            if(dd < bestd) {
-                bestd = dd;
-                best = i;
-            }
-        }
-        if(best >= 0) {
-            ms->arrival_sink = flock->arrival_slots[best];
-            ms->arrival_sink_valid = true;
-        }else{
-            ms->arrival_sink_valid = false;
-        }
+        out[n].pos = G_Pos_GetXZ(uid);
+        out[n].settled = (ms->state == STATE_ARRIVED);
+        out[n].us = &ms->arrival;
+        n++;
     });
-
-    STFREE(cap);
-    STFREE(occ);
-    STFREE(occupied);
+    return n;
 }
 
 static void update_flock_arrival_fields(void)
@@ -1444,130 +887,32 @@ static void update_flock_arrival_fields(void)
     ASSERT_IN_MAIN_THREAD();
     for(int i = 0; i < vec_size(&s_flocks); i++) {
         struct flock *flock = &vec_AT(&s_flocks, i);
-        flock->arrival_active = false;
 
-        /* The arrival logic is for the bare-movement 'flock' case only; units
-         * moving in a formation arrive via the formation's own cell fields. */
+        /* The arrival logic is for the bare-movement 'flock' case only; units moving in a
+         * formation arrive via the formation's own cell fields. */
         uint32_t first = NULL_UID;
         kh_foreach_key(flock->ents, first, { break; });
         if(first == NULL_UID || G_Formation_GetForEnt(first) != NULL_FID) {
+            G_Arrival_Deactivate(&flock->arrival);
             continue;
-        }
-        /* The min-units / near-goal checks are START gates: apply them only to bring a new
-         * arrival up. Once the region is built, latch it active until every member has
-         * settled - re-applying the start gates to a live arrival is what tore it down when
-         * the goal blocked off and units ended up far from the raw click, so the field
-         * vanished and they scattered to the dest field's nearest pathable tile. (The
-         * min-units floor exists because a handful of units just seek the goal directly:
-         * their zone is a near-degenerate disc they cannot fill.) */
-        if(flock->arrival_slots_valid) {
-            bool all_settled = true;
-            uint32_t member;
-            kh_foreach_key(flock->ents, member, {
-                if(!G_EntityExists(member))
-                    continue;
-                const struct movestate *ms = movestate_get(member);
-                if(ms && ms->state != STATE_ARRIVED) {
-                    all_settled = false;
-                    break;
-                }
-            });
-            if(all_settled) {
-                continue;
-            }
-        }else{
-            if(kh_size(flock->ents) < ARRIVAL_MIN_UNITS)
-                continue;
-            if(!flock_near_goal(flock))
-                continue;
         }
 
         float radius = G_GetSelectionRadius(first);
-        uint32_t flags = G_FlagsGet(first);
-        flock->arrival_layer = Entity_NavLayerWithRadius(flags, radius);
-        flock->arrival_radius = arrival_zone_radius(flock, radius);
-        flock->arrival_active = true;
+        enum nav_layer layer = Entity_NavLayerWithRadius(G_FlagsGet(first), radius);
 
-        /* Build the slot set and the assignment once, while the region is still
-         * empty: flood the in-disc tiles, thin them to a centred, unit-spaced set
-         * (one per member), order it far->near along the approach axis, then assign
-         * each member a distinct slot. Done once, not re-solved per tick. */
-        if(!flock->arrival_slots_valid) {
-            /* Pin the region centre to the nearest reachable tile, once. A goal on a
-             * blocker then resolves to a single fixed side; recomputing it from the raw
-             * target each tick would let the connected footprint flip-flop across a wall
-             * as units settle and the nearest-open side changes. */
-            vec2_t snapped;
-            flock->arrival_centre = M_NavClosestPathable(s_map, flock->arrival_layer,
-                flock->target_xz, &snapped) ? snapped : flock->target_xz;
-            flock->arrival_axis = flock_approach_axis(flock);
-            flock_build_arrival_slots(flock);
-            flock_thin_centered_slots(flock, kh_size(flock->ents), ARRIVAL_SLOT_SPACING * radius);
-            /* Drop slots not in clear line of the centre within the footprint. The connected
-             * flood pops by Euclidean distance, so it can wrap a thin wall (with a nearby gap)
-             * and place slots on the far side, straight-line-near but reached only by detouring
-             * around. Keeping only slots whose straight line to the centre stays on the
-             * footprint makes the slot set one continuous region on the goal's side - no slots
-             * across a wall - and matches the fine tier, which beelines on exactly that test. */
-            {
-                int kept = 0, farside = 0;
-                for(int si = 0; si < flock->num_arrival_slots; si++) {
-                    if(!M_NavSegmentWithinRegion(s_map, flock->arrival_centre, flock->arrival_slots[si],
-                                                 flock->arrival_region_keys, flock->num_arrival_region)) {
-                        farside++;
-                        continue;
-                    }
-                    flock->arrival_slots[kept++] = flock->arrival_slots[si];
-                }
-                flock->num_arrival_slots = kept;
-            }
-            /* Centre of mass of the kept slots, snapped to a reachable tile, and a dest field
-             * toward it - the arrival fallback's seek target (see ent_desired_velocity). */
-            vec2_t com = (vec2_t){0.0f, 0.0f};
-            for(int si = 0; si < flock->num_arrival_slots; si++) {
-                com.x += flock->arrival_slots[si].x;
-                com.z += flock->arrival_slots[si].z;
-            }
-            if(flock->num_arrival_slots > 0) {
-                com.x /= flock->num_arrival_slots;
-                com.z /= flock->num_arrival_slots;
-            }
-            vec2_t com_snapped;
-            flock->arrival_com = M_NavClosestPathable(s_map, flock->arrival_layer, com, &com_snapped)
-                              ? com_snapped : com;
-            flock->arrival_com_dest_id = M_NavDestIDForPos(s_map, flock->arrival_com,
-                flock->arrival_layer);
-            /* Sort frame for the far->near + lateral ordering and the assignment. */
-            s_slot_sort_ref  = flock->arrival_centre;
-            s_slot_sort_axis = flock->arrival_axis;
-            s_slot_sort_perp = (vec2_t){-flock->arrival_axis.z, flock->arrival_axis.x};
-            s_slot_sort_band = ARRIVAL_SLOT_SPACING * radius;
-            flock_order_slots_far_near(flock);
-            flock->arrival_row_height = ARRIVAL_SLOT_SPACING * radius;
-            flock_compute_geodesic_rings(flock);
-            flock->arrival_active_row = 0;
-            flock->arrival_stall_counter = 0;
-            flock->arrival_prev_occ = 0;
-            flock->arrival_fill_frac = 0.0f;
-            flock->arrival_realloc_counter = 0;
-            realloc_flock_slots(flock);
-        }else if(++flock->arrival_realloc_counter >= ARRIVAL_REALLOC_PERIOD) {
-            flock->arrival_realloc_counter = 0;
-            realloc_flock_slots(flock);
-        }
+        STALLOC(struct arrival_member, members, kh_size(flock->ents));
+        int n = build_arrival_members(flock, members, kh_size(flock->ents));
+        G_Arrival_UpdateFlock(&flock->arrival, s_map, flock->target_xz, layer, radius,
+            kh_size(flock->ents), members, n);
+        STFREE(members);
     }
 }
 
-/* Request the broad TARGET_ZONE approach field for each active flock (built off
- * the main thread, cached and invalidated like any nav field). */
 static void request_flock_arrival_fields(void)
 {
     for(int i = 0; i < vec_size(&s_flocks); i++) {
         const struct flock *flock = &vec_AT(&s_flocks, i);
-        if(!flock->arrival_active)
-            continue;
-        M_NavRequestAsyncGroupArrivalField(s_move_work.gamestate.map,
-            flock->arrival_layer, flock->arrival_centre, flock->arrival_radius);
+        G_Arrival_RequestField(&flock->arrival, s_move_work.gamestate.map);
     }
 }
 
@@ -1621,15 +966,14 @@ static size_t adjacent_flock_members(uint32_t uid, const struct flock *flock,
 }
 
 /* Count the settled (arrived) flock members touching 'uid'. A unit boxed in by a
- * couple of settled neighbours, where slot-seek and avoidance just fight, is
- * good enough where it is, so the ball settles by propagation from the anchored
- * mass rather than each unit jostling onto its exact tile. */
+ * couple of settled neighbours can "just stop".
+ */
 static int adjacent_settled_count(uint32_t uid)
 {
-    /* Cross-flock: count any settled neighbour, not only same-flock members - a unit boxed in by
-     * another layer's settled ball (a separate flock) has none of its own to touch and would
-     * otherwise never satisfy the settle cascade. by_prop's own-footprint gate still keeps it
-     * from settling against an unrelated cluster. */
+    /* Cross-flock: count any settled neighbour, not only same-flock members. 
+     * A unit boxed in by another layer's settled ball (a separate flock) has 
+     * none of its own to touch and would otherwise never satisfy the settle cascade. 
+     */
     vec2_t pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
     float radius_uid = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
     uint32_t ent_flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
@@ -1869,93 +1213,6 @@ static void render_formation_orientation(void)
     G_Formation_RenderPlacement(sel, endpoints[0], delta);
 }
 
-/* Debug overlay: the flock's reachable open arrival slots, in blue. As members
- * settle the filled tiles drop out, so the blue is the goal region minus what's
- * already taken. The TARGET_ZONE approach arrows are drawn separately. */
-static void render_group_arrival_field(const struct flock *flock, vec3_t color)
-{
-    if(!flock->arrival_active || !flock->arrival_slots_valid || flock->num_arrival_slots == 0)
-        return;
-
-    struct map_resolution nav_res;
-    M_NavGetResolution(s_map, &nav_res);
-    const float hx = ((TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE) / (float)nav_res.tile_w) / 2.0f;
-    const float hz = ((TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE) / (float)nav_res.tile_h) / 2.0f;
-
-    static vec2_t corners[ARRIVAL_MAX_SLOTS * 4];
-    static vec3_t colors[ARRIVAL_MAX_SLOTS];
-
-    int n = flock->num_arrival_slots;
-    for(int i = 0; i < n; i++) {
-        vec2_t s = flock->arrival_slots[i];
-        corners[i * 4 + 0] = (vec2_t){s.x + hx, s.z - hz};
-        corners[i * 4 + 1] = (vec2_t){s.x + hx, s.z + hz};
-        corners[i * 4 + 2] = (vec2_t){s.x - hx, s.z + hz};
-        corners[i * 4 + 3] = (vec2_t){s.x - hx, s.z - hz};
-        colors[i] = color;
-    }
-
-    mat4x4_t model;
-    PFM_Mat4x4_MakeTrans(0.0f, 0.0f, 0.0f, &model);
-    size_t count = n;
-    bool on_water = false;
-    R_PushCmd((struct rcmd){
-        .func = R_GL_DrawMapOverlayQuads,
-        .nargs = 6,
-        .args = {
-            R_PushArg(corners, sizeof(vec2_t) * n * 4),
-            R_PushArg(colors, sizeof(vec3_t) * n),
-            R_PushArg(&count, sizeof(count)),
-            R_PushArg(&model, sizeof(model)),
-            R_PushArg(&on_water, sizeof(bool)),
-            (void*)G_GetPrevTickMap(),
-        },
-    });
-}
-
-static void render_group_arrival_assignment(const struct flock *flock)
-{
-    const vec3_t magenta = (vec3_t){1.0f, 0.0f, 1.0f};
-    const float circle_radius = 1.5f;
-    const float width = 0.5f;
-
-    for(int i = 0; i < flock->num_arrival_slots; i++) {
-        vec2_t pos = flock->arrival_slots[i];
-        R_PushCmd((struct rcmd){
-            .func = R_GL_DrawSelectionCircle,
-            .nargs = 5,
-            .args = {
-                R_PushArg(&pos, sizeof(pos)),
-                R_PushArg(&circle_radius, sizeof(circle_radius)),
-                R_PushArg(&width, sizeof(width)),
-                R_PushArg(&magenta, sizeof(magenta)),
-                (void*)G_GetPrevTickMap(),
-            }
-        });
-    }
-
-    uint32_t uid;
-    kh_foreach_key(flock->ents, uid, {
-        if(!G_EntityExists(uid))
-            continue;
-        const struct movestate *ms = movestate_get(uid);
-        if(!ms || !ms->arrival_sink_valid)
-            continue;
-        vec2_t from = G_Pos_GetXZ(uid);
-        vec2_t endpoints[] = {from, ms->arrival_sink};
-        R_PushCmd((struct rcmd){
-            .func = R_GL_DrawLine,
-            .nargs = 4,
-            .args = {
-                R_PushArg(endpoints, sizeof(endpoints)),
-                R_PushArg(&width, sizeof(width)),
-                R_PushArg(&magenta, sizeof(magenta)),
-                (void*)G_GetPrevTickMap()
-            }
-        });
-    });
-}
-
 static void on_render_3d(void *user, void *event)
 {
     if(s_mouse_dragged) {
@@ -2102,12 +1359,13 @@ static void on_render_3d(void *user, void *event)
         };
         for(int i = 0; i < vec_size(&s_flocks); i++) {
             const struct flock *flock = &vec_AT(&s_flocks, i);
-            if(!flock->arrival_active)
+            if(!flock->arrival.active)
                 continue;
-            render_group_arrival_field(flock, dbg_flock_pal[i % ARR_SIZE(dbg_flock_pal)]);
-            render_group_arrival_assignment(flock);
-            M_NavRenderVisibleGroupArrivalField(s_map, cam, flock->arrival_layer,
-                flock->arrival_centre, flock->arrival_radius, flock->dest_id);
+            STALLOC(struct arrival_member, members, kh_size(flock->ents));
+            int n = build_arrival_members(flock, members, kh_size(flock->ents));
+            G_Arrival_RenderDebug(&flock->arrival, cam, s_map, flock->dest_id,
+                dbg_flock_pal[i % ARR_SIZE(dbg_flock_pal)], members, n);
+            STFREE(members);
         }
     }
 }
@@ -2209,107 +1467,16 @@ static vec2_t ent_desired_velocity(uint32_t uid, vec2_t cell_arrival_vdes, bool 
     case STATE_ARRIVING_TO_CELL: {
         return cell_arrival_vdes;
     }
-    default:
+    default: {
         assert(fl);
-        bool in_region = group_arrival_in_region(fl, pos_xz);
-        bool near_region = group_arrival_near_region(fl, pos_xz);
-        /* A unit that has reached the region (or its one-tile pad) is latched (arrival_committed):
-         * for the rest of the order it only seeks its slot or snuggles onto the cluster, never a
-         * new path. The latch, not the live test, gates this, so a unit shoved off the blue still
-         * heads back in instead of dropping to the dest field and routing around. Always returns. */
-        if(fl->arrival_active && (near_region || ms->arrival_committed)) {
-            /* Fine tier: seek this unit's assigned slot. */
-            struct movestate *mms = movestate_get(uid);
-            /* Latch the commit the instant we reach the region or its pad, not only at the next
-             * realloc: a unit pinned against the full blue edge (it cannot stand on a footprint
-             * tile) would otherwise never commit, flip to the out-of-region field, and get steered
-             * around the ball - the edge deadlock. Committed, it never gets guided back out. */
-            if(near_region)
-                mms->arrival_committed = true;
-            if(mms->arrival_sink_valid
-            && M_NavPositionBlocked(s_move_work.gamestate.map, fl->arrival_layer, mms->arrival_sink))
-                mms->arrival_sink_valid =
-                    flock_nearest_open_slot(fl, pos_xz, &mms->arrival_sink);
-            /* Head straight to the slot only when the line to it stays on the footprint;
-             * a slot across a wall (the region wrapped an obstacle, or the crowd shoved
-             * this unit to the far side) would otherwise be sought through the blocker.
-             * Without a clear line, fall through to the dest field, which routes around
-             * the wall until the unit comes round and the line clears. */
-            if(mms->arrival_sink_valid
-            && M_NavSegmentWithinRegion(s_move_work.gamestate.map, pos_xz, mms->arrival_sink,
-                                        fl->arrival_region_keys, fl->num_arrival_region)) {
-                vec2_t v;
-                PFM_Vec2_Sub(&mms->arrival_sink, &pos_xz, &v);
-                /* Count consecutive ticks we want the slot but barely move AND make no
-                 * progress toward it; wedged by the crowd. A slow lateral squish keeps
-                 * positive progress, so it is not cut short. (Single-threaded: safe to
-                 * write here.) */
-                if(PFM_Vec2_Len(&mms->velocity) < ARRIVAL_STUCK_SPEED
-                && PFM_Vec2_Dot(&mms->velocity, &v) <= 0.0f)
-                    mms->arrival_stuck++;
-                else
-                    mms->arrival_stuck = 0;
-                if(PFM_Vec2_Len(&v) > EPSILON)
-                    PFM_Vec2_Normal(&v, &v);
-                return v;
-            }
-            /* No open slot to claim (all taken, blocked, or the assigned one walled off): head
-             * straight for the nearest slot, occupied or not. The slots are where the ball
-             * forms, so this carries the unit onto the cluster and it stops on the first contact
-             * (see the settle logic), instead of parking on a bare nearest tile or the empty
-             * centre. */
-            vec2_t to_slot;
-            if(flock_nearest_slot(fl, pos_xz, &to_slot)) {
-                PFM_Vec2_Sub(&to_slot, &pos_xz, &to_slot);
-                if(PFM_Vec2_Len(&to_slot) > EPSILON)
-                    PFM_Vec2_Normal(&to_slot, &to_slot);
-                return to_slot;
-            }
-            return (vec2_t){0.0f, 0.0f};
-        }
-
-        /* Out of the region: approach on the TARGET_ZONE field, which routes around a wall
-         * that boxes the goal in (where the point-goal field would steer the long way to the
-         * nearest pathable tile of a blocked click). In-region units returned above; this
-         * runs only for units still approaching from outside. */
-        if(fl->arrival_active) {
-            vec2_t zvel;
-            bool at_slot;
-            if(M_NavDesiredGroupArrivalVelocity(s_move_work.gamestate.map, fl->arrival_layer,
-                pos_xz, fl->arrival_centre, fl->arrival_radius, &zvel, &at_slot)
-            && !at_slot && PFM_Vec2_Len(&zvel) > EPSILON)
-                return zvel;
-        }
-
-        /* Zone field gave nothing (cut off by the settling ball, or beyond reach). With static
-         * LOS to the goal (no wall - only the dynamic ball, or open) bee-line straight at it and
-         * push in: the COM dest field below would route the long way AROUND the ball, but we want
-         * to drive in and stop on first contact (by_contact, in the settle). No LOS = a wall, so
-         * route around it on the COM field (it sits where the ball forms, the open side of the
-         * wall). Non-arrival movement is left on the point-goal field untouched. */
-        if(fl->arrival_active && fl->arrival_slots_valid) {
-            /* Debounce the stage choice (see arrival_los_latched): flip the latched LOS only
-             * after the raw test has disagreed for ARRIVAL_LOS_HYST ticks, so the seam flicker
-             * cannot oscillate the unit between the two opposed branches. */
-            struct movestate *mms = movestate_get(uid);
-            if(has_dest_los == mms->arrival_los_latched)
-                mms->arrival_los_hyst = 0;
-            else if(++mms->arrival_los_hyst >= ARRIVAL_LOS_HYST) {
-                mms->arrival_los_latched = has_dest_los;
-                mms->arrival_los_hyst = 0;
-            }
-            if(mms->arrival_los_latched) {
-                vec2_t toc;
-                PFM_Vec2_Sub((vec2_t*)&fl->arrival_centre, &pos_xz, &toc);
-                if(PFM_Vec2_Len(&toc) > EPSILON)
-                    PFM_Vec2_Normal(&toc, &toc);
-                return toc;
-            }
-            return M_NavDesiredPointSeekVelocity(s_move_work.gamestate.map, fl->arrival_com_dest_id,
-                pos_xz, fl->arrival_com);
-        }
+        struct movestate *mms = movestate_get(uid);
+        vec2_t arrival_vel;
+        if(G_Arrival_DesiredVelocity(&fl->arrival, &mms->arrival, s_map,
+            s_move_work.gamestate.map, pos_xz, mms->velocity, has_dest_los, &arrival_vel))
+            return arrival_vel;
         return M_NavDesiredPointSeekVelocity(s_move_work.gamestate.map, fl->dest_id,
             pos_xz, fl->target_xz);
+    }
     }
 }
 
@@ -2329,17 +1496,6 @@ static vec2_t seek_force(uint32_t uid, vec2_t target_xz)
 
     PFM_Vec2_Sub(&desired_velocity, &ms->velocity, &ret);
     return ret;
-}
-
-/* The point a flock unit arrives at: its own committed far sink if it has one, else
- * the goal centre, so the ball fills the region instead of piling onto the centre.
- */
-static vec2_t arrival_seek_target(uint32_t uid, const struct flock *flock)
-{
-    const struct movestate *ms = movestate_get(uid);
-    if(ms && flock->arrival_active && ms->arrival_committed && ms->arrival_sink_valid)
-        return ms->arrival_sink;
-    return flock->target_xz;
 }
 
 /* Arrival behaviour is like 'seek' but the entity decelerates and comes to a halt when it is 
@@ -2553,7 +1709,7 @@ static vec2_t point_seek_total_force(uint32_t uid, const struct flock *flock,
     struct movestate *ms = movestate_get(uid);
     assert(ms);
 
-    vec2_t arrive = arrive_force_point(uid, arrival_seek_target(uid, flock), vdes, has_dest_los);
+    vec2_t arrive = arrive_force_point(uid, G_Arrival_SeekTarget(&flock->arrival, &ms->arrival, flock->target_xz), vdes, has_dest_los);
     vec2_t cohesion = cohesion_force(uid, flock);
     vec2_t separation = separation_force(uid, SEPARATION_BUFFER_DIST);
 
@@ -2687,7 +1843,7 @@ static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock,
             steer_force = separation_force(uid, SEPARATION_BUFFER_DIST); 
             break;
         case 2: 
-            steer_force = arrive_force_point(uid, arrival_seek_target(uid, flock), vdes, has_dest_los); 
+            steer_force = arrive_force_point(uid, G_Arrival_SeekTarget(&flock->arrival, &ms->arrival, flock->target_xz), vdes, has_dest_los); 
             break;
         }
 
@@ -3070,7 +2226,7 @@ static quat_t turn_toward(quat_t cur, quat_t target, float max_deg)
     return final;
 }
 
-static bool move_gated_by_heading(enum arrival_state state)
+static bool move_gated_by_heading(enum move_state state)
 {
     switch(state) {
     case STATE_MOVING:
@@ -3118,12 +2274,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
     assert(hz_count(hz) <= 20);
     assert(20 % hz_count(hz) == 0);
 
-    /* Gate translation on heading so a unit never slides sideways out of a stop: a
-     * halted unit pivots in place until facing within MOVE_HEADING_RESUME of its
-     * travel direction before moving, and once moving it commits, only halting to
-     * re-aim if the target swings past MOVE_HEADING_HALT (a near-reversal). The wide
-     * gap between the two is hysteresis, keyed off whether the unit is presently
-     * moving, so ordinary course corrections are taken in stride.
+    /* Gate translation on heading so a unit never slides sideways out of a stop.
      */
     bool turn_to_move = false;
     quat_t travel_dir = ms->next_rot;
@@ -3152,9 +2303,9 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         return;
     }
 
-    /* nullify_impass_components clears impassable parts of the steering force but not the
-     * carried velocity, so guard the step itself: refuse to land on a dynamically-blocked
-     * tile (a building and the like). A unit already on a blocker may still step off it. */
+    /* Refuse to land on a dynamically-blocked tile (a building and the like). 
+     * A unit already on a blocker may still step off it. 
+     */
     vec2_t curr_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
     bool on_blocked = M_NavPositionBlocked(s_move_work.gamestate.map, layer, curr_xz);
 
@@ -3199,7 +2350,9 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         out->flags |= UPDATE_SET_VELOCITY;
         out->next_velocity = (vec2_t){0.0f, 0.0f};
 
-        /* A combat-held unit pivots toward its combat facing, not its travel heading. */
+        /* A combat-held unit pivots toward its combat facing, not its travel heading. The
+         * rotation patch is set only inside a branch that actually computes next_nrot; with no
+         * branch taken the unit keeps its current rotation (else next_nrot is left unset). */
         if(G_FlagsGetFrom(s_move_work.gamestate.flags, uid) & ENTITY_FLAG_COMBAT_HELD) {
             out->flags |= UPDATE_SET_PREV_ROT | UPDATE_SET_NEXT_ROT | UPDATE_SET_ROTATION;
             out->flags |= UPDATE_TURNING_IN_PLACE;
@@ -3242,100 +2395,15 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         struct flock *flock = flock_for_ent(uid);
         assert(flock);
 
-        if(flock->arrival_active) {
-
-            /* Settle on reaching any open slot at or behind the frontier (at_sink, checked
-             * every tick so a unit claims whatever slot it is over, not just the one the
-             * last reallocation assigned it); or on being ringed by enough settled
-             * neighbours (by_prop); or, as a last resort, when wedged too long (by_stuck).
-             */
-            const struct movestate *fms = movestate_get(uid);
-            bool in_region = group_arrival_in_region(flock, new_pos_xz);
-            bool near_region = group_arrival_near_region(flock, new_pos_xz);
-            bool at_sink = in_region
-                        && near_open_slot(flock, new_pos_xz, radius * ARRIVAL_SINK_TOLERANCE);
-            int settle_contacts = ARRIVAL_SETTLE_CONTACTS;
-            if(flock->arrival_fill_frac >= ARRIVAL_FILL_RELAX_1)
-                settle_contacts = 2;
-            else if(flock->arrival_fill_frac >= ARRIVAL_FILL_RELAX_2)
-                settle_contacts = 3;
-            bool reachable_slot = fms->arrival_sink_valid
-                && M_NavSegmentWithinRegion(s_move_work.gamestate.map, new_pos_xz, fms->arrival_sink,
-                                            flock->arrival_region_keys, flock->num_arrival_region);
-            /* A slotless unit may snuggle onto the cluster only in the end game (fill_done:
-             * frontier at the last ring); before then it must keep moving to a slot, or it
-             * settles short and leaves the ball strung out. It still needs the normal contact
-             * count, so it packs in rather than freezing on a single touch. */
-            bool fill_done = flock->arrival_active_row >= flock->arrival_num_rows - 1;
-            /* A unit still moving toward its assigned slot is left to reach it (so the
-             * far rim seeds via at_sink) rather than settled short by the cascade. */
-            bool advancing = false;
-            if(fms->arrival_sink_valid) {
-                vec2_t to_sink;
-                PFM_Vec2_Sub((vec2_t*)&fms->arrival_sink, &new_pos_xz, &to_sink);
-                advancing = PFM_Vec2_Dot((vec2_t*)&fms->velocity, &to_sink) > 0.0f;
-            }
+        if(flock->arrival.active) {
             int n_settled = adjacent_settled_count(uid);
-            /* A freshly ordered unit standing among already-arrived units (from a prior order)
-             * looks ringed and, at rest on tick one, not advancing - so the proximity settles
-             * below would stop it before it ever heads for its goal. Gate them on having first
-             * travelled clear of where it was ordered (arrival_engaged); a unit that reaches an
-             * actual open slot still settles via at_sink regardless. */
-            if(!fms->arrival_engaged) {
-                vec2_t from_order;
-                PFM_Vec2_Sub(&new_pos_xz, (vec2_t*)&fms->arrival_order_pos, &from_order);
-                if(PFM_Vec2_Len(&from_order) > ARRIVAL_ENGAGE_DIST)
-                    ms->arrival_engaged = true;
-            }
-            /* A unit closing on a reachable slot keeps going (!advancing gates it); one with no
-             * reachable slot snuggles in only in the end game (fill_done), never mid-fill. */
-            bool by_prop  = ARRIVAL_PROP_ENABLED && fms->arrival_engaged && !at_sink && in_region
-                         && n_settled >= settle_contacts
-                         && (reachable_slot ? !advancing : fill_done);
-            /* A frozen unit gives up only when plausibly at a final spot: within a tile of the
-             * region (near_region) or already touching an arrived unit (n_settled). A unit
-             * waiting its turn at the START - far from the blue, nothing settled by it - is not
-             * eligible, so it keeps heading for the goal instead of stopping dead in place. */
-            bool stuck_eligible = near_region || n_settled >= 1;
-            /* Wedge fallback for a slotless unit that cannot reach a slot (boxed in, never got
-             * one, or pinned outside against the ball); the fine tier only tracks 'stuck' for a
-             * unit advancing on a clear line to its sink, so track the rest here. */
-            if(!at_sink && !fms->arrival_sink_valid && stuck_eligible && fms->arrival_engaged) {
-                /* Net-progress wedge test (not instantaneous speed): a unit ping-ponging across
-                 * a flow-field discontinuity twitches above the old speed threshold once per
-                 * cycle, which reset a speed-keyed counter one tick short of the limit forever.
-                 * Count ticks spent within ARRIVAL_STUCK_DISP of an anchor, re-seeding only on
-                 * real travel; a unit oscillating in place never re-seeds, so it gives up. */
-                if(!ms->arrival_progress_anchored) {
-                    ms->arrival_progress_anchor = new_pos_xz;
-                    ms->arrival_progress_anchored = true;
-                    ms->arrival_stuck = 0;
-                }
-                vec2_t prog_disp;
-                PFM_Vec2_Sub(&new_pos_xz, &ms->arrival_progress_anchor, &prog_disp);
-                if(PFM_Vec2_Len(&prog_disp) > ARRIVAL_STUCK_DISP) {
-                    ms->arrival_progress_anchor = new_pos_xz;
-                    ms->arrival_stuck = 0;
-                }else{
-                    ms->arrival_stuck++;
-                }
-            }
-            bool by_stuck = !at_sink && !by_prop && stuck_eligible
-                         && fms->arrival_stuck >= ARRIVAL_STUCK_LIMIT;
-            /* Overflow unit pinned against the full ball: at/near the blue (incl. the pad), no
-             * reachable slot, touching an arrived unit, and the footprint full. Stop on first
-             * contact instead of jittering at the edge until by_stuck finally trips. No LOS gate
-             * - a unit walled off from the goal but wedged on the cluster must still settle; the
-             * fill_frac gate keeps this from firing mid-fill (units there still have slots). */
-            bool by_contact = fms->arrival_engaged && !at_sink && near_region && !reachable_slot
-                           && n_settled >= 1 && flock->arrival_fill_frac >= ARRIVAL_FILL_RELAX_1;
-            if(at_sink || by_prop || by_stuck || by_contact) {
+            if(G_Arrival_ShouldSettle(&flock->arrival, &ms->arrival, s_map,
+                s_move_work.gamestate.map, new_pos_xz, ms->velocity, radius, n_settled)) {
                 out->flags |= UPDATE_SET_STATE;
                 out->next_state = STATE_ARRIVED;
                 out->next_block = true;
                 break;
             }
-
         }else{
 
             if(arrived(uid, new_pos_xz)) {
@@ -3700,12 +2768,7 @@ static void find_neighbours(uint32_t uid,
 
         /* A neighbour right at its arrival slot is about to settle and will not yield,
          * so avoid it fully (static) even while it is still moving at speed. */
-        bool at_slot = ms->arrival_committed && ms->arrival_sink_valid;
-        if(at_slot) {
-            vec2_t sd;
-            PFM_Vec2_Sub(&ms->arrival_sink, &curr_xz_pos, &sd);
-            at_slot = PFM_Vec2_Len(&sd) < newdesc.radius * ARRIVAL_SINK_TOLERANCE;
-        }
+        bool at_slot = G_Arrival_NeighbourSettling(&ms->arrival, curr_xz_pos, newdesc.radius);
 
         if(ent_still(ms) || PFM_Vec2_Len(&ms->velocity) < CLEARPATH_STILL_SPEED || at_slot) {
             /* A static neighbour is a stationary obstacle; its velocity-obstacle apex
@@ -3760,9 +2823,6 @@ static void do_add_entity(uint32_t uid, vec3_t pos, float selection_radius, int 
 {
     ASSERT_IN_MAIN_THREAD();
 
-    /* The add was queued for an entity that has since been removed (its transform is gone);
-     * skip it, as do_remove_entity does for an absent entity, so Entity_GetRot below cannot
-     * assert on a missing transform. */
     if(!G_EntityExists(uid))
         return;
 
@@ -4345,7 +3405,7 @@ static void move_velocity_work(int begin_idx, int end_idx)
             vpref = point_seek_vpref(in->ent_uid, flock, 
                 in->ent_des_v, in->has_dest_los, in->speed);
         }
-        assert(vpref.x != NAN && vpref.z != NAN);
+        assert(vpref.x == vpref.x && vpref.z == vpref.z); /* a NaN vpref would corrupt the integration */
 
         /* Find the entity's neighbours */
         find_neighbours(in->ent_uid, in->dyn_neighbs, in->stat_neighbs);
