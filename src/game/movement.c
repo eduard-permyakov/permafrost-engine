@@ -1691,7 +1691,7 @@ static vec2_t separation_force(uint32_t uid, float buffer_dist)
         float eq = 0.85f;
         float steep = 20.0f;
         float t = (PFM_Vec2_Len(&diff) - radius*eq) / PFM_Vec2_Len(&diff);
-        float scale = exp(-steep * t);
+        float scale = exp(MIN(-steep * t, 40.0f));
         PFM_Vec2_Scale(&diff, scale, &diff);
 
         PFM_Vec2_Add(&ret, &diff, &ret);
