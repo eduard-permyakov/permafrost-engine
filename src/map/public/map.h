@@ -459,9 +459,16 @@ vec2_t M_NavClosestReachableDest(const struct map *map, enum nav_layer layer,
  * under the selection circle are used.
  * ------------------------------------------------------------------------
  */
-bool   M_NavClosestReachableAdjacentPos(const struct map *map, enum nav_layer layer, 
-                                        vec2_t xz_src, const uint32_t target_uid, 
+bool   M_NavClosestReachableAdjacentPos(const struct map *map, enum nav_layer layer,
+                                        vec2_t xz_src, const uint32_t target_uid,
                                         vec2_t *out);
+
+/* Like M_NavClosestReachableAdjacentPos, but resolving the target from a
+ * snapshot query context instead of live state (safe off the main thread).
+ */
+bool   M_NavClosestReachableAdjacentPosFrom(const struct map *map, enum nav_layer layer,
+                                            vec2_t xz_src, uint32_t target_uid,
+                                            const struct nav_unit_query_ctx *ctx, vec2_t *out);
 
 /* ------------------------------------------------------------------------
  * Will return the XZ map position that the entity at the source location
@@ -624,6 +631,14 @@ bool     M_NavObjAdjacentToStaticWith(const struct map *map, vec2_t xz_pos, floa
                                       const struct obb *stat);
 bool     M_NavObjAdjacentToDynamicWith(const struct map *map, vec2_t xz_pos_a, float radius_a,
                                        vec2_t xz_pos_b, float radius_b);
+
+/* ------------------------------------------------------------------------
+ * Like M_NavObjAdjacent, but resolving both entities from a snapshot query
+ * context instead of live state, so it is safe to call off the main thread.
+ * ------------------------------------------------------------------------
+ */
+bool     M_NavObjAdjacentFrom(const struct map *map, uint32_t uid, uint32_t target_uid,
+                              const struct nav_unit_query_ctx *ctx);
 
 /* ------------------------------------------------------------------------
  * Sets 'out' to pointer to 'struct tile' for the specified descriptor. 

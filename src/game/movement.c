@@ -2475,7 +2475,8 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         }
 
         if(!entity_exists(ms->surround_target_uid)
-        ||  M_NavObjAdjacent(s_move_work.gamestate.map, uid, ms->surround_target_uid)) {
+        ||  M_NavObjAdjacentFrom(s_move_work.gamestate.map, uid, ms->surround_target_uid,
+                                 &s_move_work.unit_query_ctx)) {
             out->flags |= UPDATE_SET_STATE;
             out->next_state = STATE_ARRIVED;
             out->next_block = true;
@@ -2490,8 +2491,8 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         PFM_Vec2_Sub(&target_pos, &ms->surround_target_prev, &delta);
         if(PFM_Vec2_Len(&delta) > EPSILON || PFM_Vec2_Len(&ms->velocity) < EPSILON) {
 
-            bool hasdest = M_NavClosestReachableAdjacentPos(s_move_work.gamestate.map, layer, 
-                new_pos_xz, ms->surround_target_uid, &dest);
+            bool hasdest = M_NavClosestReachableAdjacentPosFrom(s_move_work.gamestate.map, layer,
+                new_pos_xz, ms->surround_target_uid, &s_move_work.unit_query_ctx, &dest);
 
             if(!hasdest) {
                 out->flags |= UPDATE_SET_STATE;

@@ -68,6 +68,18 @@
 #define CLAMP(a, min, max)  (MIN(MAX((a), (min)), (max)))
 #define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
 
+KHASH_MAP_INIT_INT(aabb, struct aabb)
+
+/* Geometry of an adjacency target: a selection circle for a movable
+ * entity, else its oriented bounding box.
+ */
+struct nav_target_geom{
+    bool       movable;
+    vec2_t     xz;
+    float      radius;
+    struct obb obb;
+};
+
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -128,6 +140,64 @@ static struct tile *tile_for_desc(const struct map *map, const struct tile_desc 
     M_TileForDesc(map, converted_td, &ret);
     assert(ret);
     return ret;
+}
+
+static struct nav_target_geom nav_target_geom_live(uint32_t uid)
+{
+    struct nav_target_geom ret;
+    ret.movable = G_FlagsGet(uid) & ENTITY_FLAG_MOVABLE;
+    if(ret.movable) {
+        ret.xz = G_Pos_GetXZ(uid);
+        ret.radius = G_GetSelectionRadius(uid);
+    }else{
+        Entity_CurrentOBB(uid, &ret.obb, false);
+    }
+    return ret;
+}
+
+static struct nav_target_geom nav_target_geom_from(uint32_t uid,
+                                                   const struct nav_unit_query_ctx *ctx)
+{
+    struct nav_target_geom ret;
+    ret.movable = G_FlagsGetFrom(ctx->flags, uid) & ENTITY_FLAG_MOVABLE;
+    if(ret.movable) {
+        ret.xz = G_Pos_GetXZFrom(ctx->positions, uid);
+        ret.radius = G_GetSelectionRadiusFrom(ctx->sel_radiuses, uid);
+    }else{
+        khash_t(trans) *transforms = ctx->transforms;
+        vec3_t scale = Entity_GetScaleFrom(transforms, uid);
+
+        mat4x4_t model;
+        Entity_ModelMatrixFrom(G_Pos_GetFrom(ctx->positions, uid),
+            Entity_GetRotFrom(transforms, uid), scale, &model);
+
+        khiter_t k = kh_get(aabb, ctx->aabbs, uid);
+        assert(k != kh_end(ctx->aabbs));
+        Entity_CurrentOBBFrom(&kh_value(ctx->aabbs, k), model, scale, &ret.obb);
+    }
+    return ret;
+}
+
+static bool nav_obj_adjacent(const struct map *map, vec2_t ent_xz, float ent_radius,
+                             const struct nav_target_geom *tgt)
+{
+    if(tgt->movable) {
+        return N_ObjAdjacentToDynamicWith(map->nav_private, map->pos, ent_xz, ent_radius,
+            tgt->xz, tgt->radius);
+    }
+    return N_ObjAdjacentToStaticWith(map->nav_private, map->pos, ent_xz, ent_radius, &tgt->obb);
+}
+
+static bool nav_closest_reachable_adjacent_pos(const struct map *map, enum nav_layer layer,
+                                               vec2_t xz_src, const struct nav_target_geom *tgt,
+                                               vec2_t *out)
+{
+    if(tgt->movable) {
+        return N_ClosestReachableAdjacentPosDynamic(map->nav_private, layer, map->pos,
+            xz_src, tgt->xz, tgt->radius, out);
+    }
+    return N_ClosestReachableAdjacentPosStatic(map->nav_private, layer, map->pos,
+        xz_src, &tgt->obb, out);
 }
 
 /*****************************************************************************/
@@ -766,21 +836,19 @@ vec2_t M_NavClosestReachableDest(const struct map *map, enum nav_layer layer,
     return N_ClosestReachableDest(map->nav_private, layer, map->pos, xz_src, xz_dst);
 }
 
-bool M_NavClosestReachableAdjacentPos(const struct map *map, enum nav_layer layer, 
+bool M_NavClosestReachableAdjacentPos(const struct map *map, enum nav_layer layer,
                                       vec2_t xz_src, const uint32_t target_uid, vec2_t *out)
 {
-    uint32_t flags = G_FlagsGet(target_uid);
-    if(flags & ENTITY_FLAG_MOVABLE) {
+    struct nav_target_geom tgt = nav_target_geom_live(target_uid);
+    return nav_closest_reachable_adjacent_pos(map, layer, xz_src, &tgt, out);
+}
 
-        return N_ClosestReachableAdjacentPosDynamic(map->nav_private, layer, map->pos, 
-            xz_src, G_Pos_GetXZ(target_uid), G_GetSelectionRadius(target_uid), out);
-    }else{
-
-        struct obb obb;
-        Entity_CurrentOBB(target_uid, &obb, false);
-        return N_ClosestReachableAdjacentPosStatic(map->nav_private, layer,
-            map->pos, xz_src, &obb, out);
-    }
+bool M_NavClosestReachableAdjacentPosFrom(const struct map *map, enum nav_layer layer,
+                                          vec2_t xz_src, uint32_t target_uid,
+                                          const struct nav_unit_query_ctx *ctx, vec2_t *out)
+{
+    struct nav_target_geom tgt = nav_target_geom_from(target_uid, ctx);
+    return nav_closest_reachable_adjacent_pos(map, layer, xz_src, &tgt, out);
 }
 
 bool M_NavClosestPathable(const struct map *map, enum nav_layer layer, vec2_t xz_src, vec2_t *out)
@@ -972,19 +1040,19 @@ uint32_t M_NavDestIDForPosAttacking(const struct map *map, vec2_t xz_pos,
 
 bool M_NavObjAdjacent(const struct map *map, uint32_t uid, uint32_t target_uid)
 {
-    if(G_FlagsGet(target_uid) & ENTITY_FLAG_MOVABLE) {
-
-        return N_ObjAdjacentToDynamic(map->nav_private, map->pos, uid, 
-            G_Pos_GetXZ(target_uid), G_GetSelectionRadius(target_uid));
-    }else{
-
-        struct obb obb;
-        Entity_CurrentOBB(target_uid, &obb, false);
-        return N_ObjAdjacentToStatic(map->nav_private, map->pos, uid, &obb);
-    }
+    struct nav_target_geom tgt = nav_target_geom_live(target_uid);
+    return nav_obj_adjacent(map, G_Pos_GetXZ(uid), G_GetSelectionRadius(uid), &tgt);
 }
 
-bool M_NavObjAdjacentToStaticWith(const struct map *map, vec2_t xz_pos, float radius, 
+bool M_NavObjAdjacentFrom(const struct map *map, uint32_t uid, uint32_t target_uid,
+                          const struct nav_unit_query_ctx *ctx)
+{
+    struct nav_target_geom tgt = nav_target_geom_from(target_uid, ctx);
+    return nav_obj_adjacent(map, G_Pos_GetXZFrom(ctx->positions, uid),
+        G_GetSelectionRadiusFrom(ctx->sel_radiuses, uid), &tgt);
+}
+
+bool M_NavObjAdjacentToStaticWith(const struct map *map, vec2_t xz_pos, float radius,
                                   const struct obb *stat)
 {
     return N_ObjAdjacentToStaticWith(map->nav_private, map->pos, xz_pos, radius, stat);
