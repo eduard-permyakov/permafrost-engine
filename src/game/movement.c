@@ -196,9 +196,11 @@ struct movestate{
     /* The target direction for 'turning' entities 
      */
     quat_t             target_dir;
-    /* Heading a combat-held unit pivots to; separate from target_dir (also written by formation). */
+    /* Heading a combat-held unit pivots to; separate from target_dir (also written by formation). 
+     */
     quat_t             combat_facing;
-    /* Per-unit fine-arrival state (see arrival.h). */
+    /* Per-unit fine-arrival state. 
+     */
     struct arrival_unit_state arrival;
 };
 
@@ -1359,7 +1361,7 @@ static void on_render_3d(void *user, void *event)
         };
         for(int i = 0; i < vec_size(&s_flocks); i++) {
             const struct flock *flock = &vec_AT(&s_flocks, i);
-            if(!flock->arrival.active)
+            if(!G_Arrival_IsActive(&flock->arrival))
                 continue;
             STALLOC(struct arrival_member, members, kh_size(flock->ents));
             int n = build_arrival_members(flock, members, kh_size(flock->ents));
@@ -2395,7 +2397,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         struct flock *flock = flock_for_ent(uid);
         assert(flock);
 
-        if(flock->arrival.active) {
+        if(G_Arrival_IsActive(&flock->arrival)) {
             int n_settled = adjacent_settled_count(uid);
             if(G_Arrival_ShouldSettle(&flock->arrival, &ms->arrival, s_map,
                 s_move_work.gamestate.map, new_pos_xz, ms->velocity, radius, n_settled)) {

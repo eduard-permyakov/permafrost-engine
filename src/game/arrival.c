@@ -55,12 +55,12 @@
 #define ARRIVAL_STUCK_DISP        (1.5f)   /* Travel under this over the window = no progress */
 #define ARRIVAL_LOS_HYST          (12)     /* Opposite-LOS ticks before the approach stage flips */
 #define ARRIVAL_ENGAGE_DIST       (4.0f)   /* Travel this far from the order point before settling */
+#define ARRIVAL_SETTLE_RANGE      (1.5f)   /* Give up only within this x the region radius of the centre */
 #define ARRIVAL_REALLOC_PERIOD    (4)      /* Re-balance + advance the frontier every N ticks */
 #define ARRIVAL_ROW_FILL_THRESH   (1.0f)   /* Row this full -> advance the frontier */
 #define ARRIVAL_ROW_STALL_TICKS   (80)     /* Frontier flat this long -> force past the row */
 #define ARRIVAL_REORIENT_FREEZE   (0.25f)  /* Re-orient the fill until the ball is this full */
 #define ARRIVAL_COMPACT_FACTOR    (1.5f)   /* Footprint cap as a multiple of disc radius */
-#define ARRIVAL_PROP_ENABLED      (1)      /* Settle-on-contact propagation */
 #define ARRIVAL_SETTLE_CONTACTS   (3)      /* Settled neighbours needed to settle */
 #define ARRIVAL_FILL_RELAX_2      (0.75f)  /* Ball this full -> settle on 2 neighbours */
 #define ARRIVAL_FILL_RELAX_1      (0.90f)  /* Ball this full -> settle on 1 neighbour */
@@ -80,6 +80,34 @@ static float  s_slot_sort_band;
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static bool unit_committed(const struct arrival_unit_state *us)
+{
+    return us->substate == ARRIVAL_SUBSTATE_SEEK
+        || us->substate == ARRIVAL_SUBSTATE_SEEK_ARMED;
+}
+
+static bool unit_armed(const struct arrival_unit_state *us)
+{
+    return us->substate == ARRIVAL_SUBSTATE_APPROACH_ARMED
+        || us->substate == ARRIVAL_SUBSTATE_SEEK_ARMED;
+}
+
+static void unit_commit(struct arrival_unit_state *us)
+{
+    if(us->substate == ARRIVAL_SUBSTATE_APPROACH)
+        us->substate = ARRIVAL_SUBSTATE_SEEK;
+    else if(us->substate == ARRIVAL_SUBSTATE_APPROACH_ARMED)
+        us->substate = ARRIVAL_SUBSTATE_SEEK_ARMED;
+}
+
+static void unit_arm(struct arrival_unit_state *us)
+{
+    if(us->substate == ARRIVAL_SUBSTATE_APPROACH)
+        us->substate = ARRIVAL_SUBSTATE_APPROACH_ARMED;
+    else if(us->substate == ARRIVAL_SUBSTATE_SEEK)
+        us->substate = ARRIVAL_SUBSTATE_SEEK_ARMED;
+}
 
 static int slot_cmp_near_ref(const void *a, const void *b)
 {
@@ -149,7 +177,6 @@ static void arrival_build_slots(struct arrival_state *as, const struct map *map)
     as->num_region = M_NavTileKeysForPositions(map, as->slots, n, as->region_keys);
 
     as->num_slots = n;
-    as->slots_valid = true;
 }
 
 /* Reduce the dense tile flood into the final set of settle spots, roughly one
@@ -353,7 +380,6 @@ static bool arrival_near_goal(const struct arrival_member *members, int n, vec2_
 static void arrival_realloc_slots(struct arrival_state *as, const struct map *map,
                                   const struct arrival_member *members, int n)
 {
-    as->assigned = true;
     int M = as->num_slots;
     if(M == 0 || as->num_rows == 0)
         return;
@@ -449,7 +475,7 @@ static void arrival_realloc_slots(struct arrival_state *as, const struct map *ma
         /* Latch in-region behaviour even with no slot to claim now, so a unit jostled off 
          * the goal region heads back to the cluster instead of routing out around a wall.
          */
-        members[m].us->committed = true;
+        unit_commit(members[m].us);
         int best = -1;
         float bestd = INFINITY;
         for(int i = 0; i < M; i++) {
@@ -480,7 +506,7 @@ static void arrival_realloc_slots(struct arrival_state *as, const struct map *ma
 
 static void arrival_render_field(const struct arrival_state *as, const struct map *map, vec3_t color)
 {
-    if(!as->active || !as->slots_valid || as->num_slots == 0)
+    if(as->phase != ARRIVAL_PHASE_FILLING || as->num_slots == 0)
         return;
 
     struct map_resolution nav_res;
@@ -565,38 +591,38 @@ static void arrival_render_assignment(const struct arrival_state *as,
 
 void G_Arrival_InitFlock(struct arrival_state *as)
 {
-    as->active = false;
-    as->slots_valid = false;
-    as->assigned = false;
+    as->phase = ARRIVAL_PHASE_INACTIVE;
 }
 
 void G_Arrival_Deactivate(struct arrival_state *as)
 {
-    as->active = false;
+    /* Stop filling but keep the built region. */
+    if(as->phase == ARRIVAL_PHASE_FILLING)
+        as->phase = ARRIVAL_PHASE_DONE;
+}
+
+bool G_Arrival_IsActive(const struct arrival_state *as)
+{
+    return as->phase == ARRIVAL_PHASE_FILLING;
 }
 
 void G_Arrival_InitUnit(struct arrival_unit_state *us, vec2_t order_pos)
 {
-    us->committed = false;
+    us->substate = ARRIVAL_SUBSTATE_APPROACH;
     us->los_latched = false;
     us->los_hyst = 0;
     us->sink_valid = false;
     us->stuck = 0;
     us->progress_anchored = false;
     us->order_pos = order_pos;
-    us->engaged = false;
 }
 
 void G_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2_t target_xz,
                            enum nav_layer layer, float unit_radius, int total_members,
                            const struct arrival_member *members, int nmembers)
 {
-    as->active = false;
-
-    /* Start gates (min-units, near-goal) bring a NEW arrival up; once built, 
-     * stay active until all settle.
-     */
-    if(as->slots_valid) {
+    bool built = (as->phase != ARRIVAL_PHASE_INACTIVE);
+    if(built) {
         bool all_settled = true;
         for(int i = 0; i < nmembers; i++) {
             if(!members[i].settled) {
@@ -604,8 +630,10 @@ void G_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2
                 break;
             }
         }
-        if(all_settled)
+        if(all_settled) {
+            as->phase = ARRIVAL_PHASE_DONE;
             return;
+        }
     }else{
         if(total_members < ARRIVAL_MIN_UNITS)
             return;
@@ -615,9 +643,9 @@ void G_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2
 
     as->layer = layer;
     as->radius = arrival_zone_radius(map, total_members, unit_radius);
-    as->active = true;
+    as->phase = ARRIVAL_PHASE_FILLING;
 
-    if(!as->slots_valid) {
+    if(!built) {
         /* Pin the centre to the nearest reachable tile once; recomputing it each tick would let
          * the footprint flip-flop across walls as units settle.
          */
@@ -627,7 +655,7 @@ void G_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2
         arrival_build_slots(as, map);
         arrival_thin_centered_slots(as, map, total_members, ARRIVAL_SLOT_SPACING * unit_radius);
 
-        /* Drop slots whose straight line to the centre leaves the footprint: the flood pops by
+        /* Drop slots whose straight line to the centre leaves the goal region: the flood pops by
          * Euclidean distance and can wrap a thin wall, placing slots reachable only by detour.
          * Keeping the clear-line ones matches the fine tier, which beelines on that test.
          */
@@ -678,7 +706,7 @@ void G_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2
 
 void G_Arrival_RequestField(const struct arrival_state *as, const struct map *map)
 {
-    if(!as->active)
+    if(as->phase != ARRIVAL_PHASE_FILLING)
         return;
     M_NavRequestAsyncGroupArrivalField(map, as->layer, as->centre, as->radius);
 }
@@ -687,32 +715,31 @@ bool G_Arrival_DesiredVelocity(const struct arrival_state *as, struct arrival_un
                                const struct map *region_map, const struct map *nav_map,
                                vec2_t pos, vec2_t velocity, bool has_dest_los, vec2_t *out_vel)
 {
-    bool near_region = arrival_near_region(as, region_map, pos);
-    /* Reached the region (or its pad) -> latched committed: only seek the 
-     * slot or snuggle onto the cluster, never a new path, even if shoved 
-     * off the blue. Always returns.
+    if(as->phase != ARRIVAL_PHASE_FILLING)
+        return false;
+
+    /* Reaching the region (or its one-tile pad) commits the unit to the SEEK substate; the latch,
+     * not the live test, gates it thereafter, so a unit shoved off the blue heads back in rather
+     * than dropping to the approach field.
      */
-    if(as->active && (near_region || us->committed)) {
-        /* Latch the instant we reach the pad, not at the next realloc: 
-         * a unit pinned against the full edge would otherwise never commit 
-         * and get steered around the ball.
-         */
-        if(near_region)
-            us->committed = true;
+    if(arrival_near_region(as, region_map, pos))
+        unit_commit(us);
+
+    switch(us->substate) {
+    case ARRIVAL_SUBSTATE_SEEK:
+    case ARRIVAL_SUBSTATE_SEEK_ARMED: {
+        /* Re-target if the assigned slot got blocked out from under us. */
         if(us->sink_valid && M_NavPositionBlocked(nav_map, as->layer, us->sink))
             us->sink_valid = arrival_nearest_open_slot(as, nav_map, pos, &us->sink);
 
-        /* Beeline the slot only when the line to it stays on the footprint; 
-         * else fall through to the dest field, which routes around the wall 
-         * until the line clears.
+        /* Beeline the slot only while the line to it stays on the footprint; else fall through to
+         * the nearest-slot push, which drives a walled-off unit onto the cluster.
          */
         if(us->sink_valid
         && M_NavSegmentWithinRegion(nav_map, pos, us->sink, as->region_keys, as->num_region)) {
             vec2_t v;
             PFM_Vec2_Sub(&us->sink, &pos, &v);
-            /* Count ticks we want the slot but barely move and make no progress:
-             * the unit is wedged in by a crowd. 
-             */
+            /* Count ticks we want the slot but barely move and make no progress: crowd-wedged. */
             if(PFM_Vec2_Len(&velocity) < ARRIVAL_STUCK_SPEED
             && PFM_Vec2_Dot(&velocity, &v) <= 0.0f)
                 us->stuck++;
@@ -723,7 +750,7 @@ bool G_Arrival_DesiredVelocity(const struct arrival_state *as, struct arrival_un
             *out_vel = v;
             return true;
         }
-        /* No claimable slot: head for the nearest slot (occupied or not) onto the cluster, where
+        /* No reachable slot: head for the nearest slot (occupied or not) onto the cluster, where
          * it stops on contact, rather than a bare tile or the empty centre.
          */
         vec2_t to_slot;
@@ -737,12 +764,11 @@ bool G_Arrival_DesiredVelocity(const struct arrival_state *as, struct arrival_un
         *out_vel = (vec2_t){0.0f, 0.0f};
         return true;
     }
-
-    /* Out of the region: approach on the TARGET_ZONE field, which routes around 
-     * a wall boxing the goal in (the point field would steer the long way to a 
-     * blocked click's nearest tile).
-     */
-    if(as->active) {
+    case ARRIVAL_SUBSTATE_APPROACH:
+    case ARRIVAL_SUBSTATE_APPROACH_ARMED: {
+        /* Approach on the TARGET_ZONE field, which routes around a wall boxing the goal in (the
+         * point field would steer the long way to a blocked click's nearest tile).
+         */
         vec2_t zvel;
         bool at_slot;
         if(M_NavDesiredGroupArrivalVelocity(nav_map, as->layer, pos, as->centre, as->radius,
@@ -751,11 +777,8 @@ bool G_Arrival_DesiredVelocity(const struct arrival_state *as, struct arrival_un
             *out_vel = zvel;
             return true;
         }
-    }
-
-    if(as->active && as->slots_valid) {
-        /* Debounce: flip the latched LOS only after the raw test disagrees for LOS_HYST ticks, so
-         * a seam flicker can't oscillate between the two opposed branches.
+        /* Zone field gave nothing: with static LOS, beeline the goal and push in; else route
+         * around on the COM field. Debounce the LOS flip so a wall seam can't oscillate it.
          */
         if(has_dest_los == us->los_latched)
             us->los_hyst = 0;
@@ -773,6 +796,7 @@ bool G_Arrival_DesiredVelocity(const struct arrival_state *as, struct arrival_un
         }
         *out_vel = M_NavDesiredPointSeekVelocity(nav_map, as->com_dest_id, pos, as->com);
         return true;
+    }
     }
     return false;
 }
@@ -812,28 +836,33 @@ bool G_Arrival_ShouldSettle(const struct arrival_state *as, struct arrival_unit_
     }
     /* Start grace: a unit ordered among already-arrived units looks 
      * 'arrived' initially. Gate the proximity settles on first travelling 
-     * clear of the order point (engaged).
+     * clear of the order point (armed).
      */
-    if(!us->engaged) {
+    if(!unit_armed(us)) {
         vec2_t from_order;
         PFM_Vec2_Sub(&new_pos, (vec2_t*)&us->order_pos, &from_order);
         if(PFM_Vec2_Len(&from_order) > ARRIVAL_ENGAGE_DIST)
-            us->engaged = true;
+            unit_arm(us);
     }
-    bool by_prop  = ARRIVAL_PROP_ENABLED && us->engaged && !at_sink && in_region
-                 && nsettled >= settle_contacts
-                 && (reachable_slot ? !advancing : fill_done);
+    bool by_prop = unit_armed(us) && !at_sink && in_region
+                && nsettled >= settle_contacts
+                && (reachable_slot ? !advancing : fill_done);
 
-    /* Give up only when plausibly final: near the goal region, or already 
-     * touching an arrived unit. One waiting its turn far out keeps heading for 
-     * the goal.
+    /* Give up only when plausibly final: near the footprint, or - within settle range of the
+     * goal centre - pressed against an arrived unit. Brushing an arrived unit far from the goal
+     * is not enough; that unit keeps heading in.
      */
-    bool stuck_eligible = near_region || nsettled >= 1;
-    if(!at_sink && !us->sink_valid && stuck_eligible && us->engaged) {
-        /* Net-progress wedge (not instantaneous speed): a unit ping-ponging 
+    struct map_resolution res;
+    M_NavGetResolution(region_map, &res);
+    float tile_dim = (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE) / (float)res.tile_w;
+    float settle_range = as->radius * tile_dim * ARRIVAL_SETTLE_RANGE;
+    vec2_t to_centre;
+    PFM_Vec2_Sub(&new_pos, (vec2_t*)&as->centre, &to_centre);
+    bool within_settle_range = PFM_Vec2_Dot(&to_centre, &to_centre) <= settle_range * settle_range;
+    bool stuck_eligible = near_region || (nsettled >= 1 && within_settle_range);
+    if(!at_sink && !us->sink_valid && stuck_eligible && unit_armed(us)) {
+        /* Net-progress check (not instantaneous speed): a unit ping-ponging 
          * a field discontinuity twitches above a speed threshold once a cycle. 
-         * Count ticks within STUCK_DISP of an anchor, re-seeding only on real 
-         * travel.
          */
         if(!us->progress_anchored) {
             us->progress_anchor = new_pos;
@@ -855,7 +884,7 @@ bool G_Arrival_ShouldSettle(const struct arrival_state *as, struct arrival_unit_
     /* Relax the settle condition when enough units have settled. This allows "stray"
      * units to make a best-effort stop in the presence of difficult dynamic conditions.
      */
-    bool by_contact = us->engaged && !at_sink && near_region && !reachable_slot
+    bool by_contact = unit_armed(us) && !at_sink && near_region && !reachable_slot
                    && nsettled >= 1 && as->fill_frac >= ARRIVAL_FILL_RELAX_1;
     return (at_sink || by_prop || by_stuck || by_contact);
 }
@@ -863,7 +892,7 @@ bool G_Arrival_ShouldSettle(const struct arrival_state *as, struct arrival_unit_
 vec2_t G_Arrival_SeekTarget(const struct arrival_state *as, const struct arrival_unit_state *us,
                             vec2_t target_xz)
 {
-    if(as->active && us->committed && us->sink_valid)
+    if(as->phase == ARRIVAL_PHASE_FILLING && unit_committed(us) && us->sink_valid)
         return us->sink;
     return target_xz;
 }
@@ -871,7 +900,7 @@ vec2_t G_Arrival_SeekTarget(const struct arrival_state *as, const struct arrival
 bool G_Arrival_NeighbourSettling(const struct arrival_unit_state *us, vec2_t neighb_pos,
                                  float radius)
 {
-    bool at_slot = us->committed && us->sink_valid;
+    bool at_slot = unit_committed(us) && us->sink_valid;
     if(at_slot) {
         vec2_t sd;
         PFM_Vec2_Sub((vec2_t*)&us->sink, &neighb_pos, &sd);
