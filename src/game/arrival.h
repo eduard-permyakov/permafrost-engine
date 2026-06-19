@@ -73,6 +73,7 @@ struct arrival_state{
     vec2_t           com;
     dest_id_t        com_dest_id;
     uint16_t         radius;
+    float            unit_radius;
     int              num_slots;
     int              active_row;
     int              realloc_counter;
@@ -91,6 +92,14 @@ struct arrival_state{
      */
     int              num_region;
     uint64_t         region_keys[ARRIVAL_MAX_SLOTS];
+};
+
+/* A flock's arrival overlay is computed per nav layer (radius bucket), mirroring the
+ * per-layer movement fields: each present layer gets its own footprint, slots, and
+ * obstacle pads. Entries are allocated lazily for the layers actually present.
+ */
+struct arrival_group{
+    struct arrival_state *layers[NAV_LAYER_MAX];
 };
 
 struct arrival_unit_state{
@@ -121,6 +130,8 @@ struct arrival_unit_state{
 struct arrival_member{
     vec2_t                     pos;
     bool                       settled;
+    enum nav_layer             layer;
+    float                      radius;
     struct arrival_unit_state *us;
 };
 
@@ -148,6 +159,19 @@ bool G_Arrival_NeighbourSettling(const struct arrival_unit_state *us, vec2_t nei
 void G_Arrival_RenderDebug(const struct arrival_state *as, const struct camera *cam,
                            const struct map *map, dest_id_t dest_id, vec3_t color,
                            const struct arrival_member *members, int nmembers);
+
+void G_ArrivalGroup_Init(struct arrival_group *grp);
+void G_ArrivalGroup_Destroy(struct arrival_group *grp);
+void G_ArrivalGroup_Reset(struct arrival_group *grp);
+void G_ArrivalGroup_Deactivate(struct arrival_group *grp);
+void G_ArrivalGroup_Update(struct arrival_group *grp, const struct map *map, vec2_t target_xz,
+                           const struct arrival_member *members, int nmembers);
+void G_ArrivalGroup_RequestFields(const struct arrival_group *grp, const struct map *map);
+bool G_ArrivalGroup_IsActive(const struct arrival_group *grp);
+struct arrival_state *G_ArrivalGroup_ForLayer(const struct arrival_group *grp, enum nav_layer layer);
+void G_ArrivalGroup_RenderDebug(const struct arrival_group *grp, const struct camera *cam,
+                                const struct map *map, dest_id_t dest_id, vec3_t color,
+                                const struct arrival_member *members, int nmembers);
 
 #endif
 

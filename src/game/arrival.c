@@ -50,12 +50,11 @@
 
 #define ARRIVAL_FIELD_PLAN_RADIUS (150.0f) /* Plan the zone once a member is this near the goal */
 #define ARRIVAL_MIN_UNITS         (4)      /* Below this, just seek the goal; no ball fill */
-#define ARRIVAL_STUCK_SPEED       (0.1f)   /* Per-tick speed below which a unit counts as wedged */
 #define ARRIVAL_STUCK_LIMIT       (12)     /* Wedged this many ticks -> settle in place */
-#define ARRIVAL_STUCK_DISP        (1.5f)   /* Travel under this over the window = no progress */
+#define ARRIVAL_STUCK_DISP        (1.875f) /* Travel under this over the window = no progress */
 #define ARRIVAL_LOS_HYST          (12)     /* Opposite-LOS ticks before the approach stage flips */
 #define ARRIVAL_ENGAGE_DIST       (4.0f)   /* Travel this far from the order point before settling */
-#define ARRIVAL_SETTLE_RANGE      (1.5f)   /* Give up only within this x the region radius of the centre */
+#define ARRIVAL_SETTLE_RANGE      (1.875f) /* Give up only within this x the region radius of the centre */
 #define ARRIVAL_REALLOC_PERIOD    (4)      /* Re-balance + advance the frontier every N ticks */
 #define ARRIVAL_ROW_FILL_THRESH   (1.0f)   /* Row this full -> advance the frontier */
 #define ARRIVAL_ROW_STALL_TICKS   (80)     /* Frontier flat this long -> force past the row */
@@ -156,9 +155,14 @@ static bool arrival_near_region(const struct arrival_state *as, const struct map
     struct map_resolution res;
     M_NavGetResolution(map, &res);
     float td = (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE) / (float)res.tile_w;
-    /* Add a 1-tile pad around the goal */
-    for(int dz = -1; dz <= 1; dz++) {
-    for(int dx = -1; dx <= 1; dx++) {
+    /* Pad the footprint by the unit radius (min one tile) so a large unit
+     * butting the cluster from just outside still counts as near.
+     */
+    int pad = (int)ceilf(as->unit_radius / td);
+    if(pad < 1)
+        pad = 1;
+    for(int dz = -pad; dz <= pad; dz++) {
+    for(int dx = -pad; dx <= pad; dx++) {
         if(dx == 0 && dz == 0)
             continue;
         if(arrival_in_region(as, map, (vec2_t){pos.x + dx * td, pos.z + dz * td}))
@@ -643,6 +647,7 @@ void G_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2
 
     as->layer = layer;
     as->radius = arrival_zone_radius(map, total_members, unit_radius);
+    as->unit_radius = unit_radius;
     as->phase = ARRIVAL_PHASE_FILLING;
 
     if(!built) {
@@ -739,12 +744,6 @@ bool G_Arrival_DesiredVelocity(const struct arrival_state *as, struct arrival_un
         && M_NavSegmentWithinRegion(nav_map, pos, us->sink, as->region_keys, as->num_region)) {
             vec2_t v;
             PFM_Vec2_Sub(&us->sink, &pos, &v);
-            /* Count ticks we want the slot but barely move and make no progress: crowd-wedged. */
-            if(PFM_Vec2_Len(&velocity) < ARRIVAL_STUCK_SPEED
-            && PFM_Vec2_Dot(&velocity, &v) <= 0.0f)
-                us->stuck++;
-            else
-                us->stuck = 0;
             if(PFM_Vec2_Len(&v) > EPSILON)
                 PFM_Vec2_Normal(&v, &v);
             *out_vel = v;
@@ -855,12 +854,12 @@ bool G_Arrival_ShouldSettle(const struct arrival_state *as, struct arrival_unit_
     struct map_resolution res;
     M_NavGetResolution(region_map, &res);
     float tile_dim = (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE) / (float)res.tile_w;
-    float settle_range = as->radius * tile_dim * ARRIVAL_SETTLE_RANGE;
+    float settle_range = (as->radius * tile_dim + radius) * ARRIVAL_SETTLE_RANGE;
     vec2_t to_centre;
     PFM_Vec2_Sub(&new_pos, (vec2_t*)&as->centre, &to_centre);
     bool within_settle_range = PFM_Vec2_Dot(&to_centre, &to_centre) <= settle_range * settle_range;
-    bool stuck_eligible = near_region || (nsettled >= 1 && within_settle_range);
-    if(!at_sink && !us->sink_valid && stuck_eligible && unit_armed(us)) {
+    bool stuck_eligible = near_region || within_settle_range;
+    if(!at_sink && stuck_eligible && unit_armed(us)) {
         /* Net-progress check (not instantaneous speed): a unit ping-ponging 
          * a field discontinuity twitches above a speed threshold once a cycle. 
          */
@@ -916,5 +915,104 @@ void G_Arrival_RenderDebug(const struct arrival_state *as, const struct camera *
     arrival_render_field(as, map, color);
     arrival_render_assignment(as, members, nmembers);
     M_NavRenderVisibleGroupArrivalField(map, cam, as->layer, as->centre, as->radius, dest_id);
+}
+
+void G_ArrivalGroup_Init(struct arrival_group *grp)
+{
+    memset(grp->layers, 0, sizeof(grp->layers));
+}
+
+void G_ArrivalGroup_Destroy(struct arrival_group *grp)
+{
+    for(int l = 0; l < NAV_LAYER_MAX; l++) {
+        if(grp->layers[l]) {
+            PF_FREE(grp->layers[l]);
+            grp->layers[l] = NULL;
+        }
+    }
+}
+
+void G_ArrivalGroup_Reset(struct arrival_group *grp)
+{
+    for(int l = 0; l < NAV_LAYER_MAX; l++) {
+        if(grp->layers[l])
+            G_Arrival_InitFlock(grp->layers[l]);
+    }
+}
+
+void G_ArrivalGroup_Deactivate(struct arrival_group *grp)
+{
+    for(int l = 0; l < NAV_LAYER_MAX; l++) {
+        if(grp->layers[l])
+            G_Arrival_Deactivate(grp->layers[l]);
+    }
+}
+
+struct arrival_state *G_ArrivalGroup_ForLayer(const struct arrival_group *grp, enum nav_layer layer)
+{
+    return grp->layers[layer];
+}
+
+bool G_ArrivalGroup_IsActive(const struct arrival_group *grp)
+{
+    for(int l = 0; l < NAV_LAYER_MAX; l++) {
+        if(grp->layers[l] && G_Arrival_IsActive(grp->layers[l]))
+            return true;
+    }
+    return false;
+}
+
+void G_ArrivalGroup_Update(struct arrival_group *grp, const struct map *map, vec2_t target_xz,
+                           const struct arrival_member *members, int nmembers)
+{
+    STALLOC(struct arrival_member, sub, nmembers > 0 ? nmembers : 1);
+    for(int l = 0; l < NAV_LAYER_MAX; l++) {
+
+        int sn = 0;
+        float maxr = 0.0f;
+        for(int i = 0; i < nmembers; i++) {
+            if(members[i].layer != (enum nav_layer)l)
+                continue;
+            sub[sn++] = members[i];
+            if(members[i].radius > maxr)
+                maxr = members[i].radius;
+        }
+
+        if(sn == 0) {
+            /* No members on this layer: drop any stale footprint. */
+            if(grp->layers[l]) {
+                PF_FREE(grp->layers[l]);
+                grp->layers[l] = NULL;
+            }
+            continue;
+        }
+
+        if(!grp->layers[l]) {
+            grp->layers[l] = PF_MALLOC(sizeof(struct arrival_state));
+            if(!grp->layers[l])
+                continue;
+            G_Arrival_InitFlock(grp->layers[l]);
+        }
+        G_Arrival_UpdateFlock(grp->layers[l], map, target_xz, (enum nav_layer)l, maxr, sn, sub, sn);
+    }
+    STFREE(sub);
+}
+
+void G_ArrivalGroup_RequestFields(const struct arrival_group *grp, const struct map *map)
+{
+    for(int l = 0; l < NAV_LAYER_MAX; l++) {
+        if(grp->layers[l])
+            G_Arrival_RequestField(grp->layers[l], map);
+    }
+}
+
+void G_ArrivalGroup_RenderDebug(const struct arrival_group *grp, const struct camera *cam,
+                                const struct map *map, dest_id_t dest_id, vec3_t color,
+                                const struct arrival_member *members, int nmembers)
+{
+    for(int l = 0; l < NAV_LAYER_MAX; l++) {
+        if(grp->layers[l] && G_Arrival_IsActive(grp->layers[l]))
+            G_Arrival_RenderDebug(grp->layers[l], cam, map, dest_id, color, members, nmembers);
+    }
 }
 

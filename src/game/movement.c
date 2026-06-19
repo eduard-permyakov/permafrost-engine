@@ -208,8 +208,8 @@ struct flock{
     khash_t(entity) *ents;
     vec2_t           target_xz; 
     dest_id_t        dest_id;
-    /* Group-arrival state: goal region, slots, and per-member assignment. */
-    struct arrival_state arrival;
+    /* Group-arrival state, computed per nav layer present in the flock. */
+    struct arrival_group arrival;
 };
 
 struct formation_state{
@@ -561,11 +561,18 @@ static struct flock *flock_for_dest(dest_id_t id)
 {
     for(int i = 0; i < vec_size(&s_flocks); i++) {
 
-        struct flock *curr_flock = &vec_AT(&s_flocks, i);            
+        struct flock *curr_flock = &vec_AT(&s_flocks, i);
         if(curr_flock->dest_id == id)
             return curr_flock;
     }
     return NULL;
+}
+
+static struct arrival_state *flock_arrival_for_ent(const struct flock *flock, uint32_t uid)
+{
+    float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
+    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+    return G_ArrivalGroup_ForLayer(&flock->arrival, Entity_NavLayerWithRadius(flags, radius));
 }
 
 static void entity_block(uint32_t uid)
@@ -731,6 +738,7 @@ static void remove_from_flocks(uint32_t uid)
 
         if(kh_size(curr_flock->ents) == 0) {
             kh_destroy(entity, curr_flock->ents);
+            G_ArrivalGroup_Destroy(&curr_flock->arrival);
             vec_flock_del(&s_flocks, i);
         }
     }
@@ -849,7 +857,7 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
         uint32_t curr;
         kh_foreach_key(new_flock.ents, curr, { flock_add(merge_flock, curr); });
         kh_destroy(entity, new_flock.ents);
-        G_Arrival_InitFlock(&merge_flock->arrival);
+        G_ArrivalGroup_Reset(&merge_flock->arrival);
 
     }else{
         formation_id_t fid;
@@ -876,8 +884,11 @@ static int build_arrival_members(const struct flock *flock, struct arrival_membe
         struct movestate *ms = movestate_get(uid);
         if(!ms)
             continue;
+        float radius = G_GetSelectionRadius(uid);
         out[n].pos = G_Pos_GetXZ(uid);
         out[n].settled = (ms->state == STATE_ARRIVED);
+        out[n].radius = radius;
+        out[n].layer = Entity_NavLayerWithRadius(G_FlagsGet(uid), radius);
         out[n].us = &ms->arrival;
         n++;
     });
@@ -895,17 +906,13 @@ static void update_flock_arrival_fields(void)
         uint32_t first = NULL_UID;
         kh_foreach_key(flock->ents, first, { break; });
         if(first == NULL_UID || G_Formation_GetForEnt(first) != NULL_FID) {
-            G_Arrival_Deactivate(&flock->arrival);
+            G_ArrivalGroup_Deactivate(&flock->arrival);
             continue;
         }
 
-        float radius = G_GetSelectionRadius(first);
-        enum nav_layer layer = Entity_NavLayerWithRadius(G_FlagsGet(first), radius);
-
         STALLOC(struct arrival_member, members, kh_size(flock->ents));
         int n = build_arrival_members(flock, members, kh_size(flock->ents));
-        G_Arrival_UpdateFlock(&flock->arrival, s_map, flock->target_xz, layer, radius,
-            kh_size(flock->ents), members, n);
+        G_ArrivalGroup_Update(&flock->arrival, s_map, flock->target_xz, members, n);
         STFREE(members);
     }
 }
@@ -914,7 +921,7 @@ static void request_flock_arrival_fields(void)
 {
     for(int i = 0; i < vec_size(&s_flocks); i++) {
         const struct flock *flock = &vec_AT(&s_flocks, i);
-        G_Arrival_RequestField(&flock->arrival, s_move_work.gamestate.map);
+        G_ArrivalGroup_RequestFields(&flock->arrival, s_move_work.gamestate.map);
     }
 }
 
@@ -1361,11 +1368,11 @@ static void on_render_3d(void *user, void *event)
         };
         for(int i = 0; i < vec_size(&s_flocks); i++) {
             const struct flock *flock = &vec_AT(&s_flocks, i);
-            if(!G_Arrival_IsActive(&flock->arrival))
+            if(!G_ArrivalGroup_IsActive(&flock->arrival))
                 continue;
             STALLOC(struct arrival_member, members, kh_size(flock->ents));
             int n = build_arrival_members(flock, members, kh_size(flock->ents));
-            G_Arrival_RenderDebug(&flock->arrival, cam, s_map, flock->dest_id,
+            G_ArrivalGroup_RenderDebug(&flock->arrival, cam, s_map, flock->dest_id,
                 dbg_flock_pal[i % ARR_SIZE(dbg_flock_pal)], members, n);
             STFREE(members);
         }
@@ -1472,8 +1479,9 @@ static vec2_t ent_desired_velocity(uint32_t uid, vec2_t cell_arrival_vdes, bool 
     default: {
         assert(fl);
         struct movestate *mms = movestate_get(uid);
+        struct arrival_state *as = flock_arrival_for_ent(fl, uid);
         vec2_t arrival_vel;
-        if(G_Arrival_DesiredVelocity(&fl->arrival, &mms->arrival, s_map,
+        if(as && G_Arrival_DesiredVelocity(as, &mms->arrival, s_map,
             s_move_work.gamestate.map, pos_xz, mms->velocity, has_dest_los, &arrival_vel))
             return arrival_vel;
         return M_NavDesiredPointSeekVelocity(s_move_work.gamestate.map, fl->dest_id,
@@ -1711,7 +1719,9 @@ static vec2_t point_seek_total_force(uint32_t uid, const struct flock *flock,
     struct movestate *ms = movestate_get(uid);
     assert(ms);
 
-    vec2_t arrive = arrive_force_point(uid, G_Arrival_SeekTarget(&flock->arrival, &ms->arrival, flock->target_xz), vdes, has_dest_los);
+    struct arrival_state *as = flock_arrival_for_ent(flock, uid);
+    vec2_t seek = as ? G_Arrival_SeekTarget(as, &ms->arrival, flock->target_xz) : flock->target_xz;
+    vec2_t arrive = arrive_force_point(uid, seek, vdes, has_dest_los);
     vec2_t cohesion = cohesion_force(uid, flock);
     vec2_t separation = separation_force(uid, SEPARATION_BUFFER_DIST);
 
@@ -1844,9 +1854,12 @@ static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock,
         case 1: 
             steer_force = separation_force(uid, SEPARATION_BUFFER_DIST); 
             break;
-        case 2: 
-            steer_force = arrive_force_point(uid, G_Arrival_SeekTarget(&flock->arrival, &ms->arrival, flock->target_xz), vdes, has_dest_los); 
+        case 2: {
+            struct arrival_state *as = flock_arrival_for_ent(flock, uid);
+            vec2_t seek = as ? G_Arrival_SeekTarget(as, &ms->arrival, flock->target_xz) : flock->target_xz;
+            steer_force = arrive_force_point(uid, seek, vdes, has_dest_los);
             break;
+        }
         }
 
         nullify_impass_components(uid, &steer_force);
@@ -2397,9 +2410,10 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         struct flock *flock = flock_for_ent(uid);
         assert(flock);
 
-        if(G_Arrival_IsActive(&flock->arrival)) {
+        struct arrival_state *as = G_ArrivalGroup_ForLayer(&flock->arrival, layer);
+        if(as && G_Arrival_IsActive(as)) {
             int n_settled = adjacent_settled_count(uid);
-            if(G_Arrival_ShouldSettle(&flock->arrival, &ms->arrival, s_map,
+            if(G_Arrival_ShouldSettle(as, &ms->arrival, s_map,
                 s_move_work.gamestate.map, new_pos_xz, ms->velocity, radius, n_settled)) {
                 out->flags |= UPDATE_SET_STATE;
                 out->next_state = STATE_ARRIVED;
@@ -2816,6 +2830,7 @@ static void disband_empty_flocks(void)
                 G_Formation_RemoveUnit(uid);
             });
             kh_destroy(entity, flock->ents);
+            G_ArrivalGroup_Destroy(&flock->arrival);
             vec_flock_del(&s_flocks, i);
         }
     }
@@ -5183,6 +5198,7 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
         struct flock new_flock;
         new_flock.ents = kh_init(entity);
         CHK_TRUE_RET(new_flock.ents);
+        G_ArrivalGroup_Init(&new_flock.arrival);
 
         CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_flock);
         CHK_TRUE_JMP(attr.type == TYPE_INT, fail_flock);
