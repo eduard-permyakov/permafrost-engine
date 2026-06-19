@@ -987,9 +987,14 @@ static int adjacent_settled_count(uint32_t uid)
     float radius_uid = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
     uint32_t ent_flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
 
+    /* The acceptance test scales its cutoff with both radii, so the query radius must too,
+     * else two large units never register as adjacent and the settle cascade starves.
+     */
+    float search_radius = MAX(SEPARATION_NEIGHB_RADIUS, 2.0f * radius_uid + ADJACENCY_SEP_DIST);
+
     uint32_t near_ents[128];
     int num_near = G_Pos_EntsInCircleFrom(s_move_work.gamestate.postree,
-        s_move_work.gamestate.flags, pos, SEPARATION_NEIGHB_RADIUS, near_ents, ARR_SIZE(near_ents));
+        s_move_work.gamestate.flags, pos, search_radius, near_ents, ARR_SIZE(near_ents));
 
     int count = 0;
     for(int i = 0; i < num_near; i++) {

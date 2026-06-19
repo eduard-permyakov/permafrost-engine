@@ -858,7 +858,7 @@ bool G_Arrival_ShouldSettle(const struct arrival_state *as, struct arrival_unit_
     vec2_t to_centre;
     PFM_Vec2_Sub(&new_pos, (vec2_t*)&as->centre, &to_centre);
     bool within_settle_range = PFM_Vec2_Dot(&to_centre, &to_centre) <= settle_range * settle_range;
-    bool stuck_eligible = near_region || within_settle_range;
+    bool stuck_eligible = nsettled >= 1 && (near_region || within_settle_range);
     if(!at_sink && stuck_eligible && unit_armed(us)) {
         /* Net-progress check (not instantaneous speed): a unit ping-ponging 
          * a field discontinuity twitches above a speed threshold once a cycle. 
