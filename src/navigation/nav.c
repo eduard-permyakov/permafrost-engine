@@ -3305,10 +3305,76 @@ bool N_RequestPathAttacking(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
                           map_pos, layer, out_dest_id);
 }
 
+/* Bilinearly blend the flow directions of the four tiles bracketing 'curr_pos', so a
+ * unit straddling a discontinuity in the quantised field (the cardinal-first staircase)
+ * follows the averaged heading rather than snapping onto a single-tile lane. Samples on
+ * impassable/unreachable tiles (FD_NONE) or in chunks whose field is not cached are
+ * dropped, and the remaining weights renormalise via the final normalise.
+ */
+static vec2_t n_interpolated_flow_dir(struct nav_private *priv, dest_id_t id,
+                                      struct map_resolution res, vec3_t map_pos,
+                                      vec2_t curr_pos, const struct flow_field *base_ff,
+                                      struct tile_desc base_tile)
+{
+    struct box bounds = M_Tile_Bounds(res, map_pos, base_tile);
+    vec2_t centre = (vec2_t){bounds.x - bounds.width / 2.0f,
+                             bounds.z + bounds.height / 2.0f};
+    float dx = curr_pos.x - centre.x;
+    float dz = curr_pos.z - centre.z;
+
+    int dc = (dx < 0.0f) ? 1 : -1;
+    int dr = (dz > 0.0f) ? 1 : -1;
+    float wc = MIN(fabs(dx) / bounds.width,  1.0f);
+    float wr = MIN(fabs(dz) / bounds.height, 1.0f);
+
+    const int   sdc[4] = {0, dc, 0,  dc};
+    const int   sdr[4] = {0, 0,  dr, dr};
+    const float sw [4] = {(1.0f - wc) * (1.0f - wr), wc * (1.0f - wr),
+                          (1.0f - wc) * wr,          wc * wr};
+
+    vec2_t acc = (vec2_t){0.0f, 0.0f};
+    float wsum = 0.0f;
+
+    for(int i = 0; i < 4; i++) {
+
+        if(sw[i] <= 0.0f)
+            continue;
+
+        struct tile_desc td = base_tile;
+        if(!M_Tile_RelativeDesc(res, &td, sdc[i], sdr[i]))
+            continue;
+
+        const struct flow_field *ff = base_ff;
+        if(td.chunk_r != base_tile.chunk_r || td.chunk_c != base_tile.chunk_c) {
+            ff_id_t ffid;
+            if(!N_FC_GetDestFFMapping(priv->fieldcache, id,
+                (struct coord){td.chunk_r, td.chunk_c}, &ffid))
+                continue;
+            ff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
+            if(!ff)
+                continue;
+        }
+
+        enum flow_dir dir = ff->field[td.tile_r][td.tile_c].dir_idx;
+        if(dir == FD_NONE)
+            continue;
+
+        vec2_t fd = N_FlowDir(dir), scaled;
+        PFM_Vec2_Scale(&fd, sw[i], &scaled);
+        PFM_Vec2_Add(&acc, &scaled, &acc);
+        wsum += sw[i];
+    }
+
+    if(wsum < 1e-6f || PFM_Vec2_Len(&acc) < 1e-6f)
+        return N_FlowDir(base_ff->field[base_tile.tile_r][base_tile.tile_c].dir_idx);
+
+    PFM_Vec2_Normal(&acc, &acc);
+    return acc;
+}
+
 vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest, 
                                   void *nav_private, vec3_t map_pos)
 {
-    unsigned dir_idx;
     struct nav_private *priv = nav_private;
     enum nav_layer layer = N_DestLayer(id);
     int faction_id = N_DestFactionID(id);
@@ -3396,8 +3462,7 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
 
 ff_found:
     assert(ff);
-    dir_idx = ff->field[tile.tile_r][tile.tile_c].dir_idx;
-    return N_FlowDir(dir_idx);
+    return n_interpolated_flow_dir(priv, id, res, map_pos, curr_pos, ff, tile);
 }
 
 bool N_DesiredGroupArrivalVelocity(vec2_t curr_pos, void *nav_private, enum nav_layer layer,
