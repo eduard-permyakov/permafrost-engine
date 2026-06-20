@@ -1300,11 +1300,6 @@ void M_GetFieldCacheStats(const struct map *map, struct fc_stats *out)
     return N_FC_GetStatsAt(map->nav_private, out);
 }
 
-void M_SwapCaches(struct map *a, struct map *b)
-{
-    N_SwapFieldcaches(a->nav_private, b->nav_private);
-}
-
 void M_NavSetNavUnitQueryCtx(struct map *map, struct nav_unit_query_ctx *ctx)
 {
     return N_SetNavUnitQueryCtx(map->nav_private, ctx);

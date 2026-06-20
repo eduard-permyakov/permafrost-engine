@@ -63,6 +63,14 @@ struct refcounted_map *G_Move_NavSnapshotAcquire(void);
 
 bool G_Move_Init(const struct map *map);
 void G_Move_Shutdown(void);
+
+/* The tid of the navigation tick task, or NULL_TID when none is in flight. */
+uint32_t G_Move_GetNavTID(void);
+
+/* Drain the navigation tick task to a quiescent state so the main thread may
+ * safely read the task-owned field cache (e.g. for debug rendering). Returns
+ * false if the task is GPU-blocked and could not be completed this call. */
+bool G_Move_NavQuiesce(void);
 bool G_Move_HasWork(void);
 void G_Move_FlushWork(void);
 

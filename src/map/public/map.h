@@ -860,12 +860,6 @@ void        M_AL_FreeCopyWithFields(struct map *map);
 bool   M_AL_WritePFMap(const struct map *map, SDL_RWops *stream);
 
 /* ------------------------------------------------------------------------
- * Swap fieldcaches between two navigation contexts.
- * ------------------------------------------------------------------------
- */
-void   M_SwapCaches(struct map *a, struct map *b);
-
-/* ------------------------------------------------------------------------
  * Access navigation stats.
  * ------------------------------------------------------------------------
  */

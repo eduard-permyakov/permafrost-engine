@@ -56,8 +56,10 @@ void N_FC_Free(struct fieldcache_ctx *ctx);
 bool N_FC_Init(struct fieldcache_ctx *ctx);
 void N_FC_Destroy(struct fieldcache_ctx *ctx);
 
-bool N_FC_Clone(struct fieldcache_ctx *from, struct fieldcache_ctx *to);
-void N_FC_Swap(struct fieldcache_ctx *a, struct fieldcache_ctx *b);
+/* The single process-wide field cache, owned by the navigation tick task. */
+bool                   N_FC_InitSingleton(void);
+void                   N_FC_ShutdownSingleton(void);
+struct fieldcache_ctx *N_FC_GetSingleton(void);
 
 /* Invalidate all LOS and Flow fields for a particular chunk 
  */

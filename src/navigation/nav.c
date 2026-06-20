@@ -141,6 +141,20 @@ VEC_IMPL(static inline, in, struct field_work_in)
 VEC_TYPE(out, struct field_work_out)
 VEC_IMPL(static inline, out, struct field_work_out)
 
+struct fc_inval_cmd{
+    struct coord   chunk;
+    enum nav_layer layer;
+    int            width;
+    int            height;
+    bool           through;
+};
+VEC_TYPE(inval, struct fc_inval_cmd)
+VEC_IMPL(static inline, inval, struct fc_inval_cmd)
+
+/* Field-cache invalidation commands accumulated by N_Update on the main thread
+ * and drained by the navigation tick task via N_ApplyDeferredInvalidations. */
+static vec_inval_t s_pending_inval;
+
 struct field_work{
     struct memstack mem;
     vec_in_t        in;
@@ -2105,6 +2119,11 @@ bool N_Init(void)
     if(!stalloc_init(&s_field_work.mem))
         goto fail_alloc;
 
+    vec_inval_init(&s_pending_inval);
+
+    if(!N_FC_InitSingleton())
+        goto fail_alloc;
+
     return true;
 
 fail_alloc:
@@ -2117,7 +2136,6 @@ void N_Update(void *nav_private)
     PERF_ENTER();
 
     struct nav_private *priv = nav_private;
-    N_FC_InvalidateDynamicSurroundFields(priv->fieldcache);
 
     for(int layer = 0; layer < NAV_LAYER_MAX; layer++) {
     
@@ -2134,17 +2152,23 @@ void N_Update(void *nav_private)
             uint32_t key = kh_key(set, i);
             struct coord curr = (struct coord){ key >> 16, key & 0xffff };
 
-            N_FC_InvalidateAllAtChunk(priv->fieldcache, curr, layer);
-            N_FC_InvalidateNeighbourEnemySeekFields(priv->fieldcache, priv->width, priv->height, curr, layer);
-
             struct nav_chunk *chunk = &priv->chunks[layer]
                                                    [IDX(curr.r, priv->width, curr.c)];
             int nflipped = n_update_edge_states(chunk);
 
-            if(nflipped) {
+            if(nflipped)
                 components_dirty = true;
-                N_FC_InvalidateAllThroughChunk(priv->fieldcache, curr, layer);
-            }
+
+            /* Defer field-cache invalidation to the navigation tick task, which
+             * owns the cache (drained in N_ApplyDeferredInvalidations).
+             */
+            vec_inval_push(&s_pending_inval, (struct fc_inval_cmd){
+                .chunk   = curr,
+                .layer   = layer,
+                .width   = priv->width,
+                .height  = priv->height,
+                .through = (nflipped != 0)
+            });
         }
 
         if(components_dirty) {
@@ -2157,9 +2181,28 @@ void N_Update(void *nav_private)
     PERF_RETURN_VOID();
 }
 
+void N_ApplyDeferredInvalidations(void)
+{
+    struct fieldcache_ctx *fc = N_FC_GetSingleton();
+    N_FC_InvalidateDynamicSurroundFields(fc);
+
+    for(int i = 0; i < vec_size(&s_pending_inval); i++) {
+
+        const struct fc_inval_cmd *cmd = &vec_AT(&s_pending_inval, i);
+        N_FC_InvalidateAllAtChunk(fc, cmd->chunk, cmd->layer);
+        N_FC_InvalidateNeighbourEnemySeekFields(fc, cmd->width, cmd->height,
+            cmd->chunk, cmd->layer);
+        if(cmd->through)
+            N_FC_InvalidateAllThroughChunk(fc, cmd->chunk, cmd->layer);
+    }
+    vec_inval_reset(&s_pending_inval);
+}
+
 void N_Shutdown(void)
 {
     field_join_work();
+    N_FC_ShutdownSingleton();
+    vec_inval_destroy(&s_pending_inval);
     stalloc_destroy(&s_field_work.mem);
 }
 
@@ -2176,8 +2219,6 @@ void N_DestroyCtx(void *nav_private)
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
         kh_destroy(coord, priv->dirty_chunks[i]);
     }
-    N_FC_Destroy(priv->fieldcache);
-    N_FC_Free(priv->fieldcache);
 }
 
 bool N_InitCtx(void *nav_private)
@@ -2186,11 +2227,9 @@ bool N_InitCtx(void *nav_private)
     struct nav_private *priv = nav_private;
     memset(priv, 0, sizeof(struct nav_private));
 
-    if(NULL == (priv->fieldcache = N_FC_New()))
-        return false;
-
-    if(!N_FC_Init(priv->fieldcache))
-        return false;
+    /* Every navigation context shares the one task-owned field cache. */
+    priv->fieldcache = N_FC_GetSingleton();
+    assert(priv->fieldcache);
 
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
         if((priv->dirty_chunks[i] = kh_init(coord)) == NULL)
@@ -5173,27 +5212,12 @@ void N_CloneCtx(void *nav_private, void *out)
         }
     }
 
-    to->fieldcache = N_FC_New();
-    assert(to->fieldcache);
-    bool ret = N_FC_Clone(from->fieldcache, to->fieldcache);
-
+    /* The field cache is a shared singleton; the shallow copy above already
+     * carried its pointer over, so there is nothing to clone. */
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
         to->dirty_chunks[i] = kh_copy(coord, from->dirty_chunks[i]);
     }
     PERF_RETURN_VOID();
-}
-
-void N_SwapFieldcaches(void *nav_private_a, void *nav_private_b)
-{
-    assert(nav_private_a);
-    assert(nav_private_b);
-
-    struct nav_private *a = (struct nav_private*)nav_private_a;
-    struct nav_private *b = (struct nav_private*)nav_private_b;
-
-    struct fieldcache_ctx *tmp = a->fieldcache;
-    a->fieldcache = b->fieldcache;
-    b->fieldcache = tmp;
 }
 
 void N_FC_ClearStatsAt(void *nav_private)

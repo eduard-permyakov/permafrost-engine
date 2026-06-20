@@ -658,10 +658,19 @@ void N_CloneCtx(void *nav_private, void *out);
 void N_DestroyCtx(void *nav_private);
 
 /* ------------------------------------------------------------------------
- * Swaps field caches between two navigation contexts.
+ * Applies the field-cache invalidation commands that N_Update accumulated
+ * since the previous tick. Must run from the navigation tick task (it mutates
+ * the task-owned field cache), as the first step of a tick's work.
  * ------------------------------------------------------------------------
  */
-void N_SwapFieldcaches(void *nav_private_a, void *nav_private_b);
+void N_ApplyDeferredInvalidations(void);
+
+/* ------------------------------------------------------------------------
+ * Registers a callback returning the tid of the navigation tick task. The
+ * field cache uses it to assert it is only accessed from that context.
+ * ------------------------------------------------------------------------
+ */
+void N_FC_SetNavTaskTIDProvider(uint32_t (*provider)(void));
 
 /* ------------------------------------------------------------------------
  * Creates an arbitrary-resolution flow field guiding to a set of tiles.

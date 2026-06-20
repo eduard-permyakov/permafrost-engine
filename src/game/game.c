@@ -2069,14 +2069,6 @@ void G_UpdateMap(void)
     }
 }
 
-void G_SwapFieldCaches(struct map *map)
-{
-    ASSERT_IN_MAIN_THREAD();
-    if(s_gs.map) {
-        M_SwapCaches(s_gs.map, map);
-    }
-}
-
 const struct map *G_GetMap(void)
 {
     ASSERT_IN_MAIN_THREAD();

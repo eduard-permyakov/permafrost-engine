@@ -1227,11 +1227,33 @@ static void render_formation_orientation(void)
     G_Formation_RenderPlacement(sel, endpoints[0], delta);
 }
 
+static bool move_nav_field_overlay_enabled(void)
+{
+    static const char *const keys[] = {
+        "pf.debug.show_last_cmd_flow_field",
+        "pf.debug.show_first_sel_movestate",
+        "pf.debug.show_enemy_seek_fields",
+        "pf.debug.show_group_arrival_field",
+    };
+    for(int i = 0; i < ARR_SIZE(keys); i++) {
+        struct sval setting;
+        if(Settings_Get(keys[i], &setting) == SS_OKAY && setting.as_bool)
+            return true;
+    }
+    return false;
+}
+
 static void on_render_3d(void *user, void *event)
 {
     if(s_mouse_dragged) {
         render_formation_orientation();
     }
+
+    /* The field-visualisation overlays below read the task-owned field cache on
+     * the main thread; drain the nav task so it is quiescent. Skip those
+     * overlays if it cannot be drained this frame (GPU work in flight).
+     */
+    bool cache_ok = !move_nav_field_overlay_enabled() || G_Move_NavQuiesce();
 
     const struct camera *cam = G_GetActiveCamera();
     enum nav_layer layer;
@@ -1246,7 +1268,7 @@ static void on_render_3d(void *user, void *event)
 
     status = Settings_Get("pf.debug.show_last_cmd_flow_field", &setting);
     assert(status == SS_OKAY);
-    if(setting.as_bool && s_last_cmd_dest_valid) {
+    if(setting.as_bool && s_last_cmd_dest_valid && cache_ok) {
         M_NavRenderVisiblePathFlowField(s_map, cam, s_last_cmd_dest);
     }
 
@@ -1256,8 +1278,8 @@ static void on_render_3d(void *user, void *event)
     enum selection_type seltype;
     const vec_entity_t *sel = G_Sel_Get(&seltype);
 
-    if(setting.as_bool && vec_size(sel) > 0) {
-    
+    if(setting.as_bool && vec_size(sel) > 0 && cache_ok) {
+
         uint32_t ent = vec_AT(sel, 0);
         struct movestate *ms = movestate_get(ent);
         if(ms) {
@@ -1320,7 +1342,7 @@ static void on_render_3d(void *user, void *event)
 
     status = Settings_Get("pf.debug.show_enemy_seek_fields", &setting);
     assert(status == SS_OKAY);
-    if(setting.as_bool) {
+    if(setting.as_bool && cache_ok) {
 
         status = Settings_Get("pf.debug.enemy_seek_fields_faction_id", &setting);
         assert(status == SS_OKAY);
@@ -1366,7 +1388,7 @@ static void on_render_3d(void *user, void *event)
 
     status = Settings_Get("pf.debug.show_group_arrival_field", &setting);
     assert(status == SS_OKAY);
-    if(setting.as_bool) {
+    if(setting.as_bool && cache_ok) {
         static const vec3_t dbg_flock_pal[] = {   /* DEBUG: one colour per flock so layers separate */
             {0.1f, 0.3f, 1.0f}, {1.0f, 0.5f, 0.0f}, {0.1f, 0.9f, 0.3f},
             {1.0f, 1.0f, 0.0f}, {0.7f, 0.0f, 1.0f},
@@ -4240,6 +4262,7 @@ static void copy_gpu_results(void)
 
 static struct result navigation_tick_task(void *arg)
 {
+    N_ApplyDeferredInvalidations();
     compute_los_state();
     compute_async_fields();
     compute_desired_velocity();
@@ -4291,7 +4314,6 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
     pivot_held_still_units();
     move_handle_hz_update(curr_event);
     move_process_cmds();
-    G_SwapFieldCaches(s_move_work.gamestate.map);
     move_release_gamestate();
     disband_empty_flocks();
     update_flock_arrival_fields();
@@ -4442,6 +4464,16 @@ static void nav_cancel_gpu_work(void)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
+uint32_t G_Move_GetNavTID(void)
+{
+    return s_tick_task_tid;
+}
+
+bool G_Move_NavQuiesce(void)
+{
+    return nav_tick_finish_work() == WORK_COMPLETE;
+}
+
 bool G_Move_Init(const struct map *map)
 {
     assert(map);
@@ -4470,6 +4502,8 @@ bool G_Move_Init(const struct map *map)
 
     vec_entity_init(&s_move_markers);
     vec_flock_init(&s_flocks);
+
+    N_FC_SetNavTaskTIDProvider(G_Move_GetNavTID);
 
     E_Global_Register(EVENT_UPDATE_START, on_update, NULL, G_RUNNING);
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
