@@ -79,9 +79,24 @@ enum edge_state{
     EDGE_STATE_BLOCKED,
 };
 
+/* A position-independent reference to a portal within a navigation layer:
+ * (chunk_index << PORTAL_REF_PORTAL_BITS) | portal_index. Stored instead of a
+ * pointer so the navigation state can be relocated or forked without fixups.
+ */
+typedef uint32_t portal_ref;
+#define PORTAL_REF_PORTAL_BITS 8
+#define PORTAL_REF_PORTAL_MASK 0xffu
+#define PORTAL_REF_NONE        (~(portal_ref)0)
+
+static inline portal_ref portal_ref_make(int chunk_idx, int portal_idx)
+{
+    return (((portal_ref)chunk_idx) << PORTAL_REF_PORTAL_BITS)
+         | (((portal_ref)portal_idx) & PORTAL_REF_PORTAL_MASK);
+}
+
 struct edge{
     enum edge_state es;
-    struct portal  *neighbour;
+    portal_ref      neighbour;
     /* Cost of moving from the center of one portal to the center
      * of the next. */
     float           cost;
@@ -97,7 +112,7 @@ struct portal{
     struct coord      endpoints[2]; 
     size_t            num_neighbours;
     struct edge       edges[MAX_PORTALS_PER_CHUNK-1];
-    struct portal    *connected;
+    portal_ref        connected;
 };
 
 struct nav_chunk{
@@ -108,10 +123,10 @@ struct nav_chunk{
      */
     uint8_t         cost_base[FIELD_RES_R][FIELD_RES_C]; 
     /* Per-tile cost to reach each portal (octile distance, synced with cost_base),
-     * 16-bit fixed-point — use portal_cost_pack/unpack. Points into nav_private's
-     * backing; snapshots share the live map's read-only.
+     * 16-bit fixed-point — use portal_cost_pack/unpack. Inlined so the chunk is
+     * self-contained and the nav buffer can be forked as one contiguous window.
      */
-    uint16_t        (*portal_travel_costs)[FIELD_RES_R][FIELD_RES_C];
+    uint16_t        portal_travel_costs[MAX_PORTALS_PER_CHUNK][FIELD_RES_R][FIELD_RES_C];
     /* Every tile in the 'blockers' holds a reference count for
      * how many stationary entities are currently 'retaining' that 
      * tile by being positioned on it. 'Blocked' tiles are treated 

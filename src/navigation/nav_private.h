@@ -47,15 +47,16 @@ __KHASH_TYPE(coord, khint32_t, struct coord)
 
 struct portal;
 struct fieldcache_ctx;
+struct pf_cow_region;
 
 struct nav_private{
     size_t                 width, height;
     struct nav_chunk      *chunks[NAV_LAYER_MAX];
-    /* Owns the backing storage for portal_travel_costs (live map only; NULL in
-     * snapshots, which share the live map's chunk pointers read-only).
-     */
-    uint16_t             (*portal_travel_costs_mem)[FIELD_RES_R][FIELD_RES_C];
-    /* Private cache for fields and other computation-heavy intermediate data */
+    /* Copy-on-write backing for the chunk buffer (live context only; NULL in
+     * reader-view snapshot contexts). The live nav mutates the private writer
+     * view; snapshots read the canonical view, refreshed by N_PublishLive. */
+    struct pf_cow_region  *cow;
+    /* Shared field-cache singleton (owned by fieldcache.c); identical in every context. */
     struct fieldcache_ctx *fieldcache;
     /* Data used for fieldcache invalidation */
     khash_t(coord)        *dirty_chunks[NAV_LAYER_MAX];
@@ -64,6 +65,16 @@ struct nav_private{
      * that it can be queried asynchronously. */
     struct nav_unit_query_ctx *unit_query_ctx;
 };
+
+/* Resolve a position-independent portal reference within a layer. */
+static inline struct portal *n_portal(const struct nav_private *priv,
+                                      enum nav_layer layer, portal_ref ref)
+{
+    if(ref == PORTAL_REF_NONE)
+        return NULL;
+    return &priv->chunks[layer][ref >> PORTAL_REF_PORTAL_BITS]
+                .portals[ref & PORTAL_REF_PORTAL_MASK];
+}
 
 enum nav_layer N_DestLayer(dest_id_t id);
 int            N_DestFactionID(dest_id_t id);

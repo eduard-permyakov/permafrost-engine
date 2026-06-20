@@ -810,6 +810,27 @@ void M_AL_FreeCopyWithFields(struct map *map)
     PF_FREE(map);
 }
 
+struct map *M_AL_SnapshotShared(const struct map *src)
+{
+    struct map *ret = PF_MALLOC(M_AL_ShallowCopySize(src->width, src->height));
+    if(!ret)
+        return NULL;
+
+    M_AL_ShallowCopy(ret, src);
+    ret->nav_private = N_NewReaderCtx(src->nav_private);
+    if(!ret->nav_private) {
+        PF_FREE(ret);
+        return NULL;
+    }
+    return ret;
+}
+
+void M_AL_FreeSnapshotShared(struct map *map)
+{
+    N_FreeReaderCtx(map->nav_private);
+    PF_FREE(map);
+}
+
 bool M_AL_WritePFMap(const struct map *map, SDL_RWops *stream)
 {
     char line[MAX_LINE_LEN];

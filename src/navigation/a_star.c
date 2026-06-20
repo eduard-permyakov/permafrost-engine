@@ -158,7 +158,7 @@ static size_t portal_connected_liids(const struct nav_private *priv, enum nav_la
         FIELD_RES_C, FIELD_RES_R
     };
 
-    const struct portal *conn = port->connected;
+    const struct portal *conn = n_portal(priv, layer, port->connected);
     const struct nav_chunk *pchunk = &priv->chunks[layer][port->chunk.r * priv->width + port->chunk.c];
 
     /* Take the first tile in the current chunk with the matching liid and 
@@ -230,10 +230,10 @@ static int neighbours_portal_graph(const struct nav_private *priv, enum nav_laye
         /* If the portal is not reachable from our source local island, then 
          * we can't use it 
          */
-        if(!portal_reachable_from_island(chunk, edge->neighbour, liid))
+        if(!portal_reachable_from_island(chunk, n_portal(priv, layer, edge->neighbour), liid))
             continue;
 
-        out_neighbours[ret] = edge->neighbour;
+        out_neighbours[ret] = n_portal(priv, layer, edge->neighbour);
         out_costs[ret] = edge->cost;
         out_enter_liids[ret] = liid;
         ret++;
@@ -247,7 +247,7 @@ static int neighbours_portal_graph(const struct nav_private *priv, enum nav_laye
         if(ret == maxout)
             return ret;
 
-        out_neighbours[ret] = portal->connected;
+        out_neighbours[ret] = n_portal(priv, layer, portal->connected);
         out_costs[ret] = 1;
         out_enter_liids[ret] = conn_liids[i];
         ret++;

@@ -828,14 +828,17 @@ static void field_build_flow_unaligned(
 }
 
 static void field_fixup_portal_edges(
+    const struct nav_private *priv,
+    enum nav_layer       layer,
     float                intf[FIELD_RES_R][FIELD_RES_C], 
     struct flow_field   *inout_flow,
     const struct portal *port)
 {
-    bool up    = port->connected->chunk.r < port->chunk.r;
-    bool down  = port->connected->chunk.r > port->chunk.r;
-    bool left  = port->connected->chunk.c < port->chunk.c;
-    bool right = port->connected->chunk.c > port->chunk.c;
+    const struct portal *conn = n_portal(priv, layer, port->connected);
+    bool up    = conn->chunk.r < port->chunk.r;
+    bool down  = conn->chunk.r > port->chunk.r;
+    bool left  = conn->chunk.c < port->chunk.c;
+    bool right = conn->chunk.c > port->chunk.c;
     assert(up ^ down ^ left ^ right);
 
     for(int r = 0; r < FIELD_RES_R; r++) {
@@ -1403,13 +1406,15 @@ static size_t field_initial_frontier(
 }
 
 static void field_fixup(
+    const struct nav_private *priv,
+    enum nav_layer          layer,
     struct field_target     target, 
     float                   integration_field[FIELD_RES_R][FIELD_RES_C],
     struct flow_field      *inout_flow, 
     const struct nav_chunk *chunk)
 {
     if(target.type == TARGET_PORTAL) {
-        field_fixup_portal_edges(integration_field, inout_flow, target.pd.port); 
+        field_fixup_portal_edges(priv, layer, integration_field, inout_flow, target.pd.port); 
     }
 
     if(target.type == TARGET_PORTALMASK) {
@@ -1418,7 +1423,7 @@ static void field_fixup(
 
             if(!(target.portalmask & (((uint64_t)1) << i)))
                 continue;
-            field_fixup_portal_edges(integration_field, inout_flow, &chunk->portals[i]);
+            field_fixup_portal_edges(priv, layer, integration_field, inout_flow, &chunk->portals[i]);
         }
     }
 }
@@ -2071,7 +2076,7 @@ void N_FlowFieldUpdate(
     inout_flow->target = target;
     field_build_integration(&frontier, chunk, faction_id, ctx, integration_field);
     field_build_flow(integration_field, inout_flow);
-    field_fixup(target, integration_field, inout_flow, chunk);
+    field_fixup(priv, layer, target, integration_field, inout_flow, chunk);
 
     pq_coord_destroy(&frontier);
     PERF_RETURN_VOID();
@@ -2416,7 +2421,7 @@ void N_FlowFieldUpdateIslandToNearest(
 
     field_build_integration(&frontier, chunk, faction_id, ctx, integration_field);
     field_build_flow(integration_field, inout_flow);
-    field_fixup(inout_flow->target, integration_field, inout_flow, chunk);
+    field_fixup(priv, layer, inout_flow->target, integration_field, inout_flow, chunk);
 
     pq_coord_destroy(&frontier);
 }

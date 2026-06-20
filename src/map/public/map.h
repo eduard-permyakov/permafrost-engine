@@ -853,6 +853,12 @@ void   M_AL_ShallowCopy(struct map *dst, const struct map *src);
 struct map *M_AL_CopyWithFields(const struct map *src);
 void        M_AL_FreeCopyWithFields(struct map *map);
 
+/* A read-only snapshot whose navigation chunks alias the live map's canonical
+ * (copy-on-write reader) view, rather than a deep copy. Call M_NavPublish on the
+ * live map first so the canonical reflects the latest writer-side changes. */
+struct map *M_AL_SnapshotShared(const struct map *src);
+void        M_AL_FreeSnapshotShared(struct map *map);
+
 /* ------------------------------------------------------------------------
  * Write the map contents to the stream in PFMap format.
  * ------------------------------------------------------------------------

@@ -3588,7 +3588,7 @@ static void refcounted_map_destroy(void *owner)
 {
     /* Runs on whichever thread drops the last reference; PF_FREE is thread-safe. */
     struct refcounted_map *rmap = owner;
-    M_AL_FreeCopyWithFields(rmap->snapshot);
+    M_AL_FreeSnapshotShared(rmap->snapshot);
     PF_FREE(rmap);
 }
 
@@ -3615,7 +3615,7 @@ static void move_copy_gamestate(void)
     s_move_work.gamestate.ent_gpu_id_map = G_CopyEntGPUIDMap();
     s_move_work.gamestate.gpu_id_ent_map = G_CopyGPUIDEntMap();
     struct refcounted_map *snap = PF_MALLOC(sizeof(struct refcounted_map));
-    snap->snapshot = M_AL_CopyWithFields(s_map);
+    snap->snapshot = M_AL_SnapshotShared(s_map);
     sp_init(snap, refcounted_map_destroy);
     s_nav_snapshot = snap;
     s_move_work.gamestate.map = snap->snapshot;

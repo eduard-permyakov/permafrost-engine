@@ -658,6 +658,17 @@ void N_CloneCtx(void *nav_private, void *out);
 void N_DestroyCtx(void *nav_private);
 
 /* ------------------------------------------------------------------------
+ * Copy-on-write snapshot support. N_NewReaderCtx makes a lightweight nav
+ * context whose chunks alias the live context's canonical (reader) view;
+ * N_PublishLive commits the live writer view's changes to the canonical so
+ * the readers observe them.
+ * ------------------------------------------------------------------------
+ */
+void *N_NewReaderCtx(const void *live_nav);
+void  N_FreeReaderCtx(void *reader_nav);
+void  N_PublishLive(void *nav_private);
+
+/* ------------------------------------------------------------------------
  * Applies the field-cache invalidation commands that N_Update accumulated
  * since the previous tick. Must run from the navigation tick task (it mutates
  * the task-owned field cache), as the first step of a tick's work.

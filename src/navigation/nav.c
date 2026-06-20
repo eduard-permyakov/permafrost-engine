@@ -46,6 +46,7 @@
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../lib/public/mem.h"
+#include "../lib/public/pf_cow_region.h"
 #include "../lib/public/queue.h"
 #include "../lib/public/pqueue.h"
 #include "../lib/public/pf_string.h"
@@ -154,6 +155,12 @@ VEC_IMPL(static inline, inval, struct fc_inval_cmd)
 /* Field-cache invalidation commands accumulated by N_Update on the main thread
  * and drained by the navigation tick task via N_ApplyDeferredInvalidations. */
 static vec_inval_t s_pending_inval;
+
+VEC_TYPE(crange, struct cow_range)
+VEC_IMPL(static inline, crange, struct cow_range)
+
+/* Scratch list of writer byte-ranges to publish to the canonical each tick. */
+static vec_crange_t s_pub_ranges;
 
 struct field_work{
     struct memstack mem;
@@ -468,7 +475,8 @@ static void n_make_cliff_edges(struct nav_private *priv, const struct tile **til
 }
 
 static void n_link_chunks(struct nav_chunk *a, enum edge_type a_type, struct coord a_coord,
-                          struct nav_chunk *b, enum edge_type b_type, struct coord b_coord)
+                          struct nav_chunk *b, enum edge_type b_type, struct coord b_coord,
+                          size_t width)
 {
     assert(((a_type | b_type) == (EDGE_BOT | EDGE_TOP)) || ((a_type | b_type) == (EDGE_LEFT | EDGE_RIGHT)));
     size_t stride = (a_type & (EDGE_BOT | EDGE_TOP)) ? 1 : FIELD_RES_C;
@@ -512,7 +520,7 @@ static void n_link_chunks(struct nav_chunk *a, enum edge_type a_type, struct coo
                                 ? (struct coord){i, a_fixed_idx}
                                 : (assert(0), (struct coord){0}),
                 .num_neighbours = 0,
-                .connected      = &b->portals[b->num_portals]
+                .connected      = portal_ref_make(IDX(b_coord.r, width, b_coord.c), b->num_portals)
             };
             b->portals[b->num_portals] = (struct portal) {
                 .component_id   = 0,
@@ -523,7 +531,7 @@ static void n_link_chunks(struct nav_chunk *a, enum edge_type a_type, struct coo
                                 ? (struct coord){i, b_fixed_idx}
                                 : (assert(0), (struct coord){0}),
                 .num_neighbours = 0,
-                .connected      = &a->portals[a->num_portals]
+                .connected      = portal_ref_make(IDX(a_coord.r, width, a_coord.c), a->num_portals)
             };
 
         /* Last tile of portal */
@@ -568,12 +576,12 @@ static void n_create_portals(struct nav_private *priv, enum nav_layer layer)
                                 : NULL;
 
         if(bot) {
-            n_link_chunks(curr, EDGE_BOT, 
-                (struct coord){r, c}, bot, EDGE_TOP, (struct coord){r+1, c});
+            n_link_chunks(curr, EDGE_BOT,
+                (struct coord){r, c}, bot, EDGE_TOP, (struct coord){r+1, c}, priv->width);
         }
         if(right) {
-            n_link_chunks(curr, EDGE_RIGHT, 
-                (struct coord){r, c}, right, EDGE_LEFT, (struct coord){r, c+1});
+            n_link_chunks(curr, EDGE_RIGHT,
+                (struct coord){r, c}, right, EDGE_LEFT, (struct coord){r, c+1}, priv->width);
         }
 
         n_links += (!!bot + !!right);
@@ -611,7 +619,9 @@ static void n_link_chunk_portals(struct nav_private *priv, struct nav_chunk *chu
                 layer, &path, &cost);
             if(has_path) {
                 port->edges[port->num_neighbours] = (struct edge){
-                    EDGE_STATE_ACTIVE, link_candidate, cost
+                    EDGE_STATE_ACTIVE,
+                    portal_ref_make(IDX(chunk_coord.r, priv->width, chunk_coord.c), j),
+                    cost
                 };
                 port->num_neighbours++;    
             }
@@ -622,20 +632,23 @@ static void n_link_chunk_portals(struct nav_private *priv, struct nav_chunk *chu
     vec_coord_destroy(&path);
 }
 
-static void n_visit_portal(struct portal *port, int comp_id)
+static void n_visit_portal(struct nav_private *priv, enum nav_layer layer,
+                           struct portal *port, int comp_id)
 {
     if(port->component_id != 0)
         return;
 
     port->component_id = comp_id;
-    n_visit_portal(port->connected, comp_id); 
+    struct portal *conn = n_portal(priv, layer, port->connected);
+    if(conn)
+        n_visit_portal(priv, layer, conn, comp_id);
 
     for(int i = 0; i < port->num_neighbours; i++) {
 
-        struct portal *curr = port->edges[i].neighbour;
+        struct portal *curr = n_portal(priv, layer, port->edges[i].neighbour);
         if(port->edges[i].es == EDGE_STATE_BLOCKED)
             continue;
-        n_visit_portal(curr, comp_id);
+        n_visit_portal(priv, layer, curr, comp_id);
     }
 }
 
@@ -648,7 +661,7 @@ static void n_update_components(struct nav_private *priv, enum nav_layer layer)
 
     int comp_id = 1;
     FOREACH_PORTAL(priv, layer, port, {
-        n_visit_portal(port, comp_id++);
+        n_visit_portal(priv, layer, port, comp_id++);
     });
 }
 
@@ -677,7 +690,8 @@ static bool n_local_ports_connected(struct portal *a, struct portal *b,
     return false;
 }
 
-static int n_update_edge_states(struct nav_chunk *chunk)
+static int n_update_edge_states(struct nav_private *priv, enum nav_layer layer,
+                                struct nav_chunk *chunk)
 {
     int ret = 0;
     for(int i = 0; i < chunk->num_portals; i++) {
@@ -686,7 +700,7 @@ static int n_update_edge_states(struct nav_chunk *chunk)
 
         for(int j = 0; j < port->num_neighbours; j++) {
 
-            struct portal *neighb = port->edges[j].neighbour;
+            struct portal *neighb = n_portal(priv, layer, port->edges[j].neighbour);
             bool conn = n_local_ports_connected(port, neighb, chunk);
 
             enum edge_state new_es = conn ? EDGE_STATE_ACTIVE : EDGE_STATE_BLOCKED;
@@ -707,7 +721,7 @@ static void n_update_all_edge_states(struct nav_private *priv, enum nav_layer la
     size_t nchunks = priv->width * priv->height;
     for(int i = 0; i < nchunks; i++) {
         struct nav_chunk *chunk = &priv->chunks[layer][i];
-        n_update_edge_states(chunk);
+        n_update_edge_states(priv, layer, chunk);
     }
 }
 
@@ -1939,7 +1953,7 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
         struct portal_hop curr_hop = vec_AT(&path, MAX(next_hop_idx - 1, 0));
         struct portal_hop next_hop = vec_AT(&path, next_hop_idx);
 
-        if(curr_hop.portal->connected == next_hop.portal)
+        if(n_portal(priv, layer, curr_hop.portal->connected) == next_hop.portal)
             continue;
 
         /* Since we are moving from 'closest portal' to 'closest portal', it 
@@ -1960,7 +1974,7 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
             .pd = (struct portal_desc){
                 next_hop.portal, 
                 next_hop.liid,
-                next_hop.portal->connected, 
+                n_portal(priv, layer, next_hop.portal->connected),
                 (i < vec_size(&path)-1) ? vec_AT(&path, next_hop_idx + 1).liid 
                                         : N_ClosestPathableLocalIsland(priv, dst_chunk, dst_desc),
             }
@@ -2067,48 +2081,6 @@ static vec2_t tile_center_location(struct nav_private *priv, vec3_t map_pos, str
     };
 }
 
-static struct portal *convert_portal_pointer(struct portal *ptr, struct nav_private *from,
-                                             struct nav_private *to)
-{
-    size_t chunks_per_layer = from->width * from->height;
-    size_t layer_size = chunks_per_layer * sizeof(struct nav_chunk);
-
-    for(int i = 0; i < NAV_LAYER_MAX; i++) {
-
-        const char *from_base = (const char*)from->chunks[i];
-        const char *to_base = (const char*)to->chunks[i];
-
-        if(((const char*)ptr) >= from_base && ((const char*)ptr) < (from_base + layer_size)) {
-            size_t offset = (uintptr_t)(((char*)ptr) - from_base);
-            assert(offset < layer_size);
-            return (struct portal*)(to_base + offset);
-        }
-    }
-    assert(0);
-    return NULL;
-}
-
-static void clone_portals(const struct nav_chunk *from, struct nav_private *from_ctx, 
-                          struct nav_chunk *to, struct nav_private *to_ctx)
-{
-    PERF_ENTER();
-
-    to->num_portals = from->num_portals;
-    for(int i = 0; i < from->num_portals; i++) {
-
-        struct portal src = from->portals[i];
-        src.connected = convert_portal_pointer(src.connected, from_ctx, to_ctx);
-
-        for(int j = 0; j < src.num_neighbours; j++) {
-
-            src.edges[j].neighbour = convert_portal_pointer(src.edges[j].neighbour,
-                from_ctx, to_ctx);
-        }
-        to->portals[i] = src;
-    }
-    PERF_RETURN_VOID();
-}
-
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -2120,6 +2092,7 @@ bool N_Init(void)
         goto fail_alloc;
 
     vec_inval_init(&s_pending_inval);
+    vec_crange_init(&s_pub_ranges);
 
     if(!N_FC_InitSingleton())
         goto fail_alloc;
@@ -2131,14 +2104,29 @@ fail_alloc:
     return false;
 }
 
+static void nav_publish(struct nav_private *priv, const struct cow_range *ranges, size_t n)
+{
+    if(!priv->cow)
+        return;
+    pf_cow_publish(priv->cow, ranges, n);
+    /* The writer base can move on reset (Windows); re-derive the live chunk pointers. */
+    struct nav_chunk *wbase = pf_cow_writer_base(priv->cow);
+    size_t layer_chunks = priv->width * priv->height;
+    for(int i = 0; i < NAV_LAYER_MAX; i++)
+        priv->chunks[i] = wbase + i * layer_chunks;
+}
+
 void N_Update(void *nav_private)
 {
     PERF_ENTER();
 
     struct nav_private *priv = nav_private;
+    size_t layer_chunks = priv->width * priv->height;
+    bool full_layer[NAV_LAYER_MAX] = {0};
 
+    PERF_PUSH("recompute");
     for(int layer = 0; layer < NAV_LAYER_MAX; layer++) {
-    
+
         n_update_dirty_local_islands(priv, layer);
 
         khash_t(coord) *set = priv->dirty_chunks[layer];
@@ -2154,7 +2142,7 @@ void N_Update(void *nav_private)
 
             struct nav_chunk *chunk = &priv->chunks[layer]
                                                    [IDX(curr.r, priv->width, curr.c)];
-            int nflipped = n_update_edge_states(chunk);
+            int nflipped = n_update_edge_states(priv, layer, chunk);
 
             if(nflipped)
                 components_dirty = true;
@@ -2173,10 +2161,46 @@ void N_Update(void *nav_private)
 
         if(components_dirty) {
             n_update_components(priv, layer);
+            full_layer[layer] = true;
+        }
+    }
+    PERF_POP();
+
+    /* Commit the writer view's changes to the canonical so snapshot readers see
+     * them: whole layers whose components were recomputed (component_id touched
+     * every portal), plus the individual dirty chunks of the other layers. */
+    PERF_PUSH("publish");
+    vec_crange_reset(&s_pub_ranges);
+    for(int layer = 0; layer < NAV_LAYER_MAX; layer++) {
+
+        if(full_layer[layer]) {
+            vec_crange_push(&s_pub_ranges, (struct cow_range){
+                (size_t)layer * layer_chunks * sizeof(struct nav_chunk),
+                layer_chunks * sizeof(struct nav_chunk)
+            });
+            continue;
         }
 
-        kh_clear(coord, set);
+        khash_t(coord) *set = priv->dirty_chunks[layer];
+        for(int i = kh_begin(set); i != kh_end(set); i++) {
+            if(!kh_exist(set, i))
+                continue;
+            uint32_t key = kh_key(set, i);
+            struct coord curr = (struct coord){ key >> 16, key & 0xffff };
+            size_t idx = IDX(curr.r, priv->width, curr.c);
+            vec_crange_push(&s_pub_ranges, (struct cow_range){
+                ((size_t)layer * layer_chunks + idx) * sizeof(struct nav_chunk),
+                sizeof(struct nav_chunk)
+            });
+        }
     }
+
+    size_t nranges = vec_size(&s_pub_ranges);
+    nav_publish(priv, nranges ? &vec_AT(&s_pub_ranges, 0) : NULL, nranges);
+    PERF_POP();
+
+    for(int layer = 0; layer < NAV_LAYER_MAX; layer++)
+        kh_clear(coord, priv->dirty_chunks[layer]);
 
     PERF_RETURN_VOID();
 }
@@ -2203,6 +2227,7 @@ void N_Shutdown(void)
     field_join_work();
     N_FC_ShutdownSingleton();
     vec_inval_destroy(&s_pending_inval);
+    vec_crange_destroy(&s_pub_ranges);
     stalloc_destroy(&s_field_work.mem);
 }
 
@@ -2267,26 +2292,18 @@ void *N_NewCtxForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
     if(!N_InitCtx(ret))
         goto fail_init_ctx;
 
-    memset(ret->chunks, 0, sizeof(ret->chunks));
-    for(int i = 0; i < NAV_LAYER_MAX; i++) {
-        ret->chunks[i] = PF_MALLOC(w * h * sizeof(struct nav_chunk));
-        if(!ret->chunks[i])
-            goto fail_alloc_chunks;
-    }
-
     ret->width = w;
     ret->height = h;
 
-    ret->portal_travel_costs_mem = PF_MALLOC(NAV_LAYER_MAX * w * h * MAX_PORTALS_PER_CHUNK
-                                           * sizeof(*ret->portal_travel_costs_mem));
-    if(!ret->portal_travel_costs_mem)
+    /* One copy-on-write region holds all layers' chunks (inlined portal_travel_costs
+     * makes each chunk self-contained). The live nav builds/mutates the private writer
+     * view; snapshots read the canonical view, refreshed by N_PublishLive. */
+    ret->cow = pf_cow_create(NAV_LAYER_MAX * w * h * sizeof(struct nav_chunk));
+    if(!ret->cow)
         goto fail_alloc_chunks;
-    for(int layer = 0; layer < NAV_LAYER_MAX; layer++) {
-        for(size_t idx = 0; idx < w * h; idx++) {
-            ret->chunks[layer][idx].portal_travel_costs =
-                &ret->portal_travel_costs_mem[(layer * w * h + idx) * MAX_PORTALS_PER_CHUNK];
-        }
-    }
+    struct nav_chunk *chunkmem = pf_cow_writer_base(ret->cow);
+    for(int i = 0; i < NAV_LAYER_MAX; i++)
+        ret->chunks[i] = chunkmem + i * (w * h);
 
     assert(FIELD_RES_R >= chunk_h && FIELD_RES_R % chunk_h == 0);
     assert(FIELD_RES_C >= chunk_w && FIELD_RES_C % chunk_w == 0);
@@ -2323,6 +2340,8 @@ void *N_NewCtxForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
     }
 
     ret->unit_query_ctx = NULL;
+    /* Make the freshly-built writer view visible to snapshot readers. */
+    N_PublishLive(ret);
     return ret;
 
 fail_alloc_chunks:
@@ -2339,11 +2358,44 @@ void N_FreeCtx(void *nav_private)
 
     N_DestroyCtx(priv);
 
-    for(int i = 0; i < NAV_LAYER_MAX; i++) {
-        PF_FREE(priv->chunks[i]);
-    }
-    PF_FREE(priv->portal_travel_costs_mem);
+    pf_cow_destroy(priv->cow);
     PF_FREE(nav_private);
+}
+
+void *N_NewReaderCtx(const void *live_nav)
+{
+    const struct nav_private *live = live_nav;
+    struct nav_private *r = PF_MALLOC(sizeof(struct nav_private));
+    if(!r)
+        return NULL;
+
+    *r = *live;
+    r->cow = NULL;
+    r->unit_query_ctx = NULL;
+
+    struct nav_chunk *cbase = (struct nav_chunk*)pf_cow_reader_base(live->cow);
+    size_t layer_chunks = live->width * live->height;
+    for(int i = 0; i < NAV_LAYER_MAX; i++) {
+        r->chunks[i] = cbase + i * layer_chunks;
+        r->dirty_chunks[i] = NULL;
+    }
+    return r;
+}
+
+void N_FreeReaderCtx(void *reader_nav)
+{
+    PF_FREE(reader_nav);
+}
+
+void N_PublishLive(void *nav_private)
+{
+    struct nav_private *priv = nav_private;
+    if(!priv->cow)
+        return;
+    struct cow_range full = {
+        0, NAV_LAYER_MAX * priv->width * priv->height * sizeof(struct nav_chunk)
+    };
+    nav_publish(priv, &full, 1);
 }
 
 void N_SetNavUnitQueryCtx(void *nav_private, struct nav_unit_query_ctx *ctx)
@@ -3244,7 +3296,7 @@ void N_RenderNavigationPortals(void *nav_private, const struct map *map,
 
         for(int j = 0; j < port->num_neighbours; j++) {
 
-            struct portal *neighb = port->edges[j].neighbour;
+            struct portal *neighb = n_portal(priv, layer, port->edges[j].neighbour);
             struct coord a = (struct coord){
                 (port->endpoints[0].r + port->endpoints[1].r) / 2,
                 (port->endpoints[0].c + port->endpoints[1].c) / 2,
@@ -3301,6 +3353,8 @@ void N_UpdatePortals(void *nav_private)
     for(int layer = 0; layer < NAV_LAYER_MAX; layer++) {
         n_update_portals(nav_private, layer);
     }
+    /* Portal rebuild touches the whole map; commit it all to the canonical. */
+    N_PublishLive(nav_private);
 }
 
 void N_UpdateIslandsField(void *nav_private)
@@ -5181,42 +5235,24 @@ void N_CloneCtx(void *nav_private, void *out)
     struct nav_private *to = (struct nav_private*)out;
 
     *to = *from;
-    to->portal_travel_costs_mem = NULL;
-    unsigned char *cursor = (unsigned char*)(to + 1);
+    to->cow = NULL;
+
+    /* The chunk arrays (inlined portal_travel_costs, position-independent portal
+     * refs) are one contiguous block laid out right after the descriptor, so the
+     * clone is a single memcpy with no per-field copy and no pointer fixup. */
+    struct nav_chunk *chunkmem = (struct nav_chunk*)(to + 1);
     size_t chunks_per_layer = from->width * from->height;
-    size_t layer_size = chunks_per_layer * sizeof(struct nav_chunk);
+    size_t total = NAV_LAYER_MAX * chunks_per_layer * sizeof(struct nav_chunk);
 
-    for(int i = 0; i < NAV_LAYER_MAX; i++) {
+    memcpy(chunkmem, from->chunks[0], total);
+    for(int i = 0; i < NAV_LAYER_MAX; i++)
+        to->chunks[i] = chunkmem + i * chunks_per_layer;
 
-        size_t cost_size = sizeof(((struct nav_chunk*)0)->cost_base);
-        size_t blockers_size = sizeof(((struct nav_chunk*)0)->blockers);
-        size_t factions_size = sizeof(((struct nav_chunk*)0)->factions);
-        size_t islands_size = sizeof(((struct nav_chunk*)0)->islands);
-        size_t loc_islands_size = sizeof(((struct nav_chunk*)0)->local_islands);
-        to->chunks[i] = (struct nav_chunk*)cursor;
-
-        for(int j = 0; j < chunks_per_layer; j++) {
-            memcpy(to->chunks[i][j].cost_base, from->chunks[i][j].cost_base, cost_size);
-            memcpy(to->chunks[i][j].blockers, from->chunks[i][j].blockers, blockers_size);
-            memcpy(to->chunks[i][j].factions, from->chunks[i][j].factions, factions_size);
-            memcpy(to->chunks[i][j].islands, from->chunks[i][j].islands, islands_size);
-            memcpy(to->chunks[i][j].local_islands, from->chunks[i][j].local_islands, loc_islands_size);
-            to->chunks[i][j].portal_travel_costs = from->chunks[i][j].portal_travel_costs;
-        }
-        cursor += layer_size;
-    }
-
-    for(int i = 0; i < NAV_LAYER_MAX; i++) {
-        for(int j = 0; j < chunks_per_layer; j++) {
-            clone_portals(&from->chunks[i][j], from, &to->chunks[i][j], to);
-        }
-    }
-
-    /* The field cache is a shared singleton; the shallow copy above already
-     * carried its pointer over, so there is nothing to clone. */
-    for(int i = 0; i < NAV_LAYER_MAX; i++) {
+    /* The field cache is a shared singleton; the shallow copy above carried its
+     * pointer over. */
+    for(int i = 0; i < NAV_LAYER_MAX; i++)
         to->dirty_chunks[i] = kh_copy(coord, from->dirty_chunks[i]);
-    }
+
     PERF_RETURN_VOID();
 }
 
