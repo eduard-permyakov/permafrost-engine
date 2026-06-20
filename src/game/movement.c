@@ -4099,6 +4099,26 @@ static void interpolate_tick(void *user, void *event)
     PERF_RETURN_VOID();
 }
 
+static void compute_los_state(void)
+{
+    PERF_ENTER();
+    for(int i = 0; i < s_move_work.nwork; i++) {
+
+        struct move_work_in *in = &s_move_work.in[i];
+        const struct movestate *ms = movestate_get(in->ent_uid);
+        const struct flock *fl = flock_for_ent(in->ent_uid);
+        vec2_t pos = (vec2_t){ms->prev_pos.x, ms->prev_pos.z};
+
+        in->has_dest_los = (fl
+            && (ms->state != STATE_SURROUND_ENTITY || !ms->using_surround_field))
+            ? M_NavHasDestLOS(s_move_work.gamestate.map, fl->dest_id, pos, fl->target_xz)
+            : false;
+
+        Sched_TryYield();
+    }
+    PERF_RETURN_VOID();
+}
+
 static void compute_async_fields(void)
 {
     /* The field computations can read various navigation state
@@ -4215,6 +4235,7 @@ static void copy_gpu_results(void)
 
 static struct result navigation_tick_task(void *arg)
 {
+    compute_los_state();
     compute_async_fields();
     compute_desired_velocity();
     fork_join_velocity_computations();
@@ -4286,7 +4307,6 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
         if(ent_still(ms))
             continue;
 
-        struct flock *flock = flock_for_ent(curr);
         vec_cp_ent_t *dyn, *stat;
         dyn = stalloc(&s_move_work.mem, sizeof(vec_cp_ent_t));
         stat = stalloc(&s_move_work.mem, sizeof(vec_cp_ent_t));
@@ -4327,9 +4347,6 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
             .save_debug = G_ClearPath_ShouldSaveDebug(curr),
             .stat_neighbs = stat,
             .dyn_neighbs = dyn,
-            .has_dest_los = (flock 
-                         && (ms->state != STATE_SURROUND_ENTITY || !ms->using_surround_field)) 
-                          ? M_NavHasDestLOS(s_map, flock->dest_id, pos, flock->target_xz) : false,
             .fstate.fid = fid,
             .fstate.assignment_ready = 
                 (fid != NULL_FID) ? G_Formation_AssignmentReady(curr)
