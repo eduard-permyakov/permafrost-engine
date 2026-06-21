@@ -3507,6 +3507,18 @@ static void s_create_settings(void)
         .commit = trace_enable_commit,
     });
     assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.log_python",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
 }
 
 static PyObject *s_wrap_argv(struct arg_desc *args)
@@ -4624,6 +4636,11 @@ void S_ShowLastError(void)
     if(s_err_ctx.occurred) {
         s_err_ctx.prev_state = G_GetSimState();
         G_SetSimState(G_PAUSED_FULL);
+
+        struct sval setting;
+        if(Settings_Get("pf.debug.log_python", &setting) == SS_OKAY && setting.as_bool) {
+            S_Error_Print(&s_err_ctx);
+        }
     }
 }
 

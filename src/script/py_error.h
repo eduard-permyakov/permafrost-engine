@@ -49,6 +49,7 @@ struct py_err_ctx{
 };
 
 void S_Error_Update(struct py_err_ctx *err_ctx);
+void S_Error_Print(struct py_err_ctx *err_ctx);
 
 #endif
 

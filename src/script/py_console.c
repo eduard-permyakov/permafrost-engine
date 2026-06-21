@@ -45,6 +45,7 @@
 #include "py_console.h"
 #include "../ui.h"
 #include "../event.h"
+#include "../settings.h"
 #include "../lib/public/lru_cache.h"
 #include "../lib/public/mem.h"
 #include "../lib/public/vec.h"
@@ -133,6 +134,14 @@ static void add_history(const char *str, enum line_type type)
 static void write_str(const char *str, size_t idx)
 {
     assert(idx < 2);
+
+    struct sval setting;
+    if(Settings_Get("pf.debug.log_python", &setting) == SS_OKAY && setting.as_bool) {
+        FILE *stream = (idx == 0) ? stdout : stderr;
+        fputs(str, stream);
+        fflush(stream);
+    }
+
     static size_t nextline_idx[2] = {0};
     static char nextline[2][80];
 

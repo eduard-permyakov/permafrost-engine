@@ -269,6 +269,59 @@ bool s_print_source_line(const char *filename, int lineno, int indent,
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
+void S_Error_Print(struct py_err_ctx *err_ctx)
+{
+    if(!err_ctx->occurred || !err_ctx->type)
+        return;
+
+    char buff[256] = "";
+    if(PyExceptionClass_Check(err_ctx->type)) {
+        const char *clsname = PyExceptionClass_Name(err_ctx->type);
+        const char *dot = strrchr(clsname, '.');
+        pf_strlcpy(buff, dot ? dot + 1 : clsname, sizeof(buff));
+    }else{
+        PyObject *repr = PyObject_Str(err_ctx->type);
+        if(repr) {
+            pf_strlcpy(buff, PyString_AS_STRING(repr), sizeof(buff));
+            Py_DECREF(repr);
+        }
+    }
+
+    if(err_ctx->value) {
+        PyObject *repr = PyObject_Str(err_ctx->value);
+        if(repr) {
+            if(strlen(PyString_AS_STRING(repr))) {
+                pf_strlcat(buff, ": ", sizeof(buff));
+                pf_strlcat(buff, PyString_AS_STRING(repr), sizeof(buff));
+            }
+            Py_DECREF(repr);
+        }
+    }
+
+    fprintf(stderr, "[python] Unhandled exception: %s\n", buff);
+
+    PyTracebackObject *tb = (PyTracebackObject*)err_ctx->traceback;
+    if(tb) {
+        fprintf(stderr, "[python] Traceback (most recent call last):\n");
+    }
+    int frame = 0;
+    for(; tb != NULL && frame < 128; tb = tb->tb_next, frame++) {
+
+        const char *file = PyString_AsString(tb->tb_frame->f_code->co_filename);
+        const char *func = PyString_AsString(tb->tb_frame->f_code->co_name);
+        fprintf(stderr, "[python]   File \"%s\", line %d, in %s\n", file, tb->tb_lineno, func);
+
+        char linebuff[512] = "";
+        s_print_source_line(file, tb->tb_lineno, 4, sizeof(linebuff), linebuff);
+        size_t len = strlen(linebuff);
+        if(len > 0 && linebuff[len - 1] == '\n')
+            linebuff[len - 1] = '\0';
+        if(strlen(linebuff))
+            fprintf(stderr, "[python] %s\n", linebuff);
+    }
+    fflush(stderr);
+}
+
 void S_Error_Update(struct py_err_ctx *err_ctx)
 {
     if(!err_ctx->occurred)
