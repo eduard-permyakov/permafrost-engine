@@ -170,6 +170,10 @@ struct task{
     struct task   *prev, *next;
     void          *earg;
     void         (*erelease)(void*);
+#if defined(__SANITIZE_ADDRESS__)
+    void          *fake_stack;   /* ASan fiber fake-stack save slot */
+    void          *entry_code;   /* real task fn, invoked via the ASan entry shim */
+#endif
     char          __pad[8];
 };
 
@@ -264,6 +268,66 @@ bool                    s_flushing = false;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
+#if defined(__SANITIZE_ADDRESS__)
+#include <sanitizer/common_interface_defs.h>
+#include <pthread.h>
+extern int pthread_getattr_np(pthread_t, pthread_attr_t *);
+
+static uint32_t sched_curr_thread_tid(void);
+
+/* Per-thread scheduler-fiber bookkeeping so AddressSanitizer can follow the
+ * stack across our hand-written context switches (otherwise it computes a bogus
+ * combined stack and both emits false positives and misses fiber-stack overflows). */
+static void       *s_main_fake_stack;
+static const void *s_main_stack_lo;
+static size_t      s_main_stack_sz;
+static void       *s_worker_fake_stack[MAX_WORKER_THREADS];
+static const void *s_worker_stack_lo[MAX_WORKER_THREADS];
+static size_t      s_worker_stack_sz[MAX_WORKER_THREADS];
+
+static void sched_asan_capture_self_stack(const void **out_lo, size_t *out_sz)
+{
+    pthread_attr_t attr;
+    void *lo = NULL;
+    size_t sz = 0;
+    if(pthread_getattr_np(pthread_self(), &attr) == 0) {
+        pthread_attr_getstack(&attr, &lo, &sz);
+        pthread_attr_destroy(&attr);
+    }
+    *out_lo = lo;
+    *out_sz = sz;
+}
+
+/* Announce the destination stack before a switch, finalize when this fiber is
+ * resumed. cur_fake is NULL when the current fiber is exiting (its fake stack
+ * is abandoned rather than saved). */
+static uint64_t sched_switch_ctx_asan(struct context *save, struct context *restore,
+    uint64_t retval, void *arg, void **cur_fake, const void *dst_lo, size_t dst_sz)
+{
+    __sanitizer_start_switch_fiber(cur_fake, dst_lo, dst_sz);
+    uint64_t ret = sched_switch_ctx(save, restore, retval, arg);
+    __sanitizer_finish_switch_fiber(cur_fake ? *cur_fake : NULL, NULL, NULL);
+    return ret;
+}
+
+/* Entry shim for a freshly-started fiber: finalize the switch into it (a new
+ * fiber has no prior fake stack, hence NULL) before running the task body. */
+static void sched_fiber_asan_entry(void *arg)
+{
+    __sanitizer_finish_switch_fiber(NULL, NULL, NULL);
+    struct task *task = &s_tasks[sched_curr_thread_tid() - 1];
+    sched_task_exit(((struct result (*)(void*))task->entry_code)(arg));
+}
+
+#define SCHED_SWITCH(_save, _load, _rv, _arg, _curfake, _dlo, _dsz) \
+    sched_switch_ctx_asan((_save), (_load), (_rv), (_arg), (_curfake), (_dlo), (_dsz))
+#else
+#define SCHED_SWITCH(_save, _load, _rv, _arg, _curfake, _dlo, _dsz) \
+    sched_switch_ctx((_save), (_load), (_rv), (_arg))
+#endif
+
+#define SCHED_TASK_STACK_SZ(_t) (((_t)->flags & TASK_BIG_STACK) ? BIG_STACK_SZ : STACK_SZ)
+
 static void sched_init_ctx(struct task *task, void *code)
 {
     const size_t stack_size = (task->flags & TASK_BIG_STACK) ? BIG_STACK_SZ : STACK_SZ;
@@ -283,7 +347,12 @@ static void sched_init_ctx(struct task *task, void *code)
     /* This is where we will jump to the next time we 
      * will context switch to this task. */
     stack_base -= 8;
+#if defined(__SANITIZE_ADDRESS__)
+    task->entry_code = code;
+    *(uint64_t*)stack_base = (uintptr_t)sched_fiber_asan_entry;
+#else
     *(uint64_t*)stack_base = (uintptr_t)code;
+#endif
 
     memset(&task->ctx, 0, sizeof(task->ctx));
     task->ctx.rsp = (uintptr_t)stack_base;
@@ -524,9 +593,15 @@ void sched_task_exit(struct result ret)
     task->req.type = _SCHED_REQ_FREE;
 
     if(SDL_ThreadID() == g_main_thread_id) {
+#if defined(__SANITIZE_ADDRESS__)
+        __sanitizer_start_switch_fiber(NULL, s_main_stack_lo, s_main_stack_sz);
+#endif
         sched_switch_ctx(&task->ctx, &s_main_ctx, 0, NULL);
     }else{
         int id = sched_curr_thread_worker_id();
+#if defined(__SANITIZE_ADDRESS__)
+        __sanitizer_start_switch_fiber(NULL, s_worker_stack_lo[id], s_worker_stack_sz[id]);
+#endif
         sched_switch_ctx(&task->ctx, &s_worker_contexts[id], 0, NULL);
     }
 
@@ -780,10 +855,12 @@ static void sched_task_run(struct task *task)
     PERF_PUSH(name);
 
     if(SDL_ThreadID() == g_main_thread_id) {
-        sched_switch_ctx(&s_main_ctx, &task->ctx, task->retval, task->arg);
+        SCHED_SWITCH(&s_main_ctx, &task->ctx, task->retval, task->arg,
+            &s_main_fake_stack, task->stackmem, SCHED_TASK_STACK_SZ(task));
     }else{
         int id = sched_curr_thread_worker_id();
-        sched_switch_ctx(&s_worker_contexts[id], &task->ctx, task->retval, task->arg);
+        SCHED_SWITCH(&s_worker_contexts[id], &task->ctx, task->retval, task->arg,
+            &s_worker_fake_stack[id], task->stackmem, SCHED_TASK_STACK_SZ(task));
     }
 
     PERF_POP();
@@ -1035,6 +1112,9 @@ static void worker_do_work(int id)
 static int worker_threadfn(void *arg)
 {
     int id = (uintptr_t)arg;
+#if defined(__SANITIZE_ADDRESS__)
+    sched_asan_capture_self_stack(&s_worker_stack_lo[id], &s_worker_stack_sz[id]);
+#endif
     worker_notify_done(id);
 
     while(true) {
@@ -1167,6 +1247,10 @@ static struct task *next_main_thread_task(void)
 bool Sched_Init(void)
 {
     ASSERT_IN_MAIN_THREAD();
+
+#if defined(__SANITIZE_ADDRESS__)
+    sched_asan_capture_self_stack(&s_main_stack_lo, &s_main_stack_sz);
+#endif
 
     s_thread_tid_map = kh_init(tid);
     if(!s_thread_tid_map)
@@ -1556,10 +1640,12 @@ uint64_t Sched_Request(struct request req)
 
     uint64_t ret;
     if(SDL_ThreadID() == g_main_thread_id) {
-        ret = sched_switch_ctx(&task->ctx, &s_main_ctx, 0, NULL);
+        ret = SCHED_SWITCH(&task->ctx, &s_main_ctx, 0, NULL,
+            &task->fake_stack, s_main_stack_lo, s_main_stack_sz);
     }else{
         int id = sched_curr_thread_worker_id();
-        ret = sched_switch_ctx(&task->ctx, &s_worker_contexts[id], 0, NULL);
+        ret = SCHED_SWITCH(&task->ctx, &s_worker_contexts[id], 0, NULL,
+            &task->fake_stack, s_worker_stack_lo[id], s_worker_stack_sz[id]);
     }
 
     for(int i = nsaved - 1; i >= 0; i--) {
