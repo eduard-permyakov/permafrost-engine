@@ -1692,7 +1692,13 @@ static void entity_apply_update(struct combat_work_out *out)
     uint32_t uid = out->ent_uid;
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
+
+    if(entity_dead(uid))
+        return;
+
+    int live_hp = cs->current_hp;
     *cs = out->next_state;
+    cs->current_hp = live_hp;
 
     if(out->notify_attack_end) {
         combat_notify_attack_end(uid, cs);
