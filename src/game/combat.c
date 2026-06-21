@@ -1030,10 +1030,11 @@ static void do_set_stance(uint32_t uid, enum combat_stance stance)
     ASSERT_IN_MAIN_THREAD();
 
     /* The stance command is deferred, so the entity may have been removed
-     * (e.g. despawned by a script) before this is processed.
+     * (e.g. despawned by a script) or have died before this is processed.
+     * In the latter case, resetting its state would resurrect it.
      */
     struct combatstate *cs = combatstate_get(uid);
-    if(!cs)
+    if(!cs || cs->state == STATE_DEATH_ANIM_PLAYING)
         return;
 
     if(stance == cs->stance)
@@ -1072,6 +1073,13 @@ static void do_attack_unit(uint32_t uid, uint32_t target)
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
 
+    /* This deferred command may be processed after the entity died (and is now
+     * playing its death animation); acting on it would reset the combat state and
+     * resurrect the entity, leading to a second death.
+     */
+    if(cs->state == STATE_DEATH_ANIM_PLAYING)
+        return;
+
     do_stop_attack(uid);
     cs->stance = COMBAT_STANCE_AGGRESSIVE;
 
@@ -1099,7 +1107,7 @@ static void do_stop_attack(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
 
     struct combatstate *cs = combatstate_get(uid);
-    if(!cs)
+    if(!cs || cs->state == STATE_DEATH_ANIM_PLAYING)
         return;
 
     E_Entity_Unregister(EVENT_UPDATE_START, uid, on_attack_anim_tick);
