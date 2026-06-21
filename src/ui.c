@@ -48,7 +48,7 @@
 #include "lib/public/pf_string.h"
 #include "lib/public/nk_file_browser.h"
 #include "lib/public/khash.h"
-#include "lib/public/mem.h"
+#include "mem.h"
 #include "game/public/game.h"
 
 #include <stdbool.h>

@@ -51,7 +51,7 @@
 #include "lib/public/khash.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/mpool_allocator.h"
-#include "lib/public/mem.h"
+#include "mem.h"
 
 #include <SDL.h>
 

@@ -40,7 +40,7 @@
 #include "main.h"
 #include "perf.h"
 #include "sched.h"
-#include "lib/public/mem.h"
+#include "mem.h"
 #include "lib/public/khash.h"
 #include "lib/public/vec.h"
 #include "lib/public/queue.h"

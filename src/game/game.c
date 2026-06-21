@@ -65,7 +65,7 @@
 #include "../phys/public/phys.h"
 #include "../phys/public/collision.h"
 #include "../lib/public/pf_string.h"
-#include "../lib/public/mem.h"
+#include "../mem.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../entity.h"
 #include "../camera.h"

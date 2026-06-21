@@ -40,7 +40,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "mem.h"
+#include "../../mem.h"
 
 #define STATIC_BUFF_SZ (512*1024)
 #define MEMBLOCK_SZ    (64*1024*1024)

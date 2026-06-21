@@ -47,7 +47,7 @@
 #include "../event.h"
 #include "../settings.h"
 #include "../lib/public/lru_cache.h"
-#include "../lib/public/mem.h"
+#include "../mem.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/pf_string.h"
 #include "../game/public/game.h"

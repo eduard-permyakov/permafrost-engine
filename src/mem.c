@@ -33,7 +33,7 @@
  *
  */
 
-#include "public/mem.h"
+#include "mem.h"
 
 #include <SDL.h>
 #include <mimalloc.h>

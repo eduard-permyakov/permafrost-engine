@@ -49,7 +49,7 @@
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 
-#include "../lib/public/mem.h"
+#include "../mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

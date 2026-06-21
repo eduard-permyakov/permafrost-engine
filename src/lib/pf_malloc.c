@@ -37,7 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_LIB_PF_MALLOC
 
 #include "public/pf_malloc.h"
-#include "public/mem.h"
+#include "../mem.h"
 
 #include <stdint.h>
 #include <assert.h>

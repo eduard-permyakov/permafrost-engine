@@ -40,7 +40,7 @@
 #include "../map/public/tile.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
-#include "../lib/public/mem.h"
+#include "../mem.h"
 #include "../lib/public/attr.h"
 
 #include <math.h>

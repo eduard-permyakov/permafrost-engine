@@ -44,7 +44,7 @@
 #include "render/public/render.h"
 #include "render/public/render_ctrl.h"
 #include "lib/public/vec.h"
-#include "lib/public/mem.h"
+#include "mem.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/stb_image.h"
 #include "lib/public/nk_file_browser.h"

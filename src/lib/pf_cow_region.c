@@ -54,7 +54,7 @@
 #include <string.h>
 #include <stdint.h>
 
-#include "../lib/public/mem.h"
+#include "../mem.h"
 
 #if !defined(_WIN32) && !defined(MFD_CLOEXEC)
 #define MFD_CLOEXEC 0x0001U

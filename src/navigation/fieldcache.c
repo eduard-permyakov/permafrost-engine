@@ -41,7 +41,7 @@
 #include "../lib/public/lru_cache.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"
-#include "../lib/public/mem.h"
+#include "../mem.h"
 #include "../event.h"
 #include "../sched.h"
 #include "../config.h"

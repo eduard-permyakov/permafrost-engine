@@ -48,7 +48,7 @@
 #include "lib/public/attr.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/vec.h"
-#include "lib/public/mem.h"
+#include "mem.h"
 #include "lib/public/SDL_vec_rwops.h"
 #include "navigation/public/nav.h"
 #include "game/public/game.h"

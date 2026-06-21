@@ -48,7 +48,7 @@
 #include "../render/public/render_ctrl.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/attr.h"
-#include "../lib/public/mem.h"
+#include "../mem.h"
 #include "../lib/public/simd.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"

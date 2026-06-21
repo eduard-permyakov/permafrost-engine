@@ -44,7 +44,7 @@
 #include "../map/public/tile.h"
 #include "../game/public/game.h"
 #include "../lib/public/pqueue.h"
-#include "../lib/public/mem.h"
+#include "../mem.h"
 
 #include <string.h>
 #include <assert.h>

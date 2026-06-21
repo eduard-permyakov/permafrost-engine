@@ -124,7 +124,7 @@ int main() {
  */
 
 #include "../../perf.h"
-#include "mem.h"
+#include "../../mem.h"
 
 #define AC_VERSION_KHASH_H "0.2.8"
 

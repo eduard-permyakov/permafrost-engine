@@ -46,7 +46,7 @@
 #include "../lib/public/pf_string.h"
 #include "../game/public/game.h"
 
-#include "../lib/public/mem.h"
+#include "../mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

@@ -36,7 +36,7 @@
 #ifndef PERF_H
 #define PERF_H
 
-#include "lib/public/mem.h"
+#include "mem.h"
 
 #include <stdbool.h>
 #include <stddef.h>

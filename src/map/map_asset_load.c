@@ -46,7 +46,7 @@
 #include "../navigation/public/nav.h"
 #include "../game/public/game.h"
 #include "../lib/public/pf_string.h"
-#include "../lib/public/mem.h"
+#include "../mem.h"
 #include "../ui.h"
 #include "../perf.h"
 #include "../event.h"

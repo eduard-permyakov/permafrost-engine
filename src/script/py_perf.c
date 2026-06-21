@@ -38,7 +38,7 @@
 
 #include "py_perf.h"
 #include "../perf.h"
-#include "../lib/public/mem.h"
+#include "../mem.h"
 
 #include <assert.h>
 

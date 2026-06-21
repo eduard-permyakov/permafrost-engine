@@ -40,7 +40,7 @@
 #include "main.h"
 #include "lib/public/windows.h"
 #include "lib/public/pf_string.h"
-#include "lib/public/mem.h"
+#include "mem.h"
 
 #include <SDL.h>
 

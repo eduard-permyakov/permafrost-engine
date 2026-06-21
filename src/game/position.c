@@ -49,7 +49,7 @@
 #include "../event.h"
 #include "../perf.h"
 #include "../sched.h"
-#include "../lib/public/mem.h"
+#include "../mem.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 #include "../render/public/render.h"

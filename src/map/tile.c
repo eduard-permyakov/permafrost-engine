@@ -40,7 +40,7 @@
 #include "public/map.h"
 #include "../pf_math.h"
 #include "../perf.h"
-#include "../lib/public/mem.h"
+#include "../mem.h"
 #include "../lib/public/pf_string.h"
 #include "../phys/public/collision.h"
 

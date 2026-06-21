@@ -38,7 +38,7 @@
 
 #include "public/nk_file_browser.h"
 #include "public/pf_string.h"
-#include "public/mem.h"
+#include "../mem.h"
 #include "../main.h"
 
 #include <string.h>

@@ -37,7 +37,7 @@
 #define MPOOL_ALLOCATOR_H
 
 #include "mpool.h"
-#include "mem.h"
+#include "../../mem.h"
 
 #include <stdio.h>
 

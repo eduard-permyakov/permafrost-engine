@@ -66,7 +66,7 @@
 #include "../lib/public/pf_string.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/nk_file_browser.h"
-#include "../lib/public/mem.h"
+#include "../mem.h"
 #include "../lib/public/windows.h"
 #include "../event.h"
 #include "../config.h"

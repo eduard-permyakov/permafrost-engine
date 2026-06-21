@@ -50,7 +50,7 @@
 #include <string.h>
 #include <assert.h>
 
-#include "lib/public/mem.h"
+#include "mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

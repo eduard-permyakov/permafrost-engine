@@ -57,7 +57,7 @@
 #include "../config.h"
 #include "../lib/public/pf_malloc.h"
 #include "../lib/public/khash.h"
-#include "../lib/public/mem.h"
+#include "../mem.h"
 #include "../map/public/tile.h"
 #include "../game/public/game.h"
 

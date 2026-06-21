@@ -47,7 +47,7 @@
 #include "lib/public/vec.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/noise.h"
-#include "lib/public/mem.h"
+#include "mem.h"
 #include "script/public/script.h"
 #include "game/public/game.h"
 #include "navigation/public/nav.h"

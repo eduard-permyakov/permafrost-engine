@@ -51,7 +51,7 @@
 #include "../camera.h"
 #include "../main.h"
 #include "../map/public/tile.h"
-#include "../lib/public/mem.h"
+#include "../mem.h"
 
 #include <GL/glew.h>
 

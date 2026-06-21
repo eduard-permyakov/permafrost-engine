@@ -59,7 +59,7 @@
 #include "../render/public/render_ctrl.h"
 #include "../map/public/map.h"
 #include "../lib/public/pf_string.h"
-#include "../lib/public/mem.h"
+#include "../mem.h"
 
 #include <assert.h>
 #include <stdbool.h>

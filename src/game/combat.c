@@ -62,7 +62,7 @@
 #include "../lib/public/khash.h"
 #include "../lib/public/attr.h"
 #include "../lib/public/pf_string.h"
-#include "../lib/public/mem.h"
+#include "../mem.h"
 #include "../lib/public/queue.h"
 #include "../lib/public/string_intern.h"
 

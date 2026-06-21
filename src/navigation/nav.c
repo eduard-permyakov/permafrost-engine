@@ -45,7 +45,7 @@
 #include "../game/public/game.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
-#include "../lib/public/mem.h"
+#include "../mem.h"
 #include "../lib/public/pf_cow_region.h"
 #include "../lib/public/queue.h"
 #include "../lib/public/pqueue.h"
