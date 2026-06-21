@@ -88,6 +88,7 @@ Download the free demo on [Steam](https://store.steampowered.com/app/1309720/EVE
 * Lightweight memory accounting for realtime tracking of allocations
 * Fiber system for putting work in lightweight tasks that are scheduled in userspace
 * Fiber-backed Python tasks, allowing cooperative multitasking logic in Python
+* Zero-copy forking of state using page-level Copy-on-Write semantics
 * Cross-platform (Linux and Windows)
 * Windows launcher to automatically capture a minidump and stdout, stderr logs on application error
 

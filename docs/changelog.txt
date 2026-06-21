@@ -3,11 +3,22 @@
 ********************************************************************************
 
 ================================================================================
+[Version 1.16.0] - 21.06.2026
+================================================================================
+    * Re-work movement arrival behaviour
+    * Tuning to the movement and combat systems
+    * Extend tile rendering options; improvements to image quilting
+    * Performance improvements
+    * Support mousewheel zoom
+    * Miscellaneous fixes
+
+================================================================================
 [Version 1.15.0] - 02.06.2026
 ================================================================================
     * Implement static grass rendering over the map's surface
     * Expand the engine's profiling and instrumentation capabilities
     * Significant performance improvements accross multiple engine systems
+
 ================================================================================
 [Version 1.14.0] - 19.05.2026
 ================================================================================
