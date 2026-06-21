@@ -846,6 +846,7 @@ static bool sched_wait(struct task *task, uint32_t child_tid)
 static void sched_task_run(struct task *task)
 {
     assert(sched_curr_thread_tid() == NULL_TID);
+    assert(!(task->flags & TASK_MAIN_THREAD_PINNED) || SDL_ThreadID() == g_main_thread_id);
     sched_set_thread_tid(SDL_ThreadID(), task->tid);
     task->state = TASK_STATE_ACTIVE;
     assert(stack_pointer_valid(task));
@@ -1158,12 +1159,16 @@ static bool do_run_sync(uint32_t tid, bool dequeue)
             goto out;
     }
 
-    if(sched_curr_thread_tid() == NULL_TID) {
+    bool idle = (sched_curr_thread_tid() == NULL_TID);
+    bool pinned_off_main = (task->flags & TASK_MAIN_THREAD_PINNED)
+                        && (SDL_ThreadID() != g_main_thread_id);
+
+    if(idle && !pinned_off_main) {
 
         sched_task_run(task);
         sched_task_service_request(task);
 
-    }else{
+    }else if(!idle) {
         SDL_UnlockMutex(s_request_lock);
         S_Task_MaybeExit();
 
@@ -1174,6 +1179,10 @@ static bool do_run_sync(uint32_t tid, bool dequeue)
 
         S_Task_MaybeEnter();
         SDL_LockMutex(s_request_lock);
+    }else{
+        /* Idle worker holding a main-pinned task: hand it to the main ready queue
+         * instead of running it off the main thread. */
+        sched_reactivate(task);
     }
     ret = true;
 
