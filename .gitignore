@@ -1,6 +1,7 @@
 /bin/
 /lib/
 /obj/
+/cache/
 /launcher/obj/
 
 /assets/*
@@ -38,6 +39,9 @@ deps/SDL2/VisualC/SDL/x64/
 deps/SDL2/out/
 
 deps/Python/PCbuild/.vs/
+deps/Python/build-asan/
+
+deps/mimalloc/build-asan/
 
 deps/openal-soft/CMakeCache.txt
 deps/openal-soft/CMakeFiles/
