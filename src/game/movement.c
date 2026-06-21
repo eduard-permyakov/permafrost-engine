@@ -478,6 +478,8 @@ static bool                    s_use_gpu = true;
 static bool                    s_move_tick_queued = false;
 
 static uint32_t                s_tick_task_tid = NULL_TID;
+/* Published by the navigation task onto itself at entry and cleared at exit, */
+static uint32_t                s_nav_task_active_tid = NULL_TID;
 static struct future           s_tick_task_future;
 
 static const char *s_state_str[] = {
@@ -2498,12 +2500,10 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
     }
     case STATE_SEEK_ENEMIES: {
 
-        if(PFM_Vec2_Len(&vdes) < EPSILON) {
-
-            out->flags |= UPDATE_SET_STATE;
-            out->next_state = STATE_WAITING;
-            out->next_block = true;
-        }
+        /* When the seek field can't route us toward an enemy (walled in by the
+         * surrounding crowd) we stay in SEEK_ENEMIES as a soft obstacle and retry
+         * next tick, rather than full-stopping into a WAITING blocker.
+         */
         break;
     }
     case STATE_SURROUND_ENTITY: {
@@ -4262,6 +4262,8 @@ static void copy_gpu_results(void)
 
 static struct result navigation_tick_task(void *arg)
 {
+    s_nav_task_active_tid = Sched_ActiveTID();
+
     N_ApplyDeferredInvalidations();
     compute_los_state();
     compute_async_fields();
@@ -4279,6 +4281,8 @@ static struct result navigation_tick_task(void *arg)
     }
 
     fork_join_state_updates();
+
+    s_nav_task_active_tid = NULL_TID;
     return NULL_RESULT;
 }
 
@@ -4464,9 +4468,12 @@ static void nav_cancel_gpu_work(void)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
+/* May only be called from within the navigation task context (it is invoked by the
+ * fieldcache's nav-task assertion). Outside that context it reads as NULL_TID.
+ */
 uint32_t G_Move_GetNavTID(void)
 {
-    return s_tick_task_tid;
+    return s_nav_task_active_tid;
 }
 
 bool G_Move_NavQuiesce(void)
