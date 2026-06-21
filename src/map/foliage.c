@@ -79,10 +79,6 @@
 #define NOISE_OCTAVES            4
 #define NOISE_PERSISTENCE        0.5f
 
-/*****************************************************************************/
-/* TYPES                                                                     */
-/*****************************************************************************/
-
 struct chunk_foliage {
     vec3_t *positions;
     float  *rotations;

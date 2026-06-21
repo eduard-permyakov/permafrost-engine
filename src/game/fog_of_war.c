@@ -88,6 +88,13 @@ enum fog_state{
 
 KHASH_SET_INIT_INT(uid)
 
+/* Update a contiguous run of n tiles.*/
+typedef void (*stamp_row_fn)(uint8_t *rc, uint32_t *fs, int n, int shift,
+                             uint32_t clearmask, int delta);
+
+static void stamp_row_scalar(uint8_t *rc, uint32_t *fs, int n, int shift,
+                             uint32_t clearmask, int delta);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -143,6 +150,11 @@ static int *s_chunk_maxh;
 /* LOS-aware stamp (recursive shadowcasting): per-box visible mask, reused. */
 static uint8_t *s_los_vis;
 static size_t   s_los_cap;
+
+/* Bound once in G_Fog_Init from the runtime CPU query. s_stamp_row covers
+ * short/medium runs; s_stamp_row_long the >=16-tile runs where AVX-512 wins. */
+static stamp_row_fn s_stamp_row      = stamp_row_scalar;
+static stamp_row_fn s_stamp_row_long = stamp_row_scalar;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -240,13 +252,6 @@ static const struct disc_stamp *get_stamp(float radius)
     return &s_stamps[slot];
 }
 
-/* Update a contiguous run of n tiles: refcnt[i] += delta (uint8 wrap), then set
- * faction 'shift'/'clearmask' bits of fog_state[i] to VISIBLE if the new refcnt
- * != 0 else IN_FOG. Bit-identical to update_tile. The concrete variant is bound
- * once in G_Fog_Init via simd_*_supported(). */
-typedef void (*stamp_row_fn)(uint8_t *rc, uint32_t *fs, int n, int shift,
-                             uint32_t clearmask, int delta);
-
 static void stamp_row_scalar(uint8_t *rc, uint32_t *fs, int n, int shift,
                              uint32_t clearmask, int delta)
 {
@@ -314,11 +319,6 @@ static void stamp_row_avx512(uint8_t *rc, uint32_t *fs, int n, int shift,
     }
     stamp_row_scalar(rc + i, fs + i, n - i, shift, clearmask, delta);
 }
-
-/* Bound once in G_Fog_Init from the runtime CPU query. s_stamp_row covers
- * short/medium runs; s_stamp_row_long the >=16-tile runs where AVX-512 wins. */
-static stamp_row_fn s_stamp_row      = stamp_row_scalar;
-static stamp_row_fn s_stamp_row_long = stamp_row_scalar;
 
 /* Apply a run of n tiles starting at (abs_r, abs_c). The fog arrays are
  * chunk-blocked, so a run is contiguous only within a chunk -- split it into
@@ -398,14 +398,6 @@ static bool box_is_open(struct tile_desc origin, float radius, int origin_height
     }}
     return true;
 }
-
-/* Octant transforms for recursive shadowcasting (xx, xy, yx, yy per octant). */
-static const int s_oct_mult[4][8] = {
-    {1, 0, 0, -1, -1,  0,  0,  1},
-    {0, 1, -1, 0,  0, -1,  1,  0},
-    {0, 1,  1, 0,  0, -1, -1,  0},
-    {1, 0,  0, 1, -1,  0,  0, -1},
-};
 
 static bool los_blocked_abs(int abs_r, int abs_c, int origin_height)
 {
@@ -487,6 +479,14 @@ static void cast_light(uint8_t *mask, int abs_r0, int abs_c0, int maxdist, float
 static void fog_los_stamp(int faction_id, struct tile_desc origin, int origin_height,
                           float radius, int delta)
 {
+    /* Octant transforms for recursive shadowcasting (xx, xy, yx, yy per octant). */
+    static const int s_oct_mult[4][8] = {
+        {1, 0, 0, -1, -1,  0,  0,  1},
+        {0, 1, -1, 0,  0, -1,  1,  0},
+        {0, 1,  1, 0,  0, -1, -1,  0},
+        {1, 0,  0, 1, -1,  0,  0, -1},
+    };
+
     struct map_resolution res = s_res;
     int total_rows = res.chunk_h * res.tile_h;
     int total_cols = res.chunk_w * res.tile_w;
