@@ -116,9 +116,15 @@ struct fieldcache_ctx{
 static struct fieldcache_ctx *s_singleton;
 static uint32_t             (*s_nav_task_tid_provider)(void);
 
+/* A fieldcache mutation is safe either when no navigation task is in flight (e.g. the
+ * synchronous save-time flush, which runs in a session-task fiber) or when it happens
+ * on the in-flight nav task itself. The provider reads NULL_TID when no task is active. */
 #define FC_ASSERT_NAV_TASK()                                            \
-    assert(!s_nav_task_tid_provider                                     \
-        || Sched_ActiveTID() == s_nav_task_tid_provider())
+    do {                                                                \
+        uint32_t _navtid = s_nav_task_tid_provider                      \
+                         ? s_nav_task_tid_provider() : NULL_TID;        \
+        assert(_navtid == NULL_TID || Sched_ActiveTID() == _navtid);    \
+    }while(0)
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */

@@ -173,5 +173,11 @@ void G_ArrivalGroup_RenderDebug(const struct arrival_group *grp, const struct ca
                                 const struct map *map, dest_id_t dest_id, vec3_t color,
                                 const struct arrival_member *members, int nmembers);
 
+struct SDL_RWops;
+bool G_Arrival_SaveState(struct SDL_RWops *stream, const struct arrival_group *grp);
+bool G_Arrival_LoadState(struct SDL_RWops *stream, struct arrival_group *grp);
+bool G_Arrival_SaveUnitState(struct SDL_RWops *stream, const struct arrival_unit_state *us);
+bool G_Arrival_LoadUnitState(struct SDL_RWops *stream, struct arrival_unit_state *us);
+
 #endif
 

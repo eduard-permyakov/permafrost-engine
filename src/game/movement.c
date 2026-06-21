@@ -5077,6 +5077,8 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr_flock->dest_id
         };
         CHK_TRUE_RET(Attr_Write(stream, &flock_dest, "flock_dest"));
+
+        CHK_TRUE_RET(G_Arrival_SaveState(stream, &curr_flock->arrival));
         Sched_TryYield();
     }
 
@@ -5237,6 +5239,8 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
             .val.as_quat = curr.combat_facing
         };
         CHK_TRUE_RET(Attr_Write(stream, &combat_facing, "combat_facing"));
+
+        CHK_TRUE_RET(G_Arrival_SaveUnitState(stream, &curr.arrival));
         Sched_TryYield();
     });
 
@@ -5289,11 +5293,14 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_JMP(attr.type == TYPE_INT, fail_flock);
         new_flock.dest_id = attr.val.as_int;
 
+        CHK_TRUE_JMP(G_Arrival_LoadState(stream, &new_flock.arrival), fail_flock);
+
         vec_flock_push(&s_flocks, new_flock);
         Sched_TryYield();
         continue;
 
     fail_flock:
+        G_ArrivalGroup_Destroy(&new_flock.arrival);
         kh_destroy(entity, new_flock.ents);
         return false;
     }
@@ -5412,6 +5419,8 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_QUAT);
         ms->combat_facing = attr.val.as_quat;
+
+        CHK_TRUE_RET(G_Arrival_LoadUnitState(stream, &ms->arrival));
 
         /* Re-emit the start for an entity reloaded mid-move so client scripts resume
          * the movement animation. */

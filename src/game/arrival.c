@@ -41,10 +41,17 @@
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../lib/public/mem.h"
+#include "../lib/public/attr.h"
 
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
+
+#define CHK_TRUE_RET(_pred)             \
+    do{                                 \
+        if(!(_pred))                    \
+            return false;               \
+    }while(0)
 
 #define EPSILON                   (1.0f/1024)
 
@@ -1014,5 +1021,205 @@ void G_ArrivalGroup_RenderDebug(const struct arrival_group *grp, const struct ca
         if(grp->layers[l] && G_Arrival_IsActive(grp->layers[l]))
             G_Arrival_RenderDebug(grp->layers[l], cam, map, dest_id, color, members, nmembers);
     }
+}
+
+/*****************************************************************************/
+/* SERIALIZATION                                                             */
+/*****************************************************************************/
+
+static bool save_int(struct SDL_RWops *stream, int val, const char *name)
+{
+    struct attr attr = (struct attr){ .type = TYPE_INT, .val.as_int = val };
+    return Attr_Write(stream, &attr, name);
+}
+
+static bool save_float(struct SDL_RWops *stream, float val, const char *name)
+{
+    struct attr attr = (struct attr){ .type = TYPE_FLOAT, .val.as_float = val };
+    return Attr_Write(stream, &attr, name);
+}
+
+static bool save_vec2(struct SDL_RWops *stream, vec2_t val, const char *name)
+{
+    struct attr attr = (struct attr){ .type = TYPE_VEC2, .val.as_vec2 = val };
+    return Attr_Write(stream, &attr, name);
+}
+
+static bool save_bool(struct SDL_RWops *stream, bool val, const char *name)
+{
+    struct attr attr = (struct attr){ .type = TYPE_BOOL, .val.as_bool = val };
+    return Attr_Write(stream, &attr, name);
+}
+
+static bool load_int(struct SDL_RWops *stream, int *out)
+{
+    struct attr attr;
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    *out = attr.val.as_int;
+    return true;
+}
+
+static bool load_float(struct SDL_RWops *stream, float *out)
+{
+    struct attr attr;
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+    *out = attr.val.as_float;
+    return true;
+}
+
+static bool load_vec2(struct SDL_RWops *stream, vec2_t *out)
+{
+    struct attr attr;
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC2);
+    *out = attr.val.as_vec2;
+    return true;
+}
+
+static bool load_bool(struct SDL_RWops *stream, bool *out)
+{
+    struct attr attr;
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_BOOL);
+    *out = attr.val.as_bool;
+    return true;
+}
+
+static bool arrival_save_one(struct SDL_RWops *stream, const struct arrival_state *as)
+{
+    CHK_TRUE_RET(save_int(stream, as->phase, "as_phase"));
+    /* An INACTIVE layer has no built region; only 'phase' is initialized (by
+     * G_Arrival_InitFlock) and the rest is uninitialized scratch - don't serialize it. */
+    if(as->phase == ARRIVAL_PHASE_INACTIVE)
+        return true;
+    CHK_TRUE_RET(save_int(stream, as->layer, "as_layer"));
+    CHK_TRUE_RET(save_vec2(stream, as->centre, "as_centre"));
+    CHK_TRUE_RET(save_vec2(stream, as->axis, "as_axis"));
+    CHK_TRUE_RET(save_vec2(stream, as->com, "as_com"));
+    CHK_TRUE_RET(save_int(stream, as->com_dest_id, "as_com_dest_id"));
+    CHK_TRUE_RET(save_int(stream, as->radius, "as_radius"));
+    CHK_TRUE_RET(save_float(stream, as->unit_radius, "as_unit_radius"));
+    CHK_TRUE_RET(save_int(stream, as->num_slots, "as_num_slots"));
+    CHK_TRUE_RET(save_int(stream, as->active_row, "as_active_row"));
+    CHK_TRUE_RET(save_int(stream, as->realloc_counter, "as_realloc_counter"));
+    CHK_TRUE_RET(save_int(stream, as->stall_counter, "as_stall_counter"));
+    CHK_TRUE_RET(save_int(stream, as->prev_occ, "as_prev_occ"));
+    CHK_TRUE_RET(save_float(stream, as->fill_frac, "as_fill_frac"));
+    CHK_TRUE_RET(save_int(stream, as->num_rows, "as_num_rows"));
+    CHK_TRUE_RET(save_float(stream, as->row_height, "as_row_height"));
+    CHK_TRUE_RET(save_int(stream, as->num_region, "as_num_region"));
+
+    for(int i = 0; i < as->num_slots; i++) {
+        CHK_TRUE_RET(save_vec2(stream, as->slots[i], "as_slot"));
+        CHK_TRUE_RET(save_int(stream, as->slot_ring[i], "as_slot_ring"));
+    }
+    for(int i = 0; i < as->num_region; i++) {
+        CHK_TRUE_RET(save_int(stream, (int)(uint32_t)as->region_keys[i], "as_region_lo"));
+        CHK_TRUE_RET(save_int(stream, (int)(uint32_t)(as->region_keys[i] >> 32), "as_region_hi"));
+    }
+    return true;
+}
+
+static bool arrival_load_one(struct SDL_RWops *stream, struct arrival_state *as)
+{
+    memset(as, 0, sizeof(*as));
+
+    int tmp;
+    CHK_TRUE_RET(load_int(stream, &tmp));  as->phase = tmp;
+    if(as->phase == ARRIVAL_PHASE_INACTIVE)
+        return true;
+    CHK_TRUE_RET(load_int(stream, &tmp));  as->layer = tmp;
+    CHK_TRUE_RET(load_vec2(stream, &as->centre));
+    CHK_TRUE_RET(load_vec2(stream, &as->axis));
+    CHK_TRUE_RET(load_vec2(stream, &as->com));
+    CHK_TRUE_RET(load_int(stream, &tmp));  as->com_dest_id = tmp;
+    CHK_TRUE_RET(load_int(stream, &tmp));  as->radius = tmp;
+    CHK_TRUE_RET(load_float(stream, &as->unit_radius));
+    CHK_TRUE_RET(load_int(stream, &as->num_slots));
+    CHK_TRUE_RET(load_int(stream, &as->active_row));
+    CHK_TRUE_RET(load_int(stream, &as->realloc_counter));
+    CHK_TRUE_RET(load_int(stream, &as->stall_counter));
+    CHK_TRUE_RET(load_int(stream, &as->prev_occ));
+    CHK_TRUE_RET(load_float(stream, &as->fill_frac));
+    CHK_TRUE_RET(load_int(stream, &as->num_rows));
+    CHK_TRUE_RET(load_float(stream, &as->row_height));
+    CHK_TRUE_RET(load_int(stream, &as->num_region));
+
+    CHK_TRUE_RET(as->num_slots >= 0 && as->num_slots <= ARRIVAL_MAX_SLOTS);
+    CHK_TRUE_RET(as->num_region >= 0 && as->num_region <= ARRIVAL_MAX_SLOTS);
+
+    for(int i = 0; i < as->num_slots; i++) {
+        CHK_TRUE_RET(load_vec2(stream, &as->slots[i]));
+        CHK_TRUE_RET(load_int(stream, &as->slot_ring[i]));
+    }
+    for(int i = 0; i < as->num_region; i++) {
+        int lo, hi;
+        CHK_TRUE_RET(load_int(stream, &lo));
+        CHK_TRUE_RET(load_int(stream, &hi));
+        as->region_keys[i] = ((uint64_t)(uint32_t)hi << 32) | (uint32_t)lo;
+    }
+    return true;
+}
+
+bool G_Arrival_SaveState(struct SDL_RWops *stream, const struct arrival_group *grp)
+{
+    for(int l = 0; l < NAV_LAYER_MAX; l++) {
+        bool present = (grp->layers[l] != NULL);
+        CHK_TRUE_RET(save_bool(stream, present, "as_present"));
+        if(present)
+            CHK_TRUE_RET(arrival_save_one(stream, grp->layers[l]));
+    }
+    return true;
+}
+
+bool G_Arrival_LoadState(struct SDL_RWops *stream, struct arrival_group *grp)
+{
+    for(int l = 0; l < NAV_LAYER_MAX; l++) {
+
+        bool present;
+        CHK_TRUE_RET(load_bool(stream, &present));
+        if(!present)
+            continue;
+
+        struct arrival_state *as = PF_MALLOC(sizeof(struct arrival_state));
+        CHK_TRUE_RET(as);
+        if(!arrival_load_one(stream, as)) {
+            PF_FREE(as);
+            return false;
+        }
+        grp->layers[l] = as;
+    }
+    return true;
+}
+
+bool G_Arrival_SaveUnitState(struct SDL_RWops *stream, const struct arrival_unit_state *us)
+{
+    CHK_TRUE_RET(save_int(stream, us->substate, "us_substate"));
+    CHK_TRUE_RET(save_bool(stream, us->sink_valid, "us_sink_valid"));
+    CHK_TRUE_RET(save_vec2(stream, us->sink, "us_sink"));
+    CHK_TRUE_RET(save_int(stream, us->stuck, "us_stuck"));
+    CHK_TRUE_RET(save_vec2(stream, us->progress_anchor, "us_progress_anchor"));
+    CHK_TRUE_RET(save_bool(stream, us->progress_anchored, "us_progress_anchored"));
+    CHK_TRUE_RET(save_bool(stream, us->los_latched, "us_los_latched"));
+    CHK_TRUE_RET(save_int(stream, us->los_hyst, "us_los_hyst"));
+    CHK_TRUE_RET(save_vec2(stream, us->order_pos, "us_order_pos"));
+    return true;
+}
+
+bool G_Arrival_LoadUnitState(struct SDL_RWops *stream, struct arrival_unit_state *us)
+{
+    int tmp;
+    CHK_TRUE_RET(load_int(stream, &tmp));  us->substate = tmp;
+    CHK_TRUE_RET(load_bool(stream, &us->sink_valid));
+    CHK_TRUE_RET(load_vec2(stream, &us->sink));
+    CHK_TRUE_RET(load_int(stream, &us->stuck));
+    CHK_TRUE_RET(load_vec2(stream, &us->progress_anchor));
+    CHK_TRUE_RET(load_bool(stream, &us->progress_anchored));
+    CHK_TRUE_RET(load_bool(stream, &us->los_latched));
+    CHK_TRUE_RET(load_int(stream, &us->los_hyst));
+    CHK_TRUE_RET(load_vec2(stream, &us->order_pos));
+    return true;
 }
 
