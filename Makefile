@@ -37,12 +37,12 @@ MIMALLOC_SRC = ./deps/mimalloc
 
 LINUX_GLEW_LIB = libGLEW.so.2.3
 LINUX_SDL2_LIB = libSDL2-2.0.so.0
-LINUX_PYTHON_LIB = libpython2.7.so.1.0
+LINUX_PYTHON_LIB = libpython2.7$(PY_ASAN_INFIX).so.1.0
 LINUX_PYTHON_TARGET = libpython2.7.so
 LINUX_OPENAL_LIB = libopenal.so.1
 
-LINUX_MIMALLOC_DEBUG_LIB = libmimalloc-debug.so.2
-LINUX_MIMALLOC_RELEASE_LIB = libmimalloc.so.2
+LINUX_MIMALLOC_DEBUG_LIB = libmimalloc$(MI_ASAN_INFIX)-debug.so.2
+LINUX_MIMALLOC_RELEASE_LIB = libmimalloc$(MI_ASAN_INFIX).so.2
 LINUX_MIMALLOC_LIB = $(LINUX_MIMALLOC_$(TYPE)_LIB)
 
 LINUX_SDL2_CONFIG = --host=x86_64-pc-linux-gnu
@@ -149,6 +149,9 @@ MIMALLOC_DEBUG_OPTS = -DCMAKE_BUILD_TYPE=Debug
 MIMALLOC_RELEASE_OPTS = -DCMAKE_BUILD_TYPE=Release
 MIMALLOC_OPTS = $(MIMALLOC_$(TYPE)_OPTS) $($(PLAT)_MIMALLOC_OPTS) -DCMAKE_C_FLAGS=-I../include
 
+MIMALLOC_BUILD = $(MIMALLOC_SRC)/build$(MI_ASAN_INFIX)
+PYTHON_BUILD = $(PYTHON_SRC)/build$(PY_ASAN_INFIX)
+
 WARNING_FLAGS = \
 	-Wall \
 	-Wno-missing-braces \
@@ -161,8 +164,12 @@ EXTRA_RELEASE_FLAGS = -DNDEBUG
 EXTRA_FLAGS = $(EXTRA_$(TYPE)_FLAGS)
 
 ifneq ($(ASAN),0)
-ASAN_CFLAGS = -fsanitize=address -static-libasan
-ASAN_LDFLAGS = -fsanitize=address -static-libasan
+ASAN_CFLAGS = -fsanitize=address
+ASAN_LDFLAGS = -fsanitize=address
+MI_ASAN_INFIX = -asan
+MIMALLOC_OPTS += -DMI_TRACK_ASAN=ON -DMI_OVERRIDE=OFF
+PY_ASAN_INFIX = -asan
+PY_ASAN_CONFIG = --without-pymalloc
 endif
 
 ifneq ($(TSAN),0)
@@ -230,8 +237,8 @@ endif
 	cp $(SDL2_SRC)/build/build/.libs/$(SDL2_LIB) $@
 
 ./lib/$(PYTHON_LIB):
-	mkdir -p $(PYTHON_SRC)/build
-	cd $(PYTHON_SRC)/build \
+	mkdir -p $(PYTHON_BUILD)
+	cd $(PYTHON_BUILD) \
 	&& ../configure \
 		$(PYTHON_CONFIG) \
 		--build=x86_64-pc-linux-gnu \
@@ -239,9 +246,10 @@ endif
 		--disable-ipv6 \
 		--without-threads \
 		--without-signal-module \
+		$(PY_ASAN_CONFIG) \
 	&& cp ./pyconfig.h ../Include/. \
-	&& make $(PYTHON_TARGET) CFLAGS=$(PYTHON_DEFS) LDFLAGS=$(PYTHON_LDFLAGS)
-	cp $(PYTHON_SRC)/build/$(PYTHON_TARGET) $@
+	&& make $(PYTHON_TARGET) CFLAGS="$(PYTHON_DEFS) $(ASAN_CFLAGS)" LDFLAGS="$(PYTHON_LDFLAGS) $(ASAN_LDFLAGS)" INSTSONAME=libpython2.7$(PY_ASAN_INFIX).so.1.0
+	cp $(PYTHON_BUILD)/$(PYTHON_TARGET) $@
 
 ./lib/$(OPENAL_LIB):
 	mkdir -p $(OPENAL_SRC)/build
@@ -257,12 +265,12 @@ endif
 	cp $(OPENAL_SRC)/build/$(OPENAL_LIB) $@
 
 ./lib/$(MIMALLOC_LIB):
-	mkdir -p $(MIMALLOC_SRC)/build
-	cd $(MIMALLOC_SRC)/build \
+	mkdir -p $(MIMALLOC_BUILD)
+	cd $(MIMALLOC_BUILD) \
 		&& export CFLAGS="-DERROR_COMMITMENT_MINIMUM=0x0000027B" \
 		&& cmake .. $(MIMALLOC_OPTS) \
 		&& make
-	cp $(MIMALLOC_SRC)/build/$(MIMALLOC_LIB) $@
+	cp $(MIMALLOC_BUILD)/$(MIMALLOC_LIB) $@
 
 ./lib/mimalloc-redirect.dll: ./lib/$(MIMALLOC_LIB)
 	cp $(MIMALLOC_SRC)/bin/$(notdir $@) $@
