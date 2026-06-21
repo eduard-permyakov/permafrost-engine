@@ -171,6 +171,9 @@ static const char *s_event_str_table[] = {
 static khash_t(handler_desc) *s_event_handler_table;
 static queue(event)           s_event_queues[2];
 static int                    s_front_queue_idx = 0;
+/* Scratch values for e_handle_event, to avoid allocation churn */
+static vec_hd_t               s_dispatch_execd;
+static vec_hd_t               s_dispatch_curr;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -335,35 +338,43 @@ static void e_handle_event(struct event event, bool immediate)
      * been changed by the prior handler call.
      */
 
-    vec_hd_t execd_handlers;
-    vec_hd_init(&execd_handlers);
-    bool ran; 
-
-    vec_hd_t curr;
-    vec_hd_init(&curr);
+    vec_hd_t execd_local, curr_local;
+    vec_hd_t *execd_handlers, *curr;
+    if(immediate) {
+        vec_hd_init(&execd_local);
+        vec_hd_init(&curr_local);
+        execd_handlers = &execd_local;
+        curr = &curr_local;
+    }else{
+        execd_handlers = &s_dispatch_execd;
+        curr = &s_dispatch_curr;
+        vec_hd_reset(execd_handlers);
+        vec_hd_reset(curr);
+    }
+    bool ran;
 
     do{
         ran = false;
         khiter_t k = kh_get(handler_desc, s_event_handler_table, key);
         if(k == kh_end(s_event_handler_table))
-            break; 
+            break;
 
-        vec_hd_reset(&curr);
-        vec_hd_copy(&curr, &kh_value(s_event_handler_table, k));
+        vec_hd_reset(curr);
+        vec_hd_copy(curr, &kh_value(s_event_handler_table, k));
 
-        for(int i = 0; i < vec_size(&curr); i++) {
+        for(int i = 0; i < vec_size(curr); i++) {
 
-            /* Since any of the executed handlers may have subsequently 
-             * been deleted, the pointers to scripting objects in the 
+            /* Since any of the executed handlers may have subsequently
+             * been deleted, the pointers to scripting objects in the
              * executed handlers must be treated as dangling references
-             * and must not be dereferenced 
+             * and must not be dereferenced
              */
-            struct handler_desc elem = vec_AT(&curr, i);
-            int idx = vec_hd_indexof(&execd_handlers, elem, e_ptrs_equal); 
+            struct handler_desc elem = vec_AT(curr, i);
+            int idx = vec_hd_indexof(execd_handlers, elem, e_ptrs_equal);
             if(idx != -1)
                 continue;
             /* memoize any handlers that we've already ran */
-            vec_hd_push(&execd_handlers, elem);
+            vec_hd_push(execd_handlers, elem);
 
             if(!immediate && ((elem.simmask & ss) == 0))
                 continue;
@@ -374,11 +385,13 @@ static void e_handle_event(struct event event, bool immediate)
             ran = true;
             break;
         }
-    
+
     }while(ran);
 
-    vec_hd_destroy(&execd_handlers);
-    vec_hd_destroy(&curr);
+    if(immediate) {
+        vec_hd_destroy(&execd_local);
+        vec_hd_destroy(&curr_local);
+    }
 
     if(event.source == ES_SCRIPT)
         S_Release(event.arg);
@@ -416,6 +429,9 @@ bool E_Init(void)
     if(!queue_event_init(&s_event_queues[1], 2048))
         goto fail_back_queue;
 
+    vec_hd_init(&s_dispatch_execd);
+    vec_hd_init(&s_dispatch_curr);
+
     return true;
         
 fail_back_queue:
@@ -441,6 +457,9 @@ void E_Shutdown(void)
     kh_destroy(handler_desc, s_event_handler_table);
     queue_event_destroy(&s_event_queues[1]);
     queue_event_destroy(&s_event_queues[0]);
+
+    vec_hd_destroy(&s_dispatch_execd);
+    vec_hd_destroy(&s_dispatch_curr);
 }
 
 void E_ServiceQueue(void)

@@ -1426,8 +1426,9 @@ void Sched_HandleEvent(int event, void *arg, int event_source, bool immediate)
     ASSERT_IN_MAIN_THREAD();
     SDL_LockMutex(s_request_lock);
 
-    queue_tid_t torun;
-    queue_tid_init(&torun, 32);
+    queue_tid_t torun = {0};
+    if(immediate)
+        queue_tid_init(&torun, 32);
 
     khiter_t k = kh_get(tqueue, s_event_queues, event);
     if(k == kh_end(s_event_queues))
@@ -1472,7 +1473,8 @@ void Sched_HandleEvent(int event, void *arg, int event_source, bool immediate)
     }
 
 out:
-    queue_tid_destroy(&torun);
+    if(immediate)
+        queue_tid_destroy(&torun);
     SDL_UnlockMutex(s_request_lock);
 }    
 
