@@ -91,7 +91,6 @@
 #define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_DISPATCH)
 
 
-#define BASE_CAM_HEIGHT     175.0f
 #define CAM_TILT_UP_DEGREES 25.0f
 #define CAM_SPEED           0.20f
 #define CAM_SENS            0.05f
@@ -143,7 +142,7 @@ static void g_reset_camera(struct camera *cam)
     ss_e status;
     (void)status;
     struct sval setting;
-    status = Settings_Get("pf.game.camera_zoom", &setting);
+    status = Settings_Get("pf.game.default_camera_zoom", &setting);
     assert(status == SS_OKAY);
     float multiplier = setting.as_int / 100.0f;
 
@@ -1013,7 +1012,7 @@ static void g_create_settings(void)
     assert(status == SS_OKAY);
 
     status = Settings_Create((struct setting){
-        .name = "pf.game.camera_zoom",
+        .name = "pf.game.default_camera_zoom",
         .val = (struct sval) {
             .type = ST_TYPE_INT,
             .as_int = 150

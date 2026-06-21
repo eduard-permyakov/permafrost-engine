@@ -48,6 +48,7 @@
 #define MAX_FACTIONS     15
 #define MAX_FAC_NAME_LEN 32
 #define AIR_UNIT_HEIGHT  20.0f
+#define BASE_CAM_HEIGHT  175.0f
 
 struct map;
 struct tile_desc;

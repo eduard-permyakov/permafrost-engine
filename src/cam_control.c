@@ -38,6 +38,7 @@
 
 #include "cam_control.h"
 #include "config.h"
+#include "settings.h"
 #include "event.h"
 #include "main.h"
 #include "cursor.h"
@@ -58,6 +59,14 @@
 
 
 #define KEYUP_TICKS_TIMEOUT (1)
+
+/* RTS-mode zoom is driven by the camera height. The initial height comes from
+ * the pf.game.default_camera_zoom setting (a percentage of BASE_CAM_HEIGHT);
+ * the bounds cap how far the mousewheel can subsequently drive it.
+ */
+#define ZOOM_PER_NOTCH_HEIGHT (15.0f)
+#define ZOOM_MIN_HEIGHT       (125.0f)
+#define ZOOM_MAX_HEIGHT       (350.0f)
 
 /* Certain *ahem* OS/Windows System combos send KEYUP events
  * even when holding down a key. So holding down a key looks 
@@ -95,6 +104,7 @@ struct cam_rts_ctx{
     bool          scroll_left;
     bool          scroll_right;
     bool          pan_disabled;
+    int           zoom_delta;
 
     enum keystate front_state;
     uint32_t      front_pressed_tick;
@@ -128,6 +138,7 @@ struct{
     handler_t installed_on_mousemove;
     handler_t installed_on_mousedown;
     handler_t installed_on_mouseup;
+    handler_t installed_on_mousewheel;
     handler_t installed_on_update_end;
 }s_cam_ctx;
 
@@ -284,6 +295,17 @@ static void rts_cam_on_mouseup(void *unused, void *event_arg)
         ctx->pan_disabled = false;
 }
 
+static void rts_cam_on_mousewheel(void *unused, void *event_arg)
+{
+    struct cam_rts_ctx *ctx = &s_cam_ctx.active_ctx.rts;
+    SDL_Event *e = (SDL_Event*)event_arg;
+
+    int y = e->wheel.y;
+    if(e->wheel.direction == SDL_MOUSEWHEEL_FLIPPED)
+        y = -y;
+    ctx->zoom_delta += y;
+}
+
 static void rts_cam_on_keydown(void *unused, void *event_arg)
 {
     struct cam_rts_ctx *ctx = &s_cam_ctx.active_ctx.rts;
@@ -420,6 +442,28 @@ static void rts_cam_on_update_end(void *unused1, void *unused2)
     }
 
     Camera_MoveDirectionTick(cam, dir);
+
+    if(ctx->zoom_delta != 0) {
+
+        vec3_t pos = Camera_GetPos(cam);
+        vec3_t front = Camera_GetDir(cam);
+
+        /* Scrolling up zooms in, i.e. lowers the camera toward the ground */
+        float target_h = pos.y - ctx->zoom_delta * ZOOM_PER_NOTCH_HEIGHT;
+        target_h = target_h < ZOOM_MIN_HEIGHT ? ZOOM_MIN_HEIGHT : target_h;
+        target_h = target_h > ZOOM_MAX_HEIGHT ? ZOOM_MAX_HEIGHT : target_h;
+
+        /* Move along the view direction so the look-at point stays fixed */
+        if(front.y < 0.0f) {
+            float t = (target_h - pos.y) / front.y;
+            vec3_t delta;
+            PFM_Vec3_Scale(&front, t, &delta);
+            PFM_Vec3_Add(&pos, &delta, &pos);
+            Camera_SetPos(cam, pos);
+        }
+        ctx->zoom_delta = 0;
+    }
+
     Camera_TickFinishPerspective(cam);
 }
 
@@ -466,6 +510,7 @@ void CamControl_RTS_Install(struct camera *cam)
     E_Global_Register(SDL_MOUSEMOTION,     rts_cam_on_mousemove,  NULL, G_RUNNING);
     E_Global_Register(SDL_MOUSEBUTTONDOWN, rts_cam_on_mousedown,  NULL, G_RUNNING);
     E_Global_Register(SDL_MOUSEBUTTONUP,   rts_cam_on_mouseup,    NULL, G_RUNNING);
+    E_Global_Register(SDL_MOUSEWHEEL,      rts_cam_on_mousewheel, NULL, G_RUNNING);
     E_Global_Register(EVENT_UPDATE_END,    rts_cam_on_update_end, NULL, 
         G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
 
@@ -474,6 +519,7 @@ void CamControl_RTS_Install(struct camera *cam)
     s_cam_ctx.installed_on_mousemove  = rts_cam_on_mousemove;
     s_cam_ctx.installed_on_mousedown  = rts_cam_on_mousedown;
     s_cam_ctx.installed_on_mouseup    = rts_cam_on_mouseup;
+    s_cam_ctx.installed_on_mousewheel = rts_cam_on_mousewheel;
     s_cam_ctx.installed_on_update_end = rts_cam_on_update_end;
     s_cam_ctx.active = cam;
 
@@ -481,6 +527,13 @@ void CamControl_RTS_Install(struct camera *cam)
     s_cam_ctx.active_ctx.rts.left_state = KEY_RELEASED;
     s_cam_ctx.active_ctx.rts.back_state = KEY_RELEASED;
     s_cam_ctx.active_ctx.rts.right_state = KEY_RELEASED;
+
+    struct sval zoom;
+    if(Settings_Get("pf.game.default_camera_zoom", &zoom) == SS_OKAY) {
+        vec3_t pos = Camera_GetPos(cam);
+        pos.y = BASE_CAM_HEIGHT * (zoom.as_int / 100.0f);
+        Camera_SetPos(cam, pos);
+    }
 
     Cursor_SetRTSMode(true);
 }
