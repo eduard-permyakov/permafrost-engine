@@ -48,7 +48,6 @@
 #include "gl_anim.h"
 #include "gl_swapchain.h"
 #include "render_private.h"
-#include "../camera.h"
 #include "../settings.h"
 #include "../main.h"
 #include "../ui.h"
@@ -244,13 +243,6 @@ static bool water_rt_scale_validate(const struct sval *new_val)
     return (new_val->type == ST_TYPE_FLOAT)
         && (new_val->as_float >= 0.1f)
         && (new_val->as_float <= 1.0f);
-}
-
-static bool camera_projection_validate(const struct sval *new_val)
-{
-    return (new_val->type == ST_TYPE_INT)
-        && (new_val->as_int >= CAM_PROJ_PERSPECTIVE)
-        && (new_val->as_int <= CAM_PROJ_ORTHOGRAPHIC);
 }
 
 static void render_set_logmask(int *mask)
@@ -773,18 +765,6 @@ bool R_Init(const char *base_path)
         .prio = 0,
         .validate = water_rt_scale_validate,
         .commit = water_rt_scale_commit,
-    });
-    assert(status == SS_OKAY);
-
-    status = Settings_Create((struct setting){
-        .name = "pf.video.camera_projection",
-        .val = (struct sval) {
-            .type = ST_TYPE_INT,
-            .as_int = CAM_PROJ_PERSPECTIVE
-        },
-        .prio = 0,
-        .validate = camera_projection_validate,
-        .commit = NULL, /* Seeds new cameras only; not a live global */
     });
     assert(status == SS_OKAY);
 

@@ -465,8 +465,13 @@ static void rts_cam_on_update_end(void *unused1, void *unused2)
     }
 
     struct sval proj;
-    if(Settings_Get("pf.video.camera_projection", &proj) == SS_OKAY) {
+    if(Settings_Get("pf.game.camera_projection", &proj) == SS_OKAY) {
         Camera_SetProjection(cam, proj.as_int);
+    }
+
+    struct sval tilt;
+    if(Settings_Get("pf.game.camera_tilt", &tilt) == SS_OKAY) {
+        Camera_SetPitchAndYaw(cam, -(90.0f - tilt.as_int), Camera_GetYaw(cam));
     }
 
     Camera_TickFinish(cam);

@@ -91,7 +91,12 @@
 #define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_DISPATCH)
 
 
-#define CAM_TILT_UP_DEGREES 45.0f
+/* Camera tilt is the angle (in degrees) the RTS camera is pitched up from
+ * looking straight down; the camera pitch is -(90 - tilt). Driven by the
+ * pf.game.camera_tilt setting. */
+#define CAM_TILT_MIN_DEGREES     15
+#define CAM_TILT_MAX_DEGREES     45
+#define CAM_TILT_DEFAULT_DEGREES 25
 #define CAM_SPEED           0.20f
 #define CAM_SENS            0.05f
 #define MAX_VIS_RANGE       150.0f
@@ -146,8 +151,12 @@ static void g_reset_camera(struct camera *cam)
     assert(status == SS_OKAY);
     float multiplier = setting.as_int / 100.0f;
 
-    Camera_SetPitchAndYaw(cam, -(90.0f - CAM_TILT_UP_DEGREES), 90.0f + 45.0f);
-    Camera_SetPos(cam, (vec3_t){ 0.0f, BASE_CAM_HEIGHT * multiplier, 0.0f }); 
+    struct sval tilt;
+    status = Settings_Get("pf.game.camera_tilt", &tilt);
+    assert(status == SS_OKAY);
+
+    Camera_SetPitchAndYaw(cam, -(90.0f - tilt.as_int), 90.0f + 45.0f);
+    Camera_SetPos(cam, (vec3_t){ 0.0f, BASE_CAM_HEIGHT * multiplier, 0.0f });
 }
 
 static bool g_init_camera(void) 
@@ -158,7 +167,7 @@ static bool g_init_camera(void)
     }
 
     struct sval proj;
-    if(Settings_Get("pf.video.camera_projection", &proj) == SS_OKAY) {
+    if(Settings_Get("pf.game.camera_projection", &proj) == SS_OKAY) {
         Camera_SetProjection(s_gs.active_cam, proj.as_int);
     }
 
@@ -705,6 +714,20 @@ static bool hb_mode_validate(const struct sval *new_val)
     return true;
 }
 
+static bool cam_projection_validate(const struct sval *new_val)
+{
+    if(new_val->type != ST_TYPE_INT)
+        return false;
+    return (new_val->as_int >= CAM_PROJ_PERSPECTIVE && new_val->as_int <= CAM_PROJ_ORTHOGRAPHIC);
+}
+
+static bool cam_tilt_validate(const struct sval *new_val)
+{
+    if(new_val->type != ST_TYPE_INT)
+        return false;
+    return (new_val->as_int >= CAM_TILT_MIN_DEGREES && new_val->as_int <= CAM_TILT_MAX_DEGREES);
+}
+
 static bool fac_vision_validate(const struct sval *new_val)
 {
     if(new_val->type != ST_TYPE_INT)
@@ -1021,6 +1044,30 @@ static void g_create_settings(void)
         .prio = 0,
         .validate = cam_zoom_validate,
         .commit = cam_zoom_commit,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.game.camera_projection",
+        .val = (struct sval) {
+            .type = ST_TYPE_INT,
+            .as_int = CAM_PROJ_PERSPECTIVE
+        },
+        .prio = 0,
+        .validate = cam_projection_validate,
+        .commit = NULL, /* Seeds new cameras; the RTS controller re-samples it */
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.game.camera_tilt",
+        .val = (struct sval) {
+            .type = ST_TYPE_INT,
+            .as_int = CAM_TILT_DEFAULT_DEGREES
+        },
+        .prio = 0,
+        .validate = cam_tilt_validate,
+        .commit = NULL, /* Seeds the camera; the RTS controller re-samples it */
     });
     assert(status == SS_OKAY);
 
