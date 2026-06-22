@@ -50,16 +50,14 @@
 #define CONFIG_LOADING_SPRITE       "assets/loading_screens/sprite"
 
 #define CONFIG_SHADOW_MAP_RES       (2048)
-/* Determines the draw distance from the light source when creating the
- * shadow map. Note that a higher drawdistance leads to more peterpanning.
+/* Upper bound on the draw distance (depth) of the light's frustum. The actual
+ * near/far planes are fitted per-frame to the visible area's depth range.
  */
-#define CONFIG_SHADOW_DRAWDIST      (1536)
-/* This is the half-width of the light source's frustum, in OpenGL coordinates.
- * Increasing the FOV results in lower-quality shadows for the same shadow map 
- * resolution. However, the light frustum needs to be sufficiently large to 
- * contain all shadow casters visible by the RTS camera.
+#define CONFIG_SHADOW_DRAWDIST      (4096)
+/* Upper bound on the half-extent of the light's (orthographic) frustum, in
+ * OpenGL coordinates.
  */
-#define CONFIG_SHADOW_FOV           (160)
+#define CONFIG_SHADOW_MAX_EXTENT    (1536)
 
 #define CONFIG_SETTINGS_FILENAME    "pf.conf"
 

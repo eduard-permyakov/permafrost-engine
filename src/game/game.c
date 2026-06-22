@@ -194,16 +194,12 @@ static void g_init_map(void)
 
 static void g_shadow_pass(struct render_input *in)
 {
-    vec3_t pos = Camera_GetPos(in->cam);
-    vec3_t dir = Camera_GetDir(in->cam);
-
-    R_PushCmd((struct rcmd){ 
-        .func = R_GL_DepthPassBegin, 
-        .nargs = 3,
-        .args = { 
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DepthPassBegin,
+        .nargs = 2,
+        .args = {
             R_PushArg(&in->light_pos, sizeof(in->light_pos)),
-            R_PushArg(&pos, sizeof(pos)),
-            R_PushArg(&dir, sizeof(dir)),
+            R_PushArg((void*)in->cam, g_sizeof_camera),
         },
     });
 
@@ -2011,7 +2007,7 @@ void G_Update(void)
     Camera_MakeFrustum(s_gs.active_cam, &cam_frust);
 
     struct frustum light_frust;
-    R_LightVisibilityFrustum(s_gs.active_cam, &light_frust);
+    R_LightVisibilityFrustum(s_gs.active_cam, s_gs.light_pos, &light_frust);
 
     uint16_t pm = g_player_mask();
     uint32_t curr;

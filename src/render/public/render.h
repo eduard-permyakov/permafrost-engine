@@ -494,7 +494,7 @@ void  R_GL_MapFoliageEndDraw(void);
  * a matching call to 'R_GL_DepthPassEnd'.
  * ---------------------------------------------------------------------------
  */
-void R_GL_DepthPassBegin(const vec3_t *light_pos, const vec3_t *cam_pos, const vec3_t *cam_dir);
+void R_GL_DepthPassBegin(const vec3_t *light_pos, const struct camera *cam);
 
 /* ---------------------------------------------------------------------------
  * Set up the rendering context for normal rendering. This _must_ be called
