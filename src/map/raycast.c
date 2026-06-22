@@ -119,7 +119,7 @@ struct aabb aabb_for_tile(struct tile_desc desc, const struct map *map)
     };
 }
 
-static vec3_t rc_unproject_mouse_coords(void)
+static vec3_t rc_unproject_mouse_coords(float ndc_z)
 {
     int mouse_x, mouse_y;
     SDL_GetMouseState(&mouse_x, &mouse_y);
@@ -129,7 +129,7 @@ static vec3_t rc_unproject_mouse_coords(void)
 
     vec3_t ndc = (vec3_t){-1.0f + 2.0*((float)mouse_x/width),
                            1.0f - 2.0*((float)mouse_y/height),
-                          -1.0f};
+                          ndc_z};
     vec4_t clip = (vec4_t){ndc.x, ndc.y, ndc.z, 1.0f};
 
     mat4x4_t view_proj_inverse; 
@@ -195,11 +195,14 @@ static bool rc_find_intersection(vec3_t ray_origin, vec3_t ray_dir,
 
 static void rc_compute(void)
 {
-    vec3_t ray_origin = rc_unproject_mouse_coords();
-    vec3_t cam_pos = Camera_GetPos(s_ctx.cam);
+    /* Unproject the near and far plane points rather than building the ray
+     * from the camera position, so that the ray is correct under both
+     * perspective and orthographic (parallel-ray) projections. */
+    vec3_t ray_origin = rc_unproject_mouse_coords(-1.0f);
+    vec3_t ray_far    = rc_unproject_mouse_coords( 1.0f);
 
     vec3_t ray_dir;
-    PFM_Vec3_Sub(&ray_origin, &cam_pos, &ray_dir);
+    PFM_Vec3_Sub(&ray_far, &ray_origin, &ray_dir);
     if(PFM_Vec3_Len(&ray_dir) > EPSILON) {
         PFM_Vec3_Normal(&ray_dir, &ray_dir);
     }

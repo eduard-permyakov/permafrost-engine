@@ -46,6 +46,7 @@
 #include "gl_state.h"
 #include "../main.h"
 #include "../camera.h"
+#include "../config.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/stb_image.h"
 
@@ -248,6 +249,20 @@ void R_GL_DrawSkybox(const struct camera *cam)
         .val.as_mat4 = view_dir_mat
     });
 
+    /* Always draw the skybox with a perspective projection: an orthographic
+     * projection has no vanishing point. */
+    struct uval saved_proj;
+    R_GL_StateGet(GL_U_PROJECTION, &saved_proj);
+
+    int w, h;
+    Engine_WinDrawableSize(&w, &h);
+    mat4x4_t proj;
+    PFM_Mat4x4_MakePerspective(CAM_FOV_RAD, ((GLfloat)w)/h, CAM_Z_NEAR_DIST, CONFIG_DRAWDIST, &proj);
+    R_GL_StateSet(GL_U_PROJECTION, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = proj
+    });
+
     GLint old_cull_face_mode;
     glGetIntegerv(GL_CULL_FACE_MODE, &old_cull_face_mode);
     GLint old_depth_func_mode;
@@ -262,6 +277,8 @@ void R_GL_DrawSkybox(const struct camera *cam)
 
     glDepthMask(old_depth_func_mode);
     glCullFace(old_cull_face_mode);
+
+    R_GL_StateSet(GL_U_PROJECTION, saved_proj);
 
     GL_PERF_POP_GROUP();
     GL_ASSERT_OK();

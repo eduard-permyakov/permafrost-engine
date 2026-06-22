@@ -72,10 +72,12 @@ struct camera {
 
     uint32_t prev_frame_ts;
 
-    /* When 'bounded' is true, the camera position must 
+    /* When 'bounded' is true, the camera position must
      * always be within the 'bounds' box */
     bool            bounded;
     struct bound_box bounds;
+
+    enum cam_projection projection;
 };
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -107,6 +109,21 @@ static void camera_move_within_bounds(struct camera *cam)
 
     cam->pos.z = MAX(cam->pos.z, cam->bounds.z);
     cam->pos.z = MIN(cam->pos.z, cam->bounds.z + cam->bounds.h);
+}
+
+static void camera_ortho_extents(const struct camera *cam, float aspect,
+                                 vec2_t *out_bot_left, vec2_t *out_top_right)
+{
+    /* Match the perspective footprint at the point the camera is looking at on
+     * the ground plane, so that toggling the projection keeps the view scale.
+     */
+    float focal = (cam->front.y < -EPSILON) ? (cam->pos.y / -cam->front.y)
+                                            : (CONFIG_DRAWDIST / 2.0f);
+    float half_h = focal * tan(CAM_FOV_RAD / 2.0f);
+    float half_w = half_h * aspect;
+
+    *out_bot_left  = (vec2_t){-half_w, -half_h};
+    *out_top_right = (vec2_t){ half_w,  half_h};
 }
 
 /*****************************************************************************/
@@ -450,6 +467,37 @@ void Camera_TickFinishOrthographic(struct camera *cam, vec2_t bot_left, vec2_t t
     cam->prev_frame_ts = SDL_GetTicks();
 }
 
+enum cam_projection Camera_GetProjection(const struct camera *cam)
+{
+    return cam->projection;
+}
+
+void Camera_SetProjection(struct camera *cam, enum cam_projection proj)
+{
+    cam->projection = proj;
+}
+
+void Camera_GetOrthoExtents(const struct camera *cam, vec2_t *out_bot_left, vec2_t *out_top_right)
+{
+    int w, h;
+    Engine_WinDrawableSize(&w, &h);
+    camera_ortho_extents(cam, ((float)w)/h, out_bot_left, out_top_right);
+}
+
+void Camera_TickFinish(struct camera *cam)
+{
+    if(cam->projection == CAM_PROJ_ORTHOGRAPHIC) {
+        int w, h;
+        Engine_WinDrawableSize(&w, &h);
+
+        vec2_t bot_left, top_right;
+        camera_ortho_extents(cam, ((float)w)/h, &bot_left, &top_right);
+        Camera_TickFinishOrthographic(cam, bot_left, top_right);
+    }else{
+        Camera_TickFinishPerspective(cam);
+    }
+}
+
 void Camera_RestrictPosWithBox(struct camera *cam, struct bound_box box)
 {
     cam->bounded = true;
@@ -481,7 +529,16 @@ void Camera_MakeProjMat(const struct camera *cam, mat4x4_t *out)
 {
     int w, h;
     Engine_WinDrawableSize(&w, &h);
-    PFM_Mat4x4_MakePerspective(CAM_FOV_RAD, ((GLfloat)w)/h, 0.1f, CONFIG_DRAWDIST, out);
+    const float aspect = ((GLfloat)w)/h;
+
+    if(cam->projection == CAM_PROJ_ORTHOGRAPHIC) {
+        vec2_t bot_left, top_right;
+        camera_ortho_extents(cam, aspect, &bot_left, &top_right);
+        PFM_Mat4x4_MakeOrthographic(bot_left.raw[0], top_right.raw[0],
+            bot_left.raw[1], top_right.raw[1], 0.1f, CONFIG_DRAWDIST, out);
+    }else{
+        PFM_Mat4x4_MakePerspective(CAM_FOV_RAD, aspect, 0.1f, CONFIG_DRAWDIST, out);
+    }
 }
 
 void Camera_MakeFrustum(const struct camera *cam, struct frustum *out)
@@ -490,7 +547,14 @@ void Camera_MakeFrustum(const struct camera *cam, struct frustum *out)
     Engine_WinDrawableSize(&w, &h);
     const float aspect_ratio = ((float)w)/h;
 
-    C_MakeFrustum(cam->pos, cam->up, cam->front, aspect_ratio, CAM_FOV_RAD, 
-        CAM_Z_NEAR_DIST, CONFIG_DRAWDIST, out);
+    if(cam->projection == CAM_PROJ_ORTHOGRAPHIC) {
+        vec2_t bot_left, top_right;
+        camera_ortho_extents(cam, aspect_ratio, &bot_left, &top_right);
+        C_MakeFrustumOrthographic(cam->pos, cam->up, cam->front,
+            top_right.raw[0], top_right.raw[1], CAM_Z_NEAR_DIST, CONFIG_DRAWDIST, out);
+    }else{
+        C_MakeFrustum(cam->pos, cam->up, cam->front, aspect_ratio, CAM_FOV_RAD,
+            CAM_Z_NEAR_DIST, CONFIG_DRAWDIST, out);
+    }
 }
 

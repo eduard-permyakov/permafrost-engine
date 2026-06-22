@@ -243,7 +243,7 @@ void R_GL_SpriteRenderBatch(struct sprite_desc *sprites, size_t *nsprites,
     sort_by_sprite(sprites, *nsprites, descs, &ndescs);
 
     /* Set the camera uniforms */
-    Camera_TickFinishPerspective((struct camera*)cam);
+    Camera_TickFinish((struct camera*)cam);
     vec3_t dir = Camera_GetDir(cam);
     R_GL_StateSet(GL_U_VIEW_DIR, (struct uval){
         .type = UTYPE_VEC3,

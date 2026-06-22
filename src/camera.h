@@ -52,6 +52,11 @@ struct bound_box{
 #define CAM_Z_NEAR_DIST     (5.0f)
 #define CAM_FOV_RAD         (M_PI/4.0f)
 
+enum cam_projection{
+    CAM_PROJ_PERSPECTIVE,
+    CAM_PROJ_ORTHOGRAPHIC,
+};
+
 struct camera *Camera_New (void);
 void           Camera_Free(struct camera *cam);
 
@@ -92,6 +97,14 @@ void           Camera_ChangeDirection  (struct camera *cam, int dx, int dy);
 void           Camera_TickFinishPerspective(struct camera *cam);
 void           Camera_TickFinishPerspectiveUpsideDown(struct camera *cam);
 void           Camera_TickFinishOrthographic(struct camera *cam, vec2_t bot_left, vec2_t top_right);
+void           Camera_TickFinish(struct camera *cam);
+
+enum cam_projection Camera_GetProjection(const struct camera *cam);
+void                Camera_SetProjection(struct camera *cam, enum cam_projection proj);
+
+/* The orthographic view-volume extents this camera would use, matching its
+ * orthographic projection matrix. */
+void           Camera_GetOrthoExtents(const struct camera *cam, vec2_t *out_bot_left, vec2_t *out_top_right);
 
 void           Camera_MakeFrustum(const struct camera *cam, struct frustum *out);
 

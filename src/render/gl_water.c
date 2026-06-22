@@ -99,6 +99,7 @@ struct water_gl_state{
     GLfloat  clear_clr[4];
     vec3_t   u_cam_pos;
     mat4x4_t u_view;
+    mat4x4_t u_proj;
     bool     shadows;
 };
 
@@ -140,13 +141,15 @@ static void save_gl_state(struct water_gl_state *out)
     glGetIntegerv(GL_RENDERBUFFER_BINDING, &out->rbo);
     glGetFloatv(GL_COLOR_CLEAR_VALUE, out->clear_clr);
 
-    struct uval pval, tval, sval;
+    struct uval pval, tval, jval, sval;
     R_GL_StateGet(GL_U_VIEW_POS, &pval);
     R_GL_StateGet(GL_U_VIEW, &tval);
+    R_GL_StateGet(GL_U_PROJECTION, &jval);
     R_GL_StateGet(GL_U_SHADOWS_ON, &sval);
 
     out->u_cam_pos = pval.val.as_vec3;
     out->u_view = tval.val.as_mat4;
+    out->u_proj = jval.val.as_mat4;
     out->shadows = (bool)sval.val.as_int;
 
     GL_PERF_RETURN_VOID();
@@ -162,6 +165,7 @@ static void restore_gl_state(const struct water_gl_state *in)
     glViewport(in->viewport[0], in->viewport[1], in->viewport[2], in->viewport[3]);
     glClearColor(in->clear_clr[0], in->clear_clr[1], in->clear_clr[2], in->clear_clr[3]);
     R_GL_SetViewMatAndPos(&in->u_view, &in->u_cam_pos);
+    R_GL_SetProj(&in->u_proj);
     R_GL_SetShadowsEnabled(&in->shadows);
 
     GL_PERF_RETURN_VOID();
@@ -390,7 +394,16 @@ static void render_reflection_tex(bool on, struct render_input in)
     cam_dir.y *= -1.0f;
     Camera_SetPos(cam, cam_pos);
     Camera_SetDir(cam, cam_dir);
-    Camera_TickFinishPerspective(cam);
+
+    /* The reflection must use the same projection as the main camera so that it
+     * lines up when sampled via projective texturing. */
+    if(Camera_GetProjection(in.cam) == CAM_PROJ_ORTHOGRAPHIC) {
+        vec2_t bot_left, top_right;
+        Camera_GetOrthoExtents(in.cam, &bot_left, &top_right);
+        Camera_TickFinishOrthographic(cam, bot_left, top_right);
+    }else{
+        Camera_TickFinishPerspective(cam);
+    }
 
     /* Face culling is problematic when we're looking from below - changing 
      * the winding order does not work in all cases. */
@@ -509,7 +522,7 @@ static void setup_map_uniforms(GLuint shader_prog)
     GL_PERF_RETURN_VOID();
 }
 
-static void setup_cam_uniforms(GLuint shader_prog)
+static void setup_cam_uniforms(GLuint shader_prog, const struct camera *cam)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -525,6 +538,13 @@ static void setup_cam_uniforms(GLuint shader_prog)
         .val.as_float = CONFIG_DRAWDIST
     });
     R_GL_StateInstall(GL_U_CAM_FAR, shader_prog);
+
+    /* The depth-buffer linearization in the shader differs between projections */
+    R_GL_StateSet(GL_U_CAM_ORTHOGRAPHIC, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = (Camera_GetProjection(cam) == CAM_PROJ_ORTHOGRAPHIC)
+    });
+    R_GL_StateInstall(GL_U_CAM_ORTHOGRAPHIC, shader_prog);
 
     GL_PERF_RETURN_VOID();
 }
@@ -691,7 +711,7 @@ void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const
     R_GL_Shader_InstallProg(shader_prog);
 
     setup_map_uniforms(shader_prog);
-    setup_cam_uniforms(shader_prog);
+    setup_cam_uniforms(shader_prog, in->cam);
     setup_texture_uniforms(shader_prog, s_ctx.refract_tex, s_ctx.refract_depth_tex,
         s_ctx.reflect_tex);
     setup_fog_uniforms(shader_prog, in->map);

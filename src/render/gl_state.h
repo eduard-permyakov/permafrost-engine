@@ -94,6 +94,7 @@
 #define GL_U_REFRACT_DEPTH      "refraction_depth"
 #define GL_U_CAM_NEAR           "cam_near"
 #define GL_U_CAM_FAR            "cam_far"
+#define GL_U_CAM_ORTHOGRAPHIC   "cam_orthographic"
 #define GL_U_WATER_TILING       "water_tiling"
 #define GL_U_MAP_RES            "map_resolution"
 #define GL_U_MAP_POS            "map_pos"

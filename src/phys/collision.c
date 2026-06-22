@@ -348,6 +348,57 @@ void C_MakeFrustum(vec3_t pos, vec3_t up, vec3_t front,
     PFM_Vec3_Cross(&p_to_near_bot_edge, &cam_right, &out->bot.normal);
 }
 
+void C_MakeFrustumOrthographic(vec3_t pos, vec3_t up, vec3_t front,
+                               GLfloat half_width, GLfloat half_height,
+                               GLfloat near_dist, GLfloat far_dist,
+                               struct frustum *out)
+{
+    vec3_t tmp;
+    vec3_t cam_right;
+    PFM_Vec3_Cross(&up, &front, &cam_right);
+    PFM_Vec3_Normal(&cam_right, &cam_right);
+
+    vec3_t nc = pos;
+    PFM_Vec3_Scale(&front, near_dist, &tmp);
+    PFM_Vec3_Add(&nc, &tmp, &nc);
+
+    vec3_t fc = pos;
+    PFM_Vec3_Scale(&front, far_dist, &tmp);
+    PFM_Vec3_Add(&fc, &tmp, &fc);
+
+    /* The near and far extents are identical for an orthographic projection */
+    vec3_t up_half_h, right_half_w;
+    PFM_Vec3_Scale(&up, half_height, &up_half_h);
+    PFM_Vec3_Scale(&cam_right, half_width, &right_half_w);
+
+    /* Near corners */
+    PFM_Vec3_Add(&nc, &up_half_h, &tmp); PFM_Vec3_Sub(&tmp, &right_half_w, &out->ntl);
+    PFM_Vec3_Add(&nc, &up_half_h, &tmp); PFM_Vec3_Add(&tmp, &right_half_w, &out->ntr);
+    PFM_Vec3_Sub(&nc, &up_half_h, &tmp); PFM_Vec3_Sub(&tmp, &right_half_w, &out->nbl);
+    PFM_Vec3_Sub(&nc, &up_half_h, &tmp); PFM_Vec3_Add(&tmp, &right_half_w, &out->nbr);
+
+    /* Far corners */
+    PFM_Vec3_Add(&fc, &up_half_h, &tmp); PFM_Vec3_Sub(&tmp, &right_half_w, &out->ftl);
+    PFM_Vec3_Add(&fc, &up_half_h, &tmp); PFM_Vec3_Add(&tmp, &right_half_w, &out->ftr);
+    PFM_Vec3_Sub(&fc, &up_half_h, &tmp); PFM_Vec3_Sub(&tmp, &right_half_w, &out->fbl);
+    PFM_Vec3_Sub(&fc, &up_half_h, &tmp); PFM_Vec3_Add(&tmp, &right_half_w, &out->fbr);
+
+    /* Plane normals point inward: the near/far faces face along +/- front, and
+     * the side faces (offset along +/- cam_right and +/- up) face the opposite
+     * way back into the box. */
+    vec3_t neg_front, neg_up, neg_right;
+    PFM_Vec3_Scale(&front, -1.0f, &neg_front);
+    PFM_Vec3_Scale(&up, -1.0f, &neg_up);
+    PFM_Vec3_Scale(&cam_right, -1.0f, &neg_right);
+
+    out->nearp.point = nc;        out->nearp.normal = front;
+    out->farp.point  = fc;        out->farp.normal  = neg_front;
+    out->right.point = out->ntr;  out->right.normal = neg_right;
+    out->left.point  = out->ntl;  out->left.normal  = cam_right;
+    out->top.point   = out->ntl;  out->top.normal   = neg_up;
+    out->bot.point   = out->nbl;  out->bot.normal   = up;
+}
+
 bool C_RayIntersectsAABB(vec3_t ray_origin, vec3_t ray_dir, struct aabb aabb, float *out_t)
 {
      float t1 = (aabb.x_min - ray_origin.x) / ray_dir.x;

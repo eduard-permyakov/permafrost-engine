@@ -294,10 +294,12 @@ static void sel_compute_hovered(struct camera *cam, const vec_entity_t *visible,
     SDL_GetMouseState(&mouse_x, &mouse_y);
 
     vec3_t ray_origin = sel_unproject_mouse_coords(cam, (vec2_t){mouse_x, mouse_y}, -1.0f);
+    vec3_t ray_far    = sel_unproject_mouse_coords(cam, (vec2_t){mouse_x, mouse_y}, 1.0f);
     vec3_t ray_dir;
 
-    vec3_t cam_pos = Camera_GetPos(cam);
-    PFM_Vec3_Sub(&ray_origin, &cam_pos, &ray_dir);
+    /* Derive the direction from the near/far unprojected points so the ray is
+     * correct under both perspective and orthographic projections. */
+    PFM_Vec3_Sub(&ray_far, &ray_origin, &ray_dir);
     PFM_Vec3_Normal(&ray_dir, &ray_dir);
 
     float t_min = FLT_MAX;

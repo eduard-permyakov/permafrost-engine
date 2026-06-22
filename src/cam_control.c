@@ -257,7 +257,7 @@ static void fps_cam_on_update_end(void *unused1, void *unused2)
     if(ctx->right_state != KEY_RELEASED) PFM_Vec3_Add(&dir, &right, &dir);
     
     Camera_MoveDirectionTick(cam, dir);
-    Camera_TickFinishPerspective(cam);
+    Camera_TickFinish(cam);
 }
 
 static void rts_cam_on_mousemove(void *unused, void *event_arg)
@@ -464,13 +464,18 @@ static void rts_cam_on_update_end(void *unused1, void *unused2)
         ctx->zoom_delta = 0;
     }
 
-    Camera_TickFinishPerspective(cam);
+    struct sval proj;
+    if(Settings_Get("pf.video.camera_projection", &proj) == SS_OKAY) {
+        Camera_SetProjection(cam, proj.as_int);
+    }
+
+    Camera_TickFinish(cam);
 }
 
 static void free_cam_on_update_end(void *unused1, void *unused2)
 {
     struct camera *cam = s_cam_ctx.active;
-    Camera_TickFinishPerspective(cam);
+    Camera_TickFinish(cam);
 }
 
 /*****************************************************************************/

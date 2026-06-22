@@ -81,6 +81,7 @@ uniform sampler2D refraction_depth;
 uniform float water_move_factor;
 uniform float cam_near;
 uniform float cam_far;
+uniform bool  cam_orthographic;
 
 uniform vec3 light_color;
 
@@ -224,6 +225,11 @@ float tint_factor(ivec4 td, vec2 uv)
 
 float linearize_depth(float z)
 {
+    /* An orthographic depth buffer is already linear in NDC, so the perspective
+     * reconstruction below would produce wrong distances (and make the boundary
+     * discard reject every fragment). */
+    if(cam_orthographic)
+        return cam_near + z * (cam_far - cam_near);
     return 2.0 * cam_near * cam_far / (cam_far + cam_near - (2.0 * z - 1.0) * (cam_far - cam_near));
 }
 

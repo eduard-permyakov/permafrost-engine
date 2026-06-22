@@ -73,10 +73,18 @@ enum volume_intersec_type{
     VOLUME_INTERSEC_INTERSECTION,
 };
 
-void C_MakeFrustum(vec3_t pos, vec3_t up, vec3_t front, 
-                   GLfloat aspect_ratio, GLfloat fov_rad, 
+void C_MakeFrustum(vec3_t pos, vec3_t up, vec3_t front,
+                   GLfloat aspect_ratio, GLfloat fov_rad,
                    GLfloat near_dist, GLfloat far_dist,
                    struct frustum *out);
+
+/* Builds a box-shaped (parallel-sided) frustum for an orthographic camera.
+ * half_width and half_height are the view-volume extents, matching those used
+ * to build the orthographic projection matrix. */
+void C_MakeFrustumOrthographic(vec3_t pos, vec3_t up, vec3_t front,
+                               GLfloat half_width, GLfloat half_height,
+                               GLfloat near_dist, GLfloat far_dist,
+                               struct frustum *out);
 
 bool C_RayIntersectsAABB(vec3_t ray_origin, vec3_t ray_dir, struct aabb aabb, float *out_t);
 bool C_RayIntersectsOBB (vec3_t ray_origin, vec3_t ray_dir, struct obb obb,   float *out_t);

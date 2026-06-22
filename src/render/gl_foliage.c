@@ -241,7 +241,7 @@ void R_GL_MapFoliageBeginDraw(const struct camera *cam, const float *scale,
 
     GL_PERF_PUSH_GROUP(0, "map_foliage");
 
-    Camera_TickFinishPerspective((struct camera*)cam);
+    Camera_TickFinish((struct camera*)cam);
 
     R_GL_StateSet("cover_scale", (struct uval){
         .type         = UTYPE_FLOAT,

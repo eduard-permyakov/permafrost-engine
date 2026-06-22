@@ -49,6 +49,7 @@
 #include "../main.h"
 #include "../ui.h"
 #include "../cursor.h"
+#include "../camera.h"
 
 #include <SDL.h>
 
@@ -856,6 +857,9 @@ static void s_expose_game_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, CAM_MODE_FPS);
     PY_EXPOSE_ENUM(module, CAM_MODE_RTS);
     PY_EXPOSE_ENUM(module, CAM_MODE_FREE);
+
+    PY_EXPOSE_ENUM(module, CAM_PROJ_PERSPECTIVE);
+    PY_EXPOSE_ENUM(module, CAM_PROJ_ORTHOGRAPHIC);
 
     PY_EXPOSE_ENUM(module, TRANSPORT_STRATEGY_EXCESS);
     PY_EXPOSE_ENUM(module, TRANSPORT_STRATEGY_NEAREST);

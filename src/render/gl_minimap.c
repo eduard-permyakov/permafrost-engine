@@ -114,7 +114,6 @@ void draw_cam_frustum(const struct camera *cam, mat4x4_t *minimap_model, const s
 
     struct frustum cam_frust;
     Camera_MakeFrustum(cam, &cam_frust);
-    vec3_t cam_pos = Camera_GetPos(cam);
 
     struct plane ground_plane = {
         .point  = {0.0f, 0.0f, 0.0f},
@@ -138,27 +137,27 @@ void draw_cam_frustum(const struct camera *cam, mat4x4_t *minimap_model, const s
      * In that case, we just take the intersection to be extremely far away 
      * so that we can still draw a partial visible box. */
     float t;
-    if(!C_RayIntersectsPlane(cam_pos, tr_dir, ground_plane, &t))
+    if(!C_RayIntersectsPlane(cam_frust.ntr, tr_dir, ground_plane, &t))
         t = (1e10);
     PFM_Vec3_Scale(&tr_dir, t, &tr_dir);
-    PFM_Vec3_Add(&cam_pos, &tr_dir, &tr);
+    PFM_Vec3_Add(&cam_frust.ntr, &tr_dir, &tr);
 
-    if(!C_RayIntersectsPlane(cam_pos, tl_dir, ground_plane, &t))
+    if(!C_RayIntersectsPlane(cam_frust.ntl, tl_dir, ground_plane, &t))
         t = (1e10);
     PFM_Vec3_Scale(&tl_dir, t, &tl_dir);
-    PFM_Vec3_Add(&cam_pos, &tl_dir, &tl);
+    PFM_Vec3_Add(&cam_frust.ntl, &tl_dir, &tl);
 
     /* When the bottom part of the frustum doesn't intersect the ground plane,
      * there is nothing to draw. */
-    if(!C_RayIntersectsPlane(cam_pos, br_dir, ground_plane, &t))
+    if(!C_RayIntersectsPlane(cam_frust.nbr, br_dir, ground_plane, &t))
         GL_PERF_RETURN_VOID();
     PFM_Vec3_Scale(&br_dir, t, &br_dir);
-    PFM_Vec3_Add(&cam_pos, &br_dir, &br);
+    PFM_Vec3_Add(&cam_frust.nbr, &br_dir, &br);
 
-    if(!C_RayIntersectsPlane(cam_pos, bl_dir, ground_plane, &t))
+    if(!C_RayIntersectsPlane(cam_frust.nbl, bl_dir, ground_plane, &t))
         GL_PERF_RETURN_VOID();
     PFM_Vec3_Scale(&bl_dir, t, &bl_dir);
-    PFM_Vec3_Add(&cam_pos, &bl_dir, &bl);
+    PFM_Vec3_Add(&cam_frust.nbl, &bl_dir, &bl);
 
     /* Next, normalize the coordinates so that (0,0) is the exact center
      * of the map and coordinates that are visible on the minimap have 

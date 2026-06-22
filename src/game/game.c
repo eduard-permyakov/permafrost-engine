@@ -91,7 +91,7 @@
 #define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_DISPATCH)
 
 
-#define CAM_TILT_UP_DEGREES 25.0f
+#define CAM_TILT_UP_DEGREES 45.0f
 #define CAM_SPEED           0.20f
 #define CAM_SENS            0.05f
 #define MAX_VIS_RANGE       150.0f
@@ -155,6 +155,11 @@ static bool g_init_camera(void)
     s_gs.active_cam = Camera_New();
     if(!s_gs.active_cam) {
         return false;
+    }
+
+    struct sval proj;
+    if(Settings_Get("pf.video.camera_projection", &proj) == SS_OKAY) {
+        Camera_SetProjection(s_gs.active_cam, proj.as_int);
     }
 
     Camera_SetSpeed(s_gs.active_cam, CAM_SPEED);

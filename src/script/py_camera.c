@@ -90,6 +90,8 @@ static PyObject *PyCamera_get_speed(PyCameraObject *self, void *closure);
 static int       PyCamera_set_speed(PyCameraObject *self, PyObject *value, void *closure);
 static PyObject *PyCamera_get_sensitivity(PyCameraObject *self, void *closure);
 static int       PyCamera_set_sensitivity(PyCameraObject *self, PyObject *value, void *closure);
+static PyObject *PyCamera_get_projection_mode(PyCameraObject *self, void *closure);
+static int       PyCamera_set_projection_mode(PyCameraObject *self, PyObject *value, void *closure);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -148,6 +150,11 @@ static PyGetSetDef PyCamera_getset[] = {
     {"sensitivity",
     (getter)PyCamera_get_sensitivity, (setter)PyCamera_set_sensitivity,
     "The camera's sensitivity (how fast direction can be changed)",
+    NULL},
+    {"projection_mode",
+    (getter)PyCamera_get_projection_mode, (setter)PyCamera_set_projection_mode,
+    "The camera's projection mode. Can be one of pf.CAM_PROJ_PERSPECTIVE or "
+    "pf.CAM_PROJ_ORTHOGRAPHIC.",
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -223,15 +230,16 @@ static PyObject *PyCamera_new(PyTypeObject *type, PyObject *args, PyObject *kwds
         return NULL;
     }
 
-    static char *kwlist[] = {"name", "mode", "position", "pitch", "yaw", 
-        "speed", "sensitivity", NULL};
+    static char *kwlist[] = {"name", "mode", "position", "pitch", "yaw",
+        "speed", "sensitivity", "projection_mode", NULL};
     const char *name = NULL;
     enum cam_mode mode = CAM_MODE_FREE;
+    int projection_mode = CAM_PROJ_PERSPECTIVE;
     PyObject *obj;
     float a, b, c, d;
 
-    if(!PyArg_ParseTupleAndKeywords(args, kwds, "|siOffff", kwlist, &name, &mode, 
-        &obj, &a, &b, &c, &d)) {
+    if(!PyArg_ParseTupleAndKeywords(args, kwds, "|siOffffi", kwlist, &name, &mode,
+        &obj, &a, &b, &c, &d, &projection_mode)) {
         assert(PyErr_Occurred());
         return NULL;
     }
@@ -244,6 +252,7 @@ static PyObject *PyCamera_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
     self->mode = mode;
     self->cam = cam;
+    Camera_SetProjection(cam, projection_mode);
     return (PyObject*)self;
 }
 
@@ -259,8 +268,8 @@ static void PyCamera_dealloc(PyCameraObject *self)
 
 static int PyCamera_init(PyCameraObject *self, PyObject *args, PyObject *kwds)
 {
-    static char *kwlist[] = {"name", "mode", "position", "pitch", "yaw", 
-        "speed", "sensitivity", NULL};
+    static char *kwlist[] = {"name", "mode", "position", "pitch", "yaw",
+        "speed", "sensitivity", "projection_mode", NULL};
 
     PyObject *pos_tuple = NULL;
     vec3_t pos = Camera_GetPos(self->cam);
@@ -271,9 +280,10 @@ static int PyCamera_init(PyCameraObject *self, PyObject *args, PyObject *kwds)
     float speed = CAM_DEFAULT_SPEED;
     float sens = CAM_DEFAULT_SENS;
     const char *name = NULL;
+    int projection_mode = CAM_PROJ_PERSPECTIVE;
 
-    if(!PyArg_ParseTupleAndKeywords(args, kwds, "|siOffff", kwlist, 
-        &name, &mode, &pos_tuple, &pitch, &yaw, &speed, &sens)) {
+    if(!PyArg_ParseTupleAndKeywords(args, kwds, "|siOffffi", kwlist,
+        &name, &mode, &pos_tuple, &pitch, &yaw, &speed, &sens, &projection_mode)) {
         assert(PyErr_Occurred());
         return -1;
     }
@@ -401,6 +411,12 @@ static PyObject *PyCamera_pickle(PyCameraObject *self, PyObject *args, PyObject 
     Py_DECREF(sens);
     CHK_TRUE(status, fail_pickle);
 
+    PyObject *projection = PyInt_FromLong(Camera_GetProjection(self->cam));
+    CHK_TRUE(projection, fail_pickle);
+    status = S_PickleObjgraph(projection, stream);
+    Py_DECREF(projection);
+    CHK_TRUE(status, fail_pickle);
+
     ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
 fail_pickle:
     SDL_RWclose(stream);
@@ -448,6 +464,9 @@ static PyObject *PyCamera_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
     PyObject *sensitivity = S_UnpickleObjgraph(stream);
     SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
+    PyObject *projection = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
     if(!active
     || !name
     || !mode
@@ -455,7 +474,8 @@ static PyObject *PyCamera_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
     || !pitch
     || !yaw
     || !speed
-    || !sensitivity) {
+    || !sensitivity
+    || !projection) {
         PyErr_SetString(PyExc_RuntimeError, "Could not unpickle internal state of pf.Camera instance");
         goto fail_unpickle;
     }
@@ -474,13 +494,14 @@ static PyObject *PyCamera_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
         if(!cam_args)
             goto fail_unpickle;
 
-        PyObject *cam_kwargs = Py_BuildValue("{s:O,s:O,s:O,s:O,s:O,s:O}", 
-            "mode",         mode,
-            "position",     position,
-            "pitch",        pitch,
-            "yaw",          yaw,
-            "speed",        speed,
-            "sensitivity",  sensitivity
+        PyObject *cam_kwargs = Py_BuildValue("{s:O,s:O,s:O,s:O,s:O,s:O,s:O}",
+            "mode",            mode,
+            "position",        position,
+            "pitch",           pitch,
+            "yaw",             yaw,
+            "speed",           speed,
+            "sensitivity",     sensitivity,
+            "projection_mode", projection
         );
         if(name != Py_None) {
             PyDict_SetItemString(cam_kwargs, "name", name);
@@ -509,6 +530,7 @@ fail_unpickle:
     Py_XDECREF(pitch);
     Py_XDECREF(yaw);
     Py_XDECREF(sensitivity);
+    Py_XDECREF(projection);
     Py_XDECREF(cam_obj);
     SDL_RWclose(stream);
 fail_args:
@@ -655,6 +677,31 @@ static int PyCamera_set_sensitivity(PyCameraObject *self, PyObject *value, void 
     }
 
     Camera_SetSens(self->cam, PyFloat_AS_DOUBLE(value));
+    return 0;
+}
+
+static PyObject *PyCamera_get_projection_mode(PyCameraObject *self, void *closure)
+{
+    return PyInt_FromLong(Camera_GetProjection(self->cam));
+}
+
+static int PyCamera_set_projection_mode(PyCameraObject *self, PyObject *value, void *closure)
+{
+    /* Unlike the orientation attributes, the projection mode may be changed on
+     * any camera so that the active view can be switched at runtime. */
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer.");
+        return -1;
+    }
+
+    long mode = PyInt_AsLong(value);
+    if(mode != CAM_PROJ_PERSPECTIVE && mode != CAM_PROJ_ORTHOGRAPHIC) {
+        PyErr_SetString(PyExc_ValueError,
+            "Projection mode must be pf.CAM_PROJ_PERSPECTIVE or pf.CAM_PROJ_ORTHOGRAPHIC.");
+        return -1;
+    }
+
+    Camera_SetProjection(self->cam, mode);
     return 0;
 }
 
