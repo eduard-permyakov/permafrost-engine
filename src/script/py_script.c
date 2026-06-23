@@ -62,6 +62,7 @@
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 #include "../phys/public/phys.h"
+#include "../phys/public/collision.h"
 #include "../lib/public/SDL_vec_rwops.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/pf_nuklear.h"
@@ -202,6 +203,7 @@ static PyObject *PyPf_get_player_population_limit(PyObject *self);
 
 static PyObject *PyPf_get_tile(PyObject *self, PyObject *args);
 static PyObject *PyPf_update_tile(PyObject *self, PyObject *args);
+static PyObject *PyPf_tiles_under_obj(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_map_highlight_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_minimap_position(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_minimap_position(PyObject *self, PyObject *args);
@@ -662,9 +664,14 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_get_tile, METH_VARARGS,
     "Get the pf.Tile object describing the tile at the specified coordinates."},
 
-    {"update_tile", 
+    {"update_tile",
     (PyCFunction)PyPf_update_tile, METH_VARARGS,
     "Update the map tile at the specified coordinates to the new value."},
+
+    {"tiles_under_obj",
+    (PyCFunction)PyPf_tiles_under_obj, METH_VARARGS,
+    "Returns a list of ((chunk_r, chunk_c), (tile_r, tile_c)) coordinates for the tiles "
+    "covered by the footprint of the entity with the supplied UID."},
 
     {"set_map_highlight_size", 
     (PyCFunction)PyPf_set_map_highlight_size, METH_VARARGS,
@@ -2313,6 +2320,50 @@ static PyObject *PyPf_get_tile(PyObject *self, PyObject *args)
     }
 
     return S_Tile_New(&desc);
+}
+
+static PyObject *PyPf_tiles_under_obj(PyObject *self, PyObject *args)
+{
+    int uid;
+    if(!PyArg_ParseTuple(args, "i", &uid)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an entity UID (integer).");
+        return NULL;
+    }
+
+    if(!G_EntityExists(uid)) {
+        PyErr_SetString(PyExc_RuntimeError, "No entity with the supplied UID.");
+        return NULL;
+    }
+
+    const struct map *map = G_GetPrevTickMap();
+    if(!map) {
+        PyErr_SetString(PyExc_RuntimeError, "No active map.");
+        return NULL;
+    }
+
+    struct obb obb;
+    Entity_CurrentOBB(uid, &obb, true);
+
+    struct map_resolution res;
+    M_GetResolution(map, &res);
+
+    struct tile_desc tds[2048];
+    size_t ntiles = M_Tile_AllUnderObj(M_GetPos(map), res, &obb, tds, ARR_SIZE(tds));
+
+    PyObject *list = PyList_New(ntiles);
+    if(!list)
+        return NULL;
+
+    for(size_t i = 0; i < ntiles; i++) {
+        PyObject *coord = Py_BuildValue("((ii)(ii))",
+            tds[i].chunk_r, tds[i].chunk_c, tds[i].tile_r, tds[i].tile_c);
+        if(!coord) {
+            Py_DECREF(list);
+            return NULL;
+        }
+        PyList_SET_ITEM(list, i, coord);
+    }
+    return list;
 }
 
 static PyObject *PyPf_update_tile(PyObject *self, PyObject *args)
