@@ -77,6 +77,7 @@
 #include "../session.h"
 #include "../perf.h"
 #include "../cursor.h"
+#include "../cam_control.h"
 #include "../task.h"
 #include "../sched.h"
 #include "../asset_load.h"
@@ -254,6 +255,8 @@ static PyObject *PyPf_activate_system_cursor(PyObject *self, PyObject *args);
 static PyObject *PyPf_activate_named_cursor(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_cursor_rts_mode(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_cursor_rts_mode(PyObject *self);
+static PyObject *PyPf_set_rts_camera_zoom_enabled(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_rts_camera_zoom_enabled(PyObject *self);
 
 static PyObject *PyPf_multiply_quaternions(PyObject *self, PyObject *args);
 static PyObject *PyPf_rand(PyObject *self, PyObject *args);
@@ -879,6 +882,15 @@ static PyMethodDef pf_module_methods[] = {
     {"get_cursor_rts_mode",
     (PyCFunction)PyPf_get_cursor_rts_mode, METH_NOARGS,
     "Returns the current state of the RTS cursor mode enablement."},
+
+    {"set_rts_camera_zoom_enabled",
+    (PyCFunction)PyPf_set_rts_camera_zoom_enabled, METH_VARARGS,
+    "Enable or disable the RTS camera's mousewheel zoom. Disable it when the wheel is "
+    "temporarily repurposed and re-enable it afterwards."},
+
+    {"get_rts_camera_zoom_enabled",
+    (PyCFunction)PyPf_get_rts_camera_zoom_enabled, METH_NOARGS,
+    "Returns whether the RTS camera's mousewheel zoom is currently enabled."},
 
     {"multiply_quaternions",
     (PyCFunction)PyPf_multiply_quaternions, METH_VARARGS,
@@ -3150,6 +3162,27 @@ static PyObject *PyPf_set_cursor_rts_mode(PyObject *self, PyObject *args)
 static PyObject *PyPf_get_cursor_rts_mode(PyObject *self)
 {
     if(Cursor_GetRTSMode()) {
+        Py_RETURN_TRUE;
+    }else{
+        Py_RETURN_FALSE;
+    }
+}
+
+static PyObject *PyPf_set_rts_camera_zoom_enabled(PyObject *self, PyObject *args)
+{
+    PyObject *value;
+    if(!PyArg_ParseTuple(args, "O", &value)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting a single argument: boolean expression");
+        return NULL;
+    }
+
+    CamControl_RTS_SetZoomEnabled(PyObject_IsTrue(value));
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_get_rts_camera_zoom_enabled(PyObject *self)
+{
+    if(CamControl_RTS_GetZoomEnabled()) {
         Py_RETURN_TRUE;
     }else{
         Py_RETURN_FALSE;

@@ -41,6 +41,7 @@
 #include "public/script.h"
 #include "py_ui_style.h"
 #include "py_pickle.h"
+#include "py_console.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/vec.h"
 #include "../mem.h"
@@ -2718,6 +2719,10 @@ bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
             (vec2_t){adj_bounds.x,                  adj_bounds.y + visible_size.y}))
             return true;
     }
+
+    /* The console is a C-side window, not tracked in s_active_windows. */
+    if(S_Console_MouseOver(mouse_x, mouse_y))
+        return true;
 
     return false;
 }

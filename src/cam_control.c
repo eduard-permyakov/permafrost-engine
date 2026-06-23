@@ -142,6 +142,8 @@ struct{
     handler_t installed_on_update_end;
 }s_cam_ctx;
 
+static bool s_rts_zoom_enabled = true;
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -299,6 +301,16 @@ static void rts_cam_on_mousewheel(void *unused, void *event_arg)
 {
     struct cam_rts_ctx *ctx = &s_cam_ctx.active_ctx.rts;
     SDL_Event *e = (SDL_Event*)event_arg;
+
+    if(!s_rts_zoom_enabled)
+        return;
+
+    /* When the cursor is over a UI window, the scroll belongs to that window
+     * (e.g. scrolling a list); don't also zoom the camera. */
+    int mouse_x, mouse_y;
+    SDL_GetMouseState(&mouse_x, &mouse_y);
+    if(S_UI_MouseOverWindow(mouse_x, mouse_y))
+        return;
 
     int y = e->wheel.y;
     if(e->wheel.direction == SDL_MOUSEWHEEL_FLIPPED)
@@ -566,11 +578,22 @@ void CamControl_UninstallActive(void)
     if(s_cam_ctx.installed_on_mousemove)  E_Global_Unregister(SDL_MOUSEMOTION,     s_cam_ctx.installed_on_mousemove);
     if(s_cam_ctx.installed_on_mousedown)  E_Global_Unregister(SDL_MOUSEBUTTONDOWN, s_cam_ctx.installed_on_mousedown);
     if(s_cam_ctx.installed_on_mouseup)    E_Global_Unregister(SDL_MOUSEBUTTONUP,   s_cam_ctx.installed_on_mouseup);
+    if(s_cam_ctx.installed_on_mousewheel) E_Global_Unregister(SDL_MOUSEWHEEL,       s_cam_ctx.installed_on_mousewheel);
     if(s_cam_ctx.installed_on_update_end) E_Global_Unregister(EVENT_UPDATE_END,    s_cam_ctx.installed_on_update_end);
 
     memset(&s_cam_ctx, 0, sizeof(s_cam_ctx));
 
     Cursor_SetRTSMode(false);
     SDL_SetRelativeMouseMode(false);
+}
+
+void CamControl_RTS_SetZoomEnabled(bool enabled)
+{
+    s_rts_zoom_enabled = enabled;
+}
+
+bool CamControl_RTS_GetZoomEnabled(void)
+{
+    return s_rts_zoom_enabled;
 }
 

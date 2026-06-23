@@ -52,4 +52,9 @@ void CamControl_RTS_Install(struct camera *cam);
 void CamControl_Free_Install(struct camera *cam);
 void CamControl_UninstallActive(void);
 
+/* Enable or disable the RTS controller's mousewheel zoom. 
+ */
+void CamControl_RTS_SetZoomEnabled(bool enabled);
+bool CamControl_RTS_GetZoomEnabled(void);
+
 #endif

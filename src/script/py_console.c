@@ -44,6 +44,7 @@
 
 #include "py_console.h"
 #include "../ui.h"
+#include "../main.h"
 #include "../event.h"
 #include "../settings.h"
 #include "../lib/public/lru_cache.h"
@@ -562,5 +563,30 @@ void S_Console_Show(void)
 void S_Console_ToggleShown(void)
 {
     s_shown = !s_shown;
+}
+
+bool S_Console_MouseOver(int mouse_x, int mouse_y)
+{
+    if(!s_shown)
+        return false;
+
+    struct nk_context *ctx = UI_GetContext();
+    struct nk_window *win = nk_window_find(ctx, "Console");
+    if(!win || (win->flags & (NK_WINDOW_CLOSED | NK_WINDOW_HIDDEN)))
+        return false;
+
+    /* The console is built at a fixed virtual resolution; map the cursor into
+     * that space (matching S_UI_MouseOverWindow) and test the live, possibly
+     * dragged, window bounds. */
+    int w, h;
+    Engine_WinDrawableSize(&w, &h);
+    const vec2_t adj_vres = UI_ArAdjustedVRes((vec2_t){1920, 1080});
+
+    float vmouse_x = (float)mouse_x / w * adj_vres.x;
+    float vmouse_y = (float)mouse_y / h * adj_vres.y;
+
+    struct nk_rect b = win->bounds;
+    return (vmouse_x >= b.x && vmouse_x <= b.x + b.w)
+        && (vmouse_y >= b.y && vmouse_y <= b.y + b.h);
 }
 
