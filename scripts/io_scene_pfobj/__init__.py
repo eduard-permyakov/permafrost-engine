@@ -1,6 +1,6 @@
 #
 #  This file is part of Permafrost Engine. 
-#  Copyright (C) 2017-2023 Eduard Permyakov 
+#  Copyright (C) 2017-2026 Eduard Permyakov 
 #
 #  Permafrost Engine is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -35,8 +35,8 @@
 bl_info = {
     "name": "Permafrost Engine Object (.pfobj)",
     "author": "Eduard Permyakov",
-    "version": (1, 0, 0),
-    "blender": (2, 72),
+    "version": (1, 1, 0),
+    "blender": (2, 80, 0),
     "location": "File > Import-Export",
     "description": "Exports and imports models in Permafrost Engine Object format",
     "category": "Import-Export"
@@ -60,7 +60,7 @@ class ImportPFOBJ(bpy.types.Operator, ImportHelper):
     bl_idname    = "import_scene.pfobj"
     bl_label     = "Import PFOBJ"
     filename_ext = ".pfobj"
-    filter_glob  = StringProperty(
+    filter_glob: StringProperty(
         default="*.pfobj",
         options={'HIDDEN'}
     )
@@ -75,21 +75,21 @@ class ExportPFOBJ(bpy.types.Operator, ExportHelper):
     bl_idname    = "export_scene.pfobj"
     bl_label     = 'Export PFOBJ'
 
-    filter_glob = StringProperty(
+    filter_glob: StringProperty(
         default="*.pfobj",
         options={'HIDDEN'}
     )
     check_extension = True
     filename_ext    = ".pfobj"
 
-    export_bbox = BoolProperty(
+    export_bbox: BoolProperty(
         name="Export Object Bounding Box",
         description="Export Bounding Box (used for entities which have collision). For animated " \
             "entities, this is the bind pose bounding box.",
         default=True
     )
 
-    local_origin = BoolProperty(
+    local_origin: BoolProperty(
         name="Use Local Object Origin",
         description="Worldspace transform is not applied to vertices, they are exported in object space instead.",
         default=False
@@ -97,38 +97,48 @@ class ExportPFOBJ(bpy.types.Operator, ExportHelper):
 
     def execute(self, context):
         from . import export_pfobj
-        from mathutils import Matrix
+        from mathutils import Matrix, Vector
 
         keywords = self.as_keywords(ignore=("check_existing",
                                             "filter_glob"))
 
-        # Convert to OpenGL coordinate system
-        global_matrix = axis_conversion(to_forward='-Z', to_up='Y').to_4x4()
+        # Convert to the engine coordinate system. axis_conversion only ever yields a
+        # rotation, but the engine's view matrix is left-handed (determinant -1), so we
+        # compose in an X reflection or models export mirrored left-to-right.
+        global_matrix = Matrix.Diagonal(Vector((-1.0, 1.0, 1.0, 1.0))) \
+            @ axis_conversion(to_forward='-Z', to_up='Y').to_4x4()
         keywords["global_matrix"] = global_matrix
 
         return export_pfobj.save(self, context, **keywords)
 
 
 def menu_func_import(self, context):
-    self.layout.operator(ImportPFOBJ.bl_idname, 
+    self.layout.operator(ImportPFOBJ.bl_idname,
                          text="Permafrost Engine Object (.pfobj)")
 
 
 def menu_func_export(self, context):
-    self.layout.operator(ExportPFOBJ.bl_idname, 
+    self.layout.operator(ExportPFOBJ.bl_idname,
                          text="Permafrost Engine Object (.pfobj)")
 
-def register():
-    bpy.utils.register_module(__name__)
+classes = (
+    ImportPFOBJ,
+    ExportPFOBJ,
+)
 
-    bpy.types.INFO_MT_file_import.append(menu_func_import)
-    bpy.types.INFO_MT_file_export.append(menu_func_export)
+def register():
+    for cls in classes:
+        bpy.utils.register_class(cls)
+
+    bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
+    bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
 
 def unregister():
-    bpy.utils.unregister_module(__name__)
+    bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
+    bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
 
-    bpy.types.INFO_MT_file_import.remove(menu_func_import)
-    bpy.types.INFO_MT_file_export.remove(menu_func_export)
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
 
 if __name__ == "__main__":
     register()
