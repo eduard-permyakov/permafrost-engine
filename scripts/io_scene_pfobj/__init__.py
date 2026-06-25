@@ -66,8 +66,15 @@ class ImportPFOBJ(bpy.types.Operator, ImportHelper):
     )
 
     def execute(self, context):
-        # TODO
-        return {'FINISHED'}
+        from . import import_pfobj
+        from mathutils import Matrix, Vector
+
+        # Invert the same transform the exporter applies (an X reflection composed with
+        # the Blender-to-engine axis conversion) to bring the model back into Blender space.
+        global_matrix = Matrix.Diagonal(Vector((-1.0, 1.0, 1.0, 1.0))) \
+            @ axis_conversion(to_forward='-Z', to_up='Y').to_4x4()
+
+        return import_pfobj.load(self, context, self.filepath, global_matrix)
 
 class ExportPFOBJ(bpy.types.Operator, ExportHelper):
     """Save a Permafrost Engine Object File"""
