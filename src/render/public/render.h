@@ -320,6 +320,18 @@ struct vram_stats;
 void   R_GL_ReadVramStats(struct vram_stats *out);
 
 /* ---------------------------------------------------------------------------
+ * GPU pipeline-statistics (GL_ARB_pipeline_statistics_query) for one frame.
+ * 'cookies' holds PERF_GPU_STAT_COUNT caller-owned query handles. Begin opens a
+ * whole-frame span, End closes it, and Resolve reads a deferred (non-stalling)
+ * slot into 'out' and frees the handles. All zero when the extension is absent.
+ * ---------------------------------------------------------------------------
+ */
+struct gpu_frame_stats;
+void   R_GL_PipelineStatsBegin(uint32_t *cookies);
+void   R_GL_PipelineStatsEnd(void);
+void   R_GL_ResolvePipelineStats(uint32_t *cookies, struct gpu_frame_stats *out);
+
+/* ---------------------------------------------------------------------------
  * Snapshot the engine's tracked GPU allocations (per render-file system, split
  * into texture/renderbuffer/bufferobject) into 'out'. The counters are
  * maintained by the gl_mem.h wrapper macros as GL objects are allocated/freed.

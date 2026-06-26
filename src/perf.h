@@ -107,6 +107,21 @@ struct vram_stats{
     int evicted_kb;
 };
 
+/* OpenGL pipeline-statistics counters (GL_ARB_pipeline_statistics_query) for a
+ * single frame. All zero when the extension is unavailable or GPU tracing is
+ * off.
+ */
+struct gpu_frame_stats{
+    uint64_t verts_submitted;
+    uint64_t prims_submitted;
+    uint64_t vs_invocations;
+    uint64_t clip_in_prims;
+    uint64_t clip_out_prims;
+    uint64_t frag_invocations;
+};
+
+#define PERF_GPU_STAT_COUNT (6)
+
 struct perf_info{
     char threadname[64];
     size_t nentries;
@@ -146,6 +161,7 @@ bool     Perf_IsRoot(void);
 size_t   Perf_Report(size_t maxout, struct perf_info **out);
 void     Perf_GetMemoryStats(struct perf_mem_stats *out);
 void     Perf_GetVramStats(struct vram_stats *out);
+void     Perf_GetGpuFrameStats(struct gpu_frame_stats *out);
 void     Perf_GetMemoryAccounting(struct mem_accounting *out);
 void     Perf_GetGpuMemoryAccounting(struct gpu_mem_accounting *out);
 uint32_t Perf_LastFrameMS(void);

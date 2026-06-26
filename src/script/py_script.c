@@ -135,6 +135,7 @@ static PyObject *PyPf_prev_frame_ms(PyObject *self);
 static PyObject *PyPf_prev_frame_perfstats(PyObject *self);
 static PyObject *PyPf_prev_frame_memstats(PyObject *self);
 static PyObject *PyPf_prev_frame_vramstats(PyObject *self);
+static PyObject *PyPf_prev_frame_gpu_stats(PyObject *self);
 static PyObject *PyPf_prev_frame_mem_accounting(PyObject *self);
 static PyObject *PyPf_prev_frame_gpu_mem_accounting(PyObject *self);
 static PyObject *PyPf_mem_audit(PyObject *self);
@@ -403,6 +404,12 @@ static PyMethodDef pf_module_methods[] = {
     {"prev_frame_vramstats", 
     (PyCFunction)PyPf_prev_frame_vramstats, METH_NOARGS,
     "Get a dictionary of the GPU video memory statistics (in KB) for the previous frame."},
+
+    {"prev_frame_gpu_stats",
+    (PyCFunction)PyPf_prev_frame_gpu_stats, METH_NOARGS,
+    "Get a dictionary of GPU pipeline-statistics counters (vertices/primitives "
+    "submitted, vertex/fragment-shader invocations, clipping input/output "
+    "primitives) for the previous frame."},
 
     {"prev_frame_mem_accounting",
     (PyCFunction)PyPf_prev_frame_mem_accounting, METH_NOARGS,
@@ -1452,6 +1459,20 @@ static PyObject *PyPf_prev_frame_vramstats(PyObject *self)
         "current_available_kb", stats.current_available_kb,
         "eviction_count",       stats.eviction_count,
         "evicted_kb",           stats.evicted_kb);
+}
+
+static PyObject *PyPf_prev_frame_gpu_stats(PyObject *self)
+{
+    struct gpu_frame_stats stats = {0};
+    Perf_GetGpuFrameStats(&stats);
+
+    return Py_BuildValue("{s:K,s:K,s:K,s:K,s:K,s:K}",
+        "verts_submitted",  (unsigned long long)stats.verts_submitted,
+        "prims_submitted",  (unsigned long long)stats.prims_submitted,
+        "vs_invocations",   (unsigned long long)stats.vs_invocations,
+        "clip_in_prims",    (unsigned long long)stats.clip_in_prims,
+        "clip_out_prims",   (unsigned long long)stats.clip_out_prims,
+        "frag_invocations", (unsigned long long)stats.frag_invocations);
 }
 
 static PyObject *mem_accounting_to_dict(const struct mem_accounting *acc)

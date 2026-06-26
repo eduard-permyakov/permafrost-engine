@@ -172,6 +172,9 @@ static struct mem_accounting
 static uint64_t               s_last_frames_allocd_bytes[NFRAMES_LOGGED];
 static struct vram_stats      s_vram[NFRAMES_LOGGED];
 static struct gpu_mem_accounting s_gpu_accounting[NFRAMES_LOGGED];
+static uint32_t               s_gpu_stat_cookies[NFRAMES_LOGGED][PERF_GPU_STAT_COUNT];
+static bool                   s_gpu_stat_valid[NFRAMES_LOGGED];
+static struct gpu_frame_stats s_gpu_frame_stats[NFRAMES_LOGGED];
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -699,6 +702,19 @@ void Perf_BeginTick(void)
         .nargs = 1,
         .args = { &s_gpu_accounting[s_last_idx] }
     });
+    if(s_gpu_stat_valid[s_last_idx]) {
+        R_PushCmd((struct rcmd){
+            .func = R_GL_ResolvePipelineStats,
+            .nargs = 2,
+            .args = { &s_gpu_stat_cookies[s_last_idx][0], &s_gpu_frame_stats[s_last_idx] }
+        });
+    }
+    R_PushCmd((struct rcmd){
+        .func = R_GL_PipelineStatsBegin,
+        .nargs = 1,
+        .args = { &s_gpu_stat_cookies[s_last_idx][0] }
+    });
+    s_gpu_stat_valid[s_last_idx] = true;
 
     khiter_t k = kh_get(pstate, s_thread_state_table, GPU_STATE_KEY);
     if(k == kh_end(s_thread_state_table))
@@ -748,15 +764,19 @@ void Perf_FinishTick(void)
 {
     ASSERT_IN_MAIN_THREAD();
 
+    R_PushCmd((struct rcmd){
+        .func = R_GL_PipelineStatsEnd,
+        .nargs = 0
+    });
+
     for(khiter_t k = kh_begin(s_thread_state_table); k != kh_end(s_thread_state_table); k++) {
 
         if(!kh_exist(s_thread_state_table, k))
             continue;
 
-        struct perf_state *curr = &kh_val(s_thread_state_table, k);
-
         /* A non-empty stack means the owning thread is mid-function;
          * advancing perf_tree_idx would invalidate the stack's indices. */
+        struct perf_state *curr = &kh_val(s_thread_state_table, k);
         if(vec_size(&curr->perf_stack) > 0)
             continue;
 
@@ -876,6 +896,12 @@ void Perf_GetVramStats(struct vram_stats *out)
 {
     int read_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
     *out = s_vram[read_idx];
+}
+
+void Perf_GetGpuFrameStats(struct gpu_frame_stats *out)
+{
+    int read_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
+    *out = s_gpu_frame_stats[read_idx];
 }
 
 void Perf_GetMemoryAccounting(struct mem_accounting *out)

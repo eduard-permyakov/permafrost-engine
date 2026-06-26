@@ -71,6 +71,21 @@ static struct{
 
 static unsigned long s_frame;
 
+/* Pipeline-statistics query targets, in the field order of struct
+ * gpu_frame_stats. 's_pipeline_stats_active' guards the begin/end pairing so a
+ * frame that never opened a span (extension absent, or tracing toggled) is not
+ * closed.
+ */
+static const GLenum s_pipeline_stat_targets[PERF_GPU_STAT_COUNT] = {
+    GL_VERTICES_SUBMITTED,
+    GL_PRIMITIVES_SUBMITTED,
+    GL_VERTEX_SHADER_INVOCATIONS,
+    GL_CLIPPING_INPUT_PRIMITIVES,
+    GL_CLIPPING_OUTPUT_PRIMITIVES,
+    GL_FRAGMENT_SHADER_INVOCATIONS,
+};
+static bool s_pipeline_stats_active;
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -142,6 +157,57 @@ void R_GL_ReadVramStats(struct vram_stats *out)
     glGetIntegerv(GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX, &out->current_available_kb);
     glGetIntegerv(GL_GPU_MEMORY_INFO_EVICTION_COUNT_NVX,           &out->eviction_count);
     glGetIntegerv(GL_GPU_MEMORY_INFO_EVICTED_MEMORY_NVX,           &out->evicted_kb);
+}
+
+void R_GL_PipelineStatsBegin(uint32_t *cookies)
+{
+    if(!GLEW_ARB_pipeline_statistics_query) {
+        memset(cookies, 0, sizeof(uint32_t) * PERF_GPU_STAT_COUNT);
+        s_pipeline_stats_active = false;
+        return;
+    }
+
+    glGenQueries(PERF_GPU_STAT_COUNT, (GLuint*)cookies);
+    for(int i = 0; i < PERF_GPU_STAT_COUNT; i++)
+        glBeginQuery(s_pipeline_stat_targets[i], cookies[i]);
+
+    s_pipeline_stats_active = true;
+    GL_ASSERT_OK();
+}
+
+void R_GL_PipelineStatsEnd(void)
+{
+    if(!s_pipeline_stats_active)
+        return;
+
+    for(int i = 0; i < PERF_GPU_STAT_COUNT; i++)
+        glEndQuery(s_pipeline_stat_targets[i]);
+
+    s_pipeline_stats_active = false;
+    GL_ASSERT_OK();
+}
+
+void R_GL_ResolvePipelineStats(uint32_t *cookies, struct gpu_frame_stats *out)
+{
+    uint64_t vals[PERF_GPU_STAT_COUNT] = {0};
+
+    for(int i = 0; i < PERF_GPU_STAT_COUNT; i++) {
+        if(cookies[i] == 0)
+            continue;
+        GLint avail = GL_FALSE;
+        glGetQueryObjectiv(cookies[i], GL_QUERY_RESULT_AVAILABLE, &avail);
+        if(avail)
+            glGetQueryObjectui64v(cookies[i], GL_QUERY_RESULT, &vals[i]);
+        glDeleteQueries(1, (GLuint*)&cookies[i]);
+        cookies[i] = 0;
+    }
+
+    out->verts_submitted  = vals[0];
+    out->prims_submitted  = vals[1];
+    out->vs_invocations   = vals[2];
+    out->clip_in_prims    = vals[3];
+    out->clip_out_prims   = vals[4];
+    out->frag_invocations = vals[5];
 }
 
 void R_GL_PerfStallFrameReport(void)
