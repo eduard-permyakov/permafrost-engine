@@ -78,6 +78,7 @@
 struct shared_resource{
     uint32_t     ent_flags;
     void        *render_private;
+    void        *render_private_lod[2]; /* [LOD1, LOD2]; alias render_private when absent */
     void        *anim_private;
     const char  *basedir;
     const char  *filename;
@@ -90,6 +91,9 @@ KHASH_MAP_INIT_INT(uid_ent, struct entity*)
 MPOOL_ALLOCATOR_TYPE(ent, struct entity)
 MPOOL_ALLOCATOR_PROTOTYPES(static, ent, struct entity)
 MPOOL_ALLOCATOR_IMPL(static, ent, struct entity)
+
+static bool al_get_resource(const char *path, const char *basedir,
+                            const char *pfobj_name, struct shared_resource *out);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -221,18 +225,66 @@ static void al_render_to_texture(struct shared_resource *res)
     });
 }
 
+/* LOD resources are leaves: they loads no LODs of its own (terminating 
+ * recursion in al_attach_lods) and skip the UI-icon bake. 
+ */
+static bool al_is_lod_name(const char *pfobj_name)
+{
+    return pf_endswith(pfobj_name, ".lod1.pfobj")
+        || pf_endswith(pfobj_name, ".lod2.pfobj");
+}
+
+/* Discover and load the lower-detail siblings longside a base model. Each 
+ * loads as its own resource so its mesh lands in the shared batch and its 
+ * textures dedup against the base. A missing or unparseable level falls back 
+ * to the base mesh. 
+ */
+static void al_attach_lods(const char *basedir, const char *pfobj_name,
+                           struct shared_resource *out)
+{
+    out->render_private_lod[0] = out->render_private;
+    out->render_private_lod[1] = out->render_private;
+
+    if(!pf_endswith(pfobj_name, ".pfobj"))
+        return;
+
+    size_t stem = strlen(pfobj_name) - strlen(".pfobj");
+    for(int level = 1; level <= 2; level++) {
+
+        char lodname[256];
+        pf_snprintf(lodname, sizeof(lodname), "%.*s.lod%d.pfobj",
+            (int)stem, pfobj_name, level);
+
+        char lodpath[512];
+        pf_snprintf(lodpath, sizeof(lodpath), "%s/%s/%s", g_basepath, basedir, lodname);
+
+        struct shared_resource lodres;
+        if(al_get_resource(lodpath, basedir, lodname, &lodres))
+            out->render_private_lod[level-1] = lodres.render_private;
+    }
+}
+
 static void al_commit_resource(const char *path, const char *basedir,
                                const char *pfobj_name, struct shared_resource *out)
 {
     out->basedir = pf_strdup(basedir);
     out->filename = pf_strdup(pfobj_name);
 
+    bool is_lod = al_is_lod_name(pfobj_name);
+    if(is_lod) {
+        out->render_private_lod[0] = out->render_private;
+        out->render_private_lod[1] = out->render_private;
+    }else{
+        al_attach_lods(basedir, pfobj_name, out);
+    }
+
     int put_ret;
     khiter_t k = kh_put(entity_res, s_name_resource_table, pf_strdup(path), &put_ret);
     assert(put_ret != -1 && put_ret != 0);
     kh_value(s_name_resource_table, k) = *out;
 
-    al_render_to_texture(out);
+    if(!is_lod)
+        al_render_to_texture(out);
 }
 
 static bool al_get_resource(const char *path, const char *basedir, 
@@ -379,6 +431,8 @@ bool AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
         goto fail_init;
 
     newent->render_private = res.render_private;
+    newent->render_private_lod[0] = res.render_private_lod[0];
+    newent->render_private_lod[1] = res.render_private_lod[1];
     newent->anim_private = res.anim_private;
     newent->identity_aabb = res.aabb;
 
@@ -444,6 +498,8 @@ bool AL_EntitySetPFObj(uint32_t uid, const char *base_path, const char *pfobj_na
     ent->filename = newobj;
 
     ent->render_private = new_res.render_private;
+    ent->render_private_lod[0] = new_res.render_private_lod[0];
+    ent->render_private_lod[1] = new_res.render_private_lod[1];
     ent->anim_private = new_res.anim_private;
     ent->identity_aabb = new_res.aabb;
 

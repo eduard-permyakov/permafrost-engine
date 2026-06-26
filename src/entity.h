@@ -87,6 +87,9 @@ struct entity{
     const char  *basedir;
     const char  *filename;
     void        *render_private;
+    /* Lower-detail meshes [LOD1, LOD2]; each aliases render_private when the
+     * corresponding variant was absent on disk. */
+    void        *render_private_lod[2];
     void        *anim_private;
     struct aabb  identity_aabb; /* Bind-pose AABB */
 };

@@ -436,14 +436,54 @@ static void g_sort_anim_list(vec_ranim_t *inout)
     PERF_RETURN_VOID();
 }
 
+static int g_select_lod(float dist, float d1, float d2)
+{
+    if(dist >= d2)
+        return 2;
+    if(dist >= d1)
+        return 1;
+    return 0;
+}
+
+static void *g_lod_priv(const struct entity *ent, int lod)
+{
+    if(lod <= 0)
+        return ent->render_private;
+    return ent->render_private_lod[lod - 1];
+}
+
+static void *g_lod_priv_coarsest(const struct entity *ent)
+{
+    if(ent->render_private_lod[1] != ent->render_private)
+        return ent->render_private_lod[1];
+    if(ent->render_private_lod[0] != ent->render_private)
+        return ent->render_private_lod[0];
+    return ent->render_private;
+}
+
 static void g_make_draw_list(vec_entity_t ents, vec_rstat_t *out_stat, vec_ranim_t *out_anim,
-                             bool onlycasters)
+                             bool onlycasters, bool coarsest)
 {
     PERF_ENTER();
     struct map_resolution res;
     if(s_gs.map) {
         M_GetResolution(s_gs.map, &res);
     }
+
+    struct sval lod_setting;
+    bool lod_enabled = (Settings_Get("pf.video.lod_enabled", &lod_setting) == SS_OKAY)
+                     && lod_setting.as_bool;
+
+    float lod_d1 = 300.0f, lod_d2 = 450.0f;
+    if(Settings_Get("pf.video.lod_dist1", &lod_setting) == SS_OKAY)
+        lod_d1 = lod_setting.as_float;
+    if(Settings_Get("pf.video.lod_dist2", &lod_setting) == SS_OKAY)
+        lod_d2 = lod_setting.as_float;
+
+    /* The shadow and water passes ('coarsest') always use the coarsest mesh;
+     * the main camera pass selects by distance. */
+    bool dist_lod = lod_enabled && !coarsest;
+    vec3_t campos = Camera_GetPos(s_gs.active_cam);
 
     for(int i = 0; i < vec_size(&ents); i++) {
 
@@ -465,11 +505,21 @@ static void g_make_draw_list(vec_entity_t ents, vec_rstat_t *out_stat, vec_ranim
         mat4x4_t model;
         Entity_ModelMatrix(curr, &model);
 
+        void *render_priv = ent->render_private;
+        if(lod_enabled && coarsest) {
+            render_priv = g_lod_priv_coarsest(ent);
+        }else if(dist_lod) {
+            vec3_t epos = G_Pos_Get(curr);
+            vec3_t delta;
+            PFM_Vec3_Sub(&campos, &epos, &delta);
+            render_priv = g_lod_priv(ent, g_select_lod(PFM_Vec3_Len(&delta), lod_d1, lod_d2));
+        }
+
         if(flags & ENTITY_FLAG_ANIMATED) {
 
             struct ent_anim_rstate rstate = (struct ent_anim_rstate){
                 .uid = curr,
-                .render_private = ent->render_private, 
+                .render_private = render_priv,
                 .model = model,
                 .translucent = !!(flags & ENTITY_FLAG_TRANSLUCENT),
             };
@@ -485,7 +535,7 @@ static void g_make_draw_list(vec_entity_t ents, vec_rstat_t *out_stat, vec_ranim
 
             struct ent_stat_rstate rstate = (struct ent_stat_rstate){
                 .uid = curr,
-                .render_private = ent->render_private, 
+                .render_private = render_priv,
                 .model = model,
                 .translucent = !!(flags & ENTITY_FLAG_TRANSLUCENT),
                 .td = td
@@ -549,8 +599,8 @@ static void g_create_render_input(struct render_input *out)
     vec_rstat_resize(&out->light_vis_stat, 2048);
     vec_ranim_resize(&out->light_vis_anim, 2048);
 
-    g_make_draw_list(s_gs.visible, &out->cam_vis_stat, &out->cam_vis_anim, false);
-    g_make_draw_list(s_gs.light_visible, &out->light_vis_stat, &out->light_vis_anim, true);
+    g_make_draw_list(s_gs.visible, &out->cam_vis_stat, &out->cam_vis_anim, false, false);
+    g_make_draw_list(s_gs.light_visible, &out->light_vis_stat, &out->light_vis_anim, true, true);
 
     PERF_RETURN_VOID();
 }
@@ -580,7 +630,7 @@ static void *g_push_render_input(struct render_input in)
             in.light_vis_stat.size * sizeof(struct ent_stat_rstate));
     }
     if(in.light_vis_anim.size) {
-        ret->light_vis_anim.array = R_PushArg(in.light_vis_anim.array, 
+        ret->light_vis_anim.array = R_PushArg(in.light_vis_anim.array,
             in.light_vis_anim.size * sizeof(struct ent_anim_rstate));
     }
 
@@ -590,6 +640,11 @@ static void *g_push_render_input(struct render_input in)
 static bool bool_val_validate(const struct sval *new_val)
 {
     return (new_val->type == ST_TYPE_BOOL);
+}
+
+static bool lod_dist_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_FLOAT) && (new_val->as_float >= 0.0f);
 }
 
 static bool cam_zoom_validate(const struct sval *new_val)
@@ -1120,6 +1175,42 @@ static void g_create_settings(void)
     assert(status == SS_OKAY);
 
     status = Settings_Create((struct setting){
+        .name = "pf.video.lod_enabled",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = true
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.video.lod_dist1",
+        .val = (struct sval) {
+            .type = ST_TYPE_FLOAT,
+            .as_float = 300.0f
+        },
+        .prio = 0,
+        .validate = lod_dist_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.video.lod_dist2",
+        .val = (struct sval) {
+            .type = ST_TYPE_FLOAT,
+            .as_float = 450.0f
+        },
+        .prio = 0,
+        .validate = lod_dist_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
         .name = "pf.video.shadows_enabled",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
@@ -1473,18 +1564,32 @@ static void g_remove_queued(void)
     vec_entity_reset(&s_gs.removed);
 }
 
-/* Cheap chunk-granularity prune: drop entities whose chunk (and its 8
- * neighbours) have no water at all. False positives are acceptable here. */
+static void *g_water_lod_priv(uint32_t uid, bool lod_enabled)
+{
+    const struct entity *ent = AL_EntityGet(uid);
+    if(!ent)
+        return NULL;
+    return lod_enabled ? g_lod_priv_coarsest(ent) : ent->render_private;
+}
+
 static void g_prune_water_input(struct render_input *in)
 {
     PERF_ENTER();
 
     assert(s_gs.map);
 
+    struct sval lod_setting;
+    bool lod_enabled = (Settings_Get("pf.video.lod_enabled", &lod_setting) == SS_OKAY)
+                     && lod_setting.as_bool;
+
     for(int i = vec_size(&in->cam_vis_stat) - 1; i >= 0; i--) {
-        const struct ent_stat_rstate *rstate = &vec_AT(&in->cam_vis_stat, i);
+        struct ent_stat_rstate *rstate = &vec_AT(&in->cam_vis_stat, i);
         if(!M_PointHasNearbyWater(s_gs.map, G_Pos_GetXZ(rstate->uid))) {
             vec_rstat_del(&in->cam_vis_stat, i);
+        }else{
+            void *priv = g_water_lod_priv(rstate->uid, lod_enabled);
+            if(priv)
+                rstate->render_private = priv;
         }
     }
 
@@ -1496,9 +1601,13 @@ static void g_prune_water_input(struct render_input *in)
     }
 
     for(int i = vec_size(&in->cam_vis_anim) - 1; i >= 0; i--) {
-        const struct ent_anim_rstate *rstate = &vec_AT(&in->cam_vis_anim, i);
+        struct ent_anim_rstate *rstate = &vec_AT(&in->cam_vis_anim, i);
         if(!M_PointHasNearbyWater(s_gs.map, G_Pos_GetXZ(rstate->uid))) {
             vec_ranim_del(&in->cam_vis_anim, i);
+        }else{
+            void *priv = g_water_lod_priv(rstate->uid, lod_enabled);
+            if(priv)
+                rstate->render_private = priv;
         }
     }
 

@@ -105,7 +105,7 @@ struct render_input{
     /* The visible entities to render */
     vec_rstat_t         cam_vis_stat;
     vec_ranim_t         cam_vis_anim;
-    /* The entities 'visible' from the light source PoV. They are 
+    /* The entities 'visible' from the light source PoV. They are
      * used for rendering the shadow map. */
     vec_rstat_t         light_vis_stat;
     vec_ranim_t         light_vis_anim;
