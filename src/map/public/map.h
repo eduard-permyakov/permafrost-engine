@@ -291,6 +291,15 @@ bool   M_PointOverLand(const struct map *map, vec2_t pos);
 bool   M_PointHasNearbyWater(const struct map *map, vec2_t xz_pos);
 
 /* ------------------------------------------------------------------------
+ * Precise per-tile test for whether xz_pos is within the configured radius
+ * (pf.video.water_prune_radius, in tiles) of a water tile. Backed by a
+ * precomputed membership mask, so this is an O(1) lookup suitable for
+ * pruning thousands of entities per frame.
+ * ------------------------------------------------------------------------
+ */
+bool   M_PointNearWater(const struct map *map, vec2_t xz_pos);
+
+/* ------------------------------------------------------------------------
  * Returns true if the tile has at least one adjacent tile over water.
  * ------------------------------------------------------------------------
  */

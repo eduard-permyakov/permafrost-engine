@@ -647,6 +647,12 @@ static bool lod_dist_validate(const struct sval *new_val)
     return (new_val->type == ST_TYPE_FLOAT) && (new_val->as_float >= 0.0f);
 }
 
+static bool water_prune_radius_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_INT)
+        && (new_val->as_int >= 0) && (new_val->as_int <= 64);
+}
+
 static bool cam_zoom_validate(const struct sval *new_val)
 {
     if(new_val->type != ST_TYPE_INT)
@@ -1211,6 +1217,18 @@ static void g_create_settings(void)
     assert(status == SS_OKAY);
 
     status = Settings_Create((struct setting){
+        .name = "pf.video.water_prune_radius",
+        .val = (struct sval) {
+            .type = ST_TYPE_INT,
+            .as_int = 8
+        },
+        .prio = 0,
+        .validate = water_prune_radius_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
         .name = "pf.video.shadows_enabled",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
@@ -1575,7 +1593,6 @@ static void *g_water_lod_priv(uint32_t uid, bool lod_enabled)
 static void g_prune_water_input(struct render_input *in)
 {
     PERF_ENTER();
-
     assert(s_gs.map);
 
     struct sval lod_setting;
@@ -1584,7 +1601,7 @@ static void g_prune_water_input(struct render_input *in)
 
     for(int i = vec_size(&in->cam_vis_stat) - 1; i >= 0; i--) {
         struct ent_stat_rstate *rstate = &vec_AT(&in->cam_vis_stat, i);
-        if(!M_PointHasNearbyWater(s_gs.map, G_Pos_GetXZ(rstate->uid))) {
+        if(!M_PointNearWater(s_gs.map, G_Pos_GetXZ(rstate->uid))) {
             vec_rstat_del(&in->cam_vis_stat, i);
         }else{
             void *priv = g_water_lod_priv(rstate->uid, lod_enabled);
@@ -1595,14 +1612,14 @@ static void g_prune_water_input(struct render_input *in)
 
     for(int i = vec_size(&in->light_vis_stat) - 1; i >= 0; i--) {
         const struct ent_stat_rstate *rstate = &vec_AT(&in->light_vis_stat, i);
-        if(!M_PointHasNearbyWater(s_gs.map, G_Pos_GetXZ(rstate->uid))) {
+        if(!M_PointNearWater(s_gs.map, G_Pos_GetXZ(rstate->uid))) {
             vec_rstat_del(&in->light_vis_stat, i);
         }
     }
 
     for(int i = vec_size(&in->cam_vis_anim) - 1; i >= 0; i--) {
         struct ent_anim_rstate *rstate = &vec_AT(&in->cam_vis_anim, i);
-        if(!M_PointHasNearbyWater(s_gs.map, G_Pos_GetXZ(rstate->uid))) {
+        if(!M_PointNearWater(s_gs.map, G_Pos_GetXZ(rstate->uid))) {
             vec_ranim_del(&in->cam_vis_anim, i);
         }else{
             void *priv = g_water_lod_priv(rstate->uid, lod_enabled);
@@ -1613,7 +1630,7 @@ static void g_prune_water_input(struct render_input *in)
 
     for(int i = vec_size(&in->light_vis_anim) - 1; i >= 0; i--) {
         const struct ent_anim_rstate *rstate = &vec_AT(&in->light_vis_anim, i);
-        if(!M_PointHasNearbyWater(s_gs.map, G_Pos_GetXZ(rstate->uid))) {
+        if(!M_PointNearWater(s_gs.map, G_Pos_GetXZ(rstate->uid))) {
             vec_ranim_del(&in->light_vis_anim, i);
         }
     }

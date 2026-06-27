@@ -479,6 +479,20 @@ bool M_PointHasNearbyWater(const struct map *map, vec2_t xz_pos)
     return m_chunk_or_neighbour_has_water(map, chunk_r, chunk_c);
 }
 
+bool M_PointNearWater(const struct map *map, vec2_t xz_pos)
+{
+    if(!map->near_water.bits)
+        return true; /* mask absent on shared copies; keep rather than drop */
+
+    struct tile_desc td;
+    if(!M_DescForPoint2D(map, xz_pos, &td))
+        return false;
+
+    int gx = td.chunk_c * TILES_PER_CHUNK_WIDTH  + td.tile_c;
+    int gy = td.chunk_r * TILES_PER_CHUNK_HEIGHT + td.tile_r;
+    return bitgrid_test(&map->near_water, gx, gy);
+}
+
 vec2_t M_ClampedMapCoordinate(const struct map *map, vec2_t xz)
 {
     const float EPSILON = (1.0f/1024);

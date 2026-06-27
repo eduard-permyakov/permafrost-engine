@@ -50,6 +50,7 @@
 #include "../ui.h"
 #include "../perf.h"
 #include "../event.h"
+#include "../settings.h"
 
 #include <stdlib.h>
 #include <assert.h>
@@ -555,10 +556,62 @@ static void on_update_end(void *user, void *event)
     al_flush_dirty_tiles();
 }
 
+static int m_near_water_radius(void)
+{
+    struct sval setting;
+    if(Settings_Get("pf.video.water_prune_radius", &setting) == SS_OKAY)
+        return setting.as_int;
+    return 8;
+}
+
+static void m_stamp_near_water(struct map *map)
+{
+    /* The has_water flag skips all-dry chunks, so cost scales with water area. */
+    int radius = m_near_water_radius();
+
+    for(int cr = 0; cr < (int)map->height; cr++) {
+    for(int cc = 0; cc < (int)map->width;  cc++) {
+
+        const struct pfchunk *chunk = &map->chunks[cr * map->width + cc];
+        if(!chunk->has_water)
+            continue;
+
+        for(int tr = 0; tr < TILES_PER_CHUNK_HEIGHT; tr++) {
+        for(int tc = 0; tc < TILES_PER_CHUNK_WIDTH;  tc++) {
+
+            if(chunk->tiles[tr * TILES_PER_CHUNK_WIDTH + tc].base_height >= 0)
+                continue;
+
+            int gx = cc * TILES_PER_CHUNK_WIDTH + tc;
+            int gy = cr * TILES_PER_CHUNK_HEIGHT + tr;
+            bitgrid_stamp_square(&map->near_water, gx, gy, radius);
+        }}
+    }}
+}
+
+static bool m_init_near_water(struct map *map)
+{
+    int width  = (int)map->width  * TILES_PER_CHUNK_WIDTH;
+    int height = (int)map->height * TILES_PER_CHUNK_HEIGHT;
+
+    if(!bitgrid_init(&map->near_water, width, height))
+        return false;
+    m_stamp_near_water(map);
+    return true;
+}
+
+static void m_refresh_near_water(struct map *map)
+{
+    if(!map->near_water.bits)
+        return;
+    bitgrid_clear(&map->near_water);
+    m_stamp_near_water(map);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
- 
+
 bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
                             SDL_RWops *stream, void *outmap, bool update_navgrid)
 {
@@ -665,6 +718,9 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
     if(!map->nav_private)
         return false;
 
+    if(!m_init_near_water(map))
+        return false;
+
     return true;
 }
 
@@ -694,6 +750,9 @@ bool M_AL_UpdateTile(struct map *map, const struct tile_desc *desc, const struct
             break;
         }
     }
+
+    /* A water edit can shift proximity far outside this chunk; full rebuild. */
+    m_refresh_near_water(map);
 
     struct map_resolution res;
     M_GetResolution(map, &res);
@@ -770,6 +829,7 @@ void M_AL_FreePrivate(struct map *map)
     R_PushCmd((struct rcmd){ .func = R_GL_MapShutdown });
     assert(map->nav_private);
     N_FreeCtx(map->nav_private);
+    bitgrid_destroy(&map->near_water);
 }
 
 size_t M_AL_ShallowCopySize(size_t nrows, size_t ncols)
@@ -781,6 +841,8 @@ size_t M_AL_ShallowCopySize(size_t nrows, size_t ncols)
 void M_AL_ShallowCopy(struct map *dst, const struct map *src)
 {
     memcpy(dst, src, M_AL_ShallowCopySize(src->width, src->height));
+    /* Never alias the live buffer into a cross-thread copy. */
+    memset(&dst->near_water, 0, sizeof(dst->near_water));
 }
 
 struct map *M_AL_CopyWithFields(const struct map *src)
@@ -800,6 +862,14 @@ struct map *M_AL_CopyWithFields(const struct map *src)
     N_CloneCtx(src->nav_private, nav);
     ret->nav_private = nav;
 
+    /* Give the independent copy its own mask. */
+    if(!m_init_near_water(ret)) {
+        N_DestroyCtx(ret->nav_private);
+        PF_FREE(ret->nav_private);
+        PF_FREE(ret);
+        return NULL;
+    }
+
     return ret;
 }
 
@@ -807,6 +877,7 @@ void M_AL_FreeCopyWithFields(struct map *map)
 {
     N_DestroyCtx(map->nav_private);
     PF_FREE(map->nav_private);
+    bitgrid_destroy(&map->near_water);
     PF_FREE(map);
 }
 

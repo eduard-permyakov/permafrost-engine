@@ -38,6 +38,7 @@
 
 #include "pfchunk.h"
 #include "../pf_math.h"
+#include "../lib/public/bitgrid.h"
 
 #define MAX_NUM_MATS   (256)
 #define MAX_NUM_SPLATS (256)
@@ -95,6 +96,8 @@ struct map{
      */
     size_t num_splats;
     struct splatmap splatmap;
+    /* Per-tile mask of tiles near water; backs the O(1) water-prune test. */
+    struct bitgrid near_water;
     /* ------------------------------------------------------------------------
      * The map chunks stored in row-major order. In total, there must be 
      * (width * height) number of chunks.
