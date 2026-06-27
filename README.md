@@ -41,10 +41,11 @@ Download the free demo on [Steam](https://store.steampowered.com/app/1309720/EVE
 * Bump mapping, normal mapping, parallax mapping
 * Terrain texture splatting
 * Skybox
+* Distance-based mesh level-of-detal (LOD) rendering
 * Batched rendering with dynamic batches
 * Ringbuffer-based streaming of data to GPU
 * RTS camera, FPS camera
-* Rendering of tile-based map parsed from ASCII file
+* Rendering of tile-based map with custom file format
 * Water rendering (including reflection, refraction, soft edge effects)
 * Programmatic synthesis of textures using the Image Quilting algorithm
 * Aperiodic tiling of the map plane using the Wang Tiling algorithm
