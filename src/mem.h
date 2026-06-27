@@ -129,6 +129,7 @@ enum mem_sub_game{
 
 enum mem_sub_lib{
     MEM_SUB_LIB_ATTR = 0,
+    MEM_SUB_LIB_BITGRID,
     MEM_SUB_LIB_NK_FILE_BROWSER,
     MEM_SUB_LIB_NOISE,
     MEM_SUB_LIB_PF_MALLOC,

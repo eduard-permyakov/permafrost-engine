@@ -485,6 +485,7 @@ const char *Mem_SubName(uint16_t sys, uint16_t sub)
     };
     static const char *lib_subs[] = {
         [MEM_SUB_LIB_ATTR]            = "attr",
+        [MEM_SUB_LIB_BITGRID]         = "bitgrid",
         [MEM_SUB_LIB_NK_FILE_BROWSER] = "nk_file_browser",
         [MEM_SUB_LIB_NOISE]           = "noise",
         [MEM_SUB_LIB_PF_MALLOC]       = "pf_malloc",
