@@ -90,6 +90,11 @@
 #define FIELD_RECOMPUTE_INTERVAL (3.0f) /* seconds */
 #define MAX_CELL_ASSIGNMENT_WORK (256)
 #define IDX(r, width, c)         (r * width + c)
+/* Cost of assigning an entity to an unplaced cell. Exceeds any real distance
+ * cost by orders of magnitude, but is far enough from INT64_MAX that solver
+ * arithmetic on sentinel entries cannot overflow.
+ */
+#define BIG_ASSIGNMENT_COST      (INT64_C(1) << 42)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -1567,11 +1572,11 @@ static void init_subformations(struct formation *formation)
 /* The cost matrix holds the distance between every entity
  * and every cell.
  */
-static void create_cost_matrix(struct cell_assignment_work *work, int *out_costs, 
+static void create_cost_matrix(struct cell_assignment_work *work, int64_t *out_costs,
                                struct coord *out_idx_to_cell)
 {
     size_t nents = kh_size(work->ents);
-    int *out_rows = out_costs;
+    int64_t *out_rows = out_costs;
 
     size_t cell_idx = 0;
     for(int i = 0; i < nents; i++) {
@@ -1592,397 +1597,227 @@ static void create_cost_matrix(struct cell_assignment_work *work, int *out_costs
     kh_foreach_key(work->ents, uid, {
 
         vec2_t pos = G_Pos_GetXZFrom(work->positions, uid);
-        size_t cell_idx = 0;
         for(int j = 0; j < nents; j++) {
             struct coord cell_coord = out_idx_to_cell[j];
             size_t cell_idx = CELL_IDX(cell_coord.r, cell_coord.c, work->ncols);
             struct cell *cell = &vec_AT(&work->cells, cell_idx);
             if(cell->state == CELL_NOT_PLACED) {
-                out_rows[IDX(i, nents, j)] = INT_MAX;
+                out_rows[IDX(i, nents, j)] = BIG_ASSIGNMENT_COST;
             }else{
                 vec2_t delta;
                 PFM_Vec2_Sub(&cell->pos, &pos, &delta);
-                /* Scale the resolution by 100 to keep 2 points of precision
-                 * after the decimal in the integer distance. Squaring the 
-                 * distance adds an additional penalty for a unit 'overtaking'
-                 * another one in the formation. */
-                float squared_distance = powf(PFM_Vec2_Len(&delta) * 100, 2);
-                out_rows[IDX(i, nents, j)] = squared_distance;
+                /* Scale the squared distance by 100^2 to keep 2 points of
+                 * precision after the decimal in the integer cost. Squaring
+                 * the distance adds an additional penalty for a unit
+                 * 'overtaking' another one in the formation.
+                 */
+                double squared_distance = (double)PFM_Vec2_Dot(&delta, &delta) * 10000.0;
+                out_rows[IDX(i, nents, j)] = llround(squared_distance);
             }
         }
         i++;
     });
 }
 
-static int row_minimum(int *costs, int irow, size_t nents)
+#ifndef NDEBUG
+static bool assignment_is_optimal(const int64_t *costs, size_t nents,
+                                  const int32_t *col_to_row,
+                                  const int64_t *u, const int64_t *v)
 {
-    int *rows = costs;
-    int min = rows[IDX(irow, nents, 0)];
-    for(int i = 1; i < nents; i++) {
-        min = MIN(min, rows[IDX(irow, nents, i)]);
-    }
-    return min;
-}
+    STALLOC(bool, seen, nents);
+    memset(seen, 0, nents * sizeof(bool));
+    bool ret = false;
 
-static int column_minimum(int *costs, int icol, size_t nents)
-{
-    int *rows = costs;
-    int min = rows[IDX(0, nents, icol)];
-    for(int i = 1; i < nents; i++) {
-        min = MIN(min, rows[IDX(i, nents, icol)]);
+    for(int j = 0; j < nents; j++) {
+        int i = col_to_row[j];
+        if(i < 0 || i >= (int)nents || seen[i])
+            goto out;
+        seen[i] = true;
+        if(costs[IDX(i, nents, j)] - u[i] - v[j] != 0)
+            goto out;
     }
-    return min;
-}
-
-static bool assigned_in_column(bool *starred, size_t nents, size_t icol)
-{
-    bool *rows = (void*)starred;
     for(int i = 0; i < nents; i++) {
-        if(rows[IDX(i, nents, icol)])
-            return true;
-    }
-    return false;
-}
-
-static bool row_is_covered(bool *covered, size_t nents, size_t irow)
-{
-    bool *rows = covered;
-    size_t ncovered = 0;
-    for(int i = 0; i < nents; i++) {
-        if(rows[IDX(irow, nents, i)])
-            ncovered++;
-    }
-    return (ncovered == nents);
-}
-
-static void cover_column(bool *covered, size_t nents, size_t icol)
-{
-    bool *rows = covered;
-    for(int i = 0; i < nents; i++) {
-        rows[IDX(i, nents, icol)] = true;
-    }
-}
-
-static void uncover_column(bool *covered, size_t nents, size_t icol)
-{
-    bool *rows = covered;
-    for(int i = 0; i < nents; i++) {
-        if(!row_is_covered(covered, nents, i)) {
-            rows[IDX(i, nents, icol)] = false;
-        }
-    }
-}
-
-static void cover_row(bool *covered, size_t nents, size_t irow)
-{
-    bool *rows = (void*)covered;
-    for(int i = 0; i < nents; i++) {
-        rows[IDX(irow, nents, i)] = true;
-    }
-}
-
-static bool row_has_starred(bool *starred, size_t nents, size_t irow, int *out_col)
-{
-    bool *rows = (void*)starred;
-    for(int i = 0; i < nents; i++) {
-        if(rows[IDX(irow, nents, i)]) {
-            *out_col = i;
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool column_is_covered(bool *covered, size_t nents, size_t icol)
-{
-    bool *rows = (void*)covered;
-    size_t ncovered = 0;
-    for(int i = 0; i < nents; i++) {
-        if(rows[IDX(i, nents, icol)])
-            ncovered++;
-    }
-    return (ncovered == nents);
-}
-
-static bool column_has_starred(bool *starred, size_t nents, size_t icol, int *out_row)
-{
-    bool *rows = (void*)starred;
-    for(int i = 0; i < nents; i++) {
-        if(rows[IDX(i, nents, icol)]) {
-            *out_row = i;
-            return true;
-        }
-    }
-    return false;
-}
-
-static int primed_zero_at_row(bool *primed, size_t nents, size_t irow)
-{
-    bool *rows = (void*)primed;
-    for(int i = 0; i < nents; i++) {
-        if(rows[IDX(irow, nents, i)])
-            return i;
-    }
-    assert(0);
-    return -1;
-}
-
-static size_t count_covered_rows(bool *covered, size_t nents)
-{
-    bool *rows = (void*)covered;
-    size_t ret = 0;
-    for(int i = 0; i < nents; i++) {
-        size_t ncovered = 0;
         for(int j = 0; j < nents; j++) {
-            if(rows[IDX(i, nents, j)])
-                ncovered++;
+            if(costs[IDX(i, nents, j)] - u[i] - v[j] < 0)
+                goto out;
         }
-        if(ncovered == nents)
-            ret++;
     }
+    ret = true;
+out:
+    STFREE(seen);
     return ret;
 }
+#endif
 
-static size_t count_covered_columns(bool *covered, size_t nents)
+/* Solve the linear assignment problem on the dense cost matrix in O(n^3) with
+ * the shortest-augmenting-path formulation of the Hungarian algorithm: exact
+ * integer dual potentials and one Dijkstra-style augmentation per row over the
+ * reduced-cost graph. The invariant costs[i][j] - u[i] - v[j] >= 0, with
+ * equality on matched pairs, holds throughout and certifies optimality of the
+ * final matching.
+ */
+static bool solve_optimal_assignment(const int64_t *costs, size_t nents,
+                                     int32_t *out_row_to_col)
 {
-    bool *rows = covered;
-    size_t ret = 0;
+    unsigned char *scratch = PF_MALLOC(nents * (3 * sizeof(int64_t) + 4 * sizeof(int32_t)));
+    if(!scratch)
+        return false;
+
+    int64_t *u = (int64_t*)scratch;
+    int64_t *v = u + nents;
+    int64_t *minv = v + nents;
+    int32_t *col_to_row = (int32_t*)(minv + nents);
+    int32_t *way = col_to_row + nents;
+    int32_t *cols = way + nents;
+    int32_t *slist = cols + nents;
+
+    memset(u, 0, nents * sizeof(int64_t));
+    memset(v, 0, nents * sizeof(int64_t));
+    for(int j = 0; j < nents; j++) {
+        col_to_row[j] = -1;
+    }
     for(int i = 0; i < nents; i++) {
-        size_t ncovered = 0;
+        out_row_to_col[i] = -1;
+    }
+
+    /* Column and row reduction followed by a greedy matching of tight pairs
+     * (the Jonker-Volgenant initialisation). Rows matched here satisfy the
+     * dual invariant already and skip the augmentation loop entirely.
+     */
+    for(int j = 0; j < nents; j++) {
+        int64_t min = costs[IDX(0, nents, j)];
+        for(int i = 1; i < nents; i++) {
+            int64_t cur = costs[IDX(i, nents, j)];
+            if(cur < min)
+                min = cur;
+        }
+        v[j] = min;
+    }
+    for(int i = 0; i < nents; i++) {
+        int64_t min = costs[IDX(i, nents, 0)] - v[0];
+        for(int j = 1; j < nents; j++) {
+            int64_t cur = costs[IDX(i, nents, j)] - v[j];
+            if(cur < min)
+                min = cur;
+        }
+        u[i] = min;
+    }
+    for(int i = 0; i < nents; i++) {
         for(int j = 0; j < nents; j++) {
-            if(rows[IDX(j, nents, i)])
-                ncovered++;
-        }
-        if(ncovered == nents)
-            ret++;
-    }
-    return ret;
-}
-
-static void dump_cost_matrix_only(int *costs, size_t nents)
-{
-    int *cost_rows = costs;
-    for(int r = 0; r < nents; r++) {
-        for(int c = 0; c < nents; c++) {
-            printf("%03d", cost_rows[IDX(r, nents, c)]);
-            if(c != nents-1)
-                printf("  ");
-        }
-        printf("\n");
-    }
-}
-
-static void dump_cost_matrix(int *costs, size_t nents,
-                             bool *starred, bool *covered, bool *primed)
-{
-    int  *cost_rows = costs;
-    bool *starred_rows = starred;
-    bool *covered_rows = covered;
-    bool *primed_rows = primed;
-
-    for(int r = 0; r < nents; r++) {
-        for(int c = 0; c < nents; c++) {
-            printf("%03d%c%c%c", 
-                cost_rows[IDX(r, nents, c)],
-                starred_rows[IDX(r, nents, c)] ? '*'  : ' ',
-                primed_rows[IDX(r, nents, c)]  ? '\'' : ' ',
-                covered_rows[IDX(r, nents, c)] ? 'C'  : ' ');
-            if(c != nents-1)
-                printf("  ");
-        }
-        printf("\n");
-    }
-}
-
-static int min_uncovered_value(int *costs, bool *covered, size_t nents)
-{
-    int  *cost_rows = costs;
-    bool *covered_rows = (void*)covered;
-
-    int min = INT_MAX;
-    for(int r = 0; r < nents; r++) {
-        for(int c = 0; c < nents; c++) {
-            if(!covered_rows[IDX(r, nents, c)]) {
-                min = MIN(cost_rows[IDX(r, nents, c)], min);
-            }
-        }
-    }
-    return min;
-}
-
-static int min_lines_to_cover_zeroes(int *costs, int *out_next, 
-                                     struct coord *out_assignment, size_t nents)
-{
-    STALLOC(bool, starred, nents * nents);
-    STALLOC(bool, covered, nents * nents);
-    STALLOC(bool, primed, nents * nents);
-
-    memset(starred, 0, nents * nents * sizeof(bool));
-    memset(covered, 0, nents * nents * sizeof(bool));
-    memset(primed, 0, nents * nents * sizeof(bool));
-
-    int  *cost_rows = costs;
-    bool *starred_rows = starred;
-    bool *covered_rows = covered;
-    bool *primed_rows = primed;
-
-iterate:
-    /* For each row, try to assign an arbitrary zero. Assigned tasks
-     * are represented by starring a zero. Note that assignments can't 
-     * be in the same row or column.
-     */
-    for(int row = 0; row < nents; row++) {
-        for(int col = 0; col < nents; col++) {
-            if(starred_rows[IDX(row, nents, col)])
-                break;
-            if((cost_rows[IDX(row, nents, col)] == 0) && !assigned_in_column(starred, nents, col)) {
-                starred_rows[IDX(row, nents, col)] = true;
+            if(col_to_row[j] >= 0)
+                continue;
+            if(costs[IDX(i, nents, j)] - u[i] - v[j] == 0) {
+                col_to_row[j] = i;
+                out_row_to_col[i] = j;
                 break;
             }
         }
     }
 
-    /* Cover all columns containing a (starred) zero.
-     */
-    for(int row = 0; row < nents; row++) {
-        for(int col = 0; col < nents; col++) {
-            if(starred_rows[IDX(row, nents, col)])
-                cover_column(covered, nents, col);
-        }
-    }
+    for(int i0 = 0; i0 < nents; i0++) {
 
-    bool has_uncovered;
-    int primed_r, primed_c;
-    do{
-        /* Find a non-covered zero and prime it */
-        has_uncovered = false;
-        for(int row = 0; row < nents; row++) {
-            for(int col = 0; col < nents; col++) {
-                if(cost_rows[IDX(row, nents, col)] == 0 && !covered_rows[IDX(row, nents, col)]) {
-                    has_uncovered = true;
-                    primed_rows[IDX(row, nents, col)] = true;
-                    primed_r = row;
-                    primed_c = col;
-                    break;
+        if(out_row_to_col[i0] >= 0)
+            continue;
+
+        int nunused = 0;
+        int nsettled = 0;
+        for(int j = 0; j < nents; j++) {
+            minv[j] = INT64_MAX;
+            way[j] = -1;
+            cols[nunused++] = j;
+        }
+
+        int cur_row = i0;
+        int prev_col = -1;
+        int next_col;
+
+        for(;;) {
+            /* Fused relax-and-scan over the compacted unused columns */
+            int64_t delta = INT64_MAX;
+            int next_k = -1;
+            for(int k = 0; k < nunused; k++) {
+                int j = cols[k];
+                int64_t reduced = costs[IDX(cur_row, nents, j)] - u[cur_row] - v[j];
+                if(reduced < minv[j]) {
+                    minv[j] = reduced;
+                    way[j] = prev_col;
+                }
+                if(minv[j] < delta) {
+                    delta = minv[j];
+                    next_k = k;
                 }
             }
-            if(has_uncovered)
+            next_col = cols[next_k];
+
+            /* Shift the potentials so the settled tree stays tight */
+            u[i0] += delta;
+            for(int s = 0; s < nsettled; s++) {
+                int j = slist[s];
+                u[col_to_row[j]] += delta;
+                v[j] -= delta;
+            }
+            for(int k = 0; k < nunused; k++) {
+                minv[cols[k]] -= delta;
+            }
+
+            cols[next_k] = cols[--nunused];
+            slist[nsettled++] = next_col;
+            prev_col = next_col;
+            if(col_to_row[next_col] < 0)
                 break;
+            cur_row = col_to_row[next_col];
         }
 
-        if(has_uncovered) {
-            /* If the zero is on the same row as a starred zero, 
-             * cover the corresponding row, and uncover the column 
-             * of the starred zero 
-             */
-            int starred_c;
-            if(row_has_starred(starred, nents, primed_r, &starred_c)) {
-                uncover_column(covered, nents, starred_c);
-                cover_row(covered, nents, primed_r);
-            }else{
-                size_t npath = 0;
-                STALLOC(struct coord, path, nents * nents);
-                path[npath++] = (struct coord){primed_r, primed_c};
-                /* Else the non-covered zero has no assigned zero on its row. 
-                 * We make a path starting from the zero by performing the following steps: 
-                 *
-                 * Substep 1: Find a starred zero on the corresponding column. If there is one, 
-                 * go to Substep 2, else, stop.
-                 */
-            next_path_zero:;
-                int starred_r;
-                if(column_has_starred(starred, nents, primed_c, &starred_r)) {
-                    path[npath++] = (struct coord){starred_r, primed_c};
-                    /*
-                     * Substep 2: Find a primed zero on the corresponding row (there should always 
-                     * be one). Go to Substep 1. 
-                     */
-                    primed_c = primed_zero_at_row(primed, nents, starred_r);
-                    primed_r = starred_r;
-                    path[npath++] = (struct coord){primed_r, primed_c};
-                    goto next_path_zero;
-                }
-
-                /* For all zeros encountered during the path, star primed zeros 
-                 * and unstar starred zeros.
-                 */
-                for(int i = 0; i < npath; i++) {
-                    struct coord curr = path[i];
-                    assert(starred_rows[IDX(curr.r, nents, curr.c)] ^ primed_rows[IDX(curr.r, nents, curr.c)]);
-                    if(starred_rows[IDX(curr.r, nents, curr.c)]) {
-                        starred_rows[IDX(curr.r, nents, curr.c)] = false;
-                    }else if(primed_rows[IDX(curr.r, nents, curr.c)]) {
-                        starred_rows[IDX(curr.r, nents, curr.c)] = true;
-                    }
-                }
-
-                /* Unprime all primed zeroes and uncover all tiles.
-                 */
-                for(int i = 0; i < nents; i++) {
-                    for(int j = 0; j < nents; j++) {
-                        primed_rows[IDX(i, nents, j)] = false;
-                        covered_rows[IDX(i, nents, j)] = false;
-                    }
-                }
-                STFREE(path);
-                Sched_TryYield();
-                goto iterate;
-            }
+        /* Trace back along the tree, flipping the matching */
+        for(int j = next_col; j != -1; ) {
+            int prev = way[j];
+            col_to_row[j] = (prev == -1) ? i0 : col_to_row[prev];
+            j = prev;
         }
-    }while(has_uncovered); 
-
-    size_t ncovered_rows = count_covered_rows(covered, nents);
-    size_t ncovered_cols = count_covered_columns(covered, nents);
-
-    size_t ret;
-    if((ncovered_rows == nents) || (ncovered_cols == nents)) {
-        ret = nents;
-    }else{
-        ret = (ncovered_rows + ncovered_cols);
+        Sched_TryYield();
     }
 
-    if(ret < nents) {
-        /* Find the lowest uncovered value. Subtract this from every 
-         * unmarked element and add it to every element covered by two lines.  
-         * This is equivalent to subtracting a number from all rows which are 
-         * not covered and adding the same number to all columns which are 
-         * covered. These operations do not change optimal assignments. 
-         */
-        int *next_rows = out_next;
-        memcpy(out_next, costs, sizeof(int) * nents * nents);
-
-        int min = min_uncovered_value(costs, covered, nents);
-        for(int r = 0; r < nents; r++) {
-            if(!row_is_covered(covered, nents, r)) {
-                for(int c = 0; c < nents; c++) {
-                    next_rows[IDX(r, nents, c)] -= min;
-                }
-            }
-        }
-        for(int c = 0; c < nents; c++) {
-            if(column_is_covered(covered, nents, c)) {
-                for(int r = 0; r < nents; r++) {
-                    next_rows[IDX(r, nents, c)] += min;
-                }
-            }
-        }
-    }else{
-        int i = 0;
-        for(int r = 0; r < nents; r++) {
-            for(int c = 0; c < nents; c++) {
-                if(starred_rows[IDX(r, nents, c)]) {
-                    out_assignment[i++] = (struct coord){r, c};
-                }
-            }
-        }
-        assert(i == nents);
+    for(int j = 0; j < nents; j++) {
+        out_row_to_col[col_to_row[j]] = j;
     }
+    assert(assignment_is_optimal(costs, nents, col_to_row, u, v));
 
-    STFREE(starred);
-    STFREE(covered);
-    STFREE(primed);
+    PF_FREE(scratch);
+    return true;
+}
 
-    return ret;
+/* Fallback for allocation failure: hand out cells in entity iteration order,
+ * without optimising travel distance.
+ */
+static void assign_in_iteration_order(struct cell_assignment_work *work)
+{
+    size_t walk = 0;
+    uint32_t uid;
+    kh_foreach_key(work->ents, uid, {
+
+        struct cell *cell;
+        do{
+            cell = &vec_AT(&work->cells, walk);
+            walk++;
+        }while(cell->state == CELL_NOT_USED);
+        struct coord cell_coord = (struct coord){
+            (walk-1) / work->ncols,
+            (walk-1) % work->ncols
+        };
+
+        int status;
+        khiter_t k = kh_put(assignment, work->assignment, uid, &status);
+        assert(status != -1);
+        kh_val(work->assignment, k) = cell_coord;
+
+        size_t cell_idx = CELL_IDX(cell_coord.r, cell_coord.c, work->ncols);
+        if(cell->state != CELL_NOT_PLACED) {
+            cell->state = CELL_OCCUPIED;
+        }
+        khiter_t l = kh_put(reverse, work->reverse, cell_idx, &status);
+        assert(status != -1);
+        kh_val(work->reverse, l) = uid;
+    });
 }
 
 /* Use the Hungarian algorithm to find an optimal assignment of entities to cells
@@ -1991,55 +1826,31 @@ iterate:
 static void compute_cell_assignment(struct cell_assignment_work *work)
 {
     size_t nents = kh_size(work->ents);
-    STALLOC(int, costs, nents * nents);
-    STALLOC(int, next, nents * nents);
-    STALLOC(struct coord, assignment, nents);
-    STALLOC(struct coord, idx_to_cell, nents);
+    size_t bufsize = nents * nents * sizeof(int64_t)
+                   + nents * sizeof(struct coord)
+                   + nents * sizeof(int32_t);
+    unsigned char *buffer = PF_MALLOC(bufsize);
+    if(!buffer) {
+        assign_in_iteration_order(work);
+        return;
+    }
 
+    int64_t *costs = (int64_t*)buffer;
+    struct coord *idx_to_cell = (struct coord*)(costs + nents * nents);
+    int32_t *row_to_col = (int32_t*)(idx_to_cell + nents);
+
+    PERF_PUSH("cost matrix");
     create_cost_matrix(work, costs, idx_to_cell);
-    int *rows = costs;
+    PERF_POP();
 
-    /* Step 1: Subtract row minima
-     * For each row, find the lowest element and subtract it from each element in that row.
-     */
-    for(int i = 0; i < nents; i++) {
-        int row_min = row_minimum(costs, i, nents);
-        for(int j = 0; j < nents; j++) {
-            rows[IDX(i, nents, j)] -= row_min;
+    PERF_PUSH("solve");
+    bool solved = solve_optimal_assignment(costs, nents, row_to_col);
+    PERF_POP();
+    if(!solved) {
+        for(int i = 0; i < nents; i++) {
+            row_to_col[i] = i;
         }
     }
-
-    /* Step  2: Subtract column minima 
-     * For each column, find the lowest element and subtract it from each element in that 
-     * column.
-     */
-    for(int i = 0; i < nents; i++) {
-        int col_min = column_minimum(costs, i, nents);
-        for(int j = 0; j < nents; j++) {
-            rows[IDX(j, nents, i)] -= col_min;
-        }
-    }
-
-    size_t min_lines;
-    do{
-        Sched_TryYield();
-        /* Step 3: Cover all zeros with a minimum number of lines
-         * Cover all zeros in the resulting matrix using a minimum number of horizontal and 
-         * vertical lines. If n lines are required, an optimal assignment exists among the zeros. 
-         * The algorithm stops.
-         *
-         * If less than n lines are required, continue with Step 4.
-         */
-        min_lines = min_lines_to_cover_zeroes(costs, next, assignment, nents);
-
-        /* Step 4: Create additional zeros
-         * Find the smallest element (call it k) that is not covered by a line in Step 3. 
-         * Subtract k from all uncovered elements, and add k to all elements that are covered twice.
-         */
-        if(min_lines < nents) {
-            memcpy(costs, next, sizeof(int) * nents * nents);
-        }
-    }while(min_lines < nents);
 
     int i = 0;
     uint32_t uid;
@@ -2048,8 +1859,7 @@ static void compute_cell_assignment(struct cell_assignment_work *work)
         int status;
         khiter_t k = kh_put(assignment, work->assignment, uid, &status);
         assert(status != -1);
-        size_t meta_idx = assignment[i].c;
-        struct coord cell_coord = idx_to_cell[meta_idx];
+        struct coord cell_coord = idx_to_cell[row_to_col[i]];
         kh_val(work->assignment, k) = cell_coord;
         size_t cell_idx = CELL_IDX(cell_coord.r, cell_coord.c, work->ncols);
         struct cell *cell = &vec_AT(&work->cells, cell_idx);
@@ -2064,10 +1874,7 @@ static void compute_cell_assignment(struct cell_assignment_work *work)
         i++;
     });
 
-    STFREE(costs);
-    STFREE(next);
-    STFREE(assignment);
-    STFREE(idx_to_cell);
+    PF_FREE(buffer);
 }
 
 static mat4x4_t cell_field_model_matrix(vec2_t center)
@@ -4246,7 +4053,7 @@ static void dispatch_cell_assignment_task(struct cell_assignment_work *work)
 
     SDL_AtomicSet(&work->future.status, FUTURE_INCOMPLETE);
     work->tid = Sched_Create(16, cell_assignment_task, work, "cell_assignment_task",
-        &work->future, TASK_BIG_STACK);
+        &work->future, 0);
     if(work->tid == NULL_TID) {
         cell_assignment_task(work);
         SDL_AtomicSet(&work->future.status, FUTURE_COMPLETE);
