@@ -41,6 +41,7 @@
 #include "../entity.h"
 #include "../sched.h"
 #include "../perf.h"
+#include "../main.h"
 #include "../map/public/tile.h"
 #include "../game/public/game.h"
 #include "../lib/public/pqueue.h"
@@ -584,7 +585,11 @@ static void build_overlay_mask(const struct nav_cell_overlay *overlay,
     }
 }
 
-static void field_build_integration_region(
+/* Returns false if the flood was cut short by engine shutdown, leaving
+ * the integration field incomplete. The caller must not derive a flow
+ * field from it in that case.
+ */
+static bool field_build_integration_region(
     pq_td_t                  *frontier,
     const struct nav_private *priv,
     enum nav_layer            layer,
@@ -596,7 +601,18 @@ static void field_build_integration_region(
     struct map_resolution res;
     N_GetResolution(priv, &res);
 
+    size_t nprocessed = 0;
     while(pq_size(frontier) > 0) {
+
+        /* Large regions can take tens of milliseconds to flood. Yield
+         * periodically so that higher-priority tasks are not starved
+         * of workers.
+         */
+        if((nprocessed++ % 1024) == 0) {
+            if(Engine_ShuttingDown())
+                return false;
+            Sched_TryYield();
+        }
 
         struct tile_desc curr;
         pq_td_pop(frontier, &curr);
@@ -635,6 +651,7 @@ static void field_build_integration_region(
             }
         }
     }
+    return true;
 }
 
 /* same as 'field_build_integration' but only impassable tiles 
@@ -675,7 +692,7 @@ static void field_build_integration_nonpass(
 /* Like 'field_build_integration_nonpass', but supporting any sized square region 
  * which may straddle chunk boundaries.
  */
-static void field_build_integration_nonpass_region(
+static bool field_build_integration_nonpass_region(
     pq_td_t                  *frontier,
     const struct nav_private *priv,
     enum nav_layer            layer,
@@ -687,7 +704,14 @@ static void field_build_integration_nonpass_region(
     struct map_resolution res;
     N_GetResolution(priv, &res);
 
+    size_t nprocessed = 0;
     while(pq_size(frontier) > 0) {
+
+        if((nprocessed++ % 1024) == 0) {
+            if(Engine_ShuttingDown())
+                return false;
+            Sched_TryYield();
+        }
 
         struct tile_desc curr;
         pq_td_pop(frontier, &curr);
@@ -729,6 +753,7 @@ static void field_build_integration_nonpass_region(
             }
         }
     }
+    return true;
 }
 
 static void field_build_flow(float intf[FIELD_RES_R][FIELD_RES_C], struct flow_field *inout_flow)
@@ -1597,9 +1622,10 @@ static void field_update_enemies(
     const int coff = (chunk_coord.c > 0) ? FIELD_RES_C / 2 + (FIELD_RES_C % 2) : 0;
 
     struct region region = (struct region){base, rdim, cdim};
-    field_build_integration_region(&frontier, priv, layer, 0,
-        region, integration_field, NULL);
-    field_build_flow_region(rdim, cdim, roff, coff, integration_field, inout_flow);
+    if(field_build_integration_region(&frontier, priv, layer, 0,
+        region, integration_field, NULL)) {
+        field_build_flow_region(rdim, cdim, roff, coff, integration_field, inout_flow);
+    }
 
     STFREE(integration_field);
     STFREE(init_frontier);
@@ -1665,8 +1691,9 @@ static void field_update_entity(
     const int coff = (chunk_coord.c > 0) ? FIELD_RES_C / 2 + (FIELD_RES_C % 2) : 0;
 
     struct region region = (struct region){base, rdim, cdim};
-    field_build_integration_region(&frontier, priv, layer, 0, region, integration_field, NULL);
-    field_build_flow_region(rdim, cdim, roff, coff, integration_field, inout_flow);
+    if(field_build_integration_region(&frontier, priv, layer, 0, region, integration_field, NULL)) {
+        field_build_flow_region(rdim, cdim, roff, coff, integration_field, inout_flow);
+    }
 
     STFREE(integration_field);
     STFREE(init_frontier);
@@ -1881,8 +1908,9 @@ static void field_update_zone(
     const int coff = (chunk_coord.c > 0) ? FIELD_RES_C / 2 + (FIELD_RES_C % 2) : 0;
 
     struct region region = (struct region){base, rdim, cdim};
-    field_build_integration_region(&frontier, priv, layer, 0, region, integration_field, NULL);
-    field_build_flow_region(rdim, cdim, roff, coff, integration_field, inout_flow);
+    if(field_build_integration_region(&frontier, priv, layer, 0, region, integration_field, NULL)) {
+        field_build_flow_region(rdim, cdim, roff, coff, integration_field, inout_flow);
+    }
 
     STFREE(integration_field);
     STFREE(init_frontier);
@@ -2577,9 +2605,10 @@ void N_CellArrivalFieldCreate(void *nav_private, size_t rdim, size_t cdim,
         build_overlay_mask(overlay, res, base, rdim, cdim, overlay_mask);
     }
 
-    field_build_integration_region(&frontier, priv, layer, enemies, region,
-        integration_field, overlay_mask);
-    field_build_flow_unaligned(rdim, cdim, integration_field, out);
+    if(field_build_integration_region(&frontier, priv, layer, enemies, region,
+        integration_field, overlay_mask)) {
+        field_build_flow_unaligned(rdim, cdim, integration_field, out);
+    }
 
     pq_td_destroy(&frontier);
     PERF_RETURN_VOID();
@@ -2655,9 +2684,10 @@ void N_GroupArrivalFieldCreate(void *nav_private, size_t rdim, size_t cdim,
         build_overlay_mask(overlay, res, base, rdim, cdim, overlay_mask);
     }
 
-    field_build_integration_region(&frontier, priv, layer, enemies, region,
-        integration_field, overlay_mask);
-    field_build_flow_unaligned(rdim, cdim, integration_field, out);
+    if(field_build_integration_region(&frontier, priv, layer, enemies, region,
+        integration_field, overlay_mask)) {
+        field_build_flow_unaligned(rdim, cdim, integration_field, out);
+    }
 
     pq_td_destroy(&frontier);
     PERF_RETURN_VOID();
@@ -2748,26 +2778,27 @@ void N_CellArrivalFieldUpdateToNearestPathable(void *nav_private, size_t rdim, s
         build_overlay_mask(overlay, res, base, rdim, cdim, overlay_mask);
     }
 
-    field_build_integration_nonpass_region(&frontier, priv, layer, enemies,
-        region, integration_field, overlay_mask);
+    if(field_build_integration_nonpass_region(&frontier, priv, layer, enemies,
+        region, integration_field, overlay_mask)) {
 
-    for(int r = 0; r < rdim; r++) {
-    for(int c = 0; c < cdim; c++) {
+        for(int r = 0; r < rdim; r++) {
+        for(int c = 0; c < cdim; c++) {
 
-        struct tile_desc curr = base;
-        bool exists = M_Tile_RelativeDesc(res, &curr, c, r);
-        if(!exists)
-            continue;
+            struct tile_desc curr = base;
+            bool exists = M_Tile_RelativeDesc(res, &curr, c, r);
+            if(!exists)
+                continue;
 
-        if(integration_field[r * rdim + c] == INFINITY)
-            continue;
-        if(integration_field[r * rdim + c] == 0.0f)
-            continue;
+            if(integration_field[r * rdim + c] == INFINITY)
+                continue;
+            if(integration_field[r * rdim + c] == 0.0f)
+                continue;
 
-        enum flow_dir dir = field_flow_dir(rdim, cdim, (const float *)integration_field,
-            (struct coord){r, c});
-        set_flow_cell(dir, r, c, rdim, cdim, inout);
-    }}
+            enum flow_dir dir = field_flow_dir(rdim, cdim, (const float *)integration_field,
+                (struct coord){r, c});
+            set_flow_cell(dir, r, c, rdim, cdim, inout);
+        }}
+    }
 
     pq_td_destroy(&frontier);
 }

@@ -793,6 +793,12 @@ static void sched_task_cleanup(const struct task *task)
     if(task->erelease) {
         task->erelease(task->earg);
     }
+    /* The discarded task will never run to completion. Publish its
+     * future so that any code polling it does not wait forever.
+     */
+    if(task->future) {
+        SDL_AtomicSet(&task->future->status, FUTURE_COMPLETE);
+    }
 }
 
 static void sched_await_event(struct task *task, int event)

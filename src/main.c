@@ -125,6 +125,7 @@ static unsigned long             s_resume_tick;
  */
 static bool                      s_step_frame = false;
 static bool                      s_quit = false; 
+static bool                      s_shutting_down = false;
 static vec_event_t               s_prev_tick_events;
 
 static SDL_Thread               *s_render_thread;
@@ -617,6 +618,11 @@ fail_resize:
 
 static void engine_shutdown(void)
 {
+    s_shutting_down = true;
+    /* Unwind the scripting tasks instead of letting Sched_Flush run their
+     * queued message backlog to exhaustion.
+     */
+    S_Task_KillAll();
     Sched_Flush();
     Sprite_Shutdown();
     P_Projectile_Shutdown();
@@ -752,6 +758,11 @@ void Engine_ClearPendingEvents(void)
 bool Engine_InRunningState(void)
 {
     return (s_state == ENGINE_STATE_RUNNING);
+}
+
+bool Engine_ShuttingDown(void)
+{
+    return s_shutting_down;
 }
 
 bool Engine_GetArg(const char *name, size_t maxout, char out[])

@@ -74,8 +74,14 @@
 
 #define COLUMN_WIDTH_RATIO       (4.0f)
 #define RANK_WIDTH_RATIO         (0.25f)
-#define OCCUPIED_FIELD_RES       (95) /* Must be odd */
-#define CELL_ARRIVAL_FIELD_RES   (OCCUPIED_FIELD_RES + 1) /* Must be even */
+/* The formation field resolution is stepped up for formations with many
+ * units, so that the cells and approach paths still fit in the field. The
+ * cell arrival field resolution is always one more than the occupied field
+ * resolution (odd + 1 = even, as required by the navigation flood fill).
+ */
+#define FIELD_RES_SMALL          (95)  /* Must be odd */
+#define FIELD_RES_LARGE          (143) /* Must be odd */
+#define FIELD_STEP_UP_UNITS      (160)
 #define MAX_CHILDREN             (16)
 #define CELL_IDX(_r, _c, _ncols) ((_r) * (_ncols) + (_c))
 #define ARR_SIZE(a)              (sizeof(a)/sizeof(a[0]))
@@ -90,6 +96,8 @@
 #define FIELD_RECOMPUTE_INTERVAL (3.0f) /* seconds */
 #define MAX_CELL_ASSIGNMENT_WORK (256)
 #define IDX(r, width, c)         (r * width + c)
+#define FIELD_IDX3(_res, _l, _r, _c) \
+    (((size_t)(_l) * (_res) * (_res)) + ((size_t)(_r) * (_res)) + (_c))
 /* Cost of assigning an entity to an unplaced cell. Exceeds any real distance
  * cost by orders of magnitude, but is far enough from INT64_MAX that solver
  * arithmetic on sentinel entries cannot overflow.
@@ -158,10 +166,6 @@ struct range2d{
     int min_c, max_c;
 };
 
-struct cell_arrival_field{
-    uint8_t raw[CELL_ARRIVAL_FIELD_RES * CELL_ARRIVAL_FIELD_RES / 2];
-};
-
 VEC_TYPE(cell, struct cell)
 VEC_IMPL(static inline, cell, struct cell)
 
@@ -171,6 +175,7 @@ VEC_IMPL(static inline, tile, struct tile_desc)
 struct cell_field_work_input{
     enum nav_layer   layer;
     uint16_t         enemy_faction_mask;
+    int              field_res;
     struct tile_desc cell_tile;
     struct tile_desc center_tile;
     struct tile_desc curr_tile;
@@ -186,7 +191,10 @@ struct cell_field_work{
     struct future                future;
     struct cell_field_work_input input;
     struct nav_cell_overlay      overlay;
-    struct cell_arrival_field    result;
+    /* 4-bit-packed cell arrival flow field, pointing into the owning
+     * subformation's cell_rasters block.
+     */
+    uint8_t                     *result;
 };
 
 VEC_TYPE(work, struct cell_field_work)
@@ -194,7 +202,7 @@ VEC_IMPL(static inline, work, struct cell_field_work)
 
 KHASH_MAP_INIT_INT(assignment, struct coord)
 KHASH_MAP_INIT_INT(reverse, uint32_t);
-KHASH_MAP_INIT_INT(result, struct cell_arrival_field*)
+KHASH_MAP_INIT_INT(result, uint8_t*)
 
 QUEUE_TYPE(coord, struct coord)
 QUEUE_IMPL(static, coord, struct coord)
@@ -264,6 +272,10 @@ struct subformation{
      */
     khash_t(result)     *results;
     vec_work_t           futures;
+    /* Backing storage for the per-entity cell arrival rasters, sized
+     * to the parent formation's field resolution.
+     */
+    uint8_t             *cell_rasters;
     vec_tile_t           blocked_tiles;
 };
 
@@ -315,14 +327,19 @@ struct formation{
      */
     struct subformation *root;
     vec_subformation_t   subformations;
-    /* The map tiles which have already been allocated to cells.
-     * Centered at the target position.
+    /* Resolution of the occupied/islands fields, stepped up for large
+     * formations. The cell arrival field resolution is field_res + 1.
      */
-    uint8_t              occupied[NAV_LAYER_MAX][OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES];
+    int                  field_res;
+    /* The map tiles which have already been allocated to cells.
+     * Centered at the target position. NAV_LAYER_MAX layer-major
+     * field_res x field_res grids, heap-allocated at creation.
+     */
+    uint8_t             *occupied;
     /* A copy of the navigation 'island' field for the area specified
      * by the 'occupied' field.
      */
-    uint16_t             islands[NAV_LAYER_MAX][OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES];
+    uint16_t            *islands;
     /* State associated with outstanding cell assignment computations 
      */
     vec_assignment_work_t work;
@@ -338,8 +355,8 @@ static void collect_cell_assignment_result(const struct cell_assignment_work *wo
                                            struct subformation *out);
 
 static void complete_cell_field_work(struct subformation *formation, bool yield);
-static struct cell_arrival_field *cell_get_field(uint32_t uid);
-static enum flow_dir cell_get_dir(const struct cell_arrival_field *field, int r, int c);
+static uint8_t *cell_get_field(uint32_t uid);
+static enum flow_dir cell_get_dir(const uint8_t *field, int arrival_res, int r, int c);
 static void recompute_cell_arrival_fields(struct formation *parent, vec2_t center, 
                                           struct subformation *formation);
 
@@ -368,7 +385,6 @@ static khash_t(mapping)      *s_ent_formation_map;
 static khash_t(formation)    *s_formations;
 static khash_t(type)         *s_preferred;
 static formation_id_t         s_next_id;
-static SDL_TLSID              s_workspace;
 static queue_event_t          s_events;
 static queue_cell_recompute_t s_requests;
 
@@ -376,28 +392,45 @@ static queue_cell_recompute_t s_requests;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static size_t workspace_size(void)
+static size_t workspace_size(int arrival_res)
 {
     size_t padding = 64;
-    size_t count = CELL_ARRIVAL_FIELD_RES * CELL_ARRIVAL_FIELD_RES;
+    size_t count = (size_t)arrival_res * arrival_res;
     return count * (sizeof(float) + sizeof(bool) + sizeof(struct tile_desc) * 2) + padding;
 }
 
-static void *get_workspace(void)
+static uint8_t *occupied_layer(struct formation *formation, enum nav_layer layer)
 {
-    void *ret;
-    if((ret = SDL_TLSGet(s_workspace)))
-        return ret;
+    return formation->occupied + (size_t)layer * formation->field_res * formation->field_res;
+}
 
-    size_t sz = workspace_size();
-    ret = PF_MALLOC(sz);
-    if(!ret)
-        return NULL;
-    if(0 != SDL_TLSSet(s_workspace, ret, Mem_Free)) {
-        PF_FREE(ret);
-        return NULL;
+static uint16_t *islands_layer(struct formation *formation, enum nav_layer layer)
+{
+    return formation->islands + (size_t)layer * formation->field_res * formation->field_res;
+}
+
+static int field_res_for_unit_count(size_t nunits)
+{
+    return (nunits > FIELD_STEP_UP_UNITS) ? FIELD_RES_LARGE : FIELD_RES_SMALL;
+}
+
+static bool alloc_formation_fields(struct formation *formation)
+{
+    size_t count = (size_t)NAV_LAYER_MAX * formation->field_res * formation->field_res;
+    bool ret = true;
+    ret &= ((formation->occupied = PF_MALLOC(count * sizeof(uint8_t))) != NULL);
+    ret &= ((formation->islands = PF_MALLOC(count * sizeof(uint16_t))) != NULL);
+    if(!ret) {
+        PF_FREE(formation->occupied);
+        PF_FREE(formation->islands);
+        return false;
     }
-    return ret;
+    /* Layers which are not in use by any subformation are never initialised,
+     * but are still serialised.
+     */
+    memset(formation->occupied, 0, count * sizeof(uint8_t));
+    memset(formation->islands, 0, count * sizeof(uint16_t));
+    return true;
 }
 
 static size_t ncols(enum formation_type type, size_t nunits)
@@ -434,14 +467,14 @@ static float formation_speed(const vec_entity_t *ents)
  * target, this allows to get better utilization of the 
  * field.
  */
-static vec2_t field_center(vec2_t target, vec2_t orientation)
+static vec2_t field_center(vec2_t target, vec2_t orientation, int field_res)
 {
     struct map_resolution nav_res;
     M_NavGetResolution(s_map, &nav_res);
     const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
     const float tile_x_dim = chunk_x_dim / nav_res.tile_w;
 
-    int delta_mag = OCCUPIED_FIELD_RES / 3.0f * tile_x_dim;
+    int delta_mag = field_res / 3.0f * tile_x_dim;
     vec2_t delta = orientation;
     PFM_Vec2_Normal(&delta, &delta);
     PFM_Vec2_Scale(&delta, delta_mag, &delta);
@@ -454,8 +487,7 @@ static vec2_t field_center(vec2_t target, vec2_t orientation)
 
 static bool try_occupy_cell(struct coord *curr, vec2_t orientation, uint16_t iid,
                             float radius, enum nav_layer layer, int anchor, bool commit,
-                            uint8_t occupied[NAV_LAYER_MAX][OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
-                            uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
+                            int field_res, uint8_t *occupied, uint16_t *islands)
 {
     struct map_resolution nav_res;
     M_NavGetResolution(s_map, &nav_res);
@@ -466,11 +498,11 @@ static bool try_occupy_cell(struct coord *curr, vec2_t orientation, uint16_t iid
     const float tile_x_dim = chunk_x_dim / nav_res.tile_w;
     const float tile_z_dim = chunk_z_dim / nav_res.tile_h;
 
-    const float field_x_dim = tile_x_dim * OCCUPIED_FIELD_RES;
-    const float field_z_dim = tile_z_dim * OCCUPIED_FIELD_RES;
+    const float field_x_dim = tile_x_dim * field_res;
+    const float field_z_dim = tile_z_dim * field_res;
 
     struct map_resolution res = (struct map_resolution){
-        1, 1, OCCUPIED_FIELD_RES, OCCUPIED_FIELD_RES,
+        1, 1, field_res, field_res,
         field_x_dim, field_z_dim
     };
     /* Find the center point of the tile, in field-local coordinates */
@@ -487,24 +519,24 @@ static bool try_occupy_cell(struct coord *curr, vec2_t orientation, uint16_t iid
 
     for(int i = 0; i < ndescs; i++) {
         struct coord coord = (struct coord){descs[i].tile_r, descs[i].tile_c};
-        if(islands[coord.r][coord.c] != iid)
+        if(islands[IDX(coord.r, field_res, coord.c)] != iid)
             return false;
-        if(occupied[layer][coord.r][coord.c] != TILE_FREE
-        && occupied[layer][coord.r][coord.c] != TILE_VISITED)
+        if(occupied[FIELD_IDX3(field_res, layer, coord.r, coord.c)] != TILE_FREE
+        && occupied[FIELD_IDX3(field_res, layer, coord.r, coord.c)] != TILE_VISITED)
             return false;
     }
     if(commit) {
         for(int i = 0; i < ndescs; i++) {
             struct coord coord = (struct coord){descs[i].tile_r, descs[i].tile_c};
             for(int j = 0; j < NAV_LAYER_MAX; j++) {
-                occupied[j][coord.r][coord.c] = TILE_ALLOCATED;
+                occupied[FIELD_IDX3(field_res, j, coord.r, coord.c)] = TILE_ALLOCATED;
             }
         }
     }
     return true;
 }
 
-static vec2_t tile_to_pos(struct coord tile, vec2_t center)
+static vec2_t tile_to_pos(struct coord tile, vec2_t center, int field_res)
 {
     struct map_resolution nav_res;
     M_NavGetResolution(s_map, &nav_res);
@@ -521,8 +553,8 @@ static vec2_t tile_to_pos(struct coord tile, vec2_t center)
     };
 
     vec2_t offset = (vec2_t) {
-         tile_x_dim * (tile.c - OCCUPIED_FIELD_RES/2 + 0.5f * SIGNUM(center.x)),
-        -tile_z_dim * (tile.r - OCCUPIED_FIELD_RES/2 - 0.5f * SIGNUM(center.z))
+         tile_x_dim * (tile.c - field_res/2 + 0.5f * SIGNUM(center.x)),
+        -tile_z_dim * (tile.r - field_res/2 - 0.5f * SIGNUM(center.z))
     };
 
     vec2_t ret = tile_center;
@@ -530,15 +562,15 @@ static vec2_t tile_to_pos(struct coord tile, vec2_t center)
     return ret;
 }
 
-static struct coord pos_to_tile(vec2_t center, vec2_t pos)
+static struct coord pos_to_tile(vec2_t center, vec2_t pos, int field_res)
 {
     struct map_resolution nav_res;
     M_NavGetResolution(s_map, &nav_res);
 
     vec2_t tile_center = tile_to_pos((struct coord){
-        OCCUPIED_FIELD_RES/2,
-        OCCUPIED_FIELD_RES/2
-    }, center);
+        field_res/2,
+        field_res/2
+    }, center, field_res);
 
     const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
     const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
@@ -557,23 +589,23 @@ static struct coord pos_to_tile(vec2_t center, vec2_t pos)
     float dr = -delta.z / tile_z_dim + 0.5f;
 
     return (struct coord){
-        OCCUPIED_FIELD_RES/2 + dr,
-        OCCUPIED_FIELD_RES/2 + dc
+        field_res/2 + dr,
+        field_res/2 + dc
     };
 }
 
-static vec2_t bin_to_tile(vec2_t pos, vec2_t center)
+static vec2_t bin_to_tile(vec2_t pos, vec2_t center, int field_res)
 {
-    struct coord tile = pos_to_tile(center, pos);
-    return tile_to_pos(tile, center);
+    struct coord tile = pos_to_tile(center, pos, field_res);
+    return tile_to_pos(tile, center, field_res);
 }
 
-static vec2_t bin_to_tile_clamped(vec2_t pos, vec2_t center)
+static vec2_t bin_to_tile_clamped(vec2_t pos, vec2_t center, int field_res)
 {
-    struct coord tile = pos_to_tile(center, pos);
-    tile.r = CLAMP(tile.r, 0, OCCUPIED_FIELD_RES-1);
-    tile.c = CLAMP(tile.c, 0, OCCUPIED_FIELD_RES-1);
-    return tile_to_pos(tile, center);
+    struct coord tile = pos_to_tile(center, pos, field_res);
+    tile.r = CLAMP(tile.r, 0, field_res-1);
+    tile.c = CLAMP(tile.c, 0, field_res-1);
+    return tile_to_pos(tile, center, field_res);
 }
 
 /* The distance we need to march in order to 
@@ -595,11 +627,10 @@ static float step_distance(vec2_t orientation, float base)
 
 static bool nearest_free_tile(struct coord *curr, struct coord *out, uint16_t iid,
     int direction_mask, vec2_t center, vec2_t orientation, float radius, enum nav_layer layer,
-    uint8_t occupied[NAV_LAYER_MAX][OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
-    uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
+    int field_res, uint8_t *occupied, uint16_t *islands)
 {
     if(try_occupy_cell(curr, orientation, iid, radius, layer,
-                       direction_mask, false, occupied, islands)) {
+                       direction_mask, false, field_res, occupied, islands)) {
         *out = *curr;
         return true;
     }
@@ -634,16 +665,16 @@ static bool nearest_free_tile(struct coord *curr, struct coord *out, uint16_t ii
         PFM_Vec2_Add(&delta, &unit_perpendicular, &delta);
     }
 
-    vec2_t candidate_pos = tile_to_pos(*curr, center);
+    vec2_t candidate_pos = tile_to_pos(*curr, center, field_res);
     vec2_t shifted_pos;
     PFM_Vec2_Add(&candidate_pos, &delta, &shifted_pos);
-    struct coord test_tile = pos_to_tile(center, shifted_pos);
+    struct coord test_tile = pos_to_tile(center, shifted_pos, field_res);
 
     if(test_tile.r != curr->r || test_tile.c != curr->c) {
-        if((test_tile.r >= 0 && test_tile.r < OCCUPIED_FIELD_RES)
-        && (test_tile.c >= 0 && test_tile.c < OCCUPIED_FIELD_RES)
+        if((test_tile.r >= 0 && test_tile.r < field_res)
+        && (test_tile.c >= 0 && test_tile.c < field_res)
         && (try_occupy_cell(&test_tile, orientation, iid, radius, layer,
-                            (int)direction_mask, false, occupied, islands))) {
+                            (int)direction_mask, false, field_res, occupied, islands))) {
             *out = test_tile;
             return true;
         }
@@ -652,7 +683,7 @@ static bool nearest_free_tile(struct coord *curr, struct coord *out, uint16_t ii
     /* If we could not place the tile at a specific offset, fall back
      * to a brute-force breadth-first search.
      */
-    for(int delta = 1; delta < OCCUPIED_FIELD_RES; delta++) {
+    for(int delta = 1; delta < field_res; delta++) {
         for(int dr = -delta; dr <= +delta; dr++) {
         for(int dc = -delta; dc <= +delta; dc++) {
             if(abs(dr) != delta && abs(dc) != delta)
@@ -660,14 +691,14 @@ static bool nearest_free_tile(struct coord *curr, struct coord *out, uint16_t ii
 
             int abs_r = curr->r + dr;
             int abs_c = curr->c + dc;
-            if(abs_r < 0 || abs_r >= OCCUPIED_FIELD_RES)
+            if(abs_r < 0 || abs_r >= field_res)
                 continue;
-            if(abs_c < 0 || abs_c >= OCCUPIED_FIELD_RES)
+            if(abs_c < 0 || abs_c >= field_res)
                 continue;
 
             struct coord curr = (struct coord){abs_r, abs_c};
             if(try_occupy_cell(&curr, orientation, iid, radius, layer,
-                               direction_mask, false, occupied, islands)) {
+                               direction_mask, false, field_res, occupied, islands)) {
                 *out = (struct coord){abs_r, abs_c};
                 return true;
             }
@@ -693,7 +724,7 @@ static bool any_match(struct tile_desc *a, size_t numa,
  * field. 
  */
 static vec2_t target_direction_offsets(vec2_t center, vec2_t orientation, 
-                                       float unit_radius)
+                                       float unit_radius, int field_res)
 {
     struct map_resolution nav_res;
     M_NavGetResolution(s_map, &nav_res);
@@ -704,19 +735,19 @@ static vec2_t target_direction_offsets(vec2_t center, vec2_t orientation,
     const float tile_x_dim = chunk_x_dim / nav_res.tile_w;
     const float tile_z_dim = chunk_z_dim / nav_res.tile_h;
 
-    const float field_x_dim = tile_x_dim * OCCUPIED_FIELD_RES;
-    const float field_z_dim = tile_z_dim * OCCUPIED_FIELD_RES;
+    const float field_x_dim = tile_x_dim * field_res;
+    const float field_z_dim = tile_z_dim * field_res;
 
     struct map_resolution res = (struct map_resolution){
-        1, 1, OCCUPIED_FIELD_RES, OCCUPIED_FIELD_RES,
+        1, 1, field_res, field_res,
         field_x_dim, field_z_dim
     };
 
     /* First find the set of tiles occupied by the root cell */
     vec3_t origin = (vec3_t){0.0f, 0.0f, 0.0f};
     struct coord root_tile = (struct coord){
-        OCCUPIED_FIELD_RES/2,
-        OCCUPIED_FIELD_RES/2
+        field_res/2,
+        field_res/2
     };
     vec2_t root_center = (vec2_t){
         (root_tile.c + 0.5f) * -tile_x_dim,
@@ -744,7 +775,7 @@ static vec2_t target_direction_offsets(vec2_t center, vec2_t orientation,
 
     vec2_t candidate = root_center;
     PFM_Vec2_Add(&candidate, &min_delta, &candidate);
-    candidate = bin_to_tile(candidate, center);
+    candidate = bin_to_tile(candidate, center, field_res);
 
     do{
         struct tile_desc front_descs[256];
@@ -796,8 +827,8 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
                        enum nav_layer layer, vec2_t target_offsets,
                        const struct cell *left, const struct cell *right,
                        const struct cell *front,  const struct cell *back,
-                       uint8_t occupied[NAV_LAYER_MAX][OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
-                       uint16_t islands[NAV_LAYER_MAX][OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
+                       int field_res, uint8_t *occupied, uint16_t *islands,
+                       struct coord *visited)
 {
     int anchor = 0;
     if(left && (left->state != CELL_NOT_PLACED))
@@ -815,7 +846,7 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
     int count = 0;
 
     if(anchor == 0) {
-        pos = bin_to_tile(root, center);
+        pos = bin_to_tile(root, center, field_res);
     }
 
     if(anchor & DIR_LEFT) {
@@ -883,13 +914,15 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
     }
 
     /* Find the target tile for the position */
-    struct coord target_tile = pos_to_tile(center, pos);
+    struct coord target_tile = pos_to_tile(center, pos, field_res);
     struct coord curr_tile;
 
-    struct coord dest_coord = pos_to_tile(center, target);
-    dest_coord.r = CLAMP(dest_coord.r, 0, OCCUPIED_FIELD_RES - 1);
-    dest_coord.c = CLAMP(dest_coord.c, 0, OCCUPIED_FIELD_RES - 1);
-    uint16_t iid = islands[layer][dest_coord.r][dest_coord.c];
+    uint16_t *islands_base = islands + (size_t)layer * field_res * field_res;
+
+    struct coord dest_coord = pos_to_tile(center, target, field_res);
+    dest_coord.r = CLAMP(dest_coord.r, 0, field_res - 1);
+    dest_coord.c = CLAMP(dest_coord.c, 0, field_res - 1);
+    uint16_t iid = islands_base[IDX(dest_coord.r, field_res, dest_coord.c)];
     /* This case should not be hit under normal conditions, as 
      * the 'target' position should be on the same island as the 
      * formation units. 
@@ -898,12 +931,11 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
         return false;
 
     bool exists = nearest_free_tile(&target_tile, &curr_tile, iid, anchor, 
-        center, orientation, radius, layer, occupied, islands[layer]);
+        center, orientation, radius, layer, field_res, occupied, islands_base);
     if(!exists)
         return false;
 
     size_t nvisited = 0;
-    struct coord visited[OCCUPIED_FIELD_RES * OCCUPIED_FIELD_RES];
     /* Do a breath-first traversal of the 'occupied' field and greedily place 
      * each cell. If we are not able to place a cell, mark that candidate tile
      * as 'visited'
@@ -911,12 +943,12 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
     bool success = false;
     do{
         success = try_occupy_cell(&curr_tile, orientation, iid, radius, layer, 
-            anchor, true, occupied, islands[layer]);
+            anchor, true, field_res, occupied, islands_base);
         if(!success) {
-            occupied[layer][curr_tile.r][curr_tile.c] = TILE_VISITED;
+            occupied[FIELD_IDX3(field_res, layer, curr_tile.r, curr_tile.c)] = TILE_VISITED;
             visited[nvisited++] = curr_tile;
             bool exists = nearest_free_tile(&curr_tile, &curr_tile, iid, anchor, 
-                center, orientation, radius, layer, occupied, islands[layer]);
+                center, orientation, radius, layer, field_res, occupied, islands_base);
             if(!exists)
                 break;
         }
@@ -924,21 +956,21 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
 
     /* Reset the 'visited' tiles */
     for(int i = 0; i < nvisited; i++) {
-        if(occupied[layer][visited[i].r][visited[i].c] == TILE_VISITED)
-            occupied[layer][visited[i].r][visited[i].c] = TILE_FREE;
+        if(occupied[FIELD_IDX3(field_res, layer, visited[i].r, visited[i].c)] == TILE_VISITED)
+            occupied[FIELD_IDX3(field_res, layer, visited[i].r, visited[i].c)] = TILE_FREE;
     }
     if(success) {
         curr->ideal_raw = pos;
-        curr->ideal_binned = tile_to_pos(target_tile, center);
+        curr->ideal_binned = tile_to_pos(target_tile, center, field_res);
         curr->state = CELL_NOT_OCCUPIED;
-        curr->pos = tile_to_pos(curr_tile, center);
+        curr->pos = tile_to_pos(curr_tile, center, field_res);
         curr->reachable_pos = curr->pos;
     }
     return success;
 }
 
 static void init_occupied_field(const struct map *map, enum nav_layer layer, vec2_t center,
-                                uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
+                                int field_res, uint8_t *occupied)
 {
     PERF_ENTER();
 
@@ -950,20 +982,20 @@ static void init_occupied_field(const struct map *map, enum nav_layer layer, vec
     M_Tile_DescForPoint2D(res, map_pos, center, &center_tile);
 
     struct coord center_coord = (struct coord){
-        OCCUPIED_FIELD_RES / 2,
-        OCCUPIED_FIELD_RES / 2
+        field_res / 2,
+        field_res / 2
     };
 
-    memset(occupied, 0, OCCUPIED_FIELD_RES * OCCUPIED_FIELD_RES);
-    for(int r = 0; r < OCCUPIED_FIELD_RES; r++) {
-    for(int c = 0; c < OCCUPIED_FIELD_RES; c++) {
+    memset(occupied, 0, (size_t)field_res * field_res);
+    for(int r = 0; r < field_res; r++) {
+    for(int c = 0; c < field_res; c++) {
 
         int dr = center_coord.r - r;
         int dc = center_coord.c - c;
         struct tile_desc curr = center_tile;
         bool exists = M_Tile_RelativeDesc(res, &curr, dc, dr);
         if(!exists) {
-            occupied[r][c] = TILE_BLOCKED;
+            occupied[IDX(r, field_res, c)] = TILE_BLOCKED;
             continue;
         }
 
@@ -974,7 +1006,7 @@ static void init_occupied_field(const struct map *map, enum nav_layer layer, vec
         };
         if(!M_NavPositionPathable(map, layer, center)
         ||  M_NavPositionBlocked(map, layer, center)) {
-            occupied[r][c] = TILE_BLOCKED;
+            occupied[IDX(r, field_res, c)] = TILE_BLOCKED;
             continue;
         }
     }}
@@ -983,10 +1015,9 @@ static void init_occupied_field(const struct map *map, enum nav_layer layer, vec
 }
 
 static void init_islands_field(const struct map *map, enum nav_layer layer, vec2_t center,
-                               uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
+                               int field_res, uint16_t *islands)
 {
-    M_NavCopyIslandsFieldView(map, center, OCCUPIED_FIELD_RES, OCCUPIED_FIELD_RES,
-        layer, (uint16_t*)islands);
+    M_NavCopyIslandsFieldView(map, center, field_res, field_res, layer, islands);
 }
 
 static vec2_t back_row_average_pos(struct subformation *formation)
@@ -1156,14 +1187,18 @@ static vec2_t target_position(vec_entity_t *ents)
 
 static void place_subformation(struct subformation *formation, vec2_t center, 
     vec2_t target, vec2_t orientation,
-    uint8_t occupied[NAV_LAYER_MAX][OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
-    uint16_t islands[NAV_LAYER_MAX][OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
+    int field_res, uint8_t *occupied, uint16_t *islands)
 {
     PERF_ENTER();
 
     vec2_t target_orientation = orientation;
-    vec2_t target_offsets = target_direction_offsets(center, orientation, formation->unit_radius);
+    vec2_t target_offsets = target_direction_offsets(center, orientation,
+        formation->unit_radius, field_res);
     vec2_t target_pos = subformation_target_pos(formation, target, orientation, target_offsets);
+
+    struct coord *visited = PF_MALLOC((size_t)field_res * field_res * sizeof(struct coord));
+    if(!visited)
+        PERF_RETURN_VOID();
 
     int nrows = formation->nrows;
     int ncols = formation->ncols;
@@ -1222,7 +1257,7 @@ static void place_subformation(struct subformation *formation, vec2_t center,
         bool success = place_cell(curr_cell, center, target_pos, 
             formation->reachable_target, orientation, formation->unit_radius, 
             formation->layer, target_offsets, left_cell, right_cell, front_cell, back_cell, 
-            occupied, islands);
+            field_res, occupied, islands, visited);
         if(!success)
             break;
 
@@ -1238,6 +1273,7 @@ static void place_subformation(struct subformation *formation, vec2_t center,
     }
 
     queue_coord_destroy(&frontier);
+    PF_FREE(visited);
 
     formation->pos = subformation_center(formation);
     formation->orientation = orientation;
@@ -1517,6 +1553,7 @@ static void init_subformation(vec2_t target, struct subformation *formation,
     }}
     formation->results = kh_init(result);
     vec_work_init(&formation->futures);
+    formation->cell_rasters = NULL;
     vec_tile_init(&formation->blocked_tiles);
 }
 
@@ -1877,21 +1914,22 @@ static void compute_cell_assignment(struct cell_assignment_work *work)
     PF_FREE(buffer);
 }
 
-static mat4x4_t cell_field_model_matrix(vec2_t center)
+static mat4x4_t cell_field_model_matrix(vec2_t center, int field_res)
 {
     struct map_resolution nav_res;
     M_NavGetResolution(s_map, &nav_res);
 
+    const int arrival_res = field_res + 1;
     const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
     const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
 
     const float tile_x_dim = chunk_x_dim / nav_res.tile_w;
     const float tile_z_dim = chunk_z_dim / nav_res.tile_h;
 
-    const float field_x_dim = tile_x_dim * CELL_ARRIVAL_FIELD_RES;
-    const float field_z_dim = tile_z_dim * CELL_ARRIVAL_FIELD_RES;
+    const float field_x_dim = tile_x_dim * arrival_res;
+    const float field_z_dim = tile_z_dim * arrival_res;
 
-    vec2_t binned_center = bin_to_tile(center, center);
+    vec2_t binned_center = bin_to_tile(center, center, field_res);
     binned_center.x += tile_x_dim / 2.0f;
     binned_center.z -= tile_z_dim / 2.0f;
 
@@ -2115,7 +2153,7 @@ static size_t next_chunk_range(size_t begin, size_t size,
     return i + 1;
 }
 
-static size_t chunks_for_field(vec2_t center, size_t maxout, 
+static size_t chunks_for_field(vec2_t center, int field_res, size_t maxout,
                                struct coord *out_chunks, struct range2d *out_ranges)
 {
     struct map_resolution res;
@@ -2125,8 +2163,8 @@ static size_t chunks_for_field(vec2_t center, size_t maxout,
     struct tile_desc center_tile;
     M_Tile_DescForPoint2D(res, map_pos, center, &center_tile);
 
-    int min_dr = -OCCUPIED_FIELD_RES / 2;
-    int min_dc = -OCCUPIED_FIELD_RES / 2;
+    int min_dr = -field_res / 2;
+    int min_dc = -field_res / 2;
     struct tile_desc min_tile = center_tile;
     bool exists = M_Tile_RelativeDesc(res, &min_tile, min_dc, min_dr);
     if(!exists) {
@@ -2153,8 +2191,8 @@ static size_t chunks_for_field(vec2_t center, size_t maxout,
     }
 done_min:;
 
-    int max_dr = OCCUPIED_FIELD_RES / 2;
-    int max_dc = OCCUPIED_FIELD_RES / 2;
+    int max_dr = field_res / 2;
+    int max_dc = field_res / 2;
     struct tile_desc max_tile = center_tile;
     exists = M_Tile_RelativeDesc(res, &max_tile, max_dr, max_dc);
     if(!exists) {
@@ -2233,7 +2271,8 @@ static void render_islands_field(enum nav_layer layer)
 
         struct coord chunks[32];
         struct range2d ranges[32];
-        size_t nchunks = chunks_for_field(formation->center, 32, chunks, ranges);
+        size_t nchunks = chunks_for_field(formation->center, formation->field_res,
+            32, chunks, ranges);
 
         struct tile_desc center_tile;
         M_Tile_DescForPoint2D(res, map_pos, formation->center, &center_tile);
@@ -2269,11 +2308,12 @@ static void render_islands_field(enum nav_layer layer)
                 int dr, dc;
                 M_Tile_Distance(res, &curr, &center_tile, &dr, &dc);
 
-                int offset_r = (OCCUPIED_FIELD_RES / 2) + dr;
-                int offset_c = (OCCUPIED_FIELD_RES / 2) + dc;
-                assert(offset_r >= 0 && offset_r < OCCUPIED_FIELD_RES);
-                assert(offset_c >= 0 && offset_c < OCCUPIED_FIELD_RES);
-                uint16_t island_id = formation->islands[layer][offset_r][offset_c];
+                int offset_r = (formation->field_res / 2) + dr;
+                int offset_c = (formation->field_res / 2) + dc;
+                assert(offset_r >= 0 && offset_r < formation->field_res);
+                assert(offset_c >= 0 && offset_c < formation->field_res);
+                uint16_t island_id = islands_layer(formation, layer)
+                                                  [IDX(offset_r, formation->field_res, offset_c)];
 
                 char text[8];
                 pf_snprintf(text, sizeof(text), "%u", island_id);
@@ -2292,6 +2332,8 @@ static void render_formations_occupied_field(enum nav_layer layer)
     struct formation *formation;
     kh_foreach_ptr(s_formations, formation, {
 
+        const int field_res = formation->field_res;
+
         struct tile_desc center_tile;
         M_Tile_DescForPoint2D(res, map_pos, formation->center, &center_tile);
 
@@ -2301,7 +2343,7 @@ static void render_formations_occupied_field(enum nav_layer layer)
             center_bounds.z + center_bounds.height / 2.0f
         };
 
-        const float field_width = center_bounds.width * OCCUPIED_FIELD_RES;
+        const float field_width = center_bounds.width * field_res;
         const float line_width = 1.0f;
         const vec3_t blue = (vec3_t){0.0f, 0.0f, 1.0f};
 
@@ -2323,25 +2365,32 @@ static void render_formations_occupied_field(enum nav_layer layer)
         });
 
         struct coord center_coord = (struct coord){
-            OCCUPIED_FIELD_RES / 2,
-            OCCUPIED_FIELD_RES / 2
+            field_res / 2,
+            field_res / 2
         };
 
         const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
         const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
 
-        vec2_t corners_buff[4 * OCCUPIED_FIELD_RES * OCCUPIED_FIELD_RES];
-        memset(corners_buff, 0, sizeof(corners_buff));
-        vec3_t colors_buff[OCCUPIED_FIELD_RES * OCCUPIED_FIELD_RES];
-        struct coord chunk_buff[OCCUPIED_FIELD_RES * OCCUPIED_FIELD_RES];
+        size_t ntiles = (size_t)field_res * field_res;
+        vec2_t *corners_buff = PF_MALLOC(ntiles * 4 * sizeof(vec2_t));
+        vec3_t *colors_buff = PF_MALLOC(ntiles * sizeof(vec3_t));
+        struct coord *chunk_buff = PF_MALLOC(ntiles * sizeof(struct coord));
+        if(!corners_buff || !colors_buff || !chunk_buff) {
+            PF_FREE(corners_buff);
+            PF_FREE(colors_buff);
+            PF_FREE(chunk_buff);
+            continue;
+        }
+        memset(corners_buff, 0, ntiles * 4 * sizeof(vec2_t));
 
         vec2_t *corners_base = corners_buff;
         vec3_t *colors_base = colors_buff; 
         struct coord *chunk_base = chunk_buff;
         size_t count = 0;
 
-        for(int r = 0; r < OCCUPIED_FIELD_RES; r++) {
-        for(int c = 0; c < OCCUPIED_FIELD_RES; c++) {
+        for(int r = 0; r < field_res; r++) {
+        for(int c = 0; c < field_res; c++) {
 
             int dr = center_coord.r - r;
             int dc = center_coord.c - c;
@@ -2363,9 +2412,10 @@ static void render_formations_occupied_field(enum nav_layer layer)
             *corners_base++ = (vec2_t){square_x - square_x_len, square_z + square_z_len};
             *corners_base++ = (vec2_t){square_x - square_x_len, square_z};
 
-            if(formation->occupied[layer][r][c] == TILE_BLOCKED) {
+            uint8_t state = occupied_layer(formation, layer)[IDX(r, field_res, c)];
+            if(state == TILE_BLOCKED) {
                 *colors_base++ = (vec3_t){1.0f, 0.0f, 0.0f};
-            }else if(formation->occupied[layer][r][c] == TILE_ALLOCATED) {
+            }else if(state == TILE_ALLOCATED) {
                 *colors_base++ = (vec3_t){0.0f, 0.0f, 1.0f};
             }else{
                 *colors_base++ = (vec3_t){0.0f, 1.0f, 0.0f};
@@ -2399,6 +2449,9 @@ static void render_formations_occupied_field(enum nav_layer layer)
             });
             offset = next_offset;
         }
+        PF_FREE(corners_buff);
+        PF_FREE(colors_buff);
+        PF_FREE(chunk_buff);
     });
 }
 
@@ -2448,37 +2501,43 @@ static void render_cell_arrival_field(struct formation *formation, int index)
             break;
     });
 
-    struct cell_arrival_field *field = cell_get_field(uid);
+    const uint8_t *field = cell_get_field(uid);
     if(!field)
         return;
 
-    assert(sizeof(*field) == ((CELL_ARRIVAL_FIELD_RES * CELL_ARRIVAL_FIELD_RES) / 2));
     struct map_resolution res;
     M_NavGetResolution(s_map, &res);
 
+    const int arrival_res = formation->field_res + 1;
     const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
     const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
 
     const float tile_x_dim = chunk_x_dim / res.tile_w;
     const float tile_z_dim = chunk_z_dim / res.tile_h;
 
-    const float field_x_dim = tile_x_dim * CELL_ARRIVAL_FIELD_RES;
-    const float field_z_dim = tile_z_dim * CELL_ARRIVAL_FIELD_RES;
+    const float field_x_dim = tile_x_dim * arrival_res;
+    const float field_z_dim = tile_z_dim * arrival_res;
 
-    vec2_t positions_buff[CELL_ARRIVAL_FIELD_RES * CELL_ARRIVAL_FIELD_RES];
-    vec2_t dirs_buff[CELL_ARRIVAL_FIELD_RES * CELL_ARRIVAL_FIELD_RES];
+    size_t ntiles = (size_t)arrival_res * arrival_res;
+    vec2_t *positions_buff = PF_MALLOC(ntiles * sizeof(vec2_t));
+    vec2_t *dirs_buff = PF_MALLOC(ntiles * sizeof(vec2_t));
+    if(!positions_buff || !dirs_buff) {
+        PF_FREE(positions_buff);
+        PF_FREE(dirs_buff);
+        return;
+    }
 
     size_t count = 0;
-    mat4x4_t model = cell_field_model_matrix(formation->center);
+    mat4x4_t model = cell_field_model_matrix(formation->center, formation->field_res);
 
-    for(int r = 0; r < CELL_ARRIVAL_FIELD_RES; r++) {
-    for(int c = 0; c < CELL_ARRIVAL_FIELD_RES; c++) {
+    for(int r = 0; r < arrival_res; r++) {
+    for(int c = 0; c < arrival_res; c++) {
 
         float square_x_len = (1.0f / res.tile_w) * chunk_x_dim;
         float square_z_len = (1.0f / res.tile_h) * chunk_z_dim;
-        float square_x = CLAMP(-(((float)c) / CELL_ARRIVAL_FIELD_RES) * field_x_dim, 
+        float square_x = CLAMP(-(((float)c) / arrival_res) * field_x_dim,
                                -field_x_dim, field_x_dim);
-        float square_z = CLAMP((((float)r) / CELL_ARRIVAL_FIELD_RES) * field_z_dim, 
+        float square_z = CLAMP((((float)r) / arrival_res) * field_z_dim,
                                -field_z_dim, field_z_dim);
 
         vec2_t pos = (vec2_t){
@@ -2492,22 +2551,30 @@ static void render_cell_arrival_field(struct formation *formation, int index)
             continue;
 
         positions_buff[count] = pos;
-        enum flow_dir dir = cell_get_dir(field, r, c);
+        enum flow_dir dir = cell_get_dir(field, arrival_res, r, c);
         dirs_buff[count] = N_FlowDir(dir);
         count++;
     }}
+
+    if(count == 0) {
+        PF_FREE(positions_buff);
+        PF_FREE(dirs_buff);
+        return;
+    }
 
     R_PushCmd((struct rcmd){
         .func = R_GL_DrawFlowField,
         .nargs = 5,
         .args = {
-            R_PushArg(positions_buff, sizeof(positions_buff)),
-            R_PushArg(dirs_buff, sizeof(dirs_buff)),
+            R_PushArg(positions_buff, count * sizeof(vec2_t)),
+            R_PushArg(dirs_buff, count * sizeof(vec2_t)),
             R_PushArg(&count, sizeof(count)),
             R_PushArg(&model, sizeof(model)),
             (void*)G_GetPrevTickMap(),
         },
     });
+    PF_FREE(positions_buff);
+    PF_FREE(dirs_buff);
 }
 
 static void render_formation_forces(void)
@@ -2736,8 +2803,9 @@ static bool event_triggered_recalculate(struct formation *formation, struct bloc
     const float tile_x_dim = chunk_x_dim / nav_res.tile_w;
     const float tile_z_dim = chunk_z_dim / nav_res.tile_h;
 
-    const float field_x_dim = tile_x_dim * CELL_ARRIVAL_FIELD_RES;
-    const float field_z_dim = tile_z_dim * CELL_ARRIVAL_FIELD_RES;
+    const int arrival_res = formation->field_res + 1;
+    const float field_x_dim = tile_x_dim * arrival_res;
+    const float field_z_dim = tile_z_dim * arrival_res;
 
     vec2_t base = formation->center;
     vec2_t delta = (vec2_t){field_x_dim/2.0f, -field_z_dim/2.0f};
@@ -2804,8 +2872,15 @@ static void on_1hz_tick(void *user, void *event)
         khiter_t k = kh_get(formation, s_formations, desc.fid);
         if(k == kh_end(s_formations))
             continue;
+        /* The entity may have died or been re-ordered into a different
+         * formation since the request was queued.
+         */
+        if(G_Formation_GetForEnt(desc.uid) != desc.fid)
+            continue;
         struct formation *formation = &kh_val(s_formations, k);
         struct cell_field_work *work = cell_get_work(desc.uid);
+        if(!work)
+            continue;
 
         for(int i = 0; i < vec_size(&formation->subformations); i++) {
             struct subformation *sub = &vec_AT(&formation->subformations, i);
@@ -2876,6 +2951,7 @@ static void destroy_subformation(struct subformation *formation)
 {
     complete_cell_field_work(formation, false);
     vec_work_destroy(&formation->futures);
+    PF_FREE(formation->cell_rasters);
     vec_tile_destroy(&formation->blocked_tiles);
     vec_cell_destroy(&formation->cells);
     kh_destroy(result, formation->results);
@@ -2899,6 +2975,8 @@ static void destroy_formation(struct formation *formation)
     kh_destroy(entity, formation->ents);
     vec_subformation_destroy(&formation->subformations);
     kh_destroy(assignment, formation->sub_assignment);
+    PF_FREE(formation->occupied);
+    PF_FREE(formation->islands);
 }
 
 static khash_t(entity) *copy_vector(const vec_entity_t *ents)
@@ -2951,15 +3029,27 @@ static struct result cell_field_task(void *arg)
 
     struct cell_field_work *work = arg;
     struct cell_field_work_input *input = &work->input;
-    struct cell_arrival_field *result = &work->result;
+    uint8_t *result = work->result;
     struct refcounted_map *map = work->map;
-    void *workspace = get_workspace();
-    size_t size = workspace_size();
+    int arrival_res = input->field_res + 1;
+    size_t size = workspace_size(arrival_res);
 
-    M_NavCellArrivalFieldCreate(map->snapshot, CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES, 
+    /* The scratch must be private to this task: the field generation
+     * yields, so a shared buffer could be picked up by another field
+     * task interleaved on the same thread.
+     */
+    void *workspace = PF_MALLOC(size);
+    if(!workspace) {
+        memset(result, 0, (size_t)arrival_res * arrival_res / 2);
+        sp_release(map);
+        PERF_RETURN(NULL_RESULT);
+    }
+
+    M_NavCellArrivalFieldCreate(map->snapshot, arrival_res, arrival_res,
         input->layer, input->enemy_faction_mask, input->cell_tile, input->center_tile,
-        (uint8_t*)result, workspace, size, &work->overlay);
+        result, workspace, size, &work->overlay);
 
+    PF_FREE(workspace);
     sp_release(map);
     PERF_RETURN(NULL_RESULT);
 }
@@ -2970,18 +3060,26 @@ static struct result cell_field_fixup_task(void *arg)
 
     struct cell_field_work *work = arg;
     struct cell_field_work_input *input = &work->input;
-    struct cell_arrival_field *result = &work->result;
+    uint8_t *result = work->result;
     struct refcounted_map *map = work->map;
-    void *workspace = get_workspace();
-    size_t size = workspace_size();
+    int arrival_res = input->field_res + 1;
+    size_t size = workspace_size(arrival_res);
 
-    M_NavCellArrivalFieldCreate(map->snapshot, CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES, 
+    void *workspace = PF_MALLOC(size);
+    if(!workspace) {
+        memset(result, 0, (size_t)arrival_res * arrival_res / 2);
+        sp_release(map);
+        PERF_RETURN(NULL_RESULT);
+    }
+
+    M_NavCellArrivalFieldCreate(map->snapshot, arrival_res, arrival_res,
         input->layer, input->enemy_faction_mask, input->cell_tile, input->center_tile,
-        (uint8_t*)result, workspace, size, &work->overlay);
-    M_NavCellArrivalFieldUpdateToNearestPathable(map->snapshot, 
-        CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES, input->layer, input->enemy_faction_mask,
-        input->curr_tile, input->center_tile, (uint8_t*)result, workspace, size, &work->overlay);
+        result, workspace, size, &work->overlay);
+    M_NavCellArrivalFieldUpdateToNearestPathable(map->snapshot,
+        arrival_res, arrival_res, input->layer, input->enemy_faction_mask,
+        input->curr_tile, input->center_tile, result, workspace, size, &work->overlay);
 
+    PF_FREE(workspace);
     sp_release(map);
     PERF_RETURN(NULL_RESULT);
 }
@@ -3001,7 +3099,7 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
     M_NavGetResolution(rmap->snapshot, &res);
     vec3_t map_pos = M_GetPos(rmap->snapshot);
 
-    vec2_t bpos = bin_to_tile_clamped(cell->reachable_pos, center);
+    vec2_t bpos = bin_to_tile_clamped(cell->reachable_pos, center, parent->field_res);
     bpos = M_ClampedMapCoordinate(rmap->snapshot, bpos);
 
     struct tile_desc cell_td;
@@ -3010,7 +3108,8 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
     assert(exists);
 
     struct tile_desc center_td;
-    exists = M_Tile_DescForPoint2D(res, map_pos, bin_to_tile(center, center), &center_td);
+    exists = M_Tile_DescForPoint2D(res, map_pos,
+        bin_to_tile(center, center, parent->field_res), &center_td);
     assert(exists);
 
     if(func == cell_field_fixup_task) {
@@ -3035,6 +3134,7 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
 
     work->input.layer = formation->layer;
     work->input.enemy_faction_mask = G_GetEnemyFactions(formation->faction_id);
+    work->input.field_res = parent->field_res;
     work->input.cell_tile = cell_td;
     work->input.center_tile = center_td;
 
@@ -3077,12 +3177,24 @@ static void dispatch_cell_field_work(struct formation *parent, vec2_t center,
     vec_work_resize(&formation->futures, nents);
     formation->futures.size = nents;
 
+    /* The rasters block must likewise stay pinned while tasks are in
+     * flight; it is only ever replaced here, before any dispatch.
+     */
+    size_t arrival_res = parent->field_res + 1;
+    size_t raster_size = arrival_res * arrival_res / 2;
+    PF_FREE(formation->cell_rasters);
+    formation->cell_rasters = PF_MALLOC(nents * raster_size);
+    kh_clear(result, formation->results);
+    if(!formation->cell_rasters)
+        return;
+
     build_blocked_overlay(parent, formation);
 
     int i = 0;
     uint32_t uid;
     kh_foreach_key(formation->ents, uid, {
         struct cell_field_work *curr = &vec_AT(&formation->futures, i);
+        curr->result = formation->cell_rasters + i * raster_size;
 
         khiter_t k = kh_get(assignment, formation->assignment, uid);
         assert(k != kh_end(formation->assignment));
@@ -3141,20 +3253,26 @@ static void on_update_start(void *user, void *event)
                 struct cell_field_work *curr = &vec_AT(&sub->futures, j);
                 uint32_t uid = curr->uid;
                 if(curr->recompute_pending && Sched_FutureIsReady(&curr->future)) {
+                    /* The unit may have been removed from the subformation
+                     * while its recompute was pending.
+                     */
                     khiter_t k = kh_get(assignment, sub->assignment, uid);
-                    assert(k != kh_end(sub->assignment));
-                    struct coord coord = kh_val(sub->assignment, k);
-                    struct cell *cell = &vec_AT(&sub->cells,
-                        CELL_IDX(coord.r, coord.c, sub->ncols));
-                    dispatch_cell_task(formation, formation->center, uid, sub, curr, cell,
-                        cell_field_task);
+                    if(k == kh_end(sub->assignment)) {
+                        curr->recompute_pending = false;
+                    }else{
+                        struct coord coord = kh_val(sub->assignment, k);
+                        struct cell *cell = &vec_AT(&sub->cells,
+                            CELL_IDX(coord.r, coord.c, sub->ncols));
+                        dispatch_cell_task(formation, formation->center, uid, sub, curr, cell,
+                            cell_field_task);
+                    }
                 }
                 if(!curr->consumed && Sched_FutureIsReady(&curr->future)) {
                     /* Publish the result */
                     int ret;
                     khiter_t k = kh_put(result, sub->results, curr->uid, &ret);
                     assert(ret != -1);
-                    kh_val(sub->results, k) = &curr->result;
+                    kh_val(sub->results, k) = curr->result;
                     curr->consumed = true;
                 }
             }
@@ -3162,7 +3280,7 @@ static void on_update_start(void *user, void *event)
     });
 }
 
-static struct cell_arrival_field *cell_get_field(uint32_t uid)
+static uint8_t *cell_get_field(uint32_t uid)
 {
     formation_id_t fid = G_Formation_GetForEnt(uid);
     if(fid == NULL_FID)
@@ -3203,23 +3321,26 @@ static struct cell_field_work *cell_get_work(uint32_t uid)
         if(curr->uid == uid)
             return curr;
     }
-    assert(0);
+    /* The subformation has not dispatched its field work yet, which is
+     * possible when the entity was recently moved to a new formation
+     * that is still computing its cell assignment.
+     */
     return NULL;
 }
 
-static enum flow_dir cell_get_dir(const struct cell_arrival_field *field, int r, int c)
+static enum flow_dir cell_get_dir(const uint8_t *field, int arrival_res, int r, int c)
 {
-    assert(r >= 0 && r < CELL_ARRIVAL_FIELD_RES);
-    assert(c >= 0 && c < CELL_ARRIVAL_FIELD_RES);
+    assert(r >= 0 && r < arrival_res);
+    assert(c >= 0 && c < arrival_res);
 
-    size_t row_size = CELL_ARRIVAL_FIELD_RES / 2;
+    size_t row_size = arrival_res / 2;
     size_t aligned_c = (c - (c % 2)) / 2;
     size_t byte_index = r * row_size + aligned_c;
     enum flow_dir dir;
     if(c % 2 == 1) {
-        dir = (field->raw[byte_index] & 0x0f) >> 0;
+        dir = (field[byte_index] & 0x0f) >> 0;
     }else{
-        dir = (field->raw[byte_index] & 0xf0) >> 4;
+        dir = (field[byte_index] & 0xf0) >> 4;
     }
     return dir;
 }
@@ -3236,8 +3357,8 @@ static bool inside_arrival_field_bounds(struct formation *formation, vec2_t pos)
     const float tile_x_dim = chunk_x_dim / nav_res.tile_w;
     const float tile_z_dim = chunk_z_dim / nav_res.tile_h;
 
-    const float field_x_dim = tile_x_dim * OCCUPIED_FIELD_RES - buffer;
-    const float field_z_dim = tile_z_dim * OCCUPIED_FIELD_RES - buffer;
+    const float field_x_dim = tile_x_dim * formation->field_res - buffer;
+    const float field_z_dim = tile_z_dim * formation->field_res - buffer;
 
     vec2_t center = formation->center;
     vec2_t corners[] = {
@@ -3276,26 +3397,28 @@ static struct cell *cell_for_ent(struct formation *formation, uint32_t uid)
     return &vec_AT(&sub->cells, cell_idx);
 }
 
-static void recompute_cell_arrival_fields(struct formation *parent, vec2_t center, 
+static void recompute_cell_arrival_fields(struct formation *parent, vec2_t center,
                                           struct subformation *formation)
 {
-    int i = 0;
-    uint32_t uid;
-    kh_foreach_key(formation->ents, uid, {
+    /* Walk the futures rather than the entity set: the two can no longer
+     * be paired up positionally once units have been removed, and stale
+     * entries for removed units must be skipped.
+     */
+    for(int i = 0; i < vec_size(&formation->futures); i++) {
         struct cell_field_work *curr = &vec_AT(&formation->futures, i);
-        i++;
         if(!curr->consumed) {
             curr->recompute_pending = true;
             continue;
         }
 
-        khiter_t k = kh_get(assignment, formation->assignment, uid);
-        assert(k != kh_end(formation->assignment));
+        khiter_t k = kh_get(assignment, formation->assignment, curr->uid);
+        if(k == kh_end(formation->assignment))
+            continue;
         struct coord coord = kh_val(formation->assignment, k);
         struct cell *cell = &vec_AT(&formation->cells,
             CELL_IDX(coord.r, coord.c, formation->ncols));
-        dispatch_cell_task(parent, center, uid, formation, curr, cell, cell_field_task);
-    });
+        dispatch_cell_task(parent, center, curr->uid, formation, curr, cell, cell_field_task);
+    }
 }
 
 static quat_t quat_from_vec(vec2_t dir)
@@ -3349,14 +3472,14 @@ static void clear_for_ent(uint32_t uid)
 /* Returns true if the current cell arrival field for the entity
  * will guide it towards a blocked tile.
  */
-static bool will_collide(struct cell_arrival_field *field, enum nav_layer layer, 
+static bool will_collide(const uint8_t *field, int arrival_res, enum nav_layer layer,
                          struct coord coord, vec2_t pos)
 {
     struct map_resolution res;
     M_NavGetResolution(s_map, &res);
     vec3_t map_pos = M_GetPos(s_map);
 
-    enum flow_dir dir = cell_get_dir(field, coord.r, coord.c);
+    enum flow_dir dir = cell_get_dir(field, arrival_res, coord.r, coord.c);
     vec2_t vec_dir = N_FlowDir(dir);
 
     float magnitude = 4.0f;
@@ -3768,6 +3891,7 @@ static bool subformation_load_state(struct formation *parent, struct subformatio
     sub->ents = kh_init(entity);
     vec_cell_init(&sub->cells);
     vec_work_init(&sub->futures);
+    sub->cell_rasters = NULL;
     vec_tile_init(&sub->blocked_tiles);
 
     struct attr attr;
@@ -4084,14 +4208,8 @@ bool G_Formation_Init(const struct map *map)
     if(NULL == (s_preferred = kh_init(type)))
         goto fail_preferred;
 
-    if(s_workspace == 0) {
-        s_workspace = SDL_TLSCreate();
-    }
-    if(s_workspace == 0)
-        goto fail_tls;
-
     if(!queue_event_init(&s_events, 512))
-        goto fail_tls;
+        goto fail_events;
 
     if(!queue_cell_recompute_init(&s_requests, 512))
         goto fail_requests;
@@ -4111,7 +4229,7 @@ bool G_Formation_Init(const struct map *map)
 
 fail_requests:
     queue_event_destroy(&s_events);
-fail_tls:
+fail_events:
     kh_destroy(type, s_preferred);
 fail_preferred:
     kh_destroy(formation, s_formations);
@@ -4199,24 +4317,31 @@ void G_Formation_Create(vec2_t target, vec2_t orientation,
     assert(ret != -1);
     struct formation *new = &kh_val(s_formations, k);
 
+    int field_res = field_res_for_unit_count(vec_size(ents));
     *new = (struct formation){
         .refcount = vec_size(ents),
         .type = type,
         .target = target,
         .orientation = orientation,
-        .center = field_center(target, orientation),
+        .center = field_center(target, orientation, field_res),
         .ents = copy_vector(ents),
         .speed = formation_speed(ents),
         .created_tick = SDL_GetTicks(),
-        .sub_assignment = kh_init(assignment)
+        .sub_assignment = kh_init(assignment),
+        .field_res = field_res
     };
     init_subformations(new);
+    bool fields = alloc_formation_fields(new);
+    (void)fields;
+    assert(fields);
 
     enum nav_layer layers[NAV_LAYER_MAX];
     size_t nlayers = formation_layers(&new->subformations, layers);
     for(int i = 0; i < nlayers; i++) {
-        init_occupied_field(s_map, layers[i], new->center, new->occupied[layers[i]]);
-        init_islands_field(s_map, layers[i], new->center, new->islands[layers[i]]);
+        init_occupied_field(s_map, layers[i], new->center, field_res,
+            occupied_layer(new, layers[i]));
+        init_islands_field(s_map, layers[i], new->center, field_res,
+            islands_layer(new, layers[i]));
     }
 
     vec_assignment_work_init(&new->work);
@@ -4227,7 +4352,7 @@ void G_Formation_Create(vec2_t target, vec2_t orientation,
         struct subformation *sub = &vec_AT(&new->subformations, i);
         sub->state = SUBFORMATION_COMPUTING_ASSIGNMENT;
         place_subformation(sub, new->center, target, new->orientation, 
-            new->occupied, new->islands);
+            field_res, new->occupied, new->islands);
         mark_unused_cells(sub);
 
         struct cell_assignment_work *work = &vec_AT(&new->work, i);
@@ -4305,7 +4430,7 @@ bool G_Formation_CanUseArrivalField(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    struct cell_arrival_field *field = cell_get_field(uid);
+    const uint8_t *field = cell_get_field(uid);
     if(!field)
         return false;
 
@@ -4330,16 +4455,18 @@ vec2_t G_Formation_DesiredArrivalVelocity(uint32_t uid)
     struct formation *formation = formation_for_ent(uid);
     assert(formation);
 
+    int arrival_res = formation->field_res + 1;
     vec2_t pos = G_Pos_GetXZ(uid);
-    struct coord coord = pos_to_tile(pos, formation->center);
-    /* Account for the difference between OCCUPIED_FIELD_RES
-     * and CELL_ARRIVAL_FIELD_RES. Clamp in case the position lies
-     * outside the field footprint. */
-    coord.r = CLAMP(coord.r + 1, 0, CELL_ARRIVAL_FIELD_RES - 1);
-    coord.c = CLAMP(coord.c + 1, 0, CELL_ARRIVAL_FIELD_RES - 1);
+    struct coord coord = pos_to_tile(pos, formation->center, formation->field_res);
+    /* Account for the difference between the occupied and cell arrival
+     * field resolutions. Clamp in case the position lies outside the
+     * field footprint.
+     */
+    coord.r = CLAMP(coord.r + 1, 0, arrival_res - 1);
+    coord.c = CLAMP(coord.c + 1, 0, arrival_res - 1);
 
-    struct cell_arrival_field *field = cell_get_field(uid);
-    enum flow_dir dir = cell_get_dir(field, coord.r, coord.c);
+    const uint8_t *field = cell_get_field(uid);
+    enum flow_dir dir = cell_get_dir(field, arrival_res, coord.r, coord.c);
     return N_FlowDir(dir);
 }
 
@@ -4494,8 +4621,8 @@ enum formation_type G_Formation_PreferredForSet(const vec_entity_t *ents)
 
     vec_entity_t filtered;
     filter_selection_movable(ents, &filtered);
-    if(vec_size(&filtered) > 0 && all_same_preferred(ents)) {
-        uint32_t first = G_Formation_GetPreferred(vec_AT(ents, 0));
+    if(vec_size(&filtered) > 0 && all_same_preferred(&filtered)) {
+        uint32_t first = G_Formation_GetPreferred(vec_AT(&filtered, 0));
         vec_entity_destroy(&filtered);
         return first;
     }
@@ -4508,7 +4635,7 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
     PERF_ENTER();
 
-    struct cell_arrival_field *field = cell_get_field(uid);
+    const uint8_t *field = cell_get_field(uid);
     if(!field)
         PERF_RETURN_VOID();
 
@@ -4516,24 +4643,26 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
     struct formation *formation = formation_for_ent(uid);
     struct subformation *sub = subformation_for_ent(formation, uid);
     struct cell_field_work *work = cell_get_work(uid);
+    if(!work)
+        PERF_RETURN_VOID();
 
     const struct map *map = G_GetMap();
     struct map_resolution res;
     M_NavGetResolution(map, &res);
     vec3_t map_pos = M_GetPos(map);
 
+    int arrival_res = formation->field_res + 1;
     vec2_t pos = G_Pos_GetXZ(uid);
-    struct coord coord = pos_to_tile(pos, formation->center);
-    /* Account for the difference between OCCUPIED_FIELD_RES
-     * and CELL_ARRIVAL_FIELD_RES. Clamp in case the position lies
-     * outside the field footprint. */
-    coord.r = CLAMP(coord.r + 1, 0, CELL_ARRIVAL_FIELD_RES - 1);
-    coord.c = CLAMP(coord.c + 1, 0, CELL_ARRIVAL_FIELD_RES - 1);
+    struct coord coord = pos_to_tile(pos, formation->center, formation->field_res);
+    /* Account for the difference between the occupied and cell arrival
+     * field resolutions. Clamp in case the position lies outside the
+     * field footprint.
+     */
+    coord.r = CLAMP(coord.r + 1, 0, arrival_res - 1);
+    coord.c = CLAMP(coord.c + 1, 0, arrival_res - 1);
 
     enum nav_layer layer = Entity_NavLayer(uid);
     struct cell_field_work_input *input = &work->input;
-    void *workspace = get_workspace();
-    size_t ws_size = workspace_size();
 
     /* Out of performance considerations, don't re-compute the 
      * field too often. Wait for a number of changes to pile up
@@ -4565,7 +4694,7 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
      * case, resort to stopping the unit at its' location.
      */
     if(!M_NavPositionBlocked(map, layer, pos)
-    && cell_get_dir(field, coord.r, coord.c) == FD_NONE) {
+    && cell_get_dir(field, arrival_res, coord.r, coord.c) == FD_NONE) {
         cell->reachable_pos = pos;
         PERF_RETURN_VOID();
     }
@@ -4586,7 +4715,7 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
     /* If the current field is leading the entity towards
      * a blocked tile, it must be outdated. Recompute it.
      */
-    else if(will_collide(field, layer, coord, pos)) {
+    else if(will_collide(field, arrival_res, layer, coord, pos)) {
 
         request_cell_recompute(fid, uid);
         work->last_update_ticks = curr;
@@ -4758,6 +4887,13 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
 {
     ASSERT_IN_MAIN_THREAD();
 
+    /* Preview only the units that the order will actually contain. The
+     * shallow copy shares the (read-only) backing array.
+     */
+    vec_entity_t capped = *ents;
+    capped.size = MIN(vec_size(ents), MAX_FORMATION_UNITS);
+    ents = &capped;
+
     if(PFM_Vec2_Len(&orientation) < EPSILON) {
         orientation = G_Formation_AutoOrientation(target, ents);
     }
@@ -4775,31 +4911,38 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
     }
 
     enum formation_type type = G_Formation_PreferredForSet(ents);
+    int field_res = field_res_for_unit_count(vec_size(ents));
     struct formation formation = (struct formation){
         .refcount = vec_size(ents),
         .type = type,
         .target = target,
         .orientation = orientation,
-        .center = field_center(target, orientation),
+        .center = field_center(target, orientation, field_res),
         .ents = copy_vector(ents),
         .speed = formation_speed(ents),
         .created_tick = SDL_GetTicks(),
-        .sub_assignment = kh_init(assignment)
+        .sub_assignment = kh_init(assignment),
+        .field_res = field_res
     };
     init_subformations(&formation);
     vec_assignment_work_init(&formation.work);
+    bool fields = alloc_formation_fields(&formation);
+    (void)fields;
+    assert(fields);
 
     enum nav_layer layers[NAV_LAYER_MAX];
     size_t nlayers = formation_layers(&formation.subformations, layers);
     for(int i = 0; i < nlayers; i++) {
-        init_occupied_field(map, layers[i], formation.center, formation.occupied[layers[i]]);
-        init_islands_field(map, layers[i], formation.center, formation.islands[layers[i]]);
+        init_occupied_field(map, layers[i], formation.center, field_res,
+            occupied_layer(&formation, layers[i]));
+        init_islands_field(map, layers[i], formation.center, field_res,
+            islands_layer(&formation, layers[i]));
     }
 
     for(int i = 0; i < vec_size(&formation.subformations); i++) {
         struct subformation *sub = &vec_AT(&formation.subformations, i);
         place_subformation(sub, formation.center, target, formation.orientation, 
-            formation.occupied, formation.islands);
+            field_res, formation.occupied, formation.islands);
         mark_unused_cells(sub);
         render_cells(sub);
     }
@@ -4887,6 +5030,12 @@ bool G_Formation_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &center, "center"));
 
+        struct attr field_res = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = formation->field_res
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &field_res, "field_res"));
+
         struct attr nents = (struct attr){
             .type = TYPE_INT,
             .val.as_int = kh_size(formation->ents)
@@ -4965,24 +5114,24 @@ bool G_Formation_SaveState(struct SDL_RWops *stream)
         /* map_snapshots is not saved */
 
         for(int l = 0; l < NAV_LAYER_MAX; l++) {
-        for(int r = 0; r < OCCUPIED_FIELD_RES; r++) {
-        for(int c = 0; c < OCCUPIED_FIELD_RES; c++) {
+        for(int r = 0; r < formation->field_res; r++) {
+        for(int c = 0; c < formation->field_res; c++) {
 
             struct attr occupied_state = (struct attr){
                 .type = TYPE_INT,
-                .val.as_int = formation->occupied[l][r][c]
+                .val.as_int = formation->occupied[FIELD_IDX3(formation->field_res, l, r, c)]
             };
             CHK_TRUE_RET(Attr_Write(stream, &occupied_state, "occupied_state"));
         }}}
         Sched_TryYield();
 
         for(int l = 0; l < NAV_LAYER_MAX; l++) {
-        for(int r = 0; r < OCCUPIED_FIELD_RES; r++) {
-        for(int c = 0; c < OCCUPIED_FIELD_RES; c++) {
+        for(int r = 0; r < formation->field_res; r++) {
+        for(int c = 0; c < formation->field_res; c++) {
 
             struct attr island_state = (struct attr){
                 .type = TYPE_INT,
-                .val.as_int = formation->islands[l][r][c]
+                .val.as_int = formation->islands[FIELD_IDX3(formation->field_res, l, r, c)]
             };
             CHK_TRUE_RET(Attr_Write(stream, &island_state, "island_state"));
         }}}
@@ -5067,6 +5216,13 @@ bool G_Formation_LoadState(struct SDL_RWops *stream)
 
         CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_formation);
         CHK_TRUE_JMP(attr.type == TYPE_INT, fail_load_formation);
+        CHK_TRUE_JMP(attr.val.as_int == FIELD_RES_SMALL
+                  || attr.val.as_int == FIELD_RES_LARGE, fail_load_formation);
+        new->field_res = attr.val.as_int;
+        CHK_TRUE_JMP(alloc_formation_fields(new), fail_load_formation);
+
+        CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_formation);
+        CHK_TRUE_JMP(attr.type == TYPE_INT, fail_load_formation);
         size_t nents = attr.val.as_int;
 
         for(int i = 0; i < nents; i++) {
@@ -5132,23 +5288,23 @@ bool G_Formation_LoadState(struct SDL_RWops *stream)
 
         /* Load occupied fields */
         for(int l = 0; l < NAV_LAYER_MAX; l++) {
-        for(int r = 0; r < OCCUPIED_FIELD_RES; r++) {
-        for(int c = 0; c < OCCUPIED_FIELD_RES; c++) {
+        for(int r = 0; r < new->field_res; r++) {
+        for(int c = 0; c < new->field_res; c++) {
 
             CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_subformations);
             CHK_TRUE_JMP(attr.type == TYPE_INT, fail_load_subformations);
-            new->occupied[l][r][c] = attr.val.as_int;
+            new->occupied[FIELD_IDX3(new->field_res, l, r, c)] = attr.val.as_int;
         }}}
         Sched_TryYield();
 
         /* Load islands fields */
         for(int l = 0; l < NAV_LAYER_MAX; l++) {
-        for(int r = 0; r < OCCUPIED_FIELD_RES; r++) {
-        for(int c = 0; c < OCCUPIED_FIELD_RES; c++) {
+        for(int r = 0; r < new->field_res; r++) {
+        for(int c = 0; c < new->field_res; c++) {
 
             CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_subformations);
             CHK_TRUE_JMP(attr.type == TYPE_INT, fail_load_subformations);
-            new->islands[l][r][c] = attr.val.as_int;
+            new->islands[FIELD_IDX3(new->field_res, l, r, c)] = attr.val.as_int;
         }}}
 
         Sched_TryYield();
@@ -5163,6 +5319,8 @@ bool G_Formation_LoadState(struct SDL_RWops *stream)
         kh_destroy(entity, new->ents);
         vec_subformation_destroy(&new->subformations);
         kh_destroy(assignment, new->sub_assignment);
+        PF_FREE(new->occupied);
+        PF_FREE(new->islands);
         kh_del(formation, s_formations, k);
         return false;
     }

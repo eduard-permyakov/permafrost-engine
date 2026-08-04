@@ -258,6 +258,7 @@ void                  G_Sel_Disable(void);
 void                  G_Sel_Clear(void);
 void                  G_Sel_Add(uint32_t uid);
 void                  G_Sel_Remove(uint32_t uid);
+void                  G_Sel_RemoveMany(const uint32_t *uids, size_t nuids);
 const vec_entity_t   *G_Sel_Get(enum selection_type *out_type);
 uint32_t              G_Sel_GetHovered(void);
 void                  G_Sel_Set(uint32_t *ents, size_t nents);

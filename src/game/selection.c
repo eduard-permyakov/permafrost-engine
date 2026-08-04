@@ -640,6 +640,26 @@ void G_Sel_Remove(uint32_t uid)
     }
 }
 
+void G_Sel_RemoveMany(const uint32_t *uids, size_t nuids)
+{
+    bool removed = false;
+    for(size_t i = 0; i < nuids; i++) {
+
+        uint32_t flags = G_FlagsGet(uids[i]);
+        if(!(flags & ENTITY_FLAG_SELECTABLE))
+            continue;
+
+        int idx = vec_entity_indexof(&s_selected, uids[i], entities_equal);
+        if(idx != -1) {
+            vec_entity_del(&s_selected, idx);
+            removed = true;
+        }
+    }
+    if(removed) {
+        E_Global_Notify(EVENT_UNIT_SELECTION_CHANGED, NULL, ES_ENGINE);
+    }
+}
+
 const vec_entity_t *G_Sel_Get(enum selection_type *out_type)
 {
     *out_type = s_ctx.type;

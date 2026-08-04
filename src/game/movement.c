@@ -949,6 +949,12 @@ static void make_flocks(const vec_entity_t *sel, vec2_t target_xz, vec2_t target
     if(vec_size(&fsel) == 0)
         return;
 
+    if(type != FORMATION_NONE && vec_size(&fsel) > MAX_FORMATION_UNITS) {
+        G_Sel_RemoveMany(&vec_AT(&fsel, MAX_FORMATION_UNITS),
+            vec_size(&fsel) - MAX_FORMATION_UNITS);
+        fsel.size = MAX_FORMATION_UNITS;
+    }
+
     vec_entity_t layer_flocks[NAV_LAYER_MAX];
     split_into_layers(&fsel, layer_flocks);
 
@@ -1055,13 +1061,31 @@ static void move_marker_add(vec3_t pos, bool attack)
     vec_entity_push(&s_move_markers, uid);
 }
 
-static void move_order(const vec_entity_t *sel, bool attack, vec3_t mouse_coord, 
+static void move_order(const vec_entity_t *sel, bool attack, vec3_t mouse_coord,
                        vec2_t orientation)
 {
-    size_t nmoved = 0;
-    for(int i = 0; i < vec_size(sel); i++) {
+    enum formation_type type = G_Formation_PreferredForSet(sel);
 
-        uint32_t curr = vec_AT(sel, i);
+    /* Cap formation orders before any per-unit processing: the excess
+     * units are deselected and must not be stopped or notified. The
+     * capped copy also keeps the iteration safe from the deselection
+     * mutating the live selection vector. The deselection is batched,
+     * as G_Sel_Remove fires a selection-changed event for every
+     * removed unit.
+     */
+    vec_entity_t capped;
+    vec_entity_init(&capped);
+    vec_entity_copy(&capped, (vec_entity_t*)sel);
+    if(type != FORMATION_NONE && vec_size(&capped) > MAX_FORMATION_UNITS) {
+        G_Sel_RemoveMany(&vec_AT(&capped, MAX_FORMATION_UNITS),
+            vec_size(&capped) - MAX_FORMATION_UNITS);
+        capped.size = MAX_FORMATION_UNITS;
+    }
+
+    size_t nmoved = 0;
+    for(int i = 0; i < vec_size(&capped); i++) {
+
+        uint32_t curr = vec_AT(&capped, i);
         uint32_t flags = G_FlagsGet(curr);
         if(!(flags & ENTITY_FLAG_MOVABLE))
             continue;
@@ -1081,7 +1105,7 @@ static void move_order(const vec_entity_t *sel, bool attack, vec3_t mouse_coord,
         move_marker_add(mouse_coord, attack);
         vec_entity_t *copy = PF_MALLOC(sizeof(vec_entity_t));
         vec_entity_init(copy);
-        vec_entity_copy(copy, (vec_entity_t*)sel);
+        vec_entity_copy(copy, &capped);
         move_push_cmd((struct move_cmd){
             .type = MOVE_CMD_MAKE_FLOCKS,
             .args[0] = (struct attr){
@@ -1094,7 +1118,7 @@ static void move_order(const vec_entity_t *sel, bool attack, vec3_t mouse_coord,
             },
             .args[2] = (struct attr){
                 .type = TYPE_INT,
-                .val.as_int = G_Formation_PreferredForSet(copy)
+                .val.as_int = type
             },
             .args[3] = (struct attr){
                 .type = TYPE_BOOL,
@@ -1106,6 +1130,7 @@ static void move_order(const vec_entity_t *sel, bool attack, vec3_t mouse_coord,
             }
         });
     }
+    vec_entity_destroy(&capped);
 }
 
 static void on_mousedown(void *user, void *event)

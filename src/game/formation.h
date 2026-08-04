@@ -41,6 +41,10 @@
 #include "../navigation/public/nav.h"
 
 #define NULL_FID (~((uint32_t)0))
+/* Formation orders for more units than this get truncated to the first
+ * MAX_FORMATION_UNITS entities, with the excess deselected.
+ */
+#define MAX_FORMATION_UNITS (512)
 
 typedef uint32_t formation_id_t;
 
