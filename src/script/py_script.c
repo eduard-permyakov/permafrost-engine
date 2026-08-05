@@ -3904,7 +3904,7 @@ static PyObject *PyPf_ents_in_circle(PyObject *self, PyObject *args, PyObject *k
     if(ninserted == ninside || ninserted == 0)
         return list;
 
-    PyObject *ret = PyList_GetSlice(list, 0, ninserted-1);
+    PyObject *ret = PyList_GetSlice(list, 0, ninserted);
     Py_DECREF(list);
     return ret;
 }
@@ -3956,7 +3956,7 @@ static PyObject *PyPf_ents_in_rect(PyObject *self, PyObject *args, PyObject *kwa
     if(ninserted == ninside || ninserted == 0)
         return list;
 
-    PyObject *ret = PyList_GetSlice(list, 0, ninserted-1);
+    PyObject *ret = PyList_GetSlice(list, 0, ninserted);
     Py_DECREF(list);
     return ret;
 }
@@ -4195,6 +4195,8 @@ static PyObject *PyPf_formation_preferred_for_set(PyObject *self, PyObject *args
         }
         uint32_t uid;
         S_Entity_UIDForObj(obj, &uid);
+        if(!G_EntityExists(uid))
+            continue;
         vec_entity_push(&ents, uid);
     }
 
@@ -4541,8 +4543,10 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
     case EVENT_HARVEST_TARGET_ACQUIRED:
     case EVENT_STORAGE_TARGET_ACQUIRED:
     case EVENT_TRANSPORT_TARGET_ACQUIRED:
-    case EVENT_BUILDING_CONSTRUCTED: 
+    case EVENT_BUILDING_CONSTRUCTED:
     case EVENT_ORDER_ISSUED:
+    case EVENT_UNIT_BECAME_IDLE:
+    case EVENT_UNIT_BECAME_ACTIVE:
     case EVENT_ENTITY_DIED: {
         PyObject *ent = S_Entity_ObjForUID((uintptr_t)arg);
         if(ent) {
