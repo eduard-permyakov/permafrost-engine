@@ -272,6 +272,9 @@ void                  G_Group_Unlock(int group_id);
 int                   G_Group_ForEnt(uint32_t uid);
 int                   G_Group_ForSet(const uint32_t *uids, size_t nuids);
 const vec_entity_t   *G_Group_Members(int group_id);
+void                  G_Group_SetBackgroundStyle(const struct nk_style_item *style);
+void                  G_Group_SetFontColor(const struct nk_color *clr);
+bool                  G_Group_MouseOverUI(int mouse_x, int mouse_y);
 
 
 /*###########################################################################*/

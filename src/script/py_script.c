@@ -295,6 +295,8 @@ static PyObject *PyPf_group_lock(PyObject *self, PyObject *args);
 static PyObject *PyPf_group_unlock(PyObject *self, PyObject *args);
 static PyObject *PyPf_group_for_set(PyObject *self, PyObject *args);
 static PyObject *PyPf_group_members(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_group_ui_style(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_group_ui_font_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_show_console(PyObject *self);
 static PyObject *PyPf_get_version_string(PyObject *self);
 
@@ -1047,6 +1049,15 @@ static PyMethodDef pf_module_methods[] = {
     {"group_members",
     (PyCFunction)PyPf_group_members, METH_VARARGS,
     "Returns a list of the entities locked to the group with the specified ID."},
+
+    {"set_group_ui_style",
+    (PyCFunction)PyPf_set_group_ui_style, METH_VARARGS,
+    "Set the background style of the group UI windows to an (R, G, B, A) color, an image, or "
+    "a (path, left, right, top, bottom) nine patch."},
+
+    {"set_group_ui_font_color",
+    (PyCFunction)PyPf_set_group_ui_font_color, METH_VARARGS,
+    "Set the font color of the group UI windows to an (R, G, B, A) color."},
 
     {"show_console",
     (PyCFunction)PyPf_show_console, METH_NOARGS,
@@ -4288,6 +4299,61 @@ static PyObject *PyPf_group_for_set(PyObject *self, PyObject *args)
         return NULL;
 
     return PyInt_FromLong(G_Group_ForSet(ents, nents));
+}
+
+static PyObject *PyPf_set_group_ui_style(PyObject *self, PyObject *args)
+{
+    struct nk_style_item style;
+    PyObject *val;
+
+    if(!PyArg_ParseTuple(args, "O", &val)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an (R, G, B, A) tuple or an image path.");
+        return NULL;
+    }
+
+    if(S_UI_ParseNinePatch(val, &style.data.slice_texpath) == 0) {
+
+        style.type = NK_STYLE_ITEM_NINE_SLICE_TEXPATH;
+
+    }else if(PyTuple_Check(val)
+    && PyTuple_GET_SIZE(val) == 4
+    && PyInt_Check(PyTuple_GET_ITEM(val, 0))
+    && PyInt_Check(PyTuple_GET_ITEM(val, 1))
+    && PyInt_Check(PyTuple_GET_ITEM(val, 2))
+    && PyInt_Check(PyTuple_GET_ITEM(val, 3))) {
+
+        style.type = NK_STYLE_ITEM_COLOR;
+        style.data.color.r = PyInt_AS_LONG(PyTuple_GET_ITEM(val, 0));
+        style.data.color.g = PyInt_AS_LONG(PyTuple_GET_ITEM(val, 1));
+        style.data.color.b = PyInt_AS_LONG(PyTuple_GET_ITEM(val, 2));
+        style.data.color.a = PyInt_AS_LONG(PyTuple_GET_ITEM(val, 3));
+
+    }else if(PyString_Check(val)) {
+
+        style.type = NK_STYLE_ITEM_TEXPATH;
+        pf_strlcpy(style.data.texpath, PyString_AS_STRING(val),
+            ARR_SIZE(style.data.texpath));
+
+    }else{
+        PyErr_SetString(PyExc_TypeError, "Argument must be an (R, G, B, A) tuple or an image path.");
+        return NULL;
+    }
+
+    G_Group_SetBackgroundStyle(&style);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_group_ui_font_color(PyObject *self, PyObject *args)
+{
+    int r, g, b, a;
+    if(!PyArg_ParseTuple(args, "iiii", &r, &g, &b, &a)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A).");
+        return NULL;
+    }
+
+    struct nk_color clr = (struct nk_color){r, g, b, a};
+    G_Group_SetFontColor(&clr);
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_group_members(PyObject *self, PyObject *args)

@@ -2749,9 +2749,9 @@ void S_UI_PyRegister(PyObject *module)
     S_UI_Style_PyRegister(module, s_nk_ctx);
 }
 
-bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
+bool S_UI_MouseOverObscuringWindow(int mouse_x, int mouse_y)
 {
-    int w, h;    
+    int w, h;
     Engine_WinDrawableSize(&w, &h);
 
     for(int i = 0; i < vec_size(&s_active_windows); i++) {
@@ -2789,6 +2789,17 @@ bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
 
     /* The console is a C-side window, not tracked in s_active_windows. */
     if(S_Console_MouseOver(mouse_x, mouse_y))
+        return true;
+
+    return false;
+}
+
+bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
+{
+    if(S_UI_MouseOverObscuringWindow(mouse_x, mouse_y))
+        return true;
+
+    if(G_Group_MouseOverUI(mouse_x, mouse_y))
         return true;
 
     return false;

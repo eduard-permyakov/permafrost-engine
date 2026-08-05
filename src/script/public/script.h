@@ -91,6 +91,7 @@ void            S_Task_MaybeEnter(void);
 /*###########################################################################*/
 
 bool            S_UI_MouseOverWindow(int mouse_x, int mouse_y);
+bool            S_UI_MouseOverObscuringWindow(int mouse_x, int mouse_y);
 bool            S_UI_TextEditHasFocus(void);
 
 /*###########################################################################*/
