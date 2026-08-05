@@ -55,6 +55,7 @@
 #include "region.h"
 #include "garrison.h"
 #include "automation.h"
+#include "group.h"
 #include "population.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
@@ -197,6 +198,7 @@ static void g_init_map(void)
     G_Region_Init(s_gs.map);
     G_Harvester_Init(s_gs.map);
     G_Automation_Init();
+    G_Group_Init();
     G_ClearPath_Init(s_gs.map);
     N_ClearState();
 }
@@ -962,6 +964,7 @@ static void g_clear_map_state(void)
         G_Region_Shutdown();
         G_Harvester_Shutdown();
         G_Automation_Shutdown();
+        G_Group_Shutdown();
         G_ClearPath_Shutdown();
         G_Pos_Shutdown();
         M_FoliageShutdown();
@@ -2534,6 +2537,7 @@ bool G_RemoveEntity(uint32_t uid)
     G_Population_RemoveContributor(uid);
     G_Population_RemoveLimitContributor(uid);
     G_Automation_RemoveEntity(uid);
+    G_Group_RemoveEntity(uid);
     G_Region_RemoveEnt(uid);
     G_Pos_Delete(uid);
     Entity_Remove(uid);
@@ -3147,6 +3151,7 @@ void G_Zombiefy(uint32_t uid, bool invis)
     G_Population_RemoveContributor(uid);
     G_Population_RemoveLimitContributor(uid);
     G_Automation_RemoveEntity(uid);
+    G_Group_RemoveEntity(uid);
 
     G_SetVisionRange(uid, 0.0f);
     G_Region_RemoveEnt(uid);
@@ -3713,6 +3718,9 @@ bool G_SaveEntityState(SDL_RWops *stream)
     if(!G_Automation_SaveState(stream))
         return false;
 
+    if(!G_Group_SaveState(stream))
+        return false;
+
     return true;
 }
 
@@ -3784,6 +3792,11 @@ bool G_LoadEntityState(SDL_RWops *stream)
 
     if(!G_Automation_LoadState(stream)) {
         fprintf(stderr, "Could not load automation state.\n");
+        return false;
+    }
+
+    if(!G_Group_LoadState(stream)) {
+        fprintf(stderr, "Could not load group state.\n");
         return false;
     }
 

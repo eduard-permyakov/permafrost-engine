@@ -291,6 +291,10 @@ static PyObject *PyPf_formation_arrange(PyObject *self, PyObject *args);
 static PyObject *PyPf_move_in_formation(PyObject *self, PyObject *args);
 static PyObject *PyPf_attack_in_formation(PyObject *self, PyObject *args);
 static PyObject *PyPf_formation_preferred_for_set(PyObject *self, PyObject *args);
+static PyObject *PyPf_group_lock(PyObject *self, PyObject *args);
+static PyObject *PyPf_group_unlock(PyObject *self, PyObject *args);
+static PyObject *PyPf_group_for_set(PyObject *self, PyObject *args);
+static PyObject *PyPf_group_members(PyObject *self, PyObject *args);
 static PyObject *PyPf_show_console(PyObject *self);
 static PyObject *PyPf_get_version_string(PyObject *self);
 
@@ -1024,6 +1028,25 @@ static PyMethodDef pf_module_methods[] = {
     {"formation_preferred_for_set",
     (PyCFunction)PyPf_formation_preferred_for_set, METH_VARARGS,
     "Returns the preferred formation type for the specified set of entities."},
+
+    {"group_lock",
+    (PyCFunction)PyPf_group_lock, METH_VARARGS,
+    "Lock the specified entities into a group. Selecting any unit of the group selects the "
+    "entire group. Returns the ID of the new group, or 0 on failure."},
+
+    {"group_unlock",
+    (PyCFunction)PyPf_group_unlock, METH_VARARGS,
+    "Disband the group with the specified ID, making its members individually selectable "
+    "once again."},
+
+    {"group_for_set",
+    (PyCFunction)PyPf_group_for_set, METH_VARARGS,
+    "Returns the ID of the locked group that all the entities in the specified list belong "
+    "to, or 0 if they do not all belong to the same group."},
+
+    {"group_members",
+    (PyCFunction)PyPf_group_members, METH_VARARGS,
+    "Returns a list of the entities locked to the group with the specified ID."},
 
     {"show_console",
     (PyCFunction)PyPf_show_console, METH_NOARGS,
@@ -3901,7 +3924,7 @@ static PyObject *PyPf_ents_in_circle(PyObject *self, PyObject *args, PyObject *k
         PyList_SET_ITEM(list, ninserted++, obj);
     }
 
-    if(ninserted == ninside || ninserted == 0)
+    if(ninserted == ninside)
         return list;
 
     PyObject *ret = PyList_GetSlice(list, 0, ninserted);
@@ -3953,7 +3976,7 @@ static PyObject *PyPf_ents_in_rect(PyObject *self, PyObject *args, PyObject *kwa
         PyList_SET_ITEM(list, ninserted++, obj);
     }
 
-    if(ninserted == ninside || ninserted == 0)
+    if(ninserted == ninside)
         return list;
 
     PyObject *ret = PyList_GetSlice(list, 0, ninserted);
@@ -4203,6 +4226,100 @@ static PyObject *PyPf_formation_preferred_for_set(PyObject *self, PyObject *args
     enum formation_type type = G_Formation_PreferredForSet(&ents);
     vec_entity_destroy(&ents);
     return PyInt_FromLong(type);
+}
+
+static bool s_uids_for_ent_list(PyObject *list, uint32_t *out, size_t *out_nents)
+{
+    size_t nents = 0;
+    for(int i = 0; i < PyList_GET_SIZE(list); i++) {
+        PyObject *obj = PyList_GET_ITEM(list, i);
+        if(!S_Entity_Check(obj)) {
+            PyErr_SetString(PyExc_TypeError, "Argument must a list of pf.Entity objects.");
+            return false;
+        }
+        uint32_t uid;
+        S_Entity_UIDForObj(obj, &uid);
+        if(!G_EntityExists(uid))
+            continue;
+        out[nents++] = uid;
+    }
+    *out_nents = nents;
+    return true;
+}
+
+static PyObject *PyPf_group_lock(PyObject *self, PyObject *args)
+{
+    PyObject *list;
+    if(!PyArg_ParseTuple(args, "O!", &PyList_Type, &list)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must a list object.");
+        return NULL;
+    }
+
+    STALLOC(uint32_t, ents, PyList_GET_SIZE(list));
+    size_t nents;
+    if(!s_uids_for_ent_list(list, ents, &nents))
+        return NULL;
+
+    return PyInt_FromLong(G_Group_Lock(ents, nents));
+}
+
+static PyObject *PyPf_group_unlock(PyObject *self, PyObject *args)
+{
+    int group_id;
+    if(!PyArg_ParseTuple(args, "i", &group_id)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer group ID.");
+        return NULL;
+    }
+    G_Group_Unlock(group_id);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_group_for_set(PyObject *self, PyObject *args)
+{
+    PyObject *list;
+    if(!PyArg_ParseTuple(args, "O!", &PyList_Type, &list)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must a list object.");
+        return NULL;
+    }
+
+    STALLOC(uint32_t, ents, PyList_GET_SIZE(list));
+    size_t nents;
+    if(!s_uids_for_ent_list(list, ents, &nents))
+        return NULL;
+
+    return PyInt_FromLong(G_Group_ForSet(ents, nents));
+}
+
+static PyObject *PyPf_group_members(PyObject *self, PyObject *args)
+{
+    int group_id;
+    if(!PyArg_ParseTuple(args, "i", &group_id)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer group ID.");
+        return NULL;
+    }
+
+    const vec_entity_t *members = G_Group_Members(group_id);
+    size_t nmembers = members ? vec_size(members) : 0;
+
+    PyObject *list = PyList_New(nmembers);
+    if(!list)
+        return NULL;
+
+    size_t ninserted = 0;
+    for(int i = 0; i < nmembers; i++) {
+        PyObject *obj = S_Entity_ObjForUID(vec_AT(members, i));
+        if(!obj)
+            continue;
+        Py_INCREF(obj);
+        PyList_SET_ITEM(list, ninserted++, obj);
+    }
+
+    if(ninserted == nmembers)
+        return list;
+
+    PyObject *ret = PyList_GetSlice(list, 0, ninserted);
+    Py_DECREF(list);
+    return ret;
 }
 
 static PyObject *PyPf_show_console(PyObject *self)
@@ -4683,8 +4800,10 @@ bool S_LoadState(SDL_RWops *stream)
     bool ret = false;
 
     PyObject *state = S_UnpickleObjgraph(stream);
-    if(!state)
+    if(!state) {
+        S_ShowLastError();
         return false;
+    }
 
     if(!PyTuple_Check(state) || (PyTuple_GET_SIZE(state) != 9))
         goto fail;

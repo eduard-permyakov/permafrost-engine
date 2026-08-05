@@ -263,6 +263,16 @@ const vec_entity_t   *G_Sel_Get(enum selection_type *out_type);
 uint32_t              G_Sel_GetHovered(void);
 void                  G_Sel_Set(uint32_t *ents, size_t nents);
 
+/*###########################################################################*/
+/* GAME GROUPS                                                               */
+/*###########################################################################*/
+
+int                   G_Group_Lock(const uint32_t *uids, size_t nuids);
+void                  G_Group_Unlock(int group_id);
+int                   G_Group_ForEnt(uint32_t uid);
+int                   G_Group_ForSet(const uint32_t *uids, size_t nuids);
+const vec_entity_t   *G_Group_Members(int group_id);
+
 
 /*###########################################################################*/
 /* GAME MOVEMENT                                                             */

@@ -458,20 +458,60 @@ static void sel_filter_and_set_type(void)
     sel_filter_buildings();
 }
 
+static void sel_remove_unit(uint32_t uid)
+{
+    int idx = vec_entity_indexof(&s_selected, uid, entities_equal);
+    if(idx != -1) {
+        vec_entity_del(&s_selected, idx);
+    }
+}
+
+static bool sel_group_member_selectable(uint32_t uid)
+{
+    if(!G_EntityExists(uid))
+        return false;
+    uint32_t flags = G_FlagsGet(uid);
+    if(!(flags & ENTITY_FLAG_SELECTABLE))
+        return false;
+    if(flags & ENTITY_FLAG_GARRISONED)
+        return false;
+    return true;
+}
+
+/* Selecting a unit locked to a group selects the entire group. Group members
+ * bypass the mouse picking so they must be re-validated here.
+ */
 static void sel_process_unit(uint32_t uid)
 {
-    if(sel_shift_pressed()) {
-        int idx = vec_entity_indexof(&s_selected, uid, entities_equal);
-        if(idx == -1) {
-            vec_entity_push(&s_selected, uid);
-        }
-    }else if(sel_ctrl_pressed()) {
-        int idx = vec_entity_indexof(&s_selected, uid, entities_equal);
-        if(idx != -1) {
-            vec_entity_del(&s_selected, idx);
+    const vec_entity_t *group = NULL;
+    int gid = G_Group_ForEnt(uid);
+    if(gid) {
+        group = G_Group_Members(gid);
+    }
+
+    if(sel_ctrl_pressed()) {
+        sel_remove_unit(uid);
+        if(group) {
+            for(int i = 0; i < vec_size(group); i++) {
+                sel_remove_unit(vec_AT(group, i));
+            }
         }
     }else{
+        if(vec_entity_indexof(&s_selected, uid, entities_equal) != -1)
+            return;
         vec_entity_push(&s_selected, uid);
+        if(group) {
+            for(int i = 0; i < vec_size(group); i++) {
+                uint32_t curr = vec_AT(group, i);
+                if(curr == uid)
+                    continue;
+                if(!sel_group_member_selectable(curr))
+                    continue;
+                if(vec_entity_indexof(&s_selected, curr, entities_equal) == -1) {
+                    vec_entity_push(&s_selected, curr);
+                }
+            }
+        }
     }
 }
 

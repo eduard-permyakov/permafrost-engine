@@ -473,6 +473,7 @@ const char *Mem_SubName(uint16_t sys, uint16_t sub)
         [MEM_SUB_GAME_FOG_OF_WAR]   = "fog_of_war",
         [MEM_SUB_GAME_FORMATION]    = "formation",
         [MEM_SUB_GAME_GARRISON]     = "garrison",
+        [MEM_SUB_GAME_GROUP]        = "group",
         [MEM_SUB_GAME_HARVESTER]    = "harvester",
         [MEM_SUB_GAME_MOVEMENT]     = "movement",
         [MEM_SUB_GAME_POPULATION]   = "population",
