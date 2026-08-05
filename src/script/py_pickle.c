@@ -7109,34 +7109,26 @@ static int op_ext_bi_method(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
     PyTypeObject *tp_type = (PyTypeObject*)type;
     PyMethodDef *found = NULL;
-    for(PyMethodDef *curr = tp_type->tp_methods; curr && curr->ml_name; curr++) {
-    
-        if(0 == strcmp(curr->ml_name, PyString_AS_STRING(name))) {
-            found = curr; 
-            break;
-        }
-    }
 
-    PyObject *bases;
-    if(!found && (bases = tp_type->tp_bases)) {
+    /* Walk the full MRO so that methods of C base types are found even
+     * when the instance's class is multiple inheritance levels removed.
+     */
+    PyObject *mro = tp_type->tp_mro;
+    assert(!mro || PyTuple_Check(mro));
 
-        assert(PyTuple_Check(bases));
+    for(int i = 0; !found && mro && i < PyTuple_GET_SIZE(mro); i++) {
 
-        for(int i = 0; i < PyTuple_GET_SIZE(bases); i++) {
+        PyTypeObject *base = (PyTypeObject*)PyTuple_GET_ITEM(mro, i);
+        assert(PyType_Check((PyObject*)base));
 
-            tp_type = (PyTypeObject*)PyTuple_GET_ITEM(bases, i);
-            assert(PyType_Check(tp_type));
+        for(PyMethodDef *curr = base->tp_methods; curr && curr->ml_name; curr++) {
 
-            for(PyMethodDef *curr = tp_type->tp_methods; curr && curr->ml_name; curr++) {
-            
-                if(0 == strcmp(curr->ml_name, PyString_AS_STRING(name))) {
-                    found = curr; 
-                    goto done;
-                }
+            if(0 == strcmp(curr->ml_name, PyString_AS_STRING(name))) {
+                found = curr;
+                break;
             }
         }
     }
-done:
 
     if(!found) {
         SET_RUNTIME_EXC("Could not find method (%s) of type (%s)",
