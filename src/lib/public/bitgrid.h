@@ -44,9 +44,6 @@
  * uint64 words and stored row-major with each row aligned to a word boundary.
  * Use it when you need an O(1) "is cell (x, y) in the set" test over a fixed
  * grid (occupancy masks, dilated regions, dirty-cell tracking, ...).
- *
- * This is distinct from bitmap_grid.h, which is a spatial index for point
- * entities; here the bits themselves are the payload.
  */
 struct bitgrid{
     int       width;      /* cells along x: valid x in [0, width)  */
