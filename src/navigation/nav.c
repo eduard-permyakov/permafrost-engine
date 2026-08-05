@@ -1044,6 +1044,7 @@ static void n_update_blockers(struct nav_private *priv, enum nav_layer layer, in
             assert(ret != -1);
 
             priv->local_islands_dirty[layer] = true;
+            priv->edge_states_dirty[layer] = true;
         }
     }
 }
@@ -1784,7 +1785,10 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
     (void)result;
 
     n_update_dirty_local_islands(nav_private, layer);
-    n_update_all_edge_states(nav_private, layer);
+    if(priv->edge_states_dirty[layer]) {
+        n_update_all_edge_states(priv, layer);
+        priv->edge_states_dirty[layer] = false;
+    }
 
     /* Convert source and destination positions to tile coordinates */
     struct tile_desc src_desc, dst_desc;
@@ -2257,6 +2261,7 @@ bool N_InitCtx(void *nav_private)
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
         if((priv->dirty_chunks[i] = kh_init(coord)) == NULL)
             goto fail_alloc;
+        priv->edge_states_dirty[i] = true;
     }
     return true;
 
@@ -2272,6 +2277,7 @@ void N_ClearCtx(void *nav_private)
 
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
         priv->local_islands_dirty[i] = false;
+        priv->edge_states_dirty[i] = true;
         kh_clear(coord, priv->dirty_chunks[i]);
     }
 
@@ -3343,13 +3349,16 @@ void N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *o
             priv->chunks[layer][IDX(tds[i].chunk_r, priv->width, tds[i].chunk_c)]
                 .cost_base[tds[i].tile_r][tds[i].tile_c] = COST_IMPASSABLE;
         }
+        priv->edge_states_dirty[layer] = true;
     }
 }
 
 void N_UpdatePortals(void *nav_private)
 {
+    struct nav_private *priv = nav_private;
     for(int layer = 0; layer < NAV_LAYER_MAX; layer++) {
-        n_update_portals(nav_private, layer);
+        n_update_portals(priv, layer);
+        priv->edge_states_dirty[layer] = true;
     }
     /* Portal rebuild touches the whole map; commit it all to the canonical. */
     N_PublishLive(nav_private);

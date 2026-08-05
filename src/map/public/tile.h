@@ -175,10 +175,42 @@ float      M_Tile_HeightAtPos(const struct tile *tile, float frac_width, float f
 
 struct box M_Tile_Bounds(struct map_resolution res, vec3_t map_pos, struct tile_desc desc);
 struct box M_Tile_ChunkBounds(struct map_resolution res, vec3_t map_pos, int chunk_r, int chunk_c);
-bool       M_Tile_RelativeDesc(struct map_resolution res, struct tile_desc *inout, 
-                               int tile_dc, int tile_dr);
-void       M_Tile_Distance(struct map_resolution res, struct tile_desc *a, struct tile_desc *b, 
-                           int *out_r, int *out_c);
+
+/* Defined inline: these run in the inner loops of the field flood fills. */
+static inline bool M_Tile_RelativeDesc(struct map_resolution res, struct tile_desc *inout,
+                                       int tile_dc, int tile_dr)
+{
+    int abs_r = inout->chunk_r * res.tile_h + inout->tile_r + tile_dr;
+    int abs_c = inout->chunk_c * res.tile_w + inout->tile_c + tile_dc;
+
+    int max_r = res.chunk_h * res.tile_h;
+    int max_c = res.chunk_w * res.tile_w;
+
+    if(abs_r < 0 || abs_r >= max_r)
+        return false;
+    if(abs_c < 0 || abs_c >= max_c)
+        return false;
+
+    *inout = (struct tile_desc) {
+        abs_r / res.tile_h,
+        abs_c / res.tile_w,
+        abs_r % res.tile_h,
+        abs_c % res.tile_w,
+    };
+    return true;
+}
+
+static inline void M_Tile_Distance(struct map_resolution res, struct tile_desc *a,
+                                   struct tile_desc *b, int *out_r, int *out_c)
+{
+    int a_abs_r = a->chunk_r * res.tile_h + a->tile_r;
+    int a_abs_c = a->chunk_c * res.tile_w + a->tile_c;
+    int b_abs_r = b->chunk_r * res.tile_h + b->tile_r;
+    int b_abs_c = b->chunk_c * res.tile_w + b->tile_c;
+
+    *out_r = b_abs_r - a_abs_r;
+    *out_c = b_abs_c - a_abs_c;
+}
 
 /* Fills 'out' with a list of tile descriptors which are intersected by the 2D line 
  * segment. The descriptors will be in the order they are intersected by the line

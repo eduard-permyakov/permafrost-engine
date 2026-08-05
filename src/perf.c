@@ -180,6 +180,7 @@ static struct gpu_frame_stats s_gpu_frame_stats[NFRAMES_LOGGED];
 static struct nav_tick_sample s_nav_tick_hist[PERF_NAV_TICK_HISTORY];
 static size_t                 s_nav_tick_head;
 static size_t                 s_nav_tick_count;
+static uint32_t               s_nav_tick_seq;
 static SDL_atomic_t           s_nav_parallel_us;
 
 /*****************************************************************************/
@@ -910,12 +911,11 @@ void Perf_GetGpuFrameStats(struct gpu_frame_stats *out)
     *out = s_gpu_frame_stats[read_idx];
 }
 
-void Perf_RecordNavTick(uint32_t dur_us, uint32_t serial_us, uint32_t total_us,
-                        uint32_t nwork, uint32_t budget_us)
+void Perf_RecordNavTick(const struct nav_tick_sample *sample)
 {
     ASSERT_IN_MAIN_THREAD();
-    s_nav_tick_hist[s_nav_tick_head] = (struct nav_tick_sample){
-        dur_us, serial_us, total_us, nwork, budget_us};
+    s_nav_tick_hist[s_nav_tick_head] = *sample;
+    s_nav_tick_hist[s_nav_tick_head].tick = s_nav_tick_seq++;
     s_nav_tick_head = (s_nav_tick_head + 1) % PERF_NAV_TICK_HISTORY;
     if(s_nav_tick_count < PERF_NAV_TICK_HISTORY)
         s_nav_tick_count++;

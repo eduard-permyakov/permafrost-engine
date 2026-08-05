@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2019-2023 Eduard Permyakov 
+ *  Copyright (C) 2019-2026 Eduard Permyakov
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -45,6 +45,8 @@
 #define MEM_FILE_SUB MEM_SUB_GAME_CLEARPATH
 
 #include "clearpath.h"
+#include "../lib/public/vec.h"
+#include "../lib/public/simd.h"
 #include "public/game.h"
 #include "movement.h"
 #include "game_private.h"
@@ -120,41 +122,67 @@ static struct saved_ctx s_debug_saved;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
+/* Local inline vec2 helpers: the solve runs up to n_rays^2 * n_rays inner
+ * iterations per unit, where the out-of-line PFM_Vec2 calls and their
+ * double-precision sqrt dominate. */
+static inline float cp_dot(vec2_t a, vec2_t b)   { return a.x * b.x + a.y * b.y; }
+static inline vec2_t cp_add(vec2_t a, vec2_t b)  { return (vec2_t){a.x + b.x, a.y + b.y}; }
+static inline vec2_t cp_sub(vec2_t a, vec2_t b)  { return (vec2_t){a.x - b.x, a.y - b.y}; }
+static inline vec2_t cp_scale(vec2_t a, float s) { return (vec2_t){a.x * s, a.y * s}; }
+static inline float cp_len2(vec2_t a)            { return a.x * a.x + a.y * a.y; }
+
+static inline vec2_t cp_norm(vec2_t a)
+{
+    float len = sqrtf(cp_len2(a));
+    return (vec2_t){a.x / len, a.y / len};
+}
+
 static bool same_position(vec2_t a, vec2_t b)
 {
-    vec2_t delta;
-    PFM_Vec2_Sub(&b, &a, &delta);
-    return (PFM_Vec2_Len(&delta) < EPSILON);
+    return cp_len2(cp_sub(b, a)) < (float)(EPSILON * EPSILON);
+}
+
+/* Determinant-form ray/ray intersection. Unlike the slope-form
+ * C_RayRayIntersection2D, the |det| parallel test rejects near-parallel steep
+ * pairs whose far-away spurious intersections the slope-difference test
+ * admits, and axis-aligned rays follow the intended geometry instead of the
+ * NaN fall-throughs. Verified against the reference in bench/clearpath. */
+static inline bool cp_ray_ray_isec(struct line_2d a, struct line_2d b, vec2_t *out)
+{
+    float det = a.dir.x * b.dir.z - a.dir.z * b.dir.x;
+    if(fabsf(det) < EPSILON)
+        return false;
+
+    vec2_t d = cp_sub(b.point, a.point);
+    float t = (d.x * b.dir.z - d.z * b.dir.x) / det;
+    float s = (d.x * a.dir.z - d.z * a.dir.x) / det;
+    if(t < 0.0f || s < 0.0f)
+        return false;
+
+    out->x = a.point.x + t * a.dir.x;
+    out->z = a.point.z + t * a.dir.z;
+    return true;
 }
 
 static void compute_vo_edges(struct cp_ent ent, struct cp_ent neighb,
                              vec2_t *out_xz_right, vec2_t *out_xz_left)
 {
-    vec2_t ent_to_nb, right;
-    PFM_Vec2_Sub(&neighb.xz_pos, &ent.xz_pos, &ent_to_nb);
-    PFM_Vec2_Normal(&ent_to_nb, &ent_to_nb);
+    vec2_t ent_to_nb = cp_norm(cp_sub(neighb.xz_pos, ent.xz_pos));
+    vec2_t right = cp_scale((vec2_t){-ent_to_nb.z, ent_to_nb.x},
+        neighb.radius + ent.radius + CLEARPATH_BUFFER_RADIUS);
 
-    right = (vec2_t){-ent_to_nb.z, ent_to_nb.x};
-    PFM_Vec2_Scale(&right, neighb.radius + ent.radius + CLEARPATH_BUFFER_RADIUS, &right);
+    vec2_t right_tangent = cp_add(neighb.xz_pos, right);
+    vec2_t left_tangent = cp_sub(neighb.xz_pos, right);
 
-    vec2_t right_tangent, left_tangent;
-    PFM_Vec2_Add(&neighb.xz_pos, &right, &right_tangent);
-    PFM_Vec2_Sub(&neighb.xz_pos, &right, &left_tangent);
-
-    PFM_Vec2_Sub(&right_tangent, &ent.xz_pos, out_xz_right);
-    PFM_Vec2_Normal(out_xz_right, out_xz_right);
-    assert(fabs(PFM_Vec2_Len(out_xz_right) - 1.0f) < EPSILON);
-
-    PFM_Vec2_Sub(&left_tangent, &ent.xz_pos, out_xz_left);
-    PFM_Vec2_Normal(out_xz_left, out_xz_left);
-    assert(fabs(PFM_Vec2_Len(out_xz_left) - 1.0f) < EPSILON);
+    *out_xz_right = cp_norm(cp_sub(right_tangent, ent.xz_pos));
+    *out_xz_left = cp_norm(cp_sub(left_tangent, ent.xz_pos));
 }
 
 static struct VO compute_vo(struct cp_ent ent, struct cp_ent neighb)
 {
     struct VO ret;
     compute_vo_edges(ent, neighb, &ret.xz_right_side, &ret.xz_left_side);
-    PFM_Vec2_Add(&ent.xz_pos, &neighb.xz_vel, &ret.xz_apex);
+    ret.xz_apex = cp_add(ent.xz_pos, neighb.xz_vel);
     return ret;
 }
 
@@ -162,12 +190,7 @@ static struct RVO compute_rvo(struct cp_ent ent, struct cp_ent neighb)
 {
     struct RVO ret;
     compute_vo_edges(ent, neighb, &ret.xz_right_side, &ret.xz_left_side);
-
-    vec2_t apex_off;
-    PFM_Vec2_Add(&ent.xz_vel, &neighb.xz_vel, &apex_off);
-    PFM_Vec2_Scale(&apex_off, 0.5f, &apex_off);
-    PFM_Vec2_Add(&ent.xz_pos, &apex_off, &ret.xz_apex);
-
+    ret.xz_apex = cp_add(ent.xz_pos, cp_scale(cp_add(ent.xz_vel, neighb.xz_vel), 0.5f));
     return ret;
 }
 
@@ -178,11 +201,8 @@ static struct HRVO compute_hrvo(struct cp_ent ent, struct cp_ent neighb)
     struct line_2d l1, l2;
     vec2_t intersec_point;
 
-    vec2_t centerline;
-    PFM_Vec2_Add(&rvo.xz_left_side, &rvo.xz_right_side, &centerline);
-
-    vec2_t vo_apex;
-    PFM_Vec2_Add(&ent.xz_pos, &neighb.xz_vel, &vo_apex);
+    vec2_t centerline = cp_add(rvo.xz_left_side, rvo.xz_right_side);
+    vec2_t vo_apex = cp_add(ent.xz_pos, neighb.xz_vel);
 
     float det = (centerline.x * ent.xz_vel.y) - (centerline.y * ent.xz_vel.x);
     if(det > EPSILON) { /* the entity velocity is left of the RVO centerline */
@@ -213,80 +233,34 @@ static struct HRVO compute_hrvo(struct cp_ent ent, struct cp_ent neighb)
     return ret;
 }
 
-static size_t compute_all_vos(struct cp_ent ent, vec_cp_ent_t stat_neighbs, 
-                              struct VO *out)
+static size_t compute_all_vos(struct cp_ent ent, const struct cp_ent *stat_neighbs,
+                              size_t nstat, struct VO *out)
 {
-    size_t ret = 0; 
+    size_t ret = 0;
 
-    for(struct cp_ent *nb = stat_neighbs.array; 
-        nb < stat_neighbs.array + vec_size(&stat_neighbs); nb++) {
+    for(size_t i = 0; i < nstat; i++) {
 
-        if(same_position(ent.xz_pos, nb->xz_pos))
+        if(same_position(ent.xz_pos, stat_neighbs[i].xz_pos))
             continue;
-        out[ret++] = compute_vo(ent, *nb);
+        out[ret++] = compute_vo(ent, stat_neighbs[i]);
     }
 
     return ret;
 }
 
-static size_t compute_all_hrvos(struct cp_ent ent, vec_cp_ent_t dyn_neighbs, 
-                                struct HRVO *out)
+static size_t compute_all_hrvos(struct cp_ent ent, const struct cp_ent *dyn_neighbs,
+                                size_t ndyn, struct HRVO *out)
 {
-    size_t ret = 0; 
+    size_t ret = 0;
 
-    for(int i = 0; i < vec_size(&dyn_neighbs); i++) {
+    for(size_t i = 0; i < ndyn; i++) {
 
-        struct cp_ent *nb = &vec_AT(&dyn_neighbs, i);
-        if(same_position(ent.xz_pos, nb->xz_pos))
+        if(same_position(ent.xz_pos, dyn_neighbs[i].xz_pos))
             continue;
-        out[ret++] = compute_hrvo(ent, *nb);
+        out[ret++] = compute_hrvo(ent, dyn_neighbs[i]);
     }
 
     return ret;
-}
-
-/* Points exactly 'on' the boundary will be considered as 'not inside' of the PCR for our purposes. */
-static bool inside_pcr(const struct line_2d *vo_lr_pairs, size_t n_rays, vec2_t test)
-{
-    assert(n_rays % 2 == 0);
-    for(int i = 0; i < n_rays; i+=2) {
-
-        assert(fabs(PFM_Vec2_Len(&vo_lr_pairs[i + 0].dir) - 1.0f) < EPSILON);
-        const float left_dir_x = vo_lr_pairs[i + 0].dir.x;
-        const float left_dir_z = vo_lr_pairs[i + 0].dir.z;
-
-        vec2_t point_to_test;
-        PFM_Vec2_Sub(&test, (vec2_t*)&vo_lr_pairs[i + 0].point, &point_to_test);
-        if(PFM_Vec2_Len(&point_to_test) < EPSILON)
-            continue;
-        PFM_Vec2_Normal(&point_to_test, &point_to_test);
-
-        float left_det = (point_to_test.z * left_dir_x) - (point_to_test.x * left_dir_z);
-        bool left_of_vo = (left_det < EPSILON);
-
-        if(left_of_vo)
-            continue;
-
-        assert(fabs(PFM_Vec2_Len(&vo_lr_pairs[i + 1].dir) - 1.0f) < EPSILON);
-        const float right_dir_x = vo_lr_pairs[i + 1].dir.x;
-        const float right_dir_z = vo_lr_pairs[i + 1].dir.z;
-
-        PFM_Vec2_Sub(&test, (vec2_t*)&vo_lr_pairs[i + 1].point, &point_to_test);
-        if(PFM_Vec2_Len(&point_to_test) < EPSILON)
-            continue;
-        PFM_Vec2_Normal(&point_to_test, &point_to_test);
-
-        float right_det = (point_to_test.z * right_dir_x) - (point_to_test.x * right_dir_z);
-        bool right_of_vo = (right_det > -EPSILON);
-
-        if(right_of_vo)
-            continue;
-
-        assert(!left_of_vo && !right_of_vo);
-        return true;
-    }
-
-    return false;
 }
 
 static void rays_repr(const struct HRVO *hrvos, size_t n_hrvos,
@@ -318,102 +292,162 @@ static void rays_repr(const struct HRVO *hrvos, size_t n_hrvos,
     }
 }
 
-static size_t compute_vo_xpoints(struct line_2d *rays, size_t n_rays, vec_vec2_t *inout)
+/* One lane per VO (32 dynamic + 32 static neighbours max), rounded up to a
+ * whole number of 8-lane groups. */
+#define MAX_SOA_VOS (72)
+
+/* SoA mirror of the VO ray pairs, one lane per VO, tail-padded with sentinel
+ * VOs whose left test always fails ("outside"). */
+struct rays_soa{
+    float apex_x[MAX_SOA_VOS], apex_z[MAX_SOA_VOS];
+    float ldir_x[MAX_SOA_VOS], ldir_z[MAX_SOA_VOS];
+    float rdir_x[MAX_SOA_VOS], rdir_z[MAX_SOA_VOS];
+    size_t nvos;
+};
+
+static void rays_soa_repr(const struct line_2d *rays, size_t n_rays, struct rays_soa *out)
 {
-    size_t ret = 0;
-    for(int i = 0; i < n_rays; i++) {
-    for(int j = 0; j < n_rays; j++) {
-
-        if(i == j) 
-            continue;
-
-        vec2_t isec_point;
-        if(!C_RayRayIntersection2D(rays[i], rays[j], &isec_point))
-            continue;
-
-        if(inside_pcr(rays, n_rays, isec_point))
-            continue;
-
-        vec_vec2_push(inout, isec_point);
-        ret++;
-    }}
-
-    return ret;
+    size_t nvos = n_rays / 2;
+    assert(nvos + 8 <= MAX_SOA_VOS);
+    out->nvos = nvos;
+    for(size_t i = 0; i < nvos; i++) {
+        out->apex_x[i] = rays[2*i + 0].point.x;
+        out->apex_z[i] = rays[2*i + 0].point.z;
+        out->ldir_x[i] = rays[2*i + 0].dir.x;
+        out->ldir_z[i] = rays[2*i + 0].dir.z;
+        out->rdir_x[i] = rays[2*i + 1].dir.x;
+        out->rdir_z[i] = rays[2*i + 1].dir.z;
+    }
+    size_t npad = (nvos + 7) & ~7ull;
+    for(size_t i = nvos; i < npad; i++) {
+        out->apex_x[i] = 0.0f;
+        out->apex_z[i] = 0.0f;
+        out->ldir_x[i] = 0.0f;
+        out->ldir_z[i] = 0.0f;
+        out->rdir_x[i] = 0.0f;
+        out->rdir_z[i] = 0.0f;
+    }
 }
 
-static size_t compute_vdes_proj_points(struct line_2d *rays, size_t n_rays,
-                                       vec2_t des_v, vec_vec2_t *inout)
+/* Points exactly 'on' the boundary will be considered as 'not inside' of the PCR for our purposes.
+ * The VO's two rays share an apex, so one subtraction serves both sign tests; comparing the raw
+ * determinant against EPSILON * |d| preserves the normalized-compare boundary without the two
+ * normalizations. */
+static bool inside_pcr_scalar(const struct rays_soa *soa, vec2_t test)
 {
-    vec2_t proj;
-    size_t ret = 0;
+    for(size_t i = 0; i < soa->nvos; i++) {
 
-    for(int i = 0; i < n_rays; i++) {
-    
-        assert(fabs(PFM_Vec2_Len(&rays[i].dir) - 1.0f) < EPSILON);
+        vec2_t d = cp_sub(test, (vec2_t){soa->apex_x[i], soa->apex_z[i]});
+        float len2 = cp_len2(d);
+        if(len2 < (float)(EPSILON * EPSILON))
+            continue;
+        float eps_len = (float)EPSILON * sqrtf(len2);
 
-        float len = PFM_Vec2_Dot(&rays[i].dir, &des_v);
-        PFM_Vec2_Scale(&rays[i].dir, len, &proj);
-        PFM_Vec2_Add(&rays[i].point, &proj, &proj);
+        float left_det = (d.z * soa->ldir_x[i]) - (d.x * soa->ldir_z[i]);
+        if(left_det < eps_len)
+            continue;
 
-        if(!inside_pcr(rays, n_rays, proj)) {
-        
-            vec_vec2_push(inout, proj);
-            ret++;
-        }
+        float right_det = (d.z * soa->rdir_x[i]) - (d.x * soa->rdir_z[i]);
+        if(right_det > -eps_len)
+            continue;
+
+        return true;
     }
 
-    return ret;
+    return false;
 }
 
-static vec2_t compute_vnew(const vec_vec2_t *outside_points, vec2_t des_v, vec2_t ent_xz_pos)
+/* 8-wide inside_pcr over the SoA rays. The sign tests compare det against
+ * EPSILON * |d| like the scalar form, expressed sqrt-free as
+ * (det > 0) && (det^2 >= EPS^2 * len2). */
+SIMD_TARGET_AVX2
+static bool inside_pcr_avx2(const struct rays_soa *soa, vec2_t test)
 {
-    float min_dist = INFINITY, len;
-    vec2_t ret = (vec2_t){0.0f, 0.0f};
+    const __m256 eps2 = _mm256_set1_ps((float)(EPSILON * EPSILON));
+    const __m256 tx = _mm256_set1_ps(test.x);
+    const __m256 tz = _mm256_set1_ps(test.z);
+    const __m256 zero = _mm256_setzero_ps();
 
-    for(int i = 0; i < vec_size(outside_points); i++) {
+    size_t npad = (soa->nvos + 7) & ~7ull;
+    for(size_t i = 0; i < npad; i += 8) {
 
-        /* The points are in worldspace coordinates. Convert them to the entity's 
-         * local space to get the admissible velocities. */
-        vec2_t curr = vec_AT(outside_points, i), diff;
-        PFM_Vec2_Sub(&curr, &ent_xz_pos, &curr);
+        __m256 dx = _mm256_sub_ps(tx, _mm256_loadu_ps(&soa->apex_x[i]));
+        __m256 dz = _mm256_sub_ps(tz, _mm256_loadu_ps(&soa->apex_z[i]));
+        __m256 len2 = _mm256_add_ps(_mm256_mul_ps(dx, dx), _mm256_mul_ps(dz, dz));
+        __m256 eps2_len2 = _mm256_mul_ps(eps2, len2);
 
-        PFM_Vec2_Sub(&des_v, &curr, &diff);
-        if((len = PFM_Vec2_Len(&diff)) < min_dist) {
+        __m256 ldet = _mm256_sub_ps(
+            _mm256_mul_ps(dz, _mm256_loadu_ps(&soa->ldir_x[i])),
+            _mm256_mul_ps(dx, _mm256_loadu_ps(&soa->ldir_z[i])));
+        __m256 rdet = _mm256_sub_ps(
+            _mm256_mul_ps(dz, _mm256_loadu_ps(&soa->rdir_x[i])),
+            _mm256_mul_ps(dx, _mm256_loadu_ps(&soa->rdir_z[i])));
 
-            min_dist = len;
-            ret = curr;
-        }
+        __m256 valid = _mm256_cmp_ps(len2, eps2, _CMP_GE_OQ);
+        __m256 lpos = _mm256_and_ps(
+            _mm256_cmp_ps(ldet, zero, _CMP_GT_OQ),
+            _mm256_cmp_ps(_mm256_mul_ps(ldet, ldet), eps2_len2, _CMP_GE_OQ));
+        __m256 rneg = _mm256_and_ps(
+            _mm256_cmp_ps(rdet, zero, _CMP_LT_OQ),
+            _mm256_cmp_ps(_mm256_mul_ps(rdet, rdet), eps2_len2, _CMP_GE_OQ));
+
+        __m256 inside = _mm256_and_ps(valid, _mm256_and_ps(lpos, rneg));
+        if(_mm256_movemask_ps(inside))
+            return true;
     }
-    return ret;
+    return false;
 }
 
-static void remove_furthest(vec2_t xz_pos, vec_cp_ent_t *dyn_inout, vec_cp_ent_t *stat_inout)
+/* Set at init to the widest supported PCR-containment kernel. */
+static bool (*s_inside_pcr)(const struct rays_soa *soa, vec2_t test) = inside_pcr_scalar;
+
+/* Running-min candidate accumulator: replaces the heap candidate vector and
+ * the final full-scan selection. Candidates are worldspace points; the stored
+ * velocity is the point converted to the entity's local space. */
+struct vnew_min{
+    float  min_dist2;
+    vec2_t vnew;
+    bool   any;
+};
+
+static inline void vnew_consider(struct vnew_min *m, vec2_t cand_ws,
+                                 vec2_t des_v_ws, vec2_t ent_xz_pos)
 {
-    float max_dist = -INFINITY;
-    vec_cp_ent_t *del_vec = NULL;
+    float dist2 = cp_len2(cp_sub(des_v_ws, cand_ws));
+    if(dist2 < m->min_dist2) {
+        m->min_dist2 = dist2;
+        m->vnew = cp_sub(cand_ws, ent_xz_pos);
+        m->any = true;
+    }
+}
+
+static void remove_furthest(vec2_t xz_pos, struct cp_ent *dyn, size_t *ndyn,
+                            struct cp_ent *stat, size_t *nstat)
+{
+    float max_dist2 = -INFINITY;
+    struct cp_ent *del_arr = NULL;
+    size_t *del_count = NULL;
     int del_idx = -1;
 
     for(int i = 0; i < 2; i++) {
-    
-        vec_cp_ent_t *curr_vec = (i == 0) ? dyn_inout : stat_inout;
-        for(int j = 0; j < vec_size(curr_vec); j++) {
-        
-            float len;
-            vec2_t diff;
-            struct cp_ent *ent = &vec_AT(curr_vec, j);
 
-            PFM_Vec2_Sub(&xz_pos, &ent->xz_pos, &diff);
-            if((len = PFM_Vec2_Len(&diff)) > max_dist) {
-                max_dist = len; 
-                del_vec = curr_vec;
-                del_idx = j;
+        struct cp_ent *arr = (i == 0) ? dyn : stat;
+        size_t count = (i == 0) ? *ndyn : *nstat;
+        for(size_t j = 0; j < count; j++) {
+
+            float len2 = cp_len2(cp_sub(xz_pos, arr[j].xz_pos));
+            if(len2 > max_dist2) {
+                max_dist2 = len2;
+                del_arr = arr;
+                del_count = (i == 0) ? ndyn : nstat;
+                del_idx = (int)j;
             }
         }
     }
 
-    if(max_dist > -INFINITY) {
+    if(max_dist2 > -INFINITY) {
         assert(del_idx != -1);
-        vec_cp_ent_del(del_vec, del_idx);
+        del_arr[del_idx] = del_arr[--(*del_count)];
     }
 }
 
@@ -550,33 +584,37 @@ static void on_render_3d(void *user, void *event)
 }
 
 static bool clearpath_new_velocity(struct cp_ent cpent,
-                                   uint32_t ent_uid,
                                    vec2_t ent_des_v,
-                                   const vec_cp_ent_t dyn_neighbs,
-                                   const vec_cp_ent_t stat_neighbs,
+                                   const struct cp_ent *dyn_neighbs,
+                                   size_t ndyn,
+                                   const struct cp_ent *stat_neighbs,
+                                   size_t nstat,
                                    bool save_debug,
                                    vec2_t *out)
 {
     bool status = false;
-    STALLOC(struct HRVO, dyn_hrvos, vec_size(&dyn_neighbs));
-    STALLOC(struct VO, stat_vos, vec_size(&stat_neighbs));
+    STALLOC(struct HRVO, dyn_hrvos, ndyn);
+    STALLOC(struct VO, stat_vos, nstat);
 
-    size_t n_hrvos = compute_all_hrvos(cpent, dyn_neighbs, dyn_hrvos);
-    size_t n_vos = compute_all_vos(cpent, stat_neighbs, (struct VO*)stat_vos);
+    size_t n_hrvos = compute_all_hrvos(cpent, dyn_neighbs, ndyn, dyn_hrvos);
+    size_t n_vos = compute_all_vos(cpent, stat_neighbs, nstat, stat_vos);
 
-    /* We may have skipped the neighbours that are at the exact same 
+    /* We may have skipped the neighbours that are at the exact same
      * or nearly same position as the entity.
      */
-    assert(n_hrvos <= vec_size(&dyn_neighbs));
-    assert(n_vos <= vec_size(&stat_neighbs));
+    assert(n_hrvos <= ndyn);
+    assert(n_vos <= nstat);
 
-    /* Following the ClearPath approach, which is applicable to many variations 
-     * of velocity obstacles, we represent the combined hybrid reciprocal velocity 
-     * obstacle as a union of line segments. 
+    /* Following the ClearPath approach, which is applicable to many variations
+     * of velocity obstacles, we represent the combined hybrid reciprocal velocity
+     * obstacle as a union of line segments.
      */
     const size_t n_rays = (n_hrvos + n_vos) * 2;
     STALLOC(struct line_2d, rays, n_rays);
     rays_repr(dyn_hrvos, n_hrvos, stat_vos, n_vos, rays);
+
+    struct rays_soa soa;
+    rays_soa_repr(rays, n_rays, &soa);
 
     if(save_debug) {
 
@@ -596,50 +634,65 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
         s_debug_saved.valid = true;
     }
 
-    vec2_t des_v_ws;
-    PFM_Vec2_Add(&cpent.xz_pos, &ent_des_v, &des_v_ws);
+    vec2_t des_v_ws = cp_add(cpent.xz_pos, ent_des_v);
 
-    if(!inside_pcr(rays, n_rays, des_v_ws)) {
+    if(!s_inside_pcr(&soa, des_v_ws)) {
 
-        s_debug_saved.des_v_in_pcr = false;
+        if(save_debug)
+            s_debug_saved.des_v_in_pcr = false;
         *out = ent_des_v;
         status = true;
         goto out;
     }
 
-    vec_vec2_t xpoints;
-    vec_vec2_init(&xpoints);
-
-    /* The line segments are intersected pairwise and the intersection points 
-     * inside the combined hybrid reciprocal velocity obstacle are discarded. 
-     * The remaining intersection points are permissible new velocities on the 
-     * boundary of the combined hybrid reciprocal velocity obstacle.
+    /* The line segments are intersected pairwise and the intersection points
+     * inside the combined hybrid reciprocal velocity obstacle are discarded.
+     * The remaining intersection points are permissible new velocities on the
+     * boundary of the combined hybrid reciprocal velocity obstacle. Of those,
+     * only the one closest to the preferred velocity is kept.
      */
-    compute_vo_xpoints(rays, n_rays, &xpoints); 
+    struct vnew_min m = {INFINITY, {0.0f, 0.0f}, false};
 
-    /* In addition we project the preferred velocity (des_v) on to the line 
-     * segments (xz_left_side and xz_right_side of each hrvo) and also retain 
-     * those points that are outside the combined hybrid reciprocal velocity 
+    for(size_t i = 0; i < n_rays; i++) {
+    for(size_t j = i + 1; j < n_rays; j++) {
+
+        vec2_t isec_point;
+        if(!cp_ray_ray_isec(rays[i], rays[j], &isec_point))
+            continue;
+        if(s_inside_pcr(&soa, isec_point))
+            continue;
+
+        vnew_consider(&m, isec_point, des_v_ws, cpent.xz_pos);
+        if(save_debug)
+            vec_vec2_push(&s_debug_saved.xpoints, isec_point);
+    }}
+
+    /* In addition we project the preferred velocity (des_v) on to the line
+     * segments (xz_left_side and xz_right_side of each hrvo) and also retain
+     * those points that are outside the combined hybrid reciprocal velocity
      * obstacle.
      */
-    compute_vdes_proj_points(rays, n_rays, ent_des_v, &xpoints);
+    for(size_t i = 0; i < n_rays; i++) {
 
-    if(vec_size(&xpoints) == 0) {
-        vec_vec2_destroy(&xpoints);
-        goto out;    
+        float len = cp_dot(rays[i].dir, ent_des_v);
+        vec2_t proj = cp_add(rays[i].point, cp_scale(rays[i].dir, len));
+
+        if(!s_inside_pcr(&soa, proj)) {
+            vnew_consider(&m, proj, des_v_ws, cpent.xz_pos);
+            if(save_debug)
+                vec_vec2_push(&s_debug_saved.xpoints, proj);
+        }
     }
 
-    vec2_t ret = compute_vnew(&xpoints, ent_des_v, cpent.xz_pos);
+    if(!m.any)
+        goto out;
 
     if(save_debug) {
-    
-        vec_vec2_copy(&s_debug_saved.xpoints, &xpoints);
-        s_debug_saved.v_new = ret;
+        s_debug_saved.v_new = m.vnew;
         s_debug_saved.des_v_in_pcr = true;
     }
 
-    vec_vec2_destroy(&xpoints);
-    *out = ret;
+    *out = m.vnew;
     status = true;
 
 out:
@@ -649,16 +702,11 @@ out:
     return status;
 }
 
-static bool entities_equal(uint32_t *a, uint32_t *b)
-{
-    return ((*a) == (*b));
-}
-
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool G_ClearPath_ShouldSaveDebug(uint32_t ent_uid)
+uint32_t G_ClearPath_DebugUid(void)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -667,22 +715,25 @@ bool G_ClearPath_ShouldSaveDebug(uint32_t ent_uid)
     assert(status == SS_OKAY);
 
     if(!setting.as_bool)
-        return false;
+        return NULL_UID;
 
     enum selection_type seltype;
     const vec_entity_t *sel = G_Sel_Get(&seltype);
 
     if(vec_size(sel) == 0)
-        return false; 
+        return NULL_UID;
 
-    return (0 == vec_entity_indexof((vec_entity_t*)sel, ent_uid, entities_equal));
+    return vec_AT(sel, 0);
 }
 
 void G_ClearPath_Init(const struct map *map)
 {
-    E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, (struct map*)map, 
+    E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, (struct map*)map,
         G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
     vec_vec2_init(&s_debug_saved.xpoints);
+    if(simd_avx2_supported()) {
+        s_inside_pcr = inside_pcr_avx2;
+    }
 }
 
 void G_ClearPath_Shutdown(void)
@@ -694,22 +745,24 @@ void G_ClearPath_Shutdown(void)
 vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
                                uint32_t ent_uid,
                                vec2_t ent_des_v,
-                               vec_cp_ent_t dyn_neighbs,
-                               vec_cp_ent_t stat_neighbs,
+                               struct cp_ent *dyn_neighbs,
+                               size_t ndyn,
+                               struct cp_ent *stat_neighbs,
+                               size_t nstat,
                                bool save_debug)
 {
     PERF_ENTER();
 
     do{
         vec2_t ret;
-        bool found = clearpath_new_velocity(cpent, ent_uid, ent_des_v, 
-            dyn_neighbs, stat_neighbs, save_debug, &ret);
+        bool found = clearpath_new_velocity(cpent, ent_des_v,
+            dyn_neighbs, ndyn, stat_neighbs, nstat, save_debug, &ret);
         if(found)
             PERF_RETURN(ret);
 
-        remove_furthest(cpent.xz_pos, &dyn_neighbs, &stat_neighbs);
+        remove_furthest(cpent.xz_pos, dyn_neighbs, &ndyn, stat_neighbs, &nstat);
 
-    }while(vec_size(&dyn_neighbs) > 0 && vec_size(&stat_neighbs) > 0);
+    }while(ndyn > 0 && nstat > 0);
 
     PERF_RETURN((vec2_t){0.0f, 0.0f});
 }

@@ -61,6 +61,10 @@ struct nav_private{
     /* Data used for fieldcache invalidation */
     khash_t(coord)        *dirty_chunks[NAV_LAYER_MAX];
     bool                   local_islands_dirty[NAV_LAYER_MAX];
+    /* Set on any blocker occupancy transition; consumed by the portal edge-state
+     * sweep in n_request_path, so the full-layer sweep runs at most once per
+     * batch of blocker changes rather than once per path request. */
+    bool                   edge_states_dirty[NAV_LAYER_MAX];
     /* State for unit queries, used to store a snapshot of the unit gamestate so 
      * that it can be queried asynchronously. */
     struct nav_unit_query_ctx *unit_query_ctx;

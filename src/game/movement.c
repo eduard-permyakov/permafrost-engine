@@ -56,6 +56,7 @@
 #include "../perf.h"
 #include "../sched.h"
 #include "../task.h"
+#include "../lib/public/simd.h"
 #include "../main.h"
 #include "../navigation/public/nav.h"
 #include "../lib/public/queue.h"
@@ -93,6 +94,7 @@ static int hz_count(enum movement_hz hz);
 #define SCALED_MAX_FORCE      (MAX_FORCE / hz_count(s_move_work.hz) * 20.0)
 #define VEL_HIST_LEN          (14)
 #define MAX_MOVE_TASKS        (64)
+#define MAX_REBUILDS_PER_TICK (128)
 #define MAX_GPU_FLOCK_MEMBERS (1024)  /* Must match movement.glsl */
 
 #define SIGNUM(x)    (((x) > 0) - ((x) < 0))
@@ -261,18 +263,40 @@ struct movestate_patch{
     quat_t               next_target_dir;
 };
 
+/* Dense per-flock snapshot of member uids and positions, in flock iteration
+ * order, so the O(flock) cohesion scan reads packed arrays instead of probing
+ * two hash tables per member. */
+struct flock_snap{
+    const uint32_t *uids;
+    const float    *pos_x;
+    const float    *pos_z;
+    size_t          nents;
+};
+
 struct move_work_in{
     uint32_t       ent_uid;
+    /* The unit's flock (and its snapshot), resolved once at submit time;
+     * flock membership is stable for the duration of the tick. */
+    struct flock            *flock;
+    const struct flock_snap *fsnap;
     vec2_t         ent_des_v;
     float          speed;
     vec2_t         cell_pos;
     struct cp_ent  cp_ent;
     bool           save_debug;
-    vec_cp_ent_t  *stat_neighbs;
-    vec_cp_ent_t  *dyn_neighbs;
+    /* Scratch slices of s_move_work.neighb_mem, capacity MAX_NEIGHBOURS each,
+     * filled by find_neighbours in the velocity phase. */
+    struct cp_ent *stat_neighbs;
+    struct cp_ent *dyn_neighbs;
+    size_t         nstat;
+    size_t         ndyn;
     bool           has_dest_los;
     bool           needs_los_build;
     bool           los_queried;
+    bool           los_built;
+    /* The rebuild budget ran out before this unit's field was serviced; a zero
+     * desired velocity then means "not served yet", not "can't be routed". */
+    bool           field_starved;
     struct formation_state fstate;
     vec2_t         cell_arrival_vdes;
 };
@@ -332,6 +356,8 @@ struct move_work{
     enum movement_hz          hz;
     struct move_work_in      *in;
     struct move_work_out     *out;
+    struct cp_ent            *neighb_mem;
+    struct flock_snap        *flock_snaps;
     size_t                    nwork;
     size_t                    ntasks;
     uint32_t                  tids[MAX_MOVE_TASKS];
@@ -426,7 +452,6 @@ static struct result navigation_tick_task(void *arg);
 #define COHESION_NEIGHBOUR_RADIUS       (50.0f)
 #define ARRIVE_SLOWING_RADIUS           (10.0f)
 #define ADJACENCY_SEP_DIST              (5.0f)
-#define ALIGN_NEIGHBOUR_RADIUS          (10.0f)
 #define SEPARATION_NEIGHB_RADIUS        (30.0f)
 #define CELL_ARRIVAL_RADIUS             (30.0f)
 
@@ -479,19 +504,27 @@ static bool                    s_move_hz_dirty = false;
 static bool                    s_use_gpu = true;
 static bool                    s_move_tick_queued = false;
 
+/* Per-tick budget on full field rebuilds (n_request_path), consumed by the
+ * serial LOS-build and path-request loops. Invalidation storms (war start,
+ * mass settling) otherwise rebuild thousands of fields in a single tick,
+ * blowing the tick budget many times over; capped, the storm amortises over
+ * consecutive ticks. Starved units coast on their previous field for a tick
+ * and are served first on the next one via the round-robin start index.
+ */
+static size_t                  s_rebuild_budget = 0;
+static size_t                  s_rebuild_start = 0;
+static size_t                  s_first_starved = (size_t)-1;
+
 static uint32_t                s_tick_task_tid = NULL_TID;
 /* Published by the navigation task onto itself at entry and cleared at exit, */
 static uint32_t                s_nav_task_active_tid = NULL_TID;
 static struct future           s_tick_task_future;
 
-/* Per-tick nav stats published by the nav fiber, read by the main thread at the
- * join (valid once s_tick_task_future is ready).
+/* Per-tick nav stats. The fiber phases are published by the nav fiber, the
+ * main-thread fields by move_do_tick; read by the main thread at the join
+ * (valid once s_tick_task_future is ready).
  */
-static struct{
-    uint32_t wall_us;
-    uint32_t serial_us;
-    uint32_t total_us; 
-}s_last_nav_tick_stats;
+static struct nav_tick_sample  s_last_nav_tick_stats;
 
 static const char *s_state_str[] = {
     [STATE_MOVING]              = STR(STATE_MOVING),
@@ -508,6 +541,12 @@ static const char *s_state_str[] = {
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static uint32_t perf_ticks_to_us(uint64_t delta_ticks)
+{
+    uint64_t freq = SDL_GetPerformanceFrequency();
+    return freq ? (uint32_t)(delta_ticks * 1000000ull / freq) : 0;
+}
 
 /* The returned pointer is guaranteed to be valid to write to for
  * so long as we don't add anything to the table. At that point, there
@@ -1470,7 +1509,6 @@ static void request_async_field(uint32_t uid)
         return;
 
     vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
-    struct flock *fl = flock_for_ent(uid);
 
     switch(ms->state) {
     case STATE_SEEK_ENEMIES:  {
@@ -1501,7 +1539,7 @@ static void request_async_field(uint32_t uid)
     }
 }
 
-static struct target build_target(uint32_t uid)
+static struct target build_target(uint32_t uid, const struct flock *fl)
 {
     const struct movestate *ms = movestate_get(uid);
     float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
@@ -1519,13 +1557,13 @@ static struct target build_target(uint32_t uid)
                                .surround = {.layer = layer, .faction_id = faction_id,
                                             .uid = ms->surround_target_uid}};
     }
-    struct flock *fl = flock_for_ent(uid);
     assert(fl);
     return (struct target){.kind = TARGET_KIND_POINT_SEEK,
                            .point_seek = {.dest_id = fl->dest_id, .dest_xz = fl->target_xz}};
 }
 
-static vec2_t ent_desired_velocity(uint32_t uid, vec2_t cell_arrival_vdes, bool has_dest_los)
+static vec2_t ent_desired_velocity(uint32_t uid, struct flock *fl,
+                                   vec2_t cell_arrival_vdes, bool has_dest_los)
 {
     const struct movestate *ms = movestate_get(uid);
     vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
@@ -1540,10 +1578,9 @@ static vec2_t ent_desired_velocity(uint32_t uid, vec2_t cell_arrival_vdes, bool 
 
     case STATE_SEEK_ENEMIES:
     case STATE_SURROUND_ENTITY:
-        return M_NavDesiredVelocityForTargetCached(map, build_target(uid), pos_xz);
+        return M_NavDesiredVelocityForTargetCached(map, build_target(uid, fl), pos_xz);
 
     default: {
-        struct flock *fl = flock_for_ent(uid);
         assert(fl);
         struct movestate *mms = movestate_get(uid);
         struct arrival_state *as = flock_arrival_for_ent(fl, uid);
@@ -1551,7 +1588,7 @@ static vec2_t ent_desired_velocity(uint32_t uid, vec2_t cell_arrival_vdes, bool 
         if(as && G_Arrival_DesiredVelocity(as, &mms->arrival, s_map,
             map, pos_xz, mms->velocity, has_dest_los, &arrival_vel))
             return arrival_vel;
-        return M_NavDesiredVelocityForTargetCached(map, build_target(uid), pos_xz);
+        return M_NavDesiredVelocityForTargetCached(map, build_target(uid, fl), pos_xz);
     }
     }
 }
@@ -1642,75 +1679,31 @@ static vec2_t arrive_force_enemies(uint32_t uid, vec2_t vdes)
     return ret;
 }
 
-/* Alignment is a behaviour that causes a particular agent to line up with agents close by.
- */
-static vec2_t alignment_force(uint32_t uid, const struct flock *flock)
-{
-    vec2_t ret = (vec2_t){0.0f};
-    size_t neighbour_count = 0;
-
-    uint32_t curr;
-    kh_foreach_key(flock->ents, curr, {
-
-        if(curr == uid)
-            continue;
-
-        vec2_t diff;
-        vec2_t ent_xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
-        vec2_t curr_xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr);
-
-        PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
-        if(PFM_Vec2_Len(&diff) < ALIGN_NEIGHBOUR_RADIUS) {
-
-            struct movestate *ms = movestate_get(uid);
-            assert(ms);
-
-            if(PFM_Vec2_Len(&ms->velocity) < EPSILON)
-                continue; 
-
-            PFM_Vec2_Add(&ret, &ms->velocity, &ret);
-            neighbour_count++;
-        }
-    });
-
-    if(0 == neighbour_count)
-        return (vec2_t){0.0f};
-
-    struct movestate *ms = movestate_get(uid);
-    assert(ms);
-
-    PFM_Vec2_Scale(&ret, 1.0f / neighbour_count, &ret);
-    PFM_Vec2_Sub(&ret, &ms->velocity, &ret);
-    vec2_truncate(&ret, SCALED_MAX_FORCE);
-    return ret;
-}
-
 /* Cohesion is a behaviour that causes agents to steer towards the center of mass of nearby agents.
  */
-static vec2_t cohesion_force(uint32_t uid, const struct flock *flock)
+static vec2_t cohesion_force(uint32_t uid, const struct flock_snap *snap)
 {
     vec2_t COM = (vec2_t){0.0f};
     size_t neighbour_count = 0;
     vec2_t ent_xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
 
-    uint32_t curr;
-    kh_foreach_key(flock->ents, curr, {
+    for(size_t i = 0; i < snap->nents; i++) {
 
-        if(curr == uid)
+        if(snap->uids[i] == uid)
             continue;
 
         vec2_t diff;
-        vec2_t curr_xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr);
+        vec2_t curr_xz_pos = (vec2_t){snap->pos_x[i], snap->pos_z[i]};
         PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
 
-        float t = (PFM_Vec2_Len(&diff) - COHESION_NEIGHBOUR_RADIUS*0.75) 
+        float t = (PFM_Vec2_Len(&diff) - COHESION_NEIGHBOUR_RADIUS*0.75)
                 / COHESION_NEIGHBOUR_RADIUS;
         float scale = exp(-6.0f * t);
 
         PFM_Vec2_Scale(&curr_xz_pos, scale, &curr_xz_pos);
         PFM_Vec2_Add(&COM, &curr_xz_pos, &COM);
         neighbour_count++;
-    });
+    }
 
     if(0 == neighbour_count)
         return (vec2_t){0.0f};
@@ -1721,6 +1714,120 @@ static vec2_t cohesion_force(uint32_t uid, const struct flock *flock)
     vec2_truncate(&ret, SCALED_MAX_FORCE);
     return ret;
 }
+
+/* Cephes-derived polynomial exp over 8 lanes (relative error ~1e-7; the
+ * result only weighs flock members in a steering heuristic). */
+SIMD_TARGET_AVX2
+static inline __m256 exp256_ps(__m256 x)
+{
+    const __m256 exp_hi = _mm256_set1_ps( 88.3762626647949f);
+    const __m256 exp_lo = _mm256_set1_ps(-88.3762626647949f);
+    const __m256 log2e  = _mm256_set1_ps(1.44269504088896341f);
+    const __m256 c1     = _mm256_set1_ps(0.693359375f);
+    const __m256 c2     = _mm256_set1_ps(-2.12194440e-4f);
+    const __m256 one    = _mm256_set1_ps(1.0f);
+
+    x = _mm256_min_ps(x, exp_hi);
+    x = _mm256_max_ps(x, exp_lo);
+
+    __m256 fx = _mm256_floor_ps(_mm256_add_ps(_mm256_mul_ps(x, log2e),
+        _mm256_set1_ps(0.5f)));
+    x = _mm256_sub_ps(x, _mm256_mul_ps(fx, c1));
+    x = _mm256_sub_ps(x, _mm256_mul_ps(fx, c2));
+
+    __m256 z = _mm256_mul_ps(x, x);
+    __m256 y = _mm256_set1_ps(1.9875691500e-4f);
+    y = _mm256_add_ps(_mm256_mul_ps(y, x), _mm256_set1_ps(1.3981999507e-3f));
+    y = _mm256_add_ps(_mm256_mul_ps(y, x), _mm256_set1_ps(8.3334519073e-3f));
+    y = _mm256_add_ps(_mm256_mul_ps(y, x), _mm256_set1_ps(4.1665795894e-2f));
+    y = _mm256_add_ps(_mm256_mul_ps(y, x), _mm256_set1_ps(1.6666665459e-1f));
+    y = _mm256_add_ps(_mm256_mul_ps(y, x), _mm256_set1_ps(5.0000001201e-1f));
+    y = _mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(y, z), x), one);
+
+    __m256i emm0 = _mm256_cvttps_epi32(fx);
+    emm0 = _mm256_slli_epi32(_mm256_add_epi32(emm0, _mm256_set1_epi32(0x7f)), 23);
+    return _mm256_mul_ps(y, _mm256_castsi256_ps(emm0));
+}
+
+SIMD_TARGET_AVX2
+static vec2_t cohesion_force_avx2(uint32_t uid, const struct flock_snap *snap)
+{
+    vec2_t ent_xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
+
+    const __m256 ex = _mm256_set1_ps(ent_xz_pos.x);
+    const __m256 ez = _mm256_set1_ps(ent_xz_pos.z);
+    const __m256 k_off = _mm256_set1_ps(COHESION_NEIGHBOUR_RADIUS * 0.75f);
+    const __m256 k_scale = _mm256_set1_ps(-6.0f / COHESION_NEIGHBOUR_RADIUS);
+    const __m256i vuid = _mm256_set1_epi32((int)uid);
+
+    __m256 sum_x = _mm256_setzero_ps();
+    __m256 sum_z = _mm256_setzero_ps();
+
+    size_t nblock = snap->nents & ~7ull;
+    for(size_t i = 0; i < nblock; i += 8) {
+
+        __m256 px = _mm256_loadu_ps(&snap->pos_x[i]);
+        __m256 pz = _mm256_loadu_ps(&snap->pos_z[i]);
+        __m256i ids = _mm256_loadu_si256((const __m256i*)&snap->uids[i]);
+
+        __m256 dx = _mm256_sub_ps(px, ex);
+        __m256 dz = _mm256_sub_ps(pz, ez);
+        __m256 dist = _mm256_sqrt_ps(_mm256_add_ps(_mm256_mul_ps(dx, dx),
+            _mm256_mul_ps(dz, dz)));
+
+        __m256 scale = exp256_ps(_mm256_mul_ps(_mm256_sub_ps(dist, k_off), k_scale));
+
+        __m256 self = _mm256_castsi256_ps(_mm256_cmpeq_epi32(ids, vuid));
+        scale = _mm256_andnot_ps(self, scale);
+
+        sum_x = _mm256_add_ps(sum_x, _mm256_mul_ps(px, scale));
+        sum_z = _mm256_add_ps(sum_z, _mm256_mul_ps(pz, scale));
+    }
+
+    float lanes_x[8], lanes_z[8];
+    _mm256_storeu_ps(lanes_x, sum_x);
+    _mm256_storeu_ps(lanes_z, sum_z);
+
+    vec2_t COM = (vec2_t){0.0f};
+    for(int i = 0; i < 8; i++) {
+        COM.x += lanes_x[i];
+        COM.z += lanes_z[i];
+    }
+
+    size_t neighbour_count = 0;
+    for(size_t i = 0; i < nblock; i++) {
+        neighbour_count += (snap->uids[i] != uid);
+    }
+    for(size_t i = nblock; i < snap->nents; i++) {
+
+        if(snap->uids[i] == uid)
+            continue;
+
+        vec2_t diff;
+        vec2_t curr_xz_pos = (vec2_t){snap->pos_x[i], snap->pos_z[i]};
+        PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
+
+        float t = (PFM_Vec2_Len(&diff) - COHESION_NEIGHBOUR_RADIUS*0.75)
+                / COHESION_NEIGHBOUR_RADIUS;
+        float scale = exp(-6.0f * t);
+
+        COM.x += curr_xz_pos.x * scale;
+        COM.z += curr_xz_pos.z * scale;
+        neighbour_count++;
+    }
+
+    if(0 == neighbour_count)
+        return (vec2_t){0.0f};
+
+    vec2_t ret;
+    PFM_Vec2_Scale(&COM, 1.0f / neighbour_count, &COM);
+    PFM_Vec2_Sub(&COM, &ent_xz_pos, &ret);
+    vec2_truncate(&ret, SCALED_MAX_FORCE);
+    return ret;
+}
+
+/* Set at init to the widest supported cohesion kernel. */
+static vec2_t (*s_cohesion_force)(uint32_t uid, const struct flock_snap *snap) = cohesion_force;
 
 /* Separation is a behaviour that causes agents to steer away from nearby agents.
  */
@@ -1779,7 +1886,8 @@ static vec2_t separation_force(uint32_t uid, float buffer_dist)
     return ret;
 }
 
-static vec2_t point_seek_total_force(uint32_t uid, const struct flock *flock, 
+static vec2_t point_seek_total_force(uint32_t uid, const struct flock *flock,
+                                     const struct flock_snap *fsnap,
                                      vec2_t vdes, bool has_dest_los)
 {
     struct movestate *ms = movestate_get(uid);
@@ -1788,7 +1896,7 @@ static vec2_t point_seek_total_force(uint32_t uid, const struct flock *flock,
     struct arrival_state *as = flock_arrival_for_ent(flock, uid);
     vec2_t seek = as ? G_Arrival_SeekTarget(as, &ms->arrival, flock->target_xz) : flock->target_xz;
     vec2_t arrive = arrive_force_point(uid, seek, vdes, has_dest_los);
-    vec2_t cohesion = cohesion_force(uid, flock);
+    vec2_t cohesion = s_cohesion_force(uid, fsnap);
     vec2_t separation = separation_force(uid, SEPARATION_BUFFER_DIST);
 
     PFM_Vec2_Scale(&arrive,     MOVE_ARRIVE_FORCE_SCALE,   &arrive);
@@ -1904,7 +2012,8 @@ static void nullify_impass_components(uint32_t uid, vec2_t *inout_force)
         inout_force->z = 0.0f;
 }
 
-static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock, 
+static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock,
+                               const struct flock_snap *fsnap,
                                vec2_t vdes, bool has_dest_los, float speed)
 {
     struct movestate *ms = movestate_get(uid);
@@ -1914,8 +2023,8 @@ static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock,
     for(int prio = 0; prio < 3; prio++) {
 
         switch(prio) {
-        case 0: 
-            steer_force = point_seek_total_force(uid, flock, vdes, has_dest_los); 
+        case 0:
+            steer_force = point_seek_total_force(uid, flock, fsnap, vdes, has_dest_los);
             break;
         case 1: 
             steer_force = separation_force(uid, SEPARATION_BUFFER_DIST); 
@@ -2520,12 +2629,17 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
             }
         }
 
-        /* If we've not hit a condition to stop or give up but our desired velocity 
+        /* If we've not hit a condition to stop or give up but our desired velocity
          * is zero, that means the navigation system is currently not able to guide
-         * the entity any closer to its' goal. Stop and wait, re-requesting the  path 
-         * after some time. 
+         * the entity any closer to its' goal. Stop and wait, re-requesting the  path
+         * after some time. A starved unit is an exception: its field simply hasn't
+         * been rebuilt yet this tick, so it stays MOVING and is served by the
+         * round-robin rebuild cursor within the next few ticks.
          */
         if(PFM_Vec2_Len(&vdes) < EPSILON) {
+
+            if(in->field_starved)
+                break;
 
             assert(flock_for_ent(uid));
             out->flags |= UPDATE_SET_STATE;
@@ -2803,9 +2917,12 @@ static void entity_apply_update(uint32_t uid, const struct movestate_patch *patc
 }
 
 static void find_neighbours(uint32_t uid,
-                            vec_cp_ent_t *out_dyn,
-                            vec_cp_ent_t *out_stat)
+                            struct cp_ent *out_dyn, size_t *out_ndyn,
+                            struct cp_ent *out_stat, size_t *out_nstat)
 {
+    *out_ndyn = 0;
+    *out_nstat = 0;
+
     /* For the ClearPath algorithm, we only consider entities with
      * ENTITY_FLAG_MOVABLE set, as they are the only ones that may need
      * to be avoided during moving. Here, 'static' entites refer
@@ -2855,11 +2972,11 @@ static void find_neighbours(uint32_t uid,
             /* A static neighbour is a stationary obstacle; its velocity-obstacle apex
              * must sit on its body, not be offset by a stale/leftover velocity. */
             newdesc.xz_vel = (vec2_t){0.0f, 0.0f};
-            if(vec_size(out_stat) < MAX_NEIGHBOURS)
-                vec_cp_ent_push(out_stat, newdesc);
+            if(*out_nstat < MAX_NEIGHBOURS)
+                out_stat[(*out_nstat)++] = newdesc;
         }else {
-            if(vec_size(out_dyn) < MAX_NEIGHBOURS)
-                vec_cp_ent_push(out_dyn, newdesc);
+            if(*out_ndyn < MAX_NEIGHBOURS)
+                out_dyn[(*out_ndyn)++] = newdesc;
         }
     }
 }
@@ -3409,26 +3526,6 @@ static void move_process_cmds(void)
     }
 }
 
-static void *cp_vec_realloc(void *ptr, size_t size)
-{
-    ASSERT_IN_MAIN_THREAD();
-    if(!ptr)
-        return stalloc(&s_move_work.mem, size);
-
-    void *ret = stalloc(&s_move_work.mem, size);
-    if(!ret)
-        return NULL;
-
-    assert(size % 2 == 0);
-    memcpy(ret, ptr, size / 2);
-    return ret;
-}
-
-static void cp_vec_free(void *ptr)
-{
-    /* no-op */
-}
-
 static void move_velocity_work(int begin_idx, int end_idx)
 {
     for(int i = begin_idx; i <= end_idx; i++) {
@@ -3445,7 +3542,7 @@ static void move_velocity_work(int begin_idx, int end_idx)
             continue;
         }
 
-        const struct flock *flock = flock_for_ent(in->ent_uid);
+        const struct flock *flock = in->flock;
 
         /* Compute the preferred velocity */
         vec2_t vpref = (vec2_t){NAN, NAN};
@@ -3484,17 +3581,19 @@ static void move_velocity_work(int begin_idx, int end_idx)
             break;
         default:
             assert(flock);
-            vpref = point_seek_vpref(in->ent_uid, flock, 
+            vpref = point_seek_vpref(in->ent_uid, flock, in->fsnap,
                 in->ent_des_v, in->has_dest_los, in->speed);
         }
         assert(vpref.x == vpref.x && vpref.z == vpref.z); /* a NaN vpref would corrupt the integration */
 
         /* Find the entity's neighbours */
-        find_neighbours(in->ent_uid, in->dyn_neighbs, in->stat_neighbs);
+        find_neighbours(in->ent_uid, in->dyn_neighbs, &in->ndyn,
+            in->stat_neighbs, &in->nstat);
 
         /* Compute the velocity constrainted by potential collisions */
-        vec2_t new_vel = G_ClearPath_NewVelocity(in->cp_ent, in->ent_uid, 
-            vpref, *in->dyn_neighbs, *in->stat_neighbs, in->save_debug);
+        vec2_t new_vel = G_ClearPath_NewVelocity(in->cp_ent, in->ent_uid,
+            vpref, in->dyn_neighbs, in->ndyn, in->stat_neighbs, in->nstat,
+            in->save_debug);
 
         out->ent_uid = in->ent_uid;
         out->ent_vel = new_vel;
@@ -3523,8 +3622,8 @@ static struct result move_dv_task(void *arg)
     for(int i = move_arg->begin_idx; i <= move_arg->end_idx; i++) {
 
         struct move_work_in *in = &s_move_work.in[i];
-        in->ent_des_v = ent_desired_velocity(in->ent_uid, in->cell_arrival_vdes,
-            in->has_dest_los);
+        in->ent_des_v = ent_desired_velocity(in->ent_uid, in->flock,
+            in->cell_arrival_vdes, in->has_dest_los);
         s_move_work.out[i].ent_des_v = in->ent_des_v;
         ncomputed++;
 
@@ -3790,14 +3889,52 @@ static void move_prepare_work(enum movement_hz hz)
     size_t ndynamic = kh_size(G_GetDynamicEntsSet());
     s_move_work.in = stalloc(&s_move_work.mem, ndynamic * sizeof(struct move_work_in));
     s_move_work.out = stalloc(&s_move_work.mem, ndynamic * sizeof(struct move_work_out));
+    s_move_work.neighb_mem = stalloc(&s_move_work.mem,
+        ndynamic * 2 * MAX_NEIGHBOURS * sizeof(struct cp_ent));
     s_move_work.hz = hz;
     s_move_work.type = (s_use_gpu ? WORK_TYPE_GPU : WORK_TYPE_CPU);
     SDL_AtomicSet(&s_move_work.gpu_velocities_ready, 0);
 }
 
+static void move_build_flock_snaps(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    size_t nflocks = vec_size(&s_flocks);
+    s_move_work.flock_snaps = stalloc(&s_move_work.mem,
+        nflocks * sizeof(struct flock_snap));
+
+    for(int i = 0; i < nflocks; i++) {
+
+        struct flock *fl = &vec_AT(&s_flocks, i);
+        size_t nents = kh_size(fl->ents);
+        uint32_t *uids = stalloc(&s_move_work.mem, nents * sizeof(uint32_t));
+        float *pos_x = stalloc(&s_move_work.mem, nents * sizeof(float));
+        float *pos_z = stalloc(&s_move_work.mem, nents * sizeof(float));
+
+        size_t idx = 0;
+        uint32_t curr;
+        kh_foreach_key(fl->ents, curr, {
+            vec2_t pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr);
+            uids[idx] = curr;
+            pos_x[idx] = pos.x;
+            pos_z[idx] = pos.z;
+            idx++;
+        });
+        assert(idx == nents);
+
+        s_move_work.flock_snaps[i] = (struct flock_snap){uids, pos_x, pos_z, nents};
+    }
+}
+
 static void move_push_work(struct move_work_in in)
 {
-    s_move_work.in[s_move_work.nwork++] = in;
+    size_t idx = s_move_work.nwork++;
+    in.dyn_neighbs  = s_move_work.neighb_mem + (2 * idx + 0) * MAX_NEIGHBOURS;
+    in.stat_neighbs = s_move_work.neighb_mem + (2 * idx + 1) * MAX_NEIGHBOURS;
+    in.ndyn = 0;
+    in.nstat = 0;
+    s_move_work.in[idx] = in;
 }
 
 static void move_submit_cpu_work(task_func_t code)
@@ -3819,7 +3956,7 @@ static void move_submit_cpu_work(task_func_t code)
         arg->end_idx = MIN(nitems * (i + 1) - 1, s_move_work.nwork-1);
 
         SDL_AtomicSet(&s_move_work.futures[s_move_work.ntasks].status, FUTURE_INCOMPLETE);
-        s_move_work.tids[s_move_work.ntasks] = Sched_Create(4, code, arg, 
+        s_move_work.tids[s_move_work.ntasks] = Sched_Create(4, code, arg,
             "move::work", &s_move_work.futures[s_move_work.ntasks], TASK_BIG_STACK);
 
         if(s_move_work.tids[s_move_work.ntasks] == NULL_TID) {
@@ -4044,6 +4181,7 @@ static enum move_work_status nav_tick_finish_work(void)
     }
 
     PERF_PUSH("nav tick drain");
+    uint64_t drain_start = SDL_GetPerformanceCounter();
     while(!Sched_FutureIsReady(&s_tick_task_future)) {
         /* If the task is event-blocked waiting for GPU results,
          * we are not able to run it to completion at this point.
@@ -4057,9 +4195,10 @@ static enum move_work_status nav_tick_finish_work(void)
     s_tick_task_tid = NULL_TID;
 
     /* s_move_work.{hz,nwork} still hold the just-completed task's values here. */
-    uint32_t budget_us = 1000000u / hz_count(s_move_work.hz);
-    Perf_RecordNavTick(s_last_nav_tick_stats.wall_us, s_last_nav_tick_stats.serial_us,
-        s_last_nav_tick_stats.total_us, (uint32_t)s_move_work.nwork, budget_us);
+    s_last_nav_tick_stats.drain_us  = perf_ticks_to_us(SDL_GetPerformanceCounter() - drain_start);
+    s_last_nav_tick_stats.nwork     = (uint32_t)s_move_work.nwork;
+    s_last_nav_tick_stats.budget_us = 1000000u / hz_count(s_move_work.hz);
+    Perf_RecordNavTick(&s_last_nav_tick_stats);
 
     return WORK_COMPLETE;
 }
@@ -4200,12 +4339,14 @@ static struct result move_los_peek_task(void *arg)
 
         struct move_work_in *in = &s_move_work.in[i];
         const struct movestate *ms = movestate_get(in->ent_uid);
-        const struct flock *fl = flock_for_ent(in->ent_uid);
+        const struct flock *fl = in->flock;
         vec2_t pos = (vec2_t){ms->prev_pos.x, ms->prev_pos.z};
 
         in->has_dest_los = false;
         in->needs_los_build = false;
         in->los_queried = false;
+        in->los_built = false;
+        in->field_starved = false;
         if(fl && (ms->state != STATE_SURROUND_ENTITY || !ms->using_surround_field)) {
             bool present;
             bool vis = M_NavHasDestLOSCached(map, fl->dest_id, pos, &present);
@@ -4227,30 +4368,48 @@ static void compute_los_state(void)
     PERF_ENTER();
 
     /* Parallel read: peek each unit's cached LOS read-only and flag the misses. */
+    uint64_t phase_start = SDL_GetPerformanceCounter();
     move_submit_cpu_work(move_los_peek_task);
     move_complete_cpu_work();
+    s_last_nav_tick_stats.los_peek_us =
+        perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
 
     /* Serial build: construct the LOS field for the flagged units, which mutates
      * the shared cache.
      */
+    phase_start = SDL_GetPerformanceCounter();
     const struct map *map = s_move_work.gamestate.map;
     unsigned checked = 0, misses = 0;
-    for(int i = 0; i < s_move_work.nwork; i++) {
+    size_t nwork = s_move_work.nwork;
+    for(size_t k = 0; k < nwork; k++) {
 
-        struct move_work_in *in = &s_move_work.in[i];
+        size_t idx = (s_rebuild_start + k) % nwork;
+        struct move_work_in *in = &s_move_work.in[idx];
         if(in->los_queried)
             checked++;
         if(!in->needs_los_build)
             continue;
         misses++;
 
+        if(s_rebuild_budget == 0) {
+            if(s_first_starved == (size_t)-1)
+                s_first_starved = idx;
+            continue;
+        }
+        s_rebuild_budget--;
+
         const struct movestate *ms = movestate_get(in->ent_uid);
-        const struct flock *fl = flock_for_ent(in->ent_uid);
+        const struct flock *fl = in->flock;
         vec2_t pos = (vec2_t){ms->prev_pos.x, ms->prev_pos.z};
         in->has_dest_los = M_NavHasDestLOS(map, fl->dest_id, pos, fl->target_xz);
+        in->los_built = true;
 
         Sched_TryYield();
     }
+
+    s_last_nav_tick_stats.los_build_us =
+        perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
+    s_last_nav_tick_stats.nlos_builds = misses;
 
     M_NavAddLosSamples(map, checked, checked - misses);
     PERF_RETURN_VOID();
@@ -4264,6 +4423,7 @@ static void compute_path_requests(void)
      * arrival zone fields. The field computations read navigation state from
      * multiple threads, which is safe so long as nothing mutates it concurrently.
      */
+    uint64_t phase_start = SDL_GetPerformanceCounter();
     N_PrepareAsyncWork();
     for(int i = 0; i < s_move_work.nwork; i++) {
         struct move_work_in *in = &s_move_work.in[i];
@@ -4272,43 +4432,57 @@ static void compute_path_requests(void)
     }
     request_flock_arrival_fields();
     N_AwaitAsyncFields();
+    s_last_nav_tick_stats.cpr_async_us =
+        perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
 
     /* Serial pre-build of point-seek paths and blocked-tile repairs, which mutate
      * the shared cache and so cannot run in the parallel desired-velocity phase.
      * Yield periodically so the scheduler can still meet its frame budget.
      */
+    phase_start = SDL_GetPerformanceCounter();
     const struct map *map = s_move_work.gamestate.map;
     uint64_t last_yield = SDL_GetPerformanceCounter();
     const uint64_t yield_ticks = SDL_GetPerformanceFrequency() / 500; /* ~2ms */
     unsigned checked = 0, rebuilds = 0;
-    for(int i = 0; i < s_move_work.nwork; i++) {
+    size_t nwork = s_move_work.nwork;
+    for(size_t k = 0; k < nwork; k++) {
 
-        struct move_work_in *in = &s_move_work.in[i];
+        size_t idx = (s_rebuild_start + k) % nwork;
+        struct move_work_in *in = &s_move_work.in[idx];
         uint32_t uid = in->ent_uid;
         const struct movestate *ms = movestate_get(uid);
         if(!ms || ms->state == STATE_TURNING || ms->state == STATE_ARRIVING_TO_CELL)
             continue;
 
         vec2_t pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
-        struct target t = build_target(uid);
+        struct target t = build_target(uid, in->flock);
         checked++;
         /* Built this tick, by the LOS phase or a request here, counts as a miss. */
-        bool rebuilt = in->needs_los_build;
+        bool rebuilt = in->los_built;
         if(M_NavRequiresPathRequest(map, t, pos)) {
-            M_NavServicePathRequest(map, t, pos);
-            rebuilt = true;
+            if(s_rebuild_budget > 0) {
+                s_rebuild_budget--;
+                M_NavServicePathRequest(map, t, pos);
+                rebuilt = true;
+            }else{
+                in->field_starved = true;
+                if(s_first_starved == (size_t)-1)
+                    s_first_starved = idx;
+            }
         }
         if(rebuilt)
             rebuilds++;
 
         /* Arrival units may fall back to the group centre-of-mass point-seek field. */
-        struct flock *fl = flock_for_ent(uid);
+        struct flock *fl = in->flock;
         struct arrival_state *as = fl ? flock_arrival_for_ent(fl, uid) : NULL;
         if(as && as->phase == ARRIVAL_PHASE_FILLING) {
             struct target tc = {.kind = TARGET_KIND_POINT_SEEK,
                                 .point_seek = {.dest_id = as->com_dest_id, .dest_xz = as->com}};
-            if(M_NavRequiresPathRequest(map, tc, pos))
+            if(M_NavRequiresPathRequest(map, tc, pos) && s_rebuild_budget > 0) {
+                s_rebuild_budget--;
                 M_NavServicePathRequest(map, tc, pos);
+            }
         }
 
         if(SDL_GetPerformanceCounter() - last_yield > yield_ticks) {
@@ -4316,6 +4490,14 @@ static void compute_path_requests(void)
             last_yield = SDL_GetPerformanceCounter();
         }
     }
+
+    if(s_first_starved != (size_t)-1) {
+        s_rebuild_start = s_first_starved;
+    }
+
+    s_last_nav_tick_stats.cpr_serial_us =
+        perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
+    s_last_nav_tick_stats.nreq_rebuilds = rebuilds;
 
     M_NavAddFlowSamples(map, checked, checked - rebuilds);
     PERF_RETURN_VOID();
@@ -4414,7 +4596,12 @@ static struct result navigation_tick_task(void *arg)
     uint64_t nav_start = SDL_GetPerformanceCounter();
 
     Perf_NavParallelReset();
+    s_rebuild_budget = MAX_REBUILDS_PER_TICK;
+    s_first_starved = (size_t)-1;
     N_ApplyDeferredInvalidations();
+
+    s_last_nav_tick_stats.inval_us =
+        perf_ticks_to_us(SDL_GetPerformanceCounter() - nav_start);
 
     compute_los_state();
 
@@ -4424,8 +4611,14 @@ static struct result navigation_tick_task(void *arg)
     compute_path_requests();
 
     serial_ticks += SDL_GetPerformanceCounter() - cpr_start;
+    uint64_t phase_start = SDL_GetPerformanceCounter();
 
     fork_join_desired_velocity();
+
+    s_last_nav_tick_stats.dv_us =
+        perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
+    phase_start = SDL_GetPerformanceCounter();
+
     fork_join_velocity_computations();
 
     if(s_move_work.type == WORK_TYPE_GPU) {
@@ -4438,16 +4631,20 @@ static struct result navigation_tick_task(void *arg)
         copy_gpu_results();
     }
 
+    s_last_nav_tick_stats.vel_us =
+        perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
+    phase_start = SDL_GetPerformanceCounter();
+
     fork_join_state_updates();
+
+    s_last_nav_tick_stats.upd_us =
+        perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
 
     s_nav_task_active_tid = NULL_TID;
 
-    uint64_t freq = SDL_GetPerformanceFrequency();
-    uint32_t wall_us   = freq ? (uint32_t)((SDL_GetPerformanceCounter() - nav_start) * 1000000ull / freq) : 0;
-    uint32_t serial_us = freq ? (uint32_t)(serial_ticks * 1000000ull / freq) : 0;
-    s_last_nav_tick_stats.wall_us   = wall_us;
-    s_last_nav_tick_stats.serial_us = serial_us;
-    s_last_nav_tick_stats.total_us  = serial_us + Perf_NavParallelGet();
+    s_last_nav_tick_stats.dur_us    = perf_ticks_to_us(SDL_GetPerformanceCounter() - nav_start);
+    s_last_nav_tick_stats.serial_us = perf_ticks_to_us(serial_ticks);
+    s_last_nav_tick_stats.total_us  = s_last_nav_tick_stats.serial_us + Perf_NavParallelGet();
     return NULL_RESULT;
 }
 
@@ -4478,22 +4675,41 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
 {
     ASSERT_IN_MAIN_THREAD();
     PERF_PUSH("movement::tick");
+    uint64_t tick_start = SDL_GetPerformanceCounter();
 
     move_consume_work_results();
+
+    s_last_nav_tick_stats.consume_us =
+        perf_ticks_to_us(SDL_GetPerformanceCounter() - tick_start);
+
     pivot_held_still_units();
     move_handle_hz_update(curr_event);
     move_process_cmds();
+
+    uint64_t phase_start = SDL_GetPerformanceCounter();
     move_release_gamestate();
+    uint64_t copy_ticks = SDL_GetPerformanceCounter() - phase_start;
+
     disband_empty_flocks();
     update_flock_arrival_fields();
 
     /* Run the navigation updates synchronous to the movement tick */
+    phase_start = SDL_GetPerformanceCounter();
     G_UpdateMap();
+    s_last_nav_tick_stats.map_update_us =
+        perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
 
+    phase_start = SDL_GetPerformanceCounter();
     move_prepare_work(hz);
     move_copy_gamestate();
+    copy_ticks += SDL_GetPerformanceCounter() - phase_start;
+    s_last_nav_tick_stats.copy_gs_us = perf_ticks_to_us(copy_ticks);
+
+    move_build_flock_snaps();
 
     PERF_PUSH("submit move work");
+    phase_start = SDL_GetPerformanceCounter();
+    uint32_t debug_uid = G_ClearPath_DebugUid();
     uint32_t curr;
     kh_foreach_key(s_entity_state_table, curr, {
 
@@ -4503,15 +4719,15 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
         if(ent_still(ms))
             continue;
 
-        vec_cp_ent_t *dyn, *stat;
-        dyn = stalloc(&s_move_work.mem, sizeof(vec_cp_ent_t));
-        stat = stalloc(&s_move_work.mem, sizeof(vec_cp_ent_t));
-
-        vec_cp_ent_init_alloc(dyn, cp_vec_realloc, cp_vec_free);
-        vec_cp_ent_init_alloc(stat, cp_vec_realloc, cp_vec_free);
-
-        vec_cp_ent_resize(dyn, MAX_NEIGHBOURS);
-        vec_cp_ent_resize(stat, MAX_NEIGHBOURS);
+        struct flock *flock = NULL;
+        const struct flock_snap *fsnap = NULL;
+        for(int fi = 0; fi < vec_size(&s_flocks); fi++) {
+            if(flock_contains(&vec_AT(&s_flocks, fi), curr)) {
+                flock = &vec_AT(&s_flocks, fi);
+                fsnap = &s_move_work.flock_snaps[fi];
+                break;
+            }
+        }
 
         vec2_t pos = (vec2_t){ms->prev_pos.x, ms->prev_pos.z};
         float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr);
@@ -4537,12 +4753,12 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
         formation_id_t fid = G_Formation_GetForEnt(curr);
         move_push_work((struct move_work_in){
             .ent_uid = curr,
+            .flock = flock,
+            .fsnap = fsnap,
             .speed = entity_speed(curr),
             .cell_pos = cell_pos,
             .cp_ent = curr_cp,
-            .save_debug = G_ClearPath_ShouldSaveDebug(curr),
-            .stat_neighbs = stat,
-            .dyn_neighbs = dyn,
+            .save_debug = (curr == debug_uid),
             .fstate.fid = fid,
             .fstate.assignment_ready = 
                 (fid != NULL_FID) ? G_Formation_AssignmentReady(curr)
@@ -4571,9 +4787,14 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
             .cell_arrival_vdes = cell_arrival_vdes
         });
     });
+    s_last_nav_tick_stats.submit_us =
+        perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
     PERF_POP();
 
     nav_tick_submit_work();
+
+    s_last_nav_tick_stats.main_us =
+        perf_ticks_to_us(SDL_GetPerformanceCounter() - tick_start);
     PERF_POP();
 }
 
@@ -4649,6 +4870,9 @@ bool G_Move_NavQuiesce(void)
 bool G_Move_Init(const struct map *map)
 {
     assert(map);
+    if(simd_avx2_supported()) {
+        s_cohesion_force = cohesion_force_avx2;
+    }
     if(NULL == (s_entity_state_table = kh_init(state))) {
         return false;
     }

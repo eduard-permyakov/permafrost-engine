@@ -126,14 +126,35 @@ struct gpu_frame_stats{
 
 
 /* Per-tick navigation stats for the perf window. Times are in microseconds;
- * total_us is serial_us plus the summed CPU of the parallel phases.
+ * total_us is serial_us plus the summed CPU of the parallel phases. The phase
+ * wall times include any scheduler quiesce gaps at frame boundaries.
  */
 struct nav_tick_sample{
-    uint32_t dur_us;      /* wall-time */
-    uint32_t serial_us;   /* wall-time of the serial (non-parallelised) phases */
-    uint32_t total_us;    /* serial_us + summed parallel-task CPU */
-    uint32_t nwork;       /* entities processed this tick */
-    uint32_t budget_us;   /* per-tick budget (1000/hz) */
+    uint32_t dur_us;        /* wall-time */
+    uint32_t serial_us;     /* wall-time of the serial (non-parallelised) phases */
+    uint32_t total_us;      /* serial_us + summed parallel-task CPU */
+    uint32_t nwork;         /* entities processed this tick */
+    uint32_t budget_us;     /* per-tick budget (1000/hz) */
+    uint32_t tick;          /* monotonic tick sequence number */
+    /* Nav fiber phases */
+    uint32_t inval_us;      /* applying deferred field invalidations */
+    uint32_t los_peek_us;   /* parallel LOS cache peek */
+    uint32_t los_build_us;  /* serial LOS field build loop */
+    uint32_t cpr_async_us;  /* parallel async field build + join */
+    uint32_t cpr_serial_us; /* serial path-request loop */
+    uint32_t dv_us;         /* parallel desired-velocity phase */
+    uint32_t vel_us;        /* velocity (ClearPath) phase */
+    uint32_t upd_us;        /* parallel state-update phase */
+    /* Main-thread half of the tick */
+    uint32_t main_us;       /* whole of move_do_tick */
+    uint32_t consume_us;    /* applying the previous tick's results */
+    uint32_t copy_gs_us;    /* releasing + copying the gamestate snapshot */
+    uint32_t submit_us;     /* per-entity work submission loop */
+    uint32_t map_update_us; /* synchronous navigation map update */
+    uint32_t drain_us;      /* main-thread inline drain of an unfinished fiber */
+    /* Field-cache miss counters */
+    uint32_t nlos_builds;   /* units whose LOS field was built this tick */
+    uint32_t nreq_rebuilds; /* units whose path was serviced this tick */
 };
 
 struct perf_info{
@@ -193,8 +214,7 @@ uint64_t Perf_LastFrameAllocdBytes(void);
 /* Navigation-task wall-time history (one sample per completed nav tick), feeding
  * the perf window's live graph. Recorded from the main thread at the nav-tick join.
  */
-void     Perf_RecordNavTick(uint32_t dur_us, uint32_t serial_us, uint32_t total_us,
-                            uint32_t nwork, uint32_t budget_us);
+void     Perf_RecordNavTick(const struct nav_tick_sample *sample);
 size_t   Perf_GetNavTickTimes(size_t maxout, struct nav_tick_sample *out);
 
 /* The following can only be called from the main thread, making sure that 

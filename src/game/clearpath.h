@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2019-2023 Eduard Permyakov 
+ *  Copyright (C) 2019-2026 Eduard Permyakov
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -37,13 +37,14 @@
 #define CLEARPATH_H
 
 #include "../pf_math.h"
-#include "../lib/public/vec.h"
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 
 #define CLEARPATH_NEIGHBOUR_RADIUS (10.0f)
-/* This is added to the entity's radius so that it will take wider turns 
+/* This is added to the entity's radius so that it will take wider turns
  * and leave this as a buffer between it and the obstacle.
  */
 #define CLEARPATH_BUFFER_RADIUS    (0.0f)
@@ -56,18 +57,21 @@ struct cp_ent{
     float  radius;
 };
 
-VEC_TYPE(cp_ent, struct cp_ent)
-VEC_IMPL(static inline, cp_ent, struct cp_ent)
-
 void G_ClearPath_Init(const struct map *map);
 void G_ClearPath_Shutdown(void);
-bool G_ClearPath_ShouldSaveDebug(uint32_t ent_uid);
 
+/* The single entity whose ClearPath state should be saved for the debug
+ * overlay this tick, or NULL_UID. */
+uint32_t G_ClearPath_DebugUid(void);
+
+/* The neighbour arrays are scratch: the retry loop compacts them in place. */
 vec2_t G_ClearPath_NewVelocity(struct cp_ent ent,
                                uint32_t ent_uid,
                                vec2_t ent_des_v,
-                               vec_cp_ent_t dyn_neighbs,
-                               vec_cp_ent_t stat_neighbs,
+                               struct cp_ent *dyn_neighbs,
+                               size_t ndyn,
+                               struct cp_ent *stat_neighbs,
+                               size_t nstat,
                                bool save_debug);
 
 #endif

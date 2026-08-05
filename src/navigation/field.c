@@ -202,20 +202,15 @@ static bool field_tile_passable_no_enemies(
 }
 
 static int field_neighbours_grid(
-    const struct nav_chunk    *chunk, 
-    struct coord               coord, 
-    bool                       only_passable, 
+    const struct nav_chunk    *chunk,
+    struct coord               coord,
+    bool                       only_passable,
     int                        faction_id,
-    struct nav_unit_query_ctx *ctx,
-    struct coord              *out_neighbours, 
+    uint16_t                   enemies,
+    struct coord              *out_neighbours,
     uint8_t                   *out_costs)
 {
     int ret = 0;
-    uint16_t enemies = 0;
-    if(faction_id != FACTION_ID_NONE) {
-        enemies = enemies_for_faction(faction_id, ctx);
-    }
-
     for(int r = -1; r <= 1; r++) {
     for(int c = -1; c <= 1; c++) {
 
@@ -304,19 +299,14 @@ static int field_neighbours_grid_global(
 
 static int field_neighbours_grid_los(
     const struct nav_chunk    *chunk,
-    const struct LOS_field    *los, 
+    const struct LOS_field    *los,
     int                        faction_id,
-    struct coord            coord, 
-    struct nav_unit_query_ctx *ctx,
-    struct coord              *out_neighbours, 
+    struct coord            coord,
+    uint16_t                   enemies,
+    struct coord              *out_neighbours,
     uint8_t                   *out_costs)
 {
     int ret = 0;
-    uint16_t enemies = 0;
-    if(faction_id != FACTION_ID_NONE) {
-        enemies = enemy_faction_from(faction_id, ctx);
-    }
-
     for(int r = -1; r <= 1; r++) {
     for(int c = -1; c <= 1; c++) {
 
@@ -544,6 +534,7 @@ static void field_build_integration(
     struct nav_unit_query_ctx *ctx,
     float                      inout[FIELD_RES_R][FIELD_RES_C])
 {
+    uint16_t enemies = enemies_for_faction(faction_id, ctx);
     while(pq_size(frontier) > 0) {
 
         struct coord curr;
@@ -551,8 +542,8 @@ static void field_build_integration(
 
         struct coord neighbours[8];
         uint8_t neighbour_costs[8];
-        int num_neighbours = field_neighbours_grid(chunk, curr, true, faction_id, 
-            ctx, neighbours, neighbour_costs);
+        int num_neighbours = field_neighbours_grid(chunk, curr, true, faction_id,
+            enemies, neighbours, neighbour_costs);
 
         for(int i = 0; i < num_neighbours; i++) {
 
@@ -664,6 +655,7 @@ static void field_build_integration_nonpass(
     struct nav_unit_query_ctx *ctx,
     float                      inout[FIELD_RES_R][FIELD_RES_C])
 {
+    uint16_t enemies = enemies_for_faction(faction_id, ctx);
     while(pq_size(frontier) > 0) {
 
         struct coord curr;
@@ -671,8 +663,8 @@ static void field_build_integration_nonpass(
 
         struct coord neighbours[8];
         uint8_t neighbour_costs[8];
-        int num_neighbours = field_neighbours_grid(chunk, curr, false, faction_id, 
-            ctx, neighbours, neighbour_costs);
+        int num_neighbours = field_neighbours_grid(chunk, curr, false, faction_id,
+            enemies, neighbours, neighbour_costs);
 
         for(int i = 0; i < num_neighbours; i++) {
 
@@ -2347,6 +2339,11 @@ void N_LOSFieldCreate(
         }
     }
 
+    uint16_t enemies = 0;
+    if(faction_id != FACTION_ID_NONE) {
+        enemies = enemy_faction_from(faction_id, ctx);
+    }
+
     while(pq_size(&frontier) > 0) {
 
         struct coord curr;
@@ -2354,8 +2351,8 @@ void N_LOSFieldCreate(
 
         struct coord neighbours[8];
         uint8_t neighbour_costs[8];
-        int num_neighbours = field_neighbours_grid_los(chunk, out_los, faction_id, 
-            curr, ctx, neighbours, neighbour_costs);
+        int num_neighbours = field_neighbours_grid_los(chunk, out_los, faction_id,
+            curr, enemies, neighbours, neighbour_costs);
 
         for(int i = 0; i < num_neighbours; i++) {
 
@@ -2519,17 +2516,19 @@ void N_FlowFieldPatchBlocked(struct flow_field *ff)
 
 vec2_t N_FlowDir(enum flow_dir dir)
 {
-    static vec2_t s_flow_dir_lookup[9] = {0};
-    s_flow_dir_lookup[FD_NONE]  = (vec2_t){  0.0f,               0.0f              };
-    s_flow_dir_lookup[FD_NW]    = (vec2_t){  1.0f / sqrt(2.0f), -1.0f / sqrt(2.0f) };
-    s_flow_dir_lookup[FD_N]     = (vec2_t){  0.0f,              -1.0f              };
-    s_flow_dir_lookup[FD_NE]    = (vec2_t){ -1.0f / sqrt(2.0f), -1.0f / sqrt(2.0f) };
-    s_flow_dir_lookup[FD_W]     = (vec2_t){  1.0f,               0.0f              };
-    s_flow_dir_lookup[FD_E]     = (vec2_t){ -1.0f,               0.0f              };
-    s_flow_dir_lookup[FD_SW]    = (vec2_t){  1.0f / sqrt(2.0f),  1.0f / sqrt(2.0f) };
-    s_flow_dir_lookup[FD_S]     = (vec2_t){  0.0f,               1.0f              };
-    s_flow_dir_lookup[FD_SE]    = (vec2_t){ -1.0f / sqrt(2.0f),  1.0f / sqrt(2.0f) };
-
+    #define INV_SQRT2 (0.70710678f)
+    static const vec2_t s_flow_dir_lookup[9] = {
+        [FD_NONE] = {  0.0f,       0.0f      },
+        [FD_NW]   = {  INV_SQRT2, -INV_SQRT2 },
+        [FD_N]    = {  0.0f,      -1.0f      },
+        [FD_NE]   = { -INV_SQRT2, -INV_SQRT2 },
+        [FD_W]    = {  1.0f,       0.0f      },
+        [FD_E]    = { -1.0f,       0.0f      },
+        [FD_SW]   = {  INV_SQRT2,  INV_SQRT2 },
+        [FD_S]    = {  0.0f,       1.0f      },
+        [FD_SE]   = { -INV_SQRT2,  INV_SQRT2 },
+    };
+    #undef INV_SQRT2
     return s_flow_dir_lookup[dir];
 }
 

@@ -152,53 +152,50 @@ static size_t portal_connected_liids(const struct nav_private *priv, enum nav_la
                                      const struct portal *port, uint16_t liid, uint16_t *out, size_t maxout)
 {
     assert(maxout > 0);
-    uint16_t ret = 0;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    size_t ret = 0;
 
     const struct portal *conn = n_portal(priv, layer, port->connected);
     const struct nav_chunk *pchunk = &priv->chunks[layer][port->chunk.r * priv->width + port->chunk.c];
+    const struct nav_chunk *cchunk = &priv->chunks[layer][conn->chunk.r * priv->width + conn->chunk.c];
 
-    /* Take the first tile in the current chunk with the matching liid and 
-     * return the liid of the tile directly beside the matching tile in the 
-     * adjacent chunk.
+    /* Paired portals are created in lockstep over the same span of the shared
+     * chunk edge, so the tile directly beside a portal tile in the adjacent
+     * chunk is the connected portal's tile at the same offset along the run.
      */
-    for(int r1 = port->endpoints[0].r; r1 <= port->endpoints[1].r; r1++) {
-    for(int c1 = port->endpoints[0].c; c1 <= port->endpoints[1].c; c1++) {
+    int pdr = (port->endpoints[1].r > port->endpoints[0].r) ? 1 : 0;
+    int pdc = (port->endpoints[1].c > port->endpoints[0].c) ? 1 : 0;
+    int cdr = (conn->endpoints[1].r > conn->endpoints[0].r) ? 1 : 0;
+    int cdc = (conn->endpoints[1].c > conn->endpoints[0].c) ? 1 : 0;
+    int len = (port->endpoints[1].r - port->endpoints[0].r)
+            + (port->endpoints[1].c - port->endpoints[0].c) + 1;
 
-        uint16_t curr_liid = pchunk->local_islands[r1][c1];
-        if(curr_liid != liid)
+    for(int i = 0; i < len; i++) {
+
+        if(ret == maxout)
+            return ret;
+
+        int r1 = port->endpoints[0].r + i * pdr;
+        int c1 = port->endpoints[0].c + i * pdc;
+        if(pchunk->local_islands[r1][c1] != liid)
             continue;
 
-        for(int r2 = conn->endpoints[0].r; r2 <= conn->endpoints[1].r; r2++) {
-        for(int c2 = conn->endpoints[0].c; c2 <= conn->endpoints[1].c; c2++) {
+        int r2 = conn->endpoints[0].r + i * cdr;
+        int c2 = conn->endpoints[0].c + i * cdc;
+        uint16_t neighb_liid = cchunk->local_islands[r2][c2];
+        if(neighb_liid == ISLAND_NONE)
+            continue;
 
-            const struct nav_chunk *cchunk = &priv->chunks[layer][conn->chunk.r * priv->width + conn->chunk.c];
-            struct tile_desc tda = (struct tile_desc){port->chunk.r, port->chunk.c, r1, c1};
-            struct tile_desc tdb = (struct tile_desc){conn->chunk.r, conn->chunk.c, r2, c2};
-
-            if(ret == maxout)
-                return ret;
-
-            int dr, dc;
-            M_Tile_Distance(res, &tda, &tdb, &dr, &dc);
-            if(abs(dr) + abs(dc) == 1) {
-                uint16_t neighb_liid = cchunk->local_islands[r2][c2];
-                bool contains = false;
-                for(int i = 0; i < ret; i++) {
-                    if(out[i] == neighb_liid) {
-                        contains = true;
-                        break;
-                    }
-                }
-                if(!contains && neighb_liid != ISLAND_NONE) {
-                    out[ret++] = neighb_liid;
-                }
+        bool contains = false;
+        for(int j = 0; j < ret; j++) {
+            if(out[j] == neighb_liid) {
+                contains = true;
+                break;
             }
-        }}
-    }}
+        }
+        if(!contains) {
+            out[ret++] = neighb_liid;
+        }
+    }
     return ret;
 }
 

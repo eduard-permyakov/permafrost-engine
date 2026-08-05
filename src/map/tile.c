@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2018-2023 Eduard Permyakov 
+ *  Copyright (C) 2018-2026 Eduard Permyakov
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -388,41 +388,6 @@ struct box M_Tile_ChunkBounds(struct map_resolution res, vec3_t map_pos, int chu
     };
 }
 
-bool M_Tile_RelativeDesc(struct map_resolution res, struct tile_desc *inout, 
-                         int tile_dc, int tile_dr)
-{
-    int abs_r = inout->chunk_r * res.tile_h + inout->tile_r + tile_dr;
-    int abs_c = inout->chunk_c * res.tile_w + inout->tile_c + tile_dc;
-
-    int max_r = res.chunk_h * res.tile_h;
-    int max_c = res.chunk_w * res.tile_w;
-
-    if(abs_r < 0 || abs_r >= max_r)
-        return false;
-    if(abs_c < 0 || abs_c >= max_c)
-        return false;
-
-    *inout = (struct tile_desc) {
-        abs_r / res.tile_h,
-        abs_c / res.tile_w,
-        abs_r % res.tile_h,
-        abs_c % res.tile_w,
-    };
-    return true;
-}
-
-void M_Tile_Distance(struct map_resolution res, struct tile_desc *a, struct tile_desc *b, 
-                     int *out_r, int *out_c)
-{
-    int a_abs_r = a->chunk_r * res.tile_h + a->tile_r;
-    int a_abs_c = a->chunk_c * res.tile_w + a->tile_c;
-    int b_abs_r = b->chunk_r * res.tile_h + b->tile_r;
-    int b_abs_c = b->chunk_c * res.tile_w + b->tile_c;
-
-    *out_r = b_abs_r - a_abs_r;
-    *out_c = b_abs_c - a_abs_c;
-}
-
 /* Uses a variant of the algorithm outlined here:
  * http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.42.3443&rep=rep1&type=pdf 
  * ('A Fast Voxel Traversal Algorithm for Ray Tracing' by John Amanatides, Andrew Woo)
@@ -706,12 +671,20 @@ size_t M_Tile_AllUnderCircle(struct map_resolution res, vec2_t xz_center, float 
         if(!M_Tile_RelativeDesc(res, &curr, dc, dr))
             continue;
 
+        /* The circle overlaps the tile iff the point of the tile rect nearest
+         * to the circle centre lies within the radius; clamping the centre to
+         * the rect finds that point without any quadratic solves. */
         struct box bounds = M_Tile_Bounds(res, map_pos, curr);
-        if(!C_CircleRectIntersection(xz_center, radius, bounds))
+        float xmin = bounds.x - bounds.width, xmax = bounds.x;
+        float zmin = bounds.z, zmax = bounds.z + bounds.height;
+        float cx = xz_center.x < xmin ? xmin : (xz_center.x > xmax ? xmax : xz_center.x);
+        float cz = xz_center.z < zmin ? zmin : (xz_center.z > zmax ? zmax : xz_center.z);
+        float dx = xz_center.x - cx, dz = xz_center.z - cz;
+        if(dx * dx + dz * dz > radius * radius)
             continue;
 
         out[ret++] = curr;
-        if(ret == maxout) 
+        if(ret == maxout)
             return ret;
     }}
     return ret;
