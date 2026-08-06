@@ -85,12 +85,12 @@ void N_FC_InvalidateAllThroughChunk(struct fieldcache_ctx *ctx,
  * current one. This is because 'enemy seek' fields are also dependent
  * on the state of the units in adjacent chunks.
  */
-void N_FC_InvalidateNeighbourEnemySeekFields(struct fieldcache_ctx *ctx, 
-                                             int width, int height, 
-                                             struct coord chunk, 
-                                             enum nav_layer layer);
+size_t N_FC_InvalidateNeighbourEnemySeekFields(struct fieldcache_ctx *ctx,
+                                               int width, int height,
+                                               struct coord chunk,
+                                               enum nav_layer layer);
 
-void N_FC_InvalidateDynamicSurroundFields(struct fieldcache_ctx *ctx);
+size_t N_FC_InvalidateDynamicSurroundFields(struct fieldcache_ctx *ctx);
 
 /*###########################################################################*/
 /* LOS FIELD CACHING                                                         */

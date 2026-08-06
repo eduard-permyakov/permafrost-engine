@@ -233,13 +233,14 @@ static void clear_chunk_los_map(struct fieldcache_ctx *ctx, uint64_t key, enum n
     }
 }
 
-static void clear_chunk_flow_map(struct fieldcache_ctx *ctx, uint64_t key, 
-                                 enum nav_layer layer, int only_target_type)
+static size_t clear_chunk_flow_map(struct fieldcache_ctx *ctx, uint64_t key,
+                                   enum nav_layer layer, int only_target_type)
 {
     khiter_t k = kh_get(idvec, ctx->chunk_ffield_map, key);
     if(k == kh_end(ctx->chunk_ffield_map))
-        return;
+        return 0;
 
+    size_t ret = 0;
     vec_id_t *keys = &kh_val(ctx->chunk_ffield_map, k);
     for(int i = vec_size(keys)-1; i >= 0; i--) {
 
@@ -252,12 +253,14 @@ static void clear_chunk_flow_map(struct fieldcache_ctx *ctx, uint64_t key,
 
         bool found = lru_flow_remove(&ctx->flow_cache, key);
         ctx->perfstats.flow_invalidated += !!found;
+        ret += !!found;
         vec_id_del(keys, i);
     }
     if(vec_size(keys) == 0) {
         vec_id_destroy(keys);
         kh_del(idvec, ctx->chunk_ffield_map, k);
     }
+    return ret;
 }
 
 /*****************************************************************************/
@@ -564,10 +567,11 @@ void N_FC_InvalidateAllThroughChunk(struct fieldcache_ctx *ctx, struct coord chu
     });
 }
 
-void N_FC_InvalidateNeighbourEnemySeekFields(struct fieldcache_ctx *ctx, int width, int height, 
-                                             struct coord chunk, enum nav_layer layer)
+size_t N_FC_InvalidateNeighbourEnemySeekFields(struct fieldcache_ctx *ctx, int width, int height,
+                                               struct coord chunk, enum nav_layer layer)
 {
     FC_ASSERT_NAV_TASK();
+    size_t ret = 0;
     for(int dr = -1; dr <= +1; dr++) {
     for(int dc = -1; dc <= +1; dc++) {
 
@@ -584,18 +588,20 @@ void N_FC_InvalidateNeighbourEnemySeekFields(struct fieldcache_ctx *ctx, int wid
 
         struct coord curr = (struct coord){abs_r, abs_c};
         uint64_t key = key_for_chunk(curr);
-        clear_chunk_flow_map(ctx, key, layer, TARGET_ENEMIES);
+        ret += clear_chunk_flow_map(ctx, key, layer, TARGET_ENEMIES);
     }}
+    return ret;
 }
 
-void N_FC_InvalidateDynamicSurroundFields(struct fieldcache_ctx *ctx)
+size_t N_FC_InvalidateDynamicSurroundFields(struct fieldcache_ctx *ctx)
 {
     FC_ASSERT_NAV_TASK();
+    size_t ret = 0;
     uint64_t key;
     struct flow_field ff_val;
 
     LRU_FOREACH_SAFE_REMOVE(flow, &ctx->flow_cache, key, ff_val, {
-    
+
         int type = N_FlowFieldTargetType(key);
         if(type != TARGET_ENTITY)
             continue;
@@ -605,7 +611,9 @@ void N_FC_InvalidateDynamicSurroundFields(struct fieldcache_ctx *ctx)
             continue;
 
         lru_flow_remove(&ctx->flow_cache, key);
+        ret++;
     });
+    return ret;
 }
 
 struct fieldcache_ctx *N_FC_New(void)
@@ -622,6 +630,11 @@ void N_FC_Free(struct fieldcache_ctx *ctx)
 void N_FC_SetNavTaskTIDProvider(uint32_t (*provider)(void))
 {
     s_nav_task_tid_provider = provider;
+}
+
+uint32_t N_FC_NavTaskTID(void)
+{
+    return s_nav_task_tid_provider ? s_nav_task_tid_provider() : NULL_TID;
 }
 
 bool N_FC_InitSingleton(void)

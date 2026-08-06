@@ -61,6 +61,7 @@
 
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
+#define CLAMP(a, min, max)  (MIN(MAX((a), (min)), (max)))
 #define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
 #define MAX_ENTS_PER_CHUNK  (4096)
 #define SEARCH_BUFFER       (16.0f)
@@ -1465,14 +1466,34 @@ static size_t field_passable_frontier(
     void                     *workspace,
     size_t                    ws_size)
 {
-    struct nav_chunk *start_chunk = 
-        &priv->chunks[layer][start.chunk_r * priv->width + start.chunk_c];
-    struct coord start_coord = (struct coord){start.tile_r, start.tile_c};
-    assert(!field_tile_passable(start_chunk, start_coord));
     size_t ret = 0;
 
     struct map_resolution res;
     N_GetResolution(priv, &res);
+
+    /* The caller picked 'start' from an earlier view of the map state. Units
+     * are dynamic blockers, so by the time we run here the tile may lie outside
+     * the region or have become passable; clamp and degrade gracefully.
+     */
+    int sdr, sdc;
+    M_Tile_Distance(res, &region.base, &start, &sdr, &sdc);
+    sdr = CLAMP(sdr, 0, (int)region.r - 1);
+    sdc = CLAMP(sdc, 0, (int)region.c - 1);
+    struct tile_desc clamped = region.base;
+    if(!M_Tile_RelativeDesc(res, &clamped, sdc, sdr))
+        return 0;
+    start = clamped;
+
+    struct nav_chunk *start_chunk =
+        &priv->chunks[layer][start.chunk_r * priv->width + start.chunk_c];
+    struct coord start_coord = (struct coord){start.tile_r, start.tile_c};
+    if(field_tile_passable(start_chunk, start_coord)) {
+        if(maxout == 0)
+            return 0;
+        out[0] = start;
+        return 1;
+    }
+
     const size_t nelems = pow(MAX(region.r, region.c), 2.0f);
 
     /* Allow worker threads to use thread-local workspace memory

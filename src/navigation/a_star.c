@@ -254,15 +254,24 @@ static int neighbours_portal_graph(const struct nav_private *priv, enum nav_laye
 }
 
 static bool portal_path_found(const struct nav_private *priv, enum nav_layer layer,
-                              khash_t(key_portal) *came_from, const struct portal *finish,
-                              uint16_t end_liid, struct portal_hop *out_first)
+                              khash_t(key_portal) *came_from, khash_t(key_float) *running_cost,
+                              const struct portal *finish, uint16_t end_liid,
+                              struct portal_hop *out_first)
 {
     khiter_t k;
-    const struct nav_chunk *chunk = 
+    const struct nav_chunk *chunk =
         &priv->chunks[layer][finish->chunk.r * priv->width + finish->chunk.c];
 
     struct portal_hop hop = (struct portal_hop){finish, end_liid};
     if((k = kh_get(key_portal, came_from, phop_to_key(&hop))) != kh_end(came_from)) {
+        *out_first = hop;
+        return true;
+    }
+    /* Frontier seeds are reached but have no came_from entry; a path whose
+     * only node is a seed (the target portal is directly reachable from the
+     * source tile) is still a found path. The backward walk terminates on the
+     * came_from miss, yielding the single-hop path. */
+    if((k = kh_get(key_float, running_cost, phop_to_key(&hop))) != kh_end(running_cost)) {
         *out_first = hop;
         return true;
     }
@@ -438,6 +447,8 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_til
         goto fail_came_from;
     if(NULL == (running_cost = kh_init(key_float)))
         goto fail_running_cost;
+    kh_resize(key_portal, came_from, 512);
+    kh_resize(key_float, running_cost, 512);
 
     const struct nav_chunk *bchunk = &priv->chunks[layer][start_tile.chunk_r * priv->width + start_tile.chunk_c];
     uint16_t start_liid = N_ClosestPathableLocalIsland(priv, bchunk, start_tile);
@@ -505,7 +516,7 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_til
     }
     
     struct portal_hop last;
-    if(!portal_path_found(priv, layer, came_from, finish, end_liid, &last))
+    if(!portal_path_found(priv, layer, came_from, running_cost, finish, end_liid, &last))
         goto fail_find_path;
 
     vec_portal_reset(out_path);

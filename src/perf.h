@@ -155,6 +155,17 @@ struct nav_tick_sample{
     /* Field-cache miss counters */
     uint32_t nlos_builds;   /* units whose LOS field was built this tick */
     uint32_t nreq_rebuilds; /* units whose path was serviced this tick */
+    /* Field churn diagnostics (see struct nav_tick_diag) */
+    uint32_t nenemy_built;
+    uint32_t nzone_built;
+    uint32_t nsurround_built;
+    uint32_t ninval_enemy;
+    uint32_t ninval_surround;
+    uint32_t nsvc_sync;
+    uint32_t nsvc_patch;
+    uint32_t nastar;
+    uint32_t nastar_memo;
+    uint32_t npseek_built;
 };
 
 struct perf_info{

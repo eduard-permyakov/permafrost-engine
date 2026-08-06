@@ -76,6 +76,9 @@
 bool M_TileAdjacentToWater(const struct map *map, const struct tile_desc *td);
 bool M_TileAdjacentToLand(const struct map *map, const struct tile_desc *td);
 
+static bool field_work_pending(ff_id_t ffid);
+static void field_submit_work(void);
+
 #define IDX(r, width, c)   ((r) * (width) + (c))
 #define CURSOR_OFF(cursor, base) ((ptrdiff_t)((cursor) - (base)))
 #define ARR_SIZE(a)              (sizeof(a)/sizeof(a[0]))
@@ -85,7 +88,7 @@ bool M_TileAdjacentToLand(const struct map *map, const struct tile_desc *td);
 #define CLAMP(a, min, max)       (MIN(MAX((a), (min)), (max)))
 
 #define EPSILON                  (1.0f / 1024)
-#define MAX_FIELD_TASKS          (256)
+#define MAX_FIELD_TASKS          (512)
 
 #define FOREACH_PORTAL(_priv, _layer, _local, ...)                                              \
     do{                                                                                         \
@@ -167,7 +170,6 @@ struct field_work{
     vec_in_t        in;
     vec_out_t       out;
     size_t          nwork;
-    size_t          ntasks;
     uint32_t        tids[MAX_FIELD_TASKS];
     struct future   futures[MAX_FIELD_TASKS];
 };
@@ -180,6 +182,32 @@ KHASH_SET_INIT_INT64(td)
 /*****************************************************************************/
 
 static struct field_work s_field_work;
+
+/* Per-tick field churn diagnostics for the perf window; reset at the top of
+ * the nav tick in N_ApplyDeferredInvalidations. */
+static struct nav_tick_diag s_tick_diag;
+
+/* Per-tick memo of the portal-graph solve in n_request_path, keyed by
+ * (src chunk, src local island, dest id). During a storm thousands of units
+ * share a handful of these keys; the snapshot's chunks are immutable for the
+ * tick, so the solve outcome can be replayed. Only used on the navigation
+ * tick task: main-thread requests run against the live context, whose chunk
+ * state the memo does not describe.
+ */
+enum astar_memo_outcome{
+    MEMO_PATH,       /* proceed to the backward walk with the stored path */
+    MEMO_TRUE_EARLY, /* return true without building any fields */
+    MEMO_FALSE,      /* return false */
+};
+
+struct astar_memo_entry{
+    enum astar_memo_outcome outcome;
+    struct tile_desc        dst_desc;
+    vec_portal_t            path;    /* valid for MEMO_PATH only */
+};
+
+KHASH_MAP_INIT_INT64(astar_memo, struct astar_memo_entry)
+static khash_t(astar_memo) *s_astar_memo;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -1044,7 +1072,7 @@ static void n_update_blockers(struct nav_private *priv, enum nav_layer layer, in
             assert(ret != -1);
 
             priv->local_islands_dirty[layer] = true;
-            priv->edge_states_dirty[layer] = true;
+            priv->edge_chunks_dirty[layer] = true;
         }
     }
 }
@@ -1424,6 +1452,7 @@ static const struct portal *n_closest_reachable_from_location(struct nav_private
 
             if(!arr_contains(liids, nliids, curr_liid) && nliids < ARR_SIZE(liids)) {
                 liids[nliids++] = curr_liid;
+                s_tick_diag.nastar++;
                 if(AStar_PortalGraphPath(loc, curr, port, priv, layer, &path, &cost)
                 && cost < shortest_dist) {
 
@@ -1772,6 +1801,107 @@ static void n_update_island_field(struct nav_private *priv, enum nav_layer layer
     }}
 }
 
+static bool on_nav_task(void)
+{
+    uint32_t tid = N_FC_NavTaskTID();
+    return (tid != NULL_TID) && (Sched_ActiveTID() == tid);
+}
+
+/* Queues a flow-field build on the async pool instead of flooding it inline
+ * on the navigation fiber. Returns false when the pool is full, in which case
+ * the caller floods inline as before. The result becomes resident at the next
+ * N_AwaitAsyncFields join, which runs before any consumer of the field.
+ */
+static bool n_request_async_flow(struct nav_private *priv, struct coord chunk,
+                                 struct field_target target, int faction_id,
+                                 enum nav_layer layer, ff_id_t ffid)
+{
+    if(field_work_pending(ffid))
+        return true;
+
+    if(s_field_work.nwork == MAX_FIELD_TASKS)
+        return false;
+
+    vec_in_push(&s_field_work.in, (struct field_work_in){
+        .priv = priv,
+        .chunk = chunk,
+        .target = target,
+        .faction_id = faction_id,
+        .layer = layer,
+        .id = ffid
+    });
+    field_submit_work();
+    return true;
+}
+
+static uint64_t astar_memo_key(struct tile_desc src, uint16_t src_liid, dest_id_t dest)
+{
+    return ((uint64_t)src.chunk_r << 58)
+         | ((uint64_t)src.chunk_c << 52)
+         | ((uint64_t)src_liid    << 32)
+         | ((uint64_t)dest);
+}
+
+static void astar_memo_store(uint64_t key, enum astar_memo_outcome outcome,
+                             struct tile_desc dst_desc, const vec_portal_t *path)
+{
+    struct astar_memo_entry entry = (struct astar_memo_entry){
+        .outcome = outcome,
+        .dst_desc = dst_desc,
+    };
+    if(outcome == MEMO_PATH) {
+        vec_portal_init(&entry.path);
+        if(!vec_portal_resize(&entry.path, vec_size(path)))
+            return;
+        for(int i = 0; i < vec_size(path); i++) {
+            vec_portal_push(&entry.path, vec_AT(path, i));
+        }
+    }
+
+    int status;
+    khiter_t k = kh_put(astar_memo, s_astar_memo, key, &status);
+    if(status <= 0) {
+        if(outcome == MEMO_PATH)
+            vec_portal_destroy(&entry.path);
+        return;
+    }
+    kh_value(s_astar_memo, k) = entry;
+}
+
+static void astar_memo_clear(void)
+{
+    struct astar_memo_entry entry;
+    kh_foreach_value(s_astar_memo, entry, {
+        if(entry.outcome == MEMO_PATH) {
+            vec_portal_destroy(&entry.path);
+        }
+    });
+    kh_clear(astar_memo, s_astar_memo);
+}
+
+static bool field_has_flow(const struct flow_field *ff)
+{
+    for(int r = 0; r < FIELD_RES_R; r++) {
+    for(int c = 0; c < FIELD_RES_C; c++) {
+        if(ff->field[r][c].dir_idx != FD_NONE)
+            return true;
+    }}
+    return false;
+}
+
+/* Commit fields pre-patched: blocker churn invalidates and rebuilds corridor
+ * fields near-continuously while packed columns march, and an unpatched field
+ * makes every unit standing on a blocked tile re-request the patch service
+ * after every rebuild. Wholly empty fields are left for the per-unit
+ * island-to-nearest fallback.
+ */
+static void field_patch_blocked(struct flow_field *ff)
+{
+    if(field_has_flow(ff)) {
+        N_FlowFieldPatchBlocked(ff);
+    }
+}
+
 static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int faction_id,
                            vec3_t map_pos, enum nav_layer layer, dest_id_t *out_dest_id)
 {
@@ -1783,11 +1913,30 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
 
     bool result;
     (void)result;
+    /* On the navigation task, the portal solve is memoized per tick and flow
+     * floods are deferred to the async pool; main-thread requests run fully
+     * inline against the live context. */
+    bool on_task = on_nav_task();
 
     n_update_dirty_local_islands(nav_private, layer);
     if(priv->edge_states_dirty[layer]) {
         n_update_all_edge_states(priv, layer);
         priv->edge_states_dirty[layer] = false;
+        priv->edge_chunks_dirty[layer] = false;
+    }else if(priv->edge_chunks_dirty[layer]) {
+
+        khash_t(coord) *set = priv->dirty_chunks[layer];
+        for(khiter_t k = kh_begin(set); k != kh_end(set); k++) {
+
+            if(!kh_exist(set, k))
+                continue;
+
+            uint32_t key = kh_key(set, k);
+            struct coord curr = (struct coord){ key >> 16, key & 0xffff };
+            n_update_edge_states(priv, layer,
+                &priv->chunks[layer][IDX(curr.r, priv->width, curr.c)]);
+        }
+        priv->edge_chunks_dirty[layer] = false;
     }
 
     /* Convert source and destination positions to tile coordinates */
@@ -1828,11 +1977,13 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
         struct flow_field ff;
         id = N_FlowFieldID((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, target, layer);
 
-        if(!N_FC_ContainsFlowField(priv->fieldcache, id)) {
-        
-            struct coord chunk = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
+        struct coord chunk = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
+        if(!N_FC_ContainsFlowField(priv->fieldcache, id)
+        && !(on_task && n_request_async_flow(priv, chunk, target, faction_id, layer, id))) {
+
             N_FlowFieldInit(chunk, &ff);
             N_FlowFieldUpdate(chunk, priv, faction_id, layer, target, priv->unit_query_ctx, &ff);
+            field_patch_blocked(&ff);
             N_FC_PutFlowField(priv->fieldcache, id, &ff);
         }
 
@@ -1881,22 +2032,61 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
         }
     }
 
-    const struct portal *dst_port = n_closest_reachable_portal(dst_chunk, 
+    float cost;
+    vec_portal_t path;
+    vec_portal_init(&path);
+    const struct portal *dst_port = NULL;
+
+    uint64_t memo_key = 0;
+    bool use_memo = on_task;
+    if(use_memo) {
+
+        uint16_t src_liid = N_ClosestPathableLocalIsland(priv, src_chunk, src_desc);
+        memo_key = astar_memo_key(src_desc, src_liid, ret);
+
+        khiter_t k = kh_get(astar_memo, s_astar_memo, memo_key);
+        if(k != kh_end(s_astar_memo)) {
+
+            s_tick_diag.nastar_memo++;
+            const struct astar_memo_entry *entry = &kh_value(s_astar_memo, k);
+            switch(entry->outcome) {
+            case MEMO_TRUE_EARLY:
+                vec_portal_destroy(&path);
+                *out_dest_id = ret;
+                PERF_RETURN(true);
+            case MEMO_FALSE:
+                vec_portal_destroy(&path);
+                PERF_RETURN(false);
+            case MEMO_PATH:
+                dst_desc = entry->dst_desc;
+                vec_portal_resize(&path, vec_size(&entry->path));
+                for(int i = 0; i < vec_size(&entry->path); i++) {
+                    vec_portal_push(&path, vec_AT(&entry->path, i));
+                }
+                /* The reconstructed path always ends at the portal the solve
+                 * targeted. */
+                dst_port = vec_AT(&path, vec_size(&path) - 1).portal;
+                goto walk;
+            }
+        }
+    }
+
+    dst_port = n_closest_reachable_portal(dst_chunk,
         (struct coord){dst_desc.tile_r, dst_desc.tile_c}, true);
     if(!dst_port) {
-        dst_port = n_closest_reachable_portal(dst_chunk, 
+        dst_port = n_closest_reachable_portal(dst_chunk,
             (struct coord){dst_desc.tile_r, dst_desc.tile_c}, false);
     }
 
     if(!dst_port) {
+        if(use_memo)
+            astar_memo_store(memo_key, MEMO_FALSE, dst_desc, NULL);
+        vec_portal_destroy(&path);
         PERF_RETURN(false);
     }
 
-    float cost;
-    vec_portal_t path;
-    vec_portal_init(&path);
-
-    bool path_exists = AStar_PortalGraphPath(src_desc, dst_desc, dst_port, 
+    s_tick_diag.nastar++;
+    bool path_exists = AStar_PortalGraphPath(src_desc, dst_desc, dst_port,
         priv, layer, &path, &cost);
     if(!path_exists) {
 
@@ -1910,17 +2100,20 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
          * on another island, it is not guaranteed that it will lead to to the target. Resort 
          * to getting maximally close on this chunk.
          */
-        if(N_ClosestPathableLocalIsland(priv, dst_chunk, dst_desc) 
+        if(N_ClosestPathableLocalIsland(priv, dst_chunk, dst_desc)
         != N_ClosestPathableLocalIsland(priv, dst_chunk, orig_dst)
         && (src_desc.chunk_r == dst_desc.chunk_r && src_desc.chunk_c == dst_desc.chunk_c)) {
 
+            if(use_memo)
+                astar_memo_store(memo_key, MEMO_TRUE_EARLY, dst_desc, NULL);
             vec_portal_destroy(&path);
             *out_dest_id = ret;
             PERF_RETURN(true);
         }
 
         if(dst_port) {
-            path_exists = AStar_PortalGraphPath(src_desc, dst_desc, dst_port, 
+            s_tick_diag.nastar++;
+            path_exists = AStar_PortalGraphPath(src_desc, dst_desc, dst_port,
                 priv, layer, &path, &cost);
         }
     }
@@ -1928,16 +2121,24 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
     if(!path_exists) {
         vec_portal_destroy(&path);
 
-        /* If the source and destination are on the same chunk, then there is nothing left for us 
+        /* If the source and destination are on the same chunk, then there is nothing left for us
          * to do but get as close as possible */
         if(src_desc.chunk_r == dst_desc.chunk_r && src_desc.chunk_c == dst_desc.chunk_c) {
+            if(use_memo)
+                astar_memo_store(memo_key, MEMO_TRUE_EARLY, dst_desc, NULL);
             *out_dest_id = ret;
             PERF_RETURN(true);
         }else{
+            if(use_memo)
+                astar_memo_store(memo_key, MEMO_FALSE, dst_desc, NULL);
             PERF_RETURN(false);
         }
     }
 
+    if(use_memo)
+        astar_memo_store(memo_key, MEMO_PATH, dst_desc, &path);
+
+walk:;
     struct coord prev_los_coord = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
 
     /* Traverse the portal path _backwards_ and generate the required fields, 
@@ -2004,10 +2205,11 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
             ff.patched = 0;
 
             N_FlowFieldUpdate(chunk_coord, priv, faction_id, layer, target, priv->unit_query_ctx, &ff);
-            /* We set the updated flow field for the new (least recently used) key. Since in 
-             * this case more than one flowfield ID maps to the same field but we only keep 
-             * one of the IDs, it may be possible that the same flowfield will be redundantly 
-             * updated at a later time. However, this is largely inconsequential. 
+            field_patch_blocked(&ff);
+            /* We set the updated flow field for the new (least recently used) key. Since in
+             * this case more than one flowfield ID maps to the same field but we only keep
+             * one of the IDs, it may be possible that the same flowfield will be redundantly
+             * updated at a later time. However, this is largely inconsequential.
              */
             N_FC_PutDestFFMapping(priv->fieldcache, ret, chunk_coord, new_id);
             N_FC_PutFlowField(priv->fieldcache, new_id, &ff);
@@ -2016,15 +2218,17 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
         }
 
         N_FC_PutDestFFMapping(priv->fieldcache, ret, chunk_coord, new_id);
-        if(!N_FC_ContainsFlowField(priv->fieldcache, new_id)) {
+        if(!N_FC_ContainsFlowField(priv->fieldcache, new_id)
+        && !(on_task && n_request_async_flow(priv, chunk_coord, target, faction_id, layer, new_id))) {
 
             N_FlowFieldInit(chunk_coord, &ff);
             N_FlowFieldUpdate(chunk_coord, priv, faction_id, layer, target, priv->unit_query_ctx, &ff);
+            field_patch_blocked(&ff);
             N_FC_PutFlowField(priv->fieldcache, new_id, &ff);
         }
 
     ff_exists:
-        assert(N_FC_ContainsFlowField(priv->fieldcache, new_id));
+        assert(N_FC_ContainsFlowField(priv->fieldcache, new_id) || field_work_pending(new_id));
         /* Reference field in the cache */
         (void)N_FC_FlowFieldAt(priv->fieldcache, new_id);
 
@@ -2059,16 +2263,48 @@ static struct result field_task(void *arg)
     struct field_work_out *out = &vec_AT(&s_field_work.out, *index);
 
     N_FlowFieldInit(in->chunk, &out->field);
-    N_FlowFieldUpdate(in->chunk, in->priv, in->faction_id, in->layer, in->target, 
+    N_FlowFieldUpdate(in->chunk, in->priv, in->faction_id, in->layer, in->target,
         in->priv->unit_query_ctx, &out->field);
+
+    if(in->target.type != TARGET_ZONE) {
+        field_patch_blocked(&out->field);
+    }
 
     Perf_NavParallelAddSince(t0);
     return NULL_RESULT;
 }
 
+static bool field_work_pending(ff_id_t ffid)
+{
+    for(int i = 0; i < s_field_work.nwork; i++) {
+        if(vec_AT(&s_field_work.in, i).id == ffid)
+            return true;
+    }
+    return false;
+}
+
+/* Submits the last-pushed field work entry to the task pool. On task pool
+ * exhaustion the field is computed inline, keeping the in/out/future arrays
+ * index-paired either way.
+ */
+static void field_submit_work(void)
+{
+    size_t idx = s_field_work.nwork++;
+    size_t *arg = stalloc(&s_field_work.mem, sizeof(size_t));
+    *arg = idx;
+
+    SDL_AtomicSet(&s_field_work.futures[idx].status, FUTURE_INCOMPLETE);
+    s_field_work.tids[idx] = Sched_Create(1, field_task, arg,
+        "nav::field_task", &s_field_work.futures[idx], TASK_BIG_STACK);
+    if(s_field_work.tids[idx] == NULL_TID) {
+        field_task(arg);
+        SDL_AtomicSet(&s_field_work.futures[idx].status, FUTURE_COMPLETE);
+    }
+}
+
 static void field_join_work(void)
 {
-    Sched_AwaitAll(s_field_work.tids, s_field_work.futures, s_field_work.ntasks);
+    Sched_AwaitAll(s_field_work.tids, s_field_work.futures, s_field_work.nwork);
 }
 
 static vec2_t tile_center_location(struct nav_private *priv, vec3_t map_pos, struct tile_desc td)
@@ -2091,6 +2327,9 @@ bool N_Init(void)
 {
     memset(&s_field_work, 0, sizeof(s_field_work));
     if(!stalloc_init(&s_field_work.mem))
+        goto fail_alloc;
+
+    if(NULL == (s_astar_memo = kh_init(astar_memo)))
         goto fail_alloc;
 
     vec_inval_init(&s_pending_inval);
@@ -2165,6 +2404,8 @@ void N_Update(void *nav_private)
             n_update_components(priv, layer);
             full_layer[layer] = true;
         }
+        /* The per-dirty-chunk sweep above reconciled every flipped chunk. */
+        priv->edge_chunks_dirty[layer] = false;
     }
     PERF_POP();
 
@@ -2209,24 +2450,34 @@ void N_Update(void *nav_private)
 
 void N_ApplyDeferredInvalidations(void)
 {
+    memset(&s_tick_diag, 0, sizeof(s_tick_diag));
+    astar_memo_clear();
+
     struct fieldcache_ctx *fc = N_FC_GetSingleton();
-    N_FC_InvalidateDynamicSurroundFields(fc);
+    s_tick_diag.inval_surround += N_FC_InvalidateDynamicSurroundFields(fc);
 
     for(int i = 0; i < vec_size(&s_pending_inval); i++) {
 
         const struct fc_inval_cmd *cmd = &vec_AT(&s_pending_inval, i);
         N_FC_InvalidateAllAtChunk(fc, cmd->chunk, cmd->layer);
-        N_FC_InvalidateNeighbourEnemySeekFields(fc, cmd->width, cmd->height,
-            cmd->chunk, cmd->layer);
+        s_tick_diag.inval_enemy += N_FC_InvalidateNeighbourEnemySeekFields(fc,
+            cmd->width, cmd->height, cmd->chunk, cmd->layer);
         if(cmd->through)
             N_FC_InvalidateAllThroughChunk(fc, cmd->chunk, cmd->layer);
     }
     vec_inval_reset(&s_pending_inval);
 }
 
+void N_GetTickDiag(struct nav_tick_diag *out)
+{
+    *out = s_tick_diag;
+}
+
 void N_Shutdown(void)
 {
     field_join_work();
+    astar_memo_clear();
+    kh_destroy(astar_memo, s_astar_memo);
     N_FC_ShutdownSingleton();
     vec_inval_destroy(&s_pending_inval);
     vec_crange_destroy(&s_pub_ranges);
@@ -2278,6 +2529,7 @@ void N_ClearCtx(void *nav_private)
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
         priv->local_islands_dirty[i] = false;
         priv->edge_states_dirty[i] = true;
+        priv->edge_chunks_dirty[i] = false;
         kh_clear(coord, priv->dirty_chunks[i]);
     }
 
@@ -3659,7 +3911,9 @@ void N_ServicePathRequest(void *nav_private, vec3_t map_pos, struct target targe
             struct flow_field built;
             N_FlowFieldInit(chunk, &built);
             N_FlowFieldUpdate(chunk, priv, faction_id, layer, ft, priv->unit_query_ctx, &built);
+            field_patch_blocked(&built);
             N_FC_PutFlowField(priv->fieldcache, ffid, &built);
+            s_tick_diag.svc_sync++;
         }
     }
 
@@ -3697,8 +3951,13 @@ void N_ServicePathRequest(void *nav_private, vec3_t map_pos, struct target targe
         uint16_t local_iid = nchunk->local_islands[tile.tile_r][tile.tile_c];
         N_FlowFieldUpdateIslandToNearest(local_iid, priv, layer, faction_id,
             priv->unit_query_ctx, &rebuilt);
+        /* Completing the island rebuild with the patch pass gives the other
+         * islands' units flow as well and marks the field patched, so one
+         * service resolves the sealed chunk instead of one per island. */
+        field_patch_blocked(&rebuilt);
     }
     N_FC_PutFlowField(priv->fieldcache, ffid, &rebuilt);
+    s_tick_diag.svc_patch++;
 }
 
 bool N_DesiredGroupArrivalVelocity(vec2_t curr_pos, void *nav_private, enum nav_layer layer,
@@ -3794,15 +4053,7 @@ void N_RequestAsyncEnemySeekField(vec2_t curr_pos, void *nav_private, enum nav_l
         .layer = layer,
         .id = ffid
     });
-    size_t *arg = stalloc(&s_field_work.mem, sizeof(size_t));
-    *arg = s_field_work.nwork++;
-
-    SDL_AtomicSet(&s_field_work.futures[s_field_work.ntasks].status, FUTURE_INCOMPLETE);
-    s_field_work.tids[s_field_work.ntasks] = Sched_Create(1, field_task, arg, 
-        "nav::field_task", &s_field_work.futures[s_field_work.ntasks], TASK_BIG_STACK);
-    if(s_field_work.tids[s_field_work.ntasks] != NULL_TID) {
-        s_field_work.ntasks++;
-    }
+    field_submit_work();
 }
 
 void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_layer layer,
@@ -3848,15 +4099,7 @@ void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_la
         .layer = layer,
         .id = ffid
     });
-    size_t *arg = stalloc(&s_field_work.mem, sizeof(size_t));
-    *arg = s_field_work.nwork++;
-
-    SDL_AtomicSet(&s_field_work.futures[s_field_work.ntasks].status, FUTURE_INCOMPLETE);
-    s_field_work.tids[s_field_work.ntasks] = Sched_Create(1, field_task, arg, 
-        "nav::field_task", &s_field_work.futures[s_field_work.ntasks], TASK_BIG_STACK);
-    if(s_field_work.tids[s_field_work.ntasks] != NULL_TID) {
-        s_field_work.ntasks++;
-    }
+    field_submit_work();
 }
 
 static void request_zone_field_chunk(struct nav_private *priv, struct coord chunk,
@@ -3884,15 +4127,7 @@ static void request_zone_field_chunk(struct nav_private *priv, struct coord chun
         .layer = layer,
         .id = ffid
     });
-    size_t *arg = stalloc(&s_field_work.mem, sizeof(size_t));
-    *arg = s_field_work.nwork++;
-
-    SDL_AtomicSet(&s_field_work.futures[s_field_work.ntasks].status, FUTURE_INCOMPLETE);
-    s_field_work.tids[s_field_work.ntasks] = Sched_Create(1, field_task, arg,
-        "nav::field_task", &s_field_work.futures[s_field_work.ntasks], TASK_BIG_STACK);
-    if(s_field_work.tids[s_field_work.ntasks] != NULL_TID) {
-        s_field_work.ntasks++;
-    }
+    field_submit_work();
 }
 
 void N_RequestAsyncGroupArrivalField(vec2_t centre_pos, void *nav_private, enum nav_layer layer,
@@ -3935,14 +4170,22 @@ void N_RequestAsyncGroupArrivalField(vec2_t centre_pos, void *nav_private, enum 
 void N_AwaitAsyncFields(void)
 {
     field_join_work();
-    for(int i = 0; i < s_field_work.ntasks; i++) {
+    for(int i = 0; i < s_field_work.nwork; i++) {
         struct field_work_in *in = &vec_AT(&s_field_work.in, i);
         struct field_work_out *out = &vec_AT(&s_field_work.out, i);
         N_FC_PutFlowField(in->priv->fieldcache, in->id, &out->field);
+
+        switch(in->target.type) {
+        case TARGET_ENEMIES: s_tick_diag.enemy_built++;    break;
+        case TARGET_ENTITY:  s_tick_diag.surround_built++; break;
+        case TARGET_ZONE:    s_tick_diag.zone_built++;     break;
+        case TARGET_PORTAL:
+        case TARGET_TILE:    s_tick_diag.pseek_built++;    break;
+        default:;
+        }
     }
     stalloc_clear(&s_field_work.mem);
     s_field_work.nwork = 0;
-    s_field_work.ntasks = 0;
 }
 
 void N_InvalidateZoneFieldsAt(void *nav_private, vec3_t map_pos, vec2_t xz_pos,

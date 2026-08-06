@@ -94,7 +94,7 @@ static int hz_count(enum movement_hz hz);
 #define SCALED_MAX_FORCE      (MAX_FORCE / hz_count(s_move_work.hz) * 20.0)
 #define VEL_HIST_LEN          (14)
 #define MAX_MOVE_TASKS        (64)
-#define MAX_REBUILDS_PER_TICK (128)
+#define MAX_REBUILDS_PER_TICK (64)
 #define MAX_GPU_FLOCK_MEMBERS (1024)  /* Must match movement.glsl */
 
 #define SIGNUM(x)    (((x) > 0) - ((x) < 0))
@@ -4198,6 +4198,20 @@ static enum move_work_status nav_tick_finish_work(void)
     s_last_nav_tick_stats.drain_us  = perf_ticks_to_us(SDL_GetPerformanceCounter() - drain_start);
     s_last_nav_tick_stats.nwork     = (uint32_t)s_move_work.nwork;
     s_last_nav_tick_stats.budget_us = 1000000u / hz_count(s_move_work.hz);
+
+    struct nav_tick_diag diag;
+    M_NavGetTickDiag(s_move_work.gamestate.map, &diag);
+    s_last_nav_tick_stats.nenemy_built    = diag.enemy_built;
+    s_last_nav_tick_stats.nzone_built     = diag.zone_built;
+    s_last_nav_tick_stats.nsurround_built = diag.surround_built;
+    s_last_nav_tick_stats.ninval_enemy    = diag.inval_enemy;
+    s_last_nav_tick_stats.ninval_surround = diag.inval_surround;
+    s_last_nav_tick_stats.nsvc_sync       = diag.svc_sync;
+    s_last_nav_tick_stats.nsvc_patch      = diag.svc_patch;
+    s_last_nav_tick_stats.nastar          = diag.nastar;
+    s_last_nav_tick_stats.nastar_memo     = diag.nastar_memo;
+    s_last_nav_tick_stats.npseek_built    = diag.pseek_built;
+
     Perf_RecordNavTick(&s_last_nav_tick_stats);
 
     return WORK_COMPLETE;
@@ -4389,6 +4403,20 @@ static void compute_los_state(void)
             checked++;
         if(!in->needs_los_build)
             continue;
+
+        const struct movestate *ms = movestate_get(in->ent_uid);
+        const struct flock *fl = in->flock;
+        vec2_t pos = (vec2_t){ms->prev_pos.x, ms->prev_pos.z};
+
+        /* The needs_los_build flag is a snapshot from the parallel peek: an
+         * earlier build this tick may have already cached this (dest, chunk)
+         * LOS field. A hit here costs no rebuild budget. */
+        bool present;
+        bool vis = M_NavHasDestLOSCached(map, fl->dest_id, pos, &present);
+        if(present) {
+            in->has_dest_los = vis;
+            continue;
+        }
         misses++;
 
         if(s_rebuild_budget == 0) {
@@ -4398,9 +4426,6 @@ static void compute_los_state(void)
         }
         s_rebuild_budget--;
 
-        const struct movestate *ms = movestate_get(in->ent_uid);
-        const struct flock *fl = in->flock;
-        vec2_t pos = (vec2_t){ms->prev_pos.x, ms->prev_pos.z};
         in->has_dest_los = M_NavHasDestLOS(map, fl->dest_id, pos, fl->target_xz);
         in->los_built = true;
 
@@ -4424,7 +4449,6 @@ static void compute_path_requests(void)
      * multiple threads, which is safe so long as nothing mutates it concurrently.
      */
     uint64_t phase_start = SDL_GetPerformanceCounter();
-    N_PrepareAsyncWork();
     for(int i = 0; i < s_move_work.nwork; i++) {
         struct move_work_in *in = &s_move_work.in[i];
         request_async_field(in->ent_uid);
@@ -4432,6 +4456,11 @@ static void compute_path_requests(void)
     }
     request_flock_arrival_fields();
     N_AwaitAsyncFields();
+
+    /* The join clears the pool's arena; the serial loop below re-uses the
+     * pool for its deferred flow floods, so it must be re-prepared (arrays
+     * are carved from the arena before any per-task args). */
+    N_PrepareAsyncWork();
     s_last_nav_tick_stats.cpr_async_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
 
@@ -4494,6 +4523,11 @@ static void compute_path_requests(void)
     if(s_first_starved != (size_t)-1) {
         s_rebuild_start = s_first_starved;
     }
+
+    /* Join the flow floods that the serviced path requests deferred to the
+     * async pool; the fields must be resident before the desired-velocity
+     * phase peeks them. */
+    N_AwaitAsyncFields();
 
     s_last_nav_tick_stats.cpr_serial_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
@@ -4599,6 +4633,10 @@ static struct result navigation_tick_task(void *arg)
     s_rebuild_budget = MAX_REBUILDS_PER_TICK;
     s_first_starved = (size_t)-1;
     N_ApplyDeferredInvalidations();
+
+    /* Open the async field pool for the whole tick: the serial LOS-build loop
+     * defers flow floods to it before compute_path_requests runs. */
+    N_PrepareAsyncWork();
 
     s_last_nav_tick_stats.inval_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - nav_start);

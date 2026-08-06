@@ -872,6 +872,7 @@ bool   M_AL_WritePFMap(const struct map *map, SDL_RWops *stream);
  * ------------------------------------------------------------------------
  */
 void M_GetFieldCacheStats(const struct map *map, struct fc_stats *out);
+void M_NavGetTickDiag(const struct map *map, struct nav_tick_diag *out);
 
 /* ------------------------------------------------------------------------
  * Post a batch of flow-field cache hit-rate samples from the nav tick task.

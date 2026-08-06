@@ -700,11 +700,35 @@ void  N_PublishLive(void *nav_private);
 void N_ApplyDeferredInvalidations(void);
 
 /* ------------------------------------------------------------------------
+ * Per-tick field churn diagnostics: async fields built by kind, enemy-seek/
+ * dynamic-surround fields invalidated, and synchronous service builds and
+ * blocked-tile patches. Reset at the top of every navigation tick.
+ * ------------------------------------------------------------------------
+ */
+struct nav_tick_diag{
+    uint32_t enemy_built;
+    uint32_t zone_built;
+    uint32_t surround_built;
+    uint32_t inval_enemy;
+    uint32_t inval_surround;
+    uint32_t svc_sync;
+    uint32_t svc_patch;
+    uint32_t nastar;      /* portal-graph A* invocations */
+    uint32_t nastar_memo; /* solves served from the per-tick memo */
+    uint32_t pseek_built; /* point-seek flow floods offloaded to the pool */
+};
+
+void N_GetTickDiag(struct nav_tick_diag *out);
+
+/* ------------------------------------------------------------------------
  * Registers a callback returning the tid of the navigation tick task. The
  * field cache uses it to assert it is only accessed from that context.
  * ------------------------------------------------------------------------
  */
 void N_FC_SetNavTaskTIDProvider(uint32_t (*provider)(void));
+
+/* The registered navigation tick task tid, or NULL_TID outside a tick. */
+uint32_t N_FC_NavTaskTID(void);
 
 /* ------------------------------------------------------------------------
  * Creates an arbitrary-resolution flow field guiding to a set of tiles.

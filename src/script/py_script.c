@@ -1524,7 +1524,7 @@ static PyObject *PyPf_get_nav_tick_times(PyObject *self)
     if(!list)
         return NULL;
     for(size_t i = 0; i < n; i++) {
-        PyObject *item = Py_BuildValue("(IIIIIIIIIIIIIIIIIIIIII)",
+        PyObject *item = Py_BuildValue("(IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII)",
             samples[i].dur_us, samples[i].serial_us,
             samples[i].total_us, samples[i].nwork, samples[i].budget_us,
             samples[i].tick,
@@ -1533,7 +1533,12 @@ static PyObject *PyPf_get_nav_tick_times(PyObject *self)
             samples[i].dv_us, samples[i].vel_us, samples[i].upd_us,
             samples[i].main_us, samples[i].consume_us, samples[i].copy_gs_us,
             samples[i].submit_us, samples[i].map_update_us, samples[i].drain_us,
-            samples[i].nlos_builds, samples[i].nreq_rebuilds);
+            samples[i].nlos_builds, samples[i].nreq_rebuilds,
+            samples[i].nenemy_built, samples[i].nzone_built,
+            samples[i].nsurround_built, samples[i].ninval_enemy,
+            samples[i].ninval_surround, samples[i].nsvc_sync,
+            samples[i].nsvc_patch, samples[i].nastar, samples[i].nastar_memo,
+            samples[i].npseek_built);
         if(!item) {
             Py_DECREF(list);
             return NULL;

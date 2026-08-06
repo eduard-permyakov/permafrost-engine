@@ -1317,6 +1317,12 @@ void M_GetFieldCacheStats(const struct map *map, struct fc_stats *out)
     return N_FC_GetStatsAt(map->nav_private, out);
 }
 
+void M_NavGetTickDiag(const struct map *map, struct nav_tick_diag *out)
+{
+    (void)map;
+    N_GetTickDiag(out);
+}
+
 void M_NavAddFlowSamples(const struct map *map, unsigned query, unsigned hit)
 {
     N_FC_AddFlowSamplesAt(map->nav_private, query, hit);

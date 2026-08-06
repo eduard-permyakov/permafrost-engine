@@ -1560,7 +1560,6 @@ uint32_t Sched_Create(int prio, task_func_t code, void *arg, const char *name,
     SDL_LockMutex(s_request_lock);
     uint32_t ret = sched_create(prio, code, arg, name, result, flags | TASK_DETACHED, NULL_TID);
     SDL_UnlockMutex(s_request_lock);
-    struct task *task = &s_tasks[ret - 1];
     return ret;
 }
 
