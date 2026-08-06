@@ -128,45 +128,46 @@ bool G_Pos_Set(uint32_t uid, vec3_t pos)
 
     khiter_t k = kh_get(pos, s_postable, uid);
     bool overwrite = (k != kh_end(s_postable));
+    int faction_id = G_GetFactionID(uid);
+    uint32_t flags = G_FlagsGet(uid);
     float vrange = G_GetVisionRange(uid);
-    vec3_t old_pos = {0};
 
     if(overwrite) {
-        old_pos = kh_val(s_postable, k);
-        bool ret = bg_ent_delete(&s_postree, old_pos.x, old_pos.z, uid);
-        assert(ret);
+        vec3_t old_pos = kh_val(s_postable, k);
+        if(!bg_ent_update(&s_postree, old_pos.x, old_pos.z, pos.x, pos.z, uid))
+            return false;
+        kh_val(s_postable, k) = pos;
 
-        G_Combat_RemoveRef(G_GetFactionID(uid), (vec2_t){old_pos.x, old_pos.z});
+        G_Combat_MoveRef(faction_id, (vec2_t){old_pos.x, old_pos.z},
+            (vec2_t){pos.x, pos.z});
         G_Region_RemoveRef(uid, (vec2_t){old_pos.x, old_pos.z});
-    }
+        G_Region_AddRef(uid, (vec2_t){pos.x, pos.z});
+        G_Fog_UpdateVision((vec2_t){old_pos.x, old_pos.z}, (vec2_t){pos.x, pos.z},
+            faction_id, vrange);
+    }else{
+        if(!bg_ent_insert(&s_postree, pos.x, pos.z, uid))
+            return false;
 
-    if(!bg_ent_insert(&s_postree, pos.x, pos.z, uid))
-        return false;
-
-    if(!overwrite) {
         int ret;
-        kh_put(pos, s_postable, uid, &ret); 
+        kh_put(pos, s_postable, uid, &ret);
         if(ret == -1) {
             bg_ent_delete(&s_postree, pos.x, pos.z, uid);
             return false;
         }
         k = kh_get(pos, s_postable, uid);
-    }
+        kh_val(s_postable, k) = pos;
 
-    kh_val(s_postable, k) = pos;
+        G_Combat_AddRef(faction_id, (vec2_t){pos.x, pos.z});
+        G_Region_AddRef(uid, (vec2_t){pos.x, pos.z});
+        G_Fog_AddVision((vec2_t){pos.x, pos.z}, faction_id, vrange);
+    }
     assert(kh_size(s_postable) == s_postree.nrecs);
 
     G_Move_UpdatePos(uid, (vec2_t){pos.x, pos.z});
-    G_Combat_AddRef(G_GetFactionID(uid), (vec2_t){pos.x, pos.z});
-    G_Region_AddRef(uid, (vec2_t){pos.x, pos.z});
-    G_Building_UpdateBounds(uid);
-    G_Resource_UpdateBounds(uid);
-    if(overwrite) {
-        G_Fog_UpdateVision((vec2_t){old_pos.x, old_pos.z}, (vec2_t){pos.x, pos.z},
-            G_GetFactionID(uid), vrange);
-    }else{
-        G_Fog_AddVision((vec2_t){pos.x, pos.z}, G_GetFactionID(uid), vrange);
-    }
+    if(flags & ENTITY_FLAG_BUILDING)
+        G_Building_UpdateBounds(uid);
+    if(flags & ENTITY_FLAG_RESOURCE)
+        G_Resource_UpdateBounds(uid);
 
     return true;
 }

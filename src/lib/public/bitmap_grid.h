@@ -321,6 +321,8 @@ static inline uint64_t bg_keep_bits_below(uint64_t w, int bit_hi)
     scope bool   bg_##name##_copy(const bg(name) *from, bg(name) *to);                         \
     scope bool   bg_##name##_insert(bg(name) *bg, float x, float y, type record);              \
     scope bool   bg_##name##_delete(bg(name) *bg, float x, float y, type record);              \
+    scope bool   bg_##name##_update(bg(name) *bg, float x, float y,                            \
+                                    float nx, float ny, type record);                          \
     scope bool   bg_##name##_find(bg(name) *bg, float x, float y, type *out, int maxout);      \
     scope bool   bg_##name##_contains(bg(name) *bg, float x, float y);                         \
     scope int    bg_##name##_inrange_circle(bg(name) *bg,                                      \
@@ -1185,6 +1187,52 @@ static inline uint64_t bg_keep_bits_below(uint64_t w, int bit_hi)
             }                                                                                  \
             prev = curr;                                                                       \
             curr = bg->nexts[curr];                                                            \
+        }                                                                                      \
+        return false;                                                                          \
+    }                                                                                          \
+                                                                                               \
+    /* Move: a same-cell move rewrites the stored coordinates in place, skipping           */  \
+    /* the delete/insert slot and bitmap churn.                                            */  \
+                                                                                               \
+    scope bool bg_##name##_update(bg(name) *bg, float x, float y,                              \
+                                  float nx, float ny, type record)                             \
+    {                                                                                          \
+        int32_t ix = BG_SCALE_F(x);                                                            \
+        int32_t iy = BG_SCALE_F(y);                                                            \
+        int32_t inx = BG_SCALE_F(nx);                                                          \
+        int32_t iny = BG_SCALE_F(ny);                                                          \
+        int cx = _bg_##name##_cell_x_from_int(bg, ix);                                         \
+        int cy = _bg_##name##_cell_y_from_int(bg, iy);                                         \
+        int ncx = _bg_##name##_cell_x_from_int(bg, inx);                                       \
+        int ncy = _bg_##name##_cell_y_from_int(bg, iny);                                       \
+                                                                                               \
+        if(cx != ncx || cy != ncy) {                                                           \
+            if(!bg_##name##_delete(bg, x, y, record))                                          \
+                return false;                                                                  \
+            return bg_##name##_insert(bg, nx, ny, record);                                     \
+        }                                                                                      \
+                                                                                               \
+        int ci = cy * bg->grid_w + cx;                                                         \
+        bg_cell(name) *c = &bg->cells[ci];                                                     \
+        int32_t start = c->packed_start;                                                       \
+        for(int32_t i = 0; i < c->packed_size; i++) {                                          \
+            int32_t idx = start + i;                                                           \
+            if(bg->xs[idx] == ix && bg->ys[idx] == iy                                          \
+            && bg->comparator(&record, &bg->records[idx])) {                                   \
+                bg->xs[idx] = inx;                                                             \
+                bg->ys[idx] = iny;                                                             \
+                bg->dirty = true;                                                              \
+                return true;                                                                   \
+            }                                                                                  \
+        }                                                                                      \
+        for(int32_t curr = c->overflow_head; curr >= 0; curr = bg->nexts[curr]) {              \
+            if(bg->xs[curr] == ix && bg->ys[curr] == iy                                        \
+            && bg->comparator(&record, &bg->records[curr])) {                                  \
+                bg->xs[curr] = inx;                                                            \
+                bg->ys[curr] = iny;                                                            \
+                bg->dirty = true;                                                              \
+                return true;                                                                   \
+            }                                                                                  \
         }                                                                                      \
         return false;                                                                          \
     }                                                                                          \

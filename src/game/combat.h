@@ -66,6 +66,7 @@ bool G_Combat_Idle(uint32_t uid);
 
 void G_Combat_AddRef(int faction_id, vec2_t pos);
 void G_Combat_RemoveRef(int faction_id, vec2_t pos);
+void G_Combat_MoveRef(int faction_id, vec2_t from, vec2_t to);
 void G_Combat_AddTimeDelta(uint32_t delta);
 
 bool G_Combat_SaveState(struct SDL_RWops *stream);

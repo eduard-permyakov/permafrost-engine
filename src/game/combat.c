@@ -2775,6 +2775,32 @@ void G_Combat_RemoveRef(int faction_id, vec2_t pos)
     });
 }
 
+/* A remove+add pair whose endpoints fall in the same position bin cancels
+ * exactly at drain time; skip enqueueing both.
+ */
+void G_Combat_MoveRef(int faction_id, vec2_t from, vec2_t to)
+{
+    if(s_map) {
+        struct map_resolution mapres;
+        M_GetResolution(s_map, &mapres);
+
+        struct map_resolution binres = (struct map_resolution){
+            mapres.chunk_w, mapres.chunk_h,
+            X_BINS_PER_CHUNK, Z_BINS_PER_CHUNK,
+            mapres.field_w, mapres.field_h
+        };
+
+        struct tile_desc from_td, to_td;
+        if(M_Tile_DescForPoint2D(binres, M_GetPos(s_map), from, &from_td)
+        && M_Tile_DescForPoint2D(binres, M_GetPos(s_map), to, &to_td)
+        && from_td.chunk_r == to_td.chunk_r && from_td.chunk_c == to_td.chunk_c
+        && from_td.tile_r == to_td.tile_r && from_td.tile_c == to_td.tile_c)
+            return;
+    }
+    G_Combat_RemoveRef(faction_id, from);
+    G_Combat_AddRef(faction_id, to);
+}
+
 void G_Combat_UpdateRef(int oldfac, int newfac, vec2_t pos)
 {
     combat_push_cmd((struct combat_cmd){
