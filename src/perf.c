@@ -76,7 +76,8 @@
 #define GPU_STATE_NAME  "GPU"
 #define GPU_STATE_KEY   UINT64_MAX
 #define GPU_TIMER_HZ    (1 * 1000 * 1000 * 1000)
-#define LOG_FREQUENCY   (60)
+#define LOG_FREQUENCY      (60)
+#define SLOW_FRAME_DUMP_MS (40)
 
 #if defined(__linux__) && !defined(NDEBUG)
 enum {
@@ -181,6 +182,11 @@ static struct nav_tick_sample s_nav_tick_hist[PERF_NAV_TICK_HISTORY];
 static size_t                 s_nav_tick_head;
 static size_t                 s_nav_tick_count;
 static uint32_t               s_nav_tick_seq;
+
+static struct frame_time_sample s_frame_time_hist[PERF_FRAME_HISTORY];
+static size_t                   s_frame_time_head;
+static size_t                   s_frame_time_count;
+static uint32_t                 s_frame_time_seq;
 static SDL_atomic_t           s_nav_parallel_us;
 
 /*****************************************************************************/
@@ -801,13 +807,27 @@ void Perf_FinishTick(void)
     uint32_t curr_time = SDL_GetTicks();
     uint32_t last_ts = s_last_frames_ms[s_last_idx];
     s_last_frames_ms[s_last_idx] = curr_time - last_ts;
+
+    s_frame_time_hist[s_frame_time_head] = (struct frame_time_sample){
+        s_frame_time_seq++, s_last_frames_ms[s_last_idx]
+    };
+    s_frame_time_head = (s_frame_time_head + 1) % PERF_FRAME_HISTORY;
+    if(s_frame_time_count < PERF_FRAME_HISTORY)
+        s_frame_time_count++;
+
     s_last_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
 
     struct sval log_setting;
     if(Settings_Get("pf.debug.log_call_graphs", &log_setting) == SS_OKAY
     && log_setting.as_bool) {
-        static unsigned s_call_graph_counter = 0;
-        if((s_call_graph_counter++ % LOG_FREQUENCY) == 0) {
+        /* Dump only slow frames, rate-limited. Perf_LastFrameMS refers to the
+         * same aged slot whose tree Perf_Report reads.
+         */
+        static unsigned s_frames_since_dump = LOG_FREQUENCY;
+        s_frames_since_dump++;
+        if(Perf_LastFrameMS() >= SLOW_FRAME_DUMP_MS
+        && s_frames_since_dump >= LOG_FREQUENCY) {
+            s_frames_since_dump = 0;
             struct perf_info *infos[32];
             size_t nthreads = Perf_Report(sizeof(infos)/sizeof(infos[0]), infos);
             perf_log_call_graph(nthreads, infos);
@@ -945,6 +965,16 @@ size_t Perf_GetNavTickTimes(size_t maxout, struct nav_tick_sample *out)
     size_t start = (s_nav_tick_head + PERF_NAV_TICK_HISTORY - n) % PERF_NAV_TICK_HISTORY;
     for(size_t i = 0; i < n; i++)
         out[i] = s_nav_tick_hist[(start + i) % PERF_NAV_TICK_HISTORY];
+    return n;
+}
+
+size_t Perf_GetFrameTimes(size_t maxout, struct frame_time_sample *out)
+{
+    ASSERT_IN_MAIN_THREAD();
+    size_t n = (maxout < s_frame_time_count) ? maxout : s_frame_time_count;
+    size_t start = (s_frame_time_head + PERF_FRAME_HISTORY - n) % PERF_FRAME_HISTORY;
+    for(size_t i = 0; i < n; i++)
+        out[i] = s_frame_time_hist[(start + i) % PERF_FRAME_HISTORY];
     return n;
 }
 

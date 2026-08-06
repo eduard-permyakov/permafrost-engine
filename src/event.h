@@ -166,9 +166,13 @@ bool        E_QueuedThisFrame(enum eventtype event);
 void E_Global_Notify(enum eventtype event, void *event_arg, enum event_source);
 void E_Global_NotifyImmediate(enum eventtype event, void *event_arg, enum event_source);
 
-bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg,
-                       int simmask);
+bool E_Global_RegisterNamed(enum eventtype event, handler_t handler, void *user_arg,
+                            int simmask, const char *fname);
 bool E_Global_Unregister(enum eventtype event, handler_t handler);
+
+/* Captures the handler symbol name for perf-marker attribution */
+#define E_Global_Register(event, handler, user_arg, simmask) \
+    E_Global_RegisterNamed((event), (handler), (user_arg), (simmask), __FILE__ "::" #handler)
 
 bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler, 
                              script_opaque_t user_arg, int simmask);
@@ -179,9 +183,12 @@ bool E_Global_ScriptUnregister(enum eventtype event, script_opaque_t handler);
 /* EVENT ENTITY                                                              */
 /*###########################################################################*/
 
-bool E_Entity_Register(enum eventtype event, uint32_t ent_uid, handler_t handler, 
-                       void *user_arg, int simmask);
+bool E_Entity_RegisterNamed(enum eventtype event, uint32_t ent_uid, handler_t handler,
+                            void *user_arg, int simmask, const char *fname);
 bool E_Entity_Unregister(enum eventtype event, uint32_t ent_uid, handler_t handler);
+
+#define E_Entity_Register(event, ent_uid, handler, user_arg, simmask) \
+    E_Entity_RegisterNamed((event), (ent_uid), (handler), (user_arg), (simmask), __FILE__ "::" #handler)
 
 bool E_Entity_ScriptRegister(enum eventtype event, uint32_t ent_uid, 
                              script_opaque_t handler, script_opaque_t user_arg, int simmask);

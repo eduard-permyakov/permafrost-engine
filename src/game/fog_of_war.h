@@ -50,6 +50,7 @@ void G_Fog_Shutdown(void);
 
 void G_Fog_AddVision(vec2_t xz_pos, int faction_id, float radius);
 void G_Fog_RemoveVision(vec2_t xz_pos, int faction_id, float radius);
+void G_Fog_UpdateVision(vec2_t from_xz, vec2_t to_xz, int faction_id, float radius);
 void G_Fog_UpdateVisionRange(vec2_t xz_pos, int faction_id, float oldr, float newr);
 
 /* Vision updates from Add/Remove/UpdateVisionRange are batched and applied

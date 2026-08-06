@@ -137,6 +137,7 @@ static PyObject *PyPf_prev_frame_memstats(PyObject *self);
 static PyObject *PyPf_prev_frame_vramstats(PyObject *self);
 static PyObject *PyPf_prev_frame_gpu_stats(PyObject *self);
 static PyObject *PyPf_get_nav_tick_times(PyObject *self);
+static PyObject *PyPf_get_frame_times(PyObject *self);
 static PyObject *PyPf_prev_frame_mem_accounting(PyObject *self);
 static PyObject *PyPf_prev_frame_gpu_mem_accounting(PyObject *self);
 static PyObject *PyPf_mem_audit(PyObject *self);
@@ -422,6 +423,11 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_get_nav_tick_times, METH_NOARGS,
     "Get a list of (wall_us, serial_us, total_us, nwork, budget_us) tuples for recent "
     "completed navigation ticks, oldest-first, for the perf window's nav-tick stats."},
+
+    {"get_frame_times",
+    (PyCFunction)PyPf_get_frame_times, METH_NOARGS,
+    "Get a list of (seq, ms) tuples for recently completed frames, oldest-first. "
+    "The engine-side ring is deep enough for a 1Hz sampler task to never miss frames."},
 
     {"prev_frame_mem_accounting",
     (PyCFunction)PyPf_prev_frame_mem_accounting, METH_NOARGS,
@@ -1524,7 +1530,7 @@ static PyObject *PyPf_get_nav_tick_times(PyObject *self)
     if(!list)
         return NULL;
     for(size_t i = 0; i < n; i++) {
-        PyObject *item = Py_BuildValue("(IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII)",
+        PyObject *item = Py_BuildValue("(IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII)",
             samples[i].dur_us, samples[i].serial_us,
             samples[i].total_us, samples[i].nwork, samples[i].budget_us,
             samples[i].tick,
@@ -1533,12 +1539,33 @@ static PyObject *PyPf_get_nav_tick_times(PyObject *self)
             samples[i].dv_us, samples[i].vel_us, samples[i].upd_us,
             samples[i].main_us, samples[i].consume_us, samples[i].copy_gs_us,
             samples[i].submit_us, samples[i].map_update_us, samples[i].drain_us,
+            samples[i].pivot_us, samples[i].cmds_us, samples[i].flock_us,
+            samples[i].snaps_us,
             samples[i].nlos_builds, samples[i].nreq_rebuilds,
             samples[i].nenemy_built, samples[i].nzone_built,
             samples[i].nsurround_built, samples[i].ninval_enemy,
             samples[i].ninval_surround, samples[i].nsvc_sync,
             samples[i].nsvc_patch, samples[i].nastar, samples[i].nastar_memo,
             samples[i].npseek_built);
+        if(!item) {
+            Py_DECREF(list);
+            return NULL;
+        }
+        PyList_SET_ITEM(list, i, item);
+    }
+    return list;
+}
+
+static PyObject *PyPf_get_frame_times(PyObject *self)
+{
+    struct frame_time_sample samples[PERF_FRAME_HISTORY];
+    size_t n = Perf_GetFrameTimes(PERF_FRAME_HISTORY, samples);
+
+    PyObject *list = PyList_New(n);
+    if(!list)
+        return NULL;
+    for(size_t i = 0; i < n; i++) {
+        PyObject *item = Py_BuildValue("(II)", samples[i].seq, samples[i].ms);
         if(!item) {
             Py_DECREF(list);
             return NULL;

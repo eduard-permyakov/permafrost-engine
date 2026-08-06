@@ -78,6 +78,25 @@ vec2_t         G_Formation_CohesionForce(uint32_t uid);
 vec2_t         G_Formation_AlignmentForce(uint32_t uid);
 vec2_t         G_Formation_DragForce(uint32_t uid);
 
+/* All the per-entity formation state read by the movement submit loop,
+ * resolved with a single set of lookups. Returns false (and sets fid to
+ * NULL_FID) when the entity is not part of a formation.
+ */
+struct formation_submit_state{
+    formation_id_t fid;
+    bool           assignment_ready;
+    bool           assigned_to_cell;
+    bool           in_range_of_cell;
+    bool           arrived_at_cell;
+    vec2_t         cohesion_force;
+    vec2_t         alignment_force;
+    vec2_t         drag_force;
+    quat_t         target_orientation;
+    float          speed;
+};
+
+bool           G_Formation_SubmitState(uint32_t uid, struct formation_submit_state *out);
+
 bool           G_Formation_SaveState(struct SDL_RWops *stream);
 bool           G_Formation_LoadState(struct SDL_RWops *stream);
 

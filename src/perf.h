@@ -84,6 +84,7 @@
 #define NFRAMES_LOGGED        (5)
 #define PERF_GPU_STAT_COUNT   (6)
 #define PERF_NAV_TICK_HISTORY (64)
+#define PERF_FRAME_HISTORY    (4096)
 
 struct gpu_mem_accounting;
 
@@ -152,6 +153,10 @@ struct nav_tick_sample{
     uint32_t submit_us;     /* per-entity work submission loop */
     uint32_t map_update_us; /* synchronous navigation map update */
     uint32_t drain_us;      /* main-thread inline drain of an unfinished fiber */
+    uint32_t pivot_us;      /* turning of combat-held still units */
+    uint32_t cmds_us;       /* command-queue drain */
+    uint32_t flock_us;      /* flock disband + arrival-field refresh */
+    uint32_t snaps_us;      /* flock snapshot rebuild */
     /* Field-cache miss counters */
     uint32_t nlos_builds;   /* units whose LOS field was built this tick */
     uint32_t nreq_rebuilds; /* units whose path was serviced this tick */
@@ -227,6 +232,16 @@ uint64_t Perf_LastFrameAllocdBytes(void);
  */
 void     Perf_RecordNavTick(const struct nav_tick_sample *sample);
 size_t   Perf_GetNavTickTimes(size_t maxout, struct nav_tick_sample *out);
+
+/* Frame duration history (one entry per frame). Deep enough that a script task
+ * draining it at 1Hz cannot miss frames even when the scheduler is saturated.
+ */
+struct frame_time_sample{
+    uint32_t seq;
+    uint32_t ms;
+};
+
+size_t   Perf_GetFrameTimes(size_t maxout, struct frame_time_sample *out);
 
 /* The following can only be called from the main thread, making sure that 
  * none of the other threads are touching the Perf_ API concurrently 

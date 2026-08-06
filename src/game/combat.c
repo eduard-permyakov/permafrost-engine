@@ -258,9 +258,72 @@ enum combat_cmd_type{
     COMBAT_CMD_PROJ_HIT
 };
 
+/* Commands carry small typed payloads; the uid is hoisted out of the union so
+ * the queue-snooping helpers can read it uniformly (0 for commands that don't
+ * target an entity).
+ */
 struct combat_cmd{
     enum combat_cmd_type type;
-    struct attr          args[4];
+    uint32_t             uid;
+    union{
+        struct{
+            enum combat_stance initial;
+        }add;
+        struct{
+            int    faction_id;
+            vec2_t pos;
+        }add_ref;
+        struct{
+            int    faction_id;
+            vec2_t pos;
+        }remove_ref;
+        struct{
+            int    oldfac;
+            int    newfac;
+            vec2_t pos;
+        }update_ref;
+        struct{
+            vec3_t proj_pos;
+        }tryhit;
+        struct{
+            uint32_t target;
+        }attack_unit;
+        struct{
+            enum combat_stance stance;
+        }set_stance;
+        struct{
+            int hp;
+        }current_hp;
+        struct{
+            float armour_pc;
+        }base_armour;
+        struct{
+            int dmg;
+        }base_damage;
+        struct{
+            int hp;
+        }max_hp;
+        struct{
+            float range;
+        }set_range;
+        struct{
+            uint32_t delta;
+        }time_delta;
+        struct{
+            struct proj_desc *pd;
+        }proj_desc;
+        struct{
+            struct proj_fire_desc *fd;
+        }proj_fire_desc;
+        struct{
+            char   dir[256];
+            char   pfobj[256];
+            vec3_t scale;
+        }corpse_model;
+        struct{
+            struct proj_hit *hit;
+        }proj_hit;
+    }u;
 };
 
 struct corpse{
@@ -1329,13 +1392,9 @@ static void on_attack_anim_tick(void *user, void *event)
     E_Entity_Unregister(EVENT_UPDATE_START, self, on_attack_anim_tick);
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_TRYHIT,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = self
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_VEC3,
-            .val.as_vec3 = projectile_spawn_pos(self)
+        .uid = self,
+        .u.tryhit = {
+            .proj_pos = projectile_spawn_pos(self)
         }
     });
 }
@@ -1801,8 +1860,7 @@ static void combat_push_cmd(struct combat_cmd cmd)
 static bool uids_match(void *arg, struct combat_cmd *cmd)
 {
     uint32_t desired_uid = (uintptr_t)arg;
-    uint32_t actual_uid = cmd->args[0].val.as_int;
-    return (desired_uid == actual_uid);
+    return (desired_uid == cmd->uid);
 }
 
 static struct combat_cmd *snoop_most_recent_command(enum combat_cmd_type type, void *arg,
@@ -1894,125 +1952,93 @@ static void combat_process_cmds(void)
     while(queue_cmd_pop(&s_combat_commands, &cmd)) {
         switch(cmd.type) {
         case COMBAT_CMD_ADD: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            enum combat_stance initial = cmd.args[1].val.as_int;
-            do_add_entity(uid, initial);
+            do_add_entity(cmd.uid, cmd.u.add.initial);
             break;
         }
         case COMBAT_CMD_REMOVE: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            do_remove_entity(uid);
+            do_remove_entity(cmd.uid);
             break;
         }
         case COMBAT_CMD_TRYHIT: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            vec3_t proj_pos = cmd.args[1].val.as_vec3;
-            do_tryhit(uid, proj_pos);
+            do_tryhit(cmd.uid, cmd.u.tryhit.proj_pos);
             break;
         }
         case COMBAT_CMD_SET_STANCE: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            enum combat_stance stance = cmd.args[1].val.as_int;
-            do_set_stance(uid, stance);
+            do_set_stance(cmd.uid, cmd.u.set_stance.stance);
             break;
         }
         case COMBAT_CMD_CLEAR_SAVED_MOVE_CMD: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            do_clear_saved_move_cmd(uid);
+            do_clear_saved_move_cmd(cmd.uid);
             break;
         }
         case COMBAT_CMD_ATTACK_UNIT: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            uint32_t target = cmd.args[1].val.as_int;
-            do_attack_unit(uid, target);
+            do_attack_unit(cmd.uid, cmd.u.attack_unit.target);
             break;
         }
         case COMBAT_CMD_STOP_ATTACK: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            do_stop_attack(uid);
+            do_stop_attack(cmd.uid);
             break;
         }
         case COMBAT_CMD_ADD_TIME_DELTA: {
-            uint32_t delta = cmd.args[0].val.as_int;
-            do_add_time_delta(delta);
+            do_add_time_delta(cmd.u.time_delta.delta);
             break;
         }
         case COMBAT_CMD_ADD_REF: {
-            int faction_id = cmd.args[0].val.as_int;
-            vec2_t pos = cmd.args[1].val.as_vec2;
-            do_add_ref(faction_id, pos);
+            do_add_ref(cmd.u.add_ref.faction_id, cmd.u.add_ref.pos);
             break;
         }
         case COMBAT_CMD_REMOVE_REF: {
-            int faction_id = cmd.args[0].val.as_int;
-            vec2_t pos = cmd.args[1].val.as_vec2;
-            do_remove_ref(faction_id, pos);
+            do_remove_ref(cmd.u.remove_ref.faction_id, cmd.u.remove_ref.pos);
             break;
         }
         case COMBAT_CMD_UPDATE_REF: {
-            int oldfac = cmd.args[0].val.as_int;
-            int newfac = cmd.args[1].val.as_int;
-            vec2_t pos = cmd.args[2].val.as_vec2;
-            do_update_ref(oldfac, newfac, pos);
+            do_update_ref(cmd.u.update_ref.oldfac, cmd.u.update_ref.newfac,
+                cmd.u.update_ref.pos);
             break;
         }
         case COMBAT_CMD_SET_BASE_ARMOUR: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            float armour_pc = cmd.args[1].val.as_float;
-            do_set_base_armour(uid, armour_pc);
+            do_set_base_armour(cmd.uid, cmd.u.base_armour.armour_pc);
             break;
         }
         case COMBAT_CMD_SET_BASE_DAMAGE: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            int dmg = cmd.args[1].val.as_int;
-            do_set_base_damage(uid, dmg);
+            do_set_base_damage(cmd.uid, cmd.u.base_damage.dmg);
             break;
         }
         case COMBAT_CMD_SET_CURRENT_HP: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            int hp = cmd.args[1].val.as_int;
-            do_set_current_hp(uid, hp);
+            do_set_current_hp(cmd.uid, cmd.u.current_hp.hp);
             break;
         }
         case COMBAT_CMD_SET_MAX_HP: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            int hp = cmd.args[1].val.as_int;
-            do_set_max_hp(uid, hp);
+            do_set_max_hp(cmd.uid, cmd.u.max_hp.hp);
             break;
         }
         case COMBAT_CMD_SET_RANGE: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            float range  = cmd.args[1].val.as_float;
-            do_set_range(uid, range);
+            do_set_range(cmd.uid, cmd.u.set_range.range);
             break;
         }
         case COMBAT_CMD_SET_PROJ_DESC: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            struct proj_desc *pd = cmd.args[1].val.as_pointer;
-            do_set_proj_desc(uid, pd);
+            struct proj_desc *pd = cmd.u.proj_desc.pd;
+            do_set_proj_desc(cmd.uid, pd);
             PF_FREE(pd);
             break;
         }
         case COMBAT_CMD_SET_PROJ_FIRE_DESC: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            struct proj_fire_desc *fd = cmd.args[1].val.as_pointer;
-            do_set_proj_fire_desc(uid, fd);
+            struct proj_fire_desc *fd = cmd.u.proj_fire_desc.fd;
+            do_set_proj_fire_desc(cmd.uid, fd);
             PF_FREE(fd);
             break;
         }
         case COMBAT_CMD_SET_CORPSE_MODEL: {
 
-            uint32_t uid = cmd.args[0].val.as_int;
-            const char *dirkey = si_intern(cmd.args[1].val.as_string, &s_stringpool, s_stridx);
-            const char *objkey = si_intern(cmd.args[2].val.as_string, &s_stringpool, s_stridx);
-            vec3_t scale = cmd.args[3].val.as_vec3;
+            const char *dirkey = si_intern(cmd.u.corpse_model.dir, &s_stringpool, s_stridx);
+            const char *objkey = si_intern(cmd.u.corpse_model.pfobj, &s_stringpool, s_stridx);
             if(dirkey && objkey) {
-                do_set_corpse_model(uid, dirkey, objkey, scale);
+                do_set_corpse_model(cmd.uid, dirkey, objkey, cmd.u.corpse_model.scale);
             }
             break;
         }
         case COMBAT_CMD_PROJ_HIT: {
-            struct proj_hit *hit = cmd.args[0].val.as_pointer;
+            struct proj_hit *hit = cmd.u.proj_hit.hit;
             do_proj_tryhit(hit);
             PF_FREE(hit);
             break;
@@ -2461,9 +2487,8 @@ static void on_proj_hit(void *user, void *event)
 
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_PROJ_HIT,
-        .args[0] = (struct attr){
-            .type = TYPE_POINTER,
-            .val.as_pointer = copy
+        .u.proj_hit = {
+            .hit = copy
         }
     });
 }
@@ -2593,13 +2618,9 @@ void G_Combat_AddEntity(uint32_t uid, enum combat_stance initial)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_ADD,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = initial
+        .uid = uid,
+        .u.add = {
+            .initial = initial
         }
     });
 }
@@ -2608,10 +2629,7 @@ void G_Combat_RemoveEntity(uint32_t uid)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_REMOVE,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        }
+        .uid = uid
     });
 }
 
@@ -2619,13 +2637,9 @@ void G_Combat_SetStance(uint32_t uid, enum combat_stance stance)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_SET_STANCE,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = stance
+        .uid = uid,
+        .u.set_stance = {
+            .stance = stance
         }
     });
 }
@@ -2635,12 +2649,12 @@ enum combat_stance G_Combat_GetStance(uint32_t uid)
     struct combat_cmd *cmd = snoop_most_recent_command(COMBAT_CMD_SET_STANCE,
         (void*)(uintptr_t)uid, uids_match);
     if(cmd) {
-        return cmd->args[1].val.as_int;
+        return cmd->u.set_stance.stance;
     }
     cmd = snoop_most_recent_command(COMBAT_CMD_ADD,
         (void*)(uintptr_t)uid, uids_match);
     if(cmd) {
-        return cmd->args[1].val.as_int;
+        return cmd->u.add.initial;
     }
 
     struct combatstate *cs = combatstate_get(uid);
@@ -2652,10 +2666,7 @@ void G_Combat_ClearSavedMoveCmd(uint32_t uid)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_CLEAR_SAVED_MOVE_CMD,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        }
+        .uid = uid
     });
 }
 
@@ -2721,14 +2732,8 @@ void G_Combat_AttackUnit(uint32_t uid, uint32_t target)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_ATTACK_UNIT,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = target
-        }
+        .uid = uid,
+        .u.attack_unit.target = target
     });
 }
 
@@ -2736,10 +2741,7 @@ void G_Combat_StopAttack(uint32_t uid)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_STOP_ATTACK,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        }
+        .uid = uid
     });
 }
 
@@ -2747,10 +2749,7 @@ void G_Combat_AddTimeDelta(uint32_t delta)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_ADD_TIME_DELTA,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = delta
-        }
+        .u.time_delta.delta = delta
     });
 }
 
@@ -2758,13 +2757,9 @@ void G_Combat_AddRef(int faction_id, vec2_t pos)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_ADD_REF,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = faction_id
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_VEC2,
-            .val.as_vec2 = pos
+        .u.add_ref = {
+            .faction_id = faction_id,
+            .pos = pos
         }
     });
 }
@@ -2773,13 +2768,9 @@ void G_Combat_RemoveRef(int faction_id, vec2_t pos)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_REMOVE_REF,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = faction_id
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_vec2 = pos
+        .u.remove_ref = {
+            .faction_id = faction_id,
+            .pos = pos
         }
     });
 }
@@ -2788,17 +2779,10 @@ void G_Combat_UpdateRef(int oldfac, int newfac, vec2_t pos)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_UPDATE_REF,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = oldfac
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = newfac
-        },
-        .args[2] = (struct attr){
-            .type = TYPE_VEC2,
-            .val.as_vec2 = pos
+        .u.update_ref = {
+            .oldfac = oldfac,
+            .newfac = newfac,
+            .pos = pos
         }
     });
 }
@@ -2817,7 +2801,7 @@ int G_Combat_GetCurrentHP(uint32_t uid)
     cmd = snoop_most_recent_command(COMBAT_CMD_SET_CURRENT_HP,
         (void*)(uintptr_t)uid, uids_match);
     if(cmd) {
-        return cmd->args[1].val.as_int;
+        return cmd->u.current_hp.hp;
     }
     cmd = snoop_most_recent_command(COMBAT_CMD_ADD,
         (void*)(uintptr_t)uid, uids_match);
@@ -2834,14 +2818,8 @@ void G_Combat_SetBaseArmour(uint32_t uid, float armour_pc)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_SET_BASE_ARMOUR,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_FLOAT,
-            .val.as_float = armour_pc
-        }
+        .uid = uid,
+        .u.base_armour.armour_pc = armour_pc
     });
 }
 
@@ -2851,7 +2829,7 @@ float G_Combat_GetBaseArmour(uint32_t uid)
     cmd = snoop_most_recent_command(COMBAT_CMD_SET_BASE_ARMOUR,
         (void*)(uintptr_t)uid, uids_match);
     if(cmd) {
-        return cmd->args[1].val.as_float;
+        return cmd->u.base_armour.armour_pc;
     }
     cmd = snoop_most_recent_command(COMBAT_CMD_ADD,
         (void*)(uintptr_t)uid, uids_match);
@@ -2868,14 +2846,8 @@ void G_Combat_SetBaseDamage(uint32_t uid, int dmg)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_SET_BASE_DAMAGE,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = dmg
-        }
+        .uid = uid,
+        .u.base_damage.dmg = dmg
     });
 }
 
@@ -2885,7 +2857,7 @@ int G_Combat_GetBaseDamage(uint32_t uid)
     cmd = snoop_most_recent_command(COMBAT_CMD_SET_BASE_DAMAGE,
         (void*)(uintptr_t)uid, uids_match);
     if(cmd) {
-        return cmd->args[1].val.as_int;
+        return cmd->u.base_damage.dmg;
     }
     cmd = snoop_most_recent_command(COMBAT_CMD_ADD,
         (void*)(uintptr_t)uid, uids_match);
@@ -2902,14 +2874,8 @@ void G_Combat_SetCurrentHP(uint32_t uid, int hp)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_SET_CURRENT_HP,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = hp
-        }
+        .uid = uid,
+        .u.current_hp.hp = hp
     });
 }
 
@@ -2917,14 +2883,8 @@ void G_Combat_SetMaxHP(uint32_t uid, int hp)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_SET_MAX_HP,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = hp
-        }
+        .uid = uid,
+        .u.max_hp.hp = hp
     });
 }
 
@@ -2934,7 +2894,7 @@ int G_Combat_GetMaxHP(uint32_t uid)
     cmd = snoop_most_recent_command(COMBAT_CMD_SET_MAX_HP,
         (void*)(uintptr_t)uid, uids_match);
     if(cmd) {
-        return cmd->args[1].val.as_int;
+        return cmd->u.max_hp.hp;
     }
     cmd = snoop_most_recent_command(COMBAT_CMD_ADD,
         (void*)(uintptr_t)uid, uids_match);
@@ -2951,14 +2911,8 @@ void G_Combat_SetRange(uint32_t uid, float range)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_SET_RANGE,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_FLOAT,
-            .val.as_float = range
-        }
+        .uid = uid,
+        .u.set_range.range = range
     });
 }
 
@@ -2979,14 +2933,8 @@ void G_Combat_SetProjDesc(uint32_t uid, const struct proj_desc *pd)
 
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_SET_PROJ_DESC,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_POINTER,
-            .val.as_pointer = copy
-        }
+        .uid = uid,
+        .u.proj_desc.pd = copy
     });
 }
 
@@ -2999,14 +2947,8 @@ void G_Combat_SetProjFireDesc(uint32_t uid, const struct proj_fire_desc *fd)
 
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_SET_PROJ_FIRE_DESC,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_POINTER,
-            .val.as_pointer = copy
-        }
+        .uid = uid,
+        .u.proj_fire_desc.fd = copy
     });
 }
 
@@ -3016,7 +2958,7 @@ float G_Combat_GetRange(uint32_t uid)
     cmd = snoop_most_recent_command(COMBAT_CMD_SET_RANGE,
         (void*)(uintptr_t)uid, uids_match);
     if(cmd) {
-        return cmd->args[1].val.as_float;
+        return cmd->u.set_range.range;
     }
     cmd = snoop_most_recent_command(COMBAT_CMD_ADD,
         (void*)(uintptr_t)uid, uids_match);
@@ -3033,23 +2975,11 @@ void G_Combat_SetCorpseModel(uint32_t uid, const char *dir, const char *pfobj, v
 {
     struct combat_cmd cmd = (struct combat_cmd){
         .type = COMBAT_CMD_SET_CORPSE_MODEL,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_STRING,
-        },
-        .args[2] = (struct attr){
-            .type = TYPE_STRING,
-        },
-        .args[3] = (struct attr){
-            .type = TYPE_VEC3,
-            .val.as_vec3 = scale
-        }
+        .uid = uid,
+        .u.corpse_model.scale = scale
     };
-    pf_strlcpy(cmd.args[1].val.as_string, dir, sizeof(cmd.args[1].val.as_string));
-    pf_strlcpy(cmd.args[2].val.as_string, pfobj, sizeof(cmd.args[2].val.as_string));
+    pf_strlcpy(cmd.u.corpse_model.dir, dir, sizeof(cmd.u.corpse_model.dir));
+    pf_strlcpy(cmd.u.corpse_model.pfobj, pfobj, sizeof(cmd.u.corpse_model.pfobj));
     combat_push_cmd(cmd);
 }
 

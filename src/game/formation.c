@@ -4490,13 +4490,8 @@ vec2_t G_Formation_ApproximateDesiredArrivalVelocity(uint32_t uid)
     return delta;
 }
 
-bool G_Formation_ArrivedAtCell(uint32_t uid)
+static bool arrived_at_cell(uint32_t uid, struct cell *cell)
 {
-    ASSERT_IN_MAIN_THREAD();
-
-    struct formation *formation = formation_for_ent(uid);
-    assert(formation);
-    struct cell *cell = cell_for_ent(formation, uid);
     if(!cell)
         return true;
 
@@ -4511,16 +4506,20 @@ bool G_Formation_ArrivedAtCell(uint32_t uid)
     return (PFM_Vec2_Len(&delta) <= arrive_thresh);
 }
 
-bool G_Formation_AssignmentReady(uint32_t uid)
+bool G_Formation_ArrivedAtCell(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
     struct formation *formation = formation_for_ent(uid);
     assert(formation);
-    /* We consider the assignment ready when all units in front of the 
+    return arrived_at_cell(uid, cell_for_ent(formation, uid));
+}
+
+static bool assignment_ready(struct formation *formation, struct subformation *sub)
+{
+    /* We consider the assignment ready when all units in front of the
      * subformation have an assignment and thus can start moving.
      */
-    struct subformation *sub = subformation_for_ent(formation, uid);
     for(int i = 0; i < vec_size(&formation->subformations); i++) {
         struct subformation *curr = &vec_AT(&formation->subformations, i);
         if(curr == sub)
@@ -4530,6 +4529,15 @@ bool G_Formation_AssignmentReady(uint32_t uid)
     }
     assert(0);
     return false;
+}
+
+bool G_Formation_AssignmentReady(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct formation *formation = formation_for_ent(uid);
+    assert(formation);
+    return assignment_ready(formation, subformation_for_ent(formation, uid));
 }
 
 bool G_Formation_AssignedToCell(uint32_t uid)
@@ -4742,15 +4750,11 @@ enum formation_type G_Formation_Type(formation_id_t fid)
     return formation->type;
 }
 
-vec2_t G_Formation_AlignmentForce(uint32_t uid)
+static vec2_t alignment_force(uint32_t uid, struct subformation *sub)
 {
-    ASSERT_IN_MAIN_THREAD();
-
     vec2_t total = (vec2_t){0.0f, 0.0f};
     size_t nents = 0;
 
-    struct formation *formation = formation_for_ent(uid);
-    struct subformation *sub = subformation_for_ent(formation, uid);
     if(sub->state == SUBFORMATION_COMPUTING_ASSIGNMENT)
         return (vec2_t){0.0f, 0.0f};
 
@@ -4795,12 +4799,16 @@ vec2_t G_Formation_AlignmentForce(uint32_t uid)
     return total;
 }
 
-vec2_t G_Formation_CohesionForce(uint32_t uid)
+vec2_t G_Formation_AlignmentForce(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
     struct formation *formation = formation_for_ent(uid);
-    struct subformation *sub = subformation_for_ent(formation, uid);
+    return alignment_force(uid, subformation_for_ent(formation, uid));
+}
+
+static vec2_t cohesion_force(uint32_t uid, struct subformation *sub)
+{
     if(sub->state == SUBFORMATION_COMPUTING_ASSIGNMENT)
         return (vec2_t){0.0f, 0.0f};
 
@@ -4828,12 +4836,16 @@ vec2_t G_Formation_CohesionForce(uint32_t uid)
     return follow_force(uid, sub);
 }
 
-vec2_t G_Formation_DragForce(uint32_t uid)
+vec2_t G_Formation_CohesionForce(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
     struct formation *formation = formation_for_ent(uid);
-    struct subformation *sub = subformation_for_ent(formation, uid);
+    return cohesion_force(uid, subformation_for_ent(formation, uid));
+}
+
+static vec2_t drag_force(uint32_t uid, struct subformation *sub)
+{
     if(sub->state == SUBFORMATION_COMPUTING_ASSIGNMENT)
         return (vec2_t){0.0f, 0.0f};
 
@@ -4881,6 +4893,43 @@ vec2_t G_Formation_DragForce(uint32_t uid)
         }
     }
     return (vec2_t){0.0f, 0.0f};
+}
+
+vec2_t G_Formation_DragForce(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct formation *formation = formation_for_ent(uid);
+    return drag_force(uid, subformation_for_ent(formation, uid));
+}
+
+bool G_Formation_SubmitState(uint32_t uid, struct formation_submit_state *out)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    formation_id_t fid = G_Formation_GetForEnt(uid);
+    if(fid == NULL_FID) {
+        out->fid = NULL_FID;
+        return false;
+    }
+
+    khiter_t k = kh_get(formation, s_formations, fid);
+    assert(k != kh_end(s_formations));
+    struct formation *formation = &kh_val(s_formations, k);
+    struct subformation *sub = subformation_for_ent(formation, uid);
+    struct cell *cell = cell_for_ent(formation, uid);
+
+    out->fid = fid;
+    out->assignment_ready = assignment_ready(formation, sub);
+    out->assigned_to_cell = (cell && cell->state == CELL_OCCUPIED);
+    out->in_range_of_cell = inside_arrival_field_bounds(formation, G_Pos_GetXZ(uid));
+    out->arrived_at_cell = arrived_at_cell(uid, cell);
+    out->cohesion_force = cohesion_force(uid, sub);
+    out->alignment_force = alignment_force(uid, sub);
+    out->drag_force = drag_force(uid, sub);
+    out->target_orientation = quat_from_vec(formation->orientation);
+    out->speed = formation->speed;
+    return true;
 }
 
 void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t orientation)

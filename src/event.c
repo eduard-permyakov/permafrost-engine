@@ -70,6 +70,7 @@ struct handler_desc{
     void          *user_arg;
     int            simmask;    /* Specifies during which simulation states the handler gets invoked */
     uint32_t       register_tick;
+    const char    *fname;      /* Handler symbol name, for perf-marker attribution (engine handlers only) */
 };
 
 struct event{
@@ -289,7 +290,9 @@ static void e_invoke(const struct handler_desc hd, struct event event)
 {
     if(hd.type == HANDLER_TYPE_ENGINE) {
 
+        PERF_PUSH(hd.fname ? hd.fname : "handler");
         hd.handler.as_function(hd.user_arg, event.arg);
+        PERF_POP();
 
     }else if(hd.type == HANDLER_TYPE_SCRIPT) {
 
@@ -303,7 +306,14 @@ static void e_invoke(const struct handler_desc hd, struct event event)
             return;
         }
 
-        script_opaque_t script_arg = (event.source == ES_SCRIPT) 
+        /* Marker names must come from a bounded set; event names qualify,
+         * script callable names do not.
+         */
+        const char *evtname = E_EngineEventString(event.type);
+        PERF_PUSH("script handler");
+        PERF_PUSH(evtname ? evtname : "sdl event");
+
+        script_opaque_t script_arg = (event.source == ES_SCRIPT)
             ? S_UnwrapIfWeakref(event.arg)
             : S_WrapEngineEventArg(event.type, event.arg);
         assert(script_arg);
@@ -313,6 +323,9 @@ static void e_invoke(const struct handler_desc hd, struct event event)
 
         S_Release(script_arg);
         S_Release(user_arg);
+
+        PERF_POP();
+        PERF_POP();
     }
 }
 
@@ -471,14 +484,19 @@ void E_ServiceQueue(void)
     s_front_queue_idx = (s_front_queue_idx + 1) % 2;
 
     e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, GLOBAL_ID, ticks}, false);
-    e_notify_entities_update_start(ticks, false);
 
+    PERF_PUSH("entities update start scan");
+    e_notify_entities_update_start(ticks, false);
+    PERF_POP();
+
+    PERF_PUSH("event queue drain");
     struct event event;
     while(queue_event_pop(queue, &event)) {
-    
+
         e_handle_event(event, false);
         /* event arg already released */
     }
+    PERF_POP();
 
     e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID, ticks}, false);
 
@@ -623,7 +641,8 @@ void E_Global_Notify(enum eventtype event, void *event_arg, enum event_source so
     queue_event_push(&s_event_queues[s_front_queue_idx], &e);
 }
 
-bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg, int simmask)
+bool E_Global_RegisterNamed(enum eventtype event, handler_t handler, void *user_arg,
+                            int simmask, const char *fname)
 {
     struct handler_desc hd;
     hd.type = HANDLER_TYPE_ENGINE;
@@ -631,6 +650,7 @@ bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg, 
     hd.user_arg = user_arg;
     hd.simmask = simmask;
     hd.register_tick = SDL_GetTicks();
+    hd.fname = fname;
 
     return e_register_handler(e_key(GLOBAL_ID, event), &hd);
 }
@@ -653,6 +673,7 @@ bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler,
     hd.user_arg = user_arg;
     hd.simmask = simmask;
     hd.register_tick = SDL_GetTicks();
+    hd.fname = NULL;
 
     return e_register_handler(e_key(GLOBAL_ID, event), &hd);
 }
@@ -676,8 +697,8 @@ void E_Global_NotifyImmediate(enum eventtype event, void *event_arg, enum event_
  * Entity Events
  */
 
-bool E_Entity_Register(enum eventtype event, uint32_t ent_uid, handler_t handler, 
-                       void *user_arg, int simmask)
+bool E_Entity_RegisterNamed(enum eventtype event, uint32_t ent_uid, handler_t handler,
+                            void *user_arg, int simmask, const char *fname)
 {
     struct handler_desc hd;
     hd.type = HANDLER_TYPE_ENGINE;
@@ -685,6 +706,7 @@ bool E_Entity_Register(enum eventtype event, uint32_t ent_uid, handler_t handler
     hd.user_arg = user_arg;
     hd.simmask = simmask;
     hd.register_tick = SDL_GetTicks();
+    hd.fname = fname;
 
     return e_register_handler(e_key(ent_uid, event), &hd);
 }
@@ -707,6 +729,7 @@ bool E_Entity_ScriptRegister(enum eventtype event, uint32_t ent_uid,
     hd.user_arg = user_arg;
     hd.simmask = simmask;
     hd.register_tick = SDL_GetTicks();
+    hd.fname = NULL;
 
     return e_register_handler(e_key(ent_uid, event), &hd);
 }

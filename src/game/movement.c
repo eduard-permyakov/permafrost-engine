@@ -416,14 +416,68 @@ enum move_cmd_type{
     MOVE_CMD_SET_COMBAT_HELD
 };
 
+/* Commands carry small typed payloads; the uid is hoisted out of the union so
+ * the queue-snooping helpers can read it uniformly (0 for MAKE_FLOCKS).
+ */
 struct move_cmd{
     bool               deleted;
     enum move_cmd_type type;
-    struct attr        args[6];
+    uint32_t           uid;
+    union{
+        struct{
+            vec3_t pos;
+            float  radius;
+            int    faction_id;
+        }add;
+        struct{
+            vec2_t dest_xz;
+            bool   attack;
+        }set_dest;
+        struct{
+            quat_t target;
+        }change_direction;
+        struct{
+            uint32_t target;
+            float    range;
+        }enter_range;
+        struct{
+            uint32_t target;
+        }surround;
+        struct{
+            vec2_t pos;
+        }update_pos;
+        struct{
+            int oldfac;
+            int newfac;
+        }update_faction;
+        struct{
+            float radius;
+        }update_radius;
+        struct{
+            float speed;
+        }max_speed;
+        struct{
+            vec_entity_t       *sel;
+            vec2_t              target_xz;
+            enum formation_type type;
+            bool                attack;
+            vec2_t              target_orientation;
+        }make_flocks;
+        struct{
+            vec3_t pos;
+        }block;
+        struct{
+            quat_t dir;
+        }combat_facing;
+        struct{
+            bool held;
+        }combat_held;
+    }u;
 };
 
 KHASH_MAP_INIT_INT(state, struct movestate)
 KHASH_MAP_INIT_INT(aabb, struct aabb)
+KHASH_MAP_INIT_INT(findex, int)
 
 QUEUE_TYPE(cmd, struct move_cmd)
 QUEUE_IMPL(static, cmd, struct move_cmd)
@@ -485,6 +539,8 @@ static bool                    s_drag_attacking;
 
 static vec_entity_t            s_move_markers;
 static vec_flock_t             s_flocks;
+/* Per-tick uid -> flock index, rebuilt alongside the flock snapshots */
+static khash_t(findex)        *s_flock_index;
 static khash_t(state)         *s_entity_state_table;
 
 /* Store the most recently issued move command location for debug rendering */
@@ -1147,25 +1203,12 @@ static void move_order(const vec_entity_t *sel, bool attack, vec3_t mouse_coord,
         vec_entity_copy(copy, &capped);
         move_push_cmd((struct move_cmd){
             .type = MOVE_CMD_MAKE_FLOCKS,
-            .args[0] = (struct attr){
-                .type = TYPE_POINTER,
-                .val.as_pointer = copy
-            },
-            .args[1] = (struct attr){
-                .type = TYPE_VEC2,
-                .val.as_vec2 = (vec2_t){mouse_coord.x, mouse_coord.z}
-            },
-            .args[2] = (struct attr){
-                .type = TYPE_INT,
-                .val.as_int = type
-            },
-            .args[3] = (struct attr){
-                .type = TYPE_BOOL,
-                .val.as_bool = attack
-            },
-            .args[4] = (struct attr){
-                .type = TYPE_VEC2,
-                .val.as_vec2 = orientation
+            .u.make_flocks = {
+                .sel = copy,
+                .target_xz = (vec2_t){mouse_coord.x, mouse_coord.z},
+                .type = type,
+                .attack = attack,
+                .target_orientation = orientation
             }
         });
     }
@@ -2232,8 +2275,7 @@ static vec2_t vel_wma(const struct movestate *ms)
 static bool uids_match(void *arg, struct move_cmd *cmd)
 {
     uint32_t desired_uid = (uintptr_t)arg;
-    uint32_t actual_uid = cmd->args[0].val.as_int;
-    return (desired_uid == actual_uid);
+    return (desired_uid == cmd->uid);
 }
 
 static struct move_cmd *snoop_most_recent_command(enum move_cmd_type type, void *arg,
@@ -2278,12 +2320,12 @@ static bool snoop_still(uint32_t uid)
         case MOVE_CMD_SET_ENTER_RANGE:
         case MOVE_CMD_SET_SEEK_ENEMIES:
         case MOVE_CMD_SET_SURROUND_ENTITY: {
-            if(curr->args[0].val.as_int == uid)
+            if(curr->uid == uid)
                 return false;
             break;
         }
         case MOVE_CMD_STOP:
-            if(curr->args[0].val.as_int == uid)
+            if(curr->uid == uid)
                 return true;
             break;
         default:
@@ -2299,18 +2341,6 @@ static bool snoop_still(uint32_t uid)
     struct movestate *ms = movestate_get(uid);
     assert(ms);
     return (ms->state == STATE_ARRIVED);
-}
-
-static void flush_update_pos_commands(uint32_t uid)
-{
-    struct move_cmd *cmd;
-    while((cmd = snoop_most_recent_command(MOVE_CMD_UPDATE_POS, 
-        (void*)(uintptr_t)uid, uids_match, true))) {
-
-        uint32_t uid = cmd->args[0].val.as_int;
-        vec2_t pos = cmd->args[1].val.as_vec2;
-        do_update_pos(uid, pos);
-    }
 }
 
 static bool arrived(uint32_t uid, vec2_t xz_pos)
@@ -3310,11 +3340,12 @@ static void do_update_pos(uint32_t uid, vec2_t pos)
         pos.z
     };
 
+    /* The positions table is read by the drain-time blocking paths and must be
+     * patched; the snapshot postree has no reader before it is rebuilt from
+     * live state at the tick's copy phase, so it is left stale.
+     */
     khiter_t k = kh_get(pos, s_move_work.gamestate.positions, uid);
     assert(k != kh_end(s_move_work.gamestate.positions));
-    vec3_t oldpos = kh_val(s_move_work.gamestate.positions, k);
-    bg_ent_delete(s_move_work.gamestate.postree, oldpos.x, oldpos.z, uid);
-    bg_ent_insert(s_move_work.gamestate.postree, newpos.x, newpos.z, uid);
     kh_val(s_move_work.gamestate.positions, k) = newpos;
 
     if(!ms->blocking)
@@ -3407,117 +3438,85 @@ static void move_process_cmds(void)
 
         switch(cmd.type) {
         case MOVE_CMD_ADD: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            vec3_t pos = cmd.args[1].val.as_vec3;
-            float radius = cmd.args[2].val.as_float;
-            int faction_id = cmd.args[3].val.as_int;
-            do_add_entity(uid, pos, radius, faction_id);
+            do_add_entity(cmd.uid, cmd.u.add.pos, cmd.u.add.radius,
+                cmd.u.add.faction_id);
             break;
         }
         case MOVE_CMD_REMOVE: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            do_remove_entity(uid);
+            do_remove_entity(cmd.uid);
             break;
         }
         case MOVE_CMD_STOP: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            do_stop(uid);
+            do_stop(cmd.uid);
             break;
         }
         case MOVE_CMD_SET_DEST: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            vec2_t dest_xz = cmd.args[1].val.as_vec2;
-            bool attack = cmd.args[2].val.as_bool;
-            do_set_dest(uid, dest_xz, attack);
+            do_set_dest(cmd.uid, cmd.u.set_dest.dest_xz, cmd.u.set_dest.attack);
             break;
         }
         case MOVE_CMD_CHANGE_DIRECTION: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            quat_t target = cmd.args[1].val.as_quat;
-            do_set_change_direction(uid, target);
+            do_set_change_direction(cmd.uid, cmd.u.change_direction.target);
             break;
         }
         case MOVE_CMD_SET_ENTER_RANGE: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            uint32_t target = cmd.args[1].val.as_int;
-            float range = cmd.args[2].val.as_float;
-            do_set_enter_range(uid, target, range);
+            do_set_enter_range(cmd.uid, cmd.u.enter_range.target,
+                cmd.u.enter_range.range);
             break;
         }
         case MOVE_CMD_SET_SEEK_ENEMIES: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            do_set_seek_enemies(uid);
+            do_set_seek_enemies(cmd.uid);
             break;
         }
         case MOVE_CMD_SET_SURROUND_ENTITY: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            uint32_t target = cmd.args[1].val.as_int;
-            do_set_surround_entity(uid, target);
+            do_set_surround_entity(cmd.uid, cmd.u.surround.target);
             break;
         }
         case MOVE_CMD_UPDATE_POS: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            vec2_t pos = cmd.args[1].val.as_vec2;
-            do_update_pos(uid, pos);
+            do_update_pos(cmd.uid, cmd.u.update_pos.pos);
             break;
         }
         case MOVE_CMD_UPDATE_FACTION_ID: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            int oldfac = cmd.args[1].val.as_int;
-            int newfac = cmd.args[2].val.as_int;
-            do_update_faction_id(uid, oldfac, newfac);
+            do_update_faction_id(cmd.uid, cmd.u.update_faction.oldfac,
+                cmd.u.update_faction.newfac);
             break;
         }
         case MOVE_CMD_UPDATE_SELECTION_RADIUS: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            float radius = cmd.args[1].val.as_float;
-            do_update_selection_radius(uid, radius);
+            do_update_selection_radius(cmd.uid, cmd.u.update_radius.radius);
             break;
         }
         case MOVE_CMD_SET_MAX_SPEED: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            float speed = cmd.args[1].val.as_float;
-            do_set_max_speed(uid, speed);
+            do_set_max_speed(cmd.uid, cmd.u.max_speed.speed);
             break;
         }
         case MOVE_CMD_MAKE_FLOCKS: {
-            vec_entity_t *sel = (vec_entity_t*)cmd.args[0].val.as_pointer;
-            vec2_t target_xz = cmd.args[1].val.as_vec2;
-            enum formation_type type = cmd.args[2].val.as_int;
-            bool attack = cmd.args[3].val.as_bool;
-            vec2_t target_orientation = cmd.args[4].val.as_vec2;
-            make_flocks(sel, target_xz, target_orientation, type, attack);
+            vec_entity_t *sel = cmd.u.make_flocks.sel;
+            make_flocks(sel, cmd.u.make_flocks.target_xz,
+                cmd.u.make_flocks.target_orientation, cmd.u.make_flocks.type,
+                cmd.u.make_flocks.attack);
             vec_entity_destroy(sel);
             PF_FREE(sel);
             break;
         }
         case MOVE_CMD_UNBLOCK: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            struct movestate *ms = movestate_get(uid);
+            struct movestate *ms = movestate_get(cmd.uid);
             if(ms && ms->blocking) {
-                entity_unblock(uid);
+                entity_unblock(cmd.uid);
             }
             break;
         }
         case MOVE_CMD_BLOCK: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            vec3_t pos = cmd.args[1].val.as_vec3;
-            struct movestate *ms = movestate_get(uid);
+            struct movestate *ms = movestate_get(cmd.uid);
             if(ms && !ms->blocking) {
-                do_block(uid, pos);
+                do_block(cmd.uid, cmd.u.block.pos);
             }
             break;
         }
         case MOVE_CMD_SET_COMBAT_FACING: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            quat_t dir = cmd.args[1].val.as_quat;
-            do_set_combat_facing(uid, dir);
+            do_set_combat_facing(cmd.uid, cmd.u.combat_facing.dir);
             break;
         }
         case MOVE_CMD_SET_COMBAT_HELD: {
-            uint32_t uid = cmd.args[0].val.as_int;
-            bool held = cmd.args[1].val.as_bool;
-            do_set_combat_held(uid, held);
+            do_set_combat_held(cmd.uid, cmd.u.combat_held.held);
             break;
         }
         default:
@@ -3903,6 +3902,7 @@ static void move_build_flock_snaps(void)
     size_t nflocks = vec_size(&s_flocks);
     s_move_work.flock_snaps = stalloc(&s_move_work.mem,
         nflocks * sizeof(struct flock_snap));
+    kh_clear(findex, s_flock_index);
 
     for(int i = 0; i < nflocks; i++) {
 
@@ -3920,6 +3920,10 @@ static void move_build_flock_snaps(void)
             pos_x[idx] = pos.x;
             pos_z[idx] = pos.z;
             idx++;
+            int put_status;
+            khiter_t k = kh_put(findex, s_flock_index, curr, &put_status);
+            assert(put_status != -1);
+            kh_val(s_flock_index, k) = i;
         });
         assert(idx == nents);
 
@@ -4720,16 +4724,27 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
     s_last_nav_tick_stats.consume_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - tick_start);
 
-    pivot_held_still_units();
-    move_handle_hz_update(curr_event);
-    move_process_cmds();
-
     uint64_t phase_start = SDL_GetPerformanceCounter();
+    pivot_held_still_units();
+    s_last_nav_tick_stats.pivot_us =
+        perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
+
+    move_handle_hz_update(curr_event);
+
+    phase_start = SDL_GetPerformanceCounter();
+    move_process_cmds();
+    s_last_nav_tick_stats.cmds_us =
+        perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
+
+    phase_start = SDL_GetPerformanceCounter();
     move_release_gamestate();
     uint64_t copy_ticks = SDL_GetPerformanceCounter() - phase_start;
 
+    phase_start = SDL_GetPerformanceCounter();
     disband_empty_flocks();
     update_flock_arrival_fields();
+    s_last_nav_tick_stats.flock_us =
+        perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
 
     /* Run the navigation updates synchronous to the movement tick */
     phase_start = SDL_GetPerformanceCounter();
@@ -4743,7 +4758,10 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
     copy_ticks += SDL_GetPerformanceCounter() - phase_start;
     s_last_nav_tick_stats.copy_gs_us = perf_ticks_to_us(copy_ticks);
 
+    phase_start = SDL_GetPerformanceCounter();
     move_build_flock_snaps();
+    s_last_nav_tick_stats.snaps_us =
+        perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
 
     PERF_PUSH("submit move work");
     phase_start = SDL_GetPerformanceCounter();
@@ -4759,12 +4777,11 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
 
         struct flock *flock = NULL;
         const struct flock_snap *fsnap = NULL;
-        for(int fi = 0; fi < vec_size(&s_flocks); fi++) {
-            if(flock_contains(&vec_AT(&s_flocks, fi), curr)) {
-                flock = &vec_AT(&s_flocks, fi);
-                fsnap = &s_move_work.flock_snaps[fi];
-                break;
-            }
+        khiter_t fit = kh_get(findex, s_flock_index, curr);
+        if(fit != kh_end(s_flock_index)) {
+            int fi = kh_val(s_flock_index, fit);
+            flock = &vec_AT(&s_flocks, fi);
+            fsnap = &s_move_work.flock_snaps[fi];
         }
 
         vec2_t pos = (vec2_t){ms->prev_pos.x, ms->prev_pos.z};
@@ -4788,40 +4805,25 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
             }
         }
 
-        formation_id_t fid = G_Formation_GetForEnt(curr);
+        struct formation_submit_state fss = {0};
+        bool in_formation = G_Formation_SubmitState(curr, &fss);
         move_push_work((struct move_work_in){
             .ent_uid = curr,
             .flock = flock,
             .fsnap = fsnap,
-            .speed = entity_speed(curr),
+            .speed = in_formation ? fss.speed : ms->max_speed,
             .cell_pos = cell_pos,
             .cp_ent = curr_cp,
             .save_debug = (curr == debug_uid),
-            .fstate.fid = fid,
-            .fstate.assignment_ready = 
-                (fid != NULL_FID) ? G_Formation_AssignmentReady(curr)
-                                  : false,
-            .fstate.assigned_to_cell = 
-                (fid != NULL_FID) ? G_Formation_AssignedToCell(curr)
-                                  : false,
-            .fstate.in_range_of_cell = 
-                (fid != NULL_FID) ? G_Formation_InRangeOfCell(curr)
-                                  : false,
-            .fstate.arrived_at_cell = 
-                (fid != NULL_FID) ? G_Formation_ArrivedAtCell(curr)
-                                  : false,
-            .fstate.normal_cohesion_force = 
-                ((fid != NULL_FID) ? G_Formation_CohesionForce(curr) 
-                                   : (vec2_t){0.0f, 0.0f}),
-            .fstate.normal_align_force = 
-                ((fid != NULL_FID) ? G_Formation_AlignmentForce(curr)
-                                   : (vec2_t){0.0f, 0.0f}),
-            .fstate.normal_drag_force = 
-                ((fid != NULL_FID) ? G_Formation_DragForce(curr)
-                                   : (vec2_t){0.0f, 0.0f}),
-            .fstate.target_orientation = 
-                ((fid != NULL_FID) ? G_Formation_TargetOrientation(curr)
-                                   : (quat_t){0.0f, 0.0f, 0.0f, 0.0f}),
+            .fstate.fid = fss.fid,
+            .fstate.assignment_ready = fss.assignment_ready,
+            .fstate.assigned_to_cell = fss.assigned_to_cell,
+            .fstate.in_range_of_cell = fss.in_range_of_cell,
+            .fstate.arrived_at_cell = fss.arrived_at_cell,
+            .fstate.normal_cohesion_force = fss.cohesion_force,
+            .fstate.normal_align_force = fss.alignment_force,
+            .fstate.normal_drag_force = fss.drag_force,
+            .fstate.target_orientation = fss.target_orientation,
             .cell_arrival_vdes = cell_arrival_vdes
         });
     });
@@ -4915,20 +4917,28 @@ bool G_Move_Init(const struct map *map)
         return false;
     }
 
+    if(NULL == (s_flock_index = kh_init(findex))) {
+        kh_destroy(state, s_entity_state_table);
+        return false;
+    }
+
     memset(&s_move_work, 0, sizeof(s_move_work));
     if(!stalloc_init(&s_move_work.mem)) {
+        kh_destroy(findex, s_flock_index);
         kh_destroy(state, s_entity_state_table);
         return NULL;
     }
 
     if(!queue_cmd_init(&s_move_commands, 256)) {
         stalloc_destroy(&s_move_work.mem);
+        kh_destroy(findex, s_flock_index);
         kh_destroy(state, s_entity_state_table);
         return NULL;
     }
 
     if(!stalloc_init(&s_eventargs)) {
         stalloc_destroy(&s_move_work.mem);
+        kh_destroy(findex, s_flock_index);
         kh_destroy(state, s_entity_state_table);
         queue_cmd_destroy(&s_move_commands);
         return NULL;
@@ -4986,6 +4996,7 @@ void G_Move_Shutdown(void)
     stalloc_destroy(&s_eventargs);
     queue_cmd_destroy(&s_move_commands);
     stalloc_destroy(&s_move_work.mem);
+    kh_destroy(findex, s_flock_index);
     kh_destroy(state, s_entity_state_table);
 }
 
@@ -5020,21 +5031,11 @@ void G_Move_AddEntity(uint32_t uid, vec3_t pos, float sel_radius, int faction_id
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_ADD,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_VEC3,
-            .val.as_vec3 = pos
-        },
-        .args[2] = (struct attr){
-            .type = TYPE_FLOAT,
-            .val.as_float = sel_radius
-        },
-        .args[3] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_float = faction_id
+        .uid = uid,
+        .u.add = {
+            .pos = pos,
+            .radius = sel_radius,
+            .faction_id = faction_id
         }
     });
 }
@@ -5044,10 +5045,7 @@ void G_Move_RemoveEntity(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_REMOVE,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        }
+        .uid = uid
     });
 }
 
@@ -5056,10 +5054,7 @@ void G_Move_Stop(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_STOP,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        }
+        .uid = uid
     });
 }
 
@@ -5069,8 +5064,8 @@ bool G_Move_GetDest(uint32_t uid, vec2_t *out_xz, bool *out_attack)
         (void*)(uintptr_t)uid, uids_match, false);
 
     if(cmd) {
-        *out_xz = cmd->args[1].val.as_vec2;
-        *out_attack = cmd->args[2].val.as_bool;
+        *out_xz = cmd->u.set_dest.dest_xz;
+        *out_attack = cmd->u.set_dest.attack;
         return true;
     }
 
@@ -5088,7 +5083,7 @@ bool G_Move_GetSurrounding(uint32_t uid, uint32_t *out_uid)
         (void*)(uintptr_t)uid, uids_match, false);
 
     if(cmd) {
-        *out_uid = cmd->args[1].val.as_int;
+        *out_uid = cmd->u.surround.target;
         return true;
     }
 
@@ -5114,14 +5109,8 @@ void G_Move_SetCombatHeld(uint32_t uid, bool held)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_SET_COMBAT_HELD,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_BOOL,
-            .val.as_bool = held
-        }
+        .uid = uid,
+        .u.combat_held.held = held
     });
 }
 
@@ -5130,14 +5119,8 @@ void G_Move_SetCombatFacing(uint32_t uid, quat_t dir)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_SET_COMBAT_FACING,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_QUAT,
-            .val.as_quat = dir
-        }
+        .uid = uid,
+        .u.combat_facing.dir = dir
     });
 }
 
@@ -5146,17 +5129,10 @@ void G_Move_SetDest(uint32_t uid, vec2_t dest_xz, bool attack)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_SET_DEST,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_VEC2,
-            .val.as_vec2 = dest_xz
-        },
-        .args[2] = (struct attr){
-            .type = TYPE_BOOL,
-            .val.as_bool = attack
+        .uid = uid,
+        .u.set_dest = {
+            .dest_xz = dest_xz,
+            .attack = attack
         }
     });
 }
@@ -5166,14 +5142,8 @@ void G_Move_SetChangeDirection(uint32_t uid, quat_t target)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_CHANGE_DIRECTION,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_QUAT,
-            .val.as_quat = target
-        }
+        .uid = uid,
+        .u.change_direction.target = target
     });
 }
 
@@ -5182,18 +5152,11 @@ void G_Move_SetEnterRange(uint32_t uid, uint32_t target, float range)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_SET_ENTER_RANGE,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = target
-        },
-        .args[2] = (struct attr){
-            .type = TYPE_FLOAT,
-            .val.as_float = range
-        } 
+        .uid = uid,
+        .u.enter_range = {
+            .target = target,
+            .range = range
+        }
     });
 }
 
@@ -5214,10 +5177,7 @@ void G_Move_SetSeekEnemies(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_SET_SEEK_ENEMIES,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        }
+        .uid = uid
     });
 }
 
@@ -5226,14 +5186,8 @@ void G_Move_SetSurroundEntity(uint32_t uid, uint32_t target)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_SET_SURROUND_ENTITY,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = target
-        }
+        .uid = uid,
+        .u.surround.target = target
     });
 }
 
@@ -5242,14 +5196,8 @@ void G_Move_UpdatePos(uint32_t uid, vec2_t pos)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_UPDATE_POS,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_VEC2,
-            .val.as_vec2 = pos
-        }
+        .uid = uid,
+        .u.update_pos.pos = pos
     });
 }
 
@@ -5258,10 +5206,7 @@ void G_Move_Unblock(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_UNBLOCK,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        }
+        .uid = uid
     });
 }
 
@@ -5270,14 +5215,8 @@ void G_Move_BlockAt(uint32_t uid, vec3_t pos)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_BLOCK,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_VEC3,
-            .val.as_vec3 = pos
-        }
+        .uid = uid,
+        .u.block.pos = pos
     });
 }
 
@@ -5286,17 +5225,10 @@ void G_Move_UpdateFactionID(uint32_t uid, int oldfac, int newfac)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_UPDATE_FACTION_ID,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = oldfac
-        },
-        .args[2] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = newfac
+        .uid = uid,
+        .u.update_faction = {
+            .oldfac = oldfac,
+            .newfac = newfac
         }
     });
 }
@@ -5306,14 +5238,8 @@ void G_Move_UpdateSelectionRadius(uint32_t uid, float sel_radius)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_UPDATE_SELECTION_RADIUS,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_FLOAT,
-            .val.as_float  = sel_radius
-        }
+        .uid = uid,
+        .u.update_radius.radius = sel_radius
     });
 }
 
@@ -5344,7 +5270,7 @@ bool G_Move_GetMaxSpeed(uint32_t uid, float *out)
         (void*)(uintptr_t)uid, uids_match, false);
 
     if(cmd) {
-        *out = cmd->args[1].val.as_float;
+        *out = cmd->u.max_speed.speed;
         return true;
     }
 
@@ -5361,14 +5287,8 @@ bool G_Move_SetMaxSpeed(uint32_t uid, float speed)
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_SET_MAX_SPEED,
-        .args[0] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = uid
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_FLOAT,
-            .val.as_float = speed
-        }
+        .uid = uid,
+        .u.max_speed.speed = speed
     });
     return true;
 }
@@ -5383,25 +5303,12 @@ void G_Move_ArrangeInFormation(vec_entity_t *ents, vec2_t target,
 
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_MAKE_FLOCKS,
-        .args[0] = (struct attr){
-            .type = TYPE_POINTER,
-            .val.as_pointer = copy
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_VEC2,
-            .val.as_vec2 = target,
-        },
-        .args[2] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = type
-        },
-        .args[3] = (struct attr){
-            .type = TYPE_BOOL,
-            .val.as_bool = false
-        },
-        .args[4] = (struct attr){
-            .type = TYPE_VEC2,
-            .val.as_vec2 = orientation
+        .u.make_flocks = {
+            .sel = copy,
+            .target_xz = target,
+            .type = type,
+            .attack = false,
+            .target_orientation = orientation
         }
     });
 }
@@ -5416,25 +5323,12 @@ void G_Move_AttackInFormation(vec_entity_t *ents, vec2_t target,
 
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_MAKE_FLOCKS,
-        .args[0] = (struct attr){
-            .type = TYPE_POINTER,
-            .val.as_pointer = copy
-        },
-        .args[1] = (struct attr){
-            .type = TYPE_VEC2,
-            .val.as_vec2 = target,
-        },
-        .args[2] = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = type
-        },
-        .args[3] = (struct attr){
-            .type = TYPE_BOOL,
-            .val.as_bool = true
-        },
-        .args[4] = (struct attr){
-            .type = TYPE_VEC2,
-            .val.as_vec2 = orientation
+        .u.make_flocks = {
+            .sel = copy,
+            .target_xz = target,
+            .type = type,
+            .attack = true,
+            .target_orientation = orientation
         }
     });
 }

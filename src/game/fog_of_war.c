@@ -773,6 +773,22 @@ void G_Fog_RemoveVision(vec2_t xz_pos, int faction_id, float radius)
     enqueue_update(faction_id, xz_pos, radius, -1);
 }
 
+/* A remove+add pair whose endpoints quantise to the same tile stamps two
+ * exactly-cancelling discs; skip both.
+ */
+void G_Fog_UpdateVision(vec2_t from_xz, vec2_t to_xz, int faction_id, float radius)
+{
+    struct tile_desc from_td, to_td;
+    if(M_Tile_DescForPoint2D(s_res, s_map_pos, from_xz, &from_td)
+    && M_Tile_DescForPoint2D(s_res, s_map_pos, to_xz, &to_td)
+    && from_td.chunk_r == to_td.chunk_r && from_td.chunk_c == to_td.chunk_c
+    && from_td.tile_r == to_td.tile_r && from_td.tile_c == to_td.tile_c)
+        return;
+
+    enqueue_update(faction_id, from_xz, radius, -1);
+    enqueue_update(faction_id, to_xz, radius, +1);
+}
+
 /* Flush all pending vision updates immediately. Must be called on the main
  * thread (mutates shared fog state). Called at the movement-apply boundary and
  * before the per-frame vision-state upload. */
