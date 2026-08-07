@@ -83,7 +83,7 @@
 
 #define NFRAMES_LOGGED        (5)
 #define PERF_GPU_STAT_COUNT   (6)
-#define PERF_NAV_TICK_HISTORY (64)
+#define PERF_NAV_TICK_HISTORY (1024)
 #define PERF_FRAME_HISTORY    (4096)
 
 struct gpu_mem_accounting;

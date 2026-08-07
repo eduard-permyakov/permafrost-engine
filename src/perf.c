@@ -815,6 +815,13 @@ void Perf_FinishTick(void)
     if(s_frame_time_count < PERF_FRAME_HISTORY)
         s_frame_time_count++;
 
+    struct sval csv_setting;
+    if(Settings_Get("pf.debug.log_perf_csv", &csv_setting) == SS_OKAY
+    && csv_setting.as_bool) {
+        fprintf(stdout, "[frame-csv] %u,%u,%u\n",
+            s_frame_time_seq - 1, s_last_frames_ms[s_last_idx], SDL_GetTicks());
+    }
+
     s_last_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
 
     struct sval log_setting;
@@ -936,6 +943,24 @@ void Perf_RecordNavTick(const struct nav_tick_sample *sample)
     ASSERT_IN_MAIN_THREAD();
     s_nav_tick_hist[s_nav_tick_head] = *sample;
     s_nav_tick_hist[s_nav_tick_head].tick = s_nav_tick_seq++;
+
+    struct sval csv_setting;
+    if(Settings_Get("pf.debug.log_perf_csv", &csv_setting) == SS_OKAY
+    && csv_setting.as_bool) {
+        const struct nav_tick_sample *r = &s_nav_tick_hist[s_nav_tick_head];
+        fprintf(stdout, "[nav-csv] %u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,"
+            "%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
+            r->dur_us, r->serial_us, r->total_us, r->nwork, r->budget_us, r->tick,
+            r->inval_us, r->los_peek_us, r->los_build_us, r->cpr_async_us,
+            r->cpr_serial_us, r->dv_us, r->vel_us, r->upd_us, r->main_us,
+            r->consume_us, r->copy_gs_us, r->submit_us, r->map_update_us,
+            r->drain_us, r->pivot_us, r->cmds_us, r->flock_us, r->snaps_us,
+            r->nlos_builds, r->nreq_rebuilds, r->nenemy_built, r->nzone_built,
+            r->nsurround_built, r->ninval_enemy, r->ninval_surround,
+            r->nsvc_sync, r->nsvc_patch, r->nastar, r->nastar_memo,
+            r->npseek_built);
+    }
+
     s_nav_tick_head = (s_nav_tick_head + 1) % PERF_NAV_TICK_HISTORY;
     if(s_nav_tick_count < PERF_NAV_TICK_HISTORY)
         s_nav_tick_count++;
