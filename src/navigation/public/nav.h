@@ -449,6 +449,40 @@ bool      N_HasDestLOSCached(dest_id_t id, vec2_t curr_pos, void *nav_private,
                              vec3_t map_pos, bool *out_present);
 
 /* ------------------------------------------------------------------------
+ * Like N_HasDestLOS on the navigation task: LOS floods are deferred to the
+ * worker pool, so a miss records the required chain of builds and reports
+ * LOS_ENSURE_DEFERRED. The answer becomes readable via N_HasDestLOSCached
+ * once N_FinishLOSChains publishes the fields.
+ * ------------------------------------------------------------------------
+ */
+enum los_ensure_result{
+    LOS_ENSURE_ANSWER,
+    LOS_ENSURE_DEFERRED,
+    LOS_ENSURE_FAIL,
+};
+
+enum los_ensure_result N_EnsureDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_private,
+                                       vec3_t map_pos, vec2_t xz_dest, bool *out_vis);
+
+/* ------------------------------------------------------------------------
+ * Returns true if a deferred LOS build for the destination's field at the
+ * position's chunk is already recorded this tick.
+ * ------------------------------------------------------------------------
+ */
+bool      N_DestLOSPending(dest_id_t id, vec2_t curr_pos, void *nav_private,
+                           vec3_t map_pos);
+
+/* ------------------------------------------------------------------------
+ * Submit the LOS chains recorded by the navigation task's serial loops to
+ * the worker pool, then join them and publish the fields to the cache. The
+ * dispatch and the join are split so unrelated work can be awaited between
+ * them.
+ * ------------------------------------------------------------------------
+ */
+void      N_DispatchLOSChains(void);
+void      N_FinishLOSChains(void);
+
+/* ------------------------------------------------------------------------
  * Returns true if the specified XZ position is pathable.
  * ------------------------------------------------------------------------
  */

@@ -78,6 +78,10 @@ bool M_TileAdjacentToLand(const struct map *map, const struct tile_desc *td);
 
 static bool field_work_pending(ff_id_t ffid);
 static void field_submit_work(void);
+static bool los_work_pending(dest_id_t id, struct coord chunk);
+static void los_defer_create(struct nav_private *priv, vec3_t map_pos, dest_id_t id,
+                             struct coord chunk_coord, struct tile_desc dst_desc,
+                             const struct coord *prev_coord);
 
 #define IDX(r, width, c)   ((r) * (width) + (c))
 #define CURSOR_OFF(cursor, base) ((ptrdiff_t)((cursor) - (base)))
@@ -89,6 +93,8 @@ static void field_submit_work(void);
 
 #define EPSILON                  (1.0f / 1024)
 #define MAX_FIELD_TASKS          (512)
+#define MAX_LOS_CHAINS           (128)
+#define MAX_LOS_ENTRIES          (512)
 
 #define FOREACH_PORTAL(_priv, _layer, _local, ...)                                              \
     do{                                                                                         \
@@ -180,6 +186,48 @@ struct field_work{
     struct future   futures[MAX_FIELD_TASKS];
 };
 
+/* A deferred LOS field build. The LOS wavefront is carried across chunk borders,
+ * so each field depends on its predecessor along the portal path: an index into
+ * the owning chain when the predecessor is built this window, else a pointer into
+ * the cache (stable, as the cache is only mutated once the floods complete).
+ */
+struct los_work_entry{
+    struct coord            chunk;
+    struct tile_desc        target;
+    int                     prev_idx;
+    const struct LOS_field *prev;
+    int                     next;
+    struct LOS_field        out;
+};
+
+/* All deferred builds for one destination, flooded in record order by a single
+ * task so every entry's intra-chain predecessor is complete before it is read.
+ */
+struct los_chain{
+    dest_id_t id;
+    int       head;
+    int       tail;
+};
+
+KHASH_MAP_INIT_INT64(lospend, int)
+KHASH_MAP_INIT_INT(loschain, int)
+
+/* LOS chain builds recorded by the navigation task's serial loops, flooded on
+ * the worker pool and published to the field cache at the join.
+ */
+struct los_work{
+    struct nav_private    *priv;
+    vec3_t                 map_pos;
+    struct los_work_entry *entries;
+    size_t                 nentries;
+    struct los_chain       chains[MAX_LOS_CHAINS];
+    size_t                 nchains;
+    khash_t(lospend)      *pending;     /* (dest, chunk) -> entry index */
+    khash_t(loschain)     *chain_index; /* dest -> chain index */
+    uint32_t               tids[MAX_LOS_CHAINS];
+    struct future          futures[MAX_LOS_CHAINS];
+};
+
 __KHASH_IMPL(coord, static inline, khint32_t, struct coord, 1, kh_int_hash_func, kh_int_hash_equal)
 KHASH_SET_INIT_INT64(td)
 
@@ -188,6 +236,7 @@ KHASH_SET_INIT_INT64(td)
 /*****************************************************************************/
 
 static struct field_work s_field_work;
+static struct los_work   s_los_work;
 
 /* Per-tick field churn diagnostics for the perf window; reset at the top of
  * the nav tick in N_ApplyDeferredInvalidations. */
@@ -1998,13 +2047,18 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
     }
 
     /* Create the LOS field for the destination chunk, if necessary */
-    if(!N_FC_ContainsLOSField(priv->fieldcache, ret, 
-        (struct coord){dst_desc.chunk_r, dst_desc.chunk_c})) {
+    struct coord dst_chunk_coord = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
+    if(!N_FC_ContainsLOSField(priv->fieldcache, ret, dst_chunk_coord)
+    && !(on_task && los_work_pending(ret, dst_chunk_coord))) {
 
-        struct LOS_field lf;
-        N_LOSFieldCreate(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, 
-            dst_desc, priv, map_pos, priv->unit_query_ctx, &lf, NULL);
-        N_FC_PutLOSField(priv->fieldcache, ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &lf);
+        if(on_task) {
+            los_defer_create(priv, map_pos, ret, dst_chunk_coord, dst_desc, NULL);
+        }else{
+            struct LOS_field lf;
+            N_LOSFieldCreate(ret, dst_chunk_coord, dst_desc, priv, map_pos,
+                priv->unit_query_ctx, &lf, NULL);
+            N_FC_PutLOSField(priv->fieldcache, ret, dst_chunk_coord, &lf);
+        }
     }
 
     /* Source and destination positions are in the same chunk, and a path exists
@@ -2238,19 +2292,25 @@ walk:;
         /* Reference field in the cache */
         (void)N_FC_FlowFieldAt(priv->fieldcache, new_id);
 
-        if(!N_FC_ContainsLOSField(priv->fieldcache, ret, chunk_coord)) {
+        if(!N_FC_ContainsLOSField(priv->fieldcache, ret, chunk_coord)
+        && !(on_task && los_work_pending(ret, chunk_coord))) {
 
             assert((abs(prev_los_coord.r - chunk_coord.r) 
                   + abs(prev_los_coord.c - chunk_coord.c)) == 1);
-            assert(N_FC_ContainsLOSField(priv->fieldcache, ret, prev_los_coord));
+            assert(N_FC_ContainsLOSField(priv->fieldcache, ret, prev_los_coord)
+                || (on_task && los_work_pending(ret, prev_los_coord)));
 
-            const struct LOS_field *prev_los = N_FC_LOSFieldAt(priv->fieldcache, ret, prev_los_coord);
-            assert(prev_los);
-            assert(prev_los->chunk.r == prev_los_coord.r && prev_los->chunk.c == prev_los_coord.c);
+            if(on_task) {
+                los_defer_create(priv, map_pos, ret, chunk_coord, dst_desc, &prev_los_coord);
+            }else{
+                const struct LOS_field *prev_los = N_FC_LOSFieldAt(priv->fieldcache, ret, prev_los_coord);
+                assert(prev_los);
+                assert(prev_los->chunk.r == prev_los_coord.r && prev_los->chunk.c == prev_los_coord.c);
 
-            struct LOS_field lf;
-            N_LOSFieldCreate(ret, chunk_coord, dst_desc, priv, map_pos, priv->unit_query_ctx, &lf, prev_los);
-            N_FC_PutLOSField(priv->fieldcache, ret, chunk_coord, &lf);
+                struct LOS_field lf;
+                N_LOSFieldCreate(ret, chunk_coord, dst_desc, priv, map_pos, priv->unit_query_ctx, &lf, prev_los);
+                N_FC_PutLOSField(priv->fieldcache, ret, chunk_coord, &lf);
+            }
         }
 
         prev_los_coord = chunk_coord;
@@ -2313,6 +2373,144 @@ static void field_join_work(void)
     Sched_AwaitAll(s_field_work.tids, s_field_work.futures, s_field_work.nwork);
 }
 
+static uint64_t los_pending_key(dest_id_t id, struct coord chunk)
+{
+    return (((uint64_t)id) << 32) | ((uint64_t)chunk.r << 16) | (uint64_t)chunk.c;
+}
+
+static bool los_work_pending(dest_id_t id, struct coord chunk)
+{
+    khiter_t k = kh_get(lospend, s_los_work.pending, los_pending_key(id, chunk));
+    return (k != kh_end(s_los_work.pending));
+}
+
+static struct result los_chain_task(void *arg)
+{
+    uint64_t t0 = SDL_GetPerformanceCounter();
+    struct los_chain *chain = arg;
+
+    for(int idx = chain->head; idx != -1; idx = s_los_work.entries[idx].next) {
+
+        struct los_work_entry *e = &s_los_work.entries[idx];
+        const struct LOS_field *prev = (e->prev_idx != -1)
+                                     ? &s_los_work.entries[e->prev_idx].out
+                                     : e->prev;
+        N_LOSFieldCreate(chain->id, e->chunk, e->target, s_los_work.priv,
+            s_los_work.map_pos, s_los_work.priv->unit_query_ctx, &e->out, prev);
+        Sched_TryYield();
+    }
+    Perf_NavParallelAddSince(t0);
+    return NULL_RESULT;
+}
+
+/* On task pool exhaustion the chain is flooded inline, which stays safe: it
+ * reads only its own entries and cache-resident predecessors.
+ */
+static void los_submit_chain(size_t idx)
+{
+    struct los_chain *chain = &s_los_work.chains[idx];
+    SDL_AtomicSet(&s_los_work.futures[idx].status, FUTURE_INCOMPLETE);
+    s_los_work.tids[idx] = Sched_Create(1, los_chain_task, chain,
+        "nav::los_chain_task", &s_los_work.futures[idx], TASK_BIG_STACK);
+    if(s_los_work.tids[idx] == NULL_TID) {
+        los_chain_task(chain);
+        SDL_AtomicSet(&s_los_work.futures[idx].status, FUTURE_COMPLETE);
+    }
+}
+
+static void los_publish_chains(void)
+{
+    struct nav_private *priv = s_los_work.priv;
+    for(size_t i = 0; i < s_los_work.nchains; i++) {
+
+        struct los_chain *chain = &s_los_work.chains[i];
+        for(int idx = chain->head; idx != -1; idx = s_los_work.entries[idx].next) {
+            struct los_work_entry *e = &s_los_work.entries[idx];
+            N_FC_PutLOSField(priv->fieldcache, chain->id, e->chunk, &e->out);
+        }
+    }
+    s_los_work.nentries = 0;
+    s_los_work.nchains = 0;
+    s_los_work.priv = NULL;
+    kh_clear(lospend, s_los_work.pending);
+    kh_clear(loschain, s_los_work.chain_index);
+}
+
+static void los_flush_chains(void)
+{
+    N_DispatchLOSChains();
+    N_FinishLOSChains();
+}
+
+/* Records a LOS field build in place of the serial loops' inline flood. Cached
+ * predecessor pointers stay valid until the floods read them: every publish is
+ * preceded by a join of all recorded entries, so no capture outlives a cache
+ * mutation.
+ */
+static void los_defer_create(struct nav_private *priv, vec3_t map_pos, dest_id_t id,
+                             struct coord chunk_coord, struct tile_desc dst_desc,
+                             const struct coord *prev_coord)
+{
+    khiter_t k = kh_get(loschain, s_los_work.chain_index, id);
+    bool new_chain = (k == kh_end(s_los_work.chain_index));
+
+    if(s_los_work.nentries == MAX_LOS_ENTRIES
+    || (new_chain && s_los_work.nchains == MAX_LOS_CHAINS)) {
+        los_flush_chains();
+        new_chain = true;
+    }
+
+    s_los_work.priv = priv;
+    s_los_work.map_pos = map_pos;
+
+    int chain_idx;
+    if(new_chain) {
+        chain_idx = s_los_work.nchains++;
+        s_los_work.chains[chain_idx] = (struct los_chain){
+            .id = id,
+            .head = -1,
+            .tail = -1
+        };
+        int status;
+        k = kh_put(loschain, s_los_work.chain_index, id, &status);
+        assert(status != -1);
+        kh_value(s_los_work.chain_index, k) = chain_idx;
+    }else{
+        chain_idx = kh_value(s_los_work.chain_index, k);
+    }
+    struct los_chain *chain = &s_los_work.chains[chain_idx];
+
+    int idx = s_los_work.nentries++;
+    struct los_work_entry *e = &s_los_work.entries[idx];
+    e->chunk = chunk_coord;
+    e->target = dst_desc;
+    e->prev_idx = -1;
+    e->prev = NULL;
+    e->next = -1;
+
+    if(prev_coord) {
+        khiter_t p = kh_get(lospend, s_los_work.pending, los_pending_key(id, *prev_coord));
+        if(p != kh_end(s_los_work.pending)) {
+            e->prev_idx = kh_value(s_los_work.pending, p);
+        }else{
+            e->prev = N_FC_PeekLOSField(priv->fieldcache, id, *prev_coord);
+            assert(e->prev);
+        }
+    }
+
+    if(chain->tail != -1) {
+        s_los_work.entries[chain->tail].next = idx;
+    }else{
+        chain->head = idx;
+    }
+    chain->tail = idx;
+
+    int status;
+    khiter_t pk = kh_put(lospend, s_los_work.pending, los_pending_key(id, chunk_coord), &status);
+    assert(status != -1);
+    kh_value(s_los_work.pending, pk) = idx;
+}
+
 static vec2_t tile_center_location(struct nav_private *priv, vec3_t map_pos, struct tile_desc td)
 {
     struct map_resolution res;
@@ -2336,6 +2534,16 @@ bool N_Init(void)
         goto fail_alloc;
 
     if(NULL == (s_field_work.pending = kh_init(ffpend)))
+        goto fail_alloc;
+
+    memset(&s_los_work, 0, sizeof(s_los_work));
+    if(NULL == (s_los_work.entries = PF_MALLOC(MAX_LOS_ENTRIES * sizeof(struct los_work_entry))))
+        goto fail_alloc;
+
+    if(NULL == (s_los_work.pending = kh_init(lospend)))
+        goto fail_alloc;
+
+    if(NULL == (s_los_work.chain_index = kh_init(loschain)))
         goto fail_alloc;
 
     if(NULL == (s_astar_memo = kh_init(astar_memo)))
@@ -2492,6 +2700,9 @@ void N_Shutdown(void)
     vec_crange_destroy(&s_pub_ranges);
     kh_destroy(ffpend, s_field_work.pending);
     stalloc_destroy(&s_field_work.mem);
+    kh_destroy(loschain, s_los_work.chain_index);
+    kh_destroy(lospend, s_los_work.pending);
+    PF_FREE(s_los_work.entries);
 }
 
 void N_ClearState(void)
@@ -4190,6 +4401,21 @@ void N_AwaitAsyncFields(void)
     kh_clear(ffpend, s_field_work.pending);
 }
 
+void N_DispatchLOSChains(void)
+{
+    for(size_t i = 0; i < s_los_work.nchains; i++) {
+        los_submit_chain(i);
+    }
+}
+
+void N_FinishLOSChains(void)
+{
+    if(s_los_work.nchains == 0)
+        return;
+    Sched_AwaitAll(s_los_work.tids, s_los_work.futures, s_los_work.nchains);
+    los_publish_chains();
+}
+
 void N_InvalidateZoneFieldsAt(void *nav_private, vec3_t map_pos, vec2_t xz_pos,
                               enum nav_layer layer)
 {
@@ -4293,6 +4519,55 @@ bool N_HasDestLOSCached(dest_id_t id, vec2_t curr_pos, void *nav_private, vec3_t
     }
     *out_present = true;
     return lf->field[tile.tile_r][tile.tile_c].visible;
+}
+
+bool N_DestLOSPending(dest_id_t id, vec2_t curr_pos, void *nav_private, vec3_t map_pos)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct tile_desc tile;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, curr_pos, &tile);
+    assert(result);
+
+    return los_work_pending(id, (struct coord){tile.chunk_r, tile.chunk_c});
+}
+
+enum los_ensure_result N_EnsureDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_private,
+                                       vec3_t map_pos, vec2_t xz_dest, bool *out_vis)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct tile_desc tile;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, curr_pos, &tile);
+    assert(result);
+    struct coord chunk = (struct coord){tile.chunk_r, tile.chunk_c};
+
+    if(N_FC_ContainsLOSField(priv->fieldcache, id, chunk)) {
+        const struct LOS_field *lf = N_FC_LOSFieldAt(priv->fieldcache, id, chunk);
+        *out_vis = lf->field[tile.tile_r][tile.tile_c].visible;
+        return LOS_ENSURE_ANSWER;
+    }
+    if(los_work_pending(id, chunk))
+        return LOS_ENSURE_DEFERRED;
+
+    dest_id_t ret;
+    if(!n_request_path(priv, curr_pos, xz_dest, N_DestFactionID(id), map_pos,
+                       N_DestLayer(id), &ret))
+        return LOS_ENSURE_FAIL;
+
+    /* A capacity flush inside the request may have published the field already */
+    if(N_FC_ContainsLOSField(priv->fieldcache, id, chunk)) {
+        const struct LOS_field *lf = N_FC_LOSFieldAt(priv->fieldcache, id, chunk);
+        *out_vis = lf->field[tile.tile_r][tile.tile_c].visible;
+        return LOS_ENSURE_ANSWER;
+    }
+    if(los_work_pending(id, chunk))
+        return LOS_ENSURE_DEFERRED;
+    return LOS_ENSURE_FAIL;
 }
 
 bool N_PositionPathable(vec2_t xz_pos, enum nav_layer layer, void *nav_private, vec3_t map_pos)

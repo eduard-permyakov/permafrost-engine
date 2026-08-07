@@ -817,6 +817,17 @@ bool M_NavHasDestLOSCached(const struct map *map, dest_id_t id, vec2_t curr_pos,
     return N_HasDestLOSCached(id, curr_pos, map->nav_private, map->pos, out_present);
 }
 
+enum los_ensure_result M_NavEnsureDestLOS(const struct map *map, dest_id_t id, vec2_t curr_pos,
+                                          vec2_t xz_dest, bool *out_vis)
+{
+    return N_EnsureDestLOS(id, curr_pos, map->nav_private, map->pos, xz_dest, out_vis);
+}
+
+bool M_NavDestLOSPending(const struct map *map, dest_id_t id, vec2_t curr_pos)
+{
+    return N_DestLOSPending(id, curr_pos, map->nav_private, map->pos);
+}
+
 bool M_NavPositionPathable(const struct map *map, enum nav_layer layer, vec2_t xz_pos)
 {
     struct box map_box = (struct  box){

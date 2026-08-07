@@ -140,7 +140,7 @@ struct nav_tick_sample{
     /* Nav fiber phases */
     uint32_t inval_us;      /* applying deferred field invalidations */
     uint32_t los_peek_us;   /* parallel LOS cache peek */
-    uint32_t los_build_us;  /* serial LOS field build loop */
+    uint32_t los_build_us;  /* serial LOS record loop + parallel chain flood/publish */
     uint32_t cpr_async_us;  /* parallel async field build + join */
     uint32_t cpr_serial_us; /* serial path-request loop */
     uint32_t dv_us;         /* parallel desired-velocity phase */

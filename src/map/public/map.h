@@ -422,6 +422,21 @@ bool   M_NavHasDestLOS(const struct map *map, dest_id_t id, vec2_t curr_pos, vec
 bool   M_NavHasDestLOSCached(const struct map *map, dest_id_t id, vec2_t curr_pos, bool *out_present);
 
 /* ------------------------------------------------------------------------
+ * Like M_NavHasDestLOS on the navigation task: a miss records a deferred
+ * chain of LOS builds instead of flooding inline. See N_EnsureDestLOS.
+ * ------------------------------------------------------------------------
+ */
+enum los_ensure_result M_NavEnsureDestLOS(const struct map *map, dest_id_t id, vec2_t curr_pos,
+                                          vec2_t xz_dest, bool *out_vis);
+
+/* ------------------------------------------------------------------------
+ * Returns true if a deferred LOS build covering the position's chunk is
+ * already recorded this tick for the destination.
+ * ------------------------------------------------------------------------
+ */
+bool   M_NavDestLOSPending(const struct map *map, dest_id_t id, vec2_t curr_pos);
+
+/* ------------------------------------------------------------------------
  * Returns true if the particular entity is in direct line of sight of the 
  * specified position.
  * ------------------------------------------------------------------------

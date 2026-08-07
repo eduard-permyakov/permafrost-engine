@@ -300,6 +300,9 @@ struct move_work_in{
     bool           needs_los_build;
     bool           los_queried;
     bool           los_built;
+    /* The LOS answer awaits a chain build on the worker pool; resolved by a
+     * cache peek once the chains are joined and published. */
+    bool           los_deferred;
     /* The rebuild budget ran out before this unit's field was serviced; a zero
      * desired velocity then means "not served yet", not "can't be routed". */
     bool           field_starved;
@@ -4480,6 +4483,7 @@ static struct result move_los_peek_task(void *arg)
         in->needs_los_build = false;
         in->los_queried = false;
         in->los_built = false;
+        in->los_deferred = false;
         in->field_starved = false;
         if(fl && (ms->state != STATE_SURROUND_ENTITY || !ms->using_surround_field)) {
             bool present;
@@ -4508,8 +4512,8 @@ static void compute_los_state(void)
     s_last_nav_tick_stats.los_peek_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
 
-    /* Serial build: construct the LOS field for the flagged units, which mutates
-     * the shared cache.
+    /* Serial record: route the flagged units' misses through the path request,
+     * which defers the LOS floods to the worker pool as per-destination chains.
      */
     phase_start = SDL_GetPerformanceCounter();
     const struct map *map = s_move_work.gamestate.map;
@@ -4537,6 +4541,12 @@ static void compute_los_state(void)
             in->has_dest_los = vis;
             continue;
         }
+
+        /* Neither does an already-recorded chain build */
+        if(M_NavDestLOSPending(map, fl->dest_id, pos)) {
+            in->los_deferred = true;
+            continue;
+        }
         misses++;
 
         if(s_rebuild_budget == 0) {
@@ -4546,10 +4556,40 @@ static void compute_los_state(void)
         }
         s_rebuild_budget--;
 
-        in->has_dest_los = M_NavHasDestLOS(map, fl->dest_id, pos, fl->target_xz);
+        switch(M_NavEnsureDestLOS(map, fl->dest_id, pos, fl->target_xz, &vis)) {
+        case LOS_ENSURE_ANSWER:
+            in->has_dest_los = vis;
+            break;
+        case LOS_ENSURE_DEFERRED:
+            in->los_deferred = true;
+            break;
+        case LOS_ENSURE_FAIL:
+            in->has_dest_los = false;
+            break;
+        }
         in->los_built = true;
 
         Sched_TryYield();
+    }
+
+    /* Flood the recorded chains in parallel, publish them at the join, and
+     * resolve the answers that waited on them with a cache peek.
+     */
+    N_DispatchLOSChains();
+    N_FinishLOSChains();
+
+    for(size_t i = 0; i < nwork; i++) {
+
+        struct move_work_in *in = &s_move_work.in[i];
+        if(!in->los_deferred)
+            continue;
+
+        const struct movestate *ms = movestate_get(in->ent_uid);
+        vec2_t pos = (vec2_t){ms->prev_pos.x, ms->prev_pos.z};
+
+        bool present;
+        bool vis = M_NavHasDestLOSCached(map, in->flock->dest_id, pos, &present);
+        in->has_dest_los = present && vis;
     }
 
     s_last_nav_tick_stats.los_build_us =
@@ -4649,10 +4689,13 @@ static void compute_path_requests(void)
         s_rebuild_start = s_first_starved;
     }
 
-    /* Join the flow floods that the serviced path requests deferred to the
-     * async pool; the fields must be resident before the desired-velocity
-     * phase peeks them. */
+    /* Join the flow floods and LOS chains that the serviced path requests
+     * deferred to the async pool; the fields must be resident before the
+     * desired-velocity phase peeks them. The LOS chains are dispatched first
+     * so both flood sets share the window. */
+    N_DispatchLOSChains();
     N_AwaitAsyncFields();
+    N_FinishLOSChains();
 
     s_last_nav_tick_stats.cpr_serial_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
