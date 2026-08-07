@@ -432,23 +432,49 @@ fail_came_from:
     PERF_RETURN(false);
 }
 
+/* Admissible octile estimate from a portal's midpoint to the goal tile, in
+ * tile units (the minimum per-tile travel cost is 1).
+ */
+static float portal_octile_estimate(const struct portal *port, struct tile_desc end)
+{
+    int pr = port->chunk.r * FIELD_RES_R
+           + (port->endpoints[0].r + port->endpoints[1].r) / 2;
+    int pc = port->chunk.c * FIELD_RES_C
+           + (port->endpoints[0].c + port->endpoints[1].c) / 2;
+    int er = end.chunk_r * FIELD_RES_R + end.tile_r;
+    int ec = end.chunk_c * FIELD_RES_C + end.tile_c;
+    int dr = abs(pr - er), dc = abs(pc - ec);
+    int dmin = (dr < dc) ? dr : dc;
+    int dmax = (dr > dc) ? dr : dc;
+    return (dmax - dmin) + dmin * 1.41421356f;
+}
+
 bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_tile, 
                            const struct portal *finish, const struct nav_private *priv, 
                            enum nav_layer layer, vec_portal_t *out_path, float *out_cost)
 {
     PERF_ENTER();
 
-    pq_portal_t          frontier;
-    khash_t(key_portal) *came_from;
-    khash_t(key_float)  *running_cost;
+    /* Only ever called from the serial navigation-fiber path-request flow, so
+     * the tables can persist across calls instead of being rebuilt.
+     */
+    static khash_t(key_portal) *came_from;
+    static khash_t(key_float)  *running_cost;
     
+    pq_portal_t frontier;
     pq_portal_init(&frontier);
-    if(NULL == (came_from = kh_init(key_portal)))
-        goto fail_came_from;
-    if(NULL == (running_cost = kh_init(key_float)))
-        goto fail_running_cost;
-    kh_resize(key_portal, came_from, 512);
-    kh_resize(key_float, running_cost, 512);
+    if(!came_from) {
+        if(NULL == (came_from = kh_init(key_portal)))
+            goto fail_came_from;
+        kh_resize(key_portal, came_from, 512);
+    }
+    if(!running_cost) {
+        if(NULL == (running_cost = kh_init(key_float)))
+            goto fail_came_from;
+        kh_resize(key_float, running_cost, 512);
+    }
+    kh_clear(key_portal, came_from);
+    kh_clear(key_float, running_cost);
 
     const struct nav_chunk *bchunk = &priv->chunks[layer][start_tile.chunk_r * priv->width + start_tile.chunk_c];
     uint16_t start_liid = N_ClosestPathableLocalIsland(priv, bchunk, start_tile);
@@ -474,7 +500,7 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_til
 
                 struct portal_hop hop = (struct portal_hop){port, start_liid};
                 kh_put_val(key_float, running_cost, phop_to_key(&hop), cost);
-                pq_portal_push(&frontier, cost, hop);
+                pq_portal_push(&frontier, cost + portal_octile_estimate(port, end_tile), hop);
             }
         }
     }
@@ -507,8 +533,7 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_til
             || new_cost < kh_value(running_cost, k)) {
 
                 kh_put_val(key_float, running_cost, phop_to_key(&next_hop), new_cost);
-                /* No heuristic used - effectively Dijkstra's algorithm */
-                float priority = new_cost;
+                float priority = new_cost + portal_octile_estimate(next, end_tile);
                 pq_portal_push(&frontier, priority, next_hop);
                 kh_put_val(key_portal, came_from, phop_to_key(&next_hop), curr);
             }
@@ -545,16 +570,11 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_til
     *out_cost = kh_value(running_cost, k);
 
     pq_portal_destroy(&frontier);
-    kh_destroy(key_float, running_cost);
-    kh_destroy(key_portal, came_from);
 
     PERF_RETURN(true);
 
 fail_find_path:
     pq_portal_destroy(&frontier);
-    kh_destroy(key_float, running_cost);
-fail_running_cost:
-    kh_destroy(key_portal, came_from);
 fail_came_from:
     PERF_RETURN(false);
 }

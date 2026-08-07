@@ -1695,9 +1695,12 @@ static void field_update_entity(
         integration_field[dr * rdim + dc] = 0.0f;
     }
 
+    struct entity_desc stored = target;
+    stored.built_pos = ent_pos_xz(target.target, ctx);
+    stored.age = 0;
     inout_flow->target = (struct field_target){
         .type = TARGET_ENTITY,
-        .ent = target
+        .ent = stored
     };
 
     const int roff = (chunk_coord.r > 0) ? FIELD_RES_R / 2 + (FIELD_RES_R % 2) : 0;
@@ -2263,6 +2266,11 @@ void N_LOSFieldCreate(
 
     pq_coord_t frontier;
     pq_coord_init(&frontier);
+    /* O(1) membership test for the frontier; the priority-queue linear scan
+     * made the flood quadratic.
+     */
+    bool in_frontier[FIELD_RES_R][FIELD_RES_C];
+    memset(in_frontier, 0, sizeof(in_frontier));
     const struct nav_chunk *chunk = &priv->chunks[N_DestLayer(id)]
                                                  [chunk_coord.r * priv->width + chunk_coord.c];
 
@@ -2276,6 +2284,7 @@ void N_LOSFieldCreate(
     if(chunk_coord.r == target.chunk_r && chunk_coord.c == target.chunk_c) {
 
         pq_coord_push(&frontier, 0.0f, (struct coord){target.tile_r, target.tile_c});
+        in_frontier[target.tile_r][target.tile_c] = true;
         integration_field[target.tile_r][target.tile_c] = 0.0f;
         assert(NULL == prev_los);
 
@@ -2335,6 +2344,7 @@ void N_LOSFieldCreate(
                 if(out_los->field[r][curr_edge_idx].visible) {
 
                     pq_coord_push(&frontier, 0.0f, (struct coord){r, curr_edge_idx});
+                    in_frontier[r][curr_edge_idx] = true;
                     integration_field[r][curr_edge_idx] = 0.0f;
                 }
             }
@@ -2354,6 +2364,7 @@ void N_LOSFieldCreate(
                 if(out_los->field[curr_edge_idx][c].visible) {
 
                     pq_coord_push(&frontier, 0.0f, (struct coord){curr_edge_idx, c});
+                    in_frontier[curr_edge_idx][c] = true;
                     integration_field[curr_edge_idx][c] = 0.0f; 
                 }
             }
@@ -2369,6 +2380,7 @@ void N_LOSFieldCreate(
 
         struct coord curr;
         pq_coord_pop(&frontier, &curr);
+        in_frontier[curr.r][curr.c] = false;
 
         struct coord neighbours[8];
         uint8_t neighbour_costs[8];
@@ -2398,8 +2410,10 @@ void N_LOSFieldCreate(
                 if(new_cost < integration_field[neighbours[i].r][neighbours[i].c]) {
 
                     integration_field[nr][nc] = new_cost;
-                    if(!pq_coord_contains(&frontier, field_compare_tiles, neighbours[i]))
+                    if(!in_frontier[nr][nc]) {
                         pq_coord_push(&frontier, new_cost, neighbours[i]);
+                        in_frontier[nr][nc] = true;
+                    }
                 }
             }
         }

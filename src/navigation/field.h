@@ -62,6 +62,12 @@ struct enemies_desc{
 struct entity_desc{
     uint32_t     target;
     vec3_t       map_pos;
+    /* Position the target occupied when the field was built, letting the
+     * per-tick invalidation keep fields whose target has not moved a tile;
+     * 'age' bounds how long crowd-induced staleness can persist.
+     */
+    vec2_t       built_pos;
+    uint8_t      age;
 };
 
 struct portal_desc{

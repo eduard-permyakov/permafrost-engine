@@ -319,6 +319,7 @@ static inline uint64_t bg_keep_bits_below(uint64_t w, int bit_hi)
     scope void   bg_##name##_clear(bg(name) *bg);                                              \
     scope bool   bg_##name##_reserve(bg(name) *bg, size_t hint);                               \
     scope bool   bg_##name##_copy(const bg(name) *from, bg(name) *to);                         \
+    scope bool   bg_##name##_copy_into(const bg(name) *from, bg(name) *to);                    \
     scope bool   bg_##name##_insert(bg(name) *bg, float x, float y, type record);              \
     scope bool   bg_##name##_delete(bg(name) *bg, float x, float y, type record);              \
     scope bool   bg_##name##_update(bg(name) *bg, float x, float y,                            \
@@ -1101,6 +1102,54 @@ static inline uint64_t bg_keep_bits_below(uint64_t w, int bit_hi)
         PF_FREE(to->bm_fine); PF_FREE(to->bm_coarse);                                                \
         memset(to, 0, sizeof(*to));                                                            \
         return false;                                                                          \
+    }                                                                                          \
+                                                                                               \
+    /* Copy reusing the destination's buffers from a previous copy when the               */  \
+    /* dimensions and capacity still fit; falls back to a fresh copy otherwise.           */  \
+                                                                                               \
+    scope bool bg_##name##_copy_into(const bg(name) *from, bg(name) *to)                       \
+    {                                                                                          \
+        size_t ncells = (size_t)from->grid_w * (size_t)from->grid_h;                           \
+        bool reuse = (to->cells != NULL)                                                       \
+                  && (to->grid_w == from->grid_w)                                              \
+                  && (to->grid_h == from->grid_h)                                              \
+                  && (to->elts_cap >= from->elts_size)                                         \
+                  && (!from->bm_fine || to->bm_fine)                                           \
+                  && (!from->bm_coarse || to->bm_coarse)                                       \
+                  && (to->bm_fine_row_u64 == from->bm_fine_row_u64)                            \
+                  && (to->bm_coarse_row_u64 == from->bm_coarse_row_u64)                        \
+                  && (to->coarse_h == from->coarse_h);                                         \
+        if(!reuse) {                                                                           \
+            bg_##name##_destroy(to);                                                           \
+            return bg_##name##_copy(from, to);                                                 \
+        }                                                                                      \
+                                                                                               \
+        bg_cell(name) *cells = to->cells;                                                      \
+        int32_t *xs = to->xs, *ys = to->ys, *nexts = to->nexts;                                \
+        type *records = to->records;                                                           \
+        uint64_t *bm_fine = to->bm_fine, *bm_coarse = to->bm_coarse;                           \
+        int32_t cap = to->elts_cap;                                                            \
+                                                                                               \
+        memcpy(to, from, sizeof(*to));                                                         \
+        to->cells = cells;                                                                     \
+        to->xs = xs; to->ys = ys; to->nexts = nexts; to->records = records;                    \
+        to->bm_fine = bm_fine; to->bm_coarse = bm_coarse;                                      \
+        to->elts_cap = cap;                                                                    \
+                                                                                               \
+        memcpy(to->cells, from->cells, ncells * sizeof(bg_cell(name)));                        \
+        memcpy(to->xs,      from->xs,      (size_t)from->elts_size * sizeof(int32_t));         \
+        memcpy(to->ys,      from->ys,      (size_t)from->elts_size * sizeof(int32_t));         \
+        memcpy(to->nexts,   from->nexts,   (size_t)from->elts_size * sizeof(int32_t));         \
+        memcpy(to->records, from->records, (size_t)from->elts_size * sizeof(type));            \
+        if(from->bm_fine) {                                                                    \
+            memcpy(to->bm_fine, from->bm_fine,                                                 \
+                (size_t)from->bm_fine_row_u64 * (size_t)from->grid_h * sizeof(uint64_t));      \
+        }                                                                                      \
+        if(from->bm_coarse) {                                                                  \
+            memcpy(to->bm_coarse, from->bm_coarse,                                             \
+                (size_t)from->bm_coarse_row_u64 * (size_t)from->coarse_h * sizeof(uint64_t));  \
+        }                                                                                      \
+        return true;                                                                           \
     }                                                                                          \
                                                                                                \
     /* Insert always appends to the cell's overflow chain. This keeps inserts              */  \

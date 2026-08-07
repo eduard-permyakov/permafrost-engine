@@ -165,11 +165,17 @@ VEC_IMPL(static inline, crange, struct cow_range)
 /* Scratch list of writer byte-ranges to publish to the canonical each tick. */
 static vec_crange_t s_pub_ranges;
 
+KHASH_SET_INIT_INT64(ffpend)
+
 struct field_work{
     struct memstack mem;
     vec_in_t        in;
     vec_out_t       out;
     size_t          nwork;
+    /* ff_ids with a queued job, mirroring 'in' (the linear pending scan is
+     * O(nwork) per dispatch at 10k units)
+     */
+    khash_t(ffpend) *pending;
     uint32_t        tids[MAX_FIELD_TASKS];
     struct future   futures[MAX_FIELD_TASKS];
 };
@@ -2276,11 +2282,8 @@ static struct result field_task(void *arg)
 
 static bool field_work_pending(ff_id_t ffid)
 {
-    for(int i = 0; i < s_field_work.nwork; i++) {
-        if(vec_AT(&s_field_work.in, i).id == ffid)
-            return true;
-    }
-    return false;
+    khiter_t k = kh_get(ffpend, s_field_work.pending, ffid);
+    return (k != kh_end(s_field_work.pending));
 }
 
 /* Submits the last-pushed field work entry to the task pool. On task pool
@@ -2290,6 +2293,9 @@ static bool field_work_pending(ff_id_t ffid)
 static void field_submit_work(void)
 {
     size_t idx = s_field_work.nwork++;
+    int put_status;
+    kh_put(ffpend, s_field_work.pending, vec_AT(&s_field_work.in, idx).id, &put_status);
+    assert(put_status != -1);
     size_t *arg = stalloc(&s_field_work.mem, sizeof(size_t));
     *arg = idx;
 
@@ -2327,6 +2333,9 @@ bool N_Init(void)
 {
     memset(&s_field_work, 0, sizeof(s_field_work));
     if(!stalloc_init(&s_field_work.mem))
+        goto fail_alloc;
+
+    if(NULL == (s_field_work.pending = kh_init(ffpend)))
         goto fail_alloc;
 
     if(NULL == (s_astar_memo = kh_init(astar_memo)))
@@ -2481,6 +2490,7 @@ void N_Shutdown(void)
     N_FC_ShutdownSingleton();
     vec_inval_destroy(&s_pending_inval);
     vec_crange_destroy(&s_pub_ranges);
+    kh_destroy(ffpend, s_field_work.pending);
     stalloc_destroy(&s_field_work.mem);
 }
 
@@ -4039,11 +4049,8 @@ void N_RequestAsyncEnemySeekField(vec2_t curr_pos, void *nav_private, enum nav_l
     if(s_field_work.nwork == MAX_FIELD_TASKS)
         return;
 
-    for(int i = 0; i < s_field_work.nwork; i++) {
-        /* We already have a job for this field */
-        if(vec_AT(&s_field_work.in, i).id == ffid)
-            return;
-    }
+    if(field_work_pending(ffid))
+        return;
 
     vec_in_push(&s_field_work.in, (struct field_work_in){
         .priv = priv,
@@ -4085,11 +4092,8 @@ void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_la
     if(s_field_work.nwork == MAX_FIELD_TASKS)
         return;
 
-    for(int i = 0; i < s_field_work.nwork; i++) {
-        /* We already have a job for this field */
-        if(vec_AT(&s_field_work.in, i).id == ffid)
-            return;
-    }
+    if(field_work_pending(ffid))
+        return;
 
     vec_in_push(&s_field_work.in, (struct field_work_in){
         .priv = priv,
@@ -4113,11 +4117,8 @@ static void request_zone_field_chunk(struct nav_private *priv, struct coord chun
     if(s_field_work.nwork == MAX_FIELD_TASKS)
         return;
 
-    for(int i = 0; i < s_field_work.nwork; i++) {
-        /* We already have a job for this field */
-        if(vec_AT(&s_field_work.in, i).id == ffid)
-            return;
-    }
+    if(field_work_pending(ffid))
+        return;
 
     vec_in_push(&s_field_work.in, (struct field_work_in){
         .priv = priv,
@@ -4186,6 +4187,7 @@ void N_AwaitAsyncFields(void)
     }
     stalloc_clear(&s_field_work.mem);
     s_field_work.nwork = 0;
+    kh_clear(ffpend, s_field_work.pending);
 }
 
 void N_InvalidateZoneFieldsAt(void *nav_private, vec3_t map_pos, vec2_t xz_pos,

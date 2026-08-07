@@ -55,6 +55,7 @@ size_t    G_Pos_UploadFrom(khash_t(pos) *table, khash_t(id) *ent_gpu_id_table,
                            const struct map *map);
 
 bg_ent_t *G_Pos_CopyBitmapGrid(void);
+bg_ent_t *G_Pos_CopyBitmapGridInto(bg_ent_t *dst);
 void      G_Pos_DestroyBitmapGrid(bg_ent_t *tree);
 int       G_Pos_EntsInCircleFrom(bg_ent_t *tree, khash_t(id) *flags, vec2_t xz_point, float range, 
                                  uint32_t *out, size_t maxout);
@@ -68,6 +69,7 @@ uint32_t  G_Pos_NearestWithPredFrom(bg_ent_t *tree, khash_t(pos) *positions,
                                     float max_range);
 
 khash_t(pos) *G_Pos_CopyTable(void);
+khash_t(pos) *G_Pos_CopyTableInto(khash_t(pos) *dst);
 
 void      G_Pos_Garrison(uint32_t uid);
 void      G_Pos_Ungarrison(uint32_t uid, vec3_t pos);

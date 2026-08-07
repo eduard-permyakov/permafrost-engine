@@ -91,6 +91,7 @@ VEC_TYPE(hd, struct handler_desc)
 VEC_IMPL(static inline, hd, struct handler_desc)
 
 KHASH_MAP_INIT_INT64(handler_desc, vec_hd_t)
+KHASH_MAP_INIT_INT(usub, int)
 
 QUEUE_TYPE(event, struct event)
 QUEUE_IMPL(static, event, struct event)
@@ -170,6 +171,11 @@ static const char *s_event_str_table[] = {
 };
 
 static khash_t(handler_desc) *s_event_handler_table;
+/* Refcount of per-entity EVENT_UPDATE_START registrations, so the per-frame
+ * notify iterates the live subscribers instead of scanning the whole handler
+ * table.
+ */
+static khash_t(usub)         *s_update_start_subs;
 static queue(event)           s_event_queues[2];
 static int                    s_front_queue_idx = 0;
 /* Scratch values for e_handle_event, to avoid allocation churn */
@@ -228,6 +234,26 @@ static bool e_is_timer_event(enum eventtype type)
     return false;
 }
 
+static void e_update_start_subs_add(uint64_t key, int delta)
+{
+    if((uint32_t)(key & 0xffffffff) != EVENT_UPDATE_START)
+        return;
+    uint32_t uid = key >> 32;
+    if(uid == GLOBAL_ID)
+        return;
+
+    khiter_t k = kh_get(usub, s_update_start_subs, uid);
+    if(k == kh_end(s_update_start_subs)) {
+        int ret;
+        k = kh_put(usub, s_update_start_subs, uid, &ret);
+        assert(ret != -1);
+        kh_value(s_update_start_subs, k) = 0;
+    }
+    kh_value(s_update_start_subs, k) += delta;
+    if(kh_value(s_update_start_subs, k) <= 0)
+        kh_del(usub, s_update_start_subs, k);
+}
+
 static bool e_register_handler(uint64_t key, struct handler_desc *desc)
 {
     khiter_t k;
@@ -256,6 +282,7 @@ static bool e_register_handler(uint64_t key, struct handler_desc *desc)
         kh_value(s_event_handler_table, k) = vec;
     }
 
+    e_update_start_subs_add(key, +1);
     return true;
 }
 
@@ -283,6 +310,7 @@ static bool e_unregister_handler(uint64_t key, const struct handler_desc *desc)
     vec_hd_del(&vec, idx);
     kh_value(s_event_handler_table, k) = vec;
 
+    e_update_start_subs_add(key, -1);
     return true;
 }
 
@@ -412,19 +440,19 @@ static void e_handle_event(struct event event, bool immediate)
 
 static void e_notify_entities_update_start(uint32_t ticks, bool immediate)
 {
-    uint64_t key;
-    vec_hd_t curr;
-    (void)curr;
-
-    kh_foreach(s_event_handler_table, key, curr, {
-
-        if((key & 0xffffffff) != EVENT_UPDATE_START)
-            continue;
-        uint32_t uid = key >> 32;
-        if(uid == GLOBAL_ID)
-            continue;
-        e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, uid, ticks}, immediate);
+    /* Snapshot the subscriber set: a handler may register or unregister
+     * UPDATE_START handlers mid-dispatch, mutating the index.
+     */
+    STALLOC(uint32_t, uids, kh_size(s_update_start_subs));
+    size_t nuids = 0;
+    uint32_t uid;
+    kh_foreach_key(s_update_start_subs, uid, {
+        uids[nuids++] = uid;
     });
+
+    for(size_t i = 0; i < nuids; i++) {
+        e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, uids[i], ticks}, immediate);
+    }
 }
 
 /*****************************************************************************/
@@ -436,6 +464,10 @@ bool E_Init(void)
     s_event_handler_table = kh_init(handler_desc);
     if(!s_event_handler_table)
         goto fail_table;
+
+    s_update_start_subs = kh_init(usub);
+    if(!s_update_start_subs)
+        goto fail_front_queue;
 
     if(!queue_event_init(&s_event_queues[0], 2048))
         goto fail_front_queue;
@@ -450,6 +482,7 @@ bool E_Init(void)
 fail_back_queue:
     queue_event_destroy(&s_event_queues[0]);
 fail_front_queue:
+    kh_destroy(usub, s_update_start_subs);
     kh_destroy(handler_desc, s_event_handler_table);
 fail_table:
     return false;
@@ -467,6 +500,7 @@ void E_Shutdown(void)
         vec_hd_destroy(&vec);
     }
 
+    kh_destroy(usub, s_update_start_subs);
     kh_destroy(handler_desc, s_event_handler_table);
     queue_event_destroy(&s_event_queues[1]);
     queue_event_destroy(&s_event_queues[0]);
@@ -534,6 +568,16 @@ void E_FlushEventQueue(void)
     }
 }
 
+bool E_Entity_HasHandler(enum eventtype event, uint32_t ent_uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    khiter_t k = kh_get(handler_desc, s_event_handler_table, e_key(ent_uid, event));
+    if(k == kh_end(s_event_handler_table))
+        return false;
+    return vec_size(&kh_value(s_event_handler_table, k)) > 0;
+}
+
 bool E_QueuedThisFrame(enum eventtype event)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -579,6 +623,7 @@ void E_DeleteScriptHandlers(void)
             S_Release(hd.handler.as_script_callable);
             S_Release(hd.user_arg); 
             vec_hd_del(&curr, i);
+            e_update_start_subs_add(key, -1);
         }
 
         khiter_t k = kh_get(handler_desc, s_event_handler_table, key);

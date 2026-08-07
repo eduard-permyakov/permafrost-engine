@@ -402,39 +402,50 @@ static void g_render_healthbars(void)
     PERF_RETURN_VOID();
 }
 
+/* Stable opaque-before-translucent partition; the insertion-sort variant was
+ * quadratic when translucent entries appeared early in the list.
+ */
 static void g_sort_stat_list(vec_rstat_t *inout)
 {
     PERF_ENTER();
-    int i = 1;
-    while(i < vec_size(inout)) {
-        int j = i;
-        while(j > 0 && vec_AT(inout, j - 1).translucent && !vec_AT(inout, j).translucent) {
+    size_t n = vec_size(inout);
+    if(n == 0)
+        PERF_RETURN_VOID();
 
-            struct ent_stat_rstate tmp = vec_AT(inout, j - 1);
-            vec_AT(inout, j - 1) = vec_AT(inout, j);
-            vec_AT(inout, j) = tmp;
-            j--;
-        }
-        i++;
+    struct ent_stat_rstate *scratch = stalloc(&G_GetSimWS()->args,
+        n * sizeof(*scratch));
+    size_t head = 0;
+    for(size_t i = 0; i < n; i++) {
+        if(!vec_AT(inout, i).translucent)
+            scratch[head++] = vec_AT(inout, i);
     }
+    for(size_t i = 0; i < n; i++) {
+        if(vec_AT(inout, i).translucent)
+            scratch[head++] = vec_AT(inout, i);
+    }
+    memcpy(inout->array, scratch, n * sizeof(*scratch));
     PERF_RETURN_VOID();
 }
 
 static void g_sort_anim_list(vec_ranim_t *inout)
 {
     PERF_ENTER();
-    int i = 1;
-    while(i < vec_size(inout)) {
-        int j = i;
-        while(j > 0 && vec_AT(inout, j - 1).translucent && !vec_AT(inout, j).translucent) {
+    size_t n = vec_size(inout);
+    if(n == 0)
+        PERF_RETURN_VOID();
 
-            struct ent_anim_rstate tmp = vec_AT(inout, j - 1);
-            vec_AT(inout, j - 1) = vec_AT(inout, j);
-            vec_AT(inout, j) = tmp;
-            j--;
-        }
-        i++;
+    struct ent_anim_rstate *scratch = stalloc(&G_GetSimWS()->args,
+        n * sizeof(*scratch));
+    size_t head = 0;
+    for(size_t i = 0; i < n; i++) {
+        if(!vec_AT(inout, i).translucent)
+            scratch[head++] = vec_AT(inout, i);
     }
+    for(size_t i = 0; i < n; i++) {
+        if(vec_AT(inout, i).translucent)
+            scratch[head++] = vec_AT(inout, i);
+    }
+    memcpy(inout->array, scratch, n * sizeof(*scratch));
     PERF_RETURN_VOID();
 }
 
@@ -2403,6 +2414,11 @@ khash_t(id) *G_FlagsCopyTable(void)
     return kh_copy_id(s_gs.ent_flag_map);
 }
 
+khash_t(id) *G_FlagsCopyTableInto(khash_t(id) *dst)
+{
+    return kh_copy_into_id(s_gs.ent_flag_map, dst);
+}
+
 bool G_AddEntity(uint32_t uid, uint32_t flags, vec3_t pos)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -2635,9 +2651,19 @@ khash_t(id) *G_CopyEntGPUIDMap(void)
     return kh_copy(id, s_gs.ent_gpu_id_map);
 }
 
+khash_t(id) *G_CopyEntGPUIDMapInto(khash_t(id) *dst)
+{
+    return kh_copy_into(id, s_gs.ent_gpu_id_map, dst);
+}
+
 khash_t(id) *G_CopyGPUIDEntMap(void)
 {
     return kh_copy(id, s_gs.gpu_id_ent_map);
+}
+
+khash_t(id) *G_CopyGPUIDEntMapInto(khash_t(id) *dst)
+{
+    return kh_copy_into(id, s_gs.gpu_id_ent_map, dst);
 }
 
 bool G_AddFaction(const char *name, vec3_t color, int *out_id)
@@ -2799,6 +2825,11 @@ khash_t(id) *G_FactionIDCopyTable(void)
     return kh_copy_id(s_gs.ent_faction_map);
 }
 
+khash_t(id) *G_FactionIDCopyTableInto(khash_t(id) *dst)
+{
+    return kh_copy_into_id(s_gs.ent_faction_map, dst);
+}
+
 int G_GetFactionIDFrom(khash_t(id) *table, uint32_t uid)
 {
     khiter_t k = kh_get(id, table, uid);
@@ -2861,6 +2892,11 @@ float G_GetSelectionRadius(uint32_t uid)
 khash_t(range) *G_SelectionRadiusCopyTable(void)
 {
     return kh_copy_range(s_gs.selection_radiuses);
+}
+
+khash_t(range) *G_SelectionRadiusCopyTableInto(khash_t(range) *dst)
+{
+    return kh_copy_into_range(s_gs.selection_radiuses, dst);
 }
 
 float G_GetSelectionRadiusFrom(khash_t(range) *table, uint32_t uid)
@@ -3305,8 +3341,14 @@ void G_UpdateBounds(uint32_t uid)
     if(!G_EntityExists(uid))
         return;
 
-    G_Building_UpdateBounds(uid);
-    G_Resource_UpdateBounds(uid);
+    /* Both updates are no-ops for plain units; one flags probe replaces two
+     * module-table probes on the per-moving-entity rotation path.
+     */
+    uint32_t flags = G_FlagsGet(uid);
+    if(flags & ENTITY_FLAG_BUILDING)
+        G_Building_UpdateBounds(uid);
+    if(flags & ENTITY_FLAG_RESOURCE)
+        G_Resource_UpdateBounds(uid);
 }
 
 void G_SetShowUnitIcons(bool show)

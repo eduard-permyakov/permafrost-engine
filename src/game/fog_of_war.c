@@ -1229,6 +1229,24 @@ uint32_t *G_Fog_CopyState(void)
     return ret;
 }
 
+uint32_t *G_Fog_CopyStateInto(uint32_t *dst, size_t *inout_ntiles)
+{
+    struct map_resolution res = s_res;
+    const size_t ntiles = res.chunk_w * res.chunk_h * res.tile_w * res.tile_h;
+
+    if(!dst || *inout_ntiles != ntiles) {
+        PF_FREE(dst);
+        dst = PF_MALLOC(sizeof(s_fog_state[0]) * ntiles);
+        if(!dst) {
+            *inout_ntiles = 0;
+            return NULL;
+        }
+        *inout_ntiles = ntiles;
+    }
+    memcpy(dst, s_fog_state, sizeof(s_fog_state[0]) * ntiles);
+    return dst;
+}
+
 bool G_Fog_ObjVisibleFrom(uint32_t *state, bool enabled, uint16_t fac_mask, const struct obb *obb)
 {
     if(!enabled)

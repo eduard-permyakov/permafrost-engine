@@ -77,6 +77,14 @@
 
 #define EPSILON         (1.0/1024)
 #define MAX_SAVED_VOS   (512)
+/* Rays participating in the pairwise-intersection candidate stage. With
+ * distance-ordered neighbours these are the nearest obstacles; every ray still
+ * bounds the accepted set via the containment test and contributes projection
+ * candidates, so the cap only thins candidate generation.
+ */
+#define MAX_PAIRWISE_RAYS (24)
+/* Neighbour-dropping retries of the full solve before giving up */
+#define MAX_SOLVE_RETRIES (3)
 
 VEC_TYPE(vec2, vec2_t)
 VEC_IMPL(static inline, vec2, vec2_t)
@@ -653,8 +661,9 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
      */
     struct vnew_min m = {INFINITY, {0.0f, 0.0f}, false};
 
-    for(size_t i = 0; i < n_rays; i++) {
-    for(size_t j = i + 1; j < n_rays; j++) {
+    const size_t n_pair = (n_rays < MAX_PAIRWISE_RAYS) ? n_rays : MAX_PAIRWISE_RAYS;
+    for(size_t i = 0; i < n_pair; i++) {
+    for(size_t j = i + 1; j < n_pair; j++) {
 
         vec2_t isec_point;
         if(!cp_ray_ray_isec(rays[i], rays[j], &isec_point))
@@ -753,6 +762,7 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
 {
     PERF_ENTER();
 
+    int retries = 0;
     do{
         vec2_t ret;
         bool found = clearpath_new_velocity(cpent, ent_des_v,
@@ -760,6 +770,8 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
         if(found)
             PERF_RETURN(ret);
 
+        if(++retries > MAX_SOLVE_RETRIES)
+            break;
         remove_furthest(cpent.xz_pos, dyn_neighbs, &ndyn, stat_neighbs, &nstat);
 
     }while(ndyn > 0 && nstat > 0);

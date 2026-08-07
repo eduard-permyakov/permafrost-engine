@@ -45,8 +45,10 @@
 #include "../event.h"
 #include "../sched.h"
 #include "../config.h"
+#include "../map/public/tile.h"
 
 #include <assert.h>
+#include <math.h>
 
 #undef PF_MALLOC
 #undef PF_CALLOC
@@ -115,6 +117,11 @@ struct fieldcache_ctx{
  */
 static struct fieldcache_ctx *s_singleton;
 static uint32_t             (*s_nav_task_tid_provider)(void);
+
+/* Ticks a surround field for an unmoved target may be kept before a forced
+ * rebuild picks up crowd-induced passability changes around it.
+ */
+#define SURROUND_FIELD_MAX_AGE (4)
 
 /* A fieldcache mutation is safe either when no navigation task is in flight (e.g. the
  * synchronous save-time flush, which runs in a session-task fiber) or when it happens
@@ -404,7 +411,11 @@ void N_FC_PutLOSField(struct fieldcache_ctx *ctx, dest_id_t id,
 bool N_FC_ContainsFlowField(struct fieldcache_ctx *ctx, ff_id_t ffid)
 {
     FC_ASSERT_NAV_TASK();
-    return lru_flow_contains(&ctx->flow_cache, ffid);
+    /* Peek: a membership probe must not splice the LRU list; recency is
+     * bumped by the actual reads (N_FC_FlowFieldAt). This runs per unit per
+     * tick on the async-field request path.
+     */
+    return (lru_flow_peek(&ctx->flow_cache, ffid) != NULL);
 }
 
 const struct flow_field *N_FC_FlowFieldAt(struct fieldcache_ctx *ctx, ff_id_t ffid)
@@ -607,8 +618,31 @@ size_t N_FC_InvalidateDynamicSurroundFields(struct fieldcache_ctx *ctx)
             continue;
 
         uint32_t ent = ff_val.target.ent.target;
+        if(!G_EntityExists(ent)) {
+            lru_flow_remove(&ctx->flow_cache, key);
+            ret++;
+            continue;
+        }
         if(!(G_FlagsGet(ent) & ENTITY_FLAG_MOVABLE))
             continue;
+
+        /* A field whose target has stayed within its tile still guides to the
+         * same footprint; keep it, bounded by an age cap so crowd-induced
+         * staleness cannot persist indefinitely.
+         */
+        vec2_t curr = G_Pos_GetXZ(ent);
+        vec2_t built = ff_val.target.ent.built_pos;
+        bool moved = fabsf(curr.x - built.x) >= X_COORDS_PER_TILE
+                  || fabsf(curr.z - built.z) >= Z_COORDS_PER_TILE;
+
+        if(!moved && ff_val.target.ent.age < SURROUND_FIELD_MAX_AGE) {
+            /* Single-owner context: bump the age in the stored entry */
+            struct flow_field *stored =
+                (struct flow_field*)lru_flow_peek(&ctx->flow_cache, key);
+            assert(stored);
+            stored->target.ent.age++;
+            continue;
+        }
 
         lru_flow_remove(&ctx->flow_cache, key);
         ret++;

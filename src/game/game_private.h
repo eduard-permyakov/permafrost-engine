@@ -58,11 +58,16 @@ enum ctx_action        G_CurrContextualAction(void);
 void                   G_NotifyOrderIssued(uint32_t uid, bool clear_harvester);
 
 khash_t(id)           *G_FlagsCopyTable(void);
+khash_t(id)           *G_FlagsCopyTableInto(khash_t(id) *dst);
 khash_t(range)        *G_SelectionRadiusCopyTable(void);
+khash_t(range)        *G_SelectionRadiusCopyTableInto(khash_t(range) *dst);
 khash_t(id)           *G_FactionIDCopyTable(void);
+khash_t(id)           *G_FactionIDCopyTableInto(khash_t(id) *dst);
 
 khash_t(id)           *G_CopyEntGPUIDMap(void);
+khash_t(id)           *G_CopyEntGPUIDMapInto(khash_t(id) *dst);
 khash_t(id)           *G_CopyGPUIDEntMap(void);
+khash_t(id)           *G_CopyGPUIDEntMapInto(khash_t(id) *dst);
 uint32_t               G_GPUIDForEntFrom(khash_t(id) *table, uint32_t uid);
 uint32_t               G_EntForGPUIDFrom(khash_t(id) *table, uint32_t gpuid);
 

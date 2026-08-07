@@ -378,6 +378,12 @@ static const struct map  *s_map;
 static uint16_t          *s_fac_refcnts[MAX_FACTIONS];
 
 static struct combat_work s_combat_work;
+/* uid -> identity aabb, persistent across ticks; referenced directly by the
+ * gamestate snapshot. Entries for removed entities linger until the periodic
+ * clear.
+ */
+static khash_t(aabb)          *s_aabb_cache;
+static size_t                  s_fog_snap_ntiles;
 static queue_cmd_t        s_combat_commands;
 static unsigned long      s_last_tick;
 static enum combat_hz     s_combat_hz = COMBAT_HZ_1;
@@ -2080,23 +2086,25 @@ static void combat_complete_work(void)
     Sched_AwaitAll(s_combat_work.tids, s_combat_work.futures, s_combat_work.ntasks);
 }
 
-static khash_t(aabb) *combat_copy_aabbs(void)
+static khash_t(aabb) *combat_update_aabb_cache(void)
 {
     PERF_ENTER();
-    khash_t(aabb) *aabbs = kh_init(aabb);
-    if(!aabbs)
-        PERF_RETURN(NULL);
-
     const khash_t(entity) *ents = G_GetAllEntsSet();
+
+    if(kh_size(s_aabb_cache) > 2 * kh_size(ents) + 1024)
+        kh_clear(aabb, s_aabb_cache);
 
     uint32_t uid;
     kh_foreach_key(ents, uid, {
-        int ret;
-        khiter_t k = kh_put(aabb, aabbs, uid, &ret);
-        assert(ret != -1);
-        kh_value(aabbs, k) = AL_EntityGet(uid)->identity_aabb;
+        khiter_t k = kh_get(aabb, s_aabb_cache, uid);
+        if(k == kh_end(s_aabb_cache)) {
+            int ret;
+            k = kh_put(aabb, s_aabb_cache, uid, &ret);
+            assert(ret != -1);
+            kh_value(s_aabb_cache, k) = AL_EntityGet(uid)->identity_aabb;
+        }
     });
-    PERF_RETURN(aabbs);
+    PERF_RETURN(s_aabb_cache);
 }
 
 static void combat_copy_gamestate(void)
@@ -2105,20 +2113,26 @@ static void combat_copy_gamestate(void)
     s_combat_work.gamestate.factions = G_GetFactions(NULL, NULL, NULL);
     s_combat_work.gamestate.player_factions = G_GetPlayerControlledFactions();
     s_combat_work.gamestate.fog_enabled = G_Fog_Enabled();
-    s_combat_work.gamestate.flags = G_FlagsCopyTable();
-    s_combat_work.gamestate.positions = G_Pos_CopyTable();
-    s_combat_work.gamestate.postree = G_Pos_CopyBitmapGrid();
-    s_combat_work.gamestate.transforms = Entity_CopyTransforms();
-    s_combat_work.gamestate.sel_radiuses = G_SelectionRadiusCopyTable();
-    s_combat_work.gamestate.faction_ids = G_FactionIDCopyTable();
+    s_combat_work.gamestate.flags = G_FlagsCopyTableInto(s_combat_work.gamestate.flags);
+    s_combat_work.gamestate.positions =
+        G_Pos_CopyTableInto(s_combat_work.gamestate.positions);
+    s_combat_work.gamestate.postree =
+        G_Pos_CopyBitmapGridInto(s_combat_work.gamestate.postree);
+    s_combat_work.gamestate.transforms =
+        Entity_CopyTransformsInto(s_combat_work.gamestate.transforms);
+    s_combat_work.gamestate.sel_radiuses =
+        G_SelectionRadiusCopyTableInto(s_combat_work.gamestate.sel_radiuses);
+    s_combat_work.gamestate.faction_ids =
+        G_FactionIDCopyTableInto(s_combat_work.gamestate.faction_ids);
     s_combat_work.gamestate.diptable = G_CopyDiplomacyTable();
     s_combat_work.gamestate.buildstate = G_Building_CopyState();
-    s_combat_work.gamestate.aabbs = combat_copy_aabbs();
-    s_combat_work.gamestate.fog_state = G_Fog_CopyState();
+    s_combat_work.gamestate.aabbs = combat_update_aabb_cache();
+    s_combat_work.gamestate.fog_state =
+        G_Fog_CopyStateInto(s_combat_work.gamestate.fog_state, &s_fog_snap_ntiles);
     PERF_RETURN_VOID();
 }
 
-static void combat_release_gamestate(void)
+static void combat_destroy_gamestate(void)
 {
     PERF_ENTER();
     if(s_combat_work.gamestate.flags) {
@@ -2153,13 +2167,29 @@ static void combat_release_gamestate(void)
         kh_destroy(state, s_combat_work.gamestate.buildstate);
         s_combat_work.gamestate.buildstate = NULL;
     }
-    if(s_combat_work.gamestate.aabbs) {
-        kh_destroy(aabb, s_combat_work.gamestate.aabbs);
-        s_combat_work.gamestate.aabbs = NULL;
-    }
+    /* Aliases the persistent cache, which is destroyed separately */
+    s_combat_work.gamestate.aabbs = NULL;
     if(s_combat_work.gamestate.fog_state) {
         PF_FREE(s_combat_work.gamestate.fog_state);
         s_combat_work.gamestate.fog_state = NULL;
+    }
+    s_fog_snap_ntiles = 0;
+    PERF_RETURN_VOID();
+}
+
+/* The copied tables are retained and refilled by the next tick's copy; only
+ * the small per-tick resources are dropped here.
+ */
+static void combat_release_gamestate(void)
+{
+    PERF_ENTER();
+    if(s_combat_work.gamestate.diptable) {
+        PF_FREE(s_combat_work.gamestate.diptable);
+        s_combat_work.gamestate.diptable = NULL;
+    }
+    if(s_combat_work.gamestate.buildstate) {
+        kh_destroy(state, s_combat_work.gamestate.buildstate);
+        s_combat_work.gamestate.buildstate = NULL;
     }
     PERF_RETURN_VOID();
 }
@@ -2514,6 +2544,11 @@ bool G_Combat_Init(const struct map *map)
     if(NULL == (s_entity_state_table = kh_init(state)))
         return false;
 
+    if(NULL == (s_aabb_cache = kh_init(aabb))) {
+        kh_destroy(state, s_entity_state_table);
+        return false;
+    }
+
     memset(&s_combat_work, 0, sizeof(s_combat_work));
     if(!stalloc_init(&s_combat_work.mem))
         goto fail_stack;
@@ -2576,13 +2611,14 @@ void G_Combat_Shutdown(void)
         E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_death_anim_finish);
     });
 
-    combat_release_gamestate();
+    combat_destroy_gamestate();
     vec_entity_destroy(&s_dying_ents);
     for(int i = 0; i < MAX_FACTIONS; i++) {
         PF_FREE(s_fac_refcnts[i]);
     }
     queue_cmd_destroy(&s_combat_commands);
     stalloc_destroy(&s_combat_work.mem);
+    kh_destroy(aabb, s_aabb_cache);
     kh_destroy(state, s_entity_state_table);
 
     vec_corpse_destroy(&s_corpses);

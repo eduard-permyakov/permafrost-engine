@@ -137,6 +137,7 @@ bool G_Pos_Set(uint32_t uid, vec3_t pos)
         if(!bg_ent_update(&s_postree, old_pos.x, old_pos.z, pos.x, pos.z, uid))
             return false;
         kh_val(s_postable, k) = pos;
+        Entity_DirtyModelMatrix(uid);
 
         G_Combat_MoveRef(faction_id, (vec2_t){old_pos.x, old_pos.z},
             (vec2_t){pos.x, pos.z});
@@ -156,6 +157,7 @@ bool G_Pos_Set(uint32_t uid, vec3_t pos)
         }
         k = kh_get(pos, s_postable, uid);
         kh_val(s_postable, k) = pos;
+        Entity_DirtyModelMatrix(uid);
 
         G_Combat_AddRef(faction_id, (vec2_t){pos.x, pos.z});
         G_Region_AddRef(uid, (vec2_t){pos.x, pos.z});
@@ -192,6 +194,11 @@ khash_t(pos) *G_Pos_CopyTable(void)
     return kh_copy_pos(s_postable);
 }
 
+khash_t(pos) *G_Pos_CopyTableInto(khash_t(pos) *dst)
+{
+    return kh_copy_into_pos(s_postable, dst);
+}
+
 vec3_t G_Pos_GetFrom(khash_t(pos) *table, uint32_t uid)
 {
     khiter_t k = kh_get(pos, table, uid);
@@ -216,6 +223,7 @@ void G_Pos_Delete(uint32_t uid)
 
     vec3_t pos = kh_val(s_postable, k);
     kh_del(pos, s_postable, k);
+    Entity_DirtyModelMatrix(uid);
 
     bool ret = bg_ent_delete(&s_postree, pos.x, pos.z, uid);
     assert(ret);
@@ -374,6 +382,16 @@ bg_ent_t *G_Pos_CopyBitmapGrid(void)
         return NULL;
     bg_ent_copy(&s_postree, ret);
     return ret;
+}
+
+bg_ent_t *G_Pos_CopyBitmapGridInto(bg_ent_t *dst)
+{
+    ASSERT_IN_MAIN_THREAD();
+    if(!dst)
+        return G_Pos_CopyBitmapGrid();
+    bg_ent_cleanup(&s_postree);
+    bg_ent_copy_into(&s_postree, dst);
+    return dst;
 }
 
 void G_Pos_DestroyBitmapGrid(bg_ent_t *tree)

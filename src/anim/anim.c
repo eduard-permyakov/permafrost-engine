@@ -206,11 +206,16 @@ void A_Update(void)
     PERF_ENTER();
 
     uint32_t curr_ticks = SDL_GetTicks();
-    uint32_t uid;
 
-    kh_foreach(s_anim_ctx, uid, (struct anim_ctx){0}, {
+    /* Direct bucket iteration: the kh_foreach value copy plus the second
+     * lookup for a writable pointer doubled the per-entity cost.
+     */
+    for(khiter_t it = kh_begin(s_anim_ctx); it != kh_end(s_anim_ctx); it++) {
 
-        struct anim_ctx *ctx = a_ctx_for_uid(uid);
+        if(!kh_exist(s_anim_ctx, it))
+            continue;
+        uint32_t uid = kh_key(s_anim_ctx, it);
+        struct anim_ctx *ctx = &kh_value(s_anim_ctx, it);
         float frame_period_secs = 1.0f/ctx->key_fps;
         float elapsed_secs = (curr_ticks - ctx->curr_frame_start_ticks)/1000.0f;
 
@@ -221,8 +226,14 @@ void A_Update(void)
 
             if(ctx->curr_frame == ctx->active->num_frames - 1) {
 
-                E_Entity_Notify(EVENT_ANIM_CYCLE_FINISHED, uid, NULL, ES_ENGINE);
-                if(ctx->mode == ANIM_MODE_ONCE) {
+                /* Skip the enqueue and dispatch overhead for the many entities
+                 * with no subscription (nothing awaits these by type).
+                 */
+                if(E_Entity_HasHandler(EVENT_ANIM_CYCLE_FINISHED, uid)) {
+                    E_Entity_Notify(EVENT_ANIM_CYCLE_FINISHED, uid, NULL, ES_ENGINE);
+                }
+                if(ctx->mode == ANIM_MODE_ONCE
+                && E_Entity_HasHandler(EVENT_ANIM_FINISHED, uid)) {
                     E_Entity_Notify(EVENT_ANIM_FINISHED, uid, NULL, ES_ENGINE);
                 }
             }
@@ -231,7 +242,7 @@ void A_Update(void)
                 A_SetActiveClip(uid, ctx->idle->name, ANIM_MODE_LOOP, ctx->key_fps);
             }
         }
-    });
+    }
     PERF_RETURN_VOID();
 }
 

@@ -213,7 +213,8 @@ static const double __ac_HASH_UPPER = 0.77;
     extern int            kh_resize_##name(kh_##name##_t *h, khint_t new_n_buckets);            \
     extern khint_t        kh_put_##name(kh_##name##_t *h, khkey_t key, int *ret);               \
     extern void           kh_del_##name(kh_##name##_t *h, khint_t x);                           \
-    extern kh_##name##_t *kh_copy_##name(kh_##name##_t *h);
+    extern kh_##name##_t *kh_copy_##name(kh_##name##_t *h);                                     \
+    extern kh_##name##_t *kh_copy_into_##name(kh_##name##_t *h, kh_##name##_t *dst);
 
 #define __KHASH_IMPL(name, SCOPE, khkey_t, khval_t, kh_is_map, __hash_func, __hash_equal)       \
                                                                                                 \
@@ -438,6 +439,42 @@ static const double __ac_HASH_UPPER = 0.77;
         kfree(ret->keys);                                                                       \
         kfree(ret);                                                                             \
         return NULL;                                                                            \
+    }                                                                                           \
+                                                                                                \
+    SCOPE kh_##name##_t *kh_copy_into_##name(kh_##name##_t *h, kh_##name##_t *dst)              \
+    {                                                                                           \
+        if(!dst)                                                                                \
+            return kh_copy_##name(h);                                                           \
+        if(dst->n_buckets != h->n_buckets) {                                                    \
+            kfree(dst->flags);                                                                  \
+            kfree(dst->keys);                                                                   \
+            kfree(dst->vals);                                                                   \
+            dst->flags = NULL; dst->keys = NULL; dst->vals = NULL;                              \
+            dst->n_buckets = 0;                                                                 \
+            if(h->n_buckets > 0) {                                                              \
+                dst->flags = (khint32_t*)kmalloc(__ac_fsize(h->n_buckets) * sizeof(khint32_t)); \
+                dst->keys = (khkey_t*)kmalloc(h->n_buckets * sizeof(khkey_t));                  \
+                dst->vals = h->vals ? (khval_t*)kmalloc(h->n_buckets * sizeof(khval_t)) : NULL; \
+                if(!dst->flags || !dst->keys || (h->vals && !dst->vals)) {                      \
+                    kfree(dst->flags);                                                          \
+                    kfree(dst->keys);                                                           \
+                    kfree(dst->vals);                                                           \
+                    kfree(dst);                                                                 \
+                    return NULL;                                                                \
+                }                                                                               \
+                dst->n_buckets = h->n_buckets;                                                  \
+            }                                                                                   \
+        }                                                                                       \
+        dst->size = h->size;                                                                    \
+        dst->n_occupied = h->n_occupied;                                                        \
+        dst->upper_bound = h->upper_bound;                                                      \
+        if(h->n_buckets > 0) {                                                                  \
+            kmemcpy(dst->flags, h->flags, __ac_fsize(h->n_buckets) * sizeof(khint32_t));        \
+            kmemcpy(dst->keys, h->keys, h->n_buckets * sizeof(khkey_t));                        \
+            if(h->vals)                                                                         \
+                kmemcpy(dst->vals, h->vals, h->n_buckets * sizeof(khval_t));                    \
+        }                                                                                       \
+        return dst;                                                                             \
     }
 
 #define KHASH_DECLARE(name, khkey_t, khval_t)                                                   \
@@ -702,6 +739,16 @@ static kh_inline khint_t __ac_Wang_hash(khint_t key)
   @return       The copy of h, or NULL
  */
 #define kh_copy(name, h) kh_copy_##name(h)
+
+/*! @function
+  @abstract     Deep-copy the hashtable into 'dst', reusing its buffers when the
+                bucket counts match; 'dst' may be NULL to allocate a fresh copy
+  @param  name  Name of the hash table [symbol]
+  @param  h     Pointer to the hash table [khash_t(name)*]
+  @param  dst   Destination table from a previous copy, or NULL
+  @return       The filled destination, or NULL (dst is consumed on failure)
+ */
+#define kh_copy_into(name, h, dst) kh_copy_into_##name(h, dst)
 
 /* More conenient interfaces */
 

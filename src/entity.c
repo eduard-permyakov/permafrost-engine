@@ -94,6 +94,7 @@ MPOOL_IMPL(static, taglist, struct taglist)
 
 KHASH_MAP_INIT_INT(tags, struct taglist)
 KHASH_MAP_INIT_INT(icons, struct iconlist)
+KHASH_MAP_INIT_INT(matrix, mat4x4_t)
 __KHASH_IMPL(trans, extern, khint32_t, struct transform, 1, kh_int_hash_func, kh_int_hash_equal)
 
 /*****************************************************************************/
@@ -108,6 +109,11 @@ static kh_ents_t        *s_tag_ent_map;
 static kh_tags_t        *s_ent_tag_map;
 static kh_trans_t       *s_ent_trans_map;
 static kh_icons_t       *s_ent_icons_map;
+/* Lazily-built model matrices, invalidated by removing the entry whenever the
+ * position, rotation or scale changes; culling and both draw lists rebuilt
+ * the same matrix several times per visible entity per frame.
+ */
+static khash_t(matrix)  *s_ent_matrix_cache;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -316,11 +322,32 @@ static struct result disappear_task(void *arg)
 
 void Entity_ModelMatrix(uint32_t uid, mat4x4_t *out)
 {
+    ASSERT_IN_MAIN_THREAD();
+
+    khiter_t k = kh_get(matrix, s_ent_matrix_cache, uid);
+    if(k != kh_end(s_ent_matrix_cache)) {
+        *out = kh_value(s_ent_matrix_cache, k);
+        return;
+    }
+
     vec3_t pos = G_Pos_Get(uid);
     vec3_t scale = Entity_GetScale(uid);
     quat_t rot = Entity_GetRot(uid);
 
     Entity_ModelMatrixFrom(pos, rot, scale, out);
+
+    int status;
+    k = kh_put(matrix, s_ent_matrix_cache, uid, &status);
+    assert(status != -1);
+    kh_value(s_ent_matrix_cache, k) = *out;
+}
+
+void Entity_DirtyModelMatrix(uint32_t uid)
+{
+    khiter_t k = kh_get(matrix, s_ent_matrix_cache, uid);
+    if(k != kh_end(s_ent_matrix_cache)) {
+        kh_del(matrix, s_ent_matrix_cache, k);
+    }
 }
 
 uint32_t Entity_NewUID(void)
@@ -595,7 +622,14 @@ bool Entity_Init(void)
     if(!s_ent_icons_map)
         goto fail_ent_icons_map;
 
+    s_ent_matrix_cache = kh_init(matrix);
+    if(!s_ent_matrix_cache)
+        goto fail_matrix_cache;
+
     return true;
+
+fail_matrix_cache:
+    kh_destroy(icons, s_ent_icons_map);
 
 fail_ent_icons_map:
     kh_destroy(trans, s_ent_trans_map);
@@ -611,6 +645,7 @@ fail_strintern:
 
 void Entity_Shutdown(void)
 {
+    kh_destroy(matrix, s_ent_matrix_cache);
     kh_destroy(icons, s_ent_icons_map);
     kh_destroy(trans, s_ent_trans_map);
     kh_destroy(tags, s_ent_tag_map);
@@ -620,6 +655,7 @@ void Entity_Shutdown(void)
 
 void Entity_ClearState(void)
 {
+    kh_clear(matrix, s_ent_matrix_cache);
     kh_clear(icons, s_ent_icons_map);
     kh_clear(trans, s_ent_trans_map);
     kh_clear(tags, s_ent_tag_map);
@@ -643,6 +679,7 @@ void Entity_SetRot(uint32_t uid, quat_t rot)
         assert(status != -1);
     }
     kh_value(s_ent_trans_map, k).rotation = rot;
+    Entity_DirtyModelMatrix(uid);
     G_UpdateBounds(uid);
 }
 
@@ -662,11 +699,14 @@ void Entity_SetScale(uint32_t uid, vec3_t scale)
         assert(status != -1);
     }
     kh_value(s_ent_trans_map, k).scale = scale;
+    Entity_DirtyModelMatrix(uid);
     G_UpdateBounds(uid);
 }
 
 void Entity_Remove(uint32_t uid)
 {
+    Entity_DirtyModelMatrix(uid);
+
     khiter_t k = kh_get(trans, s_ent_trans_map, uid);
     if(k != kh_end(s_ent_trans_map)) {
         kh_del(trans, s_ent_trans_map, k);
@@ -682,6 +722,11 @@ void Entity_Remove(uint32_t uid)
 khash_t(trans) *Entity_CopyTransforms(void)
 {
     return kh_copy_trans(s_ent_trans_map);
+}
+
+khash_t(trans) *Entity_CopyTransformsInto(khash_t(trans) *dst)
+{
+    return kh_copy_into_trans(s_ent_trans_map, dst);
 }
 
 quat_t Entity_GetRotFrom(khash_t(trans) *table, uint32_t uid)

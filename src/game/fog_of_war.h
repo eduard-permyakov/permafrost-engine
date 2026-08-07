@@ -78,6 +78,7 @@ bool G_Fog_LoadState(struct SDL_RWops *stream);
 bool G_Fog_Enabled(void);
 
 uint32_t *G_Fog_CopyState(void);
+uint32_t *G_Fog_CopyStateInto(uint32_t *dst, size_t *inout_ntiles);
 
 #endif
 
