@@ -174,6 +174,12 @@ struct gamestate{
      */
     vec_obb_t               visible_obbs;
     /*-------------------------------------------------------------------------
+     * Scratch candidate list for visibility culling: the entities positioned
+     * within the camera and light frustum footprints.
+     *-------------------------------------------------------------------------
+     */
+    vec_entity_t            cull_cands;
+    /*-------------------------------------------------------------------------
      * The state of the factions in the current game. 'factions_allocd' has a 
      * set bit for every faction index that's 'allocated'. Clear bits are 'free'.
      *-------------------------------------------------------------------------

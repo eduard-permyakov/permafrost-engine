@@ -935,6 +935,32 @@ static uint16_t g_player_mask(void)
     return ret;
 }
 
+/* Padding on the frustum footprint query, in world units: the culling test
+ * is on the entity's OBB, so one centred just outside the footprint can
+ * still reach into it. Larger than any entity's half-extent.
+ */
+#define CULL_QUERY_PAD (64.0f)
+
+/* XZ footprint of a frustum. A frustum is the convex hull of its 8 corners,
+ * so every point inside it lies within this box; an entity rejected against
+ * the box cannot be inside the frustum.
+ */
+static void g_frustum_xz_bounds(const struct frustum *f, vec2_t *out_min, vec2_t *out_max)
+{
+    const vec3_t *corners[8] = {
+        &f->ntl, &f->ntr, &f->nbl, &f->nbr,
+        &f->ftl, &f->ftr, &f->fbl, &f->fbr
+    };
+    *out_min = (vec2_t){corners[0]->x, corners[0]->z};
+    *out_max = *out_min;
+    for(int i = 1; i < 8; i++) {
+        out_min->x = MIN(out_min->x, corners[i]->x);
+        out_min->z = MIN(out_min->z, corners[i]->z);
+        out_max->x = MAX(out_max->x, corners[i]->x);
+        out_max->z = MAX(out_max->z, corners[i]->z);
+    }
+}
+
 static bool g_ent_visible(uint16_t playermask, uint32_t uid, const struct obb *obb)
 {
     if(!s_gs.map)
@@ -1764,12 +1790,14 @@ bool G_Init(void)
     vec_entity_init(&s_gs.visible);
     vec_entity_init(&s_gs.light_visible);
     vec_obb_init(&s_gs.visible_obbs);
+    vec_entity_init(&s_gs.cull_cands);
     vec_entity_init(&s_gs.removed);
     g_create_settings();
 
     vec_entity_resize(&s_gs.visible, 2048);
     vec_entity_resize(&s_gs.light_visible, 2048);
     vec_obb_resize(&s_gs.visible_obbs, 2048);
+    vec_entity_resize(&s_gs.cull_cands, 2048);
 
     if(!stalloc_init(&s_gs.render_data_stack))
         return false;
@@ -2170,6 +2198,7 @@ void G_Shutdown(void)
     vec_entity_destroy(&s_gs.light_visible);
     vec_entity_destroy(&s_gs.visible);
     vec_obb_destroy(&s_gs.visible_obbs);
+    vec_entity_destroy(&s_gs.cull_cands);
     vec_entity_destroy(&s_gs.removed);
     stalloc_destroy(&s_gs.render_data_stack);
 }
@@ -2206,8 +2235,26 @@ void G_Update(void)
     Entity_ClearOBBCache();
 
     PERF_PUSH("visibility culling");
-    kh_foreach_key(s_gs.active, curr, {
+    /* Narrow to entities positioned inside the camera or light footprint
+     * before building any OBB: constructing one costs a model matrix and a
+     * pose AABB lookup, and the scan was previously paid for every entity
+     * on the map no matter where the camera pointed.
+     */
+    vec2_t cmin, cmax, lmin, lmax;
+    g_frustum_xz_bounds(&cam_frust, &cmin, &cmax);
+    g_frustum_xz_bounds(&light_frust, &lmin, &lmax);
+    vec2_t qmin = (vec2_t){MIN(cmin.x, lmin.x) - CULL_QUERY_PAD,
+                           MIN(cmin.z, lmin.z) - CULL_QUERY_PAD};
+    vec2_t qmax = (vec2_t){MAX(cmax.x, lmax.x) + CULL_QUERY_PAD,
+                           MAX(cmax.z, lmax.z) + CULL_QUERY_PAD};
 
+    size_t nactive = kh_size(s_gs.active);
+    vec_entity_resize(&s_gs.cull_cands, nactive);
+    int ncands = G_Pos_EntsInRect(qmin, qmax, s_gs.cull_cands.array, nactive);
+
+    for(int ci = 0; ci < ncands; ci++) {
+
+        curr = s_gs.cull_cands.array[ci];
         struct obb obb;
         Entity_CurrentOBB(curr, &obb, false);
         bool vis_checked = false;
@@ -2232,7 +2279,7 @@ void G_Update(void)
                 vec_entity_push(&s_gs.light_visible, curr);
             }
         }
-    });
+    }
     PERF_POP();
 
     if(s_gs.map) {
