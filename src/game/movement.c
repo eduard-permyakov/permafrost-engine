@@ -4600,14 +4600,14 @@ static void compute_los_state(void)
     PERF_RETURN_VOID();
 }
 
-static void compute_path_requests(void)
+/* Dispatch the per-entity enemy/surround floods and the per-flock arrival
+ * zone floods ahead of the serial LOS phase: they read only the immutable
+ * snapshot, so they overlap the record loop and the LOS chain builds, and
+ * the join in compute_path_requests finds them largely complete. Returns
+ * the dispatch wall time in performance-counter ticks.
+ */
+static uint64_t dispatch_async_fields(void)
 {
-    PERF_ENTER();
-
-    /* Parallel pre-build of the per-entity enemy/surround fields and the per-flock
-     * arrival zone fields. The field computations read navigation state from
-     * multiple threads, which is safe so long as nothing mutates it concurrently.
-     */
     uint64_t phase_start = SDL_GetPerformanceCounter();
     uint64_t last_dispatch_yield = SDL_GetPerformanceCounter();
     const uint64_t dispatch_yield_ticks = SDL_GetPerformanceFrequency() / 500; /* ~2ms */
@@ -4620,6 +4620,17 @@ static void compute_path_requests(void)
         }
     }
     request_flock_arrival_fields();
+    return SDL_GetPerformanceCounter() - phase_start;
+}
+
+static void compute_path_requests(uint64_t dispatch_ticks)
+{
+    PERF_ENTER();
+
+    /* Join the enemy/surround/zone floods dispatched ahead of the LOS phase,
+     * along with the flow floods that phase's path requests deferred.
+     */
+    uint64_t phase_start = SDL_GetPerformanceCounter();
     N_AwaitAsyncFields();
 
     /* The join clears the pool's arena; the serial loop below re-uses the
@@ -4627,7 +4638,7 @@ static void compute_path_requests(void)
      * are carved from the arena before any per-task args). */
     N_PrepareAsyncWork();
     s_last_nav_tick_stats.cpr_async_us =
-        perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
+        perf_ticks_to_us(dispatch_ticks + (SDL_GetPerformanceCounter() - phase_start));
 
     /* Serial pre-build of point-seek paths and blocked-tile repairs, which mutate
      * the shared cache and so cannot run in the parallel desired-velocity phase.
@@ -4809,12 +4820,14 @@ static struct result navigation_tick_task(void *arg)
     s_last_nav_tick_stats.inval_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - nav_start);
 
+    uint64_t dispatch_ticks = dispatch_async_fields();
+
     compute_los_state();
 
     uint64_t serial_ticks = SDL_GetPerformanceCounter() - nav_start;
     uint64_t cpr_start = SDL_GetPerformanceCounter();
 
-    compute_path_requests();
+    compute_path_requests(dispatch_ticks);
 
     serial_ticks += SDL_GetPerformanceCounter() - cpr_start;
     uint64_t phase_start = SDL_GetPerformanceCounter();
