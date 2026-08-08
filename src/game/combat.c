@@ -334,6 +334,7 @@ struct corpse{
 };
 
 KHASH_MAP_INIT_INT(state, struct combatstate)
+KHASH_SET_INIT_INT(animpend)
 
 QUEUE_TYPE(cmd, struct combat_cmd)
 QUEUE_IMPL(static, cmd, struct combat_cmd)
@@ -343,6 +344,7 @@ VEC_IMPL(static, corpse, struct corpse);
 
 static void combat_push_cmd(struct combat_cmd cmd);
 static void on_attack_anim_tick(void *user, void *event);
+static void attack_anim_pending_remove(uint32_t uid);
 static void on_death_anim_finish(void *user, void *event);
 static void do_stop_attack(uint32_t uid);
 static bool entity_dead(uint32_t uid);
@@ -370,11 +372,16 @@ static const char *s_name_for_state[] = {
 };
 
 static khash_t(state)    *s_entity_state_table;
+/* Units whose attack animation is playing, polled once per frame for the
+ * frame at which the hit lands. Batched into a single global handler. 
+ */
+static khash_t(animpend) *s_attack_anim_pending;
 /* For saving/restoring state */
 static vec_entity_t       s_dying_ents;
 static const struct map  *s_map;
 /* How many units of a faction currently currently occupy that bin.
- * For quickly finding that there are no enemy units nearby */
+ * For quickly finding that there are no enemy units nearby 
+ */
 static uint16_t          *s_fac_refcnts[MAX_FACTIONS];
 
 static struct combat_work s_combat_work;
@@ -793,7 +800,7 @@ static void entity_die(uint32_t uid)
         G_FlagsSet(uid, flags);
     }
 
-    E_Entity_Unregister(EVENT_UPDATE_START, uid, on_attack_anim_tick);
+    attack_anim_pending_remove(uid);
     E_Global_Notify(EVENT_ENTITY_DIED, (void*)((uintptr_t)uid), ES_ENGINE);
     E_Entity_Notify(EVENT_ENTITY_DEATH, uid, NULL, ES_ENGINE);
     vec_entity_push(&s_dying_ents, uid);
@@ -1006,7 +1013,7 @@ static void do_remove_entity(uint32_t uid)
     if(!cs)
         return;
 
-    E_Entity_Unregister(EVENT_UPDATE_START, uid, on_attack_anim_tick);
+    attack_anim_pending_remove(uid);
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_death_anim_finish);
 
     if(cs->state == STATE_ATTACK_ANIM_PLAYING
@@ -1179,7 +1186,7 @@ static void do_stop_attack(uint32_t uid)
     if(!cs || cs->state == STATE_DEATH_ANIM_PLAYING)
         return;
 
-    E_Entity_Unregister(EVENT_UPDATE_START, uid, on_attack_anim_tick);
+    attack_anim_pending_remove(uid);
 
     if(cs->state == STATE_ATTACK_ANIM_PLAYING
     || cs->state == STATE_CAN_ATTACK) {
@@ -1385,9 +1392,23 @@ static vec3_t projectile_spawn_pos(uint32_t uid)
     return (vec3_t){proj_pos.x, proj_pos.y, proj_pos.z};
 }
 
-static void on_attack_anim_tick(void *user, void *event)
+static void attack_anim_pending_add(uint32_t uid)
 {
-    uint32_t self = (uintptr_t)user;
+    int status;
+    kh_put(animpend, s_attack_anim_pending, uid, &status);
+    assert(status != -1);
+}
+
+static void attack_anim_pending_remove(uint32_t uid)
+{
+    khiter_t k = kh_get(animpend, s_attack_anim_pending, uid);
+    if(k != kh_end(s_attack_anim_pending)) {
+        kh_del(animpend, s_attack_anim_pending, k);
+    }
+}
+
+static void attack_anim_tick(uint32_t self)
+{
     int curr_frame = A_GetCurrFrameIndex(self);
     struct combatstate *cs = combatstate_get(self);
     assert(cs);
@@ -1395,7 +1416,7 @@ static void on_attack_anim_tick(void *user, void *event)
     if(curr_frame != cs->fd.frame_offset)
         return;
 
-    E_Entity_Unregister(EVENT_UPDATE_START, self, on_attack_anim_tick);
+    attack_anim_pending_remove(self);
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_TRYHIT,
         .uid = self,
@@ -1403,6 +1424,26 @@ static void on_attack_anim_tick(void *user, void *event)
             .proj_pos = projectile_spawn_pos(self)
         }
     });
+}
+
+static void on_attack_anim_tick(void *user, void *event)
+{
+    /* Snapshot: attack_anim_tick removes entries as hits land. */
+    size_t npend = kh_size(s_attack_anim_pending);
+    if(npend == 0)
+        return;
+
+    STALLOC(uint32_t, pend, npend);
+    size_t n = 0;
+    uint32_t uid;
+    kh_foreach_key(s_attack_anim_pending, uid, {
+        pend[n++] = uid;
+    });
+
+    for(size_t i = 0; i < n; i++) {
+        attack_anim_tick(pend[i]);
+    }
+    STFREE(pend);
 }
 
 static bool entity_dead(uint32_t uid)
@@ -1818,8 +1859,7 @@ static void entity_apply_update(struct combat_work_out *out)
     }
     case COMBAT_ACTION_ANIMATED_ATTACK: {
         uint32_t uid = out->action_args[0].val.as_int;
-        E_Entity_Register(EVENT_UPDATE_START, uid, on_attack_anim_tick, 
-            (void*)((uintptr_t)uid), G_RUNNING);
+        attack_anim_pending_add(uid);
         break;
     }
     case COMBAT_ACTION_ATTACK_IF_STILL: {
@@ -2544,7 +2584,13 @@ bool G_Combat_Init(const struct map *map)
     if(NULL == (s_entity_state_table = kh_init(state)))
         return false;
 
+    if(NULL == (s_attack_anim_pending = kh_init(animpend))) {
+        kh_destroy(state, s_entity_state_table);
+        return false;
+    }
+
     if(NULL == (s_aabb_cache = kh_init(aabb))) {
+        kh_destroy(animpend, s_attack_anim_pending);
         kh_destroy(state, s_entity_state_table);
         return false;
     }
@@ -2576,6 +2622,7 @@ bool G_Combat_Init(const struct map *map)
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_ALL);
     E_Global_Register(EVENT_PROJECTILE_HIT, on_proj_hit, NULL, G_RUNNING);
+    E_Global_Register(EVENT_UPDATE_START, on_attack_anim_tick, NULL, G_RUNNING);
     s_map = map;
     combat_copy_gamestate();
     vec_corpse_init(&s_corpses);
@@ -2590,6 +2637,7 @@ fail_strintern:
 fail_queue:
     stalloc_destroy(&s_combat_work.mem);
 fail_stack:
+    kh_destroy(animpend, s_attack_anim_pending);
     kh_destroy(state, s_entity_state_table);
     return false;
 }
@@ -2604,10 +2652,11 @@ void G_Combat_Shutdown(void)
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     E_Global_Unregister(EVENT_PROJECTILE_HIT, on_proj_hit);
+    E_Global_Unregister(EVENT_UPDATE_START, on_attack_anim_tick);
 
     uint32_t uid;
     kh_foreach_key(s_entity_state_table, uid, {
-        E_Entity_Unregister(EVENT_UPDATE_START, uid, on_attack_anim_tick);
+        attack_anim_pending_remove(uid);
         E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_death_anim_finish);
     });
 
@@ -2619,6 +2668,7 @@ void G_Combat_Shutdown(void)
     queue_cmd_destroy(&s_combat_commands);
     stalloc_destroy(&s_combat_work.mem);
     kh_destroy(aabb, s_aabb_cache);
+    kh_destroy(animpend, s_attack_anim_pending);
     kh_destroy(state, s_entity_state_table);
 
     vec_corpse_destroy(&s_corpses);
@@ -3379,8 +3429,7 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
 
         if(cs->state == STATE_ATTACK_ANIM_PLAYING) {
             CHK_TRUE_RET(G_EntityExists(uid));
-            E_Entity_Register(EVENT_UPDATE_START, uid, on_attack_anim_tick, 
-                (void*)((uintptr_t)uid), G_RUNNING);
+            attack_anim_pending_add(uid);
         }
 
         /* Re-establish the attack-notified invariant for an entity reloaded mid-attack

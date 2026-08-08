@@ -4644,6 +4644,22 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
     PERF_ENTER();
 
+    /* Out of performance considerations, don't re-compute the 
+     * field too often. Wait for a number of changes to pile up
+     * and do it perfodically, as necessary. This is checked before
+     * anything else: every arriving unit calls in every tick, and all
+     * but one in FIELD_RECOMPUTE_INTERVAL of those calls stop here.
+     */
+    struct cell_field_work *work = cell_get_work(uid);
+    if(!work)
+        PERF_RETURN_VOID();
+
+    uint32_t curr = SDL_GetTicks();
+    float elapsed = (curr - work->last_update_ticks) / 1000.0f;
+    if(elapsed < FIELD_RECOMPUTE_INTERVAL) {
+        PERF_RETURN_VOID();
+    }
+
     const uint8_t *field = cell_get_field(uid);
     if(!field)
         PERF_RETURN_VOID();
@@ -4651,9 +4667,6 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
     formation_id_t fid = G_Formation_GetForEnt(uid);
     struct formation *formation = formation_for_ent(uid);
     struct subformation *sub = subformation_for_ent(formation, uid);
-    struct cell_field_work *work = cell_get_work(uid);
-    if(!work)
-        PERF_RETURN_VOID();
 
     const struct map *map = G_GetMap();
     struct map_resolution res;
@@ -4672,16 +4685,6 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
 
     enum nav_layer layer = Entity_NavLayer(uid);
     struct cell_field_work_input *input = &work->input;
-
-    /* Out of performance considerations, don't re-compute the 
-     * field too often. Wait for a number of changes to pile up
-     * and do it perfodically, as necessary.
-     */
-    uint32_t curr = SDL_GetTicks();
-    float elapsed = (curr - work->last_update_ticks) / 1000.0f;
-    if(elapsed < FIELD_RECOMPUTE_INTERVAL) {
-        PERF_RETURN_VOID();
-    }
 
     /* The field missed an event-driven refresh while this unit was not
      * arriving to its cell; refresh it now that it consumes it again.
