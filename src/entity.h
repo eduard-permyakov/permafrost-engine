@@ -164,6 +164,8 @@ void     Entity_Remove(uint32_t uid);
 khash_t(trans) *Entity_CopyTransforms(void);
 khash_t(trans) *Entity_CopyTransformsInto(khash_t(trans) *dst);
 void Entity_DirtyModelMatrix(uint32_t uid);
+/* Drop the per-frame OBB memo; called once the animation poses settle */
+void Entity_ClearOBBCache(void);
 quat_t          Entity_GetRotFrom(khash_t(trans) *table, uint32_t uid);
 vec3_t          Entity_GetScaleFrom(khash_t(trans) *table, uint32_t uid);
 void            Entity_ModelMatrixFrom(vec3_t pos, quat_t rot, vec3_t scale, mat4x4_t *out);

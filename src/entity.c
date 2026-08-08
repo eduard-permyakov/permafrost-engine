@@ -95,6 +95,7 @@ MPOOL_IMPL(static, taglist, struct taglist)
 KHASH_MAP_INIT_INT(tags, struct taglist)
 KHASH_MAP_INIT_INT(icons, struct iconlist)
 KHASH_MAP_INIT_INT(matrix, mat4x4_t)
+KHASH_MAP_INIT_INT(obb, struct obb)
 __KHASH_IMPL(trans, extern, khint32_t, struct transform, 1, kh_int_hash_func, kh_int_hash_equal)
 
 /*****************************************************************************/
@@ -114,6 +115,11 @@ static kh_icons_t       *s_ent_icons_map;
  * the same matrix several times per visible entity per frame.
  */
 static khash_t(matrix)  *s_ent_matrix_cache;
+/* Per-frame memo of the current-pose OBBs, cleared once the animation poses
+ * settle for the frame; projectile sweeps and the UI rebuild the same OBB
+ * several times per entity per frame.
+ */
+static khash_t(obb)     *s_ent_obb_cache;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -348,6 +354,15 @@ void Entity_DirtyModelMatrix(uint32_t uid)
     if(k != kh_end(s_ent_matrix_cache)) {
         kh_del(matrix, s_ent_matrix_cache, k);
     }
+    k = kh_get(obb, s_ent_obb_cache, uid);
+    if(k != kh_end(s_ent_obb_cache)) {
+        kh_del(obb, s_ent_obb_cache, k);
+    }
+}
+
+void Entity_ClearOBBCache(void)
+{
+    kh_clear(obb, s_ent_obb_cache);
 }
 
 uint32_t Entity_NewUID(void)
@@ -362,6 +377,14 @@ void Entity_SetNextUID(uint32_t uid)
 
 void Entity_CurrentOBB(uint32_t uid, struct obb *out, bool identity)
 {
+    if(!identity) {
+        khiter_t k = kh_get(obb, s_ent_obb_cache, uid);
+        if(k != kh_end(s_ent_obb_cache)) {
+            *out = kh_value(s_ent_obb_cache, k);
+            return;
+        }
+    }
+
     const struct aabb *aabb;
     uint32_t flags = G_FlagsGet(uid);
 
@@ -376,6 +399,13 @@ void Entity_CurrentOBB(uint32_t uid, struct obb *out, bool identity)
     Entity_ModelMatrix(uid, &model);
     vec3_t scale = Entity_GetScale(uid);
     Entity_CurrentOBBFrom(aabb, model, scale, out);
+
+    if(!identity) {
+        int status;
+        khiter_t k = kh_put(obb, s_ent_obb_cache, uid, &status);
+        assert(status != -1);
+        kh_value(s_ent_obb_cache, k) = *out;
+    }
 }
 
 vec3_t Entity_CenterPos(uint32_t uid)
@@ -626,8 +656,14 @@ bool Entity_Init(void)
     if(!s_ent_matrix_cache)
         goto fail_matrix_cache;
 
+    s_ent_obb_cache = kh_init(obb);
+    if(!s_ent_obb_cache)
+        goto fail_obb_cache;
+
     return true;
 
+fail_obb_cache:
+    kh_destroy(matrix, s_ent_matrix_cache);
 fail_matrix_cache:
     kh_destroy(icons, s_ent_icons_map);
 
@@ -645,6 +681,7 @@ fail_strintern:
 
 void Entity_Shutdown(void)
 {
+    kh_destroy(obb, s_ent_obb_cache);
     kh_destroy(matrix, s_ent_matrix_cache);
     kh_destroy(icons, s_ent_icons_map);
     kh_destroy(trans, s_ent_trans_map);
@@ -655,6 +692,7 @@ void Entity_Shutdown(void)
 
 void Entity_ClearState(void)
 {
+    kh_clear(obb, s_ent_obb_cache);
     kh_clear(matrix, s_ent_matrix_cache);
     kh_clear(icons, s_ent_icons_map);
     kh_clear(trans, s_ent_trans_map);

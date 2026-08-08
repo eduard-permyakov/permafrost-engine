@@ -2202,6 +2202,8 @@ void G_Update(void)
     if(s_gs.ss == G_RUNNING) {
         A_Update();
     }
+    /* The advanced poses move the animated entities' bounds */
+    Entity_ClearOBBCache();
 
     PERF_PUSH("visibility culling");
     kh_foreach_key(s_gs.active, curr, {
