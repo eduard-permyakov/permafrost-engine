@@ -184,6 +184,10 @@ struct cell_field_work_input{
 struct cell_field_work{
     bool                         consumed;
     bool                         recompute_pending;
+    /* The field missed an event-driven refresh while its unit was not
+     * arriving to its cell; refreshed on demand once it is again.
+     */
+    bool                         stale;
     uint32_t                     last_update_ticks;
     struct refcounted_map       *map;
     uint32_t                     tid;
@@ -357,8 +361,7 @@ static void collect_cell_assignment_result(const struct cell_assignment_work *wo
 static void complete_cell_field_work(struct subformation *formation, bool yield);
 static uint8_t *cell_get_field(uint32_t uid);
 static enum flow_dir cell_get_dir(const uint8_t *field, int arrival_res, int r, int c);
-static void recompute_cell_arrival_fields(struct formation *parent, vec2_t center, 
-                                          struct subformation *formation);
+static void invalidate_cell_arrival_fields(struct subformation *formation);
 
 static uint32_t subformation_leader(struct subformation *formation);
 static void subformation_anchor_and_heading(uint32_t leader,
@@ -2941,7 +2944,7 @@ static void on_1hz_tick(void *user, void *event)
             struct subformation *curr = &vec_AT(&formation->subformations, i);
             if(curr->state != SUBFORMATION_READY)
                 continue;
-            recompute_cell_arrival_fields(formation, formation->center, curr);
+            invalidate_cell_arrival_fields(curr);
         }
     });
     kh_destroy(entity, need_recompute);
@@ -3126,6 +3129,7 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
 
     work->consumed = false;
     work->recompute_pending = false;
+    work->stale = false;
     work->map = rmap;
     work->overlay = (struct nav_cell_overlay){formation->blocked_tiles.array,
         vec_size(&formation->blocked_tiles)};
@@ -3397,8 +3401,14 @@ static struct cell *cell_for_ent(struct formation *formation, uint32_t uid)
     return &vec_AT(&sub->cells, cell_idx);
 }
 
-static void recompute_cell_arrival_fields(struct formation *parent, vec2_t center,
-                                          struct subformation *formation)
+/* Blocker churn invalidates the fields, but does not rebuild them: an
+ * arriving unit refreshes its own field through the rate-limited
+ * G_Formation_UpdateFieldIfNeeded, and nothing else reads them. The
+ * eager per-event rebuild kept every intersecting formation's fields
+ * flooding continuously through a melee (~60% of all engine CPU) with
+ * almost no readers.
+ */
+static void invalidate_cell_arrival_fields(struct subformation *formation)
 {
     /* Walk the futures rather than the entity set: the two can no longer
      * be paired up positionally once units have been removed, and stale
@@ -3406,18 +3416,9 @@ static void recompute_cell_arrival_fields(struct formation *parent, vec2_t cente
      */
     for(int i = 0; i < vec_size(&formation->futures); i++) {
         struct cell_field_work *curr = &vec_AT(&formation->futures, i);
-        if(!curr->consumed) {
-            curr->recompute_pending = true;
+        if(!curr->consumed)
             continue;
-        }
-
-        khiter_t k = kh_get(assignment, formation->assignment, curr->uid);
-        if(k == kh_end(formation->assignment))
-            continue;
-        struct coord coord = kh_val(formation->assignment, k);
-        struct cell *cell = &vec_AT(&formation->cells,
-            CELL_IDX(coord.r, coord.c, formation->ncols));
-        dispatch_cell_task(parent, center, curr->uid, formation, curr, cell, cell_field_task);
+        curr->stale = true;
     }
 }
 
@@ -4679,6 +4680,16 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
     uint32_t curr = SDL_GetTicks();
     float elapsed = (curr - work->last_update_ticks) / 1000.0f;
     if(elapsed < FIELD_RECOMPUTE_INTERVAL) {
+        PERF_RETURN_VOID();
+    }
+
+    /* The field missed an event-driven refresh while this unit was not
+     * arriving to its cell; refresh it now that it consumes it again.
+     */
+    if(work->stale) {
+        work->stale = false;
+        request_cell_recompute(fid, uid);
+        work->last_update_ticks = curr;
         PERF_RETURN_VOID();
     }
 
