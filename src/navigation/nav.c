@@ -1106,6 +1106,10 @@ static void n_update_blockers(struct nav_private *priv, enum nav_layer layer, in
     for(int i = 0; i < ntds; i++) {
     
         volatile struct tile_desc curr = tds[i];
+        if(curr.chunk_r < priv->window.min_r || curr.chunk_r > priv->window.max_r
+        || curr.chunk_c < priv->window.min_c || curr.chunk_c > priv->window.max_c)
+            continue;
+
         struct nav_chunk *chunk = 
             &priv->chunks[layer][IDX(curr.chunk_r, priv->width, curr.chunk_c)];
 
@@ -2775,6 +2779,7 @@ void *N_NewCtxForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
     ret->width = w;
     ret->height = h;
     ret->layer_mask = NAV_LAYER_MASK_ALL;
+    ret->window = (struct nav_window){0, 0, (int)h - 1, (int)w - 1};
 
     /* One copy-on-write region holds all layers' chunks (inlined portal_travel_costs
      * makes each chunk self-contained). The live nav builds/mutates the private writer
@@ -5763,7 +5768,7 @@ static void n_clone_chunk(struct nav_chunk *dst, const struct nav_chunk *src)
 }
 
 void N_CloneCtx(void *nav_private, void *out, const enum nav_layer *layers,
-                size_t nlayers)
+                size_t nlayers, struct nav_window window)
 {
     PERF_ENTER();
 
@@ -5775,6 +5780,12 @@ void N_CloneCtx(void *nav_private, void *out, const enum nav_layer *layers,
     to->layer_mask = 0;
     for(int i = 0; i < nlayers; i++)
         to->layer_mask |= (1u << layers[i]);
+
+    window.min_r = MAX(window.min_r, 0);
+    window.min_c = MAX(window.min_c, 0);
+    window.max_r = MIN(window.max_r, (int)from->height - 1);
+    window.max_c = MIN(window.max_c, (int)from->width - 1);
+    to->window = window;
 
     /* The chunk arrays are one contiguous block laid out right after the
      * descriptor. Every layer is given its window into it so that writes to an
@@ -5788,9 +5799,11 @@ void N_CloneCtx(void *nav_private, void *out, const enum nav_layer *layers,
 
     for(int i = 0; i < nlayers; i++) {
         enum nav_layer layer = layers[i];
-        for(int j = 0; j < chunks_per_layer; j++) {
-            n_clone_chunk(&to->chunks[layer][j], &from->chunks[layer][j]);
-        }
+        for(int r = window.min_r; r <= window.max_r; r++) {
+        for(int c = window.min_c; c <= window.max_c; c++) {
+            size_t idx = IDX(r, from->width, c);
+            n_clone_chunk(&to->chunks[layer][idx], &from->chunks[layer][idx]);
+        }}
     }
 
     /* The field cache is a shared singleton; the shallow copy above carried its

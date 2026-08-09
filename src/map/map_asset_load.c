@@ -846,7 +846,7 @@ void M_AL_ShallowCopy(struct map *dst, const struct map *src)
 }
 
 struct map *M_AL_CopyWithFields(const struct map *src, const enum nav_layer *layers,
-                                size_t nlayers)
+                                size_t nlayers, struct nav_window window)
 {
     struct map *ret = PF_MALLOC(M_AL_ShallowCopySize(src->width, src->height));
     if(!ret)
@@ -860,7 +860,7 @@ struct map *M_AL_CopyWithFields(const struct map *src, const enum nav_layer *lay
 
     M_AL_ShallowCopy(ret, src);
 
-    N_CloneCtx(src->nav_private, nav, layers, nlayers);
+    N_CloneCtx(src->nav_private, nav, layers, nlayers, window);
     ret->nav_private = nav;
 
     /* Give the independent copy its own mask. */

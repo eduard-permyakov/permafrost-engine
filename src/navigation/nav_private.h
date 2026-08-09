@@ -74,6 +74,9 @@ struct nav_private{
      * set for the live context; a clone restricted to a subset of layers clears
      * the rest so that blocker updates cannot touch chunks it never populated. */
     uint16_t               layer_mask;
+    /* Inclusive chunk rectangle holding real data, for the same reason as
+     * 'layer_mask'. Spans the whole map in the live context. */
+    struct nav_window      window;
 };
 
 #define NAV_LAYER_MASK_ALL ((uint16_t)((1u << NAV_LAYER_MAX) - 1))

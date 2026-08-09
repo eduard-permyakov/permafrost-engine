@@ -1017,6 +1017,31 @@ static void init_occupied_field(const struct map *map, enum nav_layer layer, vec
     PERF_RETURN_VOID();
 }
 
+/* The chunks the placement fields read, padded by one chunk so that a unit
+ * standing just outside the field box - whose blocker footprint can still
+ * reach into it - is itself inside the window and gets decref'd.
+ */
+static struct nav_window placement_window(const struct map *map, vec2_t center,
+                                          int field_res)
+{
+    struct map_resolution res;
+    M_NavGetResolution(map, &res);
+
+    struct tile_desc center_tile;
+    M_Tile_DescForPoint2D(res, M_GetPos(map), center, &center_tile);
+
+    int abs_r = center_tile.chunk_r * res.tile_h + center_tile.tile_r;
+    int abs_c = center_tile.chunk_c * res.tile_w + center_tile.tile_c;
+    int half = field_res / 2;
+
+    return (struct nav_window){
+        (abs_r - half - res.tile_h) / res.tile_h,
+        (abs_c - half - res.tile_w) / res.tile_w,
+        (abs_r + half + res.tile_h) / res.tile_h,
+        (abs_c + half + res.tile_w) / res.tile_w
+    };
+}
+
 static void init_islands_field(const struct map *map, enum nav_layer layer, vec2_t center,
                                int field_res, uint16_t *islands)
 {
@@ -4986,7 +5011,8 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
 
     /* The clone only carries the layers placement reads, so it cannot be made
      * until the subformations have settled which those are. */
-    struct map *map = M_AL_CopyWithFields(s_map, layers, nlayers);
+    struct map *map = M_AL_CopyWithFields(s_map, layers, nlayers,
+        placement_window(s_map, formation.center, field_res));
     for(int i = 0; i < vec_size(ents); i++) {
         uint32_t uid = vec_AT(ents, i);
         float radius = G_GetSelectionRadius(uid);

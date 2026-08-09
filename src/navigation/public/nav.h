@@ -701,14 +701,20 @@ void N_CopyIslandsFieldView(void *nav_private, vec2_t center, vec3_t map_pos, in
  */
 size_t N_DeepCopySize(void *nav_private);
 
+/* An inclusive rectangle of chunks. */
+struct nav_window{
+    int min_r, min_c;
+    int max_r, max_c;
+};
+
 /* ------------------------------------------------------------------------
  * Makes a copy of the traversal cost, blocked tile data, and per-tile
- * faction refcounts for the specified layers only. The chunks of the other
+ * faction refcounts for the specified layers and window of chunks only. The chunks of the other
  * layers are left blank; they may be written to, but hold no source data.
  * ------------------------------------------------------------------------
  */
 void N_CloneCtx(void *nav_private, void *out, const enum nav_layer *layers,
-                size_t nlayers);
+                size_t nlayers, struct nav_window window);
 
 /* ------------------------------------------------------------------------
  * Cleans up additional per-context allocations.
