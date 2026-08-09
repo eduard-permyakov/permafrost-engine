@@ -5754,17 +5754,23 @@ size_t N_DeepCopySize(void *nav_private)
     return ret;
 }
 
+/* A clone is only ever read for tile passability, occupancy and island
+ * membership, so the two bulk fields are skipped: portal_travel_costs (512KB)
+ * serves the portal graph search and factions (60KB) the enemy-aware floods,
+ * and neither runs against a clone. The blocker refcount update still writes
+ * factions, but nothing reads it back out of a clone.
+ */
 static void n_clone_chunk(struct nav_chunk *dst, const struct nav_chunk *src)
 {
-    /* portal_travel_costs is 512KB of the 650KB chunk and is only consulted by
-     * the portal graph search, which no consumer of a clone performs. Copying
-     * around it leaves those pages untouched, so they are never faulted in. */
-    size_t head = offsetof(struct nav_chunk, portal_travel_costs);
-    size_t tail_off = offsetof(struct nav_chunk, blockers);
-    size_t tail = sizeof(struct nav_chunk) - tail_off;
+    const struct{ size_t off, len; } ranges[] = {
+        {0, offsetof(struct nav_chunk, portal_travel_costs)},
+        {offsetof(struct nav_chunk, blockers), sizeof(src->blockers)},
+        {offsetof(struct nav_chunk, islands),
+         sizeof(struct nav_chunk) - offsetof(struct nav_chunk, islands)},
+    };
 
-    memcpy(dst, src, head);
-    memcpy((char*)dst + tail_off, (const char*)src + tail_off, tail);
+    for(int i = 0; i < ARR_SIZE(ranges); i++)
+        memcpy((char*)dst + ranges[i].off, (const char*)src + ranges[i].off, ranges[i].len);
 }
 
 void N_CloneCtx(void *nav_private, void *out, const enum nav_layer *layers,
