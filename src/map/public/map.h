@@ -867,7 +867,8 @@ void   M_AL_ShallowCopy(struct map *dst, const struct map *src);
  * faction refcounts from the navigation data.
  * ------------------------------------------------------------------------
  */
-struct map *M_AL_CopyWithFields(const struct map *src);
+struct map *M_AL_CopyWithFields(const struct map *src, const enum nav_layer *layers,
+                                size_t nlayers);
 void        M_AL_FreeCopyWithFields(struct map *map);
 
 /* A read-only snapshot whose navigation chunks alias the live map's canonical

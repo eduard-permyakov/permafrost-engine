@@ -70,7 +70,13 @@ struct nav_private{
     /* State for unit queries, used to store a snapshot of the unit gamestate so 
      * that it can be queried asynchronously. */
     struct nav_unit_query_ctx *unit_query_ctx;
+    /* Bit per nav_layer marking which layers hold real chunk data. Every bit is
+     * set for the live context; a clone restricted to a subset of layers clears
+     * the rest so that blocker updates cannot touch chunks it never populated. */
+    uint16_t               layer_mask;
 };
+
+#define NAV_LAYER_MASK_ALL ((uint16_t)((1u << NAV_LAYER_MAX) - 1))
 
 /* Resolve a position-independent portal reference within a layer. */
 static inline struct portal *n_portal(const struct nav_private *priv,

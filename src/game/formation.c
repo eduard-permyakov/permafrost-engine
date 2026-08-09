@@ -4961,18 +4961,6 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
         orientation = G_Formation_AutoOrientation(target, ents);
     }
 
-    struct map *map = M_AL_CopyWithFields(s_map);
-    for(int i = 0; i < vec_size(ents); i++) {
-        uint32_t uid = vec_AT(ents, i);
-        float radius = G_GetSelectionRadius(uid);
-        vec2_t pos = G_Pos_GetXZ(uid);
-        int faction_id = G_GetFactionID(uid);
-        uint32_t flags = G_FlagsGet(uid);
-        if(G_Move_Still(uid)) {
-            M_NavBlockersDecref(pos, radius, faction_id, flags, map);
-        }
-    }
-
     enum formation_type type = G_Formation_PreferredForSet(ents);
     int field_res = field_res_for_unit_count(vec_size(ents));
     struct formation formation = (struct formation){
@@ -4995,6 +4983,21 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
 
     enum nav_layer layers[NAV_LAYER_MAX];
     size_t nlayers = formation_layers(&formation.subformations, layers);
+
+    /* The clone only carries the layers placement reads, so it cannot be made
+     * until the subformations have settled which those are. */
+    struct map *map = M_AL_CopyWithFields(s_map, layers, nlayers);
+    for(int i = 0; i < vec_size(ents); i++) {
+        uint32_t uid = vec_AT(ents, i);
+        float radius = G_GetSelectionRadius(uid);
+        vec2_t pos = G_Pos_GetXZ(uid);
+        int faction_id = G_GetFactionID(uid);
+        uint32_t flags = G_FlagsGet(uid);
+        if(G_Move_Still(uid)) {
+            M_NavBlockersDecref(pos, radius, faction_id, flags, map);
+        }
+    }
+
     for(int i = 0; i < nlayers; i++) {
         init_occupied_field(map, layers[i], formation.center, field_res,
             occupied_layer(&formation, layers[i]));

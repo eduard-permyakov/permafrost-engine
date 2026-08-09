@@ -1100,6 +1100,9 @@ static void n_update_dirty_local_islands(void *nav_private, enum nav_layer layer
 static void n_update_blockers(struct nav_private *priv, enum nav_layer layer, int faction_id,
                               struct tile_desc *tds, size_t ntds, int ref_delta)
 {
+    if(!(priv->layer_mask & (1u << layer)))
+        return;
+
     for(int i = 0; i < ntds; i++) {
     
         volatile struct tile_desc curr = tds[i];
@@ -2771,6 +2774,7 @@ void *N_NewCtxForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
 
     ret->width = w;
     ret->height = h;
+    ret->layer_mask = NAV_LAYER_MASK_ALL;
 
     /* One copy-on-write region holds all layers' chunks (inlined portal_travel_costs
      * makes each chunk self-contained). The live nav builds/mutates the private writer
@@ -5745,7 +5749,21 @@ size_t N_DeepCopySize(void *nav_private)
     return ret;
 }
 
-void N_CloneCtx(void *nav_private, void *out)
+static void n_clone_chunk(struct nav_chunk *dst, const struct nav_chunk *src)
+{
+    /* portal_travel_costs is 512KB of the 650KB chunk and is only consulted by
+     * the portal graph search, which no consumer of a clone performs. Copying
+     * around it leaves those pages untouched, so they are never faulted in. */
+    size_t head = offsetof(struct nav_chunk, portal_travel_costs);
+    size_t tail_off = offsetof(struct nav_chunk, blockers);
+    size_t tail = sizeof(struct nav_chunk) - tail_off;
+
+    memcpy(dst, src, head);
+    memcpy((char*)dst + tail_off, (const char*)src + tail_off, tail);
+}
+
+void N_CloneCtx(void *nav_private, void *out, const enum nav_layer *layers,
+                size_t nlayers)
 {
     PERF_ENTER();
 
@@ -5754,17 +5772,26 @@ void N_CloneCtx(void *nav_private, void *out)
 
     *to = *from;
     to->cow = NULL;
+    to->layer_mask = 0;
+    for(int i = 0; i < nlayers; i++)
+        to->layer_mask |= (1u << layers[i]);
 
-    /* The chunk arrays (inlined portal_travel_costs, position-independent portal
-     * refs) are one contiguous block laid out right after the descriptor, so the
-     * clone is a single memcpy with no per-field copy and no pointer fixup. */
+    /* The chunk arrays are one contiguous block laid out right after the
+     * descriptor. Every layer is given its window into it so that writes to an
+     * uncopied layer still land inside the clone, but only the requested
+     * layers are populated. */
     struct nav_chunk *chunkmem = (struct nav_chunk*)(to + 1);
     size_t chunks_per_layer = from->width * from->height;
-    size_t total = NAV_LAYER_MAX * chunks_per_layer * sizeof(struct nav_chunk);
 
-    memcpy(chunkmem, from->chunks[0], total);
     for(int i = 0; i < NAV_LAYER_MAX; i++)
         to->chunks[i] = chunkmem + i * chunks_per_layer;
+
+    for(int i = 0; i < nlayers; i++) {
+        enum nav_layer layer = layers[i];
+        for(int j = 0; j < chunks_per_layer; j++) {
+            n_clone_chunk(&to->chunks[layer][j], &from->chunks[layer][j]);
+        }
+    }
 
     /* The field cache is a shared singleton; the shallow copy above carried its
      * pointer over. */

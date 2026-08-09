@@ -703,10 +703,12 @@ size_t N_DeepCopySize(void *nav_private);
 
 /* ------------------------------------------------------------------------
  * Makes a copy of the traversal cost, blocked tile data, and per-tile
- * faction refcounts.
+ * faction refcounts for the specified layers only. The chunks of the other
+ * layers are left blank; they may be written to, but hold no source data.
  * ------------------------------------------------------------------------
  */
-void N_CloneCtx(void *nav_private, void *out);
+void N_CloneCtx(void *nav_private, void *out, const enum nav_layer *layers,
+                size_t nlayers);
 
 /* ------------------------------------------------------------------------
  * Cleans up additional per-context allocations.
