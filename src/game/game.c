@@ -114,6 +114,7 @@
     }while(0)
 
 VEC_IMPL(extern, obb, struct obb)
+VEC_IMPL(extern, drawcand, struct draw_cand)
 __KHASH_IMPL(entity,  extern, khint32_t, uint32_t, 0, kh_int_hash_func, kh_int_hash_equal)
 __KHASH_IMPL(id,      extern, khint32_t, int,      1, kh_int_hash_func, kh_int_hash_equal)
 __KHASH_IMPL(range,   extern, khint32_t, float,    1, kh_int_hash_func, kh_int_hash_equal)
@@ -474,8 +475,11 @@ static void *g_lod_priv_coarsest(const struct entity *ent)
     return ent->render_private;
 }
 
-static void g_make_draw_list(vec_entity_t ents, vec_rstat_t *out_stat, vec_ranim_t *out_anim,
-                             bool onlycasters, bool coarsest)
+/* Both passes are built in a single sweep of the union: an entity drawn by the
+ * camera and by the light shares everything but its mesh LOD, so its flags,
+ * model matrix, pose descriptor and tile are resolved once.
+ */
+static void g_make_draw_lists(struct render_input *out)
 {
     PERF_ENTER();
     struct map_resolution res;
@@ -493,16 +497,13 @@ static void g_make_draw_list(vec_entity_t ents, vec_rstat_t *out_stat, vec_ranim
     if(Settings_Get("pf.video.lod_dist2", &lod_setting) == SS_OKAY)
         lod_d2 = lod_setting.as_float;
 
-    /* The shadow and water passes ('coarsest') always use the coarsest mesh;
-     * the main camera pass selects by distance. */
-    bool dist_lod = lod_enabled && !coarsest;
     vec3_t campos = Camera_GetPos(s_gs.active_cam);
 
-    for(int i = 0; i < vec_size(&ents); i++) {
+    for(int i = 0; i < vec_size(&s_gs.draw_cands); i++) {
 
-        uint32_t curr = vec_AT(&ents, i);
+        struct draw_cand cand = vec_AT(&s_gs.draw_cands, i);
+        uint32_t curr = cand.uid;
         uint32_t flags = G_FlagsGet(curr);
-        const struct entity *ent = AL_EntityGet(curr);
 
         if(flags & ENTITY_FLAG_INVISIBLE)
             continue;
@@ -510,37 +511,53 @@ static void g_make_draw_list(vec_entity_t ents, vec_rstat_t *out_stat, vec_ranim
         if(flags & ENTITY_FLAG_GARRISONED)
             continue;
 
-        if(onlycasters && !(flags & ENTITY_FLAG_COLLISION))
+        uint32_t passes = cand.passes;
+        if(!(flags & ENTITY_FLAG_COLLISION))
+            passes &= ~DRAW_PASS_LIGHT;
+
+        if(!passes)
             continue;
 
-        PERF_PUSH("process entity");
-
+        const struct entity *ent = AL_EntityGet(curr);
         mat4x4_t model;
         Entity_ModelMatrix(curr, &model);
 
-        void *render_priv = ent->render_private;
-        if(lod_enabled && coarsest) {
-            render_priv = g_lod_priv_coarsest(ent);
-        }else if(dist_lod) {
-            vec3_t epos = G_Pos_Get(curr);
-            vec3_t delta;
-            PFM_Vec3_Sub(&campos, &epos, &delta);
-            render_priv = g_lod_priv(ent, g_select_lod(PFM_Vec3_Len(&delta), lod_d1, lod_d2));
+        /* The shadow and water passes always draw the coarsest mesh; the main
+         * camera pass selects by distance. */
+        void *cam_priv = ent->render_private;
+        void *light_priv = ent->render_private;
+        if(lod_enabled) {
+            if(passes & DRAW_PASS_CAM) {
+                vec3_t epos = G_Pos_Get(curr);
+                vec3_t delta;
+                PFM_Vec3_Sub(&campos, &epos, &delta);
+                cam_priv = g_lod_priv(ent, g_select_lod(PFM_Vec3_Len(&delta), lod_d1, lod_d2));
+            }
+            if(passes & DRAW_PASS_LIGHT) {
+                light_priv = g_lod_priv_coarsest(ent);
+            }
         }
 
         if(flags & ENTITY_FLAG_ANIMATED) {
 
             struct ent_anim_rstate rstate = (struct ent_anim_rstate){
                 .uid = curr,
-                .render_private = render_priv,
                 .model = model,
                 .translucent = !!(flags & ENTITY_FLAG_TRANSLUCENT),
             };
             A_GetRenderState(curr, &rstate.desc);
-            vec_ranim_push(out_anim, rstate);
+
+            if(passes & DRAW_PASS_CAM) {
+                rstate.render_private = cam_priv;
+                vec_ranim_push(&out->cam_vis_anim, rstate);
+            }
+            if(passes & DRAW_PASS_LIGHT) {
+                rstate.render_private = light_priv;
+                vec_ranim_push(&out->light_vis_anim, rstate);
+            }
 
         }else{
-        
+
             struct tile_desc td = {0};
             if(s_gs.map) {
                 M_Tile_DescForPoint2D(res, M_GetPos(s_gs.map), G_Pos_GetXZ(curr), &td);
@@ -548,18 +565,26 @@ static void g_make_draw_list(vec_entity_t ents, vec_rstat_t *out_stat, vec_ranim
 
             struct ent_stat_rstate rstate = (struct ent_stat_rstate){
                 .uid = curr,
-                .render_private = render_priv,
                 .model = model,
                 .translucent = !!(flags & ENTITY_FLAG_TRANSLUCENT),
                 .td = td
             };
-            vec_rstat_push(out_stat, rstate);
+
+            if(passes & DRAW_PASS_CAM) {
+                rstate.render_private = cam_priv;
+                vec_rstat_push(&out->cam_vis_stat, rstate);
+            }
+            if(passes & DRAW_PASS_LIGHT) {
+                rstate.render_private = light_priv;
+                vec_rstat_push(&out->light_vis_stat, rstate);
+            }
         }
-        PERF_POP();
     }
 
-    g_sort_stat_list(out_stat);
-    g_sort_anim_list(out_anim);
+    g_sort_stat_list(&out->cam_vis_stat);
+    g_sort_anim_list(&out->cam_vis_anim);
+    g_sort_stat_list(&out->light_vis_stat);
+    g_sort_anim_list(&out->light_vis_anim);
     PERF_RETURN_VOID();
 }
 
@@ -612,8 +637,7 @@ static void g_create_render_input(struct render_input *out)
     vec_rstat_resize(&out->light_vis_stat, 2048);
     vec_ranim_resize(&out->light_vis_anim, 2048);
 
-    g_make_draw_list(s_gs.visible, &out->cam_vis_stat, &out->cam_vis_anim, false, false);
-    g_make_draw_list(s_gs.light_visible, &out->light_vis_stat, &out->light_vis_anim, true, true);
+    g_make_draw_lists(out);
 
     PERF_RETURN_VOID();
 }
@@ -982,6 +1006,11 @@ static bool g_ent_visible(uint16_t playermask, uint32_t uid, const struct obb *o
 static bool g_entities_equal(uint32_t *a, uint32_t *b)
 {
     return ((*a) == (*b));
+}
+
+static bool g_draw_cands_equal(struct draw_cand *a, struct draw_cand *b)
+{
+    return (a->uid == b->uid);
 }
 
 static void g_clear_map_state(void)
@@ -1788,14 +1817,14 @@ bool G_Init(void)
     ASSERT_IN_MAIN_THREAD();
 
     vec_entity_init(&s_gs.visible);
-    vec_entity_init(&s_gs.light_visible);
+    vec_drawcand_init(&s_gs.draw_cands);
     vec_obb_init(&s_gs.visible_obbs);
     vec_entity_init(&s_gs.cull_cands);
     vec_entity_init(&s_gs.removed);
     g_create_settings();
 
     vec_entity_resize(&s_gs.visible, 2048);
-    vec_entity_resize(&s_gs.light_visible, 2048);
+    vec_drawcand_resize(&s_gs.draw_cands, 2048);
     vec_obb_resize(&s_gs.visible_obbs, 2048);
     vec_entity_resize(&s_gs.cull_cands, 2048);
 
@@ -1940,7 +1969,7 @@ void G_ClearState(void)
     kh_clear(range, s_gs.ent_visrange_map);
     kh_clear(range, s_gs.selection_radiuses);
     vec_entity_reset(&s_gs.visible);
-    vec_entity_reset(&s_gs.light_visible);
+    vec_drawcand_reset(&s_gs.draw_cands);
     vec_obb_reset(&s_gs.visible_obbs);
 
     g_clear_map_state();
@@ -2195,7 +2224,7 @@ void G_Shutdown(void)
     kh_destroy(id, s_gs.ent_flag_map);
     kh_destroy(range, s_gs.ent_visrange_map);
     kh_destroy(range, s_gs.selection_radiuses);
-    vec_entity_destroy(&s_gs.light_visible);
+    vec_drawcand_destroy(&s_gs.draw_cands);
     vec_entity_destroy(&s_gs.visible);
     vec_obb_destroy(&s_gs.visible_obbs);
     vec_entity_destroy(&s_gs.cull_cands);
@@ -2213,7 +2242,7 @@ void G_Update(void)
     }
 
     vec_entity_reset(&s_gs.visible);
-    vec_entity_reset(&s_gs.light_visible);
+    vec_drawcand_reset(&s_gs.draw_cands);
     vec_obb_reset(&s_gs.visible_obbs);
 
     vec3_t pos = Camera_GetPos(s_gs.active_cam);
@@ -2259,6 +2288,7 @@ void G_Update(void)
         Entity_CurrentOBB(curr, &obb, false);
         bool vis_checked = false;
         bool vis = false;
+        uint32_t passes = 0;
 
         /* Note that there may be some false positives due to using the fast frustum cull. */
         if(C_FrustumOBBIntersectionFast(&cam_frust, &obb) != VOLUME_INTERSEC_OUTSIDE) {
@@ -2267,6 +2297,7 @@ void G_Update(void)
             if(vis) {
                 vec_entity_push(&s_gs.visible, curr);
                 vec_obb_push(&s_gs.visible_obbs, obb);
+                passes |= DRAW_PASS_CAM;
             }
         }
 
@@ -2276,8 +2307,12 @@ void G_Update(void)
             }
             uint32_t flags = G_FlagsGet(curr);
             if(vis || !(flags & ENTITY_FLAG_MOVABLE)) {
-                vec_entity_push(&s_gs.light_visible, curr);
+                passes |= DRAW_PASS_LIGHT;
             }
+        }
+
+        if(passes) {
+            vec_drawcand_push(&s_gs.draw_cands, (struct draw_cand){curr, passes});
         }
     }
     PERF_POP();
@@ -2582,9 +2617,10 @@ bool G_RemoveEntity(uint32_t uid)
         vec_obb_del(&s_gs.visible_obbs, idx);
     }
 
-    idx = vec_entity_indexof(&s_gs.light_visible, uid, g_entities_equal);
+    idx = vec_drawcand_indexof(&s_gs.draw_cands, (struct draw_cand){uid, 0},
+        g_draw_cands_equal);
     if(idx != -1) {
-        vec_entity_del(&s_gs.light_visible, idx);
+        vec_drawcand_del(&s_gs.draw_cands, idx);
     }
 
     A_RemoveEntity(uid);

@@ -48,6 +48,17 @@
 KHASH_DECLARE(id, khint32_t, int)
 KHASH_DECLARE(range, khint32_t, float)
 
+#define DRAW_PASS_CAM   (1 << 0)
+#define DRAW_PASS_LIGHT (1 << 1)
+
+/* An entity taking part in at least one of the frame's draw passes. */
+struct draw_cand{
+    uint32_t uid;
+    uint32_t passes;
+};
+
+VEC_TYPE(drawcand, struct draw_cand)
+
 
 struct gamestate{
     enum simstate           ss;
@@ -163,11 +174,12 @@ struct gamestate{
      */
     vec_entity_t            visible;
     /*-------------------------------------------------------------------------
-     * The set of entities that should be rendered from the light's point of 
-     * view (for creating the shadow depth map).
+     * The union of the entities drawn by the camera pass and those drawn from
+     * the light's point of view (for creating the shadow depth map), each
+     * tagged with the passes it takes part in.
      *-------------------------------------------------------------------------
      */
-    vec_entity_t            light_visible;
+    vec_drawcand_t          draw_cands;
     /*-------------------------------------------------------------------------
      * Cache of current-frame OBBs for visible entities.
      *-------------------------------------------------------------------------
