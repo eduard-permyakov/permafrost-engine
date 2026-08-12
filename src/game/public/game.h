@@ -311,6 +311,16 @@ enum combat_stance{
     COMBAT_STANCE_NO_ENGAGEMENT,
 };
 
+/* An entity's attacks carry a damage type and an entity has an armour type;
+ * the pair selects a multiplier from the interaction table. Both are opaque
+ * IDs in the range [0, *_TYPE_MAX) - what they mean, and what they are called,
+ * is entirely up to the scripting layer. Type 0 is the one an entity gets when
+ * it declares nothing, so scripts should keep the multiplier of type 0 against
+ * type 0 at 1.0.
+ */
+#define DAMAGE_TYPE_MAX  8
+#define ARMOUR_TYPE_MAX  8
+
 struct proj_fire_desc{
     /* How many frames into the "fire" animation
      * do we launch it? */
@@ -349,6 +359,20 @@ void  G_Combat_SetProjFireDesc(uint32_t uid, const struct proj_fire_desc *fd);
 void  G_Combat_SetCorpseModel(uint32_t uid, const char *dir, const char *pfobj, vec3_t scale);
 bool  G_Combat_GetHPDisplay(uint32_t uid, int *out_curr, int *out_max);
 enum combat_stance G_Combat_GetStance(uint32_t uid);
+
+void  G_Combat_SetDamageType(uint32_t uid, int type);
+int   G_Combat_GetDamageType(uint32_t uid);
+void  G_Combat_SetArmourType(uint32_t uid, int type);
+int   G_Combat_GetArmourType(uint32_t uid);
+
+/* 'mult' is an 'nrows' x 'ncols' row-major array of multipliers indexed
+ * [damage_type][armour_type]; it may be smaller than the capacity, in which
+ * case the remaining cells are 1.0. All 1.0 by default, which leaves the damage
+ * arithmetic exactly as it is without a table. The getter always writes the
+ * full DAMAGE_TYPE_MAX * ARMOUR_TYPE_MAX array.
+ */
+void  G_Combat_SetDamageTable(const float *mult, int nrows, int ncols);
+void  G_Combat_GetDamageTable(float *out_mult);
 
 /*###########################################################################*/
 /* GAME POSITION                                                             */

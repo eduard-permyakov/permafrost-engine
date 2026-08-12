@@ -288,6 +288,8 @@ static PyObject *PyPf_get_all_music(PyObject *self);
 static PyObject *PyPf_play_effect(PyObject *self, PyObject *args);
 static PyObject *PyPf_play_global_effect(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_spawn_projectile(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_damage_table(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_damage_table(PyObject *self);
 static PyObject *PyPf_formation_arrange(PyObject *self, PyObject *args);
 static PyObject *PyPf_move_in_formation(PyObject *self, PyObject *args);
 static PyObject *PyPf_attack_in_formation(PyObject *self, PyObject *args);
@@ -1019,6 +1021,20 @@ static PyMethodDef pf_module_methods[] = {
     "Spawn a projectile with the specified parameters at a map location. The projectile will travel "
     "with the specified velocity until it leaves the map bounds or hits a unit. The hit event can be "
     "handled."},
+
+    {"set_damage_table",
+    (PyCFunction)PyPf_set_damage_table, METH_VARARGS,
+    "Set the damage type vs. armour type interaction table. Takes a sequence of at most "
+    "pf.DAMAGE_TYPE_MAX equal-length sequences of at most pf.ARMOUR_TYPE_MAX floats, indexed "
+    "[damage_type][armour_type]. Each entry scales the damage an attack of that damage type deals "
+    "to a target of that armour type. Type IDs the table does not cover are left at 1.0, as are "
+    "all entries by default."},
+
+    {"get_damage_table",
+    (PyCFunction)PyPf_get_damage_table, METH_NOARGS,
+    "Returns the current damage type vs. armour type interaction table as a tuple of "
+    "pf.DAMAGE_TYPE_MAX tuples of pf.ARMOUR_TYPE_MAX floats, regardless of the size of the table "
+    "that was set."},
 
     {"formation_arrange",
     (PyCFunction)PyPf_formation_arrange, METH_VARARGS,
@@ -4125,10 +4141,11 @@ static PyObject *PyPf_spawn_projectile(PyObject *self, PyObject *args)
     uint32_t cookie;
     int flags;
     struct proj_desc pd;
+    uint32_t dmg_type = 0;
 
-    if(!PyArg_ParseTuple(args, "(fff)(fff)IIII(ss(fff)f)", &origin.x, &origin.y, &origin.z,
+    if(!PyArg_ParseTuple(args, "(fff)(fff)IIII(ss(fff)f)|I", &origin.x, &origin.y, &origin.z,
         &velocity.x, &velocity.y, &velocity.z, &ent_parent, &faction_id, &cookie, &flags,
-        &pd.basedir, &pd.pfobj, &pd.scale.x, &pd.scale.y, &pd.scale.z, &pd.speed)) {
+        &pd.basedir, &pd.pfobj, &pd.scale.x, &pd.scale.y, &pd.scale.z, &pd.speed, &dmg_type)) {
 
         PyErr_SetString(PyExc_RuntimeError, "The following arugment list is expected: "
             "origin (tuple of 3 floats), "
@@ -4141,12 +4158,140 @@ static PyObject *PyPf_spawn_projectile(PyObject *self, PyObject *args)
             "[projectile model base directory (string), "
             "projectile model PFOBJ filename (string), "
             "projectile model scale (tuple of 3 floats), "
-            "projectile speed (float)].");
+            "projectile speed (float)], "
+            "damage type (int, optional).");
         return NULL;
     }
 
-    uint32_t ret = P_Projectile_Add(origin, velocity, ent_parent, faction_id, cookie, flags, pd);
+    uint32_t ret = P_Projectile_Add(origin, velocity, ent_parent, faction_id, cookie,
+        dmg_type, flags, pd);
     return PyInt_FromLong(ret);
+}
+
+static bool s_parse_damage_table(PyObject *obj, float out[DAMAGE_TYPE_MAX][ARMOUR_TYPE_MAX],
+                                 int *out_nrows, int *out_ncols)
+{
+    if(!PySequence_Check(obj) || PySequence_Size(obj) > DAMAGE_TYPE_MAX) {
+        PyErr_Format(PyExc_TypeError, "The damage table must be a sequence of at most %d rows, "
+            "one per damage type.", DAMAGE_TYPE_MAX);
+        return false;
+    }
+
+    const int nrows = PySequence_Size(obj);
+    int ncols = 0;
+
+    for(int d = 0; d < nrows; d++) {
+
+        PyObject *row = PySequence_GetItem(obj, d);
+        if(!row)
+            return false;
+
+        if(!PySequence_Check(row) || PySequence_Size(row) > ARMOUR_TYPE_MAX) {
+            Py_DECREF(row);
+            PyErr_Format(PyExc_TypeError, "Row %d of the damage table must be a sequence of at "
+                "most %d floats, one per armour type.", d, ARMOUR_TYPE_MAX);
+            return false;
+        }
+
+        /* Every row covers the same armour types, so ragged input is a typo. */
+        if(d == 0) {
+            ncols = PySequence_Size(row);
+        }else if(PySequence_Size(row) != ncols) {
+            Py_DECREF(row);
+            PyErr_Format(PyExc_TypeError, "Row %d of the damage table has %d entries; row 0 "
+                "has %d. All rows must be the same length.",
+                d, (int)PySequence_Size(row), ncols);
+            return false;
+        }
+
+        for(int a = 0; a < ncols; a++) {
+
+            PyObject *val = PySequence_GetItem(row, a);
+            if(!val) {
+                Py_DECREF(row);
+                return false;
+            }
+
+            double mult = PyFloat_AsDouble(val);
+            Py_DECREF(val);
+            if(PyErr_Occurred()) {
+                Py_DECREF(row);
+                return false;
+            }
+
+            if(mult < 0.0 || mult > 100.0) {
+                Py_DECREF(row);
+                PyErr_Format(PyExc_ValueError, "The damage multiplier at [%d][%d] must be in "
+                    "the range [0.0, 100.0].", d, a);
+                return false;
+            }
+            out[d][a] = mult;
+        }
+        Py_DECREF(row);
+    }
+
+    *out_nrows = nrows;
+    *out_ncols = ncols;
+    return true;
+}
+
+static PyObject *PyPf_set_damage_table(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    if(!PyArg_ParseTuple(args, "O", &obj)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one (sequence) argument.");
+        return NULL;
+    }
+
+    /* Parse the whole table before committing any of it, so that a table which
+     * fails validation leaves the live one untouched. */
+    float mult[DAMAGE_TYPE_MAX][ARMOUR_TYPE_MAX];
+    int nrows, ncols;
+    if(!s_parse_damage_table(obj, mult, &nrows, &ncols))
+        return NULL;
+
+    /* The parsed rows are strided by the capacity, not by ncols. */
+    float packed[DAMAGE_TYPE_MAX * ARMOUR_TYPE_MAX];
+    for(int d = 0; d < nrows; d++) {
+        for(int a = 0; a < ncols; a++) {
+            packed[d * ncols + a] = mult[d][a];
+        }
+    }
+
+    G_Combat_SetDamageTable(packed, nrows, ncols);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_get_damage_table(PyObject *self)
+{
+    float mult[DAMAGE_TYPE_MAX][ARMOUR_TYPE_MAX];
+    G_Combat_GetDamageTable(&mult[0][0]);
+
+    PyObject *ret = PyTuple_New(DAMAGE_TYPE_MAX);
+    if(!ret)
+        return NULL;
+
+    for(int d = 0; d < DAMAGE_TYPE_MAX; d++) {
+
+        PyObject *row = PyTuple_New(ARMOUR_TYPE_MAX);
+        if(!row) {
+            Py_DECREF(ret);
+            return NULL;
+        }
+
+        for(int a = 0; a < ARMOUR_TYPE_MAX; a++) {
+
+            PyObject *val = PyFloat_FromDouble(mult[d][a]);
+            if(!val) {
+                Py_DECREF(row);
+                Py_DECREF(ret);
+                return NULL;
+            }
+            PyTuple_SET_ITEM(row, a, val);
+        }
+        PyTuple_SET_ITEM(ret, d, row);
+    }
+    return ret;
 }
 
 static PyObject *PyPf_formation_arrange(PyObject *self, PyObject *args)
@@ -4798,7 +4943,7 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
             parent = Py_None;
         }
         Py_INCREF(parent);
-        return Py_BuildValue("OIOI", ent, hit->proj_uid, parent, hit->cookie);
+        return Py_BuildValue("OIOII", ent, hit->proj_uid, parent, hit->cookie, hit->dmg_type);
     }
     case EVENT_ENTERED_REGION:
     case EVENT_EXITED_REGION: {

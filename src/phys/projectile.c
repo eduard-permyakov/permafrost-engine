@@ -90,6 +90,7 @@ struct projectile{
     uint32_t                 uid;
     uint32_t                 ent_parent;
     uint32_t                 cookie;
+    uint32_t                 dmg_type;
     uint32_t                 flags;
     int                      faction_id;
     void                    *render_private;
@@ -341,6 +342,7 @@ static void phys_sweep_test(int front_idx)
         hit->proj_uid = proj->uid;
         hit->parent_uid = proj->ent_parent;
         hit->cookie = proj->cookie;
+        hit->dmg_type = proj->dmg_type;
         E_Global_Notify(EVENT_PROJECTILE_HIT, hit, ES_ENGINE);
 
         if(proj->sprite_flags & PROJ_HAS_IMPACT_SPRITE) {
@@ -489,14 +491,15 @@ static void on_render_3d(void *user, void *arg)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-uint32_t P_Projectile_Add(vec3_t origin, vec3_t velocity, uint32_t ent_parent, int faction_id, 
-                          uint32_t cookie, int flags, struct proj_desc pd)
+uint32_t P_Projectile_Add(vec3_t origin, vec3_t velocity, uint32_t ent_parent, int faction_id,
+                          uint32_t cookie, uint32_t dmg_type, int flags, struct proj_desc pd)
 {
     uint32_t ret = s_next_uid++;
     struct projectile proj = (struct projectile){
         .uid = ret,
         .ent_parent = ent_parent,
         .cookie = cookie,
+        .dmg_type = dmg_type,
         .flags = flags,
         .faction_id = faction_id,
         .render_private = AL_RenderPrivateForName(pd.basedir, pd.pfobj),
@@ -705,6 +708,12 @@ bool P_Projectile_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &cookie, "cookie"));
 
+        struct attr dmg_type = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr->dmg_type,
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &dmg_type, "dmg_type"));
+
         struct attr flags = (struct attr){
             .type = TYPE_INT,
             .val.as_int = curr->flags,
@@ -827,6 +836,10 @@ bool P_Projectile_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         proj.cookie = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        proj.dmg_type = attr.val.as_int;
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);

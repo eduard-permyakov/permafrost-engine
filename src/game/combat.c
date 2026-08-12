@@ -137,6 +137,8 @@ struct combatstats{
     int   base_dmg;         /* The base damage per hit */
     float base_armour_pc;   /* Percentage of damage blocked. Valid range: [0.0 - 1.0] */
     float attack_range;
+    int   dmg_type;
+    int   armour_type;
 };
 
 struct combatstate{
@@ -255,7 +257,10 @@ enum combat_cmd_type{
     COMBAT_CMD_SET_PROJ_DESC,
     COMBAT_CMD_SET_PROJ_FIRE_DESC,
     COMBAT_CMD_SET_CORPSE_MODEL,
-    COMBAT_CMD_PROJ_HIT
+    COMBAT_CMD_PROJ_HIT,
+    COMBAT_CMD_SET_DAMAGE_TYPE,
+    COMBAT_CMD_SET_ARMOUR_TYPE,
+    COMBAT_CMD_SET_DAMAGE_TABLE
 };
 
 /* Commands carry small typed payloads; the uid is hoisted out of the union so
@@ -323,6 +328,15 @@ struct combat_cmd{
         struct{
             struct proj_hit *hit;
         }proj_hit;
+        struct{
+            int type;
+        }damage_type;
+        struct{
+            int type;
+        }armour_type;
+        struct{
+            float mult[DAMAGE_TYPE_MAX * ARMOUR_TYPE_MAX];
+        }damage_table;
     }u;
 };
 
@@ -354,6 +368,8 @@ static void combat_notify_attack_end(uint32_t uid, struct combatstate *cs);
 static struct combat_cmd *snoop_most_recent_command(enum combat_cmd_type type, void *arg,
                                                     bool (*pred)(void*, struct combat_cmd*));
 static bool uids_match(void *arg, struct combat_cmd *cmd);
+static bool any_command(void *arg, struct combat_cmd *cmd);
+static float combat_dmg_mult(int dmg_type, int armour_type);
 static void combat_tick(void *user, void *event);
 
 /*****************************************************************************/
@@ -398,6 +414,10 @@ static bool               s_combat_hz_dirty = false;
 
 static khash_t(stridx)   *s_stridx;
 static mp_strbuff_t       s_stringpool;
+/* [damage_type][armour_type] multipliers, owned by the scripting layer. All
+ * 1.0 until a table is uploaded, so the system is a no-op by default.
+ */
+static float              s_dmg_mult[DAMAGE_TYPE_MAX][ARMOUR_TYPE_MAX];
 static vec_corpse_t       s_corpses;
 
 /*****************************************************************************/
@@ -429,6 +449,17 @@ static void combatstate_remove(uint32_t uid)
     khiter_t k = kh_get(state, s_entity_state_table, uid);
     assert(k != kh_end(s_entity_state_table));
     kh_del(state, s_entity_state_table, k);
+}
+
+static float combat_dmg_mult(int dmg_type, int armour_type)
+{
+    /* The IDs come from scripts and from projectiles in flight, either of which
+     * may be out of range for the current table. */
+    if(dmg_type < 0 || dmg_type >= DAMAGE_TYPE_MAX)
+        return 1.0f;
+    if(armour_type < 0 || armour_type >= ARMOUR_TYPE_MAX)
+        return 1.0f;
+    return s_dmg_mult[dmg_type][armour_type];
 }
 
 static bool entities_equal(uint32_t *a, uint32_t *b)
@@ -851,7 +882,9 @@ static void entity_melee_attack(uint32_t uid, uint32_t target)
     struct combatstate *cs = combatstate_get(uid);
     struct combatstate *target_cs = combatstate_get(cs->target_uid);
 
-    float dmg = cs->stats.base_dmg  * (1.0f - target_cs->stats.base_armour_pc);
+    float dmg = cs->stats.base_dmg
+              * combat_dmg_mult(cs->stats.dmg_type, target_cs->stats.armour_type)
+              * (1.0f - target_cs->stats.base_armour_pc);
     target_cs->current_hp = MAX(0, target_cs->current_hp - dmg);
 
     if(target_cs->current_hp == 0 && target_cs->stats.max_hp > 0) {
@@ -888,7 +921,7 @@ static void entity_ranged_attack(uint32_t uid, uint32_t target, vec3_t proj_pos)
     }
 
     P_Projectile_Add(proj_pos, vel, uid, G_GetFactionIDFrom(gs->faction_ids, uid),
-        ent_dmg, PROJ_ONLY_HIT_COMBATABLE | PROJ_ONLY_HIT_ENEMIES, cs->pd);
+        ent_dmg, cs->stats.dmg_type, PROJ_ONLY_HIT_COMBATABLE | PROJ_ONLY_HIT_ENEMIES, cs->pd);
 }
 
 static bool garrisoned(uint32_t uid)
@@ -991,6 +1024,7 @@ static void do_add_entity(uint32_t uid, enum combat_stance initial)
 
     assert(combatstate_get(uid) == NULL);
     struct combatstate new_cs = (struct combatstate) {
+        /* Both type IDs default to 0, the type an entity gets when it declares none. */
         .stats = {0},
         .current_hp = 0,
         .stance = initial,
@@ -1093,7 +1127,9 @@ static void do_proj_tryhit(struct proj_hit *hit)
         return;
 
     struct combatstate *cs = combatstate_get(hit->ent_uid);
-    float dmg = hit->cookie * (1.0f - cs->stats.base_armour_pc);
+    float dmg = hit->cookie
+              * combat_dmg_mult(hit->dmg_type, cs->stats.armour_type)
+              * (1.0f - cs->stats.base_armour_pc);
     cs->current_hp = MAX(0, cs->current_hp - dmg);
 
     if(cs->current_hp == 0 && cs->stats.max_hp > 0) {
@@ -1284,6 +1320,31 @@ static void do_set_base_armour(uint32_t uid, float armour_pc)
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
     cs->stats.base_armour_pc = armour_pc;
+}
+
+static void do_set_damage_type(uint32_t uid, int type)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct combatstate *cs = combatstate_get(uid);
+    assert(cs);
+    cs->stats.dmg_type = type;
+}
+
+static void do_set_armour_type(uint32_t uid, int type)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct combatstate *cs = combatstate_get(uid);
+    assert(cs);
+    cs->stats.armour_type = type;
+}
+
+static void do_set_damage_table(const float *mult)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    memcpy(s_dmg_mult, mult, sizeof(s_dmg_mult));
 }
 
 static void do_set_base_damage(uint32_t uid, int dmg)
@@ -1909,6 +1970,11 @@ static bool uids_match(void *arg, struct combat_cmd *cmd)
     return (desired_uid == cmd->uid);
 }
 
+static bool any_command(void *arg, struct combat_cmd *cmd)
+{
+    return true;
+}
+
 static struct combat_cmd *snoop_most_recent_command(enum combat_cmd_type type, void *arg,
                                                     bool (*pred)(void*, struct combat_cmd*))
 {
@@ -2087,6 +2153,18 @@ static void combat_process_cmds(void)
             struct proj_hit *hit = cmd.u.proj_hit.hit;
             do_proj_tryhit(hit);
             PF_FREE(hit);
+            break;
+        }
+        case COMBAT_CMD_SET_DAMAGE_TYPE: {
+            do_set_damage_type(cmd.uid, cmd.u.damage_type.type);
+            break;
+        }
+        case COMBAT_CMD_SET_ARMOUR_TYPE: {
+            do_set_armour_type(cmd.uid, cmd.u.armour_type.type);
+            break;
+        }
+        case COMBAT_CMD_SET_DAMAGE_TABLE: {
+            do_set_damage_table(cmd.u.damage_table.mult);
             break;
         }
         default:
@@ -2581,6 +2659,12 @@ static float hz_count(enum combat_hz hz)
 
 bool G_Combat_Init(const struct map *map)
 {
+    for(int d = 0; d < DAMAGE_TYPE_MAX; d++) {
+        for(int a = 0; a < ARMOUR_TYPE_MAX; a++) {
+            s_dmg_mult[d][a] = 1.0f;
+        }
+    }
+
     if(NULL == (s_entity_state_table = kh_init(state)))
         return false;
 
@@ -2982,6 +3066,93 @@ int G_Combat_GetBaseDamage(uint32_t uid)
     return cs->stats.base_dmg;
 }
 
+void G_Combat_SetDamageType(uint32_t uid, int type)
+{
+    combat_push_cmd((struct combat_cmd){
+        .type = COMBAT_CMD_SET_DAMAGE_TYPE,
+        .uid = uid,
+        .u.damage_type.type = type
+    });
+}
+
+int G_Combat_GetDamageType(uint32_t uid)
+{
+    struct combat_cmd *cmd;
+    cmd = snoop_most_recent_command(COMBAT_CMD_SET_DAMAGE_TYPE,
+        (void*)(uintptr_t)uid, uids_match);
+    if(cmd) {
+        return cmd->u.damage_type.type;
+    }
+    cmd = snoop_most_recent_command(COMBAT_CMD_ADD,
+        (void*)(uintptr_t)uid, uids_match);
+    if(cmd) {
+        return 0;
+    }
+
+    struct combatstate *cs = combatstate_get(uid);
+    assert(cs);
+    return cs->stats.dmg_type;
+}
+
+void G_Combat_SetArmourType(uint32_t uid, int type)
+{
+    combat_push_cmd((struct combat_cmd){
+        .type = COMBAT_CMD_SET_ARMOUR_TYPE,
+        .uid = uid,
+        .u.armour_type.type = type
+    });
+}
+
+int G_Combat_GetArmourType(uint32_t uid)
+{
+    struct combat_cmd *cmd;
+    cmd = snoop_most_recent_command(COMBAT_CMD_SET_ARMOUR_TYPE,
+        (void*)(uintptr_t)uid, uids_match);
+    if(cmd) {
+        return cmd->u.armour_type.type;
+    }
+    cmd = snoop_most_recent_command(COMBAT_CMD_ADD,
+        (void*)(uintptr_t)uid, uids_match);
+    if(cmd) {
+        return 0;
+    }
+
+    struct combatstate *cs = combatstate_get(uid);
+    assert(cs);
+    return cs->stats.armour_type;
+}
+
+void G_Combat_SetDamageTable(const float *mult, int nrows, int ncols)
+{
+    assert(nrows >= 0 && nrows <= DAMAGE_TYPE_MAX);
+    assert(ncols >= 0 && ncols <= ARMOUR_TYPE_MAX);
+
+    struct combat_cmd cmd = (struct combat_cmd){
+        .type = COMBAT_CMD_SET_DAMAGE_TABLE,
+        .uid = 0
+    };
+    /* Expand to the full capacity here rather than carrying the dimensions
+     * through the queue: the types the table does not cover are unaffected. */
+    float (*dst)[ARMOUR_TYPE_MAX] = (float (*)[ARMOUR_TYPE_MAX])cmd.u.damage_table.mult;
+    for(int d = 0; d < DAMAGE_TYPE_MAX; d++) {
+        for(int a = 0; a < ARMOUR_TYPE_MAX; a++) {
+            dst[d][a] = (d < nrows && a < ncols) ? mult[d * ncols + a] : 1.0f;
+        }
+    }
+    combat_push_cmd(cmd);
+}
+
+void G_Combat_GetDamageTable(float *out_mult)
+{
+    struct combat_cmd *cmd;
+    cmd = snoop_most_recent_command(COMBAT_CMD_SET_DAMAGE_TABLE, NULL, any_command);
+    if(cmd) {
+        memcpy(out_mult, cmd->u.damage_table.mult, sizeof(cmd->u.damage_table.mult));
+        return;
+    }
+    memcpy(out_mult, s_dmg_mult, sizeof(s_dmg_mult));
+}
+
 void G_Combat_SetCurrentHP(uint32_t uid, int hp)
 {
     combat_push_cmd((struct combat_cmd){
@@ -3131,6 +3302,28 @@ float G_Combat_GetTickHz(void)
 
 bool G_Combat_SaveState(struct SDL_RWops *stream)
 {
+    struct attr ndmg = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = DAMAGE_TYPE_MAX
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &ndmg, "num_damage_types"));
+
+    struct attr narmour = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = ARMOUR_TYPE_MAX
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &narmour, "num_armour_types"));
+
+    for(int d = 0; d < DAMAGE_TYPE_MAX; d++) {
+        for(int a = 0; a < ARMOUR_TYPE_MAX; a++) {
+            struct attr mult = (struct attr){
+                .type = TYPE_FLOAT,
+                .val.as_float = s_dmg_mult[d][a]
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &mult, "dmg_mult"));
+        }
+    }
+
     struct attr num_ents = (struct attr){
         .type = TYPE_INT,
         .val.as_int = kh_size(s_entity_state_table)
@@ -3393,6 +3586,32 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
     combat_process_cmds();
 
     struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const int ndmg = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const int narmour = attr.val.as_int;
+
+    for(int d = 0; d < DAMAGE_TYPE_MAX; d++) {
+        for(int a = 0; a < ARMOUR_TYPE_MAX; a++) {
+            s_dmg_mult[d][a] = 1.0f;
+        }
+    }
+
+    /* A record from a build with a larger capacity is read in full but only the
+     * part covered by this build's types is kept. */
+    for(int d = 0; d < ndmg; d++) {
+        for(int a = 0; a < narmour; a++) {
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+            if(d < DAMAGE_TYPE_MAX && a < ARMOUR_TYPE_MAX) {
+                s_dmg_mult[d][a] = attr.val.as_float;
+            }
+        }
+    }
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);

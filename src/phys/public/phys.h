@@ -54,6 +54,9 @@ struct proj_hit{
     uint32_t proj_uid;
     uint32_t parent_uid;
     uint32_t cookie;
+    /* Opaque launch-time classification. The game layer stores the
+     * shooter's damage type ID here. */
+    uint32_t dmg_type;
 };
 
 enum proj_desc_flags{
@@ -87,8 +90,8 @@ enum proj_fire_mode{
 bool     P_Projectile_Init(void);
 void     P_Projectile_Shutdown(void);
 
-uint32_t P_Projectile_Add(vec3_t origin, vec3_t velocity, uint32_t ent_parent, int faction_id, 
-                          uint32_t cookie, int flags, struct proj_desc pd);
+uint32_t P_Projectile_Add(vec3_t origin, vec3_t velocity, uint32_t ent_parent, int faction_id,
+                          uint32_t cookie, uint32_t dmg_type, int flags, struct proj_desc pd);
 void     P_Projectile_Update(void);
 bool     P_Projectile_VelocityForTarget(vec3_t src, vec3_t dst, float init_speed, 
                                         enum proj_fire_mode mode, vec3_t *out);

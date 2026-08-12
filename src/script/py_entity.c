@@ -37,7 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_SCRIPT_ENTITY
 
 #include <Python.h> /* must be first */
-#include "py_entity.h" 
+#include "py_entity.h"
 #include "py_pickle.h"
 #include "../main.h"
 #include "../entity.h"
@@ -390,6 +390,10 @@ static PyObject *PyCombatableEntity_get_base_armour(PyCombatableEntityObject *se
 static int       PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyCombatableEntity_get_attack_range(PyCombatableEntityObject *self, void *closure);
 static int       PyCombatableEntity_set_attack_range(PyCombatableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyCombatableEntity_get_damage_type(PyCombatableEntityObject *self, void *closure);
+static int       PyCombatableEntity_set_damage_type(PyCombatableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyCombatableEntity_get_armour_type(PyCombatableEntityObject *self, void *closure);
+static int       PyCombatableEntity_set_armour_type(PyCombatableEntityObject *self, PyObject *value, void *closure);
 static int       PyCombatableEntity_set_corpse_model(PyCombatableEntityObject *self, PyObject *value, void *closure);
 static int       PyCombatableEntity_set_projectile_fire_desc(PyCombatableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyCombatableEntity_hold_position(PyCombatableEntityObject *self);
@@ -444,6 +448,18 @@ static PyGetSetDef PyCombatableEntity_getset[] = {
     (getter)PyCombatableEntity_get_attack_range, (setter)PyCombatableEntity_set_attack_range,
     "The distance from which an entity can attack. 0 for melee units.",
     NULL},
+    {"damage_type",
+    (getter)PyCombatableEntity_get_damage_type, (setter)PyCombatableEntity_set_damage_type,
+    "The damage type ID of this entity's attacks, an integer in [0, pf.DAMAGE_TYPE_MAX). Selects "
+    "the row of the damage table applied against the target's armour type. The meaning of each "
+    "ID is defined by the scripts.",
+    NULL},
+    {"armour_type",
+    (getter)PyCombatableEntity_get_armour_type, (setter)PyCombatableEntity_set_armour_type,
+    "The armour type ID of this entity, an integer in [0, pf.ARMOUR_TYPE_MAX). Selects the column "
+    "of the damage table applied to incoming attacks. The meaning of each ID is defined by the "
+    "scripts.",
+    NULL},
     {"corpse_model",
     NULL, (setter)PyCombatableEntity_set_corpse_model,
     "Descriptor of the corpse model to display upon entity death. Only shown for entities with a "
@@ -466,8 +482,9 @@ static PyTypeObject PyCombatableEntity_type = {
     .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_doc       = "Permafrost Engine entity which is able to take part in combat. This type "
                     "requires the 'max_hp', 'base_dmg', and 'base_armour' keyword arguments to be "
-                    "passed to __init__. An optional 'attack_range' keyword argument may also be "
-                    "passed. This is a subclass of pf.Entity.",
+                    "passed to __init__. The optional 'attack_range', 'damage_type' and "
+                    "'armour_type' keyword arguments may also be passed. This is a subclass of "
+                    "pf.Entity.",
     .tp_methods   = PyCombatableEntity_methods,
     .tp_base      = &PyEntity_type,
     .tp_getset    = PyCombatableEntity_getset,
@@ -2363,15 +2380,20 @@ static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self, PyObj
     PyObject *base_armour = NULL;
     PyObject *curr_hp = NULL;
     PyObject *attack_range = NULL;
+    PyObject *damage_type = NULL;
+    PyObject *armour_type = NULL;
 
     if(!(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE)) {
-    
+
         max_hp = PyInt_FromLong(G_Combat_GetMaxHP(self->super.ent));
         base_dmg = PyInt_FromLong(G_Combat_GetBaseDamage(self->super.ent));
         base_armour = PyFloat_FromDouble(G_Combat_GetBaseArmour(self->super.ent));
         curr_hp = PyInt_FromLong(G_Combat_GetCurrentHP(self->super.ent));
         attack_range = PyFloat_FromDouble(G_Combat_GetRange(self->super.ent));
-        CHK_TRUE(max_hp && base_dmg && base_armour && curr_hp && attack_range, fail_pickle);
+        damage_type = PyInt_FromLong(G_Combat_GetDamageType(self->super.ent));
+        armour_type = PyInt_FromLong(G_Combat_GetArmourType(self->super.ent));
+        CHK_TRUE(max_hp && base_dmg && base_armour && curr_hp && attack_range
+              && damage_type && armour_type, fail_pickle);
 
         bool status;
         status = S_PickleObjgraph(max_hp, stream);
@@ -2384,12 +2406,18 @@ static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self, PyObj
         CHK_TRUE(status, fail_pickle);
         status = S_PickleObjgraph(attack_range, stream);
         CHK_TRUE(status, fail_pickle);
+        status = S_PickleObjgraph(damage_type, stream);
+        CHK_TRUE(status, fail_pickle);
+        status = S_PickleObjgraph(armour_type, stream);
+        CHK_TRUE(status, fail_pickle);
 
         Py_DECREF(max_hp);
         Py_DECREF(base_dmg);
         Py_DECREF(base_armour);
         Py_DECREF(curr_hp);
         Py_DECREF(attack_range);
+        Py_DECREF(damage_type);
+        Py_DECREF(armour_type);
     }
 
     Py_DECREF(ret);
@@ -2403,6 +2431,8 @@ fail_pickle:
     Py_XDECREF(base_armour);
     Py_XDECREF(curr_hp);
     Py_XDECREF(attack_range);
+    Py_XDECREF(damage_type);
+    Py_XDECREF(armour_type);
     SDL_RWclose(stream);
 fail_stream:
     Py_XDECREF(ret);
@@ -2413,6 +2443,7 @@ static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args, PyOb
 {
     char tmp;
     PyObject *max_hp = NULL, *base_dmg = NULL, *base_armour = NULL, *curr_hp = NULL, *attack_range = NULL;
+    PyObject *damage_type = NULL, *armour_type = NULL;
     PyObject *ret = NULL;
     int status;
 
@@ -2467,6 +2498,18 @@ static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args, PyOb
 
         status = PyObject_SetAttrString(ent, "attack_range", attack_range);
         CHK_TRUE(0 == status, fail_unpickle);
+
+        damage_type = S_UnpickleObjgraph(stream);
+        SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+        status = PyObject_SetAttrString(ent, "damage_type", damage_type);
+        CHK_TRUE(0 == status, fail_unpickle);
+
+        armour_type = S_UnpickleObjgraph(stream);
+        SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+        status = PyObject_SetAttrString(ent, "armour_type", armour_type);
+        CHK_TRUE(0 == status, fail_unpickle);
     }
 
     nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
@@ -2478,6 +2521,8 @@ fail_unpickle:
     Py_XDECREF(base_armour);
     Py_XDECREF(curr_hp);
     Py_XDECREF(attack_range);
+    Py_XDECREF(damage_type);
+    Py_XDECREF(armour_type);
     SDL_RWclose(stream);
 fail_stream:
     Py_DECREF(ent);
@@ -2667,7 +2712,15 @@ static int PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *arg
 
     PyObject *attack_range = PyDict_GetItemString(kwds, "attack_range");
     if(attack_range && (PyCombatableEntity_set_attack_range(self, attack_range, NULL) != 0))
-        return -1; /* Exception already set */ 
+        return -1; /* Exception already set */
+
+    PyObject *damage_type = PyDict_GetItemString(kwds, "damage_type");
+    if(damage_type && (PyCombatableEntity_set_damage_type(self, damage_type, NULL) != 0))
+        return -1; /* Exception already set */
+
+    PyObject *armour_type = PyDict_GetItemString(kwds, "armour_type");
+    if(armour_type && (PyCombatableEntity_set_armour_type(self, armour_type, NULL) != 0))
+        return -1; /* Exception already set */
 
     PyObject *proj_desc = PyDict_GetItemString(kwds, "projectile_descriptor");
     if(proj_desc) {
@@ -2921,6 +2974,62 @@ static int PyCombatableEntity_set_attack_range(PyCombatableEntityObject *self, P
     }
 
     G_Combat_SetRange(self->super.ent, range);
+    return 0;
+}
+
+static PyObject *PyCombatableEntity_get_damage_type(PyCombatableEntityObject *self, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+    return PyInt_FromLong(G_Combat_GetDamageType(self->super.ent));
+}
+
+static int PyCombatableEntity_set_damage_type(PyCombatableEntityObject *self, PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+
+    if(!PyInt_Check(value)
+    || PyInt_AS_LONG(value) < 0
+    || PyInt_AS_LONG(value) >= DAMAGE_TYPE_MAX) {
+        PyErr_SetString(PyExc_TypeError, "damage_type attribute must be an integer in the range "
+            "[0, pf.DAMAGE_TYPE_MAX).");
+        return -1;
+    }
+
+    G_Combat_SetDamageType(self->super.ent, PyInt_AS_LONG(value));
+    return 0;
+}
+
+static PyObject *PyCombatableEntity_get_armour_type(PyCombatableEntityObject *self, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+    return PyInt_FromLong(G_Combat_GetArmourType(self->super.ent));
+}
+
+static int PyCombatableEntity_set_armour_type(PyCombatableEntityObject *self, PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+
+    if(!PyInt_Check(value)
+    || PyInt_AS_LONG(value) < 0
+    || PyInt_AS_LONG(value) >= ARMOUR_TYPE_MAX) {
+        PyErr_SetString(PyExc_TypeError, "armour_type attribute must be an integer in the range "
+            "[0, pf.ARMOUR_TYPE_MAX).");
+        return -1;
+    }
+
+    G_Combat_SetArmourType(self->super.ent, PyInt_AS_LONG(value));
     return 0;
 }
 

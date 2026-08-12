@@ -883,6 +883,11 @@ static void s_expose_game_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, FORMATION_COLUMN);
     PY_EXPOSE_ENUM(module, FORMATION_MAX);
 
+    /* The damage and armour types themselves are defined by the scripting
+     * layer; the engine only publishes how many of each it can hold. */
+    PY_EXPOSE_ENUM(module, DAMAGE_TYPE_MAX);
+    PY_EXPOSE_ENUM(module, ARMOUR_TYPE_MAX);
+
     PY_EXPOSE_ENUM(module, AIR_UNIT_HEIGHT);
 }
 
