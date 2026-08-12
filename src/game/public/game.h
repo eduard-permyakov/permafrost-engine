@@ -387,6 +387,7 @@ vec2_t         G_Pos_GetXZ(uint32_t uid);
 
 vec3_t         G_Pos_GetFrom(struct kh_pos_s *table, uint32_t uid);
 vec2_t         G_Pos_GetXZFrom(struct kh_pos_s *table, uint32_t uid);
+bool           G_Pos_HasFrom(struct kh_pos_s *table, uint32_t uid);
 
 int            G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout);
 int            G_Pos_EntsInRectFrom(struct bg_ent_s *tree, struct kh_id_s *flags,

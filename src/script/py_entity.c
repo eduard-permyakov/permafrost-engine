@@ -39,6 +39,7 @@
 #include <Python.h> /* must be first */
 #include "py_entity.h"
 #include "py_pickle.h"
+#include "public/script.h"
 #include "../main.h"
 #include "../entity.h"
 #include "../event.h"
@@ -5139,7 +5140,11 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
             PyObject *repr = PyObject_Repr(tstate->curexc_value);
             printf("[IMPORT] Unable to make %s instance: %s\n", cls, PyString_AS_STRING(repr));
             Py_DECREF(repr);
-            PyErr_Clear();
+            /* The substitute below is a bare entity, missing everything the scripts
+             * expect of the class, so the first symptom would otherwise show up much
+             * later and somewhere unrelated. Report it where it happened.
+             */
+            S_ShowLastError();
         }
     }
 

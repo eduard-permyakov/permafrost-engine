@@ -369,6 +369,7 @@ static struct combat_cmd *snoop_most_recent_command(enum combat_cmd_type type, v
                                                     bool (*pred)(void*, struct combat_cmd*));
 static bool uids_match(void *arg, struct combat_cmd *cmd);
 static bool any_command(void *arg, struct combat_cmd *cmd);
+static bool gamestate_has_pos(uint32_t uid);
 static float combat_dmg_mult(int dmg_type, int armour_type);
 static void combat_tick(void *user, void *event);
 
@@ -449,6 +450,11 @@ static void combatstate_remove(uint32_t uid)
     khiter_t k = kh_get(state, s_entity_state_table, uid);
     assert(k != kh_end(s_entity_state_table));
     kh_del(state, s_entity_state_table, k);
+}
+
+static bool gamestate_has_pos(uint32_t uid)
+{
+    return G_Pos_HasFrom(s_combat_work.gamestate.positions, uid);
 }
 
 static float combat_dmg_mult(int dmg_type, int armour_type)
@@ -1075,6 +1081,9 @@ static void do_tryhit(uint32_t uid, vec3_t proj_pos)
     if(entity_dead(uid))
         return; /* Our unit already got 'killed' */
 
+    if(!gamestate_has_pos(uid))
+        return; /* Removed this frame; its position is already gone */
+
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
     if(cs->state == STATE_DEATH_ANIM_PLAYING
@@ -1190,6 +1199,14 @@ static void do_attack_unit(uint32_t uid, uint32_t target)
      * resurrect the entity, leading to a second death.
      */
     if(cs->state == STATE_DEATH_ANIM_PLAYING)
+        return;
+
+    /* An entity removed this frame loses its position right away but keeps its
+     * combat state until the queued removal is drained, so a command issued
+     * before it died can still arrive here. Drop it rather than read a position
+     * that is already gone.
+     */
+    if(!gamestate_has_pos(uid) || !gamestate_has_pos(target))
         return;
 
     do_stop_attack(uid);
@@ -2395,14 +2412,21 @@ static void combat_tick(void *user, void *event)
 
     combat_finish_work();
     combat_handle_hz_update(curr_event);
-    combat_process_cmds();
-    combat_release_gamestate();
 
-    combat_prepare_work();
+    /* Snapshot before draining the queue, so that the command handlers see the
+     * entities created since the last tick. The work list is built afterwards,
+     * from the entities the snapshot actually covers.
+     */
+    combat_release_gamestate();
     combat_copy_gamestate();
+
+    combat_process_cmds();
+    combat_prepare_work();
 
     uint32_t uid;
     kh_foreach_key(s_entity_state_table, uid, {
+        if(!gamestate_has_pos(uid))
+            continue;
         combat_push_work((struct combat_work_in){uid});
     });
     combat_submit_work();

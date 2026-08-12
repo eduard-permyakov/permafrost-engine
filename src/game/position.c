@@ -214,6 +214,11 @@ vec2_t G_Pos_GetXZFrom(khash_t(pos) *table, uint32_t uid)
     return (vec2_t){pos.x, pos.z};
 }
 
+bool G_Pos_HasFrom(khash_t(pos) *table, uint32_t uid)
+{
+    return (kh_get(pos, table, uid) != kh_end(table));
+}
+
 void G_Pos_Delete(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
