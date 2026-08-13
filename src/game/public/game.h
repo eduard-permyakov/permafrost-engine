@@ -311,12 +311,8 @@ enum combat_stance{
     COMBAT_STANCE_NO_ENGAGEMENT,
 };
 
-/* An entity's attacks carry a damage type and an entity has an armour type;
- * the pair selects a multiplier from the interaction table. Both are opaque
- * IDs in the range [0, *_TYPE_MAX) - what they mean, and what they are called,
- * is entirely up to the scripting layer. Type 0 is the one an entity gets when
- * it declares nothing, so scripts should keep the multiplier of type 0 against
- * type 0 at 1.0.
+/* Opaque IDs in [0, *_TYPE_MAX); the scripting layer defines what they mean.
+ * Type 0 is the default, so scripts should keep [0][0] at 1.0.
  */
 #define DAMAGE_TYPE_MAX  8
 #define ARMOUR_TYPE_MAX  8

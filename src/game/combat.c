@@ -369,7 +369,6 @@ static struct combat_cmd *snoop_most_recent_command(enum combat_cmd_type type, v
                                                     bool (*pred)(void*, struct combat_cmd*));
 static bool uids_match(void *arg, struct combat_cmd *cmd);
 static bool any_command(void *arg, struct combat_cmd *cmd);
-static bool gamestate_has_pos(uint32_t uid);
 static float combat_dmg_mult(int dmg_type, int armour_type);
 static void combat_tick(void *user, void *event);
 
@@ -452,15 +451,8 @@ static void combatstate_remove(uint32_t uid)
     kh_del(state, s_entity_state_table, k);
 }
 
-static bool gamestate_has_pos(uint32_t uid)
-{
-    return G_Pos_HasFrom(s_combat_work.gamestate.positions, uid);
-}
-
 static float combat_dmg_mult(int dmg_type, int armour_type)
 {
-    /* The IDs come from scripts and from projectiles in flight, either of which
-     * may be out of range for the current table. */
     if(dmg_type < 0 || dmg_type >= DAMAGE_TYPE_MAX)
         return 1.0f;
     if(armour_type < 0 || armour_type >= ARMOUR_TYPE_MAX)
@@ -589,15 +581,14 @@ static void entity_move_in_range(uint32_t uid, uint32_t target)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    struct combat_gamestate *gs = &s_combat_work.gamestate;
     const struct combatstate *cs = combatstate_get(uid);
     assert(cs->stance != COMBAT_STANCE_HOLD_POSITION);
 
     if(cs->stats.attack_range == 0.0f) {
         G_Move_SetSurroundEntity(uid, target);
     }else{
-        if(M_NavLocationsReachable(s_map, Entity_NavLayer(uid), 
-            G_Pos_GetXZFrom(gs->positions, uid), G_Pos_GetXZFrom(gs->positions, target))) {
+        if(M_NavLocationsReachable(s_map, Entity_NavLayer(uid),
+            G_Pos_GetXZ(uid), G_Pos_GetXZ(target))) {
 
             G_Move_SetSurroundEntity(uid, target);
         }else{
@@ -624,28 +615,70 @@ static void current_obb_from_gamestate(uint32_t uid, struct obb *out)
     Entity_CurrentOBBFrom(aabb, model, scale, out);
 }
 
+/* Workers read the gamestate snapshot; the main thread reads live state. */
+static bool on_main_thread(void)
+{
+    return (SDL_ThreadID() == g_main_thread_id);
+}
+
+static vec2_t entity_xz(uint32_t uid)
+{
+    if(on_main_thread())
+        return G_Pos_GetXZ(uid);
+    return G_Pos_GetXZFrom(s_combat_work.gamestate.positions, uid);
+}
+
+static uint32_t entity_flags(uint32_t uid)
+{
+    if(on_main_thread())
+        return G_FlagsGet(uid);
+    return G_FlagsGetFrom(s_combat_work.gamestate.flags, uid);
+}
+
+static float entity_sel_radius(uint32_t uid)
+{
+    if(on_main_thread())
+        return G_GetSelectionRadius(uid);
+    return G_GetSelectionRadiusFrom(s_combat_work.gamestate.sel_radiuses, uid);
+}
+
+static quat_t entity_rot(uint32_t uid)
+{
+    if(on_main_thread())
+        return Entity_GetRot(uid);
+    return Entity_GetRotFrom(s_combat_work.gamestate.transforms, uid);
+}
+
+static void entity_obb(uint32_t uid, struct obb *out)
+{
+    if(on_main_thread()) {
+        Entity_CurrentOBB(uid, out, false);
+        return;
+    }
+    current_obb_from_gamestate(uid, out);
+}
+
 static bool entities_adjacent(uint32_t ent, uint32_t target)
 {
-    struct combat_gamestate *gs = &s_combat_work.gamestate;
-    uint32_t flags = G_FlagsGetFrom(gs->flags, target);
+    uint32_t flags = entity_flags(target);
 
     if(flags & ENTITY_FLAG_MOVABLE) {
 
-        vec2_t ent_pos = G_Pos_GetXZFrom(gs->positions, ent);
-        vec2_t target_pos = G_Pos_GetXZFrom(gs->positions, target);
+        vec2_t ent_pos = entity_xz(ent);
+        vec2_t target_pos = entity_xz(target);
 
-        float ent_radius = G_GetSelectionRadiusFrom(gs->sel_radiuses, ent);
-        float target_radius = G_GetSelectionRadiusFrom(gs->sel_radiuses, target);
+        float ent_radius = entity_sel_radius(ent);
+        float target_radius = entity_sel_radius(target);
 
         return M_NavObjAdjacentToDynamicWith(s_map, ent_pos, ent_radius, 
             target_pos, target_radius);
     }else{
 
         struct obb obb;
-        current_obb_from_gamestate(target, &obb);
+        entity_obb(target, &obb);
 
-        vec2_t ent_pos = G_Pos_GetXZFrom(gs->positions, ent);
-        float ent_radius = G_GetSelectionRadiusFrom(gs->sel_radiuses, ent);
+        vec2_t ent_pos = entity_xz(ent);
+        float ent_radius = entity_sel_radius(ent);
 
         return M_NavObjAdjacentToStaticWith(s_map, ent_pos, ent_radius, &obb);
     }
@@ -658,14 +691,13 @@ static bool entity_can_attack_melee(uint32_t uid, uint32_t target)
 
 static bool entity_can_attack(uint32_t uid, uint32_t target)
 {
-    struct combat_gamestate *gs = &s_combat_work.gamestate;
     const struct combatstate *cs = combatstate_get(uid);
     if(cs->stats.attack_range == 0.0f) {
         return entity_can_attack_melee(uid, target);
     }
 
-    vec2_t xz_src = G_Pos_GetXZFrom(gs->positions, uid);
-    vec2_t xz_dst = G_Pos_GetXZFrom(gs->positions, target);
+    vec2_t xz_src = entity_xz(uid);
+    vec2_t xz_dst = entity_xz(target);
 
     vec2_t delta;
     PFM_Vec2_Sub(&xz_src, &xz_dst, &delta);
@@ -697,7 +729,8 @@ static bool valid_enemy(uint32_t curr, void *arg)
         return false;
 
     struct combatstate *cs = combatstate_get(curr);
-    assert(cs);
+    if(!cs)
+        return false;
     if(cs->state == STATE_DEATH_ANIM_PLAYING)
         return false;
 
@@ -726,15 +759,14 @@ static quat_t quat_from_vec(vec2_t dir)
 
 static quat_t entity_turn_dir(uint32_t uid, uint32_t target)
 {
-    struct combat_gamestate *gs = &s_combat_work.gamestate;
-    vec2_t ent_pos_xz = G_Pos_GetXZFrom(gs->positions, uid);
-    vec2_t tar_pos_xz = G_Pos_GetXZFrom(gs->positions, target);
+    vec2_t ent_pos_xz = entity_xz(uid);
+    vec2_t tar_pos_xz = entity_xz(target);
 
     vec2_t ent_to_target;
     PFM_Vec2_Sub(&tar_pos_xz, &ent_pos_xz, &ent_to_target);
 
     if(PFM_Vec2_Len(&ent_to_target) < EPSILON) {
-        return Entity_GetRotFrom(gs->transforms, uid);
+        return entity_rot(uid);
     }
 
     PFM_Vec2_Normal(&ent_to_target, &ent_to_target);
@@ -784,7 +816,7 @@ static void entity_turn_to_target(uint32_t uid, uint32_t target)
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
 
-    uint32_t flags = G_FlagsGetFrom(gs->flags, uid);
+    uint32_t flags = G_FlagsGet(uid);
 
     /* Formation members hold their ground and fire without leaving the formation. */
     if(fires_from_formation(uid)) {
@@ -887,6 +919,8 @@ static void entity_melee_attack(uint32_t uid, uint32_t target)
 
     struct combatstate *cs = combatstate_get(uid);
     struct combatstate *target_cs = combatstate_get(cs->target_uid);
+    if(!target_cs)
+        return;
 
     float dmg = cs->stats.base_dmg
               * combat_dmg_mult(cs->stats.dmg_type, target_cs->stats.armour_type)
@@ -926,15 +960,13 @@ static void entity_ranged_attack(uint32_t uid, uint32_t target, vec3_t proj_pos)
         return; /* Degenerate: the target is right on top of the muzzle. */
     }
 
-    P_Projectile_Add(proj_pos, vel, uid, G_GetFactionIDFrom(gs->faction_ids, uid),
+    P_Projectile_Add(proj_pos, vel, uid, G_GetFactionID(uid),
         ent_dmg, cs->stats.dmg_type, PROJ_ONLY_HIT_COMBATABLE | PROJ_ONLY_HIT_ENEMIES, cs->pd);
 }
 
 static bool garrisoned(uint32_t uid)
 {
-    struct combat_gamestate *gs = &s_combat_work.gamestate;
-    uint32_t flags = G_FlagsGetFrom(gs->flags, uid);
-    return (flags & ENTITY_FLAG_GARRISONED);
+    return (entity_flags(uid) & ENTITY_FLAG_GARRISONED);
 }
 
 static struct result corpse_disappear_task(void *arg)
@@ -1081,9 +1113,6 @@ static void do_tryhit(uint32_t uid, vec3_t proj_pos)
     if(entity_dead(uid))
         return; /* Our unit already got 'killed' */
 
-    if(!gamestate_has_pos(uid))
-        return; /* Removed this frame; its position is already gone */
-
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
     if(cs->state == STATE_DEATH_ANIM_PLAYING
@@ -1111,7 +1140,6 @@ static void do_tryhit(uint32_t uid, vec3_t proj_pos)
         return; /* Our (melee) target already got 'killed' */
     }
 
-    struct combatstate *target_cs = combatstate_get(cs->target_uid);
     quat_t target_dir = entity_turn_dir(uid, cs->target_uid);
     quat_t ent_rot = Entity_GetRot(uid);
     float angle_diff = PFM_Quat_PitchDiff(&ent_rot, &target_dir);
@@ -1201,18 +1229,10 @@ static void do_attack_unit(uint32_t uid, uint32_t target)
     if(cs->state == STATE_DEATH_ANIM_PLAYING)
         return;
 
-    /* An entity removed this frame loses its position right away but keeps its
-     * combat state until the queued removal is drained, so a command issued
-     * before it died can still arrive here. Drop it rather than read a position
-     * that is already gone.
-     */
-    if(!gamestate_has_pos(uid) || !gamestate_has_pos(target))
-        return;
-
     do_stop_attack(uid);
     cs->stance = COMBAT_STANCE_AGGRESSIVE;
 
-    uint32_t flags = G_FlagsGetFrom(gs->flags, uid);
+    uint32_t flags = G_FlagsGet(uid);
     if(flags & ENTITY_FLAG_MOVABLE) {
     
         cs->sticky = true;
@@ -1528,7 +1548,7 @@ static bool entity_dead(uint32_t uid)
 {
     struct combatstate *cs = combatstate_get(uid);
     if(!cs || (cs->state == STATE_DEATH_ANIM_PLAYING)
-    || (G_FlagsGetFrom(s_combat_work.gamestate.flags, uid) & ENTITY_FLAG_ZOMBIE))
+    || (entity_flags(uid) & ENTITY_FLAG_ZOMBIE))
         return true;
 
     return false;
@@ -1550,7 +1570,7 @@ static void entity_target_enemy(uint32_t uid, uint32_t enemy)
         return;
     }
 
-    uint32_t flags = G_FlagsGetFrom(gs->flags, uid);
+    uint32_t flags = G_FlagsGet(uid);
     if(cs->stance == COMBAT_STANCE_AGGRESSIVE && (flags & ENTITY_FLAG_MOVABLE)) {
 
         cs->target_uid = enemy;
@@ -2412,21 +2432,15 @@ static void combat_tick(void *user, void *event)
 
     combat_finish_work();
     combat_handle_hz_update(curr_event);
-
-    /* Snapshot before draining the queue, so that the command handlers see the
-     * entities created since the last tick. The work list is built afterwards,
-     * from the entities the snapshot actually covers.
-     */
-    combat_release_gamestate();
-    combat_copy_gamestate();
-
     combat_process_cmds();
+    combat_release_gamestate();
+
+    /* Snapshot after the drain, so it agrees with the combat state table. */
     combat_prepare_work();
+    combat_copy_gamestate();
 
     uint32_t uid;
     kh_foreach_key(s_entity_state_table, uid, {
-        if(!gamestate_has_pos(uid))
-            continue;
         combat_push_work((struct combat_work_in){uid});
     });
     combat_submit_work();
@@ -3155,8 +3169,6 @@ void G_Combat_SetDamageTable(const float *mult, int nrows, int ncols)
         .type = COMBAT_CMD_SET_DAMAGE_TABLE,
         .uid = 0
     };
-    /* Expand to the full capacity here rather than carrying the dimensions
-     * through the queue: the types the table does not cover are unaffected. */
     float (*dst)[ARMOUR_TYPE_MAX] = (float (*)[ARMOUR_TYPE_MAX])cmd.u.damage_table.mult;
     for(int d = 0; d < DAMAGE_TYPE_MAX; d++) {
         for(int a = 0; a < ARMOUR_TYPE_MAX; a++) {
@@ -3625,8 +3637,6 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
         }
     }
 
-    /* A record from a build with a larger capacity is read in full but only the
-     * part covered by this build's types is kept. */
     for(int d = 0; d < ndmg; d++) {
         for(int a = 0; a < narmour; a++) {
             CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
