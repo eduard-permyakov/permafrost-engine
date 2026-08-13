@@ -45,6 +45,7 @@ GLOBAL_MATRIX = Matrix.Diagonal(Vector((-1.0, 1.0, 1.0, 1.0))) \
     @ axis_conversion(to_forward='-Z', to_up='Y').to_4x4()
 
 MAX_JOINTS_PER_VERT = 6                            # engine vertex format limit
+MAT_BOUNDARY_GROUP = "__mat_boundary__"
 
 
 def require_blender():
@@ -139,6 +140,23 @@ def mesh_blocks(obj, name_to_idx):
     return blocks
 
 
+def tag_material_boundary(obj):
+    # COLLAPSE has no material delimiter, so a collapse may weld two materials together and
+    # hand the survivors one material index: a thin two-sided sheet, such as a cape lined with
+    # the faction colour, loses its outer surface to the lining. Pin the seam vertices instead.
+    me = obj.data
+    mats = {}
+    for poly in me.polygons:
+        for vi in poly.vertices:
+            mats.setdefault(vi, set()).add(poly.material_index)
+    seam = [vi for vi, m in mats.items() if len(m) > 1]
+    if not seam:
+        return None
+    vg = obj.vertex_groups.new(name=MAT_BOUNDARY_GROUP)
+    vg.add(seam, 1.0, 'REPLACE')
+    return vg.name
+
+
 def decimate_copy(base, ratio):
     # Apply (not just evaluate) the modifier so the result keeps interpolated vertex weights.
     new = base.copy()
@@ -150,6 +168,11 @@ def decimate_copy(base, ratio):
     dec.decimate_type = 'COLLAPSE'
     dec.ratio = ratio
     dec.use_collapse_triangulate = True
+    seam = tag_material_boundary(new)
+    if seam:
+        dec.vertex_group = seam
+        dec.vertex_group_factor = 1.0
+        dec.invert_vertex_group = True
     bpy.ops.object.select_all(action='DESELECT')
     new.select_set(True)
     bpy.context.view_layer.objects.active = new
