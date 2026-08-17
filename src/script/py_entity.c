@@ -389,6 +389,16 @@ static PyObject *PyCombatableEntity_get_base_dmg(PyCombatableEntityObject *self,
 static int       PyCombatableEntity_set_base_dmg(PyCombatableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyCombatableEntity_get_base_armour(PyCombatableEntityObject *self, void *closure);
 static int       PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyCombatableEntity_get_armour_points(PyCombatableEntityObject *self, void *closure);
+static int       PyCombatableEntity_set_armour_points(PyCombatableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyCombatableEntity_get_effective_armour_points(PyCombatableEntityObject *self, void *closure);
+static PyObject *PyCombatableEntity_get_effective_dmg(PyCombatableEntityObject *self, void *closure);
+static PyObject *PyCombatableEntity_get_invulnerable(PyCombatableEntityObject *self, void *closure);
+static int       PyCombatableEntity_set_invulnerable(PyCombatableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyCombatableEntity_add_modifier(PyCombatableEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyCombatableEntity_remove_modifier(PyCombatableEntityObject *self, PyObject *args);
+static PyObject *PyCombatableEntity_clear_modifiers(PyCombatableEntityObject *self);
+static PyObject *PyCombatableEntity_get_bonus(PyCombatableEntityObject *self, PyObject *args);
 static PyObject *PyCombatableEntity_get_attack_range(PyCombatableEntityObject *self, void *closure);
 static int       PyCombatableEntity_set_attack_range(PyCombatableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyCombatableEntity_get_damage_type(PyCombatableEntityObject *self, void *closure);
@@ -407,9 +417,29 @@ static PyMethodDef PyCombatableEntity_methods[] = {
     (PyCFunction)PyCombatableEntity_hold_position, METH_NOARGS,
     "Issues a 'hold position' order to the entity, stopping it and preventing it from moving to attack."},
 
-    {"attack", 
+    {"attack",
     (PyCFunction)PyCombatableEntity_attack, METH_VARARGS,
     "Issues an 'attack move' order to the entity at the XZ position specified by the argument."},
+
+    {"add_modifier",
+    (PyCFunction)PyCombatableEntity_add_modifier, METH_VARARGS | METH_KEYWORDS,
+    "Add a timed modifier to one of the entity's stats. Takes the kind (one of pf.COMBAT_MOD_ARMOUR, "
+    "pf.COMBAT_MOD_DAMAGE, pf.COMBAT_MOD_SPEED) and the amount to add, in armour points, damage per "
+    "hit, or OpenGL coords per second respectively. The optional 'duration' is in seconds; 0 (the "
+    "default) lasts until removed. The optional 'tag' names the modifier for 'remove_modifier', and "
+    "adding a tag that is already live replaces it rather than stacking with it."},
+
+    {"remove_modifier",
+    (PyCFunction)PyCombatableEntity_remove_modifier, METH_VARARGS,
+    "Remove every modifier of this entity carrying the specified tag."},
+
+    {"clear_modifiers",
+    (PyCFunction)PyCombatableEntity_clear_modifiers, METH_NOARGS,
+    "Remove all of the entity's modifiers, tagged or not."},
+
+    {"get_bonus",
+    (PyCFunction)PyCombatableEntity_get_bonus, METH_VARARGS,
+    "Returns the summed amount of every live modifier of the specified kind."},
 
     {"__del__", 
     (PyCFunction)PyCombatableEntity_del, METH_NOARGS,
@@ -442,8 +472,26 @@ static PyGetSetDef PyCombatableEntity_getset[] = {
     NULL},
     {"base_armour",
     (getter)PyCombatableEntity_get_base_armour, (setter)PyCombatableEntity_set_base_armour,
-    "The base armour (as a fraction from 0.0 to 1.0) specifying which percentage of incoming "
-    "damage is blocked.",
+    "The base armour as the fraction of incoming damage blocked, in [0.0, 1.0]. This is a view "
+    "of 'armour_points': setting it stores the equivalent flat armour, and a fraction above the "
+    "99% cap saturates there. Total immunity is not reachable this way - use 'invulnerable'.",
+    NULL},
+    {"armour_points",
+    (getter)PyCombatableEntity_get_armour_points, (setter)PyCombatableEntity_set_armour_points,
+    "The base armour in flat points, in [0, pf.ARMOUR_MAX_POINTS]. Incoming damage is scaled by "
+    "pf.ARMOUR_K / (pf.ARMOUR_K + armour), so pf.ARMOUR_K points halve it.",
+    NULL},
+    {"effective_armour_points",
+    (getter)PyCombatableEntity_get_effective_armour_points, NULL,
+    "The armour actually used against incoming damage: the base plus every live armour modifier.",
+    NULL},
+    {"effective_base_dmg",
+    (getter)PyCombatableEntity_get_effective_dmg, NULL,
+    "The damage this entity's attacks actually land: the base plus every live damage modifier.",
+    NULL},
+    {"invulnerable",
+    (getter)PyCombatableEntity_get_invulnerable, (setter)PyCombatableEntity_set_invulnerable,
+    "Whether the entity takes no damage at all and cannot be killed by an attack.",
     NULL},
     {"attack_range",
     (getter)PyCombatableEntity_get_attack_range, (setter)PyCombatableEntity_set_attack_range,
@@ -482,10 +530,11 @@ static PyTypeObject PyCombatableEntity_type = {
     .tp_basicsize = sizeof(PyCombatableEntityObject), 
     .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_doc       = "Permafrost Engine entity which is able to take part in combat. This type "
-                    "requires the 'max_hp', 'base_dmg', and 'base_armour' keyword arguments to be "
-                    "passed to __init__. The optional 'attack_range', 'damage_type' and "
-                    "'armour_type' keyword arguments may also be passed. This is a subclass of "
-                    "pf.Entity.",
+                    "requires the 'max_hp' and 'base_dmg' keyword arguments, along with exactly "
+                    "one of 'armour_points' (flat armour) or 'base_armour' (the fraction of damage "
+                    "it blocks), to be passed to __init__. The optional 'attack_range', "
+                    "'damage_type', 'armour_type' and 'invulnerable' keyword arguments may also be "
+                    "passed. This is a subclass of pf.Entity.",
     .tp_methods   = PyCombatableEntity_methods,
     .tp_base      = &PyEntity_type,
     .tp_getset    = PyCombatableEntity_getset,
@@ -996,11 +1045,16 @@ static PyObject *PyMovableEntity_get_preferred_formation(PyMovableEntityObject *
                                                          void *closure);
 static int       PyMovableEntity_set_preferred_formation(PyMovableEntityObject *self, 
                                                          PyObject *value, void *closure);
+static PyObject *PyMovableEntity_get_effective_speed(PyMovableEntityObject *self, void *closure);
 
 static PyGetSetDef PyMovableEntity_getset[] = {
     {"speed",
     (getter)PyMovableEntity_get_speed, (setter)PyMovableEntity_set_speed,
-    "Entity's movement speed (in OpenGL coordinates per second).",
+    "Entity's base movement speed (in OpenGL coordinates per second).",
+    NULL},
+    {"effective_speed",
+    (getter)PyMovableEntity_get_effective_speed, NULL,
+    "The speed the entity actually moves at: the base speed plus every live speed modifier.",
     NULL},
     {"preferred_formation",
     (getter)PyMovableEntity_get_preferred_formation, 
@@ -2388,7 +2442,7 @@ static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self, PyObj
 
         max_hp = PyInt_FromLong(G_Combat_GetMaxHP(self->super.ent));
         base_dmg = PyInt_FromLong(G_Combat_GetBaseDamage(self->super.ent));
-        base_armour = PyFloat_FromDouble(G_Combat_GetBaseArmour(self->super.ent));
+        base_armour = PyInt_FromLong(G_Combat_GetBaseArmour(self->super.ent));
         curr_hp = PyInt_FromLong(G_Combat_GetCurrentHP(self->super.ent));
         attack_range = PyFloat_FromDouble(G_Combat_GetRange(self->super.ent));
         damage_type = PyInt_FromLong(G_Combat_GetDamageType(self->super.ent));
@@ -2485,7 +2539,11 @@ static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args, PyOb
         base_armour = S_UnpickleObjgraph(stream);
         SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
-        status = PyObject_SetAttrString(ent, "base_armour", base_armour);
+        /* Saves written before armour became a flat point value stored the
+         * blocked fraction, which the percentage view converts.
+         */
+        status = PyObject_SetAttrString(ent,
+            PyInt_Check(base_armour) ? "armour_points" : "base_armour", base_armour);
         CHK_TRUE(0 == status, fail_unpickle);
 
         curr_hp = S_UnpickleObjgraph(stream);
@@ -2699,15 +2757,21 @@ fail_stream:
 
 static int PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *args, PyObject *kwds)
 {
-    PyObject *max_hp, *base_dmg, *base_armour;
+    PyObject *max_hp, *base_dmg, *base_armour, *armour_points;
     assert(G_FlagsGet(self->super.ent) & ENTITY_FLAG_COMBATABLE);
 
-    if(!kwds 
+    /* The armour may be given either as flat points or as the fraction of
+     * damage they block, but giving both leaves it ambiguous which one wins.
+     */
+    base_armour = kwds ? PyDict_GetItemString(kwds, "base_armour") : NULL;
+    armour_points = kwds ? PyDict_GetItemString(kwds, "armour_points") : NULL;
+
+    if(!kwds
     || ((max_hp = PyDict_GetItemString(kwds, "max_hp")) == NULL)
     || ((base_dmg = PyDict_GetItemString(kwds, "base_dmg")) == NULL)
-    || ((base_armour = PyDict_GetItemString(kwds, "base_armour")) == NULL)) {
-        PyErr_SetString(PyExc_TypeError, "'max_hp', 'base_dmg', and 'base_armour' keyword arguments "
-            "required for initializing pf.CombatableEntity types.");
+    || (!base_armour == !armour_points)) {
+        PyErr_SetString(PyExc_TypeError, "'max_hp', 'base_dmg', and exactly one of 'armour_points' "
+            "or 'base_armour' keyword arguments required for initializing pf.CombatableEntity types.");
         return -1;
     }
 
@@ -2798,9 +2862,20 @@ static int PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *arg
     }
 
     if((PyCombatableEntity_set_max_hp(self, max_hp, NULL) != 0)
-    || (PyCombatableEntity_set_base_dmg(self, base_dmg, NULL) != 0)
-    || (PyCombatableEntity_set_base_armour(self, base_armour, NULL) != 0))
-        return -1; /* Exception already set */ 
+    || (PyCombatableEntity_set_base_dmg(self, base_dmg, NULL) != 0))
+        return -1; /* Exception already set */
+
+    if(base_armour) {
+        if(PyCombatableEntity_set_base_armour(self, base_armour, NULL) != 0)
+            return -1; /* Exception already set */
+    }else{
+        if(PyCombatableEntity_set_armour_points(self, armour_points, NULL) != 0)
+            return -1; /* Exception already set */
+    }
+
+    PyObject *invulnerable = PyDict_GetItemString(kwds, "invulnerable");
+    if(invulnerable && (PyCombatableEntity_set_invulnerable(self, invulnerable, NULL) != 0))
+        return -1; /* Exception already set */
 
     G_Combat_SetCurrentHP(self->super.ent, PyInt_AS_LONG(max_hp));
 
@@ -2921,7 +2996,7 @@ static PyObject *PyCombatableEntity_get_base_armour(PyCombatableEntityObject *se
         return NULL;
     }
 
-    return PyFloat_FromDouble(G_Combat_GetBaseArmour(self->super.ent));
+    return PyFloat_FromDouble(G_Combat_FracForArmourPoints(G_Combat_GetBaseArmour(self->super.ent)));
 }
 
 static int PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, PyObject *value, void *closure)
@@ -2935,15 +3010,198 @@ static int PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, Py
         PyErr_SetString(PyExc_TypeError, "base_armour attribute must be a float.");
         return -1;
     }
-    
+
     float base_armour = PyFloat_AS_DOUBLE(value);
     if(base_armour < 0.0f || base_armour > 1.0f) {
         PyErr_SetString(PyExc_RuntimeError, "base_armour must be in the range of [0.0, 1.0].");
         return -1;
     }
 
-    G_Combat_SetBaseArmour(self->super.ent, base_armour);
+    G_Combat_SetBaseArmour(self->super.ent, G_Combat_ArmourPointsForFrac(base_armour));
     return 0;
+}
+
+static PyObject *PyCombatableEntity_get_armour_points(PyCombatableEntityObject *self, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
+    return Py_BuildValue("i", G_Combat_GetBaseArmour(self->super.ent));
+}
+
+static int PyCombatableEntity_set_armour_points(PyCombatableEntityObject *self, PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "armour_points attribute must be an integer.");
+        return -1;
+    }
+
+    int points = PyInt_AS_LONG(value);
+    if(points < ARMOUR_MIN_POINTS || points > ARMOUR_MAX_POINTS) {
+        PyErr_SetString(PyExc_RuntimeError, "armour_points must be in the range of "
+            "[0, pf.ARMOUR_MAX_POINTS].");
+        return -1;
+    }
+
+    G_Combat_SetBaseArmour(self->super.ent, points);
+    return 0;
+}
+
+static PyObject *PyCombatableEntity_get_effective_armour_points(PyCombatableEntityObject *self, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
+    return Py_BuildValue("i", G_Combat_GetEffectiveArmour(self->super.ent));
+}
+
+static PyObject *PyCombatableEntity_get_effective_dmg(PyCombatableEntityObject *self, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
+    return Py_BuildValue("i", G_Combat_GetEffectiveDamage(self->super.ent));
+}
+
+static PyObject *PyCombatableEntity_get_invulnerable(PyCombatableEntityObject *self, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
+    if(G_Combat_GetInvulnerable(self->super.ent))
+        Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
+}
+
+static int PyCombatableEntity_set_invulnerable(PyCombatableEntityObject *self, PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+
+    if(!PyBool_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "invulnerable attribute must be a bool.");
+        return -1;
+    }
+
+    G_Combat_SetInvulnerable(self->super.ent, (value == Py_True));
+    return 0;
+}
+
+static PyObject *PyCombatableEntity_add_modifier(PyCombatableEntityObject *self, PyObject *args,
+                                                 PyObject *kwargs)
+{
+    static char *kwlist[] = {"kind", "amount", "duration", "tag", NULL};
+    int kind;
+    float amount;
+    float duration = 0.0f;
+    const char *tag = NULL;
+
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot add a modifier to a zombie entity.");
+        return NULL;
+    }
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "if|fs", kwlist, &kind, &amount, &duration, &tag)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an integer kind and a float amount. "
+            "An optional (float) 'duration' in seconds and an optional (string) 'tag' are allowed.");
+        return NULL;
+    }
+
+    if(kind < 0 || kind >= COMBAT_MOD_MAX) {
+        PyErr_SetString(PyExc_ValueError, "The modifier kind must be one of pf.COMBAT_MOD_ARMOUR, "
+            "pf.COMBAT_MOD_DAMAGE or pf.COMBAT_MOD_SPEED.");
+        return NULL;
+    }
+
+    if(duration < 0.0f) {
+        PyErr_SetString(PyExc_ValueError, "The duration must not be negative.");
+        return NULL;
+    }
+
+    if(tag && strlen(tag) >= COMBAT_MOD_TAG_LEN) {
+        PyErr_SetString(PyExc_ValueError, "The tag is too long.");
+        return NULL;
+    }
+
+    /* A duration that rounds down to zero would mean 'permanent', which is the
+     * opposite of what a caller asking for a brief buff wants.
+     */
+    uint32_t secs = 0;
+    if(duration > 0.0f) {
+        secs = (uint32_t)roundf(duration);
+        if(secs == 0) {
+            secs = 1;
+        }
+    }
+    G_Combat_AddModifier(self->super.ent, kind, amount, secs, tag);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyCombatableEntity_remove_modifier(PyCombatableEntityObject *self, PyObject *args)
+{
+    const char *tag;
+
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot remove a modifier of a zombie entity.");
+        return NULL;
+    }
+
+    if(!PyArg_ParseTuple(args, "s", &tag)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a string.");
+        return NULL;
+    }
+
+    G_Combat_RemoveModifier(self->super.ent, tag);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyCombatableEntity_clear_modifiers(PyCombatableEntityObject *self)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot clear the modifiers of a zombie entity.");
+        return NULL;
+    }
+
+    G_Combat_ClearModifiers(self->super.ent);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyCombatableEntity_get_bonus(PyCombatableEntityObject *self, PyObject *args)
+{
+    int kind;
+
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
+    if(!PyArg_ParseTuple(args, "i", &kind)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer.");
+        return NULL;
+    }
+
+    if(kind < 0 || kind >= COMBAT_MOD_MAX) {
+        PyErr_SetString(PyExc_ValueError, "The modifier kind must be one of pf.COMBAT_MOD_ARMOUR, "
+            "pf.COMBAT_MOD_DAMAGE or pf.COMBAT_MOD_SPEED.");
+        return NULL;
+    }
+
+    return PyFloat_FromDouble(G_Combat_GetBonus(self->super.ent, kind));
 }
 
 static PyObject *PyCombatableEntity_get_attack_range(PyCombatableEntityObject *self, void *closure)
@@ -4402,6 +4660,18 @@ static PyObject *PyMovableEntity_get_speed(PyMovableEntityObject *self, void *cl
 
     float speed = 0.0f;
     G_Move_GetMaxSpeed(self->super.ent, &speed);
+    return PyFloat_FromDouble(speed);
+}
+
+static PyObject *PyMovableEntity_get_effective_speed(PyMovableEntityObject *self, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
+    float speed = 0.0f;
+    G_Move_GetEffectiveSpeed(self->super.ent, &speed);
     return PyFloat_FromDouble(speed);
 }
 

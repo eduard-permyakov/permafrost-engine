@@ -147,9 +147,13 @@ enum move_state{
 
 struct movestate{
     enum move_state state;
-    /* The base movement speed in units of OpenGL coords / second 
+    /* The speed the entity actually moves at, in units of OpenGL coords /
+     * second: the authored base speed plus whatever the combat modifiers add.
+     * Everything that steers reads this one, so a buff needs no other change.
      */
     float              max_speed;
+    float              base_speed;
+    float              speed_bonus;
     /* The current velocity 
      */
     vec2_t             velocity;
@@ -418,6 +422,7 @@ enum move_cmd_type{
     MOVE_CMD_UPDATE_FACTION_ID,
     MOVE_CMD_UPDATE_SELECTION_RADIUS,
     MOVE_CMD_SET_MAX_SPEED,
+    MOVE_CMD_SET_SPEED_BONUS,
     MOVE_CMD_MAKE_FLOCKS,
     MOVE_CMD_UNBLOCK,
     MOVE_CMD_BLOCK,
@@ -465,6 +470,9 @@ struct move_cmd{
         struct{
             float speed;
         }max_speed;
+        struct{
+            float bonus;
+        }speed_bonus;
         struct{
             vec_entity_t       *sel;
             vec2_t              target_xz;
@@ -3157,6 +3165,8 @@ static void do_add_entity(uint32_t uid, vec3_t pos, float selection_radius, int 
         .blocking = false,
         .state = STATE_ARRIVED,
         .max_speed = 0.0f,
+        .base_speed = 0.0f,
+        .speed_bonus = 0.0f,
         .left = 0,
         .prev_pos = pos,
         .next_pos = pos,
@@ -3497,7 +3507,18 @@ static void do_set_max_speed(uint32_t uid, float speed)
     if(k == kh_end(s_entity_state_table))
         return;
     struct movestate *ms = &kh_value(s_entity_state_table, k);
-    ms->max_speed = speed;
+    ms->base_speed = speed;
+    ms->max_speed = MAX(0.0f, speed + ms->speed_bonus);
+}
+
+static void do_set_speed_bonus(uint32_t uid, float bonus)
+{
+    khiter_t k = kh_get(state, s_entity_state_table, uid);
+    if(k == kh_end(s_entity_state_table))
+        return;
+    struct movestate *ms = &kh_value(s_entity_state_table, k);
+    ms->speed_bonus = bonus;
+    ms->max_speed = MAX(0.0f, ms->base_speed + bonus);
 }
 
 static void do_block(uint32_t uid, vec3_t newpos)
@@ -3575,6 +3596,10 @@ static void move_process_cmds(void)
         }
         case MOVE_CMD_SET_MAX_SPEED: {
             do_set_max_speed(cmd.uid, cmd.u.max_speed.speed);
+            break;
+        }
+        case MOVE_CMD_SET_SPEED_BONUS: {
+            do_set_speed_bonus(cmd.uid, cmd.u.speed_bonus.bonus);
             break;
         }
         case MOVE_CMD_MAKE_FLOCKS: {
@@ -5477,7 +5502,7 @@ bool G_Move_GetMaxSpeed(uint32_t uid, float *out)
     if(k == kh_end(s_entity_state_table))
         return false;
     struct movestate *ms = &kh_value(s_entity_state_table, k);
-    *out = ms->max_speed;
+    *out = ms->base_speed;
     return true;
 }
 
@@ -5489,6 +5514,27 @@ bool G_Move_SetMaxSpeed(uint32_t uid, float speed)
         .uid = uid,
         .u.max_speed.speed = speed
     });
+    return true;
+}
+
+bool G_Move_SetSpeedBonus(uint32_t uid, float bonus)
+{
+    ASSERT_IN_MAIN_THREAD();
+    move_push_cmd((struct move_cmd){
+        .type = MOVE_CMD_SET_SPEED_BONUS,
+        .uid = uid,
+        .u.speed_bonus.bonus = bonus
+    });
+    return true;
+}
+
+bool G_Move_GetEffectiveSpeed(uint32_t uid, float *out)
+{
+    khiter_t k = kh_get(state, s_entity_state_table, uid);
+    if(k == kh_end(s_entity_state_table))
+        return false;
+    struct movestate *ms = &kh_value(s_entity_state_table, k);
+    *out = ms->max_speed;
     return true;
 }
 
@@ -5630,11 +5676,17 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &state, "state"));
 
-        struct attr max_speed = (struct attr){
+        struct attr base_speed = (struct attr){
             .type = TYPE_FLOAT,
-            .val.as_float = curr.max_speed
+            .val.as_float = curr.base_speed
         };
-        CHK_TRUE_RET(Attr_Write(stream, &max_speed, "max_speed"));
+        CHK_TRUE_RET(Attr_Write(stream, &base_speed, "base_speed"));
+
+        struct attr speed_bonus = (struct attr){
+            .type = TYPE_FLOAT,
+            .val.as_float = curr.speed_bonus
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &speed_bonus, "speed_bonus"));
 
         struct attr velocity = (struct attr){
             .type = TYPE_VEC2,
@@ -5856,7 +5908,12 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_FLOAT);
-        ms->max_speed = attr.val.as_float;
+        ms->base_speed = attr.val.as_float;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        ms->speed_bonus = attr.val.as_float;
+        ms->max_speed = MAX(0.0f, ms->base_speed + ms->speed_bonus);
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_VEC2);

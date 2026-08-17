@@ -68,6 +68,7 @@
 
 #include <assert.h>
 #include <float.h>
+#include <math.h>
 #include <SDL.h>
 
 #undef PF_MALLOC
@@ -135,15 +136,25 @@ KHASH_MAP_INIT_INT(aabb, struct aabb)
 struct combatstats{
     int   max_hp;
     int   base_dmg;         /* The base damage per hit */
-    float base_armour_pc;   /* Percentage of damage blocked. Valid range: [0.0 - 1.0] */
+    int   base_armour;      /* Flat armour points. Valid range: [ARMOUR_MIN_POINTS - ARMOUR_MAX_POINTS] */
     float attack_range;
     int   dmg_type;
     int   armour_type;
 };
 
+/* The running total of every live modifier of each kind, kept as a sum so the
+ * damage path never walks the modifier list.
+ */
+struct combatmods{
+    float bonus[COMBAT_MOD_MAX];
+};
+
 struct combatstate{
     struct combatstats stats;
+    struct combatmods  mods;
     int                current_hp;
+    /* Takes no damage and cannot be killed by an attack. */
+    bool               invulnerable;
     enum combat_stance stance;
     enum{
         STATE_NOT_IN_COMBAT,
@@ -260,7 +271,11 @@ enum combat_cmd_type{
     COMBAT_CMD_PROJ_HIT,
     COMBAT_CMD_SET_DAMAGE_TYPE,
     COMBAT_CMD_SET_ARMOUR_TYPE,
-    COMBAT_CMD_SET_DAMAGE_TABLE
+    COMBAT_CMD_SET_DAMAGE_TABLE,
+    COMBAT_CMD_SET_INVULNERABLE,
+    COMBAT_CMD_ADD_MODIFIER,
+    COMBAT_CMD_REMOVE_MODIFIER,
+    COMBAT_CMD_CLEAR_MODIFIERS
 };
 
 /* Commands carry small typed payloads; the uid is hoisted out of the union so
@@ -300,8 +315,20 @@ struct combat_cmd{
             int hp;
         }current_hp;
         struct{
-            float armour_pc;
+            int armour;
         }base_armour;
+        struct{
+            bool on;
+        }invulnerable;
+        struct{
+            enum combat_mod_kind kind;
+            float                amount;
+            uint32_t             secs;
+            char                 tag[COMBAT_MOD_TAG_LEN];
+        }add_mod;
+        struct{
+            char tag[COMBAT_MOD_TAG_LEN];
+        }remove_mod;
         struct{
             int dmg;
         }base_damage;
@@ -347,6 +374,16 @@ struct corpse{
     const char *pfobj;
 };
 
+/* One live stat modifier. 'secs_left' of 0 means it never expires on its own.
+ */
+struct combat_mod{
+    uint32_t             uid;
+    uint32_t             secs_left;
+    enum combat_mod_kind kind;
+    float                amount;
+    char                 tag[COMBAT_MOD_TAG_LEN];
+};
+
 KHASH_MAP_INIT_INT(state, struct combatstate)
 KHASH_SET_INIT_INT(animpend)
 
@@ -355,6 +392,9 @@ QUEUE_IMPL(static, cmd, struct combat_cmd)
 
 VEC_TYPE(corpse, struct corpse);
 VEC_IMPL(static, corpse, struct corpse);
+
+VEC_TYPE(mod, struct combat_mod);
+VEC_IMPL(static, mod, struct combat_mod);
 
 static void combat_push_cmd(struct combat_cmd cmd);
 static void on_attack_anim_tick(void *user, void *event);
@@ -419,6 +459,7 @@ static mp_strbuff_t       s_stringpool;
  */
 static float              s_dmg_mult[DAMAGE_TYPE_MAX][ARMOUR_TYPE_MAX];
 static vec_corpse_t       s_corpses;
+static vec_mod_t          s_mods;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -460,6 +501,26 @@ static float combat_dmg_mult(int dmg_type, int armour_type)
     return s_dmg_mult[dmg_type][armour_type];
 }
 
+/* The single point where armour turns into a damage scale. Every damage site
+ * funnels its effective armour through here, so the formula and its clamp
+ * exist in exactly one place.
+ */
+static float combat_armour_mult(int armour)
+{
+    armour = MIN(MAX(armour, ARMOUR_MIN_POINTS), ARMOUR_MAX_POINTS);
+    return ((float)ARMOUR_K) / (ARMOUR_K + armour);
+}
+
+static int combat_effective_armour(const struct combatstate *cs)
+{
+    return cs->stats.base_armour + (int)roundf(cs->mods.bonus[COMBAT_MOD_ARMOUR]);
+}
+
+static int combat_effective_damage(const struct combatstate *cs)
+{
+    return MAX(0, cs->stats.base_dmg + (int)roundf(cs->mods.bonus[COMBAT_MOD_DAMAGE]));
+}
+
 static bool entities_equal(uint32_t *a, uint32_t *b)
 {
     return ((*a) == (*b));
@@ -471,6 +532,61 @@ static void combat_dying_remove(uint32_t uid)
     if(idx == -1)
         return;
     vec_entity_del(&s_dying_ents, idx);
+}
+
+/* The bonus sums are derived state: they are always rebuilt from the surviving
+ * records rather than patched, so a record that leaks can never leave a stat
+ * permanently shifted.
+ */
+static void combat_mods_resum(uint32_t uid)
+{
+    struct combatstate *cs = combatstate_get(uid);
+    if(!cs)
+        return;
+
+    struct combatmods mods = {0};
+    for(int i = 0; i < vec_size(&s_mods); i++) {
+        const struct combat_mod *curr = &vec_AT(&s_mods, i);
+        if(curr->uid != uid)
+            continue;
+        if(curr->kind < 0 || curr->kind >= COMBAT_MOD_MAX)
+            continue;
+        mods.bonus[curr->kind] += curr->amount;
+    }
+
+    float old_speed = cs->mods.bonus[COMBAT_MOD_SPEED];
+    cs->mods = mods;
+
+    if(mods.bonus[COMBAT_MOD_SPEED] != old_speed) {
+        G_Move_SetSpeedBonus(uid, mods.bonus[COMBAT_MOD_SPEED]);
+    }
+}
+
+static void combat_mods_remove_ent(uint32_t uid)
+{
+    for(int i = 0; i < vec_size(&s_mods); i++) {
+        if(vec_AT(&s_mods, i).uid != uid)
+            continue;
+        vec_mod_del(&s_mods, i);
+        i--;
+    }
+}
+
+static void combat_mods_tick(void)
+{
+    for(int i = 0; i < vec_size(&s_mods); i++) {
+
+        struct combat_mod *curr = &vec_AT(&s_mods, i);
+        if(curr->secs_left == 0)
+            continue;
+
+        if(--curr->secs_left == 0) {
+            uint32_t uid = curr->uid;
+            vec_mod_del(&s_mods, i);
+            i--;
+            combat_mods_resum(uid);
+        }
+    }
 }
 
 static struct proj_desc combat_default_proj(void)
@@ -922,9 +1038,15 @@ static void entity_melee_attack(uint32_t uid, uint32_t target)
     if(!target_cs)
         return;
 
-    float dmg = cs->stats.base_dmg
+    if(target_cs->invulnerable)
+        return;
+
+    /* The float damage is truncated by the assignment back into the integer HP,
+     * which makes any nonzero damage take at least a whole point.
+     */
+    float dmg = combat_effective_damage(cs)
               * combat_dmg_mult(cs->stats.dmg_type, target_cs->stats.armour_type)
-              * (1.0f - target_cs->stats.base_armour_pc);
+              * combat_armour_mult(combat_effective_armour(target_cs));
     target_cs->current_hp = MAX(0, target_cs->current_hp - dmg);
 
     if(target_cs->current_hp == 0 && target_cs->stats.max_hp > 0) {
@@ -953,7 +1075,7 @@ static void entity_ranged_attack(uint32_t uid, uint32_t target, vec3_t proj_pos)
         PFM_Vec3_Add(&proj_pos, &fwd, &target_pos);
     }
 
-    float ent_dmg = cs->stats.base_dmg;
+    float ent_dmg = combat_effective_damage(cs);
     vec3_t vel;
     if(!P_Projectile_VelocityForTarget(proj_pos, target_pos, cs->pd.speed,
         cs->fd.fire_mode, &vel)) {
@@ -1103,6 +1225,7 @@ static void do_remove_entity(uint32_t uid)
     }
 
     combat_dying_remove(uid);
+    combat_mods_remove_ent(uid);
     combatstate_remove(uid);
 }
 
@@ -1164,9 +1287,13 @@ static void do_proj_tryhit(struct proj_hit *hit)
         return;
 
     struct combatstate *cs = combatstate_get(hit->ent_uid);
+    if(cs->invulnerable)
+        return;
+
+    /* Truncated into the integer HP, as in the melee path. */
     float dmg = hit->cookie
               * combat_dmg_mult(hit->dmg_type, cs->stats.armour_type)
-              * (1.0f - cs->stats.base_armour_pc);
+              * combat_armour_mult(combat_effective_armour(cs));
     cs->current_hp = MAX(0, cs->current_hp - dmg);
 
     if(cs->current_hp == 0 && cs->stats.max_hp > 0) {
@@ -1350,13 +1477,77 @@ static void do_update_ref(int oldfac, int newfac, vec2_t pos)
     do_add_ref(newfac, pos);
 }
 
-static void do_set_base_armour(uint32_t uid, float armour_pc)
+static void do_set_base_armour(uint32_t uid, int armour)
 {
     ASSERT_IN_MAIN_THREAD();
 
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
-    cs->stats.base_armour_pc = armour_pc;
+    cs->stats.base_armour = armour;
+}
+
+static void do_set_invulnerable(uint32_t uid, bool on)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct combatstate *cs = combatstate_get(uid);
+    assert(cs);
+    cs->invulnerable = on;
+}
+
+static void do_add_modifier(uint32_t uid, enum combat_mod_kind kind, float amount,
+                            uint32_t secs, const char *tag)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(!combatstate_get(uid))
+        return;
+
+    /* A tagged modifier is a slot, not an accumulator: re-applying an aura
+     * refreshes it instead of stacking it up.
+     */
+    if(tag[0] != '\0') {
+        for(int i = 0; i < vec_size(&s_mods); i++) {
+            const struct combat_mod *curr = &vec_AT(&s_mods, i);
+            if(curr->uid != uid || strcmp(curr->tag, tag))
+                continue;
+            vec_mod_del(&s_mods, i);
+            break;
+        }
+    }
+
+    struct combat_mod mod = (struct combat_mod){
+        .uid = uid,
+        .secs_left = secs,
+        .kind = kind,
+        .amount = amount
+    };
+    pf_strlcpy(mod.tag, tag, sizeof(mod.tag));
+    vec_mod_push(&s_mods, mod);
+
+    combat_mods_resum(uid);
+}
+
+static void do_remove_modifier(uint32_t uid, const char *tag)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    for(int i = 0; i < vec_size(&s_mods); i++) {
+        const struct combat_mod *curr = &vec_AT(&s_mods, i);
+        if(curr->uid != uid || strcmp(curr->tag, tag))
+            continue;
+        vec_mod_del(&s_mods, i);
+        i--;
+    }
+    combat_mods_resum(uid);
+}
+
+static void do_clear_modifiers(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    combat_mods_remove_ent(uid);
+    combat_mods_resum(uid);
 }
 
 static void do_set_damage_type(uint32_t uid, int type)
@@ -1908,9 +2099,16 @@ static void entity_apply_update(struct combat_work_out *out)
     if(entity_dead(uid))
         return;
 
+    /* The worker computed its next state from a snapshot, so anything the main
+     * thread owns outright has to survive the copy-back.
+     */
     int live_hp = cs->current_hp;
+    struct combatmods live_mods = cs->mods;
+    bool live_invulnerable = cs->invulnerable;
     *cs = out->next_state;
     cs->current_hp = live_hp;
+    cs->mods = live_mods;
+    cs->invulnerable = live_invulnerable;
 
     if(out->notify_attack_end) {
         combat_notify_attack_end(uid, cs);
@@ -2146,7 +2344,7 @@ static void combat_process_cmds(void)
             break;
         }
         case COMBAT_CMD_SET_BASE_ARMOUR: {
-            do_set_base_armour(cmd.uid, cmd.u.base_armour.armour_pc);
+            do_set_base_armour(cmd.uid, cmd.u.base_armour.armour);
             break;
         }
         case COMBAT_CMD_SET_BASE_DAMAGE: {
@@ -2202,6 +2400,23 @@ static void combat_process_cmds(void)
         }
         case COMBAT_CMD_SET_DAMAGE_TABLE: {
             do_set_damage_table(cmd.u.damage_table.mult);
+            break;
+        }
+        case COMBAT_CMD_SET_INVULNERABLE: {
+            do_set_invulnerable(cmd.uid, cmd.u.invulnerable.on);
+            break;
+        }
+        case COMBAT_CMD_ADD_MODIFIER: {
+            do_add_modifier(cmd.uid, cmd.u.add_mod.kind, cmd.u.add_mod.amount,
+                cmd.u.add_mod.secs, cmd.u.add_mod.tag);
+            break;
+        }
+        case COMBAT_CMD_REMOVE_MODIFIER: {
+            do_remove_modifier(cmd.uid, cmd.u.remove_mod.tag);
+            break;
+        }
+        case COMBAT_CMD_CLEAR_MODIFIERS: {
+            do_clear_modifiers(cmd.uid);
             break;
         }
         default:
@@ -2451,6 +2666,8 @@ static void combat_tick(void *user, void *event)
 
 static void on_1hz_tick(void *user, void *event)
 {
+    combat_mods_tick();
+
     size_t ncorpses = vec_size(&s_corpses);
     for(int i = 0; i < ncorpses; i++) {
         struct corpse *curr = &vec_AT(&s_corpses, i);
@@ -2748,6 +2965,7 @@ bool G_Combat_Init(const struct map *map)
     s_map = map;
     combat_copy_gamestate();
     vec_corpse_init(&s_corpses);
+    vec_mod_init(&s_mods);
     return true;
 
 fail_refcnts:
@@ -2794,6 +3012,7 @@ void G_Combat_Shutdown(void)
     kh_destroy(state, s_entity_state_table);
 
     vec_corpse_destroy(&s_corpses);
+    vec_mod_destroy(&s_mods);
     si_shutdown(&s_stringpool, s_stridx);
 }
 
@@ -3048,32 +3267,186 @@ int G_Combat_GetCurrentHP(uint32_t uid)
     return cs->current_hp;
 }
 
-void G_Combat_SetBaseArmour(uint32_t uid, float armour_pc)
+void G_Combat_SetBaseArmour(uint32_t uid, int armour)
 {
     combat_push_cmd((struct combat_cmd){
         .type = COMBAT_CMD_SET_BASE_ARMOUR,
         .uid = uid,
-        .u.base_armour.armour_pc = armour_pc
+        .u.base_armour.armour = armour
     });
 }
 
-float G_Combat_GetBaseArmour(uint32_t uid)
+int G_Combat_GetBaseArmour(uint32_t uid)
 {
     struct combat_cmd *cmd;
     cmd = snoop_most_recent_command(COMBAT_CMD_SET_BASE_ARMOUR,
         (void*)(uintptr_t)uid, uids_match);
     if(cmd) {
-        return cmd->u.base_armour.armour_pc;
+        return cmd->u.base_armour.armour;
     }
     cmd = snoop_most_recent_command(COMBAT_CMD_ADD,
         (void*)(uintptr_t)uid, uids_match);
     if(cmd) {
-        return 0.0f;
+        return 0;
     }
 
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
-    return cs->stats.base_armour_pc;
+    return cs->stats.base_armour;
+}
+
+int G_Combat_ArmourPointsForFrac(float frac)
+{
+    if(frac <= 0.0f)
+        return ARMOUR_MIN_POINTS;
+    if(frac >= 1.0f)
+        return ARMOUR_MAX_POINTS;
+
+    int points = (int)roundf(ARMOUR_K * frac / (1.0f - frac));
+    return MIN(MAX(points, ARMOUR_MIN_POINTS), ARMOUR_MAX_POINTS);
+}
+
+float G_Combat_FracForArmourPoints(int armour)
+{
+    return 1.0f - combat_armour_mult(armour);
+}
+
+void G_Combat_SetInvulnerable(uint32_t uid, bool on)
+{
+    combat_push_cmd((struct combat_cmd){
+        .type = COMBAT_CMD_SET_INVULNERABLE,
+        .uid = uid,
+        .u.invulnerable.on = on
+    });
+}
+
+bool G_Combat_GetInvulnerable(uint32_t uid)
+{
+    struct combat_cmd *cmd;
+    cmd = snoop_most_recent_command(COMBAT_CMD_SET_INVULNERABLE,
+        (void*)(uintptr_t)uid, uids_match);
+    if(cmd) {
+        return cmd->u.invulnerable.on;
+    }
+    cmd = snoop_most_recent_command(COMBAT_CMD_ADD,
+        (void*)(uintptr_t)uid, uids_match);
+    if(cmd) {
+        return false;
+    }
+
+    struct combatstate *cs = combatstate_get(uid);
+    assert(cs);
+    return cs->invulnerable;
+}
+
+void G_Combat_AddModifier(uint32_t uid, enum combat_mod_kind kind, float amount,
+                          uint32_t secs, const char *tag)
+{
+    struct combat_cmd cmd = (struct combat_cmd){
+        .type = COMBAT_CMD_ADD_MODIFIER,
+        .uid = uid,
+        .u.add_mod.kind = kind,
+        .u.add_mod.amount = amount,
+        .u.add_mod.secs = secs
+    };
+    pf_strlcpy(cmd.u.add_mod.tag, tag ? tag : "", sizeof(cmd.u.add_mod.tag));
+    combat_push_cmd(cmd);
+}
+
+void G_Combat_RemoveModifier(uint32_t uid, const char *tag)
+{
+    struct combat_cmd cmd = (struct combat_cmd){
+        .type = COMBAT_CMD_REMOVE_MODIFIER,
+        .uid = uid
+    };
+    pf_strlcpy(cmd.u.remove_mod.tag, tag ? tag : "", sizeof(cmd.u.remove_mod.tag));
+    combat_push_cmd(cmd);
+}
+
+void G_Combat_ClearModifiers(uint32_t uid)
+{
+    combat_push_cmd((struct combat_cmd){
+        .type = COMBAT_CMD_CLEAR_MODIFIERS,
+        .uid = uid
+    });
+}
+
+/* True if a command queued after 'start' drops a modifier of this entity
+ * carrying 'tag': a clear, a matching removal, or a matching tagged add, which
+ * replaces rather than stacks. An untagged modifier only ever loses to a clear.
+ */
+static bool mod_superseded(uint32_t uid, const char *tag, int start, size_t nleft)
+{
+    for(int i = start; nleft > 0; nleft--, i = (i + 1) % s_combat_commands.capacity) {
+
+        const struct combat_cmd *curr = &s_combat_commands.mem[i];
+        if(curr->uid != uid)
+            continue;
+
+        if(curr->type == COMBAT_CMD_CLEAR_MODIFIERS)
+            return true;
+        if(tag[0] == '\0')
+            continue;
+        if(curr->type == COMBAT_CMD_REMOVE_MODIFIER && !strcmp(curr->u.remove_mod.tag, tag))
+            return true;
+        if(curr->type == COMBAT_CMD_ADD_MODIFIER && !strcmp(curr->u.add_mod.tag, tag))
+            return true;
+    }
+    return false;
+}
+
+/* Modifiers accumulate rather than overwrite, so a single most-recent snoop
+ * cannot answer this. The queued commands are replayed over the committed
+ * records instead, which is what makes a read right after an add report what
+ * that add will actually commit.
+ */
+float G_Combat_GetBonus(uint32_t uid, enum combat_mod_kind kind)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(kind < 0 || kind >= COMBAT_MOD_MAX)
+        return 0.0f;
+
+    const size_t npending = queue_size(s_combat_commands);
+    const int head = s_combat_commands.ihead;
+    float bonus = 0.0f;
+
+    for(int i = 0; i < vec_size(&s_mods); i++) {
+        const struct combat_mod *curr = &vec_AT(&s_mods, i);
+        if(curr->uid != uid || curr->kind != kind)
+            continue;
+        if(mod_superseded(uid, curr->tag, head, npending))
+            continue;
+        bonus += curr->amount;
+    }
+
+    size_t left = npending;
+    for(int i = head; left > 0; left--, i = (i + 1) % s_combat_commands.capacity) {
+
+        const struct combat_cmd *curr = &s_combat_commands.mem[i];
+        if(curr->uid != uid || curr->type != COMBAT_CMD_ADD_MODIFIER)
+            continue;
+        if(curr->u.add_mod.kind != kind)
+            continue;
+
+        int next = (i + 1) % s_combat_commands.capacity;
+        if(mod_superseded(uid, curr->u.add_mod.tag, next, left - 1))
+            continue;
+        bonus += curr->u.add_mod.amount;
+    }
+    return bonus;
+}
+
+int G_Combat_GetEffectiveArmour(uint32_t uid)
+{
+    return G_Combat_GetBaseArmour(uid)
+         + (int)roundf(G_Combat_GetBonus(uid, COMBAT_MOD_ARMOUR));
+}
+
+int G_Combat_GetEffectiveDamage(uint32_t uid)
+{
+    return MAX(0, G_Combat_GetBaseDamage(uid)
+                + (int)roundf(G_Combat_GetBonus(uid, COMBAT_MOD_DAMAGE)));
 }
 
 void G_Combat_SetBaseDamage(uint32_t uid, int dmg)
@@ -3393,6 +3766,12 @@ bool G_Combat_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &state, "state"));
 
+        struct attr invulnerable = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_int = curr.invulnerable
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &invulnerable, "invulnerable"));
+
         struct attr sticky = (struct attr){
             .type = TYPE_BOOL,
             .val.as_int = curr.sticky
@@ -3612,6 +3991,48 @@ bool G_Combat_SaveState(struct SDL_RWops *stream)
 
         Sched_TryYield();
     }
+
+    struct attr num_mods = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = vec_size(&s_mods)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_mods, "num_mods"));
+
+    for(int i = 0; i < vec_size(&s_mods); i++) {
+
+        const struct combat_mod *mod = &vec_AT(&s_mods, i);
+        struct attr mod_ent = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = mod->uid
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &mod_ent, "mod_ent"));
+
+        struct attr mod_secs = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = mod->secs_left
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &mod_secs, "mod_secs_left"));
+
+        struct attr mod_kind = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = mod->kind
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &mod_kind, "mod_kind"));
+
+        struct attr mod_amount = (struct attr){
+            .type = TYPE_FLOAT,
+            .val.as_float = mod->amount
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &mod_amount, "mod_amount"));
+
+        struct attr mod_tag = (struct attr){
+            .type = TYPE_STRING,
+        };
+        pf_strlcpy(mod_tag.val.as_string, mod->tag, sizeof(mod_tag.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &mod_tag, "mod_tag"));
+
+        Sched_TryYield();
+    }
     return true;
 }
 
@@ -3675,6 +4096,10 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         cs->state = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        cs->invulnerable = attr.val.as_bool;
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_BOOL);
@@ -3856,9 +4281,49 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
         const char *objkey = si_intern(attr.val.as_string, &s_stringpool, s_stridx);
 
         if(dirkey && objkey) {
-            add_corpse(dirkey, objkey, secs_left, corpse_pos, corpse_scale, corpse_rot); 
+            add_corpse(dirkey, objkey, secs_left, corpse_pos, corpse_scale, corpse_rot);
         }
         Sched_TryYield();
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_mods = attr.val.as_int;
+
+    vec_mod_reset(&s_mods);
+    for(int i = 0; i < num_mods; i++) {
+
+        struct combat_mod mod = {0};
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        mod.uid = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        mod.secs_left = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        mod.kind = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        mod.amount = attr.val.as_float;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        pf_strlcpy(mod.tag, attr.val.as_string, sizeof(mod.tag));
+
+        vec_mod_push(&s_mods, mod);
+        Sched_TryYield();
+    }
+
+    /* The sums are derived, so they are rebuilt from the restored records
+     * rather than saved alongside them.
+     */
+    for(int i = 0; i < vec_size(&s_mods); i++) {
+        combat_mods_resum(vec_AT(&s_mods, i).uid);
     }
 
     return true;

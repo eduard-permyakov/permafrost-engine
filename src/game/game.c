@@ -2120,6 +2120,15 @@ bool G_MapClosestPathable(vec2_t xz, vec2_t *out, enum nav_layer layer)
     return M_NavClosestPathable(s_gs.map, layer, xz, out);
 }
 
+bool G_MapPositionPathable(vec2_t xz, enum nav_layer layer)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(!s_gs.map)
+        return false;
+    return M_NavPositionPathable(s_gs.map, layer, xz);
+}
+
 bool G_PointInsideMap(vec2_t xz)
 {
     ASSERT_IN_MAIN_THREAD();

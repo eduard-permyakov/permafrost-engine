@@ -888,6 +888,14 @@ static void s_expose_game_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, DAMAGE_TYPE_MAX);
     PY_EXPOSE_ENUM(module, ARMOUR_TYPE_MAX);
 
+    /* Incoming damage is scaled by ARMOUR_K / (ARMOUR_K + armour_points). */
+    PY_EXPOSE_ENUM(module, ARMOUR_K);
+    PY_EXPOSE_ENUM(module, ARMOUR_MAX_POINTS);
+
+    PY_EXPOSE_ENUM(module, COMBAT_MOD_ARMOUR);
+    PY_EXPOSE_ENUM(module, COMBAT_MOD_DAMAGE);
+    PY_EXPOSE_ENUM(module, COMBAT_MOD_SPEED);
+
     PY_EXPOSE_ENUM(module, AIR_UNIT_HEIGHT);
 }
 

@@ -222,6 +222,7 @@ static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_nearest_pathable(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_map_nearest_pathable_water(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_map_nearest_pathable_air(PyObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPf_map_pos_pathable(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_map_pos_under_cursor(PyObject *self);
 static PyObject *PyPf_draw_text(PyObject *self, PyObject *args);
 static PyObject *PyPf_dump_framebuffer(PyObject *self, PyObject *args);
@@ -763,6 +764,12 @@ static PyMethodDef pf_module_methods[] = {
     {"map_nearest_pathable_air",
     (PyCFunction)PyPf_map_nearest_pathable_air, METH_VARARGS | METH_KEYWORDS,
     "Returns the closest XZ map position that is not currently blocked by other air units."},
+
+    {"map_pos_pathable",
+    (PyCFunction)PyPf_map_pos_pathable, METH_VARARGS | METH_KEYWORDS,
+    "Returns true if the XZ position is pathable terrain for a unit of the specified radius. "
+    "Terrain cut out by static objects such as cliffs is not pathable. Other units standing "
+    "at the position are not taken into account."},
 
     {"map_pos_under_cursor",
     (PyCFunction)PyPf_map_pos_under_cursor, METH_NOARGS,
@@ -2767,6 +2774,25 @@ static PyObject *PyPf_map_nearest_pathable_air(PyObject *self, PyObject *args, P
     }else{
         return Py_BuildValue("ff", ret.x, ret.z);
     }
+}
+
+static PyObject *PyPf_map_pos_pathable(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    float x, z;
+    static char *kwlist[] = {"pos", "radius", NULL};
+    float radius = 0.0f;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "(ff)|f", kwlist, &x, &z, &radius)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a tuple of two floats. "
+            "An optional (float) 'radius' argument is allowed.");
+        return NULL;
+    }
+
+    uint32_t flags = 0;
+    enum nav_layer layer = Entity_NavLayerWithRadius(flags, radius);
+
+    bool result = G_MapPositionPathable((vec2_t){x, z}, layer);
+    return PyBool_FromLong(result);
 }
 
 static PyObject *PyPf_map_pos_under_cursor(PyObject *self)

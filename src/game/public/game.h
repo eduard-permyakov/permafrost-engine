@@ -156,6 +156,7 @@ bool            G_MouseOverMinimap(void);
 bool            G_MouseInTargetMode(void);
 bool            G_MapHeightAtPoint(vec2_t xz, float *out_height);
 bool            G_MapClosestPathable(vec2_t xz, vec2_t *out, enum nav_layer layer);
+bool            G_MapPositionPathable(vec2_t xz, enum nav_layer layer);
 bool            G_PointInsideMap(vec2_t xz);
 bool            G_PointOverWater(vec2_t xz);
 bool            G_PointOverLand(vec2_t xz);
@@ -290,6 +291,11 @@ void G_Move_SetClickEnabled(bool on);
 bool G_Move_GetClickEnabled(void);
 bool G_Move_GetMaxSpeed(uint32_t uid, float *out);
 bool G_Move_SetMaxSpeed(uint32_t uid, float speed);
+/* The speed the entity actually moves at is the base speed plus the bonus the
+ * combat modifiers hand down, floored at zero.
+ */
+bool G_Move_SetSpeedBonus(uint32_t uid, float bonus);
+bool G_Move_GetEffectiveSpeed(uint32_t uid, float *out);
 
 void G_Move_ArrangeInFormation(vec_entity_t *ents, vec2_t target, 
                                vec2_t orientation, enum formation_type type);
@@ -317,6 +323,28 @@ enum combat_stance{
 #define DAMAGE_TYPE_MAX  8
 #define ARMOUR_TYPE_MAX  8
 
+/* Incoming damage is scaled by ARMOUR_K / (ARMOUR_K + armour), so ARMOUR_K
+ * points halve it. Every point adds the same amount of effective HP, while the
+ * blocked fraction it buys shrinks: the typical band is [0, 100], scaling well
+ * to 200, with the returns falling away past that. The cap is the 99% mark;
+ * total immunity is not reachable through armour and is a separate flag.
+ */
+#define ARMOUR_K           100
+#define ARMOUR_MIN_POINTS  0
+#define ARMOUR_MAX_POINTS  9900
+
+/* Timed stat modifiers. The amount is in the same units as the stat it moves:
+ * armour points, damage per hit, and OpenGL coords per second respectively.
+ */
+enum combat_mod_kind{
+    COMBAT_MOD_ARMOUR = 0,
+    COMBAT_MOD_DAMAGE,
+    COMBAT_MOD_SPEED,
+    COMBAT_MOD_MAX
+};
+
+#define COMBAT_MOD_TAG_LEN 64
+
 struct proj_fire_desc{
     /* How many frames into the "fire" animation
      * do we launch it? */
@@ -342,8 +370,26 @@ int   G_Combat_GetCurrentHP(uint32_t uid);
 void  G_Combat_UpdateRef(int oldfac, int newfac, vec2_t pos);
 bool  G_Combat_IsDying(uint32_t uid);
 
-void  G_Combat_SetBaseArmour(uint32_t uid, float armour_pc);
-float G_Combat_GetBaseArmour(uint32_t uid);
+void  G_Combat_SetBaseArmour(uint32_t uid, int armour);
+int   G_Combat_GetBaseArmour(uint32_t uid);
+/* Bridges between the flat points the simulation uses and the blocked fraction
+ * the scripts author. A fraction at or above 1.0 saturates at the cap.
+ */
+int   G_Combat_ArmourPointsForFrac(float frac);
+float G_Combat_FracForArmourPoints(int armour);
+void  G_Combat_SetInvulnerable(uint32_t uid, bool on);
+bool  G_Combat_GetInvulnerable(uint32_t uid);
+/* A 'secs' of 0 keeps the modifier until it is removed by tag or cleared. A tag
+ * may be NULL; adding one that matches a live tag replaces it, which is what
+ * makes re-applying an aura idempotent.
+ */
+void  G_Combat_AddModifier(uint32_t uid, enum combat_mod_kind kind, float amount,
+                           uint32_t secs, const char *tag);
+void  G_Combat_RemoveModifier(uint32_t uid, const char *tag);
+void  G_Combat_ClearModifiers(uint32_t uid);
+float G_Combat_GetBonus(uint32_t uid, enum combat_mod_kind kind);
+int   G_Combat_GetEffectiveArmour(uint32_t uid);
+int   G_Combat_GetEffectiveDamage(uint32_t uid);
 void  G_Combat_SetBaseDamage(uint32_t uid, int dmg);
 int   G_Combat_GetBaseDamage(uint32_t uid);
 void  G_Combat_SetMaxHP(uint32_t uid, int hp);
