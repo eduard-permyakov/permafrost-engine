@@ -399,6 +399,10 @@ static PyObject *PyCombatableEntity_add_modifier(PyCombatableEntityObject *self,
 static PyObject *PyCombatableEntity_remove_modifier(PyCombatableEntityObject *self, PyObject *args);
 static PyObject *PyCombatableEntity_clear_modifiers(PyCombatableEntityObject *self);
 static PyObject *PyCombatableEntity_get_bonus(PyCombatableEntityObject *self, PyObject *args);
+static PyObject *PyCombatableEntity_set_group_bonus(PyCombatableEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyCombatableEntity_clear_group_bonus(PyCombatableEntityObject *self, PyObject *args);
+static PyObject *PyCombatableEntity_get_effective_range(PyCombatableEntityObject *self, void *closure);
+static PyObject *PyCombatableEntity_get_effective_invulnerable(PyCombatableEntityObject *self, void *closure);
 static PyObject *PyCombatableEntity_get_attack_range(PyCombatableEntityObject *self, void *closure);
 static int       PyCombatableEntity_set_attack_range(PyCombatableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyCombatableEntity_get_damage_type(PyCombatableEntityObject *self, void *closure);
@@ -424,10 +428,12 @@ static PyMethodDef PyCombatableEntity_methods[] = {
     {"add_modifier",
     (PyCFunction)PyCombatableEntity_add_modifier, METH_VARARGS | METH_KEYWORDS,
     "Add a timed modifier to one of the entity's stats. Takes the kind (one of pf.COMBAT_MOD_ARMOUR, "
-    "pf.COMBAT_MOD_DAMAGE, pf.COMBAT_MOD_SPEED) and the amount to add, in armour points, damage per "
-    "hit, or OpenGL coords per second respectively. The optional 'duration' is in seconds; 0 (the "
-    "default) lasts until removed. The optional 'tag' names the modifier for 'remove_modifier', and "
-    "adding a tag that is already live replaces it rather than stacking with it."},
+    "pf.COMBAT_MOD_DAMAGE, pf.COMBAT_MOD_SPEED, pf.COMBAT_MOD_RANGE, pf.COMBAT_MOD_INVULNERABLE) and "
+    "the amount to add, in armour points, damage per hit, OpenGL coords per second, or OpenGL coords "
+    "respectively; any positive amount of pf.COMBAT_MOD_INVULNERABLE grants immunity. With 'percent' "
+    "set, the amount is a fraction of the base stat instead, so 0.2 is +20%. The optional 'duration' "
+    "is in seconds; 0 (the default) lasts until removed. The optional 'tag' names the modifier for "
+    "'remove_modifier', and adding a tag that is already live replaces it rather than stacking."},
 
     {"remove_modifier",
     (PyCFunction)PyCombatableEntity_remove_modifier, METH_VARARGS,
@@ -440,6 +446,17 @@ static PyMethodDef PyCombatableEntity_methods[] = {
     {"get_bonus",
     (PyCFunction)PyCombatableEntity_get_bonus, METH_VARARGS,
     "Returns the summed amount of every live modifier of the specified kind."},
+
+    {"set_group_bonus",
+    (PyCFunction)PyCombatableEntity_set_group_bonus, METH_VARARGS | METH_KEYWORDS,
+    "Declare a bonus this entity grants to every member of whatever group it is in, taking a tag, "
+    "the path of the icon the group banner draws for it, a kind and an amount, with the same 'percent' "
+    "meaning as 'add_modifier'. The bonus lapses as soon as the entity leaves the group, and two members "
+    "granting the same tag count once rather than stacking."},
+
+    {"clear_group_bonus",
+    (PyCFunction)PyCombatableEntity_clear_group_bonus, METH_VARARGS,
+    "Withdraw the group bonus this entity grants under the specified tag."},
 
     {"__del__", 
     (PyCFunction)PyCombatableEntity_del, METH_NOARGS,
@@ -488,6 +505,15 @@ static PyGetSetDef PyCombatableEntity_getset[] = {
     {"effective_base_dmg",
     (getter)PyCombatableEntity_get_effective_dmg, NULL,
     "The damage this entity's attacks actually land: the base plus every live damage modifier.",
+    NULL},
+    {"effective_attack_range",
+    (getter)PyCombatableEntity_get_effective_range, NULL,
+    "The range this entity actually attacks from: the base plus every live range modifier. Stays 0 "
+    "for melee units, which a range modifier never lifts off the ground.",
+    NULL},
+    {"effective_invulnerable",
+    (getter)PyCombatableEntity_get_effective_invulnerable, NULL,
+    "Whether the entity is invulnerable, from either the flag or a live modifier.",
     NULL},
     {"invulnerable",
     (getter)PyCombatableEntity_get_invulnerable, (setter)PyCombatableEntity_set_invulnerable,
@@ -3105,26 +3131,35 @@ static int PyCombatableEntity_set_invulnerable(PyCombatableEntityObject *self, P
 static PyObject *PyCombatableEntity_add_modifier(PyCombatableEntityObject *self, PyObject *args,
                                                  PyObject *kwargs)
 {
-    static char *kwlist[] = {"kind", "amount", "duration", "tag", NULL};
+    static char *kwlist[] = {"kind", "amount", "duration", "tag", "percent", NULL};
     int kind;
     float amount;
     float duration = 0.0f;
     const char *tag = NULL;
+    PyObject *percent = Py_False;
 
     if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
         PyErr_SetString(PyExc_RuntimeError, "Cannot add a modifier to a zombie entity.");
         return NULL;
     }
 
-    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "if|fs", kwlist, &kind, &amount, &duration, &tag)) {
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "if|fsO", kwlist, &kind, &amount, &duration,
+        &tag, &percent)) {
         PyErr_SetString(PyExc_TypeError, "Arguments must be an integer kind and a float amount. "
-            "An optional (float) 'duration' in seconds and an optional (string) 'tag' are allowed.");
+            "An optional (float) 'duration' in seconds, an optional (string) 'tag' and an "
+            "optional (bool) 'percent' are allowed.");
         return NULL;
     }
 
     if(kind < 0 || kind >= COMBAT_MOD_MAX) {
         PyErr_SetString(PyExc_ValueError, "The modifier kind must be one of pf.COMBAT_MOD_ARMOUR, "
-            "pf.COMBAT_MOD_DAMAGE or pf.COMBAT_MOD_SPEED.");
+            "pf.COMBAT_MOD_DAMAGE, pf.COMBAT_MOD_SPEED, pf.COMBAT_MOD_RANGE or "
+            "pf.COMBAT_MOD_INVULNERABLE.");
+        return NULL;
+    }
+
+    if(!PyBool_Check(percent)) {
+        PyErr_SetString(PyExc_TypeError, "The 'percent' argument must be a bool.");
         return NULL;
     }
 
@@ -3148,7 +3183,7 @@ static PyObject *PyCombatableEntity_add_modifier(PyCombatableEntityObject *self,
             secs = 1;
         }
     }
-    G_Combat_AddModifier(self->super.ent, kind, amount, secs, tag);
+    G_Combat_AddModifier(self->super.ent, kind, amount, percent == Py_True, secs, tag);
     Py_RETURN_NONE;
 }
 
@@ -3197,11 +3232,108 @@ static PyObject *PyCombatableEntity_get_bonus(PyCombatableEntityObject *self, Py
 
     if(kind < 0 || kind >= COMBAT_MOD_MAX) {
         PyErr_SetString(PyExc_ValueError, "The modifier kind must be one of pf.COMBAT_MOD_ARMOUR, "
-            "pf.COMBAT_MOD_DAMAGE or pf.COMBAT_MOD_SPEED.");
+            "pf.COMBAT_MOD_DAMAGE, pf.COMBAT_MOD_SPEED, pf.COMBAT_MOD_RANGE or "
+            "pf.COMBAT_MOD_INVULNERABLE.");
         return NULL;
     }
 
     return PyFloat_FromDouble(G_Combat_GetBonus(self->super.ent, kind));
+}
+
+static PyObject *PyCombatableEntity_set_group_bonus(PyCombatableEntityObject *self, PyObject *args,
+                                                    PyObject *kwargs)
+{
+    static char *kwlist[] = {"tag", "icon", "kind", "amount", "percent", NULL};
+    const char *tag, *icon;
+    int kind;
+    float amount;
+    PyObject *percent = Py_False;
+
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set a group bonus of a zombie entity.");
+        return NULL;
+    }
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "ssif|O", kwlist, &tag, &icon, &kind,
+        &amount, &percent)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string tag, a string icon path, "
+            "an integer kind and a float amount. An optional (bool) 'percent' is allowed.");
+        return NULL;
+    }
+
+    if(kind < 0 || kind >= COMBAT_MOD_MAX) {
+        PyErr_SetString(PyExc_ValueError, "The modifier kind must be one of pf.COMBAT_MOD_ARMOUR, "
+            "pf.COMBAT_MOD_DAMAGE, pf.COMBAT_MOD_SPEED, pf.COMBAT_MOD_RANGE or "
+            "pf.COMBAT_MOD_INVULNERABLE.");
+        return NULL;
+    }
+
+    if(strlen(tag) == 0 || strlen(tag) >= COMBAT_MOD_TAG_LEN) {
+        PyErr_SetString(PyExc_ValueError, "The tag must be a non-empty string that is not too long.");
+        return NULL;
+    }
+
+    if(strlen(icon) >= COMBAT_BONUS_ICON_LEN) {
+        PyErr_SetString(PyExc_ValueError, "The icon path is too long.");
+        return NULL;
+    }
+
+    if(!PyBool_Check(percent)) {
+        PyErr_SetString(PyExc_TypeError, "The 'percent' argument must be a bool.");
+        return NULL;
+    }
+
+    struct group_bonus_desc desc = (struct group_bonus_desc){
+        .kind = kind,
+        .amount = amount,
+        .percent = (percent == Py_True)
+    };
+    pf_strlcpy(desc.tag, tag, sizeof(desc.tag));
+    pf_strlcpy(desc.icon, icon, sizeof(desc.icon));
+
+    G_Combat_SetGroupBonus(self->super.ent, &desc);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyCombatableEntity_clear_group_bonus(PyCombatableEntityObject *self, PyObject *args)
+{
+    const char *tag;
+
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot clear a group bonus of a zombie entity.");
+        return NULL;
+    }
+
+    if(!PyArg_ParseTuple(args, "s", &tag)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a string.");
+        return NULL;
+    }
+
+    G_Combat_ClearGroupBonus(self->super.ent, tag);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyCombatableEntity_get_effective_range(PyCombatableEntityObject *self, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
+    return PyFloat_FromDouble(G_Combat_GetEffectiveRange(self->super.ent));
+}
+
+static PyObject *PyCombatableEntity_get_effective_invulnerable(PyCombatableEntityObject *self,
+                                                               void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
+    if(G_Combat_GetEffectiveInvulnerable(self->super.ent))
+        Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
 }
 
 static PyObject *PyCombatableEntity_get_attack_range(PyCombatableEntityObject *self, void *closure)

@@ -52,6 +52,7 @@
 #include "../lib/public/stb_image.h"
 
 #include <assert.h>
+#include <string.h>
 
 #include "../mem.h"
 
@@ -64,9 +65,19 @@
 
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
+#define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
 
-#define UI_WIDTH            (64)
+#define UI_WIDTH            (76)
 #define UI_HEIGHT           (96)
+/* Contributions per group and lines of them on the banner. */
+#define MAX_GROUP_BONUSES   (8)
+#define MAX_BANNER_BONUSES  (3)
+/* The icon is drawn into its whole cell, so the cell has to be square or the
+ * image comes out stretched.
+ */
+#define BONUS_ROW_HEIGHT    (13)
+#define BONUS_ICON_WIDTH    BONUS_ROW_HEIGHT
+#define BONUS_TEXT_WIDTH    (23)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -78,6 +89,16 @@ KHASH_MAP_INIT_INT(gid, int)
 KHASH_MAP_INIT_INT(members, vec_entity_t)
 KHASH_MAP_INIT_INT(bounds, struct rect)
 
+/* The bonuses a group carries, folded from its members' declarations by tag so
+ * that eight bannermen contribute one banner.
+ */
+struct group_bonuses{
+    int                     count;
+    struct group_bonus_desc descs[MAX_GROUP_BONUSES];
+};
+
+KHASH_MAP_INIT_INT(gbonus, struct group_bonuses)
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -85,10 +106,12 @@ KHASH_MAP_INIT_INT(bounds, struct rect)
 static khash_t(gid)     *s_ent_group_map;
 static khash_t(members) *s_groups;
 static khash_t(bounds)  *s_ui_bounds;
+static khash_t(gbonus)  *s_group_bonuses;
 static int               s_next_group_id;
 
 static struct nk_style_item s_bg_style;
 static struct nk_color      s_font_clr;
+static struct nk_color      s_bonus_clr;
 static bool                 s_ui_style_set = false;
 
 /*****************************************************************************/
@@ -98,6 +121,76 @@ static bool                 s_ui_style_set = false;
 static bool entities_equal(uint32_t *a, uint32_t *b)
 {
     return ((*a) == (*b));
+}
+
+/* Two contributions of the same tag are the same bonus, so the stronger one
+ * wins rather than the two of them adding up.
+ */
+static void group_bonuses_fold(struct group_bonuses *inout,
+                               const struct group_bonus_desc *desc)
+{
+    for(int i = 0; i < inout->count; i++) {
+        if(strcmp(inout->descs[i].tag, desc->tag))
+            continue;
+        if(desc->amount > inout->descs[i].amount) {
+            inout->descs[i] = *desc;
+        }
+        return;
+    }
+
+    if(inout->count == MAX_GROUP_BONUSES)
+        return;
+    inout->descs[inout->count++] = *desc;
+}
+
+/* A percentage reads as one, a flat amount as a plain signed number, and a
+ * latch has no magnitude worth showing beside its icon.
+ */
+static void bonus_amount_str(const struct group_bonus_desc *desc, char *out, size_t maxout)
+{
+    if(desc->kind == COMBAT_MOD_INVULNERABLE) {
+        pf_strlcpy(out, "", maxout);
+    }else if(desc->percent) {
+        pf_snprintf(out, maxout, "%+d%%", (int)roundf(desc->amount * 100.0f));
+    }else{
+        pf_snprintf(out, maxout, "%+d", (int)roundf(desc->amount));
+    }
+}
+
+static void group_bonuses_recompute(int group_id)
+{
+    const vec_entity_t *members = G_Group_Members(group_id);
+    khiter_t k = kh_get(gbonus, s_group_bonuses, group_id);
+
+    if(!members) {
+        if(k != kh_end(s_group_bonuses)) {
+            kh_del(gbonus, s_group_bonuses, k);
+        }
+        return;
+    }
+
+    struct group_bonuses bonuses = {0};
+    for(int i = 0; i < vec_size(members); i++) {
+
+        struct group_bonus_desc descs[MAX_GROUP_BONUSES];
+        int ndescs = G_Combat_GetGroupBonuses(vec_AT(members, i), descs, ARR_SIZE(descs));
+
+        for(int j = 0; j < ndescs; j++) {
+            group_bonuses_fold(&bonuses, &descs[j]);
+        }
+    }
+
+    if(bonuses.count == 0) {
+        if(k != kh_end(s_group_bonuses)) {
+            kh_del(gbonus, s_group_bonuses, k);
+        }
+        return;
+    }
+
+    int ret;
+    k = kh_put(gbonus, s_group_bonuses, group_id, &ret);
+    assert(ret != -1);
+    kh_value(s_group_bonuses, k) = bonuses;
 }
 
 static vec3_t group_centre_of_mass(const vec_entity_t *members)
@@ -179,12 +272,19 @@ static void on_update_ui(void *user, void *event)
         vec3_t ws_centre = group_centre_of_mass(&members);
         vec2_t ss_pos = group_screen_pos(ws_centre, adj_vres.x, adj_vres.y);
 
-        const vec2_t pos = (vec2_t){ss_pos.x - UI_WIDTH/2, ss_pos.y - UI_HEIGHT/2};
+        struct group_bonus_desc bonuses[MAX_BANNER_BONUSES];
+        int nbonuses = G_Group_GetBonuses(gid, bonuses, ARR_SIZE(bonuses));
+
+        /* The cloth only has room for the count, so it lengthens to carry the
+         * bonuses rather than the labels spilling off it.
+         */
+        const int height = UI_HEIGHT + nbonuses * BONUS_ROW_HEIGHT;
+        const vec2_t pos = (vec2_t){ss_pos.x - UI_WIDTH/2, ss_pos.y - height/2};
         const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BACKGROUND
                         | NK_WINDOW_NO_SCROLLBAR;
 
         struct rect adj_bounds = UI_BoundsForAspectRatio(
-            (struct rect){pos.x, pos.y, UI_WIDTH, UI_HEIGHT},
+            (struct rect){pos.x, pos.y, UI_WIDTH, height},
             vres, adj_vres, ANCHOR_DEFAULT
         );
 
@@ -201,6 +301,46 @@ static void on_update_ui(void *user, void *event)
             pf_snprintf(count, sizeof(count), "%d", (int)vec_size(&members));
             nk_layout_row_dynamic(ctx, 24, 1);
             nk_label_colored(ctx, count, NK_TEXT_CENTERED, s_font_clr);
+
+            if(nbonuses > 0) {
+                /* Zero spacing so the indent below actually centres the pair. */
+                nk_style_push_vec2(ctx, &ctx->style.window.spacing, nk_vec2(0.0f, 2.0f));
+                const char *font = UI_GetActiveFont();
+                char small[256];
+                pf_snprintf(small, sizeof(small), "%s.11", font);
+                bool shrunk = UI_SetActiveFont(small);
+
+                for(int i = 0; i < nbonuses; i++) {
+
+                    char amount[16];
+                    bonus_amount_str(&bonuses[i], amount, sizeof(amount));
+
+                    /* A latch has no amount to sit beside, so its icon centres
+                     * on its own rather than hanging off to one side.
+                     */
+                    const int text_width = strlen(amount) ? BONUS_TEXT_WIDTH : 0;
+                    const int indent = (UI_WIDTH - BONUS_ICON_WIDTH - text_width) / 2;
+
+                    nk_layout_row_begin(ctx, NK_STATIC, BONUS_ROW_HEIGHT, text_width ? 3 : 2);
+                    nk_layout_row_push(ctx, indent);
+                    nk_label_colored(ctx, "", NK_TEXT_ALIGN_LEFT, s_bonus_clr);
+
+                    nk_layout_row_push(ctx, BONUS_ICON_WIDTH);
+                    nk_image_texpath(ctx, bonuses[i].icon);
+
+                    if(text_width) {
+                        nk_layout_row_push(ctx, text_width);
+                        nk_label_colored(ctx, amount, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE,
+                            s_bonus_clr);
+                    }
+                    nk_layout_row_end(ctx);
+                }
+
+                if(shrunk) {
+                    UI_SetActiveFont(font);
+                }
+                nk_style_pop_vec2(ctx);
+            }
         }
         nk_end(ctx);
     });
@@ -374,11 +514,14 @@ bool G_Group_Init(void)
         goto fail_groups;
     if((s_ui_bounds = kh_init(bounds)) == NULL)
         goto fail_ui_bounds;
+    if((s_group_bonuses = kh_init(gbonus)) == NULL)
+        goto fail_group_bonuses;
     s_next_group_id = 1;
 
     if(!s_ui_style_set) {
         s_bg_style = nk_style_item_color(nk_rgba(45, 45, 45, 220));
         s_font_clr = nk_rgba(255, 255, 255, 255);
+        s_bonus_clr = nk_rgba(38, 122, 40, 255);
     }
 
     E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL,
@@ -386,6 +529,9 @@ bool G_Group_Init(void)
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     return true;
 
+fail_group_bonuses:
+    kh_destroy(bounds, s_ui_bounds);
+    s_ui_bounds = NULL;
 fail_ui_bounds:
     kh_destroy(members, s_groups);
     s_groups = NULL;
@@ -404,6 +550,10 @@ void G_Group_Shutdown(void)
     if(s_ui_bounds) {
         kh_destroy(bounds, s_ui_bounds);
         s_ui_bounds = NULL;
+    }
+    if(s_group_bonuses) {
+        kh_destroy(gbonus, s_group_bonuses);
+        s_group_bonuses = NULL;
     }
     if(s_groups) {
         vec_entity_t curr;
@@ -460,6 +610,8 @@ int G_Group_Lock(const uint32_t *uids, size_t nuids)
     khiter_t k = kh_put(members, s_groups, gid, &ret);
     assert(ret != -1);
     kh_value(s_groups, k) = members;
+
+    G_Group_RefreshBonus(gid);
     return gid;
 }
 
@@ -478,9 +630,15 @@ void G_Group_Unlock(int group_id)
         khiter_t m = kh_get(gid, s_ent_group_map, vec_AT(members, i));
         assert(m != kh_end(s_ent_group_map));
         kh_del(gid, s_ent_group_map, m);
+        G_Combat_RefreshBonuses(vec_AT(members, i));
     }
     vec_entity_destroy(members);
     kh_del(members, s_groups, k);
+
+    khiter_t b = kh_get(gbonus, s_group_bonuses, group_id);
+    if(b != kh_end(s_group_bonuses)) {
+        kh_del(gbonus, s_group_bonuses, b);
+    }
 }
 
 int G_Group_ForEnt(uint32_t uid)
@@ -520,11 +678,70 @@ void G_Group_SetFontColor(const struct nk_color *clr)
     s_font_clr = *clr;
 }
 
+void G_Group_SetBonusColor(const struct nk_color *clr)
+{
+    s_bonus_clr = *clr;
+}
+
 bool G_Group_MouseOverUI(int mouse_x, int mouse_y)
 {
     if(!s_ui_bounds)
         return false;
     return (group_at_position(mouse_x, mouse_y) != 0);
+}
+
+void G_Group_GetBonus(int group_id, enum combat_mod_kind kind, float *out_flat,
+                      float *out_percent)
+{
+    *out_flat = 0.0f;
+    *out_percent = 0.0f;
+
+    if(!s_group_bonuses)
+        return;
+    khiter_t k = kh_get(gbonus, s_group_bonuses, group_id);
+    if(k == kh_end(s_group_bonuses))
+        return;
+
+    const struct group_bonuses *bonuses = &kh_value(s_group_bonuses, k);
+    for(int i = 0; i < bonuses->count; i++) {
+        if(bonuses->descs[i].kind != kind)
+            continue;
+        if(bonuses->descs[i].percent) {
+            *out_percent += bonuses->descs[i].amount;
+        }else{
+            *out_flat += bonuses->descs[i].amount;
+        }
+    }
+}
+
+void G_Group_RefreshBonus(int group_id)
+{
+    if(!s_groups || group_id == 0)
+        return;
+
+    group_bonuses_recompute(group_id);
+
+    const vec_entity_t *members = G_Group_Members(group_id);
+    if(!members)
+        return;
+
+    for(int i = 0; i < vec_size(members); i++) {
+        G_Combat_RefreshBonuses(vec_AT(members, i));
+    }
+}
+
+int G_Group_GetBonuses(int group_id, struct group_bonus_desc *out, size_t maxout)
+{
+    if(!s_group_bonuses)
+        return 0;
+    khiter_t k = kh_get(gbonus, s_group_bonuses, group_id);
+    if(k == kh_end(s_group_bonuses))
+        return 0;
+
+    const struct group_bonuses *bonuses = &kh_value(s_group_bonuses, k);
+    size_t ret = MIN((size_t)bonuses->count, maxout);
+    memcpy(out, bonuses->descs, ret * sizeof(struct group_bonus_desc));
+    return ret;
 }
 
 const vec_entity_t *G_Group_Members(int group_id)
@@ -559,7 +776,16 @@ void G_Group_RemoveEntity(uint32_t uid)
     if(vec_size(members) == 0) {
         vec_entity_destroy(members);
         kh_del(members, s_groups, m);
+
+        khiter_t b = kh_get(gbonus, s_group_bonuses, gid);
+        if(b != kh_end(s_group_bonuses)) {
+            kh_del(gbonus, s_group_bonuses, b);
+        }
+    }else{
+        /* The leaver may have been the one granting the bonus. */
+        G_Group_RefreshBonus(gid);
     }
+    G_Combat_RefreshBonuses(uid);
 }
 
 bool G_Group_SaveState(struct SDL_RWops *stream)
@@ -632,6 +858,7 @@ bool G_Group_SaveState(struct SDL_RWops *stream)
     }
 
     CHK_TRUE_RET(save_color(s_font_clr, stream));
+    CHK_TRUE_RET(save_color(s_bonus_clr, stream));
     return true;
 }
 
@@ -711,7 +938,16 @@ bool G_Group_LoadState(struct SDL_RWops *stream)
     }
 
     CHK_TRUE_RET(load_color(&s_font_clr, stream));
+    CHK_TRUE_RET(load_color(&s_bonus_clr, stream));
     s_ui_style_set = true;
+
+    /* The aggregates are derived from the members' declarations, which the
+     * combat state has already restored by this point.
+     */
+    int gid;
+    kh_foreach_key(s_groups, gid, {
+        G_Group_RefreshBonus(gid);
+    });
     return true;
 }
 

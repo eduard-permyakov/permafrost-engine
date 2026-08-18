@@ -275,7 +275,10 @@ enum combat_cmd_type{
     COMBAT_CMD_SET_INVULNERABLE,
     COMBAT_CMD_ADD_MODIFIER,
     COMBAT_CMD_REMOVE_MODIFIER,
-    COMBAT_CMD_CLEAR_MODIFIERS
+    COMBAT_CMD_CLEAR_MODIFIERS,
+    COMBAT_CMD_SET_GROUP_BONUS,
+    COMBAT_CMD_CLEAR_GROUP_BONUS,
+    COMBAT_CMD_REFRESH_BONUSES
 };
 
 /* Commands carry small typed payloads; the uid is hoisted out of the union so
@@ -323,12 +326,19 @@ struct combat_cmd{
         struct{
             enum combat_mod_kind kind;
             float                amount;
+            bool                 percent;
             uint32_t             secs;
             char                 tag[COMBAT_MOD_TAG_LEN];
         }add_mod;
         struct{
             char tag[COMBAT_MOD_TAG_LEN];
         }remove_mod;
+        struct{
+            struct group_bonus_desc desc;
+        }group_bonus;
+        struct{
+            char tag[COMBAT_MOD_TAG_LEN];
+        }clear_group_bonus;
         struct{
             int dmg;
         }base_damage;
@@ -375,12 +385,14 @@ struct corpse{
 };
 
 /* One live stat modifier. 'secs_left' of 0 means it never expires on its own.
+ * A percent modifier holds a fraction of the base stat, resolved on every resum.
  */
 struct combat_mod{
     uint32_t             uid;
     uint32_t             secs_left;
     enum combat_mod_kind kind;
     float                amount;
+    bool                 percent;
     char                 tag[COMBAT_MOD_TAG_LEN];
 };
 
@@ -395,6 +407,17 @@ VEC_IMPL(static, corpse, struct corpse);
 
 VEC_TYPE(mod, struct combat_mod);
 VEC_IMPL(static, mod, struct combat_mod);
+
+/* Kept out of the combatstate, which is copied into the worker snapshot every
+ * tick; only the resolved sums are read on the damage path.
+ */
+struct group_bonus_rec{
+    uint32_t                uid;
+    struct group_bonus_desc desc;
+};
+
+VEC_TYPE(gbonus, struct group_bonus_rec);
+VEC_IMPL(static, gbonus, struct group_bonus_rec);
 
 static void combat_push_cmd(struct combat_cmd cmd);
 static void on_attack_anim_tick(void *user, void *event);
@@ -411,6 +434,7 @@ static bool uids_match(void *arg, struct combat_cmd *cmd);
 static bool any_command(void *arg, struct combat_cmd *cmd);
 static float combat_dmg_mult(int dmg_type, int armour_type);
 static void combat_tick(void *user, void *event);
+static void group_bonuses_remove_ent(uint32_t uid);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -460,6 +484,7 @@ static mp_strbuff_t       s_stringpool;
 static float              s_dmg_mult[DAMAGE_TYPE_MAX][ARMOUR_TYPE_MAX];
 static vec_corpse_t       s_corpses;
 static vec_mod_t          s_mods;
+static vec_gbonus_t       s_gbonuses;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -521,6 +546,21 @@ static int combat_effective_damage(const struct combatstate *cs)
     return MAX(0, cs->stats.base_dmg + (int)roundf(cs->mods.bonus[COMBAT_MOD_DAMAGE]));
 }
 
+/* A range of 0 is the melee sentinel that decides which attack path an entity
+ * takes, so a bonus must never lift a melee unit off it.
+ */
+static float combat_effective_range(const struct combatstate *cs)
+{
+    if(cs->stats.attack_range == 0.0f)
+        return 0.0f;
+    return MAX(0.0f, cs->stats.attack_range + cs->mods.bonus[COMBAT_MOD_RANGE]);
+}
+
+static bool combat_effective_invulnerable(const struct combatstate *cs)
+{
+    return cs->invulnerable || (cs->mods.bonus[COMBAT_MOD_INVULNERABLE] > 0.0f);
+}
+
 static bool entities_equal(uint32_t *a, uint32_t *b)
 {
     return ((*a) == (*b));
@@ -534,9 +574,30 @@ static void combat_dying_remove(uint32_t uid)
     vec_entity_del(&s_dying_ents, idx);
 }
 
+static float combat_base_stat(uint32_t uid, const struct combatstate *cs,
+                              enum combat_mod_kind kind)
+{
+    switch(kind) {
+    case COMBAT_MOD_ARMOUR:
+        return cs->stats.base_armour;
+    case COMBAT_MOD_DAMAGE:
+        return cs->stats.base_dmg;
+    case COMBAT_MOD_RANGE:
+        return cs->stats.attack_range;
+    case COMBAT_MOD_SPEED: {
+        float speed = 0.0f;
+        G_Move_GetMaxSpeed(uid, &speed);
+        return speed;
+    }
+    default:
+        return 0.0f;
+    }
+}
+
 /* The bonus sums are derived state: they are always rebuilt from the surviving
  * records rather than patched, so a record that leaks can never leave a stat
- * permanently shifted.
+ * permanently shifted. The group bonus folds in here too, so leaving a group
+ * drops it with nothing to unwind.
  */
 static void combat_mods_resum(uint32_t uid)
 {
@@ -551,7 +612,18 @@ static void combat_mods_resum(uint32_t uid)
             continue;
         if(curr->kind < 0 || curr->kind >= COMBAT_MOD_MAX)
             continue;
-        mods.bonus[curr->kind] += curr->amount;
+        mods.bonus[curr->kind] += curr->percent
+                                ? curr->amount * combat_base_stat(uid, cs, curr->kind)
+                                : curr->amount;
+    }
+
+    int gid = G_Group_ForEnt(uid);
+    if(gid) {
+        for(int kind = 0; kind < COMBAT_MOD_MAX; kind++) {
+            float flat = 0.0f, percent = 0.0f;
+            G_Group_GetBonus(gid, kind, &flat, &percent);
+            mods.bonus[kind] += flat + percent * combat_base_stat(uid, cs, kind);
+        }
     }
 
     float old_speed = cs->mods.bonus[COMBAT_MOD_SPEED];
@@ -657,7 +729,7 @@ static bool maybe_enemy_near(uint32_t uid)
     struct combat_gamestate *gs = &s_combat_work.gamestate;
     const struct combatstate *cs = combatstate_get(uid);
     vec2_t pos = G_Pos_GetXZFrom(gs->positions, uid);
-    float range = MAX(TARGET_ACQUISITION_RANGE, cs->stats.attack_range);
+    float range = MAX(TARGET_ACQUISITION_RANGE, combat_effective_range(cs));
     int binlen = MAX(
         (float)(X_COORDS_PER_TILE * TILES_PER_CHUNK_WIDTH)  / X_BINS_PER_CHUNK,
         (float)(Z_COORDS_PER_TILE * TILES_PER_CHUNK_HEIGHT) / Z_BINS_PER_CHUNK
@@ -708,7 +780,7 @@ static void entity_move_in_range(uint32_t uid, uint32_t target)
 
             G_Move_SetSurroundEntity(uid, target);
         }else{
-            G_Move_SetEnterRange(uid, target, cs->stats.attack_range);
+            G_Move_SetEnterRange(uid, target, combat_effective_range(cs));
         }
     }
 }
@@ -817,7 +889,7 @@ static bool entity_can_attack(uint32_t uid, uint32_t target)
 
     vec2_t delta;
     PFM_Vec2_Sub(&xz_src, &xz_dst, &delta);
-    return (PFM_Vec2_Len(&delta) <= cs->stats.attack_range);
+    return (PFM_Vec2_Len(&delta) <= combat_effective_range(cs));
 }
 
 static bool valid_enemy(uint32_t curr, void *arg)
@@ -1038,7 +1110,7 @@ static void entity_melee_attack(uint32_t uid, uint32_t target)
     if(!target_cs)
         return;
 
-    if(target_cs->invulnerable)
+    if(combat_effective_invulnerable(target_cs))
         return;
 
     /* The float damage is truncated by the assignment back into the integer HP,
@@ -1071,7 +1143,7 @@ static void entity_ranged_attack(uint32_t uid, uint32_t target, vec3_t proj_pos)
         target_pos = Entity_CenterPos(target);
     }else{
         vec3_t fwd = entity_facing_dir(uid);
-        PFM_Vec3_Scale(&fwd, cs->stats.attack_range, &fwd);
+        PFM_Vec3_Scale(&fwd, combat_effective_range(cs), &fwd);
         PFM_Vec3_Add(&proj_pos, &fwd, &target_pos);
     }
 
@@ -1226,6 +1298,7 @@ static void do_remove_entity(uint32_t uid)
 
     combat_dying_remove(uid);
     combat_mods_remove_ent(uid);
+    group_bonuses_remove_ent(uid);
     combatstate_remove(uid);
 }
 
@@ -1287,7 +1360,7 @@ static void do_proj_tryhit(struct proj_hit *hit)
         return;
 
     struct combatstate *cs = combatstate_get(hit->ent_uid);
-    if(cs->invulnerable)
+    if(combat_effective_invulnerable(cs))
         return;
 
     /* Truncated into the integer HP, as in the melee path. */
@@ -1496,7 +1569,7 @@ static void do_set_invulnerable(uint32_t uid, bool on)
 }
 
 static void do_add_modifier(uint32_t uid, enum combat_mod_kind kind, float amount,
-                            uint32_t secs, const char *tag)
+                            bool percent, uint32_t secs, const char *tag)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -1520,7 +1593,8 @@ static void do_add_modifier(uint32_t uid, enum combat_mod_kind kind, float amoun
         .uid = uid,
         .secs_left = secs,
         .kind = kind,
-        .amount = amount
+        .amount = amount,
+        .percent = percent
     };
     pf_strlcpy(mod.tag, tag, sizeof(mod.tag));
     vec_mod_push(&s_mods, mod);
@@ -1547,6 +1621,59 @@ static void do_clear_modifiers(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
 
     combat_mods_remove_ent(uid);
+    combat_mods_resum(uid);
+}
+
+static void do_set_group_bonus(uint32_t uid, const struct group_bonus_desc *desc)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(!combatstate_get(uid))
+        return;
+
+    for(int i = 0; i < vec_size(&s_gbonuses); i++) {
+        const struct group_bonus_rec *curr = &vec_AT(&s_gbonuses, i);
+        if(curr->uid != uid || strcmp(curr->desc.tag, desc->tag))
+            continue;
+        vec_gbonus_del(&s_gbonuses, i);
+        break;
+    }
+
+    vec_gbonus_push(&s_gbonuses, (struct group_bonus_rec){
+        .uid = uid,
+        .desc = *desc
+    });
+    G_Group_RefreshBonus(G_Group_ForEnt(uid));
+}
+
+static void do_clear_group_bonus(uint32_t uid, const char *tag)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    for(int i = 0; i < vec_size(&s_gbonuses); i++) {
+        const struct group_bonus_rec *curr = &vec_AT(&s_gbonuses, i);
+        if(curr->uid != uid || strcmp(curr->desc.tag, tag))
+            continue;
+        vec_gbonus_del(&s_gbonuses, i);
+        i--;
+    }
+    G_Group_RefreshBonus(G_Group_ForEnt(uid));
+}
+
+static void group_bonuses_remove_ent(uint32_t uid)
+{
+    for(int i = 0; i < vec_size(&s_gbonuses); i++) {
+        if(vec_AT(&s_gbonuses, i).uid != uid)
+            continue;
+        vec_gbonus_del(&s_gbonuses, i);
+        i--;
+    }
+}
+
+static void do_refresh_bonuses(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
     combat_mods_resum(uid);
 }
 
@@ -1809,7 +1936,7 @@ uint32_t closest_eligible_entity(uint32_t uid)
     struct combat_gamestate *gs = &s_combat_work.gamestate;
     struct combatstate *cs = combatstate_get(uid);
     vec2_t pos = G_Pos_GetXZFrom(gs->positions, uid);
-    float range = MAX(TARGET_ACQUISITION_RANGE, cs->stats.attack_range);
+    float range = MAX(TARGET_ACQUISITION_RANGE, combat_effective_range(cs));
 
     return G_Pos_NearestWithPredFrom(gs->postree, gs->positions, gs->flags,
         pos, valid_enemy, (void*)((uintptr_t)uid), range);
@@ -2408,7 +2535,7 @@ static void combat_process_cmds(void)
         }
         case COMBAT_CMD_ADD_MODIFIER: {
             do_add_modifier(cmd.uid, cmd.u.add_mod.kind, cmd.u.add_mod.amount,
-                cmd.u.add_mod.secs, cmd.u.add_mod.tag);
+                cmd.u.add_mod.percent, cmd.u.add_mod.secs, cmd.u.add_mod.tag);
             break;
         }
         case COMBAT_CMD_REMOVE_MODIFIER: {
@@ -2417,6 +2544,18 @@ static void combat_process_cmds(void)
         }
         case COMBAT_CMD_CLEAR_MODIFIERS: {
             do_clear_modifiers(cmd.uid);
+            break;
+        }
+        case COMBAT_CMD_SET_GROUP_BONUS: {
+            do_set_group_bonus(cmd.uid, &cmd.u.group_bonus.desc);
+            break;
+        }
+        case COMBAT_CMD_CLEAR_GROUP_BONUS: {
+            do_clear_group_bonus(cmd.uid, cmd.u.clear_group_bonus.tag);
+            break;
+        }
+        case COMBAT_CMD_REFRESH_BONUSES: {
+            do_refresh_bonuses(cmd.uid);
             break;
         }
         default:
@@ -2841,7 +2980,7 @@ static void combat_render_ranges(void)
         mat4x4_t ident;
         PFM_Mat4x4_Identity(&ident);
 
-        const float radius = curr.stats.attack_range;
+        const float radius = combat_effective_range(&curr);
         const float width = 0.25f;
         vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
 
@@ -2966,6 +3105,7 @@ bool G_Combat_Init(const struct map *map)
     combat_copy_gamestate();
     vec_corpse_init(&s_corpses);
     vec_mod_init(&s_mods);
+    vec_gbonus_init(&s_gbonuses);
     return true;
 
 fail_refcnts:
@@ -3013,6 +3153,7 @@ void G_Combat_Shutdown(void)
 
     vec_corpse_destroy(&s_corpses);
     vec_mod_destroy(&s_mods);
+    vec_gbonus_destroy(&s_gbonuses);
     si_shutdown(&s_stringpool, s_stridx);
 }
 
@@ -3340,17 +3481,60 @@ bool G_Combat_GetInvulnerable(uint32_t uid)
 }
 
 void G_Combat_AddModifier(uint32_t uid, enum combat_mod_kind kind, float amount,
-                          uint32_t secs, const char *tag)
+                          bool percent, uint32_t secs, const char *tag)
 {
     struct combat_cmd cmd = (struct combat_cmd){
         .type = COMBAT_CMD_ADD_MODIFIER,
         .uid = uid,
         .u.add_mod.kind = kind,
         .u.add_mod.amount = amount,
+        .u.add_mod.percent = percent,
         .u.add_mod.secs = secs
     };
     pf_strlcpy(cmd.u.add_mod.tag, tag ? tag : "", sizeof(cmd.u.add_mod.tag));
     combat_push_cmd(cmd);
+}
+
+void G_Combat_SetGroupBonus(uint32_t uid, const struct group_bonus_desc *desc)
+{
+    combat_push_cmd((struct combat_cmd){
+        .type = COMBAT_CMD_SET_GROUP_BONUS,
+        .uid = uid,
+        .u.group_bonus.desc = *desc
+    });
+}
+
+void G_Combat_ClearGroupBonus(uint32_t uid, const char *tag)
+{
+    struct combat_cmd cmd = (struct combat_cmd){
+        .type = COMBAT_CMD_CLEAR_GROUP_BONUS,
+        .uid = uid
+    };
+    pf_strlcpy(cmd.u.clear_group_bonus.tag, tag ? tag : "",
+        sizeof(cmd.u.clear_group_bonus.tag));
+    combat_push_cmd(cmd);
+}
+
+int G_Combat_GetGroupBonuses(uint32_t uid, struct group_bonus_desc *out, size_t maxout)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    size_t ret = 0;
+    for(int i = 0; i < vec_size(&s_gbonuses) && ret < maxout; i++) {
+        const struct group_bonus_rec *curr = &vec_AT(&s_gbonuses, i);
+        if(curr->uid != uid)
+            continue;
+        out[ret++] = curr->desc;
+    }
+    return ret;
+}
+
+void G_Combat_RefreshBonuses(uint32_t uid)
+{
+    combat_push_cmd((struct combat_cmd){
+        .type = COMBAT_CMD_REFRESH_BONUSES,
+        .uid = uid
+    });
 }
 
 void G_Combat_RemoveModifier(uint32_t uid, const char *tag)
@@ -3395,10 +3579,34 @@ static bool mod_superseded(uint32_t uid, const char *tag, int start, size_t nlef
     return false;
 }
 
+/* The base a percent modifier resolves against, as the queue will leave it. The
+ * simulation's combat_base_stat reads the committed state instead, which is not
+ * yet there for an entity created this frame.
+ */
+static float combat_base_stat_queued(uint32_t uid, enum combat_mod_kind kind)
+{
+    switch(kind) {
+    case COMBAT_MOD_ARMOUR:
+        return G_Combat_GetBaseArmour(uid);
+    case COMBAT_MOD_DAMAGE:
+        return G_Combat_GetBaseDamage(uid);
+    case COMBAT_MOD_RANGE:
+        return G_Combat_GetRange(uid);
+    case COMBAT_MOD_SPEED: {
+        float speed = 0.0f;
+        G_Move_GetMaxSpeed(uid, &speed);
+        return speed;
+    }
+    default:
+        return 0.0f;
+    }
+}
+
 /* Modifiers accumulate rather than overwrite, so a single most-recent snoop
  * cannot answer this. The queued commands are replayed over the committed
  * records instead, which is what makes a read right after an add report what
- * that add will actually commit.
+ * that add will actually commit. The group's contribution is not queued, so it
+ * is read straight from the aggregate.
  */
 float G_Combat_GetBonus(uint32_t uid, enum combat_mod_kind kind)
 {
@@ -3407,6 +3615,7 @@ float G_Combat_GetBonus(uint32_t uid, enum combat_mod_kind kind)
     if(kind < 0 || kind >= COMBAT_MOD_MAX)
         return 0.0f;
 
+    const float base = combat_base_stat_queued(uid, kind);
     const size_t npending = queue_size(s_combat_commands);
     const int head = s_combat_commands.ihead;
     float bonus = 0.0f;
@@ -3417,7 +3626,7 @@ float G_Combat_GetBonus(uint32_t uid, enum combat_mod_kind kind)
             continue;
         if(mod_superseded(uid, curr->tag, head, npending))
             continue;
-        bonus += curr->amount;
+        bonus += curr->percent ? curr->amount * base : curr->amount;
     }
 
     size_t left = npending;
@@ -3432,7 +3641,16 @@ float G_Combat_GetBonus(uint32_t uid, enum combat_mod_kind kind)
         int next = (i + 1) % s_combat_commands.capacity;
         if(mod_superseded(uid, curr->u.add_mod.tag, next, left - 1))
             continue;
-        bonus += curr->u.add_mod.amount;
+        bonus += curr->u.add_mod.percent
+               ? curr->u.add_mod.amount * base
+               : curr->u.add_mod.amount;
+    }
+
+    int gid = G_Group_ForEnt(uid);
+    if(gid) {
+        float flat = 0.0f, percent = 0.0f;
+        G_Group_GetBonus(gid, kind, &flat, &percent);
+        bonus += flat + percent * base;
     }
     return bonus;
 }
@@ -3447,6 +3665,20 @@ int G_Combat_GetEffectiveDamage(uint32_t uid)
 {
     return MAX(0, G_Combat_GetBaseDamage(uid)
                 + (int)roundf(G_Combat_GetBonus(uid, COMBAT_MOD_DAMAGE)));
+}
+
+float G_Combat_GetEffectiveRange(uint32_t uid)
+{
+    float base = G_Combat_GetRange(uid);
+    if(base == 0.0f)
+        return 0.0f;
+    return MAX(0.0f, base + G_Combat_GetBonus(uid, COMBAT_MOD_RANGE));
+}
+
+bool G_Combat_GetEffectiveInvulnerable(uint32_t uid)
+{
+    return G_Combat_GetInvulnerable(uid)
+        || (G_Combat_GetBonus(uid, COMBAT_MOD_INVULNERABLE) > 0.0f);
 }
 
 void G_Combat_SetBaseDamage(uint32_t uid, int dmg)
@@ -4025,11 +4257,65 @@ bool G_Combat_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &mod_amount, "mod_amount"));
 
+        struct attr mod_percent = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = mod->percent
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &mod_percent, "mod_percent"));
+
         struct attr mod_tag = (struct attr){
             .type = TYPE_STRING,
         };
         pf_strlcpy(mod_tag.val.as_string, mod->tag, sizeof(mod_tag.val.as_string));
         CHK_TRUE_RET(Attr_Write(stream, &mod_tag, "mod_tag"));
+
+        Sched_TryYield();
+    }
+
+    struct attr num_gbonuses = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = vec_size(&s_gbonuses)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_gbonuses, "num_gbonuses"));
+
+    for(int i = 0; i < vec_size(&s_gbonuses); i++) {
+
+        const struct group_bonus_rec *rec = &vec_AT(&s_gbonuses, i);
+        struct attr gb_ent = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = rec->uid
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &gb_ent, "gbonus_ent"));
+
+        struct attr gb_kind = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = rec->desc.kind
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &gb_kind, "gbonus_kind"));
+
+        struct attr gb_amount = (struct attr){
+            .type = TYPE_FLOAT,
+            .val.as_float = rec->desc.amount
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &gb_amount, "gbonus_amount"));
+
+        struct attr gb_percent = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = rec->desc.percent
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &gb_percent, "gbonus_percent"));
+
+        struct attr gb_tag = (struct attr){
+            .type = TYPE_STRING,
+        };
+        pf_strlcpy(gb_tag.val.as_string, rec->desc.tag, sizeof(gb_tag.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &gb_tag, "gbonus_tag"));
+
+        struct attr gb_icon = (struct attr){
+            .type = TYPE_STRING,
+        };
+        pf_strlcpy(gb_icon.val.as_string, rec->desc.icon, sizeof(gb_icon.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &gb_icon, "gbonus_icon"));
 
         Sched_TryYield();
     }
@@ -4312,10 +4598,51 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
         mod.amount = attr.val.as_float;
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        mod.percent = attr.val.as_bool;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_STRING);
         pf_strlcpy(mod.tag, attr.val.as_string, sizeof(mod.tag));
 
         vec_mod_push(&s_mods, mod);
+        Sched_TryYield();
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_gbonuses = attr.val.as_int;
+
+    vec_gbonus_reset(&s_gbonuses);
+    for(int i = 0; i < num_gbonuses; i++) {
+
+        struct group_bonus_rec rec = {0};
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        rec.uid = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        rec.desc.kind = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        rec.desc.amount = attr.val.as_float;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        rec.desc.percent = attr.val.as_bool;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        pf_strlcpy(rec.desc.tag, attr.val.as_string, sizeof(rec.desc.tag));
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        pf_strlcpy(rec.desc.icon, attr.val.as_string, sizeof(rec.desc.icon));
+
+        vec_gbonus_push(&s_gbonuses, rec);
         Sched_TryYield();
     }
 

@@ -895,6 +895,8 @@ static void s_expose_game_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, COMBAT_MOD_ARMOUR);
     PY_EXPOSE_ENUM(module, COMBAT_MOD_DAMAGE);
     PY_EXPOSE_ENUM(module, COMBAT_MOD_SPEED);
+    PY_EXPOSE_ENUM(module, COMBAT_MOD_RANGE);
+    PY_EXPOSE_ENUM(module, COMBAT_MOD_INVULNERABLE);
 
     PY_EXPOSE_ENUM(module, AIR_UNIT_HEIGHT);
 }

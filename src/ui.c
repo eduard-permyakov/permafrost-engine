@@ -338,11 +338,15 @@ static void ui_init_font_stash(struct nk_context *ctx)
         enum font_size{
             FONT_NORMAL,
             FONT_LARGE,
+            FONT_SMALL,
+            FONT_TINY,
             NUM_FONT_SIZES
         };
         size_t font_sizes[] = {
             [FONT_NORMAL] = 16,
             [FONT_LARGE]  = 32,
+            [FONT_SMALL]  = 13,
+            [FONT_TINY]   = 11,
         };
         for(enum font_size fs = 0; fs < NUM_FONT_SIZES; fs++) {
 
@@ -363,6 +367,12 @@ static void ui_init_font_stash(struct nk_context *ctx)
                 break;
             case FONT_LARGE:
                 pf_snprintf(fontname, sizeof(fontname), "%s.32", files[i].name);
+                break;
+            case FONT_SMALL:
+                pf_snprintf(fontname, sizeof(fontname), "%s.13", files[i].name);
+                break;
+            case FONT_TINY:
+                pf_snprintf(fontname, sizeof(fontname), "%s.11", files[i].name);
                 break;
             default: assert(0);
             }

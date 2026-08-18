@@ -275,6 +275,7 @@ int                   G_Group_ForSet(const uint32_t *uids, size_t nuids);
 const vec_entity_t   *G_Group_Members(int group_id);
 void                  G_Group_SetBackgroundStyle(const struct nk_style_item *style);
 void                  G_Group_SetFontColor(const struct nk_color *clr);
+void                  G_Group_SetBonusColor(const struct nk_color *clr);
 bool                  G_Group_MouseOverUI(int mouse_x, int mouse_y);
 
 
@@ -333,17 +334,36 @@ enum combat_stance{
 #define ARMOUR_MIN_POINTS  0
 #define ARMOUR_MAX_POINTS  9900
 
-/* Timed stat modifiers. The amount is in the same units as the stat it moves:
- * armour points, damage per hit, and OpenGL coords per second respectively.
+/* Timed stat modifiers. A flat amount is in the same units as the stat it
+ * moves; COMBAT_MOD_INVULNERABLE is a latch, where any positive amount grants
+ * immunity. The kind is serialized as a raw integer, so new kinds go before
+ * COMBAT_MOD_MAX and never in the middle.
  */
 enum combat_mod_kind{
     COMBAT_MOD_ARMOUR = 0,
     COMBAT_MOD_DAMAGE,
     COMBAT_MOD_SPEED,
+    COMBAT_MOD_RANGE,
+    COMBAT_MOD_INVULNERABLE,
     COMBAT_MOD_MAX
 };
 
-#define COMBAT_MOD_TAG_LEN 64
+/* A tag is the identity of a named bonus: same tag means the same bonus, so
+ * re-applying refreshes rather than stacks. Like the damage and armour types,
+ * the scripting layer defines what the tags mean, including the icon the group
+ * banner draws beside the amount.
+ */
+#define COMBAT_MOD_TAG_LEN    64
+#define COMBAT_BONUS_ICON_LEN 128
+
+/* One tag moves one stat. */
+struct group_bonus_desc{
+    char                 tag[COMBAT_MOD_TAG_LEN];
+    char                 icon[COMBAT_BONUS_ICON_LEN];
+    enum combat_mod_kind kind;
+    float                amount;
+    bool                 percent;
+};
 
 struct proj_fire_desc{
     /* How many frames into the "fire" animation
@@ -381,15 +401,38 @@ void  G_Combat_SetInvulnerable(uint32_t uid, bool on);
 bool  G_Combat_GetInvulnerable(uint32_t uid);
 /* A 'secs' of 0 keeps the modifier until it is removed by tag or cleared. A tag
  * may be NULL; adding one that matches a live tag replaces it, which is what
- * makes re-applying an aura idempotent.
+ * makes re-applying an aura idempotent. A 'percent' modifier scales the base
+ * stat it moves, so 0.2 is +20%; it is resolved against the base every time the
+ * sums are rebuilt.
  */
 void  G_Combat_AddModifier(uint32_t uid, enum combat_mod_kind kind, float amount,
-                           uint32_t secs, const char *tag);
+                           bool percent, uint32_t secs, const char *tag);
 void  G_Combat_RemoveModifier(uint32_t uid, const char *tag);
 void  G_Combat_ClearModifiers(uint32_t uid);
 float G_Combat_GetBonus(uint32_t uid, enum combat_mod_kind kind);
 int   G_Combat_GetEffectiveArmour(uint32_t uid);
 int   G_Combat_GetEffectiveDamage(uint32_t uid);
+float G_Combat_GetEffectiveRange(uint32_t uid);
+bool  G_Combat_GetEffectiveInvulnerable(uint32_t uid);
+/* A group bonus is a standing contribution an entity makes to every member of
+ * whatever group it is in. It is not a modifier record: the bonus is derived
+ * from live membership, so it lapses the moment the entity leaves.
+ */
+void  G_Combat_SetGroupBonus(uint32_t uid, const struct group_bonus_desc *desc);
+void  G_Combat_ClearGroupBonus(uint32_t uid, const char *tag);
+int   G_Combat_GetGroupBonuses(uint32_t uid, struct group_bonus_desc *out, size_t maxout);
+void  G_Combat_RefreshBonuses(uint32_t uid);
+/* The aggregate of the group members' contributions, declared here rather than
+ * beside the other group calls because it is only meaningful with the modifier
+ * kinds in scope. Contributions are folded by tag, so eight bannermen carry one
+ * bannerman's bonus while two differently-named bonuses both apply.
+ * G_Group_RefreshBonus rebuilds the aggregate and re-derives the stats of every
+ * member; a group_id of 0 is a no-op, so an ungrouped entity needs no guard.
+ */
+void  G_Group_GetBonus(int group_id, enum combat_mod_kind kind, float *out_flat,
+                       float *out_percent);
+void  G_Group_RefreshBonus(int group_id);
+int   G_Group_GetBonuses(int group_id, struct group_bonus_desc *out, size_t maxout);
 void  G_Combat_SetBaseDamage(uint32_t uid, int dmg);
 int   G_Combat_GetBaseDamage(uint32_t uid);
 void  G_Combat_SetMaxHP(uint32_t uid, int hp);

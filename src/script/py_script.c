@@ -301,6 +301,7 @@ static PyObject *PyPf_group_for_set(PyObject *self, PyObject *args);
 static PyObject *PyPf_group_members(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_style(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_font_color(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_group_ui_bonus_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_show_console(PyObject *self);
 static PyObject *PyPf_get_version_string(PyObject *self);
 
@@ -1087,6 +1088,10 @@ static PyMethodDef pf_module_methods[] = {
     {"set_group_ui_font_color",
     (PyCFunction)PyPf_set_group_ui_font_color, METH_VARARGS,
     "Set the font color of the group UI windows to an (R, G, B, A) color."},
+
+    {"set_group_ui_bonus_color",
+    (PyCFunction)PyPf_set_group_ui_bonus_color, METH_VARARGS,
+    "Set the color of the group bonus labels on the group banner to an (R, G, B, A) color."},
 
     {"show_console",
     (PyCFunction)PyPf_show_console, METH_NOARGS,
@@ -4564,6 +4569,19 @@ static PyObject *PyPf_set_group_ui_font_color(PyObject *self, PyObject *args)
 
     struct nk_color clr = (struct nk_color){r, g, b, a};
     G_Group_SetFontColor(&clr);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_group_ui_bonus_color(PyObject *self, PyObject *args)
+{
+    int r, g, b, a;
+    if(!PyArg_ParseTuple(args, "iiii", &r, &g, &b, &a)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A).");
+        return NULL;
+    }
+
+    struct nk_color clr = (struct nk_color){r, g, b, a};
+    G_Group_SetBonusColor(&clr);
     Py_RETURN_NONE;
 }
 
