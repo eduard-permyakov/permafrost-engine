@@ -50,8 +50,8 @@ class Sinbad(am.AnimMoveable, ac.AnimCombatable):
         super(Sinbad, self).__init__(path, pfobj, name, 
             idle_clip=self.idle_anim(),
             max_hp = 250,
-            base_dmg = 80,
-            base_armour = 0.50)
+            base_dmg = 70,
+            armour_points = 72)
         self.speed = 20.0
     
     def anim_toggle(self):

@@ -42,8 +42,8 @@ class Goblin(am.AnimMoveable, ac.AnimCombatable):
         super(Goblin, self).__init__(path, pfobj, name, 
             idle_clip=self.idle_anim(),
             max_hp = 120,
-            base_dmg = 40,
-            base_armour = 0.30)
+            base_dmg = 35,
+            armour_points = 32)
         self.speed = 20.0
 
     def idle_anim(self):

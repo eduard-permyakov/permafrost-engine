@@ -41,8 +41,8 @@ class Berzerker(am.AnimMoveable, ac.AnimCombatable):
         super(Berzerker, self).__init__(path, pfobj, name, 
             idle_clip=self.idle_anim(),
             max_hp = 220,
-            base_dmg = 80,
-            base_armour = 0.25)
+            base_dmg = 70,
+            armour_points = 24)
         self.speed = 20.0
 
     def idle_anim(self):
