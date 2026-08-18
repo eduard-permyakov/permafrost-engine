@@ -609,11 +609,14 @@ static void on_render_3d(void *user, void *event)
             region_render_highlight(&reg);
         }
 
-        if(!s_render && !reg.shown && !reg.highlight.active)
+        /* The ring marking the reach is drawn by the range indicator, so a
+         * highlight only rings the members and never outlines the region.
+         */
+        if(!s_render && !reg.shown)
             continue;
 
-        const float width = reg.highlight.active ? reg.highlight.outline_width : dflt_width;
-        const vec3_t outline = reg.highlight.active ? reg.highlight.outline_color : red;
+        const float width = dflt_width;
+        const vec3_t outline = red;
 
         bool explored = false;
         G_Region_Explored(key, G_GetPlayerControlledFactions(), &explored);

@@ -460,26 +460,20 @@ static PyObject *PyRegion_contains(PyRegionObject *self, PyObject *args)
 
 static PyObject *PyRegion_set_highlight(PyRegionObject *self, PyObject *args, PyObject *kwargs)
 {
-    static char *kwlist[] = {"color", "width", "outline_color", "outline_width", NULL};
+    static char *kwlist[] = {"color", "width", NULL};
     float r, g, b;
     float width = 1.0f;
-    float orr = 1.0f, og = 0.0f, ob = 0.0f;
-    float outline_width = 0.35f;
 
-    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "(fff)|f(fff)f", kwlist, &r, &g, &b, &width,
-        &orr, &og, &ob, &outline_width)) {
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "(fff)|f", kwlist, &r, &g, &b, &width)) {
         PyErr_SetString(PyExc_TypeError, "Arguments must be an (R, G, B) tuple of floats and an "
-            "optional (float) 'width'. An optional (R, G, B) 'outline_color' and (float) "
-            "'outline_width' for the ring marking the reach are allowed.");
+            "optional (float) 'width'.");
         return NULL;
     }
 
     struct bonus_highlight hl = (struct bonus_highlight){
         .active = true,
         .color = (vec3_t){r, g, b},
-        .width = width,
-        .outline_color = (vec3_t){orr, og, ob},
-        .outline_width = outline_width
+        .width = width
     };
     G_Region_SetHighlight(self->name, &hl);
     Py_RETURN_NONE;

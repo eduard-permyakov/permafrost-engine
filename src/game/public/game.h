@@ -366,14 +366,13 @@ enum combat_mod_kind{
  * player is asking. Drawn from the live membership, so nothing has to be handed
  * back to the engine as units come and go.
  */
+/* The ring under each affected unit. The extent of the reach is marked by the
+ * range indicator instead, so that every ability draws it the same way.
+ */
 struct bonus_highlight{
     bool   active;
-    /* The ring under each affected unit. */
     vec3_t color;
     float  width;
-    /* The ring marking the reach itself, drawn only for a region. */
-    vec3_t outline_color;
-    float  outline_width;
 };
 
 /* One tag moves one stat. */
