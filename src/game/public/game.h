@@ -356,6 +356,20 @@ enum combat_mod_kind{
 #define COMBAT_MOD_TAG_LEN    64
 #define COMBAT_BONUS_ICON_LEN 128
 
+/* A highlight outlines the set of units a bonus is reaching, for as long as the
+ * player is asking. Drawn from the live membership, so nothing has to be handed
+ * back to the engine as units come and go.
+ */
+struct bonus_highlight{
+    bool   active;
+    /* The ring under each affected unit. */
+    vec3_t color;
+    float  width;
+    /* The ring marking the reach itself, drawn only for a region. */
+    vec3_t outline_color;
+    float  outline_width;
+};
+
 /* One tag moves one stat. */
 struct group_bonus_desc{
     char                 tag[COMBAT_MOD_TAG_LEN];
@@ -433,6 +447,7 @@ void  G_Group_GetBonus(int group_id, enum combat_mod_kind kind, float *out_flat,
                        float *out_percent);
 void  G_Group_RefreshBonus(int group_id);
 int   G_Group_GetBonuses(int group_id, struct group_bonus_desc *out, size_t maxout);
+void  G_Group_SetHighlight(int group_id, const struct bonus_highlight *hl);
 void  G_Combat_SetBaseDamage(uint32_t uid, int dmg);
 int   G_Combat_GetBaseDamage(uint32_t uid);
 void  G_Combat_SetMaxHP(uint32_t uid, int hp);
@@ -674,6 +689,7 @@ struct region_aura{
     char                 tag[COMBAT_MOD_TAG_LEN];
 };
 
+bool   G_Region_SetHighlight(const char *name, const struct bonus_highlight *hl);
 bool   G_Region_SetAura(const char *name, const struct region_aura *aura);
 bool   G_Region_ClearAura(const char *name);
 /* Have the region track an entity's position. A uid of NULL_UID unpins it. */

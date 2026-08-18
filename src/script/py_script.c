@@ -302,6 +302,9 @@ static PyObject *PyPf_group_members(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_style(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_font_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_bonus_color(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_group_highlight(PyObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPf_clear_group_highlight(PyObject *self);
+static PyObject *PyPf_group_for_ent(PyObject *self, PyObject *args);
 static PyObject *PyPf_show_console(PyObject *self);
 static PyObject *PyPf_get_version_string(PyObject *self);
 
@@ -1092,6 +1095,19 @@ static PyMethodDef pf_module_methods[] = {
     {"set_group_ui_bonus_color",
     (PyCFunction)PyPf_set_group_ui_bonus_color, METH_VARARGS,
     "Set the color of the group bonus labels on the group banner to an (R, G, B, A) color."},
+
+    {"set_group_highlight",
+    (PyCFunction)PyPf_set_group_highlight, METH_VARARGS | METH_KEYWORDS,
+    "Outline every member of the specified group in an (R, G, B) color, with an optional 'width'. "
+    "The outlines follow the live membership. Only one group is highlighted at a time."},
+
+    {"clear_group_highlight",
+    (PyCFunction)PyPf_clear_group_highlight, METH_NOARGS,
+    "Stop outlining a group's members."},
+
+    {"group_for_ent",
+    (PyCFunction)PyPf_group_for_ent, METH_VARARGS,
+    "Returns the ID of the group the specified entity is locked into, or 0 if it is not in one."},
 
     {"show_console",
     (PyCFunction)PyPf_show_console, METH_NOARGS,
@@ -4582,6 +4598,49 @@ static PyObject *PyPf_set_group_ui_bonus_color(PyObject *self, PyObject *args)
 
     struct nk_color clr = (struct nk_color){r, g, b, a};
     G_Group_SetBonusColor(&clr);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_group_for_ent(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    if(!PyArg_ParseTuple(args, "O", &obj) || !S_Entity_Check(obj)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single pf.Entity instance.");
+        return NULL;
+    }
+
+    uint32_t uid = 0;
+    S_Entity_UIDForObj(obj, &uid);
+    return PyInt_FromLong(G_Group_ForEnt(uid));
+}
+
+static PyObject *PyPf_set_group_highlight(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    static char *kwlist[] = {"group_id", "color", "width", NULL};
+    int group_id;
+    float r, g, b;
+    float width = 1.0f;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "i(fff)|f", kwlist, &group_id, &r, &g, &b,
+        &width)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an integer group ID and an (R, G, B) "
+            "tuple of floats. An optional (float) 'width' is allowed.");
+        return NULL;
+    }
+
+    struct bonus_highlight hl = (struct bonus_highlight){
+        .active = true,
+        .color = (vec3_t){r, g, b},
+        .width = width
+    };
+    G_Group_SetHighlight(group_id, &hl);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_clear_group_highlight(PyObject *self)
+{
+    struct bonus_highlight hl = (struct bonus_highlight){0};
+    G_Group_SetHighlight(0, &hl);
     Py_RETURN_NONE;
 }
 

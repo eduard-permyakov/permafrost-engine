@@ -50,6 +50,8 @@
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/stb_image.h"
+#include "../render/public/render.h"
+#include "../render/public/render_ctrl.h"
 
 #include <assert.h>
 #include <string.h>
@@ -108,6 +110,11 @@ static khash_t(members) *s_groups;
 static khash_t(bounds)  *s_ui_bounds;
 static khash_t(gbonus)  *s_group_bonuses;
 static int               s_next_group_id;
+/* At most one group is ever asked about at a time, so the highlight is a single
+ * slot rather than per-group state to be kept tidy.
+ */
+static int               s_highlight_gid;
+static struct bonus_highlight s_highlight;
 
 static struct nk_style_item s_bg_style;
 static struct nk_color      s_font_clr;
@@ -243,6 +250,37 @@ static int group_at_position(int mouse_x, int mouse_y)
             return gid;
     });
     return 0;
+}
+
+static void on_render_3d(void *user, void *event)
+{
+    if(!s_highlight_gid || !s_highlight.active)
+        return;
+
+    const vec_entity_t *members = G_Group_Members(s_highlight_gid);
+    if(!members)
+        return;
+
+    for(int i = 0; i < vec_size(members); i++) {
+
+        uint32_t uid = vec_AT(members, i);
+        if(!G_EntityExists(uid))
+            continue;
+
+        vec2_t pos = G_Pos_GetXZ(uid);
+        float radius = G_GetSelectionRadius(uid);
+        R_PushCmd((struct rcmd){
+            .func = R_GL_DrawSelectionCircle,
+            .nargs = 5,
+            .args = {
+                R_PushArg(&pos, sizeof(pos)),
+                R_PushArg(&radius, sizeof(radius)),
+                R_PushArg(&s_highlight.width, sizeof(s_highlight.width)),
+                R_PushArg(&s_highlight.color, sizeof(s_highlight.color)),
+                (void*)G_GetPrevTickMap(),
+            },
+        });
+    }
 }
 
 static void on_update_ui(void *user, void *event)
@@ -527,6 +565,8 @@ bool G_Group_Init(void)
     E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL,
         G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
+    E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL,
+        G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
     return true;
 
 fail_group_bonuses:
@@ -544,6 +584,7 @@ fail_ent_group_map:
 
 void G_Group_Shutdown(void)
 {
+    E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
 
@@ -712,6 +753,12 @@ void G_Group_GetBonus(int group_id, enum combat_mod_kind kind, float *out_flat,
             *out_flat += bonuses->descs[i].amount;
         }
     }
+}
+
+void G_Group_SetHighlight(int group_id, const struct bonus_highlight *hl)
+{
+    s_highlight_gid = hl->active ? group_id : 0;
+    s_highlight = *hl;
 }
 
 void G_Group_RefreshBonus(int group_id)

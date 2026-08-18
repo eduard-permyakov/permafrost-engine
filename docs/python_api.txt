@@ -140,6 +140,15 @@ BUILT-IN FUNCTIONS
     Set a flag controlling whether or not the UI labels are rendered over the
     garrisonable entities.
 
+    [group_for_ent]
+    ----------------------------------------------------------------------------
+    Returns the ID of the group the specified entity is locked into, or 0 if it
+    is not in one.
+
+    [clear_group_highlight]
+    ----------------------------------------------------------------------------
+    Stop outlining a group's members.
+
     [get_active_camera]
     ----------------------------------------------------------------------------
     Get a pf.Camera object describing the active camera from whose point of
@@ -537,6 +546,17 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Set the garrisonable UI background to the specified color (R, G, B, A) or
     image (string).
+
+    [set_group_highlight]
+    ----------------------------------------------------------------------------
+    Outline every member of the specified group in an (R, G, B) color, with an
+    optional 'width'. The outlines follow the live membership. Only one group is
+    highlighted at a time.
+
+    [set_group_ui_bonus_color]
+    ----------------------------------------------------------------------------
+    Set the color of the group bonus labels on the group banner to an
+    (R, G, B, A) color.
 
     [set_gather_on_left_click]
     ----------------------------------------------------------------------------
@@ -2354,6 +2374,15 @@ BUILT-IN CLASSES
         [clear_aura]
         Remove the region's aura, dropping the modifier from everything
         currently inside it.
+
+        [set_highlight]
+        Outline every entity inside the region in an (R, G, B) color, with an
+        optional 'width', and mark the region's own extent with a ring in the
+        optional 'outline_color' and 'outline_width'. The outlines follow the
+        live membership, so nothing needs updating as units come and go.
+
+        [clear_highlight]
+        Stop outlining the region and its members.
 
     [ResourceEntity]
     ----------------------------------------------------------------------------

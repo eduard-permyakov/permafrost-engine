@@ -104,6 +104,12 @@ struct region{
     /* Set when the region follows an entity around; NULL_UID otherwise. */
     uint32_t follows;
     struct region_aura aura;
+    /* Exactly who is carrying the aura right now. Derived from curr_ents, but
+     * kept separately: membership can turn over between two notifications, and
+     * an aura that is reconciled against a stale diff leaves buffs behind.
+     */
+    khash_t(uid) *aura_ents;
+    struct bonus_highlight highlight;
 };
 
 enum op{
@@ -425,21 +431,49 @@ static bool region_aura_affects(const struct region *reg, uint32_t uid)
     return (ds != DIPLOMACY_STATE_WAR);
 }
 
-static void region_aura_apply(const struct region *reg, uint32_t uid)
+static void region_aura_drop(const struct region *reg, uint32_t uid)
 {
-    if(!region_aura_affects(reg, uid))
-        return;
-    G_Combat_AddModifier(uid, reg->aura.kind, reg->aura.amount, reg->aura.percent,
-        0, reg->aura.tag);
-}
-
-static void region_aura_clear(const struct region *reg, uint32_t uid)
-{
-    if(!reg->aura.active)
-        return;
     if(!G_EntityExists(uid))
         return;
     G_Combat_RemoveModifier(uid, reg->aura.tag);
+}
+
+/* Bring the set of entities carrying the aura back in line with the set of
+ * entities standing in the region.
+ */
+static void region_aura_reconcile(struct region *reg)
+{
+    if(!reg->aura_ents)
+        return;
+
+    for(khiter_t k = kh_begin(reg->aura_ents); k != kh_end(reg->aura_ents); k++) {
+
+        if(!kh_exist(reg->aura_ents, k))
+            continue;
+
+        uint32_t uid = kh_key(reg->aura_ents, k);
+        if(reg->aura.active && kh_get(uid, reg->curr_ents, uid) != kh_end(reg->curr_ents))
+            continue;
+
+        region_aura_drop(reg, uid);
+        kh_del(uid, reg->aura_ents, k);
+    }
+
+    if(!reg->aura.active)
+        return;
+
+    uint32_t member;
+    kh_foreach_key(reg->curr_ents, member, {
+
+        if(kh_get(uid, reg->aura_ents, member) != kh_end(reg->aura_ents))
+            continue;
+        if(!region_aura_affects(reg, member))
+            continue;
+
+        G_Combat_AddModifier(member, reg->aura.kind, reg->aura.amount, reg->aura.percent,
+            0, reg->aura.tag);
+        kh_put(uid, reg->aura_ents, member, &(int){0});
+    });
 }
 
 /* How far a following region drifts from its entity before its membership is
@@ -506,12 +540,13 @@ static void region_notify_exited(const char *name, uint32_t uid)
 static void region_notify_changed(const char *name, struct region *reg)
 {
     size_t nchanged = 0;
+
+    region_aura_reconcile(reg);
     uint32_t uid;
 
     kh_foreach_key(reg->curr_ents, uid, {
         if(kh_get(uid, reg->prev_ents, uid) != kh_end(reg->prev_ents))
             continue;
-        region_aura_apply(reg, uid);
         region_notify_entered(name, uid);
         nchanged++;
     });
@@ -519,7 +554,6 @@ static void region_notify_changed(const char *name, struct region *reg)
     kh_foreach_key(reg->prev_ents, uid, {
         if(kh_get(uid, reg->curr_ents, uid) != kh_end(reg->curr_ents))
             continue;
-        region_aura_clear(reg, uid);
         region_notify_exited(name, uid);
         nchanged++;
     });
@@ -534,9 +568,36 @@ static void region_notify_changed(const char *name, struct region *reg)
     });
 }
 
+/* One ring under every unit the region is reaching, so the extent of a bonus
+ * reads off the battlefield rather than off a number in a panel.
+ */
+static void region_render_highlight(const struct region *reg)
+{
+    uint32_t member;
+    kh_foreach_key(reg->curr_ents, member, {
+
+        if(!G_EntityExists(member))
+            continue;
+
+        vec2_t pos = G_Pos_GetXZ(member);
+        float radius = G_GetSelectionRadius(member);
+        R_PushCmd((struct rcmd){
+            .func = R_GL_DrawSelectionCircle,
+            .nargs = 5,
+            .args = {
+                R_PushArg(&pos, sizeof(pos)),
+                R_PushArg(&radius, sizeof(radius)),
+                R_PushArg(&reg->highlight.width, sizeof(reg->highlight.width)),
+                R_PushArg(&reg->highlight.color, sizeof(reg->highlight.color)),
+                (void*)G_GetPrevTickMap(),
+            },
+        });
+    });
+}
+
 static void on_render_3d(void *user, void *event)
 {
-    const float width = 0.5f;
+    const float dflt_width = 0.5f;
     const vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
 
     const char *key;
@@ -544,8 +605,15 @@ static void on_render_3d(void *user, void *event)
 
     kh_foreach(s_regions, key, reg, {
 
-        if(!s_render && !reg.shown)
+        if(reg.highlight.active) {
+            region_render_highlight(&reg);
+        }
+
+        if(!s_render && !reg.shown && !reg.highlight.active)
             continue;
+
+        const float width = reg.highlight.active ? reg.highlight.outline_width : dflt_width;
+        const vec3_t outline = reg.highlight.active ? reg.highlight.outline_color : red;
 
         bool explored = false;
         G_Region_Explored(key, G_GetPlayerControlledFactions(), &explored);
@@ -562,7 +630,7 @@ static void on_render_3d(void *user, void *event)
                     R_PushArg(&reg.pos, sizeof(reg.pos)),
                     R_PushArg(&reg.radius, sizeof(reg.radius)),
                     R_PushArg(&width, sizeof(width)),
-                    R_PushArg(&red, sizeof(red)),
+                    R_PushArg(&outline, sizeof(outline)),
                     (void*)G_GetPrevTickMap(),
                 },
             });
@@ -582,7 +650,7 @@ static void on_render_3d(void *user, void *event)
                 .args = {
                     R_PushArg(corners, sizeof(corners)),
                     R_PushArg(&width, sizeof(width)),
-                    R_PushArg(&red, sizeof(red)),
+                    R_PushArg(&outline, sizeof(outline)),
                     (void*)G_GetPrevTickMap(),
                 },
             });
@@ -662,6 +730,7 @@ void G_Region_Shutdown(void)
         PF_FREE(key);
         kh_destroy(uid, reg.curr_ents);
         kh_destroy(uid, reg.prev_ents);
+        kh_destroy(uid, reg.aura_ents);
     });
 
     for(int i = 0; i < vec_size(&s_eventargs); i++) {
@@ -686,9 +755,11 @@ bool G_Region_AddCircle(const char *name, vec2_t pos, float radius)
     };
     newreg.curr_ents = kh_init(uid);
     newreg.prev_ents = kh_init(uid);
-    if(!newreg.curr_ents || !newreg.prev_ents) {
+    newreg.aura_ents = kh_init(uid);
+    if(!newreg.curr_ents || !newreg.prev_ents || !newreg.aura_ents) {
         kh_destroy(uid, newreg.curr_ents);
         kh_destroy(uid, newreg.prev_ents);
+        kh_destroy(uid, newreg.aura_ents);
         return false;
     }
 
@@ -714,9 +785,11 @@ bool G_Region_AddRectangle(const char *name, vec2_t pos, float xlen, float zlen)
     };
     newreg.curr_ents = kh_init(uid);
     newreg.prev_ents = kh_init(uid);
-    if(!newreg.curr_ents || !newreg.prev_ents) {
+    newreg.aura_ents = kh_init(uid);
+    if(!newreg.curr_ents || !newreg.prev_ents || !newreg.aura_ents) {
         kh_destroy(uid, newreg.curr_ents);
         kh_destroy(uid, newreg.prev_ents);
+        kh_destroy(uid, newreg.aura_ents);
         return false;
     }
 
@@ -740,9 +813,11 @@ void G_Region_Remove(const char *name)
     struct region *reg = &kh_value(s_regions, k);
 
     uint32_t member;
-    kh_foreach_key(reg->curr_ents, member, {
+    kh_foreach_key(reg->aura_ents, member, {
+        region_aura_drop(reg, member);
+    });
 
-        region_aura_clear(reg, member);
+    kh_foreach_key(reg->curr_ents, member, {
 
         const char *arg = pf_strdup(name);
         vec_str_push(&s_eventargs, arg);
@@ -752,6 +827,7 @@ void G_Region_Remove(const char *name)
     region_update_intersecting(key, &kh_value(s_regions, k), REMOVE);
     kh_destroy(uid, kh_val(s_regions, k).curr_ents);
     kh_destroy(uid, kh_val(s_regions, k).prev_ents);
+    kh_destroy(uid, kh_val(s_regions, k).aura_ents);
     kh_del(region, s_regions, k);
 
     k = kh_get(name, s_dirty, name);
@@ -794,6 +870,16 @@ bool G_Region_GetPos(const char *name, vec2_t *out)
     return true;
 }
 
+bool G_Region_SetHighlight(const char *name, const struct bonus_highlight *hl)
+{
+    khiter_t k = kh_get(region, s_regions, name);
+    if(k == kh_end(s_regions))
+        return false;
+
+    kh_value(s_regions, k).highlight = *hl;
+    return true;
+}
+
 bool G_Region_SetAura(const char *name, const struct region_aura *aura)
 {
     khiter_t k = kh_get(region, s_regions, name);
@@ -804,16 +890,14 @@ bool G_Region_SetAura(const char *name, const struct region_aura *aura)
     uint32_t member;
 
     /* Swapping one aura for another must not leave the old one behind. */
-    kh_foreach_key(reg->curr_ents, member, {
-        region_aura_clear(reg, member);
+    kh_foreach_key(reg->aura_ents, member, {
+        region_aura_drop(reg, member);
     });
+    kh_clear(uid, reg->aura_ents);
 
     reg->aura = *aura;
     reg->aura.active = true;
-
-    kh_foreach_key(reg->curr_ents, member, {
-        region_aura_apply(reg, member);
-    });
+    region_aura_reconcile(reg);
     return true;
 }
 
@@ -826,9 +910,10 @@ bool G_Region_ClearAura(const char *name)
     struct region *reg = &kh_value(s_regions, k);
     uint32_t member;
 
-    kh_foreach_key(reg->curr_ents, member, {
-        region_aura_clear(reg, member);
+    kh_foreach_key(reg->aura_ents, member, {
+        region_aura_drop(reg, member);
     });
+    kh_clear(uid, reg->aura_ents);
     reg->aura = (struct region_aura){0};
     return true;
 }
@@ -1020,10 +1105,10 @@ bool G_Region_Explored(const char *name, uint16_t player_mask, bool *out)
 
     const struct region *reg = &kh_value(s_regions, k);
     switch(reg->type) {
-    case REGION_RECTANGLE:
+    case REGION_CIRCLE:
         *out = G_Fog_CircleExplored(player_mask, reg->pos, reg->radius);
         break;
-    case REGION_CIRCLE:
+    case REGION_RECTANGLE:
         *out = G_Fog_RectExplored(player_mask, reg->pos, reg->xlen/2.0f, reg->zlen/2.0f);
         break;
     default:

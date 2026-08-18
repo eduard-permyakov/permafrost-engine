@@ -76,6 +76,8 @@ static PyObject *PyRegion_contains(PyRegionObject *self, PyObject *args);
 static PyObject *PyRegion_follow(PyRegionObject *self, PyObject *args);
 static PyObject *PyRegion_set_aura(PyRegionObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyRegion_clear_aura(PyRegionObject *self);
+static PyObject *PyRegion_set_highlight(PyRegionObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyRegion_clear_highlight(PyRegionObject *self);
 static PyObject *PyRegion_explore(PyRegionObject *self, PyObject *args);
 static PyObject *PyRegion_pickle(PyRegionObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyRegion_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
@@ -120,6 +122,16 @@ static PyMethodDef PyRegion_methods[] = {
     {"clear_aura",
     (PyCFunction)PyRegion_clear_aura, METH_NOARGS,
     "Remove the region's aura, dropping the modifier from everything currently inside it."},
+
+    {"set_highlight",
+    (PyCFunction)PyRegion_set_highlight, METH_VARARGS | METH_KEYWORDS,
+    "Outline the region and every entity inside it in an (R, G, B) color, with an optional "
+    "'width'. The outlines follow the live membership, so nothing needs updating as units "
+    "come and go."},
+
+    {"clear_highlight",
+    (PyCFunction)PyRegion_clear_highlight, METH_NOARGS,
+    "Stop outlining the region and its members."},
 
     {"__pickle__", 
     (PyCFunction)PyRegion_pickle, METH_KEYWORDS,
@@ -444,6 +456,40 @@ static PyObject *PyRegion_contains(PyRegionObject *self, PyObject *args)
     }else {
         Py_RETURN_FALSE;
     }
+}
+
+static PyObject *PyRegion_set_highlight(PyRegionObject *self, PyObject *args, PyObject *kwargs)
+{
+    static char *kwlist[] = {"color", "width", "outline_color", "outline_width", NULL};
+    float r, g, b;
+    float width = 1.0f;
+    float orr = 1.0f, og = 0.0f, ob = 0.0f;
+    float outline_width = 0.35f;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "(fff)|f(fff)f", kwlist, &r, &g, &b, &width,
+        &orr, &og, &ob, &outline_width)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an (R, G, B) tuple of floats and an "
+            "optional (float) 'width'. An optional (R, G, B) 'outline_color' and (float) "
+            "'outline_width' for the ring marking the reach are allowed.");
+        return NULL;
+    }
+
+    struct bonus_highlight hl = (struct bonus_highlight){
+        .active = true,
+        .color = (vec3_t){r, g, b},
+        .width = width,
+        .outline_color = (vec3_t){orr, og, ob},
+        .outline_width = outline_width
+    };
+    G_Region_SetHighlight(self->name, &hl);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyRegion_clear_highlight(PyRegionObject *self)
+{
+    struct bonus_highlight hl = (struct bonus_highlight){0};
+    G_Region_SetHighlight(self->name, &hl);
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyRegion_explore(PyRegionObject *self, PyObject *args)
