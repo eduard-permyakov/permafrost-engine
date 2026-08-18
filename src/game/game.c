@@ -124,6 +124,16 @@ __KHASH_IMPL(range,   extern, khint32_t, float,    1, kh_int_hash_func, kh_int_h
 /*****************************************************************************/
 
 static struct gamestate s_gs;
+/* One ring at a time: it only ever answers "how far does this reach?" for the
+ * ability the pointer is currently on.
+ */
+static struct{
+    bool     active;
+    uint32_t uid;
+    float    radius;
+    float    width;
+    vec3_t   color;
+}s_range_indicator;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -2436,6 +2446,23 @@ void G_Render(void)
         }
     }
 
+    /* A ring showing how far an ability reaches, while the player is asking. */
+    if(s_range_indicator.active && G_EntityExists(s_range_indicator.uid)) {
+
+        vec2_t pos = G_Pos_GetXZ(s_range_indicator.uid);
+        R_PushCmd((struct rcmd){
+            .func = R_GL_DrawSelectionCircle,
+            .nargs = 5,
+            .args = {
+                R_PushArg(&pos, sizeof(pos)),
+                R_PushArg(&s_range_indicator.radius, sizeof(s_range_indicator.radius)),
+                R_PushArg(&s_range_indicator.width, sizeof(s_range_indicator.width)),
+                R_PushArg(&s_range_indicator.color, sizeof(s_range_indicator.color)),
+                (void*)s_gs.prev_tick_map,
+            },
+        });
+    }
+
     R_PushCmd((struct rcmd){
         .func = R_GL_DrawSkybox,
         .nargs = 1,
@@ -2962,6 +2989,23 @@ float G_GetVisionRange(uint32_t uid)
     khiter_t k = kh_get(range, s_gs.ent_visrange_map, uid);
     assert(k != kh_end(s_gs.ent_visrange_map));
     return kh_value(s_gs.ent_visrange_map, k);
+}
+
+void G_SetRangeIndicator(uint32_t uid, float radius, vec3_t color, float width)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    s_range_indicator.active = true;
+    s_range_indicator.uid = uid;
+    s_range_indicator.radius = radius;
+    s_range_indicator.color = color;
+    s_range_indicator.width = width;
+}
+
+void G_ClearRangeIndicator(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    s_range_indicator.active = false;
 }
 
 void G_SetSelectionRadius(uint32_t uid, float range)

@@ -305,6 +305,8 @@ static PyObject *PyPf_set_group_ui_bonus_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_highlight(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_clear_group_highlight(PyObject *self);
 static PyObject *PyPf_group_for_ent(PyObject *self, PyObject *args);
+static PyObject *PyPf_show_range_indicator(PyObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPf_hide_range_indicator(PyObject *self);
 static PyObject *PyPf_show_console(PyObject *self);
 static PyObject *PyPf_get_version_string(PyObject *self);
 
@@ -1108,6 +1110,16 @@ static PyMethodDef pf_module_methods[] = {
     {"group_for_ent",
     (PyCFunction)PyPf_group_for_ent, METH_VARARGS,
     "Returns the ID of the group the specified entity is locked into, or 0 if it is not in one."},
+
+    {"show_range_indicator",
+    (PyCFunction)PyPf_show_range_indicator, METH_VARARGS | METH_KEYWORDS,
+    "Draw a ring of the specified radius around an entity, for showing how far one of its "
+    "abilities reaches. Takes the pf.Entity and the radius, with an optional (R, G, B) 'color' "
+    "and (float) 'width'. Only one indicator is shown at a time."},
+
+    {"hide_range_indicator",
+    (PyCFunction)PyPf_hide_range_indicator, METH_NOARGS,
+    "Stop drawing the range indicator ring."},
 
     {"show_console",
     (PyCFunction)PyPf_show_console, METH_NOARGS,
@@ -4612,6 +4624,38 @@ static PyObject *PyPf_group_for_ent(PyObject *self, PyObject *args)
     uint32_t uid = 0;
     S_Entity_UIDForObj(obj, &uid);
     return PyInt_FromLong(G_Group_ForEnt(uid));
+}
+
+static PyObject *PyPf_show_range_indicator(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    static char *kwlist[] = {"entity", "radius", "color", "width", NULL};
+    PyObject *obj;
+    float radius;
+    float r = 1.0f, g = 0.0f, b = 0.0f;
+    float width = 0.5f;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "Of|(fff)f", kwlist, &obj, &radius,
+        &r, &g, &b, &width)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a pf.Entity and a float radius. An "
+            "optional (R, G, B) 'color' and (float) 'width' are allowed.");
+        return NULL;
+    }
+
+    if(!S_Entity_Check(obj)) {
+        PyErr_SetString(PyExc_TypeError, "The first argument must be a pf.Entity instance.");
+        return NULL;
+    }
+
+    uint32_t uid = 0;
+    S_Entity_UIDForObj(obj, &uid);
+    G_SetRangeIndicator(uid, radius, (vec3_t){r, g, b}, width);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_hide_range_indicator(PyObject *self)
+{
+    G_ClearRangeIndicator();
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_set_group_highlight(PyObject *self, PyObject *args, PyObject *kwargs)

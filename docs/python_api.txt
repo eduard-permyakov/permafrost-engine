@@ -149,6 +149,16 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Stop outlining a group's members.
 
+    [show_range_indicator]
+    ----------------------------------------------------------------------------
+    Draw a ring of the specified radius around an entity, for showing how far one
+    of its abilities reaches. Takes the pf.Entity and the radius, with an optional
+    (R, G, B) 'color' and (float) 'width'. Only one indicator is shown at a time.
+
+    [hide_range_indicator]
+    ----------------------------------------------------------------------------
+    Stop drawing the range indicator ring.
+
     [get_active_camera]
     ----------------------------------------------------------------------------
     Get a pf.Camera object describing the active camera from whose point of

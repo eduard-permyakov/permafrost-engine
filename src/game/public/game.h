@@ -191,6 +191,12 @@ void            G_GetFieldCacheStats(struct fc_stats *out);
 void            G_SetVisionRange(uint32_t uid, float range);
 float           G_GetVisionRange(uint32_t uid);
 
+/* A ring drawn around an entity at the given radius, for showing how far an
+ * ability reaches. Only one is shown at a time.
+ */
+void            G_SetRangeIndicator(uint32_t uid, float radius, vec3_t color, float width);
+void            G_ClearRangeIndicator(void);
+
 void            G_SetSelectionRadius(uint32_t uid, float range);
 float           G_GetSelectionRadius(uint32_t uid);
 float           G_GetSelectionRadiusFrom(struct kh_range_s *table, uint32_t uid);
