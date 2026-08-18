@@ -2339,6 +2339,22 @@ BUILT-IN CLASSES
         [explore]
         Explore the Fog of War in the region for the specified faction.
 
+        [follow]
+        Have the region track the position of the specified entity, or None to
+        stop following. The engine moves the region itself, and only once it
+        has drifted far enough from the entity to be worth recomputing what is
+        inside it.
+
+        [set_aura]
+        Have the region apply a modifier to every entity inside it, taking the
+        owning pf.Entity, a kind, an amount and a tag, with the same 'percent'
+        meaning as 'add_modifier'. The modifier is removed as soon as an entity
+        leaves, and only entities not at war with the owner are affected.
+
+        [clear_aura]
+        Remove the region's aura, dropping the modifier from everything
+        currently inside it.
+
     [ResourceEntity]
     ----------------------------------------------------------------------------
     Permafrost Engine resource entity. This is a subclass of pf.Entity. This

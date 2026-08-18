@@ -73,6 +73,9 @@ static void      PyRegion_dealloc(PyRegionObject *self);
 
 static PyObject *PyRegion_curr_ents(PyRegionObject *self);
 static PyObject *PyRegion_contains(PyRegionObject *self, PyObject *args);
+static PyObject *PyRegion_follow(PyRegionObject *self, PyObject *args);
+static PyObject *PyRegion_set_aura(PyRegionObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyRegion_clear_aura(PyRegionObject *self);
 static PyObject *PyRegion_explore(PyRegionObject *self, PyObject *args);
 static PyObject *PyRegion_pickle(PyRegionObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyRegion_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
@@ -101,6 +104,22 @@ static PyMethodDef PyRegion_methods[] = {
     {"explore", 
     (PyCFunction)PyRegion_explore, METH_VARARGS,
     "Explore the Fog of War in the region for the specified faction."},
+
+    {"follow",
+    (PyCFunction)PyRegion_follow, METH_VARARGS,
+    "Have the region track the position of the specified entity, or None to stop following. "
+    "The engine moves the region itself, and only once it has drifted far enough from the "
+    "entity to be worth recomputing what is inside it."},
+
+    {"set_aura",
+    (PyCFunction)PyRegion_set_aura, METH_VARARGS | METH_KEYWORDS,
+    "Have the region apply a modifier to every entity inside it, taking the owning pf.Entity, a "
+    "kind, an amount and a tag, with the same 'percent' meaning as 'add_modifier'. The modifier is "
+    "removed as soon as an entity leaves, and only entities not at war with the owner are affected."},
+
+    {"clear_aura",
+    (PyCFunction)PyRegion_clear_aura, METH_NOARGS,
+    "Remove the region's aura, dropping the modifier from everything currently inside it."},
 
     {"__pickle__", 
     (PyCFunction)PyRegion_pickle, METH_KEYWORDS,
@@ -295,12 +314,21 @@ static PyObject *PyRegion_curr_ents(PyRegionObject *self)
 {
     assert(Sched_UsingBigStack());
 
-    uint32_t ents[512];
-    size_t nents = G_Region_GetEnts(self->name, ARR_SIZE(ents), ents);
+    /* A large region can hold more entities than any fixed buffer, and silently
+     * dropping the tail reads as the region being emptier than it is.
+     */
+    size_t cap = G_Region_GetNumEnts(self->name);
+    uint32_t *ents = PF_MALLOC((cap ? cap : 1) * sizeof(uint32_t));
+    if(!ents)
+        return PyErr_NoMemory();
+
+    size_t nents = G_Region_GetEnts(self->name, cap, ents);
 
     PyObject *ret = PyList_New(0);
-    if(!ret)
+    if(!ret) {
+        PF_FREE(ents);
         return NULL;
+    }
 
     for(int i = 0; i < nents; i++) {
         PyObject *ent = S_Entity_ObjForUID(ents[i]);
@@ -308,11 +336,94 @@ static PyObject *PyRegion_curr_ents(PyRegionObject *self)
             continue;
 
         if(0 != PyList_Append(ret, ent)) {
+            PF_FREE(ents);
             Py_DECREF(ret);
             return NULL;
         }
     }
+    PF_FREE(ents);
     return ret;
+}
+
+static PyObject *PyRegion_follow(PyRegionObject *self, PyObject *args)
+{
+    PyObject *obj;
+
+    if(!PyArg_ParseTuple(args, "O", &obj)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a pf.Entity instance or None.");
+        return NULL;
+    }
+
+    if(obj == Py_None) {
+        G_Region_SetFollow(self->name, NULL_UID);
+        Py_RETURN_NONE;
+    }
+
+    if(!S_Entity_Check(obj)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a pf.Entity instance or None.");
+        return NULL;
+    }
+
+    uint32_t uid = 0;
+    S_Entity_UIDForObj(obj, &uid);
+    G_Region_SetFollow(self->name, uid);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyRegion_set_aura(PyRegionObject *self, PyObject *args, PyObject *kwargs)
+{
+    static char *kwlist[] = {"owner", "kind", "amount", "tag", "percent", NULL};
+    PyObject *obj;
+    int kind;
+    float amount;
+    const char *tag;
+    PyObject *percent = Py_False;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "Oifs|O", kwlist, &obj, &kind, &amount,
+        &tag, &percent)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an owner pf.Entity, an integer kind, "
+            "a float amount and a string tag. An optional (bool) 'percent' is allowed.");
+        return NULL;
+    }
+
+    if(!S_Entity_Check(obj)) {
+        PyErr_SetString(PyExc_TypeError, "The owner must be a pf.Entity instance.");
+        return NULL;
+    }
+
+    if(kind < 0 || kind >= COMBAT_MOD_MAX) {
+        PyErr_SetString(PyExc_ValueError, "The modifier kind must be one of pf.COMBAT_MOD_ARMOUR, "
+            "pf.COMBAT_MOD_DAMAGE, pf.COMBAT_MOD_SPEED, pf.COMBAT_MOD_RANGE or "
+            "pf.COMBAT_MOD_INVULNERABLE.");
+        return NULL;
+    }
+
+    if(strlen(tag) == 0 || strlen(tag) >= COMBAT_MOD_TAG_LEN) {
+        PyErr_SetString(PyExc_ValueError, "The tag must be a non-empty string that is not too long.");
+        return NULL;
+    }
+
+    if(!PyBool_Check(percent)) {
+        PyErr_SetString(PyExc_TypeError, "The 'percent' argument must be a bool.");
+        return NULL;
+    }
+
+    struct region_aura aura = (struct region_aura){
+        .kind = kind,
+        .amount = amount,
+        .percent = (percent == Py_True)
+    };
+    S_Entity_UIDForObj(obj, &aura.owner);
+    pf_strlcpy(aura.tag, tag, sizeof(aura.tag));
+
+    G_Region_SetAura(self->name, &aura);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyRegion_clear_aura(PyRegionObject *self)
+{
+    G_Region_ClearAura(self->name);
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyRegion_contains(PyRegionObject *self, PyObject *args)

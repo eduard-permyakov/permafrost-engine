@@ -408,6 +408,11 @@ VEC_IMPL(static, corpse, struct corpse);
 VEC_TYPE(mod, struct combat_mod);
 VEC_IMPL(static, mod, struct combat_mod);
 
+/* Indexed by entity: every add, removal and resum touches one entity's records,
+ * so a flat list would make each of them cost the whole battle's worth.
+ */
+KHASH_MAP_INIT_INT(modlist, vec_mod_t)
+
 /* Kept out of the combatstate, which is copied into the worker snapshot every
  * tick; only the resolved sums are read on the damage path.
  */
@@ -483,7 +488,7 @@ static mp_strbuff_t       s_stringpool;
  */
 static float              s_dmg_mult[DAMAGE_TYPE_MAX][ARMOUR_TYPE_MAX];
 static vec_corpse_t       s_corpses;
-static vec_mod_t          s_mods;
+static khash_t(modlist)  *s_mods;
 static vec_gbonus_t       s_gbonuses;
 
 /*****************************************************************************/
@@ -594,6 +599,23 @@ static float combat_base_stat(uint32_t uid, const struct combatstate *cs,
     }
 }
 
+static vec_mod_t *combat_mods_for(uint32_t uid, bool create)
+{
+    khiter_t k = kh_get(modlist, s_mods, uid);
+    if(k != kh_end(s_mods))
+        return &kh_value(s_mods, k);
+    if(!create)
+        return NULL;
+
+    int status;
+    k = kh_put(modlist, s_mods, uid, &status);
+    if(status == -1)
+        return NULL;
+
+    vec_mod_init(&kh_value(s_mods, k));
+    return &kh_value(s_mods, k);
+}
+
 /* The bonus sums are derived state: they are always rebuilt from the surviving
  * records rather than patched, so a record that leaks can never leave a stat
  * permanently shifted. The group bonus folds in here too, so leaving a group
@@ -606,10 +628,9 @@ static void combat_mods_resum(uint32_t uid)
         return;
 
     struct combatmods mods = {0};
-    for(int i = 0; i < vec_size(&s_mods); i++) {
-        const struct combat_mod *curr = &vec_AT(&s_mods, i);
-        if(curr->uid != uid)
-            continue;
+    vec_mod_t *list = combat_mods_for(uid, false);
+    for(int i = 0; list && i < vec_size(list); i++) {
+        const struct combat_mod *curr = &vec_AT(list, i);
         if(curr->kind < 0 || curr->kind >= COMBAT_MOD_MAX)
             continue;
         mods.bonus[curr->kind] += curr->percent
@@ -636,29 +657,38 @@ static void combat_mods_resum(uint32_t uid)
 
 static void combat_mods_remove_ent(uint32_t uid)
 {
-    for(int i = 0; i < vec_size(&s_mods); i++) {
-        if(vec_AT(&s_mods, i).uid != uid)
-            continue;
-        vec_mod_del(&s_mods, i);
-        i--;
-    }
+    khiter_t k = kh_get(modlist, s_mods, uid);
+    if(k == kh_end(s_mods))
+        return;
+
+    vec_mod_destroy(&kh_value(s_mods, k));
+    kh_del(modlist, s_mods, k);
 }
 
 static void combat_mods_tick(void)
 {
-    for(int i = 0; i < vec_size(&s_mods); i++) {
+    uint32_t uid;
+    vec_mod_t *list;
 
-        struct combat_mod *curr = &vec_AT(&s_mods, i);
-        if(curr->secs_left == 0)
-            continue;
+    kh_foreach_val_ptr(s_mods, uid, list, {
 
-        if(--curr->secs_left == 0) {
-            uint32_t uid = curr->uid;
-            vec_mod_del(&s_mods, i);
-            i--;
+        bool expired = false;
+        for(int i = 0; i < vec_size(list); i++) {
+
+            struct combat_mod *curr = &vec_AT(list, i);
+            if(curr->secs_left == 0)
+                continue;
+
+            if(--curr->secs_left == 0) {
+                vec_mod_del(list, i);
+                i--;
+                expired = true;
+            }
+        }
+        if(expired) {
             combat_mods_resum(uid);
         }
-    }
+    });
 }
 
 static struct proj_desc combat_default_proj(void)
@@ -1579,12 +1609,15 @@ static void do_add_modifier(uint32_t uid, enum combat_mod_kind kind, float amoun
     /* A tagged modifier is a slot, not an accumulator: re-applying an aura
      * refreshes it instead of stacking it up.
      */
+    vec_mod_t *list = combat_mods_for(uid, true);
+    if(!list)
+        return;
+
     if(tag[0] != '\0') {
-        for(int i = 0; i < vec_size(&s_mods); i++) {
-            const struct combat_mod *curr = &vec_AT(&s_mods, i);
-            if(curr->uid != uid || strcmp(curr->tag, tag))
+        for(int i = 0; i < vec_size(list); i++) {
+            if(strcmp(vec_AT(list, i).tag, tag))
                 continue;
-            vec_mod_del(&s_mods, i);
+            vec_mod_del(list, i);
             break;
         }
     }
@@ -1597,7 +1630,7 @@ static void do_add_modifier(uint32_t uid, enum combat_mod_kind kind, float amoun
         .percent = percent
     };
     pf_strlcpy(mod.tag, tag, sizeof(mod.tag));
-    vec_mod_push(&s_mods, mod);
+    vec_mod_push(list, mod);
 
     combat_mods_resum(uid);
 }
@@ -1606,11 +1639,11 @@ static void do_remove_modifier(uint32_t uid, const char *tag)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    for(int i = 0; i < vec_size(&s_mods); i++) {
-        const struct combat_mod *curr = &vec_AT(&s_mods, i);
-        if(curr->uid != uid || strcmp(curr->tag, tag))
+    vec_mod_t *list = combat_mods_for(uid, false);
+    for(int i = 0; list && i < vec_size(list); i++) {
+        if(strcmp(vec_AT(list, i).tag, tag))
             continue;
-        vec_mod_del(&s_mods, i);
+        vec_mod_del(list, i);
         i--;
     }
     combat_mods_resum(uid);
@@ -3104,7 +3137,7 @@ bool G_Combat_Init(const struct map *map)
     s_map = map;
     combat_copy_gamestate();
     vec_corpse_init(&s_corpses);
-    vec_mod_init(&s_mods);
+    s_mods = kh_init(modlist);
     vec_gbonus_init(&s_gbonuses);
     return true;
 
@@ -3152,7 +3185,14 @@ void G_Combat_Shutdown(void)
     kh_destroy(state, s_entity_state_table);
 
     vec_corpse_destroy(&s_corpses);
-    vec_mod_destroy(&s_mods);
+    if(s_mods) {
+        vec_mod_t curr;
+        kh_foreach_value(s_mods, curr, {
+            vec_mod_destroy(&curr);
+        });
+        kh_destroy(modlist, s_mods);
+        s_mods = NULL;
+    }
     vec_gbonus_destroy(&s_gbonuses);
     si_shutdown(&s_stringpool, s_stridx);
 }
@@ -3620,9 +3660,10 @@ float G_Combat_GetBonus(uint32_t uid, enum combat_mod_kind kind)
     const int head = s_combat_commands.ihead;
     float bonus = 0.0f;
 
-    for(int i = 0; i < vec_size(&s_mods); i++) {
-        const struct combat_mod *curr = &vec_AT(&s_mods, i);
-        if(curr->uid != uid || curr->kind != kind)
+    const vec_mod_t *list = combat_mods_for(uid, false);
+    for(int i = 0; list && i < vec_size(list); i++) {
+        const struct combat_mod *curr = &vec_AT(list, i);
+        if(curr->kind != kind)
             continue;
         if(mod_superseded(uid, curr->tag, head, npending))
             continue;
@@ -4224,15 +4265,23 @@ bool G_Combat_SaveState(struct SDL_RWops *stream)
         Sched_TryYield();
     }
 
+    size_t total_mods = 0;
+    vec_mod_t mods_curr;
+    kh_foreach_value(s_mods, mods_curr, {
+        total_mods += vec_size(&mods_curr);
+    });
+
     struct attr num_mods = (struct attr){
         .type = TYPE_INT,
-        .val.as_int = vec_size(&s_mods)
+        .val.as_int = total_mods
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_mods, "num_mods"));
 
-    for(int i = 0; i < vec_size(&s_mods); i++) {
+    vec_mod_t *mods_list;
+    kh_foreach_ptr(s_mods, mods_list, {
+    for(int i = 0; i < vec_size(mods_list); i++) {
 
-        const struct combat_mod *mod = &vec_AT(&s_mods, i);
+        const struct combat_mod *mod = &vec_AT(mods_list, i);
         struct attr mod_ent = (struct attr){
             .type = TYPE_INT,
             .val.as_int = mod->uid
@@ -4270,7 +4319,7 @@ bool G_Combat_SaveState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Write(stream, &mod_tag, "mod_tag"));
 
         Sched_TryYield();
-    }
+    }});
 
     struct attr num_gbonuses = (struct attr){
         .type = TYPE_INT,
@@ -4576,7 +4625,12 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
     CHK_TRUE_RET(attr.type == TYPE_INT);
     const size_t num_mods = attr.val.as_int;
 
-    vec_mod_reset(&s_mods);
+    vec_mod_t mods_clear;
+    kh_foreach_value(s_mods, mods_clear, {
+        vec_mod_destroy(&mods_clear);
+    });
+    kh_clear(modlist, s_mods);
+
     for(int i = 0; i < num_mods; i++) {
 
         struct combat_mod mod = {0};
@@ -4605,7 +4659,9 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(attr.type == TYPE_STRING);
         pf_strlcpy(mod.tag, attr.val.as_string, sizeof(mod.tag));
 
-        vec_mod_push(&s_mods, mod);
+        vec_mod_t *list = combat_mods_for(mod.uid, true);
+        CHK_TRUE_RET(list);
+        vec_mod_push(list, mod);
         Sched_TryYield();
     }
 
@@ -4649,9 +4705,10 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
     /* The sums are derived, so they are rebuilt from the restored records
      * rather than saved alongside them.
      */
-    for(int i = 0; i < vec_size(&s_mods); i++) {
-        combat_mods_resum(vec_AT(&s_mods, i).uid);
-    }
+    uint32_t resum_uid;
+    kh_foreach_key(s_mods, resum_uid, {
+        combat_mods_resum(resum_uid);
+    });
 
     return true;
 }

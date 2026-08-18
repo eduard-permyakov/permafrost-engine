@@ -660,10 +660,30 @@ bool   G_Region_GetPos(const char *name, vec2_t *out);
 void   G_Region_SetRender(bool on);
 bool   G_Region_GetRender(void);
 
+/* A region may carry an aura: a modifier applied to every entity inside it and
+ * dropped as soon as one leaves. Only entities not at war with the owner are
+ * affected, and the tag is a slot as everywhere else, so two overlapping auras
+ * of the same tag do not stack.
+ */
+struct region_aura{
+    bool                 active;
+    uint32_t             owner;
+    enum combat_mod_kind kind;
+    float                amount;
+    bool                 percent;
+    char                 tag[COMBAT_MOD_TAG_LEN];
+};
+
+bool   G_Region_SetAura(const char *name, const struct region_aura *aura);
+bool   G_Region_ClearAura(const char *name);
+/* Have the region track an entity's position. A uid of NULL_UID unpins it. */
+bool   G_Region_SetFollow(const char *name, uint32_t uid);
+
 bool   G_Region_GetRadius(const char *name, float *out);
 bool   G_Region_GetXLen(const char *name, float *out);
 bool   G_Region_GetZLen(const char *name, float *out);
 
+int    G_Region_GetNumEnts(const char *name);
 int    G_Region_GetEnts(const char *name, size_t maxout, uint32_t ents[]);
 bool   G_Region_ContainsEnt(const char *name, uint32_t uid);
 bool   G_Region_ExploreFog(const char *name, int faction_id);

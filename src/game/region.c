@@ -67,6 +67,9 @@
 
 
 #define MAX(a, b)    ((a) > (b) ? (a) : (b))
+#define MIN(a, b)    ((a) < (b) ? (a) : (b))
+#define FOLLOW_SLACK_FRAC (0.05f)
+#define QUERY_SCRATCH_MIN (1024)
 #define ARR_SIZE(a)  (sizeof(a)/sizeof(a[0]))
 #define EPSILON      (1.0f/1024)
 
@@ -79,22 +82,28 @@
 VEC_TYPE(str, const char*)
 VEC_IMPL(static inline, str, const char*)
 
-VEC_TYPE(uid, uint32_t)
-VEC_IMPL(static inline, uid, uint32_t)
+KHASH_SET_INIT_INT(uid)
 
+/* Membership is a set rather than a list: every entity that moves inside a
+ * region looks itself up in it, so a linear scan makes a crowded region cost
+ * more the more crowded it gets.
+ */
 struct region{
     enum region_type type;
     union{
         float radius;
         struct{
-            float xlen; 
+            float xlen;
             float zlen;
         };
     };
     bool shown;
     vec2_t pos;
-    vec_uid_t curr_ents;
-    vec_uid_t prev_ents;
+    khash_t(uid) *curr_ents;
+    khash_t(uid) *prev_ents;
+    /* Set when the region follows an entity around; NULL_UID otherwise. */
+    uint32_t follows;
+    struct region_aura aura;
 };
 
 enum op{
@@ -115,6 +124,8 @@ static bool              s_render = false;
  * making a poor man's 2-level tree */
 static vec_str_t        *s_intersecting;
 static khash_t(name)    *s_dirty;
+static uint32_t         *s_query_scratch;
+static size_t            s_query_cap;
 /* Keep the event argument strings around for one tick, so that 
  * they can be used by the event handlers safely */
 static vec_str_t         s_eventargs;
@@ -147,18 +158,6 @@ static bool region_intersects_chunk(const struct region *reg, struct map_resolut
 static bool compare_keys(const char **a, const char **b)
 {
     return *a == *b;
-}
-
-static bool compare_uids(uint32_t *a, uint32_t *b)
-{
-    return *a == *b;
-}
-
-static int compare_uint32s(const void* a, const void* b)
-{
-    uint32_t uida = *(uint32_t*)a;
-    uint32_t uidb = *(uint32_t*)b;
-    return (uida - uidb);
 }
 
 static void region_update_intersecting(const char *name, const struct region *reg, int op)
@@ -290,10 +289,10 @@ static void regions_remove_ent(uint32_t uid, vec2_t pos)
     size_t nregs = regions_at_point(pos, ARR_SIZE(regs), regs, names);
 
     for(int i = 0; i < nregs; i++) {
-        int idx = vec_uid_indexof(&regs[i]->curr_ents, uid, compare_uids);
-        if(idx == -1)
+        khiter_t k = kh_get(uid, regs[i]->curr_ents, uid);
+        if(k == kh_end(regs[i]->curr_ents))
             continue;
-        vec_uid_del(&regs[i]->curr_ents, idx);
+        kh_del(uid, regs[i]->curr_ents, k);
         kh_put(name, s_dirty, names[i], &(int){0});
     }
 }
@@ -311,42 +310,70 @@ static void regions_add_ent(uint32_t uid, vec2_t pos)
 
     for(int i = 0; i < nregs; i++) {
 
-        int idx = vec_uid_indexof(&regs[i]->curr_ents, uid, compare_uids);
-        if(idx != -1)
+        int status;
+        kh_put(uid, regs[i]->curr_ents, uid, &status);
+        if(status == 0)
             continue;
 
-        vec_uid_push(&regs[i]->curr_ents, uid);
         kh_put(name, s_dirty, names[i], &(int){0});
+    }
+}
+
+/* A large region over a crowded map can hold more entities than any fixed
+ * buffer would take, and a truncated rebuild reads as a stream of entities
+ * leaving and re-entering. The scratch grows until the query fits instead.
+ */
+static size_t region_query_ents(const struct region *reg, uint32_t **inout, size_t *incap)
+{
+    while(true) {
+
+        if(*incap == 0) {
+            *inout = PF_MALLOC(QUERY_SCRATCH_MIN * sizeof(uint32_t));
+            if(!*inout)
+                return 0;
+            *incap = QUERY_SCRATCH_MIN;
+        }
+
+        size_t nents = 0;
+        switch(reg->type) {
+        case REGION_CIRCLE: {
+            nents = G_Pos_EntsInCircle(reg->pos, reg->radius, *inout, *incap);
+            break;
+        }
+        case REGION_RECTANGLE: {
+            vec2_t xz_min = (vec2_t){reg->pos.x - reg->xlen/2.0f, reg->pos.z - reg->zlen/2.0f};
+            vec2_t xz_max = (vec2_t){reg->pos.x + reg->xlen/2.0f, reg->pos.z + reg->zlen/2.0f};
+            nents = G_Pos_EntsInRect(xz_min, xz_max, *inout, *incap);
+            break;
+        }
+        default: assert(0);
+        }
+
+        if(nents < *incap)
+            return nents;
+
+        size_t newcap = (*incap) * 2;
+        uint32_t *newmem = PF_REALLOC(*inout, newcap * sizeof(uint32_t));
+        if(!newmem)
+            return nents;
+
+        *inout = newmem;
+        *incap = newcap;
     }
 }
 
 static void region_update_ents(const char *name, struct region *reg)
 {
-    uint32_t ents[1024];
-    size_t nents = 0;
+    size_t nents = region_query_ents(reg, &s_query_scratch, &s_query_cap);
 
-    switch(reg->type) {
-    case REGION_CIRCLE: {
-        nents = G_Pos_EntsInCircle(reg->pos, reg->radius, ents, ARR_SIZE(ents));
-        break;
-    }
-    case REGION_RECTANGLE: {
-        vec2_t xz_min = (vec2_t){reg->pos.x - reg->xlen/2.0f, reg->pos.z - reg->zlen/2.0f};
-        vec2_t xz_max = (vec2_t){reg->pos.x + reg->xlen/2.0f, reg->pos.z + reg->zlen/2.0f};
-        nents = G_Pos_EntsInRect(xz_min, xz_max, ents, ARR_SIZE(ents));
-        break;
-    }
-    default: assert(0);
-    }
-
-    vec_uid_reset(&reg->curr_ents);
+    kh_clear(uid, reg->curr_ents);
     for(int i = 0; i < nents; i++) {
-        uint32_t flags = G_FlagsGet(ents[i]);
+        uint32_t flags = G_FlagsGet(s_query_scratch[i]);
         if(flags & ENTITY_FLAG_MARKER)
             continue;
         if(flags & ENTITY_FLAG_ZOMBIE)
             continue;
-        vec_uid_push(&reg->curr_ents, ents[i]);
+        kh_put(uid, reg->curr_ents, s_query_scratch[i], &(int){0});
     }
 
     khiter_t k = kh_get(region, s_regions, name);
@@ -377,83 +404,134 @@ static vec2_t region_ss_pos(vec2_t pos)
     return (vec2_t){screen_x, screen_y};
 }
 
+/* An aura is a gift to its owner's side, so anyone at war with it walks through
+ * untouched.
+ */
+static bool region_aura_affects(const struct region *reg, uint32_t uid)
+{
+    if(!reg->aura.active)
+        return false;
+    if(!G_EntityExists(reg->aura.owner) || !G_EntityExists(uid))
+        return false;
+
+    enum diplomacy_state ds;
+    int owner_fac = G_GetFactionID(reg->aura.owner);
+    int other_fac = G_GetFactionID(uid);
+    if(owner_fac == other_fac)
+        return true;
+
+    if(!G_GetDiplomacyState(owner_fac, other_fac, &ds))
+        return false;
+    return (ds != DIPLOMACY_STATE_WAR);
+}
+
+static void region_aura_apply(const struct region *reg, uint32_t uid)
+{
+    if(!region_aura_affects(reg, uid))
+        return;
+    G_Combat_AddModifier(uid, reg->aura.kind, reg->aura.amount, reg->aura.percent,
+        0, reg->aura.tag);
+}
+
+static void region_aura_clear(const struct region *reg, uint32_t uid)
+{
+    if(!reg->aura.active)
+        return;
+    if(!G_EntityExists(uid))
+        return;
+    G_Combat_RemoveModifier(uid, reg->aura.tag);
+}
+
+/* How far a following region drifts from its entity before its membership is
+ * rebuilt. A rebuild is a fresh spatial query and a fresh member set, so doing
+ * it every tick for every aura is what makes a moving region expensive; the
+ * slack is a fraction of the region's own size, where it costs only a brief
+ * lag at the boundary.
+ */
+static float region_follow_slack(const struct region *reg)
+{
+    switch(reg->type) {
+    case REGION_CIRCLE:
+        return reg->radius * FOLLOW_SLACK_FRAC;
+    case REGION_RECTANGLE:
+        return MIN(reg->xlen, reg->zlen) / 2.0f * FOLLOW_SLACK_FRAC;
+    default:
+        return (assert(0), 0.0f);
+    }
+}
+
+static void regions_update_followers(void)
+{
+    const char *name;
+    struct region *reg;
+
+    kh_foreach_val_ptr(s_regions, name, reg, {
+
+        if(reg->follows == NULL_UID)
+            continue;
+
+        if(!G_EntityExists(reg->follows)) {
+            reg->follows = NULL_UID;
+            continue;
+        }
+
+        vec2_t pos = G_Pos_GetXZ(reg->follows);
+        vec2_t delta;
+        PFM_Vec2_Sub(&reg->pos, &pos, &delta);
+        if(PFM_Vec2_Len(&delta) < region_follow_slack(reg))
+            continue;
+
+        G_Region_SetPos(name, pos);
+    });
+}
+
+static void region_notify_entered(const char *name, uint32_t uid)
+{
+    const char *arg = pf_strdup(name);
+    vec_str_push(&s_eventargs, arg);
+
+    E_Entity_Notify(EVENT_ENTERED_REGION, uid, (void*)arg, ES_ENGINE);
+    E_Global_Notify(EVENT_ENTERED_REGION, (void*)arg, ES_ENGINE);
+}
+
+static void region_notify_exited(const char *name, uint32_t uid)
+{
+    const char *arg = pf_strdup(name);
+    vec_str_push(&s_eventargs, arg);
+
+    E_Entity_Notify(EVENT_EXITED_REGION, uid, (void*)arg, ES_ENGINE);
+    E_Global_Notify(EVENT_EXITED_REGION, (void*)arg, ES_ENGINE);
+}
+
 static void region_notify_changed(const char *name, struct region *reg)
 {
-    size_t n = reg->curr_ents.size;
-    size_t m = reg->prev_ents.size;
-
-    qsort(reg->curr_ents.array, n, sizeof(uint32_t), compare_uint32s);
-    qsort(reg->prev_ents.array, m, sizeof(uint32_t), compare_uint32s);
-
-    /* use the algorithm for finding the symmetric difference 
-     * of two sorted arrays: */
     size_t nchanged = 0;
-    int i = 0, j = 0;
-    while(i < n && j < m) {
+    uint32_t uid;
 
-        if(reg->curr_ents.array[i] < reg->prev_ents.array[j]) {
-
-            const char *arg = pf_strdup(name);
-            vec_str_push(&s_eventargs, arg);
-
-            uint32_t uid = reg->curr_ents.array[i];
-            E_Entity_Notify(EVENT_ENTERED_REGION, uid, (void*)arg, ES_ENGINE);
-            E_Global_Notify(EVENT_ENTERED_REGION, (void*)arg, ES_ENGINE);
-
-            i++;
-            nchanged++;
-
-        }else if(reg->prev_ents.array[j] < reg->curr_ents.array[i]) {
-
-            const char *arg = pf_strdup(name);
-            vec_str_push(&s_eventargs, arg);
-
-            uint32_t uid = reg->prev_ents.array[j];
-            E_Entity_Notify(EVENT_EXITED_REGION, uid, (void*)arg, ES_ENGINE);
-            E_Global_Notify(EVENT_EXITED_REGION, (void*)arg, ES_ENGINE);
-
-            j++;
-            nchanged++;
-
-        }else{
-
-            i++;
-            j++;
-        }
-    }
-
-    while(i < n) {
-    
-        const char *arg = pf_strdup(name);
-        vec_str_push(&s_eventargs, arg);
-
-        uint32_t uid = reg->curr_ents.array[i];
-        E_Entity_Notify(EVENT_ENTERED_REGION, uid, (void*)arg, ES_ENGINE);
-        E_Global_Notify(EVENT_ENTERED_REGION, (void*)arg, ES_ENGINE);
-
-        i++;
+    kh_foreach_key(reg->curr_ents, uid, {
+        if(kh_get(uid, reg->prev_ents, uid) != kh_end(reg->prev_ents))
+            continue;
+        region_aura_apply(reg, uid);
+        region_notify_entered(name, uid);
         nchanged++;
-    }
+    });
 
-    while(j < m) {
-    
-        const char *arg = pf_strdup(name);
-        vec_str_push(&s_eventargs, arg);
-
-        uint32_t uid = reg->prev_ents.array[j];
-        E_Entity_Notify(EVENT_EXITED_REGION, uid, (void*)arg, ES_ENGINE);
-        E_Global_Notify(EVENT_EXITED_REGION, (void*)arg, ES_ENGINE);
-
-        j++;
+    kh_foreach_key(reg->prev_ents, uid, {
+        if(kh_get(uid, reg->curr_ents, uid) != kh_end(reg->curr_ents))
+            continue;
+        region_aura_clear(reg, uid);
+        region_notify_exited(name, uid);
         nchanged++;
-    }
+    });
 
     if(nchanged) {
         S_Region_NotifyContentsChanged(name);
     }
 
-    vec_uid_reset(&reg->prev_ents);
-    vec_uid_copy(&reg->prev_ents, &reg->curr_ents);
+    kh_clear(uid, reg->prev_ents);
+    kh_foreach_key(reg->curr_ents, uid, {
+        kh_put(uid, reg->prev_ents, uid, &(int){0});
+    });
 }
 
 static void on_render_3d(void *user, void *event)
@@ -573,14 +651,17 @@ void G_Region_Shutdown(void)
         vec_str_destroy(vec);
     }
     PF_FREE(s_intersecting);
+    PF_FREE(s_query_scratch);
+    s_query_scratch = NULL;
+    s_query_cap = 0;
 
     const char *key;
     struct region reg;
 
     kh_foreach(s_regions, key, reg, {
         PF_FREE(key);
-        vec_uid_destroy(&reg.curr_ents);
-        vec_uid_destroy(&reg.prev_ents);
+        kh_destroy(uid, reg.curr_ents);
+        kh_destroy(uid, reg.prev_ents);
     });
 
     for(int i = 0; i < vec_size(&s_eventargs); i++) {
@@ -600,10 +681,16 @@ bool G_Region_AddCircle(const char *name, vec2_t pos, float radius)
         .type = REGION_CIRCLE,
         .radius = radius,
         .shown = false,
-        .pos = pos
+        .pos = pos,
+        .follows = NULL_UID
     };
-    vec_uid_init(&newreg.curr_ents);
-    vec_uid_init(&newreg.prev_ents);
+    newreg.curr_ents = kh_init(uid);
+    newreg.prev_ents = kh_init(uid);
+    if(!newreg.curr_ents || !newreg.prev_ents) {
+        kh_destroy(uid, newreg.curr_ents);
+        kh_destroy(uid, newreg.prev_ents);
+        return false;
+    }
 
     if(!region_add(name, newreg))
         return false;
@@ -622,10 +709,16 @@ bool G_Region_AddRectangle(const char *name, vec2_t pos, float xlen, float zlen)
         .xlen = xlen,
         .zlen = zlen,
         .shown = false,
-        .pos = pos
+        .pos = pos,
+        .follows = NULL_UID
     };
-    vec_uid_init(&newreg.curr_ents);
-    vec_uid_init(&newreg.prev_ents);
+    newreg.curr_ents = kh_init(uid);
+    newreg.prev_ents = kh_init(uid);
+    if(!newreg.curr_ents || !newreg.prev_ents) {
+        kh_destroy(uid, newreg.curr_ents);
+        kh_destroy(uid, newreg.prev_ents);
+        return false;
+    }
 
     if(!region_add(name, newreg))
         return false;
@@ -646,18 +739,19 @@ void G_Region_Remove(const char *name)
     const char *key = kh_key(s_regions, k);
     struct region *reg = &kh_value(s_regions, k);
 
-    for(int i = 0; i < vec_size(&reg->curr_ents); i++) {
+    uint32_t member;
+    kh_foreach_key(reg->curr_ents, member, {
+
+        region_aura_clear(reg, member);
 
         const char *arg = pf_strdup(name);
         vec_str_push(&s_eventargs, arg);
-
-        uint32_t uid = vec_AT(&reg->curr_ents, i);
-        E_Entity_Notify(EVENT_EXITED_REGION, uid, (void*)arg, ES_ENGINE);
-    }
+        E_Entity_Notify(EVENT_EXITED_REGION, member, (void*)arg, ES_ENGINE);
+    });
 
     region_update_intersecting(key, &kh_value(s_regions, k), REMOVE);
-    vec_uid_destroy(&kh_val(s_regions, k).curr_ents);
-    vec_uid_destroy(&kh_val(s_regions, k).prev_ents);
+    kh_destroy(uid, kh_val(s_regions, k).curr_ents);
+    kh_destroy(uid, kh_val(s_regions, k).prev_ents);
     kh_del(region, s_regions, k);
 
     k = kh_get(name, s_dirty, name);
@@ -700,6 +794,55 @@ bool G_Region_GetPos(const char *name, vec2_t *out)
     return true;
 }
 
+bool G_Region_SetAura(const char *name, const struct region_aura *aura)
+{
+    khiter_t k = kh_get(region, s_regions, name);
+    if(k == kh_end(s_regions))
+        return false;
+
+    struct region *reg = &kh_value(s_regions, k);
+    uint32_t member;
+
+    /* Swapping one aura for another must not leave the old one behind. */
+    kh_foreach_key(reg->curr_ents, member, {
+        region_aura_clear(reg, member);
+    });
+
+    reg->aura = *aura;
+    reg->aura.active = true;
+
+    kh_foreach_key(reg->curr_ents, member, {
+        region_aura_apply(reg, member);
+    });
+    return true;
+}
+
+bool G_Region_ClearAura(const char *name)
+{
+    khiter_t k = kh_get(region, s_regions, name);
+    if(k == kh_end(s_regions))
+        return false;
+
+    struct region *reg = &kh_value(s_regions, k);
+    uint32_t member;
+
+    kh_foreach_key(reg->curr_ents, member, {
+        region_aura_clear(reg, member);
+    });
+    reg->aura = (struct region_aura){0};
+    return true;
+}
+
+bool G_Region_SetFollow(const char *name, uint32_t uid)
+{
+    khiter_t k = kh_get(region, s_regions, name);
+    if(k == kh_end(s_regions))
+        return false;
+
+    kh_value(s_regions, k).follows = uid;
+    return true;
+}
+
 bool G_Region_SetShown(const char *name, bool on)
 {
     khiter_t k = kh_get(region, s_regions, name);
@@ -720,6 +863,14 @@ bool G_Region_GetShown(const char *name, bool *out)
     return true;
 }
 
+int G_Region_GetNumEnts(const char *name)
+{
+    khiter_t k = kh_get(region, s_regions, name);
+    if(k == kh_end(s_regions))
+        return 0;
+    return kh_size(kh_value(s_regions, k).curr_ents);
+}
+
 int G_Region_GetEnts(const char *name, size_t maxout, uint32_t ents[])
 {
     khiter_t k = kh_get(region, s_regions, name);
@@ -729,16 +880,15 @@ int G_Region_GetEnts(const char *name, size_t maxout, uint32_t ents[])
     const struct region *reg = &kh_value(s_regions, k);
     size_t ret = 0;
 
-    for(int i = 0; i < vec_size(&reg->curr_ents); i++) {
+    uint32_t ent;
+    kh_foreach_key(reg->curr_ents, ent, {
 
-        uint32_t ent = vec_AT(&reg->curr_ents, i);
         if(!G_EntityExists(ent))
             continue;
-
         if(ret == maxout)
             return ret;
         ents[ret++] = ent;
-    }
+    });
     return ret;
 }
 
@@ -749,12 +899,7 @@ bool G_Region_ContainsEnt(const char *name, uint32_t uid)
         return false;
 
     const struct region *reg = &kh_value(s_regions, k);
-    for(int i = 0; i < vec_size(&reg->curr_ents); i++) {
-        uint32_t curr = vec_AT(&reg->curr_ents, i);
-        if(curr == uid)
-            return true;
-    }
-    return false;
+    return (kh_get(uid, reg->curr_ents, uid) != kh_end(reg->curr_ents));
 }
 
 void G_Region_RemoveRef(uint32_t uid, vec2_t oldpos)
@@ -790,6 +935,7 @@ void G_Region_Update(void)
         PF_FREE(vec_AT(&s_eventargs, i));
     }
     vec_str_reset(&s_eventargs);
+    regions_update_followers();
 
     for(khiter_t k = kh_begin(s_dirty); k != kh_end(s_dirty); k++) {
         if(!kh_exist(s_dirty, k))
@@ -955,35 +1101,79 @@ bool G_Region_SaveState(struct SDL_RWops *stream)
         default: assert(0);
         }
 
+        struct attr follows = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.follows
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &follows, "follows"));
+
+        struct attr aura_active = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr.aura.active
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &aura_active, "aura_active"));
+
+        if(curr.aura.active) {
+
+            struct attr aura_owner = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = curr.aura.owner
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &aura_owner, "aura_owner"));
+
+            struct attr aura_kind = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = curr.aura.kind
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &aura_kind, "aura_kind"));
+
+            struct attr aura_amount = (struct attr){
+                .type = TYPE_FLOAT,
+                .val.as_float = curr.aura.amount
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &aura_amount, "aura_amount"));
+
+            struct attr aura_percent = (struct attr){
+                .type = TYPE_BOOL,
+                .val.as_bool = curr.aura.percent
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &aura_percent, "aura_percent"));
+
+            struct attr aura_tag = (struct attr){ .type = TYPE_STRING };
+            pf_strlcpy(aura_tag.val.as_string, curr.aura.tag, sizeof(aura_tag.val.as_string));
+            CHK_TRUE_RET(Attr_Write(stream, &aura_tag, "aura_tag"));
+        }
+
         struct attr num_curr = (struct attr){
             .type = TYPE_INT,
-            .val.as_int = vec_size(&curr.curr_ents)
+            .val.as_int = kh_size(curr.curr_ents)
         };
         CHK_TRUE_RET(Attr_Write(stream, &num_curr, "num_curr"));
 
-        for(int i = 0; i < vec_size(&curr.curr_ents); i++) {
+        uint32_t member;
+        kh_foreach_key(curr.curr_ents, member, {
 
             struct attr ent = (struct attr){
                 .type = TYPE_INT,
-                .val.as_int = vec_AT(&curr.curr_ents, i)
+                .val.as_int = member
             };
             CHK_TRUE_RET(Attr_Write(stream, &ent, "curr_ent"));
-        }
+        });
 
         struct attr num_prev = (struct attr){
             .type = TYPE_INT,
-            .val.as_int = vec_size(&curr.prev_ents)
+            .val.as_int = kh_size(curr.prev_ents)
         };
         CHK_TRUE_RET(Attr_Write(stream, &num_prev, "num_prev"));
 
-        for(int i = 0; i < vec_size(&curr.prev_ents); i++) {
+        kh_foreach_key(curr.prev_ents, member, {
 
             struct attr ent = (struct attr){
                 .type = TYPE_INT,
-                .val.as_int = vec_AT(&curr.prev_ents, i)
+                .val.as_int = member
             };
             CHK_TRUE_RET(Attr_Write(stream, &ent, "prev_ent"));
-        }
+        });
 
         Sched_TryYield();
     });
@@ -1075,6 +1265,38 @@ bool G_Region_LoadState(struct SDL_RWops *stream)
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
+        reg->follows = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+
+        if(attr.val.as_bool) {
+
+            reg->aura.active = true;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            reg->aura.owner = attr.val.as_int;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            reg->aura.kind = attr.val.as_int;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+            reg->aura.amount = attr.val.as_float;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_BOOL);
+            reg->aura.percent = attr.val.as_bool;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_STRING);
+            pf_strlcpy(reg->aura.tag, attr.val.as_string, sizeof(reg->aura.tag));
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
         const size_t num_curr = attr.val.as_int;
 
         for(int j = 0; j < num_curr; j++) {
@@ -1082,7 +1304,7 @@ bool G_Region_LoadState(struct SDL_RWops *stream)
             struct attr curr;
             CHK_TRUE_RET(Attr_Parse(stream, &curr, true));
             CHK_TRUE_RET(curr.type == TYPE_INT);
-            vec_uid_push(&reg->curr_ents, curr.val.as_int);
+            kh_put(uid, reg->curr_ents, curr.val.as_int, &(int){0});
         }
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
@@ -1094,7 +1316,7 @@ bool G_Region_LoadState(struct SDL_RWops *stream)
             struct attr curr;
             CHK_TRUE_RET(Attr_Parse(stream, &curr, true));
             CHK_TRUE_RET(curr.type == TYPE_INT);
-            vec_uid_push(&reg->prev_ents, curr.val.as_int);
+            kh_put(uid, reg->prev_ents, curr.val.as_int, &(int){0});
         }
         Sched_TryYield();
     }
