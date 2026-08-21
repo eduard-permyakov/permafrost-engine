@@ -138,6 +138,8 @@ static PyObject *PyWindow_progress(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_progress_text(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_text_lines(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_text_lines_width(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_text_width(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_font_height(PyWindowObject *self);
 static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
 static PyObject *PyWindow_update(PyWindowObject *self);
@@ -392,6 +394,14 @@ static PyMethodDef PyWindow_methods[] = {
     {"text_lines_width", 
     (PyCFunction)PyWindow_text_lines_width, METH_VARARGS,
     "Returns the number of lines taken up by the specified text in a widget of the specified width."},
+
+    {"text_width", 
+    (PyCFunction)PyWindow_text_width, METH_VARARGS,
+    "Returns the width, in virtual pixels, that the specified text takes up in the active font."},
+
+    {"font_height", 
+    (PyCFunction)PyWindow_font_height, METH_NOARGS,
+    "Returns the height, in virtual pixels, of a single line of text in the active font."},
 
     {"show", 
     (PyCFunction)PyWindow_show, METH_NOARGS,
@@ -1743,8 +1753,33 @@ static PyObject *PyWindow_text_lines(PyWindowObject *self, PyObject *args)
         PyErr_SetString(PyExc_TypeError, "Expecting one (string) argument.");
         return NULL;
     }
+
+    if(!s_nk_ctx->current) {
+        PyErr_SetString(PyExc_RuntimeError, "Text can only be measured while a window is updating.");
+        return NULL;
+    }
+
     int ret = nk_text_lines(s_nk_ctx, str);
     return PyInt_FromLong(ret);
+}
+
+static PyObject *PyWindow_text_width(PyWindowObject *self, PyObject *args)
+{
+    const char *str;
+    if(!PyArg_ParseTuple(args, "s", &str)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one (string) argument.");
+        return NULL;
+    }
+
+    const struct nk_user_font *font = s_nk_ctx->style.font;
+    float width = font->width(font->userdata, font->height, str, nk_strlen(str));
+    return PyFloat_FromDouble(width + 2 * s_nk_ctx->style.text.padding.x);
+}
+
+static PyObject *PyWindow_font_height(PyWindowObject *self)
+{
+    const struct nk_user_font *font = s_nk_ctx->style.font;
+    return PyFloat_FromDouble(font->height + 2 * s_nk_ctx->style.text.padding.y);
 }
 
 static PyObject *PyWindow_text_lines_width(PyWindowObject *self, PyObject *args)
@@ -1755,6 +1790,12 @@ static PyObject *PyWindow_text_lines_width(PyWindowObject *self, PyObject *args)
         PyErr_SetString(PyExc_TypeError, "Expecting a string argument (text) and an integer argument (width).");
         return NULL;
     }
+
+    if(!s_nk_ctx->current) {
+        PyErr_SetString(PyExc_RuntimeError, "Text can only be measured while a window is updating.");
+        return NULL;
+    }
+
     int ret = nk_text_lines_width(s_nk_ctx, str, width);
     return PyInt_FromLong(ret);
 }
