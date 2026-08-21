@@ -2026,10 +2026,12 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
     }
 
     /* Even if a mapping exists, the actual flow field may have been evicted from
-     * the cache, due to space constraints or invalidation. */
+     * the cache, due to space constraints or invalidation, or be served stale
+     * with its rate-capped rebuild now due. */
     ff_id_t id;
     if(!N_FC_GetDestFFMapping(priv->fieldcache, ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &id)
-    || !N_FC_ContainsFlowField(priv->fieldcache, id)) {
+    || !N_FC_ContainsFlowField(priv->fieldcache, id)
+    || N_FC_FlowFieldRebuildDue(priv->fieldcache, id)) {
 
         struct field_target target = (struct field_target){
             .type = TARGET_TILE,
@@ -2040,7 +2042,8 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
         id = N_FlowFieldID((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, target, layer);
 
         struct coord chunk = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
-        if(!N_FC_ContainsFlowField(priv->fieldcache, id)
+        if((!N_FC_ContainsFlowField(priv->fieldcache, id)
+            || N_FC_FlowFieldRebuildDue(priv->fieldcache, id))
         && !(on_task && n_request_async_flow(priv, chunk, target, faction_id, layer, id))) {
 
             N_FlowFieldInit(chunk, &ff);
@@ -2259,8 +2262,9 @@ walk:;
         if(N_FC_GetDestFFMapping(priv->fieldcache, ret, chunk_coord, &exist_id)
         && N_FC_ContainsFlowField(priv->fieldcache, exist_id)) {
 
-            /* The exact flow field we need has already been made */
-            if(new_id == exist_id)
+            /* Already made; a due stale-served field falls through. */
+            if(new_id == exist_id
+            && !N_FC_FlowFieldRebuildDue(priv->fieldcache, exist_id))
                 goto ff_exists;
 
             /* This is the edge case when a path to a particular target takes us through
@@ -2285,7 +2289,8 @@ walk:;
         }
 
         N_FC_PutDestFFMapping(priv->fieldcache, ret, chunk_coord, new_id);
-        if(!N_FC_ContainsFlowField(priv->fieldcache, new_id)
+        if((!N_FC_ContainsFlowField(priv->fieldcache, new_id)
+            || N_FC_FlowFieldRebuildDue(priv->fieldcache, new_id))
         && !(on_task && n_request_async_flow(priv, chunk_coord, target, faction_id, layer, new_id))) {
 
             N_FlowFieldInit(chunk_coord, &ff);
@@ -2678,6 +2683,7 @@ void N_ApplyDeferredInvalidations(void)
     astar_memo_clear();
 
     struct fieldcache_ctx *fc = N_FC_GetSingleton();
+    N_FC_TickAdvance(fc);
     s_tick_diag.inval_surround += N_FC_InvalidateDynamicSurroundFields(fc);
 
     for(int i = 0; i < vec_size(&s_pending_inval); i++) {
@@ -3985,6 +3991,9 @@ bool N_RequiresPathRequest(void *nav_private, vec3_t map_pos, struct target targ
         layer = N_DestLayer(target.point_seek.dest_id);
         if(!N_FC_PeekDestFFMapping(priv->fieldcache, target.point_seek.dest_id, chunk, &ffid))
             return true;
+        /* A due stale-served field is serviced via the budgeted loop. */
+        if(N_FC_FlowFieldRebuildDue(priv->fieldcache, ffid))
+            return true;
         break;
     case TARGET_KIND_ENEMY_SEEK:
         layer = target.enemy_seek.layer;
@@ -4113,7 +4122,8 @@ void N_ServicePathRequest(void *nav_private, vec3_t map_pos, struct target targe
             N_FC_GetDestFFMapping(priv->fieldcache, id, chunk, &ffid);
         }
         const struct flow_field *cur = N_FC_FlowFieldAt(priv->fieldcache, ffid);
-        if(!cur || cur->field[tile.tile_r][tile.tile_c].dir_idx == FD_NONE) {
+        if(!cur || cur->field[tile.tile_r][tile.tile_c].dir_idx == FD_NONE
+        || N_FC_FlowFieldRebuildDue(priv->fieldcache, ffid)) {
             dest_id_t ret;
             if(!n_request_path(nav_private, xz, target.point_seek.dest_xz, faction_id, map_pos, layer, &ret))
                 return;
@@ -4268,7 +4278,8 @@ void N_RequestAsyncEnemySeekField(vec2_t curr_pos, void *nav_private, enum nav_l
     };
 
     ff_id_t ffid = N_FlowFieldID(chunk, target, layer);
-    if(N_FC_ContainsFlowField(priv->fieldcache, ffid))
+    if(N_FC_ContainsFlowField(priv->fieldcache, ffid)
+    && !N_FC_FlowFieldRebuildDue(priv->fieldcache, ffid))
        return;
 
     /* We'll compute the missing field on-demand later */

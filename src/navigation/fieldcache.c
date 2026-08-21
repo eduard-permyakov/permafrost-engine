@@ -79,6 +79,7 @@ VEC_PROTOTYPES(static, id, uint64_t)
 VEC_IMPL(static, id, uint64_t)
 
 KHASH_MAP_INIT_INT64(idvec, vec_id_t)
+KHASH_MAP_INIT_INT64(stale, uint32_t)
 
 struct priv_fc_stats{
     unsigned los_query;
@@ -107,6 +108,11 @@ struct fieldcache_ctx{
     khash_t(idvec)   *chunk_ffield_map; /* key: (chunk coord) */
     khash_t(idvec)   *chunk_lfield_map; /* key: (chunk coord) */
 
+    /* Fields served stale until their rate-capped rebuild publishes; the
+     * value is the tick the rebuild becomes due. Keyed by ffid. */
+    khash_t(stale)   *flow_stale;
+    uint32_t          tick;
+
     /* Statistics */
     struct priv_fc_stats perfstats;
 };
@@ -122,6 +128,13 @@ static uint32_t             (*s_nav_task_tid_provider)(void);
  * rebuild picks up crowd-induced passability changes around it.
  */
 #define SURROUND_FIELD_MAX_AGE (4)
+
+/* Ticks an invalidated field is served stale before its rebuild; caps the
+ * melee blocker-churn flood cost. Point-seek is longer: its rebuild re-runs
+ * the whole corridor, and it also damps route flapping through crowd gaps.
+ */
+#define ENEMY_SEEK_REBUILD_PERIOD_TICKS (5)
+#define POINT_SEEK_REBUILD_PERIOD_TICKS (10)
 
 /* A fieldcache mutation is safe either when no navigation task is in flight (e.g. the
  * synchronous save-time flush, which runs in a session-task fiber) or when it happens
@@ -194,6 +207,11 @@ static void field_map_add(khash_t(idvec) *hash, uint64_t key, uint64_t id)
     if(k != kh_end(hash)) {
 
         vec_id_t *curr = &kh_val(hash, k);
+        /* Stale-served fields republish; don't grow the list with dups. */
+        for(int i = 0; i < vec_size(curr); i++) {
+            if(vec_AT(curr, i) == id)
+                return;
+        }
         vec_id_push(curr, id);
     }else{
         vec_id_t newvec;
@@ -258,6 +276,29 @@ static size_t clear_chunk_flow_map(struct fieldcache_ctx *ctx, uint64_t key,
         if(only_target_type >= 0 && (N_FlowFieldTargetType(key) != only_target_type))
             continue;
 
+        /* Enemy/point-seek fields are served stale while their rate-capped
+         * rebuild is pending; a fresh mark counts as one invalidation. Zone
+         * fields must rebuild eagerly; surround fields have their own cap. */
+        int ttype = N_FlowFieldTargetType(key);
+        if((ttype == TARGET_ENEMIES || ttype == TARGET_TILE || ttype == TARGET_PORTAL)
+        && lru_flow_peek(&ctx->flow_cache, key) != NULL) {
+            int put_ret;
+            khiter_t s = kh_put(stale, ctx->flow_stale, key, &put_ret);
+            if(put_ret != 0) {
+                kh_val(ctx->flow_stale, s) = ctx->tick + ((ttype == TARGET_ENEMIES)
+                    ? ENEMY_SEEK_REBUILD_PERIOD_TICKS
+                    : POINT_SEEK_REBUILD_PERIOD_TICKS);
+                ctx->perfstats.flow_invalidated++;
+                ret++;
+            }
+            continue;
+        }
+
+        khiter_t s = kh_get(stale, ctx->flow_stale, key);
+        if(s != kh_end(ctx->flow_stale)) {
+            kh_del(stale, ctx->flow_stale, s);
+        }
+
         bool found = lru_flow_remove(&ctx->flow_cache, key);
         ctx->perfstats.flow_invalidated += !!found;
         ret += !!found;
@@ -294,9 +335,15 @@ bool N_FC_Init(struct fieldcache_ctx *ctx)
     if(NULL == (ctx->chunk_lfield_map = kh_init(idvec)))
         goto fail_chunk_lfield;
 
+    if(NULL == (ctx->flow_stale = kh_init(stale)))
+        goto fail_flow_stale;
+
+    ctx->tick = 0;
     memset(&ctx->perfstats, 0, sizeof(ctx->perfstats));
     return true;
 
+fail_flow_stale:
+    kh_destroy(idvec, ctx->chunk_lfield_map);
 fail_chunk_lfield:
     kh_destroy(idvec, ctx->chunk_ffield_map);
 fail_chunk_ffield:
@@ -323,6 +370,8 @@ void N_FC_Destroy(struct fieldcache_ctx *ctx)
 
     destroy_all_entries(ctx->chunk_lfield_map);
     kh_destroy(idvec, ctx->chunk_lfield_map);
+
+    kh_destroy(stale, ctx->flow_stale);
 }
 
 void N_FC_ClearAll(struct fieldcache_ctx *ctx)
@@ -337,6 +386,8 @@ void N_FC_ClearAll(struct fieldcache_ctx *ctx)
 
     destroy_all_entries(ctx->chunk_lfield_map);
     kh_clear(idvec, ctx->chunk_lfield_map);
+
+    kh_clear(stale, ctx->flow_stale);
 }
 
 void N_FC_ClearStats(struct fieldcache_ctx *ctx)
@@ -418,6 +469,27 @@ bool N_FC_ContainsFlowField(struct fieldcache_ctx *ctx, ff_id_t ffid)
     return (lru_flow_peek(&ctx->flow_cache, ffid) != NULL);
 }
 
+void N_FC_TickAdvance(struct fieldcache_ctx *ctx)
+{
+    FC_ASSERT_NAV_TASK();
+    ctx->tick++;
+}
+
+bool N_FC_FlowFieldRebuildDue(struct fieldcache_ctx *ctx, ff_id_t ffid)
+{
+    FC_ASSERT_NAV_TASK();
+    khiter_t s = kh_get(stale, ctx->flow_stale, ffid);
+    if(s == kh_end(ctx->flow_stale))
+        return false;
+    /* A marked field dropped behind our back (LRU, through-chunk sweep)
+     * leaves an orphaned mark; absence already forces a build. */
+    if(lru_flow_peek(&ctx->flow_cache, ffid) == NULL) {
+        kh_del(stale, ctx->flow_stale, s);
+        return false;
+    }
+    return ctx->tick >= kh_val(ctx->flow_stale, s);
+}
+
 const struct flow_field *N_FC_FlowFieldAt(struct fieldcache_ctx *ctx, ff_id_t ffid)
 {
     FC_ASSERT_NAV_TASK();
@@ -429,6 +501,11 @@ void N_FC_PutFlowField(struct fieldcache_ctx *ctx, ff_id_t ffid,
 {
     FC_ASSERT_NAV_TASK();
     lru_flow_put(&ctx->flow_cache, ffid, ff);
+
+    khiter_t s = kh_get(stale, ctx->flow_stale, ffid);
+    if(s != kh_end(ctx->flow_stale)) {
+        kh_del(stale, ctx->flow_stale, s);
+    }
 
     struct coord chunk = (struct coord){(ffid >> 8) & 0xff, ffid & 0xff};
     field_map_add(ctx->chunk_ffield_map, key_for_chunk(chunk), ffid);

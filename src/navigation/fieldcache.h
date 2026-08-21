@@ -120,6 +120,10 @@ void                     N_FC_PutLOSField(struct fieldcache_ctx *ctx,
 const struct flow_field *N_FC_FlowFieldAt(struct fieldcache_ctx *ctx, ff_id_t ffid);
 
 bool                     N_FC_ContainsFlowField(struct fieldcache_ctx *ctx, ff_id_t ffid);
+/* Advance the stale-field clock; called once per navigation tick. */
+void                     N_FC_TickAdvance(struct fieldcache_ctx *ctx);
+/* True when a stale-served enemy-seek field's rate-capped rebuild is due. */
+bool                     N_FC_FlowFieldRebuildDue(struct fieldcache_ctx *ctx, ff_id_t ffid);
 
 void                     N_FC_PutFlowField(struct fieldcache_ctx *ctx, 
                                            ff_id_t ffid, const struct flow_field *ff);
