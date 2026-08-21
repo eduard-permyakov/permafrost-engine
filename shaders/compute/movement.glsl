@@ -71,6 +71,7 @@
 #define STATE_ENTER_ENTITY_RANGE    6
 #define STATE_TURNING               7
 #define STATE_ARRIVING_TO_CELL      8
+#define STATE_FLEEING               9
 
 #define ENTITY_FLAG_ANIMATED        (1 << 0)
 #define ENTITY_FLAG_COLLISION       (1 << 1)
@@ -628,6 +629,32 @@ vec2 enemy_seek_total_force(uint gpuid, vec2 vdes)
 vec2 enemy_seek_vpref(uint gpuid, float speed, vec2 vdes)
 {
     vec2 steer_force = enemy_seek_total_force(gpuid, vdes);
+    vec2 accel = steer_force * (1.0 / ENTITY_MASS);
+    vec2 new_vel = ATTR_VEC2(gpuid, velocity) + accel;
+    new_vel = truncate(new_vel, speed / ticks_hz);
+    return new_vel;
+}
+
+vec2 flee_total_force(uint gpuid, vec2 vdes)
+{
+    vec2 arrive = arrive_force_enemies(gpuid, vdes);
+    vec2 separation = separation_force(gpuid, SEPARATION_BUFFER_DIST);
+
+    arrive *= MOVE_ARRIVE_FORCE_SCALE;
+    separation *= SEPARATION_FORCE_SCALE;
+
+    vec2 ret = vec2(0.0, 0.0);
+    ret += arrive;
+    ret += separation;
+
+    ret = truncate(ret, scaled_max_force());
+    return ret;
+}
+
+vec2 flee_vpref(uint gpuid, float speed, vec2 vdes)
+{
+    vec2 steer_force = flee_total_force(gpuid, vdes);
+    steer_force = nullify_impass_components(gpuid, steer_force);
     vec2 accel = steer_force * (1.0 / ENTITY_MASS);
     vec2 new_vel = ATTR_VEC2(gpuid, velocity) + accel;
     new_vel = truncate(new_vel, speed / ticks_hz);
@@ -1288,6 +1315,12 @@ void main()
         vpref = enemy_seek_vpref(
             gpuid, 
             ATTR(gpuid, speed), 
+            ATTR_VEC2(gpuid, vdes)
+        );
+    }else if(state == STATE_FLEEING) {
+        vpref = flee_vpref(
+            gpuid,
+            ATTR(gpuid, speed),
             ATTR_VEC2(gpuid, vdes)
         );
     }else if(state == STATE_ARRIVING_TO_CELL) {

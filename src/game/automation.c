@@ -149,7 +149,8 @@ static bool idle(uint32_t uid)
     uint32_t flags = G_FlagsGet(uid);
     if(flags & ENTITY_FLAG_GARRISONED)
         return true;
-    if((flags & ENTITY_FLAG_MOVABLE) && !G_Move_Still(uid))
+    /* A combat-held unit is stationary even though its move state is not a still one. */
+    if((flags & ENTITY_FLAG_MOVABLE) && !(flags & ENTITY_FLAG_COMBAT_HELD) && !G_Move_Still(uid))
         return false;
     if((flags & ENTITY_FLAG_HARVESTER) && !G_Harvester_Idle(uid))
         return false;

@@ -80,6 +80,14 @@
 
 
 #define TARGET_ACQUISITION_RANGE     (100.0f)
+/* Threat radii driving the non-combatant (0 damage) hang-back behaviour during
+ * an attack-move. The trigger/safe pairs form two hysteresis bands so a unit
+ * neither flickers between holding and advancing nor between fleeing and holding.
+ */
+#define NONCOMBATANT_FLEE_TRIGGER_RANGE (30.0f)  /* enemy closer -> run away */
+#define NONCOMBATANT_FLEE_SAFE_RANGE    (45.0f)  /* no enemy within -> stop running, stand */
+#define NONCOMBATANT_HOLD_TRIGGER_RANGE (60.0f)  /* enemy closer -> freeze the advance */
+#define NONCOMBATANT_HOLD_SAFE_RANGE    (80.0f)  /* no enemy within -> resume the advance */
 #define PROJECTILE_DEFAULT_SPEED     (100.0f)
 #define EPSILON                      (1.0f/1024)
 #define DEFAULT_ATTACK_PERIOD        (4.0f/3.0f)
@@ -165,6 +173,9 @@ struct combatstate{
         STATE_DEATH_ANIM_PLAYING,
         STATE_ATTACKING,
         STATE_TURNING_TO_TARGET,
+        /* Non-combatant hang-back: holding the advance / giving ground. */
+        STATE_STANDING_GROUND,
+        STATE_NON_COMBATANT_FLEEING,
     }state;
     /* Set between a sent EVENT_ATTACK_START and its matching EVENT_ATTACK_END so
      * that the two are always emitted as a pair; clients may assert the pairing.
@@ -201,7 +212,10 @@ enum combat_action{
     COMBAT_ACTION_MOVE_IN_RANGE_IF_STILL,
     COMBAT_ACTION_ANIMATED_ATTACK,
     COMBAT_ACTION_ATTACK_IF_STILL,
-    COMBAT_ACTION_TRYHIT
+    COMBAT_ACTION_TRYHIT,
+    COMBAT_ACTION_HOLD_GROUND,
+    COMBAT_ACTION_FLEE,
+    COMBAT_ACTION_RESUME_MOVE
 };
 
 struct combat_work_out{
@@ -454,6 +468,8 @@ static const char *s_name_for_state[] = {
     [STATE_DEATH_ANIM_PLAYING]      = "DEATH_ANIM_PLAYING",
     [STATE_ATTACKING]               = "ATTACKING",
     [STATE_TURNING_TO_TARGET]       = "TURNING_TO_TARGET",
+    [STATE_STANDING_GROUND]         = "STANDING_GROUND",
+    [STATE_NON_COMBATANT_FLEEING]   = "NON_COMBATANT_FLEEING",
 };
 
 static khash_t(state)    *s_entity_state_table;
@@ -1964,12 +1980,50 @@ static void entity_stop_combat(uint32_t uid)
     }
 }
 
+static bool under_attack_order(uint32_t uid)
+{
+    vec2_t dest;
+    bool attacking;
+    if(!G_Move_GetDest(uid, &dest, &attacking))
+        return false;
+    return attacking;
+}
+
+static void entity_hold_ground(uint32_t uid, uint32_t threat)
+{
+    struct combatstate *cs = combatstate_get(uid);
+    assert(cs);
+
+    G_Move_StopFlee(uid);
+
+    /* Only commit to holding while advancing under an attack-move order. */
+    if(!under_attack_order(uid) || G_Move_Still(uid)) {
+        cs->state = STATE_NOT_IN_COMBAT;
+        return;
+    }
+
+    cs->state = STATE_STANDING_GROUND;
+    cs->target_uid = threat;
+    if(!entity_dead(threat)) {
+        G_Move_SetCombatFacing(uid, entity_turn_dir(uid, threat));
+    }
+}
+
 uint32_t closest_eligible_entity(uint32_t uid)
 {
     struct combat_gamestate *gs = &s_combat_work.gamestate;
     struct combatstate *cs = combatstate_get(uid);
     vec2_t pos = G_Pos_GetXZFrom(gs->positions, uid);
     float range = MAX(TARGET_ACQUISITION_RANGE, combat_effective_range(cs));
+
+    return G_Pos_NearestWithPredFrom(gs->postree, gs->positions, gs->flags,
+        pos, valid_enemy, (void*)((uintptr_t)uid), range);
+}
+
+static uint32_t closest_eligible_entity_range(uint32_t uid, float range)
+{
+    struct combat_gamestate *gs = &s_combat_work.gamestate;
+    vec2_t pos = G_Pos_GetXZFrom(gs->positions, uid);
 
     return G_Pos_NearestWithPredFrom(gs->postree, gs->positions, gs->flags,
         pos, valid_enemy, (void*)((uintptr_t)uid), range);
@@ -2004,8 +2058,30 @@ static void entity_compute_update(uint32_t uid, struct combat_work_out *out)
         && !G_Building_IsCompletedFrom(gs->buildstate, uid))
             break;
 
-        if(curr->stats.base_dmg == 0)
+        if(curr->stats.base_dmg == 0) {
+
+            /* Non-combatants don't acquire targets; movable ones instead
+             * hold back from nearby threats during an attack-move. */
+            if(!(flags & ENTITY_FLAG_MOVABLE))
+                break;
+            if(!maybe_enemy_near(uid))
+                break;
+            uint32_t threat = closest_eligible_entity_range(uid,
+                NONCOMBATANT_HOLD_TRIGGER_RANGE);
+            if(threat == NULL_UID)
+                break;
+
+            out->action = COMBAT_ACTION_HOLD_GROUND;
+            out->action_args[0] = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = uid
+            };
+            out->action_args[1] = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = threat
+            };
             break;
+        }
 
         if(!maybe_enemy_near(uid))
             break;
@@ -2241,6 +2317,91 @@ static void entity_compute_update(uint32_t uid, struct combat_work_out *out)
         };
         break;
     }
+    case STATE_STANDING_GROUND: {
+
+        if(curr->stance == COMBAT_STANCE_NO_ENGAGEMENT || curr->stats.base_dmg > 0) {
+            curr->state = STATE_NOT_IN_COMBAT;
+            out->action = COMBAT_ACTION_RESUME_MOVE;
+            out->action_args[0] = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = uid
+            };
+            break;
+        }
+
+        uint32_t threat = closest_eligible_entity_range(uid,
+            NONCOMBATANT_HOLD_SAFE_RANGE);
+        if(threat == NULL_UID) {
+            curr->state = STATE_NOT_IN_COMBAT;
+            out->action = COMBAT_ACTION_RESUME_MOVE;
+            out->action_args[0] = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = uid
+            };
+            break;
+        }
+        curr->target_uid = threat;
+
+        vec2_t pos = G_Pos_GetXZFrom(gs->positions, uid);
+        vec2_t threat_pos = G_Pos_GetXZFrom(gs->positions, threat);
+        vec2_t delta;
+        PFM_Vec2_Sub(&threat_pos, &pos, &delta);
+
+        if(PFM_Vec2_Len(&delta) <= NONCOMBATANT_FLEE_TRIGGER_RANGE) {
+            curr->state = STATE_NON_COMBATANT_FLEEING;
+            out->action = COMBAT_ACTION_FLEE;
+            out->action_args[0] = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = uid
+            };
+            out->action_args[1] = (struct attr){
+                .type = TYPE_VEC2,
+                .val.as_vec2 = threat_pos
+            };
+        }
+        break;
+    }
+    case STATE_NON_COMBATANT_FLEEING: {
+
+        if(curr->stance == COMBAT_STANCE_NO_ENGAGEMENT || curr->stats.base_dmg > 0) {
+            curr->state = STATE_NOT_IN_COMBAT;
+            out->action = COMBAT_ACTION_RESUME_MOVE;
+            out->action_args[0] = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = uid
+            };
+            break;
+        }
+
+        uint32_t threat = closest_eligible_entity_range(uid,
+            NONCOMBATANT_FLEE_SAFE_RANGE);
+        if(threat == NULL_UID) {
+            /* Safety reached: stand and face the last known threat. */
+            curr->state = STATE_STANDING_GROUND;
+            out->action = COMBAT_ACTION_HOLD_GROUND;
+            out->action_args[0] = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = uid
+            };
+            out->action_args[1] = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = curr->target_uid
+            };
+            break;
+        }
+        curr->target_uid = threat;
+
+        out->action = COMBAT_ACTION_FLEE;
+        out->action_args[0] = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = uid
+        };
+        out->action_args[1] = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = G_Pos_GetXZFrom(gs->positions, threat)
+        };
+        break;
+    }
     case STATE_ATTACK_ANIM_PLAYING:
     case STATE_DEATH_ANIM_PLAYING:
         /* No-op */
@@ -2337,6 +2498,23 @@ static void entity_apply_update(struct combat_work_out *out)
         do_tryhit(uid, proj_pos);
         break;
     }
+    case COMBAT_ACTION_HOLD_GROUND: {
+        uint32_t uid = out->action_args[0].val.as_int;
+        uint32_t threat = out->action_args[1].val.as_int;
+        entity_hold_ground(uid, threat);
+        break;
+    }
+    case COMBAT_ACTION_FLEE: {
+        uint32_t uid = out->action_args[0].val.as_int;
+        vec2_t threat_xz = out->action_args[1].val.as_vec2;
+        G_Move_SetFlee(uid, threat_xz);
+        break;
+    }
+    case COMBAT_ACTION_RESUME_MOVE: {
+        uint32_t uid = out->action_args[0].val.as_int;
+        G_Move_StopFlee(uid);
+        break;
+    }
     default:
         assert(0);
     }
@@ -2346,11 +2524,18 @@ static void entity_apply_update(struct combat_work_out *out)
                  || cs->state == STATE_ATTACK_ANIM_PLAYING || cs->state == STATE_ATTACKING);
     uint32_t eflags = G_FlagsGet(uid);
 
-    bool hold = engaged && fires_from_formation(uid);
+    bool hold = (engaged && fires_from_formation(uid))
+             || (cs->state == STATE_STANDING_GROUND);
     if(hold && !(eflags & ENTITY_FLAG_COMBAT_HELD)) {
         G_Move_SetCombatHeld(uid, true);
     }else if(!hold && (eflags & ENTITY_FLAG_COMBAT_HELD)) {
         G_Move_SetCombatHeld(uid, false);
+    }
+
+    /* A player order can race the snapshot; reconcile in combat's favour. */
+    if(cs->stats.base_dmg == 0 && cs->state != STATE_NON_COMBATANT_FLEEING
+    && G_Move_IsFleeing(uid)) {
+        G_Move_StopFlee(uid);
     }
 }
 
@@ -3333,7 +3518,10 @@ bool G_Combat_Idle(uint32_t uid)
     struct combatstate *cs = combatstate_get(uid);
     if(!cs)
         return true;
-    return (cs->state == STATE_NOT_IN_COMBAT);
+    /* Hang-back states count as idle so automatic abilities keep firing. */
+    return (cs->state == STATE_NOT_IN_COMBAT)
+        || (cs->state == STATE_STANDING_GROUND)
+        || (cs->state == STATE_NON_COMBATANT_FLEEING);
 }
 
 void G_Combat_AttackUnit(uint32_t uid, uint32_t target)

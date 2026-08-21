@@ -142,7 +142,10 @@ enum move_state{
     /* For entities that are a part of a formation, the final stage
      * of the path will have the entity move to its' dedicated cell
      * in the formation. */
-    STATE_ARRIVING_TO_CELL
+    STATE_ARRIVING_TO_CELL,
+    /* Running directly away from a threat position; entered and exited only
+     * by the combat system, keeping flock and formation membership. */
+    STATE_FLEEING
 };
 
 struct movestate{
@@ -211,6 +214,11 @@ struct movestate_aux{
     /* Heading a combat-held unit pivots to; separate from target_dir (also written by formation). 
      */
     quat_t             combat_facing;
+    /* The position a 'FLEEING' entity is running away from, and the state to
+     * restore once the flee is over.
+     */
+    vec2_t             flee_threat_pos;
+    enum move_state    flee_prev;
     /* Per-unit fine-arrival state. 
      */
     struct arrival_unit_state arrival;
@@ -427,7 +435,9 @@ enum move_cmd_type{
     MOVE_CMD_UNBLOCK,
     MOVE_CMD_BLOCK,
     MOVE_CMD_SET_COMBAT_FACING,
-    MOVE_CMD_SET_COMBAT_HELD
+    MOVE_CMD_SET_COMBAT_HELD,
+    MOVE_CMD_SET_FLEE,
+    MOVE_CMD_STOP_FLEE
 };
 
 /* Commands carry small typed payloads; the uid is hoisted out of the union so
@@ -489,6 +499,9 @@ struct move_cmd{
         struct{
             bool held;
         }combat_held;
+        struct{
+            vec2_t threat_xz;
+        }flee;
     }u;
 };
 
@@ -616,7 +629,8 @@ static const char *s_state_str[] = {
     [STATE_SURROUND_ENTITY]     = STR(STATE_SURROUND_ENTITY),
     [STATE_ENTER_ENTITY_RANGE]  = STR(STATE_ENTER_ENTITY_RANGE),
     [STATE_TURNING]             = STR(STATE_TURNING),
-    [STATE_ARRIVING_TO_CELL]    = STR(STATE_ARRIVING_TO_CELL)
+    [STATE_ARRIVING_TO_CELL]    = STR(STATE_ARRIVING_TO_CELL),
+    [STATE_FLEEING]             = STR(STATE_FLEEING)
 };
 
 /*****************************************************************************/
@@ -1488,6 +1502,7 @@ static void on_render_3d(void *user, void *event)
             case STATE_ARRIVED:
             case STATE_WAITING:
             case STATE_TURNING:
+            case STATE_FLEEING:
                 break;
             case STATE_SEEK_ENEMIES: {
                 float radius = G_GetSelectionRadiusFrom(
@@ -1669,6 +1684,15 @@ static vec2_t ent_desired_velocity(uint32_t uid, struct flock *fl,
     case STATE_SEEK_ENEMIES:
     case STATE_SURROUND_ENTITY:
         return M_NavDesiredVelocityForTargetCached(map, build_target(uid, fl), pos_xz);
+
+    case STATE_FLEEING: {
+        vec2_t dir;
+        PFM_Vec2_Sub(&pos_xz, &movestate_aux_get(uid)->flee_threat_pos, &dir);
+        if(PFM_Vec2_Len(&dir) < EPSILON)
+            return (vec2_t){0.0f, 0.0f};
+        PFM_Vec2_Normal(&dir, &dir);
+        return dir;
+    }
 
     default: {
         assert(fl);
@@ -2197,6 +2221,46 @@ static vec2_t enemy_seek_vpref(uint32_t uid, float speed, vec2_t vdes)
     return new_vel;
 }
 
+/* Run directly away from a threat along 'vdes', separating from neighbours.
+ */
+static vec2_t flee_total_force(uint32_t uid, vec2_t vdes)
+{
+    struct movestate *ms = movestate_get(uid);
+    assert(ms);
+
+    vec2_t arrive = arrive_force_enemies(uid, vdes);
+    vec2_t separation = separation_force(uid, SEPARATION_BUFFER_DIST);
+
+    PFM_Vec2_Scale(&arrive,     MOVE_ARRIVE_FORCE_SCALE,   &arrive);
+    PFM_Vec2_Scale(&separation, SEPARATION_FORCE_SCALE,    &separation);
+
+    vec2_t ret = (vec2_t){0.0f, 0.0f};
+    PFM_Vec2_Add(&ret, &arrive, &ret);
+    PFM_Vec2_Add(&ret, &separation, &ret);
+
+    vec2_truncate(&ret, SCALED_MAX_FORCE);
+    return ret;
+}
+
+static vec2_t flee_vpref(uint32_t uid, float speed, vec2_t vdes)
+{
+    struct movestate *ms = movestate_get(uid);
+    assert(ms);
+
+    vec2_t steer_force = flee_total_force(uid, vdes);
+    /* No flow field guides a flee; clip so a cornered unit slides along
+     * obstructions. */
+    nullify_impass_components(uid, &steer_force);
+
+    vec2_t accel, new_vel;
+    PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
+
+    PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
+    vec2_truncate(&new_vel, speed / hz_count(s_move_work.hz));
+
+    return new_vel;
+}
+
 static vec2_t formation_point_seek_total_force(uint32_t uid, const struct flock *flock, vec2_t vdes,
                                                vec2_t cohesion, vec2_t alignment, bool has_dest_los)
 {
@@ -2368,7 +2432,8 @@ static bool snoop_still(uint32_t uid)
         case MOVE_CMD_CHANGE_DIRECTION:
         case MOVE_CMD_SET_ENTER_RANGE:
         case MOVE_CMD_SET_SEEK_ENEMIES:
-        case MOVE_CMD_SET_SURROUND_ENTITY: {
+        case MOVE_CMD_SET_SURROUND_ENTITY:
+        case MOVE_CMD_SET_FLEE: {
             if(curr->uid == uid)
                 return false;
             break;
@@ -2502,6 +2567,7 @@ static bool move_gated_by_heading(enum move_state state)
     case STATE_SEEK_ENEMIES:
     case STATE_SURROUND_ENTITY:
     case STATE_ENTER_ENTITY_RANGE:
+    case STATE_FLEEING:
         return true;
     default:
         return false;
@@ -2878,6 +2944,9 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         break;
     }
     case STATE_ARRIVED:
+        break;
+    case STATE_FLEEING:
+        /* No self-transitions; the combat system owns entry and exit. */
         break;
     case STATE_ARRIVING_TO_CELL: {
         if(in->fstate.fid == NULL_FID) {
@@ -3425,6 +3494,48 @@ static void do_set_seek_enemies(uint32_t uid)
     ms->state = STATE_SEEK_ENEMIES;
 }
 
+static void do_set_flee(uint32_t uid, vec2_t threat_xz)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct movestate *ms = movestate_get(uid);
+    if(!ms)
+        return;
+
+    struct movestate_aux *aux = movestate_aux_get(uid);
+    aux->flee_threat_pos = threat_xz;
+
+    if(ms->state == STATE_FLEEING)
+        return;
+
+    aux->flee_prev = ent_still(ms) ? STATE_MOVING : ms->state;
+
+    if(ent_still(ms)) {
+        entity_unblock(uid);
+        move_notify_motion_start(uid, ms);
+    }
+
+    ms->state = STATE_FLEEING;
+}
+
+static void do_stop_flee(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct movestate *ms = movestate_get(uid);
+    if(!ms || ms->state != STATE_FLEEING)
+        return;
+
+    /* The restored states steer relative to a flock; without one, stop. */
+    if(!flock_for_ent(uid)) {
+        do_stop(uid);
+        return;
+    }
+
+    struct movestate_aux *aux = movestate_aux_get(uid);
+    ms->state = aux->flee_prev;
+}
+
 static void do_update_pos(uint32_t uid, vec2_t pos)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -3633,6 +3744,14 @@ static void move_process_cmds(void)
             do_set_combat_held(cmd.uid, cmd.u.combat_held.held);
             break;
         }
+        case MOVE_CMD_SET_FLEE: {
+            do_set_flee(cmd.uid, cmd.u.flee.threat_xz);
+            break;
+        }
+        case MOVE_CMD_STOP_FLEE: {
+            do_stop_flee(cmd.uid);
+            break;
+        }
         default:
             assert(0);
         }
@@ -3666,6 +3785,9 @@ static void move_velocity_work(int begin_idx, int end_idx)
         case STATE_SEEK_ENEMIES: 
             assert(!flock);
             vpref = enemy_seek_vpref(in->ent_uid, in->speed, in->ent_des_v);
+            break;
+        case STATE_FLEEING:
+            vpref = flee_vpref(in->ent_uid, in->speed, in->ent_des_v);
             break;
         case STATE_ARRIVING_TO_CELL:
             assert(flock);
@@ -4681,7 +4803,8 @@ static void compute_path_requests(uint64_t dispatch_ticks)
         struct move_work_in *in = &s_move_work.in[idx];
         uint32_t uid = in->ent_uid;
         const struct movestate *ms = movestate_get(uid);
-        if(!ms || ms->state == STATE_TURNING || ms->state == STATE_ARRIVING_TO_CELL)
+        if(!ms || ms->state == STATE_TURNING || ms->state == STATE_ARRIVING_TO_CELL
+        || ms->state == STATE_FLEEING)
             continue;
 
         vec2_t pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
@@ -4824,6 +4947,12 @@ static void copy_gpu_results(void)
 
         out->ent_uid = in->ent_uid;
         out->ent_vel = s_move_work.gpu_velocities[i];
+
+        /* The shader doesn't know the COMBAT_HELD flag; mirror the CPU path's
+         * held short-circuit so held units don't creep on the GPU path. */
+        if(G_FlagsGetFrom(s_move_work.gamestate.flags, in->ent_uid) & ENTITY_FLAG_COMBAT_HELD) {
+            out->ent_vel = (vec2_t){0.0f, 0.0f};
+        }
     }
     PERF_RETURN_VOID();
 }
@@ -5415,6 +5544,32 @@ void G_Move_SetSurroundEntity(uint32_t uid, uint32_t target)
     });
 }
 
+void G_Move_SetFlee(uint32_t uid, vec2_t threat_xz)
+{
+    ASSERT_IN_MAIN_THREAD();
+    move_push_cmd((struct move_cmd){
+        .type = MOVE_CMD_SET_FLEE,
+        .uid = uid,
+        .u.flee.threat_xz = threat_xz
+    });
+}
+
+void G_Move_StopFlee(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+    move_push_cmd((struct move_cmd){
+        .type = MOVE_CMD_STOP_FLEE,
+        .uid = uid
+    });
+}
+
+bool G_Move_IsFleeing(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+    struct movestate *ms = movestate_get(uid);
+    return (ms && ms->state == STATE_FLEEING);
+}
+
 void G_Move_UpdatePos(uint32_t uid, vec2_t pos)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -5815,6 +5970,18 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &combat_facing, "combat_facing"));
 
+        struct attr flee_threat_pos = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = aux->flee_threat_pos
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &flee_threat_pos, "flee_threat_pos"));
+
+        struct attr flee_prev = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = aux->flee_prev
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &flee_prev, "flee_prev"));
+
         CHK_TRUE_RET(G_Arrival_SaveUnitState(stream, &aux->arrival));
         Sched_TryYield();
     });
@@ -6002,6 +6169,14 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_QUAT);
         aux->combat_facing = attr.val.as_quat;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        aux->flee_threat_pos = attr.val.as_vec2;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        aux->flee_prev = attr.val.as_int;
 
         CHK_TRUE_RET(G_Arrival_LoadUnitState(stream, &aux->arrival));
 
