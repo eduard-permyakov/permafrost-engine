@@ -219,6 +219,19 @@ struct movestate_aux{
      */
     vec2_t             flee_threat_pos;
     enum move_state    flee_prev;
+    /* A jammed unit registers as a temporary nav blocker so the floods route
+     * the units behind it around the clump. Transient. */
+    uint16_t           seek_stuck_ticks;
+    uint16_t           seek_clear_ticks;
+    /* Set once the unit has been flowing since its last order; only then may
+     * it wall itself as jam-stuck (a queued launch rear is not a jam). */
+    bool               seek_progressed;
+    bool               soft_blocking;
+    vec2_t             soft_block_pos;
+    float              soft_block_radius;
+    /* Keeps EVENT_MOTION_START/END strictly alternating; clients assert the
+     * pairing. Transient. */
+    bool               motion_stopped;
     /* Per-unit fine-arrival state. 
      */
     struct arrival_unit_state arrival;
@@ -259,7 +272,12 @@ enum movestate_flags{
     UPDATE_SET_TARGET_PREV  = (1 << 11),
     UPDATE_SET_MOVING       = (1 << 12),
     UPDATE_SET_TARGET_DIR   = (1 << 13),
-    UPDATE_TURNING_IN_PLACE = (1 << 14)
+    UPDATE_TURNING_IN_PLACE = (1 << 14),
+    /* Diagnostic only: translation was zeroed by the heading gate this tick */
+    UPDATE_HEADING_GATED    = (1 << 15),
+    /* A seeking unit made no progress this tick / has a thin local crowd */
+    UPDATE_SEEK_STUCK       = (1 << 16),
+    UPDATE_SEEK_CLEAR       = (1 << 17)
 };
 
 struct movestate_patch{
@@ -322,10 +340,19 @@ struct move_work_in{
     vec2_t         cell_arrival_vdes;
 };
 
+/* How the velocity solve resolved, for the per-tick mechanism counters. */
+enum cp_out_flags{
+    CP_OUT_GAVE_UP    = (1 << 0),
+    CP_OUT_RETRY_OK   = (1 << 1),
+    CP_OUT_FALLBACK   = (1 << 2),
+    CP_OUT_SEEK_VDES0 = (1 << 3),
+};
+
 struct move_work_out{
     uint32_t ent_uid;
     vec2_t   ent_des_v;
     vec2_t   ent_vel;
+    uint8_t  cp_flags;
     struct movestate_patch patch;
 };
 
@@ -521,6 +548,7 @@ SHARED_PTR_ASSERT_LAYOUT(struct refcounted_map, sp);
 static void move_push_cmd(struct move_cmd cmd);
 static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack);
 static void do_stop(uint32_t uid);
+static bool ent_still(const struct movestate *ms);
 static void move_notify_motion_start(uint32_t uid, struct movestate *ms);
 static void move_notify_motion_end(uint32_t uid);
 static void do_update_pos(uint32_t uid, vec2_t pos);
@@ -553,6 +581,29 @@ static struct result navigation_tick_task(void *arg);
 #define SURROUND_HIGH_WATER_X           (CHUNK_WIDTH/2.0f)
 #define SURROUND_LOW_WATER_Z            (CHUNK_HEIGHT/3.0f)
 #define SURROUND_HIGH_WATER_Z           (CHUNK_HEIGHT/2.0f)
+
+/* A unit standing still this long inside a crowd becomes a soft blocker,
+ * released once the local crowd thins for the hold duration. */
+#define SEEK_STUCK_BLOCK_TICKS          (10)
+/* Neighbours within CLEARPATH_NEIGHBOUR_RADIUS: marching ~4, jammed 6+ */
+#define SEEK_RELEASE_NEIGHBS            (6)
+#define SEEK_RELEASE_HOLD_TICKS         (20)
+/* Stagger registrations so a mass jam doesn't spike the invalidations */
+#define SEEK_BLOCK_BUDGET_PER_TICK      (16)
+
+/* Dense-crowd velocity-solve captures for offline bench replay */
+#define CP_CAPTURE_MAX_PER_TICK         (8)
+#define CP_CAPTURE_MIN_NEIGHBS          (24)
+
+struct cp_capture{
+    struct cp_ent self;
+    vec2_t        vpref;
+    bool          gave_up;
+    uint8_t       ndyn;
+    uint8_t       nstat;
+    struct cp_ent dyn[MAX_NEIGHBOURS];
+    struct cp_ent stat[MAX_NEIGHBOURS];
+};
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -588,6 +639,13 @@ static dest_id_t               s_last_cmd_dest;
 static struct move_work        s_move_work;
 static queue_cmd_t             s_move_commands;
 static struct memstack         s_eventargs;
+
+/* pf.debug.log_cp_captures, hoisted once per tick for the worker phase */
+static bool                    s_log_cp_captures;
+static struct cp_capture       s_cp_captures[CP_CAPTURE_MAX_PER_TICK];
+static SDL_atomic_t            s_cp_ncaptures;
+
+static int                     s_soft_block_budget;
 
 static unsigned long           s_last_tick = 0;
 static unsigned long           s_last_interpolate_tick = 0;
@@ -2624,6 +2682,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         if(heading_err > tolerance) {
             turn_to_move = true;
             new_vel = (vec2_t){0.0f, 0.0f};
+            out->flags |= UPDATE_HEADING_GATED;
         }
     }
 
@@ -3771,6 +3830,17 @@ static void move_velocity_work(int begin_idx, int end_idx)
         if(G_FlagsGetFrom(s_move_work.gamestate.flags, in->ent_uid) & ENTITY_FLAG_COMBAT_HELD) {
             out->ent_uid = in->ent_uid;
             out->ent_vel = (vec2_t){0.0f, 0.0f};
+            out->cp_flags = 0;
+            continue;
+        }
+
+        /* Holds its ground; neighbours still gathered for the release test. */
+        if(movestate_aux_get(in->ent_uid)->soft_blocking) {
+            find_neighbours(in->ent_uid, in->dyn_neighbs, &in->ndyn,
+                in->stat_neighbs, &in->nstat);
+            out->ent_uid = in->ent_uid;
+            out->ent_vel = (vec2_t){0.0f, 0.0f};
+            out->cp_flags = 0;
             continue;
         }
 
@@ -3825,13 +3895,38 @@ static void move_velocity_work(int begin_idx, int end_idx)
         find_neighbours(in->ent_uid, in->dyn_neighbs, &in->ndyn,
             in->stat_neighbs, &in->nstat);
 
+        /* Capture the inputs before the retry loop compacts the arrays. */
+        int cap_slot = -1;
+        if(s_log_cp_captures && (in->ndyn + in->nstat) >= CP_CAPTURE_MIN_NEIGHBS) {
+            int slot = SDL_AtomicAdd(&s_cp_ncaptures, 1);
+            if(slot < CP_CAPTURE_MAX_PER_TICK) {
+                cap_slot = slot;
+                struct cp_capture *cap = &s_cp_captures[slot];
+                cap->self = in->cp_ent;
+                cap->vpref = vpref;
+                cap->ndyn = in->ndyn;
+                cap->nstat = in->nstat;
+                memcpy(cap->dyn, in->dyn_neighbs, in->ndyn * sizeof(struct cp_ent));
+                memcpy(cap->stat, in->stat_neighbs, in->nstat * sizeof(struct cp_ent));
+            }
+        }
+
         /* Compute the velocity constrainted by potential collisions */
+        struct cp_solve_diag diag;
         vec2_t new_vel = G_ClearPath_NewVelocity(in->cp_ent, in->ent_uid,
             vpref, in->dyn_neighbs, in->ndyn, in->stat_neighbs, in->nstat,
-            in->save_debug);
+            in->save_debug, &diag);
 
         out->ent_uid = in->ent_uid;
         out->ent_vel = new_vel;
+        out->cp_flags = (diag.gave_up ? CP_OUT_GAVE_UP : 0)
+                      | (!diag.gave_up && diag.retries > 0 ? CP_OUT_RETRY_OK : 0)
+                      | (diag.fallback ? CP_OUT_FALLBACK : 0)
+                      | (ms->state == STATE_SEEK_ENEMIES
+                         && PFM_Vec2_Len(&in->ent_des_v) < EPSILON ? CP_OUT_SEEK_VDES0 : 0);
+        if(cap_slot >= 0) {
+            s_cp_captures[cap_slot].gave_up = diag.gave_up;
+        }
         vec2_truncate(&out->ent_vel, ms->max_speed / hz_count(s_move_work.hz));
     }
 }
@@ -4481,6 +4576,38 @@ static enum move_work_status nav_tick_finish_work(void)
     s_last_nav_tick_stats.nastar_memo     = diag.nastar_memo;
     s_last_nav_tick_stats.npseek_built    = diag.pseek_built;
 
+    /* The out array is consumed at the next tick's start; reducing the
+     * per-solve diagnostics here is race-free. */
+    s_last_nav_tick_stats.ncp_zero = 0;
+    s_last_nav_tick_stats.ncp_retry_ok = 0;
+    s_last_nav_tick_stats.ncp_fallback = 0;
+    s_last_nav_tick_stats.nseek_vdes0 = 0;
+    s_last_nav_tick_stats.nheading_gated = 0;
+    for(size_t i = 0; i < s_move_work.nwork; i++) {
+        const struct move_work_out *out = &s_move_work.out[i];
+        s_last_nav_tick_stats.ncp_zero       += !!(out->cp_flags & CP_OUT_GAVE_UP);
+        s_last_nav_tick_stats.ncp_retry_ok   += !!(out->cp_flags & CP_OUT_RETRY_OK);
+        s_last_nav_tick_stats.ncp_fallback   += !!(out->cp_flags & CP_OUT_FALLBACK);
+        s_last_nav_tick_stats.nseek_vdes0    += !!(out->cp_flags & CP_OUT_SEEK_VDES0);
+        s_last_nav_tick_stats.nheading_gated += !!(out->patch.flags & UPDATE_HEADING_GATED);
+    }
+
+    int ncaps = MIN(SDL_AtomicGet(&s_cp_ncaptures), CP_CAPTURE_MAX_PER_TICK);
+    for(int i = 0; i < ncaps; i++) {
+        const struct cp_capture *cap = &s_cp_captures[i];
+        fprintf(stdout, "[cp-cap] %d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%u,%u",
+            (int)cap->gave_up, cap->self.xz_pos.x, cap->self.xz_pos.z,
+            cap->self.xz_vel.x, cap->self.xz_vel.z, cap->self.radius,
+            cap->vpref.x, cap->vpref.z, cap->ndyn, cap->nstat);
+        for(int j = 0; j < cap->ndyn + cap->nstat; j++) {
+            const struct cp_ent *n = (j < cap->ndyn) ? &cap->dyn[j]
+                                                     : &cap->stat[j - cap->ndyn];
+            fprintf(stdout, ",%.4f,%.4f,%.4f,%.4f,%.4f",
+                n->xz_pos.x, n->xz_pos.z, n->xz_vel.x, n->xz_vel.z, n->radius);
+        }
+        fputc('\n', stdout);
+    }
+
     Perf_RecordNavTick(&s_last_nav_tick_stats);
 
     return WORK_COMPLETE;
@@ -4947,6 +5074,8 @@ static void copy_gpu_results(void)
 
         out->ent_uid = in->ent_uid;
         out->ent_vel = s_move_work.gpu_velocities[i];
+        /* The shader reports no solve diagnostics; the counters read zero. */
+        out->cp_flags = 0;
 
         /* The shader doesn't know the COMBAT_HELD flag; mirror the CPU path's
          * held short-circuit so held units don't creep on the GPU path. */
@@ -5051,6 +5180,11 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
     PERF_PUSH("movement::tick");
     uint64_t tick_start = SDL_GetPerformanceCounter();
 
+    struct sval cap_setting;
+    s_log_cp_captures = (Settings_Get("pf.debug.log_cp_captures", &cap_setting) == SS_OKAY)
+                     && cap_setting.as_bool;
+    SDL_AtomicSet(&s_cp_ncaptures, 0);
+
     move_consume_work_results();
 
     s_last_nav_tick_stats.consume_us =
@@ -5098,11 +5232,24 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
     PERF_PUSH("submit move work");
     phase_start = SDL_GetPerformanceCounter();
     uint32_t debug_uid = G_ClearPath_DebugUid();
+    s_last_nav_tick_stats.nstate_moving = 0;
+    s_last_nav_tick_stats.nstate_arrived = 0;
+    s_last_nav_tick_stats.nstate_seek = 0;
+    s_last_nav_tick_stats.nstate_waiting = 0;
+    s_last_nav_tick_stats.nstate_turning = 0;
     uint32_t curr;
     kh_foreach_key(s_entity_state_table, curr, {
 
         struct movestate *ms = movestate_get(curr);
         assert(ms);
+
+        switch(ms->state) {
+        case STATE_ARRIVED:      s_last_nav_tick_stats.nstate_arrived++; break;
+        case STATE_SEEK_ENEMIES: s_last_nav_tick_stats.nstate_seek++;    break;
+        case STATE_WAITING:      s_last_nav_tick_stats.nstate_waiting++; break;
+        case STATE_TURNING:      s_last_nav_tick_stats.nstate_turning++; break;
+        default:                 s_last_nav_tick_stats.nstate_moving++;  break;
+        }
 
         if(ent_still(ms))
             continue;

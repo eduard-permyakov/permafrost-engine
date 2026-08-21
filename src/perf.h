@@ -171,6 +171,18 @@ struct nav_tick_sample{
     uint32_t nastar;
     uint32_t nastar_memo;
     uint32_t npseek_built;
+    /* Crowd-mechanism diagnostics (see struct move_work_out cp_flags) */
+    uint32_t ncp_zero;       /* ClearPath solves that gave up -> (0,0) */
+    uint32_t ncp_retry_ok;   /* solves that succeeded only after >= 1 retry */
+    uint32_t ncp_fallback;   /* solves resolved by the least-violation fallback */
+    uint32_t nseek_vdes0;    /* SEEK_ENEMIES units with a zero desired velocity */
+    uint32_t nheading_gated; /* units whose translation was zeroed by the heading gate */
+    /* Per-state entity populations at submit time */
+    uint32_t nstate_moving;
+    uint32_t nstate_arrived;
+    uint32_t nstate_seek;
+    uint32_t nstate_waiting;
+    uint32_t nstate_turning;
 };
 
 struct perf_info{

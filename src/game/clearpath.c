@@ -758,24 +758,38 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
                                size_t ndyn,
                                struct cp_ent *stat_neighbs,
                                size_t nstat,
-                               bool save_debug)
+                               bool save_debug,
+                               struct cp_solve_diag *out_diag)
 {
     PERF_ENTER();
+
+    if(out_diag) {
+        *out_diag = (struct cp_solve_diag){0};
+    }
 
     int retries = 0;
     do{
         vec2_t ret;
         bool found = clearpath_new_velocity(cpent, ent_des_v,
             dyn_neighbs, ndyn, stat_neighbs, nstat, save_debug, &ret);
-        if(found)
+        if(found) {
+            if(out_diag) {
+                out_diag->retries = retries;
+            }
             PERF_RETURN(ret);
+        }
 
         if(++retries > MAX_SOLVE_RETRIES)
             break;
         remove_furthest(cpent.xz_pos, dyn_neighbs, &ndyn, stat_neighbs, &nstat);
 
-    }while(ndyn > 0 && nstat > 0);
+        /* remove_furthest drops from either class; retry while any remain. */
+    }while(ndyn > 0 || nstat > 0);
 
+    if(out_diag) {
+        out_diag->retries = retries;
+        out_diag->gave_up = true;
+    }
     PERF_RETURN((vec2_t){0.0f, 0.0f});
 }
 

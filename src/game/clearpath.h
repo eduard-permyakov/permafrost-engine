@@ -57,6 +57,13 @@ struct cp_ent{
     float  radius;
 };
 
+/* How a solve was resolved, for the per-tick mechanism counters. */
+struct cp_solve_diag{
+    uint8_t retries;
+    bool    gave_up;
+    bool    fallback;
+};
+
 void G_ClearPath_Init(const struct map *map);
 void G_ClearPath_Shutdown(void);
 
@@ -64,7 +71,8 @@ void G_ClearPath_Shutdown(void);
  * overlay this tick, or NULL_UID. */
 uint32_t G_ClearPath_DebugUid(void);
 
-/* The neighbour arrays are scratch: the retry loop compacts them in place. */
+/* The neighbour arrays are scratch: the retry loop compacts them in place.
+ * 'out_diag' may be NULL. */
 vec2_t G_ClearPath_NewVelocity(struct cp_ent ent,
                                uint32_t ent_uid,
                                vec2_t ent_des_v,
@@ -72,7 +80,8 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent ent,
                                size_t ndyn,
                                struct cp_ent *stat_neighbs,
                                size_t nstat,
-                               bool save_debug);
+                               bool save_debug,
+                               struct cp_solve_diag *out_diag);
 
 #endif
 

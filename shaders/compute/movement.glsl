@@ -118,6 +118,7 @@
 #define CLEARPATH_NEIGHBOUR_RADIUS  (10.0f)
 #define CLEARPATH_BUFFER_RADIUS     (0.0f)
 #define CLEARPATH_MAX_XPOINTS       (32)
+#define MAX_SOLVE_RETRIES           (3)
 
 #define NUM_LAYERS                  (12)
 
@@ -1285,6 +1286,7 @@ vec2 clearpath_new_velocity(in uint gpuid,
                             in uint dynamic_neighbours[MAX_NEIGHBOURS])
 {
     vec2 pos = ATTR_VEC2(gpuid, pos);
+    uint retries = 0;
     do{
         vec2 ret = vec2(0.0, 0.0);
         bool found = clearpath_try(gpuid, vpref, nstatic, ndynamic,
@@ -1292,9 +1294,12 @@ vec2 clearpath_new_velocity(in uint gpuid,
         if(found)
             return ret;
 
+        if(++retries > MAX_SOLVE_RETRIES)
+            break;
         remove_furthest(pos, nstatic, ndynamic, static_neighbours, dynamic_neighbours);
 
-    }while(nstatic > 0 && ndynamic > 0);
+        /* remove_furthest drops from either class; retry while any remain. */
+    }while(nstatic > 0 || ndynamic > 0);
 
     return vec2(0, 0);
 }
