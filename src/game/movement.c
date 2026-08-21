@@ -834,6 +834,60 @@ static void entity_unblock(uint32_t uid)
     E_Global_Notify(EVENT_MOVABLE_ENTITY_UNBLOCK, desc, ES_ENGINE);
 }
 
+static void entity_soft_block(uint32_t uid)
+{
+    struct movestate_aux *aux = movestate_aux_get(uid);
+    assert(!aux->soft_blocking);
+
+    float sel_radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
+    vec2_t pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
+    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+    M_NavBlockersIncref(pos, sel_radius,
+        G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid), flags, s_map);
+
+    aux->soft_blocking = true;
+    aux->soft_block_pos = pos;
+    aux->soft_block_radius = sel_radius;
+
+    /* Let clients switch to idle; the held path announces its own end. */
+    if(!(G_FlagsGet(uid) & ENTITY_FLAG_COMBAT_HELD))
+        move_notify_motion_end(uid);
+}
+
+static void entity_soft_unblock(uint32_t uid)
+{
+    struct movestate_aux *aux = movestate_aux_get(uid);
+    if(!aux || !aux->soft_blocking)
+        return;
+
+    int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
+    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+    M_NavBlockersDecref(aux->soft_block_pos, aux->soft_block_radius, faction_id, flags, s_map);
+
+    aux->soft_blocking = false;
+    aux->seek_stuck_ticks = 0;
+    aux->seek_clear_ticks = 0;
+    aux->seek_progressed = false;
+
+    /* Motion resumes unless settling or still combat-held. */
+    struct movestate *ms = movestate_get(uid);
+    if(ms && !ent_still(ms))
+        move_notify_motion_start(uid, ms);
+}
+
+/* A new order or forced state change starts a fresh jam evaluation. */
+static void entity_reset_seek_counters(uint32_t uid)
+{
+    entity_soft_unblock(uid);
+
+    struct movestate_aux *aux = movestate_aux_get(uid);
+    if(!aux)
+        return;
+    aux->seek_stuck_ticks = 0;
+    aux->seek_clear_ticks = 0;
+    aux->seek_progressed = false;
+}
+
 static bool stationary(uint32_t uid)
 {
     struct movestate *ms = movestate_get(uid);
@@ -885,12 +939,19 @@ static void move_notify_motion_start(uint32_t uid, struct movestate *ms)
     if(G_FlagsGet(uid) & ENTITY_FLAG_COMBAT_HELD)
         return;
     struct movestate_aux *aux = movestate_aux_get(uid);
+    if(!aux->motion_stopped)
+        return;
+    aux->motion_stopped = false;
     memset(aux->vel_hist, 0, sizeof(aux->vel_hist));
     E_Entity_Notify(EVENT_MOTION_START, uid, NULL, ES_ENGINE);
 }
 
 static void move_notify_motion_end(uint32_t uid)
 {
+    struct movestate_aux *aux = movestate_aux_get(uid);
+    if(aux->motion_stopped)
+        return;
+    aux->motion_stopped = true;
     E_Entity_Notify(EVENT_MOTION_END, uid, NULL, ES_ENGINE);
 }
 
@@ -1040,6 +1101,7 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
         struct movestate *ms = movestate_get(curr_ent);
         assert(ms);
 
+        entity_reset_seek_counters(curr_ent);
         if(ent_still(ms)) {
             entity_unblock(curr_ent); 
             move_notify_motion_start(curr_ent, ms);
@@ -2774,8 +2836,19 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         return;
 
     switch(ms->state) {
-    case STATE_MOVING: 
+    case STATE_MOVING:
     case STATE_MOVING_IN_FORMATION: {
+
+        /* A jammed plain mover is soft-blocker material too; the formation
+         * machinery owns its members' spacing. */
+        if(ms->state == STATE_MOVING && in->fstate.fid == NULL_FID) {
+            /* A heading-gated pivot is not a jam. */
+            if(!(out->flags & UPDATE_HEADING_GATED)
+            && PFM_Vec2_Len(&out->next_velocity) < EPSILON)
+                out->flags |= UPDATE_SEEK_STUCK;
+            if(in->nstat + in->ndyn < SEEK_RELEASE_NEIGHBS)
+                out->flags |= UPDATE_SEEK_CLEAR;
+        }
 
         if((in->fstate.fid != NULL_FID) && !in->fstate.assignment_ready)
             break;
@@ -2849,6 +2922,10 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
             if(in->field_starved)
                 break;
 
+            /* A soft blocker already stands and walls its tiles. */
+            if(aux->soft_blocking)
+                break;
+
             assert(flock_for_ent(uid));
             out->flags |= UPDATE_SET_STATE;
             out->next_state = STATE_WAITING;
@@ -2859,10 +2936,15 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
     }
     case STATE_SEEK_ENEMIES: {
 
-        /* When the seek field can't route us toward an enemy (walled in by the
-         * surrounding crowd) we stay in SEEK_ENEMIES as a soft obstacle and retry
-         * next tick, rather than full-stopping into a WAITING blocker.
+        /* When the seek field can't route us we retry next tick rather than
+         * full-stopping into WAITING; a persistently stuck, crowded seeker
+         * becomes a soft blocker in the apply phase.
          */
+        if(!(out->flags & UPDATE_HEADING_GATED)
+        && PFM_Vec2_Len(&out->next_velocity) < EPSILON)
+            out->flags |= UPDATE_SEEK_STUCK;
+        if(in->nstat + in->ndyn < SEEK_RELEASE_NEIGHBS)
+            out->flags |= UPDATE_SEEK_CLEAR;
         break;
     }
     case STATE_SURROUND_ENTITY: {
@@ -3126,6 +3208,38 @@ static void entity_apply_update(uint32_t uid, const struct movestate_patch *patc
     if(ms->state == STATE_SURROUND_ENTITY) {
         ent_update_using_surround_field(uid, ms);
     }
+
+    /* A held unit's soft block is managed by the flag alone; a unit that
+     * went still is a real blocker now and must drop the soft one. */
+    bool held = G_FlagsGet(uid) & ENTITY_FLAG_COMBAT_HELD;
+    if(aux->soft_blocking
+    && (ms->blocking || ent_still(ms)
+        || (!held && ms->state != STATE_SEEK_ENEMIES && ms->state != STATE_MOVING))) {
+        entity_soft_unblock(uid);
+    }
+
+    /* Re-register a held unit that shed its block through a still state. */
+    if(held && !aux->soft_blocking && !ms->blocking && !ent_still(ms)) {
+        entity_soft_block(uid);
+    }
+
+    if(!held && (ms->state == STATE_SEEK_ENEMIES || ms->state == STATE_MOVING)) {
+        bool stuck = patch->flags & UPDATE_SEEK_STUCK;
+        bool clear = patch->flags & UPDATE_SEEK_CLEAR;
+        if(PFM_Vec2_Len(&ms->velocity) > CLEARPATH_STILL_SPEED)
+            aux->seek_progressed = true;
+        aux->seek_stuck_ticks = stuck ? MIN(aux->seek_stuck_ticks + 1, UINT16_MAX) : 0;
+        aux->seek_clear_ticks = clear ? MIN(aux->seek_clear_ticks + 1, UINT16_MAX) : 0;
+
+        if(!aux->soft_blocking && stuck && !clear && aux->seek_progressed
+        && aux->seek_stuck_ticks >= SEEK_STUCK_BLOCK_TICKS
+        && s_soft_block_budget > 0) {
+            s_soft_block_budget--;
+            entity_soft_block(uid);
+        }else if(aux->soft_blocking && aux->seek_clear_ticks >= SEEK_RELEASE_HOLD_TICKS) {
+            entity_soft_unblock(uid);
+        }
+    }
 }
 
 struct near_ent_dist{
@@ -3307,6 +3421,7 @@ static void do_add_entity(uint32_t uid, vec3_t pos, float selection_radius, int 
         .combat_facing = Entity_GetRot(uid),
         .surround_target_prev = (vec2_t){0},
         .surround_nearest_prev = (vec2_t){0},
+        .motion_stopped = true,
     };
     memset(new_aux.vel_hist, 0, sizeof(new_aux.vel_hist));
 
@@ -3350,6 +3465,8 @@ static void do_stop(uint32_t uid)
     if(!ms)
         return;
 
+    entity_reset_seek_counters(uid);
+
     if(!ent_still(ms)) {
         entity_finish_moving(uid, STATE_ARRIVED, true);
     }
@@ -3361,6 +3478,8 @@ static void do_stop(uint32_t uid)
 static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack)
 {
     ASSERT_IN_MAIN_THREAD();
+
+    entity_reset_seek_counters(uid);
 
     float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
     uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
@@ -3434,6 +3553,8 @@ static void do_set_change_direction(uint32_t uid, quat_t target)
     if(!ms)
         return;
 
+    entity_reset_seek_counters(uid);
+
     if(ent_still(ms)) {
         entity_unblock(uid);
         move_notify_motion_start(uid, ms);
@@ -3464,11 +3585,22 @@ static void do_set_combat_held(uint32_t uid, bool held)
     uint32_t flags = G_FlagsGet(uid);
     if(held == (bool)(flags & ENTITY_FLAG_COMBAT_HELD))
         return;
+
+    /* Release before clearing the flag: the unblock's motion start stays
+     * suppressed and this function announces the single start. */
+    if(!held)
+        entity_reset_seek_counters(uid);
+
     G_FlagsSet(uid, held ? (flags | ENTITY_FLAG_COMBAT_HELD)
                          : (flags & ~ENTITY_FLAG_COMBAT_HELD));
 
     if(ent_still(ms))
         return;
+
+    /* Block a held unit's tiles so the floods route followers around it;
+     * still units already block. */
+    if(held && !ms->blocking && !movestate_aux_get(uid)->soft_blocking)
+        entity_soft_block(uid);
 
     if(held)
         move_notify_motion_end(uid);
@@ -3543,6 +3675,7 @@ static void do_set_seek_enemies(uint32_t uid)
     if(!ms)
         return;
 
+    entity_reset_seek_counters(uid);
     remove_from_flocks(uid);
 
     if(ent_still(ms)) {
@@ -3560,6 +3693,8 @@ static void do_set_flee(uint32_t uid, vec2_t threat_xz)
     struct movestate *ms = movestate_get(uid);
     if(!ms)
         return;
+
+    entity_reset_seek_counters(uid);
 
     struct movestate_aux *aux = movestate_aux_get(uid);
     aux->flee_threat_pos = threat_xz;
@@ -3603,6 +3738,8 @@ static void do_update_pos(uint32_t uid, vec2_t pos)
     if(!ms)
         return;
 
+    entity_reset_seek_counters(uid);
+
     vec3_t newpos = {
         pos.x,
         unit_height(uid, pos),
@@ -3637,6 +3774,8 @@ static void do_update_faction_id(uint32_t uid, int oldfac, int newfac)
     if(!ms)
         return;
 
+    entity_reset_seek_counters(uid);
+
     khiter_t k = kh_get(id, s_move_work.gamestate.faction_ids, uid);
     assert(k != kh_end(s_move_work.gamestate.faction_ids));
     kh_val(s_move_work.gamestate.faction_ids, k) = newfac;
@@ -3656,6 +3795,8 @@ static void do_update_selection_radius(uint32_t uid, float sel_radius)
     struct movestate *ms = movestate_get(uid);
     if(!ms)
         return;
+
+    entity_reset_seek_counters(uid);
 
     khiter_t k = kh_get(range, s_move_work.gamestate.sel_radiuses, uid);
     assert(k != kh_end(s_move_work.gamestate.sel_radiuses));
@@ -4223,6 +4364,7 @@ static void move_consume_work_results(void)
 
     PERF_PUSH("apply movement updates");
 
+    s_soft_block_budget = SEEK_BLOCK_BUDGET_PER_TICK;
     for(int i = 0; i < s_move_work.nwork; i++) {
         struct move_work_out *out = &s_move_work.out[i];
         entity_apply_update(out->ent_uid, &out->patch);
@@ -6331,6 +6473,13 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
          * the movement animation. */
         if(!ent_still(ms)) {
             move_notify_motion_start(uid, ms);
+        }
+
+        /* A held-at-save unit reloads with the flag set; the edge-triggered
+         * hold path never re-registers its blocker. */
+        if((G_FlagsGet(uid) & ENTITY_FLAG_COMBAT_HELD)
+        && !ent_still(ms) && !ms->blocking && !aux->soft_blocking) {
+            entity_soft_block(uid);
         }
 
         Sched_TryYield();
