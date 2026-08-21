@@ -80,14 +80,19 @@
 
 
 #define TARGET_ACQUISITION_RANGE     (100.0f)
-/* Threat radii driving the non-combatant (0 damage) hang-back behaviour during
- * an attack-move. The trigger/safe pairs form two hysteresis bands so a unit
- * neither flickers between holding and advancing nor between fleeing and holding.
- */
+/* Non-combatant hang-back threat radii; the trigger/safe pairs form two
+ * hysteresis bands. */
 #define NONCOMBATANT_FLEE_TRIGGER_RANGE (30.0f)  /* enemy closer -> run away */
 #define NONCOMBATANT_FLEE_SAFE_RANGE    (45.0f)  /* no enemy within -> stop running, stand */
 #define NONCOMBATANT_HOLD_TRIGGER_RANGE (60.0f)  /* enemy closer -> freeze the advance */
 #define NONCOMBATANT_HOLD_SAFE_RANGE    (80.0f)  /* no enemy within -> resume the advance */
+/* Re-targeting eagerness scales with distance: a unit right behind the fight
+ * waits in line on its live target, a far backline unit re-picks freely, with
+ * a linear cadence ramp between. A dead target is always replaced.
+ */
+#define RETARGET_QUEUE_RANGE         (40.0f)
+#define RETARGET_EAGER_RANGE         (80.0f)
+#define RETARGET_HOLD_MAX            (5)
 #define PROJECTILE_DEFAULT_SPEED     (100.0f)
 #define EPSILON                      (1.0f/1024)
 #define DEFAULT_ATTACK_PERIOD        (4.0f/3.0f)
@@ -183,6 +188,8 @@ struct combatstate{
     bool               attack_notified;
     bool               sticky;
     uint32_t           target_uid;
+    /* Ticks before a live target may be swapped for a closer one. Transient. */
+    uint16_t           retarget_hold;
     /* If the target gained a target while moving, save and restore
      * its' intial move command once it finishes combat. */
     bool               move_cmd_interrupted;
@@ -454,6 +461,8 @@ static bool any_command(void *arg, struct combat_cmd *cmd);
 static float combat_dmg_mult(int dmg_type, int armour_type);
 static void combat_tick(void *user, void *event);
 static void group_bonuses_remove_ent(uint32_t uid);
+static float target_distance(uint32_t uid, uint32_t target);
+static uint16_t retarget_hold_for_dist(float dist);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -1933,6 +1942,7 @@ static void entity_target_enemy(uint32_t uid, uint32_t enemy)
             || cs->stance == COMBAT_STANCE_HOLD_POSITION);
 
         cs->target_uid = enemy;
+        cs->retarget_hold = retarget_hold_for_dist(target_distance(uid, enemy));
         entity_turn_to_target(uid, enemy);
         return;
     }
@@ -1941,6 +1951,7 @@ static void entity_target_enemy(uint32_t uid, uint32_t enemy)
     if(cs->stance == COMBAT_STANCE_AGGRESSIVE && (flags & ENTITY_FLAG_MOVABLE)) {
 
         cs->target_uid = enemy;
+        cs->retarget_hold = retarget_hold_for_dist(target_distance(uid, enemy));
         cs->state = STATE_MOVING_TO_TARGET;
 
         if(!cs->move_cmd_interrupted 
@@ -2029,6 +2040,27 @@ static uint32_t closest_eligible_entity_range(uint32_t uid, float range)
         pos, valid_enemy, (void*)((uintptr_t)uid), range);
 }
 
+static float target_distance(uint32_t uid, uint32_t target)
+{
+    struct combat_gamestate *gs = &s_combat_work.gamestate;
+    vec2_t pos = G_Pos_GetXZFrom(gs->positions, uid);
+    vec2_t tpos = G_Pos_GetXZFrom(gs->positions, target);
+    vec2_t delta;
+    PFM_Vec2_Sub(&tpos, &pos, &delta);
+    return PFM_Vec2_Len(&delta);
+}
+
+static uint16_t retarget_hold_for_dist(float dist)
+{
+    if(dist >= RETARGET_EAGER_RANGE)
+        return 0;
+    if(dist <= RETARGET_QUEUE_RANGE)
+        return RETARGET_HOLD_MAX;
+    float t = (dist - RETARGET_QUEUE_RANGE)
+            / (RETARGET_EAGER_RANGE - RETARGET_QUEUE_RANGE);
+    return (uint16_t)((1.0f - t) * RETARGET_HOLD_MAX + 0.5f);
+}
+
 static void entity_compute_update(uint32_t uid, struct combat_work_out *out)
 {
     struct combat_gamestate *gs = &s_combat_work.gamestate;
@@ -2105,21 +2137,30 @@ static void entity_compute_update(uint32_t uid, struct combat_work_out *out)
     {
         assert(flags & ENTITY_FLAG_MOVABLE);
 
-        /* Handle the case where our target dies before we reach it */
-        uint32_t enemy = closest_eligible_entity(uid);
-        if(enemy == NULL_UID) {
+        if(curr->retarget_hold > 0)
+            curr->retarget_hold--;
 
-            out->action = COMBAT_ACTION_STOP_COMBAT;
-            out->action_args[0] = (struct attr){
-                .type = TYPE_INT,
-                .val.as_int = uid
-            };
-            break;
-        }
+        /* Wait in line close behind the fight; re-pick freely further back. */
+        uint32_t enemy = curr->target_uid;
+        bool invalid = entity_dead(enemy) || garrisoned(enemy);
+        float dist = invalid ? 0.0f : target_distance(uid, enemy);
 
-        /* And the case where a different target becomes even closer */
-        if(enemy != curr->target_uid) {
-            curr->target_uid = enemy;
+        if(invalid || (dist > RETARGET_QUEUE_RANGE && curr->retarget_hold == 0)) {
+
+            enemy = closest_eligible_entity(uid);
+            if(enemy == NULL_UID) {
+
+                out->action = COMBAT_ACTION_STOP_COMBAT;
+                out->action_args[0] = (struct attr){
+                    .type = TYPE_INT,
+                    .val.as_int = uid
+                };
+                break;
+            }
+            if(enemy != curr->target_uid) {
+                curr->target_uid = enemy;
+                curr->retarget_hold = retarget_hold_for_dist(target_distance(uid, enemy));
+            }
         }
 
         /* Check if we're within attacking range of our target */
