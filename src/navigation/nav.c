@@ -3893,7 +3893,7 @@ bool N_RequestPathAttacking(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
  * impassable/unreachable tiles (FD_NONE) or in chunks whose field is not cached are
  * dropped, and the remaining weights renormalise via the final normalise.
  */
-static vec2_t n_interpolated_flow_dir(struct nav_private *priv, dest_id_t id,
+static vec2_t n_interpolated_flow_dir(struct nav_private *priv, struct target target,
                                       struct map_resolution res, vec3_t map_pos,
                                       vec2_t curr_pos, const struct flow_field *base_ff,
                                       struct tile_desc base_tile, bool peek)
@@ -3929,14 +3929,20 @@ static vec2_t n_interpolated_flow_dir(struct nav_private *priv, dest_id_t id,
         const struct flow_field *ff = base_ff;
         if(td.chunk_r != base_tile.chunk_r || td.chunk_c != base_tile.chunk_c) {
             ff_id_t ffid;
-            if(peek) {
-                if(!N_FC_PeekDestFFMapping(priv->fieldcache, id,
-                    (struct coord){td.chunk_r, td.chunk_c}, &ffid))
+            struct coord nchunk = (struct coord){td.chunk_r, td.chunk_c};
+            if(target.kind == TARGET_KIND_ENEMY_SEEK) {
+                /* A neighbour chunk's enemy-seek field is routinely absent or
+                 * stale (rebuilt only by units standing in it); blending it in
+                 * deflects units along the boundary. Home chunk only. */
+                continue;
+            }else if(peek) {
+                if(!N_FC_PeekDestFFMapping(priv->fieldcache, target.point_seek.dest_id,
+                    nchunk, &ffid))
                     continue;
                 ff = N_FC_PeekFlowField(priv->fieldcache, ffid);
             }else{
-                if(!N_FC_GetDestFFMapping(priv->fieldcache, id,
-                    (struct coord){td.chunk_r, td.chunk_c}, &ffid))
+                if(!N_FC_GetDestFFMapping(priv->fieldcache, target.point_seek.dest_id,
+                    nchunk, &ffid))
                     continue;
                 ff = N_FC_FlowFieldAt(priv->fieldcache, ffid);
             }
@@ -4073,8 +4079,8 @@ vec2_t N_DesiredVelocityForTargetCached(void *nav_private, vec3_t map_pos, struc
         return (vec2_t){0.0f, 0.0f};
     }
 
-    if(target.kind == TARGET_KIND_POINT_SEEK)
-        return n_interpolated_flow_dir(priv, target.point_seek.dest_id, res, map_pos, xz, ff, tile, true);
+    if(target.kind == TARGET_KIND_POINT_SEEK || target.kind == TARGET_KIND_ENEMY_SEEK)
+        return n_interpolated_flow_dir(priv, target, res, map_pos, xz, ff, tile, true);
     return N_FlowDir(ff->field[tile.tile_r][tile.tile_c].dir_idx);
 }
 
