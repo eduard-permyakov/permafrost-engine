@@ -936,9 +936,14 @@ bool G_Arrival_DesiredVelocity(const struct arrival_state *as, struct arrival_un
             *out_vel = toc;
             return true;
         }
-        *out_vel = M_NavDesiredVelocityForTargetCached(nav_map, (struct target){
+        /* A wiped COM field reads as zero; report "no answer" so the caller
+         * falls back to the flock's own starvation-tracked field. */
+        vec2_t cvel = M_NavDesiredVelocityForTargetCached(nav_map, (struct target){
             .kind = TARGET_KIND_POINT_SEEK,
             .point_seek = {.dest_id = as->com_dest_id, .dest_xz = as->com}}, pos);
+        if(PFM_Vec2_Len(&cvel) < EPSILON)
+            return false;
+        *out_vel = cvel;
         return true;
     }
     }

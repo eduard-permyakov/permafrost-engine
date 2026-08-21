@@ -5101,9 +5101,15 @@ static void compute_path_requests(uint64_t dispatch_ticks)
         if(as && as->phase == ARRIVAL_PHASE_FILLING) {
             struct target tc = {.kind = TARGET_KIND_POINT_SEEK,
                                 .point_seek = {.dest_id = as->com_dest_id, .dest_xz = as->com}};
-            if(M_NavRequiresPathRequest(map, tc, pos) && s_rebuild_budget > 0) {
-                s_rebuild_budget--;
-                M_NavServicePathRequest(map, tc, pos);
+            if(M_NavRequiresPathRequest(map, tc, pos)) {
+                if(s_rebuild_budget > 0) {
+                    s_rebuild_budget--;
+                    M_NavServicePathRequest(map, tc, pos);
+                }else{
+                    in->field_starved = true;
+                    if(s_first_starved == (size_t)-1)
+                        s_first_starved = idx;
+                }
             }
         }
 
