@@ -93,6 +93,13 @@
 #define RETARGET_QUEUE_RANGE         (40.0f)
 #define RETARGET_EAGER_RANGE         (80.0f)
 #define RETARGET_HOLD_MAX            (5)
+/* A melee chaser closer than its personal pin range waits in line behind the
+ * front instead of following the shared enemy-seek field around it; farther
+ * units flank. The per-unit roll makes the pinned depth ragged: at infantry
+ * spacing the second and third ranks always pin, the sixth never.
+ */
+#define SEEK_PIN_RANGE_MIN           (25.0f)
+#define SEEK_PIN_RANGE_MAX           (50.0f)
 #define PROJECTILE_DEFAULT_SPEED     (100.0f)
 #define EPSILON                      (1.0f/1024)
 #define DEFAULT_ATTACK_PERIOD        (4.0f/3.0f)
@@ -190,6 +197,8 @@ struct combatstate{
     uint32_t           target_uid;
     /* Ticks before a live target may be swapped for a closer one. Transient. */
     uint16_t           retarget_hold;
+    /* The seek pin last handed to movement; NULL_UID when unpinned. Transient. */
+    uint32_t           seek_pin_uid;
     /* If the target gained a target while moving, save and restore
      * its' intial move command once it finishes combat. */
     bool               move_cmd_interrupted;
@@ -463,6 +472,7 @@ static void combat_tick(void *user, void *event);
 static void group_bonuses_remove_ent(uint32_t uid);
 static float target_distance(uint32_t uid, uint32_t target);
 static uint16_t retarget_hold_for_dist(float dist);
+static uint32_t seek_pin_for(const struct combatstate *cs, uint32_t uid, uint32_t enemy);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -1317,6 +1327,7 @@ static void do_add_entity(uint32_t uid, enum combat_stance initial)
         .stance = initial,
         .state = STATE_NOT_IN_COMBAT,
         .sticky = false,
+        .seek_pin_uid = NULL_UID,
         .move_cmd_interrupted = false,
         .pd = combat_default_proj(),
         .fd = combat_default_fire(),
@@ -1952,6 +1963,7 @@ static void entity_target_enemy(uint32_t uid, uint32_t enemy)
 
         cs->target_uid = enemy;
         cs->retarget_hold = retarget_hold_for_dist(target_distance(uid, enemy));
+        cs->seek_pin_uid = seek_pin_for(cs, uid, enemy);
         cs->state = STATE_MOVING_TO_TARGET;
 
         if(!cs->move_cmd_interrupted 
@@ -2059,6 +2071,19 @@ static uint16_t retarget_hold_for_dist(float dist)
     float t = (dist - RETARGET_QUEUE_RANGE)
             / (RETARGET_EAGER_RANGE - RETARGET_QUEUE_RANGE);
     return (uint16_t)((1.0f - t) * RETARGET_HOLD_MAX + 0.5f);
+}
+
+static float pin_range(uint32_t uid)
+{
+    float roll = ((uid * 2654435761u) >> 8) / (float)(1u << 24);
+    return SEEK_PIN_RANGE_MIN + roll * (SEEK_PIN_RANGE_MAX - SEEK_PIN_RANGE_MIN);
+}
+
+static uint32_t seek_pin_for(const struct combatstate *cs, uint32_t uid, uint32_t enemy)
+{
+    if(cs->stats.attack_range > 0.0f)
+        return NULL_UID;
+    return (target_distance(uid, enemy) <= pin_range(uid)) ? enemy : NULL_UID;
 }
 
 static void entity_compute_update(uint32_t uid, struct combat_work_out *out)
@@ -2175,6 +2200,8 @@ static void entity_compute_update(uint32_t uid, struct combat_work_out *out)
                 .type = TYPE_INT,
                 .val.as_int = enemy
             };
+        }else{
+            curr->seek_pin_uid = seek_pin_for(curr, uid, enemy);
         }
         break;
     }
@@ -2467,6 +2494,7 @@ static void entity_apply_update(struct combat_work_out *out)
     int live_hp = cs->current_hp;
     struct combatmods live_mods = cs->mods;
     bool live_invulnerable = cs->invulnerable;
+    uint32_t old_pin = cs->seek_pin_uid;
     *cs = out->next_state;
     cs->current_hp = live_hp;
     cs->mods = live_mods;
@@ -2578,6 +2606,12 @@ static void entity_apply_update(struct combat_work_out *out)
     && G_Move_IsFleeing(uid)) {
         G_Move_StopFlee(uid);
     }
+
+    /* The pin only means something while chasing. */
+    if(cs->state != STATE_MOVING_TO_TARGET)
+        cs->seek_pin_uid = NULL_UID;
+    if(cs->seek_pin_uid != old_pin)
+        G_Move_SetSeekPin(uid, cs->seek_pin_uid);
 }
 
 static void combat_push_cmd(struct combat_cmd cmd)

@@ -88,6 +88,7 @@ void G_Move_SetCombatFacing(uint32_t uid, quat_t dir);
 
 void G_Move_Stop(uint32_t uid);
 void G_Move_SetSeekEnemies(uint32_t uid);
+void G_Move_SetSeekPin(uint32_t uid, uint32_t target);
 void G_Move_SetSurroundEntity(uint32_t uid, uint32_t target);
 void G_Move_SetChangeDirection(uint32_t uid, quat_t target);
 void G_Move_SetEnterRange(uint32_t uid, uint32_t target, float range);

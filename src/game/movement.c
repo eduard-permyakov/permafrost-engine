@@ -219,6 +219,9 @@ struct movestate_aux{
      */
     vec2_t             flee_threat_pos;
     enum move_state    flee_prev;
+    /* Target a pinned seeker presses straight at instead of following the
+     * enemy-seek field; NULL_UID when unpinned. Transient. */
+    uint32_t           seek_pin_target;
     /* A jammed unit registers as a temporary nav blocker so the floods route
      * the units behind it around the clump. Transient. */
     uint16_t           seek_stuck_ticks;
@@ -464,7 +467,8 @@ enum move_cmd_type{
     MOVE_CMD_SET_COMBAT_FACING,
     MOVE_CMD_SET_COMBAT_HELD,
     MOVE_CMD_SET_FLEE,
-    MOVE_CMD_STOP_FLEE
+    MOVE_CMD_STOP_FLEE,
+    MOVE_CMD_SET_SEEK_PIN
 };
 
 /* Commands carry small typed payloads; the uid is hoisted out of the union so
@@ -529,6 +533,9 @@ struct move_cmd{
         struct{
             vec2_t threat_xz;
         }flee;
+        struct{
+            uint32_t target;
+        }seek_pin;
     }u;
 };
 
@@ -548,6 +555,8 @@ SHARED_PTR_ASSERT_LAYOUT(struct refcounted_map, sp);
 static void move_push_cmd(struct move_cmd cmd);
 static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack);
 static void do_stop(uint32_t uid);
+static void do_set_seek_pin(uint32_t uid, uint32_t target);
+static void clear_seek_pin(uint32_t uid);
 static bool ent_still(const struct movestate *ms);
 static void move_notify_motion_start(uint32_t uid, struct movestate *ms);
 static void move_notify_motion_end(uint32_t uid);
@@ -1793,6 +1802,38 @@ static struct target build_target(uint32_t uid, const struct flock *fl)
                            .point_seek = {.dest_id = fl->dest_id, .dest_xz = fl->target_xz}};
 }
 
+/* A pinned seeker waits in line: it presses straight at its target while the
+ * way is open and stands once something is in the way, so the ranks behind
+ * the front jam up and wall rather than slide along it.
+ */
+static bool seek_pin_vdes(uint32_t uid, vec2_t pos_xz, vec2_t *out)
+{
+    uint32_t pin = movestate_aux_get(uid)->seek_pin_target;
+    if(pin == NULL_UID || !entity_exists(pin)
+    || (G_FlagsGetFrom(s_move_work.gamestate.flags, pin) & ENTITY_FLAG_ZOMBIE))
+        return false;
+
+    vec2_t target_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, pin);
+    vec2_t dir;
+    PFM_Vec2_Sub(&target_xz, &pos_xz, &dir);
+    if(PFM_Vec2_Len(&dir) < EPSILON)
+        return false;
+    PFM_Vec2_Normal(&dir, &dir);
+
+    const struct map *map = s_move_work.gamestate.map;
+    float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
+    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+    enum nav_layer layer = Entity_NavLayerWithRadius(flags, radius);
+
+    vec2_t probe = (vec2_t){pos_xz.x + dir.x * radius, pos_xz.z + dir.z * radius};
+    bool open = M_NavPositionPathable(map, layer, probe)
+             && (M_NavPositionBlocked(map, layer, pos_xz)
+              || !M_NavPositionBlocked(map, layer, probe));
+
+    *out = open ? dir : (vec2_t){0.0f, 0.0f};
+    return true;
+}
+
 static vec2_t ent_desired_velocity(uint32_t uid, struct flock *fl,
                                    vec2_t cell_arrival_vdes, bool has_dest_los)
 {
@@ -1807,7 +1848,12 @@ static vec2_t ent_desired_velocity(uint32_t uid, struct flock *fl,
     case STATE_ARRIVING_TO_CELL:
         return cell_arrival_vdes;
 
-    case STATE_SEEK_ENEMIES:
+    case STATE_SEEK_ENEMIES: {
+        vec2_t pinned;
+        if(seek_pin_vdes(uid, pos_xz, &pinned))
+            return pinned;
+        return M_NavDesiredVelocityForTargetCached(map, build_target(uid, fl), pos_xz);
+    }
     case STATE_SURROUND_ENTITY:
         return M_NavDesiredVelocityForTargetCached(map, build_target(uid, fl), pos_xz);
 
@@ -2335,6 +2381,12 @@ static vec2_t enemy_seek_vpref(uint32_t uid, float speed, vec2_t vdes)
 {
     struct movestate *ms = movestate_get(uid);
     assert(ms);
+
+    /* A pinned unit with nowhere to press stands dead still; the separation
+     * jostle would otherwise keep it from ever reading as jammed. */
+    if(PFM_Vec2_Len(&vdes) < EPSILON
+    && movestate_aux_get(uid)->seek_pin_target != NULL_UID)
+        return (vec2_t){0.0f, 0.0f};
 
     vec2_t steer_force = enemy_seek_total_force(uid, vdes);
 
@@ -3237,7 +3289,9 @@ static void entity_apply_update(uint32_t uid, const struct movestate_patch *patc
         aux->seek_stuck_ticks = stuck ? MIN(aux->seek_stuck_ticks + 1, UINT16_MAX) : 0;
         aux->seek_clear_ticks = clear ? MIN(aux->seek_clear_ticks + 1, UINT16_MAX) : 0;
 
-        if(!aux->soft_blocking && stuck && !clear && aux->seek_progressed
+        /* A pinned unit is in line by intent, not a queued launch rear. */
+        bool may_wall = aux->seek_progressed || aux->seek_pin_target != NULL_UID;
+        if(!aux->soft_blocking && stuck && !clear && may_wall
         && aux->seek_stuck_ticks >= SEEK_STUCK_BLOCK_TICKS
         && s_soft_block_budget > 0) {
             s_soft_block_budget--;
@@ -3425,6 +3479,7 @@ static void do_add_entity(uint32_t uid, vec3_t pos, float selection_radius, int 
     struct movestate_aux new_aux = (struct movestate_aux) {
         .vel_hist_idx = 0,
         .combat_facing = Entity_GetRot(uid),
+        .seek_pin_target = NULL_UID,
         .surround_target_prev = (vec2_t){0},
         .surround_nearest_prev = (vec2_t){0},
         .motion_stopped = true,
@@ -3472,6 +3527,7 @@ static void do_stop(uint32_t uid)
         return;
 
     entity_reset_seek_counters(uid);
+    clear_seek_pin(uid);
 
     if(!ent_still(ms)) {
         entity_finish_moving(uid, STATE_ARRIVED, true);
@@ -3486,6 +3542,7 @@ static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack)
     ASSERT_IN_MAIN_THREAD();
 
     entity_reset_seek_counters(uid);
+    clear_seek_pin(uid);
 
     float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
     uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
@@ -3682,6 +3739,7 @@ static void do_set_seek_enemies(uint32_t uid)
         return;
 
     entity_reset_seek_counters(uid);
+    clear_seek_pin(uid);
     remove_from_flocks(uid);
 
     if(ent_still(ms)) {
@@ -3690,6 +3748,38 @@ static void do_set_seek_enemies(uint32_t uid)
     }
 
     ms->state = STATE_SEEK_ENEMIES;
+}
+
+static void clear_seek_pin(uint32_t uid)
+{
+    struct movestate_aux *aux = movestate_aux_get(uid);
+    if(aux)
+        aux->seek_pin_target = NULL_UID;
+}
+
+/* A live-target swap keeps the unit's jam state so the wall it is part of
+ * holds; a lost target or a cleared pin frees it to step into the gap.
+ */
+static void do_set_seek_pin(uint32_t uid, uint32_t target)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct movestate_aux *aux = movestate_aux_get(uid);
+    if(!aux || aux->seek_pin_target == target)
+        return;
+
+    uint32_t prev = aux->seek_pin_target;
+    aux->seek_pin_target = target;
+
+    bool prev_gone = (prev != NULL_UID)
+        && (!entity_exists(prev)
+         || (G_FlagsGetFrom(s_move_work.gamestate.flags, prev) & ENTITY_FLAG_ZOMBIE));
+    if(target != NULL_UID && !prev_gone)
+        return;
+
+    bool progressed = aux->seek_progressed;
+    entity_reset_seek_counters(uid);
+    aux->seek_progressed = progressed;
 }
 
 static void do_set_flee(uint32_t uid, vec2_t threat_xz)
@@ -3892,6 +3982,10 @@ static void move_process_cmds(void)
         }
         case MOVE_CMD_SET_SEEK_ENEMIES: {
             do_set_seek_enemies(cmd.uid);
+            break;
+        }
+        case MOVE_CMD_SET_SEEK_PIN: {
+            do_set_seek_pin(cmd.uid, cmd.u.seek_pin.target);
             break;
         }
         case MOVE_CMD_SET_SURROUND_ENTITY: {
@@ -5404,7 +5498,6 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
         case STATE_TURNING:      s_last_nav_tick_stats.nstate_turning++; break;
         default:                 s_last_nav_tick_stats.nstate_moving++;  break;
         }
-
         if(ent_still(ms))
             continue;
 
@@ -5835,6 +5928,16 @@ void G_Move_SetSeekEnemies(uint32_t uid)
     });
 }
 
+void G_Move_SetSeekPin(uint32_t uid, uint32_t target)
+{
+    ASSERT_IN_MAIN_THREAD();
+    move_push_cmd((struct move_cmd){
+        .type = MOVE_CMD_SET_SEEK_PIN,
+        .uid = uid,
+        .u.seek_pin.target = target
+    });
+}
+
 void G_Move_SetSurroundEntity(uint32_t uid, uint32_t target)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -6021,6 +6124,13 @@ void G_Move_AttackInFormation(vec_entity_t *ents, vec2_t target,
     vec_entity_t *copy = PF_MALLOC(sizeof(vec_entity_t));
     vec_entity_init(copy);
     vec_entity_copy(copy, ents);
+
+    /* An attack-move engages on contact, as the mouse order does. */
+    for(int i = 0; i < vec_size(ents); i++) {
+        uint32_t curr = vec_AT(ents, i);
+        if(G_FlagsGet(curr) & ENTITY_FLAG_COMBATABLE)
+            G_Combat_SetStance(curr, COMBAT_STANCE_AGGRESSIVE);
+    }
 
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_MAKE_FLOCKS,
