@@ -222,6 +222,8 @@ struct movestate_aux{
     /* Target a pinned seeker presses straight at instead of following the
      * enemy-seek field; NULL_UID when unpinned. Transient. */
     uint32_t           seek_pin_target;
+    /* Whether the pin held last tick (the way round was worth waiting out). */
+    bool               seek_pin_held;
     /* A jammed unit registers as a temporary nav blocker so the floods route
      * the units behind it around the clump. Transient. */
     uint16_t           seek_stuck_ticks;
@@ -280,7 +282,9 @@ enum movestate_flags{
     UPDATE_HEADING_GATED    = (1 << 15),
     /* A seeking unit made no progress this tick / has a thin local crowd */
     UPDATE_SEEK_STUCK       = (1 << 16),
-    UPDATE_SEEK_CLEAR       = (1 << 17)
+    UPDATE_SEEK_CLEAR       = (1 << 17),
+    /* The seek pin held this tick */
+    UPDATE_SEEK_PINNED      = (1 << 18)
 };
 
 struct movestate_patch{
@@ -339,6 +343,8 @@ struct move_work_in{
     /* The rebuild budget ran out before this unit's field was serviced; a zero
      * desired velocity then means "not served yet", not "can't be routed". */
     bool           field_starved;
+    /* The seek pin held for this tick's desired velocity */
+    bool           seek_pinned;
     struct formation_state fstate;
     vec2_t         cell_arrival_vdes;
 };
@@ -599,6 +605,11 @@ static struct result navigation_tick_task(void *arg);
 #define SEEK_RELEASE_HOLD_TICKS         (20)
 /* Stagger registrations so a mass jam doesn't spike the invalidations */
 #define SEEK_BLOCK_BUDGET_PER_TICK      (16)
+/* A pin candidate only holds when the field's way round costs this much more
+ * than the straight line; a few ranks behind a short front spread instead. */
+#define SEEK_PIN_DETOUR                 (40.0f)
+#define SEEK_PIN_DETOUR_HYST            (8.0f)
+#define SEEK_PIN_WALK_MAX               (64)
 
 /* Dense-crowd velocity-solve captures for offline bench replay */
 #define CP_CAPTURE_MAX_PER_TICK         (8)
@@ -1802,13 +1813,40 @@ static struct target build_target(uint32_t uid, const struct flock *fl)
                            .point_seek = {.dest_id = fl->dest_id, .dest_xz = fl->target_xz}};
 }
 
+/* The way round costs enough more than the straight line that waiting in line
+ * beats walking it. Sticky on a tile without flow (a fresh blocker before the
+ * service patch).
+ */
+static bool seek_pin_detoured(uint32_t uid, vec2_t pos_xz, vec2_t target_xz,
+                              float straight, bool held)
+{
+    vec2_t cell = N_TileDims();
+    int max_steps = MIN((int)ceilf((straight + SEEK_PIN_DETOUR) / cell.x) + 4,
+                        SEEK_PIN_WALK_MAX);
+
+    float len;
+    vec2_t end;
+    bool capped;
+    if(!M_NavFlowFieldPathLength(s_move_work.gamestate.map, build_target(uid, NULL),
+        pos_xz, max_steps, &len, &end, &capped))
+        return held;
+    if(capped)
+        return true;
+
+    vec2_t rest;
+    PFM_Vec2_Sub(&target_xz, &end, &rest);
+    float excess = len + PFM_Vec2_Len(&rest) - straight;
+    return excess > (held ? SEEK_PIN_DETOUR - SEEK_PIN_DETOUR_HYST : SEEK_PIN_DETOUR);
+}
+
 /* A pinned seeker waits in line: it presses straight at its target while the
  * way is open and stands once something is in the way, so the ranks behind
  * the front jam up and wall rather than slide along it.
  */
-static bool seek_pin_vdes(uint32_t uid, vec2_t pos_xz, vec2_t *out)
+static bool seek_pin_vdes(uint32_t uid, vec2_t pos_xz, vec2_t *out, bool *out_held)
 {
-    uint32_t pin = movestate_aux_get(uid)->seek_pin_target;
+    struct movestate_aux *aux = movestate_aux_get(uid);
+    uint32_t pin = aux->seek_pin_target;
     if(pin == NULL_UID || !entity_exists(pin)
     || (G_FlagsGetFrom(s_move_work.gamestate.flags, pin) & ENTITY_FLAG_ZOMBIE))
         return false;
@@ -1816,9 +1854,14 @@ static bool seek_pin_vdes(uint32_t uid, vec2_t pos_xz, vec2_t *out)
     vec2_t target_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, pin);
     vec2_t dir;
     PFM_Vec2_Sub(&target_xz, &pos_xz, &dir);
-    if(PFM_Vec2_Len(&dir) < EPSILON)
+    float straight = PFM_Vec2_Len(&dir);
+    if(straight < EPSILON)
         return false;
     PFM_Vec2_Normal(&dir, &dir);
+
+    if(!seek_pin_detoured(uid, pos_xz, target_xz, straight, aux->seek_pin_held))
+        return false;
+    *out_held = true;
 
     const struct map *map = s_move_work.gamestate.map;
     float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
@@ -1835,11 +1878,13 @@ static bool seek_pin_vdes(uint32_t uid, vec2_t pos_xz, vec2_t *out)
 }
 
 static vec2_t ent_desired_velocity(uint32_t uid, struct flock *fl,
-                                   vec2_t cell_arrival_vdes, bool has_dest_los)
+                                   vec2_t cell_arrival_vdes, bool has_dest_los,
+                                   bool *out_seek_pinned)
 {
     const struct movestate *ms = movestate_get(uid);
     vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
     const struct map *map = s_move_work.gamestate.map;
+    *out_seek_pinned = false;
 
     switch(ms->state) {
     case STATE_TURNING:
@@ -1850,7 +1895,7 @@ static vec2_t ent_desired_velocity(uint32_t uid, struct flock *fl,
 
     case STATE_SEEK_ENEMIES: {
         vec2_t pinned;
-        if(seek_pin_vdes(uid, pos_xz, &pinned))
+        if(seek_pin_vdes(uid, pos_xz, &pinned, out_seek_pinned))
             return pinned;
         return M_NavDesiredVelocityForTargetCached(map, build_target(uid, fl), pos_xz);
     }
@@ -2377,15 +2422,14 @@ static vec2_t cell_arrival_seek_vpref(uint32_t uid, vec2_t cell_pos, float speed
     return new_vel;
 }
 
-static vec2_t enemy_seek_vpref(uint32_t uid, float speed, vec2_t vdes)
+static vec2_t enemy_seek_vpref(uint32_t uid, float speed, vec2_t vdes, bool pinned)
 {
     struct movestate *ms = movestate_get(uid);
     assert(ms);
 
     /* A pinned unit with nowhere to press stands dead still; the separation
      * jostle would otherwise keep it from ever reading as jammed. */
-    if(PFM_Vec2_Len(&vdes) < EPSILON
-    && movestate_aux_get(uid)->seek_pin_target != NULL_UID)
+    if(pinned && PFM_Vec2_Len(&vdes) < EPSILON)
         return (vec2_t){0.0f, 0.0f};
 
     vec2_t steer_force = enemy_seek_total_force(uid, vdes);
@@ -2777,7 +2821,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
     assert(ms);
     struct movestate_aux *aux = movestate_aux_get(uid);
     assert(aux);
-    out->flags = 0;
+    out->flags = in->seek_pinned ? UPDATE_SEEK_PINNED : 0;
 
     /* Flush the interpolation if was not completed */
     if(ms->left > 0) {
@@ -3281,6 +3325,8 @@ static void entity_apply_update(uint32_t uid, const struct movestate_patch *patc
         entity_soft_block(uid);
     }
 
+    aux->seek_pin_held = !!(patch->flags & UPDATE_SEEK_PINNED);
+
     if(!held && (ms->state == STATE_SEEK_ENEMIES || ms->state == STATE_MOVING)) {
         bool stuck = patch->flags & UPDATE_SEEK_STUCK;
         bool clear = patch->flags & UPDATE_SEEK_CLEAR;
@@ -3290,7 +3336,7 @@ static void entity_apply_update(uint32_t uid, const struct movestate_patch *patc
         aux->seek_clear_ticks = clear ? MIN(aux->seek_clear_ticks + 1, UINT16_MAX) : 0;
 
         /* A pinned unit is in line by intent, not a queued launch rear. */
-        bool may_wall = aux->seek_progressed || aux->seek_pin_target != NULL_UID;
+        bool may_wall = aux->seek_progressed || aux->seek_pin_held;
         if(!aux->soft_blocking && stuck && !clear && may_wall
         && aux->seek_stuck_ticks >= SEEK_STUCK_BLOCK_TICKS
         && s_soft_block_budget > 0) {
@@ -3753,8 +3799,10 @@ static void do_set_seek_enemies(uint32_t uid)
 static void clear_seek_pin(uint32_t uid)
 {
     struct movestate_aux *aux = movestate_aux_get(uid);
-    if(aux)
+    if(aux) {
         aux->seek_pin_target = NULL_UID;
+        aux->seek_pin_held = false;
+    }
 }
 
 /* A live-target swap keeps the unit's jam state so the wall it is part of
@@ -3770,6 +3818,8 @@ static void do_set_seek_pin(uint32_t uid, uint32_t target)
 
     uint32_t prev = aux->seek_pin_target;
     aux->seek_pin_target = target;
+    if(target == NULL_UID)
+        aux->seek_pin_held = false;
 
     bool prev_gone = (prev != NULL_UID)
         && (!entity_exists(prev)
@@ -4095,7 +4145,7 @@ static void move_velocity_work(int begin_idx, int end_idx)
             break;
         case STATE_SEEK_ENEMIES: 
             assert(!flock);
-            vpref = enemy_seek_vpref(in->ent_uid, in->speed, in->ent_des_v);
+            vpref = enemy_seek_vpref(in->ent_uid, in->speed, in->ent_des_v, in->seek_pinned);
             break;
         case STATE_FLEEING:
             vpref = flee_vpref(in->ent_uid, in->speed, in->ent_des_v);
@@ -4194,7 +4244,7 @@ static struct result move_dv_task(void *arg)
 
         struct move_work_in *in = &s_move_work.in[i];
         in->ent_des_v = ent_desired_velocity(in->ent_uid, in->flock,
-            in->cell_arrival_vdes, in->has_dest_los);
+            in->cell_arrival_vdes, in->has_dest_los, &in->seek_pinned);
         s_move_work.out[i].ent_des_v = in->ent_des_v;
         ncomputed++;
 

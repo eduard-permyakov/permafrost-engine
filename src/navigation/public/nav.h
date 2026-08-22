@@ -416,6 +416,16 @@ bool   N_RequiresPathRequest(void *nav_private, vec3_t map_pos, struct target ta
 vec2_t N_DesiredVelocityForTargetCached(void *nav_private, vec3_t map_pos, struct target target, vec2_t xz);
 
 /* ------------------------------------------------------------------------
+ * Walks the cached enemy-seek field from 'xz', summing the octile step lengths
+ * until the flow ends, leaves the chunk or hits 'max_steps' (read-only). Returns
+ * false when there is no field or no flow at the start tile; 'out_end_xz' is
+ * the centre of the last tile reached.
+ * ------------------------------------------------------------------------
+ */
+bool   N_FlowFieldPathLength(void *nav_private, vec3_t map_pos, struct target target, vec2_t xz,
+                             int max_steps, float *out_len, vec2_t *out_end_xz, bool *out_capped);
+
+/* ------------------------------------------------------------------------
  * Build (and cache) the field that 'target' needs for the chunk holding 'xz',
  * including blocked-tile repair. Mutates the cache; must run on the nav task.
  * ------------------------------------------------------------------------

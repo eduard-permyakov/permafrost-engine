@@ -4093,6 +4093,67 @@ vec2_t N_DesiredVelocityForTargetCached(void *nav_private, vec3_t map_pos, struc
     return N_FlowDir(ff->field[tile.tile_r][tile.tile_c].dir_idx);
 }
 
+bool N_FlowFieldPathLength(void *nav_private, vec3_t map_pos, struct target target, vec2_t xz,
+                           int max_steps, float *out_len, vec2_t *out_end_xz, bool *out_capped)
+{
+    static const struct coord dir_delta[] = {
+        [FD_NW] = {-1, -1}, [FD_N]  = {-1, 0}, [FD_NE] = {-1, 1}, [FD_W]  = {0, -1},
+        [FD_E]  = { 0,  1}, [FD_SW] = { 1,-1}, [FD_S]  = { 1, 0}, [FD_SE] = {1,  1}
+    };
+    assert(target.kind == TARGET_KIND_ENEMY_SEEK);
+
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct tile_desc tile;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, xz, &tile);
+    assert(result);
+    struct coord chunk = (struct coord){tile.chunk_r, tile.chunk_c};
+
+    ff_id_t ffid = N_FlowFieldID(chunk, (struct field_target){
+        .type = TARGET_ENEMIES,
+        .enemies.faction_id = target.enemy_seek.faction_id,
+        .enemies.map_pos = map_pos,
+        .enemies.chunk = chunk
+    }, target.enemy_seek.layer);
+
+    const struct flow_field *ff = N_FC_PeekFlowField(priv->fieldcache, ffid);
+    if(!ff || ff->field[tile.tile_r][tile.tile_c].dir_idx == FD_NONE)
+        return false;
+
+    /* The flow is a strict descent, so the walk ends at a seed tile, at the
+     * chunk edge (the padded build points edge tiles at enemies outside) or
+     * at the step cap.
+     */
+    vec2_t dims = N_TileDims();
+    float len = 0.0f;
+    *out_capped = false;
+
+    for(int step = 0; ; step++) {
+        enum flow_dir dir = ff->field[tile.tile_r][tile.tile_c].dir_idx;
+        if(dir == FD_NONE)
+            break;
+        if(step == max_steps) {
+            *out_capped = true;
+            break;
+        }
+        struct coord delta = dir_delta[dir];
+        struct tile_desc next = tile;
+        if(!M_Tile_RelativeDesc(res, &next, delta.c, delta.r)
+        || next.chunk_r != chunk.r || next.chunk_c != chunk.c)
+            break;
+        float dx = delta.c * dims.x, dz = delta.r * dims.z;
+        len += sqrtf(dx * dx + dz * dz);
+        tile = next;
+    }
+
+    struct box bounds = M_Tile_Bounds(res, map_pos, tile);
+    *out_end_xz = (vec2_t){bounds.x - bounds.width / 2.0f, bounds.z + bounds.height / 2.0f};
+    *out_len = len;
+    return true;
+}
+
 void N_ServicePathRequest(void *nav_private, vec3_t map_pos, struct target target, vec2_t xz)
 {
     struct nav_private *priv = nav_private;

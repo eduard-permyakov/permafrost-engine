@@ -802,6 +802,13 @@ vec2_t M_NavDesiredVelocityForTargetCached(const struct map *map, struct target 
     return N_DesiredVelocityForTargetCached(map->nav_private, map->pos, target, xz);
 }
 
+bool M_NavFlowFieldPathLength(const struct map *map, struct target target, vec2_t xz,
+                              int max_steps, float *out_len, vec2_t *out_end_xz, bool *out_capped)
+{
+    return N_FlowFieldPathLength(map->nav_private, map->pos, target, xz,
+        max_steps, out_len, out_end_xz, out_capped);
+}
+
 void M_NavServicePathRequest(const struct map *map, struct target target, vec2_t xz)
 {
     N_ServicePathRequest(map->nav_private, map->pos, target, xz);
