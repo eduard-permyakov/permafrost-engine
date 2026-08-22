@@ -1124,7 +1124,7 @@ static vec2_t subformation_center(struct subformation *formation)
     return ret;
 }
 
-static vec2_t formation_center_of_mass(vec_entity_t *ents)
+static vec2_t formation_center_of_mass(const vec_entity_t *ents)
 {
     vec2_t ret = (vec2_t){0.0f, 0.0f};
     size_t nents = vec_size(ents);
@@ -1139,7 +1139,7 @@ static vec2_t formation_center_of_mass(vec_entity_t *ents)
     return ret;
 }
 
-static vec2_t formation_average_orientation(vec_entity_t *ents)
+static vec2_t formation_average_orientation(const vec_entity_t *ents)
 {
     vec4_t front = (vec4_t){0.0f, 0.0f, 1.0f, 1.0f};
     vec2_t ret = (vec2_t){0.0f, 0.0f};
@@ -4289,36 +4289,55 @@ void G_Formation_Shutdown(void)
     kh_destroy(mapping, s_ent_formation_map);
 }
 
+static float group_radius(const vec_entity_t *ents, vec2_t com)
+{
+    float ret = 0.0f;
+    for(int i = 0; i < vec_size(ents); i++) {
+        uint32_t uid = vec_AT(ents, i);
+        vec2_t pos = G_Pos_GetXZ(uid);
+        vec2_t delta;
+        PFM_Vec2_Sub(&pos, &com, &delta);
+        ret = MAX(ret, PFM_Vec2_Len(&delta) + G_GetSelectionRadius(uid));
+    }
+    return ret;
+}
+
+/* Rotate unit vector 'from' toward unit vector 'to' along the shortest arc */
+static vec2_t rotate_toward(vec2_t from, vec2_t to, float fraction)
+{
+    float cross = from.x * to.z - from.z * to.x;
+    float dot = from.x * to.x + from.z * to.z;
+    float angle = atan2(cross, dot) * fraction;
+    return (vec2_t){
+        from.x * cos(angle) - from.z * sin(angle),
+        from.x * sin(angle) + from.z * cos(angle)
+    };
+}
+
+/* A target inside the group's own footprint is a short shuffle, not a reason
+ * to spin the block; the facing only fully commits to the target direction
+ * once it lies beyond the group's radius.
+ */
 vec2_t G_Formation_AutoOrientation(vec2_t target, const vec_entity_t *ents)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    vec2_t COM = (vec2_t){0.0f, 0.0f};
-    for(int i = 0; i < vec_size(ents); i++) {
-        uint32_t curr = vec_AT(ents, i);
-        vec2_t curr_pos = G_Pos_GetXZ(curr);
-        PFM_Vec2_Add(&COM, &curr_pos, &COM);
-    }
-    size_t nents = vec_size(ents);
-    PFM_Vec2_Scale(&COM, 1.0f / nents, &COM);
+    vec2_t com = formation_center_of_mass(ents);
+    vec2_t facing = formation_average_orientation(ents);
 
-    vec2_t orientation;
-    PFM_Vec2_Sub(&target, &COM, &orientation);
+    vec2_t delta;
+    PFM_Vec2_Sub(&target, &com, &delta);
+    float dist = PFM_Vec2_Len(&delta);
+    if(dist < EPSILON)
+        return facing;
 
-    if(PFM_Vec2_Len(&orientation) < EPSILON) {
+    vec2_t dir;
+    PFM_Vec2_Normal(&delta, &dir);
+    float radius = group_radius(ents, com);
+    if(radius < EPSILON)
+        return dir;
 
-        vec4_t front = (vec4_t){0.0f, 0.0f, 1.0f, 1.0f};
-        quat_t rot = Entity_GetRot(vec_AT(ents, 0)); 
-
-        mat4x4_t rot_mat;
-        PFM_Mat4x4_RotFromQuat(&rot, &rot_mat);
-
-        vec4_t dir;
-        PFM_Mat4x4_Mult4x1(&rot_mat, &front, &dir);
-        return (vec2_t){dir.x, dir.z};
-    }
-    PFM_Vec2_Normal(&orientation, &orientation);
-    return orientation;
+    return rotate_toward(facing, dir, MIN(dist / radius, 1.0f));
 }
 
 void G_Formation_Create(vec2_t target, vec2_t orientation, 
