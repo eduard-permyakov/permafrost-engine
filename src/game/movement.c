@@ -936,6 +936,12 @@ static float entity_speed(uint32_t uid)
  */
 static void move_notify_motion_start(uint32_t uid, struct movestate *ms)
 {
+    /* Pivots and scripts rotate a still unit behind the shadow's back; motion
+     * resumes from the rotation the unit is showing.
+     */
+    if(ent_still(ms))
+        ms->prev_rot = ms->next_rot = Entity_GetRot(uid);
+
     if(G_FlagsGet(uid) & ENTITY_FLAG_COMBAT_HELD)
         return;
     struct movestate_aux *aux = movestate_aux_get(uid);
@@ -2803,7 +2809,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         out->flags |= UPDATE_SET_NEXT_ROT;
         out->next_nrot = orient_to_velocity_history(ms, aux);
         out->flags |= UPDATE_SET_ROTATION;
-        out->next_rot = ms->next_rot;
+        out->next_rot = (out->next_left == 0) ? out->next_nrot : ms->next_rot;
 
     }else{
         out->flags |= UPDATE_SET_VELOCITY;
@@ -3047,8 +3053,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
     case STATE_TURNING: {
 
         /* find the angle between the two quaternions */
-        quat_t ent_rot = Entity_GetRot(uid);
-        float angle_diff = PFM_Quat_PitchDiff(&ent_rot, &aux->target_dir);
+        float angle_diff = PFM_Quat_PitchDiff(&ms->next_rot, &aux->target_dir);
         float degrees = RAD_TO_DEG(angle_diff);
 
         /* if it's within a tolerance, stop turning */
@@ -3060,11 +3065,12 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         }
 
         /* If not, turn towards the target by at most the turn rate */
-        quat_t final = turn_toward(ent_rot, aux->target_dir, SCALED_MAX_TURN_RATE);
+        quat_t final = turn_toward(ms->next_rot, aux->target_dir, SCALED_MAX_TURN_RATE);
 
-        out->flags |= UPDATE_SET_ROTATION | UPDATE_SET_PREV_ROT;
+        out->flags |= UPDATE_SET_ROTATION | UPDATE_SET_PREV_ROT | UPDATE_SET_NEXT_ROT;
         out->next_rot = final;
         out->next_prot = final;
+        out->next_nrot = final;
 
         break;
     }
