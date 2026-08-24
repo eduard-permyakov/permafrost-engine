@@ -424,6 +424,8 @@ vec2_t N_DesiredVelocityForTargetCached(void *nav_private, vec3_t map_pos, struc
  */
 bool   N_FlowFieldPathLength(void *nav_private, vec3_t map_pos, struct target target, vec2_t xz,
                              int max_steps, float *out_len, vec2_t *out_end_xz, bool *out_capped);
+/* Raw flow direction of the tile under xz in the cached field, -1 if none */
+int    N_FlowFieldDirAt(void *nav_private, vec3_t map_pos, struct target target, vec2_t xz);
 
 /* ------------------------------------------------------------------------
  * Build (and cache) the field that 'target' needs for the chunk holding 'xz',

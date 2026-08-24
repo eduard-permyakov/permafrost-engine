@@ -85,6 +85,9 @@
 #define MAX_PAIRWISE_RAYS (24)
 /* Neighbour-dropping retries of the full solve before giving up */
 #define MAX_SOLVE_RETRIES (3)
+/* A candidate on the other side of the preferred velocity than the
+ * remembered one must be this much closer to win. */
+#define CP_SIDE_PENALTY   (4.0f)
 
 VEC_TYPE(vec2, vec2_t)
 VEC_IMPL(static inline, vec2, vec2_t)
@@ -202,7 +205,7 @@ static struct RVO compute_rvo(struct cp_ent ent, struct cp_ent neighb)
     return ret;
 }
 
-static struct HRVO compute_hrvo(struct cp_ent ent, struct cp_ent neighb)
+static struct HRVO compute_hrvo(struct cp_ent ent, struct cp_ent neighb, int side)
 {
     struct HRVO ret;
     struct RVO rvo = compute_rvo(ent, neighb);
@@ -212,7 +215,11 @@ static struct HRVO compute_hrvo(struct cp_ent ent, struct cp_ent neighb)
     vec2_t centerline = cp_add(rvo.xz_left_side, rvo.xz_right_side);
     vec2_t vo_apex = cp_add(ent.xz_pos, neighb.xz_vel);
 
+    /* A still unit has no velocity to pick the passing side from; keep the
+     * side it last deflected to rather than degrading to a symmetric RVO. */
     float det = (centerline.x * ent.xz_vel.y) - (centerline.y * ent.xz_vel.x);
+    if(fabsf(det) <= EPSILON)
+        det = side;
     if(det > EPSILON) { /* the entity velocity is left of the RVO centerline */
 
         l1 = (struct line_2d){rvo.xz_apex, rvo.xz_left_side};
@@ -257,7 +264,7 @@ static size_t compute_all_vos(struct cp_ent ent, const struct cp_ent *stat_neigh
 }
 
 static size_t compute_all_hrvos(struct cp_ent ent, const struct cp_ent *dyn_neighbs,
-                                size_t ndyn, struct HRVO *out)
+                                size_t ndyn, int side, struct HRVO *out)
 {
     size_t ret = 0;
 
@@ -265,7 +272,7 @@ static size_t compute_all_hrvos(struct cp_ent ent, const struct cp_ent *dyn_neig
 
         if(same_position(ent.xz_pos, dyn_neighbs[i].xz_pos))
             continue;
-        out[ret++] = compute_hrvo(ent, dyn_neighbs[i]);
+        out[ret++] = compute_hrvo(ent, dyn_neighbs[i], side);
     }
 
     return ret;
@@ -418,11 +425,43 @@ struct vnew_min{
     bool   any;
 };
 
+static inline bool cp_landing_ok(const struct cp_terrain *terrain, vec2_t ent_pos,
+                                 vec2_t cand_ws)
+{
+    if(!terrain->map)
+        return true;
+
+    vec2_t v = cp_sub(cand_ws, ent_pos);
+    float len = sqrtf(cp_len2(v));
+    if(len > terrain->max_step && len > EPSILON)
+        v = cp_scale(v, terrain->max_step / len);
+    vec2_t land = cp_add(ent_pos, v);
+
+    if(!M_NavPositionPathable(terrain->map, terrain->layer, land))
+        return false;
+    return terrain->on_blocked || !M_NavPositionBlocked(terrain->map, terrain->layer, land);
+}
+
+static inline int cp_side_of(vec2_t des_v, vec2_t v)
+{
+    float cross = des_v.x * v.z - des_v.z * v.x;
+    return (cross > EPSILON) ? 1 : (cross < -EPSILON) ? -1 : 0;
+}
+
+/* The landing test runs only for a candidate that would become the new
+ * minimum, so the tile lookups stay at a handful per solve. */
 static inline void vnew_consider(struct vnew_min *m, vec2_t cand_ws,
-                                 vec2_t des_v_ws, vec2_t ent_xz_pos)
+                                 vec2_t des_v_ws, vec2_t ent_xz_pos,
+                                 const struct cp_terrain *terrain, int side)
 {
     float dist2 = cp_len2(cp_sub(des_v_ws, cand_ws));
-    if(dist2 < m->min_dist2) {
+    if(side != 0) {
+        vec2_t des_v = cp_sub(des_v_ws, ent_xz_pos);
+        vec2_t cand = cp_sub(cand_ws, ent_xz_pos);
+        if(cp_side_of(des_v, cand) == -side)
+            dist2 *= CP_SIDE_PENALTY;
+    }
+    if(dist2 < m->min_dist2 && cp_landing_ok(terrain, ent_xz_pos, cand_ws)) {
         m->min_dist2 = dist2;
         m->vnew = cp_sub(cand_ws, ent_xz_pos);
         m->any = true;
@@ -503,7 +542,8 @@ static void on_render_3d(void *user, void *event)
         },
     });
 
-    float radius = CLEARPATH_NEIGHBOUR_RADIUS;
+    float reach = 2.0f * cpent->radius * CLEARPATH_NEIGHBOUR_SCALE;
+    float radius = (reach > CLEARPATH_NEIGHBOUR_RADIUS) ? reach : CLEARPATH_NEIGHBOUR_RADIUS;
     float width = 0.5f;
 
     R_PushCmd((struct rcmd){
@@ -597,6 +637,8 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
                                    size_t ndyn,
                                    const struct cp_ent *stat_neighbs,
                                    size_t nstat,
+                                   const struct cp_terrain *terrain,
+                                   int side,
                                    bool save_debug,
                                    vec2_t *out)
 {
@@ -604,7 +646,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
     STALLOC(struct HRVO, dyn_hrvos, ndyn);
     STALLOC(struct VO, stat_vos, nstat);
 
-    size_t n_hrvos = compute_all_hrvos(cpent, dyn_neighbs, ndyn, dyn_hrvos);
+    size_t n_hrvos = compute_all_hrvos(cpent, dyn_neighbs, ndyn, side, dyn_hrvos);
     size_t n_vos = compute_all_vos(cpent, stat_neighbs, nstat, stat_vos);
 
     /* We may have skipped the neighbours that are at the exact same
@@ -644,7 +686,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
 
     vec2_t des_v_ws = cp_add(cpent.xz_pos, ent_des_v);
 
-    if(!s_inside_pcr(&soa, des_v_ws)) {
+    if(!s_inside_pcr(&soa, des_v_ws) && cp_landing_ok(terrain, cpent.xz_pos, des_v_ws)) {
 
         if(save_debug)
             s_debug_saved.des_v_in_pcr = false;
@@ -671,7 +713,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
         if(s_inside_pcr(&soa, isec_point))
             continue;
 
-        vnew_consider(&m, isec_point, des_v_ws, cpent.xz_pos);
+        vnew_consider(&m, isec_point, des_v_ws, cpent.xz_pos, terrain, side);
         if(save_debug)
             vec_vec2_push(&s_debug_saved.xpoints, isec_point);
     }}
@@ -687,7 +729,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
         vec2_t proj = cp_add(rays[i].point, cp_scale(rays[i].dir, len));
 
         if(!s_inside_pcr(&soa, proj)) {
-            vnew_consider(&m, proj, des_v_ws, cpent.xz_pos);
+            vnew_consider(&m, proj, des_v_ws, cpent.xz_pos, terrain, side);
             if(save_debug)
                 vec_vec2_push(&s_debug_saved.xpoints, proj);
         }
@@ -758,6 +800,8 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
                                size_t ndyn,
                                struct cp_ent *stat_neighbs,
                                size_t nstat,
+                               struct cp_terrain terrain,
+                               int side,
                                bool save_debug,
                                struct cp_solve_diag *out_diag)
 {
@@ -771,10 +815,12 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
     do{
         vec2_t ret;
         bool found = clearpath_new_velocity(cpent, ent_des_v,
-            dyn_neighbs, ndyn, stat_neighbs, nstat, save_debug, &ret);
+            dyn_neighbs, ndyn, stat_neighbs, nstat, &terrain, side, save_debug, &ret);
         if(found) {
             if(out_diag) {
                 out_diag->retries = retries;
+                if(!same_position(ret, ent_des_v))
+                    out_diag->side = cp_side_of(ent_des_v, ret);
             }
             PERF_RETURN(ret);
         }

@@ -43,7 +43,12 @@
 #include <stdint.h>
 
 
+/* A neighbour is considered once the centre distance is within this
+ * multiple of the radius sum (at least the floor), so every pair meets the
+ * same cone geometry at first sight as a soldier pair does at 10.
+ */
 #define CLEARPATH_NEIGHBOUR_RADIUS (10.0f)
+#define CLEARPATH_NEIGHBOUR_SCALE  (10.0f / 6.5f)
 /* This is added to the entity's radius so that it will take wider turns
  * and leave this as a buffer between it and the obstacle.
  */
@@ -57,11 +62,26 @@ struct cp_ent{
     float  radius;
 };
 
+/* The ground a candidate velocity must land on: the unit's nav layer, and
+ * whether it already stands on a blocked tile (then it may step onto one).
+ * The landing point is the candidate clamped to the unit's per-tick step,
+ * matching the truncation the movement code applies to the solver's result.
+ * A NULL map disables the test.
+ */
+struct cp_terrain{
+    const struct map *map;
+    int               layer;
+    bool              on_blocked;
+    float             max_step;
+};
+
 /* How a solve was resolved, for the per-tick mechanism counters. */
 struct cp_solve_diag{
     uint8_t retries;
     bool    gave_up;
     bool    fallback;
+    /* Sign of the deflection from the preferred velocity, 0 when none */
+    int8_t  side;
 };
 
 void G_ClearPath_Init(const struct map *map);
@@ -80,6 +100,8 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent ent,
                                size_t ndyn,
                                struct cp_ent *stat_neighbs,
                                size_t nstat,
+                               struct cp_terrain terrain,
+                               int side,
                                bool save_debug,
                                struct cp_solve_diag *out_diag);
 

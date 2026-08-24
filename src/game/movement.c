@@ -224,6 +224,9 @@ struct movestate_aux{
     uint32_t           seek_pin_target;
     /* Whether the pin held last tick (the way round was worth waiting out). */
     bool               seek_pin_held;
+    /* Side of the last ClearPath deflection, kept CP_SIDE_HOLD_TICKS */
+    int8_t             cp_side;
+    uint8_t            cp_side_ticks;
     /* A jammed unit registers as a temporary nav blocker so the floods route
      * the units behind it around the clump. Transient. */
     uint16_t           seek_stuck_ticks;
@@ -284,7 +287,10 @@ enum movestate_flags{
     UPDATE_SEEK_STUCK       = (1 << 16),
     UPDATE_SEEK_CLEAR       = (1 << 17),
     /* The seek pin held this tick */
-    UPDATE_SEEK_PINNED      = (1 << 18)
+    UPDATE_SEEK_PINNED      = (1 << 18),
+    /* Diagnostic only: the step was refused by the landing tile */
+    UPDATE_VETO_UNPATHABLE  = (1 << 19),
+    UPDATE_VETO_BLOCKED     = (1 << 20)
 };
 
 struct movestate_patch{
@@ -345,6 +351,7 @@ struct move_work_in{
     bool           field_starved;
     /* The seek pin held for this tick's desired velocity */
     bool           seek_pinned;
+    int8_t         cp_side;
     struct formation_state fstate;
     vec2_t         cell_arrival_vdes;
 };
@@ -362,6 +369,7 @@ struct move_work_out{
     vec2_t   ent_des_v;
     vec2_t   ent_vel;
     uint8_t  cp_flags;
+    int8_t   cp_side;
     struct movestate_patch patch;
 };
 
@@ -415,6 +423,10 @@ struct move_work{
     struct move_work_out     *out;
     struct cp_ent            *neighb_mem;
     struct flock_snap        *flock_snaps;
+    /* Parallel to in/out, NULL unless tracing */
+    struct move_trace        *trace;
+    /* Largest movable radius seen, for the centre-based neighbour queries */
+    float                     max_radius;
     size_t                    nwork;
     size_t                    ntasks;
     uint32_t                  tids[MAX_MOVE_TASKS];
@@ -581,6 +593,11 @@ static struct result navigation_tick_task(void *arg);
 #define ARRIVE_SLOWING_RADIUS           (10.0f)
 #define ADJACENCY_SEP_DIST              (5.0f)
 #define SEPARATION_NEIGHB_RADIUS        (30.0f)
+/* Beyond this multiple of the radius sum the separation term is e^-10 of its
+ * contact value; the floor keeps the soldier query as it was. */
+#define SEPARATION_NEIGHB_SCALE         (1.3f)
+/* Deeper interpenetration than this keeps the pure radial push-out */
+#define SEP_REDIRECT_MIN_GAP            (-2.0f)
 #define CELL_ARRIVAL_RADIUS             (30.0f)
 
 #define COLLISION_MAX_SEE_AHEAD         (10.0f)
@@ -600,11 +617,16 @@ static struct result navigation_tick_task(void *arg);
 /* A unit standing still this long inside a crowd becomes a soft blocker,
  * released once the local crowd thins for the hold duration. */
 #define SEEK_STUCK_BLOCK_TICKS          (10)
-/* Neighbours within CLEARPATH_NEIGHBOUR_RADIUS: marching ~4, jammed 6+ */
+/* ClearPath neighbours (within CLEARPATH_NEIGHBOUR_SCALE radius sums): marching ~4, jammed 6+ */
 #define SEEK_RELEASE_NEIGHBS            (6)
 #define SEEK_RELEASE_HOLD_TICKS         (20)
 /* Stagger registrations so a mass jam doesn't spike the invalidations */
 #define SEEK_BLOCK_BUDGET_PER_TICK      (16)
+/* Ticks without a deflection before the passing side is forgotten */
+#define CP_SIDE_HOLD_TICKS              (10)
+/* A shuttle jams against its destination's edge, where the building takes up
+ * half the contact ring; the crowd test is correspondingly lower. */
+#define SURROUND_RELEASE_NEIGHBS        (3)
 /* A pin candidate only holds when the field's way round costs this much more
  * than the straight line; a few ranks behind a short front spread instead. */
 #define SEEK_PIN_DETOUR                 (40.0f)
@@ -612,10 +634,11 @@ static struct result navigation_tick_task(void *arg);
 #define SEEK_PIN_WALK_MAX               (64)
 
 /* Dense-crowd velocity-solve captures for offline bench replay */
-#define CP_CAPTURE_MAX_PER_TICK         (8)
+#define CP_CAPTURE_MAX_PER_TICK         (32)
 #define CP_CAPTURE_MIN_NEIGHBS          (24)
 
 struct cp_capture{
+    uint32_t      uid;
     struct cp_ent self;
     vec2_t        vpref;
     bool          gave_up;
@@ -623,6 +646,47 @@ struct cp_capture{
     uint8_t       nstat;
     struct cp_ent dyn[MAX_NEIGHBOURS];
     struct cp_ent stat[MAX_NEIGHBOURS];
+};
+
+/* Per-unit movement trace for offline crowd-behaviour analysis
+ * (pf.debug.log_move_trace_min_radius). The nearest-neighbour query is wide
+ * enough to see contact at any unit radius.
+ */
+#define MV_TRACE_NN_RADIUS              (64.0f)
+
+enum move_trace_flags{
+    MV_TRACE_HEADING_GATED   = (1 << 0),
+    MV_TRACE_CP_GAVE_UP      = (1 << 1),
+    MV_TRACE_CP_RETRY_OK     = (1 << 2),
+    MV_TRACE_VETO_UNPATHABLE = (1 << 3),
+    MV_TRACE_VETO_BLOCKED    = (1 << 4),
+    MV_TRACE_SOFT_BLOCKING   = (1 << 5),
+    MV_TRACE_SEEK_STUCK      = (1 << 6),
+    MV_TRACE_SEEK_CLEAR      = (1 << 7),
+    MV_TRACE_HAS_DEST_LOS    = (1 << 8),
+    MV_TRACE_FIELD_STARVED   = (1 << 9),
+    MV_TRACE_SURROUND_FIELD  = (1 << 10),
+    MV_TRACE_COMBAT_HELD     = (1 << 11),
+};
+
+struct move_trace{
+    bool     traced;
+    vec2_t   vpref;
+    vec2_t   sep;
+    int      sep_n;
+    int      retries;
+    uint32_t nn_uid;
+    vec2_t   nn_pos;
+    float    nn_dist;
+    float    nn_radius;
+    bool     nn_seen;
+    /* The nullify_impass_components probes, for a zero vpref with a live vdes:
+     * bit 0 own tile blocked, then (pathable, blocked) pairs for +x, -x, +z, -z */
+    bool     probed;
+    uint16_t probe;
+    struct tile_desc td;
+    /* Raw flow dirs of the 3x3 tile block around the unit, row-major from -z,-x */
+    int8_t   dirs[9];
 };
 
 /*****************************************************************************/
@@ -665,7 +729,13 @@ static bool                    s_log_cp_captures;
 static struct cp_capture       s_cp_captures[CP_CAPTURE_MAX_PER_TICK];
 static SDL_atomic_t            s_cp_ncaptures;
 
+/* pf.debug.log_move_trace_min_radius, hoisted once per tick; negative = off */
+static float                   s_move_trace_min_radius = -1.0f;
+static unsigned                s_move_trace_tick;
+
 static int                     s_soft_block_budget;
+/* Monotone: a departed unit leaves the queries slightly wide, never narrow */
+static float                   s_max_sel_radius;
 
 static unsigned long           s_last_tick = 0;
 static unsigned long           s_last_interpolate_tick = 0;
@@ -2162,16 +2232,27 @@ static vec2_t (*s_cohesion_force)(uint32_t uid, const struct flock_snap *snap) =
 
 /* Separation is a behaviour that causes agents to steer away from nearby agents.
  */
-static vec2_t separation_force(uint32_t uid, float buffer_dist)
+static float separation_reach(float radius_sum)
+{
+    return MAX(SEPARATION_NEIGHB_RADIUS, SEPARATION_NEIGHB_SCALE * radius_sum);
+}
+
+static float clearpath_reach(float radius_sum)
+{
+    return MAX(CLEARPATH_NEIGHBOUR_RADIUS, CLEARPATH_NEIGHBOUR_SCALE * radius_sum);
+}
+
+static vec2_t separation_force_gap(uint32_t uid, float buffer_dist, float *out_min_gap)
 {
     vec2_t ret = (vec2_t){0.0f};
     uint32_t ent_flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+    float ent_radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
 
-    uint32_t near_ents[128];
+    uint32_t near_ents[256];
     int num_near = G_Pos_EntsInCircleFrom(s_move_work.gamestate.postree,
         s_move_work.gamestate.flags,
         G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid), 
-        SEPARATION_NEIGHB_RADIUS, near_ents, ARR_SIZE(near_ents));
+        separation_reach(ent_radius + s_move_work.max_radius), near_ents, ARR_SIZE(near_ents));
 
     for(int i = 0; i < num_near; i++) {
 
@@ -2188,13 +2269,19 @@ static vec2_t separation_force(uint32_t uid, float buffer_dist)
         vec2_t ent_xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
         vec2_t curr_xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr);
 
-        float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid) 
-                     + G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr) 
-                     + buffer_dist;
+        float radius_sum = ent_radius
+                         + G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr);
+        float radius = radius_sum + buffer_dist;
         PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
 
         if(PFM_Vec2_Len(&diff) < EPSILON)
             continue;
+        if(PFM_Vec2_Len(&diff) > separation_reach(radius_sum))
+            continue;
+
+        float gap = PFM_Vec2_Len(&diff) - radius_sum;
+        if(gap < *out_min_gap)
+            *out_min_gap = gap;
 
         /* Exponential decay with y=1 when diff = radius*0.85 
          * Use smooth decay curves in order to curb the 'toggling' or oscillating 
@@ -2217,9 +2304,44 @@ static vec2_t separation_force(uint32_t uid, float buffer_dist)
     return ret;
 }
 
+static vec2_t separation_force(uint32_t uid, float buffer_dist)
+{
+    float min_gap = INFINITY;
+    return separation_force_gap(uid, buffer_dist, &min_gap);
+}
+
+/* A separation push against a live desired direction backs the unit out of
+ * the way it wants to go; redirect that component sideways (the remembered
+ * passing side) so nose-to-nose units step around each other instead of
+ * bouncing along the line of centres. The redirected share blends smoothly
+ * to zero as interpenetration deepens (a hard cut oscillates at the
+ * boundary), so a wedged pair keeps the radial push-out.
+ */
+static vec2_t redirect_backward(vec2_t force, vec2_t vdes, int side, float min_gap)
+{
+    if(PFM_Vec2_Len(&vdes) < EPSILON || min_gap <= SEP_REDIRECT_MIN_GAP)
+        return force;
+
+    float frac = MIN(1.0f, (min_gap - SEP_REDIRECT_MIN_GAP) / -SEP_REDIRECT_MIN_GAP);
+
+    vec2_t vhat;
+    PFM_Vec2_Normal(&vdes, &vhat);
+    float back = PFM_Vec2_Dot(&force, &vhat);
+    if(back >= 0.0f)
+        return force;
+
+    vec2_t lat = (vec2_t){vhat.z * side, -vhat.x * side};
+    vec2_t backward, lateral;
+    PFM_Vec2_Scale(&vhat, back * frac, &backward);
+    PFM_Vec2_Sub(&force, &backward, &force);
+    PFM_Vec2_Scale(&lat, -back * frac, &lateral);
+    PFM_Vec2_Add(&force, &lateral, &force);
+    return force;
+}
+
 static vec2_t point_seek_total_force(uint32_t uid, const struct flock *flock,
                                      const struct flock_snap *fsnap,
-                                     vec2_t vdes, bool has_dest_los)
+                                     vec2_t vdes, bool has_dest_los, int side)
 {
     struct movestate *ms = movestate_get(uid);
     assert(ms);
@@ -2229,7 +2351,9 @@ static vec2_t point_seek_total_force(uint32_t uid, const struct flock *flock,
         flock->target_xz) : flock->target_xz;
     vec2_t arrive = arrive_force_point(uid, seek, vdes, has_dest_los);
     vec2_t cohesion = s_cohesion_force(uid, fsnap);
-    vec2_t separation = separation_force(uid, SEPARATION_BUFFER_DIST);
+    float min_gap = INFINITY;
+    vec2_t separation = separation_force_gap(uid, SEPARATION_BUFFER_DIST, &min_gap);
+    separation = redirect_backward(separation, vdes, side, min_gap);
 
     PFM_Vec2_Scale(&arrive,     MOVE_ARRIVE_FORCE_SCALE,   &arrive);
     PFM_Vec2_Scale(&cohesion,   MOVE_COHESION_FORCE_SCALE, &cohesion);
@@ -2346,7 +2470,7 @@ static void nullify_impass_components(uint32_t uid, vec2_t *inout_force)
 
 static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock,
                                const struct flock_snap *fsnap,
-                               vec2_t vdes, bool has_dest_los, float speed)
+                               vec2_t vdes, bool has_dest_los, float speed, int side)
 {
     struct movestate *ms = movestate_get(uid);
     assert(ms);
@@ -2356,11 +2480,14 @@ static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock,
 
         switch(prio) {
         case 0:
-            steer_force = point_seek_total_force(uid, flock, fsnap, vdes, has_dest_los);
+            steer_force = point_seek_total_force(uid, flock, fsnap, vdes, has_dest_los, side);
             break;
-        case 1: 
-            steer_force = separation_force(uid, SEPARATION_BUFFER_DIST); 
+        case 1: {
+            float min_gap = INFINITY;
+            steer_force = separation_force_gap(uid, SEPARATION_BUFFER_DIST, &min_gap);
+            steer_force = redirect_backward(steer_force, vdes, side, min_gap);
             break;
+        }
         case 2: {
             struct arrival_state *as = flock_arrival_for_ent(flock, uid);
             vec2_t seek = as ? G_Arrival_SeekTarget(as, &movestate_aux_get(uid)->arrival,
@@ -2911,6 +3038,11 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         out->flags |= UPDATE_SET_VELOCITY;
         out->next_velocity = (vec2_t){0.0f, 0.0f};
 
+        if(PFM_Vec2_Len(&new_vel) > 0) {
+            out->flags |= M_NavPositionPathable(s_move_work.gamestate.map, layer, new_pos_xz)
+                        ? UPDATE_VETO_BLOCKED : UPDATE_VETO_UNPATHABLE;
+        }
+
         /* A combat-held unit pivots toward its combat facing, not its travel heading. The
          * rotation patch is set only inside a branch that actually computes next_nrot; with no
          * branch taken the unit keeps its current rotation (else next_nrot is left unset). */
@@ -3050,6 +3182,16 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         break;
     }
     case STATE_SURROUND_ENTITY: {
+
+        /* A shuttle wedged in a crowd at its destination walls like a jammed
+         * seeker: the field then routes the rest of the crowd around it and
+         * the blob drains from the rim.
+         */
+        if(!(out->flags & UPDATE_HEADING_GATED)
+        && PFM_Vec2_Len(&out->next_velocity) < EPSILON)
+            out->flags |= UPDATE_SEEK_STUCK;
+        if(in->nstat + in->ndyn < SURROUND_RELEASE_NEIGHBS)
+            out->flags |= UPDATE_SEEK_CLEAR;
 
         if(ms->surround_target_uid == NULL_UID) {
             out->flags |= UPDATE_SET_STATE;
@@ -3236,6 +3378,19 @@ static void ent_update_using_surround_field(uint32_t uid, struct movestate *ms)
     }
 }
 
+static void entity_apply_cp_side(uint32_t uid, int side)
+{
+    struct movestate_aux *aux = movestate_aux_get(uid);
+    if(!aux)
+        return;
+    if(side != 0) {
+        aux->cp_side = side;
+        aux->cp_side_ticks = 0;
+    }else if(aux->cp_side != 0 && ++aux->cp_side_ticks > CP_SIDE_HOLD_TICKS) {
+        aux->cp_side = 0;
+    }
+}
+
 static void entity_apply_update(uint32_t uid, const struct movestate_patch *patch)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -3316,7 +3471,8 @@ static void entity_apply_update(uint32_t uid, const struct movestate_patch *patc
     bool held = G_FlagsGet(uid) & ENTITY_FLAG_COMBAT_HELD;
     if(aux->soft_blocking
     && (ms->blocking || ent_still(ms)
-        || (!held && ms->state != STATE_SEEK_ENEMIES && ms->state != STATE_MOVING))) {
+        || (!held && ms->state != STATE_SEEK_ENEMIES && ms->state != STATE_MOVING
+                  && ms->state != STATE_SURROUND_ENTITY))) {
         entity_soft_unblock(uid);
     }
 
@@ -3327,7 +3483,8 @@ static void entity_apply_update(uint32_t uid, const struct movestate_patch *patc
 
     aux->seek_pin_held = !!(patch->flags & UPDATE_SEEK_PINNED);
 
-    if(!held && (ms->state == STATE_SEEK_ENEMIES || ms->state == STATE_MOVING)) {
+    if(!held && (ms->state == STATE_SEEK_ENEMIES || ms->state == STATE_MOVING
+              || ms->state == STATE_SURROUND_ENTITY)) {
         bool stuck = patch->flags & UPDATE_SEEK_STUCK;
         bool clear = patch->flags & UPDATE_SEEK_CLEAR;
         if(PFM_Vec2_Len(&ms->velocity) > CLEARPATH_STILL_SPEED)
@@ -3335,8 +3492,12 @@ static void entity_apply_update(uint32_t uid, const struct movestate_patch *patc
         aux->seek_stuck_ticks = stuck ? MIN(aux->seek_stuck_ticks + 1, UINT16_MAX) : 0;
         aux->seek_clear_ticks = clear ? MIN(aux->seek_clear_ticks + 1, UINT16_MAX) : 0;
 
-        /* A pinned unit is in line by intent, not a queued launch rear. */
-        bool may_wall = aux->seek_progressed || aux->seek_pin_held;
+        /* A pinned unit is in line by intent, not a queued launch rear. The
+         * progressed latch does not carry to shuttles: their orders re-issue
+         * mid-transit (resetting it invisibly) and a jam at the destination
+         * is wall-worthy regardless of how the cart got there. */
+        bool may_wall = aux->seek_progressed || aux->seek_pin_held
+                     || ms->state == STATE_SURROUND_ENTITY;
         if(!aux->soft_blocking && stuck && !clear && may_wall
         && aux->seek_stuck_ticks >= SEEK_STUCK_BLOCK_TICKS
         && s_soft_block_budget > 0) {
@@ -3375,11 +3536,12 @@ static void find_neighbours(uint32_t uid,
 
     uint32_t ent_flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
     vec2_t ent_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
+    float ent_radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
     uint32_t near_ents[512];
     int num_near = G_Pos_EntsInCircleFrom(s_move_work.gamestate.postree, 
         s_move_work.gamestate.flags,
         ent_pos,
-        CLEARPATH_NEIGHBOUR_RADIUS, near_ents, ARR_SIZE(near_ents));
+        clearpath_reach(ent_radius + s_move_work.max_radius), near_ents, ARR_SIZE(near_ents));
 
     /* Keep the NEAREST candidates in each class rather than the first
      * encountered: in dense crowds the query returns far more than the caps,
@@ -3411,10 +3573,15 @@ static void find_neighbours(uint32_t uid,
         if(!(flags & ENTITY_FLAG_MOVABLE))
             continue;
 
-        if(G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr) == 0.0f)
+        float curr_radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr);
+        if(curr_radius == 0.0f)
             continue;
 
         if((ent_flags & ENTITY_FLAG_AIR) != (flags & ENTITY_FLAG_AIR))
+            continue;
+
+        float reach = clearpath_reach(ent_radius + curr_radius);
+        if(dists[i].dist2 > reach * reach)
             continue;
 
         struct movestate *ms = movestate_get(curr);
@@ -3424,7 +3591,7 @@ static void find_neighbours(uint32_t uid,
         struct cp_ent newdesc = (struct cp_ent) {
             .xz_pos = curr_xz_pos,
             .xz_vel = ms->velocity,
-            .radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr)
+            .radius = curr_radius
         };
 
         /* A neighbour right at its arrival slot is about to settle and will not yield,
@@ -3499,6 +3666,7 @@ static void do_add_entity(uint32_t uid, vec3_t pos, float selection_radius, int 
     k = kh_put(range, s_move_work.gamestate.sel_radiuses, uid, &ret);
     assert(ret != -1);
     kh_value(s_move_work.gamestate.sel_radiuses, k) = selection_radius;
+    s_max_sel_radius = MAX(s_max_sel_radius, selection_radius);
 
     k = kh_put(id, s_move_work.gamestate.faction_ids, uid, &ret);
     assert(ret != -1);
@@ -3947,6 +4115,7 @@ static void do_update_selection_radius(uint32_t uid, float sel_radius)
     khiter_t k = kh_get(range, s_move_work.gamestate.sel_radiuses, uid);
     assert(k != kh_end(s_move_work.gamestate.sel_radiuses));
     kh_val(s_move_work.gamestate.sel_radiuses, k) = sel_radius;
+    s_max_sel_radius = MAX(s_max_sel_radius, sel_radius);
 
     if(!ms->blocking)
         return;
@@ -4108,12 +4277,95 @@ static void move_process_cmds(void)
     }
 }
 
+/* The nearest movable neighbour regardless of the solver's query radius,
+ * whether the solver saw it, and the separation force the steering summed.
+ * Must run before the solve compacts the neighbour lists.
+ */
+static void move_trace_velocity(const struct move_work_in *in, struct move_trace *tr,
+                                vec2_t vpref)
+{
+    uint32_t uid = in->ent_uid;
+    uint32_t ent_flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+    vec2_t pos = in->cp_ent.xz_pos;
+
+    tr->vpref = vpref;
+    tr->sep = separation_force(uid, SEPARATION_BUFFER_DIST);
+    tr->nn_uid = NULL_UID;
+    tr->nn_dist = INFINITY;
+
+    uint32_t near_ents[512];
+    int num_near = G_Pos_EntsInCircleFrom(s_move_work.gamestate.postree,
+        s_move_work.gamestate.flags, pos, MV_TRACE_NN_RADIUS, near_ents, ARR_SIZE(near_ents));
+
+    for(int i = 0; i < num_near; i++) {
+
+        uint32_t curr = near_ents[i];
+        uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, curr);
+        if(curr == uid || !(flags & ENTITY_FLAG_MOVABLE))
+            continue;
+        if((ent_flags & ENTITY_FLAG_AIR) != (flags & ENTITY_FLAG_AIR))
+            continue;
+
+        vec2_t cpos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr);
+        vec2_t diff;
+        PFM_Vec2_Sub(&cpos, &pos, &diff);
+        float dist = PFM_Vec2_Len(&diff);
+
+        if(dist <= separation_reach(in->cp_ent.radius
+                                  + G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr)))
+            tr->sep_n++;
+        if(dist < tr->nn_dist) {
+            tr->nn_dist = dist;
+            tr->nn_uid = curr;
+            tr->nn_pos = cpos;
+            tr->nn_radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr);
+        }
+    }
+
+    for(size_t i = 0; i < in->ndyn + in->nstat; i++) {
+        const struct cp_ent *n = (i < in->ndyn) ? &in->dyn_neighbs[i]
+                                                : &in->stat_neighbs[i - in->ndyn];
+        if(n->xz_pos.x == tr->nn_pos.x && n->xz_pos.z == tr->nn_pos.z) {
+            tr->nn_seen = true;
+            break;
+        }
+    }
+
+    if(PFM_Vec2_Len(&vpref) < EPSILON && PFM_Vec2_Len(&in->ent_des_v) > EPSILON) {
+
+        const struct map *map = s_move_work.gamestate.map;
+        enum nav_layer layer = Entity_NavLayerWithRadius(ent_flags, in->cp_ent.radius);
+        vec2_t nt = N_TileDims();
+        vec2_t probes[4] = {
+            (vec2_t){pos.x + nt.x, pos.z}, (vec2_t){pos.x - nt.x, pos.z},
+            (vec2_t){pos.x, pos.z + nt.z}, (vec2_t){pos.x, pos.z - nt.z},
+        };
+        struct map_resolution res;
+        M_NavGetResolution(map, &res);
+        M_Tile_DescForPoint2D(res, M_GetPos(map), pos, &tr->td);
+        tr->probed = true;
+        tr->probe = M_NavPositionBlocked(map, layer, pos) ? 1 : 0;
+        for(int i = 0; i < 4; i++) {
+            tr->probe |= M_NavPositionPathable(map, layer, probes[i]) << (1 + 2 * i);
+            tr->probe |= M_NavPositionBlocked(map, layer, probes[i]) << (2 + 2 * i);
+        }
+        struct target target = build_target(uid, in->flock);
+        for(int dz = -1; dz <= 1; dz++) {
+        for(int dx = -1; dx <= 1; dx++) {
+            vec2_t p = (vec2_t){pos.x + dx * nt.x, pos.z + dz * nt.z};
+            tr->dirs[(dz + 1) * 3 + (dx + 1)] = M_NavFlowFieldDirAt(map, target, p);
+        }}
+    }
+}
+
 static void move_velocity_work(int begin_idx, int end_idx)
 {
     for(int i = begin_idx; i <= end_idx; i++) {
     
         struct move_work_in *in = &s_move_work.in[i];
         struct move_work_out *out = &s_move_work.out[i];
+        struct move_trace *tr = s_move_work.trace ? &s_move_work.trace[i] : NULL;
+        bool traced = tr && tr->traced;
 
         const struct movestate *ms = movestate_get(in->ent_uid);
 
@@ -4122,6 +4374,7 @@ static void move_velocity_work(int begin_idx, int end_idx)
             out->ent_uid = in->ent_uid;
             out->ent_vel = (vec2_t){0.0f, 0.0f};
             out->cp_flags = 0;
+            out->cp_side = 0;
             continue;
         }
 
@@ -4132,6 +4385,7 @@ static void move_velocity_work(int begin_idx, int end_idx)
             out->ent_uid = in->ent_uid;
             out->ent_vel = (vec2_t){0.0f, 0.0f};
             out->cp_flags = 0;
+            out->cp_side = 0;
             continue;
         }
 
@@ -4178,7 +4432,8 @@ static void move_velocity_work(int begin_idx, int end_idx)
         default:
             assert(flock);
             vpref = point_seek_vpref(in->ent_uid, flock, in->fsnap,
-                in->ent_des_v, in->has_dest_los, in->speed);
+                in->ent_des_v, in->has_dest_los, in->speed,
+                in->cp_side ? in->cp_side : 1);
         }
         assert(vpref.x == vpref.x && vpref.z == vpref.z); /* a NaN vpref would corrupt the integration */
 
@@ -4186,13 +4441,19 @@ static void move_velocity_work(int begin_idx, int end_idx)
         find_neighbours(in->ent_uid, in->dyn_neighbs, &in->ndyn,
             in->stat_neighbs, &in->nstat);
 
+        if(traced) {
+            move_trace_velocity(in, tr, vpref);
+        }
+
         /* Capture the inputs before the retry loop compacts the arrays. */
         int cap_slot = -1;
-        if(s_log_cp_captures && (in->ndyn + in->nstat) >= CP_CAPTURE_MIN_NEIGHBS) {
+        if(s_log_cp_captures
+        && (traced || (in->ndyn + in->nstat) >= CP_CAPTURE_MIN_NEIGHBS)) {
             int slot = SDL_AtomicAdd(&s_cp_ncaptures, 1);
             if(slot < CP_CAPTURE_MAX_PER_TICK) {
                 cap_slot = slot;
                 struct cp_capture *cap = &s_cp_captures[slot];
+                cap->uid = in->ent_uid;
                 cap->self = in->cp_ent;
                 cap->vpref = vpref;
                 cap->ndyn = in->ndyn;
@@ -4202,14 +4463,23 @@ static void move_velocity_work(int begin_idx, int end_idx)
             }
         }
 
+        uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, in->ent_uid);
+        struct cp_terrain terrain = (struct cp_terrain){
+            .map = s_move_work.gamestate.map,
+            .layer = Entity_NavLayerWithRadius(flags, in->cp_ent.radius),
+            .max_step = ms->max_speed / hz_count(s_move_work.hz),
+        };
+        terrain.on_blocked = M_NavPositionBlocked(terrain.map, terrain.layer, in->cp_ent.xz_pos);
+
         /* Compute the velocity constrainted by potential collisions */
         struct cp_solve_diag diag;
         vec2_t new_vel = G_ClearPath_NewVelocity(in->cp_ent, in->ent_uid,
             vpref, in->dyn_neighbs, in->ndyn, in->stat_neighbs, in->nstat,
-            in->save_debug, &diag);
+            terrain, in->cp_side, in->save_debug, &diag);
 
         out->ent_uid = in->ent_uid;
         out->ent_vel = new_vel;
+        out->cp_side = diag.side;
         out->cp_flags = (diag.gave_up ? CP_OUT_GAVE_UP : 0)
                       | (!diag.gave_up && diag.retries > 0 ? CP_OUT_RETRY_OK : 0)
                       | (diag.fallback ? CP_OUT_FALLBACK : 0)
@@ -4217,6 +4487,9 @@ static void move_velocity_work(int begin_idx, int end_idx)
                          && PFM_Vec2_Len(&in->ent_des_v) < EPSILON ? CP_OUT_SEEK_VDES0 : 0);
         if(cap_slot >= 0) {
             s_cp_captures[cap_slot].gave_up = diag.gave_up;
+        }
+        if(traced) {
+            tr->retries = diag.retries;
         }
         vec2_truncate(&out->ent_vel, ms->max_speed / hz_count(s_move_work.hz));
     }
@@ -4518,6 +4791,7 @@ static void move_consume_work_results(void)
     for(int i = 0; i < s_move_work.nwork; i++) {
         struct move_work_out *out = &s_move_work.out[i];
         entity_apply_update(out->ent_uid, &out->patch);
+        entity_apply_cp_side(out->ent_uid, out->cp_side);
     }
 
     /* All this tick's position changes are enqueued; apply the batched fog
@@ -4542,6 +4816,10 @@ static void move_prepare_work(enum movement_hz hz)
     s_move_work.out = stalloc(&s_move_work.mem, ndynamic * sizeof(struct move_work_out));
     s_move_work.neighb_mem = stalloc(&s_move_work.mem,
         ndynamic * 2 * MAX_NEIGHBOURS * sizeof(struct cp_ent));
+    s_move_work.trace = (s_move_trace_min_radius >= 0.0f)
+                      ? stalloc(&s_move_work.mem, ndynamic * sizeof(struct move_trace))
+                      : NULL;
+    s_move_work.max_radius = s_max_sel_radius;
     s_move_work.hz = hz;
     s_move_work.type = (s_use_gpu ? WORK_TYPE_GPU : WORK_TYPE_CPU);
     SDL_AtomicSet(&s_move_work.gpu_velocities_ready, 0);
@@ -4591,6 +4869,11 @@ static void move_push_work(struct move_work_in in)
     in.ndyn = 0;
     in.nstat = 0;
     s_move_work.in[idx] = in;
+    if(s_move_work.trace) {
+        s_move_work.trace[idx] = (struct move_trace){
+            .traced = (in.cp_ent.radius >= s_move_trace_min_radius)
+        };
+    }
 }
 
 static void move_submit_cpu_work(task_func_t code)
@@ -4830,6 +5113,75 @@ static void nav_tick_submit_work(void)
     s_last_tick = g_frame_idx;
 }
 
+static unsigned move_trace_flags(const struct move_work_in *in, const struct move_work_out *out,
+                                 const struct movestate *ms, const struct movestate_aux *aux)
+{
+    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, in->ent_uid);
+    unsigned ret = 0;
+    ret |= (out->patch.flags & UPDATE_HEADING_GATED)   ? MV_TRACE_HEADING_GATED   : 0;
+    ret |= (out->cp_flags & CP_OUT_GAVE_UP)            ? MV_TRACE_CP_GAVE_UP      : 0;
+    ret |= (out->cp_flags & CP_OUT_RETRY_OK)           ? MV_TRACE_CP_RETRY_OK     : 0;
+    ret |= (out->patch.flags & UPDATE_VETO_UNPATHABLE) ? MV_TRACE_VETO_UNPATHABLE : 0;
+    ret |= (out->patch.flags & UPDATE_VETO_BLOCKED)    ? MV_TRACE_VETO_BLOCKED    : 0;
+    ret |= aux->soft_blocking                          ? MV_TRACE_SOFT_BLOCKING   : 0;
+    ret |= (out->patch.flags & UPDATE_SEEK_STUCK)      ? MV_TRACE_SEEK_STUCK      : 0;
+    ret |= (out->patch.flags & UPDATE_SEEK_CLEAR)      ? MV_TRACE_SEEK_CLEAR      : 0;
+    ret |= in->has_dest_los                            ? MV_TRACE_HAS_DEST_LOS    : 0;
+    ret |= in->field_starved                           ? MV_TRACE_FIELD_STARVED   : 0;
+    ret |= ms->using_surround_field                    ? MV_TRACE_SURROUND_FIELD  : 0;
+    ret |= (flags & ENTITY_FLAG_COMBAT_HELD)           ? MV_TRACE_COMBAT_HELD     : 0;
+    return ret;
+}
+
+/* Runs between the drain and the apply: in/out and the pre-apply movestates
+ * describe the tick just computed.
+ */
+static void move_trace_emit(void)
+{
+    for(size_t i = 0; i < s_move_work.nwork; i++) {
+
+        const struct move_trace *tr = &s_move_work.trace[i];
+        if(!tr->traced)
+            continue;
+
+        const struct move_work_in *in = &s_move_work.in[i];
+        const struct move_work_out *out = &s_move_work.out[i];
+        uint32_t uid = in->ent_uid;
+        const struct movestate *ms = movestate_get(uid);
+        const struct movestate_aux *aux = movestate_aux_get(uid);
+        if(!ms || !aux)
+            continue;
+
+        float radius = in->cp_ent.radius;
+        uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+        int layer = Entity_NavLayerWithRadius(flags, radius);
+        vec2_t app = (out->patch.flags & UPDATE_SET_VELOCITY) ? out->patch.next_velocity
+                                                              : (vec2_t){0.0f, 0.0f};
+        vec2_t face = facing_dir(ms->next_rot);
+
+        fprintf(stdout, "[mv-trace] %u,%u,%.2f,%d,%s,%.3f,%.3f,%.2f,"
+            "%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,"
+            "%u,%d,%u,%u,%u,%.3f,%.2f,%d,%.4f,%.4f,%d,%d\n",
+            s_move_trace_tick, uid, radius, layer, s_state_str[ms->state],
+            in->cp_ent.xz_pos.x, in->cp_ent.xz_pos.z, in->speed,
+            in->ent_des_v.x, in->ent_des_v.z, tr->vpref.x, tr->vpref.z,
+            out->ent_vel.x, out->ent_vel.z, app.x, app.z, face.x, face.z,
+            move_trace_flags(in, out, ms, aux), tr->retries,
+            (unsigned)in->ndyn, (unsigned)in->nstat,
+            tr->nn_uid, tr->nn_dist, tr->nn_radius, (int)tr->nn_seen,
+            tr->sep.x, tr->sep.z, tr->sep_n, out->cp_side);
+
+        if(tr->probed) {
+            fprintf(stdout, "[mv-probe] %u,%u,%d,%d,%d,%d,%u", s_move_trace_tick, uid,
+                tr->td.chunk_r, tr->td.chunk_c, tr->td.tile_r, tr->td.tile_c, tr->probe);
+            for(int i = 0; i < 9; i++) {
+                fprintf(stdout, ",%d", tr->dirs[i]);
+            }
+            fputc('\n', stdout);
+        }
+    }
+}
+
 static enum move_work_status nav_tick_finish_work(void)
 {
     if(s_tick_task_tid == NULL_TID) {
@@ -4887,8 +5239,8 @@ static enum move_work_status nav_tick_finish_work(void)
     int ncaps = MIN(SDL_AtomicGet(&s_cp_ncaptures), CP_CAPTURE_MAX_PER_TICK);
     for(int i = 0; i < ncaps; i++) {
         const struct cp_capture *cap = &s_cp_captures[i];
-        fprintf(stdout, "[cp-cap] %d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%u,%u",
-            (int)cap->gave_up, cap->self.xz_pos.x, cap->self.xz_pos.z,
+        fprintf(stdout, "[cp-cap] %u,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%u,%u",
+            cap->uid, (int)cap->gave_up, cap->self.xz_pos.x, cap->self.xz_pos.z,
             cap->self.xz_vel.x, cap->self.xz_vel.z, cap->self.radius,
             cap->vpref.x, cap->vpref.z, cap->ndyn, cap->nstat);
         for(int j = 0; j < cap->ndyn + cap->nstat; j++) {
@@ -4899,6 +5251,11 @@ static enum move_work_status nav_tick_finish_work(void)
         }
         fputc('\n', stdout);
     }
+
+    if(s_move_work.trace) {
+        move_trace_emit();
+    }
+    s_move_trace_tick++;
 
     Perf_RecordNavTick(&s_last_nav_tick_stats);
 
@@ -5483,6 +5840,11 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
                      && cap_setting.as_bool;
     SDL_AtomicSet(&s_cp_ncaptures, 0);
 
+    struct sval trace_setting;
+    s_move_trace_min_radius =
+        (Settings_Get("pf.debug.log_move_trace_min_radius", &trace_setting) == SS_OKAY)
+        ? trace_setting.as_float : -1.0f;
+
     move_consume_work_results();
 
     s_last_nav_tick_stats.consume_us =
@@ -5562,6 +5924,7 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
 
         vec2_t pos = (vec2_t){ms->prev_pos.x, ms->prev_pos.z};
         float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr);
+        s_max_sel_radius = MAX(s_max_sel_radius, radius);
 
         struct cp_ent curr_cp = (struct cp_ent) {
             .xz_pos = pos,
@@ -5590,6 +5953,7 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
             .speed = in_formation ? fss.speed : ms->max_speed,
             .cell_pos = cell_pos,
             .cp_ent = curr_cp,
+            .cp_side = movestate_aux_get(curr)->cp_side,
             .save_debug = (curr == debug_uid),
             .fstate.fid = fss.fid,
             .fstate.assignment_ready = fss.assignment_ready,

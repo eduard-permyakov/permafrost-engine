@@ -238,6 +238,11 @@ static bool int_val_validate(const struct sval *new_val)
     return (new_val->type == ST_TYPE_INT);
 }
 
+static bool float_val_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_FLOAT);
+}
+
 static bool water_rt_scale_validate(const struct sval *new_val)
 {
     return (new_val->type == ST_TYPE_FLOAT)
@@ -836,6 +841,19 @@ bool R_Init(const char *base_path)
         },
         .prio = 0,
         .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    /* Per-tick [mv-trace] lines for units of at least this selection radius; negative = off */
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.log_move_trace_min_radius",
+        .val = (struct sval) {
+            .type = ST_TYPE_FLOAT,
+            .as_float = -1.0f,
+        },
+        .prio = 0,
+        .validate = float_val_validate,
         .commit = NULL,
     });
     assert(status == SS_OKAY);

@@ -809,6 +809,11 @@ bool M_NavFlowFieldPathLength(const struct map *map, struct target target, vec2_
         max_steps, out_len, out_end_xz, out_capped);
 }
 
+int M_NavFlowFieldDirAt(const struct map *map, struct target target, vec2_t xz)
+{
+    return N_FlowFieldDirAt(map->nav_private, map->pos, target, xz);
+}
+
 void M_NavServicePathRequest(const struct map *map, struct target target, vec2_t xz)
 {
     N_ServicePathRequest(map->nav_private, map->pos, target, xz);

@@ -3936,10 +3936,12 @@ static vec2_t n_interpolated_flow_dir(struct nav_private *priv, struct target ta
         if(td.chunk_r != base_tile.chunk_r || td.chunk_c != base_tile.chunk_c) {
             ff_id_t ffid;
             struct coord nchunk = (struct coord){td.chunk_r, td.chunk_c};
-            if(target.kind == TARGET_KIND_ENEMY_SEEK) {
-                /* A neighbour chunk's enemy-seek field is routinely absent or
-                 * stale (rebuilt only by units standing in it); blending it in
-                 * deflects units along the boundary. Home chunk only. */
+            if(target.kind == TARGET_KIND_ENEMY_SEEK
+            || target.kind == TARGET_KIND_SURROUND) {
+                /* A neighbour chunk's enemy-seek or surround field is routinely
+                 * absent or stale (rebuilt only by units standing in it);
+                 * blending it in deflects units along the boundary. Home chunk
+                 * only. */
                 continue;
             }else if(peek) {
                 if(!N_FC_PeekDestFFMapping(priv->fieldcache, target.point_seek.dest_id,
@@ -3966,7 +3968,10 @@ static vec2_t n_interpolated_flow_dir(struct nav_private *priv, struct target ta
         wsum += sw[i];
     }
 
-    if(wsum < 1e-6f || PFM_Vec2_Len(&acc) < 1e-6f)
+    /* On a watershed (opposite dirs blending to nearly nothing) the residual
+     * must not be renormalised into a confident direction; the tile's own
+     * sample is the honest answer. */
+    if(wsum < 1e-6f || PFM_Vec2_Len(&acc) < 0.35f * wsum)
         return N_FlowDir(base_ff->field[base_tile.tile_r][base_tile.tile_c].dir_idx);
 
     PFM_Vec2_Normal(&acc, &acc);
@@ -4088,9 +4093,44 @@ vec2_t N_DesiredVelocityForTargetCached(void *nav_private, vec3_t map_pos, struc
         return (vec2_t){0.0f, 0.0f};
     }
 
-    if(target.kind == TARGET_KIND_POINT_SEEK || target.kind == TARGET_KIND_ENEMY_SEEK)
-        return n_interpolated_flow_dir(priv, target, res, map_pos, xz, ff, tile, true);
-    return N_FlowDir(ff->field[tile.tile_r][tile.tile_c].dir_idx);
+    return n_interpolated_flow_dir(priv, target, res, map_pos, xz, ff, tile, true);
+}
+
+int N_FlowFieldDirAt(void *nav_private, vec3_t map_pos, struct target target, vec2_t xz)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct tile_desc tile;
+    if(!M_Tile_DescForPoint2D(res, map_pos, xz, &tile))
+        return -1;
+    struct coord chunk = (struct coord){tile.chunk_r, tile.chunk_c};
+
+    ff_id_t ffid;
+    if(target.kind == TARGET_KIND_POINT_SEEK) {
+        if(!N_FC_PeekDestFFMapping(priv->fieldcache, target.point_seek.dest_id, chunk, &ffid))
+            return -1;
+    }else if(target.kind == TARGET_KIND_ENEMY_SEEK) {
+        ffid = N_FlowFieldID(chunk, (struct field_target){
+            .type = TARGET_ENEMIES,
+            .enemies.faction_id = target.enemy_seek.faction_id,
+            .enemies.map_pos = map_pos,
+            .enemies.chunk = chunk
+        }, target.enemy_seek.layer);
+    }else{
+        assert(target.kind == TARGET_KIND_SURROUND);
+        ffid = N_FlowFieldID(chunk, (struct field_target){
+            .type = TARGET_ENTITY,
+            .ent.target = target.surround.uid,
+            .ent.map_pos = map_pos
+        }, target.surround.layer);
+    }
+
+    const struct flow_field *ff = N_FC_PeekFlowField(priv->fieldcache, ffid);
+    if(!ff)
+        return -1;
+    return ff->field[tile.tile_r][tile.tile_c].dir_idx;
 }
 
 bool N_FlowFieldPathLength(void *nav_private, vec3_t map_pos, struct target target, vec2_t xz,
