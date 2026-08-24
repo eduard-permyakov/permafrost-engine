@@ -263,6 +263,34 @@ static size_t compute_all_vos(struct cp_ent ent, const struct cp_ent *stat_neigh
     return ret;
 }
 
+/* A wall tile's obstacle constrains the unit's centre alone; the nav layer's
+ * dilation already encodes the body, so no radius sum here.
+ */
+static size_t compute_all_tile_vos(struct cp_ent ent, const vec2_t *tiles,
+                                   size_t ntiles, struct VO *out)
+{
+    size_t ret = 0;
+
+    for(size_t i = 0; i < ntiles; i++) {
+
+        if(same_position(ent.xz_pos, tiles[i]))
+            continue;
+
+        vec2_t ent_to_nb = cp_norm(cp_sub(tiles[i], ent.xz_pos));
+        vec2_t right = cp_scale((vec2_t){-ent_to_nb.z, ent_to_nb.x},
+            CLEARPATH_TILE_RADIUS);
+
+        vec2_t right_tangent = cp_add(tiles[i], right);
+        vec2_t left_tangent = cp_sub(tiles[i], right);
+
+        struct VO *vo = &out[ret++];
+        vo->xz_apex = ent.xz_pos;
+        vo->xz_right_side = cp_norm(cp_sub(right_tangent, ent.xz_pos));
+        vo->xz_left_side = cp_norm(cp_sub(left_tangent, ent.xz_pos));
+    }
+    return ret;
+}
+
 static size_t compute_all_hrvos(struct cp_ent ent, const struct cp_ent *dyn_neighbs,
                                 size_t ndyn, int side, struct HRVO *out)
 {
@@ -637,6 +665,8 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
                                    size_t ndyn,
                                    const struct cp_ent *stat_neighbs,
                                    size_t nstat,
+                                   const vec2_t *tile_obs,
+                                   size_t ntiles,
                                    const struct cp_terrain *terrain,
                                    int side,
                                    bool save_debug,
@@ -644,16 +674,17 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
 {
     bool status = false;
     STALLOC(struct HRVO, dyn_hrvos, ndyn);
-    STALLOC(struct VO, stat_vos, nstat);
+    STALLOC(struct VO, stat_vos, nstat + ntiles);
 
     size_t n_hrvos = compute_all_hrvos(cpent, dyn_neighbs, ndyn, side, dyn_hrvos);
     size_t n_vos = compute_all_vos(cpent, stat_neighbs, nstat, stat_vos);
+    n_vos += compute_all_tile_vos(cpent, tile_obs, ntiles, stat_vos + n_vos);
 
     /* We may have skipped the neighbours that are at the exact same
      * or nearly same position as the entity.
      */
     assert(n_hrvos <= ndyn);
-    assert(n_vos <= nstat);
+    assert(n_vos <= nstat + ntiles);
 
     /* Following the ClearPath approach, which is applicable to many variations
      * of velocity obstacles, we represent the combined hybrid reciprocal velocity
@@ -800,6 +831,8 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
                                size_t ndyn,
                                struct cp_ent *stat_neighbs,
                                size_t nstat,
+                               const vec2_t *tile_obs,
+                               size_t ntiles,
                                struct cp_terrain terrain,
                                int side,
                                bool save_debug,
@@ -815,7 +848,8 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
     do{
         vec2_t ret;
         bool found = clearpath_new_velocity(cpent, ent_des_v,
-            dyn_neighbs, ndyn, stat_neighbs, nstat, &terrain, side, save_debug, &ret);
+            dyn_neighbs, ndyn, stat_neighbs, nstat, tile_obs, ntiles,
+            &terrain, side, save_debug, &ret);
         if(found) {
             if(out_diag) {
                 out_diag->retries = retries;

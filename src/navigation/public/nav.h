@@ -426,6 +426,9 @@ bool   N_FlowFieldPathLength(void *nav_private, vec3_t map_pos, struct target ta
                              int max_steps, float *out_len, vec2_t *out_end_xz, bool *out_capped);
 /* Raw flow direction of the tile under xz in the cached field, -1 if none */
 int    N_FlowFieldDirAt(void *nav_private, vec3_t map_pos, struct target target, vec2_t xz);
+/* Centres of impassable or blocker-occupied tiles within reach of xz */
+int    N_BlockedTilesAround(void *nav_private, vec3_t map_pos, int layer, vec2_t xz,
+                            float reach, vec2_t *out_centres, int max);
 
 /* ------------------------------------------------------------------------
  * Build (and cache) the field that 'target' needs for the chunk holding 'xz',

@@ -337,8 +337,11 @@ struct move_work_in{
      * filled by find_neighbours in the velocity phase. */
     struct cp_ent *stat_neighbs;
     struct cp_ent *dyn_neighbs;
+    /* Blocked-tile centres near the unit, walls for the velocity solve */
+    vec2_t        *tile_obs;
     size_t         nstat;
     size_t         ndyn;
+    size_t         ntiles;
     bool           has_dest_los;
     bool           needs_los_build;
     bool           los_queried;
@@ -422,6 +425,7 @@ struct move_work{
     struct move_work_in      *in;
     struct move_work_out     *out;
     struct cp_ent            *neighb_mem;
+    vec2_t                   *tile_mem;
     struct flock_snap        *flock_snaps;
     /* Parallel to in/out, NULL unless tracing */
     struct move_trace        *trace;
@@ -624,9 +628,18 @@ static struct result navigation_tick_task(void *arg);
 #define SEEK_BLOCK_BUDGET_PER_TICK      (16)
 /* Ticks without a deflection before the passing side is forgotten */
 #define CP_SIDE_HOLD_TICKS              (10)
+/* Wall-tile window beyond one step: a tile just outside the step can still
+ * clip the corner of a fast diagonal */
+#define CLEARPATH_TILE_MARGIN           (4.0f)
+/* G_Pos_Set forwards every position write here, including movement's own
+ * per-tick ones; only a genuine teleport invalidates the jam counters. */
+#define MOVE_TELEPORT_RESET_DIST        (8.0f)
 /* A shuttle jams against its destination's edge, where the building takes up
  * half the contact ring; the crowd test is correspondingly lower. */
 #define SURROUND_RELEASE_NEIGHBS        (3)
+/* Wall tiles take contact-ring slots a unit could never fill; credit them
+ * toward the crowd test so jams against walls can arm the drain. */
+#define SEEK_WALL_NEIGHB_CREDIT         (3)
 /* A pin candidate only holds when the field's way round costs this much more
  * than the straight line; a few ranks behind a short front spread instead. */
 #define SEEK_PIN_DETOUR                 (40.0f)
@@ -2497,7 +2510,8 @@ static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock,
         }
         }
 
-        nullify_impass_components(uid, &steer_force);
+        /* Walls live in the velocity solve as tile obstacles; the force gets
+         * clipped along the wall tangent there instead of axis-zeroed here. */
         if(PFM_Vec2_Len(&steer_force) > SCALED_MAX_FORCE * 0.01)
             break;
     }
@@ -3080,7 +3094,8 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
             if(!(out->flags & UPDATE_HEADING_GATED)
             && PFM_Vec2_Len(&out->next_velocity) < EPSILON)
                 out->flags |= UPDATE_SEEK_STUCK;
-            if(in->nstat + in->ndyn < SEEK_RELEASE_NEIGHBS)
+            if(in->nstat + in->ndyn + MIN((int)in->ntiles, SEEK_WALL_NEIGHB_CREDIT)
+               < SEEK_RELEASE_NEIGHBS)
                 out->flags |= UPDATE_SEEK_CLEAR;
         }
 
@@ -3177,7 +3192,8 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         if(!(out->flags & UPDATE_HEADING_GATED)
         && PFM_Vec2_Len(&out->next_velocity) < EPSILON)
             out->flags |= UPDATE_SEEK_STUCK;
-        if(in->nstat + in->ndyn < SEEK_RELEASE_NEIGHBS)
+        if(in->nstat + in->ndyn + MIN((int)in->ntiles, SEEK_WALL_NEIGHB_CREDIT)
+           < SEEK_RELEASE_NEIGHBS)
             out->flags |= UPDATE_SEEK_CLEAR;
         break;
     }
@@ -3190,7 +3206,8 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         if(!(out->flags & UPDATE_HEADING_GATED)
         && PFM_Vec2_Len(&out->next_velocity) < EPSILON)
             out->flags |= UPDATE_SEEK_STUCK;
-        if(in->nstat + in->ndyn < SURROUND_RELEASE_NEIGHBS)
+        if(in->nstat + in->ndyn + MIN((int)in->ntiles, SEEK_WALL_NEIGHB_CREDIT)
+           < SURROUND_RELEASE_NEIGHBS)
             out->flags |= UPDATE_SEEK_CLEAR;
 
         if(ms->surround_target_uid == NULL_UID) {
@@ -4052,8 +4069,6 @@ static void do_update_pos(uint32_t uid, vec2_t pos)
     if(!ms)
         return;
 
-    entity_reset_seek_counters(uid);
-
     vec3_t newpos = {
         pos.x,
         unit_height(uid, pos),
@@ -4066,7 +4081,14 @@ static void do_update_pos(uint32_t uid, vec2_t pos)
      */
     khiter_t k = kh_get(pos, s_move_work.gamestate.positions, uid);
     assert(k != kh_end(s_move_work.gamestate.positions));
+    vec3_t oldpos = kh_val(s_move_work.gamestate.positions, k);
     kh_val(s_move_work.gamestate.positions, k) = newpos;
+
+    vec2_t jump;
+    PFM_Vec2_Sub(&pos, &(vec2_t){oldpos.x, oldpos.z}, &jump);
+    if(PFM_Vec2_Len(&jump) > MOVE_TELEPORT_RESET_DIST) {
+        entity_reset_seek_counters(uid);
+    }
 
     if(!ms->blocking)
         return;
@@ -4391,6 +4413,39 @@ static void move_velocity_work(int begin_idx, int end_idx)
 
         const struct flock *flock = in->flock;
 
+        uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, in->ent_uid);
+        struct cp_terrain terrain = (struct cp_terrain){
+            .map = s_move_work.gamestate.map,
+            .layer = Entity_NavLayerWithRadius(flags, in->cp_ent.radius),
+            .max_step = ms->max_speed / hz_count(s_move_work.hz),
+        };
+        terrain.on_blocked = M_NavPositionBlocked(terrain.map, terrain.layer, in->cp_ent.xz_pos);
+
+        /* Walls in the solve: a unit standing on a blocked tile is escaping
+         * and gets none. */
+        if(!terrain.on_blocked && !(flags & ENTITY_FLAG_AIR)) {
+            in->ntiles = M_NavBlockedTilesAround(terrain.map, terrain.layer,
+                in->cp_ent.xz_pos,
+                CLEARPATH_TILE_RADIUS + terrain.max_step + CLEARPATH_TILE_MARGIN,
+                in->tile_obs, CLEARPATH_MAX_TILE_OBS);
+        }
+
+        /* The passing side: the remembered deflection, but never toward a
+         * nearby wall. */
+        int side = in->cp_side ? in->cp_side : 1;
+        if(in->ntiles > 0 && PFM_Vec2_Len(&in->ent_des_v) > EPSILON) {
+            vec2_t centroid = (vec2_t){0.0f, 0.0f};
+            for(size_t t = 0; t < in->ntiles; t++) {
+                PFM_Vec2_Add(&centroid, &in->tile_obs[t], &centroid);
+            }
+            PFM_Vec2_Scale(&centroid, 1.0f / in->ntiles, &centroid);
+            PFM_Vec2_Sub(&centroid, &in->cp_ent.xz_pos, &centroid);
+            float cr = in->ent_des_v.x * centroid.z - in->ent_des_v.z * centroid.x;
+            if(fabsf(cr) > EPSILON) {
+                side = (cr > 0.0f) ? 1 : -1;
+            }
+        }
+
         /* Compute the preferred velocity */
         vec2_t vpref = (vec2_t){NAN, NAN};
         switch(ms->state) {
@@ -4432,8 +4487,7 @@ static void move_velocity_work(int begin_idx, int end_idx)
         default:
             assert(flock);
             vpref = point_seek_vpref(in->ent_uid, flock, in->fsnap,
-                in->ent_des_v, in->has_dest_los, in->speed,
-                in->cp_side ? in->cp_side : 1);
+                in->ent_des_v, in->has_dest_los, in->speed, side);
         }
         assert(vpref.x == vpref.x && vpref.z == vpref.z); /* a NaN vpref would corrupt the integration */
 
@@ -4463,18 +4517,11 @@ static void move_velocity_work(int begin_idx, int end_idx)
             }
         }
 
-        uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, in->ent_uid);
-        struct cp_terrain terrain = (struct cp_terrain){
-            .map = s_move_work.gamestate.map,
-            .layer = Entity_NavLayerWithRadius(flags, in->cp_ent.radius),
-            .max_step = ms->max_speed / hz_count(s_move_work.hz),
-        };
-        terrain.on_blocked = M_NavPositionBlocked(terrain.map, terrain.layer, in->cp_ent.xz_pos);
-
         /* Compute the velocity constrainted by potential collisions */
         struct cp_solve_diag diag;
         vec2_t new_vel = G_ClearPath_NewVelocity(in->cp_ent, in->ent_uid,
             vpref, in->dyn_neighbs, in->ndyn, in->stat_neighbs, in->nstat,
+            in->tile_obs, in->ntiles,
             terrain, in->cp_side, in->save_debug, &diag);
 
         out->ent_uid = in->ent_uid;
@@ -4816,6 +4863,8 @@ static void move_prepare_work(enum movement_hz hz)
     s_move_work.out = stalloc(&s_move_work.mem, ndynamic * sizeof(struct move_work_out));
     s_move_work.neighb_mem = stalloc(&s_move_work.mem,
         ndynamic * 2 * MAX_NEIGHBOURS * sizeof(struct cp_ent));
+    s_move_work.tile_mem = stalloc(&s_move_work.mem,
+        ndynamic * CLEARPATH_MAX_TILE_OBS * sizeof(vec2_t));
     s_move_work.trace = (s_move_trace_min_radius >= 0.0f)
                       ? stalloc(&s_move_work.mem, ndynamic * sizeof(struct move_trace))
                       : NULL;
@@ -4866,8 +4915,10 @@ static void move_push_work(struct move_work_in in)
     size_t idx = s_move_work.nwork++;
     in.dyn_neighbs  = s_move_work.neighb_mem + (2 * idx + 0) * MAX_NEIGHBOURS;
     in.stat_neighbs = s_move_work.neighb_mem + (2 * idx + 1) * MAX_NEIGHBOURS;
+    in.tile_obs = s_move_work.tile_mem + idx * CLEARPATH_MAX_TILE_OBS;
     in.ndyn = 0;
     in.nstat = 0;
+    in.ntiles = 0;
     s_move_work.in[idx] = in;
     if(s_move_work.trace) {
         s_move_work.trace[idx] = (struct move_trace){
@@ -5161,7 +5212,7 @@ static void move_trace_emit(void)
 
         fprintf(stdout, "[mv-trace] %u,%u,%.2f,%d,%s,%.3f,%.3f,%.2f,"
             "%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,"
-            "%u,%d,%u,%u,%u,%.3f,%.2f,%d,%.4f,%.4f,%d,%d\n",
+            "%u,%d,%u,%u,%u,%.3f,%.2f,%d,%.4f,%.4f,%d,%d,%u\n",
             s_move_trace_tick, uid, radius, layer, s_state_str[ms->state],
             in->cp_ent.xz_pos.x, in->cp_ent.xz_pos.z, in->speed,
             in->ent_des_v.x, in->ent_des_v.z, tr->vpref.x, tr->vpref.z,
@@ -5169,7 +5220,7 @@ static void move_trace_emit(void)
             move_trace_flags(in, out, ms, aux), tr->retries,
             (unsigned)in->ndyn, (unsigned)in->nstat,
             tr->nn_uid, tr->nn_dist, tr->nn_radius, (int)tr->nn_seen,
-            tr->sep.x, tr->sep.z, tr->sep_n, out->cp_side);
+            tr->sep.x, tr->sep.z, tr->sep_n, out->cp_side, (unsigned)in->ntiles);
 
         if(tr->probed) {
             fprintf(stdout, "[mv-probe] %u,%u,%d,%d,%d,%d,%u", s_move_trace_tick, uid,

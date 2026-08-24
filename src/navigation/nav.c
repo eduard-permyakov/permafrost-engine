@@ -4712,6 +4712,50 @@ bool N_PositionPathable(vec2_t xz_pos, enum nav_layer layer, void *nav_private, 
     return chunk->cost_base[tile.tile_r][tile.tile_c] != COST_IMPASSABLE;
 }
 
+int N_BlockedTilesAround(void *nav_private, vec3_t map_pos, int layer, vec2_t xz,
+                         float reach, vec2_t *out_centres, int max)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct tile_desc base;
+    if(!M_Tile_DescForPoint2D(res, map_pos, xz, &base))
+        return 0;
+
+    vec2_t dims = N_TileDims();
+    int span = (int)ceilf(reach / dims.x);
+    int ret = 0;
+
+    for(int dr = -span; dr <= span; dr++) {
+    for(int dc = -span; dc <= span; dc++) {
+
+        if(ret == max)
+            return ret;
+
+        struct tile_desc td = base;
+        if(!M_Tile_RelativeDesc(res, &td, dc, dr))
+            continue;
+
+        const struct nav_chunk *chunk =
+            &priv->chunks[layer][IDX(td.chunk_r, priv->width, td.chunk_c)];
+        if(chunk->cost_base[td.tile_r][td.tile_c] != COST_IMPASSABLE
+        && chunk->blockers[td.tile_r][td.tile_c] == 0)
+            continue;
+
+        struct box bounds = M_Tile_Bounds(res, map_pos, td);
+        vec2_t centre = (vec2_t){bounds.x - bounds.width / 2.0f,
+                                 bounds.z + bounds.height / 2.0f};
+        vec2_t diff;
+        PFM_Vec2_Sub(&centre, &xz, &diff);
+        if(PFM_Vec2_Len(&diff) > reach)
+            continue;
+
+        out_centres[ret++] = centre;
+    }}
+    return ret;
+}
+
 bool N_PositionBlocked(vec2_t xz_pos, enum nav_layer layer, void *nav_private, vec3_t map_pos)
 {
     struct nav_private *priv = nav_private;

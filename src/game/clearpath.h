@@ -49,6 +49,11 @@
  */
 #define CLEARPATH_NEIGHBOUR_RADIUS (10.0f)
 #define CLEARPATH_NEIGHBOUR_SCALE  (10.0f / 6.5f)
+/* Blocked tiles constrain the unit's CENTRE (the layer's dilation already
+ * accounts for the body): the disc covers the 4x4 tile alone.
+ */
+#define CLEARPATH_TILE_RADIUS      (2.8284271f)
+#define CLEARPATH_MAX_TILE_OBS     (12)
 /* This is added to the entity's radius so that it will take wider turns
  * and leave this as a buffer between it and the obstacle.
  */
@@ -100,6 +105,8 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent ent,
                                size_t ndyn,
                                struct cp_ent *stat_neighbs,
                                size_t nstat,
+                               const vec2_t *tile_obs,
+                               size_t ntiles,
                                struct cp_terrain terrain,
                                int side,
                                bool save_debug,
