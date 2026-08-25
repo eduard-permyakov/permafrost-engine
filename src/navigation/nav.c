@@ -3970,9 +3970,14 @@ static vec2_t n_interpolated_flow_dir(struct nav_private *priv, struct target ta
 
     /* On a watershed (opposite dirs blending to nearly nothing) the residual
      * must not be renormalised into a confident direction; the tile's own
-     * sample is the honest answer. */
-    if(wsum < 1e-6f || PFM_Vec2_Len(&acc) < 0.35f * wsum)
-        return N_FlowDir(base_ff->field[base_tile.tile_r][base_tile.tile_c].dir_idx);
+     * sample is the honest answer, unless it is void: that is a stamp hole to
+     * blend over, so zero only when the whole neighbourhood is void.
+     */
+    if(wsum < 1e-6f || PFM_Vec2_Len(&acc) < 0.35f * wsum) {
+        enum flow_dir own = base_ff->field[base_tile.tile_r][base_tile.tile_c].dir_idx;
+        if(own != FD_NONE || wsum < 1e-6f)
+            return N_FlowDir(own);
+    }
 
     PFM_Vec2_Normal(&acc, &acc);
     return acc;
