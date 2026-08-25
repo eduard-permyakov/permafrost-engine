@@ -4718,7 +4718,7 @@ bool N_PositionPathable(vec2_t xz_pos, enum nav_layer layer, void *nav_private, 
 }
 
 int N_BlockedTilesAround(void *nav_private, vec3_t map_pos, int layer, vec2_t xz,
-                         float reach, vec2_t *out_centres, int max)
+                         float reach, vec2_t *out_centres, int max, int *out_nterrain)
 {
     struct nav_private *priv = nav_private;
     struct map_resolution res;
@@ -4731,6 +4731,8 @@ int N_BlockedTilesAround(void *nav_private, vec3_t map_pos, int layer, vec2_t xz
     vec2_t dims = N_TileDims();
     int span = (int)ceilf(reach / dims.x);
     int ret = 0;
+    if(out_nterrain)
+        *out_nterrain = 0;
 
     for(int dr = -span; dr <= span; dr++) {
     for(int dc = -span; dc <= span; dc++) {
@@ -4756,6 +4758,8 @@ int N_BlockedTilesAround(void *nav_private, vec3_t map_pos, int layer, vec2_t xz
         if(PFM_Vec2_Len(&diff) > reach)
             continue;
 
+        if(out_nterrain && chunk->cost_base[td.tile_r][td.tile_c] == COST_IMPASSABLE)
+            (*out_nterrain)++;
         out_centres[ret++] = centre;
     }}
     return ret;

@@ -815,10 +815,10 @@ int M_NavFlowFieldDirAt(const struct map *map, struct target target, vec2_t xz)
 }
 
 int M_NavBlockedTilesAround(const struct map *map, int layer, vec2_t xz, float reach,
-                            vec2_t *out_centres, int max)
+                            vec2_t *out_centres, int max, int *out_nterrain)
 {
     return N_BlockedTilesAround(map->nav_private, map->pos, layer, xz, reach,
-        out_centres, max);
+        out_centres, max, out_nterrain);
 }
 
 void M_NavServicePathRequest(const struct map *map, struct target target, vec2_t xz)

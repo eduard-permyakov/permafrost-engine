@@ -342,6 +342,12 @@ struct move_work_in{
     size_t         nstat;
     size_t         ndyn;
     size_t         ntiles;
+    /* In-reach neighbours in non-still movement states (jam evidence) */
+    size_t         njam;
+    /* Terrain-impassable subset of the tile obstacles */
+    size_t         nterrain;
+    /* The field sample was void and the unit is coasting toward the goal */
+    bool           field_void;
     bool           has_dest_los;
     bool           needs_los_build;
     bool           los_queried;
@@ -618,10 +624,17 @@ static struct result navigation_tick_task(void *arg);
 #define SURROUND_LOW_WATER_Z            (CHUNK_HEIGHT/3.0f)
 #define SURROUND_HIGH_WATER_Z           (CHUNK_HEIGHT/2.0f)
 
+/* How long a unit heads for its goal across a stale hole in the field before
+ * treating the destination as genuinely unreachable.
+ */
+#define FIELD_VOID_COAST_TICKS          (40)
+
 /* A unit standing still this long inside a crowd becomes a soft blocker,
  * released once the local crowd thins for the hold duration. */
 #define SEEK_STUCK_BLOCK_TICKS          (10)
-/* ClearPath neighbours (within CLEARPATH_NEIGHBOUR_SCALE radius sums): marching ~4, jammed 6+ */
+/* Neighbours in ClearPath reach that are themselves trying to move: a jam is
+ * mutual obstruction, so parked bodies are not evidence of one.
+ */
 #define SEEK_RELEASE_NEIGHBS            (6)
 #define SEEK_RELEASE_HOLD_TICKS         (20)
 /* Stagger registrations so a mass jam doesn't spike the invalidations */
@@ -637,8 +650,10 @@ static struct result navigation_tick_task(void *arg);
 /* A shuttle jams against its destination's edge, where the building takes up
  * half the contact ring; the crowd test is correspondingly lower. */
 #define SURROUND_RELEASE_NEIGHBS        (3)
-/* Wall tiles take contact-ring slots a unit could never fill; credit them
- * toward the crowd test so jams against walls can arm the drain. */
+/* Terrain walls take contact-ring slots a unit could never fill; credit them
+ * toward the crowd test so jams against walls can arm the drain. Blocker
+ * stamps get none: a stamp is the output of walling, not evidence for it.
+ */
 #define SEEK_WALL_NEIGHB_CREDIT         (3)
 /* A pin candidate only holds when the field's way round costs this much more
  * than the straight line; a few ranks behind a short front spread instead. */
@@ -3094,7 +3109,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
             if(!(out->flags & UPDATE_HEADING_GATED)
             && PFM_Vec2_Len(&out->next_velocity) < EPSILON)
                 out->flags |= UPDATE_SEEK_STUCK;
-            if(in->nstat + in->ndyn + MIN((int)in->ntiles, SEEK_WALL_NEIGHB_CREDIT)
+            if(in->njam + MIN((int)in->nterrain, SEEK_WALL_NEIGHB_CREDIT)
                < SEEK_RELEASE_NEIGHBS)
                 out->flags |= UPDATE_SEEK_CLEAR;
         }
@@ -3192,7 +3207,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         if(!(out->flags & UPDATE_HEADING_GATED)
         && PFM_Vec2_Len(&out->next_velocity) < EPSILON)
             out->flags |= UPDATE_SEEK_STUCK;
-        if(in->nstat + in->ndyn + MIN((int)in->ntiles, SEEK_WALL_NEIGHB_CREDIT)
+        if(in->njam + MIN((int)in->nterrain, SEEK_WALL_NEIGHB_CREDIT)
            < SEEK_RELEASE_NEIGHBS)
             out->flags |= UPDATE_SEEK_CLEAR;
         break;
@@ -3206,9 +3221,10 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         if(!(out->flags & UPDATE_HEADING_GATED)
         && PFM_Vec2_Len(&out->next_velocity) < EPSILON)
             out->flags |= UPDATE_SEEK_STUCK;
-        if(in->nstat + in->ndyn + MIN((int)in->ntiles, SEEK_WALL_NEIGHB_CREDIT)
+        if(in->njam + MIN((int)in->nterrain, SEEK_WALL_NEIGHB_CREDIT)
            < SURROUND_RELEASE_NEIGHBS)
             out->flags |= UPDATE_SEEK_CLEAR;
+
 
         if(ms->surround_target_uid == NULL_UID) {
             out->flags |= UPDATE_SET_STATE;
@@ -3539,10 +3555,12 @@ static int near_ent_dist_cmp(const void *a, const void *b)
 
 static void find_neighbours(uint32_t uid,
                             struct cp_ent *out_dyn, size_t *out_ndyn,
-                            struct cp_ent *out_stat, size_t *out_nstat)
+                            struct cp_ent *out_stat, size_t *out_nstat,
+                            size_t *out_njam)
 {
     *out_ndyn = 0;
     *out_nstat = 0;
+    *out_njam = 0;
 
     /* For the ClearPath algorithm, we only consider entities with
      * ENTITY_FLAG_MOVABLE set, as they are the only ones that may need
@@ -3603,6 +3621,10 @@ static void find_neighbours(uint32_t uid,
 
         struct movestate *ms = movestate_get(curr);
         assert(ms);
+
+        /* Parked bodies are workforce, not crowd. */
+        if(!ent_still(ms))
+            (*out_njam)++;
 
         vec2_t curr_xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr);
         struct cp_ent newdesc = (struct cp_ent) {
@@ -4403,7 +4425,7 @@ static void move_velocity_work(int begin_idx, int end_idx)
         /* Holds its ground; neighbours still gathered for the release test. */
         if(movestate_aux_get(in->ent_uid)->soft_blocking) {
             find_neighbours(in->ent_uid, in->dyn_neighbs, &in->ndyn,
-                in->stat_neighbs, &in->nstat);
+                in->stat_neighbs, &in->nstat, &in->njam);
             out->ent_uid = in->ent_uid;
             out->ent_vel = (vec2_t){0.0f, 0.0f};
             out->cp_flags = 0;
@@ -4424,10 +4446,12 @@ static void move_velocity_work(int begin_idx, int end_idx)
         /* Walls in the solve: a unit standing on a blocked tile is escaping
          * and gets none. */
         if(!terrain.on_blocked && !(flags & ENTITY_FLAG_AIR)) {
+            int nterrain = 0;
             in->ntiles = M_NavBlockedTilesAround(terrain.map, terrain.layer,
                 in->cp_ent.xz_pos,
                 CLEARPATH_TILE_RADIUS + terrain.max_step + CLEARPATH_TILE_MARGIN,
-                in->tile_obs, CLEARPATH_MAX_TILE_OBS);
+                in->tile_obs, CLEARPATH_MAX_TILE_OBS, &nterrain);
+            in->nterrain = nterrain;
         }
 
         /* The passing side: the remembered deflection, but never toward a
@@ -4493,7 +4517,7 @@ static void move_velocity_work(int begin_idx, int end_idx)
 
         /* Find the entity's neighbours */
         find_neighbours(in->ent_uid, in->dyn_neighbs, &in->ndyn,
-            in->stat_neighbs, &in->nstat);
+            in->stat_neighbs, &in->nstat, &in->njam);
 
         if(traced) {
             move_trace_velocity(in, tr, vpref);
@@ -4919,6 +4943,9 @@ static void move_push_work(struct move_work_in in)
     in.ndyn = 0;
     in.nstat = 0;
     in.ntiles = 0;
+    in.njam = 0;
+    in.nterrain = 0;
+    in.field_void = false;
     s_move_work.in[idx] = in;
     if(s_move_work.trace) {
         s_move_work.trace[idx] = (struct move_trace){

@@ -426,9 +426,11 @@ bool   N_FlowFieldPathLength(void *nav_private, vec3_t map_pos, struct target ta
                              int max_steps, float *out_len, vec2_t *out_end_xz, bool *out_capped);
 /* Raw flow direction of the tile under xz in the cached field, -1 if none */
 int    N_FlowFieldDirAt(void *nav_private, vec3_t map_pos, struct target target, vec2_t xz);
-/* Centres of impassable or blocker-occupied tiles within reach of xz */
+/* Centres of impassable or blocker-occupied tiles within reach of xz;
+ * out_nterrain (optional) reports how many are terrain-impassable.
+ */
 int    N_BlockedTilesAround(void *nav_private, vec3_t map_pos, int layer, vec2_t xz,
-                            float reach, vec2_t *out_centres, int max);
+                            float reach, vec2_t *out_centres, int max, int *out_nterrain);
 
 /* ------------------------------------------------------------------------
  * Build (and cache) the field that 'target' needs for the chunk holding 'xz',
