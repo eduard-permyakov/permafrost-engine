@@ -652,6 +652,9 @@ static struct result navigation_tick_task(void *arg);
 /* Stand-still answers before the solve is relaxed, and the relaxation's hold */
 #define CP_STALL_RELAX_TICKS            (20)
 #define CP_STALL_RELAX_HOLD             (20)
+/* Walked but got nowhere, over the velocity history */
+#define CP_WOBBLE_NET_FRACTION          (0.25f)
+#define CP_WOBBLE_NET_MAX               (0.5f)
 /* Wall-tile window beyond one step: a tile just outside the step can still
  * clip the corner of a fast diagonal */
 #define CLEARPATH_TILE_MARGIN           (4.0f)
@@ -771,6 +774,8 @@ static SDL_atomic_t            s_cp_ncaptures;
 
 /* pf.debug.log_move_trace_min_radius, hoisted once per tick; negative = off */
 static float                   s_move_trace_min_radius = -1.0f;
+/* Traced whatever their radius, so a session can be driven by the selection */
+static const vec_entity_t     *s_move_trace_sel;
 static unsigned                s_move_trace_tick;
 
 static int                     s_soft_block_budget;
@@ -976,6 +981,7 @@ static void entity_soft_block(uint32_t uid)
         G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid), flags, s_map);
 
     aux->soft_blocking = true;
+    aux->cp_stall_ticks = 0;
     aux->soft_block_pos = pos;
     aux->soft_block_radius = sel_radius;
 
@@ -3460,11 +3466,27 @@ static void ent_update_using_surround_field(uint32_t uid, struct movestate *ms)
  * zero, and it would stand there for good. The landing test keeps a relaxed
  * solve legal, so a window of one is the way out.
  */
+/* A unit shuffling on the spot is as stuck as one standing still */
+static bool ent_wobbling(struct movestate_aux *aux)
+{
+    vec2_t net = (vec2_t){0.0f, 0.0f};
+    float walked = 0.0f;
+
+    for(int i = 0; i < VEL_HIST_LEN; i++) {
+        PFM_Vec2_Add(&net, &aux->vel_hist[i], &net);
+        walked += PFM_Vec2_Len(&aux->vel_hist[i]);
+    }
+    float progress = PFM_Vec2_Len(&net);
+    return walked > EPSILON && progress < CP_WOBBLE_NET_MAX
+        && progress < CP_WOBBLE_NET_FRACTION * walked;
+}
+
 static void entity_apply_cp_stall(uint32_t uid, bool stalled)
 {
     struct movestate_aux *aux = movestate_aux_get(uid);
 
-    aux->cp_stall_ticks = stalled ? MIN(aux->cp_stall_ticks + 1, UINT16_MAX) : 0;
+    bool going_nowhere = stalled || ent_wobbling(aux);
+    aux->cp_stall_ticks = going_nowhere ? MIN(aux->cp_stall_ticks + 1, UINT16_MAX) : 0;
     if(aux->cp_stall_ticks >= CP_STALL_RELAX_TICKS) {
         aux->cp_relax_ticks = CP_STALL_RELAX_HOLD;
     }else if(aux->cp_relax_ticks > 0) {
@@ -3598,9 +3620,12 @@ static void entity_apply_update(uint32_t uid, const struct movestate_patch *patc
          * is wall-worthy regardless of how the cart got there. */
         bool may_wall = aux->seek_progressed || aux->seek_pin_held
                      || ms->state == STATE_SURROUND_ENTITY;
-        if(!aux->soft_blocking && stuck && !clear && may_wall
-        && aux->seek_stuck_ticks >= SEEK_STUCK_BLOCK_TICKS
-        && s_soft_block_budget > 0) {
+        /* A relaxed solve has had its window and the unit is still going
+         * nowhere: too few neighbours to read as a jam, yet plainly wedged.
+         */
+        bool relax_spent = aux->cp_stall_ticks >= CP_STALL_RELAX_TICKS + CP_STALL_RELAX_HOLD;
+        if(!aux->soft_blocking && may_wall && s_soft_block_budget > 0
+        && (relax_spent || (stuck && !clear && aux->seek_stuck_ticks >= SEEK_STUCK_BLOCK_TICKS))) {
             s_soft_block_budget--;
             entity_soft_block(uid);
         }else if(aux->soft_blocking && aux->seek_clear_ticks >= SEEK_RELEASE_HOLD_TICKS) {
@@ -4943,9 +4968,9 @@ static void move_consume_work_results(void)
     s_soft_block_budget = SEEK_BLOCK_BUDGET_PER_TICK;
     for(int i = 0; i < s_move_work.nwork; i++) {
         struct move_work_out *out = &s_move_work.out[i];
+        entity_apply_cp_stall(out->ent_uid, !!(out->cp_flags & CP_OUT_STALLED));
         entity_apply_update(out->ent_uid, &out->patch);
         entity_apply_cp_side(out->ent_uid, out->cp_side);
-        entity_apply_cp_stall(out->ent_uid, !!(out->cp_flags & CP_OUT_STALLED));
     }
 
     /* All this tick's position changes are enqueued; apply the batched fog
@@ -5017,6 +5042,15 @@ static void move_build_flock_snaps(void)
     }
 }
 
+static bool ent_selected(uint32_t uid)
+{
+    for(int i = 0; s_move_trace_sel && i < vec_size(s_move_trace_sel); i++) {
+        if(vec_AT(s_move_trace_sel, i) == uid)
+            return true;
+    }
+    return false;
+}
+
 static void move_push_work(struct move_work_in in)
 {
     size_t idx = s_move_work.nwork++;
@@ -5033,6 +5067,7 @@ static void move_push_work(struct move_work_in in)
     if(s_move_work.trace) {
         s_move_work.trace[idx] = (struct move_trace){
             .traced = (in.cp_ent.radius >= s_move_trace_min_radius)
+                   || ent_selected(in.ent_uid)
         };
     }
 }
@@ -5300,6 +5335,14 @@ static unsigned move_trace_flags(const struct move_work_in *in, const struct mov
  */
 static void move_trace_emit(void)
 {
+    if(s_move_trace_tick % 20 == 0 && vec_size(s_move_trace_sel) > 0) {
+        fprintf(stdout, "[mv-sel] %u", s_move_trace_tick);
+        for(int i = 0; i < vec_size(s_move_trace_sel); i++) {
+            fprintf(stdout, ",%u", vec_AT(s_move_trace_sel, i));
+        }
+        fputc('\n', stdout);
+    }
+
     for(size_t i = 0; i < s_move_work.nwork; i++) {
 
         const struct move_trace *tr = &s_move_work.trace[i];
@@ -6036,6 +6079,8 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
     s_move_trace_min_radius =
         (Settings_Get("pf.debug.log_move_trace_min_radius", &trace_setting) == SS_OKAY)
         ? trace_setting.as_float : -1.0f;
+    enum selection_type seltype;
+    s_move_trace_sel = G_Sel_Get(&seltype);
 
     move_consume_work_results();
 
