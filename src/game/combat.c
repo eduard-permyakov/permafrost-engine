@@ -2485,6 +2485,22 @@ static void entity_compute_update(uint32_t uid, struct combat_work_out *out)
     };
 }
 
+/* Actions whose second argument names another entity rather than a value. */
+static bool action_has_target(enum combat_action action)
+{
+    switch(action) {
+    case COMBAT_ACTION_TARGET_ENEMY:
+    case COMBAT_ACTION_TURN_TO_TARGET:
+    case COMBAT_ACTION_MOVE_IN_RANGE:
+    case COMBAT_ACTION_MOVE_IN_RANGE_IF_STILL:
+    case COMBAT_ACTION_ATTACK_IF_STILL:
+    case COMBAT_ACTION_HOLD_GROUND:
+        return true;
+    default:
+        return false;
+    }
+}
+
 static void entity_apply_update(struct combat_work_out *out)
 {
     uint32_t uid = out->ent_uid;
@@ -2510,7 +2526,16 @@ static void entity_apply_update(struct combat_work_out *out)
         combat_notify_attack_end(uid, cs);
     }
 
-    switch(out->action) {
+    /* The handlers below read live positions, so an action whose target has
+     * been removed since the worker chose it has nothing to do.
+     */
+    enum combat_action action = out->action;
+    if(action_has_target(action)
+    && !G_EntityExists(out->action_args[1].val.as_int)) {
+        action = COMBAT_ACTION_NONE;
+    }
+
+    switch(action) {
     case COMBAT_ACTION_NONE:
         break;
     case COMBAT_ACTION_TARGET_ENEMY: {

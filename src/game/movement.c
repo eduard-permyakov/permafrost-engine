@@ -4045,6 +4045,9 @@ static void do_set_enter_range(uint32_t uid, uint32_t target, float range)
     if(!ms)
         return;
 
+    if(!G_EntityExists(target))
+        return;
+
     vec2_t xz_src = G_Pos_GetXZ(uid);
     vec2_t xz_dst = G_Pos_GetXZ(target);
     float radius = G_GetSelectionRadius(uid);
@@ -4087,10 +4090,11 @@ static void do_set_surround_entity(uint32_t uid, uint32_t target)
     if(!ms)
         return;
 
-    do_stop(uid);
+    if(!G_EntityExists(target))
+        return;
 
-    vec2_t pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, target);
-    do_set_dest(uid, pos, false);
+    do_stop(uid);
+    do_set_dest(uid, G_Pos_GetXZ(target), false);
 
     assert(!ms->blocking);
     ms->state = STATE_SURROUND_ENTITY;
@@ -4327,6 +4331,13 @@ static void move_process_cmds(void)
     while(queue_cmd_pop(&s_move_commands, &cmd)) {
 
         if(cmd.deleted)
+            continue;
+
+        /* The movestate outlives the entity by a tick, so the handlers' own
+         * guards miss an order queued for one that has since died.
+         */
+        if(cmd.type != MOVE_CMD_REMOVE && cmd.type != MOVE_CMD_MAKE_FLOCKS
+        && !G_EntityExists(cmd.uid))
             continue;
 
         switch(cmd.type) {
