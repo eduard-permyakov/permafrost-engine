@@ -350,6 +350,10 @@ struct move_work_in{
     size_t         ntiles;
     /* In-reach neighbours in non-still movement states (jam evidence) */
     size_t         njam;
+    /* Nearest neighbour in reach, and whether this unit gives it the lane */
+    uint32_t       nn_uid;
+    float          nn_dist;
+    bool           hug;
     /* Terrain-impassable subset of the tile obstacles */
     size_t         nterrain;
     /* The field sample was void and the unit is coasting toward the goal */
@@ -658,6 +662,10 @@ static struct result navigation_tick_task(void *arg);
 /* Wall-tile window beyond one step: a tile just outside the step can still
  * clip the corner of a fast diagonal */
 #define CLEARPATH_TILE_MARGIN           (4.0f)
+/* A neighbour this far beyond touching, and this square ahead, is an encounter */
+#define HUG_CONTACT_MARGIN              (2.0f)
+#define HUG_AHEAD_DOT                   (0.3f)
+#define HUG_WALL_MARGIN                 (1.0f)
 /* G_Pos_Set forwards every position write here, including movement's own
  * per-tick ones; only a genuine teleport invalidates the jam counters. */
 #define MOVE_TELEPORT_RESET_DIST        (8.0f)
@@ -710,6 +718,7 @@ enum move_trace_flags{
     MV_TRACE_SURROUND_FIELD  = (1 << 10),
     MV_TRACE_COMBAT_HELD     = (1 << 11),
     MV_TRACE_CP_STALLED      = (1 << 12),
+    MV_TRACE_HUGGING         = (1 << 13),
 };
 
 struct move_trace{
@@ -2415,7 +2424,7 @@ static vec2_t redirect_backward(vec2_t force, vec2_t vdes, int side, float min_g
     if(back >= 0.0f)
         return force;
 
-    vec2_t lat = (vec2_t){vhat.z * side, -vhat.x * side};
+    vec2_t lat = (vec2_t){-vhat.z * side, vhat.x * side};
     vec2_t backward, lateral;
     PFM_Vec2_Scale(&vhat, back * frac, &backward);
     PFM_Vec2_Sub(&force, &backward, &force);
@@ -3648,11 +3657,14 @@ static int near_ent_dist_cmp(const void *a, const void *b)
 static void find_neighbours(uint32_t uid,
                             struct cp_ent *out_dyn, size_t *out_ndyn,
                             struct cp_ent *out_stat, size_t *out_nstat,
-                            size_t *out_njam)
+                            size_t *out_njam,
+                            uint32_t *out_nn_uid, float *out_nn_dist)
 {
     *out_ndyn = 0;
     *out_nstat = 0;
     *out_njam = 0;
+    *out_nn_uid = NULL_UID;
+    *out_nn_dist = INFINITY;
 
     /* For the ClearPath algorithm, we only consider entities with
      * ENTITY_FLAG_MOVABLE set, as they are the only ones that may need
@@ -3718,6 +3730,11 @@ static void find_neighbours(uint32_t uid,
         if(!ent_still(ms))
             (*out_njam)++;
 
+        if(dists[i].dist2 < (*out_nn_dist) * (*out_nn_dist)) {
+            *out_nn_dist = sqrtf(dists[i].dist2);
+            *out_nn_uid = curr;
+        }
+
         vec2_t curr_xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr);
         struct cp_ent newdesc = (struct cp_ent) {
             .xz_pos = curr_xz_pos,
@@ -3727,7 +3744,8 @@ static void find_neighbours(uint32_t uid,
 
         /* A neighbour right at its arrival slot is about to settle and will not yield,
          * so avoid it fully (static) even while it is still moving at speed. */
-        bool at_slot = G_Arrival_NeighbourSettling(&movestate_aux_get(curr)->arrival,
+        struct movestate_aux *curr_aux = movestate_aux_get(curr);
+        bool at_slot = G_Arrival_NeighbourSettling(&curr_aux->arrival,
             curr_xz_pos, newdesc.radius);
 
         if(ent_still(ms) || PFM_Vec2_Len(&ms->velocity) < CLEARPATH_STILL_SPEED || at_slot) {
@@ -4497,6 +4515,72 @@ static void move_trace_velocity(const struct move_work_in *in, struct move_trace
     }
 }
 
+static float wall_distance(const vec2_t *tiles, size_t ntiles, vec2_t pos)
+{
+    float ret = INFINITY;
+    for(size_t i = 0; i < ntiles; i++) {
+        vec2_t diff;
+        PFM_Vec2_Sub((vec2_t*)&tiles[i], &pos, &diff);
+        ret = MIN(ret, PFM_Vec2_Len(&diff));
+    }
+    return ret;
+}
+
+/* Beside a wall a wedged pair cannot both take the open lane. Both evaluate the
+ * same test, so exactly one gives way: the one with less room to the wall, and
+ * on a tie the lower uid. A pair that is moving needs no arbitration.
+ */
+static bool ent_hugs_wall(const struct move_work_in *in)
+{
+    if(in->ntiles == 0 || in->nn_uid == NULL_UID)
+        return false;
+    if(PFM_Vec2_Len((vec2_t*)&in->ent_des_v) < EPSILON)
+        return false;
+    if(movestate_aux_get(in->ent_uid)->cp_stall_ticks == 0
+    || movestate_aux_get(in->nn_uid)->cp_stall_ticks == 0)
+        return false;
+
+    float nn_radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, in->nn_uid);
+    if(in->nn_dist > in->cp_ent.radius + nn_radius + HUG_CONTACT_MARGIN)
+        return false;
+
+    const struct movestate *nn_ms = movestate_get(in->nn_uid);
+    if(!nn_ms || ent_still(nn_ms))
+        return false;
+
+    vec2_t nn_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, in->nn_uid);
+    vec2_t ahead, vhat;
+    PFM_Vec2_Sub(&nn_pos, (vec2_t*)&in->cp_ent.xz_pos, &ahead);
+    if(PFM_Vec2_Len(&ahead) < EPSILON)
+        return false;
+    PFM_Vec2_Normal(&ahead, &ahead);
+    PFM_Vec2_Normal((vec2_t*)&in->ent_des_v, &vhat);
+    if(PFM_Vec2_Dot(&ahead, &vhat) < HUG_AHEAD_DOT)
+        return false;
+
+    float mine = wall_distance(in->tile_obs, in->ntiles, in->cp_ent.xz_pos);
+    float theirs = wall_distance(in->tile_obs, in->ntiles, nn_pos);
+    if(fabsf(mine - theirs) > HUG_WALL_MARGIN)
+        return mine < theirs;
+    return in->ent_uid < in->nn_uid;
+}
+
+/* Keep what runs along the wall, drop the sideways detour. */
+static vec2_t hug_wall_vpref(vec2_t vpref, vec2_t vdes, int side)
+{
+    vec2_t vhat;
+    PFM_Vec2_Normal(&vdes, &vhat);
+
+    vec2_t lat = (vec2_t){-vhat.z * side, vhat.x * side};
+    float along = PFM_Vec2_Dot(&vpref, &lat);
+    if(along <= 0.0f)
+        return vpref;
+
+    PFM_Vec2_Scale(&lat, along, &lat);
+    PFM_Vec2_Sub(&vpref, &lat, &vpref);
+    return vpref;
+}
+
 /* Standing is a real answer in a crowd and a wedge in a wall pocket, so the
  * two are told apart by how long it persists, not here.
  */
@@ -4529,7 +4613,7 @@ static void move_velocity_work(int begin_idx, int end_idx)
         /* Holds its ground; neighbours still gathered for the release test. */
         if(movestate_aux_get(in->ent_uid)->soft_blocking) {
             find_neighbours(in->ent_uid, in->dyn_neighbs, &in->ndyn,
-                in->stat_neighbs, &in->nstat, &in->njam);
+                in->stat_neighbs, &in->nstat, &in->njam, &in->nn_uid, &in->nn_dist);
             out->ent_uid = in->ent_uid;
             out->ent_vel = (vec2_t){0.0f, 0.0f};
             out->cp_flags = 0;
@@ -4561,8 +4645,8 @@ static void move_velocity_work(int begin_idx, int end_idx)
             in->nterrain = nterrain;
         }
 
-        /* The passing side: the remembered deflection, but never toward a
-         * nearby wall. */
+        /* The passing side the unit is committed to, in cp_side_of's sense:
+         * the remembered deflection, but never toward a nearby wall. */
         int side = in->cp_side ? in->cp_side : 1;
         if(in->ntiles > 0 && PFM_Vec2_Len(&in->ent_des_v) > EPSILON) {
             vec2_t centroid = (vec2_t){0.0f, 0.0f};
@@ -4573,7 +4657,7 @@ static void move_velocity_work(int begin_idx, int end_idx)
             PFM_Vec2_Sub(&centroid, &in->cp_ent.xz_pos, &centroid);
             float cr = in->ent_des_v.x * centroid.z - in->ent_des_v.z * centroid.x;
             if(fabsf(cr) > EPSILON) {
-                side = (cr > 0.0f) ? 1 : -1;
+                side = (cr > 0.0f) ? -1 : 1;
             }
         }
 
@@ -4624,7 +4708,12 @@ static void move_velocity_work(int begin_idx, int end_idx)
 
         /* Find the entity's neighbours */
         find_neighbours(in->ent_uid, in->dyn_neighbs, &in->ndyn,
-            in->stat_neighbs, &in->nstat, &in->njam);
+            in->stat_neighbs, &in->nstat, &in->njam, &in->nn_uid, &in->nn_dist);
+
+        in->hug = ent_hugs_wall(in);
+        if(in->hug) {
+            vpref = hug_wall_vpref(vpref, in->ent_des_v, side);
+        }
 
         if(traced) {
             move_trace_velocity(in, tr, vpref);
@@ -4653,7 +4742,7 @@ static void move_velocity_work(int begin_idx, int end_idx)
         vec2_t new_vel = G_ClearPath_NewVelocity(in->cp_ent, in->ent_uid,
             vpref, in->dyn_neighbs, in->ndyn, in->stat_neighbs, in->nstat,
             in->tile_obs, in->ntiles,
-            terrain, in->cp_side, relax, in->save_debug, &diag);
+            terrain, side, relax, in->save_debug, &diag);
 
         out->ent_uid = in->ent_uid;
         out->ent_vel = new_vel;
@@ -5062,6 +5151,9 @@ static void move_push_work(struct move_work_in in)
     in.ntiles = 0;
     in.njam = 0;
     in.nterrain = 0;
+    in.nn_uid = NULL_UID;
+    in.nn_dist = INFINITY;
+    in.hug = false;
     in.field_void = false;
     s_move_work.in[idx] = in;
     if(s_move_work.trace) {
@@ -5318,6 +5410,7 @@ static unsigned move_trace_flags(const struct move_work_in *in, const struct mov
     ret |= (out->cp_flags & CP_OUT_GAVE_UP)            ? MV_TRACE_CP_GAVE_UP      : 0;
     ret |= (out->cp_flags & CP_OUT_RETRY_OK)           ? MV_TRACE_CP_RETRY_OK     : 0;
     ret |= (out->cp_flags & CP_OUT_STALLED)            ? MV_TRACE_CP_STALLED      : 0;
+    ret |= in->hug                                     ? MV_TRACE_HUGGING         : 0;
     ret |= (out->patch.flags & UPDATE_VETO_UNPATHABLE) ? MV_TRACE_VETO_UNPATHABLE : 0;
     ret |= (out->patch.flags & UPDATE_VETO_BLOCKED)    ? MV_TRACE_VETO_BLOCKED    : 0;
     ret |= aux->soft_blocking                          ? MV_TRACE_SOFT_BLOCKING   : 0;
