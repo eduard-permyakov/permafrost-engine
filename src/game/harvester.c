@@ -680,6 +680,10 @@ static void entity_try_retarget(uint32_t uid)
     const char *rname = hs->res_name;
 
     finish_harvesting(hs, uid);
+    if(!rname) {
+        entity_try_drop_off(uid);
+        return;
+    }
     entity_try_gather_nearest(uid, rname);
 }
 
@@ -740,8 +744,16 @@ static void clear_queued_command(uint32_t uid)
         break;
     }
     case CMD_REPLENISH: {
-        if(G_EntityExists(arg) && !G_EntityIsZombie(arg)) {
-            G_Harvester_ReplenishResource(uid, arg);
+        if(G_EntityExists(arg) && !G_EntityIsZombie(arg)
+        && !G_Harvester_ReplenishResource(uid, arg)) {
+            /* The drop-off leg already cleared the harvest state; retarget by
+             * the resource the plot replenishes.
+             */
+            if(G_FlagsGet(arg) & ENTITY_FLAG_RESOURCE) {
+                entity_try_gather_nearest(uid, G_Resource_GetName(arg));
+            }else{
+                entity_try_drop_off(uid);
+            }
         }
         break;
     }
@@ -803,11 +815,15 @@ static void on_harvest_anim_finished(void *user, void *event)
 
         if(G_Resource_GetReplenishable(hs->res_uid)) {
 
-            if(G_Resource_IsReplenishing(hs->res_uid)) {
-                G_Harvester_ReplenishResource(uid, hs->res_uid);
-            }else{
+            /* Nothing can fetch the replenish resources right now; move on to
+             * a productive resource rather than retry every anim cycle.
+             */
+            if(!G_Resource_IsReplenishing(hs->res_uid)) {
                 G_Resource_SetReplenishing(hs->res_uid);
-                G_Harvester_ReplenishResource(uid, hs->res_uid);
+            }
+            if(!G_Harvester_ReplenishResource(uid, hs->res_uid)) {
+                entity_try_retarget(uid);
+                return;
             }
         }else{
             E_Entity_NotifyImmediate(EVENT_RESOURCE_EXHAUSTED, hs->res_uid, NULL, ES_ENGINE);
