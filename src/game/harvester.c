@@ -690,7 +690,8 @@ static void entity_try_retarget(uint32_t uid)
 uint32_t target_resource(uint32_t uid, struct hstate *hs, const char *rname)
 {
     bool resource = false;
-    if((hs->res_uid != NULL_UID) && !(G_FlagsGet(hs->res_uid) & ENTITY_FLAG_ZOMBIE)) {
+    if((hs->res_uid != NULL_UID) && G_EntityExists(hs->res_uid)
+    && !(G_FlagsGet(hs->res_uid) & ENTITY_FLAG_ZOMBIE)) {
         resource = true;
     }
     if(!resource) {
@@ -1118,6 +1119,11 @@ static void on_arrive_at_transport_dest(void *user, void *event)
      * begin work immediately.
      */
     uint32_t dest_uid = hs->transport_dest_uid;
+    if(!G_EntityExists(dest_uid) || G_EntityIsZombie(dest_uid)) {
+        finish_transporing(hs);
+        return;
+    }
+
     if((G_FlagsGet(dest_uid) & ENTITY_FLAG_RESOURCE)
     && !G_Resource_IsReplenishing(dest_uid)
     && G_Harvester_GetGatherSpeed(uid, G_Resource_GetName(dest_uid)) > 0
@@ -1128,8 +1134,7 @@ static void on_arrive_at_transport_dest(void *user, void *event)
         return;
     }
 
-    if((!G_EntityExists(dest_uid) || G_EntityIsZombie(dest_uid))
-    || !(G_FlagsGet(dest_uid) & ENTITY_FLAG_STORAGE_SITE)
+    if(!(G_FlagsGet(dest_uid) & ENTITY_FLAG_STORAGE_SITE)
     || !M_NavObjAdjacent(s_map, uid, dest_uid)) {
         /* harvester could not reach the destination storage site */
         finish_transporing(hs);
