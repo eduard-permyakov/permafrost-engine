@@ -1947,6 +1947,12 @@ static void entity_target_enemy(uint32_t uid, uint32_t enemy)
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
 
+    /* Either party may have been removed since the work snapshot chose this
+     * pairing, and the positions read below are live.
+     */
+    if(!G_EntityExists(uid) || !G_EntityExists(enemy))
+        return;
+
     if(entity_can_attack(uid, enemy)) {
 
         assert(cs->stance == COMBAT_STANCE_AGGRESSIVE 
