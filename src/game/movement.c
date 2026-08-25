@@ -2011,10 +2011,14 @@ static bool seek_pin_vdes(uint32_t uid, vec2_t pos_xz, vec2_t *out, bool *out_he
     return true;
 }
 
-static vec2_t ent_desired_velocity(uint32_t uid, struct flock *fl,
-                                   vec2_t cell_arrival_vdes, bool has_dest_los,
-                                   bool *out_seek_pinned)
+static vec2_t ent_desired_velocity(struct move_work_in *in)
 {
+    uint32_t uid = in->ent_uid;
+    struct flock *fl = in->flock;
+    vec2_t cell_arrival_vdes = in->cell_arrival_vdes;
+    bool has_dest_los = in->has_dest_los;
+    bool *out_seek_pinned = &in->seek_pinned;
+
     const struct movestate *ms = movestate_get(uid);
     vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
     const struct map *map = s_move_work.gamestate.map;
@@ -2050,7 +2054,6 @@ static vec2_t ent_desired_velocity(uint32_t uid, struct flock *fl,
         struct movestate *mms = movestate_get(uid);
         struct arrival_state *as = flock_arrival_for_ent(fl, uid);
         vec2_t arrival_vel;
-        struct move_work_in *vin = work_input_for_uid(uid);
         if(as && G_Arrival_DesiredVelocity(as, &movestate_aux_get(uid)->arrival, s_map,
             map, pos_xz, mms->velocity, has_dest_los, &arrival_vel))
             return arrival_vel;
@@ -2076,8 +2079,7 @@ static vec2_t ent_desired_velocity(uint32_t uid, struct flock *fl,
         if(PFM_Vec2_Len(&togoal) < EPSILON)
             return field_vdes;
         PFM_Vec2_Normal(&togoal, &togoal);
-        if(vin)
-            vin->field_void = true;
+        in->field_void = true;
         return togoal;
     }
     }
@@ -4794,8 +4796,7 @@ static struct result move_dv_task(void *arg)
     for(int i = move_arg->begin_idx; i <= move_arg->end_idx; i++) {
 
         struct move_work_in *in = &s_move_work.in[i];
-        in->ent_des_v = ent_desired_velocity(in->ent_uid, in->flock,
-            in->cell_arrival_vdes, in->has_dest_los, &in->seek_pinned);
+        in->ent_des_v = ent_desired_velocity(in);
         s_move_work.out[i].ent_des_v = in->ent_des_v;
         ncomputed++;
 
