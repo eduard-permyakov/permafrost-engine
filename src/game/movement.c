@@ -231,6 +231,8 @@ struct movestate_aux{
      * the units behind it around the clump. Transient. */
     uint16_t           seek_stuck_ticks;
     uint16_t           seek_clear_ticks;
+    /* Consecutive ticks coasting through a stale hole in the flow field */
+    uint16_t           field_void_ticks;
     /* Set once the unit has been flowing since its last order; only then may
      * it wall itself as jam-stuck (a queued launch rear is not a jam). */
     bool               seek_progressed;
@@ -288,6 +290,7 @@ enum movestate_flags{
     UPDATE_SEEK_CLEAR       = (1 << 17),
     /* The seek pin held this tick */
     UPDATE_SEEK_PINNED      = (1 << 18),
+    UPDATE_FIELD_VOID       = (1 << 19),
     /* Diagnostic only: the step was refused by the landing tile */
     UPDATE_VETO_UNPATHABLE  = (1 << 19),
     UPDATE_VETO_BLOCKED     = (1 << 20)
@@ -589,6 +592,8 @@ static bool ent_still(const struct movestate *ms);
 static void move_notify_motion_start(uint32_t uid, struct movestate *ms);
 static void move_notify_motion_end(uint32_t uid);
 static void do_update_pos(uint32_t uid, vec2_t pos);
+static struct move_work_in *work_input_for_uid(uint32_t uid);
+static void resume_waiting_units(void);
 static void move_tick(void *user, void *event);
 static struct result navigation_tick_task(void *arg);
 
@@ -1079,6 +1084,15 @@ static void move_notify_motion_end(uint32_t uid)
     E_Entity_Notify(EVENT_MOTION_END, uid, NULL, ES_ENGINE);
 }
 
+/* A pause (soft block, combat hold) may already have announced an end; a stint
+ * that truly finishes announces again so its watchers hear the arrival.
+ */
+static void move_notify_motion_finished(uint32_t uid)
+{
+    movestate_aux_get(uid)->motion_stopped = true;
+    E_Entity_Notify(EVENT_MOTION_END, uid, NULL, ES_ENGINE);
+}
+
 static void entity_finish_moving(uint32_t uid, enum move_state newstate, bool block)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -1088,7 +1102,7 @@ static void entity_finish_moving(uint32_t uid, enum move_state newstate, bool bl
     uint32_t flags = G_FlagsGet(uid);
 
     if(!(flags & ENTITY_FLAG_COMBAT_HELD))
-        move_notify_motion_end(uid);
+        move_notify_motion_finished(uid);
     if(flags & ENTITY_FLAG_COMBATABLE
     && (newstate != STATE_TURNING)) {
         G_Combat_SetStance(uid, COMBAT_STANCE_AGGRESSIVE);
@@ -2014,10 +2028,35 @@ static vec2_t ent_desired_velocity(uint32_t uid, struct flock *fl,
         struct movestate *mms = movestate_get(uid);
         struct arrival_state *as = flock_arrival_for_ent(fl, uid);
         vec2_t arrival_vel;
+        struct move_work_in *vin = work_input_for_uid(uid);
         if(as && G_Arrival_DesiredVelocity(as, &movestate_aux_get(uid)->arrival, s_map,
             map, pos_xz, mms->velocity, has_dest_los, &arrival_vel))
             return arrival_vel;
-        return M_NavDesiredVelocityForTargetCached(map, build_target(uid, fl), pos_xz);
+
+        vec2_t field_vdes = M_NavDesiredVelocityForTargetCached(map, build_target(uid, fl), pos_xz);
+        if(PFM_Vec2_Len(&field_vdes) > EPSILON)
+            return field_vdes;
+
+        /* A void sample on free, pathable ground is a stale hole rather than
+         * an unreachable destination; hold a heading at the goal to cross it.
+         */
+        float vradius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
+        uint32_t vflags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+        enum nav_layer vlayer = Entity_NavLayerWithRadius(vflags, vradius);
+        struct movestate_aux *vaux = movestate_aux_get(uid);
+        if(vaux->field_void_ticks >= FIELD_VOID_COAST_TICKS
+        || M_NavPositionBlocked(map, vlayer, pos_xz)
+        || !M_NavPositionPathable(map, vlayer, pos_xz))
+            return field_vdes;
+
+        vec2_t togoal;
+        PFM_Vec2_Sub((vec2_t*)&fl->target_xz, &pos_xz, &togoal);
+        if(PFM_Vec2_Len(&togoal) < EPSILON)
+            return field_vdes;
+        PFM_Vec2_Normal(&togoal, &togoal);
+        if(vin)
+            vin->field_void = true;
+        return togoal;
     }
     }
 }
@@ -2033,7 +2072,9 @@ static vec2_t seek_force(uint32_t uid, vec2_t target_xz)
     vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
 
     PFM_Vec2_Sub(&target_xz, &pos_xz, &desired_velocity);
-    PFM_Vec2_Normal(&desired_velocity, &desired_velocity);
+    if(PFM_Vec2_Len(&desired_velocity) >= EPSILON) {
+        PFM_Vec2_Normal(&desired_velocity, &desired_velocity);
+    }
     PFM_Vec2_Scale(&desired_velocity, ms->max_speed / hz_count(s_move_work.hz), &desired_velocity);
 
     PFM_Vec2_Sub(&desired_velocity, &ms->velocity, &ret);
@@ -2059,7 +2100,10 @@ static vec2_t arrive_force_point(uint32_t uid, vec2_t target_xz, vec2_t vdes, bo
 
         PFM_Vec2_Sub(&target_xz, &pos_xz, &desired_velocity);
         distance = PFM_Vec2_Len(&desired_velocity);
-        PFM_Vec2_Normal(&desired_velocity, &desired_velocity);
+        /* Standing on the goal point; normalising the zero offset would NaN. */
+        if(distance >= EPSILON) {
+            PFM_Vec2_Normal(&desired_velocity, &desired_velocity);
+        }
         PFM_Vec2_Scale(&desired_velocity, ms->max_speed / hz_count(s_move_work.hz), 
             &desired_velocity);
 
@@ -2978,6 +3022,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
     struct movestate_aux *aux = movestate_aux_get(uid);
     assert(aux);
     out->flags = in->seek_pinned ? UPDATE_SEEK_PINNED : 0;
+    out->flags |= in->field_void ? UPDATE_FIELD_VOID : 0;
 
     /* Flush the interpolation if was not completed */
     if(ms->left > 0) {
@@ -3186,6 +3231,12 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
             if(in->field_starved)
                 break;
 
+            /* The arrive force steers straight at a destination in sight, so
+             * an empty field sample is no reason to park.
+             */
+            if(in->has_dest_los)
+                break;
+
             /* A soft blocker already stands and walls its tiles. */
             if(aux->soft_blocking)
                 break;
@@ -3345,22 +3396,9 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
 
         break;
     }
-    case STATE_WAITING: {
-
-        assert(aux->wait_ticks_left > 0);
-        aux->wait_ticks_left--;
-        if(aux->wait_ticks_left == 0) {
-
-            assert(aux->wait_prev == STATE_MOVING
-                || aux->wait_prev == STATE_MOVING_IN_FORMATION
-                || aux->wait_prev == STATE_SEEK_ENEMIES
-                || aux->wait_prev == STATE_SURROUND_ENTITY);
-
-            out->flags |= UPDATE_SET_MOVING;
-            out->next_state = aux->wait_prev;
-        }
+    case STATE_WAITING:
+        /* The resume countdown runs on the main thread. */
         break;
-    }
     case STATE_ARRIVED:
         break;
     case STATE_FLEEING:
@@ -3515,6 +3553,12 @@ static void entity_apply_update(uint32_t uid, const struct movestate_patch *patc
     }
 
     aux->seek_pin_held = !!(patch->flags & UPDATE_SEEK_PINNED);
+    if(patch->flags & UPDATE_FIELD_VOID) {
+        if(aux->field_void_ticks < UINT16_MAX)
+            aux->field_void_ticks++;
+    }else{
+        aux->field_void_ticks = 0;
+    }
 
     if(!held && (ms->state == STATE_SEEK_ENEMIES || ms->state == STATE_MOVING
               || ms->state == STATE_SURROUND_ENTITY)) {
@@ -3797,10 +3841,13 @@ static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack)
     entity_reset_seek_counters(uid);
     clear_seek_pin(uid);
 
-    float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
-    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+    /* An entity ordered in the frame it was created is not in the tick
+     * snapshot yet; the live tables are authoritative here.
+     */
+    float radius = G_GetSelectionRadius(uid);
+    uint32_t flags = G_FlagsGet(uid);
     enum nav_layer layer = Entity_NavLayerWithRadius(flags, radius);
-    vec2_t pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
+    vec2_t pos = G_Pos_GetXZ(uid);
     dest_xz = M_NavClosestReachableDest(s_map, layer, pos, dest_xz);
 
     /* If a flock already exists for the entity's destination, 
@@ -3932,9 +3979,9 @@ static void do_set_enter_range(uint32_t uid, uint32_t target, float range)
     if(!ms)
         return;
 
-    vec2_t xz_src = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
-    vec2_t xz_dst = G_Pos_GetXZFrom(s_move_work.gamestate.positions, target);
-    float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
+    vec2_t xz_src = G_Pos_GetXZ(uid);
+    vec2_t xz_dst = G_Pos_GetXZ(target);
+    float radius = G_GetSelectionRadius(uid);
     range = MAX(0.0f, range - radius);
 
     vec2_t delta;
@@ -5883,6 +5930,36 @@ static struct result navigation_tick_task(void *arg)
     return NULL_RESULT;
 }
 
+/* Waiting units aren't in the per-tick work; tick their resume countdown here. */
+static void resume_waiting_units(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    uint32_t uid;
+    kh_foreach_key(s_entity_state_table, uid, {
+
+        struct movestate *ms = movestate_get(uid);
+        if(!ms || ms->state != STATE_WAITING)
+            continue;
+        if(!G_EntityExists(uid))
+            continue;
+
+        struct movestate_aux *aux = movestate_aux_get(uid);
+        if(aux->wait_ticks_left > 0 && --aux->wait_ticks_left > 0)
+            continue;
+
+        assert(aux->wait_prev == STATE_MOVING
+            || aux->wait_prev == STATE_MOVING_IN_FORMATION
+            || aux->wait_prev == STATE_SEEK_ENEMIES
+            || aux->wait_prev == STATE_SURROUND_ENTITY);
+
+        if(ms->blocking)
+            entity_unblock(uid);
+        move_notify_motion_start(uid, ms);
+        ms->state = aux->wait_prev;
+    });
+}
+
 /* Stopped held units aren't in the per-tick work; pivot them toward their combat facing here. */
 static void pivot_held_still_units(void)
 {
@@ -5929,6 +6006,7 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
         perf_ticks_to_us(SDL_GetPerformanceCounter() - tick_start);
 
     uint64_t phase_start = SDL_GetPerformanceCounter();
+    resume_waiting_units();
     pivot_held_still_units();
     s_last_nav_tick_stats.pivot_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
