@@ -2111,6 +2111,15 @@ void N_FlowFieldUpdate(
     size_t ninit = field_initial_frontier(layer, target, chunk, priv, false, faction_id,
         ctx, init_frontier, ARR_SIZE(init_frontier));
 
+    /* An empty frontier means the goal is occupied rather than unreachable.
+     * Seed it anyway so the surrounding tiles guide units to the ring around
+     * it, instead of leaving the whole field void.
+     */
+    if(!ninit) {
+        ninit = field_initial_frontier(layer, target, chunk, priv, true, faction_id,
+            ctx, init_frontier, ARR_SIZE(init_frontier));
+    }
+
     for(int i = 0; i < ninit; i++) {
 
         struct coord curr = init_frontier[i];
