@@ -267,7 +267,7 @@ static size_t compute_all_vos(struct cp_ent ent, const struct cp_ent *stat_neigh
  * dilation already encodes the body, so no radius sum here.
  */
 static size_t compute_all_tile_vos(struct cp_ent ent, const vec2_t *tiles,
-                                   size_t ntiles, struct VO *out)
+                                   size_t ntiles, float horizon, struct VO *out)
 {
     size_t ret = 0;
 
@@ -276,15 +276,23 @@ static size_t compute_all_tile_vos(struct cp_ent ent, const vec2_t *tiles,
         if(same_position(ent.xz_pos, tiles[i]))
             continue;
 
-        vec2_t ent_to_nb = cp_norm(cp_sub(tiles[i], ent.xz_pos));
+        vec2_t to_tile = cp_sub(tiles[i], ent.xz_pos);
+        float dist = sqrtf(cp_len2(to_tile));
+        vec2_t ent_to_nb = cp_scale(to_tile, 1.0f / dist);
         vec2_t right = cp_scale((vec2_t){-ent_to_nb.z, ent_to_nb.x},
             CLEARPATH_TILE_RADIUS);
 
         vec2_t right_tangent = cp_add(tiles[i], right);
         vec2_t left_tangent = cp_sub(tiles[i], right);
 
+        /* The apex is the slowest velocity that still reaches the tile within
+         * the horizon, so the slower ones stay permissible.
+         */
+        float gap = dist - CLEARPATH_TILE_RADIUS;
+        float closing = (gap > 0.0f && horizon > 0.0f) ? gap / horizon : 0.0f;
+
         struct VO *vo = &out[ret++];
-        vo->xz_apex = ent.xz_pos;
+        vo->xz_apex = cp_add(ent.xz_pos, cp_scale(ent_to_nb, closing));
         vo->xz_right_side = cp_norm(cp_sub(right_tangent, ent.xz_pos));
         vo->xz_left_side = cp_norm(cp_sub(left_tangent, ent.xz_pos));
     }
@@ -449,6 +457,8 @@ static bool (*s_inside_pcr)(const struct rays_soa *soa, vec2_t test) = inside_pc
  * velocity is the point converted to the entity's local space. */
 struct vnew_min{
     float  min_dist2;
+    /* Squared speed a candidate must beat to count */
+    float  min_speed2;
     vec2_t vnew;
     bool   any;
 };
@@ -483,6 +493,8 @@ static inline void vnew_consider(struct vnew_min *m, vec2_t cand_ws,
                                  const struct cp_terrain *terrain, int side)
 {
     float dist2 = cp_len2(cp_sub(des_v_ws, cand_ws));
+    if(cp_len2(cp_sub(cand_ws, ent_xz_pos)) < m->min_speed2)
+        return;
     if(side != 0) {
         vec2_t des_v = cp_sub(des_v_ws, ent_xz_pos);
         vec2_t cand = cp_sub(cand_ws, ent_xz_pos);
@@ -497,10 +509,11 @@ static inline void vnew_consider(struct vnew_min *m, vec2_t cand_ws,
 }
 
 static void remove_furthest(vec2_t xz_pos, struct cp_ent *dyn, size_t *ndyn,
-                            struct cp_ent *stat, size_t *nstat)
+                            struct cp_ent *stat, size_t *nstat,
+                            vec2_t *tiles, size_t *ntiles)
 {
     float max_dist2 = -INFINITY;
-    struct cp_ent *del_arr = NULL;
+    struct cp_ent *del_ent = NULL;
     size_t *del_count = NULL;
     int del_idx = -1;
 
@@ -513,16 +526,32 @@ static void remove_furthest(vec2_t xz_pos, struct cp_ent *dyn, size_t *ndyn,
             float len2 = cp_len2(cp_sub(xz_pos, arr[j].xz_pos));
             if(len2 > max_dist2) {
                 max_dist2 = len2;
-                del_arr = arr;
+                del_ent = arr;
                 del_count = (i == 0) ? ndyn : nstat;
                 del_idx = (int)j;
             }
         }
     }
 
-    if(max_dist2 > -INFINITY) {
-        assert(del_idx != -1);
-        del_arr[del_idx] = del_arr[--(*del_count)];
+    for(size_t j = 0; j < *ntiles; j++) {
+
+        float len2 = cp_len2(cp_sub(xz_pos, tiles[j]));
+        if(len2 > max_dist2) {
+            max_dist2 = len2;
+            del_ent = NULL;
+            del_count = ntiles;
+            del_idx = (int)j;
+        }
+    }
+
+    if(max_dist2 == -INFINITY)
+        return;
+
+    assert(del_idx != -1);
+    if(del_ent) {
+        del_ent[del_idx] = del_ent[--(*del_count)];
+    }else{
+        tiles[del_idx] = tiles[--(*del_count)];
     }
 }
 
@@ -669,6 +698,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
                                    size_t ntiles,
                                    const struct cp_terrain *terrain,
                                    int side,
+                                   bool relax,
                                    bool save_debug,
                                    vec2_t *out)
 {
@@ -678,7 +708,8 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
 
     size_t n_hrvos = compute_all_hrvos(cpent, dyn_neighbs, ndyn, side, dyn_hrvos);
     size_t n_vos = compute_all_vos(cpent, stat_neighbs, nstat, stat_vos);
-    n_vos += compute_all_tile_vos(cpent, tile_obs, ntiles, stat_vos + n_vos);
+    n_vos += compute_all_tile_vos(cpent, tile_obs, ntiles, terrain->tile_horizon,
+        stat_vos + n_vos);
 
     /* We may have skipped the neighbours that are at the exact same
      * or nearly same position as the entity.
@@ -732,7 +763,9 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
      * boundary of the combined hybrid reciprocal velocity obstacle. Of those,
      * only the one closest to the preferred velocity is kept.
      */
-    struct vnew_min m = {INFINITY, {0.0f, 0.0f}, false};
+    struct vnew_min m = {INFINITY,
+        relax ? CLEARPATH_STALL_SPEED * CLEARPATH_STALL_SPEED : 0.0f,
+        {0.0f, 0.0f}, false};
 
     const size_t n_pair = (n_rays < MAX_PAIRWISE_RAYS) ? n_rays : MAX_PAIRWISE_RAYS;
     for(size_t i = 0; i < n_pair; i++) {
@@ -831,10 +864,11 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
                                size_t ndyn,
                                struct cp_ent *stat_neighbs,
                                size_t nstat,
-                               const vec2_t *tile_obs,
+                               vec2_t *tile_obs,
                                size_t ntiles,
                                struct cp_terrain terrain,
                                int side,
+                               bool relax,
                                bool save_debug,
                                struct cp_solve_diag *out_diag)
 {
@@ -849,7 +883,7 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
         vec2_t ret;
         bool found = clearpath_new_velocity(cpent, ent_des_v,
             dyn_neighbs, ndyn, stat_neighbs, nstat, tile_obs, ntiles,
-            &terrain, side, save_debug, &ret);
+            &terrain, side, relax, save_debug, &ret);
         if(found) {
             if(out_diag) {
                 out_diag->retries = retries;
@@ -861,10 +895,11 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
 
         if(++retries > MAX_SOLVE_RETRIES)
             break;
-        remove_furthest(cpent.xz_pos, dyn_neighbs, &ndyn, stat_neighbs, &nstat);
+        remove_furthest(cpent.xz_pos, dyn_neighbs, &ndyn, stat_neighbs, &nstat,
+            tile_obs, &ntiles);
 
-        /* remove_furthest drops from either class; retry while any remain. */
-    }while(ndyn > 0 || nstat > 0);
+        /* remove_furthest drops from any class; retry while any remain. */
+    }while(ndyn > 0 || nstat > 0 || ntiles > 0);
 
     if(out_diag) {
         out_diag->retries = retries;

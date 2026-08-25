@@ -174,7 +174,7 @@ struct nav_tick_sample{
     /* Crowd-mechanism diagnostics (see struct move_work_out cp_flags) */
     uint32_t ncp_zero;       /* ClearPath solves that gave up -> (0,0) */
     uint32_t ncp_retry_ok;   /* solves that succeeded only after >= 1 retry */
-    uint32_t ncp_fallback;   /* solves resolved by the least-violation fallback */
+    uint32_t ncp_stalled;    /* solves whose only answer was to stand still */
     uint32_t nseek_vdes0;    /* SEEK_ENEMIES units with a zero desired velocity */
     uint32_t nheading_gated; /* units whose translation was zeroed by the heading gate */
     /* Per-state entity populations at submit time */

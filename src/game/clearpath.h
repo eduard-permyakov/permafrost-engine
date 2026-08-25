@@ -54,6 +54,12 @@
  */
 #define CLEARPATH_TILE_RADIUS      (2.8284271f)
 #define CLEARPATH_MAX_TILE_OBS     (12)
+/* Look-ahead of a wall tile's cone once truncated; the landing test below is
+ * what keeps the step itself legal.
+ */
+#define CLEARPATH_TILE_HORIZON_SEC (1.0f)
+/* A solved velocity below this leaves the unit standing in place */
+#define CLEARPATH_STALL_SPEED      (0.05f)
 /* This is added to the entity's radius so that it will take wider turns
  * and leave this as a buffer between it and the obstacle.
  */
@@ -78,13 +84,14 @@ struct cp_terrain{
     int               layer;
     bool              on_blocked;
     float             max_step;
+    /* CLEARPATH_TILE_HORIZON_SEC in ticks; zero leaves the cones untruncated */
+    float             tile_horizon;
 };
 
 /* How a solve was resolved, for the per-tick mechanism counters. */
 struct cp_solve_diag{
     uint8_t retries;
     bool    gave_up;
-    bool    fallback;
     /* Sign of the deflection from the preferred velocity, 0 when none */
     int8_t  side;
 };
@@ -105,10 +112,11 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent ent,
                                size_t ndyn,
                                struct cp_ent *stat_neighbs,
                                size_t nstat,
-                               const vec2_t *tile_obs,
+                               vec2_t *tile_obs,
                                size_t ntiles,
                                struct cp_terrain terrain,
                                int side,
+                               bool relax,
                                bool save_debug,
                                struct cp_solve_diag *out_diag);
 

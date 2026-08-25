@@ -959,7 +959,7 @@ void Perf_RecordNavTick(const struct nav_tick_sample *sample)
             r->nlos_builds, r->nreq_rebuilds, r->nenemy_built, r->nzone_built,
             r->nsurround_built, r->ninval_enemy, r->ninval_surround,
             r->nsvc_sync, r->nsvc_patch, r->nastar, r->nastar_memo,
-            r->npseek_built, r->ncp_zero, r->ncp_retry_ok, r->ncp_fallback,
+            r->npseek_built, r->ncp_zero, r->ncp_retry_ok, r->ncp_stalled,
             r->nseek_vdes0, r->nheading_gated, r->nstate_moving,
             r->nstate_arrived, r->nstate_seek, r->nstate_waiting,
             r->nstate_turning);

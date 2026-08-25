@@ -233,6 +233,9 @@ struct movestate_aux{
     uint16_t           seek_clear_ticks;
     /* Consecutive ticks coasting through a stale hole in the flow field */
     uint16_t           field_void_ticks;
+    /* Consecutive stand-still solves, and the relaxed solves they buy. Transient. */
+    uint16_t           cp_stall_ticks;
+    uint16_t           cp_relax_ticks;
     /* Set once the unit has been flowing since its last order; only then may
      * it wall itself as jam-stuck (a queued launch rear is not a jam). */
     bool               seek_progressed;
@@ -372,7 +375,7 @@ struct move_work_in{
 enum cp_out_flags{
     CP_OUT_GAVE_UP    = (1 << 0),
     CP_OUT_RETRY_OK   = (1 << 1),
-    CP_OUT_FALLBACK   = (1 << 2),
+    CP_OUT_STALLED    = (1 << 2),
     CP_OUT_SEEK_VDES0 = (1 << 3),
 };
 
@@ -646,6 +649,9 @@ static struct result navigation_tick_task(void *arg);
 #define SEEK_BLOCK_BUDGET_PER_TICK      (16)
 /* Ticks without a deflection before the passing side is forgotten */
 #define CP_SIDE_HOLD_TICKS              (10)
+/* Stand-still answers before the solve is relaxed, and the relaxation's hold */
+#define CP_STALL_RELAX_TICKS            (20)
+#define CP_STALL_RELAX_HOLD             (20)
 /* Wall-tile window beyond one step: a tile just outside the step can still
  * clip the corner of a fast diagonal */
 #define CLEARPATH_TILE_MARGIN           (4.0f)
@@ -700,6 +706,7 @@ enum move_trace_flags{
     MV_TRACE_FIELD_STARVED   = (1 << 9),
     MV_TRACE_SURROUND_FIELD  = (1 << 10),
     MV_TRACE_COMBAT_HELD     = (1 << 11),
+    MV_TRACE_CP_STALLED      = (1 << 12),
 };
 
 struct move_trace{
@@ -3449,6 +3456,22 @@ static void ent_update_using_surround_field(uint32_t uid, struct movestate *ms)
     }
 }
 
+/* Wall cones and parked bodies can leave a unit no permissible velocity but
+ * zero, and it would stand there for good. The landing test keeps a relaxed
+ * solve legal, so a window of one is the way out.
+ */
+static void entity_apply_cp_stall(uint32_t uid, bool stalled)
+{
+    struct movestate_aux *aux = movestate_aux_get(uid);
+
+    aux->cp_stall_ticks = stalled ? MIN(aux->cp_stall_ticks + 1, UINT16_MAX) : 0;
+    if(aux->cp_stall_ticks >= CP_STALL_RELAX_TICKS) {
+        aux->cp_relax_ticks = CP_STALL_RELAX_HOLD;
+    }else if(aux->cp_relax_ticks > 0) {
+        aux->cp_relax_ticks--;
+    }
+}
+
 static void entity_apply_cp_side(uint32_t uid, int side)
 {
     struct movestate_aux *aux = movestate_aux_get(uid);
@@ -4449,6 +4472,15 @@ static void move_trace_velocity(const struct move_work_in *in, struct move_trace
     }
 }
 
+/* Standing is a real answer in a crowd and a wedge in a wall pocket, so the
+ * two are told apart by how long it persists, not here.
+ */
+static bool solve_stalled(vec2_t new_vel, vec2_t vpref)
+{
+    return PFM_Vec2_Len(&new_vel) < CLEARPATH_STALL_SPEED
+        && PFM_Vec2_Len(&vpref) >= CLEARPATH_STALL_SPEED;
+}
+
 static void move_velocity_work(int begin_idx, int end_idx)
 {
     for(int i = begin_idx; i <= end_idx; i++) {
@@ -4483,10 +4515,13 @@ static void move_velocity_work(int begin_idx, int end_idx)
         const struct flock *flock = in->flock;
 
         uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, in->ent_uid);
+        bool relax = movestate_aux_get(in->ent_uid)->cp_relax_ticks > 0;
         struct cp_terrain terrain = (struct cp_terrain){
             .map = s_move_work.gamestate.map,
             .layer = Entity_NavLayerWithRadius(flags, in->cp_ent.radius),
             .max_step = ms->max_speed / hz_count(s_move_work.hz),
+            .tile_horizon = relax ? CLEARPATH_TILE_HORIZON_SEC * hz_count(s_move_work.hz)
+                                  : 0.0f,
         };
         terrain.on_blocked = M_NavPositionBlocked(terrain.map, terrain.layer, in->cp_ent.xz_pos);
 
@@ -4593,14 +4628,14 @@ static void move_velocity_work(int begin_idx, int end_idx)
         vec2_t new_vel = G_ClearPath_NewVelocity(in->cp_ent, in->ent_uid,
             vpref, in->dyn_neighbs, in->ndyn, in->stat_neighbs, in->nstat,
             in->tile_obs, in->ntiles,
-            terrain, in->cp_side, in->save_debug, &diag);
+            terrain, in->cp_side, relax, in->save_debug, &diag);
 
         out->ent_uid = in->ent_uid;
         out->ent_vel = new_vel;
         out->cp_side = diag.side;
         out->cp_flags = (diag.gave_up ? CP_OUT_GAVE_UP : 0)
                       | (!diag.gave_up && diag.retries > 0 ? CP_OUT_RETRY_OK : 0)
-                      | (diag.fallback ? CP_OUT_FALLBACK : 0)
+                      | (solve_stalled(new_vel, vpref) ? CP_OUT_STALLED : 0)
                       | (ms->state == STATE_SEEK_ENEMIES
                          && PFM_Vec2_Len(&in->ent_des_v) < EPSILON ? CP_OUT_SEEK_VDES0 : 0);
         if(cap_slot >= 0) {
@@ -4910,6 +4945,7 @@ static void move_consume_work_results(void)
         struct move_work_out *out = &s_move_work.out[i];
         entity_apply_update(out->ent_uid, &out->patch);
         entity_apply_cp_side(out->ent_uid, out->cp_side);
+        entity_apply_cp_stall(out->ent_uid, !!(out->cp_flags & CP_OUT_STALLED));
     }
 
     /* All this tick's position changes are enqueued; apply the batched fog
@@ -5246,6 +5282,7 @@ static unsigned move_trace_flags(const struct move_work_in *in, const struct mov
     ret |= (out->patch.flags & UPDATE_HEADING_GATED)   ? MV_TRACE_HEADING_GATED   : 0;
     ret |= (out->cp_flags & CP_OUT_GAVE_UP)            ? MV_TRACE_CP_GAVE_UP      : 0;
     ret |= (out->cp_flags & CP_OUT_RETRY_OK)           ? MV_TRACE_CP_RETRY_OK     : 0;
+    ret |= (out->cp_flags & CP_OUT_STALLED)            ? MV_TRACE_CP_STALLED      : 0;
     ret |= (out->patch.flags & UPDATE_VETO_UNPATHABLE) ? MV_TRACE_VETO_UNPATHABLE : 0;
     ret |= (out->patch.flags & UPDATE_VETO_BLOCKED)    ? MV_TRACE_VETO_BLOCKED    : 0;
     ret |= aux->soft_blocking                          ? MV_TRACE_SOFT_BLOCKING   : 0;
@@ -5349,14 +5386,14 @@ static enum move_work_status nav_tick_finish_work(void)
      * per-solve diagnostics here is race-free. */
     s_last_nav_tick_stats.ncp_zero = 0;
     s_last_nav_tick_stats.ncp_retry_ok = 0;
-    s_last_nav_tick_stats.ncp_fallback = 0;
+    s_last_nav_tick_stats.ncp_stalled = 0;
     s_last_nav_tick_stats.nseek_vdes0 = 0;
     s_last_nav_tick_stats.nheading_gated = 0;
     for(size_t i = 0; i < s_move_work.nwork; i++) {
         const struct move_work_out *out = &s_move_work.out[i];
         s_last_nav_tick_stats.ncp_zero       += !!(out->cp_flags & CP_OUT_GAVE_UP);
         s_last_nav_tick_stats.ncp_retry_ok   += !!(out->cp_flags & CP_OUT_RETRY_OK);
-        s_last_nav_tick_stats.ncp_fallback   += !!(out->cp_flags & CP_OUT_FALLBACK);
+        s_last_nav_tick_stats.ncp_stalled    += !!(out->cp_flags & CP_OUT_STALLED);
         s_last_nav_tick_stats.nseek_vdes0    += !!(out->cp_flags & CP_OUT_SEEK_VDES0);
         s_last_nav_tick_stats.nheading_gated += !!(out->patch.flags & UPDATE_HEADING_GATED);
     }
