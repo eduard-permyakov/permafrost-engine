@@ -148,16 +148,16 @@ static mp_strbuff_t     s_stringpool;
 static quat_t phys_velocity_dir(vec3_t vel)
 {
     float yrot = atan2(vel.x, vel.z);
-    float zrot = atan2(vel.y, sqrt(pow(vel.x, 2) + pow(vel.z, 2)));
+    float xrot = -atan2(vel.y, sqrt(pow(vel.x, 2) + pow(vel.z, 2)));
 
     mat4x4_t yrotmat;
     PFM_Mat4x4_MakeRotY(yrot, &yrotmat);
 
-    mat4x4_t zrotmat;
-    PFM_Mat4x4_MakeRotZ(zrot, &zrotmat);
+    mat4x4_t xrotmat;
+    PFM_Mat4x4_MakeRotX(xrot, &xrotmat);
 
     mat4x4_t rotmat;
-    PFM_Mat4x4_Mult4x4(&yrotmat, &zrotmat, &rotmat);
+    PFM_Mat4x4_Mult4x4(&yrotmat, &xrotmat, &rotmat);
 
     quat_t rot;
     PFM_Quat_FromRotMat(&rotmat, &rot);
