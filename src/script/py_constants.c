@@ -881,6 +881,7 @@ static void s_expose_game_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, FORMATION_NONE);
     PY_EXPOSE_ENUM(module, FORMATION_RANK);
     PY_EXPOSE_ENUM(module, FORMATION_COLUMN);
+    PY_EXPOSE_ENUM(module, FORMATION_BOX);
     PY_EXPOSE_ENUM(module, FORMATION_MAX);
 
     /* The damage and armour types themselves are defined by the scripting

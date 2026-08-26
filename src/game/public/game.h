@@ -121,6 +121,7 @@ enum formation_type{
     FORMATION_NONE,
     FORMATION_RANK,
     FORMATION_COLUMN,
+    FORMATION_BOX,
     FORMATION_MAX
 };
 

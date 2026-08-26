@@ -354,6 +354,9 @@
     <ClCompile Include="src\game\formation.c">
       <Filter>Source Files\game</Filter>
     </ClCompile>
+    <ClCompile Include="src\game\formation_box.c">
+      <Filter>Source Files\game</Filter>
+    </ClCompile>
     <ClCompile Include="src\game\garrison.c">
       <Filter>Source Files\game</Filter>
     </ClCompile>
@@ -687,6 +690,9 @@
       <Filter>Header Files\game</Filter>
     </ClInclude>
     <ClInclude Include="src\game\formation.h">
+      <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\formation_box.h">
       <Filter>Header Files\game</Filter>
     </ClInclude>
     <ClInclude Include="src\game\automation.h">
