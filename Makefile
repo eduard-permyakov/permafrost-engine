@@ -179,7 +179,7 @@ endif
 
 ifneq ($(LTO),0)
 LTO_CFLAGS = -flto
-LTO_LDFLAGS = -flto
+LTO_LDFLAGS = -flto=auto
 endif
 
 CFLAGS = \
