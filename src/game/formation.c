@@ -831,6 +831,7 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
                        enum nav_layer layer, vec2_t target_offsets,
                        const struct cell *left, const struct cell *right,
                        const struct cell *front,  const struct cell *back,
+                       const vec2_t *ideal,
                        int field_res, uint8_t *occupied, uint16_t *islands,
                        struct coord *visited)
 {
@@ -915,6 +916,10 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
 
     if(count > 0) {
         PFM_Vec2_Scale(&pos, 1.0f / count, &pos);
+    }
+
+    if(ideal) {
+        pos = *ideal;
     }
 
     /* Find the target tile for the position */
@@ -1082,6 +1087,21 @@ static float subformation_offset(struct subformation *formation)
     return buffer;
 }
 
+/* The shells of a box are sub-rectangles of one grid, so they only nest if
+ * every one of them is laid out on the same cell pitch. The pitch does not
+ * quantise laterally, so the largest unit in the formation has to set it, or a
+ * shell of big units comes out wider than the slot the box geometry gave it and
+ * runs into the shell around it.
+ */
+static float box_cell_radius(vec_subformation_t *subformations)
+{
+    float ret = 0.0f;
+    for(int i = 0; i < vec_size(subformations); i++) {
+        ret = MAX(ret, vec_AT(subformations, i).unit_radius);
+    }
+    return ret;
+}
+
 static struct subformation *subformation_root(struct subformation *formation)
 {
     while(formation->parent)
@@ -1242,6 +1262,28 @@ static vec2_t target_position(vec_entity_t *ents)
     return ret;
 }
 
+/* The world position of cell (r, c) of the box grid, which is shared by every
+ * shell and anchored at the front-centre cell of the outermost one. Chaining a
+ * cell off its neighbours instead lets the tile binning round the same pitch a
+ * different way on either side of the anchor, which drifts the shells apart.
+ */
+static vec2_t box_cell_ideal(vec2_t origin, vec2_t orientation, vec2_t offsets,
+                             int root_nrows, int root_ncols, int r, int c)
+{
+    vec2_t row_delta;
+    PFM_Vec2_Normal(&orientation, &row_delta);
+    PFM_Vec2_Scale(&row_delta, (r - (root_nrows - 1)) * offsets.x, &row_delta);
+
+    vec2_t col_delta = (vec2_t){orientation.z, -orientation.x};
+    PFM_Vec2_Normal(&col_delta, &col_delta);
+    PFM_Vec2_Scale(&col_delta, (c - root_ncols / 2) * offsets.y, &col_delta);
+
+    vec2_t ret = origin;
+    PFM_Vec2_Add(&ret, &row_delta, &ret);
+    PFM_Vec2_Add(&ret, &col_delta, &ret);
+    return ret;
+}
+
 /* A cell masked out of the subformation's grid is not a placement anchor. */
 static struct cell *neighbour_cell(struct subformation *formation, int r, int c)
 {
@@ -1251,7 +1293,7 @@ static struct cell *neighbour_cell(struct subformation *formation, int r, int c)
     return (ret->state == CELL_NOT_USED) ? NULL : ret;
 }
 
-static void place_subformation(enum formation_type type,
+static void place_subformation(enum formation_type type, float cell_radius,
     struct subformation *formation, vec2_t center, 
     vec2_t target, vec2_t orientation,
     int field_res, uint8_t *occupied, uint16_t *islands)
@@ -1260,7 +1302,7 @@ static void place_subformation(enum formation_type type,
 
     vec2_t target_orientation = orientation;
     vec2_t target_offsets = target_direction_offsets(center, orientation,
-        formation->unit_radius, field_res);
+        cell_radius, field_res);
     vec2_t target_pos = subformation_target_pos(type, formation, target, orientation, 
         target_offsets);
 
@@ -1270,6 +1312,19 @@ static void place_subformation(enum formation_type type,
 
     int nrows = formation->nrows;
     int ncols = formation->ncols;
+
+    struct subformation *box_root = subformation_root(formation);
+    bool box = (type == FORMATION_BOX);
+    int inset = box ? (box_root->ncols - ncols) / 2 : 0;
+    vec2_t box_origin;
+    bool have_origin = false;
+
+    if(box && (formation != box_root)) {
+        struct cell *seed = &vec_AT(&box_root->cells,
+            CELL_IDX(box_root->nrows - 1, box_root->ncols / 2, box_root->ncols));
+        have_origin = (seed->state == CELL_NOT_OCCUPIED) || (seed->state == CELL_OCCUPIED);
+        box_origin = seed->pos;
+    }
 
     /* Start by placing the center-most front row cell, Position the cells on
      * pathable and unbostructed terrain.
@@ -1314,12 +1369,27 @@ static void place_subformation(enum formation_type type,
         struct cell *left_cell = neighbour_cell(formation, left.r, left.c);
         struct cell *right_cell = neighbour_cell(formation, right.r, right.c);
 
+        vec2_t ideal;
+        if(box && have_origin) {
+            ideal = box_cell_ideal(box_origin, orientation, target_offsets,
+                box_root->nrows, box_root->ncols, curr.r + inset, curr.c + inset);
+        }
+
         bool success = place_cell(curr_cell, center, target_pos, 
             formation->reachable_target, orientation, formation->unit_radius, 
             formation->layer, target_offsets, left_cell, right_cell, front_cell, back_cell, 
+            (box && have_origin) ? &ideal : NULL,
             field_res, occupied, islands, visited);
         if(!success)
             break;
+
+        /* The outermost shell's front-centre cell anchors the grid the rest of
+         * the box is laid out on.
+         */
+        if(box && !have_origin) {
+            box_origin = curr_cell->pos;
+            have_origin = true;
+        }
 
         if(left_cell && left_cell->state == CELL_NOT_PLACED)
             queue_coord_push(&frontier, &left);
@@ -4467,10 +4537,12 @@ void G_Formation_Create(vec2_t target, vec2_t orientation,
     vec_assignment_work_resize(&new->work, vec_size(&new->subformations));
     new->work.size = vec_size(&new->subformations);
 
+    float box_radius = box_cell_radius(&new->subformations);
     for(int i = 0; i < vec_size(&new->subformations); i++) {
         struct subformation *sub = &vec_AT(&new->subformations, i);
         sub->state = SUBFORMATION_COMPUTING_ASSIGNMENT;
-        place_subformation(type, sub, new->center, target, new->orientation, 
+        float cell_radius = (type == FORMATION_BOX) ? box_radius : sub->unit_radius;
+        place_subformation(type, cell_radius, sub, new->center, target, new->orientation, 
             field_res, new->occupied, new->islands);
         mark_unused_cells(sub);
 
@@ -5124,10 +5196,12 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
             islands_layer(&formation, layers[i]));
     }
 
+    float box_radius = box_cell_radius(&formation.subformations);
     for(int i = 0; i < vec_size(&formation.subformations); i++) {
         struct subformation *sub = &vec_AT(&formation.subformations, i);
-        place_subformation(type, sub, formation.center, target, formation.orientation, 
-            field_res, formation.occupied, formation.islands);
+        float cell_radius = (type == FORMATION_BOX) ? box_radius : sub->unit_radius;
+        place_subformation(type, cell_radius, sub, formation.center, target, 
+            formation.orientation, field_res, formation.occupied, formation.islands);
         mark_unused_cells(sub);
         render_cells(sub);
     }
