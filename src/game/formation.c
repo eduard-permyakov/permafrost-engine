@@ -96,11 +96,12 @@
 #define EPSILON                  (1.0f/1024)
 #define FIELD_RECOMPUTE_INTERVAL (3.0f) /* seconds */
 #define MAX_CELL_ASSIGNMENT_WORK (256)
-/* How long a box shell waits for the shells inside it before closing
- * regardless, so that an interior which cannot be reached at all does not
- * hold the wall open for good.
+/* A formation blocks its units' tiles only once this fraction of them stands
+ * on its cell, so that the ones still crossing the formation are not walled
+ * out. The timeout releases a formation whose stragglers never make it.
  */
-#define BOX_SETTLE_TIMEOUT_MS    (15000)
+#define FORMATION_SETTLE_FRACTION (0.95f)
+#define FORMATION_SETTLE_TIMEOUT_MS (15000)
 #define IDX(r, width, c)         (r * width + c)
 #define FIELD_IDX3(_res, _l, _r, _c) \
     (((size_t)(_l) * (_res) * (_res)) + ((size_t)(_r) * (_res)) + (_c))
@@ -353,11 +354,11 @@ struct formation{
     /* State associated with outstanding cell assignment computations 
      */
     vec_assignment_work_t work;
-    /* One bit per subformation with every unit standing on its cell, and the
-     * tick at which a box shell first had to wait on one. Refreshed every tick
+    /* Whether enough units stand on their cells for the formation to take its
+     * tiles, and the tick at which it first had to wait. Refreshed every tick
      * from the cells, so neither is serialised.
      */
-    uint64_t             settled;
+    bool                 may_settle;
     uint32_t             hold_start_tick;
 };
 
@@ -374,7 +375,8 @@ static void complete_cell_field_work(struct subformation *formation, bool yield)
 static uint8_t *cell_get_field(uint32_t uid);
 static enum flow_dir cell_get_dir(const uint8_t *field, int arrival_res, int r, int c);
 static void invalidate_cell_arrival_fields(struct subformation *formation);
-static void update_settled(struct formation *formation);
+static void update_settled(formation_id_t fid, struct formation *formation);
+static bool at_own_cell(uint32_t uid, struct cell *cell);
 
 static uint32_t subformation_leader(struct subformation *formation);
 static void subformation_anchor_and_heading(uint32_t leader,
@@ -3319,6 +3321,12 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
 
     work->input.layer = formation->layer;
     work->input.enemy_faction_mask = G_GetEnemyFactions(formation->faction_id);
+    /* The mask is the set of factions whose blocker stamps this field may walk
+     * through. A unit the formation settled without is walled out by its own
+     * side, so let it phase back in rather than give up outside.
+     */
+    if(parent->may_settle && !at_own_cell(uid, cell))
+        work->input.enemy_faction_mask |= (0x1 << formation->faction_id);
     work->input.field_res = parent->field_res;
     work->input.cell_tile = cell_td;
     work->input.center_tile = center_td;
@@ -3464,9 +3472,11 @@ static void on_update_start(void *user, void *event)
         }
     });
 
-    kh_foreach_ptr(s_formations, formation, {
-        update_settled(formation);
-    });
+    for(khiter_t k = kh_begin(s_formations); k != kh_end(s_formations); k++) {
+        if(!kh_exist(s_formations, k))
+            continue;
+        update_settled(kh_key(s_formations, k), &kh_val(s_formations, k));
+    }
 }
 
 static uint8_t *cell_get_field(uint32_t uid)
@@ -4737,55 +4747,75 @@ static bool at_own_cell(uint32_t uid, struct cell *cell)
     return (PFM_Vec2_Len(&delta) <= MIN(G_GetSelectionRadius(uid) * 1.5f, 10.0f));
 }
 
-static bool subformation_settled(struct subformation *sub)
+static size_t subformation_nsettled(struct subformation *sub)
 {
     if(sub->state != SUBFORMATION_READY)
-        return false;
+        return 0;
 
+    size_t ret = 0;
     uint32_t uid;
     kh_foreach_key(sub->ents, uid, {
         khiter_t k = kh_get(assignment, sub->assignment, uid);
         if(k == kh_end(sub->assignment))
-            return false;
+            continue;
         struct coord coord = kh_val(sub->assignment, k);
-        if(!at_own_cell(uid, &vec_AT(&sub->cells, CELL_IDX(coord.r, coord.c, sub->ncols))))
-            return false;
+        if(at_own_cell(uid, &vec_AT(&sub->cells, CELL_IDX(coord.r, coord.c, sub->ncols))))
+            ret++;
     });
-    return true;
+    return ret;
 }
 
-static void update_settled(struct formation *formation)
-{
-    formation->settled = 0;
-    if(formation->type != FORMATION_BOX)
-        return;
-    for(int i = 0; (i < vec_size(&formation->subformations)) && (i < 64); i++) {
-        if(subformation_settled(&vec_AT(&formation->subformations, i)))
-            formation->settled |= (((uint64_t)0x1) << i);
-    }
-}
-
-/* A box shell closes around the shells it encloses. Sealing itself shut before
- * they are through turns their cells into an unreachable island, and they give
- * up wherever they happen to be standing, so a shell holds its units off their
- * cells until the ones inside it are in.
+/* A unit whose tiles are taken walls off whatever is still crossing them: a
+ * box shell seals its interior into an unreachable island, and a rank's rear
+ * gets fenced out of its own rows. So no unit in the formation takes its tiles
+ * until nearly all of them are standing where they belong.
  */
-static bool may_settle(struct formation *formation, struct subformation *sub)
+/* The units left outside get their arrival fields rebuilt with the phasing
+ * mask, now that the rest of the formation has taken its tiles.
+ */
+static void invalidate_straggler_fields(formation_id_t fid, struct formation *formation)
 {
-    if(formation->type != FORMATION_BOX)
-        return true;
-    bool pending = false;
-    for(int i = subformation_index(formation, sub) + 1;
-        (i < vec_size(&formation->subformations)) && (i < 64); i++) {
-        if(!(formation->settled & (((uint64_t)0x1) << i)))
-            pending = true;
+    for(int i = 0; i < vec_size(&formation->subformations); i++) {
+        struct subformation *sub = &vec_AT(&formation->subformations, i);
+        uint32_t uid;
+        kh_foreach_key(sub->ents, uid, {
+            khiter_t k = kh_get(assignment, sub->assignment, uid);
+            if(k == kh_end(sub->assignment))
+                continue;
+            struct coord coord = kh_val(sub->assignment, k);
+            if(at_own_cell(uid, &vec_AT(&sub->cells, CELL_IDX(coord.r, coord.c, sub->ncols))))
+                continue;
+            request_cell_recompute(fid, uid);
+        });
     }
-    if(!pending)
-        return true;
+}
+
+static void update_settled(formation_id_t fid, struct formation *formation)
+{
+    if(formation->may_settle)
+        return;
+
+    size_t nents = 0, nsettled = 0;
+    for(int i = 0; i < vec_size(&formation->subformations); i++) {
+        struct subformation *sub = &vec_AT(&formation->subformations, i);
+        nents += kh_size(sub->ents);
+        nsettled += subformation_nsettled(sub);
+    }
+
+    if(nents == 0)
+        return;
+    if(nsettled >= (size_t)ceilf(nents * FORMATION_SETTLE_FRACTION)) {
+        formation->may_settle = true;
+        invalidate_straggler_fields(fid, formation);
+        return;
+    }
 
     if(formation->hold_start_tick == 0)
         formation->hold_start_tick = SDL_GetTicks();
-    return (SDL_GetTicks() - formation->hold_start_tick > BOX_SETTLE_TIMEOUT_MS);
+    if(SDL_GetTicks() - formation->hold_start_tick > FORMATION_SETTLE_TIMEOUT_MS) {
+        formation->may_settle = true;
+        invalidate_straggler_fields(fid, formation);
+    }
 }
 
 static bool assignment_ready(struct formation *formation, struct subformation *sub)
@@ -5209,7 +5239,9 @@ bool G_Formation_SubmitState(uint32_t uid, struct formation_submit_state *out)
     out->assignment_ready = assignment_ready(formation, sub);
     out->assigned_to_cell = (cell && cell->state == CELL_OCCUPIED);
     out->in_range_of_cell = inside_arrival_field_bounds(formation, G_Pos_GetXZ(uid));
-    out->arrived_at_cell = arrived_at_cell(uid, cell) && may_settle(formation, sub);
+    out->arrived_at_cell = arrived_at_cell(uid, cell);
+    out->may_settle = formation->may_settle;
+    out->at_cell = (cell && at_own_cell(uid, cell));
     out->cohesion_force = cohesion_force(uid, sub);
     out->alignment_force = alignment_force(uid, sub);
     out->drag_force = drag_force(uid, sub);

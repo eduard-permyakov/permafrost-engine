@@ -88,6 +88,11 @@ struct formation_submit_state{
     bool           assigned_to_cell;
     bool           in_range_of_cell;
     bool           arrived_at_cell;
+    /* Whether the formation is ready for its units to take their tiles, and
+     * whether this one stands on the cell it was actually assigned.
+     */
+    bool           may_settle;
+    bool           at_cell;
     vec2_t         cohesion_force;
     vec2_t         alignment_force;
     vec2_t         drag_force;

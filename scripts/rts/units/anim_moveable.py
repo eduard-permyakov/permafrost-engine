@@ -73,7 +73,11 @@ class AnimMoveable(pf.AnimEntity, pf.MovableEntity, cont.Controllable):
         self.play_anim(self.move_anim())
 
     def __on_motion_end(self, event):
-        assert self.moving
+        if not self.moving:
+            # A pause (parking on a formation cell, a soft block, a combat hold)
+            # already switched us to the idle clip; the engine re-announces the
+            # end once the unit has truly stopped.
+            return
         self.moving = False
         self.play_anim(self.idle_anim())
 

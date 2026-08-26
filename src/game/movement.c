@@ -239,6 +239,15 @@ struct movestate_aux{
     /* Set once the unit has been flowing since its last order; only then may
      * it wall itself as jam-stuck (a queued launch rear is not a jam). */
     bool               seek_progressed;
+    /* Standing on its formation cell while the formation is not yet ready to
+     * take its tiles: visually settled, but neither blocking nor immovable.
+     */
+    bool               parked;
+    /* Left outside by a formation that has already taken its tiles: walks
+     * through its own side's bodies and stamps to reach its cell.
+     */
+    bool               phasing;
+    uint16_t           phase_ticks;
     bool               soft_blocking;
     vec2_t             soft_block_pos;
     float              soft_block_radius;
@@ -264,6 +273,8 @@ struct formation_state{
     bool           assigned_to_cell;
     bool           in_range_of_cell;
     bool           arrived_at_cell;
+    bool           may_settle;
+    bool           at_cell;
     vec2_t         normal_cohesion_force;
     vec2_t         normal_align_force;
     vec2_t         normal_drag_force;
@@ -641,6 +652,10 @@ static struct result navigation_tick_task(void *arg);
  */
 #define FIELD_VOID_COAST_TICKS          (40)
 
+/* A straggler gives up phasing after this long, so that one which can never
+ * reach its cell does not walk through its own side for good.
+ */
+#define PHASE_MAX_TICKS                 (400)
 /* A unit standing still this long inside a crowd becomes a soft blocker,
  * released once the local crowd thins for the hold duration. */
 #define SEEK_STUCK_BLOCK_TICKS          (10)
@@ -2343,6 +2358,8 @@ static vec2_t separation_force_gap(uint32_t uid, float buffer_dist, float *out_m
     vec2_t ret = (vec2_t){0.0f};
     uint32_t ent_flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
     float ent_radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
+    int ent_faction = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
+    bool phasing = movestate_aux_get(uid)->phasing;
 
     uint32_t near_ents[256];
     int num_near = G_Pos_EntsInCircleFrom(s_move_work.gamestate.postree,
@@ -2359,6 +2376,11 @@ static vec2_t separation_force_gap(uint32_t uid, float buffer_dist, float *out_m
         if(!(flags & ENTITY_FLAG_MOVABLE))
             continue;
         if((ent_flags & ENTITY_FLAG_AIR) != (flags & ENTITY_FLAG_AIR))
+            continue;
+
+        if(phasing
+        && G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, curr) == ent_faction
+        && ent_still(movestate_get(curr)))
             continue;
 
         vec2_t diff;
@@ -2539,9 +2561,12 @@ static void nullify_impass_components(uint32_t uid, vec2_t *inout_force)
     vec2_t bot =   (vec2_t){pos.x, pos.z - nt_dims.z};
 
     /* A unit already sitting on a blocked tile must be allowed to steer toward
-     * blocked neighbours so it can slide off the blocked region; only impassable
-     * terrain is forbidden in that case. */
-    bool on_blocked = M_NavPositionBlocked(s_move_work.gamestate.map, layer, pos);
+     * blocked neighbours so it can slide off the blocked region, and one phasing
+     * back into its formation must be allowed to steer into it; only impassable
+     * terrain is forbidden in those cases.
+     */
+    bool on_blocked = movestate_aux_get(uid)->phasing
+                   || M_NavPositionBlocked(s_move_work.gamestate.map, layer, pos);
 
     if(inout_force->x > 0 
     && (!M_NavPositionPathable(s_move_work.gamestate.map, layer, left)  
@@ -3090,10 +3115,12 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
     }
 
     /* Refuse to land on a dynamically-blocked tile (a building and the like). 
-     * A unit already on a blocker may still step off it. 
+     * A unit already on a blocker may still step off it, and one phasing back
+     * into its formation may step onto its own side's stamps.
      */
     vec2_t curr_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
-    bool on_blocked = M_NavPositionBlocked(s_move_work.gamestate.map, layer, curr_xz);
+    bool on_blocked = aux->phasing
+                   || M_NavPositionBlocked(s_move_work.gamestate.map, layer, curr_xz);
 
     if(PFM_Vec2_Len(&new_vel) > 0
     && M_NavPositionPathable(s_move_work.gamestate.map, layer, new_pos_xz)
@@ -3128,7 +3155,10 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         out->next_prot = ms->next_rot;
 
         out->flags |= UPDATE_SET_NEXT_ROT;
-        out->next_nrot = orient_to_velocity_history(ms, aux);
+        /* Being shoved off the cell to let a neighbour by is not a heading. */
+        out->next_nrot = aux->parked
+            ? turn_toward(ms->next_rot, in->fstate.target_orientation, SCALED_MAX_TURN_RATE)
+            : orient_to_velocity_history(ms, aux);
         out->flags |= UPDATE_SET_ROTATION;
         out->next_rot = (out->next_left == 0) ? out->next_nrot : ms->next_rot;
 
@@ -3144,11 +3174,13 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         /* A combat-held unit pivots toward its combat facing, not its travel heading. The
          * rotation patch is set only inside a branch that actually computes next_nrot; with no
          * branch taken the unit keeps its current rotation (else next_nrot is left unset). */
-        if(G_FlagsGetFrom(s_move_work.gamestate.flags, uid) & ENTITY_FLAG_COMBAT_HELD) {
+        bool held = G_FlagsGetFrom(s_move_work.gamestate.flags, uid) & ENTITY_FLAG_COMBAT_HELD;
+        if(held || aux->parked) {
+            quat_t facing = held ? aux->combat_facing : in->fstate.target_orientation;
             out->flags |= UPDATE_SET_PREV_ROT | UPDATE_SET_NEXT_ROT | UPDATE_SET_ROTATION;
             out->flags |= UPDATE_TURNING_IN_PLACE;
             out->next_prot = ms->next_rot;
-            out->next_nrot = turn_toward(ms->next_rot, aux->combat_facing, SCALED_MAX_TURN_RATE);
+            out->next_nrot = turn_toward(ms->next_rot, facing, SCALED_MAX_TURN_RATE);
             out->next_rot = ms->next_rot;
         }else if(turn_to_move) {
             out->flags |= UPDATE_SET_PREV_ROT | UPDATE_SET_NEXT_ROT | UPDATE_SET_ROTATION;
@@ -3442,7 +3474,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
             out->next_state = STATE_MOVING_IN_FORMATION;
             break;
         }
-        if(in->fstate.arrived_at_cell) {
+        if(in->fstate.arrived_at_cell && in->fstate.may_settle) {
             out->flags |= UPDATE_SET_STATE | UPDATE_SET_TARGET_DIR;
             out->next_target_dir = in->fstate.target_orientation;
             out->next_state = STATE_TURNING;
@@ -3625,10 +3657,10 @@ static void entity_apply_update(uint32_t uid, const struct movestate_patch *patc
         aux->seek_stuck_ticks = stuck ? MIN(aux->seek_stuck_ticks + 1, UINT16_MAX) : 0;
         aux->seek_clear_ticks = clear ? MIN(aux->seek_clear_ticks + 1, UINT16_MAX) : 0;
 
-        /* A pinned unit is in line by intent, not a queued launch rear. The
-         * progressed latch does not carry to shuttles: their orders re-issue
-         * mid-transit (resetting it invisibly) and a jam at the destination
-         * is wall-worthy regardless of how the cart got there. */
+        /* A unit that never got going is queueing, not jammed, so only one
+         * that has moved may wall itself off. Pinned units hold their line by
+         * intent, and a shuttle's re-issued order silently clears the flag.
+         */
         bool may_wall = aux->seek_progressed || aux->seek_pin_held
                      || ms->state == STATE_SURROUND_ENTITY;
         /* A relaxed solve has had its window and the unit is still going
@@ -3678,6 +3710,8 @@ static void find_neighbours(uint32_t uid,
     uint32_t ent_flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
     vec2_t ent_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
     float ent_radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
+    int ent_faction = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
+    bool phasing = movestate_aux_get(uid)->phasing;
     uint32_t near_ents[512];
     int num_near = G_Pos_EntsInCircleFrom(s_move_work.gamestate.postree, 
         s_move_work.gamestate.flags,
@@ -3719,6 +3753,11 @@ static void find_neighbours(uint32_t uid,
             continue;
 
         if((ent_flags & ENTITY_FLAG_AIR) != (flags & ENTITY_FLAG_AIR))
+            continue;
+
+        if(phasing
+        && G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, curr) == ent_faction
+        && ent_still(movestate_get(curr)))
             continue;
 
         float reach = clearpath_reach(ent_radius + curr_radius);
@@ -4614,8 +4653,13 @@ static void move_velocity_work(int begin_idx, int end_idx)
 
         const struct movestate *ms = movestate_get(in->ent_uid);
 
-        /* COMBAT_HELD: keep the move state/cell but zero velocity so the unit holds position. */
-        if(G_FlagsGetFrom(s_move_work.gamestate.flags, in->ent_uid) & ENTITY_FLAG_COMBAT_HELD) {
+        /* COMBAT_HELD, and a unit parked on its cell: keep the move state/cell
+         * but zero velocity so the unit holds position. Steering toward a cell
+         * it already stands on is an undamped spring, and holding a unit in
+         * that state would have it orbit rather than stand.
+         */
+        if((G_FlagsGetFrom(s_move_work.gamestate.flags, in->ent_uid) & ENTITY_FLAG_COMBAT_HELD)
+        || movestate_aux_get(in->ent_uid)->parked) {
             out->ent_uid = in->ent_uid;
             out->ent_vel = (vec2_t){0.0f, 0.0f};
             out->cp_flags = 0;
@@ -4645,7 +4689,8 @@ static void move_velocity_work(int begin_idx, int end_idx)
             .tile_horizon = relax ? CLEARPATH_TILE_HORIZON_SEC * hz_count(s_move_work.hz)
                                   : 0.0f,
         };
-        terrain.on_blocked = M_NavPositionBlocked(terrain.map, terrain.layer, in->cp_ent.xz_pos);
+        terrain.on_blocked = movestate_aux_get(in->ent_uid)->phasing
+            || M_NavPositionBlocked(terrain.map, terrain.layer, in->cp_ent.xz_pos);
 
         /* Walls in the solve: a unit standing on a blocked tile is escaping
          * and gets none. */
@@ -6042,9 +6087,10 @@ static void copy_gpu_results(void)
         /* The shader reports no solve diagnostics; the counters read zero. */
         out->cp_flags = 0;
 
-        /* The shader doesn't know the COMBAT_HELD flag; mirror the CPU path's
-         * held short-circuit so held units don't creep on the GPU path. */
-        if(G_FlagsGetFrom(s_move_work.gamestate.flags, in->ent_uid) & ENTITY_FLAG_COMBAT_HELD) {
+        /* The shader knows neither the COMBAT_HELD flag nor the parked one;
+         * mirror the CPU path's short-circuits so neither creeps here. */
+        if((G_FlagsGetFrom(s_move_work.gamestate.flags, in->ent_uid) & ENTITY_FLAG_COMBAT_HELD)
+        || movestate_aux_get(in->ent_uid)->parked) {
             out->ent_vel = (vec2_t){0.0f, 0.0f};
         }
     }
@@ -6113,6 +6159,41 @@ static struct result navigation_tick_task(void *arg)
     s_last_nav_tick_stats.serial_us = perf_ticks_to_us(serial_ticks);
     s_last_nav_tick_stats.total_us  = s_last_nav_tick_stats.serial_us + Perf_NavParallelGet();
     return NULL_RESULT;
+}
+
+/* A unit that stopped short of its cell is skipped by the per-tick work for
+ * good, so a formation that settles around it leaves it stranded wherever it
+ * gave up. Once the formation has taken its tiles, put it back on the road with
+ * a phase permit, until its budget runs out.
+ */
+static void resume_stranded_formation_units(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    uint32_t uid;
+    kh_foreach_key(s_entity_state_table, uid, {
+
+        struct movestate *ms = movestate_get(uid);
+        if(!ms || ms->state != STATE_ARRIVED)
+            continue;
+        if(!G_EntityExists(uid))
+            continue;
+
+        struct movestate_aux *aux = movestate_aux_get(uid);
+        if(aux->phase_ticks > PHASE_MAX_TICKS)
+            continue;
+
+        struct formation_submit_state fss = {0};
+        if(!G_Formation_SubmitState(uid, &fss))
+            continue;
+        if(!fss.may_settle || fss.at_cell || !fss.assigned_to_cell)
+            continue;
+
+        if(ms->blocking)
+            entity_unblock(uid);
+        move_notify_motion_start(uid, ms);
+        ms->state = STATE_MOVING_IN_FORMATION;
+    });
 }
 
 /* Waiting units aren't in the per-tick work; tick their resume countdown here. */
@@ -6194,6 +6275,7 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
 
     uint64_t phase_start = SDL_GetPerformanceCounter();
     resume_waiting_units();
+    resume_stranded_formation_units();
     pivot_held_still_units();
     s_last_nav_tick_stats.pivot_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
@@ -6253,8 +6335,12 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
         case STATE_TURNING:      s_last_nav_tick_stats.nstate_turning++; break;
         default:                 s_last_nav_tick_stats.nstate_moving++;  break;
         }
-        if(ent_still(ms))
+        if(ent_still(ms)) {
+            struct movestate_aux *saux = movestate_aux_get(curr);
+            saux->parked = false;
+            saux->phasing = false;
             continue;
+        }
 
         struct flock *flock = NULL;
         const struct flock_snap *fsnap = NULL;
@@ -6289,6 +6375,36 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
 
         struct formation_submit_state fss = {0};
         bool in_formation = G_Formation_SubmitState(curr, &fss);
+
+        struct movestate_aux *caux = movestate_aux_get(curr);
+        /* A unit whose cell assignment has not landed yet has no cell to have
+         * arrived at, and reads as arrived. Parking it there would flip the
+         * whole formation to its idle clip for the width of that window.
+         */
+        bool parked = in_formation && fss.assigned_to_cell
+                   && fss.arrived_at_cell && !fss.may_settle;
+        caux->parked = parked;
+
+        bool left_behind = in_formation && fss.may_settle && !fss.at_cell;
+        if(!left_behind)
+            caux->phase_ticks = 0;
+        else if(caux->phase_ticks < UINT16_MAX)
+            caux->phase_ticks++;
+        caux->phasing = left_behind && (caux->phase_ticks <= PHASE_MAX_TICKS);
+
+        /* Both notifications are level-triggered and idempotent through the
+         * motion_stopped latch, so the pair is self-healing: whichever way the
+         * unit leaves the parked condition, the very next tick puts the clip
+         * back in step. A unit on its way to settling is left alone, since
+         * entity_finish_moving announces its own end.
+         */
+        if(parked) {
+            move_notify_motion_end(curr);
+        }else if(caux->motion_stopped && !caux->soft_blocking
+              && !(in_formation && fss.arrived_at_cell && fss.may_settle)) {
+            move_notify_motion_start(curr, ms);
+        }
+
         move_push_work((struct move_work_in){
             .ent_uid = curr,
             .flock = flock,
@@ -6303,6 +6419,8 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
             .fstate.assigned_to_cell = fss.assigned_to_cell,
             .fstate.in_range_of_cell = fss.in_range_of_cell,
             .fstate.arrived_at_cell = fss.arrived_at_cell,
+            .fstate.may_settle = fss.may_settle,
+            .fstate.at_cell = fss.at_cell,
             .fstate.normal_cohesion_force = fss.cohesion_force,
             .fstate.normal_align_force = fss.alignment_force,
             .fstate.normal_drag_force = fss.drag_force,
