@@ -165,3 +165,6 @@ sched_task_exit_trampoline:
 #error "Unsupported platform"
 #endif
 
+#if defined(__ELF__)
+.section .note.GNU-stack,"",@progbits
+#endif
