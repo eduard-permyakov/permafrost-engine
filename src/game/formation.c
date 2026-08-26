@@ -96,6 +96,11 @@
 #define EPSILON                  (1.0f/1024)
 #define FIELD_RECOMPUTE_INTERVAL (3.0f) /* seconds */
 #define MAX_CELL_ASSIGNMENT_WORK (256)
+/* How long a box shell waits for the shells inside it before closing
+ * regardless, so that an interior which cannot be reached at all does not
+ * hold the wall open for good.
+ */
+#define BOX_SETTLE_TIMEOUT_MS    (15000)
 #define IDX(r, width, c)         (r * width + c)
 #define FIELD_IDX3(_res, _l, _r, _c) \
     (((size_t)(_l) * (_res) * (_res)) + ((size_t)(_r) * (_res)) + (_c))
@@ -348,6 +353,12 @@ struct formation{
     /* State associated with outstanding cell assignment computations 
      */
     vec_assignment_work_t work;
+    /* One bit per subformation with every unit standing on its cell, and the
+     * tick at which a box shell first had to wait on one. Refreshed every tick
+     * from the cells, so neither is serialised.
+     */
+    uint64_t             settled;
+    uint32_t             hold_start_tick;
 };
 
 KHASH_MAP_INIT_INT(formation, struct formation)
@@ -363,6 +374,7 @@ static void complete_cell_field_work(struct subformation *formation, bool yield)
 static uint8_t *cell_get_field(uint32_t uid);
 static enum flow_dir cell_get_dir(const uint8_t *field, int arrival_res, int r, int c);
 static void invalidate_cell_arrival_fields(struct subformation *formation);
+static void update_settled(struct formation *formation);
 
 static uint32_t subformation_leader(struct subformation *formation);
 static void subformation_anchor_and_heading(uint32_t leader,
@@ -3451,6 +3463,10 @@ static void on_update_start(void *user, void *event)
             }
         }
     });
+
+    kh_foreach_ptr(s_formations, formation, {
+        update_settled(formation);
+    });
 }
 
 static uint8_t *cell_get_field(uint32_t uid)
@@ -4706,6 +4722,72 @@ bool G_Formation_ArrivedAtCell(uint32_t uid)
     return arrived_at_cell(uid, cell_for_ent(formation, uid));
 }
 
+/* arrived_at_cell() measures against the position the unit settled for when
+ * its cell turned out to be unreachable, so it cannot tell a shell that is in
+ * from one that gave up outside the wall. This measures the real cell.
+ */
+static bool at_own_cell(uint32_t uid, struct cell *cell)
+{
+    if(cell->state == CELL_NOT_PLACED || cell->state == CELL_NOT_USED)
+        return true;
+
+    vec2_t delta;
+    vec2_t pos = G_Pos_GetXZ(uid);
+    PFM_Vec2_Sub(&pos, &cell->pos, &delta);
+    return (PFM_Vec2_Len(&delta) <= MIN(G_GetSelectionRadius(uid) * 1.5f, 10.0f));
+}
+
+static bool subformation_settled(struct subformation *sub)
+{
+    if(sub->state != SUBFORMATION_READY)
+        return false;
+
+    uint32_t uid;
+    kh_foreach_key(sub->ents, uid, {
+        khiter_t k = kh_get(assignment, sub->assignment, uid);
+        if(k == kh_end(sub->assignment))
+            return false;
+        struct coord coord = kh_val(sub->assignment, k);
+        if(!at_own_cell(uid, &vec_AT(&sub->cells, CELL_IDX(coord.r, coord.c, sub->ncols))))
+            return false;
+    });
+    return true;
+}
+
+static void update_settled(struct formation *formation)
+{
+    formation->settled = 0;
+    if(formation->type != FORMATION_BOX)
+        return;
+    for(int i = 0; (i < vec_size(&formation->subformations)) && (i < 64); i++) {
+        if(subformation_settled(&vec_AT(&formation->subformations, i)))
+            formation->settled |= (((uint64_t)0x1) << i);
+    }
+}
+
+/* A box shell closes around the shells it encloses. Sealing itself shut before
+ * they are through turns their cells into an unreachable island, and they give
+ * up wherever they happen to be standing, so a shell holds its units off their
+ * cells until the ones inside it are in.
+ */
+static bool may_settle(struct formation *formation, struct subformation *sub)
+{
+    if(formation->type != FORMATION_BOX)
+        return true;
+    bool pending = false;
+    for(int i = subformation_index(formation, sub) + 1;
+        (i < vec_size(&formation->subformations)) && (i < 64); i++) {
+        if(!(formation->settled & (((uint64_t)0x1) << i)))
+            pending = true;
+    }
+    if(!pending)
+        return true;
+
+    if(formation->hold_start_tick == 0)
+        formation->hold_start_tick = SDL_GetTicks();
+    return (SDL_GetTicks() - formation->hold_start_tick > BOX_SETTLE_TIMEOUT_MS);
+}
+
 static bool assignment_ready(struct formation *formation, struct subformation *sub)
 {
     /* We consider the assignment ready when all units in front of the
@@ -5127,7 +5209,7 @@ bool G_Formation_SubmitState(uint32_t uid, struct formation_submit_state *out)
     out->assignment_ready = assignment_ready(formation, sub);
     out->assigned_to_cell = (cell && cell->state == CELL_OCCUPIED);
     out->in_range_of_cell = inside_arrival_field_bounds(formation, G_Pos_GetXZ(uid));
-    out->arrived_at_cell = arrived_at_cell(uid, cell);
+    out->arrived_at_cell = arrived_at_cell(uid, cell) && may_settle(formation, sub);
     out->cohesion_force = cohesion_force(uid, sub);
     out->alignment_force = alignment_force(uid, sub);
     out->drag_force = drag_force(uid, sub);
