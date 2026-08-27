@@ -34,6 +34,13 @@
 
 import pf
 import types
+import sys
+
+# The engine puts its own in-game console behind sys.stdout, so a shell
+# redirection of this script captures nothing at all; it has to open the file
+# it writes itself.
+OUTFILE = "docs/python_api.txt"
+sys.stdout = open(OUTFILE, "w")
 
 TAB_WIDTH = 4
 
@@ -138,6 +145,8 @@ for const in [attr for attr in dir(pf) if (isinstance(getattr(pf, attr), types.I
                                        or isinstance(getattr(pf, attr), types.UnicodeType))
                                        and not attr.startswith('__')]:
     print(tab + "{0} {1}".format(const, getattr(pf, const)))
+
+sys.stdout.close()
 
 def on_tick(user, event):
     pf.global_event(pf.SDL_QUIT, None)
