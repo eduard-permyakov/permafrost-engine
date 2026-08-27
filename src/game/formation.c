@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2023 Eduard Permyakov 
+ *  Copyright (C) 2023-2026 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -89,6 +89,11 @@
 #define MIN(a, b)                ((a) < (b) ? (a) : (b))
 #define MAX(a, b)                ((a) > (b) ? (a) : (b))
 #define CLAMP(a, min, max)       (MIN(MAX((a), (min)), (max)))
+/* How far inside the placement field a shape must sit before the fit will
+ * choose it, in tiles. Every cell is snapped to a tile, so a lattice which only
+ * just fits has nowhere to put the rounding and comes out pinned to the edge.
+ */
+#define FIT_EDGE_MARGIN          (2)
 #define UNIT_BUFFER_DIST         (1.0f)
 #define MOVE_BUFFER_DIST         (5.0f)
 #define SUBFORMATION_BUFFER_DIST (8.0f)
@@ -128,6 +133,16 @@ enum cell_state{
     CELL_OCCUPIED,
     CELL_NOT_OCCUPIED,
     CELL_NOT_USED
+};
+
+/* How much ground a cell claims when it is committed. A cell holds only its own
+ * tile while its subformation is being laid out, and the full footprint once
+ * that is done.
+ */
+enum cell_commit{
+    COMMIT_NONE,
+    COMMIT_TILE,
+    COMMIT_FOOTPRINT
 };
 
 enum tile_state{
@@ -451,21 +466,40 @@ static bool alloc_formation_fields(struct formation *formation)
     return true;
 }
 
-static size_t ncols(enum formation_type type, size_t nunits)
+/* The depth the shape wants per unit of width. It is the best case only: ground
+ * which will not take the resulting rectangle squares it off towards 1.0.
+ */
+static float shape_ratio(enum formation_type type)
 {
     switch(type) {
     case FORMATION_RANK:
-        return MIN(ceilf(sqrtf(nunits / RANK_WIDTH_RATIO)), nunits);
+        return RANK_WIDTH_RATIO;
     case FORMATION_COLUMN:
-        return MIN(ceilf(sqrtf(nunits / COLUMN_WIDTH_RATIO)), nunits);
+        return COLUMN_WIDTH_RATIO;
     default: assert(0);
     }
-	return 0;
+    return 1.0f;
 }
 
-static size_t nrows(enum formation_type type, size_t nunits)
+static size_t shape_ncols(float ratio, size_t nunits)
 {
-    return ceilf(nunits / ncols(type, nunits));
+    size_t cols = ceilf(sqrtf(nunits / ratio));
+    return CLAMP(cols, 1, nunits);
+}
+
+static size_t shape_nrows(size_t nunits, size_t ncols)
+{
+    return (nunits / ncols) + !!(nunits % ncols);
+}
+
+/* Whether the rectangle still leans the way its shape is named. The two lean
+ * the opposite way, so this is also where they meet: the squarest a shape may
+ * be squared off to.
+ */
+static bool shape_holds(enum formation_type type, size_t nunits, size_t ncols)
+{
+    size_t rows = shape_nrows(nunits, ncols);
+    return (type == FORMATION_RANK) ? (ncols >= rows) : (rows >= ncols);
 }
 
 static float formation_speed(const vec_entity_t *ents)
@@ -503,8 +537,16 @@ static vec2_t field_center(vec2_t target, vec2_t orientation, int field_res)
     return center;
 }
 
+static void stamp_tile(struct coord coord, int field_res, uint8_t *occupied)
+{
+    for(int j = 0; j < NAV_LAYER_MAX; j++) {
+        occupied[FIELD_IDX3(field_res, j, coord.r, coord.c)] = TILE_ALLOCATED;
+    }
+}
+
 static bool try_occupy_cell(struct coord *curr, vec2_t orientation, uint16_t iid,
-                            float radius, enum nav_layer layer, int anchor, bool commit,
+                            float radius, enum nav_layer layer, int anchor,
+                            enum cell_commit commit,
                             int field_res, uint8_t *occupied, uint16_t *islands)
 {
     struct map_resolution nav_res;
@@ -543,15 +585,49 @@ static bool try_occupy_cell(struct coord *curr, vec2_t orientation, uint16_t iid
         && occupied[FIELD_IDX3(field_res, layer, coord.r, coord.c)] != TILE_VISITED)
             return false;
     }
-    if(commit) {
+    /* Claiming the whole footprint has two cells veto each other over tiles
+     * neither body comes near: a radius 3 unit covers nine tiles, while off the
+     * grid axes the lattice pitch is barely two of them. The pitch is measured
+     * to guarantee the separation, so a cell need only hold its own tile until
+     * its subformation is complete.
+     */
+    if(commit == COMMIT_FOOTPRINT) {
         for(int i = 0; i < ndescs; i++) {
-            struct coord coord = (struct coord){descs[i].tile_r, descs[i].tile_c};
-            for(int j = 0; j < NAV_LAYER_MAX; j++) {
-                occupied[FIELD_IDX3(field_res, j, coord.r, coord.c)] = TILE_ALLOCATED;
-            }
+            stamp_tile((struct coord){descs[i].tile_r, descs[i].tile_c},
+                field_res, occupied);
         }
+    }else if(commit == COMMIT_TILE) {
+        stamp_tile(*curr, field_res, occupied);
     }
     return true;
+}
+
+/* Lay down every tile a unit standing on this one covers, with no free check:
+ * the cell is already committed, this only widens what it holds.
+ */
+static void stamp_footprint(struct coord tile, float radius, int field_res, uint8_t *occupied)
+{
+    struct map_resolution nav_res;
+    M_NavGetResolution(s_map, &nav_res);
+
+    const float tile_x_dim = (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE) / (float)nav_res.tile_w;
+    const float tile_z_dim = (TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE) / (float)nav_res.tile_h;
+
+    struct map_resolution res = (struct map_resolution){
+        1, 1, field_res, field_res,
+        tile_x_dim * field_res, tile_z_dim * field_res
+    };
+    vec2_t center = (vec2_t){
+        (tile.c + 0.5f) * -tile_x_dim,
+        (tile.r + 0.5f) *  tile_z_dim
+    };
+    vec3_t origin = (vec3_t){0.0f, 0.0f, 0.0f};
+
+    struct tile_desc descs[256];
+    size_t ndescs = M_Tile_AllUnderCircle(res, center, radius, origin, descs, ARR_SIZE(descs));
+    for(int i = 0; i < ndescs; i++) {
+        stamp_tile((struct coord){descs[i].tile_r, descs[i].tile_c}, field_res, occupied);
+    }
 }
 
 static vec2_t tile_to_pos(struct coord tile, vec2_t center, int field_res)
@@ -648,7 +724,7 @@ static bool nearest_free_tile(struct coord *curr, struct coord *out, uint16_t ii
     int field_res, uint8_t *occupied, uint16_t *islands)
 {
     if(try_occupy_cell(curr, orientation, iid, radius, layer,
-                       direction_mask, false, field_res, occupied, islands)) {
+                       direction_mask, COMMIT_NONE, field_res, occupied, islands)) {
         *out = *curr;
         return true;
     }
@@ -692,7 +768,7 @@ static bool nearest_free_tile(struct coord *curr, struct coord *out, uint16_t ii
         if((test_tile.r >= 0 && test_tile.r < field_res)
         && (test_tile.c >= 0 && test_tile.c < field_res)
         && (try_occupy_cell(&test_tile, orientation, iid, radius, layer,
-                            (int)direction_mask, false, field_res, occupied, islands))) {
+                            (int)direction_mask, COMMIT_NONE, field_res, occupied, islands))) {
             *out = test_tile;
             return true;
         }
@@ -716,7 +792,7 @@ static bool nearest_free_tile(struct coord *curr, struct coord *out, uint16_t ii
 
             struct coord curr = (struct coord){abs_r, abs_c};
             if(try_occupy_cell(&curr, orientation, iid, radius, layer,
-                               direction_mask, false, field_res, occupied, islands)) {
+                               direction_mask, COMMIT_NONE, field_res, occupied, islands)) {
                 *out = (struct coord){abs_r, abs_c};
                 return true;
             }
@@ -845,7 +921,7 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
                        enum nav_layer layer, vec2_t target_offsets,
                        const struct cell *left, const struct cell *right,
                        const struct cell *front,  const struct cell *back,
-                       const vec2_t *ideal,
+                       const vec2_t *ideal, enum cell_commit commit,
                        int field_res, uint8_t *occupied, uint16_t *islands,
                        struct coord *visited)
 {
@@ -966,7 +1042,7 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
     bool success = false;
     do{
         success = try_occupy_cell(&curr_tile, orientation, iid, radius, layer, 
-            anchor, true, field_res, occupied, islands_base);
+            anchor, commit, field_res, occupied, islands_base);
         if(!success) {
             occupied[FIELD_IDX3(field_res, layer, curr_tile.r, curr_tile.c)] = TILE_VISITED;
             visited[nvisited++] = curr_tile;
@@ -1276,26 +1352,34 @@ static vec2_t target_position(vec_entity_t *ents)
     return ret;
 }
 
-/* The world position of cell (r, c) of the box grid, which is shared by every
- * shell and anchored at the front-centre cell of the outermost one. Chaining a
- * cell off its neighbours instead lets the tile binning round the same pitch a
- * different way on either side of the anchor, which drifts the shells apart.
+/* The world position of the cell sitting 'depth' rows behind the origin cell
+ * and 'lateral' columns to its right, on the pitch given by 'offsets'.
  */
-static vec2_t box_cell_ideal(vec2_t origin, vec2_t orientation, vec2_t offsets,
-                             int root_nrows, int root_ncols, int r, int c)
+static vec2_t cell_lattice_pos(vec2_t origin, vec2_t orientation, vec2_t offsets,
+                               int depth, int lateral)
 {
     vec2_t row_delta;
     PFM_Vec2_Normal(&orientation, &row_delta);
-    PFM_Vec2_Scale(&row_delta, (r - (root_nrows - 1)) * offsets.x, &row_delta);
+    PFM_Vec2_Scale(&row_delta, -depth * offsets.x, &row_delta);
 
     vec2_t col_delta = (vec2_t){orientation.z, -orientation.x};
     PFM_Vec2_Normal(&col_delta, &col_delta);
-    PFM_Vec2_Scale(&col_delta, (c - root_ncols / 2) * offsets.y, &col_delta);
+    PFM_Vec2_Scale(&col_delta, lateral * offsets.y, &col_delta);
 
     vec2_t ret = origin;
     PFM_Vec2_Add(&ret, &row_delta, &ret);
     PFM_Vec2_Add(&ret, &col_delta, &ret);
     return ret;
+}
+
+/* The world position of cell (r, c) of a grid anchored at its front-centre
+ * cell, in the row and column convention the cell vector is stored in.
+ */
+static vec2_t grid_cell_ideal(vec2_t origin, vec2_t orientation, vec2_t offsets,
+                              int root_nrows, int root_ncols, int r, int c)
+{
+    return cell_lattice_pos(origin, orientation, offsets,
+        (root_nrows - 1) - r, c - root_ncols / 2);
 }
 
 /* A cell masked out of the subformation's grid is not a placement anchor. */
@@ -1305,6 +1389,138 @@ static struct cell *neighbour_cell(struct subformation *formation, int r, int c)
         return NULL;
     struct cell *ret = &vec_AT(&formation->cells, CELL_IDX(r, c, formation->ncols));
     return (ret->state == CELL_NOT_USED) ? NULL : ret;
+}
+
+/* Whether a unit of this subformation could stand on the lattice cell 'depth'
+ * rows behind the anchor and 'lateral' columns to its right.
+ */
+static bool lattice_cell_free(struct subformation *formation, vec2_t center,
+                              vec2_t anchor, vec2_t orientation, vec2_t offsets,
+                              int depth, int lateral, uint16_t iid,
+                              int field_res, uint8_t *occupied, uint16_t *islands_base)
+{
+    vec2_t pos = cell_lattice_pos(anchor, orientation, offsets, depth, lateral);
+    struct coord tile = pos_to_tile(center, pos, field_res);
+    if(tile.r < FIT_EDGE_MARGIN || tile.r >= field_res - FIT_EDGE_MARGIN
+    || tile.c < FIT_EDGE_MARGIN || tile.c >= field_res - FIT_EDGE_MARGIN)
+        return false;
+    return try_occupy_cell(&tile, orientation, iid, formation->unit_radius,
+        formation->layer, 0, COMMIT_NONE, field_res, occupied, islands_base);
+}
+
+/* The shape the ratio constant asks for is the best case only. Ground which
+ * will not take that rectangle does not refuse it, it bends it, since every
+ * cell is laid down relative to its already displaced neighbour. So square the
+ * rectangle off a column at a time until it does fit: a rank which cannot
+ * spread wide enough grows deeper, a column which cannot reach back far enough
+ * grows wider. Neither is taken past square, which is where the two meet.
+ */
+static void fit_dims_to_area(struct subformation *formation, enum formation_type type,
+                             vec2_t center, vec2_t target_pos, vec2_t orientation,
+                             vec2_t offsets, int field_res,
+                             uint8_t *occupied, uint16_t *islands)
+{
+    PERF_ENTER();
+
+    size_t nunits = kh_size(formation->ents);
+    if(nunits == 0)
+        PERF_RETURN_VOID();
+
+    uint16_t *islands_base = islands + (size_t)formation->layer * field_res * field_res;
+    struct coord dest = pos_to_tile(center, formation->reachable_target, field_res);
+    dest.r = CLAMP(dest.r, 0, field_res - 1);
+    dest.c = CLAMP(dest.c, 0, field_res - 1);
+    uint16_t iid = islands_base[IDX(dest.r, field_res, dest.c)];
+    if(iid == UINT16_MAX)
+        PERF_RETURN_VOID();
+
+    /* Every other cell is laid out from the front centre one, and that one
+     * settles on the nearest free tile to the target rather than on the target
+     * itself, so the lattice measured here has to start from the same place.
+     */
+    struct coord seed = pos_to_tile(center, bin_to_tile(target_pos, center, field_res),
+        field_res);
+    struct coord anchor_tile;
+    if(!nearest_free_tile(&seed, &anchor_tile, iid, 0, center, orientation,
+                          formation->unit_radius, formation->layer, field_res,
+                          occupied, islands_base))
+        PERF_RETURN_VOID();
+    vec2_t anchor = tile_to_pos(anchor_tile, center, field_res);
+
+    const int nents = (int)nunits;
+    const int cols_ideal = (int)shape_ncols(shape_ratio(type), nunits);
+    const int step = (type == FORMATION_RANK) ? -1 : +1;
+
+    int cols_max = 0, rows_max = 0;
+    for(int cols = cols_ideal; (cols >= 1) && (cols <= nents)
+                            && shape_holds(type, nunits, cols); cols += step) {
+        cols_max = MAX(cols_max, cols);
+        rows_max = MAX(rows_max, (int)shape_nrows(nunits, cols));
+    }
+    if(cols_max == 0)
+        PERF_RETURN_VOID();
+
+    /* Every candidate rectangle is centred on the same front cell, so all of
+     * them are sub-rectangles of the widest and deepest one. Probe that once
+     * and answer each candidate from a summed-area table of the result.
+     */
+    const size_t stride = (size_t)cols_max + 1;
+    int *sat = PF_CALLOC((size_t)(rows_max + 1) * stride, sizeof(int));
+    if(!sat)
+        PERF_RETURN_VOID();
+
+    const int lat_lo = -(cols_max / 2);
+    for(int d = 0; d < rows_max; d++) {
+    for(int l = 0; l < cols_max; l++) {
+        bool open = lattice_cell_free(formation, center, anchor, orientation, offsets,
+            d, lat_lo + l, iid, field_res, occupied, islands_base);
+        sat[(d + 1) * stride + (l + 1)] = (open ? 1 : 0)
+                                        + sat[d * stride + (l + 1)]
+                                        + sat[(d + 1) * stride + l]
+                                        - sat[d * stride + l];
+    }}
+
+    /* Walking out from the ideal shape means the first candidate to pass is
+     * always the one closest to the constant. A rectangle with room for
+     * everybody still bends around whatever it has to step over, so an
+     * unobstructed one is preferred to a merely roomy one.
+     */
+    int clear_cols = 0, fit_cols = 0, best_cols = 0, best_open = -1;
+    for(int cols = cols_ideal; (cols >= 1) && (cols <= nents)
+                            && shape_holds(type, nunits, cols); cols += step) {
+
+        int rows = (int)shape_nrows(nunits, cols);
+        int lo = (-(cols / 2)) - lat_lo;
+        int hi = (cols - 1 - (cols / 2)) - lat_lo;
+        assert((lo >= 0) && (hi < cols_max));
+
+        int nopen = sat[rows * stride + (hi + 1)] - sat[rows * stride + lo];
+        if((nopen == rows * cols) && !clear_cols)
+            clear_cols = cols;
+        if((nopen >= nents) && !fit_cols)
+            fit_cols = cols;
+        if(MIN(nopen, nents) > best_open) {
+            best_open = MIN(nopen, nents);
+            best_cols = cols;
+        }
+    }
+    PF_FREE(sat);
+
+    int ncols = clear_cols ? clear_cols : (fit_cols ? fit_cols : best_cols);
+    int nrows = (int)shape_nrows(nunits, ncols);
+    if(((size_t)ncols == formation->ncols) && ((size_t)nrows == formation->nrows))
+        PERF_RETURN_VOID();
+
+    size_t total = (size_t)nrows * ncols;
+    if(!vec_cell_resize(&formation->cells, total))
+        PERF_RETURN_VOID();
+    formation->cells.size = total;
+    for(size_t i = 0; i < total; i++) {
+        vec_AT(&formation->cells, i) = (struct cell){CELL_NOT_PLACED};
+    }
+    formation->nrows = nrows;
+    formation->ncols = ncols;
+    PERF_RETURN_VOID();
 }
 
 static void place_subformation(enum formation_type type, float cell_radius,
@@ -1320,6 +1536,11 @@ static void place_subformation(enum formation_type type, float cell_radius,
     vec2_t target_pos = subformation_target_pos(type, formation, target, orientation, 
         target_offsets);
 
+    if(type != FORMATION_BOX) {
+        fit_dims_to_area(formation, type, center, target_pos, orientation,
+            target_offsets, field_res, occupied, islands);
+    }
+
     struct coord *visited = PF_MALLOC((size_t)field_res * field_res * sizeof(struct coord));
     if(!visited)
         PERF_RETURN_VOID();
@@ -1327,17 +1548,24 @@ static void place_subformation(enum formation_type type, float cell_radius,
     int nrows = formation->nrows;
     int ncols = formation->ncols;
 
-    struct subformation *box_root = subformation_root(formation);
+    /* Every shape is laid out on one absolute lattice rather than by chaining
+     * each cell off its neighbour. Chaining re-bins an already binned position
+     * once per row, so whatever the pitch leaves over after rounding to a whole
+     * number of tiles is re-added every row and the block shears. A box nests
+     * its shells on the outermost one's lattice; every other shape is its own
+     * root and anchors on the cell it seeds from.
+     */
     bool box = (type == FORMATION_BOX);
-    int inset = box ? (box_root->ncols - ncols) / 2 : 0;
-    vec2_t box_origin;
+    struct subformation *lattice_root = box ? subformation_root(formation) : formation;
+    int inset = (lattice_root->ncols - ncols) / 2;
+    vec2_t lattice_origin;
     bool have_origin = false;
 
-    if(box && (formation != box_root)) {
-        struct cell *seed = &vec_AT(&box_root->cells,
-            CELL_IDX(box_root->nrows - 1, box_root->ncols / 2, box_root->ncols));
+    if(box && (formation != lattice_root)) {
+        struct cell *seed = &vec_AT(&lattice_root->cells,
+            CELL_IDX(lattice_root->nrows - 1, lattice_root->ncols / 2, lattice_root->ncols));
         have_origin = (seed->state == CELL_NOT_OCCUPIED) || (seed->state == CELL_OCCUPIED);
-        box_origin = seed->pos;
+        lattice_origin = seed->pos;
     }
 
     /* Start by placing the center-most front row cell, Position the cells on
@@ -1384,24 +1612,25 @@ static void place_subformation(enum formation_type type, float cell_radius,
         struct cell *right_cell = neighbour_cell(formation, right.r, right.c);
 
         vec2_t ideal;
-        if(box && have_origin) {
-            ideal = box_cell_ideal(box_origin, orientation, target_offsets,
-                box_root->nrows, box_root->ncols, curr.r + inset, curr.c + inset);
+        if(have_origin) {
+            ideal = grid_cell_ideal(lattice_origin, orientation, target_offsets,
+                lattice_root->nrows, lattice_root->ncols, curr.r + inset, curr.c + inset);
         }
 
         bool success = place_cell(curr_cell, center, target_pos, 
             formation->reachable_target, orientation, formation->unit_radius, 
             formation->layer, target_offsets, left_cell, right_cell, front_cell, back_cell, 
-            (box && have_origin) ? &ideal : NULL,
+            have_origin ? &ideal : NULL, box ? COMMIT_FOOTPRINT : COMMIT_TILE,
             field_res, occupied, islands, visited);
         if(!success)
             break;
 
-        /* The outermost shell's front-centre cell anchors the grid the rest of
-         * the box is laid out on.
+        /* The first cell down anchors the lattice the rest are laid out on: the
+         * outermost shell's front-centre cell for a box, this subformation's
+         * own for anything else.
          */
-        if(box && !have_origin) {
-            box_origin = curr_cell->pos;
+        if(!have_origin) {
+            lattice_origin = curr_cell->pos;
             have_origin = true;
         }
 
@@ -1418,6 +1647,22 @@ static void place_subformation(enum formation_type type, float cell_radius,
 
     queue_coord_destroy(&frontier);
     PF_FREE(visited);
+
+    /* The cells held only their own tiles while the grid was being laid out.
+     * Widen them to the full footprints now that no cell of this subformation
+     * has to be fitted around another.
+     */
+    if(!box) {
+        for(int i = 0; i < vec_size(&formation->cells); i++) {
+            struct cell *cell = &vec_AT(&formation->cells, i);
+            if(cell->state == CELL_NOT_PLACED || cell->state == CELL_NOT_USED)
+                continue;
+            struct coord tile = pos_to_tile(center, cell->pos, field_res);
+            if(tile.r < 0 || tile.r >= field_res || tile.c < 0 || tile.c >= field_res)
+                continue;
+            stamp_footprint(tile, formation->unit_radius, field_res, occupied);
+        }
+    }
 
     formation->pos = subformation_center(formation);
     formation->orientation = orientation;
@@ -1769,8 +2014,13 @@ static void init_subformations(struct formation *formation)
             nrows = ncolumns = shells[i].side;
             used = box_cell_mask(shells[i], counts[i]);
         }else{
-            ncolumns = ncols(formation->type, counts[i]);
-            nrows = (counts[i] / ncolumns) + !!(counts[i] % ncolumns);
+            /* A box which was refused falls back to a rank. Its own type
+             * carries no ratio to be shaped by.
+             */
+            enum formation_type shape = (formation->type == FORMATION_BOX)
+                                      ? FORMATION_RANK : formation->type;
+            ncolumns = shape_ncols(shape_ratio(shape), counts[i]);
+            nrows = shape_nrows(counts[i], ncolumns);
         }
 
         init_subformation(formation->target, sub, parent, 1, &child, 
