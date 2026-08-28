@@ -57,6 +57,11 @@ struct enemies_desc{
     int          faction_id;
     vec3_t       map_pos;
     struct coord chunk;
+    /* Guide to the nearest tile from which an enemy is within this reach,
+     * rather than to the tiles the enemies stand on. Zero seeks the enemies
+     * themselves, which is what a melee unit wants.
+     */
+    uint16_t     range;
 };
 
 struct entity_desc{

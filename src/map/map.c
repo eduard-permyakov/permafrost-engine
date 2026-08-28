@@ -1136,9 +1136,15 @@ vec2_t M_NavClosestReachableInRange(const struct map *map, enum nav_layer layer,
 }
 
 void M_NavRequestAsyncEnemySeekField(const struct map *map, enum nav_layer layer, 
-                                     vec2_t curr_pos, int faction_id)
+                                     vec2_t curr_pos, int faction_id, float range)
 {
-    N_RequestAsyncEnemySeekField(curr_pos, map->nav_private, layer, map->pos, faction_id);
+    N_RequestAsyncEnemySeekField(curr_pos, map->nav_private, layer, map->pos, faction_id, range);
+}
+
+bool M_NavHasEnemyRangeFlowAt(const struct map *map, enum nav_layer layer,
+                              int faction_id, float range, vec2_t xz_pos)
+{
+    return N_HasEnemyRangeFlowAt(map->nav_private, map->pos, layer, faction_id, range, xz_pos);
 }
 
 void M_NavRequestAsyncSurroundField(const struct map *map, enum nav_layer layer, 

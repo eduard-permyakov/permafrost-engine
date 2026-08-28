@@ -628,7 +628,15 @@ size_t   M_NavCopyBlockersPacked(const struct map *map, void *out, size_t maxout
  */
 
 void M_NavRequestAsyncEnemySeekField(const struct map *map, enum nav_layer layer, 
-                                     vec2_t curr_pos, int faction_id);
+                                     vec2_t curr_pos, int faction_id, float range);
+
+/* ------------------------------------------------------------------------
+ * True if the enemy field for the specified reach is cached and has a flow
+ * direction at the specified position.
+ * ------------------------------------------------------------------------
+ */
+bool   M_NavHasEnemyRangeFlowAt(const struct map *map, enum nav_layer layer,
+                                int faction_id, float range, vec2_t xz_pos);
 void M_NavRequestAsyncSurroundField(const struct map *map, enum nav_layer layer, 
                                     vec2_t curr_pos, uint32_t ent, int faction_id);
 void M_NavRequestAsyncGroupArrivalField(const struct map *map, enum nav_layer layer,

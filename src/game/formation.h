@@ -66,6 +66,7 @@ vec2_t         G_Formation_DesiredArrivalVelocity(uint32_t uid);
 vec2_t         G_Formation_ApproximateDesiredArrivalVelocity(uint32_t uid);
 bool           G_Formation_AssignmentReady(uint32_t uid);
 bool           G_Formation_ArrivedAtCell(uint32_t uid);
+void           G_Formation_RetryCell(uint32_t uid);
 bool           G_Formation_AssignedToCell(uint32_t uid);
 vec2_t         G_Formation_CellPosition(uint32_t uid);
 quat_t         G_Formation_TargetOrientation(uint32_t uid);

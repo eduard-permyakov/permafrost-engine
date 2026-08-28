@@ -4010,6 +4010,7 @@ bool N_RequiresPathRequest(void *nav_private, vec3_t map_pos, struct target targ
         ffid = N_FlowFieldID(chunk, (struct field_target){
             .type = TARGET_ENEMIES,
             .enemies.faction_id = target.enemy_seek.faction_id,
+            .enemies.range = target.enemy_seek.range,
             .enemies.map_pos = map_pos,
             .enemies.chunk = chunk
         }, layer);
@@ -4069,6 +4070,7 @@ vec2_t N_DesiredVelocityForTargetCached(void *nav_private, vec3_t map_pos, struc
         ffid = N_FlowFieldID(chunk, (struct field_target){
             .type = TARGET_ENEMIES,
             .enemies.faction_id = target.enemy_seek.faction_id,
+            .enemies.range = target.enemy_seek.range,
             .enemies.map_pos = map_pos,
             .enemies.chunk = chunk
         }, layer);
@@ -4120,6 +4122,7 @@ int N_FlowFieldDirAt(void *nav_private, vec3_t map_pos, struct target target, ve
         ffid = N_FlowFieldID(chunk, (struct field_target){
             .type = TARGET_ENEMIES,
             .enemies.faction_id = target.enemy_seek.faction_id,
+            .enemies.range = target.enemy_seek.range,
             .enemies.map_pos = map_pos,
             .enemies.chunk = chunk
         }, target.enemy_seek.layer);
@@ -4159,6 +4162,7 @@ bool N_FlowFieldPathLength(void *nav_private, vec3_t map_pos, struct target targ
     ff_id_t ffid = N_FlowFieldID(chunk, (struct field_target){
         .type = TARGET_ENEMIES,
         .enemies.faction_id = target.enemy_seek.faction_id,
+        .enemies.range = target.enemy_seek.range,
         .enemies.map_pos = map_pos,
         .enemies.chunk = chunk
     }, target.enemy_seek.layer);
@@ -4246,7 +4250,8 @@ void N_ServicePathRequest(void *nav_private, vec3_t map_pos, struct target targe
                 .type = TARGET_ENEMIES,
                 .enemies.faction_id = faction_id,
                 .enemies.map_pos = map_pos,
-                .enemies.chunk = chunk
+                .enemies.chunk = chunk,
+                .enemies.range = target.enemy_seek.range
             };
         }else{
             assert(target.kind == TARGET_KIND_SURROUND);
@@ -4362,7 +4367,7 @@ void N_PrepareAsyncWork(void)
 }
 
 void N_RequestAsyncEnemySeekField(vec2_t curr_pos, void *nav_private, enum nav_layer layer,
-                                  vec3_t map_pos, int faction_id)
+                                  vec3_t map_pos, int faction_id, float range)
 {
     struct nav_private *priv = nav_private;
     struct map_resolution res;
@@ -4380,7 +4385,8 @@ void N_RequestAsyncEnemySeekField(vec2_t curr_pos, void *nav_private, enum nav_l
         .type = TARGET_ENEMIES,
         .enemies.faction_id = faction_id,
         .enemies.map_pos = map_pos,
-        .enemies.chunk = chunk
+        .enemies.chunk = chunk,
+        .enemies.range = range
     };
 
     ff_id_t ffid = N_FlowFieldID(chunk, target, layer);
@@ -5760,6 +5766,32 @@ int N_DestFactionID(dest_id_t id)
 bool N_DestIDIsAttacking(dest_id_t id)
 {
     return (N_DestFactionID(id) != FACTION_ID_NONE);
+}
+
+bool N_HasEnemyRangeFlowAt(void *nav_private, vec3_t map_pos, enum nav_layer layer,
+                           int faction_id, float range, vec2_t xz_pos)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct tile_desc tile;
+    if(!M_Tile_DescForPoint2D(res, map_pos, xz_pos, &tile))
+        return false;
+
+    struct coord chunk = (struct coord){tile.chunk_r, tile.chunk_c};
+    ff_id_t ffid = N_FlowFieldID(chunk, (struct field_target){
+        .type = TARGET_ENEMIES,
+        .enemies.faction_id = faction_id,
+        .enemies.map_pos = map_pos,
+        .enemies.chunk = chunk,
+        .enemies.range = range
+    }, layer);
+
+    const struct flow_field *ff = N_FC_PeekFlowField(priv->fieldcache, ffid);
+    if(!ff)
+        return false;
+    return (ff->field[tile.tile_r][tile.tile_c].dir_idx != FD_NONE);
 }
 
 vec2_t N_ClosestReachableInRange(void *nav_private, vec3_t map_pos, 

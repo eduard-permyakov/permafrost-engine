@@ -148,7 +148,7 @@ struct target{
     enum target_kind kind;
     union{
         struct{ dest_id_t dest_id; vec2_t dest_xz; }                  point_seek;
-        struct{ enum nav_layer layer; int faction_id; }              enemy_seek;
+        struct{ enum nav_layer layer; int faction_id; float range; } enemy_seek;
         struct{ enum nav_layer layer; int faction_id; uint32_t uid; } surround;
     };
 };
@@ -882,7 +882,15 @@ void N_AwaitAsyncFields(void);
  * ------------------------------------------------------------------------
  */
 void N_RequestAsyncEnemySeekField(vec2_t curr_pos, void *nav_private, enum nav_layer layer,
-                                  vec3_t map_pos, int faction_id);
+                                  vec3_t map_pos, int faction_id, float range);
+
+/* ------------------------------------------------------------------------
+ * True if the enemy field for the specified reach is cached and has a flow
+ * direction at the specified position, so a unit can be steered by it.
+ * ------------------------------------------------------------------------
+ */
+bool N_HasEnemyRangeFlowAt(void *nav_private, vec3_t map_pos, enum nav_layer layer,
+                           int faction_id, float range, vec2_t xz_pos);
 
 /* ------------------------------------------------------------------------
  * Start an async job computing the required TARGET_ENTITY field, if it

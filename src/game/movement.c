@@ -208,6 +208,11 @@ struct movestate_aux{
      */
     vec2_t             target_prev_pos;
     float              target_range;
+    /* Reach the unit had when its attack-move was ordered, which picks the enemy
+     * field that guides it to a firing position rather than onto the enemy. Read
+     * off the main thread, so it is cached rather than asked of combat. Transient.
+     */
+    float              attack_reach;
     /* The target direction for 'turning' entities 
      */
     quat_t             target_dir;
@@ -233,6 +238,15 @@ struct movestate_aux{
     uint16_t           seek_clear_ticks;
     /* Consecutive ticks coasting through a stale hole in the flow field */
     uint16_t           field_void_ticks;
+    /* Ticks since a stranded formation member was last put back on the road.
+     * Transient.
+     */
+    uint16_t           retry_ticks;
+    /* Whether the reach field is steering this unit, and how many consecutive
+     * ticks it has been missing from the cache. Transient.
+     */
+    bool               range_latched;
+    uint16_t           range_miss_ticks;
     /* Consecutive stand-still solves, and the relaxed solves they buy. Transient. */
     uint16_t           cp_stall_ticks;
     uint16_t           cp_relax_ticks;
@@ -346,6 +360,10 @@ struct move_work_in{
     struct flock            *flock;
     const struct flock_snap *fsnap;
     vec2_t         ent_des_v;
+    /* Whether ent_des_v came from the reach-seeded enemy field rather than the
+     * flock's point field, which decides what the unit is arriving at.
+     */
+    bool           range_field;
     float          speed;
     vec2_t         cell_pos;
     struct cp_ent  cp_ent;
@@ -603,6 +621,8 @@ SHARED_PTR_ASSERT_LAYOUT(struct refcounted_map, sp);
 
 static void move_push_cmd(struct move_cmd cmd);
 static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack);
+static float attack_move_reach(uint32_t uid, const struct flock *fl);
+static float attack_move_seed_reach(uint32_t uid, uint32_t flags);
 static void do_stop(uint32_t uid);
 static void do_set_seek_pin(uint32_t uid, uint32_t target);
 static void clear_seek_pin(uint32_t uid);
@@ -656,6 +676,12 @@ static struct result navigation_tick_task(void *arg);
  * reach its cell does not walk through its own side for good.
  */
 #define PHASE_MAX_TICKS                 (400)
+/* How long a unit already standing on its fallback is left alone between
+ * attempts at the cell it was actually assigned. */
+#define STRANDED_RETRY_TICKS            (30)
+/* How long the reach field has to be absent before a unit it was steering gives
+ * up on it and goes back to the ordered point. */
+#define RANGE_FIELD_MISS_TICKS          (30)
 /* A unit standing still this long inside a crowd becomes a soft blocker,
  * released once the local crowd thins for the hold duration. */
 #define SEEK_STUCK_BLOCK_TICKS          (10)
@@ -692,6 +718,7 @@ static struct result navigation_tick_task(void *arg);
  * stamps get none: a stamp is the output of walling, not evidence for it.
  */
 #define SEEK_WALL_NEIGHB_CREDIT         (3)
+#define ATTACK_MOVE_REACH_FRAC          (0.9f)
 /* A pin candidate only holds when the field's way round costs this much more
  * than the straight line; a few ranks behind a short front spread instead. */
 #define SEEK_PIN_DETOUR                 (40.0f)
@@ -1284,7 +1311,10 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
 
         flock_add(&new_flock, curr_ent);
         ms->state = (type == FORMATION_NONE) ? STATE_MOVING : STATE_MOVING_IN_FORMATION;
-        G_Arrival_InitUnit(&movestate_aux_get(curr_ent)->arrival,
+        struct movestate_aux *caux = movestate_aux_get(curr_ent);
+        caux->attack_reach = attack ? attack_move_seed_reach(curr_ent,
+            G_FlagsGetFrom(s_move_work.gamestate.flags, curr_ent)) : 0.0f;
+        G_Arrival_InitUnit(&caux->arrival,
             G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr_ent));
     }
 
@@ -1917,7 +1947,18 @@ static void request_async_field(uint32_t uid)
         int layer = Entity_NavLayerWithRadius(flags, radius);
         int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
         return M_NavRequestAsyncEnemySeekField(s_move_work.gamestate.map, 
-            layer, pos_xz, faction_id);
+            layer, pos_xz, faction_id, 0.0f);
+    }
+    case STATE_MOVING: {
+        float reach = attack_move_reach(uid, flock_for_ent(uid));
+        if(reach == 0.0f)
+            break;
+        float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
+        uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+        int layer = Entity_NavLayerWithRadius(flags, radius);
+        int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
+        return M_NavRequestAsyncEnemySeekField(s_move_work.gamestate.map,
+            layer, pos_xz, faction_id, reach);
     }
     case STATE_SURROUND_ENTITY: {
 
@@ -1939,6 +1980,29 @@ static void request_async_field(uint32_t uid)
     }
 }
 
+/* The reach an attack-move should be guided by, or zero for an order which is
+ * not one. A unit walking to the ordered point is following a field which knows
+ * nothing of the enemy, so it will happily march past a firing position and take
+ * the long way round its own front rank to reach the point it was sent to.
+ */
+/* Formation members are deliberately excluded. Their cells are laid out around
+ * the ordered point, past the enemy, so the cohesion force pulls them forward
+ * onto the cell while the reach field pulls them back to a firing position, and
+ * a unit handed both spins between them. Standing a formation off at reach is a
+ * question for where its cells are placed, not for the field its members follow.
+ */
+static float attack_move_reach(uint32_t uid, const struct flock *fl)
+{
+    const struct movestate *ms = movestate_get(uid);
+    if(ms->state != STATE_MOVING)
+        return 0.0f;
+    if(!fl || !N_DestIDIsAttacking(fl->dest_id))
+        return 0.0f;
+
+    const struct movestate_aux *aux = movestate_aux_get(uid);
+    return aux ? aux->attack_reach : 0.0f;
+}
+
 static struct target build_target(uint32_t uid, const struct flock *fl)
 {
     const struct movestate *ms = movestate_get(uid);
@@ -1951,12 +2015,49 @@ static struct target build_target(uint32_t uid, const struct flock *fl)
         return (struct target){.kind = TARGET_KIND_ENEMY_SEEK,
                                .enemy_seek = {.layer = layer, .faction_id = faction_id}};
     }
+
     if(ms->state == STATE_SURROUND_ENTITY
     && entity_exists(ms->surround_target_uid) && ms->using_surround_field) {
         return (struct target){.kind = TARGET_KIND_SURROUND,
                                .surround = {.layer = layer, .faction_id = faction_id,
                                             .uid = ms->surround_target_uid}};
     }
+
+    /* Only once the field is built and reaches this tile: until then, and wherever
+     * there is no enemy to shoot at, the ordered point is still the destination.
+     *
+     * The choice is latched rather than made afresh each tick. The field is per
+     * chunk and a battle evicts and rebuilds it constantly, so a unit near the
+     * enemy would otherwise be handed a firing position on one tick and the
+     * ordered point beyond the enemy on the next, and swing between the two
+     * headings on the spot.
+     */
+    float reach = attack_move_reach(uid, fl);
+    struct movestate_aux *raux = movestate_aux_get(uid);
+    if(reach > 0.0f && raux) {
+
+        vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
+        bool present = M_NavHasEnemyRangeFlowAt(s_move_work.gamestate.map, layer, faction_id,
+            reach, pos_xz);
+
+        if(present) {
+            raux->range_latched = true;
+            raux->range_miss_ticks = 0;
+        }else if(raux->range_latched
+             && ++raux->range_miss_ticks >= RANGE_FIELD_MISS_TICKS) {
+            raux->range_latched = false;
+        }
+
+        if(raux->range_latched) {
+            return (struct target){.kind = TARGET_KIND_ENEMY_SEEK,
+                                   .enemy_seek = {.layer = layer, .faction_id = faction_id,
+                                                  .range = reach}};
+        }
+    }else if(raux) {
+        raux->range_latched = false;
+        raux->range_miss_ticks = 0;
+    }
+
     assert(fl);
     return (struct target){.kind = TARGET_KIND_POINT_SEEK,
                            .point_seek = {.dest_id = fl->dest_id, .dest_xz = fl->target_xz}};
@@ -2038,6 +2139,7 @@ static vec2_t ent_desired_velocity(struct move_work_in *in)
     vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
     const struct map *map = s_move_work.gamestate.map;
     *out_seek_pinned = false;
+    in->range_field = false;
 
     switch(ms->state) {
     case STATE_TURNING:
@@ -2073,7 +2175,11 @@ static vec2_t ent_desired_velocity(struct move_work_in *in)
             map, pos_xz, mms->velocity, has_dest_los, &arrival_vel))
             return arrival_vel;
 
-        vec2_t field_vdes = M_NavDesiredVelocityForTargetCached(map, build_target(uid, fl), pos_xz);
+        struct target target = build_target(uid, fl);
+        in->range_field = (target.kind == TARGET_KIND_ENEMY_SEEK)
+                       && (target.enemy_seek.range > 0.0f);
+
+        vec2_t field_vdes = M_NavDesiredVelocityForTargetCached(map, target, pos_xz);
         if(PFM_Vec2_Len(&field_vdes) > EPSILON)
             return field_vdes;
 
@@ -2589,9 +2695,25 @@ static void nullify_impass_components(uint32_t uid, vec2_t *inout_force)
         inout_force->z = 0.0f;
 }
 
+/* Where a unit is arriving, for the deceleration fallback. A unit steered by the
+ * reach field is heading for a firing position the field only expresses as a
+ * gradient, and it is not going to the ordered point at all: brake in place
+ * instead of being drawn on past the enemy when the seek force goes slack.
+ */
+static vec2_t arrive_force_seek(uint32_t uid, vec2_t target_xz, vec2_t vdes,
+                                bool has_dest_los, bool range_field)
+{
+    if(range_field) {
+        vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
+        return arrive_force_point(uid, pos_xz, vdes, true);
+    }
+    return arrive_force_point(uid, target_xz, vdes, has_dest_los);
+}
+
 static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock,
                                const struct flock_snap *fsnap,
-                               vec2_t vdes, bool has_dest_los, float speed, int side)
+                               vec2_t vdes, bool has_dest_los, float speed, int side,
+                               bool range_field)
 {
     struct movestate *ms = movestate_get(uid);
     assert(ms);
@@ -2613,7 +2735,7 @@ static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock,
             struct arrival_state *as = flock_arrival_for_ent(flock, uid);
             vec2_t seek = as ? G_Arrival_SeekTarget(as, &movestate_aux_get(uid)->arrival,
                 flock->target_xz) : flock->target_xz;
-            steer_force = arrive_force_point(uid, seek, vdes, has_dest_los);
+            steer_force = arrive_force_seek(uid, seek, vdes, has_dest_los, range_field);
             break;
         }
         }
@@ -2757,7 +2879,7 @@ static vec2_t formation_point_seek_total_force(uint32_t uid, const struct flock 
 
 static vec2_t formation_seek_vpref(uint32_t uid, const struct flock *flock, float speed,
                                    vec2_t vdes, vec2_t cohesion, vec2_t alignment, vec2_t drag,
-                                   bool has_dest_los)
+                                   bool has_dest_los, bool range_field)
 {
     struct movestate *ms = movestate_get(uid);
     assert(ms);
@@ -2774,7 +2896,8 @@ static vec2_t formation_seek_vpref(uint32_t uid, const struct flock *flock, floa
             steer_force = separation_force(uid, SEPARATION_BUFFER_DIST); 
             break;
         case 2: 
-            steer_force = arrive_force_point(uid, flock->target_xz, vdes, has_dest_los); 
+            steer_force = arrive_force_seek(uid, flock->target_xz, vdes, has_dest_los,
+                range_field); 
             break;
         }
 
@@ -3941,6 +4064,19 @@ static void do_stop(uint32_t uid)
     ms->state = STATE_ARRIVED;
 }
 
+/* The radius the attack-move field is seeded at. It sits inside the real reach:
+ * the field is seeded a whole tile at a time while combat measures the exact
+ * distance, so a unit stopped on the outermost seeded tile could be fractionally
+ * out of range, hold no flow to walk it in, and stand there without firing. The
+ * margin also keeps a unit from dropping its target on its first step backwards.
+ */
+static float attack_move_seed_reach(uint32_t uid, uint32_t flags)
+{
+    if(!(flags & ENTITY_FLAG_COMBATABLE))
+        return 0.0f;
+    return G_Combat_GetEffectiveRange(uid) * ATTACK_MOVE_REACH_FRAC;
+}
+
 static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -3963,11 +4099,18 @@ static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack)
      * next movement update. 
      */
     dest_id_t dest_id;
+    struct movestate_aux *daux = movestate_aux_get(uid);
     if(attack) {
         int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
         dest_id = M_NavDestIDForPosAttacking(s_map, dest_xz, layer, faction_id);
+        if(daux) {
+            daux->attack_reach = attack_move_seed_reach(uid, flags);
+        }
     }else{
         dest_id = M_NavDestIDForPos(s_map, dest_xz, layer);
+        if(daux) {
+            daux->attack_reach = 0.0f;
+        }
     }
     struct flock *fl = flock_for_dest(dest_id);
 
@@ -4755,12 +4898,12 @@ static void move_velocity_work(int begin_idx, int end_idx)
                 in->fstate.normal_cohesion_force,
                 in->fstate.normal_align_force,
                 in->fstate.normal_drag_force,
-                in->has_dest_los);
+                in->has_dest_los, in->range_field);
             break;
         default:
             assert(flock);
             vpref = point_seek_vpref(in->ent_uid, flock, in->fsnap,
-                in->ent_des_v, in->has_dest_los, in->speed, side);
+                in->ent_des_v, in->has_dest_los, in->speed, side, in->range_field);
         }
         assert(vpref.x == vpref.x && vpref.z == vpref.z); /* a NaN vpref would corrupt the integration */
 
@@ -6179,6 +6322,13 @@ static void resume_stranded_formation_units(void)
         if(!G_EntityExists(uid))
             continue;
 
+        /* A held unit is standing still on purpose to shoot, and combat has
+         * already put it in its idle clip. Resuming it here starts its walk clip
+         * again, so it fires on the spot while playing a walk.
+         */
+        if(G_FlagsGet(uid) & ENTITY_FLAG_COMBAT_HELD)
+            continue;
+
         struct movestate_aux *aux = movestate_aux_get(uid);
         if(aux->phase_ticks > PHASE_MAX_TICKS)
             continue;
@@ -6188,6 +6338,20 @@ static void resume_stranded_formation_units(void)
             continue;
         if(!fss.may_settle || fss.at_cell || !fss.assigned_to_cell)
             continue;
+
+        /* 'Arrived' is measured against the fallback position, while 'at cell'
+         * is measured against the cell itself, so a unit that gave up short of
+         * its cell satisfies both this resume and the settle that follows it.
+         * Resuming it every tick is then a shuffle in place rather than another
+         * attempt: space the retries out, and hand the cell back each time,
+         * since the point of a retry is that the ground may have cleared.
+         */
+        if(fss.arrived_at_cell) {
+            if(++aux->retry_ticks < STRANDED_RETRY_TICKS)
+                continue;
+            aux->retry_ticks = 0;
+            G_Formation_RetryCell(uid);
+        }
 
         if(ms->blocking)
             entity_unblock(uid);

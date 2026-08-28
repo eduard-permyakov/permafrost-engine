@@ -4973,6 +4973,30 @@ static bool arrived_at_cell(uint32_t uid, struct cell *cell)
     return (PFM_Vec2_Len(&delta) <= arrive_thresh);
 }
 
+/* Hand a unit back the cell it was assigned. The fallback position only ever
+ * moves in towards wherever a unit gave up, and nothing puts it back, so one
+ * that was boxed in once keeps its cell written off long after the crowd that
+ * trapped it has gone; it then stands on its own fallback, reads as arrived and
+ * settles again the moment anything tries to send it on.
+ */
+void G_Formation_RetryCell(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct formation *formation = formation_for_ent(uid);
+    if(!formation)
+        return;
+
+    struct cell *cell = cell_for_ent(formation, uid);
+    if(!cell)
+        return;
+    if(cell->state == CELL_NOT_PLACED || cell->state == CELL_NOT_USED)
+        return;
+
+    cell->reachable_pos = cell->pos;
+    request_cell_recompute(G_Formation_GetForEnt(uid), uid);
+}
+
 bool G_Formation_ArrivedAtCell(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();

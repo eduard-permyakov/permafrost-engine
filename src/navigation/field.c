@@ -1224,6 +1224,67 @@ static size_t field_portal_initial_frontier(
     return ret;
 }
 
+/* Mark every tile of the region from which 'pos' is within 'range'. Only ground
+ * a unit could stand on is marked: a seed inside a wall would let the flood spill
+ * out of the wall's far side and route units straight through it.
+ */
+static size_t field_stamp_firing_disc(
+    const struct nav_private *priv,
+    enum nav_layer            layer,
+    vec3_t                    map_pos,
+    struct tile_desc          base,
+    int                       rdim,
+    int                       cdim,
+    vec2_t                    pos,
+    float                     range,
+    bool                     *inout_marked)
+{
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct tile_desc centre;
+    if(!M_Tile_DescForPoint2D(res, map_pos, pos, &centre))
+        return 0;
+
+    int cr, cc;
+    M_Tile_Distance(res, &base, &centre, &cr, &cc);
+
+    vec2_t dims = N_TileDims();
+    int rad_r = (int)ceilf(range / dims.z);
+    int rad_c = (int)ceilf(range / dims.x);
+    size_t nmarked = 0;
+
+    for(int dr = -rad_r; dr <= rad_r; dr++) {
+    for(int dc = -rad_c; dc <= rad_c; dc++) {
+
+        int r = cr + dr;
+        int c = cc + dc;
+
+        if(r < 0 || r >= rdim || c < 0 || c >= cdim)
+            continue;
+        if(inout_marked[r * rdim + c])
+            continue;
+
+        float dx = dc * dims.x;
+        float dz = dr * dims.z;
+        if(dx * dx + dz * dz > range * range)
+            continue;
+
+        struct tile_desc td = base;
+        if(!M_Tile_RelativeDesc(res, &td, c, r))
+            continue;
+
+        const struct nav_chunk *chunk =
+            &priv->chunks[layer][IDX(td.chunk_r, priv->width, td.chunk_c)];
+        if(!field_tile_passable(chunk, (struct coord){td.tile_r, td.tile_c}))
+            continue;
+
+        inout_marked[r * rdim + c] = true;
+        nmarked++;
+    }}
+    return nmarked;
+}
+
 static size_t field_enemies_initial_frontier(
     struct enemies_desc       *enemies, 
     const struct nav_private  *priv, 
@@ -1242,22 +1303,27 @@ static size_t field_enemies_initial_frontier(
     float xlen = bounds.x_max - bounds.x_min;
     float zlen = bounds.z_max - bounds.z_min;
 
+    /* An enemy standing outside the padded region still puts firing tiles
+     * inside it, so the reach widens the search along with the padding.
+     */
+    float reach = enemies->range;
+
     STALLOC(uint32_t, ents, MAX_ENTS_PER_CHUNK);
     size_t num_ents;
     if(ctx) {
         num_ents = G_Pos_EntsInRectFrom(
             ctx->postree, ctx->flags,
-            (vec2_t){bounds.x_min - xlen/2.0f - SEARCH_BUFFER, 
-                     bounds.z_min - zlen/2.0f - SEARCH_BUFFER},
-            (vec2_t){bounds.x_max + xlen/2.0f + SEARCH_BUFFER, 
-                     bounds.z_max + zlen/2.0f + SEARCH_BUFFER},
+            (vec2_t){bounds.x_min - xlen/2.0f - SEARCH_BUFFER - reach, 
+                     bounds.z_min - zlen/2.0f - SEARCH_BUFFER - reach},
+            (vec2_t){bounds.x_max + xlen/2.0f + SEARCH_BUFFER + reach, 
+                     bounds.z_max + zlen/2.0f + SEARCH_BUFFER + reach},
             ents, MAX_ENTS_PER_CHUNK);
     }else{
         num_ents = G_Pos_EntsInRect(
-            (vec2_t){bounds.x_min - xlen/2.0f - SEARCH_BUFFER, 
-                     bounds.z_min - zlen/2.0f - SEARCH_BUFFER},
-            (vec2_t){bounds.x_max + xlen/2.0f + SEARCH_BUFFER, 
-                     bounds.z_max + zlen/2.0f + SEARCH_BUFFER},
+            (vec2_t){bounds.x_min - xlen/2.0f - SEARCH_BUFFER - reach, 
+                     bounds.z_min - zlen/2.0f - SEARCH_BUFFER - reach},
+            (vec2_t){bounds.x_max + xlen/2.0f + SEARCH_BUFFER + reach, 
+                     bounds.z_max + zlen/2.0f + SEARCH_BUFFER + reach},
             ents, MAX_ENTS_PER_CHUNK);
     }
 
@@ -1266,6 +1332,7 @@ static size_t field_enemies_initial_frontier(
 
     STALLOC(bool, has_enemy, rdim * cdim);
     memset(has_enemy, 0, sizeof(bool) * rdim * cdim);
+    size_t nmarked = 0;
 
     for(int i = 0; i < num_ents; i++) {
     
@@ -1274,6 +1341,19 @@ static size_t field_enemies_initial_frontier(
             continue;
         if(ent_dying(curr_enemy, ctx))
             continue;
+
+        if(reach > 0.0f) {
+
+            nmarked += field_stamp_firing_disc(priv, layer, enemies->map_pos, base,
+                rdim, cdim, ent_pos_xz(curr_enemy, ctx), reach, has_enemy);
+
+            /* Reaches overlap heavily in a crowd, so the region saturates long
+             * before the enemies run out.
+             */
+            if(nmarked == (size_t)(rdim * cdim))
+                break;
+            continue;
+        }
 
         struct tile_desc tds[512];
         int ntds;
@@ -2021,6 +2101,7 @@ ff_id_t N_FlowFieldID(struct coord chunk, struct field_target target, enum nav_l
 
         return (((uint64_t)layer)                          << 60)
              | (((uint64_t)target.type)                    << 56)
+             | (((uint64_t)target.enemies.range)           << 32)
              | (((uint64_t)target.enemies.faction_id)      << 24)
              | (((uint64_t)chunk.r)                        <<  8)
              | (((uint64_t)chunk.c)                        <<  0);
