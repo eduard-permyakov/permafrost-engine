@@ -30,6 +30,10 @@ BUILT-IN FUNCTIONS
     Order the specified units to arrange themselves at the target location and
     orientation, attacking any enemies along the way.
 
+    [clear_group_highlight]
+    ----------------------------------------------------------------------------
+    Stop outlining a group's members.
+
     [clear_unit_selection]
     ----------------------------------------------------------------------------
     Clear the current unit seleciton.
@@ -63,6 +67,11 @@ BUILT-IN FUNCTIONS
     Draw a text label with the specified bounds (X, Y, W, H) )and with the
     specified color (R, G, B, A). The label lasts for one frame, meaning this
     should be called every tick to keep the label fixed.
+
+    [dump_framebuffer]
+    ----------------------------------------------------------------------------
+    Dump the current color framebuffer to a PPM (P6) file at the specified
+    path. For debugging/automation.
 
     [enable_fog_of_war]
     ----------------------------------------------------------------------------
@@ -140,25 +149,6 @@ BUILT-IN FUNCTIONS
     Set a flag controlling whether or not the UI labels are rendered over the
     garrisonable entities.
 
-    [group_for_ent]
-    ----------------------------------------------------------------------------
-    Returns the ID of the group the specified entity is locked into, or 0 if it
-    is not in one.
-
-    [clear_group_highlight]
-    ----------------------------------------------------------------------------
-    Stop outlining a group's members.
-
-    [show_range_indicator]
-    ----------------------------------------------------------------------------
-    Draw a ring of the specified radius around an entity, for showing how far one
-    of its abilities reaches. Takes the pf.Entity and the radius, with an optional
-    (R, G, B) 'color' and (float) 'width'. Only one indicator is shown at a time.
-
-    [hide_range_indicator]
-    ----------------------------------------------------------------------------
-    Stop drawing the range indicator ring.
-
     [get_active_camera]
     ----------------------------------------------------------------------------
     Get a pf.Camera object describing the active camera from whose point of
@@ -176,6 +166,11 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Get a list of all the currently loaded music track names.
 
+    [get_allied_population]
+    ----------------------------------------------------------------------------
+    Returns the total population of factions at peace with the specified
+    faction ID, excluding the faction itself.
+
     [get_basedir]
     ----------------------------------------------------------------------------
     Get the path to the top-level game resource folder (parent of 'assets').
@@ -184,9 +179,20 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Returns the current state of the RTS cursor mode enablement.
 
+    [get_damage_table]
+    ----------------------------------------------------------------------------
+    Returns the current damage type vs. armour type interaction table as a
+    tuple of pf.DAMAGE_TYPE_MAX tuples of pf.ARMOUR_TYPE_MAX floats, regardless
+    of the size of the table that was set.
+
     [get_diplomacy_state]
     ----------------------------------------------------------------------------
     Query the diplomacy state of the specified two faction IDs.
+
+    [get_enemy_population]
+    ----------------------------------------------------------------------------
+    Returns the total population of factions at war with the specified faction
+    ID.
 
     [get_factions_list]
     ----------------------------------------------------------------------------
@@ -200,6 +206,12 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Get a list of non-directory files in the specified directory (relative to
     the working directory).
+
+    [get_frame_times]
+    ----------------------------------------------------------------------------
+    Get a list of (seq, ms) tuples for recently completed frames, oldest-first.
+    The engine-side ring is deep enough for a 1Hz sampler task to never miss
+    frames.
 
     [get_hovered_unit]
     ----------------------------------------------------------------------------
@@ -234,6 +246,28 @@ BUILT-IN FUNCTIONS
     Returns a dictionary holding various performance couners for the navigation
     subsystem.
 
+    [get_nav_tick_times]
+    ----------------------------------------------------------------------------
+    Get a list of (wall_us, serial_us, total_us, nwork, budget_us) tuples for
+    recent completed navigation ticks, oldest-first, for the perf window's
+    nav-tick stats.
+
+    [get_player_population]
+    ----------------------------------------------------------------------------
+    Returns the total population of all player-controllable factions.
+
+    [get_player_population_limit]
+    ----------------------------------------------------------------------------
+    Returns the total population limit of all player-controllable factions.
+
+    [get_population]
+    ----------------------------------------------------------------------------
+    Returns the current population count for the specified faction ID.
+
+    [get_population_limit]
+    ----------------------------------------------------------------------------
+    Returns the current population limit for the specified faction ID.
+
     [get_render_info]
     ----------------------------------------------------------------------------
     Returns a dictionary describing the renderer context. It will have the
@@ -267,6 +301,10 @@ BUILT-IN FUNCTIONS
     Returns the total amount of a particular resource between all
     player-controlled storage sites.
 
+    [get_rts_camera_zoom_enabled]
+    ----------------------------------------------------------------------------
+    Returns whether the RTS camera's mousewheel zoom is currently enabled.
+
     [get_simstate]
     ----------------------------------------------------------------------------
     Returns the current simulation state.
@@ -290,17 +328,45 @@ BUILT-IN FUNCTIONS
 
     [get_version_string]
     ----------------------------------------------------------------------------
-    Brings up the interactive Python console.
+    Returns the version of Permafrost Engine.
 
     [global_event]
     ----------------------------------------------------------------------------
     Broadcast a global event so all handlers can get invoked. Any weakref
     argument is automatically unpacked before being sent to the handler.
 
+    [group_for_ent]
+    ----------------------------------------------------------------------------
+    Returns the ID of the group the specified entity is locked into, or 0 if it
+    is not in one.
+
+    [group_for_set]
+    ----------------------------------------------------------------------------
+    Returns the ID of the locked group that all the entities in the specified
+    list belong to, or 0 if they do not all belong to the same group.
+
+    [group_lock]
+    ----------------------------------------------------------------------------
+    Lock the specified entities into a group. Selecting any unit of the group
+    selects the entire group. Returns the ID of the new group, or 0 on failure.
+
+    [group_members]
+    ----------------------------------------------------------------------------
+    Returns a list of the entities locked to the group with the specified ID.
+
+    [group_unlock]
+    ----------------------------------------------------------------------------
+    Disband the group with the specified ID, making its members individually
+    selectable once again.
+
     [hide_healthbars]
     ----------------------------------------------------------------------------
     Disable rendering of healthbars. Overrides the user-configurable dynamic
     setting.
+
+    [hide_range_indicator]
+    ----------------------------------------------------------------------------
+    Stop drawing the range indicator ring.
 
     [hide_regions]
     ----------------------------------------------------------------------------
@@ -377,6 +443,13 @@ BUILT-IN FUNCTIONS
     Remove a secondary texture for a particular texture. Takes 2 integers, the
     base material index and the accent material index.
 
+    [mem_audit]
+    ----------------------------------------------------------------------------
+    Walks mimalloc's heap to count live bytes in tagged blocks per system.
+    Returns {sys_name: alive_bytes}. Compare with prev_frame_mem_accounting()
+    to find bare-free leaks: counter > alive means tagged pointers freed
+    without going through Mem_Free.
+
     [mouse_over_minimap]
     ----------------------------------------------------------------------------
     Returns true if the mouse cursor is over the minimap, false otherwise.
@@ -438,6 +511,24 @@ BUILT-IN FUNCTIONS
     Get the number of bytes that were allocated with malloc during the previous
     frame.
 
+    [prev_frame_gpu_mem_accounting]
+    ----------------------------------------------------------------------------
+    Get a dictionary of the engine's tracked GPU memory for the previous frame,
+    keyed by render-file system; each value is {bytes, count, subsystems} where
+    subsystems splits into texture/renderbuffer/bufferobject.
+
+    [prev_frame_gpu_stats]
+    ----------------------------------------------------------------------------
+    Get a dictionary of GPU pipeline-statistics counters (vertices/primitives
+    submitted, vertex/fragment-shader invocations, clipping input/output
+    primitives) for the previous frame.
+
+    [prev_frame_mem_accounting]
+    ----------------------------------------------------------------------------
+    Get a dictionary of per-system memory accounting for the previous frame.
+    Keys are system name strings; values are dicts of {bytes, count,
+    subsystems} where 'subsystems' maps subsystem id (int) to {bytes, count}.
+
     [prev_frame_memstats]
     ----------------------------------------------------------------------------
     Get a dictionary of the memory allocation and usage statistics for the
@@ -449,7 +540,12 @@ BUILT-IN FUNCTIONS
 
     [prev_frame_perfstats]
     ----------------------------------------------------------------------------
-    Get a dictionary of the performance data for the previous frame.
+    Get a tuple of the performance data for the previous frame.
+
+    [prev_frame_vramstats]
+    ----------------------------------------------------------------------------
+    Get a dictionary of the GPU video memory statistics (in KB) for the
+    previous frame.
 
     [rand]
     ----------------------------------------------------------------------------
@@ -515,6 +611,15 @@ BUILT-IN FUNCTIONS
     Activates or deactivates the cursor RTS mode which keeps the cursor icon
     updated based on which edge of the screen it is at.
 
+    [set_damage_table]
+    ----------------------------------------------------------------------------
+    Set the damage type vs. armour type interaction table. Takes a sequence of
+    at most pf.DAMAGE_TYPE_MAX equal-length sequences of at most
+    pf.ARMOUR_TYPE_MAX floats, indexed [damage_type][armour_type]. Each entry
+    scales the damage an attack of that damage type deals to a target of that
+    armour type. Type IDs the table does not cover are left at 1.0, as are all
+    entries by default.
+
     [set_diplomacy_state]
     ----------------------------------------------------------------------------
     Symmetrically sets the diplomacy state between two distinct factions
@@ -557,21 +662,30 @@ BUILT-IN FUNCTIONS
     Set the garrisonable UI background to the specified color (R, G, B, A) or
     image (string).
 
-    [set_group_highlight]
-    ----------------------------------------------------------------------------
-    Outline every member of the specified group in an (R, G, B) color, with an
-    optional 'width'. The outlines follow the live membership. Only one group is
-    highlighted at a time.
-
-    [set_group_ui_bonus_color]
-    ----------------------------------------------------------------------------
-    Set the color of the group bonus labels on the group banner to an
-    (R, G, B, A) color.
-
     [set_gather_on_left_click]
     ----------------------------------------------------------------------------
     Set the cursor to target mode. The next left click will issue a gather
     command to the resource under the cursor.
+
+    [set_group_highlight]
+    ----------------------------------------------------------------------------
+    Outline every member of the specified group in an (R, G, B) color, with an
+    optional 'width'. The outlines follow the live membership. Only one group
+    is highlighted at a time.
+
+    [set_group_ui_bonus_color]
+    ----------------------------------------------------------------------------
+    Set the color of the group bonus labels on the group banner to an (R, G, B,
+    A) color.
+
+    [set_group_ui_font_color]
+    ----------------------------------------------------------------------------
+    Set the font color of the group UI windows to an (R, G, B, A) color.
+
+    [set_group_ui_style]
+    ----------------------------------------------------------------------------
+    Set the background style of the group UI windows to an (R, G, B, A) color,
+    an image, or a (path, left, right, top, bottom) nine patch.
 
     [set_map_highlight_size]
     ----------------------------------------------------------------------------
@@ -625,6 +739,11 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Specify an image path (string) to be used as the icon for a resource with
     the specified resource name.
+
+    [set_rts_camera_zoom_enabled]
+    ----------------------------------------------------------------------------
+    Enable or disable the RTS camera's mousewheel zoom. Disable it when the
+    wheel is temporarily repurposed and re-enable it afterwards.
 
     [set_simstate]
     ----------------------------------------------------------------------------
@@ -702,6 +821,13 @@ BUILT-IN FUNCTIONS
     the healthbars will only be rendered if the corresponding user-configurable
     setting is set.
 
+    [show_range_indicator]
+    ----------------------------------------------------------------------------
+    Draw a ring of the specified radius around an entity, for showing how far
+    one of its abilities reaches. Takes the pf.Entity and the radius, with an
+    optional (R, G, B) 'color' and (float) 'width'. Only one indicator is shown
+    at a time.
+
     [show_regions]
     ----------------------------------------------------------------------------
     Show region outlines and names over the map surface.
@@ -716,6 +842,21 @@ BUILT-IN FUNCTIONS
     projectile will travel with the specified velocity until it leaves the map
     bounds or hits a unit. The hit event can be handled.
 
+    [spawn_sprite_animated]
+    ----------------------------------------------------------------------------
+    Spawns a sprite with a specific animation. The first parameter is a sprite
+    sheet descriptor (4-tuple of a filename, the row count, the column count,
+    and the frame count). The additional parameters are ws_pos (worldspace
+    position), ws_size (worldspace size), the fps (integer), and the repeat
+    count (integer).
+
+    [spawn_sprite_static]
+    ----------------------------------------------------------------------------
+    Spawns a sprite for a fixed duration. The first parameter is a sprite sheet
+    descriptor (4-tuple of a filename, the row count, the column count, and the
+    frame count). The additional parameters are ws_pos (worldspace position),
+    ws_size (worldspace size), and duration_ms (milliseconds).
+
     [storage_site_show_ui]
     ----------------------------------------------------------------------------
     Set a flag controlling whether or not the UI windows are rendered over the
@@ -725,6 +866,11 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Compute the MS delta between two tick values retried by 'get_ticks'. This
     handles unsigned overflow unlike regular Python integer arithmnetic.
+
+    [tiles_under_obj]
+    ----------------------------------------------------------------------------
+    Returns a list of ((chunk_r, chunk_c), (tile_r, tile_c)) coordinates for
+    the tiles covered by the footprint of the entity with the supplied UID.
 
     [ui_text_edit_has_focus]
     ----------------------------------------------------------------------------
@@ -859,13 +1005,6 @@ BUILT-IN CLASSES
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
-
-        [set_group_bonus]
-        Declare a bonus this entity grants to every member of whatever group it
-        is in, taking a tag, a short display label for the group banner, a kind
-        and an amount, with the same 'percent' meaning as 'add_modifier'. The
-        bonus lapses as soon as the entity leaves the group, and two members
-        granting the same tag count once rather than stacking.
 
         [set_icons]
         Assign a set of icons to be displayed over the entity.
@@ -1349,6 +1488,10 @@ BUILT-IN CLASSES
         [position]
         The current worldspace position of the camera
 
+        [projection_mode]
+        The camera's projection mode. Can be one of pf.CAM_PROJ_PERSPECTIVE or
+        pf.CAM_PROJ_ORTHOGRAPHIC.
+
         [sensitivity]
         The camera's sensitivity (how fast direction can be changed)
 
@@ -1372,62 +1515,35 @@ BUILT-IN CLASSES
     ----------------------------------------------------------------------------
     Permafrost Engine entity which is able to take part in combat. This type
     requires the 'max_hp' and 'base_dmg' keyword arguments, along with exactly
-    one of 'armour_points' or 'base_armour', to be passed to __init__. The
-    optional 'attack_range', 'damage_type', 'armour_type' and 'invulnerable'
-    keyword arguments may also be passed. This is a subclass of pf.Entity.
+    one of 'armour_points' (flat armour) or 'base_armour' (the fraction of
+    damage it blocks), to be passed to __init__. The optional 'attack_range',
+    'damage_type', 'armour_type' and 'invulnerable' keyword arguments may also
+    be passed. This is a subclass of pf.Entity.
 
         ************************************************************************
         MEMBERS
         ************************************************************************
-        [attack_range]
-        The distance from which an entity can attack. 0 for melee units.
-
         [armour_points]
         The base armour in flat points, in [0, pf.ARMOUR_MAX_POINTS]. Incoming
-        damage is scaled by pf.ARMOUR_K / (pf.ARMOUR_K + armour_points), so
-        pf.ARMOUR_K points halve it. Every point is worth the same amount of
-        effective HP; the fraction of damage it blocks tails off.
+        damage is scaled by pf.ARMOUR_K / (pf.ARMOUR_K + armour), so
+        pf.ARMOUR_K points halve it.
 
         [armour_type]
         The armour type ID of this entity, an integer in [0,
         pf.ARMOUR_TYPE_MAX). Selects the column of the damage table applied to
         incoming attacks. The meaning of each ID is defined by the scripts.
 
+        [attack_range]
+        The distance from which an entity can attack. 0 for melee units.
+
         [base_armour]
-        The base armour as the fraction of incoming damage blocked, in
-        [0.0, 1.0]. This is a view of 'armour_points': setting it stores the
+        The base armour as the fraction of incoming damage blocked, in [0.0,
+        1.0]. This is a view of 'armour_points': setting it stores the
         equivalent flat armour, and a fraction above the 99% cap saturates
         there. Total immunity is not reachable this way - use 'invulnerable'.
 
         [base_dmg]
         The base damage for which this entity's attacks hit.
-
-        [damage_type]
-        The damage type ID of this entity's attacks, an integer in [0,
-        pf.DAMAGE_TYPE_MAX). Selects the row of the damage table applied
-        against the target's armour type. The meaning of each ID is defined by
-        the scripts.
-
-        [effective_armour_points]
-        Read-only. The armour actually used against incoming damage: the base
-        plus every live armour modifier.
-
-        [effective_base_dmg]
-        Read-only. The damage this entity's attacks actually land: the base
-        plus every live damage modifier.
-
-        [effective_attack_range]
-        Read-only. The range this entity actually attacks from: the base plus
-        every live range modifier. Stays 0 for melee units, which a range
-        modifier never lifts off the ground.
-
-        [effective_invulnerable]
-        Read-only. Whether the entity is invulnerable, from either the flag or
-        a live modifier.
-
-        [invulnerable]
-        Whether the entity takes no damage at all and cannot be killed by an
-        attack.
 
         [bounds]
         Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
@@ -1437,6 +1553,29 @@ BUILT-IN CLASSES
         Descriptor of the corpse model to display upon entity death. Only shown
         for entities with a death animation. Must be a tuple with 3 values:
         directory (string), filename (string), model scale (tuple of 3 floats).
+
+        [damage_type]
+        The damage type ID of this entity's attacks, an integer in [0,
+        pf.DAMAGE_TYPE_MAX). Selects the row of the damage table applied
+        against the target's armour type. The meaning of each ID is defined by
+        the scripts.
+
+        [effective_armour_points]
+        The armour actually used against incoming damage: the base plus every
+        live armour modifier.
+
+        [effective_attack_range]
+        The range this entity actually attacks from: the base plus every live
+        range modifier. Stays 0 for melee units, which a range modifier never
+        lifts off the ground.
+
+        [effective_base_dmg]
+        The damage this entity's attacks actually land: the base plus every
+        live damage modifier.
+
+        [effective_invulnerable]
+        Whether the entity is invulnerable, from either the flag or a live
+        modifier.
 
         [faction_id]
         Index of the faction that the entity belongs to.
@@ -1450,6 +1589,10 @@ BUILT-IN CLASSES
         [idle]
         Boolean indicating whether the entity is currently in an idle state.
 
+        [invulnerable]
+        Whether the entity takes no damage at all and cannot be killed by an
+        attack.
+
         [max_hp]
         The maximum number of hitpoints that the entity starts out with.
 
@@ -1462,6 +1605,12 @@ BUILT-IN CLASSES
 
         [pos]
         The XYZ position in worldspace coordinates.
+
+        [projectile_fire_descriptor]
+        Descriptor of when the ranged entity fires its' projectile. Must be a
+        tuple with 4 values: the frame offset index (int), the fire mode (0 or
+        1 for high or low), the bone name (string or None), and the offset
+        (tuple of 3 floats).
 
         [rotation]
         XYZW quaternion for rotaion about local origin.
@@ -1509,11 +1658,10 @@ BUILT-IN CLASSES
         in armour points, damage per hit, OpenGL coords per second, or OpenGL
         coords respectively; any positive amount of pf.COMBAT_MOD_INVULNERABLE
         grants immunity. With 'percent' set, the amount is a fraction of the
-        base stat instead, so 0.2 is +20%, resolved against the base every time
-        the stat is recomputed. The optional 'duration' is in seconds; 0 (the
-        default) lasts until removed. The optional 'tag' names the modifier for
-        'remove_modifier', and adding a tag that is already live replaces it
-        rather than stacking with it.
+        base stat instead, so 0.2 is +20%. The optional 'duration' is in
+        seconds; 0 (the default) lasts until removed. The optional 'tag' names
+        the modifier for 'remove_modifier', and adding a tag that is already
+        live replaces it rather than stacking.
 
         [add_tag]
         Add a string tag to this entity's list of tags.
@@ -1522,11 +1670,11 @@ BUILT-IN CLASSES
         Issues an 'attack move' order to the entity at the XZ position
         specified by the argument.
 
-        [clear_icons]
-        Clear the set of icons displayed over the entity.
-
         [clear_group_bonus]
         Withdraw the group bonus this entity grants under the specified tag.
+
+        [clear_icons]
+        Clear the set of icons displayed over the entity.
 
         [clear_modifiers]
         Remove all of the entity's modifiers, tagged or not.
@@ -1537,11 +1685,11 @@ BUILT-IN CLASSES
         [face_towards]
         Make the entity face towards the specified point.
 
-        [get_icons]
-        Get the set of icons displayed over the entity.
-
         [get_bonus]
         Returns the summed amount of every live modifier of the specified kind.
+
+        [get_icons]
+        Get the set of icons displayed over the entity.
 
         [hold_position]
         Issues a 'hold position' order to the entity, stopping it and
@@ -1571,6 +1719,14 @@ BUILT-IN CLASSES
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
+
+        [set_group_bonus]
+        Declare a bonus this entity grants to every member of whatever group it
+        is in, taking a tag, the path of the icon the group banner draws for
+        it, a kind and an amount, with the same 'percent' meaning as
+        'add_modifier'. The bonus lapses as soon as the entity leaves the
+        group, and two members granting the same tag count once rather than
+        stacking.
 
         [set_icons]
         Assign a set of icons to be displayed over the entity.
@@ -2188,6 +2344,10 @@ BUILT-IN CLASSES
         Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
         box (in OpenGL coordinates).
 
+        [effective_speed]
+        The speed the entity actually moves at: the base speed plus every live
+        speed modifier.
+
         [faction_id]
         Index of the faction that the entity belongs to.
 
@@ -2223,10 +2383,6 @@ BUILT-IN CLASSES
         [selection_radius]
         Radius (in OpenGL coordinates) of the unit selection circle for this
         entity.
-
-        [effective_speed]
-        Read-only. The speed the entity actually moves at: the base speed plus
-        every live speed modifier.
 
         [speed]
         Entity's base movement speed (in OpenGL coordinates per second).
@@ -2317,6 +2473,317 @@ BUILT-IN CLASSES
         Make the entity a 'zombie', effectively removing it from the game
         simulation but allowing the scripting object to persist.
 
+    [PerfInfo]
+    ----------------------------------------------------------------------------
+    Zero-copy view over a struct perf_info produced by the engine's perf
+    system. Field accessors read directly from the underlying C buffer; no
+    per-entry Python objects are eagerly allocated. The buffer is freed when
+    the wrapper is destroyed.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [nentries]
+        Number of perf entries available in this report.
+
+        [threadname]
+        Name of the thread that produced this perf report.
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__len__]
+        x.__len__() <==> len(x)
+
+        [__pickle__]
+        Serialize a Permafrost Engine PerfInfo to a string.
+
+        [funcname]
+        Returns the name of the perf entry at the given index.
+
+        [hw_br_miss]
+        Returns the branch-miss rate (percent) of the entry at the given index.
+
+        [hw_ipc]
+        Returns the instructions-per-cycle ratio of the entry at the given
+        index.
+
+        [hw_l1d_miss]
+        Returns the L1D-miss rate (percent) of the entry at the given index.
+
+        [hw_llc_miss]
+        Returns the LLC-miss rate (percent) of the entry at the given index.
+
+        [ms_delta]
+        Returns the wall-clock duration (in milliseconds) of the entry at the
+        given index.
+
+        [parent_idx]
+        Returns the parent entry index for the entry at the given index, or a
+        negative value if the entry is a root.
+
+        [pc_delta]
+        Returns the raw performance counter delta of the entry at the given
+        index.
+
+    [PopulationContributorEntity]
+    ----------------------------------------------------------------------------
+    Permafrost Engine entity that counts towards its faction's population
+    total. This is a subclass of pf.Entity.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [bounds]
+        Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
+        box (in OpenGL coordinates).
+
+        [faction_id]
+        Index of the faction that the entity belongs to.
+
+        [height]
+        Returns the scaled height of the entity, in OpenGL coordinates.
+
+        [idle]
+        Boolean indicating whether the entity is currently in an idle state.
+
+        [name]
+        Custom name given to this enity.
+
+        [pfobj_path]
+        The relative path of the PFOBJ file used to instantiate the entity.
+        Readonly.
+
+        [pos]
+        The XYZ position in worldspace coordinates.
+
+        [rotation]
+        XYZW quaternion for rotaion about local origin.
+
+        [scale]
+        The XYZ scaling factors.
+
+        [selectable]
+        Flag indicating whether this entity can be selected with the mouse.
+
+        [selection_radius]
+        Radius (in OpenGL coordinates) of the unit selection circle for this
+        entity.
+
+        [tags]
+        Return a tuple with all the entity's tags.
+
+        [top_screen_pos]
+        Get the location of the top center point of the entity, in screenspace
+        coordinates.
+
+        [uid]
+        The unique integer ID of this entity
+
+        [vision_range]
+        The radius (in OpenGL coordinates) that the entity sees around itself.
+
+        [zombie]
+        Returns True if the entity is a zombie (destroyed in the game
+        simulation, but retained via a scripting reference).
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__del__]
+        Calls the next __del__ in the MRO if there is one, otherwise do nothing.
+
+        [__pickle__]
+        Serialize a Permafrost Engine population contributor entity to a string.
+
+        [add_tag]
+        Add a string tag to this entity's list of tags.
+
+        [clear_icons]
+        Clear the set of icons displayed over the entity.
+
+        [deselect]
+        Removes the entity from the current unit selection, if it is selected.
+
+        [face_towards]
+        Make the entity face towards the specified point.
+
+        [get_icons]
+        Get the set of icons displayed over the entity.
+
+        [is_garrisoned]
+        Returns True if the entity is currently garrisoned.
+
+        [notify]
+        Send a specific event to an entity in order to invoke the entity's
+        event handlers. Weakref arguments are automatically unpacked before
+        being passed to the handler.
+
+        [ping]
+        Temporarily blink the enitity's selection circle.
+
+        [register]
+        Registers the specified callable to be invoked when an event of the
+        specified type is sent to this entity.
+
+        [remove_tag]
+        Remove a string tag from this entity's list of tags.
+
+        [select]
+        Adds the entity to the current unit selection, if it is not present
+        there already.
+
+        [set_icons]
+        Assign a set of icons to be displayed over the entity.
+
+        [set_model]
+        Replace the current entity's current model and animation data with the
+        specified PFOBJ data.
+
+        [stop]
+        Issues a 'stop' command to the entity, stopping its' movement and
+        attack. Cancels 'hold position' order.
+
+        [unregister]
+        Unregisters a callable previously registered to be invoked on the
+        specified event.
+
+        [zombiefy]
+        Make the entity a 'zombie', effectively removing it from the game
+        simulation but allowing the scripting object to persist.
+
+    [PopulationLimitContributorEntity]
+    ----------------------------------------------------------------------------
+    Permafrost Engine entity that raises its faction's population limit by a
+    fixed amount once it has been completed. Requires a 'population_limit'
+    keyword argument to __init__. This is a subclass of pf.Entity.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [bounds]
+        Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
+        box (in OpenGL coordinates).
+
+        [faction_id]
+        Index of the faction that the entity belongs to.
+
+        [height]
+        Returns the scaled height of the entity, in OpenGL coordinates.
+
+        [idle]
+        Boolean indicating whether the entity is currently in an idle state.
+
+        [name]
+        Custom name given to this enity.
+
+        [pfobj_path]
+        The relative path of the PFOBJ file used to instantiate the entity.
+        Readonly.
+
+        [population_limit]
+        The amount this entity contributes to its faction's population limit
+        once it is completed.
+
+        [pos]
+        The XYZ position in worldspace coordinates.
+
+        [rotation]
+        XYZW quaternion for rotaion about local origin.
+
+        [scale]
+        The XYZ scaling factors.
+
+        [selectable]
+        Flag indicating whether this entity can be selected with the mouse.
+
+        [selection_radius]
+        Radius (in OpenGL coordinates) of the unit selection circle for this
+        entity.
+
+        [tags]
+        Return a tuple with all the entity's tags.
+
+        [top_screen_pos]
+        Get the location of the top center point of the entity, in screenspace
+        coordinates.
+
+        [uid]
+        The unique integer ID of this entity
+
+        [vision_range]
+        The radius (in OpenGL coordinates) that the entity sees around itself.
+
+        [zombie]
+        Returns True if the entity is a zombie (destroyed in the game
+        simulation, but retained via a scripting reference).
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__del__]
+        Calls the next __del__ in the MRO if there is one, otherwise do nothing.
+
+        [__pickle__]
+        Serialize a Permafrost Engine population limit contributor entity to a
+        string.
+
+        [add_tag]
+        Add a string tag to this entity's list of tags.
+
+        [clear_icons]
+        Clear the set of icons displayed over the entity.
+
+        [deselect]
+        Removes the entity from the current unit selection, if it is selected.
+
+        [face_towards]
+        Make the entity face towards the specified point.
+
+        [get_icons]
+        Get the set of icons displayed over the entity.
+
+        [is_garrisoned]
+        Returns True if the entity is currently garrisoned.
+
+        [notify]
+        Send a specific event to an entity in order to invoke the entity's
+        event handlers. Weakref arguments are automatically unpacked before
+        being passed to the handler.
+
+        [ping]
+        Temporarily blink the enitity's selection circle.
+
+        [register]
+        Registers the specified callable to be invoked when an event of the
+        specified type is sent to this entity.
+
+        [remove_tag]
+        Remove a string tag from this entity's list of tags.
+
+        [select]
+        Adds the entity to the current unit selection, if it is not present
+        there already.
+
+        [set_icons]
+        Assign a set of icons to be displayed over the entity.
+
+        [set_model]
+        Replace the current entity's current model and animation data with the
+        specified PFOBJ data.
+
+        [stop]
+        Issues a 'stop' command to the entity, stopping its' movement and
+        attack. Cancels 'hold position' order.
+
+        [unregister]
+        Unregisters a callable previously registered to be invoked on the
+        specified event.
+
+        [zombiefy]
+        Make the entity a 'zombie', effectively removing it from the game
+        simulation but allowing the scripting object to persist.
+
     [Region]
     ----------------------------------------------------------------------------
     Permafrost Engine region object.                               
@@ -2360,6 +2827,13 @@ BUILT-IN CLASSES
         [__pickle__]
         Serialize a Permafrost Engine region object to a string.
 
+        [clear_aura]
+        Remove the region's aura, dropping the modifier from everything
+        currently inside it.
+
+        [clear_highlight]
+        Stop outlining the region and its members.
+
         [contains]
         Returns True if the specified entity is currently within the region.
 
@@ -2381,18 +2855,10 @@ BUILT-IN CLASSES
         meaning as 'add_modifier'. The modifier is removed as soon as an entity
         leaves, and only entities not at war with the owner are affected.
 
-        [clear_aura]
-        Remove the region's aura, dropping the modifier from everything
-        currently inside it.
-
         [set_highlight]
-        Outline every entity inside the region in an (R, G, B) color, with an
-        optional 'width', and mark the region's own extent with a ring in the
-        optional 'outline_color' and 'outline_width'. The outlines follow the
-        live membership, so nothing needs updating as units come and go.
-
-        [clear_highlight]
-        Stop outlining the region and its members.
+        Outline the region and every entity inside it in an (R, G, B) color,
+        with an optional 'width'. The outlines follow the live membership, so
+        nothing needs updating as units come and go.
 
     [ResourceEntity]
     ----------------------------------------------------------------------------
@@ -2774,8 +3240,8 @@ BUILT-IN CLASSES
         The height level of the bottom plane of the tile.
 
         [blend_mode]
-        The mode which determines how this tile's texture is blended with
-        adjacent tiles' textures.
+        Packed per-side blend modes - 2 bits per side. Each side is one of the
+        BLEND_MODE_* constants.
 
         [blend_normals]
         A boolean which determines if this tile's normals are averaged together
@@ -2786,6 +3252,10 @@ BUILT-IN CLASSES
 
         [bot_right_height]
         The height of the bot right corner.
+
+        [cover]
+        The type of surface cover (e.g. grass) to place on this tile. One of
+        the TILE_COVER_* constants.
 
         [no_bump_map]
         A boolean which determines if the bump map is used for giving an uneven
@@ -3821,6 +4291,10 @@ BUILT-IN CLASSES
         [file_browser]
         Present a file browser widget.
 
+        [font_height]
+        Returns the height, in virtual pixels, of a single line of text in the
+        active font.
+
         [group]
         The window UI components pushed in the callable argument will be nested
         under a group.
@@ -3852,6 +4326,11 @@ BUILT-IN CLASSES
 
         [layout_row_static]
         Add a row with a static layout.
+
+        [multi_chart]
+        Add a line chart with multiple slots. Args: chart type, (min, max)
+        tuple, a list of series (each a list of ints), and optionally a list of
+        per-series (r, g, b) colors.
 
         [on_hide]
         Callback that gets invoked when the user hides the window with the
@@ -3920,6 +4399,10 @@ BUILT-IN CLASSES
         Returns the number of lines taken up by the specified text in a widget
         of the specified width.
 
+        [text_width]
+        Returns the width, in virtual pixels, that the specified text takes up
+        in the active font.
+
         [tree]
         The window UI components pushed in the callable argument will be nested
         under a collapsable tree section.
@@ -3951,12 +4434,16 @@ BUILT-IN CONSTANTS
     ANIM_MODE_ONCE 1
     ARMOUR_K 100
     ARMOUR_MAX_POINTS 9900
+    ARMOUR_TYPE_MAX 8
     AUDIO_NUM_FG_CHANNELS 4
     BLEND_MODE_BLUR 1
+    BLEND_MODE_EDGE 2
     BLEND_MODE_NOBLEND 0
     CAM_MODE_FPS 0
     CAM_MODE_FREE 2
     CAM_MODE_RTS 1
+    CAM_PROJ_ORTHOGRAPHIC 1
+    CAM_PROJ_PERSPECTIVE 0
     COMBAT_MOD_ARMOUR 0
     COMBAT_MOD_DAMAGE 1
     COMBAT_MOD_INVULNERABLE 4
@@ -3978,72 +4465,73 @@ BUILT-IN CONSTANTS
     CURSOR_SCROLL_TOP_RIGHT 2
     CURSOR_TARGET 9
     CURSOR_TRANSPORT 14
+    DAMAGE_TYPE_MAX 8
     DIPLOMACY_STATE_PEACE 0
     DIPLOMACY_STATE_WAR 1
     EVENT_10HZ_TICK 65550
-    EVENT_1HZ_TICK 65551
+    EVENT_1HZ_TICK 65552
     EVENT_20HZ_TICK 65548
     EVENT_30HZ_TICK 65547
     EVENT_60HZ_TICK 65546
-    EVENT_ANIM_CYCLE_FINISHED 65553
-    EVENT_ANIM_FINISHED 65552
-    EVENT_ATTACK_END 65560
-    EVENT_ATTACK_START 65557
-    EVENT_BUILDING_COMPLETED 65574
-    EVENT_BUILDING_CONSTRUCTED 65575
-    EVENT_BUILDING_FOUNDED 65573
-    EVENT_BUILDING_PLACED 65597
-    EVENT_BUILDING_REMOVED 65598
-    EVENT_BUILD_BEGIN 65569
-    EVENT_BUILD_END 65570
-    EVENT_BUILD_FAIL_FOUND 65571
-    EVENT_BUILD_TARGET_ACQUIRED 65572
+    EVENT_ANIM_CYCLE_FINISHED 65555
+    EVENT_ANIM_FINISHED 65554
+    EVENT_ATTACK_END 65562
+    EVENT_ATTACK_START 65559
+    EVENT_BUILDING_COMPLETED 65576
+    EVENT_BUILDING_CONSTRUCTED 65577
+    EVENT_BUILDING_FOUNDED 65575
+    EVENT_BUILDING_PLACED 65599
+    EVENT_BUILDING_REMOVED 65600
+    EVENT_BUILD_BEGIN 65571
+    EVENT_BUILD_END 65572
+    EVENT_BUILD_FAIL_FOUND 65573
+    EVENT_BUILD_TARGET_ACQUIRED 65574
     EVENT_ENGINE_LAST 131071
-    EVENT_ENTERED_REGION 65588
-    EVENT_ENTITY_DEATH 65558
-    EVENT_ENTITY_DEATH_IMMEDIATE 65559
-    EVENT_ENTITY_DIED 65576
-    EVENT_ENTITY_DISAPPEARED 65593
-    EVENT_ENTITY_STOP 65577
-    EVENT_EXITED_REGION 65589
-    EVENT_GAME_SIMSTATE_CHANGED 65561
-    EVENT_HARVEST_BEGIN 65578
-    EVENT_HARVEST_END 65579
-    EVENT_HARVEST_TARGET_ACQUIRED 65580
-    EVENT_MOTION_END 65556
-    EVENT_MOTION_START 65555
-    EVENT_MOVABLE_ENTITY_BLOCK 65596
-    EVENT_MOVABLE_ENTITY_UNBLOCK 65595
-    EVENT_MOVE_ISSUED 65554
+    EVENT_ENTERED_REGION 65590
+    EVENT_ENTITY_DEATH 65560
+    EVENT_ENTITY_DEATH_IMMEDIATE 65561
+    EVENT_ENTITY_DIED 65578
+    EVENT_ENTITY_DISAPPEARED 65595
+    EVENT_ENTITY_STOP 65579
+    EVENT_EXITED_REGION 65591
+    EVENT_GAME_SIMSTATE_CHANGED 65563
+    EVENT_HARVEST_BEGIN 65580
+    EVENT_HARVEST_END 65581
+    EVENT_HARVEST_TARGET_ACQUIRED 65582
+    EVENT_MOTION_END 65558
+    EVENT_MOTION_START 65557
+    EVENT_MOVABLE_ENTITY_BLOCK 65598
+    EVENT_MOVABLE_ENTITY_UNBLOCK 65597
+    EVENT_MOVE_ISSUED 65556
     EVENT_NEW_GAME 65544
-    EVENT_ORDER_ISSUED 65594
-    EVENT_PROJECTILE_DISAPPEAR 65591
-    EVENT_PROJECTILE_HIT 65592
-    EVENT_RALLY_POINT_SET 65599
+    EVENT_ORDER_ISSUED 65596
+    EVENT_PROJECTILE_DISAPPEAR 65593
+    EVENT_PROJECTILE_HIT 65594
+    EVENT_RALLY_POINT_SET 65601
     EVENT_RENDER_3D_POST 65540
     EVENT_RENDER_3D_PRE 65539
     EVENT_RENDER_FINISH 65542
     EVENT_RENDER_UI 65541
-    EVENT_RESOURCE_AMOUNT_CHANGED 65587
-    EVENT_RESOURCE_DROPPED_OFF 65584
-    EVENT_RESOURCE_EXHAUSTED 65586
-    EVENT_RESOURCE_PICKED_UP 65585
-    EVENT_SCRIPT_TASK_EXCEPTION 65567
-    EVENT_SCRIPT_TASK_FINISHED 65568
+    EVENT_RESOURCE_AMOUNT_CHANGED 65589
+    EVENT_RESOURCE_DROPPED_OFF 65586
+    EVENT_RESOURCE_EXHAUSTED 65588
+    EVENT_RESOURCE_PICKED_UP 65587
+    EVENT_SCRIPT_TASK_EXCEPTION 65569
+    EVENT_SCRIPT_TASK_FINISHED 65570
     EVENT_SELECTED_TILE_CHANGED 65543
-    EVENT_SESSION_FAIL_LOAD 65565
-    EVENT_SESSION_FAIL_SAVE 65566
-    EVENT_SESSION_LOADED 65562
-    EVENT_SESSION_POPPED 65563
-    EVENT_SESSION_SAVED 65564
-    EVENT_STORAGE_SITE_AMOUNT_CHANGED 65583
-    EVENT_STORAGE_TARGET_ACQUIRED 65582
-    EVENT_TRANSPORT_TARGET_ACQUIRED 65581
-    EVENT_UNIT_BECAME_ACTIVE 65601
-    EVENT_UNIT_BECAME_IDLE 65600
+    EVENT_SESSION_FAIL_LOAD 65567
+    EVENT_SESSION_FAIL_SAVE 65568
+    EVENT_SESSION_LOADED 65564
+    EVENT_SESSION_POPPED 65565
+    EVENT_SESSION_SAVED 65566
+    EVENT_STORAGE_SITE_AMOUNT_CHANGED 65585
+    EVENT_STORAGE_TARGET_ACQUIRED 65584
+    EVENT_TRANSPORT_TARGET_ACQUIRED 65583
+    EVENT_UNIT_BECAME_ACTIVE 65603
+    EVENT_UNIT_BECAME_IDLE 65602
     EVENT_UNIT_SELECTION_CHANGED 65545
     EVENT_UPDATE_END 65537
-    EVENT_UPDATE_FACTION 65590
+    EVENT_UPDATE_FACTION 65592
     EVENT_UPDATE_START 65536
     EVENT_UPDATE_UI 65538
     FORMATION_BOX 3
@@ -4709,6 +5197,9 @@ BUILT-IN CONSTANTS
     TILETYPE_RAMP_NS 2
     TILETYPE_RAMP_SN 1
     TILETYPE_RAMP_WE 4
+    TILE_COVER_GRASS_FULL 1
+    TILE_COVER_GRASS_SPARSE 2
+    TILE_COVER_NONE 0
     TRANSPORT_STRATEGY_EXCESS 1
     TRANSPORT_STRATEGY_GATHERING 2
     TRANSPORT_STRATEGY_NEAREST 0
