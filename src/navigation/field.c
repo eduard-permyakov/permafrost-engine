@@ -1396,6 +1396,16 @@ static size_t field_enemies_initial_frontier(
         if(ent_dying(curr_enemy, ctx))
             continue;
 
+        /* A zero-reach field guides units to touch their target, and nothing on
+         * a ground or water layer can touch a flyer. Seeding one anyway walks
+         * the melee crowd to beneath it, where it stands and mills about. The
+         * reach-seeded fields keep flyers, since a shot can connect.
+         */
+        if(reach == 0.0f
+        && layer < NAV_LAYER_AIR_1X1
+        && (ent_flags(curr_enemy, ctx) & ENTITY_FLAG_AIR))
+            continue;
+
         if(reach > 0.0f) {
 
             nmarked += field_stamp_firing_disc(priv, layer, enemies->map_pos, base,

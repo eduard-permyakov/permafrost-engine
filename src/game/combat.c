@@ -1495,6 +1495,15 @@ static void do_attack_unit(uint32_t uid, uint32_t target)
     if(cs->state == STATE_DEATH_ANIM_PLAYING)
         return;
 
+    /* A grounded melee unit has no way to strike a flyer; automatic acquisition
+     * already skips them, and an explicit order would lock the unit into a chase
+     * it can never resolve.
+     */
+    if(!(G_FlagsGet(uid) & ENTITY_FLAG_AIR)
+    && (G_FlagsGet(target) & ENTITY_FLAG_AIR)
+    && (cs->stats.attack_range == 0.0f))
+        return;
+
     do_stop_attack(uid);
     cs->stance = COMBAT_STANCE_AGGRESSIVE;
 
@@ -3193,6 +3202,10 @@ static void on_mousedown(void *user, void *event)
         uint32_t flags = G_FlagsGet(curr);
 
         if(!(flags & ENTITY_FLAG_COMBATABLE))
+            continue;
+        if(!(flags & ENTITY_FLAG_AIR)
+        && (G_FlagsGet(target) & ENTITY_FLAG_AIR)
+        && (G_Combat_GetRange(curr) == 0.0f))
             continue;
 
         G_Combat_AttackUnit(curr, target);
