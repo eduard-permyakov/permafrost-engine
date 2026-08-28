@@ -1224,9 +1224,61 @@ static size_t field_portal_initial_frontier(
     return ret;
 }
 
+/* The body clearance a unit of the layer needs around a tile it is to stand on,
+ * in tiles. Movable blockers are stamped at body size only, so that passing one
+ * in a corridor stays possible; a tile a unit is sent to STOP on has to fit its
+ * whole body, which on the wider layers means this ring of clear tiles too.
+ */
+static int field_layer_margin(enum nav_layer layer)
+{
+    switch(layer) {
+    case NAV_LAYER_GROUND_3X3:
+    case NAV_LAYER_WATER_3X3:
+    case NAV_LAYER_AIR_3X3:
+        return 1;
+    case NAV_LAYER_GROUND_5X5:
+    case NAV_LAYER_WATER_5X5:
+    case NAV_LAYER_AIR_5X5:
+        return 2;
+    case NAV_LAYER_GROUND_7X7:
+    case NAV_LAYER_WATER_7X7:
+    case NAV_LAYER_AIR_7X7:
+        return 3;
+    default:
+        return 0;
+    }
+}
+
+/* Whether a unit of the layer could stand centered on the tile without its body
+ * overlapping a blocker on a neighbouring one.
+ */
+static bool field_tile_occupiable(
+    const struct nav_private *priv,
+    enum nav_layer            layer,
+    struct map_resolution     res,
+    struct tile_desc          td)
+{
+    int margin = field_layer_margin(layer);
+    for(int dr = -margin; dr <= margin; dr++) {
+    for(int dc = -margin; dc <= margin; dc++) {
+
+        if(dr == 0 && dc == 0)
+            continue;
+        struct tile_desc curr = td;
+        if(!M_Tile_RelativeDesc(res, &curr, dc, dr))
+            continue;
+        const struct nav_chunk *chunk =
+            &priv->chunks[layer][IDX(curr.chunk_r, priv->width, curr.chunk_c)];
+        if(chunk->blockers[curr.tile_r][curr.tile_c] > 0)
+            return false;
+    }}
+    return true;
+}
+
 /* Mark every tile of the region from which 'pos' is within 'range'. Only ground
  * a unit could stand on is marked: a seed inside a wall would let the flood spill
- * out of the wall's far side and route units straight through it.
+ * out of the wall's far side and route units straight through it, and a seed a
+ * body's width from a parked unit would send the follower into it.
  */
 static size_t field_stamp_firing_disc(
     const struct nav_private *priv,
@@ -1277,6 +1329,8 @@ static size_t field_stamp_firing_disc(
         const struct nav_chunk *chunk =
             &priv->chunks[layer][IDX(td.chunk_r, priv->width, td.chunk_c)];
         if(!field_tile_passable(chunk, (struct coord){td.tile_r, td.tile_c}))
+            continue;
+        if(!field_tile_occupiable(priv, layer, res, td))
             continue;
 
         inout_marked[r * rdim + c] = true;
@@ -1429,6 +1483,33 @@ static size_t field_entity_initial_frontier(
     int ntds;
     struct tile_desc tds[512];
     uint32_t ent = target->target;
+
+    /* A reach turns the goal from the entity's edge into its in-range set:
+     * every open tile the entity can be fired on from. Parked shooters drop
+     * their tiles out of the seeding on rebuild, so the field walks the rest
+     * of the attackers to the slots still free.
+     */
+    if(target->range > 0.0f) {
+
+        STALLOC(bool, marked, rdim * cdim);
+        memset(marked, 0, sizeof(bool) * rdim * cdim);
+        field_stamp_firing_disc(priv, layer, target->map_pos, base, rdim, cdim,
+            ent_pos_xz(ent, ctx), target->range, marked);
+
+        int ret = 0;
+        for(int r = 0; r < rdim && ret < maxout; r++) {
+        for(int c = 0; c < cdim && ret < maxout; c++) {
+
+            if(!marked[r * rdim + c])
+                continue;
+            struct tile_desc td = base;
+            if(!M_Tile_RelativeDesc(res, &td, c, r))
+                continue;
+            out[ret++] = td;
+        }}
+        STFREE(marked);
+        return ret;
+    }
 
     if(ent_flags(ent, ctx) & ENTITY_FLAG_BUILDING) {
 
@@ -2111,6 +2192,7 @@ ff_id_t N_FlowFieldID(struct coord chunk, struct field_target target, enum nav_l
         return (((uint64_t)layer)                          << 60)
              | (((uint64_t)target.type)                    << 56)
              | (((uint64_t)target.ent.target)              << 24)
+             | (((uint64_t)(uint8_t)(target.ent.range / 4.0f)) << 16)
              | (((uint64_t)chunk.r)                        <<  8)
              | (((uint64_t)chunk.c)                        <<  0);
 

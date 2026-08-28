@@ -640,7 +640,7 @@ void M_NavRenderVisibleGroupArrivalField(const struct map *map, const struct cam
 }
 
 void M_NavRenderVisibleSurroundField(const struct map *map, const struct camera *cam, 
-                                     enum nav_layer layer, const uint32_t uid)
+                                     enum nav_layer layer, const uint32_t uid, float range)
 {
     struct frustum frustum;
     Camera_MakeFrustum(cam, &frustum);
@@ -656,7 +656,7 @@ void M_NavRenderVisibleSurroundField(const struct map *map, const struct camera 
 
         mat4x4_t chunk_model;
         M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
-        N_RenderSurroundField(map->nav_private, map, &chunk_model, r, c, layer, uid);
+        N_RenderSurroundField(map->nav_private, map, &chunk_model, r, c, layer, uid, range);
     }}
 }
 
@@ -1147,10 +1147,16 @@ bool M_NavHasEnemyRangeFlowAt(const struct map *map, enum nav_layer layer,
     return N_HasEnemyRangeFlowAt(map->nav_private, map->pos, layer, faction_id, range, xz_pos);
 }
 
-void M_NavRequestAsyncSurroundField(const struct map *map, enum nav_layer layer, 
-                                    vec2_t curr_pos, uint32_t ent, int faction_id)
+bool M_NavHasEntityRangeFlowAt(const struct map *map, enum nav_layer layer,
+                               uint32_t ent, float range, vec2_t xz_pos)
 {
-    N_RequestAsyncSurroundField(curr_pos, map->nav_private, layer, map->pos, ent, faction_id);
+    return N_HasEntityRangeFlowAt(map->nav_private, map->pos, layer, ent, range, xz_pos);
+}
+
+void M_NavRequestAsyncSurroundField(const struct map *map, enum nav_layer layer, 
+                                    vec2_t curr_pos, uint32_t ent, int faction_id, float range)
+{
+    N_RequestAsyncSurroundField(curr_pos, map->nav_private, layer, map->pos, ent, faction_id, range);
 }
 
 void M_NavRequestAsyncGroupArrivalField(const struct map *map, enum nav_layer layer,

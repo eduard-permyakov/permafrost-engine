@@ -73,6 +73,11 @@ struct entity_desc{
      */
     vec2_t       built_pos;
     uint8_t      age;
+    /* Guide to the nearest tile from which the entity is within this reach,
+     * rather than to the tiles adjacent to it. Zero keeps the adjacency
+     * seeding, which is what a melee surround wants.
+     */
+    float        range;
 };
 
 struct portal_desc{

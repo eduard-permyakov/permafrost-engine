@@ -1140,11 +1140,26 @@ static void n_update_blockers(struct nav_private *priv, enum nav_layer layer, in
 }
 
 static void n_update_blockers_circle_ground(struct nav_private *priv, vec2_t xz_pos, float range, 
-                                            int faction_id, vec3_t map_pos, int ref_delta)
+                                            int faction_id, vec3_t map_pos, int ref_delta,
+                                            bool dilate)
 {
     struct tile_desc tds[1024];
     int ntds = M_Tile_AllUnderCircle(n_res(priv), xz_pos, range, map_pos, tds, ARR_SIZE(tds));
     n_update_blockers(priv, NAV_LAYER_GROUND_1X1, faction_id, tds, ntds, ref_delta);
+
+    /* A movable blocker is another unit standing in the way rather than geometry.
+     * The rings exist so a wide unit is guaranteed to clear a corner of the
+     * terrain; applied to a neighbour they make it a tile thicker than its body
+     * on every layer above 1X1, which is enough for a crowd to seal the gaps it
+     * would otherwise leave. Unit spacing is resolved by the velocity solve, so
+     * the body itself is all the field needs to know about.
+     */
+    if(!dilate) {
+        n_update_blockers(priv, NAV_LAYER_GROUND_3X3, faction_id, tds, ntds, ref_delta);
+        n_update_blockers(priv, NAV_LAYER_GROUND_5X5, faction_id, tds, ntds, ref_delta);
+        n_update_blockers(priv, NAV_LAYER_GROUND_7X7, faction_id, tds, ntds, ref_delta);
+        return;
+    }
 
     struct tile_desc outline3x3[1024];
     int noutline3x3 = M_Tile_Contour(ntds, tds, n_res(priv), outline3x3, ARR_SIZE(outline3x3));
@@ -1168,11 +1183,26 @@ static void n_update_blockers_circle_ground(struct nav_private *priv, vec2_t xz_
 }
 
 static void n_update_blockers_circle_water(struct nav_private *priv, vec2_t xz_pos, float range, 
-                                           int faction_id, vec3_t map_pos, int ref_delta)
+                                           int faction_id, vec3_t map_pos, int ref_delta,
+                                            bool dilate)
 {
     struct tile_desc tds[1024];
     int ntds = M_Tile_AllUnderCircle(n_res(priv), xz_pos, range, map_pos, tds, ARR_SIZE(tds));
     n_update_blockers(priv, NAV_LAYER_WATER_1X1, faction_id, tds, ntds, ref_delta);
+
+    /* A movable blocker is another unit standing in the way rather than geometry.
+     * The rings exist so a wide unit is guaranteed to clear a corner of the
+     * terrain; applied to a neighbour they make it a tile thicker than its body
+     * on every layer above 1X1, which is enough for a crowd to seal the gaps it
+     * would otherwise leave. Unit spacing is resolved by the velocity solve, so
+     * the body itself is all the field needs to know about.
+     */
+    if(!dilate) {
+        n_update_blockers(priv, NAV_LAYER_WATER_3X3, faction_id, tds, ntds, ref_delta);
+        n_update_blockers(priv, NAV_LAYER_WATER_5X5, faction_id, tds, ntds, ref_delta);
+        n_update_blockers(priv, NAV_LAYER_WATER_7X7, faction_id, tds, ntds, ref_delta);
+        return;
+    }
 
     struct tile_desc outline3x3[1024];
     int noutline3x3 = M_Tile_Contour(ntds, tds, n_res(priv), outline3x3, ARR_SIZE(outline3x3));
@@ -1196,11 +1226,26 @@ static void n_update_blockers_circle_water(struct nav_private *priv, vec2_t xz_p
 }
 
 static void n_update_blockers_circle_air(struct nav_private *priv, vec2_t xz_pos, float range, 
-                                         int faction_id, vec3_t map_pos, int ref_delta)
+                                         int faction_id, vec3_t map_pos, int ref_delta,
+                                            bool dilate)
 {
     struct tile_desc tds[1024];
     int ntds = M_Tile_AllUnderCircle(n_res(priv), xz_pos, range, map_pos, tds, ARR_SIZE(tds));
     n_update_blockers(priv, NAV_LAYER_AIR_1X1, faction_id, tds, ntds, ref_delta);
+
+    /* A movable blocker is another unit standing in the way rather than geometry.
+     * The rings exist so a wide unit is guaranteed to clear a corner of the
+     * terrain; applied to a neighbour they make it a tile thicker than its body
+     * on every layer above 1X1, which is enough for a crowd to seal the gaps it
+     * would otherwise leave. Unit spacing is resolved by the velocity solve, so
+     * the body itself is all the field needs to know about.
+     */
+    if(!dilate) {
+        n_update_blockers(priv, NAV_LAYER_AIR_3X3, faction_id, tds, ntds, ref_delta);
+        n_update_blockers(priv, NAV_LAYER_AIR_5X5, faction_id, tds, ntds, ref_delta);
+        n_update_blockers(priv, NAV_LAYER_AIR_7X7, faction_id, tds, ntds, ref_delta);
+        return;
+    }
 
     struct tile_desc outline3x3[1024];
     int noutline3x3 = M_Tile_Contour(ntds, tds, n_res(priv), outline3x3, ARR_SIZE(outline3x3));
@@ -3408,7 +3453,7 @@ void N_RenderGroupArrivalField(void *nav_private, vec3_t map_pos, mat4x4_t *chun
 }
 
 void N_RenderSurroundField(void *nav_private, const struct map *map, mat4x4_t *chunk_model, 
-                           int chunk_r, int chunk_c, enum nav_layer layer, uint32_t ent)
+                           int chunk_r, int chunk_c, enum nav_layer layer, uint32_t ent, float range)
 {
     const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
     const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
@@ -3423,6 +3468,7 @@ void N_RenderSurroundField(void *nav_private, const struct map *map, mat4x4_t *c
     struct field_target target = (struct field_target){
         .type = TARGET_ENTITY,
         .ent.target = ent,
+        .ent.range = range,
         /* rest of the fields are unused */
     };
     ff_id_t ffid = N_FlowFieldID((struct coord){chunk_r, chunk_c}, target, layer);
@@ -4020,7 +4066,8 @@ bool N_RequiresPathRequest(void *nav_private, vec3_t map_pos, struct target targ
         ffid = N_FlowFieldID(chunk, (struct field_target){
             .type = TARGET_ENTITY,
             .ent.target = target.surround.uid,
-            .ent.map_pos = map_pos
+            .ent.map_pos = map_pos,
+            .ent.range = target.surround.range
         }, layer);
         break;
     default:
@@ -4080,7 +4127,8 @@ vec2_t N_DesiredVelocityForTargetCached(void *nav_private, vec3_t map_pos, struc
         ffid = N_FlowFieldID(chunk, (struct field_target){
             .type = TARGET_ENTITY,
             .ent.target = target.surround.uid,
-            .ent.map_pos = map_pos
+            .ent.map_pos = map_pos,
+            .ent.range = target.surround.range
         }, layer);
     }
 
@@ -4131,7 +4179,8 @@ int N_FlowFieldDirAt(void *nav_private, vec3_t map_pos, struct target target, ve
         ffid = N_FlowFieldID(chunk, (struct field_target){
             .type = TARGET_ENTITY,
             .ent.target = target.surround.uid,
-            .ent.map_pos = map_pos
+            .ent.map_pos = map_pos,
+            .ent.range = target.surround.range
         }, target.surround.layer);
     }
 
@@ -4260,7 +4309,8 @@ void N_ServicePathRequest(void *nav_private, vec3_t map_pos, struct target targe
             ft = (struct field_target){
                 .type = TARGET_ENTITY,
                 .ent.target = target.surround.uid,
-                .ent.map_pos = map_pos
+                .ent.map_pos = map_pos,
+                .ent.range = target.surround.range
             };
         }
         ffid = N_FlowFieldID(chunk, ft, layer);
@@ -4413,7 +4463,7 @@ void N_RequestAsyncEnemySeekField(vec2_t curr_pos, void *nav_private, enum nav_l
 }
 
 void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_layer layer,
-                                 vec3_t map_pos, uint32_t ent, int faction_id)
+                                 vec3_t map_pos, uint32_t ent, int faction_id, float range)
 {
     struct nav_private *priv = nav_private;
     struct map_resolution res;
@@ -4431,6 +4481,7 @@ void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_la
         .type = TARGET_ENTITY,
         .ent.target = ent,
         .ent.map_pos = map_pos,
+        .ent.range = range,
     };
 
     ff_id_t ffid = N_FlowFieldID(chunk, target, layer);
@@ -5367,22 +5418,26 @@ vec2_t N_TileDims(void)
 void N_BlockersIncref(vec2_t xz_pos, float range, int faction_id, uint32_t flags,
                       vec3_t map_pos, void *nav_private)
 {
+    bool dilate = !(flags & ENTITY_FLAG_MOVABLE);
+
     if(flags & ENTITY_FLAG_AIR) {
-        n_update_blockers_circle_air(nav_private, xz_pos, range, faction_id, map_pos, +1);
+        n_update_blockers_circle_air(nav_private, xz_pos, range, faction_id, map_pos, +1, dilate);
     }else{
-        n_update_blockers_circle_water(nav_private, xz_pos, range, faction_id, map_pos, +1);
-        n_update_blockers_circle_ground(nav_private, xz_pos, range, faction_id, map_pos, +1);
+        n_update_blockers_circle_water(nav_private, xz_pos, range, faction_id, map_pos, +1, dilate);
+        n_update_blockers_circle_ground(nav_private, xz_pos, range, faction_id, map_pos, +1, dilate);
     }
 }
 
 void N_BlockersDecref(vec2_t xz_pos, float range, int faction_id, uint32_t flags,
                       vec3_t map_pos, void *nav_private)
 {
+    bool dilate = !(flags & ENTITY_FLAG_MOVABLE);
+
     if(flags & ENTITY_FLAG_AIR) {
-        n_update_blockers_circle_air(nav_private, xz_pos, range, faction_id, map_pos, -1);
+        n_update_blockers_circle_air(nav_private, xz_pos, range, faction_id, map_pos, -1, dilate);
     }else{
-        n_update_blockers_circle_water(nav_private, xz_pos, range, faction_id, map_pos, -1);
-        n_update_blockers_circle_ground(nav_private, xz_pos, range, faction_id, map_pos, -1);
+        n_update_blockers_circle_water(nav_private, xz_pos, range, faction_id, map_pos, -1, dilate);
+        n_update_blockers_circle_ground(nav_private, xz_pos, range, faction_id, map_pos, -1, dilate);
     }
 }
 
@@ -5786,6 +5841,31 @@ bool N_HasEnemyRangeFlowAt(void *nav_private, vec3_t map_pos, enum nav_layer lay
         .enemies.map_pos = map_pos,
         .enemies.chunk = chunk,
         .enemies.range = range
+    }, layer);
+
+    const struct flow_field *ff = N_FC_PeekFlowField(priv->fieldcache, ffid);
+    if(!ff)
+        return false;
+    return (ff->field[tile.tile_r][tile.tile_c].dir_idx != FD_NONE);
+}
+
+bool N_HasEntityRangeFlowAt(void *nav_private, vec3_t map_pos, enum nav_layer layer,
+                            uint32_t ent, float range, vec2_t xz_pos)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct tile_desc tile;
+    if(!M_Tile_DescForPoint2D(res, map_pos, xz_pos, &tile))
+        return false;
+
+    struct coord chunk = (struct coord){tile.chunk_r, tile.chunk_c};
+    ff_id_t ffid = N_FlowFieldID(chunk, (struct field_target){
+        .type = TARGET_ENTITY,
+        .ent.target = ent,
+        .ent.map_pos = map_pos,
+        .ent.range = range
     }, layer);
 
     const struct flow_field *ff = N_FC_PeekFlowField(priv->fieldcache, ffid);

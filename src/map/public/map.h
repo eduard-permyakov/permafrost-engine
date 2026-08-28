@@ -144,7 +144,7 @@ void   M_NavRenderVisibleGroupArrivalField(const struct map *map, const struct c
  * ------------------------------------------------------------------------
  */
 void   M_NavRenderVisibleSurroundField(const struct map *map, const struct camera *cam, 
-                                       enum nav_layer layer, uint32_t uid);
+                                       enum nav_layer layer, uint32_t uid, float range);
 
 /* ------------------------------------------------------------------------
  * Render a layer over the visible map surface showing which regions are 
@@ -637,8 +637,10 @@ void M_NavRequestAsyncEnemySeekField(const struct map *map, enum nav_layer layer
  */
 bool   M_NavHasEnemyRangeFlowAt(const struct map *map, enum nav_layer layer,
                                 int faction_id, float range, vec2_t xz_pos);
+bool   M_NavHasEntityRangeFlowAt(const struct map *map, enum nav_layer layer,
+                                 uint32_t ent, float range, vec2_t xz_pos);
 void M_NavRequestAsyncSurroundField(const struct map *map, enum nav_layer layer, 
-                                    vec2_t curr_pos, uint32_t ent, int faction_id);
+                                    vec2_t curr_pos, uint32_t ent, int faction_id, float range);
 void M_NavRequestAsyncGroupArrivalField(const struct map *map, enum nav_layer layer,
                                         vec2_t centre_pos, uint16_t radius);
 void M_NavInvalidateZoneFieldsAt(const struct map *map, vec2_t xz_pos, enum nav_layer layer);

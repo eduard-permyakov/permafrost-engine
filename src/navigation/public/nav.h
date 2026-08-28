@@ -149,7 +149,8 @@ struct target{
     union{
         struct{ dest_id_t dest_id; vec2_t dest_xz; }                  point_seek;
         struct{ enum nav_layer layer; int faction_id; float range; } enemy_seek;
-        struct{ enum nav_layer layer; int faction_id; uint32_t uid; } surround;
+        struct{ enum nav_layer layer; int faction_id; uint32_t uid;
+                float range; }                                        surround;
     };
 };
 
@@ -263,7 +264,7 @@ void      N_RenderGroupArrivalField(void *nav_private, vec3_t map_pos, mat4x4_t 
  */
 void      N_RenderSurroundField(void *nav_private, const struct map *map, 
                                 mat4x4_t *chunk_model, int chunk_r, int chunk_c, 
-                                enum nav_layer layer, uint32_t ent);
+                                enum nav_layer layer, uint32_t ent, float range);
 
 /* ------------------------------------------------------------------------
  * Debug rendering to show which navigation tiles are currently occupied
@@ -893,12 +894,19 @@ bool N_HasEnemyRangeFlowAt(void *nav_private, vec3_t map_pos, enum nav_layer lay
                            int faction_id, float range, vec2_t xz_pos);
 
 /* ------------------------------------------------------------------------
+ * Likewise for the entity field seeded at the specified reach.
+ * ------------------------------------------------------------------------
+ */
+bool N_HasEntityRangeFlowAt(void *nav_private, vec3_t map_pos, enum nav_layer layer,
+                            uint32_t ent, float range, vec2_t xz_pos);
+
+/* ------------------------------------------------------------------------
  * Start an async job computing the required TARGET_ENTITY field, if it
  * is not in the cache and has not been started already.
  * ------------------------------------------------------------------------
  */
 void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_layer layer,
-                                 vec3_t map_pos, uint32_t ent, int faction_id);
+                                 vec3_t map_pos, uint32_t ent, int faction_id, float range);
 
 /* ------------------------------------------------------------------------
  * Start an async job computing the required TARGET_ZONE arrival field for a

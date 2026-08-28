@@ -623,6 +623,7 @@ static void move_push_cmd(struct move_cmd cmd);
 static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack);
 static float attack_move_reach(uint32_t uid, const struct flock *fl);
 static float attack_move_seed_reach(uint32_t uid, uint32_t flags);
+static bool using_surround_field(uint32_t uid, uint32_t target);
 static void do_stop(uint32_t uid);
 static void do_set_seek_pin(uint32_t uid, uint32_t target);
 static void clear_seek_pin(uint32_t uid);
@@ -1802,10 +1803,23 @@ static void on_render_3d(void *user, void *event)
             switch(ms->state) {
             case STATE_MOVING:
             case STATE_MOVING_IN_FORMATION:
-            case STATE_ENTER_ENTITY_RANGE:
+            case STATE_ENTER_ENTITY_RANGE: {
                 assert(flock);
-                M_NavRenderVisiblePathFlowField(s_map, cam, flock->dest_id);
+                if(G_EntityExists(ms->surround_target_uid)
+                && movestate_aux_get(ent)->range_latched) {
+                    float radius = G_GetSelectionRadiusFrom(
+                        s_move_work.gamestate.sel_radiuses, ent);
+                    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, ent);
+                    int layer = Entity_NavLayerWithRadius(flags, radius);
+                    M_NavRenderVisibleSurroundField(s_map, cam, layer, ms->surround_target_uid,
+                        movestate_aux_get(ent)->target_range);
+                    UI_DrawText("(Ranged Surround Field)", (struct rect){5,75,600,50}, text_color);
+                }else{
+                    M_NavRenderVisiblePathFlowField(s_map, cam, flock->dest_id);
+                    UI_DrawText("(Path Field)", (struct rect){5,75,600,50}, text_color);
+                }
                 break;
+            }
             case STATE_SURROUND_ENTITY: {
 
                 if(!G_EntityExists(ms->surround_target_uid))
@@ -1816,7 +1830,8 @@ static void on_render_3d(void *user, void *event)
                         s_move_work.gamestate.sel_radiuses, ent);
                     uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, ent);
                     int layer = Entity_NavLayerWithRadius(flags, radius); 
-                    M_NavRenderVisibleSurroundField(s_map, cam, layer, ms->surround_target_uid);
+                    M_NavRenderVisibleSurroundField(s_map, cam, layer, ms->surround_target_uid,
+                        0.0f);
                     UI_DrawText("(Surround Field)", (struct rect){5,75,600,50}, text_color);
                 }else{
                     M_NavRenderVisiblePathFlowField(s_map, cam, flock->dest_id);
@@ -1971,7 +1986,25 @@ static void request_async_field(uint32_t uid)
             int layer = Entity_NavLayerWithRadius(flags, radius);
             int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
             return M_NavRequestAsyncSurroundField(s_move_work.gamestate.map, layer, pos_xz, 
-                ms->surround_target_uid, faction_id);
+                ms->surround_target_uid, faction_id, 0.0f);
+        }
+        break;
+    }
+    case STATE_ENTER_ENTITY_RANGE: {
+
+        if(!entity_exists(ms->surround_target_uid))
+            return;
+
+        vec2_t target_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions,
+            ms->surround_target_uid);
+        if(fabs(target_pos.x - pos_xz.x) < CHUNK_WIDTH
+        && fabs(target_pos.z - pos_xz.z) < CHUNK_HEIGHT) {
+            float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
+            uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+            int layer = Entity_NavLayerWithRadius(flags, radius);
+            int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
+            return M_NavRequestAsyncSurroundField(s_move_work.gamestate.map, layer, pos_xz,
+                ms->surround_target_uid, faction_id, movestate_aux_get(uid)->target_range);
         }
         break;
     }
@@ -2021,6 +2054,35 @@ static struct target build_target(uint32_t uid, const struct flock *fl)
         return (struct target){.kind = TARGET_KIND_SURROUND,
                                .surround = {.layer = layer, .faction_id = faction_id,
                                             .uid = ms->surround_target_uid}};
+    }
+    if(ms->state == STATE_ENTER_ENTITY_RANGE
+    && entity_exists(ms->surround_target_uid)) {
+
+        /* Follow the field from as far out as it has flow for us, and keep
+         * following it across rebuild gaps. The entity fields are age-evicted
+         * every few passes, so an unlatched presence test flips the unit's
+         * heading between the field's slot and the shared greedy point once
+         * per cycle, and it walks back and forth between the two.
+         */
+        struct movestate_aux *eaux = movestate_aux_get(uid);
+        vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
+        bool present = M_NavHasEntityRangeFlowAt(s_move_work.gamestate.map, layer,
+            ms->surround_target_uid, eaux->target_range, pos_xz);
+
+        if(present) {
+            eaux->range_latched = true;
+            eaux->range_miss_ticks = 0;
+        }else if(eaux->range_latched
+             && ++eaux->range_miss_ticks >= RANGE_FIELD_MISS_TICKS) {
+            eaux->range_latched = false;
+        }
+
+        if(eaux->range_latched) {
+            return (struct target){.kind = TARGET_KIND_SURROUND,
+                                   .surround = {.layer = layer, .faction_id = faction_id,
+                                                .uid = ms->surround_target_uid,
+                                                .range = eaux->target_range}};
+        }
     }
 
     /* Only once the field is built and reaches this tile: until then, and wherever
@@ -2155,6 +2217,7 @@ static vec2_t ent_desired_velocity(struct move_work_in *in)
         return M_NavDesiredVelocityForTargetCached(map, build_target(uid, fl), pos_xz);
     }
     case STATE_SURROUND_ENTITY:
+    case STATE_ENTER_ENTITY_RANGE:
         return M_NavDesiredVelocityForTargetCached(map, build_target(uid, fl), pos_xz);
 
     case STATE_FLEEING: {
@@ -4246,7 +4309,7 @@ static void do_set_enter_range(uint32_t uid, uint32_t target, float range)
 
     uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
     vec2_t xz_target = M_NavClosestReachableInRange(s_map, 
-        Entity_NavLayerWithRadius(flags, radius), xz_src, xz_dst, range - radius);
+        Entity_NavLayerWithRadius(flags, radius), xz_src, xz_dst, range);
     do_set_dest(uid, xz_target, false);
 
     ms->state = STATE_ENTER_ENTITY_RANGE;
@@ -4254,6 +4317,8 @@ static void do_set_enter_range(uint32_t uid, uint32_t target, float range)
     struct movestate_aux *aux = movestate_aux_get(uid);
     aux->target_prev_pos = xz_dst;
     aux->target_range = range;
+    aux->range_latched = false;
+    aux->range_miss_ticks = 0;
 }
 
 static bool using_surround_field(uint32_t uid, uint32_t target)
@@ -5906,7 +5971,10 @@ static struct result move_los_peek_task(void *arg)
         in->los_built = false;
         in->los_deferred = false;
         in->field_starved = false;
-        if(fl && (ms->state != STATE_SURROUND_ENTITY || !ms->using_surround_field)) {
+        bool field_led = (ms->state == STATE_SURROUND_ENTITY && ms->using_surround_field)
+                      || (ms->state == STATE_ENTER_ENTITY_RANGE
+                          && movestate_aux_get(in->ent_uid)->range_latched);
+        if(fl && !field_led) {
             bool present;
             bool vis = M_NavHasDestLOSCached(map, fl->dest_id, pos, &present);
             in->has_dest_los = present && vis;
@@ -6381,7 +6449,8 @@ static void resume_waiting_units(void)
         assert(aux->wait_prev == STATE_MOVING
             || aux->wait_prev == STATE_MOVING_IN_FORMATION
             || aux->wait_prev == STATE_SEEK_ENEMIES
-            || aux->wait_prev == STATE_SURROUND_ENTITY);
+            || aux->wait_prev == STATE_SURROUND_ENTITY
+            || aux->wait_prev == STATE_ENTER_ENTITY_RANGE);
 
         if(ms->blocking)
             entity_unblock(uid);
