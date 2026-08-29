@@ -90,15 +90,20 @@ KHASH_MAP_INIT_INT64(bbdesc, struct bb_model_desc*)
 static uint64_t bb_mix(uint64_t hash, uint64_t val);
 static bool     bb_alloc_atlas(struct bb_model_desc *desc, const void *pixels);
 static bool     bb_bake_atlas(struct bb_model_desc *desc, const void *render_private,
-                              const vec3_t *light_pos, const vec3_t *ambient_color,
-                              const vec3_t *emit_color);
+                              const struct bb_variant *var, const char *cache_name,
+                              uint64_t tag);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-/* Main thread */
+/* Main thread. The wanted variant is refreshed lazily; its generation number
+ * only advances on a material change, so light jitter below the thresholds
+ * never triggers a re-bake.
+ */
 static khash_t(bbdesc) *s_desc_table;
+static struct bb_variant s_wanted;
+static int              s_wanted_gen;
 
 /* Written once by the render thread at context init */
 static SDL_atomic_t     s_max_layers;
@@ -170,6 +175,99 @@ static struct bb_model_desc *bb_desc_for_key(void *render_key)
     return kh_value(s_desc_table, k);
 }
 
+static struct bb_variant bb_current_variant(void)
+{
+    struct sval setting;
+    bool shadowed = (Settings_Get("pf.video.shadows_enabled", &setting) == SS_OKAY)
+                  && setting.as_bool;
+    if(!shadowed) {
+        /* Without shadows the sprites bake with a canonical light, keeping the
+         * atlases valid across maps.
+         */
+        return (struct bb_variant){
+            .shadowed = false,
+            .light_pos = (vec3_t){500.0f, 1000.0f, 500.0f},
+            .ambient_color = (vec3_t){1.0f, 1.0f, 1.0f},
+            .emit_color = (vec3_t){1.0f, 1.0f, 1.0f},
+        };
+    }
+    /* Self-shadowing bakes the shadow direction in, so the shadowed variant
+     * must follow the map's actual light.
+     */
+    return (struct bb_variant){
+        .shadowed = true,
+        .light_pos = G_GetLightPos(),
+        .ambient_color = G_GetAmbientLightColor(),
+        .emit_color = G_GetEmitLightColor(),
+    };
+}
+
+static bool bb_variant_differs(const struct bb_variant *a, const struct bb_variant *b)
+{
+    if(a->shadowed != b->shadowed)
+        return true;
+
+    vec3_t da = a->light_pos, db = b->light_pos;
+    PFM_Vec3_Normal(&da, &da);
+    PFM_Vec3_Normal(&db, &db);
+    if(PFM_Vec3_Dot(&da, &db) < cosf(DEG_TO_RAD(CONFIG_BILLBOARD_LIGHT_REBAKE_DEG)))
+        return true;
+
+    for(int i = 0; i < 3; i++) {
+        if(fabsf(a->ambient_color.raw[i] - b->ambient_color.raw[i]) > 0.1f)
+            return true;
+        if(fabsf(a->emit_color.raw[i] - b->emit_color.raw[i]) > 0.1f)
+            return true;
+    }
+    return false;
+}
+
+static int bb_wanted_refresh(void)
+{
+    struct bb_variant cur = bb_current_variant();
+    if(s_wanted_gen == 0 || bb_variant_differs(&cur, &s_wanted)) {
+        s_wanted = cur;
+        s_wanted_gen++;
+    }
+    return s_wanted_gen;
+}
+
+static uint64_t bb_variant_tag(const struct bb_model_desc *desc, const struct bb_variant *var)
+{
+    uint64_t tag = bb_mix(desc->tag, var->shadowed);
+
+    vec3_t dir = var->light_pos;
+    PFM_Vec3_Normal(&dir, &dir);
+    for(int i = 0; i < 3; i++) {
+        tag = bb_mix(tag, (uint64_t)(int64_t)(dir.raw[i] * 256.0f));
+        tag = bb_mix(tag, (uint64_t)(var->ambient_color.raw[i] * 256.0f));
+        tag = bb_mix(tag, (uint64_t)(var->emit_color.raw[i] * 256.0f));
+    }
+    return tag;
+}
+
+static void bb_variant_cache_name(const struct bb_model_desc *desc, const struct bb_variant *var,
+                                  char *out, size_t size)
+{
+    pf_snprintf(out, size, "%s#%08x", desc->cache_name,
+        (uint32_t)(bb_variant_tag(desc, var) & 0xffffffff));
+}
+
+static void bb_enqueue_bake(struct bb_model_desc *desc, int gen)
+{
+    desc->inflight_gen = gen;
+    R_PushCmd((struct rcmd){
+        .func = R_GL_Billboard_EnsureBaked,
+        .nargs = 4,
+        .args = {
+            desc,
+            desc->render_key,
+            R_PushArg(&s_wanted, sizeof(s_wanted)),
+            R_PushArg(&gen, sizeof(gen)),
+        },
+    });
+}
+
 /* The bake camera looks at the model origin from the registered tilt, along
  * the -Z world axis; the model itself is rotated per azimuth cell.
  */
@@ -195,6 +293,46 @@ static void bb_bake_view_proj(const struct bb_model_desc *desc, float tilt_rad,
     *out_pos = pos;
 }
 
+/* One light frustum serves every cell of an atlas: the extents cover the
+ * model's rotation-invariant bounding sphere, and the depth window is kept
+ * wide regardless of model size so the shaders' constant depth bias stays
+ * sane in world units and the model sits well inside the shadow lookup's
+ * valid depth band.
+ */
+static void bb_light_space_trans(const struct bb_model_desc *desc, const vec3_t *light_pos,
+                                 mat4x4_t *out)
+{
+    vec3_t dir = *light_pos;
+    PFM_Vec3_Normal(&dir, &dir);
+    PFM_Vec3_Scale(&dir, -1.0f, &dir);
+
+    vec3_t right = (vec3_t){-1.0f, 0.0f, 0.0f};
+    if(fabsf(dir.x) > 0.99f) {
+        right = (vec3_t){0.0f, 0.0f, -1.0f};
+    }
+    vec3_t up;
+    PFM_Vec3_Cross(&dir, &right, &up);
+    PFM_Vec3_Normal(&up, &up);
+
+    vec3_t center = (vec3_t){0.0f, (desc->ymin + desc->ymax) / 2.0f, 0.0f};
+    float yhalf = (desc->ymax - desc->ymin) / 2.0f;
+    float radius = desc->world_size.x / 2.0f;
+    float sphere = sqrtf(radius * radius + yhalf * yhalf) + 2.0f;
+
+    vec3_t pos, delta;
+    PFM_Vec3_Scale(&dir, -CONFIG_BILLBOARD_SHADOW_DEPTH_RANGE / 2.0f, &delta);
+    PFM_Vec3_Add(&center, &delta, &pos);
+
+    vec3_t target;
+    PFM_Vec3_Add(&pos, &dir, &target);
+
+    mat4x4_t view, proj;
+    PFM_Mat4x4_MakeLookAt(&pos, &target, &up, &view);
+    PFM_Mat4x4_MakeOrthographic(-sphere, sphere, sphere, -sphere,
+        1.0f, CONFIG_BILLBOARD_SHADOW_DEPTH_RANGE, &proj);
+    PFM_Mat4x4_Mult4x4(&proj, &view, out);
+}
+
 static bool bb_alloc_atlas(struct bb_model_desc *desc, const void *pixels)
 {
     ASSERT_IN_RENDER_THREAD();
@@ -218,8 +356,8 @@ static bool bb_alloc_atlas(struct bb_model_desc *desc, const void *pixels)
 }
 
 static bool bb_bake_atlas(struct bb_model_desc *desc, const void *render_private,
-                          const vec3_t *light_pos, const vec3_t *ambient_color,
-                          const vec3_t *emit_color)
+                          const struct bb_variant *var, const char *cache_name,
+                          uint64_t tag)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -233,7 +371,7 @@ static bool bb_bake_atlas(struct bb_model_desc *desc, const void *render_private
 
     const char *saved_unames[] = {
         GL_U_VIEW, GL_U_VIEW_POS, GL_U_PROJECTION, GL_U_LIGHT_POS,
-        GL_U_AMBIENT_COLOR, GL_U_LIGHT_COLOR, GL_U_SHADOWS_ON
+        GL_U_AMBIENT_COLOR, GL_U_LIGHT_COLOR, GL_U_SHADOWS_ON, GL_U_LS_TRANS
     };
     struct uval saved_uvals[ARR_SIZE(saved_unames)];
     bool have_uval[ARR_SIZE(saved_unames)];
@@ -257,22 +395,28 @@ static bool bb_bake_atlas(struct bb_model_desc *desc, const void *render_private
     GLenum draw_buffs[1] = {GL_COLOR_ATTACHMENT0};
     glDrawBuffers(ARR_SIZE(draw_buffs), draw_buffs);
 
-    /* The sprites carry their own baked lighting; runtime shadowing does not
-     * apply to them, so bake unshadowed.
-     */
     float tilt_rad = desc->tilt_rad;
     mat4x4_t view, proj;
     vec3_t cam_pos;
     bb_bake_view_proj(desc, tilt_rad, &view, &cam_pos, &proj);
     R_GL_SetViewMatAndPos(&view, &cam_pos);
     R_GL_SetProj(&proj);
-    R_GL_SetLightPos(light_pos);
-    R_GL_SetAmbientLightColor(ambient_color);
-    R_GL_SetLightEmitColor(emit_color);
+    R_GL_SetLightPos(&var->light_pos);
+    R_GL_SetAmbientLightColor(&var->ambient_color);
+    R_GL_SetLightEmitColor(&var->emit_color);
+    /* Mode 2 tells the mesh shaders to keep the ambient floor under the
+     * baked self-shadow
+     */
     R_GL_StateSet(GL_U_SHADOWS_ON, (struct uval){
         .type = UTYPE_INT,
-        .val.as_int = 0
+        .val.as_int = var->shadowed ? 2 : 0
     });
+
+    mat4x4_t ls_trans;
+    PFM_Mat4x4_Identity(&ls_trans);
+    if(var->shadowed) {
+        bb_light_space_trans(desc, &var->light_pos, &ls_trans);
+    }
 
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
@@ -299,7 +443,6 @@ static bool bb_bake_atlas(struct bb_model_desc *desc, const void *render_private
                 ok = false;
                 break;
             }
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             mat4x4_t model;
             PFM_Mat4x4_MakeRotY(a * (2.0f * M_PI / desc->nazimuths), &model);
@@ -309,6 +452,12 @@ static bool bb_bake_atlas(struct bb_model_desc *desc, const void *render_private
                 mat4x4_t normal = model;
                 R_GL_AnimSetUniforms(&normal, (struct anim_pose_data_desc*)&clip->kf_pose[k]);
             }
+            if(var->shadowed) {
+                R_GL_DepthPassBeginCustom(&ls_trans);
+                R_GL_RenderDepthMap(render_private, &model);
+                R_GL_DepthPassEnd();
+            }
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             R_GL_Draw(render_private, &model, &translucent);
         }}
     }
@@ -326,7 +475,7 @@ static bool bb_bake_atlas(struct bb_model_desc *desc, const void *render_private
         void *pixels = PF_MALLOC(nbytes);
         if(pixels) {
             glGetTexImage(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-            AssetCache_ImpostorStore(desc->cache_name, desc->tag, &(struct impostor_cache){
+            AssetCache_ImpostorStore(cache_name, tag, &(struct impostor_cache){
                 .cell_res = desc->cell_res,
                 .nslices = desc->total_slices,
                 .pixels = pixels,
@@ -476,6 +625,8 @@ void R_Billboard_Register(void *render_key, const char *basedir, const char *fil
 
     desc->world_size = (vec2_t){2.0f * radius, vmax - vmin};
     desc->anchor_off = (vec2_t){0.0f, (vmax + vmin) / 2.0f};
+    desc->ymin = ymin;
+    desc->ymax = ymax;
     desc->cell_res = bb_pow2_cell_res(
         MAX(desc->world_size.x, desc->world_size.y) * CONFIG_BILLBOARD_PX_PER_WU);
 
@@ -555,25 +706,36 @@ void R_Billboard_EnsureBaked(void *render_key)
     if(!desc || SDL_AtomicGet(&desc->state) != BB_STATE_PENDING)
         return;
 
-    /* The sprites are baked with a canonical light rather than the map's:
-     * scripts set the map light only after the models load, and a fixed light
-     * keeps the atlases valid across maps.
-     */
-    vec3_t light_pos = (vec3_t){500.0f, 1000.0f, 500.0f};
-    vec3_t ambient = (vec3_t){1.0f, 1.0f, 1.0f};
-    vec3_t emit = (vec3_t){1.0f, 1.0f, 1.0f};
-
+    int gen = bb_wanted_refresh();
     SDL_AtomicSet(&desc->state, BB_STATE_QUEUED);
-    R_PushCmd((struct rcmd){
-        .func = R_GL_Billboard_EnsureBaked,
-        .nargs = 5,
-        .args = {
-            desc,
-            desc->render_key,
-            R_PushArg(&light_pos, sizeof(light_pos)),
-            R_PushArg(&ambient, sizeof(ambient)),
-            R_PushArg(&emit, sizeof(emit)),
-        },
+    bb_enqueue_bake(desc, gen);
+}
+
+void R_Billboard_Tick(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct sval setting;
+    bool enabled = (Settings_Get("pf.video.billboards_enabled", &setting) == SS_OKAY)
+                 && setting.as_bool;
+    if(!enabled || !s_desc_table)
+        return;
+
+    int gen = bb_wanted_refresh();
+    int budget = CONFIG_BILLBOARD_REBAKES_PER_FRAME;
+
+    struct bb_model_desc *desc;
+    kh_foreach_value(s_desc_table, desc, {
+        if(budget == 0)
+            break;
+        if(SDL_AtomicGet(&desc->state) != BB_STATE_READY)
+            continue;
+        if(SDL_AtomicGet(&desc->baked_gen) == gen)
+            continue;
+        if(desc->inflight_gen == gen)
+            continue;
+        bb_enqueue_bake(desc, gen);
+        budget--;
     });
 }
 
@@ -649,44 +811,58 @@ void R_GL_Billboard_ShutdownCtx(void)
 }
 
 void R_GL_Billboard_EnsureBaked(struct bb_model_desc *desc, const void *render_private,
-                                const vec3_t *light_pos, const vec3_t *ambient_color,
-                                const vec3_t *emit_color)
+                                const struct bb_variant *var, const int *gen)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    if(SDL_AtomicGet(&desc->state) == BB_STATE_READY)
+    if(SDL_AtomicGet(&desc->baked_gen) == *gen)
         GL_PERF_RETURN_VOID();
 
-    /* Warm path: upload the cached atlas without any GL baking */
-    struct impostor_cache cache;
-    if(AssetCache_ImpostorLoad(desc->cache_name, desc->tag, &cache)) {
+    GLuint old_tex = desc->tex_arr;
+    desc->tex_arr = 0;
 
-        bool ok = (cache.cell_res == desc->cell_res)
-               && (cache.nslices == desc->total_slices)
-               && bb_alloc_atlas(desc, cache.pixels);
+    char cache_name[BB_CACHE_NAME_LEN];
+    bb_variant_cache_name(desc, var, cache_name, sizeof(cache_name));
+    uint64_t tag = bb_variant_tag(desc, var);
+
+    /* Warm path: upload the cached atlas without any GL baking */
+    bool ok = false;
+    struct impostor_cache cache;
+    if(AssetCache_ImpostorLoad(cache_name, tag, &cache)) {
+
+        ok = (cache.cell_res == desc->cell_res)
+          && (cache.nslices == desc->total_slices)
+          && bb_alloc_atlas(desc, cache.pixels);
         if(ok) {
             glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
             glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
         }
         AssetCache_ImpostorRelease(&cache);
-
-        if(ok) {
-            SDL_AtomicSet(&desc->state, BB_STATE_READY);
-            GL_ASSERT_OK();
-            GL_PERF_RETURN_VOID();
-        }
-        if(desc->tex_arr) {
-            glDeleteTextures(1, &desc->tex_arr);
-            desc->tex_arr = 0;
-        }
     }
 
-    R_GL_LoadingScreenPushModel(desc->cache_name);
-    bool ok = bb_bake_atlas(desc, render_private, light_pos, ambient_color, emit_color);
-    SDL_AtomicSet(&desc->state, ok ? BB_STATE_READY : BB_STATE_FAILED);
-    R_GL_LoadingScreenPopModel();
+    if(!ok) {
+        R_GL_LoadingScreenPushModel(cache_name);
+        ok = bb_bake_atlas(desc, render_private, var, cache_name, tag);
+        R_GL_LoadingScreenPopModel();
+    }
 
+    if(ok) {
+        if(old_tex) {
+            glDeleteTextures(1, &old_tex);
+        }
+        SDL_AtomicSet(&desc->state, BB_STATE_READY);
+    }else if(old_tex) {
+        /* Keep drawing the previous atlas rather than dropping to meshes;
+         * marking the generation baked stops the retries.
+         */
+        desc->tex_arr = old_tex;
+    }else{
+        SDL_AtomicSet(&desc->state, BB_STATE_FAILED);
+    }
+    SDL_AtomicSet(&desc->baked_gen, *gen);
+
+    GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }
 

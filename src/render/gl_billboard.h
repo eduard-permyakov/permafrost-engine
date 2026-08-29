@@ -63,6 +63,17 @@ struct bb_clip_desc{
     struct anim_pose_data_desc kf_pose[CONFIG_BILLBOARD_MAX_KF];
 };
 
+/* The bake-time inputs that change how the sprites look without changing the
+ * cell layout. A variant change swaps the atlas texture in place; the resident
+ * variant is tracked by generation number.
+ */
+struct bb_variant{
+    bool   shadowed;
+    vec3_t light_pos;
+    vec3_t ambient_color;
+    vec3_t emit_color;
+};
+
 /* The billboard atlas for one model: one texture array slice per cell, laid
  * out [clip][keyframe][azimuth]. All fields except 'state' and 'tex_arr' are
  * written once at registration on the main thread and immutable afterwards.
@@ -80,7 +91,14 @@ struct bb_model_desc{
      */
     vec2_t       world_size;
     vec2_t       anchor_off;
+    /* Model-space vertical range of the baked samples, for the bake's light
+     * frustum fit
+     */
+    float        ymin;
+    float        ymax;
     SDL_atomic_t state;                    /* enum bb_state */
+    SDL_atomic_t baked_gen;                /* variant generation of the resident atlas */
+    int          inflight_gen;             /* main thread: generation of the enqueued bake */
     GLuint       tex_arr;                  /* render thread only */
     int          nclips;                   /* 0 for models without animations */
     struct bb_clip_desc clips[];

@@ -532,6 +532,8 @@ static void *g_lod_priv_coarsest(const struct entity *ent)
 static void g_make_draw_lists(struct render_input *out)
 {
     PERF_ENTER();
+    R_Billboard_Tick();
+
     struct map_resolution res;
     if(s_gs.map) {
         M_GetResolution(s_gs.map, &res);

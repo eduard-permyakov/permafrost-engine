@@ -43,6 +43,9 @@
 #define SHADOW_MAP_BIAS 0.002
 #define SHADOW_MULTIPLIER 0.55
 
+/* The 'shadows_on' mode used by the impostor bake */
+#define SHADOWS_MODE_BAKE 2
+
 /*****************************************************************************/
 /* INPUTS                                                                    */
 /*****************************************************************************/
@@ -157,7 +160,17 @@ void main()
     /* Shadow calculations */
     float shadow = shadow_factor(from_vertex.light_space_pos);
     if(shadow > 0.0) {
-        o_frag_color = vec4(final_color.xyz * SHADOW_MULTIPLIER, 1.0);
+        if(shadows_on == SHADOWS_MODE_BAKE) {
+            /* Impostor bakes self-shadow far more finely than the runtime
+             * shadow map ever resolves for a unit, so a whole-colour
+             * multiplier reads too dark; shadow only the direct light and
+             * keep the ambient floor.
+             */
+            o_frag_color = vec4((ambient * 0.55
+                + (diffuse + specular) * 1.5 * SHADOW_MULTIPLIER) * tex_color.xyz, 1.0);
+        }else{
+            o_frag_color = vec4(final_color.xyz * SHADOW_MULTIPLIER, 1.0);
+        }
     }else{
         o_frag_color = final_color;
     }

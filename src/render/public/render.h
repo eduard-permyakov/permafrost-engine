@@ -507,6 +507,7 @@ void  R_GL_MapFoliageEndDraw(void);
  * ---------------------------------------------------------------------------
  */
 void R_GL_DepthPassBegin(const vec3_t *light_pos, const struct camera *cam);
+void R_GL_DepthPassBeginCustom(const mat4x4_t *light_space_trans);
 
 /* ---------------------------------------------------------------------------
  * Set up the rendering context for normal rendering. This _must_ be called
@@ -746,6 +747,7 @@ void R_GL_SpriteRenderBatch(struct sprite_desc *sprites, size_t *nsprites,
 /*###########################################################################*/
 
 struct bb_model_desc;
+struct bb_variant;
 struct anim_data;
 
 /* ---------------------------------------------------------------------------
@@ -769,13 +771,21 @@ void R_Billboard_EnsureBaked(void *render_key);
 void R_Billboard_EnsureAllBaked(void);
 
 /* ---------------------------------------------------------------------------
- * Bake the atlas for a single model, or upload it from the impostor cache.
- * The light arguments pin down the lighting the sprites are baked with.
+ * Once-per-frame pump: when the wanted bake variant changes (the shadows
+ * setting, or a material change of the global light), enqueue re-bakes for
+ * stale atlases, capped per frame. The old atlas keeps drawing until its
+ * replacement lands.
+ * ---------------------------------------------------------------------------
+ */
+void R_Billboard_Tick(void);
+
+/* ---------------------------------------------------------------------------
+ * Bake the given variant of a model's atlas, or upload it from the impostor
+ * cache, replacing the resident atlas if there is one.
  * ---------------------------------------------------------------------------
  */
 void R_GL_Billboard_EnsureBaked(struct bb_model_desc *desc, const void *render_private,
-                                const vec3_t *light_pos, const vec3_t *ambient_color,
-                                const vec3_t *emit_color);
+                                const struct bb_variant *var, const int *gen);
 
 /* ---------------------------------------------------------------------------
  * Render every entity in the input's billboard list, one instanced draw call

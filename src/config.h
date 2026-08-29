@@ -71,7 +71,21 @@
  * atlas and keep rendering as meshes; they are few and would only blur.
  */
 #define CONFIG_BILLBOARD_MIN_PX_PER_WU (2.0f)
-#define CONFIG_BILLBOARD_CACHE_VER  (1)
+/* At most this many stale atlases are re-baked per frame, so a mid-session
+ * variant change (shadow toggle, light change) is a spread of small hitches
+ * rather than one long stall.
+ */
+#define CONFIG_BILLBOARD_REBAKES_PER_FRAME (1)
+/* The light must move by this much before the atlases re-bake, so an animated
+ * day-night light re-bakes a handful of times per cycle rather than per frame.
+ */
+#define CONFIG_BILLBOARD_LIGHT_REBAKE_DEG (10.0f)
+/* Depth extent of the bake's light frustum. Kept wide regardless of model size
+ * so the shaders' constant depth bias stays reasonable in world units and the
+ * model sits well inside the shadow lookup's valid depth band.
+ */
+#define CONFIG_BILLBOARD_SHADOW_DEPTH_RANGE (250.0f)
+#define CONFIG_BILLBOARD_CACHE_VER  (3)
 
 #define CONFIG_SETTINGS_FILENAME    "pf.conf"
 
