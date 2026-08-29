@@ -64,6 +64,8 @@
 #define TEXREF_MAGIC        "PFTR"
 #define TEXBLOB_MAGIC       "PFTB"
 #define TEXTURE_VERSION     (1)
+#define IMPOSTOR_MAGIC      "PFIM"
+#define IMPOSTOR_VERSION    (1)
 #define MAX_PATH_LEN        (512)
 #define MAX_REL_PATH_LEN    (256)
 
@@ -112,6 +114,19 @@ struct texblob_hdr{
     uint32_t width;
     uint32_t height;
     uint32_t channels;
+};
+
+/* The atlas metadata, followed on disk by the tightly-packed RGBA slices.
+ * 'rel_path' disambiguates the (flattened) cache filename like the object
+ * cache's does.
+ */
+struct impostor_hdr{
+    char     magic[4];
+    uint32_t version;
+    uint64_t tag;
+    char     rel_path[MAX_REL_PATH_LEN];
+    uint32_t cell_res;
+    uint32_t nslices;
 };
 
 /*****************************************************************************/
@@ -209,6 +224,22 @@ static void texblob_path(char *out, size_t size, uint64_t hash)
     pf_snprintf(out, size, "%s/cache/textures/%s.tex", g_basepath, hex);
 }
 
+static bool impostor_path(char *out, size_t size, const char *name)
+{
+    if(name[0] == '\0')
+        return false;
+
+    char flat[MAX_REL_PATH_LEN];
+    pf_strlcpy(flat, name, sizeof(flat));
+    for(char *c = flat; *c; c++) {
+        if(*c == '/' || *c == '\\')
+            *c = '-';
+    }
+
+    pf_snprintf(out, size, "%s/cache/impostors/%s.pfi", g_basepath, flat);
+    return true;
+}
+
 /*****************************************************************************/
 /* PUBLIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -230,6 +261,10 @@ bool AssetCache_Init(void)
         return false;
 
     pf_snprintf(path, sizeof(path), "%s/cache/textures", g_basepath);
+    if(!make_directory(path))
+        return false;
+
+    pf_snprintf(path, sizeof(path), "%s/cache/impostors", g_basepath);
     if(!make_directory(path))
         return false;
 
@@ -593,6 +628,95 @@ bool AssetCache_TextureStore(const char *src_name, uint64_t tag, const struct te
 }
 
 void AssetCache_TextureRelease(struct texture_cache *cache)
+{
+    if(cache->pixels)
+        PF_FREE(cache->pixels);
+}
+
+bool AssetCache_ImpostorLoad(const char *name, uint64_t tag, struct impostor_cache *out)
+{
+    char path[MAX_PATH_LEN];
+    if(!impostor_path(path, sizeof(path), name))
+        return false;
+
+    SDL_RWops *stream = SDL_RWFromFile(path, "rb");
+    if(!stream)
+        return false;
+
+    bool ret = false;
+    void *pixels = NULL;
+    struct impostor_hdr hdr;
+    size_t nbytes;
+
+    if(SDL_RWread(stream, &hdr, sizeof(hdr), 1) != 1)
+        goto out;
+    if(memcmp(hdr.magic, IMPOSTOR_MAGIC, sizeof(hdr.magic)) != 0)
+        goto out;
+    if(hdr.version != IMPOSTOR_VERSION)
+        goto out;
+    if(hdr.tag != tag)
+        goto out;
+
+    /* A flattened name can collide; the stored relative path is authoritative. */
+    hdr.rel_path[sizeof(hdr.rel_path) - 1] = '\0';
+    if(strcmp(hdr.rel_path, name) != 0)
+        goto out;
+
+    nbytes = (size_t)hdr.cell_res * hdr.cell_res * hdr.nslices * 4;
+    if(nbytes == 0)
+        goto out;
+
+    pixels = PF_MALLOC(nbytes);
+    if(!pixels)
+        goto out;
+    if(SDL_RWread(stream, pixels, nbytes, 1) != 1) {
+        PF_FREE(pixels);
+        goto out;
+    }
+
+    out->cell_res = hdr.cell_res;
+    out->nslices = hdr.nslices;
+    out->pixels = pixels;
+    ret = true;
+
+out:
+    SDL_RWclose(stream);
+    return ret;
+}
+
+bool AssetCache_ImpostorStore(const char *name, uint64_t tag, const struct impostor_cache *in)
+{
+    char path[MAX_PATH_LEN];
+    if(!impostor_path(path, sizeof(path), name))
+        return false;
+
+    size_t nbytes = (size_t)in->cell_res * in->cell_res * in->nslices * 4;
+    if(nbytes == 0 || !in->pixels)
+        return false;
+
+    SDL_RWops *stream = SDL_RWFromFile(path, "wb");
+    if(!stream)
+        return false;
+
+    struct impostor_hdr hdr = {0};
+    memcpy(hdr.magic, IMPOSTOR_MAGIC, sizeof(hdr.magic));
+    hdr.version = IMPOSTOR_VERSION;
+    hdr.tag = tag;
+    pf_strlcpy(hdr.rel_path, name, sizeof(hdr.rel_path));
+    hdr.cell_res = in->cell_res;
+    hdr.nslices = in->nslices;
+
+    bool ret = (SDL_RWwrite(stream, &hdr, sizeof(hdr), 1) == 1)
+            && (SDL_RWwrite(stream, in->pixels, nbytes, 1) == 1);
+    SDL_RWclose(stream);
+
+    /* Don't leave a truncated file behind to be mistaken for a valid entry */
+    if(!ret)
+        remove(path);
+    return ret;
+}
+
+void AssetCache_ImpostorRelease(struct impostor_cache *cache)
 {
     if(cache->pixels)
         PF_FREE(cache->pixels);

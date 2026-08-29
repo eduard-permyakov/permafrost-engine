@@ -111,6 +111,9 @@
 #define GL_U_SPRITE_SHEET       "sprite_sheet"
 #define GL_U_SPRITE_NROWS       "sprite_nrows"
 #define GL_U_SPRITE_NCOLS       "sprite_ncols"
+#define GL_U_BB_WORLD_SIZE      "bb_world_size"
+#define GL_U_BB_ANCHOR_OFF      "bb_anchor_off"
+#define GL_U_BB_NAZIMUTHS       "bb_nazimuths"
 
 enum utype{
     UTYPE_FLOAT,

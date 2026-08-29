@@ -741,5 +741,48 @@ void R_GL_SwapchainPresentLast(void);
 void R_GL_SpriteRenderBatch(struct sprite_desc *sprites, size_t *nsprites,
                             const struct camera *cam);
 
+/*###########################################################################*/
+/* RENDER BILLBOARD                                                          */
+/*###########################################################################*/
+
+struct bb_model_desc;
+struct anim_data;
+
+/* ---------------------------------------------------------------------------
+ * Main-thread registry of billboard atlas descriptors, keyed by the model's
+ * base render_private. Registration computes the descriptor (cell layout,
+ * framing, cache tag) but does not touch the GPU; EnsureBaked enqueues the
+ * render-thread bake. Get returns NULL until the atlas is resident.
+ * ---------------------------------------------------------------------------
+ */
+bool R_Billboard_Init(void);
+void R_Billboard_Shutdown(void);
+void R_Billboard_Register(void *render_key, const char *basedir, const char *filename,
+                          const struct aabb *aabb, const struct anim_data *anim_data);
+const struct bb_model_desc *R_Billboard_Get(void *render_key);
+/* An entity scaled so large that its sprite would fall below the density
+ * floor keeps rendering as a mesh.
+ */
+bool R_Billboard_ScaleEligible(const struct bb_model_desc *desc, vec2_t scale);
+int  R_Billboard_CellBase(const struct bb_model_desc *desc, int clip_idx, int frame_idx);
+void R_Billboard_EnsureBaked(void *render_key);
+void R_Billboard_EnsureAllBaked(void);
+
+/* ---------------------------------------------------------------------------
+ * Bake the atlas for a single model, or upload it from the impostor cache.
+ * The light arguments pin down the lighting the sprites are baked with.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_Billboard_EnsureBaked(struct bb_model_desc *desc, const void *render_private,
+                                const vec3_t *light_pos, const vec3_t *ambient_color,
+                                const vec3_t *emit_color);
+
+/* ---------------------------------------------------------------------------
+ * Render every entity in the input's billboard list, one instanced draw call
+ * per distinct model. The list must be sorted by descriptor.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_Billboard_Draw(struct render_input *in);
+
 #endif
 

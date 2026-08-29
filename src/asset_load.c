@@ -283,8 +283,12 @@ static void al_commit_resource(const char *path, const char *basedir,
     assert(put_ret != -1 && put_ret != 0);
     kh_value(s_name_resource_table, k) = *out;
 
-    if(!is_lod)
+    if(!is_lod) {
         al_render_to_texture(out);
+        R_Billboard_Register(out->render_private, basedir, pfobj_name, &out->aabb,
+            (out->ent_flags & ENTITY_FLAG_ANIMATED) ? out->anim_private : NULL);
+        R_Billboard_EnsureBaked(out->render_private);
+    }
 }
 
 static bool al_get_resource(const char *path, const char *basedir, 

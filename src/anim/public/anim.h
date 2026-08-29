@@ -126,6 +126,40 @@ const struct aabb     *A_GetCurrPoseAABB(uint32_t uid);
 int                    A_GetCurrFrameIndex(uint32_t uid);
 
 /* ---------------------------------------------------------------------------
+ * Get the index of the currently active animation clip.
+ * ---------------------------------------------------------------------------
+ */
+int                    A_GetCurrClipIndex(uint32_t uid);
+
+/* ---------------------------------------------------------------------------
+ * Get the number of animation clips held by the model data.
+ * ---------------------------------------------------------------------------
+ */
+unsigned               A_GetNumClips(const struct anim_data *data);
+
+/* ---------------------------------------------------------------------------
+ * Get the number of frames in the clip at the specified index.
+ * ---------------------------------------------------------------------------
+ */
+unsigned               A_GetClipFrameCount(const struct anim_data *data, int clip_idx);
+
+/* ---------------------------------------------------------------------------
+ * Returns a pointer to the AABB for the specified sample. The pointer should
+ * not be freed.
+ * ---------------------------------------------------------------------------
+ */
+const struct aabb     *A_GetClipFrameAABB(const struct anim_data *data, int clip_idx,
+                                          int frame_idx);
+
+/* ---------------------------------------------------------------------------
+ * Retreive the state needed to render an arbitrary (clip, frame) pose of the
+ * model, without requiring an entity.
+ * ---------------------------------------------------------------------------
+ */
+bool                   A_GetPoseDesc(const struct anim_data *data, int clip_idx,
+                                     int frame_idx, struct anim_pose_data_desc *out);
+
+/* ---------------------------------------------------------------------------
  * Try to get the current pose matrix for the specified bone.
  * ---------------------------------------------------------------------------
  */

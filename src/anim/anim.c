@@ -369,6 +369,36 @@ int A_GetCurrFrameIndex(uint32_t uid)
     return ctx->curr_frame;
 }
 
+int A_GetCurrClipIndex(uint32_t uid)
+{
+    struct anim_ctx *ctx = a_ctx_for_uid(uid);
+    return ctx->curr_clip_idx;
+}
+
+unsigned A_GetNumClips(const struct anim_data *data)
+{
+    return data->num_anims;
+}
+
+unsigned A_GetClipFrameCount(const struct anim_data *data, int clip_idx)
+{
+    assert(clip_idx >= 0 && clip_idx < data->num_anims);
+    return data->anims[clip_idx].num_frames;
+}
+
+const struct aabb *A_GetClipFrameAABB(const struct anim_data *data, int clip_idx, int frame_idx)
+{
+    assert(clip_idx >= 0 && clip_idx < data->num_anims);
+    assert(frame_idx >= 0 && frame_idx < data->anims[clip_idx].num_frames);
+    return &data->anims[clip_idx].samples[frame_idx].sample_aabb;
+}
+
+bool A_GetPoseDesc(const struct anim_data *data, int clip_idx, int frame_idx,
+                   struct anim_pose_data_desc *out)
+{
+    return A_Texture_PoseDesc(data->texture_desc_id, clip_idx, frame_idx, out);
+}
+
 bool A_GetBoneCurrPoseMat(uint32_t uid, const char *bone, mat4x4_t *out_pose)
 {
     struct anim_ctx *ctx = a_ctx_for_uid(uid);

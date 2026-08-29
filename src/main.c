@@ -503,6 +503,11 @@ static bool engine_init(void)
         fprintf(stderr, "Failed to initialize asset-cache module; asset caching disabled.\n");
     }
 
+    if(!R_Billboard_Init()) {
+        fprintf(stderr, "Failed to initialize billboard module.\n");
+        goto fail_cursor;
+    }
+
     if(!Cursor_InitDefault(g_basepath)) {
         fprintf(stderr, "Failed to initialize cursor module\n");
         goto fail_cursor;
@@ -592,6 +597,7 @@ fail_event:
 fail_render:
     Cursor_FreeAll();
 fail_cursor:
+    R_Billboard_Shutdown();
     AssetCache_Shutdown();
     AL_Shutdown();
 fail_al:
@@ -648,6 +654,7 @@ static void engine_shutdown(void)
     N_Shutdown();
 
     Cursor_FreeAll();
+    R_Billboard_Shutdown();
     AssetCache_Shutdown();
     AL_Shutdown();
     E_Shutdown();

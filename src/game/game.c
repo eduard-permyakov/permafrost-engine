@@ -339,6 +339,17 @@ static void g_draw_pass(struct render_input *in)
             });
         }
     }
+
+    /* The billboard pass is a single self-contained instanced draw, used
+     * regardless of the batching mode. The water passes skip it.
+     */
+    if(!in->water_only && vec_size(&in->cam_vis_bill)) {
+        R_PushCmd((struct rcmd){
+            .func = R_GL_Billboard_Draw,
+            .nargs = 1,
+            .args = { in },
+        });
+    }
 }
 
 static void g_render_healthbars(void)
@@ -460,6 +471,35 @@ static void g_sort_anim_list(vec_ranim_t *inout)
     PERF_RETURN_VOID();
 }
 
+static int bb_desc_cmp(const void *a, const void *b)
+{
+    const struct ent_bill_rstate *ra = a, *rb = b;
+    if(ra->desc == rb->desc)
+        return 0;
+    return (ra->desc < rb->desc) ? -1 : 1;
+}
+
+/* Group the billboard list by descriptor so the render thread can 
+ * issue one instanced draw per model.
+ */
+static void g_sort_bill_list(vec_rbill_t *inout)
+{
+    PERF_ENTER();
+    qsort(inout->array, vec_size(inout), sizeof(struct ent_bill_rstate), bb_desc_cmp);
+    PERF_RETURN_VOID();
+}
+
+/* Cliff tiles dress the terrain faces from below the surface; 
+ * a centre-anchored billboard for them sinks into the terrain 
+ * and loses every depth test.
+ */
+static bool g_billboard_excluded(const struct entity *ent)
+{
+    return ent->name
+        && (ent->name[0] == '_')
+        && (strcmp(ent->name, "__tile__") == 0);
+}
+
 static int g_select_lod(float dist, float d1, float d2)
 {
     if(dist >= d2)
@@ -507,7 +547,23 @@ static void g_make_draw_lists(struct render_input *out)
     if(Settings_Get("pf.video.lod_dist2", &lod_setting) == SS_OKAY)
         lod_d2 = lod_setting.as_float;
 
+    struct sval bb_setting;
+    bool bb_enabled = (Settings_Get("pf.video.billboards_enabled", &bb_setting) == SS_OKAY)
+                    && bb_setting.as_bool;
+
+    float bb_dist = 340.0f;
+    if(Settings_Get("pf.video.billboard_dist", &bb_setting) == SS_OKAY)
+        bb_dist = bb_setting.as_float;
+
+    /* Under an orthographic projection the apparent size is set by the zoom
+     * alone, so billboarding gates uniformly on the camera height; under a
+     * perspective one it gates on the per-entity distance.
+     */
+    bool bb_ortho = (Camera_GetProjection(s_gs.active_cam) == CAM_PROJ_ORTHOGRAPHIC);
+    bool bb_zoomed_out = (Camera_GetHeight(s_gs.active_cam) >= bb_dist);
+
     vec3_t campos = Camera_GetPos(s_gs.active_cam);
+    uint32_t ncam_drawn = 0;
 
     for(int i = 0; i < vec_size(&s_gs.draw_cands); i++) {
 
@@ -528,9 +584,54 @@ static void g_make_draw_lists(struct render_input *out)
         if(!passes)
             continue;
 
+        if(passes & DRAW_PASS_CAM)
+            ncam_drawn++;
+
         const struct entity *ent = AL_EntityGet(curr);
         mat4x4_t model;
         Entity_ModelMatrix(curr, &model);
+
+        vec3_t epos = G_Pos_Get(curr);
+        vec3_t delta;
+        PFM_Vec3_Sub(&campos, &epos, &delta);
+        float cam_dist = PFM_Vec3_Len(&delta);
+
+        /* Far entities with a baked atlas render as billboards, and cast
+         * no shadow
+         */
+        if(bb_enabled
+        && (passes & DRAW_PASS_CAM)
+        && (bb_ortho ? bb_zoomed_out : (cam_dist >= bb_dist))
+        && !(flags & ENTITY_FLAG_TRANSLUCENT)
+        && !g_billboard_excluded(ent)) {
+
+            const struct bb_model_desc *bb = R_Billboard_Get(ent->render_private);
+            vec3_t scale;
+            vec2_t scale2;
+            if(bb) {
+                scale = Entity_GetScale(curr);
+                scale2 = (vec2_t){MAX(scale.x, scale.z), scale.y};
+            }
+            if(bb && R_Billboard_ScaleEligible(bb, scale2)) {
+
+                int cell = 0;
+                if(flags & ENTITY_FLAG_ANIMATED) {
+                    cell = R_Billboard_CellBase(bb, A_GetCurrClipIndex(curr),
+                        A_GetCurrFrameIndex(curr));
+                }
+
+                quat_t rot = Entity_GetRot(curr);
+                vec_rbill_push(&out->cam_vis_bill, (struct ent_bill_rstate){
+                    .uid = curr,
+                    .desc = bb,
+                    .pos = epos,
+                    .yaw = 2.0f * atan2f(rot.y, rot.w),
+                    .scale = scale2,
+                    .cell_base = cell,
+                });
+                continue;
+            }
+        }
 
         /* The shadow and water passes always draw the coarsest mesh; the main
          * camera pass selects by distance. */
@@ -538,10 +639,7 @@ static void g_make_draw_lists(struct render_input *out)
         void *light_priv = ent->render_private;
         if(lod_enabled) {
             if(passes & DRAW_PASS_CAM) {
-                vec3_t epos = G_Pos_Get(curr);
-                vec3_t delta;
-                PFM_Vec3_Sub(&campos, &epos, &delta);
-                cam_priv = g_lod_priv(ent, g_select_lod(PFM_Vec3_Len(&delta), lod_d1, lod_d2));
+                cam_priv = g_lod_priv(ent, g_select_lod(cam_dist, lod_d1, lod_d2));
             }
             if(passes & DRAW_PASS_LIGHT) {
                 light_priv = g_lod_priv_coarsest(ent);
@@ -593,8 +691,14 @@ static void g_make_draw_lists(struct render_input *out)
 
     g_sort_stat_list(&out->cam_vis_stat);
     g_sort_anim_list(&out->cam_vis_anim);
+    g_sort_bill_list(&out->cam_vis_bill);
     g_sort_stat_list(&out->light_vis_stat);
     g_sort_anim_list(&out->light_vis_anim);
+
+    Perf_RecordBillboardStats(&(struct billboard_frame_stats){
+        .nbillboard = vec_size(&out->cam_vis_bill),
+        .ntotal = ncam_drawn,
+    });
     PERF_RETURN_VOID();
 }
 
@@ -637,12 +741,14 @@ static void g_create_render_input(struct render_input *out)
 
     vec_rstat_init_alloc(&out->cam_vis_stat, stackrealloc, stackfree);
     vec_ranim_init_alloc(&out->cam_vis_anim, stackrealloc, stackfree);
+    vec_rbill_init_alloc(&out->cam_vis_bill, stackrealloc, stackfree);
 
     vec_rstat_init_alloc(&out->light_vis_stat, stackrealloc, stackfree);
     vec_ranim_init_alloc(&out->light_vis_anim, stackrealloc, stackfree);
 
     vec_rstat_resize(&out->cam_vis_stat, 2048);
     vec_ranim_resize(&out->cam_vis_anim, 2048);
+    vec_rbill_resize(&out->cam_vis_bill, 2048);
 
     vec_rstat_resize(&out->light_vis_stat, 2048);
     vec_ranim_resize(&out->light_vis_anim, 2048);
@@ -670,6 +776,10 @@ static void *g_push_render_input(struct render_input in)
     if(in.cam_vis_anim.size) {
         ret->cam_vis_anim.array = R_PushArg(in.cam_vis_anim.array, 
             in.cam_vis_anim.size * sizeof(struct ent_anim_rstate));
+    }
+    if(in.cam_vis_bill.size) {
+        ret->cam_vis_bill.array = R_PushArg(in.cam_vis_bill.array,
+            in.cam_vis_bill.size * sizeof(struct ent_bill_rstate));
     }
 
     if(in.light_vis_stat.size) {
@@ -869,6 +979,13 @@ static void shadows_en_commit(const struct sval *new_val)
 static void batching_en_commit(const struct sval *new_val)
 {
     s_gs.use_batch_rendering = new_val->as_bool;
+}
+
+static void billboards_en_commit(const struct sval *new_val)
+{
+    if(new_val->as_bool) {
+        R_Billboard_EnsureAllBaked();
+    }
 }
 
 static bool g_save_anim_state(SDL_RWops *stream)
@@ -1296,6 +1413,35 @@ static void g_create_settings(void)
     assert(status == SS_OKAY);
 
     status = Settings_Create((struct setting){
+        .name = "pf.video.billboards_enabled",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = true
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = billboards_en_commit,
+    });
+    assert(status == SS_OKAY);
+
+    /* Threshold past which entities with a baked atlas render as billboards:
+     * the camera height under an orthographic projection, the per-entity
+     * camera distance under a perspective one. 0 renders them as billboards
+     * at every zoom level.
+     */
+    status = Settings_Create((struct setting){
+        .name = "pf.video.billboard_dist",
+        .val = (struct sval) {
+            .type = ST_TYPE_FLOAT,
+            .as_float = 340.0f
+        },
+        .prio = 0,
+        .validate = lod_dist_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
         .name = "pf.video.water_prune_radius",
         .val = (struct sval) {
             .type = ST_TYPE_INT,
@@ -1713,6 +1859,9 @@ static void g_prune_water_input(struct render_input *in)
             vec_ranim_del(&in->light_vis_anim, i);
         }
     }
+
+    /* The water passes render no billboards */
+    vec_rbill_reset(&in->cam_vis_bill);
 
     PERF_RETURN_VOID();
 }

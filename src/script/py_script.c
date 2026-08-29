@@ -136,6 +136,7 @@ static PyObject *PyPf_prev_frame_perfstats(PyObject *self);
 static PyObject *PyPf_prev_frame_memstats(PyObject *self);
 static PyObject *PyPf_prev_frame_vramstats(PyObject *self);
 static PyObject *PyPf_prev_frame_gpu_stats(PyObject *self);
+static PyObject *PyPf_prev_frame_billboard_stats(PyObject *self);
 static PyObject *PyPf_get_nav_tick_times(PyObject *self);
 static PyObject *PyPf_get_frame_times(PyObject *self);
 static PyObject *PyPf_prev_frame_mem_accounting(PyObject *self);
@@ -427,6 +428,11 @@ static PyMethodDef pf_module_methods[] = {
     "Get a dictionary of GPU pipeline-statistics counters (vertices/primitives "
     "submitted, vertex/fragment-shader invocations, clipping input/output "
     "primitives) for the previous frame."},
+
+    {"prev_frame_billboard_stats",
+    (PyCFunction)PyPf_prev_frame_billboard_stats, METH_NOARGS,
+    "Get a dictionary with the number of camera-visible entities rendered as "
+    "billboards and the total number drawn for the previous frame."},
 
     {"get_nav_tick_times",
     (PyCFunction)PyPf_get_nav_tick_times, METH_NOARGS,
@@ -1575,6 +1581,16 @@ static PyObject *PyPf_prev_frame_gpu_stats(PyObject *self)
         "clip_in_prims",    (unsigned long long)stats.clip_in_prims,
         "clip_out_prims",   (unsigned long long)stats.clip_out_prims,
         "frag_invocations", (unsigned long long)stats.frag_invocations);
+}
+
+static PyObject *PyPf_prev_frame_billboard_stats(PyObject *self)
+{
+    struct billboard_frame_stats stats = {0};
+    Perf_GetBillboardStats(&stats);
+
+    return Py_BuildValue("{s:I,s:I}",
+        "nbillboard", stats.nbillboard,
+        "ntotal",     stats.ntotal);
 }
 
 static PyObject *PyPf_get_nav_tick_times(PyObject *self)

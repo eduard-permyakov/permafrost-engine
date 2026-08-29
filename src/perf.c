@@ -177,6 +177,7 @@ static struct gpu_mem_accounting s_gpu_accounting[NFRAMES_LOGGED];
 static uint32_t               s_gpu_stat_cookies[NFRAMES_LOGGED][PERF_GPU_STAT_COUNT];
 static bool                   s_gpu_stat_valid[NFRAMES_LOGGED];
 static struct gpu_frame_stats s_gpu_frame_stats[NFRAMES_LOGGED];
+static struct billboard_frame_stats s_bill_stats[NFRAMES_LOGGED];
 
 static struct nav_tick_sample s_nav_tick_hist[PERF_NAV_TICK_HISTORY];
 static size_t                 s_nav_tick_head;
@@ -936,6 +937,18 @@ void Perf_GetGpuFrameStats(struct gpu_frame_stats *out)
 {
     int read_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
     *out = s_gpu_frame_stats[read_idx];
+}
+
+void Perf_RecordBillboardStats(const struct billboard_frame_stats *stats)
+{
+    ASSERT_IN_MAIN_THREAD();
+    s_bill_stats[s_last_idx] = *stats;
+}
+
+void Perf_GetBillboardStats(struct billboard_frame_stats *out)
+{
+    int read_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
+    *out = s_bill_stats[read_idx];
 }
 
 void Perf_RecordNavTick(const struct nav_tick_sample *sample)

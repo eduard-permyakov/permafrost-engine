@@ -518,6 +518,7 @@ const char *Mem_SubName(uint16_t sys, uint16_t sub)
         [MEM_SUB_RENDER_ASSET_LOAD]     = "asset_load",
         [MEM_SUB_RENDER_GL_ANIM]        = "anim",
         [MEM_SUB_RENDER_GL_BATCH]       = "batch",
+        [MEM_SUB_RENDER_GL_BILLBOARD]   = "billboard",
         [MEM_SUB_RENDER_GL_FOLIAGE]     = "foliage",
         [MEM_SUB_RENDER_GL_IMAGE_QUILT] = "image_quilt",
         [MEM_SUB_RENDER_GL_MEM]         = "mem",

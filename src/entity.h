@@ -112,6 +112,18 @@ struct ent_anim_rstate{
     struct anim_pose_data_desc desc;
 };
 
+struct bb_model_desc;
+
+/* State needed for rendering a billboarded entity */
+struct ent_bill_rstate{
+    uint32_t                    uid;
+    const struct bb_model_desc *desc;
+    vec3_t                      pos;
+    float                       yaw;   /* radians about +Y */
+    vec2_t                      scale; /* (horizontal, vertical) */
+    int32_t                     cell_base;
+};
+
 struct transform{
     vec3_t scale;
     quat_t rotation;
@@ -122,6 +134,9 @@ VEC_IMPL(static inline, rstat, struct ent_stat_rstate)
 
 VEC_TYPE(ranim, struct ent_anim_rstate)
 VEC_IMPL(static inline, ranim, struct ent_anim_rstate)
+
+VEC_TYPE(rbill, struct ent_bill_rstate)
+VEC_IMPL(static inline, rbill, struct ent_bill_rstate)
 
 KHASH_DECLARE(trans, khint32_t, struct transform)
 

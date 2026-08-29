@@ -127,4 +127,19 @@ bool AssetCache_TextureLoad(const char *src_name, uint64_t tag, struct texture_c
 bool AssetCache_TextureStore(const char *src_name, uint64_t tag, const struct texture_cache *in);
 void AssetCache_TextureRelease(struct texture_cache *cache);
 
+/* A baked billboard atlas: 'nslices' square cells of 'cell_res' x 'cell_res'
+ * RGBA texels, tightly packed, ready for upload as a single GL_TEXTURE_2D_ARRAY.
+ * 'name' is the model's base-path-relative path; 'tag' folds the source model's
+ * fingerprint with the bake parameters, so either kind of change re-bakes.
+ */
+struct impostor_cache{
+    int   cell_res;
+    int   nslices;
+    void *pixels;
+};
+
+bool AssetCache_ImpostorLoad(const char *name, uint64_t tag, struct impostor_cache *out);
+bool AssetCache_ImpostorStore(const char *name, uint64_t tag, const struct impostor_cache *in);
+void AssetCache_ImpostorRelease(struct impostor_cache *cache);
+
 #endif

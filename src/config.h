@@ -59,6 +59,20 @@
  */
 #define CONFIG_SHADOW_MAX_EXTENT    (1536)
 
+/* Billboard atlas baking parameters. Folded into the impostor cache tag, so
+ * changing any of them invalidates the on-disk atlases.
+ */
+#define CONFIG_BILLBOARD_AZIMUTHS   (8)
+#define CONFIG_BILLBOARD_MAX_KF     (8)
+#define CONFIG_BILLBOARD_PX_PER_WU  (4.0f)
+#define CONFIG_BILLBOARD_MIN_RES    (32)
+#define CONFIG_BILLBOARD_MAX_RES    (128)
+/* Models too large to reach this density at CONFIG_BILLBOARD_MAX_RES get no
+ * atlas and keep rendering as meshes; they are few and would only blur.
+ */
+#define CONFIG_BILLBOARD_MIN_PX_PER_WU (2.0f)
+#define CONFIG_BILLBOARD_CACHE_VER  (1)
+
 #define CONFIG_SETTINGS_FILENAME    "pf.conf"
 
 #define CONFIG_LOS_CACHE_SZ         (2048)

@@ -288,6 +288,7 @@ const char *gpu_mem_sys_name(int sys)
         [GPU_MEM_SYS_UNKNOWN]        = "unknown",
         [GPU_MEM_SYS_GL_ANIM]        = "anim",
         [GPU_MEM_SYS_GL_BATCH]       = "batch",
+        [GPU_MEM_SYS_GL_BILLBOARD]   = "billboard",
         [GPU_MEM_SYS_GL_FOLIAGE]     = "foliage",
         [GPU_MEM_SYS_GL_IMAGE_QUILT] = "image_quilt",
         [GPU_MEM_SYS_GL_MINIMAP]     = "minimap",

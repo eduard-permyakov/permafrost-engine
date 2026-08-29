@@ -45,6 +45,7 @@
 #include "gl_perf.h"
 #include "gl_state.h"
 #include "gl_batch.h"
+#include "gl_billboard.h"
 #include "gl_anim.h"
 #include "gl_swapchain.h"
 #include "render_private.h"
@@ -429,6 +430,7 @@ static void render_init_ctx(struct render_init_arg *arg)
     || !R_GL_Texture_Init()
     || !R_GL_StateInit()
     || !R_GL_Batch_Init()
+    || !R_GL_Billboard_InitCtx()
     || !R_GL_AnimInit()
     || !R_GL_SwapchainInit()) {
 
@@ -450,6 +452,7 @@ static void render_destroy_ctx(void)
 {
     R_GL_SwapchainShutdown();
     R_GL_AnimShutdown();
+    R_GL_Billboard_ShutdownCtx();
     R_GL_Batch_Shutdown();
     R_GL_StateShutdown();
     R_GL_Texture_Shutdown();

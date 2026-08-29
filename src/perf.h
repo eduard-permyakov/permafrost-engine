@@ -125,6 +125,14 @@ struct gpu_frame_stats{
     uint64_t frag_invocations;
 };
 
+/* Draw-list composition for one frame: how many of the camera-visible
+ * entities were rendered as billboards, out of the total drawn.
+ */
+struct billboard_frame_stats{
+    uint32_t nbillboard;
+    uint32_t ntotal;
+};
+
 
 /* Per-tick navigation stats for the perf window. Times are in microseconds;
  * total_us is serial_us plus the summed CPU of the parallel phases. The phase
@@ -233,6 +241,8 @@ size_t   Perf_Report(size_t maxout, struct perf_info **out);
 void     Perf_GetMemoryStats(struct perf_mem_stats *out);
 void     Perf_GetVramStats(struct vram_stats *out);
 void     Perf_GetGpuFrameStats(struct gpu_frame_stats *out);
+void     Perf_RecordBillboardStats(const struct billboard_frame_stats *stats);
+void     Perf_GetBillboardStats(struct billboard_frame_stats *out);
 void     Perf_GetMemoryAccounting(struct mem_accounting *out);
 void     Perf_GetGpuMemoryAccounting(struct gpu_mem_accounting *out);
 uint32_t Perf_LastFrameMS(void);
