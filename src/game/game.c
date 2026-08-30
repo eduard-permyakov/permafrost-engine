@@ -279,6 +279,14 @@ static void g_shadow_pass(struct render_input *in)
         }
     }
 
+    if(vec_size(&in->light_vis_bill)) {
+        R_PushCmd((struct rcmd){
+            .func = R_GL_Billboard_DrawDepth,
+            .nargs = 1,
+            .args = { in },
+        });
+    }
+
     R_PushCmd((struct rcmd){ R_GL_DepthPassEnd, 0 });
 }
 
@@ -598,11 +606,10 @@ static void g_make_draw_lists(struct render_input *out)
         PFM_Vec3_Sub(&campos, &epos, &delta);
         float cam_dist = PFM_Vec3_Len(&delta);
 
-        /* Far entities with a baked atlas render as billboards, and cast
-         * no shadow
+        /* Far entities with a baked atlas render as billboards in both the
+         * camera and the shadow pass; the card replaces the mesh everywhere
          */
         if(bb_enabled
-        && (passes & DRAW_PASS_CAM)
         && (bb_ortho ? bb_zoomed_out : (cam_dist >= bb_dist))
         && !(flags & ENTITY_FLAG_TRANSLUCENT)
         && !g_billboard_excluded(ent)) {
@@ -623,14 +630,20 @@ static void g_make_draw_lists(struct render_input *out)
                 }
 
                 quat_t rot = Entity_GetRot(curr);
-                vec_rbill_push(&out->cam_vis_bill, (struct ent_bill_rstate){
+                struct ent_bill_rstate rstate = (struct ent_bill_rstate){
                     .uid = curr,
                     .desc = bb,
                     .pos = epos,
                     .yaw = 2.0f * atan2f(rot.y, rot.w),
                     .scale = scale2,
                     .cell_base = cell,
-                });
+                };
+                if(passes & DRAW_PASS_CAM) {
+                    vec_rbill_push(&out->cam_vis_bill, rstate);
+                }
+                if(passes & DRAW_PASS_LIGHT) {
+                    vec_rbill_push(&out->light_vis_bill, rstate);
+                }
                 continue;
             }
         }
@@ -696,6 +709,7 @@ static void g_make_draw_lists(struct render_input *out)
     g_sort_bill_list(&out->cam_vis_bill);
     g_sort_stat_list(&out->light_vis_stat);
     g_sort_anim_list(&out->light_vis_anim);
+    g_sort_bill_list(&out->light_vis_bill);
 
     Perf_RecordBillboardStats(&(struct billboard_frame_stats){
         .nbillboard = vec_size(&out->cam_vis_bill),
@@ -747,6 +761,7 @@ static void g_create_render_input(struct render_input *out)
 
     vec_rstat_init_alloc(&out->light_vis_stat, stackrealloc, stackfree);
     vec_ranim_init_alloc(&out->light_vis_anim, stackrealloc, stackfree);
+    vec_rbill_init_alloc(&out->light_vis_bill, stackrealloc, stackfree);
 
     vec_rstat_resize(&out->cam_vis_stat, 2048);
     vec_ranim_resize(&out->cam_vis_anim, 2048);
@@ -754,6 +769,7 @@ static void g_create_render_input(struct render_input *out)
 
     vec_rstat_resize(&out->light_vis_stat, 2048);
     vec_ranim_resize(&out->light_vis_anim, 2048);
+    vec_rbill_resize(&out->light_vis_bill, 2048);
 
     g_make_draw_lists(out);
 
@@ -791,6 +807,10 @@ static void *g_push_render_input(struct render_input in)
     if(in.light_vis_anim.size) {
         ret->light_vis_anim.array = R_PushArg(in.light_vis_anim.array,
             in.light_vis_anim.size * sizeof(struct ent_anim_rstate));
+    }
+    if(in.light_vis_bill.size) {
+        ret->light_vis_bill.array = R_PushArg(in.light_vis_bill.array,
+            in.light_vis_bill.size * sizeof(struct ent_bill_rstate));
     }
 
     return ret;
@@ -1864,6 +1884,7 @@ static void g_prune_water_input(struct render_input *in)
 
     /* The water passes render no billboards */
     vec_rbill_reset(&in->cam_vis_bill);
+    vec_rbill_reset(&in->light_vis_bill);
 
     PERF_RETURN_VOID();
 }

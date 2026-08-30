@@ -793,6 +793,7 @@ void R_GL_Billboard_EnsureBaked(struct bb_model_desc *desc, const void *render_p
  * ---------------------------------------------------------------------------
  */
 void R_GL_Billboard_Draw(struct render_input *in);
+void R_GL_Billboard_DrawDepth(struct render_input *in);
 
 #endif
 

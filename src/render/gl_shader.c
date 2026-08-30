@@ -577,6 +577,23 @@ static struct shader s_shaders[] = {
     },
     {
         .prog_id        = (intptr_t)NULL,
+        .name           = "billboard.depth",
+        .vertex_path    = "shaders/vertex/billboard-depth.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/billboard-depth.glsl",
+        .uniforms       = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_LS_TRANS          },
+            { UTYPE_VEC3,      GL_U_LIGHT_POS         },
+            { UTYPE_INT,       GL_U_TEX_ARRAY0        },
+            { UTYPE_VEC2,      GL_U_BB_WORLD_SIZE     },
+            { UTYPE_VEC2,      GL_U_BB_ANCHOR_OFF     },
+            { UTYPE_INT,       GL_U_BB_NAZIMUTHS      },
+            {0}
+        },
+    },
+    {
+        .prog_id        = (intptr_t)NULL,
         .name           = "foliage",
         .vertex_path    = "shaders/vertex/foliage-instanced.glsl",
         .geo_path       = NULL,

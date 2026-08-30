@@ -111,6 +111,7 @@ struct render_input{
      * used for rendering the shadow map. */
     vec_rstat_t         light_vis_stat;
     vec_ranim_t         light_vis_anim;
+    vec_rbill_t         light_vis_bill;
 };
 
 enum hb_mode{

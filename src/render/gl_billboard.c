@@ -866,30 +866,21 @@ void R_GL_Billboard_EnsureBaked(struct bb_model_desc *desc, const void *render_p
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_Billboard_Draw(struct render_input *in)
+static size_t bb_upload_instances(const vec_rbill_t *list)
 {
-    GL_PERF_ENTER();
-    ASSERT_IN_RENDER_THREAD();
-
-    size_t nents = vec_size(&in->cam_vis_bill);
-    if(nents == 0)
-        GL_PERF_RETURN_VOID();
-
-    GL_PERF_PUSH_GROUP(0, "billboards");
-
+    size_t nents = vec_size(list);
     if(nents > s_inst_scratch_cap) {
         PF_FREE(s_inst_scratch);
         s_inst_scratch_cap = nents * 2;
         s_inst_scratch = PF_MALLOC(s_inst_scratch_cap * sizeof(struct bb_gpu_inst));
         if(!s_inst_scratch) {
             s_inst_scratch_cap = 0;
-            GL_PERF_POP_GROUP();
-            GL_PERF_RETURN_VOID();
+            return 0;
         }
     }
 
     for(size_t i = 0; i < nents; i++) {
-        const struct ent_bill_rstate *curr = &vec_AT(&in->cam_vis_bill, i);
+        const struct ent_bill_rstate *curr = &vec_AT(list, i);
         s_inst_scratch[i] = (struct bb_gpu_inst){
             .pos = curr->pos,
             .yaw = curr->yaw,
@@ -902,29 +893,22 @@ void R_GL_Billboard_Draw(struct render_input *in)
     if(nents > s_inst_cap) {
         s_inst_cap = nents * 2;
     }
-    /* Orphan the previous frame's contents */
+    /* Orphan the previous contents */
     glBufferData(GL_ARRAY_BUFFER, s_inst_cap * sizeof(struct bb_gpu_inst), NULL, GL_STREAM_DRAW);
     glBufferSubData(GL_ARRAY_BUFFER, 0, nents * sizeof(struct bb_gpu_inst), s_inst_scratch);
+    return nents;
+}
 
-    R_GL_StateSet(GL_U_TEX_ARRAY0, (struct uval){
-        .type = UTYPE_INT,
-        .val.as_int = 0
-    });
-    R_GL_Shader_Install("billboard");
-    GLuint prog = R_GL_Shader_GetProgForName("billboard");
-
-    /* The engine's front faces are clockwise; sidestep the quad's winding */
-    glDisable(GL_CULL_FACE);
-    glActiveTexture(GL_TEXTURE0);
-    glBindVertexArray(s_vao);
-
+static void bb_draw_desc_runs(const vec_rbill_t *list, GLuint prog)
+{
     /* One instanced draw per run of entities sharing a descriptor */
+    size_t nents = vec_size(list);
     size_t run_start = 0;
     while(run_start < nents) {
 
-        const struct bb_model_desc *desc = vec_AT(&in->cam_vis_bill, run_start).desc;
+        const struct bb_model_desc *desc = vec_AT(list, run_start).desc;
         size_t run_end = run_start + 1;
-        while(run_end < nents && vec_AT(&in->cam_vis_bill, run_end).desc == desc) {
+        while(run_end < nents && vec_AT(list, run_end).desc == desc) {
             run_end++;
         }
 
@@ -957,7 +941,78 @@ void R_GL_Billboard_Draw(struct render_input *in)
 
         run_start = run_end;
     }
+}
 
+void R_GL_Billboard_Draw(struct render_input *in)
+{
+    GL_PERF_ENTER();
+    ASSERT_IN_RENDER_THREAD();
+
+    if(vec_size(&in->cam_vis_bill) == 0)
+        GL_PERF_RETURN_VOID();
+
+    GL_PERF_PUSH_GROUP(0, "billboards");
+
+    if(!bb_upload_instances(&in->cam_vis_bill)) {
+        GL_PERF_POP_GROUP();
+        GL_PERF_RETURN_VOID();
+    }
+
+    R_GL_StateSet(GL_U_TEX_ARRAY0, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = 0
+    });
+    R_GL_Shader_Install("billboard");
+    GLuint prog = R_GL_Shader_GetProgForName("billboard");
+
+    /* The engine's front faces are clockwise; sidestep the quad's winding */
+    glDisable(GL_CULL_FACE);
+    glActiveTexture(GL_TEXTURE0);
+    glBindVertexArray(s_vao);
+
+    bb_draw_desc_runs(&in->cam_vis_bill, prog);
+
+    glEnable(GL_CULL_FACE);
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+
+    GL_PERF_POP_GROUP();
+    GL_ASSERT_OK();
+    GL_PERF_RETURN_VOID();
+}
+
+void R_GL_Billboard_DrawDepth(struct render_input *in)
+{
+    GL_PERF_ENTER();
+    ASSERT_IN_RENDER_THREAD();
+
+    if(vec_size(&in->light_vis_bill) == 0)
+        GL_PERF_RETURN_VOID();
+
+    GL_PERF_PUSH_GROUP(0, "billboards::depth");
+
+    if(!bb_upload_instances(&in->light_vis_bill)) {
+        GL_PERF_POP_GROUP();
+        GL_PERF_RETURN_VOID();
+    }
+
+    /* Pin the azimuth-binning light to this frame's snapshot */
+    R_GL_SetLightPos(&in->light_pos);
+    R_GL_StateSet(GL_U_TEX_ARRAY0, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = 0
+    });
+    R_GL_Shader_Install("billboard.depth");
+    GLuint prog = R_GL_Shader_GetProgForName("billboard.depth");
+
+    glDisable(GL_CULL_FACE);
+    glActiveTexture(GL_TEXTURE0);
+    glBindVertexArray(s_vao);
+
+    bb_draw_desc_runs(&in->light_vis_bill, prog);
+
+    /* Re-enabling leaves the depth pass's GL_FRONT cull mode in place */
     glEnable(GL_CULL_FACE);
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
