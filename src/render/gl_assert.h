@@ -48,17 +48,32 @@
 #define PRINT(_text) fprintf(stderr, "%s", (_text))
 #endif
 
-#define GL_ASSERT_OK()                                  \
-    do {                                                \
-        GLenum error = glGetError();                    \
-        if(error != GL_NO_ERROR) {                      \
-            char buff[512];                             \
-            snprintf(buff, sizeof(buff),                \
-                "%s:%d OpenGL error: %x\n",             \
-                __FILE__, __LINE__, error);             \
-            PRINT(buff);                                \
-        }                                               \
-        assert(error == GL_NO_ERROR);                   \
+/* Report but never abort: a stray error must not take the engine down, and
+ * draining the whole error queue here stops it being misattributed to a
+ * later checkpoint. Reports are capped per call site to keep a recurring
+ * per-frame error from flooding the log.
+ */
+#define GL_ASSERT_MAX_REPORTS (8)
+
+#define GL_ASSERT_OK()                                          \
+    do {                                                        \
+        static int s_nreported_here;                            \
+        GLenum error;                                           \
+        while((error = glGetError()) != GL_NO_ERROR) {          \
+            if(s_nreported_here > GL_ASSERT_MAX_REPORTS)        \
+                continue;                                       \
+            char buff[512];                                     \
+            if(s_nreported_here++ == GL_ASSERT_MAX_REPORTS) {   \
+                snprintf(buff, sizeof(buff),                    \
+                    "%s:%d further OpenGL errors suppressed\n", \
+                    __FILE__, __LINE__);                        \
+            }else{                                              \
+                snprintf(buff, sizeof(buff),                    \
+                    "%s:%d OpenGL error: %x\n",                 \
+                    __FILE__, __LINE__, error);                 \
+            }                                                   \
+            PRINT(buff);                                        \
+        }                                                       \
     }while(0)
 
 #else
