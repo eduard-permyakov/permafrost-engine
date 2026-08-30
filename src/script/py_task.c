@@ -519,16 +519,24 @@ static struct result py_task(void *arg)
             (PyObject*)self, self->ts->curexc_type ? self->ts->curexc_type : Py_None), ES_SCRIPT);
     }
 
-    /* Allow catching of the task exceptions for easier debugging */
+    /* Allow catching of the task exceptions for easier debugging. SystemExit
+     * is exempt: it is the engine's own kill signal for session teardown, and
+     * routing it through the error path would pause the freshly loaded
+     * session behind an error modal.
+     */
     if(PyErr_Occurred()) {
-        PyObject *exc_info = Py_BuildValue("OOOO",
-            self,
-            self->ts->curexc_type      ? self->ts->curexc_type      : Py_None,
-            self->ts->curexc_value     ? self->ts->curexc_value     : Py_None,
-            self->ts->curexc_traceback ? self->ts->curexc_traceback : Py_None
-        );
-        E_Global_Notify(EVENT_SCRIPT_TASK_EXCEPTION, exc_info, ES_SCRIPT);
-        S_ShowLastError();
+        if(PyErr_ExceptionMatches(PyExc_SystemExit)) {
+            PyErr_Clear();
+        }else{
+            PyObject *exc_info = Py_BuildValue("OOOO",
+                self,
+                self->ts->curexc_type      ? self->ts->curexc_type      : Py_None,
+                self->ts->curexc_value     ? self->ts->curexc_value     : Py_None,
+                self->ts->curexc_traceback ? self->ts->curexc_traceback : Py_None
+            );
+            E_Global_Notify(EVENT_SCRIPT_TASK_EXCEPTION, exc_info, ES_SCRIPT);
+            S_ShowLastError();
+        }
     }
 
     assert(!self->ts->frame);
