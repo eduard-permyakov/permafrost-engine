@@ -167,6 +167,16 @@ void R_GL_PipelineStatsBegin(uint32_t *cookies)
         return;
     }
 
+    /* Around a session load boundary, queued commands may be discarded or
+     * run out of order, which can leave the previous span open. Close it
+     * here, else the glBeginQuery calls below fail and the new names never
+     * become query objects.
+     */
+    if(s_pipeline_stats_active) {
+        for(int i = 0; i < PERF_GPU_STAT_COUNT; i++)
+            glEndQuery(s_pipeline_stat_targets[i]);
+    }
+
     glGenQueries(PERF_GPU_STAT_COUNT, (GLuint*)cookies);
     for(int i = 0; i < PERF_GPU_STAT_COUNT; i++)
         glBeginQuery(s_pipeline_stat_targets[i], cookies[i]);
@@ -194,10 +204,15 @@ void R_GL_ResolvePipelineStats(uint32_t *cookies, struct gpu_frame_stats *out)
     for(int i = 0; i < PERF_GPU_STAT_COUNT; i++) {
         if(cookies[i] == 0)
             continue;
-        GLint avail = GL_FALSE;
-        glGetQueryObjectiv(cookies[i], GL_QUERY_RESULT_AVAILABLE, &avail);
-        if(avail)
-            glGetQueryObjectui64v(cookies[i], GL_QUERY_RESULT, &vals[i]);
+        /* A begin whose end was dropped at a load boundary leaves a name
+         * that never became a query object; reading it raises an error.
+         */
+        if(glIsQuery(cookies[i])) {
+            GLint avail = GL_FALSE;
+            glGetQueryObjectiv(cookies[i], GL_QUERY_RESULT_AVAILABLE, &avail);
+            if(avail)
+                glGetQueryObjectui64v(cookies[i], GL_QUERY_RESULT, &vals[i]);
+        }
         glDeleteQueries(1, (GLuint*)&cookies[i]);
         cookies[i] = 0;
     }
