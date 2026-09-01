@@ -88,6 +88,7 @@ struct bb_gpu_inst{
 KHASH_MAP_INIT_INT64(bbdesc, struct bb_model_desc*)
 
 static uint64_t bb_mix(uint64_t hash, uint64_t val);
+static int      bb_azimuth_count(const struct aabb *aabb, int nclips);
 static bool     bb_alloc_atlas(struct bb_model_desc *desc, const void *pixels);
 static bool     bb_bake_atlas(struct bb_model_desc *desc, const void *render_private,
                               const struct bb_variant *var, const char *cache_name,
@@ -134,6 +135,9 @@ static int bb_pow2_cell_res(float px)
     return res;
 }
 
+/* The bake camera's elevation: the complement of the tilt setting, which
+ * counts up from looking straight down.
+ */
 static float bb_tilt_rad(void)
 {
     struct sval tilt;
@@ -141,7 +145,7 @@ static float bb_tilt_rad(void)
     if(Settings_Get("pf.game.camera_tilt", &tilt) == SS_OKAY) {
         degrees = tilt.as_int;
     }
-    return DEG_TO_RAD(degrees);
+    return DEG_TO_RAD(90.0f - degrees);
 }
 
 /* Accumulate one model-space AABB into the rotation-invariant framing metrics:
@@ -157,6 +161,25 @@ static void bb_extend_metrics(const struct aabb *aabb, float *inout_radius,
     *inout_radius = MAX(*inout_radius, radius);
     *inout_ymin = MIN(*inout_ymin, aabb->y_min);
     *inout_ymax = MAX(*inout_ymax, aabb->y_max);
+}
+
+/* Elongated static footprints take the finer azimuth set: a coarse bin
+ * visibly rotates a long sprite about its centre. Animated bind-pose
+ * bounds are T-poses, so those keep the coarse set.
+ */
+static int bb_azimuth_count(const struct aabb *aabb, int nclips)
+{
+    if(nclips > 0)
+        return CONFIG_BILLBOARD_AZIMUTHS;
+
+    float xspan = aabb->x_max - aabb->x_min;
+    float zspan = aabb->z_max - aabb->z_min;
+    float major = MAX(xspan, zspan);
+    float minor = MAX(MIN(xspan, zspan), 1e-3f);
+
+    if(major / minor >= CONFIG_BILLBOARD_ELONGATED_ASPECT)
+        return CONFIG_BILLBOARD_AZIMUTHS_ELONGATED;
+    return CONFIG_BILLBOARD_AZIMUTHS;
 }
 
 /* The frame index baked for a keyframe slot: the start of its bucket, matching
@@ -572,7 +595,7 @@ void R_Billboard_Register(void *render_key, const char *basedir, const char *fil
         return;
 
     desc->render_key = render_key;
-    desc->nazimuths = CONFIG_BILLBOARD_AZIMUTHS;
+    desc->nazimuths = bb_azimuth_count(aabb, nclips);
     desc->nclips = nclips;
     desc->tilt_rad = bb_tilt_rad();
     SDL_AtomicSet(&desc->state, BB_STATE_PENDING);
@@ -583,6 +606,11 @@ void R_Billboard_Register(void *render_key, const char *basedir, const char *fil
     int max_layers = SDL_AtomicGet(&s_max_layers);
     if(max_layers <= 0) {
         max_layers = FALLBACK_MAX_LAYERS;
+    }
+
+    /* The keyframe clamp below cannot shrink the azimuth set */
+    if(desc->nazimuths > max_layers) {
+        desc->nazimuths = CONFIG_BILLBOARD_AZIMUTHS;
     }
 
     int kf_cap = CONFIG_BILLBOARD_MAX_KF;

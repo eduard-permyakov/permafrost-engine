@@ -565,6 +565,16 @@ static void g_make_draw_lists(struct render_input *out)
     if(Settings_Get("pf.video.billboard_dist", &bb_setting) == SS_OKAY)
         bb_dist = bb_setting.as_float;
 
+    /* A camera pitched away from the RTS elevation the atlases are baked for
+     * shows sheared, mis-rotated cards; statics fall back to meshes there.
+     */
+    bool bb_pitch_ok = true;
+    if(bb_enabled && (Settings_Get("pf.game.camera_tilt", &bb_setting) == SS_OKAY)) {
+        float rts_pitch = -(90.0f - bb_setting.as_int);
+        bb_pitch_ok = fabsf(Camera_GetPitch(s_gs.active_cam) - rts_pitch)
+                   <= CONFIG_BILLBOARD_MAX_PITCH_DEV_DEG;
+    }
+
     /* Under an orthographic projection the apparent size is set by the zoom
      * alone, so billboarding gates uniformly on the camera height; under a
      * perspective one it gates on the per-entity distance.
@@ -610,6 +620,7 @@ static void g_make_draw_lists(struct render_input *out)
          * camera and the shadow pass; the card replaces the mesh everywhere
          */
         if(bb_enabled
+        && (bb_pitch_ok || (flags & ENTITY_FLAG_ANIMATED))
         && (bb_ortho ? bb_zoomed_out : (cam_dist >= bb_dist))
         && !(flags & ENTITY_FLAG_TRANSLUCENT)
         && !g_billboard_excluded(ent)) {

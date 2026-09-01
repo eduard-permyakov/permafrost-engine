@@ -63,6 +63,12 @@
  * changing any of them invalidates the on-disk atlases.
  */
 #define CONFIG_BILLBOARD_AZIMUTHS   (8)
+/* Static models at least this elongated in footprint bake the finer azimuth
+ * set below: coarse bins visibly rotate a long sprite about its centre, and
+ * 72 bins are exactly the editor's 5-degree rotation step.
+ */
+#define CONFIG_BILLBOARD_ELONGATED_ASPECT   (1.75f)
+#define CONFIG_BILLBOARD_AZIMUTHS_ELONGATED (72)
 #define CONFIG_BILLBOARD_MAX_KF     (8)
 #define CONFIG_BILLBOARD_PX_PER_WU  (4.0f)
 #define CONFIG_BILLBOARD_MIN_RES    (32)
@@ -80,6 +86,10 @@
  * day-night light re-bakes a handful of times per cycle rather than per frame.
  */
 #define CONFIG_BILLBOARD_LIGHT_REBAKE_DEG (10.0f)
+/* Statics billboard only when the active camera's pitch is within this many
+ * degrees of the RTS camera's, the elevation the sprites are baked for.
+ */
+#define CONFIG_BILLBOARD_MAX_PITCH_DEV_DEG (2.5f)
 /* Depth extent of the bake's light frustum. Kept wide regardless of model size
  * so the shaders' constant depth bias stays reasonable in world units and the
  * model sits well inside the shadow lookup's valid depth band.
