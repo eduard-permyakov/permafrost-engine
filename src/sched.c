@@ -250,6 +250,24 @@ static int              s_nwaiters;     /* protected by ready lock */
 static bool             s_quiesce;      /* protected by ready lock */
 static int              s_idle_workers; /* protected by ready lock */
 
+/* The single in-flight parallel-for batch: workers claim [next, next + chunk)
+ * ranges lock-free when the ready queue is empty, the submitter claims
+ * alongside them and parks until 'done' reaches 'nitems'. The fields are only
+ * rewritten once that happens, so a straggler that lands a claim always
+ * re-reads them coherent.
+ */
+static struct{
+    void        (*func)(int, int, void*);
+    void         *arg;
+    int           nitems;
+    int           chunk;
+    SDL_atomic_t  next;
+    SDL_atomic_t  done;
+    SDL_atomic_t  active;
+}s_parallel_batch;
+static SDL_mutex       *s_parallel_lock;
+static SDL_cond        *s_parallel_cond;
+
 static size_t           s_nworkers;
 static SDL_Thread      *s_worker_threads[MAX_WORKER_THREADS];
 static struct context   s_worker_contexts[MAX_WORKER_THREADS];
@@ -1082,6 +1100,37 @@ static void worker_notify_done(int id)
     SDL_UnlockMutex(s_ready_lock);
 }
 
+static bool sched_parallel_claimable(void)
+{
+    return SDL_AtomicGet(&s_parallel_batch.active)
+        && SDL_AtomicGet(&s_parallel_batch.next) < s_parallel_batch.nitems;
+}
+
+static bool sched_parallel_claim_one(void)
+{
+    int chunk = s_parallel_batch.chunk;
+    int begin = SDL_AtomicAdd(&s_parallel_batch.next, chunk);
+    int nitems = s_parallel_batch.nitems;
+    if(begin >= nitems)
+        return false;
+
+    int end = (begin + chunk > nitems) ? (nitems - 1) : (begin + chunk - 1);
+    s_parallel_batch.func(begin, end, s_parallel_batch.arg);
+
+    int ndone = SDL_AtomicAdd(&s_parallel_batch.done, end - begin + 1) + (end - begin + 1);
+    if(ndone == nitems) {
+        SDL_LockMutex(s_parallel_lock);
+        SDL_CondBroadcast(s_parallel_cond);
+        SDL_UnlockMutex(s_parallel_lock);
+    }
+    return true;
+}
+
+static void sched_parallel_drain(void)
+{
+    while(sched_parallel_claim_one()) {}
+}
+
 static struct task *worker_wait_task_or_quiesce(void)
 {
     struct task *task = NULL;
@@ -1094,6 +1143,18 @@ static struct task *worker_wait_task_or_quiesce(void)
     }
 
     while(!s_quiesce && !pq_task_pop(&s_ready_queue, &task)) {
+
+        if(sched_parallel_claimable()) {
+            s_nwaiters--;
+            SDL_UnlockMutex(s_ready_lock);
+            sched_parallel_drain();
+            SDL_LockMutex(s_ready_lock);
+            s_nwaiters++;
+            if(s_nwaiters == s_nworkers) {
+                SDL_CondBroadcast(s_ready_cond);
+            }
+            continue;
+        }
         SDL_CondWait(s_ready_cond, s_ready_lock);
     }
 
@@ -1299,6 +1360,14 @@ bool Sched_Init(void)
     if(!pq_task_reserve(&s_ready_queue_main, MAX_TASKS))
         goto fail_ready_queue_main;
 
+    s_parallel_lock = SDL_CreateMutex();
+    if(!s_parallel_lock)
+        goto fail_parallel_lock;
+
+    s_parallel_cond = SDL_CreateCond();
+    if(!s_parallel_cond)
+        goto fail_parallel_cond;
+
     assert(MAX_TASKS >= 2);
     s_tasks[0].prev = NULL;
     s_tasks[0].next = &s_tasks[1];
@@ -1373,6 +1442,10 @@ fail_msg_queue:
     for(int i = 0; i < MAX_TASKS; i++) {
         queue_tid_destroy(s_msg_queues + i);
     }
+    SDL_DestroyCond(s_parallel_cond);
+fail_parallel_cond:
+    SDL_DestroyMutex(s_parallel_lock);
+fail_parallel_lock:
     pq_task_destroy(&s_ready_queue_main);
 fail_ready_queue_main:
     pq_task_destroy(&s_ready_queue);
@@ -1406,6 +1479,8 @@ void Sched_Shutdown(void)
     kh_destroy(tqueue, s_event_queues);
 
     block_alloc_destroy(&s_bigstacks);
+    SDL_DestroyCond(s_parallel_cond);
+    SDL_DestroyMutex(s_parallel_lock);
     SDL_DestroyCond(s_ready_cond);
     SDL_DestroyMutex(s_ready_lock);
     kh_destroy(tid, s_thread_tid_map);
@@ -1605,6 +1680,47 @@ void Sched_AwaitAll(const uint32_t *tids, const struct future *futures, size_t n
         if(pending)
             Sched_TryYield();
     }while(pending);
+}
+
+void Sched_ParallelFor(void (*fn)(int begin, int end, void *arg), void *arg,
+                       size_t nitems, size_t chunk)
+{
+    if(nitems == 0)
+        return;
+
+    assert(chunk > 0);
+    assert(!SDL_AtomicGet(&s_parallel_batch.active));
+
+    s_parallel_batch.func = fn;
+    s_parallel_batch.arg = arg;
+    s_parallel_batch.nitems = nitems;
+    s_parallel_batch.chunk = chunk;
+    SDL_AtomicSet(&s_parallel_batch.done, 0);
+    SDL_AtomicSet(&s_parallel_batch.next, 0);
+    SDL_AtomicSet(&s_parallel_batch.active, 1);
+
+    /* Broadcast under the ready lock so a worker between its predicate check
+     * and the cond wait cannot miss the wake.
+     */
+    SDL_LockMutex(s_ready_lock);
+    SDL_CondBroadcast(s_ready_cond);
+    SDL_UnlockMutex(s_ready_lock);
+
+    /* A submitting fiber must stay preemptible between ranges: the per-frame
+     * worker quiesce blocks the main thread until the fiber's host yields.
+     * On a native thread the try-yield is a no-op.
+     */
+    while(sched_parallel_claim_one()) {
+        Sched_TryYield();
+    }
+
+    SDL_LockMutex(s_parallel_lock);
+    while(SDL_AtomicGet(&s_parallel_batch.done) < (int)nitems) {
+        SDL_CondWait(s_parallel_cond, s_parallel_lock);
+    }
+    SDL_UnlockMutex(s_parallel_lock);
+
+    SDL_AtomicSet(&s_parallel_batch.active, 0);
 }
 
 void Sched_ClearState(void)

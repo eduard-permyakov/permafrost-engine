@@ -107,6 +107,14 @@ uint32_t Sched_CreateBlocking(int prio, task_func_t code, void *arg, const char 
                               struct future *result, int flags);
 bool     Sched_RunSync(uint32_t tid);
 void     Sched_AwaitAll(const uint32_t *tids, const struct future *futures, size_t n);
+
+/* Run fn over every index in [0, nitems) on the worker pool, the calling
+ * thread claiming chunk-sized ranges alongside the workers. Returns once every
+ * range has completed. A single batch may be in flight engine-wide, and the
+ * range function must not call back into any Task_* or Sched_* API.
+ */
+void     Sched_ParallelFor(void (*fn)(int begin, int end, void *arg), void *arg,
+                           size_t nitems, size_t chunk);
 void     Sched_ClearState(void);
 void     Sched_Flush(void);
 bool     Sched_HasBlocked(void);
