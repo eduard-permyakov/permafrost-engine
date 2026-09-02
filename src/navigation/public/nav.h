@@ -718,6 +718,14 @@ vec2_t N_ClosestReachableInRange(void *nav_private, vec3_t map_pos,
  * Copy a subset of the global 'islands' field.
  * ------------------------------------------------------------------------
  */
+/* ------------------------------------------------------------------------
+ * Like N_CopyIslandsFieldView, but writes 1 for tiles that are impassable,
+ * blocked, or outside the map, and 0 otherwise.
+ * ------------------------------------------------------------------------
+ */
+void N_CopyBlockedFieldView(void *nav_private, vec2_t center, vec3_t map_pos, int nrows, int ncols,
+                            enum nav_layer layer, uint8_t *out_field);
+
 void N_CopyIslandsFieldView(void *nav_private, vec2_t center, vec3_t map_pos, int nrows, int ncols,
                             enum nav_layer layer, uint16_t *out_field);
 

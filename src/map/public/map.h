@@ -603,6 +603,8 @@ bool     M_NavIsMaximallyClose(const struct map *map, enum nav_layer layer,
 bool     M_NavIsAdjacentToImpassable(const struct map *map, enum nav_layer layer, vec2_t xz_pos);
 void     M_NavCopyIslandsFieldView(const struct map *map, vec2_t center,
                                    int nrows, int ncols, enum nav_layer layer, uint16_t *out_field);
+void     M_NavCopyBlockedFieldView(const struct map *map, vec2_t center,
+                                   int nrows, int ncols, enum nav_layer layer, uint8_t *out_field);
 void     M_NavCellArrivalFieldCreate(const struct map *map, size_t rdim, size_t cdim,
                                      enum nav_layer layer, uint16_t enemies,
                                      struct tile_desc target, struct tile_desc center,

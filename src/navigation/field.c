@@ -1389,7 +1389,13 @@ static size_t field_enemies_initial_frontier(
     size_t nmarked = 0;
 
     for(int i = 0; i < num_ents; i++) {
-    
+
+        /* A melee packs thousands of enemies into the search rect; stay
+         * preemptible so the per-frame worker quiesce is never held up.
+         */
+        if(i && (i & 63) == 0)
+            Sched_TryYield();
+
         uint32_t curr_enemy = ents[i];
         if(!field_enemy_ent(enemies->faction_id, curr_enemy, ctx))
             continue;

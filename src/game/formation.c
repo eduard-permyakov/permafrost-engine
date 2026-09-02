@@ -1073,42 +1073,10 @@ static void init_occupied_field(const struct map *map, enum nav_layer layer, vec
 {
     PERF_ENTER();
 
-    struct map_resolution res;
-    M_NavGetResolution(map, &res);
-    vec3_t map_pos = M_GetPos(map);
-
-    struct tile_desc center_tile;
-    M_Tile_DescForPoint2D(res, map_pos, center, &center_tile);
-
-    struct coord center_coord = (struct coord){
-        field_res / 2,
-        field_res / 2
-    };
-
-    memset(occupied, 0, (size_t)field_res * field_res);
-    for(int r = 0; r < field_res; r++) {
-    for(int c = 0; c < field_res; c++) {
-
-        int dr = center_coord.r - r;
-        int dc = center_coord.c - c;
-        struct tile_desc curr = center_tile;
-        bool exists = M_Tile_RelativeDesc(res, &curr, dc, dr);
-        if(!exists) {
-            occupied[IDX(r, field_res, c)] = TILE_BLOCKED;
-            continue;
-        }
-
-        struct box bounds = M_Tile_Bounds(res, map_pos, curr);
-        vec2_t center = (vec2_t){
-            bounds.x - bounds.width / 2.0f,
-            bounds.z + bounds.height / 2.0f
-        };
-        if(!M_NavPositionPathable(map, layer, center)
-        ||  M_NavPositionBlocked(map, layer, center)) {
-            occupied[IDX(r, field_res, c)] = TILE_BLOCKED;
-            continue;
-        }
-    }}
+    M_NavCopyBlockedFieldView(map, center, field_res, field_res, layer, occupied);
+    for(int i = 0; i < field_res * field_res; i++) {
+        occupied[i] = occupied[i] ? TILE_BLOCKED : TILE_FREE;
+    }
 
     PERF_RETURN_VOID();
 }
@@ -3511,6 +3479,7 @@ static struct result cell_field_fixup_task(void *arg)
     M_NavCellArrivalFieldCreate(map->snapshot, arrival_res, arrival_res,
         input->layer, input->enemy_faction_mask, input->cell_tile, input->center_tile,
         result, workspace, size, &work->overlay);
+    Sched_TryYield();
     M_NavCellArrivalFieldUpdateToNearestPathable(map->snapshot,
         arrival_res, arrival_res, input->layer, input->enemy_faction_mask,
         input->curr_tile, input->center_tile, result, workspace, size, &work->overlay);

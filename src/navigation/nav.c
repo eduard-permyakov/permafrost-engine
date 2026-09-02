@@ -6035,9 +6035,39 @@ void N_CopyIslandsFieldView(void *nav_private, vec2_t center, vec3_t map_pos, in
             continue;
         }
 
-        struct nav_chunk *chunk 
+        struct nav_chunk *chunk
             = &priv->chunks[layer][IDX(curr.chunk_r, priv->width, curr.chunk_c)];
         rows[IDX(r, ncols, c)] = chunk->islands[curr.tile_r][curr.tile_c];
+    }}
+}
+
+void N_CopyBlockedFieldView(void *nav_private, vec2_t center, vec3_t map_pos, int nrows, int ncols,
+                            enum nav_layer layer, uint8_t *out_field)
+{
+    struct nav_private *priv = (struct nav_private*)nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+    struct tile_desc center_tile;
+    M_Tile_DescForPoint2D(res, map_pos, center, &center_tile);
+
+    for(int r = 0; r < nrows; r++) {
+    for(int c = 0; c < ncols; c++) {
+
+        int dr = (nrows / 2) - r;
+        int dc = (ncols / 2) - c;
+
+        struct tile_desc curr = center_tile;
+        bool exists = M_Tile_RelativeDesc(res, &curr, dc, dr);
+        if(!exists) {
+            out_field[IDX(r, ncols, c)] = 1;
+            continue;
+        }
+
+        const struct nav_chunk *chunk
+            = &priv->chunks[layer][IDX(curr.chunk_r, priv->width, curr.chunk_c)];
+        out_field[IDX(r, ncols, c)] =
+            (chunk->cost_base[curr.tile_r][curr.tile_c] == COST_IMPASSABLE)
+         || (chunk->blockers[curr.tile_r][curr.tile_c] > 0);
     }}
 }
 
