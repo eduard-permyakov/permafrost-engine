@@ -130,7 +130,7 @@ bool G_Pos_Set(uint32_t uid, vec3_t pos)
     bool overwrite = (k != kh_end(s_postable));
     int faction_id = G_GetFactionID(uid);
     uint32_t flags = G_FlagsGet(uid);
-    float vrange = G_GetVisionRange(uid);
+    float vrange = G_Fog_Enabled() ? G_GetVisionRange(uid) : 0.0f;
 
     if(overwrite) {
         vec3_t old_pos = kh_val(s_postable, k);

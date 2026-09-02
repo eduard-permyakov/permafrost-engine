@@ -943,6 +943,11 @@ static void move_gpu_commit(const struct sval *new_val)
     G_Move_SetUseGPU(next);
 }
 
+static void perf_hw_counters_commit(const struct sval *new_val)
+{
+    Perf_SetHWCountersEnabled(new_val->as_bool);
+}
+
 static bool nav_layer_validate(const struct sval *new_val)
 {
     if(new_val->type != ST_TYPE_INT)
@@ -1548,6 +1553,30 @@ static void g_create_settings(void)
         .prio = 0,
         .validate = bool_val_validate,
         .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.move_parallel_executor",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = true
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.perf_hw_counters",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = perf_hw_counters_commit,
     });
     assert(status == SS_OKAY);
 
@@ -3226,6 +3255,20 @@ float G_GetVisionRange(uint32_t uid)
     khiter_t k = kh_get(range, s_gs.ent_visrange_map, uid);
     assert(k != kh_end(s_gs.ent_visrange_map));
     return kh_value(s_gs.ent_visrange_map, k);
+}
+
+void G_ReseedFogVision(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    G_Fog_ClearVisionState();
+
+    uint32_t uid;
+    float range;
+    kh_foreach(s_gs.ent_visrange_map, uid, range, {
+        if(range == 0.0f)
+            continue;
+        G_Fog_AddVision(G_Pos_GetXZ(uid), G_GetFactionID(uid), range);
+    });
 }
 
 void G_SetRangeIndicator(uint32_t uid, float radius, vec3_t color, float width)

@@ -195,6 +195,11 @@ void            G_GetFieldCacheStats(struct fc_stats *out);
 void            G_SetVisionRange(uint32_t uid, float range);
 float           G_GetVisionRange(uint32_t uid);
 
+/* Rebuild every entity's fog vision from scratch when re-enabling the fog of
+ * war, since no vision bookkeeping is done while it is disabled.
+ */
+void            G_ReseedFogVision(void);
+
 /* A ring drawn around an entity at the given radius, for showing how far an
  * ability reaches. Only one is shown at a time.
  */

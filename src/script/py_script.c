@@ -1985,6 +1985,7 @@ static PyObject *PyPf_hide_regions(PyObject *self)
 static PyObject *PyPf_enable_fog_of_war(PyObject *self)
 {
     G_Fog_Enable();
+    G_ReseedFogVision();
     Py_RETURN_NONE;
 }
 

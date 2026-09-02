@@ -77,6 +77,11 @@ bool G_Fog_LoadState(struct SDL_RWops *stream);
 
 bool G_Fog_Enabled(void);
 
+/* Zero every faction's vision refcounts, demote VISIBLE tiles to IN_FOG and
+ * drop the pending updates; the caller re-adds vision for the live entities.
+ */
+void G_Fog_ClearVisionState(void);
+
 uint32_t *G_Fog_CopyState(void);
 uint32_t *G_Fog_CopyStateInto(uint32_t *dst, size_t *inout_ntiles);
 

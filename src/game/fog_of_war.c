@@ -202,6 +202,9 @@ static void update_tile(int faction_id, struct tile_desc td, int delta)
 
 static void enqueue_update(int faction_id, vec2_t pos, float radius, int delta)
 {
+    if(!s_enabled)
+        return;
+
     if(s_nupdates == s_updates_cap) {
         s_updates_cap = s_updates_cap ? s_updates_cap * 2 : 4096;
         s_updates = PF_REALLOC(s_updates, s_updates_cap * sizeof(*s_updates));
@@ -541,6 +544,10 @@ static void fog_los_stamp(int faction_id, struct tile_desc origin, int origin_he
  * origin once, then the disc stamp (open box) or the LOS-aware stamp. */
 static void fog_flush_pending(void)
 {
+    if(!s_enabled) {
+        s_nupdates = 0;
+        return;
+    }
     if(s_nupdates == 0)
         return;
     PERF_ENTER();
@@ -1254,6 +1261,30 @@ bool G_Fog_ObjVisibleFrom(uint32_t *state, bool enabled, uint16_t fac_mask, cons
 
     enum fog_state states[] = {STATE_VISIBLE};
     return fog_obj_matches(state, fac_mask, obb, states, ARR_SIZE(states));
+}
+
+void G_Fog_ClearVisionState(void)
+{
+    s_nupdates = 0;
+
+    const size_t ntiles = s_res.chunk_w * s_res.chunk_h * s_res.tile_w * s_res.tile_h;
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+        memset(s_vision_refcnts[i], 0, ntiles * sizeof(s_vision_refcnts[0][0]));
+    }
+
+    for(size_t i = 0; i < ntiles; i++) {
+
+        uint32_t fs = s_fog_state[i];
+        for(int j = 0; j < MAX_FACTIONS; j++) {
+            enum fog_state curr = (fs >> (j * 2)) & 0x3;
+            if(curr == STATE_VISIBLE) {
+                curr = STATE_IN_FOG;
+            }
+            fs = fs & ~(0x3 << (j * 2));
+            fs = fs | (curr << (j * 2));
+        }
+        s_fog_state[i] = fs;
+    }
 }
 
 void G_Fog_Enable(void)
