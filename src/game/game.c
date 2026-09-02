@@ -832,6 +832,11 @@ static bool bool_val_validate(const struct sval *new_val)
     return (new_val->type == ST_TYPE_BOOL);
 }
 
+static bool float_val_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_FLOAT);
+}
+
 static bool lod_dist_validate(const struct sval *new_val)
 {
     return (new_val->type == ST_TYPE_FLOAT) && (new_val->as_float >= 0.0f);
@@ -1530,6 +1535,55 @@ static void g_create_settings(void)
         },
         .prio = 0,
         .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.log_call_graphs",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.log_perf_csv",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.log_cp_captures",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    /* Per-tick [mv-trace] lines for units of at least this selection radius; negative = off */
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.log_move_trace_min_radius",
+        .val = (struct sval) {
+            .type = ST_TYPE_FLOAT,
+            .as_float = -1.0f
+        },
+        .prio = 0,
+        .validate = float_val_validate,
         .commit = NULL,
     });
     assert(status == SS_OKAY);
