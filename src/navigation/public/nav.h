@@ -467,6 +467,15 @@ bool      N_HasDestLOSCached(dest_id_t id, vec2_t curr_pos, void *nav_private,
                              vec3_t map_pos, bool *out_present);
 
 /* ------------------------------------------------------------------------
+ * True when the cached LOS field for the position's chunk was invalidated by
+ * blocker churn and its rate-capped rebuild has come due. The stale answer
+ * keeps being served in the meantime. Read-only, safe off the nav task.
+ * ------------------------------------------------------------------------
+ */
+bool      N_DestLOSRebuildDue(dest_id_t id, vec2_t curr_pos, void *nav_private,
+                              vec3_t map_pos);
+
+/* ------------------------------------------------------------------------
  * Like N_HasDestLOS on the navigation task: LOS floods are deferred to the
  * worker pool, so a miss records the required chain of builds and reports
  * LOS_ENSURE_DEFERRED. The answer becomes readable via N_HasDestLOSCached

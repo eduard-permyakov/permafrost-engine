@@ -111,6 +111,8 @@ struct fieldcache_ctx{
     /* Fields served stale until their rate-capped rebuild publishes; the
      * value is the tick the rebuild becomes due. Keyed by ffid. */
     khash_t(stale)   *flow_stale;
+    /* Same for LOS fields, keyed by (dest_id, chunk coord). */
+    khash_t(stale)   *los_stale;
     uint32_t          tick;
 
     /* Statistics */
@@ -135,6 +137,10 @@ static uint32_t             (*s_nav_task_tid_provider)(void);
  */
 #define ENEMY_SEEK_REBUILD_PERIOD_TICKS (5)
 #define POINT_SEEK_REBUILD_PERIOD_TICKS (10)
+/* A melee's blocker churn mass-invalidates the (dest, chunk) LOS fields every
+ * tick; a straight-line visibility answer a few ticks stale is indistinguishable
+ * in play, and the budgeted rebuild keeps it bounded. */
+#define LOS_REBUILD_PERIOD_TICKS        (5)
 
 /* A fieldcache mutation is safe either when no navigation task is in flight (e.g. the
  * synchronous save-time flush, which runs in a session-task fiber) or when it happens
@@ -248,6 +254,23 @@ static void clear_chunk_los_map(struct fieldcache_ctx *ctx, uint64_t key, enum n
         if(N_DestLayer(key_dest(key)) != layer)
             continue;
 
+        /* Blocker churn: serve the LOS field stale while its rate-capped
+         * rebuild is pending; a fresh mark counts as one invalidation. */
+        if(lru_los_peek(&ctx->los_cache, key) != NULL) {
+            int put_ret;
+            khiter_t s = kh_put(stale, ctx->los_stale, key, &put_ret);
+            if(put_ret != 0) {
+                kh_val(ctx->los_stale, s) = ctx->tick + LOS_REBUILD_PERIOD_TICKS;
+                ctx->perfstats.los_invalidated++;
+            }
+            continue;
+        }
+
+        khiter_t s = kh_get(stale, ctx->los_stale, key);
+        if(s != kh_end(ctx->los_stale)) {
+            kh_del(stale, ctx->los_stale, s);
+        }
+
         bool found = lru_los_remove(&ctx->los_cache, key);
         ctx->perfstats.los_invalidated += !!found;
         vec_id_del(keys, i);
@@ -338,10 +361,15 @@ bool N_FC_Init(struct fieldcache_ctx *ctx)
     if(NULL == (ctx->flow_stale = kh_init(stale)))
         goto fail_flow_stale;
 
+    if(NULL == (ctx->los_stale = kh_init(stale)))
+        goto fail_los_stale;
+
     ctx->tick = 0;
     memset(&ctx->perfstats, 0, sizeof(ctx->perfstats));
     return true;
 
+fail_los_stale:
+    kh_destroy(stale, ctx->flow_stale);
 fail_flow_stale:
     kh_destroy(idvec, ctx->chunk_lfield_map);
 fail_chunk_lfield:
@@ -372,6 +400,7 @@ void N_FC_Destroy(struct fieldcache_ctx *ctx)
     kh_destroy(idvec, ctx->chunk_lfield_map);
 
     kh_destroy(stale, ctx->flow_stale);
+    kh_destroy(stale, ctx->los_stale);
 }
 
 void N_FC_ClearAll(struct fieldcache_ctx *ctx)
@@ -388,6 +417,7 @@ void N_FC_ClearAll(struct fieldcache_ctx *ctx)
     kh_clear(idvec, ctx->chunk_lfield_map);
 
     kh_clear(stale, ctx->flow_stale);
+    kh_clear(stale, ctx->los_stale);
 }
 
 void N_FC_ClearStats(struct fieldcache_ctx *ctx)
@@ -450,12 +480,18 @@ const struct LOS_field *N_FC_LOSFieldAt(struct fieldcache_ctx *ctx, dest_id_t id
     return lru_los_at(&ctx->los_cache, key);
 }
 
-void N_FC_PutLOSField(struct fieldcache_ctx *ctx, dest_id_t id, 
+void N_FC_PutLOSField(struct fieldcache_ctx *ctx, dest_id_t id,
                       struct coord chunk_coord, const struct LOS_field *lf)
 {
     FC_ASSERT_NAV_TASK();
     uint64_t key = key_for_dest_and_chunk(id, chunk_coord);
     lru_los_put(&ctx->los_cache, key, lf);
+
+    khiter_t s = kh_get(stale, ctx->los_stale, key);
+    if(s != kh_end(ctx->los_stale)) {
+        kh_del(stale, ctx->los_stale, s);
+    }
+
     field_map_add(ctx->chunk_lfield_map, key_for_chunk(chunk_coord), key);
 }
 
@@ -527,6 +563,17 @@ const struct LOS_field *N_FC_PeekLOSField(struct fieldcache_ctx *ctx, dest_id_t 
                                           struct coord chunk_coord)
 {
     return lru_los_peek(&ctx->los_cache, key_for_dest_and_chunk(id, chunk_coord));
+}
+
+bool N_FC_DestLOSRebuildDue(struct fieldcache_ctx *ctx, dest_id_t id,
+                            struct coord chunk_coord)
+{
+    /* Pure read, callable from the parallel peek like N_FC_PeekLOSField;
+     * orphaned marks are cleared on the next put or eviction. */
+    khiter_t s = kh_get(stale, ctx->los_stale, key_for_dest_and_chunk(id, chunk_coord));
+    if(s == kh_end(ctx->los_stale))
+        return false;
+    return ctx->tick >= kh_val(ctx->los_stale, s);
 }
 
 const struct flow_field *N_FC_PeekFlowField(struct fieldcache_ctx *ctx, ff_id_t ffid)

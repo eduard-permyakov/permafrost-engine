@@ -4689,6 +4689,20 @@ bool N_HasDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_private, vec3_t map_p
     return lf->field[tile.tile_r][tile.tile_c].visible;
 }
 
+bool N_DestLOSRebuildDue(dest_id_t id, vec2_t curr_pos, void *nav_private, vec3_t map_pos)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct tile_desc tile;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, curr_pos, &tile);
+    assert(result);
+    struct coord chunk = (struct coord){tile.chunk_r, tile.chunk_c};
+
+    return N_FC_DestLOSRebuildDue(priv->fieldcache, id, chunk);
+}
+
 bool N_HasDestLOSCached(dest_id_t id, vec2_t curr_pos, void *nav_private, vec3_t map_pos,
                         bool *out_present)
 {
@@ -4735,7 +4749,8 @@ enum los_ensure_result N_EnsureDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_
     assert(result);
     struct coord chunk = (struct coord){tile.chunk_r, tile.chunk_c};
 
-    if(N_FC_ContainsLOSField(priv->fieldcache, id, chunk)) {
+    if(!N_FC_DestLOSRebuildDue(priv->fieldcache, id, chunk)
+    && N_FC_ContainsLOSField(priv->fieldcache, id, chunk)) {
         const struct LOS_field *lf = N_FC_LOSFieldAt(priv->fieldcache, id, chunk);
         *out_vis = lf->field[tile.tile_r][tile.tile_c].visible;
         return LOS_ENSURE_ANSWER;

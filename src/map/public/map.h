@@ -427,6 +427,13 @@ bool   M_NavHasDestLOS(const struct map *map, dest_id_t id, vec2_t curr_pos, vec
 bool   M_NavHasDestLOSCached(const struct map *map, dest_id_t id, vec2_t curr_pos, bool *out_present);
 
 /* ------------------------------------------------------------------------
+ * True when the position's cached LOS answer is stale-served and its
+ * rate-capped rebuild has come due. Read-only, safe off the nav task.
+ * ------------------------------------------------------------------------
+ */
+bool   M_NavDestLOSRebuildDue(const struct map *map, dest_id_t id, vec2_t curr_pos);
+
+/* ------------------------------------------------------------------------
  * Like M_NavHasDestLOS on the navigation task: a miss records a deferred
  * chain of LOS builds instead of flooding inline. See N_EnsureDestLOS.
  * ------------------------------------------------------------------------

@@ -836,6 +836,11 @@ bool M_NavHasDestLOSCached(const struct map *map, dest_id_t id, vec2_t curr_pos,
     return N_HasDestLOSCached(id, curr_pos, map->nav_private, map->pos, out_present);
 }
 
+bool M_NavDestLOSRebuildDue(const struct map *map, dest_id_t id, vec2_t curr_pos)
+{
+    return N_DestLOSRebuildDue(id, curr_pos, map->nav_private, map->pos);
+}
+
 enum los_ensure_result M_NavEnsureDestLOS(const struct map *map, dest_id_t id, vec2_t curr_pos,
                                           vec2_t xz_dest, bool *out_vis)
 {
