@@ -343,9 +343,10 @@ static void rays_repr(const struct HRVO *hrvos, size_t n_hrvos,
     }
 }
 
-/* One lane per VO (32 dynamic + 32 static neighbours max), rounded up to a
- * whole number of 8-lane groups. */
-#define MAX_SOA_VOS (72)
+/* One lane per VO (32 dynamic + 32 static neighbours + 12 tile obstacles max),
+ * rounded up to a whole number of 8-lane groups.
+ */
+#define MAX_SOA_VOS (88)
 
 /* SoA mirror of the VO ray pairs, one lane per VO, tail-padded with sentinel
  * VOs whose left test always fails ("outside"). */
