@@ -219,6 +219,11 @@ void     Perf_PopGPU(uint32_t cookie);
 
 bool     Perf_IsRoot(void);
 
+/* Attribute hardware counter deltas (IPC, miss rates) to every probe scope.
+ * Costs two read() syscalls per push/pop on every instrumented thread.
+ */
+void     Perf_SetHWCountersEnabled(bool enabled);
+
 /* Per-nav-tick parallel-CPU accumulator. Thread-safe: the worker tasks add their
  * CPU time, the nav fiber resets it at tick start and reads it at the end.
  */

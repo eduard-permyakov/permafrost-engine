@@ -189,6 +189,10 @@ static size_t                   s_frame_time_head;
 static size_t                   s_frame_time_count;
 static uint32_t                 s_frame_time_seq;
 static SDL_atomic_t           s_nav_parallel_us;
+/* Hardware counter sampling at every probe push/pop costs two read() syscalls
+ * per scope; keep it opt-in so instrumented builds stay representative.
+ */
+static bool                   s_hw_counters;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -569,6 +573,11 @@ bool Perf_RegisterThread(SDL_threadID tid, const char *name)
     return true;
 }
 
+void Perf_SetHWCountersEnabled(bool enabled)
+{
+    s_hw_counters = enabled;
+}
+
 void Perf_Push(const char *name)
 {
     SDL_threadID tid = SDL_ThreadID();
@@ -580,9 +589,9 @@ void Perf_Push(const char *name)
 
 #if defined(__linux__) && !defined(NDEBUG)
     /* Lazy-init the calling thread's HW counters on first Push so that
-     * perf_event_open() runs on the right thread. 
+     * perf_event_open() runs on the right thread.
      */
-    if(!ps->hw_init_attempted) {
+    if(s_hw_counters && !ps->hw_init_attempted) {
         ps->hw_init_attempted = true;
         hw_perf_open_thread(ps);
     }
@@ -599,7 +608,9 @@ void Perf_Push(const char *name)
 
     uint32_t new_idx = vec_size(&ps->perf_trees[ps->perf_tree_idx])-1;
 #if defined(__linux__) && !defined(NDEBUG)
-    hw_perf_read_thread(ps, vec_AT(&ps->perf_trees[ps->perf_tree_idx], new_idx).hw_counters);
+    if(s_hw_counters) {
+        hw_perf_read_thread(ps, vec_AT(&ps->perf_trees[ps->perf_tree_idx], new_idx).hw_counters);
+    }
 #endif
     vec_idx_push(&ps->perf_stack, new_idx);
 }
@@ -624,10 +635,12 @@ void Perf_Pop(const char **out)
     pe->pc_delta = abs(SDL_GetPerformanceCounter() - pe->pc_delta);
 
 #if defined(__linux__) && !defined(NDEBUG)
-    uint64_t hw_end[PE_COUNT];
-    hw_perf_read_thread(ps, hw_end);
-    for(int i = 0; i < PE_COUNT; i++)
-        pe->hw_counters[i] = hw_end[i] - pe->hw_counters[i];
+    if(s_hw_counters) {
+        uint64_t hw_end[PE_COUNT];
+        hw_perf_read_thread(ps, hw_end);
+        for(int i = 0; i < PE_COUNT; i++)
+            pe->hw_counters[i] = hw_end[i] - pe->hw_counters[i];
+    }
 #endif
 
     if(out)
