@@ -95,6 +95,9 @@ static int hz_count(enum movement_hz hz);
 #define VEL_HIST_LEN          (14)
 #define MAX_MOVE_TASKS        (64)
 #define MAX_REBUILDS_PER_TICK (64)
+/* Stale-served LOS entries whose rebuild came due refresh at this rate, so a
+ * melee's mark conveyor cannot fire dozens of chain floods on one tick. */
+#define MAX_LOS_STALE_REBUILDS_PER_TICK (16)
 #define MAX_GPU_FLOCK_MEMBERS (1024)  /* Must match movement.glsl */
 
 #define SIGNUM(x)    (((x) > 0) - ((x) < 0))
@@ -461,6 +464,15 @@ enum move_work_status{
     WORK_INCOMPLETE
 };
 
+/* A snapshot of one wide movable, matched against ordinary units by exact pair
+ * reach so the giants never enter the ordinary crowd query. */
+struct large_movable{
+    vec2_t   xz_pos;
+    float    radius;
+    uint32_t flags;
+    uint32_t uid;
+};
+
 struct move_work{
     struct memstack           mem;
     struct move_gamestate     gamestate;
@@ -476,6 +488,11 @@ struct move_work{
     struct move_trace        *trace;
     /* Largest movable radius seen, for the centre-based neighbour queries */
     float                     max_radius;
+    /* Widest ordinary (<= LARGE_MOVABLE_RADIUS) movable per class, indexed by
+     * air-ness, sizing the crowd query; giants go in the registry below. */
+    float                     small_max_radius[2];
+    struct large_movable     *large_movables;
+    size_t                    nlarge;
     size_t                    nwork;
     size_t                    ntasks;
     uint32_t                  tids[MAX_MOVE_TASKS];
@@ -606,8 +623,17 @@ struct move_cmd{
     }u;
 };
 
+/* The exact tuple a block's nav refcounts were taken with; the unblock must
+ * mirror it even if the entity's flags or faction changed while blocked.
+ */
+struct block_ref{
+    int      faction_id;
+    uint32_t flags;
+};
+
 KHASH_MAP_INIT_INT(state, struct movestate)
 KHASH_MAP_INIT_INT(auxstate, struct movestate_aux)
+KHASH_MAP_INIT_INT64(blockref, struct block_ref)
 KHASH_MAP_INIT_INT(aabb, struct aabb)
 KHASH_MAP_INIT_INT(findex, int)
 
@@ -662,6 +688,10 @@ static struct result navigation_tick_task(void *arg);
 #define MOVE_HEADING_RESUME             (10.0f) /* degrees; resume/start a halted unit within this */
 #define MAX_NEIGHBOURS                  (32)
 #define CLEARPATH_STILL_SPEED           (0.3f)  /* A neighbour slower than this is treated as static (full, non-reciprocal avoidance) so a settling unit is not passed through */
+/* Movables wider than this (the rare siege engines and skyships) are matched
+ * against a small registry so they do not widen every soldier's crowd query. */
+#define LARGE_MOVABLE_RADIUS            (8.0f)
+#define MAX_LARGE_MOVABLES              (1024)
 
 #define SURROUND_LOW_WATER_X            (CHUNK_WIDTH/3.0f)
 #define SURROUND_HIGH_WATER_X           (CHUNK_WIDTH/2.0f)
@@ -810,6 +840,8 @@ static khash_t(aabb)          *s_aabb_cache;
 static size_t                  s_fog_snap_ntiles;
 static khash_t(state)         *s_entity_state_table;
 static khash_t(auxstate)      *s_entity_aux_table;
+/* Keyed by (uid << 1) | soft-ness; holds the incref-time tuple. */
+static khash_t(blockref)      *s_block_refs;
 
 /* Store the most recently issued move command location for debug rendering */
 static bool                    s_last_cmd_dest_valid = false;
@@ -821,6 +853,7 @@ static struct memstack         s_eventargs;
 
 /* pf.debug.log_cp_captures, hoisted once per tick for the worker phase */
 static bool                    s_log_cp_captures;
+static bool                    s_move_parallel_executor;
 static struct cp_capture       s_cp_captures[CP_CAPTURE_MAX_PER_TICK];
 static SDL_atomic_t            s_cp_ncaptures;
 
@@ -842,6 +875,12 @@ static struct refcounted_map  *s_nav_snapshot;
 static bool                    s_move_hz_dirty = false;
 static bool                    s_use_gpu = true;
 static bool                    s_move_tick_queued = false;
+/* A tick's main-thread work is split across two frames: the consume half runs
+ * on the tick event's frame, the snapshot + submit half on the next frame, so
+ * no single frame carries the whole stall. */
+static bool                    s_move_split_pending = false;
+static unsigned long           s_split_frame;
+static enum movement_hz        s_split_hz;
 
 /* Per-tick budget on full field rebuilds (n_request_path), consumed by the
  * serial LOS-build and path-request loops. Invalidation storms (war start,
@@ -975,15 +1014,35 @@ static struct arrival_state *flock_arrival_for_ent(const struct flock *flock, ui
     return G_ArrivalGroup_ForLayer(&flock->arrival, Entity_NavLayerWithRadius(flags, radius));
 }
 
+static void block_ref_save(uint32_t uid, int soft, int faction_id, uint32_t flags)
+{
+    int ret;
+    khiter_t k = kh_put(blockref, s_block_refs, ((uint64_t)uid << 1) | soft, &ret);
+    assert(ret != -1);
+    kh_val(s_block_refs, k) = (struct block_ref){faction_id, flags};
+}
+
+static struct block_ref block_ref_take(uint32_t uid, int soft, int faction_id, uint32_t flags)
+{
+    khiter_t k = kh_get(blockref, s_block_refs, ((uint64_t)uid << 1) | soft);
+    if(k == kh_end(s_block_refs))
+        return (struct block_ref){faction_id, flags};
+
+    struct block_ref ret = kh_val(s_block_refs, k);
+    kh_del(blockref, s_block_refs, k);
+    return ret;
+}
+
 static void entity_block(uint32_t uid)
 {
     float sel_radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
     vec2_t pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
     uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
-    M_NavBlockersIncref(pos, sel_radius, 
-        G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid), flags, s_map);
+    int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
+    M_NavBlockersIncref(pos, sel_radius, faction_id, flags, s_map);
     M_NavInvalidateZoneFieldsAt(s_move_work.gamestate.map, pos,
         Entity_NavLayerWithRadius(flags, sel_radius));
+    block_ref_save(uid, 0, faction_id, flags);
 
     struct movestate *ms = movestate_get(uid);
     assert(!ms->blocking);
@@ -1005,11 +1064,13 @@ static void entity_unblock(uint32_t uid)
     struct movestate *ms = movestate_get(uid);
     assert(ms->blocking);
 
-    int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
-    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
-    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, faction_id, flags, s_map);
+    struct block_ref ref = block_ref_take(uid, 0,
+        G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid),
+        G_FlagsGetFrom(s_move_work.gamestate.flags, uid));
+    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius,
+        ref.faction_id, ref.flags, s_map);
     M_NavInvalidateZoneFieldsAt(s_move_work.gamestate.map, ms->last_stop_pos,
-        Entity_NavLayerWithRadius(flags, ms->last_stop_radius));
+        Entity_NavLayerWithRadius(ref.flags, ms->last_stop_radius));
     ms->blocking = false;
 
     struct entity_block_desc *desc = stalloc(&s_eventargs, sizeof(struct entity_block_desc));
@@ -1029,8 +1090,9 @@ static void entity_soft_block(uint32_t uid)
     float sel_radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
     vec2_t pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
     uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
-    M_NavBlockersIncref(pos, sel_radius,
-        G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid), flags, s_map);
+    int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
+    M_NavBlockersIncref(pos, sel_radius, faction_id, flags, s_map);
+    block_ref_save(uid, 1, faction_id, flags);
 
     aux->soft_blocking = true;
     aux->cp_stall_ticks = 0;
@@ -1048,9 +1110,11 @@ static void entity_soft_unblock(uint32_t uid)
     if(!aux || !aux->soft_blocking)
         return;
 
-    int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
-    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
-    M_NavBlockersDecref(aux->soft_block_pos, aux->soft_block_radius, faction_id, flags, s_map);
+    struct block_ref ref = block_ref_take(uid, 1,
+        G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid),
+        G_FlagsGetFrom(s_move_work.gamestate.flags, uid));
+    M_NavBlockersDecref(aux->soft_block_pos, aux->soft_block_radius,
+        ref.faction_id, ref.flags, s_map);
 
     aux->soft_blocking = false;
     aux->seek_stuck_ticks = 0;
@@ -2522,6 +2586,46 @@ static float clearpath_reach(float radius_sum)
     return MAX(CLEARPATH_NEIGHBOUR_RADIUS, CLEARPATH_NEIGHBOUR_SCALE * radius_sum);
 }
 
+static float small_max_for_class(uint32_t flags)
+{
+    return s_move_work.small_max_radius[(flags & ENTITY_FLAG_AIR) ? 1 : 0];
+}
+
+/* Crowd query at the caller's class reach plus a registry pass for the
+ * giants; the two sets partition by LARGE_MOVABLE_RADIUS, so the result
+ * matches a single query at the old global reach exactly.
+ */
+static int gather_movable_neighbours(uint32_t uid, vec2_t ent_pos, float ent_radius,
+                                     uint32_t ent_flags, float (*reach_fn)(float),
+                                     uint32_t *out, int maxout)
+{
+    float grid_reach = reach_fn(ent_radius + small_max_for_class(ent_flags));
+    int ngrid = G_Pos_EntsInCircleFrom(s_move_work.gamestate.postree,
+        s_move_work.gamestate.flags, ent_pos, grid_reach, out, maxout);
+
+    int n = 0;
+    for(int i = 0; i < ngrid; i++) {
+        float cr = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, out[i]);
+        if(cr > LARGE_MOVABLE_RADIUS)
+            continue;
+        out[n++] = out[i];
+    }
+
+    for(size_t i = 0; i < s_move_work.nlarge && n < maxout; i++) {
+        const struct large_movable *lm = &s_move_work.large_movables[i];
+        if((ent_flags ^ lm->flags) & ENTITY_FLAG_AIR)
+            continue;
+        if(lm->uid == uid)
+            continue;
+        float dx = lm->xz_pos.x - ent_pos.x;
+        float dz = lm->xz_pos.z - ent_pos.z;
+        float reach = reach_fn(ent_radius + lm->radius);
+        if(dx * dx + dz * dz <= reach * reach)
+            out[n++] = lm->uid;
+    }
+    return n;
+}
+
 static vec2_t separation_force_gap(uint32_t uid, float buffer_dist, float *out_min_gap)
 {
     vec2_t ret = (vec2_t){0.0f};
@@ -2530,11 +2634,10 @@ static vec2_t separation_force_gap(uint32_t uid, float buffer_dist, float *out_m
     int ent_faction = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
     bool phasing = movestate_aux_get(uid)->phasing;
 
+    vec2_t ent_xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
     uint32_t near_ents[256];
-    int num_near = G_Pos_EntsInCircleFrom(s_move_work.gamestate.postree,
-        s_move_work.gamestate.flags,
-        G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid), 
-        separation_reach(ent_radius + s_move_work.max_radius), near_ents, ARR_SIZE(near_ents));
+    int num_near = gather_movable_neighbours(uid, ent_xz_pos, ent_radius, ent_flags,
+        separation_reach, near_ents, ARR_SIZE(near_ents));
 
     for(int i = 0; i < num_near; i++) {
 
@@ -2553,7 +2656,6 @@ static vec2_t separation_force_gap(uint32_t uid, float buffer_dist, float *out_m
             continue;
 
         vec2_t diff;
-        vec2_t ent_xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
         vec2_t curr_xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr);
 
         float radius_sum = ent_radius
@@ -3710,10 +3812,8 @@ static bool ent_wobbling(struct movestate_aux *aux)
         && progress < CP_WOBBLE_NET_FRACTION * walked;
 }
 
-static void entity_apply_cp_stall(uint32_t uid, bool stalled)
+static void entity_apply_cp_stall(struct movestate_aux *aux, bool stalled)
 {
-    struct movestate_aux *aux = movestate_aux_get(uid);
-
     bool going_nowhere = stalled || ent_wobbling(aux);
     aux->cp_stall_ticks = going_nowhere ? MIN(aux->cp_stall_ticks + 1, UINT16_MAX) : 0;
     if(aux->cp_stall_ticks >= CP_STALL_RELAX_TICKS) {
@@ -3723,11 +3823,8 @@ static void entity_apply_cp_stall(uint32_t uid, bool stalled)
     }
 }
 
-static void entity_apply_cp_side(uint32_t uid, int side)
+static void entity_apply_cp_side(struct movestate_aux *aux, int side)
 {
-    struct movestate_aux *aux = movestate_aux_get(uid);
-    if(!aux)
-        return;
     if(side != 0) {
         aux->cp_side = side;
         aux->cp_side_ticks = 0;
@@ -3736,15 +3833,15 @@ static void entity_apply_cp_side(uint32_t uid, int side)
     }
 }
 
-static void entity_apply_update(uint32_t uid, const struct movestate_patch *patch)
+static void entity_apply_update(uint32_t uid, struct movestate *ms,
+                                struct movestate_aux *aux,
+                                const struct movestate_patch *patch)
 {
     ASSERT_IN_MAIN_THREAD();
 
     if(!G_EntityExists(uid) || G_EntityIsZombie(uid) || G_EntityIsGarrisoned(uid))
         return;
 
-    struct movestate *ms = movestate_get(uid);
-    struct movestate_aux *aux = movestate_aux_get(uid);
     if(!ms)
         return;
 
@@ -3899,10 +3996,8 @@ static void find_neighbours(uint32_t uid,
     int ent_faction = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
     bool phasing = movestate_aux_get(uid)->phasing;
     uint32_t near_ents[512];
-    int num_near = G_Pos_EntsInCircleFrom(s_move_work.gamestate.postree, 
-        s_move_work.gamestate.flags,
-        ent_pos,
-        clearpath_reach(ent_radius + s_move_work.max_radius), near_ents, ARR_SIZE(near_ents));
+    int num_near = gather_movable_neighbours(uid, ent_pos, ent_radius, ent_flags,
+        clearpath_reach, near_ents, ARR_SIZE(near_ents));
 
     /* Keep the NEAREST candidates in each class rather than the first
      * encountered: in dense crowds the query returns far more than the caps,
@@ -5040,6 +5135,16 @@ static void move_update_work(int begin_idx, int end_idx)
     }
 }
 
+static void move_dv_work(int begin_idx, int end_idx)
+{
+    for(int i = begin_idx; i <= end_idx; i++) {
+
+        struct move_work_in *in = &s_move_work.in[i];
+        in->ent_des_v = ent_desired_velocity(in);
+        s_move_work.out[i].ent_des_v = in->ent_des_v;
+    }
+}
+
 static struct result move_dv_task(void *arg)
 {
     uint64_t t0 = SDL_GetPerformanceCounter();
@@ -5048,12 +5153,10 @@ static struct result move_dv_task(void *arg)
 
     for(int i = move_arg->begin_idx; i <= move_arg->end_idx; i++) {
 
-        struct move_work_in *in = &s_move_work.in[i];
-        in->ent_des_v = ent_desired_velocity(in);
-        s_move_work.out[i].ent_des_v = in->ent_des_v;
+        move_dv_work(i, i);
         ncomputed++;
 
-        if(ncomputed % 16 == 0)
+        if(ncomputed % 128 == 0)
             Task_Yield();
     }
     Perf_NavParallelAddSince(t0);
@@ -5071,7 +5174,7 @@ static struct result move_velocity_task(void *arg)
         move_velocity_work(i, i);
         ncomputed++;
 
-        if(ncomputed % 16 == 0)
+        if(ncomputed % 128 == 0)
             Task_Yield();
     }
     Perf_NavParallelAddSince(t0);
@@ -5089,11 +5192,35 @@ static struct result move_update_task(void *arg)
         move_update_work(i, i);
         ncomputed++;
 
-        if(ncomputed % 16 == 0)
+        if(ncomputed % 128 == 0)
             Task_Yield();
     }
     Perf_NavParallelAddSince(t0);
     return NULL_RESULT;
+}
+
+static void move_dv_range(int begin, int end, void *arg)
+{
+    (void)arg;
+    uint64_t t0 = SDL_GetPerformanceCounter();
+    move_dv_work(begin, end);
+    Perf_NavParallelAddSince(t0);
+}
+
+static void move_velocity_range(int begin, int end, void *arg)
+{
+    (void)arg;
+    uint64_t t0 = SDL_GetPerformanceCounter();
+    move_velocity_work(begin, end);
+    Perf_NavParallelAddSince(t0);
+}
+
+static void move_update_range(int begin, int end, void *arg)
+{
+    (void)arg;
+    uint64_t t0 = SDL_GetPerformanceCounter();
+    move_update_work(begin, end);
+    Perf_NavParallelAddSince(t0);
 }
 
 static void move_complete_cpu_work(void)
@@ -5322,9 +5449,13 @@ static void move_consume_work_results(void)
     s_soft_block_budget = SEEK_BLOCK_BUDGET_PER_TICK;
     for(int i = 0; i < s_move_work.nwork; i++) {
         struct move_work_out *out = &s_move_work.out[i];
-        entity_apply_cp_stall(out->ent_uid, !!(out->cp_flags & CP_OUT_STALLED));
-        entity_apply_update(out->ent_uid, &out->patch);
-        entity_apply_cp_side(out->ent_uid, out->cp_side);
+        struct movestate *ms = movestate_get(out->ent_uid);
+        struct movestate_aux *aux = movestate_aux_get(out->ent_uid);
+        if(!aux)
+            continue;
+        entity_apply_cp_stall(aux, !!(out->cp_flags & CP_OUT_STALLED));
+        entity_apply_update(out->ent_uid, ms, aux, &out->patch);
+        entity_apply_cp_side(aux, out->cp_side);
     }
 
     /* All this tick's position changes are enqueued; apply the batched fog
@@ -5354,6 +5485,11 @@ static void move_prepare_work(enum movement_hz hz)
     s_move_work.trace = (s_move_trace_min_radius >= 0.0f)
                       ? stalloc(&s_move_work.mem, ndynamic * sizeof(struct move_trace))
                       : NULL;
+    s_move_work.large_movables = stalloc(&s_move_work.mem,
+        MAX_LARGE_MOVABLES * sizeof(struct large_movable));
+    s_move_work.nlarge = 0;
+    s_move_work.small_max_radius[0] = 0.0f;
+    s_move_work.small_max_radius[1] = 0.0f;
     s_move_work.max_radius = s_max_sel_radius;
     s_move_work.hz = hz;
     s_move_work.type = (s_use_gpu ? WORK_TYPE_GPU : WORK_TYPE_CPU);
@@ -5880,11 +6016,9 @@ static void move_handle_hz_update(enum eventtype curr)
     register_callback_for_hz(next_hz);
 }
 
-static void entity_interpolation_step(uint32_t uid, int steps)
+static void entity_interpolation_step(uint32_t uid, struct movestate *ms, int steps)
 {
     ASSERT_IN_MAIN_THREAD();
-    struct movestate *ms = movestate_get(uid);
-    assert(ms);
 
     /* Settled units reject on the already-fetched movestate alone */
     if(ms->left == 0)
@@ -5922,6 +6056,9 @@ static void interpolate_tick(void *user, void *event)
     if(s_move_tick_queued)
         return;
 
+    if(s_move_split_pending)
+        return;
+
     /* Perform a maximum of one interpolation per frame. */
     if(g_frame_idx == s_last_interpolate_tick)
         return;
@@ -5938,27 +6075,27 @@ static void interpolate_tick(void *user, void *event)
     PERF_ENTER();
     bool coalese = E_QueuedThisFrame(EVENT_20HZ_TICK);
 
+    /* Coalese together queued updates when possible */
+    int steps = coalese ? 2 : 1;
+
     /* Iterate over all the entities and advance the position forward
      * by one interpolated step */
-    uint32_t key;
-    kh_foreach_key(s_entity_state_table, key, {
-        /* Coalese together queued updates when possible */
-        int steps = coalese ? 2 : 1;
-        entity_interpolation_step(key, steps);
-    });
+    for(khiter_t k = kh_begin(s_entity_state_table); k != kh_end(s_entity_state_table); k++) {
+        if(!kh_exist(s_entity_state_table, k))
+            continue;
+        entity_interpolation_step(kh_key(s_entity_state_table, k),
+            &kh_value(s_entity_state_table, k), steps);
+    }
 
     s_last_interpolate_tick = g_frame_idx;
     PERF_RETURN_VOID();
 }
 
-static struct result move_los_peek_task(void *arg)
+static void move_los_peek_work(int begin_idx, int end_idx)
 {
-    uint64_t t0 = SDL_GetPerformanceCounter();
-    struct move_task_arg *move_arg = arg;
     const struct map *map = s_move_work.gamestate.map;
-    size_t ncomputed = 0;
 
-    for(int i = move_arg->begin_idx; i <= move_arg->end_idx; i++) {
+    for(int i = begin_idx; i <= end_idx; i++) {
 
         struct move_work_in *in = &s_move_work.in[i];
         const struct movestate *ms = movestate_get(in->ent_uid);
@@ -5978,16 +6115,37 @@ static struct result move_los_peek_task(void *arg)
             bool present;
             bool vis = M_NavHasDestLOSCached(map, fl->dest_id, pos, &present);
             in->has_dest_los = present && vis;
-            in->needs_los_build = !present;
+            in->needs_los_build = !present
+                               || M_NavDestLOSRebuildDue(map, fl->dest_id, pos);
             in->los_queried = true;
         }
+    }
+}
+
+static struct result move_los_peek_task(void *arg)
+{
+    uint64_t t0 = SDL_GetPerformanceCounter();
+    struct move_task_arg *move_arg = arg;
+    size_t ncomputed = 0;
+
+    for(int i = move_arg->begin_idx; i <= move_arg->end_idx; i++) {
+
+        move_los_peek_work(i, i);
         ncomputed++;
 
-        if(ncomputed % 16 == 0)
+        if(ncomputed % 128 == 0)
             Task_Yield();
     }
     Perf_NavParallelAddSince(t0);
     return NULL_RESULT;
+}
+
+static void move_los_peek_range(int begin, int end, void *arg)
+{
+    (void)arg;
+    uint64_t t0 = SDL_GetPerformanceCounter();
+    move_los_peek_work(begin, end);
+    Perf_NavParallelAddSince(t0);
 }
 
 static void compute_los_state(void)
@@ -5996,8 +6154,12 @@ static void compute_los_state(void)
 
     /* Parallel read: peek each unit's cached LOS read-only and flag the misses. */
     uint64_t phase_start = SDL_GetPerformanceCounter();
-    move_submit_cpu_work(move_los_peek_task);
-    move_complete_cpu_work();
+    if(s_move_parallel_executor) {
+        Sched_ParallelFor(move_los_peek_range, NULL, s_move_work.nwork, 256);
+    }else{
+        move_submit_cpu_work(move_los_peek_task);
+        move_complete_cpu_work();
+    }
     s_last_nav_tick_stats.los_peek_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
 
@@ -6006,7 +6168,7 @@ static void compute_los_state(void)
      */
     phase_start = SDL_GetPerformanceCounter();
     const struct map *map = s_move_work.gamestate.map;
-    unsigned checked = 0, misses = 0;
+    unsigned checked = 0, misses = 0, stale_rebuilds = 0;
     size_t nwork = s_move_work.nwork;
     for(size_t k = 0; k < nwork; k++) {
 
@@ -6023,18 +6185,26 @@ static void compute_los_state(void)
 
         /* The needs_los_build flag is a snapshot from the parallel peek: an
          * earlier build this tick may have already cached this (dest, chunk)
-         * LOS field. A hit here costs no rebuild budget. */
+         * LOS field. A hit here costs no rebuild budget. A stale-served entry
+         * whose rebuild is due keeps its answer but falls through to the
+         * budgeted rebuild below. */
         bool present;
         bool vis = M_NavHasDestLOSCached(map, fl->dest_id, pos, &present);
         if(present) {
             in->has_dest_los = vis;
-            continue;
+            if(!M_NavDestLOSRebuildDue(map, fl->dest_id, pos))
+                continue;
         }
 
         /* Neither does an already-recorded chain build */
         if(M_NavDestLOSPending(map, fl->dest_id, pos)) {
             in->los_deferred = true;
             continue;
+        }
+        if(present) {
+            if(stale_rebuilds == MAX_LOS_STALE_REBUILDS_PER_TICK)
+                continue;
+            stale_rebuilds++;
         }
         misses++;
 
@@ -6215,8 +6385,12 @@ static void compute_path_requests(uint64_t dispatch_ticks)
 static void fork_join_desired_velocity(void)
 {
     PERF_ENTER();
-    move_submit_cpu_work(move_dv_task);
-    move_complete_cpu_work();
+    if(s_move_parallel_executor) {
+        Sched_ParallelFor(move_dv_range, NULL, s_move_work.nwork, 256);
+    }else{
+        move_submit_cpu_work(move_dv_task);
+        move_complete_cpu_work();
+    }
     PERF_RETURN_VOID();
 }
 
@@ -6224,8 +6398,12 @@ static void fork_join_velocity_computations(void)
 {
     switch(s_move_work.type) {
     case WORK_TYPE_CPU:
-        move_submit_cpu_work(move_velocity_task);
-        move_complete_cpu_work();
+        if(s_move_parallel_executor) {
+            Sched_ParallelFor(move_velocity_range, NULL, s_move_work.nwork, 64);
+        }else{
+            move_submit_cpu_work(move_velocity_task);
+            move_complete_cpu_work();
+        }
         break;
     case WORK_TYPE_GPU:
         move_submit_gpu_velocity_work();
@@ -6237,6 +6415,13 @@ static void fork_join_velocity_computations(void)
 static void fork_join_state_updates(void)
 {
     PERF_ENTER();
+    if(s_move_parallel_executor) {
+        PERF_PUSH("move::state updates");
+        Sched_ParallelFor(move_update_range, NULL, s_move_work.nwork, 256);
+        PERF_POP();
+        PERF_RETURN_VOID();
+    }
+
     PERF_PUSH("move::submit state updates");
     move_submit_cpu_work(move_update_task);
     PERF_POP();
@@ -6381,11 +6566,13 @@ static void resume_stranded_formation_units(void)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    uint32_t uid;
-    kh_foreach_key(s_entity_state_table, uid, {
+    for(khiter_t k = kh_begin(s_entity_state_table); k != kh_end(s_entity_state_table); k++) {
 
-        struct movestate *ms = movestate_get(uid);
-        if(!ms || ms->state != STATE_ARRIVED)
+        if(!kh_exist(s_entity_state_table, k))
+            continue;
+        uint32_t uid = kh_key(s_entity_state_table, k);
+        struct movestate *ms = &kh_value(s_entity_state_table, k);
+        if(ms->state != STATE_ARRIVED)
             continue;
         if(!G_EntityExists(uid))
             continue;
@@ -6425,7 +6612,7 @@ static void resume_stranded_formation_units(void)
             entity_unblock(uid);
         move_notify_motion_start(uid, ms);
         ms->state = STATE_MOVING_IN_FORMATION;
-    });
+    }
 }
 
 /* Waiting units aren't in the per-tick work; tick their resume countdown here. */
@@ -6433,11 +6620,13 @@ static void resume_waiting_units(void)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    uint32_t uid;
-    kh_foreach_key(s_entity_state_table, uid, {
+    for(khiter_t k = kh_begin(s_entity_state_table); k != kh_end(s_entity_state_table); k++) {
 
-        struct movestate *ms = movestate_get(uid);
-        if(!ms || ms->state != STATE_WAITING)
+        if(!kh_exist(s_entity_state_table, k))
+            continue;
+        uint32_t uid = kh_key(s_entity_state_table, k);
+        struct movestate *ms = &kh_value(s_entity_state_table, k);
+        if(ms->state != STATE_WAITING)
             continue;
         if(!G_EntityExists(uid))
             continue;
@@ -6456,7 +6645,7 @@ static void resume_waiting_units(void)
             entity_unblock(uid);
         move_notify_motion_start(uid, ms);
         ms->state = aux->wait_prev;
-    });
+    }
 }
 
 /* Stopped held units aren't in the per-tick work; pivot them toward their combat facing here. */
@@ -6464,11 +6653,13 @@ static void pivot_held_still_units(void)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    uint32_t uid;
-    kh_foreach_key(s_entity_state_table, uid, {
+    for(khiter_t k = kh_begin(s_entity_state_table); k != kh_end(s_entity_state_table); k++) {
 
-        struct movestate *ms = movestate_get(uid);
-        if(!ms || !ent_still(ms))
+        if(!kh_exist(s_entity_state_table, k))
+            continue;
+        uint32_t uid = kh_key(s_entity_state_table, k);
+        struct movestate *ms = &kh_value(s_entity_state_table, k);
+        if(!ent_still(ms))
             continue;
         if(!(G_FlagsGet(uid) & ENTITY_FLAG_COMBAT_HELD))
             continue;
@@ -6480,7 +6671,7 @@ static void pivot_held_still_units(void)
         Entity_SetRot(uid, next);
         ms->prev_rot = next;
         ms->next_rot = next;
-    });
+    }
 }
 
 static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
@@ -6498,6 +6689,11 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
     s_move_trace_min_radius =
         (Settings_Get("pf.debug.log_move_trace_min_radius", &trace_setting) == SS_OKAY)
         ? trace_setting.as_float : -1.0f;
+
+    struct sval exec_setting;
+    s_move_parallel_executor =
+        (Settings_Get("pf.debug.move_parallel_executor", &exec_setting) == SS_OKAY)
+        && exec_setting.as_bool;
     enum selection_type seltype;
     s_move_trace_sel = G_Sel_Get(&seltype);
 
@@ -6520,7 +6716,22 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
     s_last_nav_tick_stats.cmds_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
 
-    phase_start = SDL_GetPerformanceCounter();
+    s_last_nav_tick_stats.main_us =
+        perf_ticks_to_us(SDL_GetPerformanceCounter() - tick_start);
+
+    s_move_split_pending = true;
+    s_split_frame = g_frame_idx;
+    s_split_hz = hz;
+    PERF_POP();
+}
+
+static void move_do_tick_submit(enum movement_hz hz)
+{
+    ASSERT_IN_MAIN_THREAD();
+    PERF_PUSH("movement::tick submit");
+    uint64_t tick_start = SDL_GetPerformanceCounter();
+
+    uint64_t phase_start = SDL_GetPerformanceCounter();
     move_release_gamestate();
     uint64_t copy_ticks = SDL_GetPerformanceCounter() - phase_start;
 
@@ -6555,11 +6766,12 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
     s_last_nav_tick_stats.nstate_seek = 0;
     s_last_nav_tick_stats.nstate_waiting = 0;
     s_last_nav_tick_stats.nstate_turning = 0;
-    uint32_t curr;
-    kh_foreach_key(s_entity_state_table, curr, {
+    for(khiter_t it = kh_begin(s_entity_state_table); it != kh_end(s_entity_state_table); it++) {
 
-        struct movestate *ms = movestate_get(curr);
-        assert(ms);
+        if(!kh_exist(s_entity_state_table, it))
+            continue;
+        uint32_t curr = kh_key(s_entity_state_table, it);
+        struct movestate *ms = &kh_value(s_entity_state_table, it);
 
         switch(ms->state) {
         case STATE_ARRIVED:      s_last_nav_tick_stats.nstate_arrived++; break;
@@ -6568,6 +6780,24 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
         case STATE_TURNING:      s_last_nav_tick_stats.nstate_turning++; break;
         default:                 s_last_nav_tick_stats.nstate_moving++;  break;
         }
+
+        /* Classify every movable, still ones included: a still giant is a
+         * static neighbour the crowd must still avoid. */
+        float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr);
+        uint32_t curr_flags = G_FlagsGetFrom(s_move_work.gamestate.flags, curr);
+        int curr_class = (curr_flags & ENTITY_FLAG_AIR) ? 1 : 0;
+        if(radius > LARGE_MOVABLE_RADIUS && s_move_work.nlarge < MAX_LARGE_MOVABLES) {
+            s_move_work.large_movables[s_move_work.nlarge++] = (struct large_movable){
+                .xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr),
+                .radius = radius,
+                .flags = curr_flags,
+                .uid = curr
+            };
+        }else{
+            s_move_work.small_max_radius[curr_class] =
+                MAX(s_move_work.small_max_radius[curr_class], radius);
+        }
+
         if(ent_still(ms)) {
             struct movestate_aux *saux = movestate_aux_get(curr);
             saux->parked = false;
@@ -6585,8 +6815,6 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
         }
 
         vec2_t pos = (vec2_t){ms->prev_pos.x, ms->prev_pos.z};
-        float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr);
-        s_max_sel_radius = MAX(s_max_sel_radius, radius);
 
         struct cp_ent curr_cp = (struct cp_ent) {
             .xz_pos = pos,
@@ -6660,15 +6888,16 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
             .fstate.target_orientation = fss.target_orientation,
             .cell_arrival_vdes = cell_arrival_vdes
         });
-    });
+    }
     s_last_nav_tick_stats.submit_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
     PERF_POP();
 
     nav_tick_submit_work();
 
-    s_last_nav_tick_stats.main_us =
+    s_last_nav_tick_stats.main_us +=
         perf_ticks_to_us(SDL_GetPerformanceCounter() - tick_start);
+    s_last_interpolate_tick = g_frame_idx;
     PERF_POP();
 }
 
@@ -6676,6 +6905,8 @@ static void move_tick(void *user, void *event)
 {
     /* If we are backed up, drop excess events */
     if(g_frame_idx == s_last_tick)
+        return;
+    if(s_move_split_pending)
         return;
 
     enum eventtype curr_event = (uintptr_t)user;
@@ -6707,10 +6938,22 @@ static void handle_queued_tick(void)
     move_do_tick(curr_event, hz);
 }
 
+static void handle_split_submit(void)
+{
+    if(!s_move_split_pending)
+        return;
+    if(g_frame_idx == s_split_frame)
+        return;
+
+    s_move_split_pending = false;
+    move_do_tick_submit(s_split_hz);
+}
+
 static void on_update(void *user, void *event)
 {
     stalloc_clear(&s_eventargs);
     handle_queued_tick();
+    handle_split_submit();
 }
 
 static void nav_cancel_gpu_work(void)
@@ -6797,6 +7040,17 @@ bool G_Move_Init(const struct map *map)
         return NULL;
     }
 
+    if(NULL == (s_block_refs = kh_init(blockref))) {
+        stalloc_destroy(&s_eventargs);
+        stalloc_destroy(&s_move_work.mem);
+        kh_destroy(aabb, s_aabb_cache);
+        kh_destroy(findex, s_flock_index);
+        kh_destroy(auxstate, s_entity_aux_table);
+        kh_destroy(state, s_entity_state_table);
+        queue_cmd_destroy(&s_move_commands);
+        return NULL;
+    }
+
     vec_entity_init(&s_move_markers);
     vec_flock_init(&s_flocks);
 
@@ -6827,6 +7081,7 @@ void G_Move_Shutdown(void)
         nav_cancel_gpu_work();
     }
     s_move_tick_queued = false;
+    s_move_split_pending = false;
     s_map = NULL;
 
     unregister_callback_for_hz(s_move_hz);
@@ -6853,6 +7108,7 @@ void G_Move_Shutdown(void)
     kh_destroy(findex, s_flock_index);
     kh_destroy(auxstate, s_entity_aux_table);
     kh_destroy(state, s_entity_state_table);
+    kh_destroy(blockref, s_block_refs);
 }
 
 bool G_Move_HasWork(void)
@@ -6871,6 +7127,7 @@ void G_Move_FlushWork(void)
     if(nav_tick_finish_work() == WORK_INCOMPLETE) {
         nav_cancel_gpu_work();
     }
+    s_move_split_pending = false;
 
     stalloc_clear(&s_move_work.mem);
     s_move_work.in = NULL;
