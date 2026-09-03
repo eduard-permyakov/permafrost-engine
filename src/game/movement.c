@@ -3339,12 +3339,21 @@ static vec2_t intended_heading(vec2_t vdes, vec2_t new_vel)
 }
 
 static quat_t orient_to_velocity_history(const struct movestate *ms,
-                                         const struct movestate_aux *aux)
+                                         const struct movestate_aux *aux, vec2_t vdes)
 {
     vec2_t wma = vel_wma(aux);
-    if(PFM_Vec2_Len(&wma) > EPSILON)
-        return turn_toward(ms->next_rot, dir_quat_from_velocity(wma), SCALED_MAX_TURN_RATE);
-    return ms->next_rot;
+    if(PFM_Vec2_Len(&wma) <= EPSILON)
+        return ms->next_rot;
+
+    /* History opposing the intent is displacement by the crowd, not a
+     * heading: chasing it commits the facing to a full pirouette by the time
+     * the stale samples wash out. Hold the facing instead; a unit giving
+     * ground keeps fronting the way it means to go.
+     */
+    if(PFM_Vec2_Len(&vdes) > EPSILON && PFM_Vec2_Dot(&wma, &vdes) < 0.0f)
+        return ms->next_rot;
+
+    return turn_toward(ms->next_rot, dir_quat_from_velocity(wma), SCALED_MAX_TURN_RATE);
 }
 
 /* Derive the patch that should be applied onto the movestate 
@@ -3446,7 +3455,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         /* Being shoved off the cell to let a neighbour by is not a heading. */
         out->next_nrot = aux->parked
             ? turn_toward(ms->next_rot, in->fstate.target_orientation, SCALED_MAX_TURN_RATE)
-            : orient_to_velocity_history(ms, aux);
+            : orient_to_velocity_history(ms, aux, vdes);
         out->flags |= UPDATE_SET_ROTATION;
         out->next_rot = (out->next_left == 0) ? out->next_nrot : ms->next_rot;
 
