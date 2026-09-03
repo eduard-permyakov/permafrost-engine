@@ -739,6 +739,11 @@ void R_GL_SwapchainPresentLast(void);
 /* RENDER SPRITE                                                             */
 /*###########################################################################*/
 
+/* Load and upload a sprite sheet texture ahead of its first draw; a cold
+ * sheet decoded at draw time stalls the render thread mid-frame.
+ */
+void R_GL_SpritePreloadSheet(const char *filename);
+
 void R_GL_SpriteRenderBatch(struct sprite_desc *sprites, size_t *nsprites,
                             const struct camera *cam);
 

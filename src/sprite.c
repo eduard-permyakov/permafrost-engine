@@ -39,6 +39,8 @@
 #include "sprite.h"
 #include "event.h"
 #include "camera.h"
+#include "main.h"
+#include "lib/public/nk_file_browser.h"
 #include "game/public/game.h"
 #include "render/public/render.h"
 #include "render/public/render_ctrl.h"
@@ -202,6 +204,30 @@ static void add_ctx(struct sprite_ctx *ctx)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
+static void sprite_preload_sheets(void)
+{
+    char absdir[512];
+    pf_snprintf(absdir, sizeof(absdir), "%s/assets/sprites", g_basepath);
+
+    size_t nfiles = 0;
+    struct file *files = nk_file_list(absdir, &nfiles);
+    if(!files)
+        return;
+
+    for(int i = 0; i < nfiles; i++) {
+        if(files[i].is_dir)
+            continue;
+        R_PushCmd((struct rcmd){
+            .func = R_GL_SpritePreloadSheet,
+            .nargs = 1,
+            .args = {
+                R_PushArg(files[i].name, strlen(files[i].name) + 1),
+            },
+        });
+    }
+    PF_FREE(files);
+}
+
 bool Sprite_Init(void)
 {
     s_next_id = 0;
@@ -213,6 +239,7 @@ bool Sprite_Init(void)
     }
     E_Global_Register(EVENT_UPDATE_START, on_update, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_ALL);
+    sprite_preload_sheets();
     return true;
 }
 

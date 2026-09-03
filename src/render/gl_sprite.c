@@ -265,3 +265,15 @@ void R_GL_SpriteRenderBatch(struct sprite_desc *sprites, size_t *nsprites,
     GL_ASSERT_OK();
 }
 
+void R_GL_SpritePreloadSheet(const char *filename)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    char path[512];
+    pf_snprintf(path, sizeof(path), "assets/sprites/%s", filename);
+
+    GLuint tex;
+    R_GL_Texture_GetOrLoad(g_basepath, path, &tex);
+    GL_ASSERT_OK();
+}
+
