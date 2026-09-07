@@ -989,9 +989,14 @@ static void sched_task_service_request(struct task *task)
         break;
     case _SCHED_REQ_RUN_SYNC: {
 
+        /* The requester dequeued the task before asking, so it is exclusively
+         * claimed; run its slice off the lock, the way the workers do.
+         */
         struct task *requested = &s_tasks[((uint32_t)task->req.argv[0]) - 1];
+        SDL_UnlockMutex(s_request_lock);
         sched_task_run(requested);
         sched_task_service_request(requested);
+        SDL_LockMutex(s_request_lock);
         sched_reactivate(task);
         break;
     }
@@ -1232,8 +1237,15 @@ static bool do_run_sync(uint32_t tid, bool dequeue)
 
     if(idle && !pinned_off_main) {
 
+        /* The task is exclusively claimed; run the slice off the lock, the way
+         * the workers do. A fiber slice that spins awaiting a worker-owned
+         * task would otherwise pin the request lock for its whole slice, and
+         * the owner could never get in to service that task's request.
+         */
+        SDL_UnlockMutex(s_request_lock);
         sched_task_run(task);
         sched_task_service_request(task);
+        SDL_LockMutex(s_request_lock);
 
     }else if(!idle && !pinned_off_main) {
         SDL_UnlockMutex(s_request_lock);
