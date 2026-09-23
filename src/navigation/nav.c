@@ -231,6 +231,9 @@ struct los_work{
 __KHASH_IMPL(coord, static inline, khint32_t, struct coord, 1, kh_int_hash_func, kh_int_hash_equal)
 KHASH_SET_INIT_INT64(td)
 
+/* How far a ball flood looks for open ground when its goal tile is taken */
+#define OPEN_TILE_SEARCH_RINGS   (16)
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -5118,6 +5121,30 @@ done:
     return ret;
 }
 
+/* The nearest tile to 'center' that is neither blocked nor reserved, by
+ * Chebyshev ring, within the search reach.
+ */
+static bool n_nearest_open_tile(struct nav_private *priv, enum nav_layer layer,
+                                struct map_resolution res, struct tile_desc center,
+                                struct tile_desc *out)
+{
+    for(int ring = 1; ring <= OPEN_TILE_SEARCH_RINGS; ring++) {
+        for(int dr = -ring; dr <= ring; dr++) {
+        for(int dc = -ring; dc <= ring; dc++) {
+            if(MAX(abs(dr), abs(dc)) != ring)
+                continue;
+            struct tile_desc curr = center;
+            if(!M_Tile_RelativeDesc(res, &curr, dc, dr))
+                continue;
+            if(n_tile_blocked(priv, layer, curr) || n_tile_reserved(priv, layer, curr))
+                continue;
+            *out = curr;
+            return true;
+        }}
+    }
+    return false;
+}
+
 int N_ClosestConnectedPathableTiles(void *nav_private, enum nav_layer layer,
                             vec3_t map_pos, vec2_t xz_center, vec2_t *out, int maxout,
                             float max_radius)
@@ -5132,6 +5159,15 @@ int N_ClosestConnectedPathableTiles(void *nav_private, enum nav_layer layer,
     struct tile_desc center;
     if(!M_Tile_DescForPoint2D(res, map_pos, xz_center, &center))
         return 0;
+
+    /* A goal under a body or another group's ground seeds the flood from the
+     * nearest open tile, so that the footprint forms beside it instead of not
+     * at all.
+     */
+    if(n_tile_blocked(priv, layer, center) || n_tile_reserved(priv, layer, center)) {
+        if(!n_nearest_open_tile(priv, layer, res, center, &center))
+            return 0;
+    }
 
     vec2_t tile_dims = N_TileDims();
 

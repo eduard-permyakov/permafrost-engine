@@ -804,7 +804,7 @@ void G_Arrival_InitUnit(struct arrival_unit_state *us, vec2_t order_pos)
 
 void G_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2_t target_xz,
                            enum nav_layer layer, float unit_radius, int total_members,
-                           const struct arrival_member *members, int nmembers)
+                           const struct arrival_member *members, int nmembers, bool plan)
 {
     bool built = (as->phase != ARRIVAL_PHASE_INACTIVE);
     if(built) {
@@ -822,7 +822,7 @@ void G_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2
     }else{
         if(total_members < ARRIVAL_MIN_UNITS)
             return;
-        if(!arrival_near_goal(members, nmembers, target_xz))
+        if(!plan && !arrival_near_goal(members, nmembers, target_xz))
             return;
     }
 
@@ -839,6 +839,12 @@ void G_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2
         as->centre = M_NavClosestPathable(map, layer, target_xz, &snapped) ? snapped : target_xz;
         as->axis = arrival_approach_axis(members, nmembers, target_xz);
         arrival_build_slots(as, map);
+        /* A goal under a body or another group's ground puts the footprint
+         * beside it; the centre follows, so the slots' lines to it stay on
+         * the footprint and the approach heads for open ground.
+         */
+        if(as->num_slots > 0 && !arrival_in_region(as, map, as->centre))
+            as->centre = as->slots[0];
         arrival_thin_centered_slots(as, map, total_members, ARRIVAL_SLOT_SPACING * unit_radius);
 
         /* Drop slots whose straight line to the centre leaves the goal region: the flood pops by
@@ -1152,8 +1158,9 @@ bool G_ArrivalGroup_IsActive(const struct arrival_group *grp)
     return false;
 }
 
-void G_ArrivalGroup_Update(struct arrival_group *grp, const struct map *map, vec2_t target_xz,
-                           const struct arrival_member *members, int nmembers)
+static void arrival_group_update(struct arrival_group *grp, const struct map *map,
+                                 vec2_t target_xz, const struct arrival_member *members,
+                                 int nmembers, bool plan)
 {
     STALLOC(struct arrival_member, sub, nmembers > 0 ? nmembers : 1);
     for(int l = 0; l < NAV_LAYER_MAX; l++) {
@@ -1185,9 +1192,22 @@ void G_ArrivalGroup_Update(struct arrival_group *grp, const struct map *map, vec
             memset(grp->layers[l], 0, sizeof(struct arrival_state));
             G_Arrival_InitFlock(grp->layers[l]);
         }
-        G_Arrival_UpdateFlock(grp->layers[l], map, target_xz, (enum nav_layer)l, maxr, sn, sub, sn);
+        G_Arrival_UpdateFlock(grp->layers[l], map, target_xz, (enum nav_layer)l, maxr, sn, sub, sn,
+            plan);
     }
     STFREE(sub);
+}
+
+void G_ArrivalGroup_Update(struct arrival_group *grp, const struct map *map, vec2_t target_xz,
+                           const struct arrival_member *members, int nmembers)
+{
+    arrival_group_update(grp, map, target_xz, members, nmembers, false);
+}
+
+void G_ArrivalGroup_Plan(struct arrival_group *grp, const struct map *map, vec2_t target_xz,
+                         const struct arrival_member *members, int nmembers)
+{
+    arrival_group_update(grp, map, target_xz, members, nmembers, true);
 }
 
 void G_ArrivalGroup_RequestFields(const struct arrival_group *grp, const struct map *map)

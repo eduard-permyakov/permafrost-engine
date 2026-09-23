@@ -278,6 +278,8 @@ struct flock{
     dest_id_t        dest_id;
     /* Group-arrival state, computed per nav layer present in the flock. */
     struct arrival_group arrival;
+    /* The landing ground is chosen and reserved on the tick after the order */
+    bool             plan_pending;
 };
 
 struct formation_state{
@@ -1400,10 +1402,10 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
         kh_destroy(entity, new_flock.ents);
         merge_flock->target_xz = target_xz;
         G_ArrivalGroup_Reset(&merge_flock->arrival);
+        merge_flock->plan_pending = true;
 
     }else{
-        formation_id_t fid;
-        int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, first);
+        new_flock.plan_pending = true;
         vec_flock_push(&s_flocks, new_flock);
     }
 
@@ -1449,11 +1451,21 @@ static void update_flock_arrival_fields(void)
         kh_foreach_key(flock->ents, first, { break; });
         if(first == NULL_UID || G_Formation_GetForEnt(first) != NULL_FID) {
             G_ArrivalGroup_Deactivate(&flock->arrival);
+            flock->plan_pending = false;
             continue;
         }
 
         STALLOC(struct arrival_member, members, kh_size(flock->ents));
         int n = build_arrival_members(flock, members, kh_size(flock->ents));
+        /* The landing ground is chosen and reserved as soon as the order is in,
+         * with every member the order brought, so that later orders fit around
+         * it. A formation's members land on its cells instead.
+         */
+        if(flock->plan_pending) {
+            flock->plan_pending = false;
+            G_ArrivalGroup_Reset(&flock->arrival);
+            G_ArrivalGroup_Plan(&flock->arrival, s_map, flock->target_xz, members, n);
+        }
         G_ArrivalGroup_Update(&flock->arrival, s_map, flock->target_xz, members, n);
         STFREE(members);
     }
@@ -4292,6 +4304,7 @@ static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack)
         assert(fl != flock_for_ent(uid));
         remove_from_flocks(uid);
         flock_add(fl, uid);
+        fl->plan_pending = true;
 
         struct movestate *ms = movestate_get(uid);
         assert(ms);
