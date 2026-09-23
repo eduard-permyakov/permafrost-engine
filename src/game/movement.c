@@ -291,7 +291,9 @@ struct flock{
     /* Ticks since a member last came nearer its goal or settled */
     int              noprogress_ticks;
     int              nsettled_prev;
-    /* The landing ground is chosen and reserved on the tick after the order */
+    /* The landing ground is chosen and reserved on the tick after the order
+     * and after every change of membership.
+     */
     bool             plan_pending;
 };
 
@@ -973,13 +975,15 @@ static struct movestate_aux *movestate_aux_get(uint32_t uid)
     return &kh_value(s_entity_aux_table, k);
 }
 
-static void flock_try_remove(struct flock *flock, uint32_t uid)
+static bool flock_try_remove(struct flock *flock, uint32_t uid)
 {
     khiter_t k;
     if((k = kh_get(entity, flock->ents, uid)) != kh_end(flock->ents)) {
         kh_del(entity, flock->ents, k);
         G_Formation_RemoveUnit(uid);
+        return true;
     }
+    return false;
 }
 
 static void flock_add(struct flock *flock, uint32_t uid)
@@ -1304,12 +1308,14 @@ static void remove_from_flocks(uint32_t uid)
     for(int i = vec_size(&s_flocks)-1; i >= 0; i--) {
 
         struct flock *curr_flock = &vec_AT(&s_flocks, i);
-        flock_try_remove(curr_flock, uid);
+        bool removed = flock_try_remove(curr_flock, uid);
 
         if(kh_size(curr_flock->ents) == 0) {
             kh_destroy(entity, curr_flock->ents);
             G_ArrivalGroup_Destroy(&curr_flock->arrival);
             vec_flock_del(&s_flocks, i);
+        }else if(removed) {
+            curr_flock->plan_pending = true;
         }
     }
     assert(NULL == flock_for_ent(uid));
