@@ -583,6 +583,17 @@ void   M_NavBlockersIncref(vec2_t xz_pos, float range, int faction_id,
 void   M_NavBlockersDecref(vec2_t xz_pos, float range, int faction_id, 
                            uint32_t flags, const struct map *map);
 
+/* ------------------------------------------------------------------------
+ * Reserve or release the ground a parked body of the given radius would
+ * stamp on the layers of the given layer's class. Placement treats reserved
+ * tiles as taken; flow fields ignore them.
+ * ------------------------------------------------------------------------
+ */
+void   M_NavReserveIncref(vec2_t xz_pos, float range, enum nav_layer layer,
+                          const struct map *map);
+void   M_NavReserveDecref(vec2_t xz_pos, float range, enum nav_layer layer,
+                          const struct map *map);
+
 void   M_NavBlockersIncrefOBB(const struct map *map, int faction_id, 
                               uint32_t flags, const struct obb *obb);
 void   M_NavBlockersDecrefOBB(const struct map *map, int faction_id, 

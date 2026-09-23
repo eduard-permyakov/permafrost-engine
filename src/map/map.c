@@ -953,6 +953,16 @@ void M_NavBlockersDecref(vec2_t xz_pos, float range, int faction_id,
     N_BlockersDecref(xz_pos, range, faction_id, flags, map->pos, map->nav_private);
 }
 
+void M_NavReserveIncref(vec2_t xz_pos, float range, enum nav_layer layer, const struct map *map)
+{
+    N_ReserveIncref(xz_pos, range, layer, map->pos, map->nav_private);
+}
+
+void M_NavReserveDecref(vec2_t xz_pos, float range, enum nav_layer layer, const struct map *map)
+{
+    N_ReserveDecref(xz_pos, range, layer, map->pos, map->nav_private);
+}
+
 void M_NavBlockersIncrefOBB(const struct map *map, int faction_id, 
                             uint32_t flags, const struct obb *obb)
 {

@@ -133,6 +133,11 @@ struct nav_chunk{
      * as impassable when computing flow fields. 
      */
     uint16_t        blockers[FIELD_RES_R][FIELD_RES_C];
+    /* Ground a group has claimed for its arrival, in the shape of the
+     * stamps its bodies will make once parked. Only placement reads it:
+     * reserved tiles may be walked across but not stood on.
+     */
+    uint16_t        reserved[FIELD_RES_R][FIELD_RES_C];
     /* Keep a reference count of how many unit of every faction are 
      * currently blocking the corresponding tile. This additional 
      * data allows determine units belonging to which faction are 

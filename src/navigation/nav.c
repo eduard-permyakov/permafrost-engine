@@ -327,6 +327,14 @@ static bool n_tile_blocked(struct nav_private *priv, enum nav_layer layer,
     return false;
 }
 
+static bool n_tile_reserved(struct nav_private *priv, enum nav_layer layer,
+                            const struct tile_desc td)
+{
+    struct nav_chunk *chunk = &priv->chunks[layer]
+                                           [IDX(td.chunk_r, priv->width, td.chunk_c)];
+    return chunk->reserved[td.tile_r][td.tile_c] > 0;
+}
+
 static struct map_resolution n_res(void *nav_private)
 {
     struct nav_private *priv = nav_private;
@@ -1333,6 +1341,73 @@ static void n_update_blockers_circle_air(struct nav_private *priv, vec2_t xz_pos
     n_update_blockers(priv, NAV_LAYER_AIR_7X7, faction_id, outline3x3, noutline3x3, ref_delta);
     n_update_blockers(priv, NAV_LAYER_AIR_7X7, faction_id, outline5x5, noutline5x5, ref_delta);
     n_update_blockers(priv, NAV_LAYER_AIR_7X7, faction_id, outline7x7, noutline7x7, ref_delta);
+}
+
+static void n_update_reserved(struct nav_private *priv, enum nav_layer layer,
+                              struct tile_desc *tds, size_t ntds, int ref_delta)
+{
+    if(!(priv->layer_mask & (1u << layer)))
+        return;
+
+    for(int i = 0; i < ntds; i++) {
+
+        struct tile_desc curr = tds[i];
+        if(curr.chunk_r < priv->window.min_r || curr.chunk_r > priv->window.max_r
+        || curr.chunk_c < priv->window.min_c || curr.chunk_c > priv->window.max_c)
+            continue;
+
+        struct nav_chunk *chunk =
+            &priv->chunks[layer][IDX(curr.chunk_r, priv->width, curr.chunk_c)];
+        assert(ref_delta < 0 ? chunk->reserved[curr.tile_r][curr.tile_c] >= -ref_delta : true);
+        chunk->reserved[curr.tile_r][curr.tile_c] += ref_delta;
+    }
+}
+
+/* A reservation is the stamp the body will make once parked: the disc on the
+ * class's 1X1 layer and the disc plus one ring per width step on the wider
+ * ones, matching n_update_blockers_circle_*.
+ */
+static void n_update_reserved_circle(struct nav_private *priv, vec2_t xz_pos, float range,
+                                     vec3_t map_pos, int ref_delta,
+                                     const enum nav_layer layers[4])
+{
+    struct tile_desc tds[1024];
+    int ntds = M_Tile_AllUnderCircle(n_res(priv), xz_pos, range, map_pos, tds, ARR_SIZE(tds));
+
+    struct tile_desc outlines[3][1024];
+    size_t noutlines[3];
+    noutlines[0] = M_Tile_Contour(ntds, tds, n_res(priv), outlines[0], ARR_SIZE(outlines[0]));
+    noutlines[1] = M_Tile_Contour(noutlines[0], outlines[0], n_res(priv), outlines[1],
+        ARR_SIZE(outlines[1]));
+    noutlines[2] = M_Tile_Contour(noutlines[1], outlines[1], n_res(priv), outlines[2],
+        ARR_SIZE(outlines[2]));
+
+    for(int i = 0; i < 4; i++) {
+        n_update_reserved(priv, layers[i], tds, ntds, ref_delta);
+        for(int ring = 0; ring < i; ring++) {
+            n_update_reserved(priv, layers[i], outlines[ring], noutlines[ring], ref_delta);
+        }
+    }
+}
+
+static void n_update_reserved_class(struct nav_private *priv, vec2_t xz_pos, float range,
+                                    enum nav_layer layer, vec3_t map_pos, int ref_delta)
+{
+    static const enum nav_layer ground[4] = {
+        NAV_LAYER_GROUND_1X1, NAV_LAYER_GROUND_3X3, NAV_LAYER_GROUND_5X5, NAV_LAYER_GROUND_7X7
+    };
+    static const enum nav_layer water[4] = {
+        NAV_LAYER_WATER_1X1, NAV_LAYER_WATER_3X3, NAV_LAYER_WATER_5X5, NAV_LAYER_WATER_7X7
+    };
+    static const enum nav_layer air[4] = {
+        NAV_LAYER_AIR_1X1, NAV_LAYER_AIR_3X3, NAV_LAYER_AIR_5X5, NAV_LAYER_AIR_7X7
+    };
+    if(layer >= NAV_LAYER_AIR_1X1) {
+        n_update_reserved_circle(priv, xz_pos, range, map_pos, ref_delta, air);
+    }else{
+        n_update_reserved_circle(priv, xz_pos, range, map_pos, ref_delta, water);
+        n_update_reserved_circle(priv, xz_pos, range, map_pos, ref_delta, ground);
+    }
 }
 
 static void n_update_blockers_obb_ground(struct nav_private *priv, const struct obb *obb, 
@@ -2934,6 +3009,7 @@ void *N_NewCtxForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
                 }
             }}
             memset(curr_chunk->blockers, 0, sizeof(curr_chunk->blockers));
+            memset(curr_chunk->reserved, 0, sizeof(curr_chunk->reserved));
             memset(curr_chunk->factions, 0, sizeof(curr_chunk->factions));
         }}
 
@@ -3611,6 +3687,7 @@ void N_RenderNavigationBlockers(void *nav_private, const struct map *map,
         *corners_base++ = (vec2_t){square_x - square_x_len, square_z};
 
         *colors_base++ = chunk->blockers[r][c] ? (vec3_t){1.0f, 0.0f, 0.0f}
+                       : chunk->reserved[r][c] ? (vec3_t){1.0f, 1.0f, 0.0f}
                                                : (vec3_t){0.0f, 1.0f, 0.0f};
     }}
 
@@ -5096,7 +5173,7 @@ int N_ClosestConnectedPathableTiles(void *nav_private, enum nav_layer layer,
                 break;
         }
 
-        if(!n_tile_blocked(priv, layer, curr)) {
+        if(!n_tile_blocked(priv, layer, curr) && !n_tile_reserved(priv, layer, curr)) {
             out[n++] = (vec2_t){
                 map_pos.x - (curr.chunk_c * FIELD_RES_C + curr.tile_c + 0.5f) * tile_dims.x,
                 map_pos.z + (curr.chunk_r * FIELD_RES_R + curr.tile_r + 0.5f) * tile_dims.z,
@@ -5111,7 +5188,7 @@ int N_ClosestConnectedPathableTiles(void *nav_private, enum nav_layer layer,
             if(kh_get(td, visited, td_key(&nb)) != kh_end(visited))
                 continue;
             kh_put(td, visited, td_key(&nb), &status);
-            if(n_tile_blocked(priv, layer, nb))
+            if(n_tile_blocked(priv, layer, nb) || n_tile_reserved(priv, layer, nb))
                 continue;
 
             vec2_t p = (vec2_t){
@@ -5540,6 +5617,18 @@ void N_BlockersDecref(vec2_t xz_pos, float range, int faction_id, uint32_t flags
         n_update_blockers_circle_water(nav_private, xz_pos, range, faction_id, map_pos, -1, dilate);
         n_update_blockers_circle_ground(nav_private, xz_pos, range, faction_id, map_pos, -1, dilate);
     }
+}
+
+void N_ReserveIncref(vec2_t xz_pos, float range, enum nav_layer layer, vec3_t map_pos,
+                     void *nav_private)
+{
+    n_update_reserved_class(nav_private, xz_pos, range, layer, map_pos, +1);
+}
+
+void N_ReserveDecref(vec2_t xz_pos, float range, enum nav_layer layer, vec3_t map_pos,
+                     void *nav_private)
+{
+    n_update_reserved_class(nav_private, xz_pos, range, layer, map_pos, -1);
 }
 
 void N_BlockersIncrefOBB(void *nav_private, int faction_id, uint32_t flags,
@@ -6153,7 +6242,8 @@ void N_CopyBlockedFieldView(void *nav_private, vec2_t center, vec3_t map_pos, in
             = &priv->chunks[layer][IDX(curr.chunk_r, priv->width, curr.chunk_c)];
         out_field[IDX(r, ncols, c)] =
             (chunk->cost_base[curr.tile_r][curr.tile_c] == COST_IMPASSABLE)
-         || (chunk->blockers[curr.tile_r][curr.tile_c] > 0);
+         || (chunk->blockers[curr.tile_r][curr.tile_c] > 0)
+         || (chunk->reserved[curr.tile_r][curr.tile_c] > 0);
     }}
 }
 
