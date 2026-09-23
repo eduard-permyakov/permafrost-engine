@@ -74,6 +74,9 @@ struct arrival_state{
     dest_id_t        com_dest_id;
     uint16_t         radius;
     float            unit_radius;
+    /* Whether the slots hold a reservation on the map they were built on. */
+    bool             reserved;
+    const struct map *reserve_map;
     int              num_slots;
     int              active_row;
     int              realloc_counter;

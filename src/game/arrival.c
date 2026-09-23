@@ -41,6 +41,7 @@
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../mem.h"
+#include "../settings.h"
 #include "../lib/public/attr.h"
 
 #include <math.h>
@@ -736,8 +737,45 @@ static bool arrival_load_one(struct SDL_RWops *stream, struct arrival_state *as)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
+/* The slots are the group's landing ground: reserved once built so that later
+ * orders fit around them, released with the footprint.
+ */
+static bool arrival_log_enabled(void)
+{
+    struct sval setting;
+    return (Settings_Get("pf.debug.log_perf_csv", &setting) == SS_OKAY) && setting.as_bool;
+}
+
+static void arrival_reserve_slots(struct arrival_state *as, const struct map *map)
+{
+    for(int i = 0; i < as->num_slots; i++) {
+        M_NavReserveIncref(as->slots[i], as->unit_radius, as->layer, map);
+    }
+    as->reserved = true;
+    as->reserve_map = map;
+    if(arrival_log_enabled()) {
+        fprintf(stdout, "[arrival-reserve] +,%d,%d,%.2f,%.1f,%.1f,%d\n", (int)as->layer,
+            as->num_slots, as->unit_radius, as->centre.x, as->centre.z, (int)as->radius);
+    }
+}
+
+static void arrival_release_slots(struct arrival_state *as)
+{
+    if(!as->reserved)
+        return;
+    for(int i = 0; i < as->num_slots; i++) {
+        M_NavReserveDecref(as->slots[i], as->unit_radius, as->layer, as->reserve_map);
+    }
+    as->reserved = false;
+    if(arrival_log_enabled()) {
+        fprintf(stdout, "[arrival-reserve] -,%d,%d,%.2f,%.1f,%.1f,%d\n", (int)as->layer,
+            as->num_slots, as->unit_radius, as->centre.x, as->centre.z, (int)as->radius);
+    }
+}
+
 void G_Arrival_InitFlock(struct arrival_state *as)
 {
+    arrival_release_slots(as);
     as->phase = ARRIVAL_PHASE_INACTIVE;
 }
 
@@ -815,6 +853,7 @@ void G_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2
             as->slots[kept++] = as->slots[si];
         }
         as->num_slots = kept;
+        arrival_reserve_slots(as, map);
         /* COM of the kept slots + a dest field toward it - the fallback seek target. */
         vec2_t com = (vec2_t){0.0f, 0.0f};
         for(int si = 0; si < as->num_slots; si++) {
@@ -1076,6 +1115,7 @@ void G_ArrivalGroup_Destroy(struct arrival_group *grp)
 {
     for(int l = 0; l < NAV_LAYER_MAX; l++) {
         if(grp->layers[l]) {
+            arrival_release_slots(grp->layers[l]);
             PF_FREE(grp->layers[l]);
             grp->layers[l] = NULL;
         }
@@ -1131,6 +1171,7 @@ void G_ArrivalGroup_Update(struct arrival_group *grp, const struct map *map, vec
         if(sn == 0) {
             /* No members on this layer: drop any stale footprint. */
             if(grp->layers[l]) {
+                arrival_release_slots(grp->layers[l]);
                 PF_FREE(grp->layers[l]);
                 grp->layers[l] = NULL;
             }
@@ -1141,6 +1182,7 @@ void G_ArrivalGroup_Update(struct arrival_group *grp, const struct map *map, vec
             grp->layers[l] = PF_MALLOC(sizeof(struct arrival_state));
             if(!grp->layers[l])
                 continue;
+            memset(grp->layers[l], 0, sizeof(struct arrival_state));
             G_Arrival_InitFlock(grp->layers[l]);
         }
         G_Arrival_UpdateFlock(grp->layers[l], map, target_xz, (enum nav_layer)l, maxr, sn, sub, sn);

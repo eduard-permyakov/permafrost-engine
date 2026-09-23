@@ -379,6 +379,8 @@ struct formation{
      * their stamps and read void under them. Transient.
      */
     uint32_t             snapshot_gen;
+    /* Whether the placed cells hold a reservation on the live map. */
+    bool                 reserved;
 };
 
 KHASH_MAP_INIT_INT(formation, struct formation)
@@ -394,6 +396,7 @@ static void complete_cell_field_work(struct subformation *formation, bool yield)
 static uint8_t *cell_get_field(uint32_t uid);
 static enum flow_dir cell_get_dir(const uint8_t *field, int arrival_res, int r, int c);
 static void invalidate_cell_arrival_fields(struct subformation *formation);
+static void reserve_cells(const struct map *map, struct formation *formation, int delta);
 
 static uint32_t subformation_leader(struct subformation *formation);
 static void subformation_anchor_and_heading(uint32_t leader, vec2_t orientation,
@@ -1070,8 +1073,70 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
     return success;
 }
 
+/* Cells go only on ground the members can reach from the target across free
+ * tiles: a pocket behind a wall, a parked crowd or another group's reserved
+ * ground would otherwise take cells its members can never fill.
+ */
+static void block_unreachable(uint8_t *occupied, int field_res, struct coord from)
+{
+    size_t n = (size_t)field_res * field_res;
+    uint8_t *seen = PF_MALLOC(n);
+    struct coord *queue = PF_MALLOC(n * sizeof(struct coord));
+    if(!seen || !queue) {
+        PF_FREE(seen);
+        PF_FREE(queue);
+        return;
+    }
+    memset(seen, 0, n);
+
+    from.r = CLAMP(from.r, 0, field_res - 1);
+    from.c = CLAMP(from.c, 0, field_res - 1);
+    /* A target under a body or a wall floods from the nearest free tile. */
+    for(int ring = 1; occupied[IDX(from.r, field_res, from.c)] != TILE_FREE
+                   && ring < field_res / 2; ring++) {
+        bool found = false;
+        for(int r = from.r - ring; r <= from.r + ring && !found; r++) {
+        for(int c = from.c - ring; c <= from.c + ring && !found; c++) {
+            if(r < 0 || r >= field_res || c < 0 || c >= field_res)
+                continue;
+            if(occupied[IDX(r, field_res, c)] == TILE_FREE) {
+                from = (struct coord){r, c};
+                found = true;
+            }
+        }}
+    }
+    if(occupied[IDX(from.r, field_res, from.c)] != TILE_FREE) {
+        PF_FREE(seen);
+        PF_FREE(queue);
+        return;
+    }
+
+    size_t head = 0, tail = 0;
+    queue[tail++] = from;
+    seen[IDX(from.r, field_res, from.c)] = 1;
+    while(head < tail) {
+        struct coord curr = queue[head++];
+        const struct coord deltas[] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+        for(int i = 0; i < ARR_SIZE(deltas); i++) {
+            int r = curr.r + deltas[i].r, c = curr.c + deltas[i].c;
+            if(r < 0 || r >= field_res || c < 0 || c >= field_res)
+                continue;
+            if(seen[IDX(r, field_res, c)] || occupied[IDX(r, field_res, c)] != TILE_FREE)
+                continue;
+            seen[IDX(r, field_res, c)] = 1;
+            queue[tail++] = (struct coord){r, c};
+        }
+    }
+    for(size_t i = 0; i < n; i++) {
+        if(occupied[i] == TILE_FREE && !seen[i])
+            occupied[i] = TILE_BLOCKED;
+    }
+    PF_FREE(seen);
+    PF_FREE(queue);
+}
+
 static void init_occupied_field(const struct map *map, enum nav_layer layer, vec2_t center,
-                                int field_res, uint8_t *occupied)
+                                vec2_t target, int field_res, uint8_t *occupied)
 {
     PERF_ENTER();
 
@@ -1079,6 +1144,7 @@ static void init_occupied_field(const struct map *map, enum nav_layer layer, vec
     for(int i = 0; i < field_res * field_res; i++) {
         occupied[i] = occupied[i] ? TILE_BLOCKED : TILE_FREE;
     }
+    block_unreachable(occupied, field_res, pos_to_tile(center, target, field_res));
 
     PERF_RETURN_VOID();
 }
@@ -3368,6 +3434,10 @@ static void destroy_subformation(struct subformation *formation)
 
 static void destroy_formation(struct formation *formation)
 {
+    if(formation->reserved) {
+        reserve_cells(s_map, formation, -1);
+        formation->reserved = false;
+    }
     for(int i = 0; i < vec_size(&formation->work); i++) {
         struct cell_assignment_work *work = &vec_AT(&formation->work, i);
         complete_cell_assignment_work(work, false);
@@ -4728,6 +4798,29 @@ vec2_t G_Formation_AutoOrientation(vec2_t target, const vec_entity_t *ents)
     return rotate_toward(facing, dir, MIN(dist / radius, 1.0f));
 }
 
+/* The placed cells are reserved on the map in the shape of the stamps their
+ * members will make, so a later order fits around this one's ground instead
+ * of laying cells on top of it.
+ */
+static void reserve_cells(const struct map *map, struct formation *formation, int delta)
+{
+    float box_radius = box_cell_radius(&formation->subformations);
+    for(int i = 0; i < vec_size(&formation->subformations); i++) {
+        struct subformation *sub = &vec_AT(&formation->subformations, i);
+        float radius = (formation->type == FORMATION_BOX) ? box_radius : sub->unit_radius;
+        for(int j = 0; j < vec_size(&sub->cells); j++) {
+            struct cell *cell = &vec_AT(&sub->cells, j);
+            if(cell->state == CELL_NOT_PLACED || cell->state == CELL_NOT_USED)
+                continue;
+            if(delta > 0) {
+                M_NavReserveIncref(cell->pos, radius, sub->layer, map);
+            }else{
+                M_NavReserveDecref(cell->pos, radius, sub->layer, map);
+            }
+        }
+    }
+}
+
 void G_Formation_Create(vec2_t target, vec2_t orientation, 
                         const vec_entity_t *ents, enum formation_type type)
 {
@@ -4774,7 +4867,7 @@ void G_Formation_Create(vec2_t target, vec2_t orientation,
     enum nav_layer layers[NAV_LAYER_MAX];
     size_t nlayers = formation_layers(&new->subformations, layers);
     for(int i = 0; i < nlayers; i++) {
-        init_occupied_field(s_map, layers[i], new->center, field_res,
+        init_occupied_field(s_map, layers[i], new->center, target, field_res,
             occupied_layer(new, layers[i]));
         init_islands_field(s_map, layers[i], new->center, field_res,
             islands_layer(new, layers[i]));
@@ -4796,6 +4889,8 @@ void G_Formation_Create(vec2_t target, vec2_t orientation,
         struct cell_assignment_work *work = &vec_AT(&new->work, i);
         cell_assignment_work_init(work, sub, fid, i);
     }
+    reserve_cells(s_map, new, +1);
+    new->reserved = true;
     dispatch_cell_assignment_work(new);
 }
 
@@ -5479,6 +5574,11 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
      * until the subformations have settled which those are. */
     struct map *map = M_AL_CopyWithFields(s_map, layers, nlayers,
         placement_window(s_map, formation.center, field_res));
+    /* The members' own bodies and the ground their current formations hold
+     * are theirs to move over, so the preview fits without them.
+     */
+    STALLOC(formation_id_t, released, vec_size(ents));
+    size_t nreleased = 0;
     for(int i = 0; i < vec_size(ents); i++) {
         uint32_t uid = vec_AT(ents, i);
         float radius = G_GetSelectionRadius(uid);
@@ -5488,10 +5588,26 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
         if(G_Move_Still(uid)) {
             M_NavBlockersDecref(pos, radius, faction_id, flags, map);
         }
+        formation_id_t fid = G_Formation_GetForEnt(uid);
+        if(fid == NULL_FID)
+            continue;
+        bool seen = false;
+        for(size_t j = 0; j < nreleased; j++) {
+            if(released[j] == fid)
+                seen = true;
+        }
+        if(seen)
+            continue;
+        released[nreleased++] = fid;
+        struct formation *held = formation_for_ent(uid);
+        if(held && held->reserved) {
+            reserve_cells(map, held, -1);
+        }
     }
+    STFREE(released);
 
     for(int i = 0; i < nlayers; i++) {
-        init_occupied_field(map, layers[i], formation.center, field_res,
+        init_occupied_field(map, layers[i], formation.center, target, field_res,
             occupied_layer(&formation, layers[i]));
         init_islands_field(map, layers[i], formation.center, field_res,
             islands_layer(&formation, layers[i]));
@@ -5845,6 +5961,8 @@ bool G_Formation_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_subformations);
         CHK_TRUE_JMP(attr.type == TYPE_INT, fail_load_subformations);
         new->root = &vec_AT(&new->subformations, attr.val.as_int);
+        reserve_cells(s_map, new, +1);
+        new->reserved = true;
 
         /* Load occupied fields */
         for(int l = 0; l < NAV_LAYER_MAX; l++) {
