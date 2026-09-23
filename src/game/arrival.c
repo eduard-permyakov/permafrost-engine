@@ -753,6 +753,7 @@ static void arrival_reserve_slots(struct arrival_state *as, const struct map *ma
     }
     as->reserved = true;
     as->reserve_map = map;
+    as->reserve_radius = as->unit_radius;
     if(arrival_log_enabled()) {
         fprintf(stdout, "[arrival-reserve] +,%d,%d,%.2f,%.1f,%.1f,%d\n", (int)as->layer,
             as->num_slots, as->unit_radius, as->centre.x, as->centre.z, (int)as->radius);
@@ -764,12 +765,12 @@ static void arrival_release_slots(struct arrival_state *as)
     if(!as->reserved)
         return;
     for(int i = 0; i < as->num_slots; i++) {
-        M_NavReserveDecref(as->slots[i], as->unit_radius, as->layer, as->reserve_map);
+        M_NavReserveDecref(as->slots[i], as->reserve_radius, as->layer, as->reserve_map);
     }
     as->reserved = false;
     if(arrival_log_enabled()) {
         fprintf(stdout, "[arrival-reserve] -,%d,%d,%.2f,%.1f,%.1f,%d\n", (int)as->layer,
-            as->num_slots, as->unit_radius, as->centre.x, as->centre.z, (int)as->radius);
+            as->num_slots, as->reserve_radius, as->centre.x, as->centre.z, (int)as->radius);
     }
 }
 
