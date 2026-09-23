@@ -4260,7 +4260,8 @@ static size_t subformation_index(struct formation *formation, struct subformatio
 static bool subformation_save_state(struct formation *parent, struct subformation *sub, 
                                     struct SDL_RWops *stream)
 {
-    size_t parent_idx = subformation_index(parent, sub->parent);
+    /* The root has no parent; the index helper would name subformation 0. */
+    int parent_idx = sub->parent ? (int)subformation_index(parent, sub->parent) : -1;
     struct attr parent_attr = (struct attr){
         .type = TYPE_INT,
         .val.as_int = parent_idx
@@ -4461,8 +4462,8 @@ static bool subformation_load_state(struct formation *parent, struct subformatio
     struct attr attr;
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
-    size_t parent_idx = attr.val.as_int;
-    sub->parent = &vec_AT(&parent->subformations, parent_idx);
+    int parent_idx = attr.val.as_int;
+    sub->parent = (parent_idx < 0) ? NULL : &vec_AT(&parent->subformations, parent_idx);
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
