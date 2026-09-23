@@ -6304,7 +6304,8 @@ static void n_clone_chunk(struct nav_chunk *dst, const struct nav_chunk *src)
 {
     const struct{ size_t off, len; } ranges[] = {
         {0, offsetof(struct nav_chunk, portal_travel_costs)},
-        {offsetof(struct nav_chunk, blockers), sizeof(src->blockers)},
+        {offsetof(struct nav_chunk, blockers),
+         offsetof(struct nav_chunk, factions) - offsetof(struct nav_chunk, blockers)},
         {offsetof(struct nav_chunk, islands),
          sizeof(struct nav_chunk) - offsetof(struct nav_chunk, islands)},
     };
