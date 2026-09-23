@@ -1392,7 +1392,7 @@ static vec2_t target_position(vec_entity_t *ents)
  * and 'lateral' columns to its right, on the pitch given by 'offsets'.
  */
 static vec2_t cell_lattice_pos(vec2_t origin, vec2_t orientation, vec2_t offsets,
-                               int depth, int lateral)
+                               float depth, float lateral)
 {
     vec2_t row_delta;
     PFM_Vec2_Normal(&orientation, &row_delta);
@@ -1444,23 +1444,39 @@ static bool lattice_cell_free(struct subformation *formation, vec2_t center,
         formation->layer, 0, COMMIT_NONE, field_res, occupied, islands_base);
 }
 
+struct rect_candidate{
+    int   depth, lateral;
+    float dist;
+};
+
+static int rect_candidate_cmp(const void *a, const void *b)
+{
+    const struct rect_candidate *ra = a, *rb = b;
+    return (ra->dist > rb->dist) - (ra->dist < rb->dist);
+}
+
 /* The shape the ratio constant asks for is the best case only. Ground which
  * will not take that rectangle does not refuse it, it bends it, since every
  * cell is laid down relative to its already displaced neighbour. So square the
  * rectangle off a column at a time until it does fit: a rank which cannot
  * spread wide enough grows deeper, a column which cannot reach back far enough
  * grows wider. Neither is taken past square, which is where the two meet.
+ *
+ * Ground that takes no rectangle at the anchor at all (another group's
+ * reserved ground on the target, say) is not bent around: the whole rectangle
+ * moves to the nearest clear ground instead, and the lattice it is laid on
+ * comes back in 'out_anchor'.
  */
-static void fit_dims_to_area(struct subformation *formation, enum formation_type type,
+static bool fit_dims_to_area(struct subformation *formation, enum formation_type type,
                              vec2_t center, vec2_t target_pos, vec2_t orientation,
                              vec2_t offsets, int field_res,
-                             uint8_t *occupied, uint16_t *islands)
+                             uint8_t *occupied, uint16_t *islands, vec2_t *out_anchor)
 {
     PERF_ENTER();
 
     size_t nunits = kh_size(formation->ents);
     if(nunits == 0)
-        PERF_RETURN_VOID();
+        PERF_RETURN(false);
 
     uint16_t *islands_base = islands + (size_t)formation->layer * field_res * field_res;
     struct coord dest = pos_to_tile(center, formation->reachable_target, field_res);
@@ -1468,7 +1484,7 @@ static void fit_dims_to_area(struct subformation *formation, enum formation_type
     dest.c = CLAMP(dest.c, 0, field_res - 1);
     uint16_t iid = islands_base[IDX(dest.r, field_res, dest.c)];
     if(iid == UINT16_MAX)
-        PERF_RETURN_VOID();
+        PERF_RETURN(false);
 
     /* Every other cell is laid out from the front centre one, and that one
      * settles on the nearest free tile to the target rather than on the target
@@ -1480,11 +1496,12 @@ static void fit_dims_to_area(struct subformation *formation, enum formation_type
     if(!nearest_free_tile(&seed, &anchor_tile, iid, 0, center, orientation,
                           formation->unit_radius, formation->layer, field_res,
                           occupied, islands_base))
-        PERF_RETURN_VOID();
+        PERF_RETURN(false);
     vec2_t anchor = tile_to_pos(anchor_tile, center, field_res);
 
     const int nents = (int)nunits;
     const int cols_ideal = (int)shape_ncols(shape_ratio(type), nunits);
+    const int rows_ideal = (int)shape_nrows(nunits, cols_ideal);
     const int step = (type == FORMATION_RANK) ? -1 : +1;
 
     int cols_max = 0, rows_max = 0;
@@ -1494,27 +1511,42 @@ static void fit_dims_to_area(struct subformation *formation, enum formation_type
         rows_max = MAX(rows_max, (int)shape_nrows(nunits, cols));
     }
     if(cols_max == 0)
-        PERF_RETURN_VOID();
+        PERF_RETURN(false);
 
     /* Every candidate rectangle is centred on the same front cell, so all of
-     * them are sub-rectangles of the widest and deepest one. Probe that once
-     * and answer each candidate from a summed-area table of the result.
+     * them are sub-rectangles of the widest and deepest one, and the ideal
+     * rectangle moved by up to 'reach' lattice steps in any direction is a
+     * sub-rectangle of that one grown by the reach. Probe that window once
+     * and answer every candidate from a summed-area table of the result.
      */
-    const size_t stride = (size_t)cols_max + 1;
-    int *sat = PF_CALLOC((size_t)(rows_max + 1) * stride, sizeof(int));
+    const int reach = MAX(rows_max, cols_max) + 1;
+    const int win_rows = rows_max + 2 * reach;
+    const int win_cols = cols_max + 2 * reach;
+    const size_t stride = (size_t)win_cols + 1;
+    int *sat = PF_CALLOC((size_t)(win_rows + 1) * stride, sizeof(int));
     if(!sat)
-        PERF_RETURN_VOID();
+        PERF_RETURN(false);
 
     const int lat_lo = -(cols_max / 2);
-    for(int d = 0; d < rows_max; d++) {
-    for(int l = 0; l < cols_max; l++) {
+    const int win_d0 = -reach;
+    const int win_l0 = lat_lo - reach;
+    for(int d = 0; d < win_rows; d++) {
+    for(int l = 0; l < win_cols; l++) {
         bool open = lattice_cell_free(formation, center, anchor, orientation, offsets,
-            d, lat_lo + l, iid, field_res, occupied, islands_base);
+            win_d0 + d, win_l0 + l, iid, field_res, occupied, islands_base);
         sat[(d + 1) * stride + (l + 1)] = (open ? 1 : 0)
                                         + sat[d * stride + (l + 1)]
                                         + sat[(d + 1) * stride + l]
                                         - sat[d * stride + l];
     }}
+    /* Open cells of the rectangle 'rows' deep and 'cols' wide whose front
+     * left cell is at lattice (depth, lateral).
+     */
+    #define RECT_OPEN(_depth, _lateral, _rows, _cols)                           \
+        (sat[((_depth) - win_d0 + (_rows)) * stride + ((_lateral) - win_l0 + (_cols))]  \
+       - sat[((_depth) - win_d0) * stride + ((_lateral) - win_l0 + (_cols))]            \
+       - sat[((_depth) - win_d0 + (_rows)) * stride + ((_lateral) - win_l0)]            \
+       + sat[((_depth) - win_d0) * stride + ((_lateral) - win_l0)])
 
     /* Walking out from the ideal shape means the first candidate to pass is
      * always the one closest to the constant. A rectangle with room for
@@ -1526,11 +1558,7 @@ static void fit_dims_to_area(struct subformation *formation, enum formation_type
                             && shape_holds(type, nunits, cols); cols += step) {
 
         int rows = (int)shape_nrows(nunits, cols);
-        int lo = (-(cols / 2)) - lat_lo;
-        int hi = (cols - 1 - (cols / 2)) - lat_lo;
-        assert((lo >= 0) && (hi < cols_max));
-
-        int nopen = sat[rows * stride + (hi + 1)] - sat[rows * stride + lo];
+        int nopen = RECT_OPEN(0, -(cols / 2), rows, cols);
         if((nopen == rows * cols) && !clear_cols)
             clear_cols = cols;
         if((nopen >= nents) && !fit_cols)
@@ -1540,23 +1568,65 @@ static void fit_dims_to_area(struct subformation *formation, enum formation_type
             best_cols = cols;
         }
     }
+
+    /* No rectangle at the anchor is clear: move the ideal one to the nearest
+     * clear ground within reach, measured from where the order pointed.
+     */
+    bool shifted = false;
+    if(!clear_cols) {
+        const int span = 2 * reach + 1;
+        struct rect_candidate *cands = PF_MALLOC((size_t)span * span * sizeof(*cands));
+        if(cands) {
+            size_t ncands = 0;
+            for(int dd = -reach; dd <= reach; dd++) {
+            for(int dl = -reach; dl <= reach; dl++) {
+                vec2_t mid = cell_lattice_pos(anchor, orientation, offsets,
+                    dd + (rows_ideal - 1) / 2.0f, dl + (cols_ideal - 1) / 2.0f - (cols_ideal / 2));
+                vec2_t delta;
+                PFM_Vec2_Sub(&mid, &target_pos, &delta);
+                cands[ncands++] = (struct rect_candidate){dd, dl, PFM_Vec2_Len(&delta)};
+            }}
+            qsort(cands, ncands, sizeof(*cands), rect_candidate_cmp);
+            for(size_t i = 0; i < ncands; i++) {
+                int nopen = RECT_OPEN(cands[i].depth, cands[i].lateral - (cols_ideal / 2),
+                    rows_ideal, cols_ideal);
+                if(nopen != rows_ideal * cols_ideal)
+                    continue;
+                *out_anchor = cell_lattice_pos(anchor, orientation, offsets,
+                    cands[i].depth, cands[i].lateral);
+                shifted = true;
+                clear_cols = cols_ideal;
+                break;
+            }
+            PF_FREE(cands);
+        }
+    }
+    #undef RECT_OPEN
     PF_FREE(sat);
+
+    struct sval log_setting;
+    if((Settings_Get("pf.debug.log_perf_csv", &log_setting) == SS_OKAY) && log_setting.as_bool) {
+        fprintf(stdout, "[fit] layer=%d n=%zu anchor=(%.1f,%.1f) clear=%d fit=%d best=%d shifted=%d"
+            " to=(%.1f,%.1f)\n", (int)formation->layer, nunits, anchor.x, anchor.z,
+            clear_cols, fit_cols, best_cols, (int)shifted,
+            shifted ? out_anchor->x : 0.0f, shifted ? out_anchor->z : 0.0f);
+    }
 
     int ncols = clear_cols ? clear_cols : (fit_cols ? fit_cols : best_cols);
     int nrows = (int)shape_nrows(nunits, ncols);
     if(((size_t)ncols == formation->ncols) && ((size_t)nrows == formation->nrows))
-        PERF_RETURN_VOID();
+        PERF_RETURN(shifted);
 
     size_t total = (size_t)nrows * ncols;
     if(!vec_cell_resize(&formation->cells, total))
-        PERF_RETURN_VOID();
+        PERF_RETURN(false);
     formation->cells.size = total;
     for(size_t i = 0; i < total; i++) {
         vec_AT(&formation->cells, i) = (struct cell){CELL_NOT_PLACED};
     }
     formation->nrows = nrows;
     formation->ncols = ncols;
-    PERF_RETURN_VOID();
+    PERF_RETURN(shifted);
 }
 
 static void place_subformation(enum formation_type type, float cell_radius,
@@ -1572,9 +1642,11 @@ static void place_subformation(enum formation_type type, float cell_radius,
     vec2_t target_pos = subformation_target_pos(type, formation, target, orientation, 
         target_offsets);
 
+    vec2_t shifted_anchor = (vec2_t){0.0f, 0.0f};
+    bool shifted = false;
     if(type != FORMATION_BOX) {
-        fit_dims_to_area(formation, type, center, target_pos, orientation,
-            target_offsets, field_res, occupied, islands);
+        shifted = fit_dims_to_area(formation, type, center, target_pos, orientation,
+            target_offsets, field_res, occupied, islands, &shifted_anchor);
     }
 
     struct coord *visited = PF_MALLOC((size_t)field_res * field_res * sizeof(struct coord));
@@ -1594,7 +1666,7 @@ static void place_subformation(enum formation_type type, float cell_radius,
     bool box = (type == FORMATION_BOX);
     struct subformation *lattice_root = box ? subformation_root(formation) : formation;
     int inset = (lattice_root->ncols - ncols) / 2;
-    vec2_t lattice_origin;
+    vec2_t lattice_origin = (vec2_t){0.0f, 0.0f};
     bool have_origin = false;
 
     if(box && (formation != lattice_root)) {
@@ -1602,6 +1674,9 @@ static void place_subformation(enum formation_type type, float cell_radius,
             CELL_IDX(lattice_root->nrows - 1, lattice_root->ncols / 2, lattice_root->ncols));
         have_origin = (seed->state == CELL_NOT_OCCUPIED) || (seed->state == CELL_OCCUPIED);
         lattice_origin = seed->pos;
+    }else if(shifted) {
+        have_origin = true;
+        lattice_origin = shifted_anchor;
     }
 
     /* Start by placing the center-most front row cell, Position the cells on
