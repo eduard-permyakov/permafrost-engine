@@ -390,13 +390,15 @@ KHASH_MAP_INIT_INT(type, enum formation_type);
 static void complete_cell_assignment_work(struct cell_assignment_work *work, bool yield);
 static void cell_assignment_work_destroy(struct cell_assignment_work *work);
 static void collect_cell_assignment_result(const struct cell_assignment_work *work, 
-                                           struct subformation *out);
+                                           struct formation *formation, struct subformation *out);
 
 static void complete_cell_field_work(struct subformation *formation, bool yield);
 static uint8_t *cell_get_field(uint32_t uid);
 static enum flow_dir cell_get_dir(const uint8_t *field, int arrival_res, int r, int c);
 static void invalidate_cell_arrival_fields(struct subformation *formation);
 static void reserve_cells(struct formation *formation, int delta);
+static void release_cell(struct formation *formation, struct subformation *sub,
+                         struct cell *cell);
 
 static uint32_t subformation_leader(struct subformation *formation);
 static void subformation_anchor_and_heading(uint32_t leader, vec2_t orientation,
@@ -3796,7 +3798,7 @@ static void on_update_start(void *user, void *event)
                 continue;
             struct subformation *sub = &vec_AT(&formation->subformations, i);
             if(Sched_FutureIsReady(&work->future)) {
-                collect_cell_assignment_result(work, sub);
+                collect_cell_assignment_result(work, formation, sub);
                 cell_assignment_work_destroy(work);
 
                 compute_all_blocked(formation);
@@ -4654,7 +4656,7 @@ static void cell_assignment_work_destroy(struct cell_assignment_work *work)
 }
 
 static void collect_cell_assignment_result(const struct cell_assignment_work *work, 
-                                           struct subformation *out)
+                                           struct formation *formation, struct subformation *out)
 {
     assert(kh_size(work->ents) == kh_size(work->reverse));
     assert(kh_size(work->ents) == kh_size(work->assignment));
@@ -4694,6 +4696,9 @@ static void collect_cell_assignment_result(const struct cell_assignment_work *wo
             khiter_t m = kh_get(reverse, work->reverse, idx);
             assert(m != kh_end(work->reverse));
             kh_del(reverse, work->reverse, m);
+
+            struct cell *cell = &vec_AT(&((struct cell_assignment_work*)work)->cells, idx);
+            release_cell(formation, out, cell);
         }
         vec_entity_destroy(&removed);
     }
@@ -4875,27 +4880,56 @@ vec2_t G_Formation_AutoOrientation(vec2_t target, const vec_entity_t *ents)
     return rotate_toward(facing, dir, MIN(dist / radius, 1.0f));
 }
 
+static bool formation_log_enabled(void)
+{
+    struct sval setting;
+    return (Settings_Get("pf.debug.log_perf_csv", &setting) == SS_OKAY) && setting.as_bool;
+}
+
 /* The placed cells are reserved on the map in the shape of the stamps their
  * members will make, so a later order fits around this one's ground instead
  * of laying cells on top of it.
  */
+static void reserve_cell(struct formation *formation, struct subformation *sub,
+                         struct cell *cell, int delta)
+{
+    float radius = (formation->type == FORMATION_BOX) ? box_cell_radius(&formation->subformations)
+                                                      : sub->unit_radius;
+    if(delta > 0) {
+        M_NavReserveIncref(cell->pos, radius, sub->layer, s_map);
+    }else{
+        M_NavReserveDecref(cell->pos, radius, sub->layer, s_map);
+    }
+    if(formation_log_enabled()) {
+        fprintf(stdout, "[cell-reserve] %c,%d,%.1f,%.1f,%.2f\n", (delta > 0) ? '+' : '-',
+            (int)sub->layer, cell->pos.x, cell->pos.z, radius);
+    }
+}
+
 static void reserve_cells(struct formation *formation, int delta)
 {
-    float box_radius = box_cell_radius(&formation->subformations);
     for(int i = 0; i < vec_size(&formation->subformations); i++) {
         struct subformation *sub = &vec_AT(&formation->subformations, i);
-        float radius = (formation->type == FORMATION_BOX) ? box_radius : sub->unit_radius;
         for(int j = 0; j < vec_size(&sub->cells); j++) {
             struct cell *cell = &vec_AT(&sub->cells, j);
             if(cell->state == CELL_NOT_PLACED || cell->state == CELL_NOT_USED)
                 continue;
-            if(delta > 0) {
-                M_NavReserveIncref(cell->pos, radius, sub->layer, s_map);
-            }else{
-                M_NavReserveDecref(cell->pos, radius, sub->layer, s_map);
-            }
+            reserve_cell(formation, sub, cell, delta);
         }
     }
+}
+
+/* A cell that loses its member for good gives its ground back at once and
+ * reads as unused from then on, which every later pass already skips.
+ */
+static void release_cell(struct formation *formation, struct subformation *sub, struct cell *cell)
+{
+    if(cell->state == CELL_NOT_PLACED || cell->state == CELL_NOT_USED)
+        return;
+    if(formation->reserved) {
+        reserve_cell(formation, sub, cell, -1);
+    }
+    cell->state = CELL_NOT_USED;
 }
 
 void G_Formation_Create(vec2_t target, vec2_t orientation, 
@@ -5015,6 +5049,8 @@ void G_Formation_RemoveUnit(uint32_t uid)
         khiter_t m = kh_get(reverse, sub->reverse, idx);
         assert(m != kh_end(sub->reverse));
         kh_del(reverse, sub->reverse, m);
+
+        release_cell(formation, sub, &vec_AT(&sub->cells, idx));
     }
 
     clear_for_ent(uid);
@@ -6078,7 +6114,7 @@ bool G_Formation_LoadState(struct SDL_RWops *stream)
             cell_assignment_work_init(work, sub, fid, i);
             dispatch_cell_assignment_task(work);
             complete_cell_assignment_work(work, true);
-            collect_cell_assignment_result(work, sub);
+            collect_cell_assignment_result(work, formation, sub);
             cell_assignment_work_destroy(work);
         }
     });
