@@ -262,6 +262,8 @@ struct movestate_aux{
     bool               goal_set;
     vec2_t             goal_prev;
     float              goal_best;
+    /* Whether the facing is following the travel direction. Transient. */
+    bool               facing_follows;
     /* Whether the last solve saw a moving neighbour. Transient. */
     bool               crowd_moving;
     /* Walled out of its cell by its own side: walks through its own side's
@@ -334,6 +336,8 @@ enum movestate_flags{
     UPDATE_VETO_UNPATHABLE  = (1 << 19),
     UPDATE_VETO_BLOCKED     = (1 << 20),
     UPDATE_FIELD_VOID       = (1 << 21),
+    /* The facing followed the travel direction this tick */
+    UPDATE_FACING_FOLLOWS   = (1 << 22)
 };
 
 struct movestate_patch{
@@ -724,6 +728,13 @@ static struct result navigation_tick_task(void *arg);
 #define GROUP_NOPROGRESS_S              (10.0f)
 /* Coming this much nearer the goal than ever before is progress */
 #define GROUP_PROGRESS_MIN              (3.0f)
+/* The facing follows the travel direction once the unit moves at this
+ * fraction of its commanded speed, and stops following below the lower one,
+ * so a unit crawling in a crowd holds its heading instead of sweeping after
+ * every displacement.
+ */
+#define FACING_FOLLOW_ENGAGE            (0.35f)
+#define FACING_FOLLOW_RELEASE           (0.2f)
 /* How long the reach field has to be absent before a unit it was steering gives
  * up on it and goes back to the ordered point. */
 #define RANGE_FIELD_MISS_TICKS          (30)
@@ -3502,12 +3513,23 @@ static vec2_t intended_heading(vec2_t vdes, vec2_t new_vel)
     return (PFM_Vec2_Len(&vdes) > EPSILON) ? vdes : new_vel;
 }
 
+/* The facing follows the travel direction only while the unit is translating
+ * in earnest, with hysteresis on the speed so that the follow does not
+ * flicker. A unit inching through a crowd fronts the way it means to go
+ * instead of sweeping after every displacement.
+ */
 static quat_t orient_to_velocity_history(const struct movestate *ms,
-                                         const struct movestate_aux *aux, vec2_t vdes)
+                                         const struct movestate_aux *aux, vec2_t vdes,
+                                         float step, bool *out_follows)
 {
     vec2_t wma = vel_wma(aux);
-    if(PFM_Vec2_Len(&wma) <= EPSILON)
+    float band = aux->facing_follows ? FACING_FOLLOW_RELEASE : FACING_FOLLOW_ENGAGE;
+    *out_follows = PFM_Vec2_Len(&wma) > EPSILON && PFM_Vec2_Len(&wma) >= band * step;
+    if(!*out_follows) {
+        if(PFM_Vec2_Len(&vdes) > EPSILON)
+            return turn_toward(ms->next_rot, dir_quat_from_velocity(vdes), SCALED_MAX_TURN_RATE);
         return ms->next_rot;
+    }
 
     /* History opposing the intent is displacement by the crowd, not a
      * heading: chasing it commits the facing to a full pirouette by the time
@@ -3662,9 +3684,11 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
 
         out->flags |= UPDATE_SET_NEXT_ROT;
         /* Being shoved off the cell to let a neighbour by is not a heading. */
+        bool follows = false;
         out->next_nrot = aux->parked
             ? turn_toward(ms->next_rot, in->fstate.target_orientation, SCALED_MAX_TURN_RATE)
-            : orient_to_velocity_history(ms, aux, vdes);
+            : orient_to_velocity_history(ms, aux, vdes, in->speed / hz_count(hz), &follows);
+        out->flags |= follows ? UPDATE_FACING_FOLLOWS : 0;
         out->flags |= UPDATE_SET_ROTATION;
         out->next_rot = (out->next_left == 0) ? out->next_nrot : ms->next_rot;
 
@@ -4101,6 +4125,7 @@ static void entity_apply_update(uint32_t uid, struct movestate *ms,
     }
 
     aux->seek_pin_held = !!(patch->flags & UPDATE_SEEK_PINNED);
+    aux->facing_follows = !!(patch->flags & UPDATE_FACING_FOLLOWS);
     if(patch->flags & UPDATE_FIELD_VOID) {
         if(aux->field_void_ticks < UINT16_MAX)
             aux->field_void_ticks++;
