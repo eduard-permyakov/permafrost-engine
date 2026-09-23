@@ -6253,7 +6253,7 @@ void N_CopyIslandsFieldView(void *nav_private, vec2_t center, vec3_t map_pos, in
 }
 
 void N_CopyBlockedFieldView(void *nav_private, vec2_t center, vec3_t map_pos, int nrows, int ncols,
-                            enum nav_layer layer, uint8_t *out_field)
+                            enum nav_layer layer, bool with_reserved, uint8_t *out_field)
 {
     struct nav_private *priv = (struct nav_private*)nav_private;
     struct map_resolution res;
@@ -6279,7 +6279,7 @@ void N_CopyBlockedFieldView(void *nav_private, vec2_t center, vec3_t map_pos, in
         out_field[IDX(r, ncols, c)] =
             (chunk->cost_base[curr.tile_r][curr.tile_c] == COST_IMPASSABLE)
          || (chunk->blockers[curr.tile_r][curr.tile_c] > 0)
-         || (chunk->reserved[curr.tile_r][curr.tile_c] > 0);
+         || (with_reserved && chunk->reserved[curr.tile_r][curr.tile_c] > 0);
     }}
 }
 

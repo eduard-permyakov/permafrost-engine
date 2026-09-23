@@ -396,7 +396,7 @@ static void complete_cell_field_work(struct subformation *formation, bool yield)
 static uint8_t *cell_get_field(uint32_t uid);
 static enum flow_dir cell_get_dir(const uint8_t *field, int arrival_res, int r, int c);
 static void invalidate_cell_arrival_fields(struct subformation *formation);
-static void reserve_cells(const struct map *map, struct formation *formation, int delta);
+static void reserve_cells(struct formation *formation, int delta);
 
 static uint32_t subformation_leader(struct subformation *formation);
 static void subformation_anchor_and_heading(uint32_t leader, vec2_t orientation,
@@ -1136,11 +1136,12 @@ static void block_unreachable(uint8_t *occupied, int field_res, struct coord fro
 }
 
 static void init_occupied_field(const struct map *map, enum nav_layer layer, vec2_t center,
-                                vec2_t target, int field_res, uint8_t *occupied)
+                                vec2_t target, int field_res, bool with_reserved,
+                                uint8_t *occupied)
 {
     PERF_ENTER();
 
-    M_NavCopyBlockedFieldView(map, center, field_res, field_res, layer, occupied);
+    M_NavCopyBlockedFieldView(map, center, field_res, field_res, layer, with_reserved, occupied);
     for(int i = 0; i < field_res * field_res; i++) {
         occupied[i] = occupied[i] ? TILE_BLOCKED : TILE_FREE;
     }
@@ -3510,7 +3511,7 @@ static void destroy_subformation(struct subformation *formation)
 static void destroy_formation(struct formation *formation)
 {
     if(formation->reserved) {
-        reserve_cells(s_map, formation, -1);
+        reserve_cells(formation, -1);
         formation->reserved = false;
     }
     for(int i = 0; i < vec_size(&formation->work); i++) {
@@ -4877,7 +4878,7 @@ vec2_t G_Formation_AutoOrientation(vec2_t target, const vec_entity_t *ents)
  * members will make, so a later order fits around this one's ground instead
  * of laying cells on top of it.
  */
-static void reserve_cells(const struct map *map, struct formation *formation, int delta)
+static void reserve_cells(struct formation *formation, int delta)
 {
     float box_radius = box_cell_radius(&formation->subformations);
     for(int i = 0; i < vec_size(&formation->subformations); i++) {
@@ -4888,9 +4889,9 @@ static void reserve_cells(const struct map *map, struct formation *formation, in
             if(cell->state == CELL_NOT_PLACED || cell->state == CELL_NOT_USED)
                 continue;
             if(delta > 0) {
-                M_NavReserveIncref(cell->pos, radius, sub->layer, map);
+                M_NavReserveIncref(cell->pos, radius, sub->layer, s_map);
             }else{
-                M_NavReserveDecref(cell->pos, radius, sub->layer, map);
+                M_NavReserveDecref(cell->pos, radius, sub->layer, s_map);
             }
         }
     }
@@ -4942,7 +4943,7 @@ void G_Formation_Create(vec2_t target, vec2_t orientation,
     enum nav_layer layers[NAV_LAYER_MAX];
     size_t nlayers = formation_layers(&new->subformations, layers);
     for(int i = 0; i < nlayers; i++) {
-        init_occupied_field(s_map, layers[i], new->center, target, field_res,
+        init_occupied_field(s_map, layers[i], new->center, target, field_res, true,
             occupied_layer(new, layers[i]));
         init_islands_field(s_map, layers[i], new->center, field_res,
             islands_layer(new, layers[i]));
@@ -4964,7 +4965,7 @@ void G_Formation_Create(vec2_t target, vec2_t orientation,
         struct cell_assignment_work *work = &vec_AT(&new->work, i);
         cell_assignment_work_init(work, sub, fid, i);
     }
-    reserve_cells(s_map, new, +1);
+    reserve_cells(new, +1);
     new->reserved = true;
     dispatch_cell_assignment_work(new);
 }
@@ -5649,11 +5650,6 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
      * until the subformations have settled which those are. */
     struct map *map = M_AL_CopyWithFields(s_map, layers, nlayers,
         placement_window(s_map, formation.center, field_res));
-    /* The members' own bodies and the ground their current formations hold
-     * are theirs to move over, so the preview fits without them.
-     */
-    STALLOC(formation_id_t, released, vec_size(ents));
-    size_t nreleased = 0;
     for(int i = 0; i < vec_size(ents); i++) {
         uint32_t uid = vec_AT(ents, i);
         float radius = G_GetSelectionRadius(uid);
@@ -5663,26 +5659,11 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
         if(G_Move_Still(uid)) {
             M_NavBlockersDecref(pos, radius, faction_id, flags, map);
         }
-        formation_id_t fid = G_Formation_GetForEnt(uid);
-        if(fid == NULL_FID)
-            continue;
-        bool seen = false;
-        for(size_t j = 0; j < nreleased; j++) {
-            if(released[j] == fid)
-                seen = true;
-        }
-        if(seen)
-            continue;
-        released[nreleased++] = fid;
-        struct formation *held = formation_for_ent(uid);
-        if(held && held->reserved) {
-            reserve_cells(map, held, -1);
-        }
     }
-    STFREE(released);
 
+    /* Reservations steer the real placement only. */
     for(int i = 0; i < nlayers; i++) {
-        init_occupied_field(map, layers[i], formation.center, target, field_res,
+        init_occupied_field(map, layers[i], formation.center, target, field_res, false,
             occupied_layer(&formation, layers[i]));
         init_islands_field(map, layers[i], formation.center, field_res,
             islands_layer(&formation, layers[i]));
@@ -6036,7 +6017,7 @@ bool G_Formation_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_load_subformations);
         CHK_TRUE_JMP(attr.type == TYPE_INT, fail_load_subformations);
         new->root = &vec_AT(&new->subformations, attr.val.as_int);
-        reserve_cells(s_map, new, +1);
+        reserve_cells(new, +1);
         new->reserved = true;
 
         /* Load occupied fields */
