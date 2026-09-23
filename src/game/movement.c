@@ -5064,12 +5064,18 @@ static void move_trace_velocity(const struct move_work_in *in, struct move_trace
             tr->probe |= M_NavPositionPathable(map, layer, probes[i]) << (1 + 2 * i);
             tr->probe |= M_NavPositionBlocked(map, layer, probes[i]) << (2 + 2 * i);
         }
-        struct target target = build_target(uid, in->flock);
-        for(int dz = -1; dz <= 1; dz++) {
-        for(int dx = -1; dx <= 1; dx++) {
-            vec2_t p = (vec2_t){pos.x + dx * nt.x, pos.z + dz * nt.z};
-            tr->dirs[(dz + 1) * 3 + (dx + 1)] = M_NavFlowFieldDirAt(map, target, p);
-        }}
+        /* The flow sample is of the flock's own field; a flock-less unit
+         * (fleeing, seeking) has none to sample.
+         */
+        memset(tr->dirs, 0, sizeof(tr->dirs));
+        if(in->flock) {
+            struct target target = build_target(uid, in->flock);
+            for(int dz = -1; dz <= 1; dz++) {
+            for(int dx = -1; dx <= 1; dx++) {
+                vec2_t p = (vec2_t){pos.x + dx * nt.x, pos.z + dz * nt.z};
+                tr->dirs[(dz + 1) * 3 + (dx + 1)] = M_NavFlowFieldDirAt(map, target, p);
+            }}
+        }
     }
 }
 
@@ -5686,15 +5692,19 @@ static void move_consume_work_results(void)
 
 static void move_prepare_work(enum movement_hz hz)
 {
-    size_t ndynamic = kh_size(G_GetDynamicEntsSet());
-    s_move_work.in = stalloc(&s_move_work.mem, ndynamic * sizeof(struct move_work_in));
-    s_move_work.out = stalloc(&s_move_work.mem, ndynamic * sizeof(struct move_work_out));
+    /* The work set is drawn from the movement state table, which a removed
+     * entity leaves a tick after the dynamic entity set (its removal is a
+     * queued command), so the table is the bound, not the set.
+     */
+    size_t nmax = kh_size(s_entity_state_table);
+    s_move_work.in = stalloc(&s_move_work.mem, nmax * sizeof(struct move_work_in));
+    s_move_work.out = stalloc(&s_move_work.mem, nmax * sizeof(struct move_work_out));
     s_move_work.neighb_mem = stalloc(&s_move_work.mem,
-        ndynamic * 2 * MAX_NEIGHBOURS * sizeof(struct cp_ent));
+        nmax * 2 * MAX_NEIGHBOURS * sizeof(struct cp_ent));
     s_move_work.tile_mem = stalloc(&s_move_work.mem,
-        ndynamic * CLEARPATH_MAX_TILE_OBS * sizeof(vec2_t));
+        nmax * CLEARPATH_MAX_TILE_OBS * sizeof(vec2_t));
     s_move_work.trace = (s_move_trace_min_radius >= 0.0f)
-                      ? stalloc(&s_move_work.mem, ndynamic * sizeof(struct move_trace))
+                      ? stalloc(&s_move_work.mem, nmax * sizeof(struct move_trace))
                       : NULL;
     s_move_work.large_movables = stalloc(&s_move_work.mem,
         MAX_LARGE_MOVABLES * sizeof(struct large_movable));
