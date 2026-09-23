@@ -8001,7 +8001,7 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_JMP(attr.type == TYPE_INT, fail_flock);
         new_flock.dest_id = attr.val.as_int;
 
-        CHK_TRUE_JMP(G_Arrival_LoadState(stream, &new_flock.arrival), fail_flock);
+        CHK_TRUE_JMP(G_Arrival_LoadState(stream, &new_flock.arrival, s_map), fail_flock);
 
         vec_flock_push(&s_flocks, new_flock);
         Sched_TryYield();

@@ -1240,7 +1240,8 @@ bool G_Arrival_SaveState(struct SDL_RWops *stream, const struct arrival_group *g
     return true;
 }
 
-bool G_Arrival_LoadState(struct SDL_RWops *stream, struct arrival_group *grp)
+bool G_Arrival_LoadState(struct SDL_RWops *stream, struct arrival_group *grp,
+                         const struct map *map)
 {
     for(int l = 0; l < NAV_LAYER_MAX; l++) {
 
@@ -1254,6 +1255,9 @@ bool G_Arrival_LoadState(struct SDL_RWops *stream, struct arrival_group *grp)
         if(!arrival_load_one(stream, as)) {
             PF_FREE(as);
             return false;
+        }
+        if(as->phase != ARRIVAL_PHASE_INACTIVE) {
+            arrival_reserve_slots(as, map);
         }
         grp->layers[l] = as;
     }

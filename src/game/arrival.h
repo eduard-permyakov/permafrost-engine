@@ -187,7 +187,8 @@ void G_ArrivalGroup_RenderDebug(const struct arrival_group *grp, const struct ca
 
 struct SDL_RWops;
 bool G_Arrival_SaveState(struct SDL_RWops *stream, const struct arrival_group *grp);
-bool G_Arrival_LoadState(struct SDL_RWops *stream, struct arrival_group *grp);
+bool G_Arrival_LoadState(struct SDL_RWops *stream, struct arrival_group *grp,
+                         const struct map *map);
 bool G_Arrival_SaveUnitState(struct SDL_RWops *stream, const struct arrival_unit_state *us);
 bool G_Arrival_LoadUnitState(struct SDL_RWops *stream, struct arrival_unit_state *us);
 
