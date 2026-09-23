@@ -319,10 +319,10 @@ enum movestate_flags{
     UPDATE_SEEK_CLEAR       = (1 << 17),
     /* The seek pin held this tick */
     UPDATE_SEEK_PINNED      = (1 << 18),
-    UPDATE_FIELD_VOID       = (1 << 19),
     /* Diagnostic only: the step was refused by the landing tile */
     UPDATE_VETO_UNPATHABLE  = (1 << 19),
-    UPDATE_VETO_BLOCKED     = (1 << 20)
+    UPDATE_VETO_BLOCKED     = (1 << 20),
+    UPDATE_FIELD_VOID       = (1 << 21),
 };
 
 struct movestate_patch{
