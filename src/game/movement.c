@@ -7975,7 +7975,7 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
     assert(vec_size(&s_flocks) == 0);
     for(int i = 0; i < num_flocks; i++) {
 
-        struct flock new_flock;
+        struct flock new_flock = {0};
         new_flock.ents = kh_init(entity);
         CHK_TRUE_RET(new_flock.ents);
         G_ArrivalGroup_Init(&new_flock.arrival);
