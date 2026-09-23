@@ -60,6 +60,8 @@ struct refcounted_map{
 
 /* Borrow movement's current nav snapshot (NULL if not running); release with sp_release. */
 struct refcounted_map *G_Move_NavSnapshotAcquire(void);
+/* Advances every time the snapshot is retaken from the live map. */
+uint32_t G_Move_NavSnapshotGeneration(void);
 
 bool G_Move_Init(const struct map *map);
 void G_Move_Shutdown(void);

@@ -105,8 +105,6 @@
  * on its cell, so that the ones still crossing the formation are not walled
  * out. The timeout releases a formation whose stragglers never make it.
  */
-#define FORMATION_SETTLE_FRACTION (0.95f)
-#define FORMATION_SETTLE_TIMEOUT_MS (15000)
 #define IDX(r, width, c)         (r * width + c)
 #define FIELD_IDX3(_res, _l, _r, _c) \
     (((size_t)(_l) * (_res) * (_res)) + ((size_t)(_r) * (_res)) + (_c))
@@ -163,8 +161,18 @@ struct coord{
     int r, c;
 };
 
+/* How the cell's member stands to it: on its way, walled out by its own side
+ * and walking through it on the bounded pass, or given up on for good.
+ */
+enum cell_member_state{
+    MEMBER_PENDING,
+    MEMBER_STRAGGLER,
+    MEMBER_CONCEDED
+};
+
 struct cell{
     enum cell_state state;
+    enum cell_member_state member;
     /* The desired positoin of the cell based 
      * on the positions of the neighbouring 
      * cells and anchor.
@@ -177,10 +185,6 @@ struct cell{
      * into account map geometry and blockers.
      */
     vec2_t          pos;
-    /* The last known reachable position 
-     * that is maximally close to 'pos'.
-     */
-    vec2_t          reachable_pos;
 };
 
 struct range2d{
@@ -369,12 +373,12 @@ struct formation{
     /* State associated with outstanding cell assignment computations 
      */
     vec_assignment_work_t work;
-    /* Whether enough units stand on their cells for the formation to take its
-     * tiles, and the tick at which it first had to wait. Refreshed every tick
-     * from the cells, so neither is serialised.
+    /* The nav snapshot generation the formation was created under. Its cell
+     * fields wait for a newer one: the order unblocked the members on the
+     * live map, and a field built from the older snapshot would still see
+     * their stamps and read void under them. Transient.
      */
-    bool                 may_settle;
-    uint32_t             hold_start_tick;
+    uint32_t             snapshot_gen;
 };
 
 KHASH_MAP_INIT_INT(formation, struct formation)
@@ -390,11 +394,9 @@ static void complete_cell_field_work(struct subformation *formation, bool yield)
 static uint8_t *cell_get_field(uint32_t uid);
 static enum flow_dir cell_get_dir(const uint8_t *field, int arrival_res, int r, int c);
 static void invalidate_cell_arrival_fields(struct subformation *formation);
-static void update_settled(formation_id_t fid, struct formation *formation);
-static bool at_own_cell(uint32_t uid, struct cell *cell);
 
 static uint32_t subformation_leader(struct subformation *formation);
-static void subformation_anchor_and_heading(uint32_t leader,
+static void subformation_anchor_and_heading(uint32_t leader, vec2_t orientation,
                                             vec2_t *out_anchor, vec2_t *out_heading);
 static bool in_front_row(uint32_t uid, uint32_t leader, struct subformation *formation, 
                          int *out_col_offset);
@@ -1062,8 +1064,8 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
         curr->ideal_raw = pos;
         curr->ideal_binned = tile_to_pos(target_tile, center, field_res);
         curr->state = CELL_NOT_OCCUPIED;
+        curr->member = MEMBER_PENDING;
         curr->pos = tile_to_pos(curr_tile, center, field_res);
-        curr->reachable_pos = curr->pos;
     }
     return success;
 }
@@ -3010,7 +3012,7 @@ static void render_formation_forces(void)
             });
 
             vec2_t anchor, heading;
-            subformation_anchor_and_heading(leader, &anchor, &heading);
+            subformation_anchor_and_heading(leader, formation->orientation, &anchor, &heading);
             vec2_t perpendicular = (vec2_t){-heading.z, heading.x};
             float len = curr->ncols * (2 * radius + MOVE_BUFFER_DIST) + 8.0f;
             PFM_Vec2_Normal(&perpendicular, &perpendicular);
@@ -3504,7 +3506,7 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
     M_NavGetResolution(rmap->snapshot, &res);
     vec3_t map_pos = M_GetPos(rmap->snapshot);
 
-    vec2_t bpos = bin_to_tile_clamped(cell->reachable_pos, center, parent->field_res);
+    vec2_t bpos = bin_to_tile_clamped(cell->pos, center, parent->field_res);
     bpos = M_ClampedMapCoordinate(rmap->snapshot, bpos);
 
     struct tile_desc cell_td;
@@ -3541,10 +3543,10 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
     work->input.layer = formation->layer;
     work->input.enemy_faction_mask = G_GetEnemyFactions(formation->faction_id);
     /* The mask is the set of factions whose blocker stamps this field may walk
-     * through. A unit the formation settled without is walled out by its own
-     * side, so let it phase back in rather than give up outside.
+     * through. A straggler is walled out by its own side, so let it phase back
+     * in rather than give up outside.
      */
-    if(parent->may_settle && !at_own_cell(uid, cell))
+    if(cell->member == MEMBER_STRAGGLER)
         work->input.enemy_faction_mask |= (0x1 << formation->faction_id);
     work->input.field_res = parent->field_res;
     work->input.cell_tile = cell_td;
@@ -3640,6 +3642,8 @@ static void on_update_start(void *user, void *event)
     struct formation *formation;
     kh_foreach_ptr(s_formations, formation, {
 
+        if(G_Move_NavSnapshotGeneration() <= formation->snapshot_gen)
+            continue;
         for(int i = 0; i < vec_size(&formation->work); i++) {
             struct cell_assignment_work *work = &vec_AT(&formation->work, i);
             if(work->destroyed)
@@ -3690,12 +3694,6 @@ static void on_update_start(void *user, void *event)
             }
         }
     });
-
-    for(khiter_t k = kh_begin(s_formations); k != kh_end(s_formations); k++) {
-        if(!kh_exist(s_formations, k))
-            continue;
-        update_settled(kh_key(s_formations, k), &kh_val(s_formations, k));
-    }
 }
 
 static uint8_t *cell_get_field(uint32_t uid)
@@ -3948,20 +3946,30 @@ static uint32_t subformation_leader(struct subformation *formation)
     return NULL_UID;
 }
 
-static void subformation_anchor_and_heading(uint32_t leader,
-                                            vec2_t *out_anchor, vec2_t *out_heading)
+static vec2_t entity_heading(uint32_t uid)
 {
     vec4_t front = (vec4_t){0.0f, 0.0f, 1.0f, 1.0f};
-    quat_t rot = Entity_GetRot(leader);
+    quat_t rot = Entity_GetRot(uid);
 
     mat4x4_t rot_mat;
     PFM_Mat4x4_RotFromQuat(&rot, &rot_mat);
 
     vec4_t dir;
     PFM_Mat4x4_Mult4x1(&rot_mat, &front, &dir);
+    return (vec2_t){dir.x, dir.z};
+}
 
+/* The heading is the order's, not the leader's: the leader only turns as it
+ * walks, so its facing lags a re-orient by the whole first leg.
+ */
+static void subformation_anchor_and_heading(uint32_t leader, vec2_t orientation,
+                                            vec2_t *out_anchor, vec2_t *out_heading)
+{
     *out_anchor = G_Pos_GetXZ(leader);
-    *out_heading = (vec2_t){dir.x, dir.z};
+    *out_heading = orientation;
+    if(PFM_Vec2_Len(out_heading) > EPSILON) {
+        PFM_Vec2_Normal(out_heading, out_heading);
+    }
 }
 
 static uint32_t unit_in_front(uint32_t uid, struct subformation *formation)
@@ -4044,10 +4052,11 @@ static vec2_t entity_target_position(vec2_t anchor, vec2_t heading, float distan
     return ret;
 }
 
-static bool leader_should_slow_dowm(uint32_t leader, struct subformation *formation)
+static bool leader_should_slow_dowm(uint32_t leader, struct subformation *formation,
+                                    vec2_t orientation)
 {
     vec2_t anchor, heading;
-    subformation_anchor_and_heading(leader, &anchor, &heading);
+    subformation_anchor_and_heading(leader, orientation, &anchor, &heading);
     float radius = G_GetSelectionRadius(leader);
 
     khiter_t k = kh_get(assignment, formation->assignment, leader);
@@ -4235,12 +4244,6 @@ static bool subformation_save_state(struct formation *parent, struct subformatio
             .val.as_vec2 = cell->pos
         };
         CHK_TRUE_RET(Attr_Write(stream, &cell_pos, "cell_pos"));
-
-        struct attr cell_reachable_pos = (struct attr){
-            .type = TYPE_VEC2,
-            .val.as_vec2 = cell->reachable_pos
-        };
-        CHK_TRUE_RET(Attr_Write(stream, &cell_reachable_pos, "cell_reachable_pos"));
     }
 
     struct attr nassigned = (struct attr){
@@ -4408,10 +4411,6 @@ static bool subformation_load_state(struct formation *parent, struct subformatio
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_VEC2);
         cell->pos = attr.val.as_vec2;
-
-        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-        CHK_TRUE_RET(attr.type == TYPE_VEC2);
-        cell->reachable_pos = attr.val.as_vec2;
     }
     Sched_TryYield();
 
@@ -4740,6 +4739,8 @@ void G_Formation_Create(vec2_t target, vec2_t orientation,
     /* Add a mapping from entities to the formation */
     for(int i = 0; i < vec_size(ents); i++) {
         uint32_t uid = vec_AT(ents, i);
+        if(G_Formation_GetForEnt(uid) != NULL_FID)
+            G_Formation_RemoveUnit(uid);
         int ret;
         khiter_t k = kh_put(mapping, s_ent_formation_map, uid, &ret);
         assert(ret != -1);
@@ -4762,7 +4763,8 @@ void G_Formation_Create(vec2_t target, vec2_t orientation,
         .speed = formation_speed(ents),
         .created_tick = SDL_GetTicks(),
         .sub_assignment = kh_init(assignment),
-        .field_res = field_res
+        .field_res = field_res,
+        .snapshot_gen = G_Move_NavSnapshotGeneration()
     };
     init_subformations(new);
     bool fields = alloc_formation_fields(new);
@@ -4918,7 +4920,7 @@ vec2_t G_Formation_ApproximateDesiredArrivalVelocity(uint32_t uid)
     if(!cell)
         return (vec2_t){0};
 
-    vec2_t cell_pos = cell->reachable_pos;
+    vec2_t cell_pos = cell->pos;
     vec2_t ent_pos = G_Pos_GetXZ(uid);
     vec2_t delta;
     PFM_Vec2_Sub(&cell_pos, &ent_pos, &delta);
@@ -4926,29 +4928,32 @@ vec2_t G_Formation_ApproximateDesiredArrivalVelocity(uint32_t uid)
     return delta;
 }
 
+/* A parked body must stay inside its own cell: cells sit MOVE_BUFFER_DIST
+ * apart edge to edge, so that is the most a centre may be off before it
+ * overlaps a neighbouring body. Separation from a parked neighbour balances
+ * the arrive force a few units short of the cell, so a tighter bound is
+ * never reached.
+ */
+static float cell_tolerance(float radius)
+{
+    return MAX(MOVE_BUFFER_DIST, radius * 0.25f);
+}
+
 static bool arrived_at_cell(uint32_t uid, struct cell *cell)
 {
     if(!cell)
         return true;
 
-    /* Check if we are within tolerance of the cell position */
-    float radius = G_GetSelectionRadius(uid);
-    float arrive_thresh = MIN(radius * 1.5f, 10.0f);
-
-    vec2_t cell_pos = cell->reachable_pos;
     vec2_t ent_pos = G_Pos_GetXZ(uid);
     vec2_t delta;
-    PFM_Vec2_Sub(&ent_pos, &cell_pos, &delta);
-    return (PFM_Vec2_Len(&delta) <= arrive_thresh);
+    PFM_Vec2_Sub(&ent_pos, &cell->pos, &delta);
+    return (PFM_Vec2_Len(&delta) <= cell_tolerance(G_GetSelectionRadius(uid)));
 }
 
-/* Hand a unit back the cell it was assigned. The fallback position only ever
- * moves in towards wherever a unit gave up, and nothing puts it back, so one
- * that was boxed in once keeps its cell written off long after the crowd that
- * trapped it has gone; it then stands on its own fallback, reads as arrived and
- * settles again the moment anything tries to send it on.
+/* The bounded pass is spent: the member takes the ground it stands on and its
+ * cell no longer holds anyone up.
  */
-void G_Formation_RetryCell(uint32_t uid)
+void G_Formation_ConcedeCell(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -4959,11 +4964,7 @@ void G_Formation_RetryCell(uint32_t uid)
     struct cell *cell = cell_for_ent(formation, uid);
     if(!cell)
         return;
-    if(cell->state == CELL_NOT_PLACED || cell->state == CELL_NOT_USED)
-        return;
-
-    cell->reachable_pos = cell->pos;
-    request_cell_recompute(G_Formation_GetForEnt(uid), uid);
+    cell->member = MEMBER_CONCEDED;
 }
 
 bool G_Formation_ArrivedAtCell(uint32_t uid)
@@ -4975,90 +4976,71 @@ bool G_Formation_ArrivedAtCell(uint32_t uid)
     return arrived_at_cell(uid, cell_for_ent(formation, uid));
 }
 
-/* arrived_at_cell() measures against the position the unit settled for when
- * its cell turned out to be unreachable, so it cannot tell a shell that is in
- * from one that gave up outside the wall. This measures the real cell.
+/* A cell is done holding others up once its member stands on it for good or
+ * has given it up.
  */
-static bool at_own_cell(uint32_t uid, struct cell *cell)
+static bool cell_done(struct subformation *sub, int idx)
 {
-    if(cell->state == CELL_NOT_PLACED || cell->state == CELL_NOT_USED)
+    struct cell *cell = &vec_AT(&sub->cells, idx);
+    if(cell->state != CELL_OCCUPIED)
         return true;
-
-    vec2_t delta;
-    vec2_t pos = G_Pos_GetXZ(uid);
-    PFM_Vec2_Sub(&pos, &cell->pos, &delta);
-    return (PFM_Vec2_Len(&delta) <= MIN(G_GetSelectionRadius(uid) * 1.5f, 10.0f));
+    if(cell->member == MEMBER_CONCEDED)
+        return true;
+    khiter_t k = kh_get(reverse, sub->reverse, idx);
+    if(k == kh_end(sub->reverse))
+        return true;
+    uint32_t uid = kh_val(sub->reverse, k);
+    return G_Move_Still(uid) && arrived_at_cell(uid, cell);
 }
 
-static size_t subformation_nsettled(struct subformation *sub)
+static bool subformation_done(struct subformation *sub)
 {
     if(sub->state != SUBFORMATION_READY)
-        return 0;
-
-    size_t ret = 0;
-    uint32_t uid;
-    kh_foreach_key(sub->ents, uid, {
-        khiter_t k = kh_get(assignment, sub->assignment, uid);
-        if(k == kh_end(sub->assignment))
-            continue;
-        struct coord coord = kh_val(sub->assignment, k);
-        if(at_own_cell(uid, &vec_AT(&sub->cells, CELL_IDX(coord.r, coord.c, sub->ncols))))
-            ret++;
-    });
-    return ret;
+        return false;
+    for(int i = 0; i < vec_size(&sub->cells); i++) {
+        if(!cell_done(sub, i))
+            return false;
+    }
+    return true;
 }
 
-/* A unit whose tiles are taken walls off whatever is still crossing them: a
- * box shell seals its interior into an unreachable island, and a rank's rear
- * gets fenced out of its own rows. So no unit in the formation takes its tiles
- * until nearly all of them are standing where they belong.
+/* A parked body walls the wide layers for its own class, so ground is taken
+ * in an order that leaves every cell still to be filled reachable across open
+ * ground. A box shell closes around the shells it encloses, so those park
+ * first. A rank or column parks its rows front to back: the cells in front of
+ * a member's, in its column and the two beside it, must be taken before it
+ * takes its own, and a child subformation is laid behind its parent, so it
+ * waits for the parent as a whole.
  */
-/* The units left outside get their arrival fields rebuilt with the phasing
- * mask, now that the rest of the formation has taken its tiles.
- */
-static void invalidate_straggler_fields(formation_id_t fid, struct formation *formation)
+static bool may_park(struct formation *formation, struct subformation *sub, uint32_t uid)
 {
-    for(int i = 0; i < vec_size(&formation->subformations); i++) {
-        struct subformation *sub = &vec_AT(&formation->subformations, i);
-        uint32_t uid;
-        kh_foreach_key(sub->ents, uid, {
-            khiter_t k = kh_get(assignment, sub->assignment, uid);
-            if(k == kh_end(sub->assignment))
-                continue;
-            struct coord coord = kh_val(sub->assignment, k);
-            if(at_own_cell(uid, &vec_AT(&sub->cells, CELL_IDX(coord.r, coord.c, sub->ncols))))
-                continue;
-            request_cell_recompute(fid, uid);
-        });
+    if(sub->state != SUBFORMATION_READY)
+        return false;
+    if(formation->type == FORMATION_BOX) {
+        bool enclosed = false;
+        for(int i = 0; i < vec_size(&formation->subformations); i++) {
+            struct subformation *curr = &vec_AT(&formation->subformations, i);
+            if(enclosed && !subformation_done(curr))
+                return false;
+            if(curr == sub)
+                enclosed = true;
+        }
+        return true;
     }
-}
-
-static void update_settled(formation_id_t fid, struct formation *formation)
-{
-    if(formation->may_settle)
-        return;
-
-    size_t nents = 0, nsettled = 0;
-    for(int i = 0; i < vec_size(&formation->subformations); i++) {
-        struct subformation *sub = &vec_AT(&formation->subformations, i);
-        nents += kh_size(sub->ents);
-        nsettled += subformation_nsettled(sub);
+    for(struct subformation *front = sub->parent; front; front = front->parent) {
+        if(!subformation_done(front))
+            return false;
     }
-
-    if(nents == 0)
-        return;
-    if(nsettled >= (size_t)ceilf(nents * FORMATION_SETTLE_FRACTION)) {
-        formation->may_settle = true;
-        invalidate_straggler_fields(fid, formation);
-        return;
-    }
-
-    if(formation->hold_start_tick == 0)
-        formation->hold_start_tick = SDL_GetTicks();
-    if(SDL_GetTicks() - formation->hold_start_tick > FORMATION_SETTLE_TIMEOUT_MS) {
-        formation->may_settle = true;
-        invalidate_straggler_fields(fid, formation);
-    }
+    khiter_t k = kh_get(assignment, sub->assignment, uid);
+    if(k == kh_end(sub->assignment))
+        return false;
+    struct coord coord = kh_val(sub->assignment, k);
+    for(int r = coord.r + 1; r < sub->nrows; r++) {
+    for(int c = MAX(coord.c - 1, 0); c <= MIN(coord.c + 1, (int)sub->ncols - 1); c++) {
+        if(!cell_done(sub, CELL_IDX(r, c, sub->ncols)))
+            return false;
+    }}
+    return true;
 }
 
 static bool assignment_ready(struct formation *formation, struct subformation *sub)
@@ -5108,7 +5090,7 @@ vec2_t G_Formation_CellPosition(uint32_t uid)
     struct cell *cell = cell_for_ent(formation, uid);
     if(!cell)
         return (vec2_t){0};
-    return cell->reachable_pos;
+    return cell->pos;
 }
 
 void G_Formation_Arrange(enum formation_type type, vec_entity_t *ents)
@@ -5241,28 +5223,17 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
         PERF_RETURN_VOID();
     }
 
-    /* The target cell location got blocked. Try to get as close as possible. 
+    /* The field cannot lead the unit to its cell from where it stands on open
+     * ground: its own side has walled it out. It becomes a straggler and its
+     * field is rebuilt with the pass mask.
      */
     struct cell *cell = cell_for_ent(formation, uid);
-    if(M_NavPositionBlocked(map, layer, cell->reachable_pos)) {
-
-        vec2_t new_reachable = cell->reachable_pos;
-        M_NavClosestPathable(map, layer, cell->reachable_pos, &new_reachable);
-
-        cell->reachable_pos = new_reachable;
-        request_cell_recompute(fid, uid);
-
-        work->last_update_ticks = curr;
-        PERF_RETURN_VOID();
-    }
-
-    /* The entity got blocked in by other units, such that it's trapped 
-     * on an 'island' and can no longer reach its' target tile. In that
-     * case, resort to stopping the unit at its' location.
-     */
-    if(!M_NavPositionBlocked(map, layer, pos)
+    if(cell->member == MEMBER_PENDING
+    && !M_NavPositionBlocked(map, layer, pos)
     && cell_get_dir(field, arrival_res, coord.r, coord.c) == FD_NONE) {
-        cell->reachable_pos = pos;
+        cell->member = MEMBER_STRAGGLER;
+        request_cell_recompute(fid, uid);
+        work->last_update_ticks = curr;
         PERF_RETURN_VOID();
     }
 
@@ -5309,11 +5280,11 @@ enum formation_type G_Formation_Type(formation_id_t fid)
     return formation->type;
 }
 
-static vec2_t alignment_force(uint32_t uid, struct subformation *sub)
+/* The front row aligns to the ordered heading; the rows behind follow the
+ * unit in front of them instead.
+ */
+static vec2_t alignment_force(uint32_t uid, struct subformation *sub, vec2_t orientation)
 {
-    vec2_t total = (vec2_t){0.0f, 0.0f};
-    size_t nents = 0;
-
     if(sub->state == SUBFORMATION_COMPUTING_ASSIGNMENT)
         return (vec2_t){0.0f, 0.0f};
 
@@ -5321,41 +5292,14 @@ static vec2_t alignment_force(uint32_t uid, struct subformation *sub)
     assert(leader != NULL_FID);
 
     int col_offset;
-    if(in_front_row(uid, leader, sub, &col_offset)) {
+    if(!in_front_row(uid, leader, sub, &col_offset))
+        return (vec2_t){0.0f, 0.0f};
 
-        int front_row = front_row_idx(sub);
-        for(int c = 0; c < sub->ncols; c++) {
-            int idx = CELL_IDX(front_row, c, sub->ncols);
-            struct cell *cell = &vec_AT(&sub->cells, idx);
-            if(cell->state != CELL_OCCUPIED)
-                continue;
-
-            khiter_t k = kh_get(reverse, sub->reverse, idx);
-            if(k == kh_end(sub->reverse))
-                continue;
-
-            uint32_t ent = kh_val(sub->reverse, k);
-            if(ent == uid)
-                continue;
-
-            quat_t rot = Entity_GetRot(ent);
-            vec4_t front = (vec4_t){0.0f, 0.0f, 1.0f, 1.0f};
-            mat4x4_t rot_mat;
-            PFM_Mat4x4_RotFromQuat(&rot, &rot_mat);
-
-            vec4_t dir;
-            PFM_Mat4x4_Mult4x1(&rot_mat, &front, &dir);
-
-            vec2_t dir_xz = (vec2_t){dir.x, dir.z};
-            PFM_Vec2_Add(&total, &dir_xz, &total);
-            nents++;
-        }
+    vec2_t ret = orientation;
+    if(PFM_Vec2_Len(&ret) > EPSILON) {
+        PFM_Vec2_Normal(&ret, &ret);
     }
-
-    if(nents > 0) {
-        PFM_Vec2_Normal(&total, &total);
-    }
-    return total;
+    return ret;
 }
 
 vec2_t G_Formation_AlignmentForce(uint32_t uid)
@@ -5363,10 +5307,10 @@ vec2_t G_Formation_AlignmentForce(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
 
     struct formation *formation = formation_for_ent(uid);
-    return alignment_force(uid, subformation_for_ent(formation, uid));
+    return alignment_force(uid, subformation_for_ent(formation, uid), formation->orientation);
 }
 
-static vec2_t cohesion_force(uint32_t uid, struct subformation *sub)
+static vec2_t cohesion_force(uint32_t uid, struct subformation *sub, vec2_t orientation)
 {
     if(sub->state == SUBFORMATION_COMPUTING_ASSIGNMENT)
         return (vec2_t){0.0f, 0.0f};
@@ -5377,7 +5321,7 @@ static vec2_t cohesion_force(uint32_t uid, struct subformation *sub)
     assert(leader != NULL_FID);
 
     vec2_t anchor, heading;
-    subformation_anchor_and_heading(leader, &anchor, &heading);
+    subformation_anchor_and_heading(leader, orientation, &anchor, &heading);
 
     int col_offset;
     if(in_front_row(uid, leader, sub, &col_offset)) {
@@ -5400,10 +5344,10 @@ vec2_t G_Formation_CohesionForce(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
 
     struct formation *formation = formation_for_ent(uid);
-    return cohesion_force(uid, subformation_for_ent(formation, uid));
+    return cohesion_force(uid, subformation_for_ent(formation, uid), formation->orientation);
 }
 
-static vec2_t drag_force(uint32_t uid, struct subformation *sub)
+static vec2_t drag_force(uint32_t uid, struct subformation *sub, vec2_t orientation)
 {
     if(sub->state == SUBFORMATION_COMPUTING_ASSIGNMENT)
         return (vec2_t){0.0f, 0.0f};
@@ -5414,12 +5358,12 @@ static vec2_t drag_force(uint32_t uid, struct subformation *sub)
     assert(leader != NULL_FID);
 
     vec2_t anchor, heading;
-    subformation_anchor_and_heading(leader, &anchor, &heading);
+    subformation_anchor_and_heading(leader, orientation, &anchor, &heading);
 
     int col_offset;
     bool front_row = in_front_row(uid, leader, sub, &col_offset);
 
-    if((uid == leader) && !leader_should_slow_dowm(leader, sub)) {
+    if((uid == leader) && !leader_should_slow_dowm(leader, sub, orientation)) {
         return (vec2_t){0.0f, 0.0f};
     }
 
@@ -5428,11 +5372,10 @@ static vec2_t drag_force(uint32_t uid, struct subformation *sub)
 
     float amount;
     if((uid == leader) || ahead_of_target(uid, target, anchor, heading, &amount)) {
-        /* The drag force will act in the direction 
+        /* The drag force will act in the direction
          * opposite of the entity's current orientation.
          */
-        vec2_t ent_anchor, ent_heading;
-        subformation_anchor_and_heading(uid, &ent_anchor, &ent_heading);
+        vec2_t ent_heading = entity_heading(uid);
         PFM_Vec2_Scale(&ent_heading, -1.0f, &ent_heading);
         if(PFM_Vec2_Len(&ent_heading) > EPSILON) {
             PFM_Vec2_Normal(&ent_heading, &ent_heading);
@@ -5459,7 +5402,7 @@ vec2_t G_Formation_DragForce(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
 
     struct formation *formation = formation_for_ent(uid);
-    return drag_force(uid, subformation_for_ent(formation, uid));
+    return drag_force(uid, subformation_for_ent(formation, uid), formation->orientation);
 }
 
 bool G_Formation_SubmitState(uint32_t uid, struct formation_submit_state *out)
@@ -5483,11 +5426,11 @@ bool G_Formation_SubmitState(uint32_t uid, struct formation_submit_state *out)
     out->assigned_to_cell = (cell && cell->state == CELL_OCCUPIED);
     out->in_range_of_cell = inside_arrival_field_bounds(formation, G_Pos_GetXZ(uid));
     out->arrived_at_cell = arrived_at_cell(uid, cell);
-    out->may_settle = formation->may_settle;
-    out->at_cell = (cell && at_own_cell(uid, cell));
-    out->cohesion_force = cohesion_force(uid, sub);
-    out->alignment_force = alignment_force(uid, sub);
-    out->drag_force = drag_force(uid, sub);
+    out->may_park = may_park(formation, sub, uid);
+    out->straggler = (cell && cell->member == MEMBER_STRAGGLER);
+    out->cohesion_force = cohesion_force(uid, sub, formation->orientation);
+    out->alignment_force = alignment_force(uid, sub, formation->orientation);
+    out->drag_force = drag_force(uid, sub, formation->orientation);
     out->target_orientation = quat_from_vec(formation->orientation);
     out->speed = formation->speed;
     return true;
@@ -5520,7 +5463,8 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
         .speed = formation_speed(ents),
         .created_tick = SDL_GetTicks(),
         .sub_assignment = kh_init(assignment),
-        .field_res = field_res
+        .field_res = field_res,
+        .snapshot_gen = G_Move_NavSnapshotGeneration()
     };
     init_subformations(&formation);
     vec_assignment_work_init(&formation.work);

@@ -66,7 +66,7 @@ vec2_t         G_Formation_DesiredArrivalVelocity(uint32_t uid);
 vec2_t         G_Formation_ApproximateDesiredArrivalVelocity(uint32_t uid);
 bool           G_Formation_AssignmentReady(uint32_t uid);
 bool           G_Formation_ArrivedAtCell(uint32_t uid);
-void           G_Formation_RetryCell(uint32_t uid);
+void           G_Formation_ConcedeCell(uint32_t uid);
 bool           G_Formation_AssignedToCell(uint32_t uid);
 vec2_t         G_Formation_CellPosition(uint32_t uid);
 quat_t         G_Formation_TargetOrientation(uint32_t uid);
@@ -89,11 +89,11 @@ struct formation_submit_state{
     bool           assigned_to_cell;
     bool           in_range_of_cell;
     bool           arrived_at_cell;
-    /* Whether the formation is ready for its units to take their tiles, and
-     * whether this one stands on the cell it was actually assigned.
+    /* Whether the cells in front of this unit's are taken, so it may take its
+     * own, and whether its own side has walled it out of its cell.
      */
-    bool           may_settle;
-    bool           at_cell;
+    bool           may_park;
+    bool           straggler;
     vec2_t         cohesion_force;
     vec2_t         alignment_force;
     vec2_t         drag_force;

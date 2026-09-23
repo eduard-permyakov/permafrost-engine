@@ -241,10 +241,6 @@ struct movestate_aux{
     uint16_t           seek_clear_ticks;
     /* Consecutive ticks coasting through a stale hole in the flow field */
     uint16_t           field_void_ticks;
-    /* Ticks since a stranded formation member was last put back on the road.
-     * Transient.
-     */
-    uint16_t           retry_ticks;
     /* Whether the reach field is steering this unit, and how many consecutive
      * ticks it has been missing from the cache. Transient.
      */
@@ -256,12 +252,12 @@ struct movestate_aux{
     /* Set once the unit has been flowing since its last order; only then may
      * it wall itself as jam-stuck (a queued launch rear is not a jam). */
     bool               seek_progressed;
-    /* Standing on its formation cell while the formation is not yet ready to
-     * take its tiles: visually settled, but neither blocking nor immovable.
+    /* Standing on its formation cell while the cells in front of it are not
+     * yet taken: visually settled, but neither blocking nor immovable.
      */
     bool               parked;
-    /* Left outside by a formation that has already taken its tiles: walks
-     * through its own side's bodies and stamps to reach its cell.
+    /* Walled out of its cell by its own side: walks through its own side's
+     * bodies and stamps to reach it, for a bounded number of ticks.
      */
     bool               phasing;
     uint16_t           phase_ticks;
@@ -290,8 +286,8 @@ struct formation_state{
     bool           assigned_to_cell;
     bool           in_range_of_cell;
     bool           arrived_at_cell;
-    bool           may_settle;
-    bool           at_cell;
+    bool           may_park;
+    bool           straggler;
     vec2_t         normal_cohesion_force;
     vec2_t         normal_align_force;
     vec2_t         normal_drag_force;
@@ -707,9 +703,6 @@ static struct result navigation_tick_task(void *arg);
  * reach its cell does not walk through its own side for good.
  */
 #define PHASE_MAX_TICKS                 (400)
-/* How long a unit already standing on its fallback is left alone between
- * attempts at the cell it was actually assigned. */
-#define STRANDED_RETRY_TICKS            (30)
 /* How long the reach field has to be absent before a unit it was steering gives
  * up on it and goes back to the ordered point. */
 #define RANGE_FIELD_MISS_TICKS          (30)
@@ -872,6 +865,7 @@ static unsigned long           s_last_interpolate_tick = 0;
 
 static enum movement_hz        s_move_hz = MOVE_HZ_20;
 static struct refcounted_map  *s_nav_snapshot;
+static uint32_t                s_nav_snapshot_gen;
 static bool                    s_move_hz_dirty = false;
 static bool                    s_use_gpu = true;
 static bool                    s_move_tick_queued = false;
@@ -1404,6 +1398,7 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
         uint32_t curr;
         kh_foreach_key(new_flock.ents, curr, { flock_add(merge_flock, curr); });
         kh_destroy(entity, new_flock.ents);
+        merge_flock->target_xz = target_xz;
         G_ArrivalGroup_Reset(&merge_flock->arrival);
 
     }else{
@@ -3771,7 +3766,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
             out->next_state = STATE_MOVING_IN_FORMATION;
             break;
         }
-        if(in->fstate.arrived_at_cell && in->fstate.may_settle) {
+        if(in->fstate.arrived_at_cell && in->fstate.may_park) {
             out->flags |= UPDATE_SET_STATE | UPDATE_SET_TARGET_DIR;
             out->next_target_dir = in->fstate.target_orientation;
             out->next_state = STATE_TURNING;
@@ -5312,6 +5307,12 @@ static void refcounted_map_destroy(void *owner)
     PF_FREE(rmap);
 }
 
+uint32_t G_Move_NavSnapshotGeneration(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    return s_nav_snapshot_gen;
+}
+
 struct refcounted_map *G_Move_NavSnapshotAcquire(void)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -5342,6 +5343,7 @@ static void move_copy_gamestate(void)
     snap->snapshot = M_AL_SnapshotShared(s_map);
     sp_init(snap, refcounted_map_destroy);
     s_nav_snapshot = snap;
+    s_nav_snapshot_gen++;
     s_move_work.gamestate.map = snap->snapshot;
     s_move_work.gamestate.transforms =
         Entity_CopyTransformsInto(s_move_work.gamestate.transforms);
@@ -6571,59 +6573,6 @@ static struct result navigation_tick_task(void *arg)
  * gave up. Once the formation has taken its tiles, put it back on the road with
  * a phase permit, until its budget runs out.
  */
-static void resume_stranded_formation_units(void)
-{
-    ASSERT_IN_MAIN_THREAD();
-
-    for(khiter_t k = kh_begin(s_entity_state_table); k != kh_end(s_entity_state_table); k++) {
-
-        if(!kh_exist(s_entity_state_table, k))
-            continue;
-        uint32_t uid = kh_key(s_entity_state_table, k);
-        struct movestate *ms = &kh_value(s_entity_state_table, k);
-        if(ms->state != STATE_ARRIVED)
-            continue;
-        if(!G_EntityExists(uid))
-            continue;
-
-        /* A held unit is standing still on purpose to shoot, and combat has
-         * already put it in its idle clip. Resuming it here starts its walk clip
-         * again, so it fires on the spot while playing a walk.
-         */
-        if(G_FlagsGet(uid) & ENTITY_FLAG_COMBAT_HELD)
-            continue;
-
-        struct movestate_aux *aux = movestate_aux_get(uid);
-        if(aux->phase_ticks > PHASE_MAX_TICKS)
-            continue;
-
-        struct formation_submit_state fss = {0};
-        if(!G_Formation_SubmitState(uid, &fss))
-            continue;
-        if(!fss.may_settle || fss.at_cell || !fss.assigned_to_cell)
-            continue;
-
-        /* 'Arrived' is measured against the fallback position, while 'at cell'
-         * is measured against the cell itself, so a unit that gave up short of
-         * its cell satisfies both this resume and the settle that follows it.
-         * Resuming it every tick is then a shuffle in place rather than another
-         * attempt: space the retries out, and hand the cell back each time,
-         * since the point of a retry is that the ground may have cleared.
-         */
-        if(fss.arrived_at_cell) {
-            if(++aux->retry_ticks < STRANDED_RETRY_TICKS)
-                continue;
-            aux->retry_ticks = 0;
-            G_Formation_RetryCell(uid);
-        }
-
-        if(ms->blocking)
-            entity_unblock(uid);
-        move_notify_motion_start(uid, ms);
-        ms->state = STATE_MOVING_IN_FORMATION;
-    }
-}
-
 /* Waiting units aren't in the per-tick work; tick their resume countdown here. */
 static void resume_waiting_units(void)
 {
@@ -6713,7 +6662,6 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
 
     uint64_t phase_start = SDL_GetPerformanceCounter();
     resume_waiting_units();
-    resume_stranded_formation_units();
     pivot_held_still_units();
     s_last_nav_tick_stats.pivot_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
@@ -6852,15 +6800,32 @@ static void move_do_tick_submit(enum movement_hz hz)
          * whole formation to its idle clip for the width of that window.
          */
         bool parked = in_formation && fss.assigned_to_cell
-                   && fss.arrived_at_cell && !fss.may_settle;
+                   && fss.arrived_at_cell && !fss.may_park;
         caux->parked = parked;
 
-        bool left_behind = in_formation && fss.may_settle && !fss.at_cell;
-        if(!left_behind)
+        bool straggler = in_formation && fss.straggler;
+        if(!straggler)
             caux->phase_ticks = 0;
         else if(caux->phase_ticks < UINT16_MAX)
             caux->phase_ticks++;
-        caux->phasing = left_behind && (caux->phase_ticks <= PHASE_MAX_TICKS);
+        bool pass = straggler && (caux->phase_ticks <= PHASE_MAX_TICKS);
+        /* The pass is bounded: a straggler that has spent it concedes its
+         * cell and takes the ground it stands on.
+         */
+        if(straggler && !pass) {
+            G_Formation_ConcedeCell(curr);
+            entity_finish_moving(curr, STATE_ARRIVED, true);
+            continue;
+        }
+        /* The last few units onto a cell cross the clearance rings of the
+         * parked neighbours; the lattice keeps the cell itself body-clear, so
+         * the rings are transit margin here, not bodies.
+         */
+        vec2_t to_cell;
+        PFM_Vec2_Sub(&cell_pos, &curr_cp.xz_pos, &to_cell);
+        bool closing = (ms->state == STATE_ARRIVING_TO_CELL) && fss.assigned_to_cell
+                    && !parked && (PFM_Vec2_Len(&to_cell) < ARRIVE_SLOWING_RADIUS);
+        caux->phasing = pass || closing;
 
         /* Both notifications are level-triggered and idempotent through the
          * motion_stopped latch, so the pair is self-healing: whichever way the
@@ -6871,7 +6836,7 @@ static void move_do_tick_submit(enum movement_hz hz)
         if(parked) {
             move_notify_motion_end(curr);
         }else if(caux->motion_stopped && !caux->soft_blocking
-              && !(in_formation && fss.arrived_at_cell && fss.may_settle)) {
+              && !(in_formation && fss.arrived_at_cell && fss.may_park)) {
             move_notify_motion_start(curr, ms);
         }
 
@@ -6889,8 +6854,8 @@ static void move_do_tick_submit(enum movement_hz hz)
             .fstate.assigned_to_cell = fss.assigned_to_cell,
             .fstate.in_range_of_cell = fss.in_range_of_cell,
             .fstate.arrived_at_cell = fss.arrived_at_cell,
-            .fstate.may_settle = fss.may_settle,
-            .fstate.at_cell = fss.at_cell,
+            .fstate.may_park = fss.may_park,
+            .fstate.straggler = fss.straggler,
             .fstate.normal_cohesion_force = fss.cohesion_force,
             .fstate.normal_align_force = fss.alignment_force,
             .fstate.normal_drag_force = fss.drag_force,
