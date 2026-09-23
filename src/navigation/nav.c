@@ -557,6 +557,73 @@ static void n_make_cliff_edges(struct nav_private *priv, const struct tile **til
     }}
 }
 
+static int n_layer_rings(enum nav_layer layer)
+{
+    switch(layer) {
+    case NAV_LAYER_GROUND_3X3:
+    case NAV_LAYER_WATER_3X3:
+    case NAV_LAYER_AIR_3X3:
+        return 1;
+    case NAV_LAYER_GROUND_5X5:
+    case NAV_LAYER_WATER_5X5:
+    case NAV_LAYER_AIR_5X5:
+        return 2;
+    case NAV_LAYER_GROUND_7X7:
+    case NAV_LAYER_WATER_7X7:
+    case NAV_LAYER_AIR_7X7:
+        return 3;
+    default:
+        return 0;
+    }
+}
+
+/* Impassable terrain grows by the layer's clearance rings, the same rings a
+ * blocker stamp gets, so a wide body is never routed against a cliff or
+ * shore its centre could touch but its body could not.
+ */
+static void n_erode_impassable(struct nav_private *priv, enum nav_layer layer)
+{
+    int rings = n_layer_rings(layer);
+    if(rings == 0)
+        return;
+
+    size_t rows = priv->height * FIELD_RES_R;
+    size_t cols = priv->width * FIELD_RES_C;
+    uint8_t *eroded = PF_MALLOC(rows * cols);
+    if(!eroded)
+        return;
+    memset(eroded, 0, rows * cols);
+
+    for(int chunk_r = 0; chunk_r < priv->height; chunk_r++) {
+    for(int chunk_c = 0; chunk_c < priv->width;  chunk_c++) {
+        struct nav_chunk *chunk = &priv->chunks[layer][IDX(chunk_r, priv->width, chunk_c)];
+        for(int r = 0; r < FIELD_RES_R; r++) {
+        for(int c = 0; c < FIELD_RES_C; c++) {
+            if(chunk->cost_base[r][c] != COST_IMPASSABLE)
+                continue;
+            int abs_r = chunk_r * FIELD_RES_R + r;
+            int abs_c = chunk_c * FIELD_RES_C + c;
+            for(int dr = -rings; dr <= rings; dr++) {
+            for(int dc = -rings; dc <= rings; dc++) {
+                int nr = abs_r + dr, nc = abs_c + dc;
+                if(nr < 0 || nr >= (int)rows || nc < 0 || nc >= (int)cols)
+                    continue;
+                eroded[nr * cols + nc] = 1;
+            }}
+        }}
+    }}
+
+    for(size_t abs_r = 0; abs_r < rows; abs_r++) {
+    for(size_t abs_c = 0; abs_c < cols; abs_c++) {
+        if(!eroded[abs_r * cols + abs_c])
+            continue;
+        struct nav_chunk *chunk = &priv->chunks[layer][IDX(abs_r / FIELD_RES_R, priv->width,
+            abs_c / FIELD_RES_C)];
+        chunk->cost_base[abs_r % FIELD_RES_R][abs_c % FIELD_RES_C] = COST_IMPASSABLE;
+    }}
+    PF_FREE(eroded);
+}
+
 static void n_link_chunks(struct nav_chunk *a, enum edge_type a_type, struct coord a_coord,
                           struct nav_chunk *b, enum edge_type b_type, struct coord b_coord,
                           size_t width)
@@ -2871,6 +2938,7 @@ void *N_NewCtxForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
         }}
 
         n_make_cliff_edges(ret, chunk_tiles, layer, chunk_w, chunk_h);
+        n_erode_impassable(ret, layer);
         n_update_portals(ret, layer);
         n_update_island_field(ret, layer);
         n_update_local_island_field(ret, layer);
@@ -3872,16 +3940,30 @@ void N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *o
     struct tile_desc tds[2048];
     size_t ntiles = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
 
+    /* The cutout earns the same clearance rings as any other impassable
+     * terrain on the wide layers.
+     */
+    struct tile_desc outlines[3][2048];
+    size_t noutlines[3];
+    noutlines[0] = M_Tile_Contour(ntiles, tds, res, outlines[0], ARR_SIZE(outlines[0]));
+    noutlines[1] = M_Tile_Contour(noutlines[0], outlines[0], res, outlines[1], ARR_SIZE(outlines[1]));
+    noutlines[2] = M_Tile_Contour(noutlines[1], outlines[1], res, outlines[2], ARR_SIZE(outlines[2]));
+
     for(int layer = 0; layer < NAV_LAYER_MAX; layer++) {
         /* Do not cut out from air layers */
         if(layer >= NAV_LAYER_AIR_1X1 && layer <= NAV_LAYER_AIR_7X7)
             continue;
-        /* In the current implementation, we are content to block 
-         * the exact same tiles for all the existing layers */
         for(int i = 0; i < ntiles; i++) {
 
             priv->chunks[layer][IDX(tds[i].chunk_r, priv->width, tds[i].chunk_c)]
                 .cost_base[tds[i].tile_r][tds[i].tile_c] = COST_IMPASSABLE;
+        }
+        for(int ring = 0; ring < n_layer_rings(layer); ring++) {
+            for(size_t i = 0; i < noutlines[ring]; i++) {
+                struct tile_desc td = outlines[ring][i];
+                priv->chunks[layer][IDX(td.chunk_r, priv->width, td.chunk_c)]
+                    .cost_base[td.tile_r][td.tile_c] = COST_IMPASSABLE;
+            }
         }
         priv->edge_states_dirty[layer] = true;
     }
@@ -5433,7 +5515,11 @@ vec2_t N_TileDims(void)
 void N_BlockersIncref(vec2_t xz_pos, float range, int faction_id, uint32_t flags,
                       vec3_t map_pos, void *nav_private)
 {
-    bool dilate = !(flags & ENTITY_FLAG_MOVABLE);
+    /* A standing unit earns the rings too: without them the wide layers read
+     * a parked crowd as a sieve of body-width gaps and route bodies into
+     * slots they cannot fit.
+     */
+    bool dilate = true;
 
     if(flags & ENTITY_FLAG_AIR) {
         n_update_blockers_circle_air(nav_private, xz_pos, range, faction_id, map_pos, +1, dilate);
@@ -5446,7 +5532,7 @@ void N_BlockersIncref(vec2_t xz_pos, float range, int faction_id, uint32_t flags
 void N_BlockersDecref(vec2_t xz_pos, float range, int faction_id, uint32_t flags,
                       vec3_t map_pos, void *nav_private)
 {
-    bool dilate = !(flags & ENTITY_FLAG_MOVABLE);
+    bool dilate = true;
 
     if(flags & ENTITY_FLAG_AIR) {
         n_update_blockers_circle_air(nav_private, xz_pos, range, faction_id, map_pos, -1, dilate);
