@@ -4057,7 +4057,16 @@ static bool will_collide(const uint8_t *field, int arrival_res, enum nav_layer l
     return M_NavPositionBlocked(s_map, layer, next_pos);
 }
 
-static uint32_t subformation_leader(struct subformation *formation)
+/* A member off to fire, or standing to fire, is not on the lattice: the
+ * scaffold neither anchors on it nor follows it.
+ */
+static bool member_away(uint32_t uid)
+{
+    return G_Move_SeekingFiringPosition(uid)
+        || (G_FlagsGet(uid) & ENTITY_FLAG_COMBAT_HELD);
+}
+
+static uint32_t subformation_leader_pass(struct subformation *formation, bool skip_away)
 {
     /* Find the closest entity to the front row center. This is the tentative
      * formation 'leader'.
@@ -4086,12 +4095,20 @@ static uint32_t subformation_leader(struct subformation *formation)
             /* Try to get the entity for the current cell */
             int cell_idx = CELL_IDX(row, col, formation->ncols);
             khiter_t k = kh_get(reverse, formation->reverse, cell_idx);
-            if(k != kh_end(formation->reverse)) {
-                return kh_val(formation->reverse, k);
-            }
+            if(k == kh_end(formation->reverse))
+                continue;
+            if(skip_away && member_away(kh_val(formation->reverse, k)))
+                continue;
+            return kh_val(formation->reverse, k);
         }
     }
     return NULL_UID;
+}
+
+static uint32_t subformation_leader(struct subformation *formation)
+{
+    uint32_t leader = subformation_leader_pass(formation, true);
+    return (leader != NULL_UID) ? leader : subformation_leader_pass(formation, false);
 }
 
 static vec2_t entity_heading(uint32_t uid)
@@ -4133,7 +4150,7 @@ static uint32_t unit_in_front(uint32_t uid, struct subformation *formation)
         if(cell->state != CELL_OCCUPIED)
             continue;
         khiter_t l = kh_get(reverse, formation->reverse, idx);
-        if(l != kh_end(formation->reverse))
+        if(l != kh_end(formation->reverse) && !member_away(kh_val(formation->reverse, l)))
             return kh_val(formation->reverse, l);
     }
     return NULL_UID;
@@ -4219,6 +4236,8 @@ static bool leader_should_slow_dowm(uint32_t leader, struct subformation *format
             continue;
 
         uint32_t uid = kh_val(formation->reverse, k);
+        if(member_away(uid))
+            continue;
         int col_offset = c - leader_coord.c;
         float distance = -col_offset * (2 * radius + MOVE_BUFFER_DIST);
         vec2_t target = entity_target_position(anchor, heading, distance);
