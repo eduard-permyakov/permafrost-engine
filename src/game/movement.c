@@ -262,6 +262,8 @@ struct movestate_aux{
     bool               goal_set;
     vec2_t             goal_prev;
     float              goal_best;
+    /* Net travel along the desired direction since the last progress. Transient. */
+    float              headway;
     /* Whether the facing is following the travel direction. Transient. */
     bool               facing_follows;
     /* Whether the last solve saw a neighbour in the way that moves, fights,
@@ -732,7 +734,10 @@ static struct result navigation_tick_task(void *arg);
  * unit's own goal.
  */
 #define GROUP_NOPROGRESS_S              (10.0f)
-/* Coming this much nearer the goal than ever before is progress */
+/* Coming this much nearer the goal than ever before, or this much net travel
+ * along the way the field guides, is progress: a detour round a wall gains no
+ * straight-line distance for a while.
+ */
 #define GROUP_PROGRESS_MIN              (3.0f)
 /* The facing follows the travel direction once the unit moves at this
  * fraction of its commanded speed, and stops following below the lower one,
@@ -1419,6 +1424,7 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
         G_Arrival_InitUnit(&caux->arrival,
             G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr_ent));
         caux->goal_set = false;
+        caux->headway = 0.0f;
     }
 
     /* The flow fields will be computed on-demand during the next movement update tick */
@@ -1636,6 +1642,10 @@ static void update_flock_progress(enum movement_hz hz)
                 aux->goal_best = dist;
             }else if(dist < aux->goal_best - GROUP_PROGRESS_MIN) {
                 aux->goal_best = dist;
+                progressed = true;
+            }
+            if(aux->headway >= GROUP_PROGRESS_MIN) {
+                aux->headway = 0.0f;
                 progressed = true;
             }
         });
@@ -5708,6 +5718,14 @@ static void move_consume_work_results(void)
         entity_apply_update(out->ent_uid, ms, aux, &out->patch);
         entity_apply_cp_side(aux, out->cp_side);
         aux->crowd_busy = (s_move_work.in[i].nbusy > 0);
+
+        vec2_t applied = (out->patch.flags & UPDATE_SET_VELOCITY) ? out->patch.next_velocity
+                                                                  : (vec2_t){0.0f, 0.0f};
+        vec2_t along = s_move_work.in[i].ent_des_v;
+        if(PFM_Vec2_Len(&along) > EPSILON) {
+            PFM_Vec2_Normal(&along, &along);
+            aux->headway += PFM_Vec2_Dot(&applied, &along);
+        }
     }
 
     /* All this tick's position changes are enqueued; apply the batched fog
