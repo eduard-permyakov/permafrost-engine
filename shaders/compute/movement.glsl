@@ -160,7 +160,7 @@ struct move_input{
     uint  layer;
     uint  has_dest_los;
     uint  formation_assignment_ready;
-    uint  _pad0; /* Keep aligned to vec2 size */
+    uint  range_field;
 };
 
 /* Must match movement.c */
@@ -751,8 +751,15 @@ vec2 formation_point_seek_total_force(uint gpuid, uint flockid, vec2 vdes, vec2 
     return ret;
 }
 
+vec2 arrive_force_seek(uint gpuid, vec2 target_xz, vec2 vdes, uint has_dest_los, uint range_field)
+{
+    if(bool(range_field))
+        return arrive_force_point(gpuid, ATTR_VEC2(gpuid, pos), vdes, 1u);
+    return arrive_force_point(gpuid, target_xz, vdes, has_dest_los);
+}
+
 vec2 formation_seek_vpref(uint gpuid, uint flockid, float speed, vec2 vdes, vec2 cohesion, 
-                          vec2 alignment, vec2 drag, uint has_dest_los)
+                          vec2 alignment, vec2 drag, uint has_dest_los, uint range_field)
 {
     vec2 steer_force = vec2(0.0, 0.0);
     for(int prio = 0; prio < 3; prio++) {
@@ -763,8 +770,8 @@ vec2 formation_seek_vpref(uint gpuid, uint flockid, float speed, vec2 vdes, vec2
         }else if(prio == 1) {
             steer_force = separation_force(gpuid, SEPARATION_BUFFER_DIST);
         }else if(prio == 2) {
-            steer_force = arrive_force_point(gpuid, FLOCK_ATTR_VEC2(flockid, target), vdes,
-                has_dest_los);
+            steer_force = arrive_force_seek(gpuid, FLOCK_ATTR_VEC2(flockid, target), vdes,
+                has_dest_los, range_field);
         }
         steer_force = nullify_impass_components(gpuid, steer_force);
         if(length(steer_force) > scaled_max_force() * 0.01)
@@ -799,7 +806,8 @@ vec2 point_seek_total_force(uint gpuid, uint flockid, vec2 vdes, uint has_dest_l
     return ret;
 }
 
-vec2 point_seek_vpref(uint gpuid, uint flockid, vec2 vdes, uint has_dest_los, float speed)
+vec2 point_seek_vpref(uint gpuid, uint flockid, vec2 vdes, uint has_dest_los, float speed,
+                      uint range_field)
 {
     vec2 steer_force = vec2(0.0, 0.0);
     for(int prio = 0; prio < 3; prio++) {
@@ -809,8 +817,8 @@ vec2 point_seek_vpref(uint gpuid, uint flockid, vec2 vdes, uint has_dest_los, fl
         }else if(prio == 1) {
             steer_force = separation_force(gpuid, SEPARATION_BUFFER_DIST);
         }else if(prio == 2) {
-            steer_force = arrive_force_point(gpuid, FLOCK_ATTR_VEC2(flockid, target), 
-                vdes, has_dest_los);
+            steer_force = arrive_force_seek(gpuid, FLOCK_ATTR_VEC2(flockid, target), 
+                vdes, has_dest_los, range_field);
         }
         steer_force = nullify_impass_components(gpuid, steer_force);
         if(length(steer_force) > scaled_max_force() * 0.01)
@@ -1329,7 +1337,19 @@ void main()
             ATTR_VEC2(gpuid, vdes)
         );
     }else if(state == STATE_ARRIVING_TO_CELL) {
-        if(!bool(ATTR(gpuid, formation_assignment_ready))) {
+        if(bool(ATTR(gpuid, range_field))) {
+            vpref = formation_seek_vpref(
+                gpuid,
+                ATTR(gpuid, flock_id),
+                ATTR(gpuid, speed),
+                ATTR_VEC2(gpuid, vdes),
+                vec2(0.0, 0.0),
+                vec2(0.0, 0.0),
+                vec2(0.0, 0.0),
+                0u,
+                1u
+            );
+        }else if(!bool(ATTR(gpuid, formation_assignment_ready))) {
             vpref = vec2(0.0, 0.0);
         }else{
             vpref = cell_arrival_seek_vpref(
@@ -1343,7 +1363,19 @@ void main()
             );
         }
     }else if(state == STATE_MOVING_IN_FORMATION) {
-        if(!bool(ATTR(gpuid, formation_assignment_ready))) {
+        if(bool(ATTR(gpuid, range_field))) {
+            vpref = formation_seek_vpref(
+                gpuid,
+                ATTR(gpuid, flock_id),
+                ATTR(gpuid, speed),
+                ATTR_VEC2(gpuid, vdes),
+                vec2(0.0, 0.0),
+                vec2(0.0, 0.0),
+                vec2(0.0, 0.0),
+                0u,
+                1u
+            );
+        }else if(!bool(ATTR(gpuid, formation_assignment_ready))) {
             vpref = vec2(0.0, 0.0);
         }else{
             vpref = formation_seek_vpref(
@@ -1354,7 +1386,8 @@ void main()
                 ATTR_VEC2(gpuid, formation_cohesion_force),
                 ATTR_VEC2(gpuid, formation_align_force),
                 ATTR_VEC2(gpuid, formation_drag_force),
-                ATTR(gpuid, has_dest_los)
+                ATTR(gpuid, has_dest_los),
+                0u
             );
         }
     }else{
@@ -1362,8 +1395,9 @@ void main()
             gpuid,
             ATTR(gpuid, flock_id),
             ATTR_VEC2(gpuid, vdes),
-            ATTR(gpuid, has_dest_los),
-            ATTR(gpuid, speed)
+            ATTR(gpuid, has_dest_los) & ~ATTR(gpuid, range_field),
+            ATTR(gpuid, speed),
+            ATTR(gpuid, range_field)
         );
     }
 
