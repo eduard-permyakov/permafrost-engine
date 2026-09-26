@@ -549,7 +549,7 @@ struct gpu_ent_desc{
     uint32_t layer;
     uint32_t has_dest_los;
     uint32_t formation_assignment_ready;
-    uint32_t __pad0; /* Keep aligned to vec2 size */
+    uint32_t range_field;
 };
 
 enum move_cmd_type{
@@ -1421,6 +1421,8 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
         struct movestate_aux *caux = movestate_aux_get(curr_ent);
         caux->attack_reach = attack ? attack_move_seed_reach(curr_ent,
             G_FlagsGetFrom(s_move_work.gamestate.flags, curr_ent)) : 0.0f;
+        caux->range_latched = false;
+        caux->range_miss_ticks = 0;
         G_Arrival_InitUnit(&caux->arrival,
             G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr_ent));
         caux->goal_set = false;
@@ -2232,7 +2234,9 @@ static void request_async_field(uint32_t uid)
         return M_NavRequestAsyncEnemySeekField(s_move_work.gamestate.map, 
             layer, pos_xz, faction_id, 0.0f);
     }
-    case STATE_MOVING: {
+    case STATE_MOVING:
+    case STATE_MOVING_IN_FORMATION:
+    case STATE_ARRIVING_TO_CELL: {
         float reach = attack_move_reach(uid, flock_for_ent(uid));
         if(reach == 0.0f)
             break;
@@ -2286,16 +2290,15 @@ static void request_async_field(uint32_t uid)
  * nothing of the enemy, so it will happily march past a firing position and take
  * the long way round its own front rank to reach the point it was sent to.
  */
-/* Formation members are deliberately excluded. Their cells are laid out around
- * the ordered point, past the enemy, so the cohesion force pulls them forward
- * onto the cell while the reach field pulls them back to a firing position, and
- * a unit handed both spins between them. Standing a formation off at reach is a
- * question for where its cells are placed, not for the field its members follow.
+/* A formation member on the reach field is steered by the field alone and the
+ * scaffold treats it as away, so the cell's pull and the field's never compete.
  */
 static float attack_move_reach(uint32_t uid, const struct flock *fl)
 {
     const struct movestate *ms = movestate_get(uid);
-    if(ms->state != STATE_MOVING)
+    if(ms->state != STATE_MOVING
+    && ms->state != STATE_MOVING_IN_FORMATION
+    && ms->state != STATE_ARRIVING_TO_CELL)
         return 0.0f;
     if(!fl || !N_DestIDIsAttacking(fl->dest_id))
         return 0.0f;
@@ -2475,9 +2478,16 @@ static vec2_t ent_desired_velocity(struct move_work_in *in)
     case STATE_TURNING:
         return (vec2_t){0.0f, 0.0f};
 
-    case STATE_ARRIVING_TO_CELL:
+    case STATE_ARRIVING_TO_CELL: {
+        if(attack_move_reach(uid, fl) > 0.0f) {
+            struct target target = build_target(uid, fl);
+            in->range_field = (target.kind == TARGET_KIND_ENEMY_SEEK)
+                           && (target.enemy_seek.range > 0.0f);
+            if(in->range_field)
+                return M_NavDesiredVelocityForTargetCached(map, target, pos_xz);
+        }
         return cell_arrival_vdes;
-
+    }
     case STATE_SEEK_ENEMIES: {
         vec2_t pinned;
         if(seek_pin_vdes(uid, pos_xz, &pinned, out_seek_pinned))
@@ -2499,19 +2509,21 @@ static vec2_t ent_desired_velocity(struct move_work_in *in)
 
     default: {
         assert(fl);
-        struct movestate *mms = movestate_get(uid);
-        struct arrival_state *as = flock_arrival_for_ent(fl, uid);
-        vec2_t arrival_vel;
-        if(as && G_Arrival_DesiredVelocity(as, &movestate_aux_get(uid)->arrival, s_map,
-            map, pos_xz, mms->velocity, has_dest_los, &arrival_vel))
-            return arrival_vel;
-
         struct target target = build_target(uid, fl);
         in->range_field = (target.kind == TARGET_KIND_ENEMY_SEEK)
                        && (target.enemy_seek.range > 0.0f);
 
+        struct movestate *mms = movestate_get(uid);
+        struct arrival_state *as = flock_arrival_for_ent(fl, uid);
+        vec2_t arrival_vel;
+        if(!in->range_field && as
+        && G_Arrival_DesiredVelocity(as, &movestate_aux_get(uid)->arrival, s_map,
+            map, pos_xz, mms->velocity, has_dest_los, &arrival_vel))
+            return arrival_vel;
+
+        /* A zero on the reach field's passable ground is the firing position. */
         vec2_t field_vdes = M_NavDesiredVelocityForTargetCached(map, target, pos_xz);
-        if(PFM_Vec2_Len(&field_vdes) > EPSILON)
+        if(in->range_field || PFM_Vec2_Len(&field_vdes) > EPSILON)
             return field_vdes;
 
         /* A void sample on free, pathable ground is a stale hole rather than
@@ -3287,6 +3299,16 @@ static vec2_t formation_seek_vpref(uint32_t uid, const struct flock *flock, floa
     return new_vel;
 }
 
+/* On the reach field the member is steered by the field alone: no cell, no
+ * cohesion, alignment or drag, no line of sight, and the brake at its own
+ * position once the field reads zero.
+ */
+static vec2_t range_seek_vpref(uint32_t uid, const struct flock *flock, float speed, vec2_t vdes)
+{
+    vec2_t zero = (vec2_t){0.0f, 0.0f};
+    return formation_seek_vpref(uid, flock, speed, vdes, zero, zero, zero, false, true);
+}
+
 static void update_vel_hist(struct movestate_aux *aux, vec2_t vnew)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -3786,7 +3808,8 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
             break;
         }
 
-        if(mover_settle_verdict(uid, new_pos_xz, radius, layer, ms, aux) != SETTLE_NONE) {
+        if(!in->range_field
+        && mover_settle_verdict(uid, new_pos_xz, radius, layer, ms, aux) != SETTLE_NONE) {
             out->flags |= UPDATE_SET_STATE;
             out->next_state = STATE_ARRIVED;
             out->next_block = true;
@@ -3809,6 +3832,10 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
              * an empty field sample is no reason to park.
              */
             if(in->has_dest_los)
+                break;
+
+            /* A zero on the reach field is the firing position: hold it. */
+            if(in->range_field)
                 break;
 
             /* A soft blocker already stands and walls its tiles. */
@@ -4508,6 +4535,8 @@ static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack)
         dest_id = M_NavDestIDForPosAttacking(s_map, dest_xz, layer, faction_id);
         if(daux) {
             daux->attack_reach = attack_move_seed_reach(uid, flags);
+            daux->range_latched = false;
+            daux->range_miss_ticks = 0;
         }
     }else{
         dest_id = M_NavDestIDForPos(s_map, dest_xz, layer);
@@ -5290,6 +5319,10 @@ static void move_velocity_work(int begin_idx, int end_idx)
             break;
         case STATE_ARRIVING_TO_CELL:
             assert(flock);
+            if(in->range_field) {
+                vpref = range_seek_vpref(in->ent_uid, flock, in->speed, in->ent_des_v);
+                break;
+            }
             if(!in->fstate.assignment_ready) {
                 vpref = (vec2_t){0.0f, 0.0f};
                 break;
@@ -5302,6 +5335,10 @@ static void move_velocity_work(int begin_idx, int end_idx)
             break;
         case STATE_MOVING_IN_FORMATION:
             assert(flock);
+            if(in->range_field) {
+                vpref = range_seek_vpref(in->ent_uid, flock, in->speed, in->ent_des_v);
+                break;
+            }
             if(!in->fstate.assignment_ready) {
                 vpref = (vec2_t){0.0f, 0.0f};
                 break;
@@ -5315,8 +5352,8 @@ static void move_velocity_work(int begin_idx, int end_idx)
             break;
         default:
             assert(flock);
-            vpref = point_seek_vpref(in->ent_uid, flock, in->fsnap,
-                in->ent_des_v, in->has_dest_los, in->speed, side, in->range_field);
+            vpref = point_seek_vpref(in->ent_uid, flock, in->fsnap, in->ent_des_v,
+                in->has_dest_los && !in->range_field, in->speed, side, in->range_field);
         }
         assert(vpref.x == vpref.x && vpref.z == vpref.z); /* a NaN vpref would corrupt the integration */
 
@@ -5947,6 +5984,7 @@ static void move_upload_input(size_t nents)
             .layer = Entity_NavLayerWithRadius(flags, radius),
             .has_dest_los = work ? work->has_dest_los : false,
             .formation_assignment_ready = work ? work->fstate.assignment_ready : 0,
+            .range_field = work ? work->range_field : 0,
         };
         cursor += sizeof(struct gpu_ent_desc);
     }
@@ -6590,8 +6628,9 @@ static void compute_path_requests(uint64_t dispatch_ticks)
         struct move_work_in *in = &s_move_work.in[idx];
         uint32_t uid = in->ent_uid;
         const struct movestate *ms = movestate_get(uid);
-        if(!ms || ms->state == STATE_TURNING || ms->state == STATE_ARRIVING_TO_CELL
-        || ms->state == STATE_FLEEING)
+        if(!ms || ms->state == STATE_TURNING || ms->state == STATE_FLEEING)
+            continue;
+        if(ms->state == STATE_ARRIVING_TO_CELL && !movestate_aux_get(uid)->range_latched)
             continue;
 
         vec2_t pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
@@ -7449,6 +7488,20 @@ bool G_Move_GetSurrounding(uint32_t uid, uint32_t *out_uid)
         return false;
     *out_uid = ms->surround_target_uid;
     return true;
+}
+
+bool G_Move_SeekingFiringPosition(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    const struct movestate *ms = movestate_get(uid);
+    const struct movestate_aux *aux = movestate_aux_get(uid);
+    if(!ms || !aux || !aux->range_latched || aux->attack_reach == 0.0f)
+        return false;
+    enum move_state state = (ms->state == STATE_WAITING) ? aux->wait_prev : ms->state;
+    return state == STATE_MOVING
+        || state == STATE_MOVING_IN_FORMATION
+        || state == STATE_ARRIVING_TO_CELL;
 }
 
 bool G_Move_Still(uint32_t uid)
