@@ -264,8 +264,10 @@ struct movestate_aux{
     float              goal_best;
     /* Whether the facing is following the travel direction. Transient. */
     bool               facing_follows;
-    /* Whether the last solve saw a moving neighbour. Transient. */
-    bool               crowd_moving;
+    /* Whether the last solve saw a neighbour in the way that moves, fights,
+     * waits to park, or waits behind one. Transient.
+     */
+    bool               crowd_busy;
     /* Walled out of its cell by its own side: walks through its own side's
      * bodies and stamps to reach it, for a bounded number of ticks.
      */
@@ -397,6 +399,8 @@ struct move_work_in{
     size_t         ntiles;
     /* In-reach neighbours in non-still movement states (jam evidence) */
     size_t         njam;
+    /* In-reach neighbours in the way that move, fight, wait to park, or wait behind one that does */
+    size_t         nbusy;
     /* Nearest neighbour in reach, and whether this unit gives it the lane */
     uint32_t       nn_uid;
     float          nn_dist;
@@ -1559,11 +1563,20 @@ static int settle_flock_in_place(struct flock *flock)
             continue;
         if(!member_on_the_way(uid, ms) || (G_FlagsGet(uid) & ENTITY_FLAG_COMBAT_HELD))
             continue;
-        if(movestate_aux_get(uid)->crowd_moving)
+        if(movestate_aux_get(uid)->crowd_busy)
             continue;
 
         if(G_Formation_GetForEnt(uid) != NULL_FID)
             G_Formation_ConcedeCell(uid);
+        if(s_log_perf_csv) {
+            vec2_t goal = member_goal(flock, uid);
+            vec2_t pos = G_Pos_GetXZ(uid);
+            vec2_t to_goal;
+            PFM_Vec2_Sub(&goal, &pos, &to_goal);
+            fprintf(stdout, "[settle-taken] %u,%u,%s,%.1f,%d\n", s_move_trace_tick, uid,
+                s_state_str[ms->state], PFM_Vec2_Len(&to_goal),
+                (int)movestate_aux_get(uid)->parked);
+        }
 
         /* A waiting member already blocks and has announced its stop. */
         nsettled++;
@@ -4179,15 +4192,16 @@ static int near_ent_dist_cmp(const void *a, const void *b)
     return (na->dist2 > nb->dist2) - (na->dist2 < nb->dist2);
 }
 
-static void find_neighbours(uint32_t uid,
+static void find_neighbours(uint32_t uid, vec2_t ahead,
                             struct cp_ent *out_dyn, size_t *out_ndyn,
                             struct cp_ent *out_stat, size_t *out_nstat,
-                            size_t *out_njam,
+                            size_t *out_njam, size_t *out_nbusy,
                             uint32_t *out_nn_uid, float *out_nn_dist)
 {
     *out_ndyn = 0;
     *out_nstat = 0;
     *out_njam = 0;
+    *out_nbusy = 0;
     *out_nn_uid = NULL_UID;
     *out_nn_dist = INFINITY;
 
@@ -4277,6 +4291,19 @@ static void find_neighbours(uint32_t uid,
         struct movestate_aux *curr_aux = movestate_aux_get(curr);
         bool at_slot = G_Arrival_NeighbourSettling(&curr_aux->arrival,
             curr_xz_pos, newdesc.radius);
+
+        /* Standing in this unit's way and going somewhere, fighting, waiting to
+         * park, or waiting behind one that is: a unit with nothing of the kind
+         * ahead of it is stuck for good.
+         */
+        vec2_t to_curr;
+        PFM_Vec2_Sub(&curr_xz_pos, &ent_pos, &to_curr);
+        bool in_the_way = (PFM_Vec2_Len(&ahead) < EPSILON) || (PFM_Vec2_Dot(&to_curr, &ahead) > 0.0f);
+        bool moving = !ent_still(ms) && PFM_Vec2_Len(&ms->velocity) >= CLEARPATH_STILL_SPEED
+                   && !at_slot;
+        if(in_the_way && !ent_still(ms)
+        && (moving || (flags & ENTITY_FLAG_COMBAT_HELD) || curr_aux->crowd_busy || curr_aux->parked))
+            (*out_nbusy)++;
 
         if(ent_still(ms) || PFM_Vec2_Len(&ms->velocity) < CLEARPATH_STILL_SPEED || at_slot) {
             /* A static neighbour is a stationary obstacle; its velocity-obstacle apex
@@ -5187,8 +5214,9 @@ static void move_velocity_work(int begin_idx, int end_idx)
 
         /* Holds its ground; neighbours still gathered for the release test. */
         if(movestate_aux_get(in->ent_uid)->soft_blocking) {
-            find_neighbours(in->ent_uid, in->dyn_neighbs, &in->ndyn,
-                in->stat_neighbs, &in->nstat, &in->njam, &in->nn_uid, &in->nn_dist);
+            find_neighbours(in->ent_uid, in->ent_des_v, in->dyn_neighbs, &in->ndyn,
+                in->stat_neighbs, &in->nstat, &in->njam, &in->nbusy,
+                &in->nn_uid, &in->nn_dist);
             out->ent_uid = in->ent_uid;
             out->ent_vel = (vec2_t){0.0f, 0.0f};
             out->cp_flags = 0;
@@ -5283,8 +5311,9 @@ static void move_velocity_work(int begin_idx, int end_idx)
         assert(vpref.x == vpref.x && vpref.z == vpref.z); /* a NaN vpref would corrupt the integration */
 
         /* Find the entity's neighbours */
-        find_neighbours(in->ent_uid, in->dyn_neighbs, &in->ndyn,
-            in->stat_neighbs, &in->nstat, &in->njam, &in->nn_uid, &in->nn_dist);
+        find_neighbours(in->ent_uid, in->ent_des_v, in->dyn_neighbs, &in->ndyn,
+            in->stat_neighbs, &in->nstat, &in->njam, &in->nbusy,
+            &in->nn_uid, &in->nn_dist);
 
         in->hug = ent_hugs_wall(in);
         if(in->hug) {
@@ -5678,7 +5707,7 @@ static void move_consume_work_results(void)
         entity_apply_cp_stall(aux, !!(out->cp_flags & CP_OUT_STALLED));
         entity_apply_update(out->ent_uid, ms, aux, &out->patch);
         entity_apply_cp_side(aux, out->cp_side);
-        aux->crowd_moving = (s_move_work.in[i].ndyn > 0);
+        aux->crowd_busy = (s_move_work.in[i].nbusy > 0);
     }
 
     /* All this tick's position changes are enqueued; apply the batched fog
@@ -5778,6 +5807,7 @@ static void move_push_work(struct move_work_in in)
     in.nstat = 0;
     in.ntiles = 0;
     in.njam = 0;
+    in.nbusy = 0;
     in.nterrain = 0;
     in.nn_uid = NULL_UID;
     in.nn_dist = INFINITY;
