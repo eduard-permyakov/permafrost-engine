@@ -221,6 +221,7 @@ static PyObject *PyPf_map_pos_over_water(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_pos_over_land(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_nearest_pathable(PyObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPf_map_locations_reachable(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_map_nearest_pathable_water(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_map_nearest_pathable_air(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_map_pos_pathable(PyObject *self, PyObject *args, PyObject *kwargs);
@@ -768,6 +769,11 @@ static PyMethodDef pf_module_methods[] = {
     {"map_nearest_pathable",
     (PyCFunction)PyPf_map_nearest_pathable, METH_VARARGS | METH_KEYWORDS,
     "Returns the closest XZ map position that is pathable and not currently blocked."},
+
+    {"map_locations_reachable",
+    (PyCFunction)PyPf_map_locations_reachable, METH_VARARGS | METH_KEYWORDS,
+    "Returns whether two XZ map positions lie on the same island of the layer a unit of the "
+    "optional 'radius' walks, ignoring blockers."},
 
     {"map_nearest_pathable_water",
     (PyCFunction)PyPf_map_nearest_pathable_water, METH_VARARGS | METH_KEYWORDS,
@@ -2774,6 +2780,27 @@ static PyObject *PyPf_map_nearest_pathable(PyObject *self, PyObject *args, PyObj
         Py_RETURN_NONE;
     }else{
         return Py_BuildValue("ff", ret.x, ret.z);
+    }
+}
+
+static PyObject *PyPf_map_locations_reachable(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    float ax, az, bx, bz;
+    static char *kwlist[] = {"a", "b", "radius", NULL};
+    float radius = 0.0f;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "(ff)(ff)|f", kwlist, &ax, &az, &bx, &bz, &radius)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two tuples of two floats. "
+            "An optional (float) 'radius' argument is allowed.");
+        return NULL;
+    }
+
+    uint32_t flags = 0;
+    enum nav_layer layer = Entity_NavLayerWithRadius(flags, radius);
+    if(G_MapLocationsReachable((vec2_t){ax, az}, (vec2_t){bx, bz}, layer)) {
+        Py_RETURN_TRUE;
+    }else{
+        Py_RETURN_FALSE;
     }
 }
 

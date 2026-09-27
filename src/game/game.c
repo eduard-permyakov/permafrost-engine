@@ -2396,6 +2396,15 @@ bool G_MapClosestPathable(vec2_t xz, vec2_t *out, enum nav_layer layer)
     return M_NavClosestPathable(s_gs.map, layer, xz, out);
 }
 
+bool G_MapLocationsReachable(vec2_t a, vec2_t b, enum nav_layer layer)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(!s_gs.map)
+        return true;
+    return M_NavLocationsReachable(s_gs.map, layer, a, b);
+}
+
 bool G_MapPositionPathable(vec2_t xz, enum nav_layer layer)
 {
     ASSERT_IN_MAIN_THREAD();

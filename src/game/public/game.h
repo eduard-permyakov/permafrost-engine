@@ -160,6 +160,7 @@ bool            G_MouseOverMinimap(void);
 bool            G_MouseInTargetMode(void);
 bool            G_MapHeightAtPoint(vec2_t xz, float *out_height);
 bool            G_MapClosestPathable(vec2_t xz, vec2_t *out, enum nav_layer layer);
+bool            G_MapLocationsReachable(vec2_t a, vec2_t b, enum nav_layer layer);
 bool            G_MapPositionPathable(vec2_t xz, enum nav_layer layer);
 bool            G_PointInsideMap(vec2_t xz);
 bool            G_PointOverWater(vec2_t xz);
