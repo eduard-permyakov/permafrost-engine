@@ -107,6 +107,10 @@ struct fieldcache_ctx{
     /* The following structures are maintained for efficient invalidation of entries:*/
     khash_t(idvec)   *chunk_ffield_map; /* key: (chunk coord) */
     khash_t(idvec)   *chunk_lfield_map; /* key: (chunk coord) */
+    /* Destinations whose route skirted a blocked edge in the chunk. The entries
+     * outlive the routes: a destination nobody heads for has no fields to mark.
+     */
+    khash_t(idvec)   *chunk_detour_map; /* key: (chunk coord) */
 
     /* Fields served stale until their rate-capped rebuild publishes; the
      * value is the tick the rebuild becomes due. Keyed by ffid. */
@@ -232,6 +236,31 @@ static void field_map_add(khash_t(idvec) *hash, uint64_t key, uint64_t id)
     }
 }
 
+/* Marks a cached field stale-served until its rate-capped rebuild; a fresh
+ * mark counts as one invalidation.
+ */
+static bool flow_mark_stale(struct fieldcache_ctx *ctx, ff_id_t ffid, uint32_t period)
+{
+    if(lru_flow_peek(&ctx->flow_cache, ffid) == NULL)
+        return false;
+    int put_ret;
+    khiter_t s = kh_put(stale, ctx->flow_stale, ffid, &put_ret);
+    if(put_ret == 0)
+        return false;
+    kh_val(ctx->flow_stale, s) = ctx->tick + period;
+    ctx->perfstats.flow_invalidated++;
+    return true;
+}
+
+static bool id_vec_contains(const vec_id_t *vec, uint64_t id)
+{
+    for(int i = 0; i < vec_size(vec); i++) {
+        if(vec_AT(vec, i) == id)
+            return true;
+    }
+    return false;
+}
+
 static bool dest_array_contains(dest_id_t *array, size_t size, dest_id_t item)
 {
     for(int i = 0; i < size; i++) {
@@ -300,20 +329,14 @@ static size_t clear_chunk_flow_map(struct fieldcache_ctx *ctx, uint64_t key,
             continue;
 
         /* Enemy/point-seek fields are served stale while their rate-capped
-         * rebuild is pending; a fresh mark counts as one invalidation. Zone
-         * fields must rebuild eagerly; surround fields have their own cap. */
+         * rebuild is pending. Zone fields must rebuild eagerly; surround
+         * fields have their own cap. */
         int ttype = N_FlowFieldTargetType(key);
         if((ttype == TARGET_ENEMIES || ttype == TARGET_TILE || ttype == TARGET_PORTAL)
         && lru_flow_peek(&ctx->flow_cache, key) != NULL) {
-            int put_ret;
-            khiter_t s = kh_put(stale, ctx->flow_stale, key, &put_ret);
-            if(put_ret != 0) {
-                kh_val(ctx->flow_stale, s) = ctx->tick + ((ttype == TARGET_ENEMIES)
-                    ? ENEMY_SEEK_REBUILD_PERIOD_TICKS
-                    : POINT_SEEK_REBUILD_PERIOD_TICKS);
-                ctx->perfstats.flow_invalidated++;
-                ret++;
-            }
+            ret += flow_mark_stale(ctx, key, (ttype == TARGET_ENEMIES)
+                ? ENEMY_SEEK_REBUILD_PERIOD_TICKS
+                : POINT_SEEK_REBUILD_PERIOD_TICKS);
             continue;
         }
 
@@ -358,6 +381,9 @@ bool N_FC_Init(struct fieldcache_ctx *ctx)
     if(NULL == (ctx->chunk_lfield_map = kh_init(idvec)))
         goto fail_chunk_lfield;
 
+    if(NULL == (ctx->chunk_detour_map = kh_init(idvec)))
+        goto fail_chunk_detour;
+
     if(NULL == (ctx->flow_stale = kh_init(stale)))
         goto fail_flow_stale;
 
@@ -371,6 +397,8 @@ bool N_FC_Init(struct fieldcache_ctx *ctx)
 fail_los_stale:
     kh_destroy(stale, ctx->flow_stale);
 fail_flow_stale:
+    kh_destroy(idvec, ctx->chunk_detour_map);
+fail_chunk_detour:
     kh_destroy(idvec, ctx->chunk_lfield_map);
 fail_chunk_lfield:
     kh_destroy(idvec, ctx->chunk_ffield_map);
@@ -399,6 +427,9 @@ void N_FC_Destroy(struct fieldcache_ctx *ctx)
     destroy_all_entries(ctx->chunk_lfield_map);
     kh_destroy(idvec, ctx->chunk_lfield_map);
 
+    destroy_all_entries(ctx->chunk_detour_map);
+    kh_destroy(idvec, ctx->chunk_detour_map);
+
     kh_destroy(stale, ctx->flow_stale);
     kh_destroy(stale, ctx->los_stale);
 }
@@ -415,6 +446,9 @@ void N_FC_ClearAll(struct fieldcache_ctx *ctx)
 
     destroy_all_entries(ctx->chunk_lfield_map);
     kh_clear(idvec, ctx->chunk_lfield_map);
+
+    destroy_all_entries(ctx->chunk_detour_map);
+    kh_clear(idvec, ctx->chunk_detour_map);
 
     kh_clear(stale, ctx->flow_stale);
     kh_clear(stale, ctx->los_stale);
@@ -698,6 +732,34 @@ void N_FC_InvalidateAllThroughChunk(struct fieldcache_ctx *ctx, struct coord chu
         
             bool found = lru_los_remove(&ctx->los_cache, key);
             ctx->perfstats.los_invalidated += !!found;
+        }
+    });
+}
+
+void N_FC_RegisterDetour(struct fieldcache_ctx *ctx, dest_id_t id, const struct coord *chunks,
+                         size_t nchunks)
+{
+    FC_ASSERT_NAV_TASK();
+    for(int i = 0; i < nchunks; i++) {
+        field_map_add(ctx->chunk_detour_map, key_for_chunk(chunks[i]), id);
+    }
+}
+
+void N_FC_MarkDetoursOpened(struct fieldcache_ctx *ctx, struct coord chunk, enum nav_layer layer)
+{
+    FC_ASSERT_NAV_TASK();
+    khiter_t k = kh_get(idvec, ctx->chunk_detour_map, key_for_chunk(chunk));
+    if(k == kh_end(ctx->chunk_detour_map))
+        return;
+    const vec_id_t *dests = &kh_val(ctx->chunk_detour_map, k);
+
+    uint64_t key;
+    ff_id_t ffid_val;
+    LRU_FOREACH_SAFE_REMOVE(ffid, &ctx->ffid_cache, key, ffid_val, {
+
+        dest_id_t curr_dest = key_dest(key);
+        if(N_DestLayer(curr_dest) == layer && id_vec_contains(dests, curr_dest)) {
+            flow_mark_stale(ctx, ffid_val, POINT_SEEK_REBUILD_PERIOD_TICKS);
         }
     });
 }

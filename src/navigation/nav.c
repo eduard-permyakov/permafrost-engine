@@ -157,6 +157,7 @@ struct fc_inval_cmd{
     int            width;
     int            height;
     bool           through;
+    bool           opened;
 };
 VEC_TYPE(inval, struct fc_inval_cmd)
 VEC_IMPL(static inline, inval, struct fc_inval_cmd)
@@ -852,7 +853,7 @@ static bool n_local_ports_connected(struct portal *a, struct portal *b,
 }
 
 static int n_update_edge_states(struct nav_private *priv, enum nav_layer layer,
-                                struct nav_chunk *chunk)
+                                struct nav_chunk *chunk, int *out_opened)
 {
     int ret = 0;
     for(int i = 0; i < chunk->num_portals; i++) {
@@ -870,6 +871,8 @@ static int n_update_edge_states(struct nav_private *priv, enum nav_layer layer,
             if(new_es != old_es) {
                 port->edges[j].es = new_es;
                 ret++;
+                if(out_opened && new_es == EDGE_STATE_ACTIVE)
+                    (*out_opened)++;
             }
         }
     }
@@ -882,7 +885,7 @@ static void n_update_all_edge_states(struct nav_private *priv, enum nav_layer la
     size_t nchunks = priv->width * priv->height;
     for(int i = 0; i < nchunks; i++) {
         struct nav_chunk *chunk = &priv->chunks[layer][i];
-        n_update_edge_states(priv, layer, chunk);
+        n_update_edge_states(priv, layer, chunk, NULL);
     }
 }
 
@@ -1705,7 +1708,7 @@ static const struct portal *n_closest_reachable_from_location(struct nav_private
             if(!arr_contains(liids, nliids, curr_liid) && nliids < ARR_SIZE(liids)) {
                 liids[nliids++] = curr_liid;
                 s_tick_diag.nastar++;
-                if(AStar_PortalGraphPath(loc, curr, port, priv, layer, &path, &cost)
+                if(AStar_PortalGraphPath(loc, curr, port, priv, layer, &path, &cost, NULL)
                 && cost < shortest_dist) {
 
                     nearest = curr;
@@ -2186,7 +2189,7 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
             uint32_t key = kh_key(set, k);
             struct coord curr = (struct coord){ key >> 16, key & 0xffff };
             n_update_edge_states(priv, layer,
-                &priv->chunks[layer][IDX(curr.r, priv->width, curr.c)]);
+                &priv->chunks[layer][IDX(curr.r, priv->width, curr.c)], NULL);
         }
         priv->edge_chunks_dirty[layer] = false;
     }
@@ -2345,9 +2348,12 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
         PERF_RETURN(false);
     }
 
+    vec_coord_t skipped;
+    vec_coord_init(&skipped);
+
     s_tick_diag.nastar++;
     bool path_exists = AStar_PortalGraphPath(src_desc, dst_desc, dst_port,
-        priv, layer, &path, &cost);
+        priv, layer, &path, &cost, &skipped);
     if(!path_exists) {
 
         /* if we didn't find a path to the 'closest portal' to the destination, that must mean 
@@ -2367,6 +2373,7 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
             if(use_memo)
                 astar_memo_store(memo_key, MEMO_TRUE_EARLY, dst_desc, NULL);
             vec_portal_destroy(&path);
+            vec_coord_destroy(&skipped);
             *out_dest_id = ret;
             PERF_RETURN(true);
         }
@@ -2374,12 +2381,13 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
         if(dst_port) {
             s_tick_diag.nastar++;
             path_exists = AStar_PortalGraphPath(src_desc, dst_desc, dst_port,
-                priv, layer, &path, &cost);
+                priv, layer, &path, &cost, &skipped);
         }
     }
 
     if(!path_exists) {
         vec_portal_destroy(&path);
+        vec_coord_destroy(&skipped);
 
         /* If the source and destination are on the same chunk, then there is nothing left for us
          * to do but get as close as possible */
@@ -2397,6 +2405,10 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
 
     if(use_memo)
         astar_memo_store(memo_key, MEMO_PATH, dst_desc, &path);
+    if(vec_size(&skipped) > 0) {
+        N_FC_RegisterDetour(priv->fieldcache, ret, &vec_AT(&skipped, 0), vec_size(&skipped));
+    }
+    vec_coord_destroy(&skipped);
 
 walk:;
     struct coord prev_los_coord = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
@@ -2802,7 +2814,8 @@ void N_Update(void *nav_private)
 
             struct nav_chunk *chunk = &priv->chunks[layer]
                                                    [IDX(curr.r, priv->width, curr.c)];
-            int nflipped = n_update_edge_states(priv, layer, chunk);
+            int nopened = 0;
+            int nflipped = n_update_edge_states(priv, layer, chunk, &nopened);
 
             if(nflipped)
                 components_dirty = true;
@@ -2815,7 +2828,8 @@ void N_Update(void *nav_private)
                 .layer   = layer,
                 .width   = priv->width,
                 .height  = priv->height,
-                .through = (nflipped != 0)
+                .through = (nflipped != 0),
+                .opened  = (nopened != 0)
             });
         }
 
@@ -2884,6 +2898,8 @@ void N_ApplyDeferredInvalidations(void)
             cmd->width, cmd->height, cmd->chunk, cmd->layer);
         if(cmd->through)
             N_FC_InvalidateAllThroughChunk(fc, cmd->chunk, cmd->layer);
+        if(cmd->opened)
+            N_FC_MarkDetoursOpened(fc, cmd->chunk, cmd->layer);
     }
     vec_inval_reset(&s_pending_inval);
 }

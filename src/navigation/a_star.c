@@ -199,6 +199,15 @@ static size_t portal_connected_liids(const struct nav_private *priv, enum nav_la
     return ret;
 }
 
+static void skipped_add(vec_coord_t *skipped, struct coord chunk)
+{
+    for(int i = 0; i < vec_size(skipped); i++) {
+        if(vec_AT(skipped, i).r == chunk.r && vec_AT(skipped, i).c == chunk.c)
+            return;
+    }
+    vec_coord_push(skipped, chunk);
+}
+
 /* The 'liid' is the local island ID on the chunk that 'portal' is on 
  * from which we reached the portal. It is used for discriminating 
  * some portals which may not be reachable from that specific local island
@@ -209,7 +218,8 @@ static size_t portal_connected_liids(const struct nav_private *priv, enum nav_la
 static int neighbours_portal_graph(const struct nav_private *priv, enum nav_layer layer,
                                    const struct portal *portal, uint16_t liid, 
                                    const struct portal **out_neighbours, float *out_costs, 
-                                   uint16_t *out_enter_liids, size_t maxout)
+                                   uint16_t *out_enter_liids, size_t maxout,
+                                   vec_coord_t *out_skipped)
 {
     int ret = 0;
     const struct nav_chunk *chunk = 
@@ -221,8 +231,11 @@ static int neighbours_portal_graph(const struct nav_private *priv, enum nav_laye
             return ret;
 
         const struct edge *edge = &portal->edges[i];
-        if(edge->es == EDGE_STATE_BLOCKED)
+        if(edge->es == EDGE_STATE_BLOCKED) {
+            if(out_skipped)
+                skipped_add(out_skipped, portal->chunk);
             continue;
+        }
 
         /* If the portal is not reachable from our source local island, then 
          * we can't use it 
@@ -451,7 +464,8 @@ static float portal_octile_estimate(const struct portal *port, struct tile_desc 
 
 bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_tile, 
                            const struct portal *finish, const struct nav_private *priv, 
-                           enum nav_layer layer, vec_portal_t *out_path, float *out_cost)
+                           enum nav_layer layer, vec_portal_t *out_path, float *out_cost,
+                           vec_coord_t *out_skipped)
 {
     PERF_ENTER();
 
@@ -518,7 +532,7 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_til
         uint16_t neighb_enter_liids[MAX_PORTAL_NEIGHBS];
 
         int num_neighbours = neighbours_portal_graph(priv, layer, curr.portal, curr.liid, neighbours, 
-            neighbour_costs, neighb_enter_liids, ARR_SIZE(neighbours));
+            neighbour_costs, neighb_enter_liids, ARR_SIZE(neighbours), out_skipped);
 
         for(int i = 0; i < num_neighbours; i++) {
 

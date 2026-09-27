@@ -149,6 +149,15 @@ const struct flow_field *N_FC_PeekFlowField(struct fieldcache_ctx *ctx, ff_id_t 
 bool                     N_FC_PeekDestFFMapping(struct fieldcache_ctx *ctx, dest_id_t id,
                                                struct coord chunk_coord, ff_id_t *out_ff);
 
+/* A route solved around blocked portal edges is registered under the chunks
+ * holding them; an edge there opening again marks the destination's fields for
+ * the rate-capped rebuild, so its units re-solve the route.
+ */
+void                     N_FC_RegisterDetour(struct fieldcache_ctx *ctx, dest_id_t id,
+                                             const struct coord *chunks, size_t nchunks);
+void                     N_FC_MarkDetoursOpened(struct fieldcache_ctx *ctx, struct coord chunk,
+                                                enum nav_layer layer);
+
 /*###########################################################################*/
 /* GRID PATH CACHING                                                         */
 /*###########################################################################*/
