@@ -3032,6 +3032,29 @@ static vec2_t new_pos_for_vel(uint32_t uid, vec2_t velocity)
     return new_pos;
 }
 
+/* The part of a step into impassable ground that runs along it. The solver's
+ * wall obstacles are discs on the tile centres, so its avoidance can aim a
+ * little into a wall the field runs beside, and a step dropped whole there
+ * leaves the unit frozen for as long as what it avoids stays put.
+ */
+static vec2_t slide_along_impassable(uint32_t uid, enum nav_layer layer, vec2_t vel)
+{
+    const struct map *map = s_move_work.gamestate.map;
+    vec2_t along_x = (vec2_t){vel.x, 0.0f};
+    vec2_t along_z = (vec2_t){0.0f, vel.z};
+    bool x_ok = (vel.x != 0.0f)
+             && M_NavPositionPathable(map, layer, new_pos_for_vel(uid, along_x));
+    bool z_ok = (vel.z != 0.0f)
+             && M_NavPositionPathable(map, layer, new_pos_for_vel(uid, along_z));
+    if(x_ok && z_ok)
+        return (fabsf(vel.x) >= fabsf(vel.z)) ? along_x : along_z;
+    if(x_ok)
+        return along_x;
+    if(z_ok)
+        return along_z;
+    return (vec2_t){0.0f, 0.0f};
+}
+
 /* Nullify the components of the force which would guide
  * the entity towards an impassable tile. */
 static void nullify_impass_components(uint32_t uid, vec2_t *inout_force)
@@ -3663,6 +3686,17 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
     assert(hz_count(hz) <= 20);
     assert(20 % hz_count(hz) == 0);
 
+    float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
+    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+    enum nav_layer layer = Entity_NavLayerWithRadius(flags, radius);
+
+    if(PFM_Vec2_Len(&new_vel) > EPSILON
+    && !M_NavPositionPathable(s_move_work.gamestate.map, layer, new_pos_for_vel(uid, new_vel))) {
+        vec2_t slide = slide_along_impassable(uid, layer, new_vel);
+        if(PFM_Vec2_Len(&slide) > EPSILON)
+            new_vel = slide;
+    }
+
     /* Gate translation on heading so a unit never slides sideways out of a stop.
      */
     bool turn_to_move = false;
@@ -3680,9 +3714,6 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
     }
 
     vec2_t new_pos_xz = new_pos_for_vel(uid, new_vel);
-    float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
-    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
-    enum nav_layer layer = Entity_NavLayerWithRadius(flags, radius);
 
     if(flags & ENTITY_FLAG_GARRISONED) {
         if(!ent_still(ms)) {
