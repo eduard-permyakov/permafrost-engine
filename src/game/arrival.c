@@ -809,6 +809,9 @@ void G_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2
 {
     bool built = (as->phase != ARRIVAL_PHASE_INACTIVE);
     if(built) {
+        /* A ball that found no ground stays down; its members seek the goal. */
+        if(as->num_slots == 0)
+            return;
         bool all_settled = true;
         for(int i = 0; i < nmembers; i++) {
             if(!members[i].settled) {
@@ -860,6 +863,14 @@ void G_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2
             as->slots[kept++] = as->slots[si];
         }
         as->num_slots = kept;
+        if(as->num_slots == 0) {
+            as->phase = ARRIVAL_PHASE_DONE;
+            if(arrival_log_enabled()) {
+                fprintf(stdout, "[arrival-empty] %d,%.1f,%.1f\n", (int)as->layer,
+                    as->centre.x, as->centre.z);
+            }
+            return;
+        }
         arrival_reserve_slots(as, map);
         /* COM of the kept slots + a dest field toward it - the fallback seek target. */
         vec2_t com = (vec2_t){0.0f, 0.0f};
@@ -1256,7 +1267,7 @@ bool G_Arrival_LoadState(struct SDL_RWops *stream, struct arrival_group *grp,
             PF_FREE(as);
             return false;
         }
-        if(as->phase != ARRIVAL_PHASE_INACTIVE) {
+        if(as->phase != ARRIVAL_PHASE_INACTIVE && as->num_slots > 0) {
             arrival_reserve_slots(as, map);
         }
         grp->layers[l] = as;
