@@ -1528,21 +1528,25 @@ static bool fit_dims_to_area(struct subformation *formation, enum formation_type
 
     /* Every candidate rectangle is centred on the same front cell, so all of
      * them are sub-rectangles of the widest and deepest one, and the ideal
-     * rectangle moved by up to 'reach' lattice steps in any direction is a
-     * sub-rectangle of that one grown by the reach. Probe that window once
-     * and answer every candidate from a summed-area table of the result.
+     * rectangle moved by up to a formation's depth behind the one on its spot
+     * along the advance, and its own width across it, is a sub-rectangle of
+     * that one grown by those reaches. Probe that window once and answer
+     * every candidate from a summed-area table of the result. Further off
+     * than that the rectangle bends at the anchor instead: a squad ordered up
+     * to a crowded line stands in it, not a few formations behind it.
      */
-    const int reach = MAX(rows_max, cols_max) + 1;
-    const int win_rows = rows_max + 2 * reach;
-    const int win_cols = cols_max + 2 * reach;
+    const int reach_d = 2 * rows_ideal + 1;
+    const int reach_l = cols_ideal + 1;
+    const int win_rows = rows_max + 2 * reach_d;
+    const int win_cols = cols_max + 2 * reach_l;
     const size_t stride = (size_t)win_cols + 1;
     int *sat = PF_CALLOC((size_t)(win_rows + 1) * stride, sizeof(int));
     if(!sat)
         PERF_RETURN(false);
 
     const int lat_lo = -(cols_max / 2);
-    const int win_d0 = -reach;
-    const int win_l0 = lat_lo - reach;
+    const int win_d0 = -reach_d;
+    const int win_l0 = lat_lo - reach_l;
     for(int d = 0; d < win_rows; d++) {
     for(int l = 0; l < win_cols; l++) {
         bool open = lattice_cell_free(formation, center, anchor, orientation, offsets,
@@ -1587,12 +1591,13 @@ static bool fit_dims_to_area(struct subformation *formation, enum formation_type
      */
     bool shifted = false;
     if(!clear_cols) {
-        const int span = 2 * reach + 1;
-        struct rect_candidate *cands = PF_MALLOC((size_t)span * span * sizeof(*cands));
+        const int span_d = 2 * reach_d + 1;
+        const int span_l = 2 * reach_l + 1;
+        struct rect_candidate *cands = PF_MALLOC((size_t)span_d * span_l * sizeof(*cands));
         if(cands) {
             size_t ncands = 0;
-            for(int dd = -reach; dd <= reach; dd++) {
-            for(int dl = -reach; dl <= reach; dl++) {
+            for(int dd = -reach_d; dd <= reach_d; dd++) {
+            for(int dl = -reach_l; dl <= reach_l; dl++) {
                 vec2_t mid = cell_lattice_pos(anchor, orientation, offsets,
                     dd + (rows_ideal - 1) / 2.0f, dl + (cols_ideal - 1) / 2.0f - (cols_ideal / 2));
                 vec2_t delta;
