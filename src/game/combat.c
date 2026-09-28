@@ -92,6 +92,15 @@
  */
 #define RETARGET_QUEUE_RANGE         (40.0f)
 #define RETARGET_EAGER_RANGE         (80.0f)
+/* Diagnostics behind pf.debug.log_perf_csv: an enemy drawing fire from this
+ * many units is logged every period, with its hits and any hit that changed
+ * nothing about it.
+ */
+#define HOT_TARGET_MIN_ATTACKERS     (8)
+#define HOT_TARGET_PERIOD_TICKS      (20)
+#define HOT_TARGET_NODMG_LOG_MAX     (4)
+#define HOT_TARGET_ATTACKERS_LISTED  (16)
+#define HOT_TARGET_SHOTS_LOGGED      (4)
 #define RETARGET_HOLD_MAX            (5)
 /* A melee chaser closer than its personal pin range waits in line behind the
  * front instead of following the shared enemy-seek field around it; farther
@@ -443,6 +452,16 @@ VEC_IMPL(static, mod, struct combat_mod);
  */
 KHASH_MAP_INIT_INT(modlist, vec_mod_t)
 
+struct hot_stat{
+    int attackers;
+    int hits;
+    int nodmg_logged;
+    int listed;
+    int shots_logged;
+};
+
+KHASH_MAP_INIT_INT(hot, struct hot_stat)
+
 /* Kept out of the combatstate, which is copied into the worker snapshot every
  * tick; only the resolved sums are read on the damage path.
  */
@@ -461,6 +480,7 @@ static void on_death_anim_finish(void *user, void *event);
 static void do_stop_attack(uint32_t uid);
 static bool entity_dead(uint32_t uid);
 static bool garrisoned(uint32_t uid);
+static void log_hit(uint32_t target, float dmg, const char *nodmg_why);
 static void combat_notify_attack_start(uint32_t uid, struct combatstate *cs);
 static void combat_notify_attack_end(uint32_t uid, struct combatstate *cs);
 static struct combat_cmd *snoop_most_recent_command(enum combat_cmd_type type, void *arg,
@@ -524,6 +544,9 @@ static mp_strbuff_t       s_stringpool;
 static float              s_dmg_mult[DAMAGE_TYPE_MAX][ARMOUR_TYPE_MAX];
 static vec_corpse_t       s_corpses;
 static khash_t(modlist)  *s_mods;
+static khash_t(hot)      *s_hot_targets;
+static bool               s_log_perf_csv;
+static uint32_t           s_combat_ticks;
 static vec_gbonus_t       s_gbonuses;
 
 /*****************************************************************************/
@@ -1108,6 +1131,10 @@ static void entity_die(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
 
     struct combatstate *cs = combatstate_get(uid);
+    if(s_log_perf_csv) {
+        fprintf(stdout, "[cb-die] %lu,%u,%x,%d\n", g_frame_idx, uid, G_FlagsGet(uid),
+            cs ? cs->stats.max_hp : -1);
+    }
     if(cs) {
         cs->attack_notified = false;
         cs->state = STATE_NOT_IN_COMBAT;
@@ -1167,16 +1194,20 @@ static void entity_melee_attack(uint32_t uid, uint32_t target)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    if(entity_dead(target) || garrisoned(target))
+    if(entity_dead(target) || garrisoned(target)) {
+        log_hit(target, 0.0f, entity_dead(target) ? "dead" : "garrisoned");
         return;
+    }
 
     struct combatstate *cs = combatstate_get(uid);
     struct combatstate *target_cs = combatstate_get(cs->target_uid);
     if(!target_cs)
         return;
 
-    if(combat_effective_invulnerable(target_cs))
+    if(combat_effective_invulnerable(target_cs)) {
+        log_hit(target, 0.0f, "invulnerable");
         return;
+    }
 
     /* The float damage is truncated by the assignment back into the integer HP,
      * which makes any nonzero damage take at least a whole point.
@@ -1184,7 +1215,9 @@ static void entity_melee_attack(uint32_t uid, uint32_t target)
     float dmg = combat_effective_damage(cs)
               * combat_dmg_mult(cs->stats.dmg_type, target_cs->stats.armour_type)
               * combat_armour_mult(combat_effective_armour(target_cs));
+    int hp_before = target_cs->current_hp;
     target_cs->current_hp = MAX(0, target_cs->current_hp - dmg);
+    log_hit(target, dmg, (target_cs->current_hp == hp_before) ? "unchanged" : NULL);
 
     if(target_cs->current_hp == 0 && target_cs->stats.max_hp > 0) {
         entity_die(target);
@@ -1213,14 +1246,26 @@ static void entity_ranged_attack(uint32_t uid, uint32_t target, vec3_t proj_pos)
     }
 
     float ent_dmg = combat_effective_damage(cs);
-    vec3_t vel;
-    if(!P_Projectile_VelocityForTarget(proj_pos, target_pos, cs->pd.speed,
-        cs->fd.fire_mode, &vel)) {
-        return; /* Degenerate: the target is right on top of the muzzle. */
+    vec3_t vel = (vec3_t){0};
+    bool ok = P_Projectile_VelocityForTarget(proj_pos, target_pos, cs->pd.speed,
+        cs->fd.fire_mode, &vel);
+
+    int flags = PROJ_ONLY_HIT_COMBATABLE | PROJ_ONLY_HIT_ENEMIES;
+    khiter_t h = s_log_perf_csv ? kh_get(hot, s_hot_targets, target) : kh_end(s_hot_targets);
+    if(h != kh_end(s_hot_targets)
+    && kh_value(s_hot_targets, h).shots_logged < HOT_TARGET_SHOTS_LOGGED) {
+        kh_value(s_hot_targets, h).shots_logged++;
+        flags |= PROJ_TRACE;
+        fprintf(stdout, "[cb-shot] %lu,%u,%u,%d,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%d,%.3f,%.3f,%.3f,%.1f,%d\n",
+            g_frame_idx, uid, target, (int)G_EntityExists(target), proj_pos.x, proj_pos.y,
+            proj_pos.z, target_pos.x, target_pos.y, target_pos.z, (int)ok, vel.x, vel.y, vel.z,
+            cs->pd.speed, (int)cs->fd.fire_mode);
     }
+    if(!ok)
+        return; /* Degenerate: the target is right on top of the muzzle. */
 
     P_Projectile_Add(proj_pos, vel, uid, G_GetFactionID(uid),
-        ent_dmg, cs->stats.dmg_type, PROJ_ONLY_HIT_COMBATABLE | PROJ_ONLY_HIT_ENEMIES, cs->pd);
+        ent_dmg, cs->stats.dmg_type, flags, cs->pd);
 }
 
 static bool garrisoned(uint32_t uid)
@@ -1304,6 +1349,9 @@ static void on_death_anim_finish(void *user, void *event)
 
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, self, on_death_anim_finish);
     G_Zombiefy(self, true);
+    if(s_log_perf_csv) {
+        fprintf(stdout, "[cb-zombie] %lu,%u\n", g_frame_idx, self);
+    }
 
     struct combat_gamestate *gs = &s_combat_work.gamestate;
     vec3_t pos = G_Pos_GetFrom(gs->positions, self);
@@ -1368,6 +1416,26 @@ static void do_remove_entity(uint32_t uid)
     combatstate_remove(uid);
 }
 
+static void log_hit(uint32_t target, float dmg, const char *nodmg_why)
+{
+    if(!s_log_perf_csv)
+        return;
+    khiter_t k = kh_get(hot, s_hot_targets, target);
+    if(k == kh_end(s_hot_targets))
+        return;
+    struct hot_stat *stat = &kh_value(s_hot_targets, k);
+    stat->hits++;
+    if(!nodmg_why || stat->nodmg_logged >= HOT_TARGET_NODMG_LOG_MAX)
+        return;
+    stat->nodmg_logged++;
+
+    struct combatstate *cs = combatstate_get(target);
+    uint32_t flags = G_EntityExists(target) ? G_FlagsGet(target) : 0;
+    fprintf(stdout, "[cb-nodmg] %lu,%u,%s,%.2f,%d,%d,%x,%d\n", g_frame_idx, target,
+        nodmg_why, dmg, cs ? cs->current_hp : -1, cs ? cs->stats.max_hp : -1, flags,
+        cs ? (int)cs->state : -1);
+}
+
 static void do_tryhit(uint32_t uid, vec3_t proj_pos)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -1422,18 +1490,24 @@ static void do_tryhit(uint32_t uid, vec3_t proj_pos)
 
 static void do_proj_tryhit(struct proj_hit *hit)
 {
-    if(entity_dead(hit->ent_uid) || garrisoned(hit->ent_uid))
+    if(entity_dead(hit->ent_uid) || garrisoned(hit->ent_uid)) {
+        log_hit(hit->ent_uid, 0.0f, entity_dead(hit->ent_uid) ? "dead" : "garrisoned");
         return;
+    }
 
     struct combatstate *cs = combatstate_get(hit->ent_uid);
-    if(combat_effective_invulnerable(cs))
+    if(combat_effective_invulnerable(cs)) {
+        log_hit(hit->ent_uid, 0.0f, "invulnerable");
         return;
+    }
 
     /* Truncated into the integer HP, as in the melee path. */
     float dmg = hit->cookie
               * combat_dmg_mult(hit->dmg_type, cs->stats.armour_type)
               * combat_armour_mult(combat_effective_armour(cs));
+    int hp_before = cs->current_hp;
     cs->current_hp = MAX(0, cs->current_hp - dmg);
+    log_hit(hit->ent_uid, dmg, (cs->current_hp == hp_before) ? "unchanged" : NULL);
 
     if(cs->current_hp == 0 && cs->stats.max_hp > 0) {
         entity_die(hit->ent_uid);
@@ -3109,6 +3183,90 @@ static void combat_submit_work(void)
     }
 }
 
+static bool combat_engaged(const struct combatstate *cs)
+{
+    return (cs->state == STATE_MOVING_TO_TARGET
+         || cs->state == STATE_MOVING_TO_TARGET_LOCKED
+         || cs->state == STATE_CAN_ATTACK
+         || cs->state == STATE_ATTACK_ANIM_PLAYING
+         || cs->state == STATE_ATTACKING
+         || cs->state == STATE_TURNING_TO_TARGET);
+}
+
+static void log_hot_targets(void)
+{
+    khiter_t k;
+    for(k = kh_begin(s_hot_targets); k != kh_end(s_hot_targets); k++) {
+        if(kh_exist(s_hot_targets, k))
+            kh_value(s_hot_targets, k).attackers = 0;
+    }
+    for(k = kh_begin(s_entity_state_table); k != kh_end(s_entity_state_table); k++) {
+        if(!kh_exist(s_entity_state_table, k))
+            continue;
+        const struct combatstate *cs = &kh_value(s_entity_state_table, k);
+        if(!combat_engaged(cs))
+            continue;
+        int status;
+        khiter_t h = kh_put(hot, s_hot_targets, cs->target_uid, &status);
+        if(status == -1)
+            continue;
+        if(status > 0)
+            kh_value(s_hot_targets, h) = (struct hot_stat){0};
+        kh_value(s_hot_targets, h).attackers++;
+    }
+    for(k = kh_begin(s_hot_targets); k != kh_end(s_hot_targets); k++) {
+        if(!kh_exist(s_hot_targets, k))
+            continue;
+        uint32_t target = kh_key(s_hot_targets, k);
+        struct hot_stat *stat = &kh_value(s_hot_targets, k);
+        if(stat->attackers < HOT_TARGET_MIN_ATTACKERS) {
+            kh_del(hot, s_hot_targets, k);
+            continue;
+        }
+        bool exists = G_EntityExists(target);
+        vec3_t pos = exists ? G_Pos_Get(target) : (vec3_t){0};
+        uint32_t flags = exists ? G_FlagsGet(target) : 0;
+        const struct entity *ent = exists ? AL_EntityGet(target) : NULL;
+        const struct combatstate *tcs = combatstate_get(target);
+        fprintf(stdout, "[cb-hot] %lu,%u,%d,%d,%d,%.1f,%.1f,%.1f,%x,%d,%d,%d,%d,%s\n",
+            g_frame_idx, target, stat->attackers, stat->hits, (int)exists,
+            pos.x, pos.y, pos.z, flags, tcs ? tcs->current_hp : -1,
+            tcs ? tcs->stats.max_hp : -1, tcs ? (int)combat_effective_invulnerable(tcs) : -1,
+            tcs ? (int)tcs->state : -1, (ent && ent->name) ? ent->name : "");
+        stat->hits = 0;
+        stat->nodmg_logged = 0;
+        stat->listed = 0;
+        stat->shots_logged = 0;
+    }
+    for(k = kh_begin(s_entity_state_table); k != kh_end(s_entity_state_table); k++) {
+        if(!kh_exist(s_entity_state_table, k))
+            continue;
+        uint32_t uid = kh_key(s_entity_state_table, k);
+        const struct combatstate *cs = &kh_value(s_entity_state_table, k);
+        if(!combat_engaged(cs))
+            continue;
+        khiter_t h = kh_get(hot, s_hot_targets, cs->target_uid);
+        if(h == kh_end(s_hot_targets))
+            continue;
+        struct hot_stat *stat = &kh_value(s_hot_targets, h);
+        if(stat->listed >= HOT_TARGET_ATTACKERS_LISTED)
+            continue;
+        stat->listed++;
+        float dist = -1.0f;
+        if(G_EntityExists(uid) && G_EntityExists(cs->target_uid)) {
+            vec2_t a = entity_xz(uid), b = entity_xz(cs->target_uid), d;
+            PFM_Vec2_Sub(&a, &b, &d);
+            dist = PFM_Vec2_Len(&d);
+        }
+        const struct entity *ent = G_EntityExists(uid) ? AL_EntityGet(uid) : NULL;
+        fprintf(stdout, "[cb-att] %lu,%u,%u,%d,%.1f,%.1f,%d,%d,%d,%s\n", g_frame_idx,
+            cs->target_uid, uid, (int)cs->state, dist, combat_effective_range(cs),
+            G_EntityExists(uid) ? (int)G_Move_Still(uid) : -1,
+            (int)(G_Formation_GetForEnt(uid) != NULL_FID), (int)cs->attack_notified,
+            (ent && ent->name) ? ent->name : "");
+    }
+}
+
 static void combat_tick(void *user, void *event)
 {
     if(s_last_tick == g_frame_idx)
@@ -3118,6 +3276,12 @@ static void combat_tick(void *user, void *event)
     enum eventtype curr_event = (uintptr_t)user;
 
     combat_finish_work();
+
+    struct sval csv_setting;
+    s_log_perf_csv = (Settings_Get("pf.debug.log_perf_csv", &csv_setting) == SS_OKAY)
+                  && csv_setting.as_bool;
+    if(s_log_perf_csv && (++s_combat_ticks % HOT_TARGET_PERIOD_TICKS) == 0)
+        log_hot_targets();
     combat_handle_hz_update(curr_event);
     combat_process_cmds();
     combat_release_gamestate();
@@ -3442,6 +3606,7 @@ bool G_Combat_Init(const struct map *map)
     combat_copy_gamestate();
     vec_corpse_init(&s_corpses);
     s_mods = kh_init(modlist);
+    s_hot_targets = kh_init(hot);
     vec_gbonus_init(&s_gbonuses);
     return true;
 
@@ -3495,6 +3660,7 @@ void G_Combat_Shutdown(void)
             vec_mod_destroy(&curr);
         });
         kh_destroy(modlist, s_mods);
+        kh_destroy(hot, s_hot_targets);
         s_mods = NULL;
     }
     vec_gbonus_destroy(&s_gbonuses);
@@ -4937,6 +5103,7 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
         vec_mod_destroy(&mods_clear);
     });
     kh_clear(modlist, s_mods);
+    kh_clear(hot, s_hot_targets);
 
     for(int i = 0; i < num_mods; i++) {
 

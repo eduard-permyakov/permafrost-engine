@@ -219,6 +219,10 @@ static void phys_filter_out_of_bounds(void)
 
         const struct projectile *curr = &vec_AT(&s_front, i);
         if(curr->pos.y < -Z_COORDS_PER_TILE) {
+            if(curr->flags & PROJ_TRACE) {
+                fprintf(stdout, "[proj-oob] %lu,%u,%.1f,%.1f,%.1f\n", g_frame_idx, curr->uid,
+                    curr->pos.x, curr->pos.y, curr->pos.z);
+            }
             E_Global_Notify(EVENT_PROJECTILE_DISAPPEAR, (void*)((uintptr_t)curr->uid), ES_ENGINE);
             if(curr->sprite_flags & PROJ_HAS_IMPACT_SPRITE) {
                 Sprite_PlayAnim(1, 24, curr->impact_size, curr->impact_sprite, curr->pos);
@@ -333,6 +337,12 @@ static void phys_sweep_test(int front_idx)
                 hit_ent = ent;
             }
         }
+    }
+
+    if(proj->flags & PROJ_TRACE) {
+        fprintf(stdout, "[proj-trace] %lu,%u,%u,%.1f,%.1f,%.1f,%.3f,%.3f,%.3f,%u,%zu,%u\n",
+            g_frame_idx, proj->uid, proj->ent_parent, proj->pos.x, proj->pos.y, proj->pos.z,
+            proj->vel.x, proj->vel.y, proj->vel.z, s_simticks, nents, hit_ent);
     }
 
     if(hit_ent != NULL_UID) {

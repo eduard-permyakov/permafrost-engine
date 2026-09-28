@@ -48,6 +48,8 @@ struct SDL_RWops;
 
 #define PROJ_ONLY_HIT_COMBATABLE   (1 << 0)
 #define PROJ_ONLY_HIT_ENEMIES      (1 << 1)
+/* The projectile logs its sweeps and its end, for diagnostics. */
+#define PROJ_TRACE                 (1 << 2)
 
 struct proj_hit{
     uint32_t ent_uid;
