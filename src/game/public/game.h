@@ -512,6 +512,7 @@ int            G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, uint32_t *
 int            G_Pos_EntsInCircle(vec2_t xz_point, float range, uint32_t *out, size_t maxout);
 int            G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, uint32_t *out, size_t maxout,
                                   bool (*predicate)(uint32_t ent, void *arg), void *arg);
+int            G_Pos_EntsInCircleVec(vec2_t xz_point, float range, vec_entity_t *out);
 
 uint32_t       G_Pos_Nearest(vec2_t xz_point);
 uint32_t       G_Pos_NearestWithPred(vec2_t xz_point, 

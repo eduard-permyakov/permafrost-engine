@@ -368,6 +368,31 @@ int G_Pos_EntsInCircle(vec2_t xz_point, float range, uint32_t *out, size_t maxou
     PERF_RETURN(ret);
 }
 
+/* Every entity within the circle: the grid can only report a full buffer by
+ * filling it, so a full result is queried again with room for every
+ * positioned entity.
+ */
+int G_Pos_EntsInCircleVec(vec2_t xz_point, float range, vec_entity_t *out)
+{
+    PERF_ENTER();
+    ASSERT_IN_MAIN_THREAD();
+
+    size_t cap = MAX(out->capacity, 256);
+    int ret = 0;
+    for(;;) {
+        if(!vec_entity_resize(out, cap)) {
+            out->size = 0;
+            PERF_RETURN(0);
+        }
+        ret = bg_ent_inrange_circle(&s_postree, xz_point.x, xz_point.z, range, out->array, cap);
+        if(ret < (int)cap || cap >= kh_size(s_postable))
+            break;
+        cap = kh_size(s_postable);
+    }
+    out->size = filter_garrisoned(NULL, out->array, ret);
+    PERF_RETURN(out->size);
+}
+
 int G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, uint32_t *out, size_t maxout,
                                bool (*predicate)(uint32_t ent, void *arg), void *arg)
 {

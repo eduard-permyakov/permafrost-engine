@@ -134,6 +134,11 @@ static vec_proj_t       s_added;
 static vec_proj_t       s_deleted;
 struct proj_work        s_work;
 static struct memstack  s_eventargs;
+/* The entities near the projectile being swept, complete however crowded
+ * the ground is: a sweep that drops its own target lets a unit shoot at it
+ * forever.
+ */
+static vec_entity_t     s_sweep_cands;
 
 static unsigned long    s_last_tick = ULONG_MAX;
 static unsigned         s_simticks = 0;
@@ -287,8 +292,8 @@ static bool phys_enemies(int faction_id, uint32_t ent)
 static void phys_sweep_test(int front_idx)
 {
     const struct projectile *proj = &vec_AT(&s_front, front_idx);
-    uint32_t nearp[256];
-    size_t nents = G_Pos_EntsInCircle((vec2_t){proj->pos.x, proj->pos.z}, NEAR_TOLERANCE, nearp, ARR_SIZE(nearp));
+    size_t nents = G_Pos_EntsInCircleVec((vec2_t){proj->pos.x, proj->pos.z}, NEAR_TOLERANCE,
+        &s_sweep_cands);
 
     /* The collision test gets performed every frame (variable FPS) while, 
      * actual projectile motion is performed at fixed frequency of PHYS_HZ. 
@@ -312,7 +317,7 @@ static void phys_sweep_test(int front_idx)
 
     for(int i = 0; i < nents; i++) {
 
-        uint32_t ent = nearp[i];
+        uint32_t ent = vec_AT(&s_sweep_cands, i);
         /* A projectile does not collide with its' 'parent' */
         if(proj->ent_parent == ent)
             continue;
@@ -569,6 +574,7 @@ bool P_Projectile_Init(void)
         goto fail_mem;
     if(!stalloc_init(&s_eventargs))
         goto fail_eventargs;
+    vec_entity_init(&s_sweep_cands);
 
     E_Global_Register(EVENT_30HZ_TICK, on_30hz_tick, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_ALL);
@@ -595,6 +601,7 @@ void P_Projectile_Shutdown(void)
     phys_proj_join_work();
     E_Global_Unregister(EVENT_30HZ_TICK, on_30hz_tick);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
+    vec_entity_destroy(&s_sweep_cands);
     stalloc_destroy(&s_eventargs);
     stalloc_destroy(&s_work.mem);
     vec_proj_destroy(&s_front);
