@@ -6268,8 +6268,19 @@ void N_CopyIslandsFieldView(void *nav_private, vec2_t center, vec3_t map_pos, in
     }}
 }
 
+/* Whether every body on the tile belongs to one of the 'enemies' factions. */
+static bool n_tile_enemies_only(const struct nav_chunk *chunk, int r, int c, uint16_t enemies)
+{
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+        if(chunk->factions[i][r][c] && !(enemies & (0x1 << i)))
+            return false;
+    }
+    return true;
+}
+
 void N_CopyBlockedFieldView(void *nav_private, vec2_t center, vec3_t map_pos, int nrows, int ncols,
-                            enum nav_layer layer, bool with_reserved, uint8_t *out_field)
+                            enum nav_layer layer, bool with_reserved, uint16_t enemies,
+                            uint8_t *out_field)
 {
     struct nav_private *priv = (struct nav_private*)nav_private;
     struct map_resolution res;
@@ -6294,7 +6305,8 @@ void N_CopyBlockedFieldView(void *nav_private, vec2_t center, vec3_t map_pos, in
             = &priv->chunks[layer][IDX(curr.chunk_r, priv->width, curr.chunk_c)];
         out_field[IDX(r, ncols, c)] =
             (chunk->cost_base[curr.tile_r][curr.tile_c] == COST_IMPASSABLE)
-         || (chunk->blockers[curr.tile_r][curr.tile_c] > 0)
+         || (chunk->blockers[curr.tile_r][curr.tile_c] > 0
+             && !n_tile_enemies_only(chunk, curr.tile_r, curr.tile_c, enemies))
          || (with_reserved && chunk->reserved[curr.tile_r][curr.tile_c] > 0);
     }}
 }

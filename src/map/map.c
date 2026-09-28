@@ -1193,10 +1193,10 @@ void M_NavCopyIslandsFieldView(const struct map *map, vec2_t center,
 
 void M_NavCopyBlockedFieldView(const struct map *map, vec2_t center,
                                int nrows, int ncols, enum nav_layer layer, bool with_reserved,
-                               uint8_t *out_field)
+                               uint16_t enemies, uint8_t *out_field)
 {
     N_CopyBlockedFieldView(map->nav_private, center, map->pos, nrows, ncols, layer,
-        with_reserved, out_field);
+        with_reserved, enemies, out_field);
 }
 
 void M_NavCellArrivalFieldCreate(const struct map *map, size_t rdim, size_t cdim,

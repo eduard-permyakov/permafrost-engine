@@ -732,11 +732,13 @@ vec2_t N_ClosestReachableInRange(void *nav_private, vec3_t map_pos,
 /* ------------------------------------------------------------------------
  * Like N_CopyIslandsFieldView, but writes 1 for tiles that are impassable,
  * blocked, reserved (only with 'with_reserved') or outside the map, and 0
- * otherwise.
+ * otherwise. A tile blocked by bodies of the 'enemies' factions alone counts
+ * as free.
  * ------------------------------------------------------------------------
  */
 void N_CopyBlockedFieldView(void *nav_private, vec2_t center, vec3_t map_pos, int nrows, int ncols,
-                            enum nav_layer layer, bool with_reserved, uint8_t *out_field);
+                            enum nav_layer layer, bool with_reserved, uint16_t enemies,
+                            uint8_t *out_field);
 
 void N_CopyIslandsFieldView(void *nav_private, vec2_t center, vec3_t map_pos, int nrows, int ncols,
                             enum nav_layer layer, uint16_t *out_field);

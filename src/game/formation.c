@@ -1137,13 +1137,23 @@ static void block_unreachable(uint8_t *occupied, int field_res, struct coord fro
     PF_FREE(queue);
 }
 
+/* The enemy's bodies are no obstacle to the placement: the formation is meant
+ * to displace them, and a fit that steps around them lands it short of its
+ * fight.
+ */
+static uint16_t formation_enemies(const struct formation *formation)
+{
+    return G_GetEnemyFactions(vec_AT(&formation->subformations, 0).faction_id);
+}
+
 static void init_occupied_field(const struct map *map, enum nav_layer layer, vec2_t center,
                                 vec2_t target, int field_res, bool with_reserved,
-                                uint8_t *occupied)
+                                uint16_t enemies, uint8_t *occupied)
 {
     PERF_ENTER();
 
-    M_NavCopyBlockedFieldView(map, center, field_res, field_res, layer, with_reserved, occupied);
+    M_NavCopyBlockedFieldView(map, center, field_res, field_res, layer, with_reserved, enemies,
+        occupied);
     for(int i = 0; i < field_res * field_res; i++) {
         occupied[i] = occupied[i] ? TILE_BLOCKED : TILE_FREE;
     }
@@ -4998,7 +5008,7 @@ void G_Formation_Create(vec2_t target, vec2_t orientation,
     size_t nlayers = formation_layers(&new->subformations, layers);
     for(int i = 0; i < nlayers; i++) {
         init_occupied_field(s_map, layers[i], new->center, target, field_res, true,
-            occupied_layer(new, layers[i]));
+            formation_enemies(new), occupied_layer(new, layers[i]));
         init_islands_field(s_map, layers[i], new->center, field_res,
             islands_layer(new, layers[i]));
     }
@@ -5720,7 +5730,7 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
     /* Reservations steer the real placement only. */
     for(int i = 0; i < nlayers; i++) {
         init_occupied_field(map, layers[i], formation.center, target, field_res, false,
-            occupied_layer(&formation, layers[i]));
+            formation_enemies(&formation), occupied_layer(&formation, layers[i]));
         init_islands_field(map, layers[i], formation.center, field_res,
             islands_layer(&formation, layers[i]));
     }
