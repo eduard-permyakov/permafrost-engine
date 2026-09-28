@@ -3032,20 +3032,31 @@ static vec2_t new_pos_for_vel(uint32_t uid, vec2_t velocity)
     return new_pos;
 }
 
-/* The part of a step into impassable ground that runs along it. The solver's
- * wall obstacles are discs on the tile centres, so its avoidance can aim a
- * little into a wall the field runs beside, and a step dropped whole there
- * leaves the unit frozen for as long as what it avoids stays put.
+/* Whether a step may end at a position: never on impassable ground, and on a
+ * body's or building's stamp only for a unit already standing on one, which
+ * must be free to step off it, or phasing through its own side.
  */
-static vec2_t slide_along_impassable(uint32_t uid, enum nav_layer layer, vec2_t vel)
+static bool landing_ok(enum nav_layer layer, bool on_blocked, vec2_t pos)
 {
     const struct map *map = s_move_work.gamestate.map;
+    return M_NavPositionPathable(map, layer, pos)
+        && (on_blocked || !M_NavPositionBlocked(map, layer, pos));
+}
+
+/* The part of a step that keeps to ground the unit may land on. The solver's
+ * obstacles are discs, on the tile centres for walls and on the bodies for
+ * neighbours, while the ground is refused by the tile, so its answer can aim
+ * a little into a wall the field runs beside or onto the stamp beside a body
+ * it clears; a step dropped whole there leaves the unit frozen for as long as
+ * what it avoids stays put.
+ */
+static vec2_t slide_along_obstacle(uint32_t uid, enum nav_layer layer, bool on_blocked,
+                                   vec2_t vel)
+{
     vec2_t along_x = (vec2_t){vel.x, 0.0f};
     vec2_t along_z = (vec2_t){0.0f, vel.z};
-    bool x_ok = (vel.x != 0.0f)
-             && M_NavPositionPathable(map, layer, new_pos_for_vel(uid, along_x));
-    bool z_ok = (vel.z != 0.0f)
-             && M_NavPositionPathable(map, layer, new_pos_for_vel(uid, along_z));
+    bool x_ok = (vel.x != 0.0f) && landing_ok(layer, on_blocked, new_pos_for_vel(uid, along_x));
+    bool z_ok = (vel.z != 0.0f) && landing_ok(layer, on_blocked, new_pos_for_vel(uid, along_z));
     if(x_ok && z_ok)
         return (fabsf(vel.x) >= fabsf(vel.z)) ? along_x : along_z;
     if(x_ok)
@@ -3689,10 +3700,13 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
     float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
     uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
     enum nav_layer layer = Entity_NavLayerWithRadius(flags, radius);
+    vec2_t curr_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
+    bool on_blocked = aux->phasing
+                   || M_NavPositionBlocked(s_move_work.gamestate.map, layer, curr_xz);
 
     if(PFM_Vec2_Len(&new_vel) > EPSILON
-    && !M_NavPositionPathable(s_move_work.gamestate.map, layer, new_pos_for_vel(uid, new_vel))) {
-        vec2_t slide = slide_along_impassable(uid, layer, new_vel);
+    && !landing_ok(layer, on_blocked, new_pos_for_vel(uid, new_vel))) {
+        vec2_t slide = slide_along_obstacle(uid, layer, on_blocked, new_vel);
         if(PFM_Vec2_Len(&slide) > EPSILON)
             new_vel = slide;
     }
@@ -3724,17 +3738,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         return;
     }
 
-    /* Refuse to land on a dynamically-blocked tile (a building and the like). 
-     * A unit already on a blocker may still step off it, and one phasing back
-     * into its formation may step onto its own side's stamps.
-     */
-    vec2_t curr_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
-    bool on_blocked = aux->phasing
-                   || M_NavPositionBlocked(s_move_work.gamestate.map, layer, curr_xz);
-
-    if(PFM_Vec2_Len(&new_vel) > 0
-    && M_NavPositionPathable(s_move_work.gamestate.map, layer, new_pos_xz)
-    && (on_blocked || !M_NavPositionBlocked(s_move_work.gamestate.map, layer, new_pos_xz))) {
+    if(PFM_Vec2_Len(&new_vel) > 0 && landing_ok(layer, on_blocked, new_pos_xz)) {
 
         vec3_t new_pos = (vec3_t){new_pos_xz.x, unit_height(uid, new_pos_xz), new_pos_xz.z};
 
