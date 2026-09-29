@@ -490,6 +490,13 @@ struct large_movable{
     uint32_t uid;
 };
 
+/* A unit simulated from the end of its step while drawn short of it. */
+struct step_end{
+    uint32_t uid;
+    vec2_t   drawn;
+    vec2_t   end;
+};
+
 struct move_work{
     struct memstack           mem;
     struct move_gamestate     gamestate;
@@ -501,6 +508,8 @@ struct move_work{
     struct cp_ent            *neighb_mem;
     vec2_t                   *tile_mem;
     uint32_t                 *link_mem;
+    struct step_end          *step_ends;
+    size_t                    nstep_ends;
     struct flock_snap        *flock_snaps;
     /* Parallel to in/out, NULL unless tracing */
     struct move_trace        *trace;
@@ -679,6 +688,8 @@ static struct move_work_in *work_input_for_uid(uint32_t uid);
 static void entity_follow_own_move(uint32_t uid, struct movestate *ms);
 static void settle_own_moves(void);
 static void settle_own_move(uint32_t uid, struct movestate *ms);
+static void snapshot_step_ends(void);
+static void snapshot_step_ends_grid(void);
 static void resume_waiting_units(void);
 static void move_tick(void *user, void *event);
 static struct result navigation_tick_task(void *arg);
@@ -5705,6 +5716,52 @@ static void move_copy_gamestate(void)
     PERF_RETURN_VOID();
 }
 
+/* A unit part way along its interpolated step is simulated from where the
+ * step ends, not from where it is drawn: integrating from the drawn point
+ * would cut every step short by the part still to be drawn. The positions
+ * are patched here and the grid copy, which only the tick task reads, at the
+ * task's start.
+ */
+static void snapshot_step_ends(void)
+{
+    size_t nmax = kh_size(s_entity_state_table);
+    s_move_work.step_ends = stalloc(&s_move_work.mem, nmax * sizeof(struct step_end));
+    s_move_work.nstep_ends = 0;
+
+    for(khiter_t it = kh_begin(s_entity_state_table); it != kh_end(s_entity_state_table); it++) {
+
+        if(!kh_exist(s_entity_state_table, it))
+            continue;
+        const struct movestate *ms = &kh_value(s_entity_state_table, it);
+        if(ms->left == 0)
+            continue;
+        uint32_t uid = kh_key(s_entity_state_table, it);
+        khiter_t k = kh_get(pos, s_move_work.gamestate.positions, uid);
+        if(k == kh_end(s_move_work.gamestate.positions))
+            continue;
+        if(G_FlagsGetFrom(s_move_work.gamestate.flags, uid) & ENTITY_FLAG_GARRISONED)
+            continue;
+
+        vec3_t drawn = kh_val(s_move_work.gamestate.positions, k);
+        kh_val(s_move_work.gamestate.positions, k) = ms->next_pos;
+        s_move_work.step_ends[s_move_work.nstep_ends++] = (struct step_end){
+            uid, (vec2_t){drawn.x, drawn.z}, (vec2_t){ms->next_pos.x, ms->next_pos.z}
+        };
+    }
+}
+
+static void snapshot_step_ends_grid(void)
+{
+    for(size_t i = 0; i < s_move_work.nstep_ends; i++) {
+        const struct step_end *se = &s_move_work.step_ends[i];
+        bg_ent_update(s_move_work.gamestate.postree, se->drawn.x, se->drawn.z,
+            se->end.x, se->end.z, se->uid);
+    }
+    /* Keep the copy packed, as the live grid was when it was copied. */
+    if(s_move_work.nstep_ends > 0)
+        bg_ent_cleanup(s_move_work.gamestate.postree);
+}
+
 static void move_destroy_gamestate(void)
 {
     PERF_ENTER();
@@ -6947,6 +7004,7 @@ static struct result navigation_tick_task(void *arg)
     uint64_t nav_start = SDL_GetPerformanceCounter();
 
     Perf_NavParallelReset();
+    snapshot_step_ends_grid();
     s_rebuild_budget = MAX_REBUILDS_PER_TICK;
     s_first_starved = (size_t)-1;
     N_ApplyDeferredInvalidations();
@@ -7148,6 +7206,7 @@ static void move_do_tick_submit(enum movement_hz hz)
     phase_start = SDL_GetPerformanceCounter();
     move_prepare_work(hz);
     move_copy_gamestate();
+    snapshot_step_ends();
     copy_ticks += SDL_GetPerformanceCounter() - phase_start;
     s_last_nav_tick_stats.copy_gs_us = perf_ticks_to_us(copy_ticks);
 
