@@ -432,6 +432,13 @@ int    N_FlowFieldDirAt(void *nav_private, vec3_t map_pos, struct target target,
  */
 int    N_BlockedTilesAround(void *nav_private, vec3_t map_pos, int layer, vec2_t xz,
                             float reach, vec2_t *out_centres, int max, int *out_nterrain);
+/* Whether each of the dim x dim tiles of the layer from the global tile
+ * (row0, col0) is pathable and blocked, as N_PositionPathable and
+ * N_PositionBlocked answer for points on them: two bits per tile, row-major,
+ * pathable the low one. Tiles off the map are neither.
+ */
+void   N_TilePatch(void *nav_private, int layer, int row0, int col0, int dim,
+                   uint32_t *out_words);
 
 /* ------------------------------------------------------------------------
  * Build (and cache) the field that 'target' needs for the chunk holding 'xz',

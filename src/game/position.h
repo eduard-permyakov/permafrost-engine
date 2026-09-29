@@ -51,8 +51,6 @@ KHASH_DECLARE(pos, khint32_t, vec3_t)
 bool      G_Pos_Init(const struct map *map);
 void      G_Pos_Shutdown(void);
 void      G_Pos_Delete(uint32_t uid);
-size_t    G_Pos_UploadFrom(khash_t(pos) *table, khash_t(id) *ent_gpu_id_table,
-                           const struct map *map);
 /* Sets a position the movement system computed itself. It keeps its own
  * copies current, so, unlike G_Pos_Set, the change is not queued back to it.
  */

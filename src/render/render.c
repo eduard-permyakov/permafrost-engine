@@ -77,6 +77,8 @@
 
 #define EPSILON     (1.0f/1024)
 #define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
+/* Commands between checks for a finished movement solve */
+#define MOVE_POLL_INTERVAL (8)
 
 /*****************************************************************************/
 /* GLOBAL VARIABLES                                                          */
@@ -601,6 +603,7 @@ static void yield_maybe(uint32_t *timestamp)
 static void render_process_cmds(queue_rcmd_t *cmds)
 {
     uint32_t start = SDL_GetTicks();
+    size_t ncmds = 0;
     while(queue_size(*cmds) > 0) {
 
         struct rcmd curr;
@@ -608,6 +611,8 @@ static void render_process_cmds(queue_rcmd_t *cmds)
         render_dispatch_cmd(curr);
         GL_ASSERT_OK();
         yield_maybe(&start);
+        if(++ncmds % MOVE_POLL_INTERVAL == 0)
+            R_GL_MovePoll(false);
     }
 }
 
@@ -679,6 +684,7 @@ static int render(void *data)
         if(timing)
             render_frame_query_begin();
 
+        R_GL_MovePoll(true);
         render_process_cmds(&G_GetRenderWS()->commands);
         Uint64 t1 = SDL_GetPerformanceCounter();
         Uint64 t2 = t1, t3 = t1;
@@ -688,6 +694,7 @@ static int render(void *data)
             SDL_GL_SwapWindow(s_window);
             t3 = SDL_GetPerformanceCounter();
         }
+        R_GL_MovePoll(true);
         if(timing) {
             render_frame_query_end();
             double us = 1e6 / SDL_GetPerformanceFrequency();
@@ -1000,8 +1007,10 @@ void R_InitAttributes(void)
 
 bool R_ComputeShaderSupported(void)
 {
-    return (GLEW_VERSION_4_3 
-        || (GLEW_ARB_compute_shader && GLEW_ARB_shader_storage_buffer_object));
+    /* The movement solve's buffers are persistently mapped */
+    return (GLEW_VERSION_4_4
+        || (GLEW_ARB_compute_shader && GLEW_ARB_shader_storage_buffer_object
+            && GLEW_ARB_buffer_storage));
 }
 
 void R_Yield(void)

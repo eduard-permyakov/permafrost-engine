@@ -5015,6 +5015,36 @@ int N_BlockedTilesAround(void *nav_private, vec3_t map_pos, int layer, vec2_t xz
     return ret;
 }
 
+void N_TilePatch(void *nav_private, int layer, int row0, int col0, int dim,
+                 uint32_t *out_words)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    int nrows = res.chunk_h * res.tile_h;
+    int ncols = res.chunk_w * res.tile_w;
+    memset(out_words, 0, ((dim * dim * 2 + 31) / 32) * sizeof(uint32_t));
+
+    for(int r = 0; r < dim; r++) {
+    for(int c = 0; c < dim; c++) {
+
+        int row = row0 + r;
+        int col = col0 + c;
+        if(row < 0 || col < 0 || row >= nrows || col >= ncols)
+            continue;
+
+        const struct nav_chunk *chunk = &priv->chunks[layer]
+            [IDX(row / res.tile_h, priv->width, col / res.tile_w)];
+        int tr = row % res.tile_h, tc = col % res.tile_w;
+        unsigned bit = (unsigned)(r * dim + c) * 2;
+        if(chunk->cost_base[tr][tc] != COST_IMPASSABLE)
+            out_words[bit / 32] |= 1u << (bit % 32);
+        if(chunk->blockers[tr][tc] > 0)
+            out_words[bit / 32] |= 2u << (bit % 32);
+    }}
+}
+
 bool N_PositionBlocked(vec2_t xz_pos, enum nav_layer layer, void *nav_private, vec3_t map_pos)
 {
     struct nav_private *priv = nav_private;

@@ -498,28 +498,14 @@ static struct shader s_shaders[] = {
     },
     {
         .prog_id        = (intptr_t)NULL,
-        .name           = "posbuff",
-        .vertex_path    = "shaders/vertex/posbuff.glsl",
-        .geo_path       = NULL,
-        .compute_path   = NULL,
-        .frag_path      = "shaders/fragment/posbuff.glsl",
-        .uniforms       = (struct uniform[]){
-            { UTYPE_IVEC4,     GL_U_MAP_RES,          },
-            { UTYPE_VEC2,      GL_U_MAP_POS           },
-            {0}
-        },
-    },
-    {
-        .prog_id        = (intptr_t)NULL,
         .name           = "movement",
         .vertex_path    = NULL,
         .geo_path       = NULL,
         .compute_path   = "shaders/compute/movement.glsl",
         .frag_path      = NULL,
         .uniforms       = (struct uniform[]){
-            { UTYPE_IVEC4,     GL_U_MAP_RES,          },
-            { UTYPE_VEC2,      GL_U_MAP_POS           },
-            { UTYPE_INT,       GL_U_TICKS_HZ          },
+            { UTYPE_IVEC4,     GL_U_NAV_RES,          },
+            { UTYPE_VEC2,      GL_U_NAV_POS           },
             { UTYPE_INT,       GL_U_NUM_SIM_ENTS      },
             {0}
         },

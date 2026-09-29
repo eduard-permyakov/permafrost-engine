@@ -410,6 +410,8 @@ bool   M_NavFlowFieldPathLength(const struct map *map, struct target target, vec
 int    M_NavFlowFieldDirAt(const struct map *map, struct target target, vec2_t xz);
 int    M_NavBlockedTilesAround(const struct map *map, int layer, vec2_t xz, float reach,
                                vec2_t *out_centres, int max, int *out_nterrain);
+void   M_NavTilePatch(const struct map *map, int layer, int row0, int col0, int dim,
+                      uint32_t *out_words);
 void   M_NavServicePathRequest(const struct map *map, struct target target, vec2_t xz);
 
 /* ------------------------------------------------------------------------

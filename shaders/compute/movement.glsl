@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2022-2025 Eduard Permyakov 
+ *  Copyright (C) 2022-2026 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,1382 +33,623 @@
  *
  */
 
+
 #version 430 core
 
-/*****************************************************************************/
-/* DEFINES                                                                   */
-/*****************************************************************************/
-
-#define ATTR(_gpuid, _name) \
-    moveattrs[_gpuid - 1]._name
-
-#define ATTR_VEC2(_gpuid, _name) \
-    vec2(ATTR(_gpuid, _name##_x), ATTR(_gpuid, _name##_z))
-
-#define VEC2_PACKED(_name) \
-    float _name##_x, _name##_z
-
-#define FLOCK_ATTR(_flockid, _name) \
-    flocks[_flockid - 1]._name
-
-#define FLOCK_ATTR_VEC2(_flockid, _name) \
-    vec2(FLOCK_ATTR(_flockid, _name##_x), FLOCK_ATTR(_flockid, _name##_z))
-
-/* Must match movement.c */
-
-#define ENTITY_MASS                 (1.0f)
-#define EPSILON                     (1.0f/1024)
-
-#define X_COORDS_PER_TILE           (8)
-#define Z_COORDS_PER_TILE           (8)
-
-#define STATE_MOVING                0
-#define STATE_MOVING_IN_FORMATION   1
-#define STATE_ARRIVED               2
-#define STATE_SEEK_ENEMIES          3
-#define STATE_WAITING               4
-#define STATE_SURROUND_ENTITY       5
-#define STATE_ENTER_ENTITY_RANGE    6
-#define STATE_TURNING               7
-#define STATE_ARRIVING_TO_CELL      8
-#define STATE_FLEEING               9
-
-#define ENTITY_FLAG_ANIMATED        (1 << 0)
-#define ENTITY_FLAG_COLLISION       (1 << 1)
-#define ENTITY_FLAG_SELECTABLE      (1 << 2)
-#define ENTITY_FLAG_MOVABLE         (1 << 3)
-#define ENTITY_FLAG_COMBATABLE      (1 << 4)
-#define ENTITY_FLAG_INVISIBLE       (1 << 5)
-#define ENTITY_FLAG_ZOMBIE          (1 << 6)
-#define ENTITY_FLAG_MARKER          (1 << 7)
-#define ENTITY_FLAG_BUILDING        (1 << 8)
-#define ENTITY_FLAG_BUILDER         (1 << 9)
-#define ENTITY_FLAG_TRANSLUCENT     (1 << 10)
-#define ENTITY_FLAG_RESOURCE        (1 << 11)
-#define ENTITY_FLAG_HARVESTER       (1 << 12)
-#define ENTITY_FLAG_STORAGE_SITE    (1 << 13)
-#define ENTITY_FLAG_WATER           (1 << 14)
-#define ENTITY_FLAG_AIR             (1 << 15)
-#define ENTITY_FLAG_GARRISON        (1 << 16)
-#define ENTITY_FLAG_GARRISONABLE    (1 << 17)
-#define ENTITY_FLAG_GARRISONED      (1 << 18)
-
-#define MAX_FLOCK_MEMBERS           (1024) 
-#define MAX_FORCE                   (0.75f)
-#define MAX_NEAR_ENTS               (128)
-
-#define SEPARATION_FORCE_SCALE      (0.6f)
-#define MOVE_ARRIVE_FORCE_SCALE     (0.5f)
-#define MOVE_COHESION_FORCE_SCALE   (0.15f)
-#define ALIGNMENT_FORCE_SCALE       (0.15f)
-
-#define SEPARATION_BUFFER_DIST      (0.0f)
-#define COHESION_NEIGHBOUR_RADIUS   (50.0f)
-#define ARRIVE_SLOWING_RADIUS       (10.0f)
-#define ADJACENCY_SEP_DIST          (5.0f)
-#define ALIGN_NEIGHBOUR_RADIUS      (10.0f)
-#define SEPARATION_NEIGHB_RADIUS    (30.0f)
-#define CELL_ARRIVAL_RADIUS         (30.0f)
-
-#define COLLISION_MAX_SEE_AHEAD     (10.0f)
-#define WAIT_TICKS                  (60)
-#define MAX_TURN_RATE               (15.0f)
-#define MAX_NEIGHBOURS              (32)
-
-#define CLEARPATH_NEIGHBOUR_RADIUS  (10.0f)
-#define CLEARPATH_BUFFER_RADIUS     (0.0f)
-#define CLEARPATH_MAX_XPOINTS       (32)
-#define MAX_SOLVE_RETRIES           (3)
-
-#define NUM_LAYERS                  (12)
-
-#define TILES_PER_CHUNK_HEIGHT      (32)
-#define TILES_PER_CHUNK_WIDTH       (32)
-#define FIELD_RES_R                 (64)
-#define FIELD_RES_C                 (64)
-#define X_COORDS_PER_TILE           (8)
-#define Z_COORDS_PER_TILE           (8)
-
-/* Must match gl_position.c */
-#define POSTEX_RES_SCALE            (1)
-
-/*****************************************************************************/
-/* INPUT/OUTPUT                                                              */
-/*****************************************************************************/
-
-/* Careful with using verex and matrix types because they have
- * greater alignment requirements, and may introduce padding
- * into this struct.
+/* The ClearPath solve of src/game/clearpath.c (G_ClearPath_NewVelocity), one
+ * workgroup per unit. The CPU gathers every input exactly as for its own
+ * solve and lays them out as below; a change to the solve must be made in
+ * both places.
+ *
+ * The lanes build the unit's obstacles together, then split its candidates
+ * between them. Each lane keeps its best candidate in the CPU's evaluation
+ * order, so the least penalised distance over the lanes, the earliest
+ * candidate on a tie, is the CPU's pick.
+ *
+ * The solve's candidates lie on obstacle boundaries, where its inside test
+ * turns on the last bit of a world-space coordinate, so the arithmetic must
+ * round as the CPU's does: every value is precise (no fused multiply-adds)
+ * and division and square root are the correctly rounded div_rn and sqrt_rn.
  */
 
-/* Must match movement.c */
-struct move_input{
-    VEC2_PACKED(dest);
-    VEC2_PACKED(vdes);
-    VEC2_PACKED(cell_pos);
-    VEC2_PACKED(formation_cohesion_force);
-    VEC2_PACKED(formation_align_force);
-    VEC2_PACKED(formation_drag_force);
-    VEC2_PACKED(pos);
-    VEC2_PACKED(velocity);
-    uint  movestate;
-    uint  flock_id;
-    uint  flags;
-    float speed;
-    float max_speed;
+#define LANES               (64)
+layout(local_size_x = LANES) in;
+
+#define EPSILON             (1.0 / 1024.0)
+#define MAX_PAIRWISE_RAYS   (24)
+#define MAX_SOLVE_RETRIES   (3)
+#define CP_SIDE_PENALTY     (4.0)
+#define TILE_RADIUS         (2.8284271)
+#define BUFFER_RADIUS       (0.0)
+/* CLEARPATH_STALL_SPEED squared, as the CPU's float product */
+#define STALL_SPEED2_BITS   (0x3B23D70Bu)
+#define MAX_DYN             (32)
+#define MAX_STAT            (32)
+#define MAX_TILES           (12)
+#define MAX_VOS             (MAX_DYN + MAX_STAT + MAX_TILES)
+/* A chunk's side in world units: TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE
+ * of src/map/public/tile.h */
+#define CHUNK_COORDS        (256.0)
+#define NO_CANDIDATE        (0xFFFFFFFFu)
+
+#define UNIT_RELAX          (1u << 0)
+#define UNIT_ON_BLOCKED     (1u << 1)
+
+#define DIAG_GAVE_UP        (1u << 8)
+#define DIAG_PATCH_MISS     (1u << 9)
+
+/* The obstacle class in the top bits of a VO's source index */
+#define SRC_STAT            (1u << 30)
+#define SRC_TILE            (2u << 30)
+#define SRC_CLASS           (3u << 30)
+
+/* Must match struct gpu_cp_unit in movement.c */
+struct unit{
+    float px, pz;
+    float vx, vz;
+    float dx, dz;
     float radius;
-    uint  layer;
-    uint  has_dest_los;
-    uint  formation_assignment_ready;
-    uint  range_field;
+    float max_step;
+    float horizon;
+    uint  flags;
+    int   side;
+    uint  first;
+    uint  ndyn, nstat, ntiles;
+    int   prow, pcol;
+    uint  pdim;
+    uint  pfirst;
 };
 
-/* Must match movement.c */
-struct flock{
-    uint  ents[MAX_FLOCK_MEMBERS];
-    uint  nmembers;
-    float target_x, target_z;
+/* Must match struct gpu_cp_nb in movement.c; a tile obstacle leaves the
+ * velocity and radius unused. */
+struct nb{
+    float px, pz;
+    float vx, vz;
+    float radius;
 };
 
-/* Velocity Obstacle */
-struct VO{
-    vec2 xz_apex;
-    vec2 xz_left_side;
-    vec2 xz_right_side;
+/* Must match struct gpu_cp_result in movement.c */
+struct result{
+    float vx, vz;
+    int   side;
+    uint  diag;
 };
 
-/* Reciprocal Velocity Obstacle */
-struct RVO{
-    vec2 xz_apex;
-    vec2 xz_left_side;
-    vec2 xz_right_side;
-};
+layout(std430, binding = 0) readonly buffer units_buff{ unit units[]; };
+layout(std430, binding = 1) readonly buffer nbs_buff{ nb nbs[]; };
+layout(std430, binding = 2) readonly buffer patch_buff{ uint patch_words[]; };
+layout(std430, binding = 3) writeonly buffer results_buff{ result results[]; };
 
-/* Hybrid Reciprocal Velocity Obstacle */
-struct HRVO{
-    vec2 xz_apex;
-    vec2 xz_left_side;
-    vec2 xz_right_side;
-};
-
-struct ray{
-    vec2 point;
-    vec2 dir;
-};
-
-layout(local_size_x = 64) in;
-
-/* A flat array of GPU IDs that should have new velocities
- * calculated. The GPU IDs can be used to index the auxiliary
- * moveattrs buffer. While we require the attributes for all
- * moveable entities, we only need to perform the velocity
- * calculations for those that are currently not stationary.
- */
-layout(std430, binding = 0) readonly buffer in_dispatch_ids
-{
-    uint gpuids[];
-};
-
-/* Per-entitty attributes.
- */
-layout(std430, binding = 1) readonly buffer in_movedata
-{
-    move_input moveattrs[];
-};
-
-/* Collections of entities. The entity set is a flat 
- * array containting GPU ID's of entities.
- */
-layout(std430, binding = 2) readonly buffer in_flocks
-{
-    flock flocks[];
-};
-
-/* A 2D texture, covering the entire map surface, which
- * stores entities' GPU IDs at the location (pixel) where they 
- * are present. Essentially, a spacial hash of all the entities'
- * positions.
- */
-layout(r32ui,  binding = 3) uniform readonly uimage2D in_pos_id_map;
-
-/* The cost base field of the map. Stores layers together,
- * with chunks for each layer stored in row-major order.
- * Each element is a single bytes.
- */
-layout(std430, binding = 4) readonly buffer in_cost_base
-{
-    uint cost_base[];
-};
-
-/* The blockers field of the map. Stores layers together,
- * with chunks for each layer stored in row-major order.
- * Each element is 2 bytes.
- */
-layout(std430, binding = 5) readonly buffer in_blockers
-{
-    uint blockers[];
-};
-
-layout(std430, binding = 6) writeonly buffer o_data
-{
-    vec2 velocities[];
-};
-
-/*****************************************************************************/
-/* UNIFORMS                                                                  */
-/*****************************************************************************/
-
-uniform ivec4 map_resolution;
-uniform vec2  map_pos;
-uniform int   ticks_hz;
+/* The navigation grid: its resolution (chunks, then tiles per chunk) and
+ * position */
+uniform ivec4 nav_resolution;
+uniform vec2  nav_pos;
 uniform int   num_sim_ents;
 
 /*****************************************************************************/
-/* PROGRAM                                                                   */
+/* PER-INVOCATION STATE                                                      */
 /*****************************************************************************/
 
-vec2 tile_dims()
+unit          s_unit;
+precise vec2  s_pos;
+precise vec2  s_vel;
+bool          s_miss;
+uint          s_lane;
+
+/*****************************************************************************/
+/* PER-UNIT STATE                                                            */
+/*****************************************************************************/
+
+/* The obstacles still in the solve, as indices into nbs[]: the retries drop
+ * the furthest one each */
+shared uint   sh_dyn[MAX_DYN];
+shared uint   sh_stat[MAX_STAT];
+shared uint   sh_tile[MAX_TILES];
+shared uint   sh_ndyn, sh_nstat, sh_ntiles;
+
+/* The combined obstacle: dynamic neighbours' HRVOs, then static neighbours'
+ * VOs, then wall tiles' VOs, each from the obstacle in sh_src */
+shared uint   sh_src[MAX_VOS];
+shared vec2   sh_apex[MAX_VOS];
+shared vec2   sh_left[MAX_VOS];
+shared vec2   sh_right[MAX_VOS];
+shared uint   sh_nvos;
+
+/* Each lane's best candidate, then the unit's */
+shared float  sh_best_d[LANES];
+shared uint   sh_best_c[LANES];
+shared vec2   sh_best_v[LANES];
+shared bool   sh_found;
+shared vec2   sh_vnew;
+shared bool   sh_miss;
+
+/*****************************************************************************/
+/* HELPERS                                                                   */
+/*****************************************************************************/
+
+/* IEEE round-to-nearest a / b: the approximate reciprocal refined, then the
+ * quotient corrected twice by its exact residual */
+float div_rn(float a, float b)
 {
-    float x_ratio = float(TILES_PER_CHUNK_WIDTH) / FIELD_RES_C;
-    float z_ratio = float(TILES_PER_CHUNK_HEIGHT) / FIELD_RES_R;
-    return vec2(
-        x_ratio * X_COORDS_PER_TILE,
-        z_ratio * Z_COORDS_PER_TILE
-    );
+    precise float y = 1.0 / b;
+    precise float e = fma(-b, y, 1.0);
+    y = fma(y, e, y);
+    precise float q = a * y;
+    precise float r = fma(-b, q, a);
+    q = fma(r, y, q);
+    r = fma(-b, q, a);
+    q = fma(r, y, q);
+    return q;
 }
 
-/*
- * x = chunk_r
- * y = chunk_c
- * z = tile_r
- * a = tile_c
- */
-ivec4 nav_tile_desc_at(vec3 ws_pos)
+/* IEEE round-to-nearest sqrt(x), the same way */
+float sqrt_rn(float x)
 {
-    int chunk_w = map_resolution[0];
-    int chunk_h = map_resolution[1];
-    int tile_w = FIELD_RES_R;
-    int tile_h = FIELD_RES_C;
-    float xtile = tile_dims().x;
-    float ztile = tile_dims().y;
-
-    float chunk_x_dist = tile_w * xtile;
-    float chunk_z_dist = tile_h * ztile;
-
-    int chunk_r = int(abs(map_pos.y - ws_pos.z) / chunk_z_dist);
-    int chunk_c = int(abs(map_pos.x - ws_pos.x) / chunk_x_dist);
-
-    int chunk_base_x = int(map_pos.x - (chunk_c * chunk_x_dist));
-    int chunk_base_z = int(map_pos.y + (chunk_r * chunk_z_dist));
-
-    int tile_c = int(abs(chunk_base_x - ws_pos.x) / xtile);
-    int tile_r = int(abs(chunk_base_z - ws_pos.z) / ztile);
-
-    return ivec4(chunk_r, chunk_c, tile_r, tile_c);
+    if(x <= 0.0)
+        return sqrt(x);
+    precise float y = inversesqrt(x);
+    precise float s = x * y;
+    precise float h = 0.5 * y;
+    precise float r = fma(-s, s, x);
+    s = fma(r, h, s);
+    r = fma(-s, s, x);
+    s = fma(r, h, s);
+    return s;
 }
 
-uint extract_byte_from_dword(uint word, uint byte_idx)
+float len2(vec2 a)
 {
-    if(byte_idx == 0) {
-        return (word & 0xff);
-    }else if(byte_idx == 1) {
-        return ((word >> 8) & 0xff);
-    }else if(byte_idx == 2) {
-        return ((word >> 16) & 0xff);
-    }else if(byte_idx == 3) {
-        return ((word >> 24) & 0xff);
-    }
-    return 0;
-}
-
-uint extract_half_from_dword(uint word, uint idx)
-{
-    if(idx == 0) {
-        return (word & 0xffff);
-    }else if(idx == 1) {
-        return ((word >> 16) & 0xffff);
-    }
-    return 0;
-}
-
-bool position_pathable(uint layer, vec2 pos)
-{
-    uint chunk_bytes = (FIELD_RES_R * FIELD_RES_C);
-    uint layer_bytes = chunk_bytes * map_resolution[0] * map_resolution[1];
-    ivec4 desc = nav_tile_desc_at(vec3(pos.x, 0, pos.y));
-
-    uint layer_offset_bytes = layer_bytes * layer;
-    uint chunk_offset_bytes = (desc.x * map_resolution[0] + desc.y) * chunk_bytes;
-
-    uint layer_offset_words = layer_offset_bytes / 4;
-    uint chunk_offset_words = chunk_offset_bytes / 4;
-    uint buffer_words = (layer_bytes * NUM_LAYERS) / 4;
-
-    uint row_offset_bytes = FIELD_RES_C * desc.z;
-    uint row_offset_words = row_offset_bytes / 4;
-
-    /* Each 'cost base' tile is one byte, so we have 4 tiles packed per word.
-     * This way, 4 indices are used up per word, and the overflow can be used
-     * to extract the byte from the word.
-     */
-    uint col_idx = desc.a;
-    uint col_word_idx = (col_idx >> 2);
-    uint col_byte_idx = (col_idx & 0x3);
-
-    /* Handle cases where we are outside the map bounds */
-    uint dword_idx = layer_offset_words + chunk_offset_words + row_offset_words + col_word_idx;
-    if(dword_idx > buffer_words)
-        return false;
-
-    uint dword = cost_base[dword_idx];
-    uint byte = extract_byte_from_dword(dword, col_byte_idx);
-    return (byte != 0xff);
-}
-
-bool position_blocked(uint layer, vec2 pos)
-{
-    uint chunk_bytes = 2 * (FIELD_RES_R * FIELD_RES_C);
-    uint layer_bytes = chunk_bytes * map_resolution[0] * map_resolution[1];
-    ivec4 desc = nav_tile_desc_at(vec3(pos.x, 0, pos.y));
-
-    uint layer_offset_bytes = layer_bytes * layer;
-    uint chunk_offset_bytes = (desc.x * map_resolution[0] + desc.y) * chunk_bytes;
-
-    uint layer_offset_words = layer_offset_bytes / 4;
-    uint chunk_offset_words = chunk_offset_bytes / 4;
-    uint buffer_words = (layer_bytes * NUM_LAYERS) / 4;
-
-    uint row_offset_bytes = (2 * FIELD_RES_C) * desc.z;
-    uint row_offset_words = row_offset_bytes / 4;
-
-    /* Each 'cost base' tile is two bytes, so we have 2 tiles packed per word.
-     * This way, 2 indices are used up per word, and the overflow can be used
-     * to extract the halfword from the word.
-     */
-
-    uint col_idx = desc.a;
-    uint col_word_idx = (col_idx >> 1);
-    uint col_half_idx = (col_idx & 0x1);
-
-    /* Handle cases where we are outside the map bounds */
-    uint dword_idx = layer_offset_words + chunk_offset_words + row_offset_words + col_word_idx;
-    if(dword_idx > buffer_words)
-        return true;
-
-    uint dword = blockers[dword_idx];
-    uint halfword = extract_half_from_dword(dword, col_half_idx);
-    return (halfword > 0);
-}
-
-vec2 nullify_impass_components(uint gpuid, vec2 force)
-{
-    vec2 ret = force;
-    vec2 nt_dims = tile_dims();
-    float radius = ATTR(gpuid, radius);
-    uint layer = ATTR(gpuid, layer);
-
-    vec2 pos = ATTR_VEC2(gpuid, pos);
-    vec2 left  = vec2(pos.x + nt_dims.x, pos.y);
-    vec2 right = vec2(pos.x - nt_dims.x, pos.y);
-    vec2 top   = vec2(pos.x, pos.y + nt_dims.y);
-    vec2 bot   = vec2(pos.x, pos.y - nt_dims.y);
-
-    if(ret.x > 0 && (!position_pathable(layer, left) || position_blocked(layer, left))) {
-        ret.x = 0.0;
-    }
-    if(ret.x < 0 && (!position_pathable(layer, right) || position_blocked(layer, right))) {
-        ret.x = 0.0;
-    }
-    if(ret.y > 0 && (!position_pathable(layer, top) || position_blocked(layer, top))) {
-        ret.y = 0.0;
-    }
-    if(ret.y < 0 && (!position_pathable(layer, bot) || position_blocked(layer, bot))) {
-        ret.y = 0.0;
-    }
+    precise float ret = a.x * a.x + a.y * a.y;
     return ret;
 }
 
-float scaled_max_force()
+vec2 cp_norm(vec2 a)
 {
-    return ((MAX_FORCE / ticks_hz) * 20.0);
-}
-
-vec2 truncate(vec2 vec, float max)
-{
-    if(length(vec) > max) {
-        return (normalize(vec) * max);
-    }
-    return vec;
-}
-
-/* Cohesion is a behaviour that causes agents to steer towards the center of mass of nearby agents.
- */
-vec2 cohesion_force(uint gpuid, uint flockid)
-{
-    vec2 COM = vec2(0.0, 0.0);
-    uint neighbour_count = 0;
-    vec2 ent_xz_pos = ATTR_VEC2(gpuid, pos);
-    uint nents = FLOCK_ATTR(flockid, nmembers);
-
-    for(uint i = 0; i < nents; i++) {
-
-        uint curr_gpuid = flocks[flockid - 1].ents[i];
-        if(curr_gpuid == gpuid)
-            continue;
-
-        vec2 curr_xz_pos = ATTR_VEC2(curr_gpuid, pos);
-        vec2 diff = curr_xz_pos - ent_xz_pos;
-
-        float t = (length(diff) - COHESION_NEIGHBOUR_RADIUS*0.75) 
-                / COHESION_NEIGHBOUR_RADIUS;
-        float scale = exp(-6.0f * t);
-
-        vec2 added = curr_xz_pos * scale;
-        COM += added;
-        neighbour_count++;
-    }
-
-    if(0 == neighbour_count)
-        return vec2(0.0, 0.0);
-
-    COM *= (1.0 / neighbour_count);
-    vec2 ret = COM - ent_xz_pos;
-    ret = truncate(ret, scaled_max_force());
-    return ret;
-}
-
-uint ents_in_circle(vec2 origin, float radius, out uint near_ents[MAX_NEAR_ENTS])
-{
-    uint ret = 0;
-    /* Find the x,y image coordinate of the origin 
-     */
-    int resx = map_resolution.x * map_resolution.z * X_COORDS_PER_TILE;
-    int resz = map_resolution.y * map_resolution.w * Z_COORDS_PER_TILE;
-
-    /* The image has (0, 0) in the bot left corner, which corresponds
-     * to the (+x, -z) direction. The coordinate of the top right corner
-     * is (resx-1, resy-1), which correspons to the (-x, +z) direction.
-     */
-    float origin_normal_x = ((origin.x - map_pos.x) / (resx) * -1); /* [0 -> 1] */
-    float origin_normal_z = ((origin.y - map_pos.y) / (resz) * +1); /* [0 -> 1] */
-
-    int relative_origin_x = int(round(origin_normal_x * imageSize(in_pos_id_map).x));
-    int relative_origin_z = int(round(origin_normal_z * imageSize(in_pos_id_map).y));
-
-    /* Find the distance corresponding to a single pixel in 
-     * the posbuff texture.
-     */
-    int x_pixels_radius = int(ceil(radius) * POSTEX_RES_SCALE + 1);
-    int z_pixels_radius = int(ceil(radius) * POSTEX_RES_SCALE + 1);
-
-    /* Do a grid scan.
-     * Increasing x-coord -> (-z -> +z)
-     * Increasing z-coord -> (+x -> -x)
-     */
-    for(int dx = -x_pixels_radius; dx <= x_pixels_radius; dx++) {
-    for(int dz = -z_pixels_radius; dz <= z_pixels_radius; dz++) {
-
-        int x = relative_origin_x + dx;
-        int z = relative_origin_z + dz;
-
-        if(x < 0 || x >= imageSize(in_pos_id_map).x)
-            continue;
-        if(z < 0 || z >= imageSize(in_pos_id_map).y)
-            continue;
-
-        uvec4 bin_contents = imageLoad(in_pos_id_map, ivec2(x, z));
-        if(bin_contents.r > 0) {
-
-            vec2 ent_pos = ATTR_VEC2(bin_contents.r, pos);
-            if(length(ent_pos - origin) > radius)
-                continue;
-
-            near_ents[ret++] = bin_contents.r;
-            if(ret == MAX_NEAR_ENTS)
-                break;
-        }
-    }}
-    return ret;
-}
-
-/* Separation is a behaviour that causes agents to steer away from nearby agents.
- */
-vec2 separation_force(uint gpuid, float buffer_dist)
-{
-    vec2 ret = vec2(0.0, 0.0);
-    uint near_ents[MAX_NEAR_ENTS];
-    vec2 pos_xz = ATTR_VEC2(gpuid, pos);
-    uint num_near = ents_in_circle(pos_xz, SEPARATION_NEIGHB_RADIUS, near_ents);
-
-    for(int i = 0; i < num_near; i++) {
-
-        uint curr = near_ents[i];
-        if(curr == gpuid)
-            continue;
-
-        uint curr_flags = ATTR(curr, flags);
-        uint ent_flags = ATTR(gpuid, flags);
-        if((curr_flags & ENTITY_FLAG_AIR) != (ent_flags & ENTITY_FLAG_AIR))
-            continue;
-
-        vec2 curr_pos = ATTR_VEC2(curr, pos);
-        vec2 ent_pos = ATTR_VEC2(gpuid, pos);
-        vec2 diff = curr_pos - ent_pos;
-
-        if(length(diff) < EPSILON)
-            continue;
-
-        float radius = ATTR(curr, radius) + ATTR(gpuid, radius) + buffer_dist;
-        float t = (length(diff) - radius*0.85) / length(diff);
-        float scale = exp(-20.0 * t);
-
-        diff *= scale;
-        ret += diff;
-    }
-
-    if(0 == num_near)
-        return vec2(0.0, 0.0);
-
-    ret *= -1.0;
-    ret = truncate(ret, scaled_max_force());
-    return ret;
-}
-
-vec2 arrive_force_point(uint gpuid, vec2 target_xz, vec2 vdes, uint has_dest_los)
-{
-    vec2 desired_velocity = vec2(0.0, 0.0);
-    vec2 pos_xz = ATTR_VEC2(gpuid, pos);
-    float max_speed = ATTR(gpuid, max_speed);
-    float scale = max_speed / float(ticks_hz);
-
-    if(bool(has_dest_los)) {
-
-        vec2 delta = target_xz - pos_xz;
-        float distance = length(delta);
-
-        desired_velocity = normalize(delta);
-        desired_velocity *= scale;
-
-        if(distance < ARRIVE_SLOWING_RADIUS) {
-            desired_velocity *= (distance / ARRIVE_SLOWING_RADIUS);
-        }
-    }else{
-        desired_velocity = vdes * scale;
-    }
-
-    vec2 ret = desired_velocity - ATTR_VEC2(gpuid, velocity);
-    ret = truncate(ret, scaled_max_force());
-    return ret;
-}
-
-vec2 arrive_force_enemies(uint gpuid, vec2 vdes)
-{
-    vec2 pos_xz = ATTR_VEC2(gpuid, pos);
-    float max_speed = ATTR(gpuid, max_speed);
-    vec2 desired_velocity = vdes * (max_speed / ticks_hz);
-    vec2 ret = desired_velocity - ATTR_VEC2(gpuid, velocity);
-    ret = truncate(ret, scaled_max_force());
-    return ret;
-}
-
-vec2 enemy_seek_total_force(uint gpuid, vec2 vdes)
-{
-    vec2 arrive = arrive_force_enemies(gpuid, vdes);
-    vec2 separation = separation_force(gpuid, SEPARATION_BUFFER_DIST);
-
-    arrive *= MOVE_ARRIVE_FORCE_SCALE;
-    separation *= SEPARATION_FORCE_SCALE;
-
-    vec2 ret = vec2(0.0, 0.0);
-    ret += arrive;
-    ret += separation;
-
-    ret = truncate(ret, scaled_max_force());
-    return ret;
-}
-
-vec2 enemy_seek_vpref(uint gpuid, float speed, vec2 vdes)
-{
-    vec2 steer_force = enemy_seek_total_force(gpuid, vdes);
-    vec2 accel = steer_force * (1.0 / ENTITY_MASS);
-    vec2 new_vel = ATTR_VEC2(gpuid, velocity) + accel;
-    new_vel = truncate(new_vel, speed / ticks_hz);
-    return new_vel;
-}
-
-vec2 flee_total_force(uint gpuid, vec2 vdes)
-{
-    vec2 arrive = arrive_force_enemies(gpuid, vdes);
-    vec2 separation = separation_force(gpuid, SEPARATION_BUFFER_DIST);
-
-    arrive *= MOVE_ARRIVE_FORCE_SCALE;
-    separation *= SEPARATION_FORCE_SCALE;
-
-    vec2 ret = vec2(0.0, 0.0);
-    ret += arrive;
-    ret += separation;
-
-    ret = truncate(ret, scaled_max_force());
-    return ret;
-}
-
-vec2 flee_vpref(uint gpuid, float speed, vec2 vdes)
-{
-    vec2 steer_force = flee_total_force(gpuid, vdes);
-    steer_force = nullify_impass_components(gpuid, steer_force);
-    vec2 accel = steer_force * (1.0 / ENTITY_MASS);
-    vec2 new_vel = ATTR_VEC2(gpuid, velocity) + accel;
-    new_vel = truncate(new_vel, speed / ticks_hz);
-    return new_vel;
-}
-
-vec2 arrive_force_cell(uint gpuid, vec2 cell_pos, vec2 vdes)
-{
-    vec2 pos_xz = ATTR_VEC2(gpuid, pos);
-    vec2 desired_velocity = cell_pos - pos_xz;
-    float distance = length(desired_velocity);
-
-    if(distance < ARRIVE_SLOWING_RADIUS) {
-        desired_velocity *= (distance / ARRIVE_SLOWING_RADIUS);
-    }else{
-        float max_speed = ATTR(gpuid, max_speed);
-        desired_velocity = vdes * (max_speed / ticks_hz);
-    }
-    return desired_velocity;
-}
-
-vec2 cell_seek_total_force(uint gpuid, vec2 cell_pos, vec2 vdes,
-                           vec2 cohesion, vec2 alignment)
-{
-    vec2 pos_xz = ATTR_VEC2(gpuid, pos);
-    vec2 delta = cell_pos - pos_xz;
-
-    vec2 arrive = arrive_force_cell(gpuid, cell_pos, vdes);
-    vec2 separation = separation_force(gpuid, SEPARATION_BUFFER_DIST);
-
-    arrive *= MOVE_ARRIVE_FORCE_SCALE;
-    separation *= SEPARATION_FORCE_SCALE;
-    cohesion *= MOVE_COHESION_FORCE_SCALE;
-    alignment *= ALIGNMENT_FORCE_SCALE;
-
-    vec2 ret = vec2(0.0, 0.0);
-    ret += arrive;
-    ret += separation;
-
-    if(length(delta) > CELL_ARRIVAL_RADIUS) {
-        ret += cohesion;
-        ret += alignment;
-    }
-
-    ret = truncate(ret, scaled_max_force());
-    return ret;
-}
-
-vec2 cell_arrival_seek_vpref(uint gpuid, vec2 cell_pos, float speed, vec2 vdes,
-                             vec2 cohesion, vec2 alignment, vec2 drag)
-{
-    vec2 steer_force = vec2(0.0, 0.0);
-    for(int prio = 0; prio < 3; prio++) {
-
-        if(prio == 0) {
-            steer_force = cell_seek_total_force(gpuid, cell_pos, vdes, cohesion, alignment);
-        }else if(prio == 1) {
-            steer_force = separation_force(gpuid, SEPARATION_BUFFER_DIST);
-        }else if(prio == 2) {
-            steer_force = arrive_force_cell(gpuid, cell_pos, vdes);
-        }
-        steer_force = nullify_impass_components(gpuid, steer_force);
-        if(length(steer_force) > scaled_max_force() * 0.01)
-            break;
-    }
-
-    vec2 accel = steer_force * (1.0 / ENTITY_MASS);
-    vec2 new_vel = ATTR_VEC2(gpuid, velocity) + accel;
-    new_vel = truncate(new_vel, speed / ticks_hz);
-    if(length(drag) > EPSILON) {
-        new_vel = truncate(new_vel, speed * 0.75 / ticks_hz);
-    }
-    return new_vel;
-}
-
-vec2 formation_point_seek_total_force(uint gpuid, uint flockid, vec2 vdes, vec2 cohesion,
-                                      vec2 alignment, uint has_dest_los)
-{
-    vec2 arrive = arrive_force_point(gpuid, FLOCK_ATTR_VEC2(flockid, target), vdes, has_dest_los);
-    vec2 separation = separation_force(gpuid, SEPARATION_BUFFER_DIST);
-
-    arrive *= MOVE_ARRIVE_FORCE_SCALE;
-    cohesion *= MOVE_COHESION_FORCE_SCALE;
-    separation *= SEPARATION_FORCE_SCALE;
-    alignment *= ALIGNMENT_FORCE_SCALE;
-
-    vec2 ret = vec2(0.0, 0.0);
-    ret += arrive;
-    ret += separation;
-    ret += cohesion;
-
-    ret = truncate(ret, scaled_max_force());
-    return ret;
-}
-
-vec2 arrive_force_seek(uint gpuid, vec2 target_xz, vec2 vdes, uint has_dest_los, uint range_field)
-{
-    if(bool(range_field))
-        return arrive_force_point(gpuid, ATTR_VEC2(gpuid, pos), vdes, 1u);
-    return arrive_force_point(gpuid, target_xz, vdes, has_dest_los);
-}
-
-vec2 formation_seek_vpref(uint gpuid, uint flockid, float speed, vec2 vdes, vec2 cohesion, 
-                          vec2 alignment, vec2 drag, uint has_dest_los, uint range_field)
-{
-    vec2 steer_force = vec2(0.0, 0.0);
-    for(int prio = 0; prio < 3; prio++) {
-
-        if(prio == 0) {
-            steer_force = formation_point_seek_total_force(gpuid, flockid, vdes, cohesion,
-                alignment, has_dest_los);
-        }else if(prio == 1) {
-            steer_force = separation_force(gpuid, SEPARATION_BUFFER_DIST);
-        }else if(prio == 2) {
-            steer_force = arrive_force_seek(gpuid, FLOCK_ATTR_VEC2(flockid, target), vdes,
-                has_dest_los, range_field);
-        }
-        steer_force = nullify_impass_components(gpuid, steer_force);
-        if(length(steer_force) > scaled_max_force() * 0.01)
-            break;
-    }
-
-    vec2 accel = steer_force * (1.0 / ENTITY_MASS);
-    vec2 new_vel = ATTR_VEC2(gpuid, velocity) + accel;
-    new_vel = truncate(new_vel, speed / ticks_hz);
-    if(length(drag) > EPSILON) {
-        new_vel = truncate(new_vel, (speed * 0.75) / ticks_hz);
-    }
-    return new_vel;
-}
-
-vec2 point_seek_total_force(uint gpuid, uint flockid, vec2 vdes, uint has_dest_los)
-{
-    vec2 arrive = arrive_force_point(gpuid, FLOCK_ATTR_VEC2(flockid, target), vdes, has_dest_los);
-    vec2 cohesion = cohesion_force(gpuid, flockid);
-    vec2 separation = separation_force(gpuid, SEPARATION_BUFFER_DIST);
-
-    arrive *= MOVE_ARRIVE_FORCE_SCALE;
-    cohesion *= MOVE_COHESION_FORCE_SCALE;
-    separation *= SEPARATION_FORCE_SCALE;
-
-    vec2 ret = vec2(0.0, 0.0);
-    ret += arrive;
-    ret += separation;
-    ret += cohesion;
-
-    ret = truncate(ret, scaled_max_force());
-    return ret;
-}
-
-vec2 point_seek_vpref(uint gpuid, uint flockid, vec2 vdes, uint has_dest_los, float speed,
-                      uint range_field)
-{
-    vec2 steer_force = vec2(0.0, 0.0);
-    for(int prio = 0; prio < 3; prio++) {
-
-        if(prio == 0) {
-            steer_force = point_seek_total_force(gpuid, flockid, vdes, has_dest_los);
-        }else if(prio == 1) {
-            steer_force = separation_force(gpuid, SEPARATION_BUFFER_DIST);
-        }else if(prio == 2) {
-            steer_force = arrive_force_seek(gpuid, FLOCK_ATTR_VEC2(flockid, target), 
-                vdes, has_dest_los, range_field);
-        }
-        steer_force = nullify_impass_components(gpuid, steer_force);
-        if(length(steer_force) > scaled_max_force() * 0.01)
-            break;
-    }
-
-    vec2 accel = steer_force * (1.0 / ENTITY_MASS);
-    vec2 new_vel = ATTR_VEC2(gpuid, velocity) + accel;
-    new_vel = truncate(new_vel, speed / ticks_hz);
-
-    return new_vel;
-}
-
-bool ent_still(uint gpuid)
-{
-    uint state = ATTR(gpuid, movestate);
-    return (state == STATE_ARRIVED || state == STATE_WAITING);
-}
-
-ivec2 find_neighbours(in uint gpuid, 
-                     inout uint static_neighbours[MAX_NEIGHBOURS], 
-                     inout uint dynamic_neighbours[MAX_NEIGHBOURS])
-{
-    ivec2 ret = ivec2(0, 0);
-    vec2 pos_xz = ATTR_VEC2(gpuid, pos);
-    uint ent_flags = ATTR(gpuid, flags);
-
-    uint near_ents[MAX_NEAR_ENTS];
-    uint num_near = ents_in_circle(pos_xz, CLEARPATH_NEIGHBOUR_RADIUS, near_ents);
-
-    for(int i = 0; i < num_near; i++) {
-
-        uint curr_gpuid = near_ents[i];
-        uint curr_flags = ATTR(curr_gpuid, flags);
-
-        if(curr_gpuid == gpuid)
-            continue;
-
-        float radius = ATTR(curr_gpuid, radius);
-        if(radius == 0.0)
-            continue;
-
-        if((ent_flags & ENTITY_FLAG_AIR) != (curr_flags & ENTITY_FLAG_AIR))
-            continue;
-
-        if(ent_still(curr_gpuid)) {
-            if(ret.x < MAX_NEIGHBOURS)
-                static_neighbours[ret.x++] = curr_gpuid;
-        }else{
-            if(ret.y < MAX_NEIGHBOURS)
-                dynamic_neighbours[ret.y++] = curr_gpuid;
-        }
-    }
+    precise float len = sqrt_rn(len2(a));
+    precise vec2 ret = vec2(div_rn(a.x, len), div_rn(a.y, len));
     return ret;
 }
 
 bool same_position(vec2 a, vec2 b)
 {
-    vec2 delta = b - a;
-    return (length(delta) < EPSILON);
+    precise vec2 d = b - a;
+    return len2(d) < float(EPSILON * EPSILON);
 }
 
-bool infinite_rays_intersection(in struct ray l1, 
-                                in struct ray l2, 
-                                out vec2 out_intersec_point)
+vec2 nb_pos(uint i) { return vec2(nbs[i].px, nbs[i].pz); }
+vec2 nb_vel(uint i) { return vec2(nbs[i].vx, nbs[i].vz); }
+
+/* C_InfiniteLineIntersection of src/phys/collision.c, with its NaN slopes
+ * spelled out as flags */
+bool infinite_line_isec(vec2 p1, vec2 d1, vec2 p2, vec2 d2, out vec2 isec)
 {
-    bool l1_zero = abs(l1.dir.x) < EPSILON;
-    bool l2_zero = abs(l2.dir.x) < EPSILON;
-    float l1_slope = l1_zero ? 1e30 : (l1.dir.y / l1.dir.x);
-    float l2_slope = l2_zero ? 1e30 : (l2.dir.y / l2.dir.x);
+    bool v1 = abs(d1.x) < EPSILON;
+    bool v2 = abs(d2.x) < EPSILON;
+    precise float s1 = v1 ? 0.0 : div_rn(d1.y, d1.x);
+    precise float s2 = v2 ? 0.0 : div_rn(d2.y, d2.x);
 
-    if(l1_zero && l2_zero)
+    if(v1 && v2)
+        return false;
+    precise float ds = s1 - s2;
+    if(!v1 && !v2 && abs(ds) < EPSILON)
         return false;
 
-    if(abs(l1_slope - l2_slope) < EPSILON)
-        return false;
-
-    if(l1_zero && !l2_zero) {
-
-        out_intersec_point = vec2(
-            l1.point.x,
-            (l1.point.x - l2.point.x) * l2_slope + l2.point.y
-        );
-
-    }else if(!l1_zero && l2_zero) {
-
-        out_intersec_point = vec2(
-            l2.point.x,
-            (l2.point.x - l1.point.x) * l1_slope + l2.point.y
-        );
-
+    precise float x, y;
+    if(v1) {
+        x = p1.x;
+        y = (p1.x - p2.x) * s2 + p2.y;
+    }else if(v2) {
+        x = p2.x;
+        y = (p2.x - p1.x) * s1 + p2.y;
     }else{
-
-        float x = (l1_slope * l1.point.x - l2_slope * l2.point.x + l2.point.y - l1.point.y) 
-                / (l1_slope - l2_slope);
-        float y = l2_slope * (x - l2.point.x) + l2.point.y;
-        out_intersec_point = vec2(x, y);
+        x = div_rn(s1 * p1.x - s2 * p2.x + p2.y - p1.y, ds);
+        y = s2 * (x - p2.x) + p2.y;
     }
-
+    isec = vec2(x, y);
     return true;
 }
 
-void compute_vo_edges(uint gpuid, uint neighb_gpuid, 
-                      out vec2 xz_right, out vec2 xz_left)
+/* Determinant-form ray/ray intersection (cp_ray_ray_isec) */
+bool ray_ray_isec(vec2 ap, vec2 ad, vec2 bp, vec2 bd, out vec2 isec)
 {
-    vec2 ent_to_nb = normalize(ATTR_VEC2(neighb_gpuid, pos) - ATTR_VEC2(gpuid, pos));
-    vec2 right = vec2(-ent_to_nb.y, ent_to_nb.x);
-    right *= ATTR(neighb_gpuid, radius) + ATTR(gpuid, radius) + CLEARPATH_BUFFER_RADIUS;
+    precise float det = ad.x * bd.y - ad.y * bd.x;
+    if(abs(det) < EPSILON)
+        return false;
 
-    vec2 right_tangent = ATTR_VEC2(neighb_gpuid, pos) + right;
-    vec2 left_tangent = ATTR_VEC2(neighb_gpuid, pos) - right;
+    precise vec2 d = bp - ap;
+    precise float t = div_rn(d.x * bd.y - d.y * bd.x, det);
+    precise float s = div_rn(d.x * ad.y - d.y * ad.x, det);
+    if(t < 0.0 || s < 0.0)
+        return false;
 
-    xz_right = normalize(right_tangent - ATTR_VEC2(gpuid, pos));
-    xz_left = normalize(left_tangent - ATTR_VEC2(gpuid, pos));
+    precise vec2 ret = vec2(ap.x + t * ad.x, ap.y + t * ad.y);
+    isec = ret;
+    return true;
 }
 
-struct VO compute_vo(uint gpuid, uint neighb_gpuid)
+void vo_edges(vec2 nb_p, float nb_r, out vec2 right_side, out vec2 left_side)
 {
-    struct VO ret;
-    compute_vo_edges(gpuid, neighb_gpuid, ret.xz_right_side, ret.xz_left_side);
-    ret.xz_apex = ATTR_VEC2(gpuid, pos) + ATTR_VEC2(neighb_gpuid, velocity);
-    return ret;
+    precise vec2 ent_to_nb = cp_norm(nb_p - s_pos);
+    precise float rsum = nb_r + s_unit.radius + BUFFER_RADIUS;
+    precise vec2 right = vec2(-ent_to_nb.y, ent_to_nb.x) * rsum;
+
+    precise vec2 right_tangent = nb_p + right;
+    precise vec2 left_tangent = nb_p - right;
+
+    right_side = cp_norm(right_tangent - s_pos);
+    left_side = cp_norm(left_tangent - s_pos);
 }
 
-struct RVO compute_rvo(uint gpuid, uint neighb_gpuid)
+void set_vo(uint slot, vec2 apex, vec2 left_side, vec2 right_side)
 {
-    struct RVO ret;
-    compute_vo_edges(gpuid, neighb_gpuid, ret.xz_right_side, ret.xz_left_side);
-
-    vec2 apex_off = ATTR_VEC2(gpuid, velocity) + ATTR_VEC2(neighb_gpuid, velocity);
-    apex_off *= 0.5;
-    ret.xz_apex = ATTR_VEC2(gpuid, pos) + apex_off;
-
-    return ret;
+    sh_apex[slot] = apex;
+    sh_left[slot] = left_side;
+    sh_right[slot] = right_side;
 }
 
-struct HRVO compute_hrvo(uint gpuid, uint neighb_gpuid)
+void hrvo(uint slot, uint i)
 {
-    struct HRVO ret;
-    struct RVO rvo = compute_rvo(gpuid, neighb_gpuid);
+    precise vec2 p = nb_pos(i), v = nb_vel(i);
+    precise vec2 rs, ls;
+    vo_edges(p, nbs[i].radius, rs, ls);
+    precise vec2 rvo_apex = s_pos + (s_vel + v) * 0.5;
 
-    vec2 centerline = rvo.xz_left_side + rvo.xz_right_side;
-    vec2 intersec_point = vec2(0.0, 0.0);
+    precise vec2 centerline = ls + rs;
+    precise vec2 vo_apex = s_pos + v;
 
-    vec2 vo_apex = ATTR_VEC2(gpuid, pos) + ATTR_VEC2(neighb_gpuid, velocity);
-    float det = (centerline.x * ATTR_VEC2(gpuid, velocity).y) 
-              - (centerline.y * ATTR_VEC2(gpuid, velocity).x);
+    /* A still unit keeps the side it last deflected to */
+    precise float det = (centerline.x * s_vel.y) - (centerline.y * s_vel.x);
+    if(abs(det) <= EPSILON)
+        det = float(s_unit.side);
 
+    precise vec2 apex = rvo_apex;
+    precise vec2 isec;
     if(det > EPSILON) {
-
-        struct ray l1 = ray(rvo.xz_apex, rvo.xz_left_side);
-        struct ray l2 = ray(vo_apex, rvo.xz_right_side);
-
-        bool collide = infinite_rays_intersection(l1, l2, intersec_point);
-        ret.xz_apex = intersec_point;
-
+        if(infinite_line_isec(rvo_apex, ls, vo_apex, rs, isec))
+            apex = isec;
     }else if(det < -EPSILON) {
-
-        struct ray l1 = ray(rvo.xz_apex, rvo.xz_right_side);
-        struct ray l2 = ray(vo_apex, rvo.xz_left_side);
-
-        bool collide = infinite_rays_intersection(l1, l2, intersec_point);
-        ret.xz_apex = intersec_point;
-
-    }else{
-        ret.xz_apex = rvo.xz_apex;
+        if(infinite_line_isec(rvo_apex, rs, vo_apex, ls, isec))
+            apex = isec;
     }
-
-    ret.xz_right_side = rvo.xz_right_side;
-    ret.xz_left_side = rvo.xz_left_side;
-    return ret;
+    set_vo(slot, apex, ls, rs);
 }
 
-uint compute_all_hrvos(in uint gpuid,
-                       in uint ndynamic,
-                       in uint dynamic_neighbours[MAX_NEIGHBOURS],
-                       out struct HRVO out_hrvos[MAX_NEIGHBOURS])
+void stat_vo(uint slot, uint i)
 {
-    uint ret = 0;
-    vec2 ent_pos = ATTR_VEC2(gpuid, pos);
-
-    for(int i = 0; i < ndynamic; i++) {
-
-        uint curr_gpuid = dynamic_neighbours[i];
-        vec2 curr_pos = ATTR_VEC2(curr_gpuid, pos);
-        if(same_position(curr_pos, ent_pos))
-            continue;
-        out_hrvos[ret++] = compute_hrvo(gpuid, curr_gpuid);
-    }
-    return ret;
+    precise vec2 rs, ls;
+    vo_edges(nb_pos(i), nbs[i].radius, rs, ls);
+    precise vec2 apex = s_pos + nb_vel(i);
+    set_vo(slot, apex, ls, rs);
 }
 
-uint compute_all_vos(in uint gpuid,
-                     in uint nstatic,
-                     in uint static_neighbours[MAX_NEIGHBOURS],
-                     out struct VO out_vos[MAX_NEIGHBOURS])
+void tile_vo(uint slot, uint i)
 {
-    uint ret = 0;
-    vec2 ent_pos = ATTR_VEC2(gpuid, pos);
+    precise vec2 tile = nb_pos(i);
+    precise vec2 to_tile = tile - s_pos;
+    precise float dist = sqrt_rn(len2(to_tile));
+    precise vec2 ent_to_nb = to_tile * div_rn(1.0, dist);
+    precise vec2 right = vec2(-ent_to_nb.y, ent_to_nb.x) * TILE_RADIUS;
 
-    for(int i = 0; i < nstatic; i++) {
+    precise vec2 right_tangent = tile + right;
+    precise vec2 left_tangent = tile - right;
 
-        uint curr_gpuid = static_neighbours[i];
-        vec2 curr_pos = ATTR_VEC2(curr_gpuid, pos);
-        if(same_position(curr_pos, ent_pos))
-            continue;
-        out_vos[ret++] = compute_vo(gpuid, curr_gpuid);
-    }
-    return ret;
+    precise float gap = dist - TILE_RADIUS;
+    precise float closing = (gap > 0.0 && s_unit.horizon > 0.0) ? div_rn(gap, s_unit.horizon) : 0.0;
+
+    precise vec2 apex = s_pos + ent_to_nb * closing;
+    set_vo(slot, apex, cp_norm(left_tangent - s_pos), cp_norm(right_tangent - s_pos));
 }
 
-void rays_repr(in uint nstatic,
-               in uint ndynamic,
-               in struct VO vos[MAX_NEIGHBOURS],
-               in struct HRVO hrvos[MAX_NEIGHBOURS],
-               out struct ray out_rays[(MAX_NEIGHBOURS + MAX_NEIGHBOURS) * 2])
+/* The first lane lists the obstacles in the CPU's order, then the lanes
+ * build one VO each */
+void build_vos()
 {
-    uint rays_idx = 0;
-
-    for(int i = 0; i < ndynamic; i++) {
-
-        out_rays[rays_idx + 0].point = hrvos[i].xz_apex;
-        out_rays[rays_idx + 0].dir = hrvos[i].xz_left_side;
-
-        out_rays[rays_idx + 1].point = hrvos[i].xz_apex;
-        out_rays[rays_idx + 1].dir = hrvos[i].xz_right_side;
-
-        rays_idx += 2;
+    if(s_lane == 0u) {
+        uint n = 0u;
+        for(uint k = 0; k < sh_ndyn; k++) {
+            if(!same_position(s_pos, nb_pos(sh_dyn[k])))
+                sh_src[n++] = sh_dyn[k];
+        }
+        for(uint k = 0; k < sh_nstat; k++) {
+            if(!same_position(s_pos, nb_pos(sh_stat[k])))
+                sh_src[n++] = sh_stat[k] | SRC_STAT;
+        }
+        for(uint k = 0; k < sh_ntiles; k++) {
+            if(!same_position(s_pos, nb_pos(sh_tile[k])))
+                sh_src[n++] = sh_tile[k] | SRC_TILE;
+        }
+        sh_nvos = n;
     }
+    barrier();
 
-    for(int i = 0; i < nstatic; i++) {
-
-        out_rays[rays_idx + 0].point = vos[i].xz_apex;
-        out_rays[rays_idx + 0].dir = vos[i].xz_left_side;
-
-        out_rays[rays_idx + 1].point = vos[i].xz_apex;
-        out_rays[rays_idx + 1].dir = vos[i].xz_right_side;
-
-        rays_idx += 2;
+    for(uint v = s_lane; v < sh_nvos; v += LANES) {
+        uint src = sh_src[v];
+        uint i = src & ~SRC_CLASS;
+        switch(src & SRC_CLASS) {
+        case 0u:       hrvo(v, i);    break;
+        case SRC_STAT: stat_vo(v, i); break;
+        default:       tile_vo(v, i); break;
+        }
     }
+    barrier();
 }
 
-bool inside_pcr(in vec2 test,
-                in uint nrays,
-                in struct ray rays[(MAX_NEIGHBOURS + MAX_NEIGHBOURS) * 2])
+/* Points exactly on the boundary are 'not inside' (inside_pcr_avx2) */
+bool inside_pcr(vec2 test)
 {
-    uint idx = gl_GlobalInvocationID.x;
-    uint npoints = 0;
-    for(int i = 0; i < nrays; i+= 2) {
+    const float eps2 = float(EPSILON * EPSILON);
+    for(uint i = 0; i < sh_nvos; i++) {
 
-        const float left_dir_x = rays[i + 0].dir.x;
-        const float left_dir_z = rays[i + 0].dir.y;
+        precise vec2 d = test - sh_apex[i];
+        precise float l2 = d.x * d.x + d.y * d.y;
+        precise float eps2_len2 = eps2 * l2;
+        precise float ldet = d.y * sh_left[i].x - d.x * sh_left[i].y;
+        precise float rdet = d.y * sh_right[i].x - d.x * sh_right[i].y;
+        precise float ldet2 = ldet * ldet;
+        precise float rdet2 = rdet * rdet;
 
-        vec2 point_to_test = test - rays[i + 0].point;
-        if(length(point_to_test) < EPSILON)
-            continue;
-
-        point_to_test = normalize(point_to_test);
-        float left_det = (point_to_test.y * left_dir_x) - (point_to_test.x * left_dir_z);
-        bool left_of_vo = (left_det < EPSILON);
-
-        if(left_of_vo)
-            continue;
-
-        const float right_dir_x = rays[i + 1].dir.x;
-        const float right_dir_z = rays[i + 1].dir.y;
-
-        point_to_test = test - rays[i + 1].point;
-        if(length(point_to_test) < EPSILON)
-            continue;
-
-        point_to_test = normalize(point_to_test);
-        float right_det = (point_to_test.y * right_dir_x) - (point_to_test.x * right_dir_z);
-        bool right_of_vo = (right_det > -EPSILON);
-
-        if(right_of_vo)
-            continue;
-
-        return true;
+        if(l2 >= eps2
+        && ldet > 0.0 && ldet2 >= eps2_len2
+        && rdet < 0.0 && rdet2 >= eps2_len2)
+            return true;
     }
-
     return false;
 }
 
-bool finite_rays_intersection(struct ray l1, struct ray l2, out vec2 out_xz)
+void ray(uint k, out vec2 point, out vec2 dir)
 {
-    vec2 isec_point;
-    if(!infinite_rays_intersection(l1, l2, isec_point))
-        return false;
+    uint vo = k >> 1;
+    point = sh_apex[vo];
+    dir = ((k & 1u) == 0u) ? sh_left[vo] : sh_right[vo];
+}
 
-    if((isec_point.x - l1.point.x) / l1.dir.x < 0.0)
-        return false;
+/* M_NavPositionPathable and M_NavPositionBlocked on the unit's patch, which
+ * covers every point a step can land on */
+void tile_state(vec2 p, out bool pathable, out bool blocked)
+{
+    pathable = false;
+    blocked = false;
 
-    if((isec_point.y - l1.point.y) / l1.dir.y < 0.0)
-        return false;
+    precise float field_w = CHUNK_COORDS;
+    precise float field_h = CHUNK_COORDS;
+    precise float tile_x = div_rn(field_w, float(nav_resolution.z));
+    precise float tile_z = div_rn(field_h, float(nav_resolution.w));
+    precise float width = float(nav_resolution.x) * field_w;
+    precise float height = float(nav_resolution.y) * field_h;
 
-    if((isec_point.x - l2.point.x) / l2.dir.x < 0.0)
-        return false;
+    /* C_BoxPointIntersection; X increases to the left */
+    precise float min_x = nav_pos.x - width;
+    precise float max_z = nav_pos.y + height;
+    if(!(p.x <= nav_pos.x && p.x >= min_x
+      && p.y >= nav_pos.y && p.y <= max_z))
+        return;
 
-    if((isec_point.y - l2.point.y) / l2.dir.y < 0.0)
-        return false;
+    precise float cdz = nav_pos.y - p.y;
+    precise float cdx = nav_pos.x - p.x;
+    int chunk_r = clamp(int(div_rn(abs(cdz), field_h)), 0, nav_resolution.y - 1);
+    int chunk_c = clamp(int(div_rn(abs(cdx), field_w)), 0, nav_resolution.x - 1);
+    precise float chunk_base_x = nav_pos.x - float(chunk_c) * field_w;
+    precise float chunk_base_z = nav_pos.y + float(chunk_r) * field_h;
+    precise float tdz = chunk_base_z - p.y;
+    precise float tdx = chunk_base_x - p.x;
+    int tile_r = clamp(int(div_rn(abs(tdz), tile_z)), 0, nav_resolution.w - 1);
+    int tile_c = clamp(int(div_rn(abs(tdx), tile_x)), 0, nav_resolution.z - 1);
 
-    out_xz = isec_point;
+    int dr = chunk_r * nav_resolution.w + tile_r - s_unit.prow;
+    int dc = chunk_c * nav_resolution.z + tile_c - s_unit.pcol;
+    if(dr < 0 || dc < 0 || dr >= int(s_unit.pdim) || dc >= int(s_unit.pdim)) {
+        s_miss = true;
+        return;
+    }
+    uint bit = uint(dr * int(s_unit.pdim) + dc) * 2u;
+    uint word = patch_words[s_unit.pfirst + (bit >> 5)];
+    pathable = ((word >> (bit & 31u)) & 1u) != 0u;
+    blocked = ((word >> ((bit & 31u) + 1u)) & 1u) != 0u;
+}
+
+bool landing_ok(vec2 cand_ws)
+{
+    precise vec2 v = cand_ws - s_pos;
+    precise float len = sqrt_rn(len2(v));
+    if(len > s_unit.max_step && len > EPSILON)
+        v = v * div_rn(s_unit.max_step, len);
+    precise vec2 land = s_pos + v;
+
+    bool pathable, blocked;
+    tile_state(land, pathable, blocked);
+    if(!pathable)
+        return false;
+    return ((s_unit.flags & UNIT_ON_BLOCKED) != 0u) || !blocked;
+}
+
+int side_of(vec2 des_v, vec2 v)
+{
+    precise float cross = des_v.x * v.y - des_v.y * v.x;
+    return (cross > EPSILON) ? 1 : (cross < -EPSILON) ? -1 : 0;
+}
+
+/* Candidate 'c' in the CPU's order: the pairwise intersections of the first
+ * 'n_pair' rays, then the projections onto every ray */
+bool candidate(uint c, uint n_pair, uint npairs, vec2 des_v, out vec2 cand)
+{
+    if(c < npairs) {
+        uint i = 0u, rem = c;
+        while(rem >= n_pair - 1u - i) {
+            rem -= n_pair - 1u - i;
+            i++;
+        }
+        uint j = i + 1u + rem;
+        precise vec2 ip, id, jp, jd, isec;
+        ray(i, ip, id);
+        ray(j, jp, jd);
+        if(!ray_ray_isec(ip, id, jp, jd, isec))
+            return false;
+        cand = isec;
+        return true;
+    }
+    precise vec2 p, d;
+    ray(c - npairs, p, d);
+    precise float len = d.x * des_v.x + d.y * des_v.y;
+    precise vec2 proj = vec2(p.x + d.x * len, p.y + d.y * len);
+    cand = proj;
     return true;
 }
 
-uint compute_vo_xpoints(in uint nrays,
-                        in struct ray rays[(MAX_NEIGHBOURS + MAX_NEIGHBOURS) * 2],
-                        out vec2 xpoints[CLEARPATH_MAX_XPOINTS])
+/* One pass of the solve; the unit's lanes all return the same answer */
+bool solve_once(vec2 des_v, out vec2 vnew)
 {
-    uint ret = 0;
-    for(int i = 0; i < nrays; i++) {
-    for(int j = 0; j < nrays; j++) {
+    build_vos();
+    precise vec2 des_v_ws = s_pos + des_v;
 
-        if(ret == CLEARPATH_MAX_XPOINTS)
-            return ret;
-
-        if(i == j)
-            continue;
-
-        vec2 isec_point;
-        if(!finite_rays_intersection(rays[i], rays[j], isec_point))
-            continue;
-
-        if(inside_pcr(isec_point, nrays, rays))
-            continue;
-
-        xpoints[ret++] = isec_point;
-    }}
-    return ret;
-}
-
-void compute_vdes_proj_points(in uint nrays,
-                              in struct ray rays[(MAX_NEIGHBOURS + MAX_NEIGHBOURS) * 2],
-                              in vec2 vdes,
-                              inout uint nxpoints,
-                              inout vec2 xpoints[CLEARPATH_MAX_XPOINTS])
-{
-    for(int i = 0; i < nrays; i++) {
-
-        if(nxpoints == CLEARPATH_MAX_XPOINTS)
-            return;
-
-        float len = dot(rays[i].dir, vdes);
-        vec2 proj = rays[i].point + (rays[i].dir * len);
-
-        if(!inside_pcr(proj, nrays, rays)) {
-            xpoints[nxpoints++] = proj;
-        }
-    }
-}
-
-vec2 compute_vnew(in uint nxpoints,
-                  in vec2 xpoints[CLEARPATH_MAX_XPOINTS],
-                  in vec2 vdes,
-                  in vec2 pos_xz)
-{
-    float min_dist = 1e30;
-    vec2 ret = vec2(0.0, 0.0);
-
-    for(int i = 0; i < nxpoints; i++) {
-
-        vec2 curr = xpoints[i];
-        vec2 delta = curr - pos_xz;
-        vec2 diff = vdes - delta;
-        float len = length(diff);
-
-        if(len < min_dist) {
-
-            min_dist = len;
-            ret = delta;
-        }
-    }
-    return ret;
-}
-
-bool clearpath_try(uint gpuid, vec2 vdes, 
-                   uint nstatic, uint ndynamic,
-                   in uint static_neighbours[MAX_NEIGHBOURS],
-                   in uint dynamic_neighbours[MAX_NEIGHBOURS],
-                   out vec2 out_velocity)
-{
-    struct HRVO dyn_hrvos[MAX_NEIGHBOURS];
-    struct VO stat_vos[MAX_NEIGHBOURS];
-
-    uint num_hrvos = compute_all_hrvos(gpuid, ndynamic, dynamic_neighbours, dyn_hrvos);
-    uint num_vos = compute_all_vos(gpuid, nstatic, static_neighbours, stat_vos);
-
-    const uint nrays = (num_hrvos + num_vos) * 2;
-    struct ray rays[(MAX_NEIGHBOURS + MAX_NEIGHBOURS) * 2];
-    rays_repr(nstatic, ndynamic, stat_vos, dyn_hrvos, rays);
-
-    vec2 des_v_ws = ATTR_VEC2(gpuid, pos) + vdes;
-
-    if(!inside_pcr(des_v_ws, nrays, rays)) {
-        out_velocity = vdes;
+    if(!inside_pcr(des_v_ws) && landing_ok(des_v_ws)) {
+        vnew = des_v;
         return true;
     }
 
-    /* There are a maximum of (nrays)^2 intersection points 
-     * However, practically speaking, we can limit the number
-     * to a constant and truncate anything after that. 
-     */
-    vec2 xpoints[CLEARPATH_MAX_XPOINTS];
-    uint nxpoints = compute_vo_xpoints(nrays, rays, xpoints);
-    compute_vdes_proj_points(nrays, rays, vdes, nxpoints, xpoints);
+    precise float min_speed2 = ((s_unit.flags & UNIT_RELAX) != 0u)
+                             ? uintBitsToFloat(STALL_SPEED2_BITS) : 0.0;
+    uint n_rays = sh_nvos * 2u;
+    uint n_pair = min(n_rays, uint(MAX_PAIRWISE_RAYS));
+    uint npairs = (n_pair * (n_pair - 1u)) / 2u;
 
-    if(nxpoints == 0)
-        return false;
+    /* vnew_consider over this lane's candidates, in order */
+    precise float best_d = uintBitsToFloat(0x7F800000u);
+    uint best_c = NO_CANDIDATE;
+    precise vec2 best_v = vec2(0.0);
+    for(uint c = s_lane; c < npairs + n_rays; c += LANES) {
 
-    out_velocity = compute_vnew(nxpoints, xpoints, vdes, ATTR_VEC2(gpuid, pos));
-    return true;
-}
+        precise vec2 cand;
+        if(!candidate(c, n_pair, npairs, des_v, cand))
+            continue;
+        if(inside_pcr(cand))
+            continue;
 
-bool find_furthest_maybe(in vec2 pos, 
-                         inout float max_dist,
-                         inout int max_idx,
-                         in uint nents,
-                         in uint ents[MAX_NEIGHBOURS])
-{
-    bool ret = false;
-    for(int i = 0; i < nents; i++) {
-
-        uint curr_gpuid = ents[i];
-        vec2 curr_pos = ATTR_VEC2(curr_gpuid, pos);
-        vec2 diff = pos - curr_pos;
-        float len = length(diff);
-
-        if(len > max_dist) {
-            max_dist = len;
-            max_idx = i;
-            ret = true;
+        precise vec2 to_des = des_v_ws - cand;
+        precise float dist2 = len2(to_des);
+        precise vec2 v = cand - s_pos;
+        if(len2(v) < min_speed2)
+            continue;
+        if(s_unit.side != 0) {
+            precise vec2 dv = des_v_ws - s_pos;
+            if(side_of(dv, v) == -s_unit.side)
+                dist2 *= CP_SIDE_PENALTY;
+        }
+        if(dist2 < best_d && landing_ok(cand)) {
+            best_d = dist2;
+            best_c = c;
+            best_v = v;
         }
     }
-    return ret;
-}
+    sh_best_d[s_lane] = best_d;
+    sh_best_c[s_lane] = best_c;
+    sh_best_v[s_lane] = best_v;
+    barrier();
 
-void vec_remove(in uint idx,
-                inout uint size,
-                inout uint ents[MAX_NEIGHBOURS])
-{
-    for(uint i = idx; i < size-1; i++) {
-        uint next = ents[i + 1];
-        ents[i] = next;
+    if(s_lane == 0u) {
+        float d = uintBitsToFloat(0x7F800000u);
+        uint bc = NO_CANDIDATE;
+        vec2 bv = vec2(0.0);
+        for(uint l = 0; l < LANES; l++) {
+            if(sh_best_d[l] < d || (sh_best_d[l] == d && sh_best_c[l] < bc)) {
+                d = sh_best_d[l];
+                bc = sh_best_c[l];
+                bv = sh_best_v[l];
+            }
+        }
+        sh_found = (bc != NO_CANDIDATE);
+        sh_vnew = bv;
     }
-    size--;
+    barrier();
+
+    vnew = sh_vnew;
+    return sh_found;
 }
 
-void remove_furthest(in vec2 pos, 
-                     inout uint nstatic, 
-                     inout uint ndynamic,
-                     inout uint static_neighbours[MAX_NEIGHBOURS],
-                     inout uint dynamic_neighbours[MAX_NEIGHBOURS])
+void remove_furthest()
 {
-    float max_dist = -1e30;
-    int max_idx = -1;
+    precise float max_dist2 = uintBitsToFloat(0xFF800000u);
+    int cls = -1;
+    uint idx = 0u;
 
-    bool stat_found = find_furthest_maybe(pos, max_dist, max_idx, nstatic, static_neighbours);
-    bool dyn_found = find_furthest_maybe(pos, max_dist, max_idx, ndynamic, dynamic_neighbours);
-
-    if(dyn_found) {
-        vec_remove(max_idx, ndynamic, dynamic_neighbours);
-    }else if(stat_found) {
-        vec_remove(max_idx, nstatic, static_neighbours);
+    for(uint k = 0; k < sh_ndyn; k++) {
+        precise vec2 d = s_pos - nb_pos(sh_dyn[k]);
+        precise float d2 = len2(d);
+        if(d2 > max_dist2) { max_dist2 = d2; cls = 0; idx = k; }
     }
-}
+    for(uint k = 0; k < sh_nstat; k++) {
+        precise vec2 d = s_pos - nb_pos(sh_stat[k]);
+        precise float d2 = len2(d);
+        if(d2 > max_dist2) { max_dist2 = d2; cls = 1; idx = k; }
+    }
+    for(uint k = 0; k < sh_ntiles; k++) {
+        precise vec2 d = s_pos - nb_pos(sh_tile[k]);
+        precise float d2 = len2(d);
+        if(d2 > max_dist2) { max_dist2 = d2; cls = 2; idx = k; }
+    }
 
-vec2 clearpath_new_velocity(in uint gpuid, 
-                            in vec2 vpref,
-                            in uint nstatic, 
-                            in uint ndynamic,
-                            in uint static_neighbours[MAX_NEIGHBOURS],
-                            in uint dynamic_neighbours[MAX_NEIGHBOURS])
-{
-    vec2 pos = ATTR_VEC2(gpuid, pos);
-    uint retries = 0;
-    do{
-        vec2 ret = vec2(0.0, 0.0);
-        bool found = clearpath_try(gpuid, vpref, nstatic, ndynamic,
-            static_neighbours, dynamic_neighbours, ret);
-        if(found)
-            return ret;
-
-        if(++retries > MAX_SOLVE_RETRIES)
-            break;
-        remove_furthest(pos, nstatic, ndynamic, static_neighbours, dynamic_neighbours);
-
-        /* remove_furthest drops from either class; retry while any remain. */
-    }while(nstatic > 0 || ndynamic > 0);
-
-    return vec2(0, 0);
+    if(cls == 0)      sh_dyn[idx] = sh_dyn[--sh_ndyn];
+    else if(cls == 1) sh_stat[idx] = sh_stat[--sh_nstat];
+    else if(cls == 2) sh_tile[idx] = sh_tile[--sh_ntiles];
 }
 
 void main()
 {
-    uint idx = gl_GlobalInvocationID.x;
-    if(idx > num_sim_ents)
+    uint idx = gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x;
+    if(idx >= uint(num_sim_ents))
         return;
 
-    uint gpuid = gpuids[idx];
-    vec2 vpref = vec2(0.0, 0.0);
-    uint state = ATTR(gpuid, movestate);
+    s_lane = gl_LocalInvocationID.x;
+    s_unit = units[idx];
+    s_pos = vec2(s_unit.px, s_unit.pz);
+    s_vel = vec2(s_unit.vx, s_unit.vz);
+    s_miss = false;
 
-    if(state == STATE_TURNING) {
-        vpref = vec2(0.0, 0.0);
-    }else if(state == STATE_SEEK_ENEMIES) {
-        vpref = enemy_seek_vpref(
-            gpuid, 
-            ATTR(gpuid, speed), 
-            ATTR_VEC2(gpuid, vdes)
-        );
-    }else if(state == STATE_FLEEING) {
-        vpref = flee_vpref(
-            gpuid,
-            ATTR(gpuid, speed),
-            ATTR_VEC2(gpuid, vdes)
-        );
-    }else if(state == STATE_ARRIVING_TO_CELL) {
-        if(bool(ATTR(gpuid, range_field))) {
-            vpref = formation_seek_vpref(
-                gpuid,
-                ATTR(gpuid, flock_id),
-                ATTR(gpuid, speed),
-                ATTR_VEC2(gpuid, vdes),
-                vec2(0.0, 0.0),
-                vec2(0.0, 0.0),
-                vec2(0.0, 0.0),
-                0u,
-                1u
-            );
-        }else if(!bool(ATTR(gpuid, formation_assignment_ready))) {
-            vpref = vec2(0.0, 0.0);
-        }else{
-            vpref = cell_arrival_seek_vpref(
-                gpuid,
-                ATTR_VEC2(gpuid, cell_pos),
-                ATTR(gpuid, speed),
-                ATTR_VEC2(gpuid, vdes),
-                ATTR_VEC2(gpuid, formation_cohesion_force),
-                ATTR_VEC2(gpuid, formation_align_force),
-                ATTR_VEC2(gpuid, formation_drag_force)
-            );
+    if(s_lane == 0u) {
+        sh_ndyn = s_unit.ndyn;
+        sh_nstat = s_unit.nstat;
+        sh_ntiles = s_unit.ntiles;
+        for(uint k = 0; k < sh_ndyn; k++)
+            sh_dyn[k] = s_unit.first + k;
+        for(uint k = 0; k < sh_nstat; k++)
+            sh_stat[k] = s_unit.first + s_unit.ndyn + k;
+        for(uint k = 0; k < sh_ntiles; k++)
+            sh_tile[k] = s_unit.first + s_unit.ndyn + s_unit.nstat + k;
+        sh_miss = false;
+    }
+    barrier();
+
+    precise vec2 des_v = vec2(s_unit.dx, s_unit.dz);
+    uint retries = 0u;
+    bool gave_up = true;
+    precise vec2 vnew = vec2(0.0);
+
+    while(true) {
+        precise vec2 ret;
+        if(solve_once(des_v, ret)) {
+            vnew = ret;
+            gave_up = false;
+            break;
         }
-    }else if(state == STATE_MOVING_IN_FORMATION) {
-        if(bool(ATTR(gpuid, range_field))) {
-            vpref = formation_seek_vpref(
-                gpuid,
-                ATTR(gpuid, flock_id),
-                ATTR(gpuid, speed),
-                ATTR_VEC2(gpuid, vdes),
-                vec2(0.0, 0.0),
-                vec2(0.0, 0.0),
-                vec2(0.0, 0.0),
-                0u,
-                1u
-            );
-        }else if(!bool(ATTR(gpuid, formation_assignment_ready))) {
-            vpref = vec2(0.0, 0.0);
-        }else{
-            vpref = formation_seek_vpref(
-                gpuid,
-                ATTR(gpuid, flock_id),
-                ATTR(gpuid, speed),
-                ATTR_VEC2(gpuid, vdes),
-                ATTR_VEC2(gpuid, formation_cohesion_force),
-                ATTR_VEC2(gpuid, formation_align_force),
-                ATTR_VEC2(gpuid, formation_drag_force),
-                ATTR(gpuid, has_dest_los),
-                0u
-            );
-        }
-    }else{
-        vpref = point_seek_vpref(
-            gpuid,
-            ATTR(gpuid, flock_id),
-            ATTR_VEC2(gpuid, vdes),
-            ATTR(gpuid, has_dest_los) & ~ATTR(gpuid, range_field),
-            ATTR(gpuid, speed),
-            ATTR(gpuid, range_field)
-        );
+        if(++retries > uint(MAX_SOLVE_RETRIES))
+            break;
+        if(s_lane == 0u)
+            remove_furthest();
+        barrier();
+        if(sh_ndyn == 0u && sh_nstat == 0u && sh_ntiles == 0u)
+            break;
     }
 
-    uint static_neighbours[MAX_NEIGHBOURS];
-    uint dynamic_neighbours[MAX_NEIGHBOURS];
-    ivec2 num_neighbs = find_neighbours(gpuid, static_neighbours, dynamic_neighbours);
+    if(s_miss)
+        sh_miss = true;
+    barrier();
 
-    vec2 new_vel = clearpath_new_velocity(gpuid, vpref, num_neighbs.x, num_neighbs.y,
-        static_neighbours, dynamic_neighbours);
-    new_vel = truncate(new_vel, ATTR(gpuid, max_speed) / ticks_hz);
-
-    velocities[idx] = new_vel;
+    if(s_lane == 0u) {
+        int side = 0;
+        if(!gave_up && !same_position(vnew, des_v))
+            side = side_of(des_v, vnew);
+        results[idx].vx = gave_up ? 0.0 : vnew.x;
+        results[idx].vz = gave_up ? 0.0 : vnew.y;
+        results[idx].side = side;
+        results[idx].diag = retries | (gave_up ? DIAG_GAVE_UP : 0u) | (sh_miss ? DIAG_PATCH_MISS : 0u);
+    }
 }
-

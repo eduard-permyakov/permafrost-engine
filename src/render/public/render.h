@@ -612,78 +612,59 @@ void R_GL_Batch_RenderDepthMap(struct render_input *in);
 
 
 /*###########################################################################*/
-/* RENDER POSITION                                                           */
-/*###########################################################################*/
-
-/* ---------------------------------------------------------------------------
- * Render the entity attributes to a texture based on the entity's map-space 
- * position. The resulting texture can be queried with R_GL_PositionsGet and 
- * used for further computations on the GPU.
- * ---------------------------------------------------------------------------
- */
-void R_GL_PositionsUploadData(vec3_t *posbuff, uint32_t *idbuff, 
-                              const size_t *nents, const struct map *map);
-
-/* ---------------------------------------------------------------------------
- * Get the ID of the texture rendered to by R_GL_PositionsRender.
- * ---------------------------------------------------------------------------
- */
-void R_GL_PositionsGetTexture(GLuint *out_tex_id);
-
-/* ---------------------------------------------------------------------------
- * Free resources previously allocated by R_GL_PositionsUploadData.
- * ---------------------------------------------------------------------------
- */
-void R_GL_PositionsInvalidateData(void);
-
-
-/*###########################################################################*/
 /* RENDER MOVEMENT                                                           */
 /*###########################################################################*/
 
-/* ---------------------------------------------------------------------------
- * Update the uniform parameters for the 'movement' shader program.
- * ---------------------------------------------------------------------------
+/* The GPU velocity solve's buffers, persistently mapped: the CPU writes the
+ * inputs and reads the results back through these, with the capacities in
+ * bytes. Laid out as shaders/compute/movement.glsl reads them.
  */
-void R_GL_MoveUpdateUniforms(const struct map_resolution *res, vec2_t *map_pos, 
-                             int *ticks_hz, int *nwork);
+struct gpu_move_bufs{
+    void       *units;
+    void       *nbs;
+    void       *patch;
+    const void *results;
+    size_t      units_cap;
+    size_t      nbs_cap;
+    size_t      patch_cap;
+    size_t      results_cap;
+};
 
 /* ---------------------------------------------------------------------------
- * Upload the movement input state to shader storage buffer objects.
+ * (Re)create the movement buffers with at least the given capacities (units,
+ * neighbours, patch words, results, in bytes), write their mappings to 'out',
+ * and set 'done'. The mappings are NULL if the buffers could not be created.
  * ---------------------------------------------------------------------------
  */
-void R_GL_MoveUploadData(void *gpuid_buff, size_t *ndynamic_ents, 
-                         void *attr_buff, size_t *attr_buffsize,
-                         void *flock_buff, size_t *flock_buffsize,
-                         void *cost_base_buff, size_t *cost_base_size,
-                         void *blockers_buff, size_t *blockers_size);
+void R_GL_MoveReserve(const size_t *caps, struct gpu_move_bufs *out, SDL_atomic_t *done);
+
+/* When a posted solve was dispatched and signalled (performance counter
+ * ticks), and its GPU time.
+ */
+struct gpu_move_times{
+    uint64_t dispatched;
+    uint64_t signalled;
+    uint32_t gpu_us;
+};
 
 /* ---------------------------------------------------------------------------
- * Free resources previously allocated by R_GL_MoveUploadData. This must be 
- * done after the compute work has finished running and the results have been
- * read back by the CPU.
+ * Post the velocity solve for the first 'nwork' units of the mapped inputs,
+ * from the one thread that posts; the render thread dispatches the latest
+ * post at its next frame boundary. 'done' is set to 'seq' once the results
+ * are visible through the mapping, after the solve's times are written to
+ * 'out_times', if not NULL.
  * ---------------------------------------------------------------------------
  */
-void R_GL_MoveInvalidateData(void);
+void R_GL_MovePost(const struct map_resolution *res, vec2_t nav_pos, int nwork,
+                   SDL_atomic_t *done, int seq, struct gpu_move_times *out_times);
 
 /* ---------------------------------------------------------------------------
- * Dispatch the compute work for deriving the new velocities of the entities.
+ * Signal a dispatched solve that has finished, and at a frame 'boundary',
+ * where no command's GL state is live, dispatch a posted one. Called by the
+ * render thread around and between each frame's commands.
  * ---------------------------------------------------------------------------
  */
-void R_GL_MoveDispatchWork(const size_t *nents);
-
-/* ---------------------------------------------------------------------------
- * Read back the results of the previously dispatched compute work. This will
- * block until the work is finished and the results are read back.
- * ---------------------------------------------------------------------------
- */
-void R_GL_MoveReadNewVelocities(void *out, const size_t *nwork, const size_t *maxout);
-
-/* ---------------------------------------------------------------------------
- * Poll for the completion of the movement work.
- * ---------------------------------------------------------------------------
- */
-void R_GL_MovePollCompletion(SDL_atomic_t *out);
+void R_GL_MovePoll(bool boundary);
 
 /* ---------------------------------------------------------------------------
  * Clean up any OpenGL resources allocated by the movement system.

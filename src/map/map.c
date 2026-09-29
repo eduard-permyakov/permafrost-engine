@@ -821,6 +821,12 @@ int M_NavBlockedTilesAround(const struct map *map, int layer, vec2_t xz, float r
         out_centres, max, out_nterrain);
 }
 
+void M_NavTilePatch(const struct map *map, int layer, int row0, int col0, int dim,
+                    uint32_t *out_words)
+{
+    N_TilePatch(map->nav_private, layer, row0, col0, dim, out_words);
+}
+
 void M_NavServicePathRequest(const struct map *map, struct target target, vec2_t xz)
 {
     N_ServicePathRequest(map->nav_private, map->pos, target, xz);

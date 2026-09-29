@@ -52,8 +52,6 @@
 #include "../mem.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
-#include "../render/public/render.h"
-#include "../render/public/render_ctrl.h"
 
 #include <assert.h>
 #include <float.h>
@@ -730,44 +728,3 @@ uint32_t G_Pos_Nearest(vec2_t xz_point)
 
     return G_Pos_NearestWithPred(xz_point, any_ent, NULL, 0.0);
 }
-
-size_t G_Pos_UploadFrom(khash_t(pos) *table, khash_t(id) *ent_gpu_id_table,
-                        const struct map *map)
-{
-    PERF_ENTER();
-    ASSERT_IN_MAIN_THREAD();
-
-    const size_t max_ents = kh_size(table);
-    struct render_workspace *ws = G_GetSimWS();
-    vec3_t *buff = stalloc(&ws->args, max_ents * sizeof(vec3_t));
-    uint32_t *gpu_idbuff = stalloc(&ws->args, max_ents * sizeof(uint32_t));
-
-    uint32_t uid;
-    vec3_t curr;
-    size_t nents = 0;
-
-    kh_foreach(table, uid, curr, {
-
-        uint32_t gpu_id = G_GPUIDForEntFrom(ent_gpu_id_table, uid);
-        if(gpu_id == 0)
-            continue;
-
-        buff[nents] = curr;
-        gpu_idbuff[nents] = gpu_id;
-        nents++;
-    });
-
-    R_PushCmd((struct rcmd){
-        .func = R_GL_PositionsUploadData,
-        .nargs = 4,
-        .args = {
-            buff,
-            gpu_idbuff,
-            R_PushArg(&nents, sizeof(nents)),
-            (void*)G_GetPrevTickMap()
-        },
-    });
-
-    PERF_RETURN(nents);
-}
-

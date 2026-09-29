@@ -98,7 +98,6 @@ static int hz_count(enum movement_hz hz);
 /* Stale-served LOS entries whose rebuild came due refresh at this rate, so a
  * melee's mark conveyor cannot fire dozens of chain floods on one tick. */
 #define MAX_LOS_STALE_REBUILDS_PER_TICK (16)
-#define MAX_GPU_FLOCK_MEMBERS (1024)  /* Must match movement.glsl */
 
 #define SIGNUM(x)    (((x) > 0) - ((x) < 0))
 #define MAX(a, b)    ((a) > (b) ? (a) : (b))
@@ -422,6 +421,15 @@ struct move_work_in{
     int8_t         cp_side;
     struct formation_state fstate;
     vec2_t         cell_arrival_vdes;
+    /* The velocity solve's inputs, written by the gather part of the velocity
+     * phase for a solve on the CPU or the GPU */
+    vec2_t            vpref;
+    struct cp_terrain terrain;
+    int               solve_side;
+    bool              relax;
+    int               cap_slot;
+    /* The unit's slot in the GPU solve, or a GPU_SLOT_* value */
+    int               gpu_slot;
 };
 
 /* How the velocity solve resolved, for the per-tick mechanism counters. */
@@ -458,8 +466,6 @@ struct move_gamestate{
     bg_ent_t              *postree;
     khash_t(range)        *sel_radiuses;
     khash_t(id)           *faction_ids;
-    khash_t(id)           *ent_gpu_id_map;
-    khash_t(id)           *gpu_id_ent_map;
     struct map            *map;
     /* Additional state needed for nav_unit_query_ctx */
     struct kh_aabb_s      *aabbs;
@@ -523,39 +529,68 @@ struct move_work{
     size_t                    nwork;
     size_t                    ntasks;
     uint32_t                  tids[MAX_MOVE_TASKS];
-    SDL_atomic_t              gpu_velocities_ready;
-    vec2_t                   *gpu_velocities;
+    /* The GPU solve's sizes and the per-slot offsets into its buffers */
+    size_t                    gpu_nunits;
+    size_t                    gpu_nnbs;
+    size_t                    gpu_nwords;
+    uint32_t                 *gpu_first;
+    uint32_t                 *gpu_pfirst;
+    struct gpu_parity_ref    *gpu_parity;
     struct future             futures[MAX_MOVE_TASKS];
 };
 
-/* Must match movement.glsl */
-struct gpu_flock_desc{
-    GLuint  ents[MAX_GPU_FLOCK_MEMBERS];
-    GLuint  nmembers;
-    GLfloat target_x;
-    GLfloat target_z;
+/* One unit's solve for the GPU, as shaders/compute/movement.glsl reads it:
+ * all 4-byte scalars, so the std430 layout is this one.
+ */
+struct gpu_cp_unit{
+    float    px, pz;
+    float    vx, vz;
+    float    dx, dz;
+    float    radius;
+    float    max_step;
+    float    horizon;
+    uint32_t flags;
+    int32_t  side;
+    uint32_t first;
+    uint32_t ndyn, nstat, ntiles;
+    int32_t  prow, pcol;
+    uint32_t pdim;
+    uint32_t pfirst;
 };
 
-/* Must match movement.glsl */
-struct gpu_ent_desc{
-    vec2_t   dest;
-    vec2_t   vdes;
-    vec2_t   cell_pos;
-    vec2_t   formation_cohesion_force;
-    vec2_t   formation_align_force;
-    vec2_t   formation_drag_force;
-    vec2_t   pos;
-    vec2_t   velocity;
-    uint32_t movestate;
-    uint32_t flock_id;
-    uint32_t flags;
-    float    speed;
-    float    max_speed;
-    float    radius;
-    uint32_t layer;
-    uint32_t has_dest_los;
-    uint32_t formation_assignment_ready;
-    uint32_t range_field;
+/* A dynamic or static neighbour, or a wall tile's centre, of a GPU solve */
+struct gpu_cp_nb{
+    float px, pz;
+    float vx, vz;
+    float radius;
+};
+
+struct gpu_cp_result{
+    float    vx, vz;
+    int32_t  side;
+    uint32_t diag;
+};
+
+/* The CPU's answer to a solve the GPU takes, on the same inputs */
+struct gpu_parity_ref{
+    vec2_t               vel;
+    struct cp_solve_diag diag;
+};
+
+#define GPU_UNIT_RELAX       (1u << 0)
+#define GPU_UNIT_ON_BLOCKED  (1u << 1)
+#define GPU_DIAG_RETRIES     (0xffu)
+#define GPU_DIAG_GAVE_UP     (1u << 8)
+#define GPU_DIAG_PATCH_MISS  (1u << 9)
+/* The widest tile patch a GPU solve takes: a unit whose step could land
+ * further out is solved on the CPU. */
+#define GPU_PATCH_MAX_DIM    (15)
+
+enum{
+    /* No solve: the gather wrote the output */
+    GPU_SLOT_NONE = -1,
+    /* Solved on the CPU */
+    GPU_SLOT_CPU  = -2,
 };
 
 enum move_cmd_type{
@@ -684,7 +719,6 @@ static bool ent_still(const struct movestate *ms);
 static void move_notify_motion_start(uint32_t uid, struct movestate *ms);
 static void move_notify_motion_end(uint32_t uid);
 static void do_update_pos(uint32_t uid, vec2_t pos);
-static struct move_work_in *work_input_for_uid(uint32_t uid);
 static void entity_follow_own_move(uint32_t uid, struct movestate *ms);
 static void settle_own_moves(void);
 static void settle_own_move(uint32_t uid, struct movestate *ms);
@@ -927,6 +961,21 @@ static struct refcounted_map  *s_nav_snapshot;
 static uint32_t                s_nav_snapshot_gen;
 static bool                    s_move_hz_dirty = false;
 static bool                    s_use_gpu = true;
+/* The GPU solve's persistently mapped buffers, the flag the render thread
+ * sets once it has (re)created them, and the number of the last solve whose
+ * results are visible */
+static struct gpu_move_bufs    s_gpu_bufs;
+static SDL_atomic_t            s_gpu_reserved;
+static SDL_atomic_t            s_gpu_solved;
+static int                     s_gpu_seq;
+/* pf.debug.gpu_move_parity: every GPU solve is also run on the CPU and the
+ * disagreements are counted */
+static bool                    s_gpu_parity;
+static SDL_atomic_t            s_gpu_nparity;
+static SDL_atomic_t            s_gpu_nvel_diff;
+static SDL_atomic_t            s_gpu_ndiag_diff;
+/* The times of the last solve, when logging perf */
+static struct gpu_move_times   s_gpu_times;
 static bool                    s_move_tick_queued = false;
 /* A tick's main-thread work is split across two frames: the consume half runs
  * on the tick event's frame, the snapshot + submit half on the next frame, so
@@ -1037,21 +1086,6 @@ static struct flock *flock_for_ent(uint32_t uid)
             return curr_flock;
     }
     return NULL;
-}
-
-uint32_t flock_id_for_ent(uint32_t uid, const struct flock **out)
-{
-    for(int i = 0; i < vec_size(&s_flocks); i++) {
-
-        struct flock *curr_flock = &vec_AT(&s_flocks, i);            
-        khiter_t k = kh_get(entity, curr_flock->ents, uid);
-        if(k != kh_end(curr_flock->ents)) {
-            *out = curr_flock;
-            return (i + 1);
-        }
-    }
-    *out = NULL;
-    return 0;
 }
 
 static struct flock *flock_for_dest(dest_id_t id)
@@ -5297,191 +5331,230 @@ static bool solve_stalled(vec2_t new_vel, vec2_t vpref)
         && PFM_Vec2_Len(&vpref) >= CLEARPATH_STALL_SPEED;
 }
 
-static void move_velocity_work(int begin_idx, int end_idx)
+/* The velocity phase's first part: everything the solve takes, exactly as it
+ * takes it, into the unit's work item. False when the unit needs no solve and
+ * its output is written already.
+ */
+static bool velocity_gather(int i)
 {
-    for(int i = begin_idx; i <= end_idx; i++) {
-    
-        struct move_work_in *in = &s_move_work.in[i];
-        struct move_work_out *out = &s_move_work.out[i];
-        struct move_trace *tr = s_move_work.trace ? &s_move_work.trace[i] : NULL;
-        bool traced = tr && tr->traced;
+    struct move_work_in *in = &s_move_work.in[i];
+    struct move_work_out *out = &s_move_work.out[i];
+    struct move_trace *tr = s_move_work.trace ? &s_move_work.trace[i] : NULL;
+    bool traced = tr && tr->traced;
 
-        const struct movestate *ms = movestate_get(in->ent_uid);
+    const struct movestate *ms = movestate_get(in->ent_uid);
 
-        /* COMBAT_HELD, and a unit parked on its cell: keep the move state/cell
-         * but zero velocity so the unit holds position. Steering toward a cell
-         * it already stands on is an undamped spring, and holding a unit in
-         * that state would have it orbit rather than stand.
-         */
-        if((G_FlagsGetFrom(s_move_work.gamestate.flags, in->ent_uid) & ENTITY_FLAG_COMBAT_HELD)
-        || movestate_aux_get(in->ent_uid)->parked) {
-            out->ent_uid = in->ent_uid;
-            out->ent_vel = (vec2_t){0.0f, 0.0f};
-            out->cp_flags = 0;
-            out->cp_side = 0;
-            continue;
-        }
+    /* COMBAT_HELD, and a unit parked on its cell: keep the move state/cell
+     * but zero velocity so the unit holds position. Steering toward a cell
+     * it already stands on is an undamped spring, and holding a unit in
+     * that state would have it orbit rather than stand.
+     */
+    if((G_FlagsGetFrom(s_move_work.gamestate.flags, in->ent_uid) & ENTITY_FLAG_COMBAT_HELD)
+    || movestate_aux_get(in->ent_uid)->parked) {
+        out->ent_uid = in->ent_uid;
+        out->ent_vel = (vec2_t){0.0f, 0.0f};
+        out->cp_flags = 0;
+        out->cp_side = 0;
+        return false;
+    }
 
-        /* Holds its ground; neighbours still gathered for the release test. */
-        if(movestate_aux_get(in->ent_uid)->soft_blocking) {
-            find_neighbours(in->ent_uid, in->ent_des_v, in->dyn_neighbs, &in->ndyn,
-                in->stat_neighbs, &in->nstat, &in->njam, in->links, &in->nlinks,
-                &in->nn_uid, &in->nn_dist);
-            out->ent_uid = in->ent_uid;
-            out->ent_vel = (vec2_t){0.0f, 0.0f};
-            out->cp_flags = 0;
-            out->cp_side = 0;
-            continue;
-        }
-
-        const struct flock *flock = in->flock;
-
-        uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, in->ent_uid);
-        bool relax = movestate_aux_get(in->ent_uid)->cp_relax_ticks > 0;
-        struct cp_terrain terrain = (struct cp_terrain){
-            .map = s_move_work.gamestate.map,
-            .layer = Entity_NavLayerWithRadius(flags, in->cp_ent.radius),
-            .max_step = ms->max_speed / hz_count(s_move_work.hz),
-            .tile_horizon = relax ? CLEARPATH_TILE_HORIZON_SEC * hz_count(s_move_work.hz)
-                                  : 0.0f,
-        };
-        terrain.on_blocked = movestate_aux_get(in->ent_uid)->phasing
-            || M_NavPositionBlocked(terrain.map, terrain.layer, in->cp_ent.xz_pos);
-
-        /* Walls in the solve: a unit standing on a blocked tile is escaping
-         * and gets none. */
-        if(!terrain.on_blocked && !(flags & ENTITY_FLAG_AIR)) {
-            int nterrain = 0;
-            in->ntiles = M_NavBlockedTilesAround(terrain.map, terrain.layer,
-                in->cp_ent.xz_pos,
-                CLEARPATH_TILE_RADIUS + terrain.max_step + CLEARPATH_TILE_MARGIN,
-                in->tile_obs, CLEARPATH_MAX_TILE_OBS, &nterrain);
-            in->nterrain = nterrain;
-        }
-
-        /* The passing side the unit is committed to, in cp_side_of's sense:
-         * the remembered deflection, but never toward a nearby wall. */
-        int side = in->cp_side ? in->cp_side : 1;
-        if(in->ntiles > 0 && PFM_Vec2_Len(&in->ent_des_v) > EPSILON) {
-            vec2_t centroid = (vec2_t){0.0f, 0.0f};
-            for(size_t t = 0; t < in->ntiles; t++) {
-                PFM_Vec2_Add(&centroid, &in->tile_obs[t], &centroid);
-            }
-            PFM_Vec2_Scale(&centroid, 1.0f / in->ntiles, &centroid);
-            PFM_Vec2_Sub(&centroid, &in->cp_ent.xz_pos, &centroid);
-            float cr = in->ent_des_v.x * centroid.z - in->ent_des_v.z * centroid.x;
-            if(fabsf(cr) > EPSILON) {
-                side = (cr > 0.0f) ? -1 : 1;
-            }
-        }
-
-        /* Compute the preferred velocity */
-        vec2_t vpref = (vec2_t){NAN, NAN};
-        switch(ms->state) {
-        case STATE_TURNING:
-            vpref = (vec2_t){0.0f, 0.0f};
-            break;
-        case STATE_SEEK_ENEMIES: 
-            assert(!flock);
-            vpref = enemy_seek_vpref(in->ent_uid, in->speed, in->ent_des_v, in->seek_pinned);
-            break;
-        case STATE_FLEEING:
-            vpref = flee_vpref(in->ent_uid, in->speed, in->ent_des_v);
-            break;
-        case STATE_ARRIVING_TO_CELL:
-            assert(flock);
-            if(in->range_field) {
-                vpref = range_seek_vpref(in->ent_uid, flock, in->speed, in->ent_des_v);
-                break;
-            }
-            if(!in->fstate.assignment_ready) {
-                vpref = (vec2_t){0.0f, 0.0f};
-                break;
-            }
-            vpref = cell_arrival_seek_vpref(in->ent_uid, in->cell_pos, in->speed,
-                in->ent_des_v,
-                in->fstate.normal_cohesion_force,
-                in->fstate.normal_align_force,
-                in->fstate.normal_drag_force);
-            break;
-        case STATE_MOVING_IN_FORMATION:
-            assert(flock);
-            if(in->range_field) {
-                vpref = range_seek_vpref(in->ent_uid, flock, in->speed, in->ent_des_v);
-                break;
-            }
-            if(!in->fstate.assignment_ready) {
-                vpref = (vec2_t){0.0f, 0.0f};
-                break;
-            }
-            vpref = formation_seek_vpref(in->ent_uid, flock, in->speed, 
-                in->ent_des_v,
-                in->fstate.normal_cohesion_force,
-                in->fstate.normal_align_force,
-                in->fstate.normal_drag_force,
-                in->has_dest_los, in->range_field);
-            break;
-        default:
-            assert(flock);
-            vpref = point_seek_vpref(in->ent_uid, flock, in->fsnap, in->ent_des_v,
-                in->has_dest_los && !in->range_field, in->speed, side, in->range_field);
-        }
-        assert(vpref.x == vpref.x && vpref.z == vpref.z); /* a NaN vpref would corrupt the integration */
-
-        /* Find the entity's neighbours */
+    /* Holds its ground; neighbours still gathered for the release test. */
+    if(movestate_aux_get(in->ent_uid)->soft_blocking) {
         find_neighbours(in->ent_uid, in->ent_des_v, in->dyn_neighbs, &in->ndyn,
             in->stat_neighbs, &in->nstat, &in->njam, in->links, &in->nlinks,
             &in->nn_uid, &in->nn_dist);
-
-        in->hug = ent_hugs_wall(in);
-        if(in->hug) {
-            vpref = hug_wall_vpref(vpref, in->ent_des_v, side);
-        }
-
-        if(traced) {
-            move_trace_velocity(in, tr, vpref);
-        }
-
-        /* Capture the inputs before the retry loop compacts the arrays. */
-        int cap_slot = -1;
-        if(s_log_cp_captures
-        && (traced || (in->ndyn + in->nstat) >= CP_CAPTURE_MIN_NEIGHBS)) {
-            int slot = SDL_AtomicAdd(&s_cp_ncaptures, 1);
-            if(slot < CP_CAPTURE_MAX_PER_TICK) {
-                cap_slot = slot;
-                struct cp_capture *cap = &s_cp_captures[slot];
-                cap->uid = in->ent_uid;
-                cap->self = in->cp_ent;
-                cap->vpref = vpref;
-                cap->ndyn = in->ndyn;
-                cap->nstat = in->nstat;
-                memcpy(cap->dyn, in->dyn_neighbs, in->ndyn * sizeof(struct cp_ent));
-                memcpy(cap->stat, in->stat_neighbs, in->nstat * sizeof(struct cp_ent));
-            }
-        }
-
-        /* Compute the velocity constrainted by potential collisions */
-        struct cp_solve_diag diag;
-        vec2_t new_vel = G_ClearPath_NewVelocity(in->cp_ent, in->ent_uid,
-            vpref, in->dyn_neighbs, in->ndyn, in->stat_neighbs, in->nstat,
-            in->tile_obs, in->ntiles,
-            terrain, side, relax, in->save_debug, &diag);
-
         out->ent_uid = in->ent_uid;
-        out->ent_vel = new_vel;
-        out->cp_side = diag.side;
-        out->cp_flags = (diag.gave_up ? CP_OUT_GAVE_UP : 0)
-                      | (!diag.gave_up && diag.retries > 0 ? CP_OUT_RETRY_OK : 0)
-                      | (solve_stalled(new_vel, vpref) ? CP_OUT_STALLED : 0)
-                      | (ms->state == STATE_SEEK_ENEMIES
-                         && PFM_Vec2_Len(&in->ent_des_v) < EPSILON ? CP_OUT_SEEK_VDES0 : 0);
-        if(cap_slot >= 0) {
-            s_cp_captures[cap_slot].gave_up = diag.gave_up;
+        out->ent_vel = (vec2_t){0.0f, 0.0f};
+        out->cp_flags = 0;
+        out->cp_side = 0;
+        return false;
+    }
+
+    const struct flock *flock = in->flock;
+
+    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, in->ent_uid);
+    bool relax = movestate_aux_get(in->ent_uid)->cp_relax_ticks > 0;
+    struct cp_terrain terrain = (struct cp_terrain){
+        .map = s_move_work.gamestate.map,
+        .layer = Entity_NavLayerWithRadius(flags, in->cp_ent.radius),
+        .max_step = ms->max_speed / hz_count(s_move_work.hz),
+        .tile_horizon = relax ? CLEARPATH_TILE_HORIZON_SEC * hz_count(s_move_work.hz)
+                              : 0.0f,
+    };
+    terrain.on_blocked = movestate_aux_get(in->ent_uid)->phasing
+        || M_NavPositionBlocked(terrain.map, terrain.layer, in->cp_ent.xz_pos);
+
+    /* Walls in the solve: a unit standing on a blocked tile is escaping
+     * and gets none. */
+    if(!terrain.on_blocked && !(flags & ENTITY_FLAG_AIR)) {
+        int nterrain = 0;
+        in->ntiles = M_NavBlockedTilesAround(terrain.map, terrain.layer,
+            in->cp_ent.xz_pos,
+            CLEARPATH_TILE_RADIUS + terrain.max_step + CLEARPATH_TILE_MARGIN,
+            in->tile_obs, CLEARPATH_MAX_TILE_OBS, &nterrain);
+        in->nterrain = nterrain;
+    }
+
+    /* The passing side the unit is committed to, in cp_side_of's sense:
+     * the remembered deflection, but never toward a nearby wall. */
+    int side = in->cp_side ? in->cp_side : 1;
+    if(in->ntiles > 0 && PFM_Vec2_Len(&in->ent_des_v) > EPSILON) {
+        vec2_t centroid = (vec2_t){0.0f, 0.0f};
+        for(size_t t = 0; t < in->ntiles; t++) {
+            PFM_Vec2_Add(&centroid, &in->tile_obs[t], &centroid);
         }
-        if(traced) {
-            tr->retries = diag.retries;
+        PFM_Vec2_Scale(&centroid, 1.0f / in->ntiles, &centroid);
+        PFM_Vec2_Sub(&centroid, &in->cp_ent.xz_pos, &centroid);
+        float cr = in->ent_des_v.x * centroid.z - in->ent_des_v.z * centroid.x;
+        if(fabsf(cr) > EPSILON) {
+            side = (cr > 0.0f) ? -1 : 1;
         }
-        vec2_truncate(&out->ent_vel, ms->max_speed / hz_count(s_move_work.hz));
+    }
+
+    /* Compute the preferred velocity */
+    vec2_t vpref = (vec2_t){NAN, NAN};
+    switch(ms->state) {
+    case STATE_TURNING:
+        vpref = (vec2_t){0.0f, 0.0f};
+        break;
+    case STATE_SEEK_ENEMIES: 
+        assert(!flock);
+        vpref = enemy_seek_vpref(in->ent_uid, in->speed, in->ent_des_v, in->seek_pinned);
+        break;
+    case STATE_FLEEING:
+        vpref = flee_vpref(in->ent_uid, in->speed, in->ent_des_v);
+        break;
+    case STATE_ARRIVING_TO_CELL:
+        assert(flock);
+        if(in->range_field) {
+            vpref = range_seek_vpref(in->ent_uid, flock, in->speed, in->ent_des_v);
+            break;
+        }
+        if(!in->fstate.assignment_ready) {
+            vpref = (vec2_t){0.0f, 0.0f};
+            break;
+        }
+        vpref = cell_arrival_seek_vpref(in->ent_uid, in->cell_pos, in->speed,
+            in->ent_des_v,
+            in->fstate.normal_cohesion_force,
+            in->fstate.normal_align_force,
+            in->fstate.normal_drag_force);
+        break;
+    case STATE_MOVING_IN_FORMATION:
+        assert(flock);
+        if(in->range_field) {
+            vpref = range_seek_vpref(in->ent_uid, flock, in->speed, in->ent_des_v);
+            break;
+        }
+        if(!in->fstate.assignment_ready) {
+            vpref = (vec2_t){0.0f, 0.0f};
+            break;
+        }
+        vpref = formation_seek_vpref(in->ent_uid, flock, in->speed, 
+            in->ent_des_v,
+            in->fstate.normal_cohesion_force,
+            in->fstate.normal_align_force,
+            in->fstate.normal_drag_force,
+            in->has_dest_los, in->range_field);
+        break;
+    default:
+        assert(flock);
+        vpref = point_seek_vpref(in->ent_uid, flock, in->fsnap, in->ent_des_v,
+            in->has_dest_los && !in->range_field, in->speed, side, in->range_field);
+    }
+    assert(vpref.x == vpref.x && vpref.z == vpref.z); /* a NaN vpref would corrupt the integration */
+
+    /* Find the entity's neighbours */
+    find_neighbours(in->ent_uid, in->ent_des_v, in->dyn_neighbs, &in->ndyn,
+        in->stat_neighbs, &in->nstat, &in->njam, in->links, &in->nlinks,
+        &in->nn_uid, &in->nn_dist);
+
+    in->hug = ent_hugs_wall(in);
+    if(in->hug) {
+        vpref = hug_wall_vpref(vpref, in->ent_des_v, side);
+    }
+
+    if(traced) {
+        move_trace_velocity(in, tr, vpref);
+    }
+
+    /* Capture the inputs before the retry loop compacts the arrays. */
+    int cap_slot = -1;
+    if(s_log_cp_captures
+    && (traced || (in->ndyn + in->nstat) >= CP_CAPTURE_MIN_NEIGHBS)) {
+        int slot = SDL_AtomicAdd(&s_cp_ncaptures, 1);
+        if(slot < CP_CAPTURE_MAX_PER_TICK) {
+            cap_slot = slot;
+            struct cp_capture *cap = &s_cp_captures[slot];
+            cap->uid = in->ent_uid;
+            cap->self = in->cp_ent;
+            cap->vpref = vpref;
+            cap->ndyn = in->ndyn;
+            cap->nstat = in->nstat;
+            memcpy(cap->dyn, in->dyn_neighbs, in->ndyn * sizeof(struct cp_ent));
+            memcpy(cap->stat, in->stat_neighbs, in->nstat * sizeof(struct cp_ent));
+        }
+    }
+
+    in->vpref = vpref;
+    in->terrain = terrain;
+    in->solve_side = side;
+    in->relax = relax;
+    in->cap_slot = cap_slot;
+    return true;
+}
+
+/* The velocity phase's last part: the solve's answer into the unit's output */
+static void velocity_finish(int i, vec2_t new_vel, struct cp_solve_diag diag)
+{
+    struct move_work_in *in = &s_move_work.in[i];
+    struct move_work_out *out = &s_move_work.out[i];
+    struct move_trace *tr = s_move_work.trace ? &s_move_work.trace[i] : NULL;
+    bool traced = tr && tr->traced;
+    const struct movestate *ms = movestate_get(in->ent_uid);
+    vec2_t vpref = in->vpref;
+    int cap_slot = in->cap_slot;
+
+    out->ent_uid = in->ent_uid;
+    out->ent_vel = new_vel;
+    out->cp_side = diag.side;
+    out->cp_flags = (diag.gave_up ? CP_OUT_GAVE_UP : 0)
+                  | (!diag.gave_up && diag.retries > 0 ? CP_OUT_RETRY_OK : 0)
+                  | (solve_stalled(new_vel, vpref) ? CP_OUT_STALLED : 0)
+                  | (ms->state == STATE_SEEK_ENEMIES
+                     && PFM_Vec2_Len(&in->ent_des_v) < EPSILON ? CP_OUT_SEEK_VDES0 : 0);
+    if(cap_slot >= 0) {
+        s_cp_captures[cap_slot].gave_up = diag.gave_up;
+    }
+    if(traced) {
+        tr->retries = diag.retries;
+    }
+    vec2_truncate(&out->ent_vel, ms->max_speed / hz_count(s_move_work.hz));
+}
+
+static vec2_t velocity_solve(int i, struct cp_solve_diag *diag)
+{
+    struct move_work_in *in = &s_move_work.in[i];
+
+    /* Compute the velocity constrainted by potential collisions */
+    return G_ClearPath_NewVelocity(in->cp_ent, in->ent_uid,
+        in->vpref, in->dyn_neighbs, in->ndyn, in->stat_neighbs, in->nstat,
+        in->tile_obs, in->ntiles,
+        in->terrain, in->solve_side, in->relax, in->save_debug, diag);
+}
+
+static void velocity_solve_cpu(int i)
+{
+    struct cp_solve_diag diag;
+    vec2_t new_vel = velocity_solve(i, &diag);
+    velocity_finish(i, new_vel, diag);
+}
+
+static void move_velocity_work(int begin_idx, int end_idx)
+{
+    for(int i = begin_idx; i <= end_idx; i++) {
+        if(velocity_gather(i))
+            velocity_solve_cpu(i);
     }
 }
 
@@ -5591,35 +5664,6 @@ static void move_complete_cpu_work(void)
     s_move_work.ntasks = 0;
 }
 
-static void move_complete_gpu_velocity_work(void)
-{
-    Task_RescheduleOnMain();
-    ASSERT_IN_MAIN_THREAD();
-
-    size_t nwork = s_move_work.nwork;
-    size_t attr_buffsize = nwork * sizeof(vec2_t);
-
-    R_PushCmd((struct rcmd){
-        .func = R_GL_MoveReadNewVelocities,
-        .nargs = 3,
-        .args = {
-            [0] = s_move_work.gpu_velocities,
-            [1] = R_PushArg(&nwork, sizeof(size_t)),
-            [2] = R_PushArg(&attr_buffsize, sizeof(size_t))
-        }
-    });
-
-    R_PushCmd((struct rcmd){
-        .func = R_GL_MoveInvalidateData,
-        .nargs = 0
-    });
-
-    R_PushCmd((struct rcmd){
-        .func = R_GL_PositionsInvalidateData,
-        .nargs = 0
-    });
-}
-
 static khash_t(aabb) *move_update_aabb_cache(void)
 {
     PERF_ENTER();
@@ -5693,10 +5737,6 @@ static void move_copy_gamestate(void)
         G_SelectionRadiusCopyTableInto(s_move_work.gamestate.sel_radiuses);
     s_move_work.gamestate.faction_ids =
         G_FactionIDCopyTableInto(s_move_work.gamestate.faction_ids);
-    s_move_work.gamestate.ent_gpu_id_map =
-        G_CopyEntGPUIDMapInto(s_move_work.gamestate.ent_gpu_id_map);
-    s_move_work.gamestate.gpu_id_ent_map =
-        G_CopyGPUIDEntMapInto(s_move_work.gamestate.gpu_id_ent_map);
     struct refcounted_map *snap = PF_MALLOC(sizeof(struct refcounted_map));
     snap->snapshot = M_AL_SnapshotShared(s_map);
     sp_init(snap, refcounted_map_destroy);
@@ -5787,14 +5827,6 @@ static void move_destroy_gamestate(void)
     if(s_move_work.gamestate.faction_ids) {
         kh_destroy(id, s_move_work.gamestate.faction_ids);
         s_move_work.gamestate.faction_ids = NULL;
-    }
-    if(s_move_work.gamestate.ent_gpu_id_map) {
-        kh_destroy(id, s_move_work.gamestate.ent_gpu_id_map);
-        s_move_work.gamestate.ent_gpu_id_map = NULL;
-    }
-    if(s_move_work.gamestate.gpu_id_ent_map) {
-        kh_destroy(id, s_move_work.gamestate.gpu_id_ent_map);
-        s_move_work.gamestate.gpu_id_ent_map = NULL;
     }
     s_move_work.gamestate.map = NULL;
     /* Release before the next tick allocates so the freed block is recycled. */
@@ -5995,7 +6027,6 @@ static void move_prepare_work(enum movement_hz hz)
     s_move_work.max_radius = s_max_sel_radius;
     s_move_work.hz = hz;
     s_move_work.type = (s_use_gpu ? WORK_TYPE_GPU : WORK_TYPE_CPU);
-    SDL_AtomicSet(&s_move_work.gpu_velocities_ready, 0);
 }
 
 static void move_build_flock_snaps(void)
@@ -6099,206 +6130,9 @@ static void move_submit_cpu_work(task_func_t code)
     }
 }
 
-static struct move_work_in *work_input_for_uid(uint32_t uid)
-{
-    for(int i = 0; i < s_move_work.nwork; i++) {
-
-        struct move_work_in *in = &s_move_work.in[i];
-        if(in->ent_uid == uid)
-            return in;
-    }
-    return NULL;
-}
-
-static void move_upload_input(size_t nents)
-{
-    ASSERT_IN_MAIN_THREAD();
-    PERF_ENTER();
-
-    /* Setup GPUID dispatch data.
-     */
-    struct render_workspace *ws = G_GetSimWS();
-    const size_t gpuid_buffsize = s_move_work.nwork * sizeof(uint32_t);
-    const size_t nactive = s_move_work.nwork;
-    void *gpuid_buff = stalloc(&ws->args, gpuid_buffsize);
-    unsigned char *cursor = gpuid_buff;
-
-    for(int i = 0; i < s_move_work.nwork; i++) {
-
-        struct move_work_in *in = &s_move_work.in[i];
-        uint32_t gpuid = G_GPUIDForEntFrom(s_move_work.gamestate.ent_gpu_id_map, in->ent_uid);
-        *((uint32_t*)cursor) = gpuid;
-        cursor += sizeof(uint32_t);
-    }
-    assert(cursor == ((unsigned char*)gpuid_buff) + gpuid_buffsize);
-
-    /* Setup moveattr data.
-     */
-    const size_t attr_buffsize = nents * sizeof(struct gpu_ent_desc);
-    void *attrbuff = stalloc(&ws->args, attr_buffsize);
-    cursor = attrbuff;
-
-    for(int gpu_id = 1; gpu_id <= nents; gpu_id++) {
-
-        uint32_t uid = G_EntForGPUIDFrom(s_move_work.gamestate.gpu_id_ent_map, gpu_id);
-        const struct movestate *curr = movestate_get(uid);
-        assert(curr);
-
-        const struct flock *flock;
-        uint32_t flock_id = flock_id_for_ent(uid, &flock);
-        uint32_t movestate = curr->state;
-        vec2_t pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
-        vec2_t dest_xz = flock ? flock->target_xz : (vec2_t){0.0f, 0.0f};
-
-        uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
-        float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
-
-        struct move_work_in *work = NULL;
-        if(!ent_still(curr)) {
-            work = work_input_for_uid(uid);
-        }
-
-        *((struct gpu_ent_desc*)cursor) = (struct gpu_ent_desc){
-            .dest = dest_xz,
-            .vdes = work ? work->ent_des_v : (vec2_t){0},
-            .cell_pos = work ? work->cell_pos : (vec2_t){0},
-            .formation_cohesion_force  = work ? work->fstate.normal_cohesion_force : (vec2_t){0},
-            .formation_align_force = work ? work->fstate.normal_align_force : (vec2_t){0},
-            .formation_drag_force = work ? work->fstate.normal_drag_force : (vec2_t){0},
-            .pos = pos,
-            .velocity = curr->velocity,
-            .movestate = curr->state,
-            .flock_id = flock_id,
-            .flags = flags,
-            .speed = work ? work->speed : 0.0f,
-            .max_speed = curr->max_speed,
-            .radius = radius,
-            .layer = Entity_NavLayerWithRadius(flags, radius),
-            .has_dest_los = work ? work->has_dest_los : false,
-            .formation_assignment_ready = work ? work->fstate.assignment_ready : 0,
-            .range_field = work ? work->range_field : 0,
-        };
-        cursor += sizeof(struct gpu_ent_desc);
-    }
-    assert(cursor == ((unsigned char*)attrbuff) + attr_buffsize);
-
-    /* Setup flock data.
-     */
-    const size_t nflocks = vec_size(&s_flocks);
-    const size_t flock_buffsize = nflocks * sizeof(struct gpu_flock_desc);
-    void *flockbuff = stalloc(&ws->args, flock_buffsize);
-    cursor = flockbuff;
-
-    for(int i = 0; i < nflocks; i++) {
-
-        struct flock *curr_flock = &vec_AT(&s_flocks, i);            
-        uint32_t uid;
-        size_t nents = 0;
-        unsigned char *tmp = cursor;
-
-        kh_foreach_key(curr_flock->ents, uid, {
-
-            uint32_t gpuid = G_GPUIDForEntFrom(s_move_work.gamestate.ent_gpu_id_map, uid);
-            *((uint32_t*)tmp) = gpuid; 
-            tmp += sizeof(uint32_t);
-
-            if(++nents == MAX_GPU_FLOCK_MEMBERS)
-                break;
-        });
-        cursor += MAX_GPU_FLOCK_MEMBERS * sizeof(uint32_t);
-
-        assert(nents == MIN(kh_size(curr_flock->ents), MAX_GPU_FLOCK_MEMBERS));
-        *((uint32_t*)cursor) = (uint32_t)nents; 
-        cursor += sizeof(uint32_t);
-
-        *((vec2_t*)cursor) = curr_flock->target_xz;
-        cursor += sizeof(vec2_t);
-    }
-    assert(cursor == ((unsigned char*)flockbuff) + flock_buffsize);
-
-    /* Setup navigation data.
-     */
-    const size_t cost_base_buffsize = M_NavCostBaseBufferSize(s_move_work.gamestate.map);
-    void *cost_base_buff = stalloc(&ws->args, cost_base_buffsize);
-    M_NavCopyCostBasePacked(s_move_work.gamestate.map, cost_base_buff, cost_base_buffsize);
-
-    const size_t blockers_buffsize = M_NavBlockersBufferSize(s_move_work.gamestate.map);
-    void *blockers_buff = stalloc(&ws->args, blockers_buffsize);
-    M_NavCopyBlockersPacked(s_move_work.gamestate.map, blockers_buff, blockers_buffsize);
-
-    /* Upload everything.
-     */
-    R_PushCmd((struct rcmd){
-        .func = R_GL_MoveUploadData,
-        .nargs = 10,
-        .args = {
-            gpuid_buff,
-            R_PushArg(&nactive, sizeof(nactive)),
-            attrbuff,
-            R_PushArg(&attr_buffsize, sizeof(attr_buffsize)),
-            flockbuff,
-            R_PushArg(&flock_buffsize, sizeof(flock_buffsize)),
-            cost_base_buff,
-            R_PushArg(&cost_base_buffsize, sizeof(cost_base_buffsize)),
-            blockers_buff,
-            R_PushArg(&blockers_buffsize, sizeof(blockers_buffsize)),
-        },
-    });
-
-    PERF_RETURN_VOID();
-}
-
-static void move_update_uniforms(void)
-{
-    struct map_resolution res;
-    M_GetResolution(s_move_work.gamestate.map, &res);
-    vec3_t map_pos = M_GetPos(s_move_work.gamestate.map);
-    vec2_t map_pos_xz = (vec2_t){map_pos.x, map_pos.z};
-    int ticks = hz_count(s_move_work.hz);
-    int nwork = s_move_work.nwork;
-
-    R_PushCmd((struct rcmd){
-        .func = R_GL_MoveUpdateUniforms,
-        .nargs = 4,
-        .args = {
-            R_PushArg(&res, sizeof(res)),
-            R_PushArg(&map_pos_xz, sizeof(map_pos_xz)),
-            R_PushArg(&ticks, sizeof(ticks)),
-            R_PushArg(&nwork, sizeof(nwork)),
-        },
-    });
-}
-
-static void move_submit_gpu_velocity_work(void)
-{
-    assert(Sched_ActiveTID() != NULL_TID);
-    Task_RescheduleOnMain();
-
-    size_t nents = G_Pos_UploadFrom(s_move_work.gamestate.positions,
-        s_move_work.gamestate.ent_gpu_id_map,
-        s_move_work.gamestate.map);
-    assert(nents == kh_size(s_entity_state_table));
-
-    move_upload_input(nents);
-    move_update_uniforms();
-
-    R_PushCmd((struct rcmd){
-        .func = R_GL_MoveDispatchWork,
-        .nargs = 1,
-        .args = R_PushArg(&s_move_work.nwork, sizeof(s_move_work.nwork))
-    });
-    Task_Yield();
-}
-
 static void nav_tick_submit_work(void)
 {
     ASSERT_IN_MAIN_THREAD();
-
-    if(s_move_work.type == WORK_TYPE_GPU) {
-        size_t nwork = s_move_work.nwork;
-        size_t size = nwork * sizeof(vec2_t);
-        s_move_work.gpu_velocities = stalloc(&s_move_work.mem, size);
-    }
 
     SDL_AtomicSet(&s_tick_task_future.status, FUTURE_INCOMPLETE);
     s_tick_task_tid = Sched_Create(0, navigation_tick_task, NULL, 
@@ -6901,6 +6735,318 @@ static void fork_join_desired_velocity(void)
     PERF_RETURN_VOID();
 }
 
+/* The side of the tile patch a unit's solve reads on the GPU: every tile a
+ * step clamped to max_step can end on.
+ */
+static int gpu_patch_dim(const struct map_resolution *res, float max_step)
+{
+    float tile = (float)res->field_w / res->tile_w;
+    int reach = (int)ceilf(max_step / tile) + 1;
+    return 2 * reach + 1;
+}
+
+static size_t gpu_patch_words(int dim)
+{
+    return (size_t)(dim * dim * 2 + 31) / 32;
+}
+
+static void move_velocity_gather_range(int begin, int end, void *arg)
+{
+    (void)arg;
+    uint64_t t0 = SDL_GetPerformanceCounter();
+    for(int i = begin; i <= end; i++) {
+        s_move_work.in[i].gpu_slot = velocity_gather(i) ? GPU_SLOT_CPU : GPU_SLOT_NONE;
+    }
+    Perf_NavParallelAddSince(t0);
+}
+
+/* Slots and buffer offsets for the solves the GPU takes. The debug overlay's
+ * unit, whose solve the CPU records, and a unit whose step could land beyond
+ * the widest patch stay on the CPU.
+ */
+static void gpu_assign_slots(void)
+{
+    const struct map *map = s_move_work.gamestate.map;
+    struct map_resolution res;
+    M_NavGetResolution(map, &res);
+    vec3_t map_pos = M_GetPos(map);
+
+    s_move_work.gpu_first = stalloc(&s_move_work.mem, s_move_work.nwork * sizeof(uint32_t));
+    s_move_work.gpu_pfirst = stalloc(&s_move_work.mem, s_move_work.nwork * sizeof(uint32_t));
+    s_move_work.gpu_parity = s_gpu_parity
+        ? stalloc(&s_move_work.mem, s_move_work.nwork * sizeof(struct gpu_parity_ref))
+        : NULL;
+    size_t nunits = 0, nnbs = 0, nwords = 0;
+
+    for(int i = 0; i < s_move_work.nwork; i++) {
+
+        struct move_work_in *in = &s_move_work.in[i];
+        if(in->gpu_slot != GPU_SLOT_CPU)
+            continue;
+
+        struct tile_desc td;
+        int dim = gpu_patch_dim(&res, in->terrain.max_step);
+        if(in->save_debug || dim > GPU_PATCH_MAX_DIM
+        || !M_Tile_DescForPoint2D(res, map_pos, in->cp_ent.xz_pos, &td))
+            continue;
+
+        in->gpu_slot = nunits++;
+        s_move_work.gpu_first[i] = nnbs;
+        s_move_work.gpu_pfirst[i] = nwords;
+        nnbs += in->ndyn + in->nstat + in->ntiles;
+        nwords += gpu_patch_words(dim);
+    }
+    s_move_work.gpu_nunits = nunits;
+    s_move_work.gpu_nnbs = nnbs;
+    s_move_work.gpu_nwords = nwords;
+}
+
+static void gpu_await(SDL_atomic_t *flag, int value)
+{
+    /* The render thread signals from inside its frame, which spans both */
+    static const int events[] = {EVENT_UPDATE_START, EVENT_UPDATE_END};
+    for(int i = 0; SDL_AtomicGet(flag) != value; i++) {
+        int source;
+        Task_AwaitEvent(events[i % 2], &source);
+    }
+}
+
+/* Grows the mapped buffers to hold this tick's solves, false if they could
+ * not be had.
+ */
+static bool gpu_reserve(void)
+{
+    size_t need[4] = {
+        s_move_work.gpu_nunits * sizeof(struct gpu_cp_unit),
+        s_move_work.gpu_nnbs * sizeof(struct gpu_cp_nb),
+        s_move_work.gpu_nwords * sizeof(uint32_t),
+        s_move_work.gpu_nunits * sizeof(struct gpu_cp_result),
+    };
+    size_t have[4] = {
+        s_gpu_bufs.units ? s_gpu_bufs.units_cap : 0,
+        s_gpu_bufs.nbs ? s_gpu_bufs.nbs_cap : 0,
+        s_gpu_bufs.patch ? s_gpu_bufs.patch_cap : 0,
+        s_gpu_bufs.results ? s_gpu_bufs.results_cap : 0,
+    };
+    if(need[0] <= have[0] && need[1] <= have[1] && need[2] <= have[2] && need[3] <= have[3])
+        return true;
+
+    /* With room to grow, so that the reserve is rare */
+    size_t caps[4];
+    for(int i = 0; i < 4; i++) {
+        caps[i] = MAX(need[i] + need[i] / 2, (size_t)4096);
+    }
+
+    SDL_AtomicSet(&s_gpu_reserved, 0);
+    Task_RescheduleOnMain();
+    R_PushCmd((struct rcmd){
+        .func = R_GL_MoveReserve,
+        .nargs = 3,
+        .args = {
+            R_PushArg(caps, sizeof(caps)),
+            &s_gpu_bufs,
+            &s_gpu_reserved,
+        },
+    });
+    gpu_await(&s_gpu_reserved, 1);
+    return (s_gpu_bufs.units != NULL);
+}
+
+/* The retries compact the neighbour arrays, so the CPU solves copies */
+static void gpu_parity_solve(int i)
+{
+    const struct move_work_in *in = &s_move_work.in[i];
+    struct cp_ent dyn[MAX_NEIGHBOURS], stat[MAX_NEIGHBOURS];
+    vec2_t tiles[CLEARPATH_MAX_TILE_OBS];
+    memcpy(dyn, in->dyn_neighbs, in->ndyn * sizeof(struct cp_ent));
+    memcpy(stat, in->stat_neighbs, in->nstat * sizeof(struct cp_ent));
+    memcpy(tiles, in->tile_obs, in->ntiles * sizeof(vec2_t));
+
+    struct gpu_parity_ref *ref = &s_move_work.gpu_parity[i];
+    ref->vel = G_ClearPath_NewVelocity(in->cp_ent, in->ent_uid, in->vpref,
+        dyn, in->ndyn, stat, in->nstat, tiles, in->ntiles,
+        in->terrain, in->solve_side, in->relax, false, &ref->diag);
+}
+
+static void move_velocity_pack_range(int begin, int end, void *arg)
+{
+    (void)arg;
+    uint64_t t0 = SDL_GetPerformanceCounter();
+
+    const struct map *map = s_move_work.gamestate.map;
+    struct map_resolution res;
+    M_NavGetResolution(map, &res);
+    vec3_t map_pos = M_GetPos(map);
+
+    struct gpu_cp_unit *units = s_gpu_bufs.units;
+    struct gpu_cp_nb *nbs = s_gpu_bufs.nbs;
+    uint32_t *patch = s_gpu_bufs.patch;
+
+    for(int i = begin; i <= end; i++) {
+
+        const struct move_work_in *in = &s_move_work.in[i];
+        if(in->gpu_slot < 0)
+            continue;
+
+        struct tile_desc td;
+        M_Tile_DescForPoint2D(res, map_pos, in->cp_ent.xz_pos, &td);
+        int dim = gpu_patch_dim(&res, in->terrain.max_step);
+        int row0 = td.chunk_r * res.tile_h + td.tile_r - dim / 2;
+        int col0 = td.chunk_c * res.tile_w + td.tile_c - dim / 2;
+
+        /* Built in cached memory: the mapping is write-combined */
+        uint32_t words[(GPU_PATCH_MAX_DIM * GPU_PATCH_MAX_DIM * 2 + 31) / 32];
+        M_NavTilePatch(map, in->terrain.layer, row0, col0, dim, words);
+        uint32_t pfirst = s_move_work.gpu_pfirst[i];
+        memcpy(patch + pfirst, words, gpu_patch_words(dim) * sizeof(uint32_t));
+
+        uint32_t first = s_move_work.gpu_first[i];
+        units[in->gpu_slot] = (struct gpu_cp_unit){
+            .px = in->cp_ent.xz_pos.x,
+            .pz = in->cp_ent.xz_pos.z,
+            .vx = in->cp_ent.xz_vel.x,
+            .vz = in->cp_ent.xz_vel.z,
+            .dx = in->vpref.x,
+            .dz = in->vpref.z,
+            .radius = in->cp_ent.radius,
+            .max_step = in->terrain.max_step,
+            .horizon = in->terrain.tile_horizon,
+            .flags = (in->relax ? GPU_UNIT_RELAX : 0)
+                   | (in->terrain.on_blocked ? GPU_UNIT_ON_BLOCKED : 0),
+            .side = in->solve_side,
+            .first = first,
+            .ndyn = in->ndyn,
+            .nstat = in->nstat,
+            .ntiles = in->ntiles,
+            .prow = row0,
+            .pcol = col0,
+            .pdim = dim,
+            .pfirst = pfirst,
+        };
+
+        for(size_t k = 0; k < in->ndyn; k++) {
+            const struct cp_ent *n = &in->dyn_neighbs[k];
+            nbs[first++] = (struct gpu_cp_nb){
+                n->xz_pos.x, n->xz_pos.z, n->xz_vel.x, n->xz_vel.z, n->radius
+            };
+        }
+        for(size_t k = 0; k < in->nstat; k++) {
+            const struct cp_ent *n = &in->stat_neighbs[k];
+            nbs[first++] = (struct gpu_cp_nb){
+                n->xz_pos.x, n->xz_pos.z, n->xz_vel.x, n->xz_vel.z, n->radius
+            };
+        }
+        for(size_t k = 0; k < in->ntiles; k++) {
+            nbs[first++] = (struct gpu_cp_nb){
+                in->tile_obs[k].x, in->tile_obs[k].z, 0.0f, 0.0f, 0.0f
+            };
+        }
+        if(s_gpu_parity) {
+            gpu_parity_solve(i);
+        }
+    }
+    Perf_NavParallelAddSince(t0);
+}
+
+static void move_velocity_finish_range(int begin, int end, void *arg)
+{
+    (void)arg;
+    uint64_t t0 = SDL_GetPerformanceCounter();
+    const struct gpu_cp_result *results = s_gpu_bufs.results;
+
+    for(int i = begin; i <= end; i++) {
+
+        const struct move_work_in *in = &s_move_work.in[i];
+        if(in->gpu_slot == GPU_SLOT_CPU) {
+            velocity_solve_cpu(i);
+            continue;
+        }
+        if(in->gpu_slot < 0)
+            continue;
+
+        struct gpu_cp_result res = results[in->gpu_slot];
+        /* A landing outside the patch cannot be answered on the GPU */
+        if(res.diag & GPU_DIAG_PATCH_MISS) {
+            velocity_solve_cpu(i);
+            continue;
+        }
+        struct cp_solve_diag diag = {
+            .retries = res.diag & GPU_DIAG_RETRIES,
+            .gave_up = !!(res.diag & GPU_DIAG_GAVE_UP),
+            .side = res.side,
+        };
+        if(s_gpu_parity) {
+            const struct gpu_parity_ref *ref = &s_move_work.gpu_parity[i];
+            SDL_AtomicAdd(&s_gpu_nparity, 1);
+            if(ref->vel.x != res.vx || ref->vel.z != res.vz)
+                SDL_AtomicAdd(&s_gpu_nvel_diff, 1);
+            if(ref->diag.retries != diag.retries || ref->diag.gave_up != diag.gave_up
+            || ref->diag.side != diag.side)
+                SDL_AtomicAdd(&s_gpu_ndiag_diff, 1);
+        }
+        velocity_finish(i, (vec2_t){res.vx, res.vz}, diag);
+    }
+    Perf_NavParallelAddSince(t0);
+}
+
+/* The velocity phase with the solve on the GPU: the workers gather each unit's
+ * inputs as for the CPU solve and write them straight into the mapped
+ * buffers, the render thread dispatches the solve, and the workers finish the
+ * units from its results.
+ */
+static void gpu_velocity_computations(void)
+{
+    SDL_AtomicSet(&s_gpu_nparity, 0);
+    SDL_AtomicSet(&s_gpu_nvel_diff, 0);
+    SDL_AtomicSet(&s_gpu_ndiag_diff, 0);
+    uint64_t start = SDL_GetPerformanceCounter();
+    uint64_t t_post = 0, t_wake = 0;
+    unsigned long start_frame = g_frame_idx;
+
+    Sched_ParallelFor(move_velocity_gather_range, NULL, s_move_work.nwork, 64);
+    gpu_assign_slots();
+
+    bool on_gpu = (s_move_work.gpu_nunits > 0) && gpu_reserve();
+    if(!on_gpu) {
+        for(int i = 0; i < s_move_work.nwork; i++) {
+            if(s_move_work.in[i].gpu_slot >= 0)
+                s_move_work.in[i].gpu_slot = GPU_SLOT_CPU;
+        }
+    }else{
+        Sched_ParallelFor(move_velocity_pack_range, NULL, s_move_work.nwork, 256);
+
+        const struct map *map = s_move_work.gamestate.map;
+        struct map_resolution res;
+        M_NavGetResolution(map, &res);
+        vec3_t map_pos = M_GetPos(map);
+        vec2_t map_xz = (vec2_t){map_pos.x, map_pos.z};
+        int nunits = s_move_work.gpu_nunits;
+
+        /* A cancelled tick's solve may yet signal, with an older number */
+        int seq = ++s_gpu_seq;
+        s_gpu_times = (struct gpu_move_times){0};
+        t_post = SDL_GetPerformanceCounter();
+        R_GL_MovePost(&res, map_xz, nunits, &s_gpu_solved, seq,
+            s_log_perf_csv ? &s_gpu_times : NULL);
+        gpu_await(&s_gpu_solved, seq);
+        t_wake = SDL_GetPerformanceCounter();
+    }
+    Sched_ParallelFor(move_velocity_finish_range, NULL, s_move_work.nwork, 64);
+
+    if(s_log_perf_csv) {
+        uint64_t t_end = SDL_GetPerformanceCounter();
+        fprintf(stdout, "[gpu-move] %u,%zu,%zu,%lu,%u,%d,%d,%d,%u,%u,%u,%u,%u\n", s_move_trace_tick,
+            s_move_work.gpu_nunits, s_move_work.gpu_nnbs, g_frame_idx - start_frame,
+            (unsigned)perf_ticks_to_us(t_end - start),
+            SDL_AtomicGet(&s_gpu_nparity), SDL_AtomicGet(&s_gpu_nvel_diff),
+            SDL_AtomicGet(&s_gpu_ndiag_diff), s_gpu_times.gpu_us,
+            t_post ? (unsigned)perf_ticks_to_us(t_post - start) : 0,
+            s_gpu_times.dispatched ? (unsigned)perf_ticks_to_us(s_gpu_times.dispatched - start) : 0,
+            s_gpu_times.signalled ? (unsigned)perf_ticks_to_us(s_gpu_times.signalled - start) : 0,
+            t_wake ? (unsigned)perf_ticks_to_us(t_wake - start) : 0);
+    }
+}
+
 static void fork_join_velocity_computations(void)
 {
     switch(s_move_work.type) {
@@ -6913,7 +7059,7 @@ static void fork_join_velocity_computations(void)
         }
         break;
     case WORK_TYPE_GPU:
-        move_submit_gpu_velocity_work();
+        gpu_velocity_computations();
         break;
     default: assert(0);
     }
@@ -6937,66 +7083,6 @@ static void fork_join_state_updates(void)
     move_complete_cpu_work();
     PERF_POP();
 
-    PERF_RETURN_VOID();
-}
-
-static void await_gpu_completion(uint32_t timeout_ms)
-{
-    uint32_t begin = SDL_GetTicks();
-    while(!SDL_AtomicGet(&s_move_work.gpu_velocities_ready)) {
-
-        Task_RescheduleOnMain();
-        R_PushCmd((struct rcmd){
-            .func = R_GL_MovePollCompletion,
-            .nargs = 1,
-            .args = {
-                [0] = &s_move_work.gpu_velocities_ready
-            }
-        });
-
-        int source;
-        Task_AwaitEvent(EVENT_UPDATE_START, &source);
-
-        uint32_t now = SDL_GetTicks();
-        if(SDL_TICKS_PASSED(now, begin + timeout_ms))
-            break;
-    }
-}
-
-static void await_gpu_download(void)
-{
-    /* We need to wait for 2 frames after the download command 
-     * is queued. In one tick, it will be executed by the render
-     * thread. In 2 ticks, it is guaranteed to have completed.
-     */
-    unsigned long start_frame = g_frame_idx;
-    while((g_frame_idx - start_frame) < 2) {
-        int source;
-        Task_AwaitEvent(EVENT_UPDATE_START, &source);
-    }
-}
-
-static void copy_gpu_results(void)
-{
-    PERF_ENTER();
-    size_t nents = kh_size(s_entity_state_table);
-    for(int i = 0; i < s_move_work.nwork; i++) {
-
-        struct move_work_in *in = &s_move_work.in[i];
-        struct move_work_out *out = &s_move_work.out[i];
-
-        out->ent_uid = in->ent_uid;
-        out->ent_vel = s_move_work.gpu_velocities[i];
-        /* The shader reports no solve diagnostics; the counters read zero. */
-        out->cp_flags = 0;
-
-        /* The shader knows neither the COMBAT_HELD flag nor the parked one;
-         * mirror the CPU path's short-circuits so neither creeps here. */
-        if((G_FlagsGetFrom(s_move_work.gamestate.flags, in->ent_uid) & ENTITY_FLAG_COMBAT_HELD)
-        || movestate_aux_get(in->ent_uid)->parked) {
-            out->ent_vel = (vec2_t){0.0f, 0.0f};
-        }
-    }
     PERF_RETURN_VOID();
 }
 
@@ -7037,16 +7123,6 @@ static struct result navigation_tick_task(void *arg)
     phase_start = SDL_GetPerformanceCounter();
 
     fork_join_velocity_computations();
-
-    if(s_move_work.type == WORK_TYPE_GPU) {
-
-        uint32_t period_ms = (1.0f / hz_count(s_move_work.hz)) * 1000;
-        await_gpu_completion(period_ms);
-        move_complete_gpu_velocity_work();
-
-        await_gpu_download();
-        copy_gpu_results();
-    }
 
     s_last_nav_tick_stats.vel_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
@@ -7154,6 +7230,10 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
     s_move_parallel_executor =
         (Settings_Get("pf.debug.move_parallel_executor", &exec_setting) == SS_OKAY)
         && exec_setting.as_bool;
+
+    struct sval parity_setting;
+    s_gpu_parity = (Settings_Get("pf.debug.gpu_move_parity", &parity_setting) == SS_OKAY)
+                && parity_setting.as_bool;
     enum selection_type seltype;
     s_move_trace_sel = G_Sel_Get(&seltype);
 
@@ -7596,6 +7676,8 @@ void G_Move_Shutdown(void)
     s_move_tick_queued = false;
     s_move_split_pending = false;
     s_submit_prepared = false;
+    /* The render thread frees the GPU solve's buffers with the map */
+    s_gpu_bufs = (struct gpu_move_bufs){0};
     s_map = NULL;
 
     unregister_callback_for_hz(s_move_hz);
