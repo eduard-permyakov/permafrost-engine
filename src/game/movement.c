@@ -932,6 +932,9 @@ static bool                    s_move_tick_queued = false;
  * on the tick event's frame, the snapshot + submit half on the next frame, so
  * no single frame carries the whole stall. */
 static bool                    s_move_split_pending = false;
+/* The first part of a split submit ran and released the snapshot */
+static bool                    s_submit_prepared = false;
+static uint64_t                s_prepare_copy_ticks;
 static unsigned long           s_split_frame;
 static enum movement_hz        s_split_hz;
 
@@ -7182,15 +7185,19 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
     PERF_POP();
 }
 
-static void move_do_tick_submit(enum movement_hz hz)
+/* The first part of the submit: the flocks and the navigation map are brought
+ * up to date. The snapshot taken by the second part reads the map as this
+ * part published it.
+ */
+static void move_do_tick_prepare(void)
 {
     ASSERT_IN_MAIN_THREAD();
-    PERF_PUSH("movement::tick submit");
+    PERF_PUSH("movement::tick prepare");
     uint64_t tick_start = SDL_GetPerformanceCounter();
 
     uint64_t phase_start = SDL_GetPerformanceCounter();
     move_release_gamestate();
-    uint64_t copy_ticks = SDL_GetPerformanceCounter() - phase_start;
+    s_prepare_copy_ticks = SDL_GetPerformanceCounter() - phase_start;
 
     phase_start = SDL_GetPerformanceCounter();
     disband_empty_flocks();
@@ -7204,7 +7211,24 @@ static void move_do_tick_submit(enum movement_hz hz)
     s_last_nav_tick_stats.map_update_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
 
-    phase_start = SDL_GetPerformanceCounter();
+    s_last_nav_tick_stats.main_us +=
+        perf_ticks_to_us(SDL_GetPerformanceCounter() - tick_start);
+    s_submit_prepared = true;
+    PERF_POP();
+}
+
+static void move_do_tick_submit(enum movement_hz hz)
+{
+    ASSERT_IN_MAIN_THREAD();
+    PERF_PUSH("movement::tick submit");
+
+    if(!s_submit_prepared)
+        move_do_tick_prepare();
+    s_submit_prepared = false;
+    uint64_t tick_start = SDL_GetPerformanceCounter();
+    uint64_t copy_ticks = s_prepare_copy_ticks;
+
+    uint64_t phase_start = SDL_GetPerformanceCounter();
     move_prepare_work(hz);
     move_copy_gamestate();
     snapshot_step_ends();
@@ -7416,12 +7440,22 @@ static void handle_queued_tick(void)
     move_do_tick(curr_event, hz);
 }
 
+/* Below 20 Hz the tick's period leaves room to put the map update and the
+ * snapshot with the submit on frames of their own, so no one frame carries
+ * both.
+ */
 static void handle_split_submit(void)
 {
     if(!s_move_split_pending)
         return;
     if(g_frame_idx == s_split_frame)
         return;
+
+    if(!s_submit_prepared && hz_count(s_split_hz) < 20) {
+        move_do_tick_prepare();
+        s_split_frame = g_frame_idx;
+        return;
+    }
 
     s_move_split_pending = false;
     move_do_tick_submit(s_split_hz);
@@ -7561,6 +7595,7 @@ void G_Move_Shutdown(void)
     }
     s_move_tick_queued = false;
     s_move_split_pending = false;
+    s_submit_prepared = false;
     s_map = NULL;
 
     unregister_callback_for_hz(s_move_hz);
@@ -7608,6 +7643,13 @@ void G_Move_FlushWork(void)
         nav_cancel_gpu_work();
     }
     s_move_split_pending = false;
+    /* The first part of a split submit released the snapshot the drain below
+     * reads.
+     */
+    if(s_submit_prepared) {
+        move_copy_gamestate();
+        s_submit_prepared = false;
+    }
 
     stalloc_clear(&s_move_work.mem);
     s_move_work.in = NULL;
