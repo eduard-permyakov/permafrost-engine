@@ -269,6 +269,8 @@ static SDL_mutex       *s_parallel_lock;
 static SDL_cond        *s_parallel_cond;
 
 static size_t           s_nworkers;
+static uint64_t         s_tick_task_ticks;
+static uint64_t         s_tick_quiesce_ticks;
 static SDL_Thread      *s_worker_threads[MAX_WORKER_THREADS];
 static struct context   s_worker_contexts[MAX_WORKER_THREADS];
 
@@ -1632,13 +1634,26 @@ void Sched_Tick(void)
         if(curr == NULL)
             continue;
 
+        uint64_t t0 = SDL_GetPerformanceCounter();
         sched_task_run(curr);
         sched_task_service_request(curr);
+        s_tick_task_ticks += SDL_GetPerformanceCounter() - t0;
 
     }while(Perf_CurrFrameMS() < SCHED_TICK_MS);
 
+    uint64_t q0 = SDL_GetPerformanceCounter();
     sched_quiesce_workers();
+    s_tick_quiesce_ticks += SDL_GetPerformanceCounter() - q0;
     PERF_RETURN_VOID();
+}
+
+void Sched_LastTickTimes(uint64_t *out_task_us, uint64_t *out_quiesce_us)
+{
+    double us = 1e6 / SDL_GetPerformanceFrequency();
+    *out_task_us = s_tick_task_ticks * us;
+    *out_quiesce_us = s_tick_quiesce_ticks * us;
+    s_tick_task_ticks = 0;
+    s_tick_quiesce_ticks = 0;
 }
 
 uint32_t Sched_Create(int prio, task_func_t code, void *arg, const char *name, 

@@ -93,6 +93,15 @@ struct render_sync_state{
     /* Flag to specify if the framebuffer should be presented on
      * the screen after all commands are executed */
     bool       swap_buffers;
+    /* Set by the main thread to have the render thread time its frames;
+     * the render thread fills the rest before signalling 'done'. The GPU
+     * time is that of the frame FRAME_GPU_QUERY_LAG frames ago, or zero.
+     */
+    bool       timing;
+    uint64_t   t_cmds_us;
+    uint64_t   t_present_us;
+    uint64_t   t_swap_us;
+    uint64_t   t_gpu_us;
 };
 
 #define MAX_ARGS 10

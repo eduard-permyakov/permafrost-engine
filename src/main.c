@@ -846,7 +846,13 @@ int main(int argc, char **argv)
             LoadingScreen_Tick();
         }
 
+        struct sval csv_setting;
+        bool frame_prof = (Settings_Get("pf.debug.log_perf_csv", &csv_setting) == SS_OKAY)
+                       && csv_setting.as_bool;
+        Uint64 ft0 = SDL_GetPerformanceCounter();
+
         render_maybe_enable();
+        s_rstate.timing = frame_prof;
         render_thread_start_work();
         Sched_StartBackgroundTasks();
 
@@ -858,17 +864,45 @@ int main(int argc, char **argv)
         switch(s_state) {
         case ENGINE_STATE_RUNNING:
 
+        {
+            Uint64 ft1 = SDL_GetPerformanceCounter();
             process_sdl_events();
             E_ServiceQueue();
+            Uint64 ft2 = SDL_GetPerformanceCounter();
 
             G_Update();
+            Uint64 ft3 = SDL_GetPerformanceCounter();
             G_Render();
+            Uint64 ft4 = SDL_GetPerformanceCounter();
             Sched_Tick();
+            Uint64 ft5 = SDL_GetPerformanceCounter();
 
             render_status = render_thread_wait_done();
+            Uint64 ft6 = SDL_GetPerformanceCounter();
             G_SwapBuffers();
+            Uint64 ft7 = SDL_GetPerformanceCounter();
 
+            uint64_t task_us, quiesce_us;
+            Sched_LastTickTimes(&task_us, &quiesce_us);
+            uint64_t ev_us[E_TIME_NBUCKETS];
+            E_LastServiceTimes(ev_us);
+            if(frame_prof) {
+                fprintf(stdout, "[event-prof] %lu", g_frame_idx);
+                for(int i = 0; i < E_TIME_NBUCKETS; i++)
+                    fprintf(stdout, ",%lu", (unsigned long)ev_us[i]);
+                fputc('\n', stdout);
+                double us = 1e6 / SDL_GetPerformanceFrequency();
+                fprintf(stdout, "[frame-prof] %lu,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%lu,%lu,%.0f,%.0f,"
+                    "%lu,%lu,%lu,%lu\n",
+                    g_frame_idx, (ft7 - ft0) * us, (ft1 - ft0) * us, (ft2 - ft1) * us,
+                    (ft3 - ft2) * us, (ft4 - ft3) * us, (ft5 - ft4) * us,
+                    (unsigned long)task_us, (unsigned long)quiesce_us,
+                    (ft6 - ft5) * us, (ft7 - ft6) * us,
+                    (unsigned long)s_rstate.t_cmds_us, (unsigned long)s_rstate.t_present_us,
+                    (unsigned long)s_rstate.t_swap_us, (unsigned long)s_rstate.t_gpu_us);
+            }
             break;
+        }
 
         case ENGINE_STATE_WAITING:
 

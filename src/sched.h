@@ -101,6 +101,10 @@ void     Sched_Shutdown(void);
 void     Sched_HandleEvent(int event, void *arg, int event_source, bool immediate);
 void     Sched_StartBackgroundTasks(void);
 void     Sched_Tick(void);
+/* Where the last Sched_Tick spent its time: running main-thread tasks, and
+ * waiting for the workers to finish their slices at the end of the frame.
+ */
+void     Sched_LastTickTimes(uint64_t *out_task_us, uint64_t *out_quiesce_us);
 uint32_t Sched_Create(int prio, task_func_t code, void *arg, const char *name,
                      struct future *result, int flags);
 uint32_t Sched_CreateBlocking(int prio, task_func_t code, void *arg, const char *name,

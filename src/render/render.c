@@ -93,6 +93,13 @@ static SDL_Window               *s_window;
 static struct render_sync_state *s_rstate; 
 
 static jmp_buf                   s_jmpbuf; 
+/* Timestamp query pairs bracketing each frame's commands, read back a few
+ * frames later so the read never waits on the GPU.
+ */
+#define FRAME_GPU_QUERY_LAG 4
+static GLuint                    s_frame_queries[FRAME_GPU_QUERY_LAG][2];
+static bool                      s_frame_query_issued[FRAME_GPU_QUERY_LAG];
+static int                       s_frame_query_idx;
 static intptr_t                  s_jmpbuf2[5];
 
 /* write-once strings. Set by render thread at initialization */
@@ -604,6 +611,39 @@ static void render_process_cmds(queue_rcmd_t *cmds)
     }
 }
 
+static void render_frame_query_begin(void)
+{
+    if(!s_frame_queries[0][0])
+        glGenQueries(FRAME_GPU_QUERY_LAG * 2, &s_frame_queries[0][0]);
+    glQueryCounter(s_frame_queries[s_frame_query_idx][0], GL_TIMESTAMP);
+}
+
+static void render_frame_query_end(void)
+{
+    glQueryCounter(s_frame_queries[s_frame_query_idx][1], GL_TIMESTAMP);
+    s_frame_query_issued[s_frame_query_idx] = true;
+    s_frame_query_idx = (s_frame_query_idx + 1) % FRAME_GPU_QUERY_LAG;
+}
+
+/* The GPU time between the oldest issued pair, which is about to be reused,
+ * or zero while it is not yet available.
+ */
+static uint64_t render_frame_query_read(void)
+{
+    int idx = s_frame_query_idx;
+    if(!s_frame_query_issued[idx])
+        return 0;
+    GLint avail = 0;
+    glGetQueryObjectiv(s_frame_queries[idx][1], GL_QUERY_RESULT_AVAILABLE, &avail);
+    if(!avail)
+        return 0;
+    GLuint64 b = 0, e = 0;
+    glGetQueryObjectui64v(s_frame_queries[idx][0], GL_QUERY_RESULT, &b);
+    glGetQueryObjectui64v(s_frame_queries[idx][1], GL_QUERY_RESULT, &e);
+    s_frame_query_issued[idx] = false;
+    return (e > b) ? (e - b) / 1000 : 0;
+}
+
 static int render(void *data)
 {
     s_rstate = data; 
@@ -634,10 +674,27 @@ static int render(void *data)
         if(quit)
             break;
 
+        bool timing = s_rstate->timing;
+        Uint64 t0 = SDL_GetPerformanceCounter();
+        if(timing)
+            render_frame_query_begin();
+
         render_process_cmds(&G_GetRenderWS()->commands);
+        Uint64 t1 = SDL_GetPerformanceCounter();
+        Uint64 t2 = t1, t3 = t1;
         if(s_rstate->swap_buffers) {
             R_GL_SwapchainPresentLast();
+            t2 = SDL_GetPerformanceCounter();
             SDL_GL_SwapWindow(s_window);
+            t3 = SDL_GetPerformanceCounter();
+        }
+        if(timing) {
+            render_frame_query_end();
+            double us = 1e6 / SDL_GetPerformanceFrequency();
+            s_rstate->t_cmds_us = (t1 - t0) * us;
+            s_rstate->t_present_us = (t2 - t1) * us;
+            s_rstate->t_swap_us = (t3 - t2) * us;
+            s_rstate->t_gpu_us = render_frame_query_read();
         }
 
         R_GL_PerfStallFrameReport();

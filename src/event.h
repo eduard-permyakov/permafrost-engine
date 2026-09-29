@@ -150,6 +150,26 @@ struct script_handler{
 
 bool        E_Init(void);
 void        E_ServiceQueue(void);
+/* Where the last E_ServiceQueue spent its time, in microseconds, by kind of
+ * event (enum e_time_bucket order).
+ */
+enum e_time_bucket{
+    E_TIME_UPDATE_START,
+    E_TIME_ENT_UPDATE_START,
+    E_TIME_60HZ,
+    E_TIME_30HZ,
+    E_TIME_20HZ,
+    E_TIME_10HZ,
+    E_TIME_5HZ,
+    E_TIME_1HZ,
+    E_TIME_ANIM,
+    E_TIME_SDL,
+    E_TIME_SCRIPT,
+    E_TIME_OTHER,
+    E_TIME_UPDATE_END,
+    E_TIME_NBUCKETS
+};
+void        E_LastServiceTimes(uint64_t out_us[E_TIME_NBUCKETS]);
 void        E_Shutdown(void);
 void        E_DeleteScriptHandlers(void);
 size_t      E_GetScriptHandlers(size_t max_out, struct script_handler *out);

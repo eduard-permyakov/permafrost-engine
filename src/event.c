@@ -509,6 +509,29 @@ void E_Shutdown(void)
     vec_hd_destroy(&s_dispatch_curr);
 }
 
+static uint64_t s_service_ticks[E_TIME_NBUCKETS];
+
+static enum e_time_bucket e_bucket(const struct event *event)
+{
+    if(event->source == ES_SCRIPT)
+        return E_TIME_SCRIPT;
+    switch(event->type) {
+    case EVENT_60HZ_TICK:           return E_TIME_60HZ;
+    case EVENT_30HZ_TICK:           return E_TIME_30HZ;
+    case EVENT_20HZ_TICK:           return E_TIME_20HZ;
+    case EVENT_10HZ_TICK:           return E_TIME_10HZ;
+    case EVENT_5HZ_TICK:            return E_TIME_5HZ;
+    case EVENT_1HZ_TICK:
+    case EVENT_HALFHZ_TICK:         return E_TIME_1HZ;
+    case EVENT_ANIM_FINISHED:
+    case EVENT_ANIM_CYCLE_FINISHED: return E_TIME_ANIM;
+    default: break;
+    }
+    if((int)event->type < (int)SDL_LASTEVENT)
+        return E_TIME_SDL;
+    return E_TIME_OTHER;
+}
+
 void E_ServiceQueue(void)
 {
     PERF_ENTER();
@@ -517,24 +540,43 @@ void E_ServiceQueue(void)
     queue_event_t *queue = &s_event_queues[s_front_queue_idx];
     s_front_queue_idx = (s_front_queue_idx + 1) % 2;
 
+    uint64_t t0 = SDL_GetPerformanceCounter();
     e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, GLOBAL_ID, ticks}, false);
+    uint64_t t1 = SDL_GetPerformanceCounter();
+    s_service_ticks[E_TIME_UPDATE_START] += t1 - t0;
 
     PERF_PUSH("entities update start scan");
     e_notify_entities_update_start(ticks, false);
     PERF_POP();
+    uint64_t t2 = SDL_GetPerformanceCounter();
+    s_service_ticks[E_TIME_ENT_UPDATE_START] += t2 - t1;
 
     PERF_PUSH("event queue drain");
     struct event event;
     while(queue_event_pop(queue, &event)) {
 
+        enum e_time_bucket bucket = e_bucket(&event);
+        uint64_t e0 = SDL_GetPerformanceCounter();
         e_handle_event(event, false);
+        s_service_ticks[bucket] += SDL_GetPerformanceCounter() - e0;
         /* event arg already released */
     }
     PERF_POP();
 
+    uint64_t t3 = SDL_GetPerformanceCounter();
     e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID, ticks}, false);
+    s_service_ticks[E_TIME_UPDATE_END] += SDL_GetPerformanceCounter() - t3;
 
     PERF_RETURN_VOID();
+}
+
+void E_LastServiceTimes(uint64_t out_us[E_TIME_NBUCKETS])
+{
+    double us = 1e6 / SDL_GetPerformanceFrequency();
+    for(int i = 0; i < E_TIME_NBUCKETS; i++) {
+        out_us[i] = s_service_ticks[i] * us;
+        s_service_ticks[i] = 0;
+    }
 }
 
 void E_ClearPendingEvents(void)
