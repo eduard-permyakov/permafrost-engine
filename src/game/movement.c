@@ -5855,7 +5855,7 @@ static void move_update_gamestate(void)
  * hold the unit up. A chain with no such end is a crowd stuck for good, and
  * nobody in it holds anybody up.
  */
-static void mark_crowd_busy(enum movement_hz hz)
+static void mark_crowd_busy(enum movement_hz hz, uint32_t now)
 {
     static khash_t(findex) *index;
     if(!index)
@@ -5878,7 +5878,7 @@ static void mark_crowd_busy(enum movement_hz hz)
         kh_val(index, k) = i;
         busy[i] = (G_FlagsGetFrom(s_move_work.gamestate.flags, uid) & ENTITY_FLAG_COMBAT_HELD)
                || (aux && aux->progress_tick > 0
-                   && s_move_trace_tick - aux->progress_tick <= window);
+                   && now - aux->progress_tick <= window);
         if(busy[i])
             queue[nqueue++] = i;
         waiters_at[i] = 0;
@@ -5950,7 +5950,6 @@ static void move_consume_work_results(void)
         entity_apply_update(out->ent_uid, ms, aux, &out->patch);
         entity_apply_cp_side(aux, out->cp_side);
     }
-    mark_crowd_busy(s_move_work.hz);
 
     /* All this tick's position changes are enqueued; apply the batched fog
      * vision updates in one pipelined pass before any reader runs. */
@@ -7051,6 +7050,8 @@ static struct result navigation_tick_task(void *arg)
     phase_start = SDL_GetPerformanceCounter();
 
     fork_join_state_updates();
+    /* The tick counter advances when these results are collected. */
+    mark_crowd_busy(s_move_work.hz, s_move_trace_tick + 1);
 
     s_last_nav_tick_stats.upd_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
