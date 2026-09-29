@@ -174,6 +174,7 @@ bool            G_AddEntity(uint32_t uid, uint32_t flags, vec3_t pos);
 bool            G_RemoveEntity(uint32_t uid);
 void            G_StopEntity(uint32_t uid, bool stop_move, bool stop_garrison);
 void            G_UpdateBounds(uint32_t uid);
+void            G_UpdateReach(uint32_t uid);
 void            G_Zombiefy(uint32_t uid, bool invis);
 bool            G_EntityExists(uint32_t uid);
 bool            G_EntityIsZombie(uint32_t uid);
@@ -512,7 +513,7 @@ int            G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, uint32_t *
 int            G_Pos_EntsInCircle(vec2_t xz_point, float range, uint32_t *out, size_t maxout);
 int            G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, uint32_t *out, size_t maxout,
                                   bool (*predicate)(uint32_t ent, void *arg), void *arg);
-int            G_Pos_EntsInCircleVec(vec2_t xz_point, float range, vec_entity_t *out);
+int            G_Pos_EntsNearSegment(vec2_t a, vec2_t b, vec_entity_t *out);
 
 uint32_t       G_Pos_Nearest(vec2_t xz_point);
 uint32_t       G_Pos_NearestWithPred(vec2_t xz_point, 

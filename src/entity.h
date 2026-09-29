@@ -175,6 +175,10 @@ void     Entity_SetRot(uint32_t uid, quat_t rot);
 vec3_t   Entity_GetScale(uint32_t uid);
 void     Entity_SetScale(uint32_t uid, vec3_t scale);
 void     Entity_Remove(uint32_t uid);
+/* How far from its position any part of the entity's box can lie, in any of
+ * its poses and under any rotation.
+ */
+float    Entity_MaxReach(uint32_t uid);
 
 khash_t(trans) *Entity_CopyTransforms(void);
 khash_t(trans) *Entity_CopyTransformsInto(khash_t(trans) *dst);

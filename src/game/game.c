@@ -2870,6 +2870,7 @@ bool G_AddEntity(uint32_t uid, uint32_t flags, vec3_t pos)
 
     G_FlagsSet(uid, flags);
     G_Pos_Set(uid, pos);
+    G_UpdateReach(uid);
 
     if(flags & ENTITY_FLAG_ANIMATED)
         A_AddEntity(uid);
@@ -3786,6 +3787,15 @@ void G_SetHideHealthbars(bool on)
 {
     ASSERT_IN_MAIN_THREAD();
     s_gs.hide_healthbars = on;
+}
+
+void G_UpdateReach(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(!G_EntityExists(uid))
+        return;
+    G_Pos_SetReach(uid, Entity_MaxReach(uid));
 }
 
 void G_UpdateBounds(uint32_t uid)

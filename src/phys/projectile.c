@@ -78,7 +78,6 @@
 #define MAX(a, b)       ((a) > (b) ? (a) : (b))
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
 #define MAX_PROJ_TASKS  (64)
-#define NEAR_TOLERANCE  (100.0f)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -134,9 +133,9 @@ static vec_proj_t       s_added;
 static vec_proj_t       s_deleted;
 struct proj_work        s_work;
 static struct memstack  s_eventargs;
-/* The entities near the projectile being swept, complete however crowded
- * the ground is: a sweep that drops its own target lets a unit shoot at it
- * forever.
+/* The entities whose boxes can touch the segment being swept, complete however
+ * crowded the ground is: a sweep that drops its own target lets a unit shoot
+ * at it forever.
  */
 static vec_entity_t     s_sweep_cands;
 
@@ -299,8 +298,6 @@ static void phys_sweep_test(int front_idx)
     if(s_simticks == 0)
         return;
 
-    size_t nents = G_Pos_EntsInCircleVec((vec2_t){proj->pos.x, proj->pos.z}, NEAR_TOLERANCE,
-        &s_sweep_cands);
 
     /* The collision test gets performed every frame (variable FPS) while, 
      * actual projectile motion is performed at fixed frequency of PHYS_HZ. 
@@ -318,6 +315,9 @@ static void phys_sweep_test(int front_idx)
     vec3_t end, delta = proj->vel;
     PFM_Vec3_Scale(&delta, -1.0f * s_simticks, &delta);
     PFM_Vec3_Add(&begin, &delta, &end);
+
+    size_t nents = G_Pos_EntsNearSegment((vec2_t){begin.x, begin.z}, (vec2_t){end.x, end.z},
+        &s_sweep_cands);
 
     float min_dist = INFINITY;
     uint32_t hit_ent = NULL_UID;

@@ -96,6 +96,7 @@ KHASH_MAP_INIT_INT(tags, struct taglist)
 KHASH_MAP_INIT_INT(icons, struct iconlist)
 KHASH_MAP_INIT_INT(matrix, mat4x4_t)
 KHASH_MAP_INIT_INT(obb, struct obb)
+KHASH_MAP_INIT_INT(radius, float)
 __KHASH_IMPL(trans, extern, khint32_t, struct transform, 1, kh_int_hash_func, kh_int_hash_equal)
 
 /*****************************************************************************/
@@ -120,6 +121,10 @@ static khash_t(matrix)  *s_ent_matrix_cache;
  * several times per entity per frame.
  */
 static khash_t(obb)     *s_ent_obb_cache;
+/* The unscaled radius of each entity's box over all of its poses, taken once:
+ * a walk over every frame of every clip.
+ */
+static khash_t(radius)  *s_ent_pose_radius;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -660,8 +665,14 @@ bool Entity_Init(void)
     if(!s_ent_obb_cache)
         goto fail_obb_cache;
 
+    s_ent_pose_radius = kh_init(radius);
+    if(!s_ent_pose_radius)
+        goto fail_pose_radius;
+
     return true;
 
+fail_pose_radius:
+    kh_destroy(obb, s_ent_obb_cache);
 fail_obb_cache:
     kh_destroy(matrix, s_ent_matrix_cache);
 fail_matrix_cache:
@@ -681,6 +692,7 @@ fail_strintern:
 
 void Entity_Shutdown(void)
 {
+    kh_destroy(radius, s_ent_pose_radius);
     kh_destroy(obb, s_ent_obb_cache);
     kh_destroy(matrix, s_ent_matrix_cache);
     kh_destroy(icons, s_ent_icons_map);
@@ -692,6 +704,7 @@ void Entity_Shutdown(void)
 
 void Entity_ClearState(void)
 {
+    kh_clear(radius, s_ent_pose_radius);
     kh_clear(obb, s_ent_obb_cache);
     kh_clear(matrix, s_ent_matrix_cache);
     kh_clear(icons, s_ent_icons_map);
@@ -739,11 +752,58 @@ void Entity_SetScale(uint32_t uid, vec3_t scale)
     kh_value(s_ent_trans_map, k).scale = scale;
     Entity_DirtyModelMatrix(uid);
     G_UpdateBounds(uid);
+    G_UpdateReach(uid);
+}
+
+static float aabb_radius(const struct aabb *aabb)
+{
+    float x = MAX(fabsf(aabb->x_min), fabsf(aabb->x_max));
+    float y = MAX(fabsf(aabb->y_min), fabsf(aabb->y_max));
+    float z = MAX(fabsf(aabb->z_min), fabsf(aabb->z_max));
+    return sqrtf(x * x + y * y + z * z);
+}
+
+static float entity_pose_radius(uint32_t uid)
+{
+    khiter_t k = kh_get(radius, s_ent_pose_radius, uid);
+    if(k != kh_end(s_ent_pose_radius))
+        return kh_value(s_ent_pose_radius, k);
+
+    const struct entity *ent = AL_EntityGet(uid);
+    float ret = aabb_radius(&ent->identity_aabb);
+    const struct anim_data *data = ent->anim_private;
+    if(data && (G_FlagsGet(uid) & ENTITY_FLAG_ANIMATED)) {
+        for(int c = 0; c < A_GetNumClips(data); c++) {
+        for(int f = 0; f < A_GetClipFrameCount(data, c); f++) {
+            ret = MAX(ret, aabb_radius(A_GetClipFrameAABB(data, c, f)));
+        }}
+    }
+
+    int status;
+    k = kh_put(radius, s_ent_pose_radius, uid, &status);
+    if(status != -1)
+        kh_value(s_ent_pose_radius, k) = ret;
+    return ret;
+}
+
+float Entity_MaxReach(uint32_t uid)
+{
+    vec3_t scale = {1.0f, 1.0f, 1.0f};
+    khiter_t k = kh_get(trans, s_ent_trans_map, uid);
+    if(k != kh_end(s_ent_trans_map))
+        scale = kh_value(s_ent_trans_map, k).scale;
+    float smax = MAX(fabsf(scale.x), MAX(fabsf(scale.y), fabsf(scale.z)));
+    return entity_pose_radius(uid) * smax;
 }
 
 void Entity_Remove(uint32_t uid)
 {
     Entity_DirtyModelMatrix(uid);
+
+    khiter_t r = kh_get(radius, s_ent_pose_radius, uid);
+    if(r != kh_end(s_ent_pose_radius)) {
+        kh_del(radius, s_ent_pose_radius, r);
+    }
 
     khiter_t k = kh_get(trans, s_ent_trans_map, uid);
     if(k != kh_end(s_ent_trans_map)) {

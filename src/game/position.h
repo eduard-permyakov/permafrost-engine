@@ -53,6 +53,8 @@ void      G_Pos_Shutdown(void);
 void      G_Pos_Delete(uint32_t uid);
 size_t    G_Pos_UploadFrom(khash_t(pos) *table, khash_t(id) *ent_gpu_id_table,
                            const struct map *map);
+/* Records how far from its position the entity's box can reach. */
+void      G_Pos_SetReach(uint32_t uid, float reach);
 
 bg_ent_t *G_Pos_CopyBitmapGrid(void);
 bg_ent_t *G_Pos_CopyBitmapGridInto(bg_ent_t *dst);
