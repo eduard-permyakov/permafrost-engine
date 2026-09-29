@@ -328,9 +328,10 @@ static void phys_sweep_test(int front_idx)
         /* A projectile does not collide with its' 'parent' */
         if(proj->ent_parent == ent)
             continue;
-        if(G_FlagsGet(ent) & ENTITY_FLAG_ZOMBIE)
+        uint32_t flags = G_FlagsGet(ent);
+        if(flags & ENTITY_FLAG_ZOMBIE)
             continue;
-        if((proj->flags & PROJ_ONLY_HIT_COMBATABLE) && !(G_FlagsGet(ent) & ENTITY_FLAG_COMBATABLE))
+        if((proj->flags & PROJ_ONLY_HIT_COMBATABLE) && !(flags & ENTITY_FLAG_COMBATABLE))
             continue;
         if((proj->flags & PROJ_ONLY_HIT_ENEMIES) && !phys_enemies(proj->faction_id, ent))
             continue;
