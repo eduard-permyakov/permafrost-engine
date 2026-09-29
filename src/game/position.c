@@ -141,8 +141,7 @@ bool G_Pos_Set(uint32_t uid, vec3_t pos)
 
         G_Combat_MoveRef(faction_id, (vec2_t){old_pos.x, old_pos.z},
             (vec2_t){pos.x, pos.z});
-        G_Region_RemoveRef(uid, (vec2_t){old_pos.x, old_pos.z});
-        G_Region_AddRef(uid, (vec2_t){pos.x, pos.z});
+        G_Region_MoveRef(uid, (vec2_t){old_pos.x, old_pos.z}, (vec2_t){pos.x, pos.z});
         G_Fog_UpdateVision((vec2_t){old_pos.x, old_pos.z}, (vec2_t){pos.x, pos.z},
             faction_id, vrange);
     }else{

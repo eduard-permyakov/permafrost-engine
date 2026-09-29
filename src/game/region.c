@@ -129,6 +129,18 @@ static bool              s_render = false;
 /* Keep track of which regions intersect every chunk, 
  * making a poor man's 2-level tree */
 static vec_str_t        *s_intersecting;
+/* The same lists as region pointers, rebuilt when the layout generation moves
+ * on: looking each region up by name for every point query made every unit's
+ * move cost a string hash per region around it.
+ */
+struct chunk_regs{
+    uint32_t        gen;
+    size_t          n, cap;
+    struct region **regs;
+    const char    **names;
+};
+static struct chunk_regs *s_chunk_regs;
+static uint32_t          s_layout_gen = 1;
 static khash_t(name)    *s_dirty;
 static uint32_t         *s_query_scratch;
 static size_t            s_query_cap;
@@ -170,6 +182,8 @@ static void region_update_intersecting(const char *name, const struct region *re
 {
     struct map_resolution res;
     M_GetResolution(s_map, &res);
+    /* Called for every add, move and removal, after any rehash of s_regions */
+    s_layout_gen++;
 
     int delta = 0;
     int chunklen = MAX(X_COORDS_PER_TILE * res.chunk_w * res.tile_w, Z_COORDS_PER_TILE * res.chunk_h * res.tile_h);
@@ -256,6 +270,37 @@ static bool region_contains(const struct region *reg, vec2_t point)
     }
 }
 
+static const struct chunk_regs *chunk_regs_for(int idx)
+{
+    struct chunk_regs *cr = &s_chunk_regs[idx];
+    if(cr->gen == s_layout_gen)
+        return cr;
+
+    const vec_str_t *names = &s_intersecting[idx];
+    size_t n = vec_size(names);
+    if(n > cr->cap) {
+        struct region **regs = PF_REALLOC(cr->regs, n * sizeof(*regs));
+        if(!regs)
+            return NULL;
+        cr->regs = regs;
+        const char **rnames = PF_REALLOC(cr->names, n * sizeof(*rnames));
+        if(!rnames)
+            return NULL;
+        cr->names = rnames;
+        cr->cap = n;
+    }
+    for(size_t i = 0; i < n; i++) {
+        const char *name = vec_AT(names, i);
+        khiter_t k = kh_get(region, s_regions, name);
+        assert(k != kh_end(s_regions));
+        cr->names[i] = name;
+        cr->regs[i] = &kh_value(s_regions, k);
+    }
+    cr->n = n;
+    cr->gen = s_layout_gen;
+    return cr;
+}
+
 static size_t regions_at_point(vec2_t point, size_t maxout, struct region *out[], 
                                const char *out_names[])
 {
@@ -267,7 +312,20 @@ static size_t regions_at_point(vec2_t point, size_t maxout, struct region *out[]
         return 0;
 
     size_t ret = 0;
-    vec_str_t *chunk = &s_intersecting[td.chunk_r * res.chunk_w + td.chunk_c];
+    int idx = td.chunk_r * res.chunk_w + td.chunk_c;
+    const struct chunk_regs *cr = chunk_regs_for(idx);
+    if(cr) {
+        for(size_t i = 0; i < cr->n && ret < maxout; i++) {
+            if(!region_contains(cr->regs[i], point))
+                continue;
+            out[ret] = cr->regs[i];
+            out_names[ret] = cr->names[i];
+            ret++;
+        }
+        return ret;
+    }
+
+    vec_str_t *chunk = &s_intersecting[idx];
     for(int i = 0; i < vec_size(chunk); i++) {
 
         if(ret == maxout)
@@ -300,6 +358,57 @@ static void regions_remove_ent(uint32_t uid, vec2_t pos)
             continue;
         kh_del(uid, regs[i]->curr_ents, k);
         kh_put(name, s_dirty, names[i], &(int){0});
+    }
+}
+
+static bool region_in(struct region *reg, struct region *const regs[], size_t n)
+{
+    for(size_t i = 0; i < n; i++) {
+        if(regs[i] == reg)
+            return true;
+    }
+    return false;
+}
+
+/* The same net membership as a removal at the old position followed by an
+ * addition at the new one, touching only the regions whose membership changes.
+ * A region that keeps the unit is not marked, as it has nothing to report,
+ * unless it carries an aura, whose holders are reconciled on every move of a
+ * member.
+ */
+static void regions_move_ent(uint32_t uid, vec2_t oldpos, vec2_t newpos)
+{
+    assert(Sched_UsingBigStack());
+
+    const char *old_names[512], *new_names[512];
+    struct region *old_regs[512], *new_regs[512];
+    size_t nold = regions_at_point(oldpos, ARR_SIZE(old_regs), old_regs, old_names);
+    size_t nnew = regions_at_point(newpos, ARR_SIZE(new_regs), new_regs, new_names);
+    if(nold == 0 && nnew == 0)
+        return;
+
+    bool member = G_EntityExists(uid)
+               && !(G_FlagsGet(uid) & (ENTITY_FLAG_ZOMBIE | ENTITY_FLAG_MARKER));
+
+    for(size_t i = 0; i < nold; i++) {
+        if(member && region_in(old_regs[i], new_regs, nnew))
+            continue;
+        khiter_t k = kh_get(uid, old_regs[i]->curr_ents, uid);
+        if(k == kh_end(old_regs[i]->curr_ents))
+            continue;
+        kh_del(uid, old_regs[i]->curr_ents, k);
+        kh_put(name, s_dirty, old_names[i], &(int){0});
+    }
+
+    if(!member)
+        return;
+
+    for(size_t i = 0; i < nnew; i++) {
+        int status;
+        kh_put(uid, new_regs[i]->curr_ents, uid, &status);
+        if(status == 0 && !(new_regs[i]->aura.active && region_in(new_regs[i], old_regs, nold)))
+            continue;
+        kh_put(name, s_dirty, new_names[i], &(int){0});
     }
 }
 
@@ -693,6 +802,9 @@ bool G_Region_Init(const struct map *map)
     s_intersecting = PF_CALLOC(res.chunk_w * res.chunk_h, sizeof(vec_str_t));
     if(!s_intersecting)
         goto fail_intersecting;
+    s_chunk_regs = PF_CALLOC(res.chunk_w * res.chunk_h, sizeof(struct chunk_regs));
+    if(!s_chunk_regs)
+        goto fail_chunk_regs;
 
     for(int i = 0; i < res.chunk_w * res.chunk_h; i++) {
         vec_str_t *vec = ((vec_str_t*)s_intersecting) + i;
@@ -704,6 +816,8 @@ bool G_Region_Init(const struct map *map)
     s_map = map;
     return true;
 
+fail_chunk_regs:
+    PF_FREE(s_intersecting);
 fail_intersecting:
     kh_destroy(name, s_dirty);
 fail_dirty:
@@ -722,6 +836,11 @@ void G_Region_Shutdown(void)
         vec_str_destroy(vec);
     }
     PF_FREE(s_intersecting);
+    for(int i = 0; i < res.chunk_w * res.chunk_h; i++) {
+        PF_FREE(s_chunk_regs[i].regs);
+        PF_FREE(s_chunk_regs[i].names);
+    }
+    PF_FREE(s_chunk_regs);
     PF_FREE(s_query_scratch);
     s_query_scratch = NULL;
     s_query_cap = 0;
@@ -998,6 +1117,11 @@ void G_Region_RemoveRef(uint32_t uid, vec2_t oldpos)
 void G_Region_AddRef(uint32_t uid, vec2_t newpos)
 {
     regions_add_ent(uid, newpos);
+}
+
+void G_Region_MoveRef(uint32_t uid, vec2_t oldpos, vec2_t newpos)
+{
+    regions_move_ent(uid, oldpos, newpos);
 }
 
 void G_Region_RemoveEnt(uint32_t uid)
