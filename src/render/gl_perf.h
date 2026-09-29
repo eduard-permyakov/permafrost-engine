@@ -108,7 +108,7 @@ void R_GL_PerfStallFrameReport(void);
 void R_GL_PerfCallRecord(const char *expr, const char *file, int line,
                          uint64_t elapsed_ticks);
 
-#ifndef NDEBUG
+#if !defined(NDEBUG) || defined(PF_PERF_MARKERS)
 
 extern bool g_trace_gpu;
 

@@ -42,7 +42,8 @@
 #include <stddef.h>
 #include <SDL_thread.h>
 
-#ifndef NDEBUG
+/* PF_PERF_MARKERS keeps the markers in an NDEBUG build, for profiling it. */
+#if !defined(NDEBUG) || defined(PF_PERF_MARKERS)
 
 #define PERF_ENTER()            \
     do{                         \
@@ -79,6 +80,18 @@
 #define PERF_POP()
 #define PERF_POP_NAME(_ptr)
 
+#endif
+
+/* The profiler keeps its own records in khash tables and vectors, so their
+ * resize markers are dropped in perf.c, which defines PERF_INTERNAL: a push
+ * that grows one would otherwise push again, without end.
+ */
+#ifdef PERF_INTERNAL
+#define PERF_CONT_ENTER()
+#define PERF_CONT_RETURN(...) do{ return (__VA_ARGS__); }while(0)
+#else
+#define PERF_CONT_ENTER()     PERF_ENTER()
+#define PERF_CONT_RETURN(...) PERF_RETURN(__VA_ARGS__)
 #endif
 
 #define NFRAMES_LOGGED        (5)

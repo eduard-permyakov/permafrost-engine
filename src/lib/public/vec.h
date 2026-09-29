@@ -122,9 +122,9 @@
                                                                                                 \
     scope bool vec_##name##_resize(vec(name) *vec, size_t new_cap)                              \
     {                                                                                           \
-        PERF_ENTER();                                                                           \
+        PERF_CONT_ENTER();                                                                      \
         if(vec->capacity >= new_cap)                                                            \
-            PERF_RETURN(true);                                                                  \
+            PERF_CONT_RETURN(true);                                                             \
                                                                                                 \
         type *new_array;                                                                        \
         if(vec->vrealloc)                                                                       \
@@ -133,11 +133,11 @@
             new_array = (type*)Mem_ReallocTagged(vec->array,                                    \
                 new_cap * sizeof(type), vec->mem_sys, vec->mem_sub);                            \
         if(!new_array)                                                                          \
-            PERF_RETURN(false);                                                                 \
+            PERF_CONT_RETURN(false);                                                            \
                                                                                                 \
         vec->array = new_array;                                                                 \
         vec->capacity = new_cap;                                                                \
-        PERF_RETURN(true);                                                                      \
+        PERF_CONT_RETURN(true);                                                                 \
     }                                                                                           \
                                                                                                 \
     scope void vec_##name##_destroy(vec(name) *vec)                                             \

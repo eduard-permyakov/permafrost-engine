@@ -35,6 +35,7 @@
 
 #define MEM_FILE_SYS MEM_SYS_PERF
 #define MEM_FILE_SUB 0
+#define PERF_INTERNAL
 
 #include "perf.h"
 #include "main.h"
