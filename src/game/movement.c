@@ -676,6 +676,9 @@ static void move_notify_motion_start(uint32_t uid, struct movestate *ms);
 static void move_notify_motion_end(uint32_t uid);
 static void do_update_pos(uint32_t uid, vec2_t pos);
 static struct move_work_in *work_input_for_uid(uint32_t uid);
+static void entity_follow_own_move(uint32_t uid, struct movestate *ms);
+static void settle_own_moves(void);
+static void settle_own_move(uint32_t uid, struct movestate *ms);
 static void resume_waiting_units(void);
 static void move_tick(void *user, void *event);
 static struct result navigation_tick_task(void *arg);
@@ -864,6 +867,8 @@ static vec3_t                  s_drag_end_pos;
 static bool                    s_drag_attacking;
 
 static vec_entity_t            s_move_markers;
+/* Units the last apply moved, for the stamp follow-up after the drain. */
+static vec_entity_t            s_own_moves;
 static vec_flock_t             s_flocks;
 /* Per-tick uid -> flock index, rebuilt alongside the flock snapshots */
 static khash_t(findex)        *s_flock_index;
@@ -4131,7 +4136,7 @@ static void entity_apply_update(uint32_t uid, struct movestate *ms,
     }
 
     if(patch->flags & UPDATE_SET_POSITION)
-        G_Pos_Set(uid, patch->next_pos);
+        G_Pos_SetFromMovement(uid, patch->next_pos);
 
     if(patch->flags & UPDATE_SET_ROTATION)
         Entity_SetRot(uid, patch->next_rot);
@@ -4222,6 +4227,52 @@ static void entity_apply_update(uint32_t uid, struct movestate *ms,
             entity_soft_unblock(uid);
         }
     }
+
+    if(patch->flags & UPDATE_SET_NEXT_POS)
+        entity_follow_own_move(uid, ms);
+}
+
+/* The unit's own moves are not queued back to it, so the snapshot's position
+ * follows the tick's end position here, and the stamp of a unit that stops
+ * this tick, here or in the command drain, follows it in settle_own_moves.
+ */
+static void entity_follow_own_move(uint32_t uid, struct movestate *ms)
+{
+    khiter_t k = kh_get(pos, s_move_work.gamestate.positions, uid);
+    if(k != kh_end(s_move_work.gamestate.positions))
+        kh_val(s_move_work.gamestate.positions, k) = ms->next_pos;
+    vec_entity_push(&s_own_moves, uid);
+}
+
+/* A unit that stopped mid-step is stamped where the step ends and keeps
+ * sliding the rest of the way there.
+ */
+static void settle_own_moves(void)
+{
+    for(int i = 0; i < vec_size(&s_own_moves); i++) {
+
+        uint32_t uid = vec_AT(&s_own_moves, i);
+        struct movestate *ms = movestate_get(uid);
+        if(!ms || !ms->blocking || !G_EntityExists(uid))
+            continue;
+        settle_own_move(uid, ms);
+    }
+    vec_entity_reset(&s_own_moves);
+}
+
+static void settle_own_move(uint32_t uid, struct movestate *ms)
+{
+    vec2_t end = (vec2_t){ms->next_pos.x, ms->next_pos.z};
+    if(end.x != ms->last_stop_pos.x || end.z != ms->last_stop_pos.z) {
+        struct block_ref ref = block_ref_take(uid, 0,
+            G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid),
+            G_FlagsGetFrom(s_move_work.gamestate.flags, uid));
+        M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, ref.faction_id, ref.flags, s_map);
+        M_NavBlockersIncref(end, ms->last_stop_radius, ref.faction_id, ref.flags, s_map);
+        block_ref_save(uid, 0, ref.faction_id, ref.flags);
+        ms->last_stop_pos = end;
+    }
+    ms->prev_pos = G_Pos_Get(uid);
 }
 
 struct near_ent_dist{
@@ -6435,7 +6486,7 @@ static void entity_interpolation_step(uint32_t uid, struct movestate *ms, int st
     assert(fraction >= 0.0f && fraction <= 1.0f);
 
     vec3_t new_pos = interpolate_positions(ms->prev_pos, ms->next_pos, fraction);
-    G_Pos_Set(uid, new_pos);
+    G_Pos_SetFromMovement(uid, new_pos);
 
     quat_t new_rot = interpolate_rotations(ms->prev_rot, ms->next_rot, fraction);
     Entity_SetRot(uid, new_rot);
@@ -7059,6 +7110,7 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
 
     phase_start = SDL_GetPerformanceCounter();
     move_process_cmds();
+    settle_own_moves();
     s_last_nav_tick_stats.cmds_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
 
@@ -7418,6 +7470,7 @@ bool G_Move_Init(const struct map *map)
     }
 
     vec_entity_init(&s_move_markers);
+    vec_entity_init(&s_own_moves);
     vec_flock_init(&s_flocks);
 
     N_FC_SetNavTaskTIDProvider(G_Move_GetNavTID);
@@ -7467,6 +7520,7 @@ void G_Move_Shutdown(void)
     move_destroy_gamestate();
     vec_flock_destroy(&s_flocks);
     vec_entity_destroy(&s_move_markers);
+    vec_entity_destroy(&s_own_moves);
     stalloc_destroy(&s_eventargs);
     queue_cmd_destroy(&s_move_commands);
     stalloc_destroy(&s_move_work.mem);

@@ -146,7 +146,7 @@ static int filter_garrisoned(khash_t(id) *flags, uint32_t *candidates, int count
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool G_Pos_Set(uint32_t uid, vec3_t pos)
+static bool pos_set(uint32_t uid, vec3_t pos, bool notify_move)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -199,13 +199,24 @@ bool G_Pos_Set(uint32_t uid, vec3_t pos)
             bg_ent_insert(grid, pos.x, pos.z, uid);
     }
 
-    G_Move_UpdatePos(uid, (vec2_t){pos.x, pos.z});
+    if(notify_move)
+        G_Move_UpdatePos(uid, (vec2_t){pos.x, pos.z});
     if(flags & ENTITY_FLAG_BUILDING)
         G_Building_UpdateBounds(uid);
     if(flags & ENTITY_FLAG_RESOURCE)
         G_Resource_UpdateBounds(uid);
 
     return true;
+}
+
+bool G_Pos_Set(uint32_t uid, vec3_t pos)
+{
+    return pos_set(uid, pos, true);
+}
+
+bool G_Pos_SetFromMovement(uint32_t uid, vec3_t pos)
+{
+    return pos_set(uid, pos, false);
 }
 
 vec3_t G_Pos_Get(uint32_t uid)

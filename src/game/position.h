@@ -53,6 +53,10 @@ void      G_Pos_Shutdown(void);
 void      G_Pos_Delete(uint32_t uid);
 size_t    G_Pos_UploadFrom(khash_t(pos) *table, khash_t(id) *ent_gpu_id_table,
                            const struct map *map);
+/* Sets a position the movement system computed itself. It keeps its own
+ * copies current, so, unlike G_Pos_Set, the change is not queued back to it.
+ */
+bool      G_Pos_SetFromMovement(uint32_t uid, vec3_t pos);
 /* Records how far from its position the entity's box can reach. */
 void      G_Pos_SetReach(uint32_t uid, float reach);
 
