@@ -1608,6 +1608,18 @@ static void g_create_settings(void)
     assert(status == SS_OKAY);
 
     status = Settings_Create((struct setting){
+        .name = "pf.debug.log_combat_diag",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
         .name = "pf.debug.log_cp_captures",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,

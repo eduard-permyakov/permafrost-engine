@@ -92,9 +92,9 @@
  */
 #define RETARGET_QUEUE_RANGE         (40.0f)
 #define RETARGET_EAGER_RANGE         (80.0f)
-/* Diagnostics behind pf.debug.log_perf_csv: an enemy drawing fire from this
- * many units is logged every period, with its hits and any hit that changed
- * nothing about it.
+/* Diagnostics behind pf.debug.log_combat_diag: an enemy drawing fire from
+ * this many units is logged every period, with its hits and any hit that
+ * changed nothing about it.
  */
 #define HOT_TARGET_MIN_ATTACKERS     (8)
 #define HOT_TARGET_PERIOD_TICKS      (20)
@@ -545,7 +545,7 @@ static float              s_dmg_mult[DAMAGE_TYPE_MAX][ARMOUR_TYPE_MAX];
 static vec_corpse_t       s_corpses;
 static khash_t(modlist)  *s_mods;
 static khash_t(hot)      *s_hot_targets;
-static bool               s_log_perf_csv;
+static bool               s_log_combat_diag;
 static uint32_t           s_combat_ticks;
 static vec_gbonus_t       s_gbonuses;
 
@@ -1131,7 +1131,7 @@ static void entity_die(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
 
     struct combatstate *cs = combatstate_get(uid);
-    if(s_log_perf_csv) {
+    if(s_log_combat_diag) {
         fprintf(stdout, "[cb-die] %lu,%u,%x,%d\n", g_frame_idx, uid, G_FlagsGet(uid),
             cs ? cs->stats.max_hp : -1);
     }
@@ -1251,7 +1251,7 @@ static void entity_ranged_attack(uint32_t uid, uint32_t target, vec3_t proj_pos)
         cs->fd.fire_mode, &vel);
 
     int flags = PROJ_ONLY_HIT_COMBATABLE | PROJ_ONLY_HIT_ENEMIES;
-    khiter_t h = s_log_perf_csv ? kh_get(hot, s_hot_targets, target) : kh_end(s_hot_targets);
+    khiter_t h = s_log_combat_diag ? kh_get(hot, s_hot_targets, target) : kh_end(s_hot_targets);
     if(h != kh_end(s_hot_targets)
     && kh_value(s_hot_targets, h).shots_logged < HOT_TARGET_SHOTS_LOGGED) {
         kh_value(s_hot_targets, h).shots_logged++;
@@ -1349,7 +1349,7 @@ static void on_death_anim_finish(void *user, void *event)
 
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, self, on_death_anim_finish);
     G_Zombiefy(self, true);
-    if(s_log_perf_csv) {
+    if(s_log_combat_diag) {
         fprintf(stdout, "[cb-zombie] %lu,%u\n", g_frame_idx, self);
     }
 
@@ -1418,7 +1418,7 @@ static void do_remove_entity(uint32_t uid)
 
 static void log_hit(uint32_t target, float dmg, const char *nodmg_why)
 {
-    if(!s_log_perf_csv)
+    if(!s_log_combat_diag)
         return;
     khiter_t k = kh_get(hot, s_hot_targets, target);
     if(k == kh_end(s_hot_targets))
@@ -3277,10 +3277,10 @@ static void combat_tick(void *user, void *event)
 
     combat_finish_work();
 
-    struct sval csv_setting;
-    s_log_perf_csv = (Settings_Get("pf.debug.log_perf_csv", &csv_setting) == SS_OKAY)
-                  && csv_setting.as_bool;
-    if(s_log_perf_csv && (++s_combat_ticks % HOT_TARGET_PERIOD_TICKS) == 0)
+    struct sval diag_setting;
+    s_log_combat_diag = (Settings_Get("pf.debug.log_combat_diag", &diag_setting) == SS_OKAY)
+                     && diag_setting.as_bool;
+    if(s_log_combat_diag && (++s_combat_ticks % HOT_TARGET_PERIOD_TICKS) == 0)
         log_hot_targets();
     combat_handle_hz_update(curr_event);
     combat_process_cmds();
