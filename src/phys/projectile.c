@@ -292,6 +292,13 @@ static bool phys_enemies(int faction_id, uint32_t ent)
 static void phys_sweep_test(int front_idx)
 {
     const struct projectile *proj = &vec_AT(&s_front, front_idx);
+
+    /* No physics tick since the last sweep: the projectile has not moved, and
+     * the next sweep's segment ends at this very point.
+     */
+    if(s_simticks == 0)
+        return;
+
     size_t nents = G_Pos_EntsInCircleVec((vec2_t){proj->pos.x, proj->pos.z}, NEAR_TOLERANCE,
         &s_sweep_cands);
 
