@@ -1556,6 +1556,21 @@ static void g_create_settings(void)
     });
     assert(status == SS_OKAY);
 
+    /* The shortest frame dumped by pf.debug.log_call_graphs; 0 samples one
+     * frame in every LOG_FREQUENCY regardless of its length.
+     */
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.call_graph_min_ms",
+        .val = (struct sval) {
+            .type = ST_TYPE_INT,
+            .as_int = 40
+        },
+        .prio = 0,
+        .validate = int_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
     status = Settings_Create((struct setting){
         .name = "pf.debug.move_parallel_executor",
         .val = (struct sval) {

@@ -847,7 +847,10 @@ void Perf_FinishTick(void)
          */
         static unsigned s_frames_since_dump = LOG_FREQUENCY;
         s_frames_since_dump++;
-        if(Perf_LastFrameMS() >= SLOW_FRAME_DUMP_MS
+        struct sval min_setting;
+        int min_ms = (Settings_Get("pf.debug.call_graph_min_ms", &min_setting) == SS_OKAY)
+                   ? min_setting.as_int : SLOW_FRAME_DUMP_MS;
+        if(Perf_LastFrameMS() >= min_ms
         && s_frames_since_dump >= LOG_FREQUENCY) {
             s_frames_since_dump = 0;
             struct perf_info *infos[32];
