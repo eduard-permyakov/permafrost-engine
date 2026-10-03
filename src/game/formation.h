@@ -102,6 +102,8 @@ struct formation_submit_state{
 };
 
 bool           G_Formation_SubmitState(uint32_t uid, struct formation_submit_state *out);
+bool           G_Formation_SubmitStateGather(uint32_t uid, struct formation_submit_state *out);
+void           G_Formation_SetGatherActive(bool active);
 
 bool           G_Formation_SaveState(struct SDL_RWops *stream);
 bool           G_Formation_LoadState(struct SDL_RWops *stream);

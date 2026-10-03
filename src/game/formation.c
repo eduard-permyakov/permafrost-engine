@@ -5039,14 +5039,30 @@ void G_Formation_Create(vec2_t target, vec2_t orientation,
     dispatch_cell_assignment_work(new);
 }
 
-formation_id_t G_Formation_GetForEnt(uint32_t uid)
-{
-    ASSERT_IN_MAIN_THREAD();
+/* The movement submit's parallel gather reads formation state from worker
+ * threads while the main thread is blocked in that parallel-for. */
+static bool s_gather_active;
 
+#define ASSERT_MAIN_OR_GATHER() \
+    assert(SDL_ThreadID() == g_main_thread_id || s_gather_active)
+
+void G_Formation_SetGatherActive(bool active)
+{
+    s_gather_active = active;
+}
+
+static formation_id_t formation_id_for_ent(uint32_t uid)
+{
     khiter_t k = kh_get(mapping, s_ent_formation_map, uid);
     if(k == kh_end(s_ent_formation_map))
         return NULL_FID;
     return kh_val(s_ent_formation_map, k);
+}
+
+formation_id_t G_Formation_GetForEnt(uint32_t uid)
+{
+    ASSERT_MAIN_OR_GATHER();
+    return formation_id_for_ent(uid);
 }
 
 void G_Formation_RemoveUnit(uint32_t uid)
@@ -5108,7 +5124,7 @@ void G_Formation_RemoveEntity(uint32_t uid)
 
 bool G_Formation_CanUseArrivalField(uint32_t uid)
 {
-    ASSERT_IN_MAIN_THREAD();
+    ASSERT_MAIN_OR_GATHER();
 
     const uint8_t *field = cell_get_field(uid);
     if(!field)
@@ -5211,7 +5227,7 @@ void G_Formation_ConcedeCell(uint32_t uid)
 
 bool G_Formation_ArrivedAtCell(uint32_t uid)
 {
-    ASSERT_IN_MAIN_THREAD();
+    ASSERT_MAIN_OR_GATHER();
 
     struct formation *formation = formation_for_ent(uid);
     assert(formation);
@@ -5303,7 +5319,7 @@ static bool assignment_ready(struct formation *formation, struct subformation *s
 
 bool G_Formation_AssignmentReady(uint32_t uid)
 {
-    ASSERT_IN_MAIN_THREAD();
+    ASSERT_MAIN_OR_GATHER();
 
     struct formation *formation = formation_for_ent(uid);
     assert(formation);
@@ -5312,7 +5328,7 @@ bool G_Formation_AssignmentReady(uint32_t uid)
 
 bool G_Formation_AssignedToCell(uint32_t uid)
 {
-    ASSERT_IN_MAIN_THREAD();
+    ASSERT_MAIN_OR_GATHER();
 
     struct formation *formation = formation_for_ent(uid);
     assert(formation);
@@ -5324,7 +5340,7 @@ bool G_Formation_AssignedToCell(uint32_t uid)
 
 vec2_t G_Formation_CellPosition(uint32_t uid)
 {
-    ASSERT_IN_MAIN_THREAD();
+    ASSERT_MAIN_OR_GATHER();
 
     struct formation *formation = formation_for_ent(uid);
     if(!formation)
@@ -5546,7 +5562,7 @@ static vec2_t alignment_force(uint32_t uid, struct subformation *sub, vec2_t ori
 
 vec2_t G_Formation_AlignmentForce(uint32_t uid)
 {
-    ASSERT_IN_MAIN_THREAD();
+    ASSERT_MAIN_OR_GATHER();
 
     struct formation *formation = formation_for_ent(uid);
     return alignment_force(uid, subformation_for_ent(formation, uid), formation->orientation);
@@ -5583,7 +5599,7 @@ static vec2_t cohesion_force(uint32_t uid, struct subformation *sub, vec2_t orie
 
 vec2_t G_Formation_CohesionForce(uint32_t uid)
 {
-    ASSERT_IN_MAIN_THREAD();
+    ASSERT_MAIN_OR_GATHER();
 
     struct formation *formation = formation_for_ent(uid);
     return cohesion_force(uid, subformation_for_ent(formation, uid), formation->orientation);
@@ -5641,17 +5657,15 @@ static vec2_t drag_force(uint32_t uid, struct subformation *sub, vec2_t orientat
 
 vec2_t G_Formation_DragForce(uint32_t uid)
 {
-    ASSERT_IN_MAIN_THREAD();
+    ASSERT_MAIN_OR_GATHER();
 
     struct formation *formation = formation_for_ent(uid);
     return drag_force(uid, subformation_for_ent(formation, uid), formation->orientation);
 }
 
-bool G_Formation_SubmitState(uint32_t uid, struct formation_submit_state *out)
+static bool submit_state(uint32_t uid, struct formation_submit_state *out)
 {
-    ASSERT_IN_MAIN_THREAD();
-
-    formation_id_t fid = G_Formation_GetForEnt(uid);
+    formation_id_t fid = formation_id_for_ent(uid);
     if(fid == NULL_FID) {
         out->fid = NULL_FID;
         return false;
@@ -5676,6 +5690,19 @@ bool G_Formation_SubmitState(uint32_t uid, struct formation_submit_state *out)
     out->target_orientation = quat_from_vec(formation->orientation);
     out->speed = formation->speed;
     return true;
+}
+
+bool G_Formation_SubmitState(uint32_t uid, struct formation_submit_state *out)
+{
+    ASSERT_IN_MAIN_THREAD();
+    return submit_state(uid, out);
+}
+
+/* The same reads from the movement submit's parallel gather: the main thread
+ * is blocked in that parallel-for, so nothing writes formation state meanwhile. */
+bool G_Formation_SubmitStateGather(uint32_t uid, struct formation_submit_state *out)
+{
+    return submit_state(uid, out);
 }
 
 void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t orientation)

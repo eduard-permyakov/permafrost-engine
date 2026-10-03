@@ -1009,6 +1009,7 @@ static bool                    s_submit_prepared = false;
 static uint64_t                s_prepare_copy_ticks;
 /* Smoothed cost of the two submit halves, for fitting them into the frame
  * that consumed the last tick. */
+static bool                    s_submit_gather_active;
 static double                  s_prepare_ema_us = 8000.0;
 static double                  s_submit_ema_us = 8000.0;
 static unsigned long           s_split_frame;
@@ -7441,6 +7442,44 @@ static void move_do_tick_prepare(void)
     PERF_POP();
 }
 
+/* The read side of the submit, one slot per unit in table order, gathered in
+ * parallel; the side effects follow in the same order on the main thread. */
+struct submit_gather{
+    uint32_t                      uid;
+    float                         radius;
+    uint32_t                      flags;
+    bool                          still;
+    bool                          in_formation;
+    int                           flock_idx;
+    vec2_t                        cell_pos;
+    vec2_t                        cell_arrival_vdes;
+    struct formation_submit_state fss;
+};
+
+static void submit_gather_range(int begin, int end, void *arg)
+{
+    struct submit_gather *gather = arg;
+    for(int i = begin; i <= end; i++) {
+
+        struct submit_gather *sg = &gather[i];
+        uint32_t curr = sg->uid;
+        sg->radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr);
+        sg->flags = G_FlagsGetFrom(s_move_work.gamestate.flags, curr);
+        sg->flock_idx = -1;
+        sg->in_formation = false;
+
+        const struct movestate *ms = movestate_get(curr);
+        sg->still = ent_still(ms);
+        if(sg->still)
+            continue;
+
+        khiter_t fit = kh_get(findex, s_flock_index, curr);
+        if(fit != kh_end(s_flock_index))
+            sg->flock_idx = kh_val(s_flock_index, fit);
+        sg->in_formation = G_Formation_SubmitStateGather(curr, &sg->fss);
+    }
+}
+
 static void move_do_tick_submit(enum movement_hz hz)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -7475,12 +7514,41 @@ static void move_do_tick_submit(enum movement_hz hz)
     s_last_nav_tick_stats.nstate_seek = 0;
     s_last_nav_tick_stats.nstate_waiting = 0;
     s_last_nav_tick_stats.nstate_turning = 0;
+    size_t nunits = 0;
+    struct submit_gather *gather = stalloc(&s_move_work.mem,
+        kh_size(s_entity_state_table) * sizeof(struct submit_gather));
     for(khiter_t it = kh_begin(s_entity_state_table); it != kh_end(s_entity_state_table); it++) {
-
         if(!kh_exist(s_entity_state_table, it))
             continue;
-        uint32_t curr = kh_key(s_entity_state_table, it);
-        struct movestate *ms = &kh_value(s_entity_state_table, it);
+        gather[nunits++] = (struct submit_gather){ .uid = kh_key(s_entity_state_table, it) };
+    }
+
+    /* Arrival fields are built on the main thread before the gather reads them. */
+    for(size_t i = 0; i < nunits; i++) {
+        struct submit_gather *sg = &gather[i];
+        const struct movestate *ms = movestate_get(sg->uid);
+        if(ms->state != STATE_ARRIVING_TO_CELL || ent_still(ms))
+            continue;
+        sg->cell_pos = G_Formation_CellPosition(sg->uid);
+        if(!G_Formation_CanUseArrivalField(sg->uid)) {
+            sg->cell_arrival_vdes = G_Formation_ApproximateDesiredArrivalVelocity(sg->uid);
+        }else{
+            G_Formation_UpdateFieldIfNeeded(sg->uid);
+            sg->cell_arrival_vdes = G_Formation_DesiredArrivalVelocity(sg->uid);
+        }
+    }
+
+    s_submit_gather_active = true;
+    G_Formation_SetGatherActive(true);
+    Sched_ParallelFor(submit_gather_range, gather, nunits, 128);
+    G_Formation_SetGatherActive(false);
+    s_submit_gather_active = false;
+
+    for(size_t i = 0; i < nunits; i++) {
+
+        const struct submit_gather *sg = &gather[i];
+        uint32_t curr = sg->uid;
+        struct movestate *ms = movestate_get(curr);
 
         switch(ms->state) {
         case STATE_ARRIVED:      s_last_nav_tick_stats.nstate_arrived++; break;
@@ -7492,8 +7560,8 @@ static void move_do_tick_submit(enum movement_hz hz)
 
         /* Classify every movable, still ones included: a still giant is a
          * static neighbour the crowd must still avoid. */
-        float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr);
-        uint32_t curr_flags = G_FlagsGetFrom(s_move_work.gamestate.flags, curr);
+        float radius = sg->radius;
+        uint32_t curr_flags = sg->flags;
         int curr_class = (curr_flags & ENTITY_FLAG_AIR) ? 1 : 0;
         if(radius > LARGE_MOVABLE_RADIUS && s_move_work.nlarge < MAX_LARGE_MOVABLES) {
             s_move_work.large_movables[s_move_work.nlarge++] = (struct large_movable){
@@ -7507,7 +7575,7 @@ static void move_do_tick_submit(enum movement_hz hz)
                 MAX(s_move_work.small_max_radius[curr_class], radius);
         }
 
-        if(ent_still(ms)) {
+        if(sg->still) {
             struct movestate_aux *saux = movestate_aux_get(curr);
             saux->parked = false;
             saux->phasing = false;
@@ -7516,11 +7584,9 @@ static void move_do_tick_submit(enum movement_hz hz)
 
         struct flock *flock = NULL;
         const struct flock_snap *fsnap = NULL;
-        khiter_t fit = kh_get(findex, s_flock_index, curr);
-        if(fit != kh_end(s_flock_index)) {
-            int fi = kh_val(s_flock_index, fit);
-            flock = &vec_AT(&s_flocks, fi);
-            fsnap = &s_move_work.flock_snaps[fi];
+        if(sg->flock_idx >= 0) {
+            flock = &vec_AT(&s_flocks, sg->flock_idx);
+            fsnap = &s_move_work.flock_snaps[sg->flock_idx];
         }
 
         vec2_t pos = (vec2_t){ms->prev_pos.x, ms->prev_pos.z};
@@ -7531,20 +7597,11 @@ static void move_do_tick_submit(enum movement_hz hz)
             .radius = radius
         };
 
-        vec2_t cell_pos = (vec2_t){0.0f, 0.0f};
-        vec2_t cell_arrival_vdes = {0};
-        if(ms->state == STATE_ARRIVING_TO_CELL) {
-            cell_pos = G_Formation_CellPosition(curr);
-            if(!G_Formation_CanUseArrivalField(curr)) {
-                cell_arrival_vdes = G_Formation_ApproximateDesiredArrivalVelocity(curr);
-            }else{
-                G_Formation_UpdateFieldIfNeeded(curr);
-                cell_arrival_vdes = G_Formation_DesiredArrivalVelocity(curr);
-            }
-        }
+        vec2_t cell_pos = sg->cell_pos;
+        vec2_t cell_arrival_vdes = sg->cell_arrival_vdes;
 
-        struct formation_submit_state fss = {0};
-        bool in_formation = G_Formation_SubmitState(curr, &fss);
+        const struct formation_submit_state fss = sg->fss;
+        bool in_formation = sg->in_formation;
 
         struct movestate_aux *caux = movestate_aux_get(curr);
         /* A unit whose cell assignment has not landed yet has no cell to have
@@ -7989,7 +8046,9 @@ bool G_Move_GetSurrounding(uint32_t uid, uint32_t *out_uid)
 
 bool G_Move_SeekingFiringPosition(uint32_t uid)
 {
-    ASSERT_IN_MAIN_THREAD();
+    /* Also read by the submit gather's workers while the main thread is
+     * blocked in that parallel-for. */
+    assert(SDL_ThreadID() == g_main_thread_id || s_submit_gather_active);
 
     const struct movestate *ms = movestate_get(uid);
     const struct movestate_aux *aux = movestate_aux_get(uid);
