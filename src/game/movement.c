@@ -947,6 +947,14 @@ static khash_t(findex)        *s_flock_index;
  */
 static khash_t(aabb)          *s_aabb_cache;
 static size_t                  s_fog_snap_ntiles;
+/* The previous tick's copies, kept whole while its carried field floods may
+ * still read them; each copy swaps them in and refills the older set. */
+static struct move_gamestate   s_gs_spare;
+static khash_t(aabb)          *s_aabb_cache_spare;
+static size_t                  s_fog_snap_ntiles_spare;
+static struct nav_unit_query_ctx s_unit_query_ctx_ring[2];
+static int                     s_gs_slot;
+static struct refcounted_map  *s_parked_snapshot;
 static khash_t(state)         *s_entity_state_table;
 static khash_t(auxstate)      *s_entity_aux_table;
 /* Keyed by (uid << 1) | soft-ness; holds the incref-time tuple. */
@@ -5748,9 +5756,37 @@ struct refcounted_map *G_Move_NavSnapshotAcquire(void)
     return s_nav_snapshot;
 }
 
+static void swap_in_spare_gamestate(void)
+{
+    struct move_gamestate gs = s_move_work.gamestate;
+    s_move_work.gamestate = s_gs_spare;
+    s_gs_spare = gs;
+
+    size_t ntiles = s_fog_snap_ntiles;
+    s_fog_snap_ntiles = s_fog_snap_ntiles_spare;
+    s_fog_snap_ntiles_spare = ntiles;
+
+    if(!s_aabb_cache_spare)
+        s_aabb_cache_spare = kh_init(aabb);
+    khash_t(aabb) *aabbs = s_aabb_cache;
+    s_aabb_cache = s_aabb_cache_spare;
+    s_aabb_cache_spare = aabbs;
+    s_gs_slot ^= 1;
+
+    if(s_move_work.gamestate.dying_set) {
+        kh_destroy(id, s_move_work.gamestate.dying_set);
+        s_move_work.gamestate.dying_set = NULL;
+    }
+    if(s_move_work.gamestate.diptable) {
+        PF_FREE(s_move_work.gamestate.diptable);
+        s_move_work.gamestate.diptable = NULL;
+    }
+}
+
 static void move_copy_gamestate(void)
 {
     PERF_ENTER();
+    swap_in_spare_gamestate();
     s_move_work.gamestate.flags = G_FlagsCopyTableInto(s_move_work.gamestate.flags);
     s_move_work.gamestate.positions = G_Pos_CopyTableInto(s_move_work.gamestate.positions);
     s_move_work.gamestate.postree = G_Pos_CopyBitmapGridInto(s_move_work.gamestate.postree);
@@ -5775,7 +5811,8 @@ static void move_copy_gamestate(void)
     s_move_work.gamestate.player_controllable = G_GetPlayerControlledFactions();
 
     move_init_nav_unit_query_ctx();
-    M_NavSetNavUnitQueryCtx(s_move_work.gamestate.map, &s_move_work.unit_query_ctx);
+    s_unit_query_ctx_ring[s_gs_slot] = s_move_work.unit_query_ctx;
+    M_NavSetNavUnitQueryCtx(s_move_work.gamestate.map, &s_unit_query_ctx_ring[s_gs_slot]);
 
     PERF_RETURN_VOID();
 }
@@ -5826,55 +5863,66 @@ static void snapshot_step_ends_grid(void)
         bg_ent_cleanup(s_move_work.gamestate.postree);
 }
 
+static void destroy_gamestate_tables(struct move_gamestate *gs)
+{
+    if(gs->flags) {
+        kh_destroy(id, gs->flags);
+        gs->flags = NULL;
+    }
+    if(gs->positions) {
+        kh_destroy(pos, gs->positions);
+        gs->positions = NULL;
+    }
+    if(gs->postree) {
+        G_Pos_DestroyBitmapGrid(gs->postree);
+        gs->postree = NULL;
+    }
+    if(gs->sel_radiuses) {
+        kh_destroy(range, gs->sel_radiuses);
+        gs->sel_radiuses = NULL;
+    }
+    if(gs->faction_ids) {
+        kh_destroy(id, gs->faction_ids);
+        gs->faction_ids = NULL;
+    }
+    gs->map = NULL;
+    if(gs->transforms) {
+        kh_destroy(trans, gs->transforms);
+        gs->transforms = NULL;
+    }
+    /* Aliases the persistent cache, which is destroyed separately */
+    gs->aabbs = NULL;
+    if(gs->fog_state) {
+        PF_FREE(gs->fog_state);
+        gs->fog_state = NULL;
+    }
+    if(gs->dying_set) {
+        kh_destroy(id, gs->dying_set);
+        gs->dying_set = NULL;
+    }
+    if(gs->diptable) {
+        PF_FREE(gs->diptable);
+        gs->diptable = NULL;
+    }
+}
+
 static void move_destroy_gamestate(void)
 {
     PERF_ENTER();
     N_JoinCarriedAsyncFields();
-    if(s_move_work.gamestate.flags) {
-        kh_destroy(id, s_move_work.gamestate.flags);
-        s_move_work.gamestate.flags = NULL;
-    }
-    if(s_move_work.gamestate.positions) {
-        kh_destroy(pos, s_move_work.gamestate.positions);
-        s_move_work.gamestate.positions = NULL;
-    }
-    if(s_move_work.gamestate.postree) {
-        G_Pos_DestroyBitmapGrid(s_move_work.gamestate.postree);
-        s_move_work.gamestate.postree = NULL;
-    }
-    if(s_move_work.gamestate.sel_radiuses) {
-        kh_destroy(range, s_move_work.gamestate.sel_radiuses);
-        s_move_work.gamestate.sel_radiuses = NULL;
-    }
-    if(s_move_work.gamestate.faction_ids) {
-        kh_destroy(id, s_move_work.gamestate.faction_ids);
-        s_move_work.gamestate.faction_ids = NULL;
-    }
-    s_move_work.gamestate.map = NULL;
+    destroy_gamestate_tables(&s_move_work.gamestate);
+    destroy_gamestate_tables(&s_gs_spare);
     /* Release before the next tick allocates so the freed block is recycled. */
     if(s_nav_snapshot) {
         sp_release(s_nav_snapshot);
         s_nav_snapshot = NULL;
     }
-    if(s_move_work.gamestate.transforms) {
-        kh_destroy(trans, s_move_work.gamestate.transforms);
-        s_move_work.gamestate.transforms = NULL;
-    }
-    /* Aliases the persistent cache, which is destroyed separately */
-    s_move_work.gamestate.aabbs = NULL;
-    if(s_move_work.gamestate.fog_state) {
-        PF_FREE(s_move_work.gamestate.fog_state);
-        s_move_work.gamestate.fog_state = NULL;
-    }
-    if(s_move_work.gamestate.dying_set) {
-        kh_destroy(id, s_move_work.gamestate.dying_set);
-        s_move_work.gamestate.dying_set = NULL;
-    }
-    if(s_move_work.gamestate.diptable) {
-        PF_FREE(s_move_work.gamestate.diptable);
-        s_move_work.gamestate.diptable = NULL;
+    if(s_parked_snapshot) {
+        sp_release(s_parked_snapshot);
+        s_parked_snapshot = NULL;
     }
     s_fog_snap_ntiles = 0;
+    s_fog_snap_ntiles_spare = 0;
     PERF_RETURN_VOID();
 }
 
@@ -5885,18 +5933,11 @@ static void move_release_gamestate(void)
 {
     PERF_ENTER();
     s_move_work.gamestate.map = NULL;
-    if(s_nav_snapshot) {
-        sp_release(s_nav_snapshot);
-        s_nav_snapshot = NULL;
+    if(s_parked_snapshot) {
+        sp_release(s_parked_snapshot);
     }
-    if(s_move_work.gamestate.dying_set) {
-        kh_destroy(id, s_move_work.gamestate.dying_set);
-        s_move_work.gamestate.dying_set = NULL;
-    }
-    if(s_move_work.gamestate.diptable) {
-        PF_FREE(s_move_work.gamestate.diptable);
-        s_move_work.gamestate.diptable = NULL;
-    }
+    s_parked_snapshot = s_nav_snapshot;
+    s_nav_snapshot = NULL;
     PERF_RETURN_VOID();
 }
 
@@ -7426,7 +7467,7 @@ static void move_do_tick_prepare(void)
     uint64_t tick_start = SDL_GetPerformanceCounter();
 
     uint64_t phase_start = SDL_GetPerformanceCounter();
-    N_JoinCarriedAsyncFields();
+    N_JoinStaleCarriedAsyncFields();
     s_last_nav_tick_stats.carry_join_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
 
@@ -7945,6 +7986,10 @@ void G_Move_Shutdown(void)
     queue_cmd_destroy(&s_move_commands);
     stalloc_destroy(&s_move_work.mem);
     kh_destroy(aabb, s_aabb_cache);
+    if(s_aabb_cache_spare) {
+        kh_destroy(aabb, s_aabb_cache_spare);
+        s_aabb_cache_spare = NULL;
+    }
     kh_destroy(findex, s_flock_index);
     kh_destroy(auxstate, s_entity_aux_table);
     kh_destroy(state, s_entity_state_table);

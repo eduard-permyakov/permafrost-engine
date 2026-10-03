@@ -830,6 +830,7 @@ void N_GetTickDiag(struct nav_tick_diag *out);
  * the carried ones are waited for before the tables they read are reused. */
 void N_SetAsyncFieldCarry(bool on);
 void N_JoinCarriedAsyncFields(void);
+void N_JoinStaleCarriedAsyncFields(void);
 
 /* ------------------------------------------------------------------------
  * Registers a callback returning the tid of the navigation tick task. The

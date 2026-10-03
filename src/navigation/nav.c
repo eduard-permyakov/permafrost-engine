@@ -4698,6 +4698,20 @@ void N_SetAsyncFieldCarry(bool on)
     s_field_carry = on;
 }
 
+/* Floods carried before the current tick: the movement gamestate ring
+ * refills their copies next. The tick's own join already waited for them,
+ * so this finds nothing in steady state. */
+void N_JoinStaleCarriedAsyncFields(void)
+{
+    for(size_t idx = 0; idx < s_field_work.high; idx++) {
+        if(!s_field_work.occupied[idx] || !s_field_work.carried[idx])
+            continue;
+        if(s_field_work.carried_tick[idx] == s_field_tick)
+            continue;
+        Sched_AwaitAll(&s_field_work.tids[idx], &s_field_work.futures[idx], 1);
+    }
+}
+
 /* Before the tables the carried floods read are reused: wait for them,
  * leaving their results in their slots for the next tick's join. */
 void N_JoinCarriedAsyncFields(void)
