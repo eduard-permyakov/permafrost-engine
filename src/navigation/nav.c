@@ -165,6 +165,10 @@ VEC_IMPL(static inline, inval, struct fc_inval_cmd)
 /* Field-cache invalidation commands accumulated by N_Update on the main thread
  * and drained by the navigation tick task via N_ApplyDeferredInvalidations. */
 static vec_inval_t s_pending_inval;
+/* Per-layer staging of the invalidations the parallel layer update raises;
+ * merged into s_pending_inval in layer order once every layer is done. */
+static vec_inval_t s_inval_stage[NAV_LAYER_MAX];
+static bool        s_full_layer[NAV_LAYER_MAX];
 
 VEC_TYPE(crange, struct cow_range)
 VEC_IMPL(static inline, crange, struct cow_range)
@@ -2785,6 +2789,8 @@ bool N_Init(void)
         goto fail_alloc;
 
     vec_inval_init(&s_pending_inval);
+    for(int i = 0; i < NAV_LAYER_MAX; i++)
+        vec_inval_init(&s_inval_stage[i]);
     vec_crange_init(&s_pub_ranges);
 
     if(!N_FC_InitSingleton())
@@ -2809,21 +2815,16 @@ static void nav_publish(struct nav_private *priv, const struct cow_range *ranges
         priv->chunks[i] = wbase + i * layer_chunks;
 }
 
-void N_Update(void *nav_private)
+static void n_update_layer_range(int begin, int end, void *arg)
 {
-    PERF_ENTER();
-
-    struct nav_private *priv = nav_private;
-    size_t layer_chunks = priv->width * priv->height;
-    bool full_layer[NAV_LAYER_MAX] = {0};
-
-    PERF_PUSH("recompute");
-    for(int layer = 0; layer < NAV_LAYER_MAX; layer++) {
+    struct nav_private *priv = arg;
+    for(int layer = begin; layer <= end; layer++) {
 
         n_update_dirty_local_islands(priv, layer);
 
         khash_t(coord) *set = priv->dirty_chunks[layer];
         bool components_dirty = false;
+        vec_inval_reset(&s_inval_stage[layer]);
 
         for(int i = kh_begin(set); i != kh_end(set); i++) {
 
@@ -2844,7 +2845,7 @@ void N_Update(void *nav_private)
             /* Defer field-cache invalidation to the navigation tick task, which
              * owns the cache (drained in N_ApplyDeferredInvalidations).
              */
-            vec_inval_push(&s_pending_inval, (struct fc_inval_cmd){
+            vec_inval_push(&s_inval_stage[layer], (struct fc_inval_cmd){
                 .chunk   = curr,
                 .layer   = layer,
                 .width   = priv->width,
@@ -2856,10 +2857,27 @@ void N_Update(void *nav_private)
 
         if(components_dirty) {
             n_update_components(priv, layer);
-            full_layer[layer] = true;
+            s_full_layer[layer] = true;
         }
         /* The per-dirty-chunk sweep above reconciled every flipped chunk. */
         priv->edge_chunks_dirty[layer] = false;
+    }
+}
+
+void N_Update(void *nav_private)
+{
+    PERF_ENTER();
+
+    struct nav_private *priv = nav_private;
+    size_t layer_chunks = priv->width * priv->height;
+    bool *full_layer = s_full_layer;
+    memset(s_full_layer, 0, sizeof(s_full_layer));
+
+    PERF_PUSH("recompute");
+    Sched_ParallelFor(n_update_layer_range, priv, NAV_LAYER_MAX, 1);
+    for(int layer = 0; layer < NAV_LAYER_MAX; layer++) {
+        for(int i = 0; i < vec_size(&s_inval_stage[layer]); i++)
+            vec_inval_push(&s_pending_inval, vec_AT(&s_inval_stage[layer], i));
     }
     PERF_POP();
 

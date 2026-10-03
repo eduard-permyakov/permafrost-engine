@@ -747,6 +747,7 @@ static void interp_drop_segment(uint32_t uid, struct movestate *ms);
 static void interp_finish_segment(uint32_t uid, struct movestate *ms);
 static void interp_reset(void);
 static void move_interpolate_frame(void);
+static void handle_split_submit(void);
 static void resume_waiting_units(void);
 static void move_tick(void *user, void *event);
 static struct result navigation_tick_task(void *arg);
@@ -1006,6 +1007,10 @@ static bool                    s_move_split_pending = false;
 /* The first part of a split submit ran and released the snapshot */
 static bool                    s_submit_prepared = false;
 static uint64_t                s_prepare_copy_ticks;
+/* Smoothed cost of the two submit halves, for fitting them into the frame
+ * that consumed the last tick. */
+static double                  s_prepare_ema_us = 8000.0;
+static double                  s_submit_ema_us = 8000.0;
 static unsigned long           s_split_frame;
 static enum movement_hz        s_split_hz;
 
@@ -7641,6 +7646,7 @@ static void move_tick(void *user, void *event)
 
     s_move_tick_queued = false;
     move_do_tick(curr_event, hz);
+    handle_split_submit();
 }
 
 static void handle_queued_tick(void)
@@ -7665,21 +7671,46 @@ static void handle_queued_tick(void)
  * snapshot with the submit on frames of their own, so no one frame carries
  * both.
  */
+#define SPLIT_FRAME_BUDGET_US   (0.85 * 1e6 / CONFIG_SCHED_TARGET_FPS)
+
+static bool frame_has_room_for(double cost_us)
+{
+    double elapsed_us = (SDL_GetPerformanceCounter() - Perf_FrameStartTicks())
+                      * 1e6 / SDL_GetPerformanceFrequency();
+    return elapsed_us + cost_us < SPLIT_FRAME_BUDGET_US;
+}
+
+static void ema_note(double *ema, uint64_t t0)
+{
+    double us = (SDL_GetPerformanceCounter() - t0) * 1e6 / SDL_GetPerformanceFrequency();
+    *ema = 0.8 * *ema + 0.2 * us;
+}
+
+/* Each submit half runs on the frame that consumed the tick when it fits
+ * the frame's budget, and on the next frame regardless. */
 static void handle_split_submit(void)
 {
     if(!s_move_split_pending)
         return;
-    if(g_frame_idx == s_split_frame)
-        return;
+    bool same_frame = (g_frame_idx == s_split_frame);
 
-    if(!s_submit_prepared && hz_count(s_split_hz) < 20) {
+    if(!s_submit_prepared) {
+        if(same_frame && !frame_has_room_for(s_prepare_ema_us))
+            return;
+        uint64_t t0 = SDL_GetPerformanceCounter();
         move_do_tick_prepare();
+        ema_note(&s_prepare_ema_us, t0);
         s_split_frame = g_frame_idx;
+        if(!frame_has_room_for(s_submit_ema_us))
+            return;
+    }else if(same_frame && !frame_has_room_for(s_submit_ema_us)) {
         return;
     }
 
     s_move_split_pending = false;
+    uint64_t t0 = SDL_GetPerformanceCounter();
     move_do_tick_submit(s_split_hz);
+    ema_note(&s_submit_ema_us, t0);
 }
 
 static void on_update(void *user, void *event)
