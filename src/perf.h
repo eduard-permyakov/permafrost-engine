@@ -278,6 +278,7 @@ void     Perf_GetMemoryAccounting(struct mem_accounting *out);
 void     Perf_GetGpuMemoryAccounting(struct gpu_mem_accounting *out);
 uint32_t Perf_LastFrameMS(void);
 uint32_t Perf_CurrFrameMS(void);
+uint64_t Perf_FrameStartTicks(void);
 uint64_t Perf_LastFrameAllocdBytes(void);
 
 /* Navigation-task wall-time history (one sample per completed nav tick), feeding

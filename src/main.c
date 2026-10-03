@@ -879,6 +879,7 @@ int main(int argc, char **argv)
 
             render_status = render_thread_wait_done();
             Uint64 ft6 = SDL_GetPerformanceCounter();
+            Sched_QuiesceWorkers();
             G_SwapBuffers();
             Uint64 ft7 = SDL_GetPerformanceCounter();
 
@@ -922,6 +923,7 @@ int main(int argc, char **argv)
             clear_sdl_events();
             Sched_Tick();
             render_status = render_thread_wait_done();
+            Sched_QuiesceWorkers();
             if(Sched_FutureIsReady(&s_request_done)) {
                 /* Kick off the rendering work */
                 G_SwapBuffers();
@@ -934,6 +936,7 @@ int main(int argc, char **argv)
             clear_sdl_events();
             Sched_Tick();
             render_status = render_thread_wait_done();
+            Sched_QuiesceWorkers();
             if(render_status == RSTAT_DONE) {
                 s_resume_tick = g_frame_idx;
                 s_state = ENGINE_STATE_RUNNING;

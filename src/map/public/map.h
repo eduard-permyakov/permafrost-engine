@@ -899,6 +899,7 @@ size_t M_AL_ShallowCopySize(size_t nrows, size_t ncols);
  * ------------------------------------------------------------------------
  */
 void   M_AL_ShallowCopy(struct map *dst, const struct map *src);
+void   M_AL_ShallowCopyDirty(struct map *dst, const struct map *src);
 
 /* ------------------------------------------------------------------------
  * Makes a copy of the map, also copying cost field, blocked fields and

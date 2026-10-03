@@ -186,6 +186,9 @@ __pragma(pack(pop));
 #define STACK_SZ                (16 * 1024)
 #define BIG_STACK_SZ            (8 * 1024 * 1024)
 #define SCHED_TICK_MS           (1.0f / CONFIG_SCHED_TARGET_FPS * 1000.0f)
+/* The least of the frame budget the task loop keeps when the frame's tail
+ * (quiesce, render wait, buffer swap) is long. */
+#define SCHED_MIN_LOOP_US       (10000.0)
 #define ALIGNED(val, align)     (((val) + ((align) - 1)) & ~((align) - 1))
 #define DELETED_MARKER          (((uint32_t)0x1) << 31)
 
@@ -271,6 +274,10 @@ static SDL_cond        *s_parallel_cond;
 static size_t           s_nworkers;
 static uint64_t         s_tick_task_ticks;
 static uint64_t         s_tick_quiesce_ticks;
+/* End of the last task loop, and the smoothed time from there to the next
+ * frame's worker start: the part of the frame the loop's deadline leaves for. */
+static uint64_t         s_loop_end_pc;
+static double           s_frame_tail_ema_us = 2000.0;
 static SDL_Thread      *s_worker_threads[MAX_WORKER_THREADS];
 static struct context   s_worker_contexts[MAX_WORKER_THREADS];
 
@@ -1577,6 +1584,12 @@ void Sched_StartBackgroundTasks(void)
 {
     ASSERT_IN_MAIN_THREAD();
 
+    if(s_loop_end_pc) {
+        double tail_us = (SDL_GetPerformanceCounter() - s_loop_end_pc)
+                       * 1e6 / SDL_GetPerformanceFrequency();
+        s_frame_tail_ema_us = 0.8 * s_frame_tail_ema_us + 0.2 * tail_us;
+    }
+
     SDL_LockMutex(s_ready_lock);
     s_idle_workers = 0;
     SDL_UnlockMutex(s_ready_lock);
@@ -1595,6 +1608,13 @@ void Sched_Tick(void)
     ASSERT_IN_MAIN_THREAD();
     PERF_ENTER();
 
+    const uint64_t freq = SDL_GetPerformanceFrequency();
+    const double budget_us = 1e6 / CONFIG_SCHED_TARGET_FPS;
+    double loop_us = budget_us - s_frame_tail_ema_us;
+    if(loop_us < SCHED_MIN_LOOP_US)
+        loop_us = SCHED_MIN_LOOP_US;
+    const uint64_t deadline = Perf_FrameStartTicks() + (uint64_t)(loop_us * freq / 1e6);
+
     /* Use a do-while to ensure we're always making at least _some_ forward progress */
     do{
         int nwaiters = 0;
@@ -1611,14 +1631,18 @@ void Sched_Tick(void)
            && ((idle = s_idle_workers) < s_nworkers)
            && !s_flushing) {
 
-            size_t left = (Perf_CurrFrameMS() < SCHED_TICK_MS)
-                        ? SCHED_TICK_MS - Perf_CurrFrameMS()
-                        : 0;
-
-            SDL_CondWaitTimeout(s_ready_cond, s_ready_lock, left);
-            if(left == 0) {
-                s_quiesce = true;
-                SDL_CondBroadcast(s_ready_cond);
+            uint64_t now = SDL_GetPerformanceCounter();
+            if(now >= deadline)
+                break;
+            uint64_t left_us = (deadline - now) * 1000000 / freq;
+            /* The cond-wait is millisecond-granular; the last stretch is
+             * spun so the frame lands on the budget, not a tick past it. */
+            if(left_us >= 2000) {
+                SDL_CondWaitTimeout(s_ready_cond, s_ready_lock, left_us / 1000 - 1);
+            }else{
+                SDL_UnlockMutex(s_ready_lock);
+                SDL_Delay(0);
+                SDL_LockMutex(s_ready_lock);
             }
         }
         SDL_UnlockMutex(s_ready_lock);
@@ -1639,12 +1663,18 @@ void Sched_Tick(void)
         sched_task_service_request(curr);
         s_tick_task_ticks += SDL_GetPerformanceCounter() - t0;
 
-    }while(Perf_CurrFrameMS() < SCHED_TICK_MS);
+    }while(SDL_GetPerformanceCounter() < deadline);
 
+    s_loop_end_pc = SDL_GetPerformanceCounter();
+    PERF_RETURN_VOID();
+}
+
+void Sched_QuiesceWorkers(void)
+{
+    ASSERT_IN_MAIN_THREAD();
     uint64_t q0 = SDL_GetPerformanceCounter();
     sched_quiesce_workers();
     s_tick_quiesce_ticks += SDL_GetPerformanceCounter() - q0;
-    PERF_RETURN_VOID();
 }
 
 void Sched_LastTickTimes(uint64_t *out_task_us, uint64_t *out_quiesce_us)

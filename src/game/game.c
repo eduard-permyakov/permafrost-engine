@@ -3760,7 +3760,7 @@ void G_SwapBuffers(void)
     int render_idx = (sim_idx + 1) % 2;
 
     if(s_gs.map) {
-        M_AL_ShallowCopy((struct map*)s_gs.prev_tick_map, s_gs.map);
+        M_AL_ShallowCopyDirty((struct map*)s_gs.prev_tick_map, s_gs.map);
     }
 
     g_remove_queued();

@@ -93,6 +93,7 @@ enum wang_tile_color{
 static const struct map *s_dirty_map     = NULL;
 static bool              *s_tile_dirty    = NULL;  /* one flag per map tile    */
 static bool              *s_chunk_dirty   = NULL;  /* one flag per map chunk   */
+static bool              *s_copy_dirty    = NULL;  /* changed since the last frame copy */
 static struct tile_desc  *s_flush_scratch = NULL;  /* holds one chunk of descs */
 static bool               s_dirty_pending = false;
 
@@ -493,6 +494,7 @@ static void al_mark_tile_dirty(struct map_resolution res, struct tile_desc td)
 
     s_tile_dirty[tile_idx]   = true;
     s_chunk_dirty[chunk_idx] = true;
+    s_copy_dirty[chunk_idx]  = true;
     s_dirty_pending          = true;
 }
 
@@ -784,6 +786,7 @@ bool M_AL_InitTileUpdateBuffer(const struct map *map)
 
     s_tile_dirty    = PF_CALLOC(ntiles, sizeof(bool));
     s_chunk_dirty   = PF_CALLOC(nchunks, sizeof(bool));
+    s_copy_dirty    = PF_CALLOC(nchunks, sizeof(bool));
     s_flush_scratch = PF_MALLOC(tiles_per_chunk * sizeof(struct tile_desc));
     if(!s_tile_dirty || !s_chunk_dirty || !s_flush_scratch)
         goto fail;
@@ -802,9 +805,11 @@ bool M_AL_InitTileUpdateBuffer(const struct map *map)
 fail:
     PF_FREE(s_tile_dirty);
     PF_FREE(s_chunk_dirty);
+    PF_FREE(s_copy_dirty);
     PF_FREE(s_flush_scratch);
     s_tile_dirty    = NULL;
     s_chunk_dirty   = NULL;
+    s_copy_dirty    = NULL;
     s_flush_scratch = NULL;
     return false;
 }
@@ -815,10 +820,12 @@ void M_AL_DestroyTileUpdateBuffer(void)
 
     PF_FREE(s_tile_dirty);
     PF_FREE(s_chunk_dirty);
+    PF_FREE(s_copy_dirty);
     PF_FREE(s_flush_scratch);
 
     s_tile_dirty    = NULL;
     s_chunk_dirty   = NULL;
+    s_copy_dirty    = NULL;
     s_flush_scratch = NULL;
     s_dirty_map     = NULL;
     s_dirty_pending = false;
@@ -843,6 +850,26 @@ void M_AL_ShallowCopy(struct map *dst, const struct map *src)
     memcpy(dst, src, M_AL_ShallowCopySize(src->width, src->height));
     /* Never alias the live buffer into a cross-thread copy. */
     memset(&dst->near_water, 0, sizeof(dst->near_water));
+}
+
+/* The header always; a chunk only when a tile of it was written since the
+ * last copy. 'dst' must already hold a full copy of 'src'. */
+void M_AL_ShallowCopyDirty(struct map *dst, const struct map *src)
+{
+    memcpy(dst, src, sizeof(struct map));
+    memset(&dst->near_water, 0, sizeof(dst->near_water));
+
+    size_t nchunks = (size_t)src->width * src->height;
+    if(!s_copy_dirty || s_dirty_map != src) {
+        memcpy(dst->chunks, src->chunks, nchunks * sizeof(struct pfchunk));
+        return;
+    }
+    for(size_t i = 0; i < nchunks; i++) {
+        if(!s_copy_dirty[i])
+            continue;
+        memcpy(&dst->chunks[i], &src->chunks[i], sizeof(struct pfchunk));
+        s_copy_dirty[i] = false;
+    }
 }
 
 struct map *M_AL_CopyWithFields(const struct map *src, const enum nav_layer *layers,

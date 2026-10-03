@@ -101,6 +101,9 @@ void     Sched_Shutdown(void);
 void     Sched_HandleEvent(int event, void *arg, int event_source, bool immediate);
 void     Sched_StartBackgroundTasks(void);
 void     Sched_Tick(void);
+/* Park the workers at their next yield point; the frame's buffers may be
+ * swapped once this returns. */
+void     Sched_QuiesceWorkers(void);
 /* Where the last Sched_Tick spent its time: running main-thread tasks, and
  * waiting for the workers to finish their slices at the end of the frame.
  */

@@ -169,6 +169,7 @@ static khash_t(pstate) *s_thread_state_table;
 
 static int                    s_last_idx = 0;
 static unsigned               s_last_frames_ms[NFRAMES_LOGGED];
+static uint64_t               s_frame_start_pc;
 static struct perf_mem_stats  s_last_frames_memstats[NFRAMES_LOGGED];
 static struct mem_accounting
                               s_last_frames_accounting[NFRAMES_LOGGED];
@@ -719,6 +720,7 @@ void Perf_BeginTick(void)
 {
     ASSERT_IN_MAIN_THREAD();
     s_last_frames_ms[s_last_idx] = SDL_GetTicks();
+    s_frame_start_pc = SDL_GetPerformanceCounter();
 
     R_PushCmd((struct rcmd){
         .func = R_GL_ReadVramStats,
@@ -1056,6 +1058,11 @@ uint32_t Perf_LastFrameMS(void)
 {
     int read_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
     return s_last_frames_ms[read_idx];
+}
+
+uint64_t Perf_FrameStartTicks(void)
+{
+    return s_frame_start_pc;
 }
 
 uint32_t Perf_CurrFrameMS(void)
