@@ -721,6 +721,22 @@ quat_t Entity_GetRot(uint32_t uid)
     return kh_value(s_ent_trans_map, k).rotation;
 }
 
+/* The per-frame interpolation's rotation write: the OBB cache is cleared
+ * before any reader runs and a mover has no building or resource bounds, so
+ * only the transform and the model matrix memo are touched. */
+void Entity_SetRotInterpolated(uint32_t uid, quat_t rot)
+{
+    khiter_t k = kh_get(trans, s_ent_trans_map, uid);
+    if(k == kh_end(s_ent_trans_map))
+        return;
+    kh_value(s_ent_trans_map, k).rotation = rot;
+
+    khiter_t m = kh_get(matrix, s_ent_matrix_cache, uid);
+    if(m != kh_end(s_ent_matrix_cache)) {
+        kh_del(matrix, s_ent_matrix_cache, m);
+    }
+}
+
 void Entity_SetRot(uint32_t uid, quat_t rot)
 {
     khiter_t k = kh_get(trans, s_ent_trans_map, uid);

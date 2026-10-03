@@ -172,6 +172,7 @@ int      Entity_NavLayerWithRadius(uint32_t flags, float radius);
 
 quat_t   Entity_GetRot(uint32_t uid);
 void     Entity_SetRot(uint32_t uid, quat_t rot);
+void     Entity_SetRotInterpolated(uint32_t uid, quat_t rot);
 vec3_t   Entity_GetScale(uint32_t uid);
 void     Entity_SetScale(uint32_t uid, vec3_t scale);
 void     Entity_Remove(uint32_t uid);

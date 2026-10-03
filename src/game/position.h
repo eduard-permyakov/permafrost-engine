@@ -55,6 +55,12 @@ void      G_Pos_Delete(uint32_t uid);
  * copies current, so, unlike G_Pos_Set, the change is not queued back to it.
  */
 bool      G_Pos_SetFromMovement(uint32_t uid, vec3_t pos);
+/* The per-frame interpolation write: position, grid and rotation only; the
+ * position-dependent refs follow on G_Pos_SyncRefs. */
+bool      G_Pos_SetInterpolated(uint32_t uid, vec3_t pos, quat_t rot, bool drawn);
+void      G_Pos_SyncRefs(uint32_t uid);
+void      G_Pos_SetInterpCandidates(const uint32_t *uids, size_t n, uint32_t frame);
+bool      G_Pos_IsInterpCandidate(uint32_t uid);
 /* Records how far from its position the entity's box can reach. */
 void      G_Pos_SetReach(uint32_t uid, float reach);
 

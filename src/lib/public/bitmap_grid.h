@@ -1243,6 +1243,8 @@ static inline uint64_t bg_keep_bits_below(uint64_t w, int bit_hi)
     /* Move: a same-cell move rewrites the stored coordinates in place, skipping           */  \
     /* the delete/insert slot and bitmap churn.                                            */  \
                                                                                                \
+    /* A record moving within its cell keeps [0, nrecs) exact, so the tree stays  */           \
+    /* clean: only a cell change deletes and re-inserts.                          */           \
     scope bool bg_##name##_update(bg(name) *bg, float x, float y,                              \
                                   float nx, float ny, type record)                             \
     {                                                                                          \
@@ -1270,7 +1272,6 @@ static inline uint64_t bg_keep_bits_below(uint64_t w, int bit_hi)
             && bg->comparator(&record, &bg->records[idx])) {                                   \
                 bg->xs[idx] = inx;                                                             \
                 bg->ys[idx] = iny;                                                             \
-                bg->dirty = true;                                                              \
                 return true;                                                                   \
             }                                                                                  \
         }                                                                                      \
@@ -1279,7 +1280,6 @@ static inline uint64_t bg_keep_bits_below(uint64_t w, int bit_hi)
             && bg->comparator(&record, &bg->records[curr])) {                                  \
                 bg->xs[curr] = inx;                                                            \
                 bg->ys[curr] = iny;                                                            \
-                bg->dirty = true;                                                              \
                 return true;                                                                   \
             }                                                                                  \
         }                                                                                      \

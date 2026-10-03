@@ -125,6 +125,7 @@ __KHASH_IMPL(range,   extern, khint32_t, float,    1, kh_int_hash_func, kh_int_h
 
 static struct gamestate s_gs;
 static int              s_last_ncands;
+static int              s_last_ndraw;
 /* Per-frame stage times (us): fog, anim, cull, drawlist, map+ents, healthbars, minimap */
 static uint32_t         s_stage_us[7];
 
@@ -2664,6 +2665,13 @@ void G_Update(void)
     }
     PERF_POP();
 
+    vec_entity_resize(&s_gs.cull_cands, vec_size(&s_gs.draw_cands));
+    for(int i = 0; i < vec_size(&s_gs.draw_cands); i++)
+        s_gs.cull_cands.array[i] = vec_AT(&s_gs.draw_cands, i).uid;
+    G_Pos_SetInterpCandidates(s_gs.cull_cands.array, vec_size(&s_gs.draw_cands), g_frame_idx + 1);
+    s_last_ndraw = vec_size(&s_gs.draw_cands);
+    s_stage_us[2] = stage_us(st0);
+
     if(s_gs.map) {
         G_Region_Update();
     }
@@ -2687,7 +2695,7 @@ void G_StageTimes(uint32_t out[7])
 
 void G_CullStats(int *out_ncands, int *out_nvis)
 {
-    *out_ncands = s_last_ncands;
+    *out_ncands = s_last_ndraw;
     *out_nvis = vec_size(&s_gs.visible);
 }
 
@@ -3024,6 +3032,7 @@ bool G_RemoveEntity(uint32_t uid)
     G_Population_RemoveLimitContributor(uid);
     G_Automation_RemoveEntity(uid);
     G_Group_RemoveEntity(uid);
+    G_Pos_SyncRefs(uid);
     G_Region_RemoveEnt(uid);
     G_Pos_Delete(uid);
     Entity_Remove(uid);
@@ -3269,6 +3278,7 @@ void G_SetFactionID(uint32_t uid, int faction_id)
     assert(k != kh_end(s_gs.ent_faction_map));
     kh_value(s_gs.ent_faction_map, k) = faction_id;
 
+    G_Pos_SyncRefs(uid);
     vec2_t xz_pos = G_Pos_GetXZ(uid);
     float vrange = G_GetVisionRange(uid);
 
@@ -3325,6 +3335,7 @@ void G_SetVisionRange(uint32_t uid, float range)
     assert(k != kh_end(s_gs.ent_visrange_map));
 
     float oldrange = kh_value(s_gs.ent_visrange_map, k);
+    G_Pos_SyncRefs(uid);
     vec2_t xz_pos = G_Pos_GetXZ(uid);
 
     G_Fog_UpdateVisionRange(xz_pos, G_GetFactionID(uid), oldrange, range);
@@ -3690,6 +3701,7 @@ void G_Zombiefy(uint32_t uid, bool invis)
     G_Automation_RemoveEntity(uid);
     G_Group_RemoveEntity(uid);
 
+    G_Pos_SyncRefs(uid);
     G_SetVisionRange(uid, 0.0f);
     G_Region_RemoveEnt(uid);
     Entity_ClearTags(uid);

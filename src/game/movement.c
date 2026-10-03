@@ -174,6 +174,7 @@ struct movestate{
     float              step;        /* The fraction of the distance covered in a single step 
                                      * (nsteps = 1.0/step) */
     int                left;        /* The number of interpolation steps left (0 means the entity is at next_pos) */
+    int                interp_idx;  /* The unit's pending display segment, -1 for none */
     /* Flag to track whether the entiy is currently acting as a 
      * navigation blocker, and the last position where it became a blocker. 
      */
@@ -705,6 +706,21 @@ QUEUE_IMPL(static, cmd, struct move_cmd)
 VEC_TYPE(flock, struct flock)
 VEC_IMPL(static inline, flock, struct flock)
 
+/* A display segment: the unit is drawn sliding from where it stood at the
+ * last consume to the step the tick computed, over the measured tick period.
+ */
+struct interp_seg{
+    uint32_t uid;
+    bool     done;
+    vec3_t   from_pos;
+    vec3_t   to_pos;
+    quat_t   from_rot;
+    quat_t   to_rot;
+};
+
+VEC_TYPE(seg, struct interp_seg)
+VEC_IMPL(static inline, seg, struct interp_seg)
+
 SHARED_PTR_ASSERT_LAYOUT(struct refcounted_map, sp);
 
 static void move_push_cmd(struct move_cmd cmd);
@@ -724,6 +740,13 @@ static void settle_own_moves(void);
 static void settle_own_move(uint32_t uid, struct movestate *ms);
 static void snapshot_step_ends(void);
 static void snapshot_step_ends_grid(void);
+static void interp_begin_segment(uint32_t uid, struct movestate *ms,
+                                 const vec3_t *to_pos, const quat_t *to_rot);
+static void interp_consume_end(void);
+static void interp_drop_segment(uint32_t uid, struct movestate *ms);
+static void interp_finish_segment(uint32_t uid, struct movestate *ms);
+static void interp_reset(void);
+static void move_interpolate_frame(void);
 static void resume_waiting_units(void);
 static void move_tick(void *user, void *event);
 static struct result navigation_tick_task(void *arg);
@@ -954,7 +977,6 @@ static int                     s_soft_block_budget;
 static float                   s_max_sel_radius;
 
 static unsigned long           s_last_tick = 0;
-static unsigned long           s_last_interpolate_tick = 0;
 
 static enum movement_hz        s_move_hz = MOVE_HZ_20;
 static struct refcounted_map  *s_nav_snapshot;
@@ -1012,6 +1034,12 @@ static uint64_t                s_submit_pc;
 static unsigned long           s_submit_frame;
 static uint32_t                s_interp_nunits;
 static uint32_t                s_interp_us;
+static vec_seg_t               s_interp;
+static vec_seg_t               s_interp_next;
+static uint64_t                s_interp_t0;
+static double                  s_interp_period_us = 50000.0;
+static float                   s_interp_alpha;
+static uint64_t                s_last_consume_pc;
 
 static const char *s_state_str[] = {
     [STATE_MOVING]              = STR(STATE_MOVING),
@@ -3714,14 +3742,6 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
     out->flags = in->seek_pinned ? UPDATE_SEEK_PINNED : 0;
     out->flags |= in->field_void ? UPDATE_FIELD_VOID : 0;
 
-    /* Flush the interpolation if was not completed */
-    if(ms->left > 0) {
-        out->flags |= UPDATE_SET_POSITION | UPDATE_SET_ROTATION | UPDATE_SET_LEFT;
-        out->next_pos = ms->next_pos;
-        out->next_rot = ms->next_rot;
-        out->next_left = 0;
-    }
-
     assert(hz_count(hz) <= 20);
     assert(20 % hz_count(hz) == 0);
 
@@ -3770,21 +3790,9 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
 
         vec3_t new_pos = (vec3_t){new_pos_xz.x, unit_height(uid, new_pos_xz), new_pos_xz.z};
 
-        out->flags |= UPDATE_SET_PREV_POS | UPDATE_SET_NEXT_POS | UPDATE_SET_STEP | UPDATE_SET_LEFT;
+        out->flags |= UPDATE_SET_PREV_POS | UPDATE_SET_NEXT_POS;
         out->next_ppos = ms->next_pos;
         out->next_npos = new_pos;
-        out->next_step = 1.0f / (20 / hz_count(hz));
-        out->next_left = (20 / hz_count(hz)) - 1;
-
-        if(out->next_left == 0) {
-            out->flags |= UPDATE_SET_POSITION;
-            out->next_pos = new_pos;
-        }else{
-            vec3_t intermediate = interpolate_positions(out->next_ppos, out->next_npos, ms->step);
-            new_pos_xz = (vec2_t){intermediate.x, intermediate.z};
-            out->flags |= UPDATE_SET_POSITION;
-            out->next_pos = intermediate;
-        }
 
         out->flags |= UPDATE_SET_VELOCITY;
         out->next_velocity = new_vel;
@@ -3803,8 +3811,6 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
             ? turn_toward(ms->next_rot, in->fstate.target_orientation, SCALED_MAX_TURN_RATE)
             : orient_to_velocity_history(ms, aux, vdes, in->speed / hz_count(hz), &follows);
         out->flags |= follows ? UPDATE_FACING_FOLLOWS : 0;
-        out->flags |= UPDATE_SET_ROTATION;
-        out->next_rot = (out->next_left == 0) ? out->next_nrot : ms->next_rot;
 
     }else{
         out->flags |= UPDATE_SET_VELOCITY;
@@ -3821,17 +3827,15 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         bool held = G_FlagsGetFrom(s_move_work.gamestate.flags, uid) & ENTITY_FLAG_COMBAT_HELD;
         if(held || aux->parked) {
             quat_t facing = held ? aux->combat_facing : in->fstate.target_orientation;
-            out->flags |= UPDATE_SET_PREV_ROT | UPDATE_SET_NEXT_ROT | UPDATE_SET_ROTATION;
+            out->flags |= UPDATE_SET_PREV_ROT | UPDATE_SET_NEXT_ROT;
             out->flags |= UPDATE_TURNING_IN_PLACE;
             out->next_prot = ms->next_rot;
             out->next_nrot = turn_toward(ms->next_rot, facing, SCALED_MAX_TURN_RATE);
-            out->next_rot = ms->next_rot;
         }else if(turn_to_move) {
-            out->flags |= UPDATE_SET_PREV_ROT | UPDATE_SET_NEXT_ROT | UPDATE_SET_ROTATION;
+            out->flags |= UPDATE_SET_PREV_ROT | UPDATE_SET_NEXT_ROT;
             out->flags |= UPDATE_TURNING_IN_PLACE;
             out->next_prot = ms->next_rot;
             out->next_nrot = turn_toward(ms->next_rot, travel_dir, SCALED_MAX_TURN_RATE);
-            out->next_rot = ms->next_rot;
         }
     }
 
@@ -4053,8 +4057,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         /* If not, turn towards the target by at most the turn rate */
         quat_t final = turn_toward(ms->next_rot, aux->target_dir, SCALED_MAX_TURN_RATE);
 
-        out->flags |= UPDATE_SET_ROTATION | UPDATE_SET_PREV_ROT | UPDATE_SET_NEXT_ROT;
-        out->next_rot = final;
+        out->flags |= UPDATE_SET_PREV_ROT | UPDATE_SET_NEXT_ROT;
         out->next_prot = final;
         out->next_nrot = final;
 
@@ -4193,6 +4196,12 @@ static void entity_apply_update(uint32_t uid, struct movestate *ms,
     if(patch->flags & UPDATE_SET_ROTATION)
         Entity_SetRot(uid, patch->next_rot);
 
+    if(patch->flags & (UPDATE_SET_NEXT_POS | UPDATE_SET_NEXT_ROT)) {
+        interp_begin_segment(uid, ms,
+            (patch->flags & UPDATE_SET_NEXT_POS) ? &patch->next_npos : NULL,
+            (patch->flags & UPDATE_SET_NEXT_ROT) ? &patch->next_nrot : NULL);
+    }
+
     if(patch->flags & UPDATE_SET_PREV_POS)
         ms->prev_pos = patch->next_ppos;
 
@@ -4324,7 +4333,7 @@ static void settle_own_move(uint32_t uid, struct movestate *ms)
         block_ref_save(uid, 0, ref.faction_id, ref.flags);
         ms->last_stop_pos = end;
     }
-    ms->prev_pos = G_Pos_Get(uid);
+    ms->prev_pos = ms->next_pos;
 }
 
 struct near_ent_dist{
@@ -4548,6 +4557,7 @@ static void do_add_entity(uint32_t uid, vec3_t pos, float selection_radius, int 
     };
     memset(new_aux.vel_hist, 0, sizeof(new_aux.vel_hist));
 
+    new_ms.interp_idx = -1;
     k = kh_put(state, s_entity_state_table, uid, &ret);
     assert(ret != -1 && ret != 0);
     kh_value(s_entity_state_table, k) = new_ms;
@@ -4967,6 +4977,7 @@ static void do_update_pos(uint32_t uid, vec2_t pos)
     ms->last_stop_pos = pos;
     ms->prev_pos = newpos;
     ms->next_pos = newpos;
+    interp_drop_segment(uid, ms);
 }
 
 static void do_update_faction_id(uint32_t uid, int oldfac, int newfac)
@@ -5979,6 +5990,7 @@ static void move_consume_work_results(void)
     PERF_PUSH("apply movement updates");
 
     s_soft_block_budget = SEEK_BLOCK_BUDGET_PER_TICK;
+    vec_seg_reset(&s_interp_next);
     for(int i = 0; i < s_move_work.nwork; i++) {
         struct move_work_out *out = &s_move_work.out[i];
         struct movestate *ms = movestate_get(out->ent_uid);
@@ -5989,6 +6001,8 @@ static void move_consume_work_results(void)
         entity_apply_update(out->ent_uid, ms, aux, &out->patch);
         entity_apply_cp_side(aux, out->cp_side);
     }
+
+    interp_consume_end();
 
     /* All this tick's position changes are enqueued; apply the batched fog
      * vision updates in one pipelined pass before any reader runs. */
@@ -6382,80 +6396,176 @@ static void move_handle_hz_update(enum eventtype curr)
 
     unregister_callback_for_hz(curr_hz);
     register_callback_for_hz(next_hz);
+    s_interp_period_us = 1e6 / hz_count(next_hz);
+    s_last_consume_pc = 0;
 }
 
-static void entity_interpolation_step(uint32_t uid, struct movestate *ms, int steps)
+static void interp_begin_segment(uint32_t uid, struct movestate *ms,
+                                 const vec3_t *to_pos, const quat_t *to_rot)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    /* Settled units reject on the already-fetched movestate alone */
-    if(ms->left == 0)
-        return;
+    /* The refs catch up to where the unit is drawn once per tick. */
+    G_Pos_SyncRefs(uid);
 
-    /* The movestate can outlive the entity by a tick */
-    if(!G_EntityExists(uid))
-        return;
-
-    /* Garrisoned entities are off the map with their faction ref removed; a
-     * G_Pos_Set here would double-remove it (see entity_apply_update). */
-    if(G_EntityIsGarrisoned(uid))
-        return;
-
-    steps = MIN(steps, ms->left);
-    ms->left -= steps;
-    float fraction = 1.0 - (ms->step * ms->left);
-    assert(fraction >= 0.0f && fraction <= 1.0f);
-
-    vec3_t new_pos = interpolate_positions(ms->prev_pos, ms->next_pos, fraction);
-    G_Pos_SetFromMovement(uid, new_pos);
-
-    quat_t new_rot = interpolate_rotations(ms->prev_rot, ms->next_rot, fraction);
-    Entity_SetRot(uid, new_rot);
-}
-
-static void interpolate_tick(void *user, void *event)
-{
-    ASSERT_IN_MAIN_THREAD();
-
-    /* Do not run the interpolation in the same tick as the move tick */
-    if(g_frame_idx == s_last_tick)
-        return;
-
-    if(s_move_tick_queued)
-        return;
-
-    if(s_move_split_pending)
-        return;
-
-    /* Perform a maximum of one interpolation per frame. */
-    if(g_frame_idx == s_last_interpolate_tick)
-        return;
-
-    /* No need to perform the interpolation if we've got the next movement
-     * tick coming right up.
-     */
-    enum eventtype type = event_for_hz(s_move_hz);
-    if(E_QueuedThisFrame(type)) {
-        s_last_interpolate_tick = g_frame_idx;
-        return;
+    bool pending = false;
+    vec3_t old_to = {0};
+    if(ms->interp_idx >= 0 && ms->interp_idx < vec_size(&s_interp)) {
+        struct interp_seg *old = &vec_AT(&s_interp, ms->interp_idx);
+        if(old->uid == uid) {
+            pending = !old->done;
+            old_to = old->to_pos;
+            old->done = true;
+        }
     }
 
-    PERF_ENTER();
-    bool coalese = E_QueuedThisFrame(EVENT_20HZ_TICK);
+    vec3_t pos = G_Pos_Get(uid);
+    quat_t rot = Entity_GetRot(uid);
+    struct interp_seg seg = (struct interp_seg){
+        .uid = uid,
+        .done = false,
+        .from_pos = pos,
+        .to_pos = to_pos ? *to_pos : (pending ? old_to : pos),
+        .from_rot = rot,
+        .to_rot = to_rot ? *to_rot : rot,
+    };
+    ms->interp_idx = vec_size(&s_interp_next);
+    ms->left = (to_pos || pending) ? 1 : 0;
+    vec_seg_push(&s_interp_next, seg);
+}
 
-    /* Coalese together queued updates when possible */
-    int steps = coalese ? 2 : 1;
+/* Segments the tick did not replace keep sliding from where they are drawn;
+ * then the new set becomes current and the clock restarts. */
+static void interp_consume_end(void)
+{
+    ASSERT_IN_MAIN_THREAD();
 
-    /* Iterate over all the entities and advance the position forward
-     * by one interpolated step */
+    for(int i = 0; i < vec_size(&s_interp); i++) {
+        struct interp_seg *seg = &vec_AT(&s_interp, i);
+        if(seg->done)
+            continue;
+        struct movestate *ms = movestate_get(seg->uid);
+        if(!ms || ms->interp_idx != i)
+            continue;
+        if(!G_EntityExists(seg->uid)) {
+            ms->interp_idx = -1;
+            ms->left = 0;
+            continue;
+        }
+        seg->from_pos = G_Pos_Get(seg->uid);
+        seg->from_rot = Entity_GetRot(seg->uid);
+        ms->interp_idx = vec_size(&s_interp_next);
+        vec_seg_push(&s_interp_next, *seg);
+    }
+    vec_seg_t tmp = s_interp;
+    s_interp = s_interp_next;
+    s_interp_next = tmp;
+
+    uint64_t now = SDL_GetPerformanceCounter();
+    double nominal = 1e6 / hz_count(s_move_work.hz);
+    if(s_last_consume_pc) {
+        double interval = (now - s_last_consume_pc) * 1e6 / SDL_GetPerformanceFrequency();
+        interval = MIN(MAX(interval, nominal), 3.0 * nominal);
+        s_interp_period_us = 0.75 * s_interp_period_us + 0.25 * interval;
+    }else{
+        s_interp_period_us = nominal;
+    }
+    s_last_consume_pc = now;
+    s_interp_t0 = now;
+    s_interp_alpha = 0.0f;
+}
+
+static void interp_drop_segment(uint32_t uid, struct movestate *ms)
+{
+    if(ms->interp_idx >= 0 && ms->interp_idx < vec_size(&s_interp)) {
+        struct interp_seg *seg = &vec_AT(&s_interp, ms->interp_idx);
+        if(seg->uid == uid)
+            seg->done = true;
+    }
+    ms->interp_idx = -1;
+    ms->left = 0;
+}
+
+static void interp_finish_segment(uint32_t uid, struct movestate *ms)
+{
+    if(ms->interp_idx < 0 || ms->interp_idx >= vec_size(&s_interp))
+        return;
+    struct interp_seg *seg = &vec_AT(&s_interp, ms->interp_idx);
+    if(!seg->done && seg->uid == uid && G_Pos_SetInterpolated(uid, seg->to_pos, seg->to_rot, false))
+        G_Pos_SyncRefs(uid);
+    interp_drop_segment(uid, ms);
+}
+
+static void interp_reset(void)
+{
+    vec_seg_reset(&s_interp);
+    vec_seg_reset(&s_interp_next);
+    s_last_consume_pc = 0;
+    s_interp_alpha = 1.0f;
+
     for(khiter_t k = kh_begin(s_entity_state_table); k != kh_end(s_entity_state_table); k++) {
         if(!kh_exist(s_entity_state_table, k))
             continue;
-        entity_interpolation_step(kh_key(s_entity_state_table, k),
-            &kh_value(s_entity_state_table, k), steps);
+        struct movestate *ms = &kh_value(s_entity_state_table, k);
+        ms->interp_idx = -1;
+        ms->left = 0;
     }
+}
 
-    s_last_interpolate_tick = g_frame_idx;
+static void move_interpolate_frame(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    size_t nsegs = vec_size(&s_interp);
+    if(nsegs == 0 || s_interp_alpha >= 1.0f)
+        return;
+
+    uint64_t t0 = SDL_GetPerformanceCounter();
+    double elapsed_us = (t0 - s_interp_t0) * 1e6 / SDL_GetPerformanceFrequency();
+    float alpha = MIN(1.0f, (float)(elapsed_us / s_interp_period_us));
+    if(alpha <= s_interp_alpha)
+        return;
+    bool final = (alpha >= 1.0f);
+    /* Units not drawn lately take their step in one write; those writes are
+     * spread over the period in segment order so no frame carries them all. */
+    size_t snap_upto = final ? nsegs : (size_t)(nsegs * alpha);
+
+    PERF_ENTER();
+    uint32_t nwritten = 0;
+    for(size_t i = 0; i < nsegs; i++) {
+
+        struct interp_seg *seg = &vec_AT(&s_interp, i);
+        if(seg->done)
+            continue;
+        bool drawn = G_Pos_IsInterpCandidate(seg->uid);
+        bool snap = !drawn && (i < snap_upto);
+        if(!final && !drawn && !snap)
+            continue;
+
+        bool at_end = final || snap;
+        vec3_t pos = at_end ? seg->to_pos
+                            : interpolate_positions(seg->from_pos, seg->to_pos, alpha);
+        quat_t rot = at_end ? seg->to_rot
+                            : interpolate_rotations(seg->from_rot, seg->to_rot, alpha);
+        if(!G_Pos_SetInterpolated(seg->uid, pos, rot, drawn)) {
+            seg->done = true;
+            continue;
+        }
+        nwritten++;
+
+        if(at_end) {
+            G_Pos_SyncRefs(seg->uid);
+            seg->done = true;
+            struct movestate *ms = movestate_get(seg->uid);
+            if(ms) {
+                ms->left = 0;
+                ms->interp_idx = -1;
+            }
+        }
+    }
+    s_interp_alpha = alpha;
+    s_interp_nunits += nwritten;
+    s_interp_us += (SDL_GetPerformanceCounter() - t0) * 1000000 / SDL_GetPerformanceFrequency();
     PERF_RETURN_VOID();
 }
 
@@ -7227,6 +7337,7 @@ static void pivot_held_still_units(void)
         if(!G_EntityExists(uid))
             continue;
 
+        interp_finish_segment(uid, ms);
         quat_t next = turn_toward(Entity_GetRot(uid), movestate_aux_get(uid)->combat_facing,
             SCALED_MAX_TURN_RATE);
         Entity_SetRot(uid, next);
@@ -7507,7 +7618,6 @@ static void move_do_tick_submit(enum movement_hz hz)
 
     s_last_nav_tick_stats.main_us +=
         perf_ticks_to_us(SDL_GetPerformanceCounter() - tick_start);
-    s_last_interpolate_tick = g_frame_idx;
     PERF_POP();
 }
 
@@ -7575,6 +7685,7 @@ static void handle_split_submit(void)
 static void on_update(void *user, void *event)
 {
     stalloc_clear(&s_eventargs);
+    move_interpolate_frame();
     handle_queued_tick();
     handle_split_submit();
 }
@@ -7677,6 +7788,8 @@ bool G_Move_Init(const struct map *map)
     vec_entity_init(&s_move_markers);
     vec_entity_init(&s_own_moves);
     vec_flock_init(&s_flocks);
+    vec_seg_init(&s_interp);
+    vec_seg_init(&s_interp_next);
 
     N_FC_SetNavTaskTIDProvider(G_Move_GetNavTID);
 
@@ -7687,7 +7800,6 @@ bool G_Move_Init(const struct map *map)
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, 
         G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
     register_callback_for_hz(s_move_hz);
-    E_Global_Register(EVENT_20HZ_TICK, interpolate_tick, NULL, G_RUNNING);
 
     s_map = map;
     s_attack_on_lclick = false;
@@ -7712,7 +7824,7 @@ void G_Move_Shutdown(void)
     s_map = NULL;
 
     unregister_callback_for_hz(s_move_hz);
-    E_Global_Unregister(EVENT_20HZ_TICK, interpolate_tick);
+    interp_reset();
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     E_Global_Unregister(SDL_MOUSEBUTTONUP, on_mouseup);
@@ -7727,6 +7839,8 @@ void G_Move_Shutdown(void)
 
     move_destroy_gamestate();
     vec_flock_destroy(&s_flocks);
+    vec_seg_destroy(&s_interp);
+    vec_seg_destroy(&s_interp_next);
     vec_entity_destroy(&s_move_markers);
     vec_entity_destroy(&s_own_moves);
     stalloc_destroy(&s_eventargs);
@@ -8476,6 +8590,7 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
     CHK_TRUE_RET(attr.type == TYPE_INT);
     const int num_ents = attr.val.as_int;
     Sched_TryYield();
+    interp_reset();
 
     for(int i = 0; i < num_ents; i++) {
 

@@ -100,6 +100,17 @@ static bg_ent_t      s_postree;
  */
 static khash_t(reach) *s_wide;
 static bg_ent_t        s_widetree[NREACH_BANDS];
+/* Where a unit's position-dependent refs (combat bins, regions, vision)
+ * still sit while the drawn position runs ahead of them, by uid. */
+static vec2_t         *s_lag_xz;
+static uint8_t        *s_lag_set;
+static size_t          s_lag_cap;
+/* The frame an entity was last a draw candidate, by uid: only those drawn
+ * lately are moved mid-step, the rest are written once per tick. */
+static uint32_t       *s_cand_frame;
+static size_t          s_cand_cap;
+static uint32_t        s_cand_curr_frame;
+#define CAND_KEEP_FRAMES (30)
 /* Per-frame motion flow: moved-write count and summed XZ displacement */
 static uint32_t        s_flow_nmoved;
 static double          s_flow_disp;
@@ -161,6 +172,11 @@ static bool pos_set(uint32_t uid, vec3_t pos, bool notify_move)
     if(overwrite) {
         vec3_t old_pos = kh_val(s_postable, k);
         old_xz = (vec2_t){old_pos.x, old_pos.z};
+        vec2_t ref_xz = old_xz;
+        if(uid < s_lag_cap && s_lag_set[uid]) {
+            ref_xz = s_lag_xz[uid];
+            s_lag_set[uid] = 0;
+        }
         if(!bg_ent_update(&s_postree, old_pos.x, old_pos.z, pos.x, pos.z, uid))
             return false;
         kh_val(s_postable, k) = pos;
@@ -171,11 +187,10 @@ static bool pos_set(uint32_t uid, vec3_t pos, bool notify_move)
             s_flow_nmoved++;
             s_flow_disp += sqrt(fdx * fdx + fdz * fdz);
         }
-        G_Combat_MoveRef(faction_id, (vec2_t){old_pos.x, old_pos.z},
-            (vec2_t){pos.x, pos.z});
-        G_Region_MoveRef(uid, (vec2_t){old_pos.x, old_pos.z}, (vec2_t){pos.x, pos.z});
-        G_Fog_UpdateVision((vec2_t){old_pos.x, old_pos.z}, (vec2_t){pos.x, pos.z},
-            faction_id, vrange);
+
+        G_Combat_MoveRef(faction_id, ref_xz, (vec2_t){pos.x, pos.z});
+        G_Region_MoveRef(uid, ref_xz, (vec2_t){pos.x, pos.z});
+        G_Fog_UpdateVision(ref_xz, (vec2_t){pos.x, pos.z}, faction_id, vrange);
     }else{
         if(!bg_ent_insert(&s_postree, pos.x, pos.z, uid))
             return false;
@@ -213,6 +228,114 @@ static bool pos_set(uint32_t uid, vec3_t pos, bool notify_move)
         G_Resource_UpdateBounds(uid);
 
     return true;
+}
+
+static bool lag_grow(size_t need)
+{
+    size_t cap = MAX(need, s_lag_cap * 2);
+    cap = MAX(cap, (size_t)4096);
+    vec2_t *xz = PF_REALLOC(s_lag_xz, cap * sizeof(vec2_t));
+    if(!xz)
+        return false;
+    s_lag_xz = xz;
+    uint8_t *set = PF_REALLOC(s_lag_set, cap);
+    if(!set)
+        return false;
+    memset(set + s_lag_cap, 0, cap - s_lag_cap);
+    s_lag_set = set;
+    s_lag_cap = cap;
+    return true;
+}
+
+bool G_Pos_SetInterpolated(uint32_t uid, vec3_t pos, quat_t rot, bool drawn)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    khiter_t k = kh_get(pos, s_postable, uid);
+    if(k == kh_end(s_postable))
+        return false;
+    if(G_FlagsGet(uid) & ENTITY_FLAG_GARRISONED)
+        return false;
+
+    vec3_t old_pos = kh_val(s_postable, k);
+    if(!bg_ent_update(&s_postree, old_pos.x, old_pos.z, pos.x, pos.z, uid))
+        return false;
+    kh_val(s_postable, k) = pos;
+
+    float fdx = pos.x - old_pos.x, fdz = pos.z - old_pos.z;
+    if(drawn && (fdx != 0.0f || fdz != 0.0f)) {
+        s_flow_nmoved++;
+        s_flow_disp += sqrt(fdx * fdx + fdz * fdz);
+    }
+
+    khiter_t w;
+    if(kh_size(s_wide) > 0 && (w = kh_get(reach, s_wide, uid)) != kh_end(s_wide)) {
+        bg_ent_t *grid = &s_widetree[kh_val(s_wide, w).band];
+        bg_ent_update(grid, old_pos.x, old_pos.z, pos.x, pos.z, uid);
+    }
+
+    if(uid >= s_lag_cap && !lag_grow(uid + 1))
+        return false;
+    if(!s_lag_set[uid]) {
+        s_lag_set[uid] = 1;
+        s_lag_xz[uid] = (vec2_t){old_pos.x, old_pos.z};
+    }
+
+    Entity_SetRotInterpolated(uid, rot);
+    return true;
+}
+
+void G_Pos_SetInterpCandidates(const uint32_t *uids, size_t n, uint32_t frame)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    uint32_t max_uid = 0;
+    for(size_t i = 0; i < n; i++)
+        max_uid = MAX(max_uid, uids[i]);
+    size_t need = (size_t)max_uid + 1;
+    if(need > s_cand_cap) {
+        size_t cap = MAX(need, s_cand_cap * 2);
+        uint32_t *arr = PF_REALLOC(s_cand_frame, cap * sizeof(uint32_t));
+        if(!arr)
+            return;
+        memset(arr + s_cand_cap, 0, (cap - s_cand_cap) * sizeof(uint32_t));
+        s_cand_frame = arr;
+        s_cand_cap = cap;
+    }
+    s_cand_curr_frame = frame;
+    for(size_t i = 0; i < n; i++)
+        s_cand_frame[uids[i]] = frame;
+}
+
+bool G_Pos_IsInterpCandidate(uint32_t uid)
+{
+    if(uid >= s_cand_cap || s_cand_frame[uid] == 0)
+        return false;
+    return s_cand_curr_frame - s_cand_frame[uid] <= CAND_KEEP_FRAMES;
+}
+
+void G_Pos_SyncRefs(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(uid >= s_lag_cap || !s_lag_set[uid])
+        return;
+    vec2_t from = s_lag_xz[uid];
+    s_lag_set[uid] = 0;
+
+    khiter_t k = kh_get(pos, s_postable, uid);
+    if(k == kh_end(s_postable))
+        return;
+    vec3_t pos = kh_val(s_postable, k);
+    vec2_t to = (vec2_t){pos.x, pos.z};
+    if(from.x == to.x && from.z == to.z)
+        return;
+
+    int faction_id = G_GetFactionID(uid);
+    float vrange = G_Fog_Enabled() ? G_GetVisionRange(uid) : 0.0f;
+    G_Combat_MoveRef(faction_id, from, to);
+    G_Region_MoveRef(uid, from, to);
+    G_Fog_UpdateVision(from, to, faction_id, vrange);
 }
 
 void G_Pos_FlowStats(uint32_t *out_nmoved, float *out_disp)
@@ -288,6 +411,9 @@ void G_Pos_Delete(uint32_t uid)
     vec3_t pos = kh_val(s_postable, k);
     kh_del(pos, s_postable, k);
     Entity_DirtyModelMatrix(uid);
+
+    if(uid < s_lag_cap)
+        s_lag_set[uid] = 0;
 
     bool ret = bg_ent_delete(&s_postree, pos.x, pos.z, uid);
     assert(ret);
@@ -444,6 +570,14 @@ void G_Pos_Shutdown(void)
     ASSERT_IN_MAIN_THREAD();
 
     E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
+    PF_FREE(s_lag_xz);
+    PF_FREE(s_lag_set);
+    s_lag_xz = NULL;
+    s_lag_set = NULL;
+    s_lag_cap = 0;
+    PF_FREE(s_cand_frame);
+    s_cand_frame = NULL;
+    s_cand_cap = 0;
     kh_destroy(pos, s_postable);
     bg_ent_destroy(&s_postree);
     kh_destroy(reach, s_wide);
