@@ -5829,6 +5829,7 @@ static void snapshot_step_ends_grid(void)
 static void move_destroy_gamestate(void)
 {
     PERF_ENTER();
+    N_JoinCarriedAsyncFields();
     if(s_move_work.gamestate.flags) {
         kh_destroy(id, s_move_work.gamestate.flags);
         s_move_work.gamestate.flags = NULL;
@@ -7379,6 +7380,10 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
     struct sval parity_setting;
     s_gpu_parity = (Settings_Get("pf.debug.gpu_move_parity", &parity_setting) == SS_OKAY)
                 && parity_setting.as_bool;
+
+    struct sval carry_setting;
+    N_SetAsyncFieldCarry((Settings_Get("pf.debug.nav_field_carry", &carry_setting) == SS_OKAY)
+                      && carry_setting.as_bool);
     enum selection_type seltype;
     s_move_trace_sel = G_Sel_Get(&seltype);
 
@@ -7421,6 +7426,11 @@ static void move_do_tick_prepare(void)
     uint64_t tick_start = SDL_GetPerformanceCounter();
 
     uint64_t phase_start = SDL_GetPerformanceCounter();
+    N_JoinCarriedAsyncFields();
+    s_last_nav_tick_stats.carry_join_us =
+        perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
+
+    phase_start = SDL_GetPerformanceCounter();
     move_release_gamestate();
     s_prepare_copy_ticks = SDL_GetPerformanceCounter() - phase_start;
 

@@ -77,7 +77,8 @@ bool M_TileAdjacentToWater(const struct map *map, const struct tile_desc *td);
 bool M_TileAdjacentToLand(const struct map *map, const struct tile_desc *td);
 
 static bool field_work_pending(ff_id_t ffid);
-static void field_submit_work(void);
+struct field_work_in;
+static void field_submit_work(struct field_work_in entry);
 static bool los_work_pending(dest_id_t id, struct coord chunk);
 static void los_defer_create(struct nav_private *priv, vec3_t map_pos, dest_id_t id,
                              struct coord chunk_coord, struct tile_desc dst_desc,
@@ -189,7 +190,18 @@ struct field_work{
     khash_t(ffpend) *pending;
     uint32_t        tids[MAX_FIELD_TASKS];
     struct future   futures[MAX_FIELD_TASKS];
+    /* Slot bookkeeping: a rebuild of a field the cache still holds may run
+     * past the tick's join (the stale copy serves meanwhile) and keeps its
+     * slot until the next join. */
+    bool            occupied[MAX_FIELD_TASKS];
+    bool            carried[MAX_FIELD_TASKS];
+    uint32_t        carried_tick[MAX_FIELD_TASKS];
+    size_t          args[MAX_FIELD_TASKS];
+    size_t          high;
 };
+
+static bool     s_field_carry = true;
+static uint32_t s_field_tick;
 
 /* A deferred LOS field build. The LOS wavefront is carried across chunk borders,
  * so each field depends on its predecessor along the portal path: an index into
@@ -2100,7 +2112,7 @@ static bool n_request_async_flow(struct nav_private *priv, struct coord chunk,
     if(s_field_work.nwork == MAX_FIELD_TASKS)
         return false;
 
-    vec_in_push(&s_field_work.in, (struct field_work_in){
+    field_submit_work((struct field_work_in){
         .priv = priv,
         .chunk = chunk,
         .target = target,
@@ -2108,7 +2120,6 @@ static bool n_request_async_flow(struct nav_private *priv, struct coord chunk,
         .layer = layer,
         .id = ffid
     });
-    field_submit_work();
     return true;
 }
 
@@ -2588,27 +2599,59 @@ static bool field_work_pending(ff_id_t ffid)
  * exhaustion the field is computed inline, keeping the in/out/future arrays
  * index-paired either way.
  */
-static void field_submit_work(void)
+static void field_submit_work(struct field_work_in entry)
 {
-    size_t idx = s_field_work.nwork++;
+    if(s_field_dispatch_pc == 0)
+        s_field_dispatch_pc = SDL_GetPerformanceCounter();
+
+    size_t idx = 0;
+    while(idx < MAX_FIELD_TASKS && s_field_work.occupied[idx])
+        idx++;
+    assert(idx < MAX_FIELD_TASKS);
+    vec_AT(&s_field_work.in, idx) = entry;
+    s_field_work.occupied[idx] = true;
+    s_field_work.carried[idx] = false;
+    s_field_work.nwork++;
+    s_field_work.high = MAX(s_field_work.high, idx + 1);
+
     int put_status;
-    kh_put(ffpend, s_field_work.pending, vec_AT(&s_field_work.in, idx).id, &put_status);
+    kh_put(ffpend, s_field_work.pending, entry.id, &put_status);
     assert(put_status != -1);
-    size_t *arg = stalloc(&s_field_work.mem, sizeof(size_t));
+    size_t *arg = &s_field_work.args[idx];
     *arg = idx;
 
     SDL_AtomicSet(&s_field_work.futures[idx].status, FUTURE_INCOMPLETE);
     s_field_work.tids[idx] = Sched_Create(1, field_task, arg,
-        "nav::field_task", &s_field_work.futures[idx], TASK_BIG_STACK);
+            "nav::field_task", &s_field_work.futures[idx], TASK_BIG_STACK);
     if(s_field_work.tids[idx] == NULL_TID) {
         field_task(arg);
         SDL_AtomicSet(&s_field_work.futures[idx].status, FUTURE_COMPLETE);
     }
 }
 
+static void field_release_slot(size_t idx)
+{
+    khiter_t k = kh_get(ffpend, s_field_work.pending, vec_AT(&s_field_work.in, idx).id);
+    if(k != kh_end(s_field_work.pending))
+        kh_del(ffpend, s_field_work.pending, k);
+    s_field_work.occupied[idx] = false;
+    s_field_work.carried[idx] = false;
+    s_field_work.nwork--;
+    while(s_field_work.high > 0 && !s_field_work.occupied[s_field_work.high - 1])
+        s_field_work.high--;
+}
+
+/* Every slot, carried ones included, and the slots are freed: nothing is
+ * put in the cache, so this is for shutdown and state clears only. */
 static void field_join_work(void)
 {
-    Sched_AwaitAll(s_field_work.tids, s_field_work.futures, s_field_work.nwork);
+    for(size_t idx = 0; idx < s_field_work.high; idx++) {
+        if(!s_field_work.occupied[idx])
+            continue;
+        Sched_AwaitAll(&s_field_work.tids[idx], &s_field_work.futures[idx], 1);
+        field_release_slot(idx);
+    }
+    stalloc_clear(&s_field_work.mem);
 }
 
 static uint64_t los_pending_key(dest_id_t id, struct coord chunk)
@@ -2923,6 +2966,8 @@ void N_Update(void *nav_private)
 void N_ApplyDeferredInvalidations(void)
 {
     memset(&s_tick_diag, 0, sizeof(s_tick_diag));
+    s_field_dispatch_pc = 0;
+    s_field_tick++;
     SDL_AtomicSet(&s_field_us_sum, 0);
     SDL_AtomicSet(&s_field_us_max, 0);
     SDL_AtomicSet(&s_nfield_tasks, 0);
@@ -4638,11 +4683,30 @@ bool N_DesiredGroupArrivalVelocity(vec2_t curr_pos, void *nav_private, enum nav_
 
 void N_PrepareAsyncWork(void)
 {
+    /* Carried slots hold pointers into these arrays across ticks. */
+    if(vec_size(&s_field_work.in) == MAX_FIELD_TASKS)
+        return;
     vec_in_init_alloc(&s_field_work.in, vec_realloc, vec_free);
     vec_in_resize(&s_field_work.in, MAX_FIELD_TASKS);
 
     vec_out_init_alloc(&s_field_work.out, vec_realloc, vec_free);
     vec_out_resize(&s_field_work.out, MAX_FIELD_TASKS);
+}
+
+void N_SetAsyncFieldCarry(bool on)
+{
+    s_field_carry = on;
+}
+
+/* Before the tables the carried floods read are reused: wait for them,
+ * leaving their results in their slots for the next tick's join. */
+void N_JoinCarriedAsyncFields(void)
+{
+    for(size_t idx = 0; idx < s_field_work.high; idx++) {
+        if(!s_field_work.occupied[idx] || !s_field_work.carried[idx])
+            continue;
+        Sched_AwaitAll(&s_field_work.tids[idx], &s_field_work.futures[idx], 1);
+    }
 }
 
 void N_RequestAsyncEnemySeekField(vec2_t curr_pos, void *nav_private, enum nav_layer layer,
@@ -4680,7 +4744,7 @@ void N_RequestAsyncEnemySeekField(vec2_t curr_pos, void *nav_private, enum nav_l
     if(field_work_pending(ffid))
         return;
 
-    vec_in_push(&s_field_work.in, (struct field_work_in){
+    field_submit_work((struct field_work_in){
         .priv = priv,
         .chunk = chunk,
         .target = target,
@@ -4688,7 +4752,6 @@ void N_RequestAsyncEnemySeekField(vec2_t curr_pos, void *nav_private, enum nav_l
         .layer = layer,
         .id = ffid
     });
-    field_submit_work();
 }
 
 void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_layer layer,
@@ -4724,7 +4787,7 @@ void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_la
     if(field_work_pending(ffid))
         return;
 
-    vec_in_push(&s_field_work.in, (struct field_work_in){
+    field_submit_work((struct field_work_in){
         .priv = priv,
         .chunk = chunk,
         .target = target,
@@ -4732,7 +4795,6 @@ void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_la
         .layer = layer,
         .id = ffid
     });
-    field_submit_work();
 }
 
 static void request_zone_field_chunk(struct nav_private *priv, struct coord chunk,
@@ -4749,7 +4811,7 @@ static void request_zone_field_chunk(struct nav_private *priv, struct coord chun
     if(field_work_pending(ffid))
         return;
 
-    vec_in_push(&s_field_work.in, (struct field_work_in){
+    field_submit_work((struct field_work_in){
         .priv = priv,
         .chunk = chunk,
         .target = target,
@@ -4757,7 +4819,6 @@ static void request_zone_field_chunk(struct nav_private *priv, struct coord chun
         .layer = layer,
         .id = ffid
     });
-    field_submit_work();
 }
 
 void N_RequestAsyncGroupArrivalField(vec2_t centre_pos, void *nav_private, enum nav_layer layer,
@@ -4799,11 +4860,29 @@ void N_RequestAsyncGroupArrivalField(vec2_t centre_pos, void *nav_private, enum 
 
 void N_AwaitAsyncFields(void)
 {
-    field_join_work();
-    for(int i = 0; i < s_field_work.nwork; i++) {
+    for(size_t i = 0; i < s_field_work.high; i++) {
+        if(!s_field_work.occupied[i])
+            continue;
+        /* A carried slot's snapshot may be gone by now; the cache is shared. */
         struct field_work_in *in = &vec_AT(&s_field_work.in, i);
         struct field_work_out *out = &vec_AT(&s_field_work.out, i);
-        N_FC_PutFlowField(in->priv->fieldcache, in->id, &out->field);
+
+        if(!Sched_FutureIsReady(&s_field_work.futures[i])) {
+            /* A rebuild whose stale copy is still served runs on through this
+             * tick's joins; a missing field is waited for, as is a rebuild
+             * carried from an earlier tick. */
+            if(s_field_work.carried[i] && s_field_work.carried_tick[i] == s_field_tick)
+                continue;
+            if(s_field_carry && !s_field_work.carried[i]
+            && N_FC_ContainsFlowField(N_FC_GetSingleton(), in->id)) {
+                s_field_work.carried[i] = true;
+                s_field_work.carried_tick[i] = s_field_tick;
+                s_tick_diag.ncarried++;
+                continue;
+            }
+            Sched_AwaitAll(&s_field_work.tids[i], &s_field_work.futures[i], 1);
+        }
+        N_FC_PutFlowField(N_FC_GetSingleton(), in->id, &out->field);
 
         switch(in->target.type) {
         case TARGET_ENEMIES: s_tick_diag.enemy_built++;    break;
@@ -4813,10 +4892,13 @@ void N_AwaitAsyncFields(void)
         case TARGET_TILE:    s_tick_diag.pseek_built++;    break;
         default:;
         }
+        field_release_slot(i);
+    }
+    if(s_field_dispatch_pc) {
+        s_tick_diag.field_wall_us += (SDL_GetPerformanceCounter() - s_field_dispatch_pc)
+                                   * 1000000 / SDL_GetPerformanceFrequency();
     }
     stalloc_clear(&s_field_work.mem);
-    s_field_work.nwork = 0;
-    kh_clear(ffpend, s_field_work.pending);
 }
 
 void N_DispatchLOSChains(void)

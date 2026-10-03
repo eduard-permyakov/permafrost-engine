@@ -826,6 +826,10 @@ struct nav_tick_diag{
 };
 
 void N_GetTickDiag(struct nav_tick_diag *out);
+/* Rebuilds of fields the cache still holds may run past the tick's join;
+ * the carried ones are waited for before the tables they read are reused. */
+void N_SetAsyncFieldCarry(bool on);
+void N_JoinCarriedAsyncFields(void);
 
 /* ------------------------------------------------------------------------
  * Registers a callback returning the tid of the navigation tick task. The
