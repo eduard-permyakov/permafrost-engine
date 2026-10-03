@@ -982,7 +982,8 @@ void Perf_RecordNavTick(const struct nav_tick_sample *sample)
         const struct nav_tick_sample *r = &s_nav_tick_hist[s_nav_tick_head];
         fprintf(stdout, "[nav-csv] %u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,"
             "%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,"
-            "%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
+            "%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,"
+            "%u,%u,%u,%u,%u\n",
             r->dur_us, r->serial_us, r->total_us, r->nwork, r->budget_us, r->tick,
             r->inval_us, r->los_peek_us, r->los_build_us, r->cpr_async_us,
             r->cpr_serial_us, r->dv_us, r->vel_us, r->upd_us, r->main_us,
@@ -997,7 +998,9 @@ void Perf_RecordNavTick(const struct nav_tick_sample *sample)
             r->nstate_turning, r->period_us, r->fiber_frames, r->nlate,
             r->nfield_tasks, r->field_us_sum, r->field_us_max, r->field_wall_us,
             r->nchain_tasks, r->chain_us_sum, r->chain_us_max, r->chain_wall_us,
-            r->ncarried, r->carry_join_us);
+            r->ncarried, r->carry_join_us, r->astar_us, r->los_record_us,
+            r->los_ensure_us, r->nlos_flagged, r->req_prep_us,
+            r->inline_flood_us, r->ninline_flood);
     }
 
     s_nav_tick_head = (s_nav_tick_head + 1) % PERF_NAV_TICK_HISTORY;

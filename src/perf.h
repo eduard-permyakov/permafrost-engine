@@ -217,6 +217,13 @@ struct nav_tick_sample{
     uint32_t chain_wall_us;
     uint32_t ncarried;
     uint32_t carry_join_us;  /* main-thread wait for carried floods before the copy */
+    uint32_t astar_us;
+    uint32_t los_record_us;  /* the LOS phase's serial record loop */
+    uint32_t los_ensure_us;  /* of which inside M_NavEnsureDestLOS */
+    uint32_t nlos_flagged;   /* units the peek flagged for a build */
+    uint32_t req_prep_us;
+    uint32_t inline_flood_us;
+    uint32_t ninline_flood;
 };
 
 struct perf_info{

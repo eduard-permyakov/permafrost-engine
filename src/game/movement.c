@@ -6339,6 +6339,10 @@ static enum move_work_status nav_tick_finish_work(void)
     s_last_nav_tick_stats.chain_us_max    = diag.chain_us_max;
     s_last_nav_tick_stats.chain_wall_us   = diag.chain_wall_us;
     s_last_nav_tick_stats.ncarried        = diag.ncarried;
+    s_last_nav_tick_stats.astar_us        = diag.astar_us;
+    s_last_nav_tick_stats.req_prep_us     = diag.req_prep_us;
+    s_last_nav_tick_stats.inline_flood_us = diag.inline_flood_us;
+    s_last_nav_tick_stats.ninline_flood   = diag.ninline_flood;
 
     /* The out array is consumed at the next tick's start; reducing the
      * per-solve diagnostics here is race-free. */
@@ -6694,7 +6698,8 @@ static void compute_los_state(void)
      */
     phase_start = SDL_GetPerformanceCounter();
     const struct map *map = s_move_work.gamestate.map;
-    unsigned checked = 0, misses = 0, stale_rebuilds = 0;
+    unsigned checked = 0, misses = 0, stale_rebuilds = 0, flagged = 0;
+    uint64_t ensure_ticks = 0;
     size_t nwork = s_move_work.nwork;
     for(size_t k = 0; k < nwork; k++) {
 
@@ -6704,6 +6709,7 @@ static void compute_los_state(void)
             checked++;
         if(!in->needs_los_build)
             continue;
+        flagged++;
 
         const struct movestate *ms = movestate_get(in->ent_uid);
         const struct flock *fl = in->flock;
@@ -6741,7 +6747,11 @@ static void compute_los_state(void)
         }
         s_rebuild_budget--;
 
-        switch(M_NavEnsureDestLOS(map, fl->dest_id, pos, fl->target_xz, &vis)) {
+        uint64_t ensure_t0 = SDL_GetPerformanceCounter();
+        enum los_ensure_result ensured =
+            M_NavEnsureDestLOS(map, fl->dest_id, pos, fl->target_xz, &vis);
+        ensure_ticks += SDL_GetPerformanceCounter() - ensure_t0;
+        switch(ensured) {
         case LOS_ENSURE_ANSWER:
             in->has_dest_los = vis;
             break;
@@ -6757,6 +6767,10 @@ static void compute_los_state(void)
         Sched_TryYield();
     }
 
+    s_last_nav_tick_stats.los_record_us =
+        perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
+    s_last_nav_tick_stats.los_ensure_us = perf_ticks_to_us(ensure_ticks);
+    s_last_nav_tick_stats.nlos_flagged = flagged;
     /* Flood the recorded chains in parallel, publish them at the join, and
      * resolve the answers that waited on them with a cache peek.
      */

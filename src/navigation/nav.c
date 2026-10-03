@@ -79,6 +79,9 @@ bool M_TileAdjacentToLand(const struct map *map, const struct tile_desc *td);
 static bool field_work_pending(ff_id_t ffid);
 struct field_work_in;
 static void field_submit_work(struct field_work_in entry);
+static void field_submit_merge(struct field_work_in entry, const struct flow_field *base);
+static void field_finish_pending_merge(ff_id_t ffid);
+static void field_release_slot(size_t idx);
 static bool los_work_pending(dest_id_t id, struct coord chunk);
 static void los_defer_create(struct nav_private *priv, vec3_t map_pos, dest_id_t id,
                              struct coord chunk_coord, struct tile_desc dst_desc,
@@ -140,6 +143,8 @@ struct field_work_in{
     int                 faction_id;
     enum nav_layer      layer;
     ff_id_t             id;
+    /* Flood into a copy of another field of the chunk instead of a fresh one */
+    bool                merge;
 };
 
 struct field_work_out{
@@ -2207,6 +2212,7 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
      * inline against the live context. */
     bool on_task = on_nav_task();
 
+    uint64_t prep_t0 = SDL_GetPerformanceCounter();
     n_update_dirty_local_islands(nav_private, layer);
     if(priv->edge_states_dirty[layer]) {
         n_update_all_edge_states(priv, layer);
@@ -2227,6 +2233,8 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
         }
         priv->edge_chunks_dirty[layer] = false;
     }
+    s_tick_diag.req_prep_us += (SDL_GetPerformanceCounter() - prep_t0) * 1000000
+                             / SDL_GetPerformanceFrequency();
 
     /* Convert source and destination positions to tile coordinates */
     struct tile_desc src_desc, dst_desc;
@@ -2274,7 +2282,11 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
         && !(on_task && n_request_async_flow(priv, chunk, target, faction_id, layer, id))) {
 
             N_FlowFieldInit(chunk, &ff);
+            uint64_t iff_t0 = SDL_GetPerformanceCounter();
             N_FlowFieldUpdate(chunk, priv, faction_id, layer, target, priv->unit_query_ctx, &ff);
+            s_tick_diag.ninline_flood++;
+            s_tick_diag.inline_flood_us += (SDL_GetPerformanceCounter() - iff_t0) * 1000000
+                                         / SDL_GetPerformanceFrequency();
             field_patch_blocked(&ff);
             N_FC_PutFlowField(priv->fieldcache, id, &ff);
         }
@@ -2386,8 +2398,11 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
     vec_coord_init(&skipped);
 
     s_tick_diag.nastar++;
+    uint64_t astar_t0 = SDL_GetPerformanceCounter();
     bool path_exists = AStar_PortalGraphPath(src_desc, dst_desc, dst_port,
         priv, layer, &path, &cost, &skipped);
+    s_tick_diag.astar_us += (SDL_GetPerformanceCounter() - astar_t0) * 1000000
+                          / SDL_GetPerformanceFrequency();
     if(!path_exists) {
 
         /* if we didn't find a path to the 'closest portal' to the destination, that must mean 
@@ -2414,8 +2429,11 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
 
         if(dst_port) {
             s_tick_diag.nastar++;
+            uint64_t retry_t0 = SDL_GetPerformanceCounter();
             path_exists = AStar_PortalGraphPath(src_desc, dst_desc, dst_port,
                 priv, layer, &path, &cost, &skipped);
+            s_tick_diag.astar_us += (SDL_GetPerformanceCounter() - retry_t0) * 1000000
+                                  / SDL_GetPerformanceFrequency();
         }
     }
 
@@ -2495,6 +2513,11 @@ walk:;
         ff_id_t exist_id;
         struct flow_field ff;
 
+        if(on_task && N_FC_GetDestFFMapping(priv->fieldcache, ret, chunk_coord, &exist_id)
+        && exist_id != new_id && field_work_pending(exist_id)) {
+            field_finish_pending_merge(exist_id);
+        }
+
         if(N_FC_GetDestFFMapping(priv->fieldcache, ret, chunk_coord, &exist_id)
         && N_FC_ContainsFlowField(priv->fieldcache, exist_id)) {
 
@@ -2503,15 +2526,44 @@ walk:;
             && !N_FC_FlowFieldRebuildDue(priv->fieldcache, exist_id))
                 goto ff_exists;
 
+            /* On the tick task a due rebuild of the same field goes to the pool
+             * like the destination chunk's, and the stale copy serves meanwhile.
+             */
+            if(new_id == exist_id && on_task
+            && n_request_async_flow(priv, chunk_coord, target, faction_id, layer, new_id))
+                goto ff_exists;
+
             /* This is the edge case when a path to a particular target takes us through
              * the same chunk more than once. This can happen if a chunk is divided into
              * 'islands' by unpathable barriers. 
              */
             const struct flow_field *exist_ff  = N_FC_FlowFieldAt(priv->fieldcache, exist_id);
+
+            /* On the tick task the merge floods on the pool, from a copy taken
+             * now, and lands at the same join as the other deferred floods. */
+            if(on_task && (field_work_pending(new_id) || s_field_work.nwork < MAX_FIELD_TASKS)) {
+                if(!field_work_pending(new_id)) {
+                    field_submit_merge((struct field_work_in){
+                        .priv = priv,
+                        .chunk = chunk_coord,
+                        .target = target,
+                        .faction_id = faction_id,
+                        .layer = layer,
+                        .id = new_id
+                    }, exist_ff);
+                }
+                N_FC_PutDestFFMapping(priv->fieldcache, ret, chunk_coord, new_id);
+                goto ff_exists;
+            }
+
             memcpy(&ff, exist_ff, sizeof(struct flow_field));
             ff.patched = 0;
 
+            uint64_t iff_t0 = SDL_GetPerformanceCounter();
             N_FlowFieldUpdate(chunk_coord, priv, faction_id, layer, target, priv->unit_query_ctx, &ff);
+            s_tick_diag.ninline_flood++;
+            s_tick_diag.inline_flood_us += (SDL_GetPerformanceCounter() - iff_t0) * 1000000
+                                         / SDL_GetPerformanceFrequency();
             field_patch_blocked(&ff);
             /* We set the updated flow field for the new (least recently used) key. Since in
              * this case more than one flowfield ID maps to the same field but we only keep
@@ -2530,7 +2582,11 @@ walk:;
         && !(on_task && n_request_async_flow(priv, chunk_coord, target, faction_id, layer, new_id))) {
 
             N_FlowFieldInit(chunk_coord, &ff);
+            uint64_t iff_t0 = SDL_GetPerformanceCounter();
             N_FlowFieldUpdate(chunk_coord, priv, faction_id, layer, target, priv->unit_query_ctx, &ff);
+            s_tick_diag.ninline_flood++;
+            s_tick_diag.inline_flood_us += (SDL_GetPerformanceCounter() - iff_t0) * 1000000
+                                         / SDL_GetPerformanceFrequency();
             field_patch_blocked(&ff);
             N_FC_PutFlowField(priv->fieldcache, new_id, &ff);
         }
@@ -2576,7 +2632,8 @@ static struct result field_task(void *arg)
     struct field_work_in *in = &vec_AT(&s_field_work.in, *index);
     struct field_work_out *out = &vec_AT(&s_field_work.out, *index);
 
-    N_FlowFieldInit(in->chunk, &out->field);
+    if(!in->merge)
+        N_FlowFieldInit(in->chunk, &out->field);
     N_FlowFieldUpdate(in->chunk, in->priv, in->faction_id, in->layer, in->target,
         in->priv->unit_query_ctx, &out->field);
 
@@ -2599,7 +2656,7 @@ static bool field_work_pending(ff_id_t ffid)
  * exhaustion the field is computed inline, keeping the in/out/future arrays
  * index-paired either way.
  */
-static void field_submit_work(struct field_work_in entry)
+static void field_submit_slot(struct field_work_in entry, const struct flow_field *base)
 {
     if(s_field_dispatch_pc == 0)
         s_field_dispatch_pc = SDL_GetPerformanceCounter();
@@ -2620,12 +2677,45 @@ static void field_submit_work(struct field_work_in entry)
     size_t *arg = &s_field_work.args[idx];
     *arg = idx;
 
+    if(base) {
+        vec_AT(&s_field_work.out, idx).field = *base;
+        vec_AT(&s_field_work.out, idx).field.patched = 0;
+    }
+
     SDL_AtomicSet(&s_field_work.futures[idx].status, FUTURE_INCOMPLETE);
     s_field_work.tids[idx] = Sched_Create(1, field_task, arg,
             "nav::field_task", &s_field_work.futures[idx], TASK_BIG_STACK);
     if(s_field_work.tids[idx] == NULL_TID) {
         field_task(arg);
         SDL_AtomicSet(&s_field_work.futures[idx].status, FUTURE_COMPLETE);
+    }
+}
+
+static void field_submit_work(struct field_work_in entry)
+{
+    field_submit_slot(entry, NULL);
+}
+
+static void field_submit_merge(struct field_work_in entry, const struct flow_field *base)
+{
+    entry.merge = true;
+    field_submit_slot(entry, base);
+}
+
+/* A merge that a later hop of the same walk would merge into again is
+ * finished first, as the inline merge it replaces always was. */
+static void field_finish_pending_merge(ff_id_t ffid)
+{
+    for(size_t idx = 0; idx < s_field_work.high; idx++) {
+        if(!s_field_work.occupied[idx] || !vec_AT(&s_field_work.in, idx).merge)
+            continue;
+        if(vec_AT(&s_field_work.in, idx).id != ffid)
+            continue;
+        Sched_AwaitAll(&s_field_work.tids[idx], &s_field_work.futures[idx], 1);
+        N_FC_PutFlowField(N_FC_GetSingleton(), ffid, &vec_AT(&s_field_work.out, idx).field);
+        s_tick_diag.pseek_built++;
+        field_release_slot(idx);
+        return;
     }
 }
 

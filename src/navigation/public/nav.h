@@ -823,6 +823,10 @@ struct nav_tick_diag{
     uint32_t chain_us_max;
     uint32_t chain_wall_us; /* first chain dispatch to the end of the join */
     uint32_t ncarried;      /* field rebuilds left running past the join */
+    uint32_t astar_us;      /* wall time in portal-graph A* on the tick task */
+    uint32_t req_prep_us;   /* path requests' island and edge-state refresh */
+    uint32_t inline_flood_us; /* flow floods run inline by path requests */
+    uint32_t ninline_flood;
 };
 
 void N_GetTickDiag(struct nav_tick_diag *out);
