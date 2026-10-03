@@ -124,6 +124,14 @@ __KHASH_IMPL(range,   extern, khint32_t, float,    1, kh_int_hash_func, kh_int_h
 /*****************************************************************************/
 
 static struct gamestate s_gs;
+static int              s_last_ncands;
+/* Per-frame stage times (us): fog, anim, cull, drawlist, map+ents, healthbars, minimap */
+static uint32_t         s_stage_us[7];
+
+static inline uint32_t stage_us(uint64_t since)
+{
+    return (SDL_GetPerformanceCounter() - since) * 1000000 / SDL_GetPerformanceFrequency();
+}
 /* One ring at a time: it only ever answers "how far does this reach?" for the
  * ability the pointer is currently on.
  */
@@ -2570,9 +2578,11 @@ void G_Update(void)
     PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
 
+    uint64_t st0 = SDL_GetPerformanceCounter();
     if(s_gs.map) {
         G_Fog_UpdateVisionState();
     }
+    s_stage_us[0] = stage_us(st0);
 
     vec_entity_reset(&s_gs.visible);
     vec_drawcand_reset(&s_gs.draw_cands);
@@ -2590,9 +2600,12 @@ void G_Update(void)
     uint16_t pm = g_player_mask();
     uint32_t curr;
 
+    st0 = SDL_GetPerformanceCounter();
     if(s_gs.ss == G_RUNNING) {
         A_Update();
     }
+    s_stage_us[1] = stage_us(st0);
+    st0 = SDL_GetPerformanceCounter();
     /* The advanced poses move the animated entities' bounds */
     Entity_ClearOBBCache();
 
@@ -2613,6 +2626,7 @@ void G_Update(void)
     size_t nactive = kh_size(s_gs.active);
     vec_entity_resize(&s_gs.cull_cands, nactive);
     int ncands = G_Pos_EntsInRect(qmin, qmax, s_gs.cull_cands.array, nactive);
+    s_last_ncands = ncands;
 
     for(int ci = 0; ci < ncands; ci++) {
 
@@ -2665,6 +2679,18 @@ void G_Update(void)
     PERF_RETURN_VOID();
 }
 
+void G_StageTimes(uint32_t out[7])
+{
+    memcpy(out, s_stage_us, sizeof(s_stage_us));
+    memset(s_stage_us, 0, sizeof(s_stage_us));
+}
+
+void G_CullStats(int *out_ncands, int *out_nvis)
+{
+    *out_ncands = s_last_ncands;
+    *out_nvis = vec_size(&s_gs.visible);
+}
+
 void G_UpdateMap(void)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -2689,11 +2715,15 @@ void G_Render(void)
     R_PushCmd((struct rcmd){ R_GL_BeginFrame, 0 });
     E_Global_NotifyImmediate(EVENT_RENDER_3D_PRE, NULL, ES_ENGINE);
 
+    uint64_t st0 = SDL_GetPerformanceCounter();
     struct render_input in;
     g_create_render_input(&in);
 
     struct render_input *rcopy = g_push_render_input(in);
+    s_stage_us[3] = stage_us(st0);
+    st0 = SDL_GetPerformanceCounter();
     G_RenderMapAndEntities(rcopy);
+    s_stage_us[4] = stage_us(st0);
 
     struct sval refract_setting;
     status = Settings_Get("pf.video.water_refraction", &refract_setting);
@@ -2788,17 +2818,21 @@ void G_Render(void)
     E_Global_NotifyImmediate(EVENT_RENDER_3D_POST, NULL, ES_ENGINE);
     R_PushCmd((struct rcmd) { R_GL_SetScreenspaceDrawMode, 0 });
 
+    st0 = SDL_GetPerformanceCounter();
     if(!s_gs.hide_healthbars) {
         g_render_healthbars();
     }
+    s_stage_us[5] = stage_us(st0);
 
     E_Global_NotifyImmediate(EVENT_RENDER_UI, NULL, ES_ENGINE);
 
+    st0 = SDL_GetPerformanceCounter();
     if(s_gs.map) {
         M_RenderMinimap(s_gs.map, s_gs.active_cam);
         g_render_minimap_units();
         R_PushCmd((struct rcmd){ R_GL_MapInvalidate, 0 });
     }
+    s_stage_us[6] = stage_us(st0);
 
     E_Global_NotifyImmediate(EVENT_RENDER_FINISH, NULL, ES_ENGINE);
     R_PushCmd((struct rcmd){ R_GL_EndFrame, 0 });

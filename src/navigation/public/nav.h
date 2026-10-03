@@ -814,6 +814,15 @@ struct nav_tick_diag{
     uint32_t nastar;      /* portal-graph A* invocations */
     uint32_t nastar_memo; /* solves served from the per-tick memo */
     uint32_t pseek_built; /* point-seek flow floods offloaded to the pool */
+    uint32_t nfield_tasks;  /* async field floods run on the pool this tick */
+    uint32_t field_us_sum;  /* summed task time of those floods */
+    uint32_t field_us_max;  /* longest single flood */
+    uint32_t field_wall_us; /* first dispatch to the end of the join */
+    uint32_t nchain_tasks;  /* LOS chain tasks run on the pool this tick */
+    uint32_t chain_us_sum;
+    uint32_t chain_us_max;
+    uint32_t chain_wall_us; /* first chain dispatch to the end of the join */
+    uint32_t ncarried;      /* field rebuilds left running past the join */
 };
 
 void N_GetTickDiag(struct nav_tick_diag *out);

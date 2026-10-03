@@ -100,6 +100,9 @@ static bg_ent_t      s_postree;
  */
 static khash_t(reach) *s_wide;
 static bg_ent_t        s_widetree[NREACH_BANDS];
+/* Per-frame motion flow: moved-write count and summed XZ displacement */
+static uint32_t        s_flow_nmoved;
+static double          s_flow_disp;
 static size_t          s_wide_count[NREACH_BANDS];
 static float           s_wide_max[NREACH_BANDS];
 
@@ -163,6 +166,11 @@ static bool pos_set(uint32_t uid, vec3_t pos, bool notify_move)
         kh_val(s_postable, k) = pos;
         Entity_DirtyModelMatrix(uid);
 
+        float fdx = pos.x - old_pos.x, fdz = pos.z - old_pos.z;
+        if(fdx != 0.0f || fdz != 0.0f) {
+            s_flow_nmoved++;
+            s_flow_disp += sqrt(fdx * fdx + fdz * fdz);
+        }
         G_Combat_MoveRef(faction_id, (vec2_t){old_pos.x, old_pos.z},
             (vec2_t){pos.x, pos.z});
         G_Region_MoveRef(uid, (vec2_t){old_pos.x, old_pos.z}, (vec2_t){pos.x, pos.z});
@@ -205,6 +213,14 @@ static bool pos_set(uint32_t uid, vec3_t pos, bool notify_move)
         G_Resource_UpdateBounds(uid);
 
     return true;
+}
+
+void G_Pos_FlowStats(uint32_t *out_nmoved, float *out_disp)
+{
+    *out_nmoved = s_flow_nmoved;
+    *out_disp = s_flow_disp;
+    s_flow_nmoved = 0;
+    s_flow_disp = 0.0;
 }
 
 bool G_Pos_Set(uint32_t uid, vec3_t pos)

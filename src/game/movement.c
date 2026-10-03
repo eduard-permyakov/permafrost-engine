@@ -1008,6 +1008,10 @@ static struct future           s_tick_task_future;
  * (valid once s_tick_task_future is ready).
  */
 static struct nav_tick_sample  s_last_nav_tick_stats;
+static uint64_t                s_submit_pc;
+static unsigned long           s_submit_frame;
+static uint32_t                s_interp_nunits;
+static uint32_t                s_interp_us;
 
 static const char *s_state_str[] = {
     [STATE_MOVING]              = STR(STATE_MOVING),
@@ -6139,6 +6143,11 @@ static void nav_tick_submit_work(void)
             "navigation_tick_task", &s_tick_task_future, TASK_BIG_STACK);
     assert(s_tick_task_tid != NULL_TID);
     s_last_tick = g_frame_idx;
+
+    uint64_t now = SDL_GetPerformanceCounter();
+    s_last_nav_tick_stats.period_us = s_submit_pc ? perf_ticks_to_us(now - s_submit_pc) : 0;
+    s_submit_pc = now;
+    s_submit_frame = g_frame_idx;
 }
 
 static unsigned move_trace_flags(const struct move_work_in *in, const struct move_work_out *out,
@@ -6240,6 +6249,7 @@ static enum move_work_status nav_tick_finish_work(void)
     }
     PERF_POP();
     s_tick_task_tid = NULL_TID;
+    s_last_nav_tick_stats.fiber_frames = g_frame_idx - s_submit_frame;
 
     /* s_move_work.{hz,nwork} still hold the just-completed task's values here. */
     s_last_nav_tick_stats.drain_us  = perf_ticks_to_us(SDL_GetPerformanceCounter() - drain_start);
@@ -6258,6 +6268,15 @@ static enum move_work_status nav_tick_finish_work(void)
     s_last_nav_tick_stats.nastar          = diag.nastar;
     s_last_nav_tick_stats.nastar_memo     = diag.nastar_memo;
     s_last_nav_tick_stats.npseek_built    = diag.pseek_built;
+    s_last_nav_tick_stats.nfield_tasks    = diag.nfield_tasks;
+    s_last_nav_tick_stats.field_us_sum    = diag.field_us_sum;
+    s_last_nav_tick_stats.field_us_max    = diag.field_us_max;
+    s_last_nav_tick_stats.field_wall_us   = diag.field_wall_us;
+    s_last_nav_tick_stats.nchain_tasks    = diag.nchain_tasks;
+    s_last_nav_tick_stats.chain_us_sum    = diag.chain_us_sum;
+    s_last_nav_tick_stats.chain_us_max    = diag.chain_us_max;
+    s_last_nav_tick_stats.chain_wall_us   = diag.chain_wall_us;
+    s_last_nav_tick_stats.ncarried        = diag.ncarried;
 
     /* The out array is consumed at the next tick's start; reducing the
      * per-solve diagnostics here is race-free. */
@@ -6297,8 +6316,17 @@ static enum move_work_status nav_tick_finish_work(void)
     s_move_trace_tick++;
 
     Perf_RecordNavTick(&s_last_nav_tick_stats);
+    s_last_nav_tick_stats.nlate = 0;
 
     return WORK_COMPLETE;
+}
+
+void G_Move_InterpStats(uint32_t *out_nunits, uint32_t *out_us)
+{
+    *out_nunits = s_interp_nunits;
+    *out_us = s_interp_us;
+    s_interp_nunits = 0;
+    s_interp_us = 0;
 }
 
 static enum movement_hz event_to_hz(enum eventtype event)
@@ -7497,6 +7525,7 @@ static void move_tick(void *user, void *event)
     enum move_work_status status = nav_tick_finish_work();
     if(status == WORK_INCOMPLETE) {
         s_move_tick_queued = true;
+        s_last_nav_tick_stats.nlate++;
         return;
     }
 
@@ -7510,8 +7539,10 @@ static void handle_queued_tick(void)
         return;
 
     enum move_work_status status = nav_tick_finish_work();
-    if(status == WORK_INCOMPLETE)
+    if(status == WORK_INCOMPLETE) {
+        s_last_nav_tick_stats.nlate++;
         return;
+    }
 
     enum movement_hz hz = s_move_work.hz;
     enum eventtype curr_event = event_for_hz(hz);

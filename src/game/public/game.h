@@ -506,6 +506,10 @@ vec2_t         G_Pos_GetXZFrom(struct kh_pos_s *table, uint32_t uid);
 bool           G_Pos_HasFrom(struct kh_pos_s *table, uint32_t uid);
 
 int            G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout);
+void           G_Pos_FlowStats(uint32_t *out_nmoved, float *out_disp);
+void           G_CullStats(int *out_ncands, int *out_nvis);
+void           G_StageTimes(uint32_t out[7]);
+void           G_Move_InterpStats(uint32_t *out_nunits, uint32_t *out_us);
 int            G_Pos_EntsInRectFrom(struct bg_ent_s *tree, struct kh_id_s *flags,
                                     vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout);
 int            G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout,

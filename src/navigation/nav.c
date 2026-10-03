@@ -245,6 +245,25 @@ static struct los_work   s_los_work;
 /* Per-tick field churn diagnostics for the perf window; reset at the top of
  * the nav tick in N_ApplyDeferredInvalidations. */
 static struct nav_tick_diag s_tick_diag;
+/* Pool-task accounting for the tick diag: written by worker tasks, so atomic */
+static SDL_atomic_t             s_field_us_sum;
+static SDL_atomic_t             s_field_us_max;
+static SDL_atomic_t             s_nfield_tasks;
+static SDL_atomic_t             s_chain_us_sum;
+static SDL_atomic_t             s_chain_us_max;
+static SDL_atomic_t             s_nchain_tasks;
+static uint64_t                 s_field_dispatch_pc;
+static uint64_t                 s_chain_dispatch_pc;
+
+static void task_time_note(SDL_atomic_t *sum, SDL_atomic_t *max, SDL_atomic_t *count, uint64_t t0)
+{
+    int us = (SDL_GetPerformanceCounter() - t0) * 1000000 / SDL_GetPerformanceFrequency();
+    SDL_AtomicAdd(sum, us);
+    SDL_AtomicAdd(count, 1);
+    int curr = SDL_AtomicGet(max);
+    while(us > curr && !SDL_AtomicCAS(max, curr, us))
+        curr = SDL_AtomicGet(max);
+}
 
 /* Per-tick memo of the portal-graph solve in n_request_path, keyed by
  * (src chunk, src local island, dest id). During a storm thousands of units
@@ -2551,6 +2570,7 @@ static struct result field_task(void *arg)
     }
 
     Perf_NavParallelAddSince(t0);
+    task_time_note(&s_field_us_sum, &s_field_us_max, &s_nfield_tasks, t0);
     return NULL_RESULT;
 }
 
@@ -2614,6 +2634,7 @@ static struct result los_chain_task(void *arg)
         Sched_TryYield();
     }
     Perf_NavParallelAddSince(t0);
+    task_time_note(&s_chain_us_sum, &s_chain_us_max, &s_nchain_tasks, t0);
     return NULL_RESULT;
 }
 
@@ -2884,6 +2905,12 @@ void N_Update(void *nav_private)
 void N_ApplyDeferredInvalidations(void)
 {
     memset(&s_tick_diag, 0, sizeof(s_tick_diag));
+    SDL_AtomicSet(&s_field_us_sum, 0);
+    SDL_AtomicSet(&s_field_us_max, 0);
+    SDL_AtomicSet(&s_nfield_tasks, 0);
+    SDL_AtomicSet(&s_chain_us_sum, 0);
+    SDL_AtomicSet(&s_chain_us_max, 0);
+    SDL_AtomicSet(&s_nchain_tasks, 0);
     astar_memo_clear();
 
     struct fieldcache_ctx *fc = N_FC_GetSingleton();
@@ -2906,6 +2933,12 @@ void N_ApplyDeferredInvalidations(void)
 
 void N_GetTickDiag(struct nav_tick_diag *out)
 {
+    s_tick_diag.nfield_tasks = SDL_AtomicGet(&s_nfield_tasks);
+    s_tick_diag.field_us_sum = SDL_AtomicGet(&s_field_us_sum);
+    s_tick_diag.field_us_max = SDL_AtomicGet(&s_field_us_max);
+    s_tick_diag.nchain_tasks = SDL_AtomicGet(&s_nchain_tasks);
+    s_tick_diag.chain_us_sum = SDL_AtomicGet(&s_chain_us_sum);
+    s_tick_diag.chain_us_max = SDL_AtomicGet(&s_chain_us_max);
     *out = s_tick_diag;
 }
 
@@ -4770,6 +4803,7 @@ void N_AwaitAsyncFields(void)
 
 void N_DispatchLOSChains(void)
 {
+    s_chain_dispatch_pc = SDL_GetPerformanceCounter();
     for(size_t i = 0; i < s_los_work.nchains; i++) {
         los_submit_chain(i);
     }
@@ -4780,6 +4814,8 @@ void N_FinishLOSChains(void)
     if(s_los_work.nchains == 0)
         return;
     Sched_AwaitAll(s_los_work.tids, s_los_work.futures, s_los_work.nchains);
+    s_tick_diag.chain_wall_us += (SDL_GetPerformanceCounter() - s_chain_dispatch_pc)
+                               * 1000000 / SDL_GetPerformanceFrequency();
     los_publish_chains();
 }
 

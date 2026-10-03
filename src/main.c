@@ -892,14 +892,27 @@ int main(int argc, char **argv)
                     fprintf(stdout, ",%lu", (unsigned long)ev_us[i]);
                 fputc('\n', stdout);
                 double us = 1e6 / SDL_GetPerformanceFrequency();
+                int ncands, nvis;
+                G_CullStats(&ncands, &nvis);
+                uint32_t ninterp, interp_us, nmoved;
+                float disp;
+                G_Move_InterpStats(&ninterp, &interp_us);
+                G_Pos_FlowStats(&nmoved, &disp);
+                fprintf(stdout, "[flow-csv] %lu,%.0f,%u,%.3f\n", g_frame_idx, (ft7 - ft0) * us,
+                    nmoved, disp);
+                uint32_t stage[7];
+                G_StageTimes(stage);
+                fprintf(stdout, "[gstage-csv] %lu,%u,%u,%u,%u,%u,%u,%u\n", g_frame_idx, stage[0],
+                    stage[1], stage[2], stage[3], stage[4], stage[5], stage[6]);
                 fprintf(stdout, "[frame-prof] %lu,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%lu,%lu,%.0f,%.0f,"
-                    "%lu,%lu,%lu,%lu\n",
+                    "%lu,%lu,%lu,%lu,%d,%d,%u,%u\n",
                     g_frame_idx, (ft7 - ft0) * us, (ft1 - ft0) * us, (ft2 - ft1) * us,
                     (ft3 - ft2) * us, (ft4 - ft3) * us, (ft5 - ft4) * us,
                     (unsigned long)task_us, (unsigned long)quiesce_us,
                     (ft6 - ft5) * us, (ft7 - ft6) * us,
                     (unsigned long)s_rstate.t_cmds_us, (unsigned long)s_rstate.t_present_us,
-                    (unsigned long)s_rstate.t_swap_us, (unsigned long)s_rstate.t_gpu_us);
+                    (unsigned long)s_rstate.t_swap_us, (unsigned long)s_rstate.t_gpu_us,
+                    ncands, nvis, ninterp, interp_us);
             }
             break;
         }

@@ -204,6 +204,19 @@ struct nav_tick_sample{
     uint32_t nstate_seek;
     uint32_t nstate_waiting;
     uint32_t nstate_turning;
+    uint32_t period_us;      /* time between this task's submit and the previous one's */
+    uint32_t fiber_frames;   /* frames from submit to completion */
+    uint32_t nlate;          /* frames a due tick waited for the unfinished fiber */
+    uint32_t nfield_tasks;
+    uint32_t field_us_sum;
+    uint32_t field_us_max;
+    uint32_t field_wall_us;
+    uint32_t nchain_tasks;
+    uint32_t chain_us_sum;
+    uint32_t chain_us_max;
+    uint32_t chain_wall_us;
+    uint32_t ncarried;
+    uint32_t carry_join_us;  /* main-thread wait for carried floods before the copy */
 };
 
 struct perf_info{
