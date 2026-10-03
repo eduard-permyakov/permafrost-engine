@@ -94,7 +94,14 @@ MPOOL_IMPL(static, taglist, struct taglist)
 
 KHASH_MAP_INIT_INT(tags, struct taglist)
 KHASH_MAP_INIT_INT(icons, struct iconlist)
-KHASH_MAP_INIT_INT(matrix, mat4x4_t)
+/* A stale memo keeps its slot: movers dirty theirs every frame, and a
+ * delete then put churns the table. */
+struct matrix_memo{
+    mat4x4_t m;
+    bool     valid;
+};
+
+KHASH_MAP_INIT_INT(matrix, struct matrix_memo)
 KHASH_MAP_INIT_INT(obb, struct obb)
 KHASH_MAP_INIT_INT(radius, float)
 __KHASH_IMPL(trans, extern, khint32_t, struct transform, 1, kh_int_hash_func, kh_int_hash_equal)
@@ -336,8 +343,8 @@ void Entity_ModelMatrix(uint32_t uid, mat4x4_t *out)
     ASSERT_IN_MAIN_THREAD();
 
     khiter_t k = kh_get(matrix, s_ent_matrix_cache, uid);
-    if(k != kh_end(s_ent_matrix_cache)) {
-        *out = kh_value(s_ent_matrix_cache, k);
+    if(k != kh_end(s_ent_matrix_cache) && kh_value(s_ent_matrix_cache, k).valid) {
+        *out = kh_value(s_ent_matrix_cache, k).m;
         return;
     }
 
@@ -347,17 +354,19 @@ void Entity_ModelMatrix(uint32_t uid, mat4x4_t *out)
 
     Entity_ModelMatrixFrom(pos, rot, scale, out);
 
-    int status;
-    k = kh_put(matrix, s_ent_matrix_cache, uid, &status);
-    assert(status != -1);
-    kh_value(s_ent_matrix_cache, k) = *out;
+    if(k == kh_end(s_ent_matrix_cache)) {
+        int status;
+        k = kh_put(matrix, s_ent_matrix_cache, uid, &status);
+        assert(status != -1);
+    }
+    kh_value(s_ent_matrix_cache, k) = (struct matrix_memo){*out, true};
 }
 
 void Entity_DirtyModelMatrix(uint32_t uid)
 {
     khiter_t k = kh_get(matrix, s_ent_matrix_cache, uid);
     if(k != kh_end(s_ent_matrix_cache)) {
-        kh_del(matrix, s_ent_matrix_cache, k);
+        kh_value(s_ent_matrix_cache, k).valid = false;
     }
     k = kh_get(obb, s_ent_obb_cache, uid);
     if(k != kh_end(s_ent_obb_cache)) {
@@ -733,7 +742,7 @@ void Entity_SetRotInterpolated(uint32_t uid, quat_t rot)
 
     khiter_t m = kh_get(matrix, s_ent_matrix_cache, uid);
     if(m != kh_end(s_ent_matrix_cache)) {
-        kh_del(matrix, s_ent_matrix_cache, m);
+        kh_value(s_ent_matrix_cache, m).valid = false;
     }
 }
 
@@ -815,6 +824,10 @@ float Entity_MaxReach(uint32_t uid)
 void Entity_Remove(uint32_t uid)
 {
     Entity_DirtyModelMatrix(uid);
+    khiter_t mk = kh_get(matrix, s_ent_matrix_cache, uid);
+    if(mk != kh_end(s_ent_matrix_cache)) {
+        kh_del(matrix, s_ent_matrix_cache, mk);
+    }
 
     khiter_t r = kh_get(radius, s_ent_pose_radius, uid);
     if(r != kh_end(s_ent_pose_radius)) {
