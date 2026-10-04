@@ -189,7 +189,6 @@ static vec_crange_t s_pub_ranges;
 KHASH_SET_INIT_INT64(ffpend)
 
 struct field_work{
-    struct memstack mem;
     vec_in_t        in;
     vec_out_t       out;
     size_t          nwork;
@@ -315,25 +314,6 @@ static khash_t(astar_memo) *s_astar_memo;
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
-
-static void *vec_realloc(void *ptr, size_t size)
-{
-    if(!ptr)
-        return stalloc(&s_field_work.mem, size);
-
-    void *ret = stalloc(&s_field_work.mem, size);
-    if(!ret)
-        return NULL;
-
-    assert(size % 2 == 0);
-    memcpy(ret, ptr, size / 2);
-    return ret;
-}
-
-static void vec_free(void *ptr)
-{
-    /* no-op */
-}
 
 static uint64_t td_key(const struct tile_desc *td)
 {
@@ -2793,7 +2773,6 @@ static void field_join_work(void)
         Sched_AwaitAll(&s_field_work.tids[idx], &s_field_work.futures[idx], 1);
         field_release_slot(idx);
     }
-    stalloc_clear(&s_field_work.mem);
 }
 
 static uint64_t los_pending_key(dest_id_t id, struct coord chunk)
@@ -2954,7 +2933,13 @@ static vec2_t tile_center_location(struct nav_private *priv, vec3_t map_pos, str
 bool N_Init(void)
 {
     memset(&s_field_work, 0, sizeof(s_field_work));
-    if(!stalloc_init(&s_field_work.mem))
+    /* Slots are addressed by index from task args and read by carried floods
+     * across ticks, so the arrays are allocated once and never move.
+     */
+    vec_in_init(&s_field_work.in);
+    vec_out_init(&s_field_work.out);
+    if(!vec_in_resize(&s_field_work.in, MAX_FIELD_TASKS)
+    || !vec_out_resize(&s_field_work.out, MAX_FIELD_TASKS))
         goto fail_alloc;
 
     if(NULL == (s_field_work.pending = kh_init(ffpend)))
@@ -3156,7 +3141,8 @@ void N_Shutdown(void)
     vec_inval_destroy(&s_pending_inval);
     vec_crange_destroy(&s_pub_ranges);
     kh_destroy(ffpend, s_field_work.pending);
-    stalloc_destroy(&s_field_work.mem);
+    vec_in_destroy(&s_field_work.in);
+    vec_out_destroy(&s_field_work.out);
     kh_destroy(loschain, s_los_work.chain_index);
     kh_destroy(lospend, s_los_work.pending);
     PF_FREE(s_los_work.entries);
@@ -4823,18 +4809,6 @@ bool N_DesiredGroupArrivalVelocity(vec2_t curr_pos, void *nav_private, enum nav_
     return true;
 }
 
-void N_PrepareAsyncWork(void)
-{
-    /* Carried slots hold pointers into these arrays across ticks. */
-    if(vec_size(&s_field_work.in) == MAX_FIELD_TASKS)
-        return;
-    vec_in_init_alloc(&s_field_work.in, vec_realloc, vec_free);
-    vec_in_resize(&s_field_work.in, MAX_FIELD_TASKS);
-
-    vec_out_init_alloc(&s_field_work.out, vec_realloc, vec_free);
-    vec_out_resize(&s_field_work.out, MAX_FIELD_TASKS);
-}
-
 void N_SetAsyncFieldCarry(bool on)
 {
     s_field_carry = on;
@@ -5055,7 +5029,6 @@ void N_AwaitAsyncFields(void)
         s_tick_diag.field_wall_us += (SDL_GetPerformanceCounter() - s_field_dispatch_pc)
                                    * 1000000 / SDL_GetPerformanceFrequency();
     }
-    stalloc_clear(&s_field_work.mem);
 }
 
 void N_DispatchLOSChains(void)

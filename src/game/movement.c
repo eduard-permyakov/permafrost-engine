@@ -6834,11 +6834,6 @@ static void compute_path_requests(uint64_t dispatch_ticks)
      */
     uint64_t phase_start = SDL_GetPerformanceCounter();
     N_AwaitAsyncFields();
-
-    /* The join clears the pool's arena; the serial loop below re-uses the
-     * pool for its deferred flow floods, so it must be re-prepared (arrays
-     * are carved from the arena before any per-task args). */
-    N_PrepareAsyncWork();
     s_last_nav_tick_stats.cpr_async_us =
         perf_ticks_to_us(dispatch_ticks + (SDL_GetPerformanceCounter() - phase_start));
 
@@ -7299,10 +7294,6 @@ static struct result navigation_tick_task(void *arg)
     s_rebuild_budget = MAX_REBUILDS_PER_TICK;
     s_first_starved = (size_t)-1;
     N_ApplyDeferredInvalidations();
-
-    /* Open the async field pool for the whole tick: the serial LOS-build loop
-     * defers flow floods to it before compute_path_requests runs. */
-    N_PrepareAsyncWork();
 
     s_last_nav_tick_stats.inval_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - nav_start);

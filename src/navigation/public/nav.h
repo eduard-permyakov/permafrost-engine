@@ -924,12 +924,6 @@ size_t N_CopyBlockersPacked(void *nav_private, void *out, size_t maxout);
 /*###########################################################################*/
 
 /* ------------------------------------------------------------------------
- * Prepare the async workspace for following async field computation jobs.
- * ------------------------------------------------------------------------
- */
-void N_PrepareAsyncWork(void);
-
-/* ------------------------------------------------------------------------
  * Await all the outstanding flow field computation jobs and place the
  * result in the fieldcache.
  * ------------------------------------------------------------------------
