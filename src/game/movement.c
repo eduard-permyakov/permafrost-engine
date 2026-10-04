@@ -7753,11 +7753,12 @@ static void move_do_tick_submit(enum movement_hz hz)
 
 static void move_tick(void *user, void *event)
 {
-    /* If we are backed up, drop excess events */
-    if(g_frame_idx == s_last_tick)
+    /* A tick that cannot start this frame runs on the first frame that
+     * allows it; at most one is kept, so a backlog never builds. */
+    if(g_frame_idx == s_last_tick || s_move_split_pending) {
+        s_move_tick_queued = true;
         return;
-    if(s_move_split_pending)
-        return;
+    }
 
     enum eventtype curr_event = (uintptr_t)user;
     enum movement_hz hz = event_to_hz(curr_event);
@@ -7778,6 +7779,8 @@ static void handle_queued_tick(void)
 {
     if(!s_move_tick_queued)
         return;
+    if(g_frame_idx == s_last_tick || s_move_split_pending)
+        return;
 
     enum move_work_status status = nav_tick_finish_work();
     if(status == WORK_INCOMPLETE) {
@@ -7790,6 +7793,7 @@ static void handle_queued_tick(void)
 
     s_move_tick_queued = false;
     move_do_tick(curr_event, hz);
+    handle_split_submit();
 }
 
 /* Below 20 Hz the tick's period leaves room to put the map update and the
