@@ -47,7 +47,6 @@
 #include "public/render.h"
 #include "public/render_ctrl.h"
 #include "../asset_cache.h"
-#include "../camera.h"
 #include "../entity.h"
 #include "../settings.h"
 #include "../main.h"
@@ -203,18 +202,16 @@ static struct bb_model_desc *bb_desc_for_key(void *render_key)
     return kh_value(s_desc_table, k);
 }
 
-/* The bake camera views from azimuth pi while the game camera views from
+/* The bake camera views from azimuth pi while the RTS camera views from
  * atan(front.x, front.z); the light takes the same Y rotation that carries
- * one onto the other, so its direction relative to the camera is kept.
+ * one onto the other, so its direction relative to the camera is kept. The
+ * fixed RTS yaw is used rather than the active camera's: a cinematic camera
+ * would otherwise re-bake every atlas on each switch.
  */
 static vec3_t bb_bake_frame_light(vec3_t light_pos)
 {
-    const struct camera *cam = G_GetActiveCamera();
-    if(!cam)
-        return light_pos;
-
-    vec3_t front = Camera_GetDir(cam);
-    float delta = M_PI - atan2f(front.x, front.z);
+    float yaw = DEG_TO_RAD(CONFIG_RTS_CAMERA_YAW_DEG);
+    float delta = M_PI - atan2f(cosf(yaw), -sinf(yaw));
     float c = cosf(delta), s = sinf(delta);
 
     return (vec3_t){

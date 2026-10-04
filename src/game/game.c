@@ -176,7 +176,7 @@ static void g_reset_camera(struct camera *cam)
     status = Settings_Get("pf.game.camera_tilt", &tilt);
     assert(status == SS_OKAY);
 
-    Camera_SetPitchAndYaw(cam, -(90.0f - tilt.as_int), 90.0f + 45.0f);
+    Camera_SetPitchAndYaw(cam, -(90.0f - tilt.as_int), CONFIG_RTS_CAMERA_YAW_DEG);
     Camera_SetPos(cam, (vec3_t){ 0.0f, BASE_CAM_HEIGHT * multiplier, 0.0f });
 }
 

@@ -59,6 +59,9 @@
  */
 #define CONFIG_SHADOW_MAX_EXTENT    (1536)
 
+/* The RTS camera's yaw, which gameplay never changes */
+#define CONFIG_RTS_CAMERA_YAW_DEG   (135.0f)
+
 /* Billboard atlas baking parameters. Folded into the impostor cache tag, so
  * changing any of them invalidates the on-disk atlases.
  */
