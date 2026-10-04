@@ -47,6 +47,7 @@
 #include "public/render.h"
 #include "public/render_ctrl.h"
 #include "../asset_cache.h"
+#include "../camera.h"
 #include "../entity.h"
 #include "../settings.h"
 #include "../main.h"
@@ -89,6 +90,7 @@ KHASH_MAP_INIT_INT64(bbdesc, struct bb_model_desc*)
 
 static uint64_t bb_mix(uint64_t hash, uint64_t val);
 static int      bb_azimuth_count(const struct aabb *aabb, int nclips);
+static vec3_t   bb_bake_frame_light(vec3_t light_pos);
 static bool     bb_alloc_atlas(struct bb_model_desc *desc, const void *pixels);
 static bool     bb_bake_atlas(struct bb_model_desc *desc, const void *render_private,
                               const struct bb_variant *var, const char *cache_name,
@@ -198,6 +200,27 @@ static struct bb_model_desc *bb_desc_for_key(void *render_key)
     return kh_value(s_desc_table, k);
 }
 
+/* The bake camera views from azimuth pi while the game camera views from
+ * atan(front.x, front.z); the light takes the same Y rotation that carries
+ * one onto the other, so its direction relative to the camera is kept.
+ */
+static vec3_t bb_bake_frame_light(vec3_t light_pos)
+{
+    const struct camera *cam = G_GetActiveCamera();
+    if(!cam)
+        return light_pos;
+
+    vec3_t front = Camera_GetDir(cam);
+    float delta = M_PI - atan2f(front.x, front.z);
+    float c = cosf(delta), s = sinf(delta);
+
+    return (vec3_t){
+        light_pos.x * c + light_pos.z * s,
+        light_pos.y,
+        -light_pos.x * s + light_pos.z * c,
+    };
+}
+
 static struct bb_variant bb_current_variant(void)
 {
     struct sval setting;
@@ -219,7 +242,7 @@ static struct bb_variant bb_current_variant(void)
      */
     return (struct bb_variant){
         .shadowed = true,
-        .light_pos = G_GetLightPos(),
+        .light_pos = bb_bake_frame_light(G_GetLightPos()),
         .ambient_color = G_GetAmbientLightColor(),
         .emit_color = G_GetEmitLightColor(),
     };
