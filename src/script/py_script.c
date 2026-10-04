@@ -4003,8 +4003,14 @@ static bool s_pred_callable(uint32_t ent, void *arg)
     if(!obj)
         return false;
 
+    /* A predicate that raised leaves its exception pending for the caller */
+    if(PyErr_Occurred())
+        return false;
+
     PyObject *result = PyObject_CallFunctionObjArgs(func, obj, NULL);
-    bool ret = PyObject_IsTrue(result);
+    if(!result)
+        return false;
+    bool ret = (PyObject_IsTrue(result) == 1);
     Py_DECREF(result);
     return ret;
 }
@@ -4038,6 +4044,8 @@ static PyObject *PyPf_nearest_ent(PyObject *self, PyObject *args, PyObject *kwar
     }else{
         nearest = G_Pos_NearestWithPred(xz_pos, s_pred_any, NULL, max_range);
     }
+    if(PyErr_Occurred())
+        return NULL;
 
     if(G_EntityExists(nearest)) {
         PyObject *ret = S_Entity_ObjForUID(nearest);
