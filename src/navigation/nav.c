@@ -5874,14 +5874,12 @@ bool N_LocationsReachable(void *nav_private, enum nav_layer layer,
     struct map_resolution res;
     N_GetResolution(priv, &res);
 
-    bool result;
-    (void)result;
-
+    /* A point off the map reaches nothing */
     struct tile_desc src_desc, dst_desc;
-    result = M_Tile_DescForPoint2D(res, map_pos, a, &src_desc);
-    assert(result);
-    result = M_Tile_DescForPoint2D(res, map_pos, b, &dst_desc);
-    assert(result);
+    if(!M_Tile_DescForPoint2D(res, map_pos, a, &src_desc))
+        return false;
+    if(!M_Tile_DescForPoint2D(res, map_pos, b, &dst_desc))
+        return false;
 
     const struct nav_chunk *src_chunk = &priv->chunks[layer][src_desc.chunk_r * priv->width + src_desc.chunk_c];
     const struct nav_chunk *dst_chunk = &priv->chunks[layer][dst_desc.chunk_r * priv->width + dst_desc.chunk_c];
