@@ -81,6 +81,8 @@ struct field_work_in;
 static void field_submit_work(struct field_work_in entry);
 static void field_submit_merge(struct field_work_in entry, const struct flow_field *base);
 static void field_finish_pending_merge(ff_id_t ffid);
+static int  field_pending_merge_slot(ff_id_t ffid);
+static void field_submit_slot(struct field_work_in entry, const struct flow_field *base);
 static void field_release_slot(size_t idx);
 static bool los_work_pending(dest_id_t id, struct coord chunk);
 static void los_defer_create(struct nav_private *priv, vec3_t map_pos, dest_id_t id,
@@ -145,6 +147,8 @@ struct field_work_in{
     ff_id_t             id;
     /* Flood into a copy of another field of the chunk instead of a fresh one */
     bool                merge;
+    /* A merge into a merge still in flight: that one's slot plus one, else 0 */
+    size_t              base_slot;
 };
 
 struct field_work_out{
@@ -2196,7 +2200,7 @@ static void field_patch_blocked(struct flow_field *ff)
     }
 }
 
-static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int faction_id,
+static bool n_request_path_impl(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int faction_id,
                            vec3_t map_pos, enum nav_layer layer, dest_id_t *out_dest_id)
 {
     PERF_ENTER();
@@ -2463,6 +2467,7 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
     vec_coord_destroy(&skipped);
 
 walk:;
+    uint64_t walk_t0 = SDL_GetPerformanceCounter();
     struct coord prev_los_coord = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
 
     /* Traverse the portal path _backwards_ and generate the required fields, 
@@ -2515,6 +2520,24 @@ walk:;
 
         if(on_task && N_FC_GetDestFFMapping(priv->fieldcache, ret, chunk_coord, &exist_id)
         && exist_id != new_id && field_work_pending(exist_id)) {
+
+            int base = field_pending_merge_slot(exist_id);
+            if(base >= 0 && (field_work_pending(new_id) || s_field_work.nwork < MAX_FIELD_TASKS)) {
+                if(!field_work_pending(new_id)) {
+                    field_submit_slot((struct field_work_in){
+                        .priv = priv,
+                        .chunk = chunk_coord,
+                        .target = target,
+                        .faction_id = faction_id,
+                        .layer = layer,
+                        .id = new_id,
+                        .merge = true,
+                        .base_slot = (size_t)base + 1
+                    }, NULL);
+                }
+                N_FC_PutDestFFMapping(priv->fieldcache, ret, chunk_coord, new_id);
+                goto ff_exists;
+            }
             field_finish_pending_merge(exist_id);
         }
 
@@ -2621,8 +2644,22 @@ walk:;
     }
     vec_portal_destroy(&path);
 
+    s_tick_diag.req_walk_us += (SDL_GetPerformanceCounter() - walk_t0) * 1000000
+                             / SDL_GetPerformanceFrequency();
     *out_dest_id = ret; 
     PERF_RETURN(true);
+}
+
+static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int faction_id,
+                           vec3_t map_pos, enum nav_layer layer, dest_id_t *out_dest_id)
+{
+    uint64_t t0 = SDL_GetPerformanceCounter();
+    bool ret = n_request_path_impl(nav_private, xz_src, xz_dest, faction_id, map_pos, layer,
+                                   out_dest_id);
+    s_tick_diag.req_total_us += (SDL_GetPerformanceCounter() - t0) * 1000000
+                              / SDL_GetPerformanceFrequency();
+    s_tick_diag.nreq++;
+    return ret;
 }
 
 static struct result field_task(void *arg)
@@ -2632,8 +2669,17 @@ static struct result field_task(void *arg)
     struct field_work_in *in = &vec_AT(&s_field_work.in, *index);
     struct field_work_out *out = &vec_AT(&s_field_work.out, *index);
 
-    if(!in->merge)
+    if(in->merge && in->base_slot) {
+        size_t base = in->base_slot - 1;
+        while(!Sched_FutureIsReady(&s_field_work.futures[base])) {
+            if(!Sched_RunSync(s_field_work.tids[base]))
+                Sched_TryYield();
+        }
+        out->field = vec_AT(&s_field_work.out, base).field;
+        out->field.patched = 0;
+    }else if(!in->merge) {
         N_FlowFieldInit(in->chunk, &out->field);
+    }
     N_FlowFieldUpdate(in->chunk, in->priv, in->faction_id, in->layer, in->target,
         in->priv->unit_query_ctx, &out->field);
 
@@ -2702,21 +2748,27 @@ static void field_submit_merge(struct field_work_in entry, const struct flow_fie
     field_submit_slot(entry, base);
 }
 
-/* A merge that a later hop of the same walk would merge into again is
- * finished first, as the inline merge it replaces always was. */
-static void field_finish_pending_merge(ff_id_t ffid)
+static int field_pending_merge_slot(ff_id_t ffid)
 {
     for(size_t idx = 0; idx < s_field_work.high; idx++) {
         if(!s_field_work.occupied[idx] || !vec_AT(&s_field_work.in, idx).merge)
             continue;
-        if(vec_AT(&s_field_work.in, idx).id != ffid)
-            continue;
-        Sched_AwaitAll(&s_field_work.tids[idx], &s_field_work.futures[idx], 1);
-        N_FC_PutFlowField(N_FC_GetSingleton(), ffid, &vec_AT(&s_field_work.out, idx).field);
-        s_tick_diag.pseek_built++;
-        field_release_slot(idx);
-        return;
+        if(vec_AT(&s_field_work.in, idx).id == ffid)
+            return (int)idx;
     }
+    return -1;
+}
+
+/* With the pool full, a merge that a later hop merges into again is finished
+ * here, as the inline merge it replaces always was. The slot stays occupied
+ * until the join: a chained merge may still read it. */
+static void field_finish_pending_merge(ff_id_t ffid)
+{
+    int idx = field_pending_merge_slot(ffid);
+    if(idx < 0)
+        return;
+    Sched_AwaitAll(&s_field_work.tids[idx], &s_field_work.futures[idx], 1);
+    N_FC_PutFlowField(N_FC_GetSingleton(), ffid, &vec_AT(&s_field_work.out, idx).field);
 }
 
 static void field_release_slot(size_t idx)
@@ -4977,7 +5029,8 @@ void N_AwaitAsyncFields(void)
              * carried from an earlier tick. */
             if(s_field_work.carried[i] && s_field_work.carried_tick[i] == s_field_tick)
                 continue;
-            if(s_field_carry && !s_field_work.carried[i]
+            /* A merge is a fresh build that a chained merge may read: never carried. */
+            if(s_field_carry && !s_field_work.carried[i] && !in->merge
             && N_FC_ContainsFlowField(N_FC_GetSingleton(), in->id)) {
                 s_field_work.carried[i] = true;
                 s_field_work.carried_tick[i] = s_field_tick;

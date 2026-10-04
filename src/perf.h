@@ -224,6 +224,9 @@ struct nav_tick_sample{
     uint32_t req_prep_us;
     uint32_t inline_flood_us;
     uint32_t ninline_flood;
+    uint32_t req_total_us;
+    uint32_t nreq;
+    uint32_t req_walk_us;
 };
 
 struct perf_info{

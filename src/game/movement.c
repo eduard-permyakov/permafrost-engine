@@ -6343,6 +6343,9 @@ static enum move_work_status nav_tick_finish_work(void)
     s_last_nav_tick_stats.req_prep_us     = diag.req_prep_us;
     s_last_nav_tick_stats.inline_flood_us = diag.inline_flood_us;
     s_last_nav_tick_stats.ninline_flood   = diag.ninline_flood;
+    s_last_nav_tick_stats.req_total_us    = diag.req_total_us;
+    s_last_nav_tick_stats.nreq            = diag.nreq;
+    s_last_nav_tick_stats.req_walk_us     = diag.req_walk_us;
 
     /* The out array is consumed at the next tick's start; reducing the
      * per-solve diagnostics here is race-free. */
