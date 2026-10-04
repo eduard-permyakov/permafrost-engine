@@ -448,6 +448,18 @@ fail_came_from:
 /* Admissible octile estimate from a portal's midpoint to the goal tile, in
  * tile units (the minimum per-tile travel cost is 1).
  */
+static float tile_octile_estimate(struct tile_desc tile, struct tile_desc end)
+{
+    int tr = tile.chunk_r * FIELD_RES_R + tile.tile_r;
+    int tc = tile.chunk_c * FIELD_RES_C + tile.tile_c;
+    int er = end.chunk_r * FIELD_RES_R + end.tile_r;
+    int ec = end.chunk_c * FIELD_RES_C + end.tile_c;
+    int dr = abs(tr - er), dc = abs(tc - ec);
+    int dmin = (dr < dc) ? dr : dc;
+    int dmax = (dr > dc) ? dr : dc;
+    return (dmax - dmin) + dmin * 1.41421356f;
+}
+
 static float portal_octile_estimate(const struct portal *port, struct tile_desc end)
 {
     int pr = port->chunk.r * FIELD_RES_R
@@ -460,6 +472,30 @@ static float portal_octile_estimate(const struct portal *port, struct tile_desc 
     int dmin = (dr < dc) ? dr : dc;
     int dmax = (dr > dc) ? dr : dc;
     return (dmax - dmin) + dmin * 1.41421356f;
+}
+
+/* The cost from the start tile to the chunk's i-th portal: its travel cost when
+ * the tile reaches the portal, else the octile estimate when the portal lies on
+ * the start's closest pathable local island, as a tile blocked on this layer
+ * has no travel costs of its own.
+ */
+static bool start_portal_cost(const struct nav_chunk *bchunk, int i, struct tile_desc start_tile,
+                              uint16_t start_liid, float *out_cost)
+{
+    const struct portal *port = &bchunk->portals[i];
+    struct coord tile_coord = (struct coord){start_tile.tile_r, start_tile.tile_c};
+
+    if(N_PortalReachableFromTile(port, tile_coord, bchunk)) {
+        float cost = portal_cost_unpack(bchunk->portal_travel_costs[i][tile_coord.r][tile_coord.c]);
+        if(cost != FLT_MAX) {
+            *out_cost = cost;
+            return true;
+        }
+    }
+    if(!N_PortalReachableFromIsland(port, start_liid, bchunk))
+        return false;
+    *out_cost = portal_octile_estimate(port, start_tile);
+    return true;
 }
 
 bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_tile, 
@@ -500,23 +536,17 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_til
     if(end_liid == ISLAND_NONE)
         goto fail_find_path;
 
-    /* Intitialize the frontier with all the portals in the source chunk that are 
-     * reachable from the source tile. */
+    /* Initialize the frontier with the portals of the source chunk reachable
+     * from the source tile or its closest pathable local island.
+     */
     for(int i = 0; i < bchunk->num_portals; i++) {
 
-        const struct portal *port = &bchunk->portals[i];
-        struct coord tile_coord = (struct coord){start_tile.tile_r, start_tile.tile_c};
-
-        if(N_PortalReachableFromTile(port, tile_coord, bchunk)) {
-
-            float cost = portal_cost_unpack(bchunk->portal_travel_costs[i][tile_coord.r][tile_coord.c]);
-            if(cost != FLT_MAX) {
-
-                struct portal_hop hop = (struct portal_hop){port, start_liid};
-                kh_put_val(key_float, running_cost, phop_to_key(&hop), cost);
-                pq_portal_push(&frontier, cost + portal_octile_estimate(port, end_tile), hop);
-            }
-        }
+        float cost;
+        if(!start_portal_cost(bchunk, i, start_tile, start_liid, &cost))
+            continue;
+        struct portal_hop hop = (struct portal_hop){&bchunk->portals[i], start_liid};
+        kh_put_val(key_float, running_cost, phop_to_key(&hop), cost);
+        pq_portal_push(&frontier, cost + portal_octile_estimate(&bchunk->portals[i], end_tile), hop);
     }
 
     while(pq_size(&frontier) > 0) {
@@ -593,3 +623,102 @@ fail_came_from:
     PERF_RETURN(false);
 }
 
+bool AStar_NearestReachablePortal(struct tile_desc start_tile, struct tile_desc goal_tile,
+                                  const struct nav_private *priv, enum nav_layer layer,
+                                  const struct portal **out_portal, struct tile_desc *out_tile)
+{
+    PERF_ENTER();
+    /* Serial navigation-fiber only, like the path search above */
+    static khash_t(key_float) *best_cost;
+    pq_portal_t frontier;
+    pq_portal_init(&frontier);
+
+    if(!best_cost) {
+        if(NULL == (best_cost = kh_init(key_float)))
+            goto fail;
+        kh_resize(key_float, best_cost, 512);
+    }
+    kh_clear(key_float, best_cost);
+
+    const struct nav_chunk *bchunk = &priv->chunks[layer][start_tile.chunk_r * priv->width + start_tile.chunk_c];
+    uint16_t start_liid = N_ClosestPathableLocalIsland(priv, bchunk, start_tile);
+    if(start_liid == ISLAND_NONE)
+        goto fail;
+
+    for(int i = 0; i < bchunk->num_portals; i++) {
+
+        float cost;
+        if(!start_portal_cost(bchunk, i, start_tile, start_liid, &cost))
+            continue;
+        struct portal_hop hop = (struct portal_hop){&bchunk->portals[i], start_liid};
+        kh_put_val(key_float, best_cost, phop_to_key(&hop), cost);
+        pq_portal_push(&frontier, cost, hop);
+    }
+
+    /* Only a portal nearer the goal than the unit already stands is worth the trip */
+    float best_est = tile_octile_estimate(start_tile, goal_tile);
+    struct portal_hop best = {0};
+
+    while(pq_size(&frontier) > 0) {
+
+        struct portal_hop curr;
+        pq_portal_pop(&frontier, &curr);
+
+        float est = portal_octile_estimate(curr.portal, goal_tile);
+        if(est < best_est) {
+            best_est = est;
+            best = curr;
+        }
+
+        khiter_t k = kh_get(key_float, best_cost, phop_to_key(&curr));
+        assert(k != kh_end(best_cost));
+        float curr_cost = kh_value(best_cost, k);
+
+        const struct portal *neighbours[MAX_PORTAL_NEIGHBS];
+        float neighbour_costs[MAX_PORTAL_NEIGHBS];
+        uint16_t neighb_enter_liids[MAX_PORTAL_NEIGHBS];
+        int num_neighbours = neighbours_portal_graph(priv, layer, curr.portal, curr.liid, neighbours,
+            neighbour_costs, neighb_enter_liids, ARR_SIZE(neighbours), NULL);
+
+        for(int i = 0; i < num_neighbours; i++) {
+
+            struct portal_hop next_hop = (struct portal_hop){neighbours[i], neighb_enter_liids[i]};
+            float new_cost = curr_cost + neighbour_costs[i] + portal_node_penalty();
+            khiter_t n = kh_get(key_float, best_cost, phop_to_key(&next_hop));
+            if(n != kh_end(best_cost) && kh_value(best_cost, n) <= new_cost)
+                continue;
+            kh_put_val(key_float, best_cost, phop_to_key(&next_hop), new_cost);
+            pq_portal_push(&frontier, new_cost, next_hop);
+        }
+    }
+    pq_portal_destroy(&frontier);
+
+    if(!best.portal)
+        PERF_RETURN(false);
+
+    /* A tile of the portal on the side it was entered from */
+    const struct portal *port = best.portal;
+    const struct nav_chunk *pchunk = &priv->chunks[layer][port->chunk.r * priv->width + port->chunk.c];
+    struct tile_desc tile = (struct tile_desc){
+        port->chunk.r, port->chunk.c,
+        (port->endpoints[0].r + port->endpoints[1].r) / 2,
+        (port->endpoints[0].c + port->endpoints[1].c) / 2
+    };
+    for(int r = port->endpoints[0].r; r <= port->endpoints[1].r; r++) {
+    for(int c = port->endpoints[0].c; c <= port->endpoints[1].c; c++) {
+        if(pchunk->local_islands[r][c] == best.liid) {
+            tile.tile_r = r;
+            tile.tile_c = c;
+            r = port->endpoints[1].r + 1;
+            break;
+        }
+    }}
+
+    *out_portal = port;
+    *out_tile = tile;
+    PERF_RETURN(true);
+
+fail:
+    pq_portal_destroy(&frontier);
+    PERF_RETURN(false);
+}

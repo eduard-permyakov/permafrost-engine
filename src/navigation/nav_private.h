@@ -94,6 +94,8 @@ static inline struct portal *n_portal(const struct nav_private *priv,
 enum nav_layer N_DestLayer(dest_id_t id);
 int            N_DestFactionID(dest_id_t id);
 
+bool           N_PortalReachableFromIsland(const struct portal *port, uint16_t liid,
+                                           const struct nav_chunk *chunk);
 bool           N_PortalReachableFromTile(const struct portal *port, struct coord tile, 
                                          const struct nav_chunk *chunk);
 

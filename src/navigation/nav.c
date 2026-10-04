@@ -1689,6 +1689,20 @@ static const struct portal *n_closest_reachable_portal(const struct nav_chunk *c
             min_cost = cost;
         }
     }
+    if(ret || unblocked)
+        return ret;
+
+    /* A tile blocked on this layer has no travel costs; take the nearest portal */
+    for(int i = 0; i < chunk->num_portals; i++) {
+        const struct portal *curr = &chunk->portals[i];
+        int dr = abs((curr->endpoints[0].r + curr->endpoints[1].r) / 2 - start.r);
+        int dc = abs((curr->endpoints[0].c + curr->endpoints[1].c) / 2 - start.c);
+        float dist = MAX(dr, dc) + MIN(dr, dc) * 0.41421356f;
+        if(dist < min_cost) {
+            ret = curr;
+            min_cost = dist;
+        }
+    }
     return ret;
 }
 
@@ -2180,6 +2194,65 @@ static void field_patch_blocked(struct flow_field *ff)
     }
 }
 
+/* The destination chunk's field toward the destination tile and, unless the
+ * tile stands in for an unreachable one, its LOS field.
+ */
+static void n_build_dest_fields(struct nav_private *priv, vec3_t map_pos, enum nav_layer layer,
+                                int faction_id, dest_id_t ret, struct tile_desc dst_desc,
+                                bool on_task, bool with_los)
+{
+    /* Even if a mapping exists, the actual flow field may have been evicted from
+     * the cache, due to space constraints or invalidation, or be served stale
+     * with its rate-capped rebuild now due. */
+    ff_id_t id;
+    if(!N_FC_GetDestFFMapping(priv->fieldcache, ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &id)
+    || !N_FC_ContainsFlowField(priv->fieldcache, id)
+    || N_FC_FlowFieldRebuildDue(priv->fieldcache, id)) {
+
+        struct field_target target = (struct field_target){
+            .type = TARGET_TILE,
+            .tile = (struct coord){dst_desc.tile_r, dst_desc.tile_c}
+        };
+
+        struct flow_field ff;
+        id = N_FlowFieldID((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, target, layer);
+
+        struct coord chunk = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
+        if((!N_FC_ContainsFlowField(priv->fieldcache, id)
+            || N_FC_FlowFieldRebuildDue(priv->fieldcache, id))
+        && !(on_task && n_request_async_flow(priv, chunk, target, faction_id, layer, id))) {
+
+            N_FlowFieldInit(chunk, &ff);
+            uint64_t iff_t0 = SDL_GetPerformanceCounter();
+            N_FlowFieldUpdate(chunk, priv, faction_id, layer, target, priv->unit_query_ctx, &ff);
+            s_tick_diag.ninline_flood++;
+            s_tick_diag.inline_flood_us += (SDL_GetPerformanceCounter() - iff_t0) * 1000000
+                                         / SDL_GetPerformanceFrequency();
+            field_patch_blocked(&ff);
+            N_FC_PutFlowField(priv->fieldcache, id, &ff);
+        }
+
+        N_FC_PutDestFFMapping(priv->fieldcache, ret, 
+            (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, id);
+    }
+
+    /* Create the LOS field for the destination chunk, if necessary */
+    struct coord dst_chunk_coord = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
+    if(with_los
+    && !N_FC_ContainsLOSField(priv->fieldcache, ret, dst_chunk_coord)
+    && !(on_task && los_work_pending(ret, dst_chunk_coord))) {
+
+        if(on_task) {
+            los_defer_create(priv, map_pos, ret, dst_chunk_coord, dst_desc, NULL);
+        }else{
+            struct LOS_field lf;
+            N_LOSFieldCreate(ret, dst_chunk_coord, dst_desc, priv, map_pos,
+                priv->unit_query_ctx, &lf, NULL);
+            N_FC_PutLOSField(priv->fieldcache, ret, dst_chunk_coord, &lf);
+        }
+    }
+}
+
 static bool n_request_path_impl(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int faction_id,
                            vec3_t map_pos, enum nav_layer layer, dest_id_t *out_dest_id)
 {
@@ -2226,6 +2299,7 @@ static bool n_request_path_impl(void *nav_private, vec2_t xz_src, vec2_t xz_dest
     assert(result);
     result = M_Tile_DescForPoint2D(res, map_pos, xz_dest, &dst_desc);
     assert(result);
+    struct tile_desc orig_dst_desc = dst_desc;
 
     dest_id_t ret = n_dest_id(dst_desc, layer, faction_id);
 
@@ -2244,55 +2318,7 @@ static bool n_request_path_impl(void *nav_private, vec2_t xz_src, vec2_t xz_dest
         PERF_RETURN(false);
     }
 
-    /* Even if a mapping exists, the actual flow field may have been evicted from
-     * the cache, due to space constraints or invalidation, or be served stale
-     * with its rate-capped rebuild now due. */
-    ff_id_t id;
-    if(!N_FC_GetDestFFMapping(priv->fieldcache, ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &id)
-    || !N_FC_ContainsFlowField(priv->fieldcache, id)
-    || N_FC_FlowFieldRebuildDue(priv->fieldcache, id)) {
-
-        struct field_target target = (struct field_target){
-            .type = TARGET_TILE,
-            .tile = (struct coord){dst_desc.tile_r, dst_desc.tile_c}
-        };
-
-        struct flow_field ff;
-        id = N_FlowFieldID((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, target, layer);
-
-        struct coord chunk = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
-        if((!N_FC_ContainsFlowField(priv->fieldcache, id)
-            || N_FC_FlowFieldRebuildDue(priv->fieldcache, id))
-        && !(on_task && n_request_async_flow(priv, chunk, target, faction_id, layer, id))) {
-
-            N_FlowFieldInit(chunk, &ff);
-            uint64_t iff_t0 = SDL_GetPerformanceCounter();
-            N_FlowFieldUpdate(chunk, priv, faction_id, layer, target, priv->unit_query_ctx, &ff);
-            s_tick_diag.ninline_flood++;
-            s_tick_diag.inline_flood_us += (SDL_GetPerformanceCounter() - iff_t0) * 1000000
-                                         / SDL_GetPerformanceFrequency();
-            field_patch_blocked(&ff);
-            N_FC_PutFlowField(priv->fieldcache, id, &ff);
-        }
-
-        N_FC_PutDestFFMapping(priv->fieldcache, ret, 
-            (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, id);
-    }
-
-    /* Create the LOS field for the destination chunk, if necessary */
-    struct coord dst_chunk_coord = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
-    if(!N_FC_ContainsLOSField(priv->fieldcache, ret, dst_chunk_coord)
-    && !(on_task && los_work_pending(ret, dst_chunk_coord))) {
-
-        if(on_task) {
-            los_defer_create(priv, map_pos, ret, dst_chunk_coord, dst_desc, NULL);
-        }else{
-            struct LOS_field lf;
-            N_LOSFieldCreate(ret, dst_chunk_coord, dst_desc, priv, map_pos,
-                priv->unit_query_ctx, &lf, NULL);
-            N_FC_PutLOSField(priv->fieldcache, ret, dst_chunk_coord, &lf);
-        }
-    }
+    n_build_dest_fields(priv, map_pos, layer, faction_id, ret, dst_desc, on_task, true);
 
     /* Source and destination positions are in the same chunk, and a path exists
      * between them. In this case, we only need a single flow field. .
@@ -2331,6 +2357,12 @@ static bool n_request_path_impl(void *nav_private, vec2_t xz_src, vec2_t xz_dest
     const struct portal *dst_port = NULL;
 
     uint64_t memo_key = 0;
+
+    /* A route that ends at a stand-in for the ordered destination is served
+     * stale and retried; the memo restores its stand-in tile.
+     */
+    bool surrogate = false;
+
     bool use_memo = on_task;
     if(use_memo) {
 
@@ -2421,6 +2453,32 @@ static bool n_request_path_impl(void *nav_private, vec2_t xz_src, vec2_t xz_dest
         }
     }
 
+    /* Blockers have severed every portal route to the destination. Rather than
+     * leave the unit without a field, route it to the reachable portal nearest
+     * the goal; those fields are served stale, so the true route is retried
+     * once the blockers move.
+     */
+    if(!path_exists
+    && !(src_desc.chunk_r == dst_desc.chunk_r && src_desc.chunk_c == dst_desc.chunk_c)) {
+
+        const struct portal *near_port;
+        struct tile_desc near_tile;
+        if(AStar_NearestReachablePortal(src_desc, orig_dst_desc, priv, layer, &near_port, &near_tile)) {
+            s_tick_diag.nastar++;
+            uint64_t near_t0 = SDL_GetPerformanceCounter();
+            path_exists = AStar_PortalGraphPath(src_desc, near_tile, near_port,
+                priv, layer, &path, &cost, &skipped);
+            s_tick_diag.astar_us += (SDL_GetPerformanceCounter() - near_t0) * 1000000
+                                  / SDL_GetPerformanceFrequency();
+            if(path_exists) {
+                dst_desc = near_tile;
+                dst_port = near_port;
+                dst_chunk = &priv->chunks[layer][dst_desc.chunk_r * priv->width + dst_desc.chunk_c];
+                n_build_dest_fields(priv, map_pos, layer, faction_id, ret, dst_desc, on_task, false);
+            }
+        }
+    }
+
     if(!path_exists) {
         vec_portal_destroy(&path);
         vec_coord_destroy(&skipped);
@@ -2447,6 +2505,8 @@ static bool n_request_path_impl(void *nav_private, vec2_t xz_src, vec2_t xz_dest
     vec_coord_destroy(&skipped);
 
 walk:;
+    surrogate = (dst_desc.chunk_r != orig_dst_desc.chunk_r || dst_desc.chunk_c != orig_dst_desc.chunk_c
+              || dst_desc.tile_r != orig_dst_desc.tile_r || dst_desc.tile_c != orig_dst_desc.tile_c);
     uint64_t walk_t0 = SDL_GetPerformanceCounter();
     struct coord prev_los_coord = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
 
@@ -2599,7 +2659,8 @@ walk:;
         /* Reference field in the cache */
         (void)N_FC_FlowFieldAt(priv->fieldcache, new_id);
 
-        if(!N_FC_ContainsLOSField(priv->fieldcache, ret, chunk_coord)
+        if(!surrogate
+        && !N_FC_ContainsLOSField(priv->fieldcache, ret, chunk_coord)
         && !(on_task && los_work_pending(ret, chunk_coord))) {
 
             assert((abs(prev_los_coord.r - chunk_coord.r) 
@@ -2621,6 +2682,18 @@ walk:;
         }
 
         prev_los_coord = chunk_coord;
+    }
+    if(surrogate) {
+        ff_id_t stale_id;
+        struct coord ends[2] = {{src_desc.chunk_r, src_desc.chunk_c}, {dst_desc.chunk_r, dst_desc.chunk_c}};
+        for(int i = 0; i < ARR_SIZE(ends); i++) {
+            if(N_FC_GetDestFFMapping(priv->fieldcache, ret, ends[i], &stale_id))
+                N_FC_MarkFlowFieldStale(priv->fieldcache, stale_id);
+        }
+        for(int i = 0; i < vec_size(&path); i++) {
+            if(N_FC_GetDestFFMapping(priv->fieldcache, ret, vec_AT(&path, i).portal->chunk, &stale_id))
+                N_FC_MarkFlowFieldStale(priv->fieldcache, stale_id);
+        }
     }
     vec_portal_destroy(&path);
 
@@ -6142,6 +6215,17 @@ bool N_IsAdjacentToIslandOBB(void *nav_private, enum nav_layer layer, vec3_t map
     }
 
     PERF_RETURN(false);
+}
+
+bool N_PortalReachableFromIsland(const struct portal *port, uint16_t liid,
+                                 const struct nav_chunk *chunk)
+{
+    for(int r = port->endpoints[0].r; r <= port->endpoints[1].r; r++) {
+    for(int c = port->endpoints[0].c; c <= port->endpoints[1].c; c++) {
+        if(chunk->local_islands[r][c] == liid)
+            return true;
+    }}
+    return false;
 }
 
 bool N_PortalReachableFromTile(const struct portal *port, struct coord tile, 

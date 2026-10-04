@@ -130,5 +130,16 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_til
                            enum nav_layer layer, vec_portal_t *out_path, float *out_cost,
                            vec_coord_t *out_skipped);
 
+/* ------------------------------------------------------------------------
+ * For a goal no portal path reaches, finds the portal reachable from the
+ * start tile that lies nearest the goal, with a tile on the side it is
+ * entered from. Returns false when no reachable portal is nearer the goal
+ * than the start tile itself.
+ * ------------------------------------------------------------------------
+ */
+bool AStar_NearestReachablePortal(struct tile_desc start_tile, struct tile_desc goal_tile,
+                                  const struct nav_private *priv, enum nav_layer layer,
+                                  const struct portal **out_portal, struct tile_desc *out_tile);
+
 #endif
 

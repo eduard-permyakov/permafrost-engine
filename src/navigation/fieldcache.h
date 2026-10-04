@@ -124,6 +124,10 @@ bool                     N_FC_ContainsFlowField(struct fieldcache_ctx *ctx, ff_i
 void                     N_FC_TickAdvance(struct fieldcache_ctx *ctx);
 /* True when a stale-served enemy-seek field's rate-capped rebuild is due. */
 bool                     N_FC_FlowFieldRebuildDue(struct fieldcache_ctx *ctx, ff_id_t ffid);
+/* Serves a field of a route to a stand-in destination stale, so the true
+ * route is retried at the rate cap.
+ */
+void                     N_FC_MarkFlowFieldStale(struct fieldcache_ctx *ctx, ff_id_t ffid);
 
 void                     N_FC_PutFlowField(struct fieldcache_ctx *ctx, 
                                            ff_id_t ffid, const struct flow_field *ff);

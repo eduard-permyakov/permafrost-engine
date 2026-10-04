@@ -141,6 +141,7 @@ static uint32_t             (*s_nav_task_tid_provider)(void);
  */
 #define ENEMY_SEEK_REBUILD_PERIOD_TICKS (5)
 #define POINT_SEEK_REBUILD_PERIOD_TICKS (10)
+#define SURROGATE_REBUILD_PERIOD_TICKS  (20)
 /* A melee's blocker churn mass-invalidates the (dest, chunk) LOS fields every
  * tick; a straight-line visibility answer a few ticks stale is indistinguishable
  * in play, and the budgeted rebuild keeps it bounded. */
@@ -558,6 +559,12 @@ bool N_FC_FlowFieldRebuildDue(struct fieldcache_ctx *ctx, ff_id_t ffid)
         return false;
     }
     return ctx->tick >= kh_val(ctx->flow_stale, s);
+}
+
+void N_FC_MarkFlowFieldStale(struct fieldcache_ctx *ctx, ff_id_t ffid)
+{
+    FC_ASSERT_NAV_TASK();
+    flow_mark_stale(ctx, ffid, SURROGATE_REBUILD_PERIOD_TICKS);
 }
 
 const struct flow_field *N_FC_FlowFieldAt(struct fieldcache_ctx *ctx, ff_id_t ffid)
