@@ -115,6 +115,7 @@
 #define GL_U_BB_WORLD_SIZE      "bb_world_size"
 #define GL_U_BB_ANCHOR_OFF      "bb_anchor_off"
 #define GL_U_BB_NAZIMUTHS       "bb_nazimuths"
+#define GL_U_BB_DEPTH_EXTENT    "bb_depth_extent"
 
 enum utype{
     UTYPE_FLOAT,

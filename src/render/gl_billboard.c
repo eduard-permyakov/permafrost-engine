@@ -76,6 +76,7 @@
  * used until the render context has published the real limit.
  */
 #define FALLBACK_MAX_LAYERS (256)
+#define BB_BAKE_NEAR        (0.1f)
 
 /* The GPU-side per-instance record streamed to the instance VBO */
 struct bb_gpu_inst{
@@ -91,7 +92,9 @@ KHASH_MAP_INIT_INT64(bbdesc, struct bb_model_desc*)
 static uint64_t bb_mix(uint64_t hash, uint64_t val);
 static int      bb_azimuth_count(const struct aabb *aabb, int nclips);
 static vec3_t   bb_bake_frame_light(vec3_t light_pos);
-static bool     bb_alloc_atlas(struct bb_model_desc *desc, const void *pixels);
+static float    bb_depth_extent(const struct bb_model_desc *desc);
+static bool     bb_alloc_atlas(struct bb_model_desc *desc, const void *pixels,
+                               const void *depth);
 static bool     bb_bake_atlas(struct bb_model_desc *desc, const void *render_private,
                               const struct bb_variant *var, const char *cache_name,
                               uint64_t tag);
@@ -314,6 +317,24 @@ static void bb_enqueue_bake(struct bb_model_desc *desc, int gen)
     });
 }
 
+/* A bound on how far any baked point lies from the sprite's card plane, which
+ * passes through the model origin; also the scale of the baked depth offsets.
+ */
+static float bb_depth_extent(const struct bb_model_desc *desc)
+{
+    return desc->world_size.x / 2.0f + desc->world_size.y / 2.0f + fabsf(desc->anchor_off.y);
+}
+
+static float bb_bake_cam_dist(const struct bb_model_desc *desc)
+{
+    return 2.0f * bb_depth_extent(desc) + 10.0f;
+}
+
+static float bb_bake_far(const struct bb_model_desc *desc)
+{
+    return 2.0f * bb_bake_cam_dist(desc) + 10.0f;
+}
+
 /* The bake camera looks at the model origin from the registered tilt, along
  * the -Z world axis; the model itself is rotated per azimuth cell.
  */
@@ -322,8 +343,7 @@ static void bb_bake_view_proj(const struct bb_model_desc *desc, float tilt_rad,
 {
     float half_w = desc->world_size.x / 2.0f;
     float half_h = desc->world_size.y / 2.0f;
-    float extent = half_w + half_h + fabsf(desc->anchor_off.y);
-    float dist = 2.0f * extent + 10.0f;
+    float dist = bb_bake_cam_dist(desc);
 
     vec3_t pos = (vec3_t){0.0f, dist * sinf(tilt_rad), dist * cosf(tilt_rad)};
     vec3_t target = (vec3_t){0.0f, 0.0f, 0.0f};
@@ -335,8 +355,31 @@ static void bb_bake_view_proj(const struct bb_model_desc *desc, float tilt_rad,
 
     PFM_Mat4x4_MakeOrthographic(-half_w, half_w,
         desc->anchor_off.y - half_h, desc->anchor_off.y + half_h,
-        0.1f, 2.0f * dist + 10.0f, out_proj);
+        BB_BAKE_NEAR, bb_bake_far(desc), out_proj);
     *out_pos = pos;
+}
+
+/* Convert one cell's window depths from the orthographic bake into signed
+ * offsets from the card plane along the view direction, in units of the
+ * depth extent (negative is toward the camera).
+ */
+static void bb_encode_depth(const struct bb_model_desc *desc, const float *depth,
+                            size_t ntexels, int8_t *out)
+{
+    float dist = bb_bake_cam_dist(desc);
+    float far = bb_bake_far(desc);
+    float extent = bb_depth_extent(desc);
+
+    for(size_t i = 0; i < ntexels; i++) {
+        if(depth[i] >= 1.0f) {
+            out[i] = 0;
+            continue;
+        }
+        float zview = BB_BAKE_NEAR + depth[i] * (far - BB_BAKE_NEAR);
+        float off = (zview - dist) / extent;
+        off = MAX(-1.0f, MIN(1.0f, off));
+        out[i] = (int8_t)lrintf(off * 127.0f);
+    }
 }
 
 /* One light frustum serves every cell of an atlas: the extents cover the
@@ -379,9 +422,29 @@ static void bb_light_space_trans(const struct bb_model_desc *desc, const vec3_t 
     PFM_Mat4x4_Mult4x4(&proj, &view, out);
 }
 
-static bool bb_alloc_atlas(struct bb_model_desc *desc, const void *pixels)
+static void bb_free_atlas(struct bb_model_desc *desc)
+{
+    glDeleteTextures(1, &desc->tex_arr);
+    glDeleteTextures(1, &desc->depth_arr);
+    desc->tex_arr = 0;
+    desc->depth_arr = 0;
+}
+
+/* Leaves the colour array bound */
+static bool bb_alloc_atlas(struct bb_model_desc *desc, const void *pixels, const void *depth)
 {
     ASSERT_IN_RENDER_THREAD();
+
+    /* Depth offsets must not be blended across the silhouette */
+    glGenTextures(1, &desc->depth_arr);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, desc->depth_arr);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_R8_SNORM, desc->cell_res, desc->cell_res,
+        desc->total_slices, 0, GL_RED, GL_BYTE, depth);
+
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     glGenTextures(1, &desc->tex_arr);
     glBindTexture(GL_TEXTURE_2D_ARRAY, desc->tex_arr);
@@ -394,8 +457,7 @@ static bool bb_alloc_atlas(struct bb_model_desc *desc, const void *pixels)
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     if(glGetError() != GL_NO_ERROR) {
-        glDeleteTextures(1, &desc->tex_arr);
-        desc->tex_arr = 0;
+        bb_free_atlas(desc);
         return false;
     }
     return true;
@@ -425,8 +487,16 @@ static bool bb_bake_atlas(struct bb_model_desc *desc, const void *render_private
         have_uval[i] = R_GL_StateGet(saved_unames[i], &saved_uvals[i]);
     }
 
-    if(!bb_alloc_atlas(desc, NULL))
+    size_t cell_texels = (size_t)desc->cell_res * desc->cell_res;
+    float *cell_depth = PF_MALLOC(cell_texels * sizeof(float));
+    int8_t *depth = PF_MALLOC(cell_texels * desc->total_slices);
+    if(!cell_depth || !depth || !bb_alloc_atlas(desc, NULL, NULL)) {
+        if(cell_depth)
+            PF_FREE(cell_depth);
+        if(depth)
+            PF_FREE(depth);
         return false;
+    }
 
     GLuint fb;
     glGenFramebuffers(1, &fb);
@@ -505,6 +575,10 @@ static bool bb_bake_atlas(struct bb_model_desc *desc, const void *render_private
             }
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             R_GL_Draw(render_private, &model, &translucent);
+
+            glReadPixels(0, 0, desc->cell_res, desc->cell_res, GL_DEPTH_COMPONENT,
+                GL_FLOAT, cell_depth);
+            bb_encode_depth(desc, cell_depth, cell_texels, depth + slice * cell_texels);
         }}
     }
 
@@ -514,6 +588,10 @@ static bool bb_bake_atlas(struct bb_model_desc *desc, const void *render_private
     glDeleteRenderbuffers(1, &depth_rb);
 
     if(ok) {
+        glBindTexture(GL_TEXTURE_2D_ARRAY, desc->depth_arr);
+        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0, desc->cell_res, desc->cell_res,
+            desc->total_slices, GL_RED, GL_BYTE, depth);
+
         glBindTexture(GL_TEXTURE_2D_ARRAY, desc->tex_arr);
         glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
 
@@ -525,13 +603,15 @@ static bool bb_bake_atlas(struct bb_model_desc *desc, const void *render_private
                 .cell_res = desc->cell_res,
                 .nslices = desc->total_slices,
                 .pixels = pixels,
+                .depth = depth,
             });
             PF_FREE(pixels);
         }
     }else{
-        glDeleteTextures(1, &desc->tex_arr);
-        desc->tex_arr = 0;
+        bb_free_atlas(desc);
     }
+    PF_FREE(cell_depth);
+    PF_FREE(depth);
 
     glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
     glViewport(saved_viewport[0], saved_viewport[1], saved_viewport[2], saved_viewport[3]);
@@ -871,7 +951,9 @@ void R_GL_Billboard_EnsureBaked(struct bb_model_desc *desc, const void *render_p
         GL_PERF_RETURN_VOID();
 
     GLuint old_tex = desc->tex_arr;
+    GLuint old_depth = desc->depth_arr;
     desc->tex_arr = 0;
+    desc->depth_arr = 0;
 
     char cache_name[BB_CACHE_NAME_LEN];
     bb_variant_cache_name(desc, var, cache_name, sizeof(cache_name));
@@ -884,7 +966,7 @@ void R_GL_Billboard_EnsureBaked(struct bb_model_desc *desc, const void *render_p
 
         ok = (cache.cell_res == desc->cell_res)
           && (cache.nslices == desc->total_slices)
-          && bb_alloc_atlas(desc, cache.pixels);
+          && bb_alloc_atlas(desc, cache.pixels, cache.depth);
         if(ok) {
             glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
             glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
@@ -901,6 +983,7 @@ void R_GL_Billboard_EnsureBaked(struct bb_model_desc *desc, const void *render_p
     if(ok) {
         if(old_tex) {
             glDeleteTextures(1, &old_tex);
+            glDeleteTextures(1, &old_depth);
         }
         SDL_AtomicSet(&desc->state, BB_STATE_READY);
     }else if(old_tex) {
@@ -908,6 +991,7 @@ void R_GL_Billboard_EnsureBaked(struct bb_model_desc *desc, const void *render_p
          * marking the generation baked stops the retries.
          */
         desc->tex_arr = old_tex;
+        desc->depth_arr = old_depth;
     }else{
         SDL_AtomicSet(&desc->state, BB_STATE_FAILED);
     }
@@ -950,7 +1034,7 @@ static size_t bb_upload_instances(const vec_rbill_t *list)
     return nents;
 }
 
-static void bb_draw_desc_runs(const vec_rbill_t *list, GLuint prog)
+static void bb_draw_desc_runs(const vec_rbill_t *list, GLuint prog, bool depth_unit)
 {
     /* One instanced draw per run of entities sharing a descriptor */
     size_t nents = vec_size(list);
@@ -986,6 +1070,17 @@ static void bb_draw_desc_runs(const vec_rbill_t *list, GLuint prog)
         });
         R_GL_StateInstall(GL_U_BB_NAZIMUTHS, prog);
 
+        if(depth_unit) {
+            R_GL_StateSet(GL_U_BB_DEPTH_EXTENT, (struct uval){
+                .type = UTYPE_FLOAT,
+                .val.as_float = bb_depth_extent(desc)
+            });
+            R_GL_StateInstall(GL_U_BB_DEPTH_EXTENT, prog);
+
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D_ARRAY, desc->depth_arr);
+            glActiveTexture(GL_TEXTURE0);
+        }
         glBindTexture(GL_TEXTURE_2D_ARRAY, desc->tex_arr);
         bb_point_inst_attrs(run_start);
         glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, (GLsizei)(run_end - run_start));
@@ -1013,6 +1108,10 @@ void R_GL_Billboard_Draw(struct render_input *in)
         .type = UTYPE_INT,
         .val.as_int = 0
     });
+    R_GL_StateSet(GL_U_TEX_ARRAY1, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = 1
+    });
     R_GL_Shader_Install("billboard");
     GLuint prog = R_GL_Shader_GetProgForName("billboard");
 
@@ -1021,11 +1120,14 @@ void R_GL_Billboard_Draw(struct render_input *in)
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(s_vao);
 
-    bb_draw_desc_runs(&in->cam_vis_bill, prog);
+    bb_draw_desc_runs(&in->cam_vis_bill, prog, true);
 
     glEnable(GL_CULL_FACE);
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+    glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
 
     GL_PERF_POP_GROUP();
@@ -1061,7 +1163,7 @@ void R_GL_Billboard_DrawDepth(struct render_input *in)
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(s_vao);
 
-    bb_draw_desc_runs(&in->light_vis_bill, prog);
+    bb_draw_desc_runs(&in->light_vis_bill, prog, false);
 
     /* Re-enabling leaves the depth pass's GL_FRONT cull mode in place */
     glEnable(GL_CULL_FACE);

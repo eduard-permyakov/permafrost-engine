@@ -65,7 +65,7 @@
 #define TEXBLOB_MAGIC       "PFTB"
 #define TEXTURE_VERSION     (1)
 #define IMPOSTOR_MAGIC      "PFIM"
-#define IMPOSTOR_VERSION    (1)
+#define IMPOSTOR_VERSION    (2)
 #define MAX_PATH_LEN        (512)
 #define MAX_REL_PATH_LEN    (256)
 
@@ -645,6 +645,7 @@ bool AssetCache_ImpostorLoad(const char *name, uint64_t tag, struct impostor_cac
 
     bool ret = false;
     void *pixels = NULL;
+    void *depth = NULL;
     struct impostor_hdr hdr;
     size_t nbytes;
 
@@ -667,17 +668,26 @@ bool AssetCache_ImpostorLoad(const char *name, uint64_t tag, struct impostor_cac
         goto out;
 
     pixels = PF_MALLOC(nbytes);
-    if(!pixels)
-        goto out;
-    if(SDL_RWread(stream, pixels, nbytes, 1) != 1) {
-        PF_FREE(pixels);
-        goto out;
-    }
+    depth = PF_MALLOC(nbytes / 4);
+    if(!pixels || !depth)
+        goto fail;
+    if(SDL_RWread(stream, pixels, nbytes, 1) != 1)
+        goto fail;
+    if(SDL_RWread(stream, depth, nbytes / 4, 1) != 1)
+        goto fail;
 
     out->cell_res = hdr.cell_res;
     out->nslices = hdr.nslices;
     out->pixels = pixels;
+    out->depth = depth;
     ret = true;
+    goto out;
+
+fail:
+    if(pixels)
+        PF_FREE(pixels);
+    if(depth)
+        PF_FREE(depth);
 
 out:
     SDL_RWclose(stream);
@@ -691,7 +701,7 @@ bool AssetCache_ImpostorStore(const char *name, uint64_t tag, const struct impos
         return false;
 
     size_t nbytes = (size_t)in->cell_res * in->cell_res * in->nslices * 4;
-    if(nbytes == 0 || !in->pixels)
+    if(nbytes == 0 || !in->pixels || !in->depth)
         return false;
 
     SDL_RWops *stream = SDL_RWFromFile(path, "wb");
@@ -707,7 +717,8 @@ bool AssetCache_ImpostorStore(const char *name, uint64_t tag, const struct impos
     hdr.nslices = in->nslices;
 
     bool ret = (SDL_RWwrite(stream, &hdr, sizeof(hdr), 1) == 1)
-            && (SDL_RWwrite(stream, in->pixels, nbytes, 1) == 1);
+            && (SDL_RWwrite(stream, in->pixels, nbytes, 1) == 1)
+            && (SDL_RWwrite(stream, in->depth, nbytes / 4, 1) == 1);
     SDL_RWclose(stream);
 
     /* Don't leave a truncated file behind to be mistaken for a valid entry */
@@ -720,5 +731,7 @@ void AssetCache_ImpostorRelease(struct impostor_cache *cache)
 {
     if(cache->pixels)
         PF_FREE(cache->pixels);
+    if(cache->depth)
+        PF_FREE(cache->depth);
 }
 

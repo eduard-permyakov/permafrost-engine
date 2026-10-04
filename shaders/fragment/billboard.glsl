@@ -40,8 +40,10 @@
 /*****************************************************************************/
 
 in VertexToFrag{
-         vec2 uv;
-    flat int  layer;
+         vec2  uv;
+         vec3  ws_pos;
+    flat int   layer;
+    flat float depth_scale;
 }from_vertex;
 
 /*****************************************************************************/
@@ -54,7 +56,14 @@ out vec4 o_frag_color;
 /* UNIFORMS                                                                  */
 /*****************************************************************************/
 
+uniform mat4 view;
+uniform mat4 projection;
+
 uniform sampler2DArray tex_array0;
+/* Signed offsets of the baked surface from the card plane along the view
+ * direction, in units of the depth extent
+ */
+uniform sampler2DArray tex_array1;
 
 /*****************************************************************************/
 /* PROGRAM                                                                   */
@@ -66,4 +75,10 @@ void main()
     if(texel.a < 0.5)
         discard;
     o_frag_color = vec4(texel.rgb, 1.0);
+
+    float off = texture(tex_array1, vec3(from_vertex.uv, float(from_vertex.layer))).r
+              * from_vertex.depth_scale;
+    vec3 cam_forward = -vec3(view[0][2], view[1][2], view[2][2]);
+    vec4 clip = projection * view * vec4(from_vertex.ws_pos + cam_forward * off, 1.0);
+    gl_FragDepth = 0.5 * (clip.z / clip.w) + 0.5;
 }

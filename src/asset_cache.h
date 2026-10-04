@@ -135,7 +135,8 @@ void AssetCache_TextureRelease(struct texture_cache *cache);
 struct impostor_cache{
     int   cell_res;
     int   nslices;
-    void *pixels;
+    void *pixels;   /* RGBA8 */
+    void *depth;    /* SNORM8 */
 };
 
 bool AssetCache_ImpostorLoad(const char *name, uint64_t tag, struct impostor_cache *out);

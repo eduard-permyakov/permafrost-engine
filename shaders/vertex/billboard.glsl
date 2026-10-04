@@ -49,8 +49,10 @@ layout (location = 4) in int in_cell_base;
 /*****************************************************************************/
 
 out VertexToFrag{
-         vec2 uv;
-    flat int  layer;
+         vec2  uv;
+         vec3  ws_pos;
+    flat int   layer;
+    flat float depth_scale;
 }to_fragment;
 
 /*****************************************************************************/
@@ -64,6 +66,7 @@ uniform vec3 view_pos;
 uniform vec2 bb_world_size;
 uniform vec2 bb_anchor_off;
 uniform int  bb_nazimuths;
+uniform float bb_depth_extent;
 
 /*****************************************************************************/
 /* PROGRAM                                                                   */
@@ -97,6 +100,8 @@ void main()
                 + cam_up    * (in_corner.y * bb_world_size.y * 0.5 * in_scale.y);
 
     to_fragment.uv = in_corner * 0.5 + 0.5;
+    to_fragment.ws_pos = ws_pos;
     to_fragment.layer = in_cell_base + bin;
+    to_fragment.depth_scale = bb_depth_extent * in_scale.x;
     gl_Position = projection * view * vec4(ws_pos, 1.0);
 }

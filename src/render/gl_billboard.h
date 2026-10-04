@@ -100,6 +100,7 @@ struct bb_model_desc{
     SDL_atomic_t baked_gen;                /* variant generation of the resident atlas */
     int          inflight_gen;             /* main thread: generation of the enqueued bake */
     GLuint       tex_arr;                  /* render thread only */
+    GLuint       depth_arr;                /* render thread only: per-texel depth offsets */
     int          nclips;                   /* 0 for models without animations */
     struct bb_clip_desc clips[];
 };
