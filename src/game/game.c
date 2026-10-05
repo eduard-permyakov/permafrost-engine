@@ -1219,6 +1219,7 @@ static void g_clear_map_state(void)
 {
     if(s_gs.map) {
 
+        G_Move_FinishTick();
         M_Raycast_Uninstall();
         M_FreeMinimap(s_gs.map);
         G_Garrison_Shutdown();

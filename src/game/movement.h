@@ -65,6 +65,8 @@ uint32_t G_Move_NavSnapshotGeneration(void);
 
 bool G_Move_Init(const struct map *map);
 void G_Move_Shutdown(void);
+/* Join the tick in flight, which reads the other subsystems' state */
+void G_Move_FinishTick(void);
 
 /* The tid of the navigation tick task, or NULL_TID when none is in flight. */
 uint32_t G_Move_GetNavTID(void);

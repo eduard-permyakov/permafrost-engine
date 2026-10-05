@@ -7962,11 +7962,16 @@ bool G_Move_Init(const struct map *map)
     return true;
 }
 
-void G_Move_Shutdown(void)
+void G_Move_FinishTick(void)
 {
     if(nav_tick_finish_work() == WORK_INCOMPLETE) {
         nav_cancel_gpu_work();
     }
+}
+
+void G_Move_Shutdown(void)
+{
+    G_Move_FinishTick();
     s_move_tick_queued = false;
     s_move_split_pending = false;
     s_submit_prepared = false;
