@@ -98,6 +98,7 @@ struct unit{
     int   prow, pcol;
     uint  pdim;
     uint  pfirst;
+    float travel;
 };
 
 /* Must match struct gpu_cp_nb in movement.c; a tile obstacle leaves the
@@ -267,10 +268,30 @@ bool ray_ray_isec(vec2 ap, vec2 ad, vec2 bp, vec2 bd, out vec2 isec)
     return true;
 }
 
-void vo_edges(vec2 nb_p, float nb_r, out vec2 right_side, out vec2 left_side)
+float vo_radius_sum(float nb_r)
+{
+    precise float rsum = nb_r + s_unit.radius + BUFFER_RADIUS;
+    return rsum;
+}
+
+/* Mirrors reachable_radius_sum in clearpath.c */
+float reachable_radius_sum(float dist, float rsum, float travel)
+{
+    if(travel <= dist - rsum)
+        return 0.0;
+    precise float tangent2 = dist * dist - rsum * rsum;
+    if(tangent2 <= 0.0 || travel * travel >= tangent2)
+        return rsum;
+    precise float cos_half = div_rn(dist * dist + travel * travel - rsum * rsum,
+                                    2.0 * dist * travel);
+    precise float sin_half = sqrt_rn(1.0 - cos_half * cos_half);
+    precise float ret = div_rn(dist * sin_half, cos_half);
+    return min(rsum, ret);
+}
+
+void vo_edges(vec2 nb_p, float rsum, out vec2 right_side, out vec2 left_side)
 {
     precise vec2 ent_to_nb = cp_norm(nb_p - s_pos);
-    precise float rsum = nb_r + s_unit.radius + BUFFER_RADIUS;
     precise vec2 right = vec2(-ent_to_nb.y, ent_to_nb.x) * rsum;
 
     precise vec2 right_tangent = nb_p + right;
@@ -291,7 +312,7 @@ void hrvo(uint slot, uint i)
 {
     precise vec2 p = nb_pos(i), v = nb_vel(i);
     precise vec2 rs, ls;
-    vo_edges(p, nbs[i].radius, rs, ls);
+    vo_edges(p, vo_radius_sum(nbs[i].radius), rs, ls);
     precise vec2 rvo_apex = s_pos + (s_vel + v) * 0.5;
 
     precise vec2 centerline = ls + rs;
@@ -314,10 +335,16 @@ void hrvo(uint slot, uint i)
     set_vo(slot, apex, ls, rs);
 }
 
+float stat_radius_sum(uint i)
+{
+    precise float dist = sqrt_rn(len2(nb_pos(i) - s_pos));
+    return reachable_radius_sum(dist, vo_radius_sum(nbs[i].radius), s_unit.travel);
+}
+
 void stat_vo(uint slot, uint i)
 {
     precise vec2 rs, ls;
-    vo_edges(nb_pos(i), nbs[i].radius, rs, ls);
+    vo_edges(nb_pos(i), stat_radius_sum(i), rs, ls);
     precise vec2 apex = s_pos + nb_vel(i);
     set_vo(slot, apex, ls, rs);
 }
@@ -351,7 +378,8 @@ void build_vos()
                 sh_src[n++] = sh_dyn[k];
         }
         for(uint k = 0; k < sh_nstat; k++) {
-            if(!same_position(s_pos, nb_pos(sh_stat[k])))
+            if(!same_position(s_pos, nb_pos(sh_stat[k]))
+            && stat_radius_sum(sh_stat[k]) > 0.0)
                 sh_src[n++] = sh_stat[k] | SRC_STAT;
         }
         for(uint k = 0; k < sh_ntiles; k++) {

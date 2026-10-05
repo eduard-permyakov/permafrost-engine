@@ -86,6 +86,10 @@ struct cp_terrain{
     float             max_step;
     /* CLEARPATH_TILE_HORIZON_SEC in ticks; zero leaves the cones untruncated */
     float             tile_horizon;
+    /* What is left of the way to the point the unit stops at, INFINITY when
+     * it is not headed for one
+     */
+    float             travel;
 };
 
 /* How a solve was resolved, for the per-tick mechanism counters. */

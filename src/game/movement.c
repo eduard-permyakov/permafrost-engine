@@ -557,6 +557,7 @@ struct gpu_cp_unit{
     int32_t  prow, pcol;
     uint32_t pdim;
     uint32_t pfirst;
+    float    travel;
 };
 
 /* A dynamic or static neighbour, or a wall tile's centre, of a GPU solve */
@@ -5360,6 +5361,44 @@ static bool solve_stalled(vec2_t new_vel, vec2_t vpref)
         && PFM_Vec2_Len(&vpref) >= CLEARPATH_STALL_SPEED;
 }
 
+/* The last stretch onto a cell, about one cell pitch: the bodies parked on
+ * the cells around stand within it, and the pitch grows with the body.
+ */
+static float cell_closing_radius(float radius)
+{
+    return MAX(ARRIVE_SLOWING_RADIUS, 2.0f * radius);
+}
+
+/* What is left of the way to the point the unit stops at: its cell, its
+ * arrival slot or the ordered point. Units without one get INFINITY.
+ */
+static float travel_to_stop(const struct move_work_in *in, const struct movestate *ms)
+{
+    switch(ms->state) {
+    case STATE_MOVING:
+    case STATE_MOVING_IN_FORMATION:
+    case STATE_ARRIVING_TO_CELL:
+        break;
+    default:
+        return INFINITY;
+    }
+    if(!in->flock || in->range_field)
+        return INFINITY;
+
+    vec2_t goal;
+    const struct arrival_unit_state *us = &movestate_aux_get(in->ent_uid)->arrival;
+    if(in->fstate.fid != NULL_FID && in->fstate.assigned_to_cell)
+        goal = in->cell_pos;
+    else if(us->sink_valid)
+        goal = us->sink;
+    else
+        goal = in->flock->target_xz;
+
+    vec2_t to_goal;
+    PFM_Vec2_Sub(&goal, (vec2_t*)&in->cp_ent.xz_pos, &to_goal);
+    return PFM_Vec2_Len(&to_goal);
+}
+
 /* The velocity phase's first part: everything the solve takes, exactly as it
  * takes it, into the unit's work item. False when the unit needs no solve and
  * its output is written already.
@@ -5409,6 +5448,7 @@ static bool velocity_gather(int i)
         .max_step = ms->max_speed / hz_count(s_move_work.hz),
         .tile_horizon = relax ? CLEARPATH_TILE_HORIZON_SEC * hz_count(s_move_work.hz)
                               : 0.0f,
+        .travel = travel_to_stop(in, ms),
     };
     terrain.on_blocked = movestate_aux_get(in->ent_uid)->phasing
         || M_NavPositionBlocked(terrain.map, terrain.layer, in->cp_ent.xz_pos);
@@ -6267,10 +6307,17 @@ static void move_trace_emit(void)
         vec2_t app = (out->patch.flags & UPDATE_SET_VELOCITY) ? out->patch.next_velocity
                                                               : (vec2_t){0.0f, 0.0f};
         vec2_t face = facing_dir(ms->next_rot);
+        float goal_dist = NAN;
+        if(in->flock) {
+            vec2_t goal = member_goal(in->flock, uid);
+            vec2_t to_goal;
+            PFM_Vec2_Sub(&goal, (vec2_t*)&in->cp_ent.xz_pos, &to_goal);
+            goal_dist = PFM_Vec2_Len(&to_goal);
+        }
 
         fprintf(stdout, "[mv-trace] %u,%u,%.2f,%d,%s,%.3f,%.3f,%.2f,"
             "%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,"
-            "%u,%d,%u,%u,%u,%.3f,%.2f,%d,%.4f,%.4f,%d,%d,%u,%u,%u\n",
+            "%u,%d,%u,%u,%u,%.3f,%.2f,%d,%.4f,%.4f,%d,%d,%u,%u,%u,%.2f,%d,%d,%d\n",
             s_move_trace_tick, uid, radius, layer, s_state_str[ms->state],
             in->cp_ent.xz_pos.x, in->cp_ent.xz_pos.z, in->speed,
             in->ent_des_v.x, in->ent_des_v.z, tr->vpref.x, tr->vpref.z,
@@ -6279,7 +6326,9 @@ static void move_trace_emit(void)
             (unsigned)in->ndyn, (unsigned)in->nstat,
             tr->nn_uid, tr->nn_dist, tr->nn_radius, (int)tr->nn_seen,
             tr->sep.x, tr->sep.z, tr->sep_n, out->cp_side, (unsigned)in->ntiles,
-            (unsigned)in->nlinks, (unsigned)aux->cp_stall_ticks);
+            (unsigned)in->nlinks, (unsigned)aux->cp_stall_ticks, goal_dist,
+            (int)in->fstate.in_range_of_cell, (int)in->fstate.arrived_at_cell,
+            (int)in->fstate.may_park);
 
         if(tr->probed) {
             fprintf(stdout, "[mv-probe] %u,%u,%d,%d,%d,%d,%u", s_move_trace_tick, uid,
@@ -7109,6 +7158,7 @@ static void move_velocity_pack_range(int begin, int end, void *arg)
             .radius = in->cp_ent.radius,
             .max_step = in->terrain.max_step,
             .horizon = in->terrain.tile_horizon,
+            .travel = in->terrain.travel,
             .flags = (in->relax ? GPU_UNIT_RELAX : 0)
                    | (in->terrain.on_blocked ? GPU_UNIT_ON_BLOCKED : 0),
             .side = in->solve_side,
@@ -7692,7 +7742,7 @@ static void move_do_tick_submit(enum movement_hz hz)
         vec2_t to_cell;
         PFM_Vec2_Sub(&cell_pos, &curr_cp.xz_pos, &to_cell);
         bool closing = (ms->state == STATE_ARRIVING_TO_CELL) && fss.assigned_to_cell
-                    && !parked && (PFM_Vec2_Len(&to_cell) < ARRIVE_SLOWING_RADIUS);
+                    && !parked && (PFM_Vec2_Len(&to_cell) < cell_closing_radius(radius));
         caux->phasing = pass || closing;
 
         /* Both notifications are level-triggered and idempotent through the

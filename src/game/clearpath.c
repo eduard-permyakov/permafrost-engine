@@ -175,12 +175,11 @@ static inline bool cp_ray_ray_isec(struct line_2d a, struct line_2d b, vec2_t *o
     return true;
 }
 
-static void compute_vo_edges(struct cp_ent ent, struct cp_ent neighb,
+static void compute_vo_edges(struct cp_ent ent, struct cp_ent neighb, float radius_sum,
                              vec2_t *out_xz_right, vec2_t *out_xz_left)
 {
     vec2_t ent_to_nb = cp_norm(cp_sub(neighb.xz_pos, ent.xz_pos));
-    vec2_t right = cp_scale((vec2_t){-ent_to_nb.z, ent_to_nb.x},
-        neighb.radius + ent.radius + CLEARPATH_BUFFER_RADIUS);
+    vec2_t right = cp_scale((vec2_t){-ent_to_nb.z, ent_to_nb.x}, radius_sum);
 
     vec2_t right_tangent = cp_add(neighb.xz_pos, right);
     vec2_t left_tangent = cp_sub(neighb.xz_pos, right);
@@ -189,10 +188,36 @@ static void compute_vo_edges(struct cp_ent ent, struct cp_ent neighb,
     *out_xz_left = cp_norm(cp_sub(left_tangent, ent.xz_pos));
 }
 
-static struct VO compute_vo(struct cp_ent ent, struct cp_ent neighb)
+static float vo_radius_sum(struct cp_ent ent, struct cp_ent neighb)
+{
+    return neighb.radius + ent.radius + CLEARPATH_BUFFER_RADIUS;
+}
+
+/* The radius sum whose cone holds just the directions in which 'travel' more
+ * distance meets the obstacle's disc: the unit stops at its goal, so the part
+ * of a still body beyond that is no obstacle to it. Zero when no direction
+ * meets the disc.
+ */
+static float reachable_radius_sum(float dist, float radius_sum, float travel)
+{
+    if(travel <= dist - radius_sum)
+        return 0.0f;
+    float tangent2 = dist * dist - radius_sum * radius_sum;
+    if(tangent2 <= 0.0f || travel * travel >= tangent2)
+        return radius_sum;
+    /* The cone's edges pass through the points where the circle of radius
+     * 'travel' around the unit crosses the disc's rim.
+     */
+    float cos_half = (dist * dist + travel * travel - radius_sum * radius_sum)
+                   / (2.0f * dist * travel);
+    float sin_half = sqrtf(1.0f - cos_half * cos_half);
+    return fminf(radius_sum, dist * sin_half / cos_half);
+}
+
+static struct VO compute_vo(struct cp_ent ent, struct cp_ent neighb, float radius_sum)
 {
     struct VO ret;
-    compute_vo_edges(ent, neighb, &ret.xz_right_side, &ret.xz_left_side);
+    compute_vo_edges(ent, neighb, radius_sum, &ret.xz_right_side, &ret.xz_left_side);
     ret.xz_apex = cp_add(ent.xz_pos, neighb.xz_vel);
     return ret;
 }
@@ -200,7 +225,8 @@ static struct VO compute_vo(struct cp_ent ent, struct cp_ent neighb)
 static struct RVO compute_rvo(struct cp_ent ent, struct cp_ent neighb)
 {
     struct RVO ret;
-    compute_vo_edges(ent, neighb, &ret.xz_right_side, &ret.xz_left_side);
+    compute_vo_edges(ent, neighb, vo_radius_sum(ent, neighb),
+        &ret.xz_right_side, &ret.xz_left_side);
     ret.xz_apex = cp_add(ent.xz_pos, cp_scale(cp_add(ent.xz_vel, neighb.xz_vel), 0.5f));
     return ret;
 }
@@ -249,7 +275,7 @@ static struct HRVO compute_hrvo(struct cp_ent ent, struct cp_ent neighb, int sid
 }
 
 static size_t compute_all_vos(struct cp_ent ent, const struct cp_ent *stat_neighbs,
-                              size_t nstat, struct VO *out)
+                              size_t nstat, float travel, struct VO *out)
 {
     size_t ret = 0;
 
@@ -257,7 +283,12 @@ static size_t compute_all_vos(struct cp_ent ent, const struct cp_ent *stat_neigh
 
         if(same_position(ent.xz_pos, stat_neighbs[i].xz_pos))
             continue;
-        out[ret++] = compute_vo(ent, stat_neighbs[i]);
+        float dist = sqrtf(cp_len2(cp_sub(stat_neighbs[i].xz_pos, ent.xz_pos)));
+        float radius_sum = reachable_radius_sum(dist,
+            vo_radius_sum(ent, stat_neighbs[i]), travel);
+        if(radius_sum <= 0.0f)
+            continue;
+        out[ret++] = compute_vo(ent, stat_neighbs[i], radius_sum);
     }
 
     return ret;
@@ -708,7 +739,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
     STALLOC(struct VO, stat_vos, nstat + ntiles);
 
     size_t n_hrvos = compute_all_hrvos(cpent, dyn_neighbs, ndyn, side, dyn_hrvos);
-    size_t n_vos = compute_all_vos(cpent, stat_neighbs, nstat, stat_vos);
+    size_t n_vos = compute_all_vos(cpent, stat_neighbs, nstat, terrain->travel, stat_vos);
     n_vos += compute_all_tile_vos(cpent, tile_obs, ntiles, terrain->tile_horizon,
         stat_vos + n_vos);
 
