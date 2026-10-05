@@ -250,23 +250,16 @@ static void on_render(void *user, void *event)
         struct tile_desc curr = s_ctx.intersec_tile;
         if(M_Tile_RelativeDesc(res, &curr, r, c)) {
         
-            const struct pfchunk *chunk = &s_ctx.map->chunks[curr.chunk_r * s_ctx.map->width + curr.chunk_c];
-
             mat4x4_t model;
             M_ModelMatrixForChunk(s_ctx.map, (struct chunkpos){curr.chunk_r, curr.chunk_c}, &model);
 
-            const int tpcw = TILES_PER_CHUNK_WIDTH;
-            const int tpch = TILES_PER_CHUNK_HEIGHT;
-
             R_PushCmd((struct rcmd){
                 .func = R_GL_TileDrawSelected,
-                .nargs = 5,
+                .nargs = 3,
                 .args = {
                     R_PushArg(&curr, sizeof(curr)),
-                    chunk->render_private,
+                    (void*)G_GetPrevTickMap(),
                     R_PushArg(&model, sizeof(model)),
-                    R_PushArg(&tpcw, sizeof(tpcw)),
-                    R_PushArg(&tpch, sizeof(tpch)),
                 },
             });
         }

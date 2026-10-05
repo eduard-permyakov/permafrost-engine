@@ -245,35 +245,16 @@ static void m_al_patch_adjacency_info(struct map *map)
     for(int c = 0; c < map->width;  c++) {
 
         void *chunk_rprivate = map->chunks[r * map->width + c].render_private;
-        for(int tile_r = 0; tile_r < TILES_PER_CHUNK_HEIGHT; tile_r++) {
-        for(int tile_c = 0; tile_c < TILES_PER_CHUNK_HEIGHT; tile_c++) {
-        
-            struct tile_desc desc = (struct tile_desc){r, c, tile_r, tile_c};
-            const struct tile *tile = &map->chunks[r * map->width + c].tiles[tile_r * TILES_PER_CHUNK_WIDTH + tile_c];
-
-            R_PushCmd((struct rcmd){
-                .func = R_GL_TilePatchVertsBlend,
-                .nargs = 3,
-                .args = {
-                    chunk_rprivate,
-                    (void*)G_GetPrevTickMap(),
-                    R_PushArg(&desc, sizeof(desc)),
-                },
-            });
-
-            if(!tile->blend_normals)
-                continue;
-
-            R_PushCmd((struct rcmd){
-                .func = R_GL_TilePatchVertsSmooth,
-                .nargs = 3,
-                .args = {
-                    chunk_rprivate,
-                    (void*)G_GetPrevTickMap(),
-                    R_PushArg(&desc, sizeof(desc)),
-                },
-            });
-        }}
+        R_PushCmd((struct rcmd){
+            .func = R_GL_TilePatchChunk,
+            .nargs = 4,
+            .args = {
+                chunk_rprivate,
+                (void*)G_GetPrevTickMap(),
+                R_PushArg(&r, sizeof(r)),
+                R_PushArg(&c, sizeof(c)),
+            },
+        });
     }}
 }
 

@@ -559,8 +559,7 @@ static float tile_min_visible_height(const struct map *map, struct tile_desc til
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivate, mat4x4_t *model, 
-                           const int *tiles_per_chunk_x, const int *tiles_per_chunk_z)
+void R_GL_TileDrawSelected(const struct tile_desc *in, const struct map *map, mat4x4_t *model)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -569,15 +568,7 @@ void R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivat
     vec4_t red = (vec4_t){1.0f, 0.0f, 0.0f, 1.0};
     GLuint VAO, VBO;
 
-    const struct render_private *priv = chunk_rprivate;
-    size_t offset = (in->tile_r * (*tiles_per_chunk_x) + in->tile_c) * VERTS_PER_TILE * sizeof(struct terrain_vert);
-    size_t length = VERTS_PER_TILE * sizeof(struct terrain_vert);
-
-    glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
-    const struct terrain_vert *vert_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_READ_BIT);
-    assert(vert_base);
-    memcpy(vbuff, vert_base, sizeof(vbuff));
-    glUnmapBuffer(GL_ARRAY_BUFFER);
+    R_TileGetVertices(map, *in, vbuff);
 
     /* Additionally, scale the tile selection mesh slightly around its' center. This is so that 
      * it is slightly larger than the actual tile underneath and can be rendered on top of it. */
@@ -646,8 +637,7 @@ void R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivat
 }
 
 /* Patches the blend (material adjacency) attributes of a single tile. Operates
- * on 'tile_verts_base' - a pointer to the tile's VERTS_PER_TILE vertices within
- * an already-mapped buffer. */
+ * on 'tile_verts_base' - a pointer to the tile's VERTS_PER_TILE vertices. */
 static void tile_patch_verts_blend(struct terrain_vert *tile_verts_base,
                                    const struct map *map, const struct tile_desc *tile)
 {
@@ -881,28 +871,8 @@ static void tile_patch_verts_blend(struct terrain_vert *tile_verts_base,
 
 }
 
-void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, const struct tile_desc *tile)
-{
-    ASSERT_IN_RENDER_THREAD();
-
-    const struct render_private *priv = chunk_rprivate;
-    size_t offset = VERTS_PER_TILE * (tile->tile_r * TILES_PER_CHUNK_WIDTH + tile->tile_c) * sizeof(struct terrain_vert);
-    size_t length = VERTS_PER_TILE * sizeof(struct terrain_vert);
-
-    glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
-    struct terrain_vert *tile_verts_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_WRITE_BIT);
-    GL_ASSERT_OK();
-    assert(tile_verts_base);
-
-    tile_patch_verts_blend(tile_verts_base, map, tile);
-
-    glUnmapBuffer(GL_ARRAY_BUFFER);
-    GL_ASSERT_OK();
-}
-
 /* Patches the smoothed top-face normals of a single tile. Operates on
- * 'tile_verts_base' - a pointer to the tile's VERTS_PER_TILE vertices within
- * an already-mapped buffer. */
+ * 'tile_verts_base' - a pointer to the tile's VERTS_PER_TILE vertices. */
 static void tile_patch_verts_smooth(struct terrain_vert *tile_verts_base,
                                     const struct map *map, const struct tile_desc *tile)
 {
@@ -1005,23 +975,45 @@ static void tile_patch_verts_smooth(struct terrain_vert *tile_verts_base,
 
 }
 
-void R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, const struct tile_desc *tile)
+static void tile_build_verts(const struct map *map, const struct tile_desc *td, struct terrain_vert *out)
 {
+    struct tile *tile;
+    int ret = M_TileForDesc(map, *td, &tile);
+    assert(ret);
+
+    R_TileGetVertices(map, *td, out);
+    tile_patch_verts_blend(out, map, td);
+    if(tile->blend_normals) {
+        tile_patch_verts_smooth(out, map, td);
+    }
+}
+
+/* The chunk buffers are only ever written with glBufferSubData: the driver keeps
+ * a buffer that gets mapped in host memory and streams it on every draw.
+ */
+void R_GL_TilePatchChunk(void *chunk_rprivate, const struct map *map, const int *chunk_r, const int *chunk_c)
+{
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     const struct render_private *priv = chunk_rprivate;
-    size_t offset = VERTS_PER_TILE * (tile->tile_r * TILES_PER_CHUNK_WIDTH + tile->tile_c) * sizeof(struct terrain_vert);
-    size_t length = VERTS_PER_TILE * sizeof(struct terrain_vert);
+    size_t nverts = VERTS_PER_TILE * TILES_PER_CHUNK_WIDTH * TILES_PER_CHUNK_HEIGHT;
+    struct terrain_vert *vbuff = PF_MALLOC(nverts * sizeof(struct terrain_vert));
+    if(!vbuff)
+        GL_PERF_RETURN_VOID();
+
+    for(int r = 0; r < TILES_PER_CHUNK_HEIGHT; r++) {
+    for(int c = 0; c < TILES_PER_CHUNK_WIDTH;  c++) {
+        struct tile_desc td = (struct tile_desc){*chunk_r, *chunk_c, r, c};
+        tile_build_verts(map, &td, vbuff + (r * TILES_PER_CHUNK_WIDTH + c) * VERTS_PER_TILE);
+    }}
 
     glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
-    struct terrain_vert *tile_verts_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_WRITE_BIT);
-    GL_ASSERT_OK();
-    assert(tile_verts_base);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, nverts * sizeof(struct terrain_vert), vbuff);
+    PF_FREE(vbuff);
 
-    tile_patch_verts_smooth(tile_verts_base, map, tile);
-
-    glUnmapBuffer(GL_ARRAY_BUFFER);
     GL_ASSERT_OK();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_TileUpdate(void *chunk_rprivate, const struct map *map,
@@ -1030,50 +1022,17 @@ void R_GL_TileUpdate(void *chunk_rprivate, const struct map *map,
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    struct render_private *priv = chunk_rprivate;
-    size_t ndescs = *num_descs;
-
-    if(ndescs == 0) {
-        GL_PERF_RETURN_VOID();
-    }
-
-    /* All descriptors belong to the same chunk. Find the span of tile indices
-     * touched by the batch so it can be serviced with a single buffer mapping. */
-    size_t min_idx = descs[0].tile_r * TILES_PER_CHUNK_WIDTH + descs[0].tile_c;
-    size_t max_idx = min_idx;
-    for(size_t i = 1; i < ndescs; i++) {
-        size_t idx = descs[i].tile_r * TILES_PER_CHUNK_WIDTH + descs[i].tile_c;
-        if(idx < min_idx) min_idx = idx;
-        if(idx > max_idx) max_idx = idx;
-    }
-
-    size_t offset = min_idx * VERTS_PER_TILE * sizeof(struct terrain_vert);
-    size_t length = (max_idx - min_idx + 1) * VERTS_PER_TILE * sizeof(struct terrain_vert);
-
+    const struct render_private *priv = chunk_rprivate;
     glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
-    /* Map with GL_MAP_READ_BIT as well so that any tiles lying within the mapped
-     * span but not part of this batch retain their existing vertex data. */
-    struct terrain_vert *span_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length,
-        GL_MAP_READ_BIT | GL_MAP_WRITE_BIT);
-    assert(span_base);
 
-    for(size_t i = 0; i < ndescs; i++) {
+    for(size_t i = 0; i < *num_descs; i++) {
 
+        struct terrain_vert verts[VERTS_PER_TILE];
         size_t idx = descs[i].tile_r * TILES_PER_CHUNK_WIDTH + descs[i].tile_c;
-        struct terrain_vert *tile_base = span_base + (idx - min_idx) * VERTS_PER_TILE;
 
-        struct tile *tile;
-        int ret = M_TileForDesc(map, descs[i], &tile);
-        assert(ret);
-
-        R_TileGetVertices(map, descs[i], tile_base);
-        tile_patch_verts_blend(tile_base, map, &descs[i]);
-        if(tile->blend_normals) {
-            tile_patch_verts_smooth(tile_base, map, &descs[i]);
-        }
+        tile_build_verts(map, &descs[i], verts);
+        glBufferSubData(GL_ARRAY_BUFFER, idx * sizeof(verts), sizeof(verts), verts);
     }
-
-    glUnmapBuffer(GL_ARRAY_BUFFER);
 
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();

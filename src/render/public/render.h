@@ -347,14 +347,13 @@ void   R_GL_GetMemoryAccounting(struct gpu_mem_accounting *out);
  * Draws a colored outline around the tile specified by the descriptor.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivate, mat4x4_t *model, 
-                             const int *tiles_per_chunk_x, const int *tiles_per_chunk_z);
+void   R_GL_TileDrawSelected(const struct tile_desc *in, const struct map *map, mat4x4_t *model);
 
 
 /* ---------------------------------------------------------------------------
  * Update a batch of tiles with new attributes and buffer the new vertex data.
  * All 'num_descs' tile descriptors must belong to the chunk identified by
- * 'chunk_rprivate'; the whole batch is serviced with a single buffer mapping.
+ * 'chunk_rprivate'.
  * ---------------------------------------------------------------------------
  */
 void   R_GL_TileUpdate(void *chunk_rprivate, const struct map *map,
@@ -405,20 +404,12 @@ void  R_GL_MinimapRenderUnits(const struct map *map, vec2_t *center_pos,
 void  R_GL_MinimapFree(void);
 
 /* ---------------------------------------------------------------------------
- * Patch the vertices for a particular tile to have adjacency information
- * about the neighboring tiles, to be used for smooth blending.
- * Tiles which border tiles with different materials will get blending
- * 'turned on' by setting a vertex attribute.
+ * Rebuild every tile of a chunk with the attributes that depend on the
+ * neighbouring tiles (material adjacency for blending, smoothed normals)
+ * and upload the chunk's vertex data in one go.
  * ---------------------------------------------------------------------------
  */
-void  R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, const struct tile_desc *tile);
-
-/* ---------------------------------------------------------------------------
- * Updated a tile's verticies to be the average of all normals at that location,
- * thereby giving the appearance of smooth edges when lighting shading is applied.
- * ---------------------------------------------------------------------------
- */
-void  R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, const struct tile_desc *tile);
+void  R_GL_TilePatchChunk(void *chunk_rprivate, const struct map *map, const int *chunk_r, const int *chunk_c);
 
 /*###########################################################################*/
 /* RENDER TERRAIN                                                            */
