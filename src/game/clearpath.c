@@ -853,6 +853,21 @@ out:
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
+bool G_ClearPath_StandsInWay(struct cp_ent ent, struct cp_ent still, vec2_t dir, float travel)
+{
+    vec2_t to_still = cp_sub(still.xz_pos, ent.xz_pos);
+    float dist = sqrtf(cp_len2(to_still));
+    if(dist < EPSILON || cp_len2(dir) < EPSILON * EPSILON)
+        return false;
+    float radius_sum = reachable_radius_sum(dist, vo_radius_sum(ent, still), travel);
+    if(radius_sum <= 0.0f)
+        return false;
+    /* The cone compute_vo_edges builds for this radius sum */
+    float cos_dir = cp_dot(cp_norm(dir), cp_scale(to_still, 1.0f / dist));
+    float cos_edge = dist / sqrtf(dist * dist + radius_sum * radius_sum);
+    return cos_dir >= cos_edge;
+}
+
 uint32_t G_ClearPath_DebugUid(void)
 {
     ASSERT_IN_MAIN_THREAD();

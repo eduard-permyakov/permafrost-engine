@@ -279,6 +279,10 @@ struct movestate_aux{
     /* Keeps EVENT_MOTION_START/END strictly alternating; clients assert the
      * pairing. Transient. */
     bool               motion_stopped;
+    /* Ticks in a row a unit on its way took no step and turned on no spot:
+     * held up, it shows its idle clip rather than walking in place. Transient.
+     */
+    uint16_t           standing_ticks;
     /* Per-unit fine-arrival state. 
      */
     struct arrival_unit_state arrival;
@@ -763,6 +767,8 @@ static struct result navigation_tick_task(void *arg);
 #define COHESION_NEIGHBOUR_RADIUS       (50.0f)
 #define ARRIVE_SLOWING_RADIUS           (10.0f)
 #define ADJACENCY_SEP_DIST              (5.0f)
+/* A gap to a still crowd within this fraction of the unit's radius is contact */
+#define CONTACT_GAP_RADIUS_FRAC         (0.5f)
 #define SEPARATION_NEIGHB_RADIUS        (30.0f)
 /* Beyond this multiple of the radius sum the separation term is e^-10 of its
  * contact value; the floor keeps the soldier query as it was. */
@@ -778,6 +784,7 @@ static struct result navigation_tick_task(void *arg);
 #define MOVE_HEADING_HALT               (90.0f) /* degrees; halt a moving unit to re-aim past this */
 #define MOVE_HEADING_RESUME             (10.0f) /* degrees; resume/start a halted unit within this */
 #define MOVE_STEP_BAND                  (30.0f) /* degrees; a step keeps this close to the facing */
+#define MOTION_IDLE_S                   (0.5f)  /* held up this long, a unit shows its idle clip */
 #define MAX_NEIGHBOURS                  (32)
 /* Contacts in the way a unit links into the busy chain per tick */
 #define MAX_BUSY_LINKS                  (8)
@@ -1334,9 +1341,10 @@ static void move_notify_motion_start(uint32_t uid, struct movestate *ms)
     if(ent_still(ms))
         ms->prev_rot = ms->next_rot = Entity_GetRot(uid);
 
+    struct movestate_aux *aux = movestate_aux_get(uid);
+    aux->standing_ticks = 0;
     if(G_FlagsGet(uid) & ENTITY_FLAG_COMBAT_HELD)
         return;
-    struct movestate_aux *aux = movestate_aux_get(uid);
     if(!aux->motion_stopped)
         return;
     aux->motion_stopped = false;
@@ -3738,7 +3746,86 @@ enum settle_verdict{
     SETTLE_AT_SLOT,
     /* Touching a settled member of a group too small for a ball */
     SETTLE_WITH_GROUP,
+    /* Touching its order's settled crowd, which holds the ground ahead */
+    SETTLE_AT_CROWD,
 };
+
+/* How near a body counts as touching: the solve holds a wide unit off a
+ * still crowd by a gap that grows with its radius.
+ */
+static float contact_gap(float radius)
+{
+    return MAX(ADJACENCY_SEP_DIST, CONTACT_GAP_RADIUS_FRAC * radius);
+}
+
+/* A query reach covering contact_gap of either body */
+static float contact_reach(float radius_sum)
+{
+    return radius_sum + contact_gap(radius_sum);
+}
+
+/* Whether a flock was sent to the same ground as 'flock' by the same order:
+ * an order makes one flock per nav layer, all with the one target.
+ */
+static bool same_order_flock(const struct flock *a, const struct flock *b)
+{
+    vec2_t delta;
+    PFM_Vec2_Sub((vec2_t*)&a->target_xz, (vec2_t*)&b->target_xz, &delta);
+    return PFM_Vec2_Len(&delta) < EPSILON;
+}
+
+/* The unit touches a settled unit of its own order standing between it and
+ * the point it stops at: its group's crowd holds that ground, so here is as
+ * near as it gets. Units of other orders, and settled units off to the side,
+ * leave a way on.
+ */
+static bool touches_settled_crowd(uint32_t uid, const struct flock *flock, vec2_t pos,
+                                  float radius, vec2_t goal)
+{
+    vec2_t to_goal;
+    PFM_Vec2_Sub(&goal, &pos, &to_goal);
+    float travel = PFM_Vec2_Len(&to_goal);
+    if(travel < EPSILON)
+        return false;
+
+    uint32_t ent_flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
+    struct cp_ent self = (struct cp_ent){ .xz_pos = pos, .radius = radius };
+
+    uint32_t near_ents[128];
+    int num_near = gather_movable_neighbours(uid, pos, radius, ent_flags, contact_reach,
+        near_ents, ARR_SIZE(near_ents));
+
+    for(int i = 0; i < num_near; i++) {
+
+        uint32_t curr = near_ents[i];
+        if(curr == uid)
+            continue;
+        uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, curr);
+        if(!(flags & ENTITY_FLAG_MOVABLE))
+            continue;
+        if((ent_flags & ENTITY_FLAG_AIR) != (flags & ENTITY_FLAG_AIR))
+            continue;
+        const struct movestate *cms = movestate_get(curr);
+        if(!cms || cms->state != STATE_ARRIVED)
+            continue;
+
+        struct cp_ent still = (struct cp_ent){
+            .xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr),
+            .radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr)
+        };
+        vec2_t diff;
+        PFM_Vec2_Sub(&still.xz_pos, &pos, &diff);
+        if(PFM_Vec2_Len(&diff) > radius + still.radius + contact_gap(radius))
+            continue;
+        if(!G_ClearPath_StandsInWay(self, still, to_goal, travel))
+            continue;
+
+        const struct flock *cflock = flock_for_ent(curr);
+        if(cflock && same_order_flock(flock, cflock))
+            return true;
+    }
+    return false;
+}
 
 /* The one answer to whether a plain mover may stop where it is. A formation
  * member stops at its cell (STATE_ARRIVING_TO_CELL) and a group that has
@@ -3753,7 +3840,12 @@ static enum settle_verdict mover_settle_verdict(uint32_t uid, vec2_t new_pos_xz,
     assert(flock);
 
     struct arrival_state *as = G_ArrivalGroup_ForLayer(&flock->arrival, layer);
-    if(as && G_Arrival_IsActive(as)) {
+    bool ball = as && G_Arrival_IsActive(as);
+    vec2_t goal = (ball && aux->arrival.sink_valid) ? aux->arrival.sink : flock->target_xz;
+    if(touches_settled_crowd(uid, flock, new_pos_xz, radius, goal))
+        return SETTLE_AT_CROWD;
+
+    if(ball) {
         int n_settled = adjacent_settled_count(uid);
         bool at_slot = G_Arrival_ShouldSettle(as, &aux->arrival, s_map,
             s_move_work.gamestate.map, new_pos_xz, ms->velocity, radius, n_settled);
@@ -4227,6 +4319,11 @@ static void entity_apply_update(uint32_t uid, struct movestate *ms,
 
     if(patch->flags & UPDATE_SET_VELOCITY) {
         ms->velocity = patch->next_velocity;
+        bool pivoting = (patch->flags & UPDATE_TURNING_IN_PLACE) || ms->state == STATE_TURNING;
+        if(pivoting || PFM_Vec2_Len(&ms->velocity) >= CLEARPATH_STILL_SPEED)
+            aux->standing_ticks = 0;
+        else if(aux->standing_ticks < UINT16_MAX)
+            aux->standing_ticks++;
         /* While pivoting in place, wipe the velocity history so the orientation
          * doesn't chase the stale pre-order heading once movement resumes. */
         if(patch->flags & UPDATE_TURNING_IN_PLACE) {
@@ -7799,7 +7896,8 @@ static void move_do_tick_submit(enum movement_hz hz)
          * back in step. A unit on its way to settling is left alone, since
          * entity_finish_moving announces its own end.
          */
-        if(parked) {
+        bool standing = caux->standing_ticks >= MOTION_IDLE_S * hz_count(hz);
+        if(parked || standing) {
             move_notify_motion_end(curr);
         }else if(caux->motion_stopped && !caux->soft_blocking
               && !(in_formation && fss.arrived_at_cell && fss.may_park)) {

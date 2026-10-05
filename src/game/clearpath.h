@@ -109,6 +109,10 @@ uint32_t G_ClearPath_DebugUid(void);
 
 /* The neighbour arrays are scratch: the retry loop compacts them in place.
  * 'out_diag' may be NULL. */
+/* Whether travel of at most 'travel' along 'dir' meets the still body, by
+ * the same cone the velocity solve gives that body
+ */
+bool   G_ClearPath_StandsInWay(struct cp_ent ent, struct cp_ent still, vec2_t dir, float travel);
 vec2_t G_ClearPath_NewVelocity(struct cp_ent ent,
                                uint32_t ent_uid,
                                vec2_t ent_des_v,
