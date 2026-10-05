@@ -777,6 +777,7 @@ static struct result navigation_tick_task(void *arg);
 #define SCALED_MAX_TURN_RATE            (MAX_TURN_RATE / hz_count(s_move_work.hz) * 20.0)
 #define MOVE_HEADING_HALT               (90.0f) /* degrees; halt a moving unit to re-aim past this */
 #define MOVE_HEADING_RESUME             (10.0f) /* degrees; resume/start a halted unit within this */
+#define MOVE_STEP_BAND                  (30.0f) /* degrees; a step keeps this close to the facing */
 #define MAX_NEIGHBOURS                  (32)
 /* Contacts in the way a unit links into the busy chain per tick */
 #define MAX_BUSY_LINKS                  (8)
@@ -3654,6 +3655,8 @@ static bool move_gated_by_heading(enum move_state state)
 {
     switch(state) {
     case STATE_MOVING:
+    case STATE_MOVING_IN_FORMATION:
+    case STATE_ARRIVING_TO_CELL:
     case STATE_SEEK_ENEMIES:
     case STATE_SURROUND_ENTITY:
     case STATE_ENTER_ENTITY_RANGE:
@@ -3662,6 +3665,35 @@ static bool move_gated_by_heading(enum move_state state)
     default:
         return false;
     }
+}
+
+/* The part of a step a unit can take facing the way it does. Within
+ * MOVE_STEP_BAND of the facing the step is kept whole; beyond it, only its
+ * share along the nearer edge of the band, so a shove from the side or from
+ * behind moves the unit forward at most, never sideways or backward.
+ */
+static vec2_t step_within_heading(vec2_t step, vec2_t facing)
+{
+    if(PFM_Vec2_Len(&step) < EPSILON)
+        return step;
+
+    float cross = facing.x * step.z - facing.z * step.x;
+    float dot = PFM_Vec2_Dot(&facing, &step);
+    float angle = atan2f(cross, dot);
+    float band = DEG_TO_RAD(MOVE_STEP_BAND);
+    if(fabsf(angle) <= band)
+        return step;
+
+    float edge_angle = (angle > 0.0f) ? band : -band;
+    vec2_t edge = (vec2_t){
+        facing.x * cosf(edge_angle) - facing.z * sinf(edge_angle),
+        facing.x * sinf(edge_angle) + facing.z * cosf(edge_angle)
+    };
+    float along = PFM_Vec2_Dot(&step, &edge);
+    if(along <= 0.0f)
+        return (vec2_t){0.0f, 0.0f};
+    PFM_Vec2_Scale(&edge, along, &edge);
+    return edge;
 }
 
 static vec2_t intended_heading(vec2_t vdes, vec2_t new_vel)
@@ -3790,6 +3822,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         }
     }
 
+    new_vel = step_within_heading(new_vel, facing_dir(ms->next_rot));
     vec2_t new_pos_xz = new_pos_for_vel(uid, new_vel);
 
     if(flags & ENTITY_FLAG_GARRISONED) {
@@ -5537,6 +5570,21 @@ static bool velocity_gather(int i)
     find_neighbours(in->ent_uid, in->ent_des_v, in->dyn_neighbs, &in->ndyn,
         in->stat_neighbs, &in->nstat, &in->njam, in->links, &in->nlinks,
         &in->nn_uid, &in->nn_dist);
+
+    /* A unit with no wish to move takes no avoidance step either: the others
+     * treat it as a still body and keep clear of it, so a step here would
+     * only shove it sideways (and a pivot would take a heading from it).
+     */
+    if(PFM_Vec2_Len(&vpref) < EPSILON) {
+        if(traced) {
+            move_trace_velocity(in, tr, vpref);
+        }
+        out->ent_uid = in->ent_uid;
+        out->ent_vel = (vec2_t){0.0f, 0.0f};
+        out->cp_flags = 0;
+        out->cp_side = 0;
+        return false;
+    }
 
     in->hug = ent_hugs_wall(in);
     if(in->hug) {
