@@ -3563,8 +3563,11 @@ bool G_GetTile(const struct tile_desc *desc, struct tile *out)
 
     if(!s_gs.map)
         return false;
-    if(!M_TileForDesc(s_gs.map, *desc, &out))
+
+    struct tile *tile;
+    if(!M_TileForDesc(s_gs.map, *desc, &tile))
         return false;
+    *out = *tile;
     return true;
 }
 

@@ -2514,7 +2514,7 @@ static PyObject *PyPf_get_player_population_limit(PyObject *self)
 static PyObject *PyPf_get_tile(PyObject *self, PyObject *args)
 {
     struct tile_desc desc;
-    if(!PyArg_ParseTuple(args, "(ii)(ii)O", &desc.chunk_r, &desc.chunk_c, &desc.tile_r, &desc.tile_c)) {
+    if(!PyArg_ParseTuple(args, "(ii)(ii)", &desc.chunk_r, &desc.chunk_c, &desc.tile_r, &desc.tile_c)) {
         PyErr_SetString(PyExc_TypeError, "Arguments must be two tuples of two integers.");
         return NULL;
     }
