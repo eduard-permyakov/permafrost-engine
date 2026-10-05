@@ -529,6 +529,7 @@ static void al_flush_dirty_tiles(void)
         });
 
         M_UpdateMinimapChunk(s_dirty_map, cr, cc);
+        M_TerrainBake_MarkChunkStale(cr, cc);
     }}
 
     s_dirty_pending = false;

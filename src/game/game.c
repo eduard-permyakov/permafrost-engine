@@ -206,6 +206,7 @@ static void g_init_map(void)
     M_InitMinimap(s_gs.map, g_default_minimap_pos());
     M_FoliageInit(s_gs.map);
     M_AL_InitTileUpdateBuffer(s_gs.map);
+    M_TerrainBake_Init(s_gs.map);
     G_Pos_Init(s_gs.map);
     G_Building_Init(s_gs.map);
     G_Garrison_Init(s_gs.map);
@@ -235,7 +236,7 @@ static void g_shadow_pass(struct render_input *in)
     });
 
     if(in->map) {
-        M_RenderVisibleMap(in->map, in->cam, true, RENDER_PASS_DEPTH, false);
+        M_RenderVisibleMap(in->map, in->cam, true, RENDER_PASS_DEPTH, false, NULL);
     }
 
     if(s_gs.use_batch_rendering) {
@@ -302,7 +303,8 @@ static void g_shadow_pass(struct render_input *in)
 static void g_draw_pass(struct render_input *in)
 {
     if(in->map) {
-        M_RenderVisibleMap(in->map, in->cam, in->shadows, RENDER_PASS_REGULAR, in->water_only);
+        M_RenderVisibleMap(in->map, in->cam, in->shadows, RENDER_PASS_REGULAR, in->water_only,
+            in->terrain_layers);
     }
 
     if(s_gs.use_batch_rendering) {
@@ -774,6 +776,7 @@ static void g_create_render_input(struct render_input *out)
     out->shadows = shadows_setting.as_bool;
     out->water_only = false;
     out->light_pos = s_gs.light_pos;
+    out->terrain_layers = NULL;
 
     vec_rstat_init_alloc(&out->cam_vis_stat, stackrealloc, stackfree);
     vec_ranim_init_alloc(&out->cam_vis_anim, stackrealloc, stackfree);
@@ -1028,6 +1031,26 @@ static void shadows_en_commit(const struct sval *new_val)
     });
 }
 
+static bool terrain_bake_res_validate(const struct sval *new_val)
+{
+    if(new_val->type != ST_TYPE_INT)
+        return false;
+    return (new_val->as_int == 1024 || new_val->as_int == 2048 || new_val->as_int == 4096);
+}
+
+static void terrain_bake_commit(const struct sval *new_val)
+{
+    if(!s_gs.active)
+        return;
+
+    struct sval res, compress;
+    if(Settings_Get("pf.video.terrain_bake_res", &res) != SS_OKAY
+    || Settings_Get("pf.video.terrain_bake_compress", &compress) != SS_OKAY)
+        return;
+
+    M_TerrainBake_Reconfigure(res.as_int, compress.as_bool);
+}
+
 static void batching_en_commit(const struct sval *new_val)
 {
     s_gs.use_batch_rendering = new_val->as_bool;
@@ -1213,6 +1236,7 @@ static void g_clear_map_state(void)
         G_ClearPath_Shutdown();
         G_Pos_Shutdown();
         M_FoliageShutdown();
+        M_TerrainBake_Shutdown();
         M_AL_DestroyTileUpdateBuffer();
 
         AL_MapFree(s_gs.map);
@@ -1514,6 +1538,42 @@ static void g_create_settings(void)
         .prio = 0,
         .validate = bool_val_validate,
         .commit = shadows_en_commit,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.video.terrain_bake",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = true
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.video.terrain_bake_res",
+        .val = (struct sval) {
+            .type = ST_TYPE_INT,
+            .as_int = 2048
+        },
+        .prio = 0,
+        .validate = terrain_bake_res_validate,
+        .commit = terrain_bake_commit,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.video.terrain_bake_compress",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = true
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = terrain_bake_commit,
     });
     assert(status == SS_OKAY);
 
@@ -2732,12 +2792,16 @@ void G_Render(void)
     ss_e status;
     (void)status;
 
+    /* The chunk bakes render to their own target, so they precede the frame */
+    const int *terrain_layers = s_gs.map ? M_TerrainBake_Tick(s_gs.active_cam) : NULL;
+
     R_PushCmd((struct rcmd){ R_GL_BeginFrame, 0 });
     E_Global_NotifyImmediate(EVENT_RENDER_3D_PRE, NULL, ES_ENGINE);
 
     uint64_t st0 = SDL_GetPerformanceCounter();
     struct render_input in;
     g_create_render_input(&in);
+    in.terrain_layers = terrain_layers;
 
     struct render_input *rcopy = g_push_render_input(in);
     s_stage_us[3] = stage_us(st0);
@@ -3605,6 +3669,7 @@ void G_SetLightPos(vec3_t pos)
     ASSERT_IN_MAIN_THREAD();
 
     s_gs.light_pos = pos;
+    M_TerrainBake_OnLightChanged(s_gs.light_pos, s_gs.ambient_light_color, s_gs.emit_light_color);
     R_PushCmd((struct rcmd){
         .func = R_GL_SetLightPos,
         .nargs = 1,
@@ -3617,6 +3682,7 @@ void G_SetAmbientLightColor(vec3_t color)
     ASSERT_IN_MAIN_THREAD();
 
     s_gs.ambient_light_color = color;
+    M_TerrainBake_OnLightChanged(s_gs.light_pos, s_gs.ambient_light_color, s_gs.emit_light_color);
     R_PushCmd((struct rcmd){
         .func = R_GL_SetAmbientLightColor,
         .nargs = 1,
@@ -3635,6 +3701,7 @@ void G_SetEmitLightColor(vec3_t color)
     ASSERT_IN_MAIN_THREAD();
 
     s_gs.emit_light_color = color;
+    M_TerrainBake_OnLightChanged(s_gs.light_pos, s_gs.ambient_light_color, s_gs.emit_light_color);
     R_PushCmd((struct rcmd){
         .func = R_GL_SetLightEmitColor,
         .nargs = 1,

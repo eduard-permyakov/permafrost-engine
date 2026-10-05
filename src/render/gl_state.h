@@ -116,6 +116,12 @@
 #define GL_U_BB_ANCHOR_OFF      "bb_anchor_off"
 #define GL_U_BB_NAZIMUTHS       "bb_nazimuths"
 #define GL_U_BB_DEPTH_EXTENT    "bb_depth_extent"
+#define GL_U_BAKE_TEX           "bake_tex"
+#define GL_U_BAKE_LAYER         "bake_layer"
+#define GL_U_BAKE_XFORM         "bake_xform"
+#define GL_U_BAKE_VIEW_DIR      "bake_view_dir"
+#define GL_U_BC3_SRC_TEX        "bc3_src_tex"
+#define GL_U_BC3_SRC_LEVEL      "bc3_src_level"
 
 enum utype{
     UTYPE_FLOAT,

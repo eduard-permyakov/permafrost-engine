@@ -86,9 +86,22 @@
 #define MIN(a, b)                   ((a) < (b) ? (a) : (b))
 #define BG_CLR                      ((GLfloat[4]){200/256.0f, 215/256.0f, 215/256.0f, 1.0f})
 #define MODEL_TEX_DIM               (256)
+#define CHUNK_TILES                 (TILES_PER_CHUNK_WIDTH * TILES_PER_CHUNK_HEIGHT)
+#define CHUNK_WALL_INDICES          (CHUNK_TILES * 4 * VERTS_PER_SIDE_FACE)
+#define CHUNK_TOP_INDICES           (CHUNK_TILES * VERTS_PER_TOP_FACE)
 
 /*****************************************************************************/
-/* EXTERN FUNCTIONS                                                          */
+/* STATIC VARIABLES                                                          */
+/*****************************************************************************/
+
+/* Shared by every chunk VAO: all the tiles' wall vertices, then all the tiles'
+ * top-face vertices, so the two sets can be drawn with different programs.
+ */
+static GLuint s_chunk_ebo;
+static GLint  s_terrain_baked_prog = -1;
+
+/*****************************************************************************/
+/* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
 static void init_shader_progs(struct render_private *priv, const char *shader)
@@ -101,6 +114,64 @@ static void init_shader_progs(struct render_private *priv, const char *shader)
     }
     assert(priv->shader_prog != -1 && priv->shader_prog_dp != -1);
 }
+
+/* Must be called with the chunk's VAO bound: the element buffer binding is VAO
+ * state, and the buffer itself is created the first time it is needed.
+ */
+static void chunk_ebo_bind(void)
+{
+    if(s_chunk_ebo) {
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, s_chunk_ebo);
+        return;
+    }
+
+    GLushort *indices = PF_MALLOC((CHUNK_WALL_INDICES + CHUNK_TOP_INDICES) * sizeof(GLushort));
+    if(!indices)
+        return;
+
+    for(int t = 0; t < CHUNK_TILES; t++) {
+        for(int i = 0; i < 4 * VERTS_PER_SIDE_FACE; i++) {
+            indices[t * 4 * VERTS_PER_SIDE_FACE + i] = t * VERTS_PER_TILE + i;
+        }
+        for(int i = 0; i < VERTS_PER_TOP_FACE; i++) {
+            indices[CHUNK_WALL_INDICES + t * VERTS_PER_TOP_FACE + i]
+                = t * VERTS_PER_TILE + 4 * VERTS_PER_SIDE_FACE + i;
+        }
+    }
+
+    glGenBuffers(1, &s_chunk_ebo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, s_chunk_ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, (CHUNK_WALL_INDICES + CHUNK_TOP_INDICES) * sizeof(GLushort),
+        indices, GL_STATIC_DRAW);
+    PF_FREE(indices);
+}
+
+static GLuint terrain_baked_prog(void)
+{
+    if(s_terrain_baked_prog == -1) {
+        s_terrain_baked_prog = R_GL_Shader_GetProgForName("terrain-baked");
+        assert(s_terrain_baked_prog != -1);
+    }
+    return s_terrain_baked_prog;
+}
+
+static void chunk_draw_tops(const struct render_private *priv, const mat4x4_t *model, GLuint prog)
+{
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = *model
+    });
+    R_GL_Shader_InstallProg(prog);
+    R_GL_ShadowMapBind();
+
+    glBindVertexArray(priv->mesh.VAO);
+    glDrawElements(GL_TRIANGLES, CHUNK_TOP_INDICES, GL_UNSIGNED_SHORT,
+        (void*)(CHUNK_WALL_INDICES * sizeof(GLushort)));
+}
+
+/*****************************************************************************/
+/* EXTERN FUNCTIONS                                                          */
+/*****************************************************************************/
 
 void R_GL_InitObject(struct render_private *priv, const char *shader, const struct vertex *vbuff)
 {
@@ -205,6 +276,9 @@ void R_GL_InitChunk(struct render_private *priv, const char *shader, const struc
         (void*)offsetof(struct terrain_vert, wang_index));
     glEnableVertexAttribArray(11);
 
+    assert(mesh->num_verts == CHUNK_TILES * VERTS_PER_TILE);
+    chunk_ebo_bind();
+
     glBindVertexArray(0);
 
     GL_ASSERT_OK();
@@ -256,6 +330,53 @@ void R_GL_Draw(const void *render_private, mat4x4_t *model, const bool *transluc
 
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
+}
+
+void R_GL_DrawChunkBaked(const void *render_private, mat4x4_t *model,
+                         const int *layer, const vec4_t *xform)
+{
+    GL_PERF_ENTER();
+    ASSERT_IN_RENDER_THREAD();
+
+    R_GL_StateSet(GL_U_BAKE_LAYER, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = *layer
+    });
+    R_GL_StateSet(GL_U_BAKE_XFORM, (struct uval){
+        .type = UTYPE_VEC4,
+        .val.as_vec4 = *xform
+    });
+    chunk_draw_tops(render_private, model, terrain_baked_prog());
+
+    GL_ASSERT_OK();
+    GL_PERF_RETURN_VOID();
+}
+
+void R_GL_DrawChunkWalls(const void *render_private, mat4x4_t *model)
+{
+    GL_PERF_ENTER();
+    ASSERT_IN_RENDER_THREAD();
+    const struct render_private *priv = render_private;
+
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = *model
+    });
+    R_GL_Shader_InstallProg(priv->shader_prog);
+    R_GL_ShadowMapBind();
+
+    glBindVertexArray(priv->mesh.VAO);
+    glDrawElements(GL_TRIANGLES, CHUNK_WALL_INDICES, GL_UNSIGNED_SHORT, (void*)0);
+
+    GL_ASSERT_OK();
+    GL_PERF_RETURN_VOID();
+}
+
+void R_GL_DrawChunkTops(const struct render_private *priv, const mat4x4_t *model, GLuint prog)
+{
+    ASSERT_IN_RENDER_THREAD();
+    chunk_draw_tops(priv, model, prog);
+    GL_ASSERT_OK();
 }
 
 void R_GL_BeginFrame(void)

@@ -62,6 +62,16 @@
 /* The RTS camera's yaw, which gameplay never changes */
 #define CONFIG_RTS_CAMERA_YAW_DEG   (135.0f)
 
+/* Terrain bake: the number of chunks whose lit top faces stay resident as
+ * texture layers, and the margin of neighbouring terrain (in OpenGL
+ * coordinates) baked around each chunk so that filtering at the chunk
+ * borders reads the neighbours' texels.
+ */
+#define CONFIG_TERRAIN_BAKE_LAYERS  (24)
+#define CONFIG_TERRAIN_BAKE_GUTTER  (4.0f)
+/* A chunk is baked in a grid of this many slices per side, spread over frames */
+#define CONFIG_TERRAIN_BAKE_SLICE_GRID (4)
+
 /* Billboard atlas baking parameters. Folded into the impostor cache tag, so
  * changing any of them invalidates the on-disk atlases.
  */

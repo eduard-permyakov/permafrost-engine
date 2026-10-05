@@ -270,13 +270,42 @@ void M_RenderEntireMap(const struct map *map, bool shadows, enum render_pass pas
     R_PushCmd((struct rcmd){ R_GL_MapEnd, 0 });
 }
 
-void M_RenderVisibleMap(const struct map *map, const struct camera *cam,
-                        bool shadows, enum render_pass pass, bool near_water_only)
+void M_VisibleChunks(const struct map *map, const struct camera *cam, bool *out)
 {
     struct frustum frustum;
     Camera_MakeFrustum(cam, &frustum);
+
+    for(int r = 0; r < map->height; r++) {
+    for(int c = 0; c < map->width;  c++) {
+
+        struct aabb chunk_aabb;
+        m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+
+        /* Due to the nature of the the map (perfect grid), the fast and greedy frustrum 
+         * intersection test will yield too many false positives. As each chunk mesh has 
+         * a high vertex count, this is undesirable. It is absolutely worth it to do the 
+         * precise frustrum intersection test. With it, the map rendering performance
+         * scales great for large maps. */
+        out[r * map->width + c] = C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb);
+    }}
+}
+
+void M_RenderVisibleMap(const struct map *map, const struct camera *cam,
+                        bool shadows, enum render_pass pass, bool near_water_only,
+                        const int *bake_layers)
+{
     vec2_t pos = (vec2_t){map->pos.x, map->pos.z};
     const bool fval = false;
+    size_t nchunks = map->width * map->height;
+
+    STALLOC(bool, vis, nchunks);
+    M_VisibleChunks(map, cam, vis);
+
+    for(int r = 0; r < map->height; r++) {
+    for(int c = 0; c < map->width;  c++) {
+        if(near_water_only && !m_chunk_or_neighbour_has_water(map, r, c))
+            vis[r * map->width + c] = false;
+    }}
 
     R_PushCmd((struct rcmd){
         .func = R_GL_MapBegin,
@@ -289,26 +318,42 @@ void M_RenderVisibleMap(const struct map *map, const struct camera *cam,
         },
     });
 
-    for(int r = 0; r < map->height; r++) {
-    for(int c = 0; c < map->width;  c++) {
+    /* The baked top faces of the resident chunks go first, then the walls and
+     * the chunks drawn whole, so each program is installed once per pass.
+     */
+    for(int i = 0; i < nchunks; i++) {
 
-        if(near_water_only && !m_chunk_or_neighbour_has_water(map, r, c))
+        if(!vis[i] || pass != RENDER_PASS_REGULAR || !bake_layers || bake_layers[i] < 0)
             continue;
 
-        struct aabb chunk_aabb;
-        m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
-
-        /* Due to the nature of the the map (perfect grid), the fast and greedy frustrum 
-         * intersection test will yield too many false positives. As each chunk mesh has 
-         * a high vertex count, this is undesirable. It is absolutely worth it to do the 
-         * precise frustrum intersection test. With it, the map rendering performance
-         * scales great for large maps. */
-        if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
-            continue;
-
+        struct chunkpos cp = (struct chunkpos){i / map->width, i % map->width};
         mat4x4_t chunk_model;
-        const struct pfchunk *chunk = &map->chunks[r * map->width + c];
-        M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+        M_ModelMatrixForChunk(map, cp, &chunk_model);
+
+        struct terrain_bake_frame frame;
+        M_TerrainBake_ChunkFrame(map, cp.r, cp.c, &frame);
+
+        R_PushCmd((struct rcmd){
+            .func = R_GL_DrawChunkBaked,
+            .nargs = 4,
+            .args = {
+                map->chunks[i].render_private,
+                R_PushArg(&chunk_model, sizeof(chunk_model)),
+                R_PushArg(&bake_layers[i], sizeof(int)),
+                R_PushArg(&frame.xform, sizeof(frame.xform)),
+            },
+        });
+    }
+
+    for(int i = 0; i < nchunks; i++) {
+
+        if(!vis[i])
+            continue;
+
+        struct chunkpos cp = (struct chunkpos){i / map->width, i % map->width};
+        mat4x4_t chunk_model;
+        const struct pfchunk *chunk = &map->chunks[i];
+        M_ModelMatrixForChunk(map, cp, &chunk_model);
 
         switch(pass) {
         case RENDER_PASS_DEPTH: 
@@ -322,20 +367,32 @@ void M_RenderVisibleMap(const struct map *map, const struct camera *cam,
             });
             break;
         case RENDER_PASS_REGULAR:
-            R_PushCmd((struct rcmd){
-                .func = R_GL_Draw,
-                .nargs = 3,
-                .args = {
-                    chunk->render_private,
-                    R_PushArg(&chunk_model, sizeof(chunk_model)),
-                    R_PushArg(&fval, sizeof(fval)),
-                },
-            });
+            if(bake_layers && bake_layers[i] >= 0) {
+                R_PushCmd((struct rcmd){
+                    .func = R_GL_DrawChunkWalls,
+                    .nargs = 2,
+                    .args = {
+                        chunk->render_private,
+                        R_PushArg(&chunk_model, sizeof(chunk_model)),
+                    },
+                });
+            }else{
+                R_PushCmd((struct rcmd){
+                    .func = R_GL_Draw,
+                    .nargs = 3,
+                    .args = {
+                        chunk->render_private,
+                        R_PushArg(&chunk_model, sizeof(chunk_model)),
+                        R_PushArg(&fval, sizeof(fval)),
+                    },
+                });
+            }
             break;
         default: assert(0);
         }
-    }}
+    }
     R_PushCmd((struct rcmd){ R_GL_MapEnd, 0 });
+    STFREE(vis);
 }
 
 void M_RenderVisiblePathableLayer(const struct map *map, const struct camera *cam, enum nav_layer layer)
@@ -1064,6 +1121,7 @@ bool M_AddSplat(struct map *map, int base_mat_idx, int accent_mat_idx)
         .base_mat_idx = base_mat_idx,
         .accent_mat_idx = accent_mat_idx
     };
+    M_TerrainBake_MarkAllStale();
     return true;
 }
 
@@ -1078,6 +1136,7 @@ bool M_RemoveSplat(struct map *map, int base_mat_idx, int accent_mat_idx)
         if(curr->base_mat_idx == base_mat_idx && curr->accent_mat_idx == accent_mat_idx) {
             *curr = *last;
             map->num_splats--;
+            M_TerrainBake_MarkAllStale();
             return true;
         }
     }

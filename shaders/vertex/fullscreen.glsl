@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2023 Eduard Permyakov 
+ *  Copyright (C) 2026 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,64 +33,13 @@
  *
  */
 
-#ifndef GL_RENDER_H
-#define GL_RENDER_H
+#version 330 core
 
-#include "public/render.h"
-#include "../map/public/tile.h"
-#include "../pf_math.h"
-
-#include <GL/glew.h>
-
-#include <stddef.h>
-#include <stdbool.h>
-
-
-#define NORM_ARRAY0_TUNIT (GL_TEXTURE6)   /* terrain normal-map arrays use units 6..9 */
-#define TERRAIN_BAKE_TUNIT (GL_TEXTURE10)
-#define POSE_BUFF_TUNINT (GL_TEXTURE11)
-#define SPLAT_MAP_TUNIT  (GL_TEXTURE12)
-#define SKYBOX_TUNIT     (GL_TEXTURE13)
-#define HEIGHT_MAP_TUNIT (GL_TEXTURE14)
-#define SHADOW_MAP_TUNIT (GL_TEXTURE15)
-
-struct render_private;
-struct vertex;
-struct tile;
-struct tile_desc;
-struct map;
-
-/* General */
-
-void   R_GL_InitChunk(struct render_private *priv, const char *shader, const struct vertex *vbuff);
-void   R_GL_InitObject(struct render_private *priv, const char *shader, const struct vertex *vbuff);
-void   R_GL_DrawChunkTops(const struct render_private *priv, const mat4x4_t *model, GLuint prog);
-void   R_GL_GlobalConfig(void);
-void   R_GL_SetViewport(int *x, int *y, int *w, int *h);
-
-/* Shadows */
-
-void   R_GL_InitShadows(void);
-vec3_t R_GL_GetLightPos(void);
-void   R_GL_SetLightSpaceTrans(const mat4x4_t *trans);
-void   R_GL_ShadowMapBind(void);
-
-/* Water */
-
-void   R_GL_SetClipPlane(vec4_t plane_eq);
-
-/* Terrain */
-
-void   R_GL_MapFogBindLast(GLuint tunit, GLuint shader_prog, const char *uname);
-void   R_GL_MapUpdateFogClear(void);
-bool   R_GL_TerrainBakeInit(void);
-void   R_GL_TerrainBakeShutdown(void);
-void   R_GL_TerrainBakeBind(void);
-
-/* Skybox */
-
-void   R_GL_SkyboxBind(void);
-void   R_GL_DrawSkyboxScaled(const struct camera *cam, float *map_width, float *map_height);
-
-
-#endif
+/* A single triangle covering the whole viewport, drawn without any attributes.
+ * Wound clockwise, which is the engine's front face.
+ */
+void main()
+{
+    vec2 pos = vec2(float(gl_VertexID & 2) * 2.0 - 1.0, float(gl_VertexID & 1) * 4.0 - 1.0);
+    gl_Position = vec4(pos, 0.0, 1.0);
+}

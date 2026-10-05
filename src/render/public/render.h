@@ -56,6 +56,7 @@ struct frustum;
 struct render_input;
 struct nk_draw_list;
 struct map_resolution;
+struct terrain_bake_slice;
 struct obb;
 struct aabb;
 struct ent_stat_rstate;
@@ -98,6 +99,20 @@ struct sprite_desc{
  * ---------------------------------------------------------------------------
  */
 void   R_GL_Draw(const void *render_private, mat4x4_t *model, const bool *translucent);
+
+/* ---------------------------------------------------------------------------
+ * Draw a terrain chunk's top faces from its baked texture layer. 'xform' maps
+ * world XZ to the layer's texture coordinates.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_DrawChunkBaked(const void *render_private, mat4x4_t *model,
+                           const int *layer, const vec4_t *xform);
+
+/* ---------------------------------------------------------------------------
+ * Draw only the side (wall) faces of a terrain chunk with its own shader.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_DrawChunkWalls(const void *render_private, mat4x4_t *model);
 
 /* ---------------------------------------------------------------------------
  * Clear the draw buffer and set up the global OpenGL state at the beginning 
@@ -454,6 +469,25 @@ void  R_GL_MapUpdateFog(void *buff, const size_t *size);
  * ---------------------------------------------------------------------------
  */
 void  R_GL_MapInvalidate(void);
+
+/* ---------------------------------------------------------------------------
+ * Set the resolution of the baked chunk layers and whether they are stored
+ * compressed. Frees the current pool; it is re-created by the next bake.
+ * ---------------------------------------------------------------------------
+ */
+void  R_GL_TerrainBakeConfigure(const int *res, const bool *compress);
+
+/* ---------------------------------------------------------------------------
+ * Render one quadrant of a chunk's top-down bake into the scratch target.
+ * ---------------------------------------------------------------------------
+ */
+void  R_GL_TerrainBakeSlice(const struct terrain_bake_slice *slice);
+
+/* ---------------------------------------------------------------------------
+ * Mipmap the completed scratch bake and store it in the pool layer.
+ * ---------------------------------------------------------------------------
+ */
+void  R_GL_TerrainBakeFinish(const int *layer);
 
 /* ---------------------------------------------------------------------------
  * Initialize the foliage rendering context. Sets up the shared mesh VAO and

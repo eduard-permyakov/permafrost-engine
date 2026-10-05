@@ -146,7 +146,8 @@ enum mem_sub_map{
     MEM_SUB_MAP_DISPATCH,
     MEM_SUB_MAP_MINIMAP,
     MEM_SUB_MAP_RAYCAST,
-    MEM_SUB_MAP_TILE
+    MEM_SUB_MAP_TILE,
+    MEM_SUB_MAP_TERRAIN_BAKE
 };
 
 enum mem_sub_nav{

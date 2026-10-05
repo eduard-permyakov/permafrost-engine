@@ -502,6 +502,7 @@ const char *Mem_SubName(uint16_t sys, uint16_t sub)
         [MEM_SUB_MAP_MINIMAP]    = "minimap",
         [MEM_SUB_MAP_RAYCAST]    = "raycast",
         [MEM_SUB_MAP_TILE]       = "tile",
+        [MEM_SUB_MAP_TERRAIN_BAKE] = "terrain_bake",
     };
     static const char *nav_subs[] = {
         [MEM_SUB_NAV_A_STAR]     = "a_star",

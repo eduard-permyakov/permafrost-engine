@@ -108,6 +108,7 @@ uniform vec3 light_color;
 uniform vec3 light_pos;
 uniform vec3 view_pos;
 uniform mat4 view;
+uniform mat4 projection;
 
 uniform samplerBuffer height_map;
 uniform samplerBuffer splat_map;
@@ -132,6 +133,14 @@ uniform ivec4 map_resolution;
 uniform vec2 map_pos;
 
 uniform int splats[MAX_TEXTURES];
+
+/* Per-chunk bake of the lit top faces: rgb is the shaded colour without the glint,
+ * a is the glint shape (highlight times crevice depth). Sampled by world XZ.
+ */
+uniform sampler2DArray bake_tex;
+uniform vec4 bake_xform;
+uniform int bake_layer;
+uniform vec3 bake_view_dir;
 
 /*****************************************************************************/
 /* PROGRAM                                                                   */
@@ -772,6 +781,48 @@ vec4 blended_texture_val()
     return tex_color;
 }
 
+vec3 camera_forward()
+{
+    return -normalize(vec3(view[0][2], view[1][2], view[2][2]));
+}
+
+/* The direction from the fragment to the viewer. Under an orthographic projection
+ * it is the same for every fragment, which is also what the bake shades with, so
+ * a chunk drawn from its mesh matches its baked texture.
+ */
+vec3 to_viewer(vec3 world_pos)
+{
+#if defined(TERRAIN_BAKE_SRC)
+    return -bake_view_dir;
+#else
+    bool orthographic = (projection[3][3] == 1.0);
+    return orthographic ? -camera_forward() : normalize(view_pos - world_pos);
+#endif
+}
+
+/* The crevice glint fades by angle from the camera's view axis: full at the
+ * screen centre, zero past SPECULAR_VIEW_EDGE.
+ */
+float view_centre_falloff(vec3 world_pos)
+{
+    float centered = dot(camera_forward(), normalize(world_pos - view_pos));
+    return smoothstep(SPECULAR_VIEW_EDGE, 1.0, centered);
+}
+
+vec4 shadowed_output(vec4 final_color, float tf)
+{
+    if(!bool(shadows_on))
+        return final_color * tf;
+
+    float shadow = shadow_factor_poisson(from_vertex.light_space_pos);
+    if(shadow > 0.0) {
+        final_color = vec4(final_color.xyz * (SHADOW_MULTIPLIER + (1.0 - shadow) * (1.0 - SHADOW_MULTIPLIER)), 1.0);
+    }
+    return final_color * tf;
+}
+
+#if defined(TERRAIN_BAKED)
+
 void main()
 {
     ivec4 td = tile_desc_at(from_vertex.world_pos);
@@ -782,10 +833,32 @@ void main()
         return;
     }
 
+    vec2 uv = from_vertex.world_pos.xz * bake_xform.xy + bake_xform.zw;
+    vec4 baked = texture(bake_tex, vec3(uv, float(bake_layer)));
+
+    vec3 specular = SPECULAR_STRENGTH * light_color * baked.a
+                  * view_centre_falloff(from_vertex.world_pos) * TERRAIN_SPECULAR;
+    o_frag_color = shadowed_output(vec4(baked.rgb + specular, 1.0), tf);
+}
+
+#else
+
+void main()
+{
+#if !defined(TERRAIN_BAKE_SRC)
+    ivec4 td = tile_desc_at(from_vertex.world_pos);
+    float tf = tint_factor(td, from_vertex.uv);
+
+    if(tf == 0.0) {
+        o_frag_color = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+    }
+#endif
+
     /* Parallax: offset the sampling UV along the tangent-space view by the alpha height,
      * so raised relief occludes recessed. The terrain UV maps to world XZ (normal = +Y),
      * so the tangent-space view is a swizzle of the world view direction. */
-    vec3 pview = normalize(view_pos - from_vertex.world_pos);
+    vec3 pview = to_viewer(from_vertex.world_pos);
     float pheight = normal_val_raw(from_vertex.mat_idx, from_vertex.wang_index, from_vertex.uv).a;
     vec2 puv = from_vertex.uv - (vec2(pview.x, pview.z) / max(pview.y, 0.3)) * (pheight - 0.5) * PARALLAX_SCALE;
 
@@ -882,31 +955,21 @@ void main()
 
     /* Stylised crevice glint: a Blinn-Phong highlight off the relief, gated to the deep
      * (steep) parts of the normal map so it lands on grooves and cracks, not flat areas. */
-    vec3 view_dir = normalize(view_pos - from_vertex.world_pos);
+    vec3 view_dir = to_viewer(from_vertex.world_pos);
     vec3 halfway = normalize(light_dir + view_dir);
     float spec = pow(max(dot(tex_normal, halfway), 0.0), SPECULAR_SHININESS);
     float crevice = smoothstep(SPECULAR_DEPTH_LO, SPECULAR_DEPTH_HI, length(tn.xy));
-    /* Fade by angle from the camera's view axis: full at the screen centre, zero past
-     * SPECULAR_VIEW_EDGE. */
-    vec3 cam_fwd = -normalize(vec3(view[0][2], view[1][2], view[2][2]));
-    float centered = dot(cam_fwd, normalize(from_vertex.world_pos - view_pos));
-    float center_falloff = smoothstep(SPECULAR_VIEW_EDGE, 1.0, centered);
-    vec3 specular = SPECULAR_STRENGTH * light_color * spec * crevice * center_falloff * TERRAIN_SPECULAR;
+
+#if defined(TERRAIN_BAKE_SRC)
+    o_frag_color = vec4((ambient + diffuse) * tex_color.xyz, spec * crevice);
+#else
+    vec3 specular = SPECULAR_STRENGTH * light_color * spec * crevice
+                  * view_centre_falloff(from_vertex.world_pos) * TERRAIN_SPECULAR;
 
     vec4 final_color = vec4( (ambient + diffuse) * tex_color.xyz + specular, 1.0);
-    if(!bool(shadows_on)) {
-        o_frag_color = final_color * tf;        
-        return;
-    }
-
-    /* Shadow caclulations */
-    float shadow = shadow_factor_poisson(from_vertex.light_space_pos);
-    if(shadow > 0.0) {
-        o_frag_color = vec4(final_color.xyz * (SHADOW_MULTIPLIER + (1.0 - shadow) * (1.0 - SHADOW_MULTIPLIER)), 1.0);
-    }else{
-        o_frag_color = vec4(final_color.xyz, 1.0);
-    }
-
-    o_frag_color = o_frag_color * tf;
+    o_frag_color = shadowed_output(final_color, tf);
+#endif
 }
+
+#endif
 

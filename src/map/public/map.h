@@ -104,7 +104,14 @@ void   M_ModelMatrixForChunk(const struct map *map, struct chunkpos p, mat4x4_t 
  * ------------------------------------------------------------------------
  */
 void   M_RenderVisibleMap(const struct map *map, const struct camera *cam,
-                          bool shadows, enum render_pass pass, bool near_water_only);
+                          bool shadows, enum render_pass pass, bool near_water_only,
+                          const int *bake_layers);
+
+/* ------------------------------------------------------------------------
+ * Set a flag for every chunk telling if it intersects the camera frustum.
+ * ------------------------------------------------------------------------
+ */
+void   M_VisibleChunks(const struct map *map, const struct camera *cam, bool *out);
 
 /* ------------------------------------------------------------------------
  * Render a layer over the visible map surface showing which regions are 
@@ -743,6 +750,67 @@ bool   M_UpdateMinimapChunk(const struct map *map, int chunk_r, int chunk_c);
  * ------------------------------------------------------------------------
  */
 void   M_FreeMinimap     (struct map *map);
+
+/*###########################################################################*/
+/* MAP TERRAIN BAKE                                                          */
+/*###########################################################################*/
+
+/* The top-down view a chunk's lit top faces are baked from, and the affine
+ * taking world XZ to the bake's texture coordinates.
+ */
+struct terrain_bake_frame{
+    mat4x4_t view;
+    mat4x4_t proj;
+    vec4_t   xform;
+};
+
+/* One quadrant of a chunk bake: the chunk and its in-bounds neighbours drawn
+ * top-down, with the map pass state the terrain shader needs.
+ */
+struct terrain_bake_slice{
+    struct terrain_bake_frame frame;
+    int                       slice;
+    vec3_t                    view_dir;
+    vec2_t                    map_pos;
+    size_t                    num_splats;
+    struct splatmap           splatmap;
+    size_t                    num_chunks;
+    void                     *chunk_rprivates[9];
+    mat4x4_t                  chunk_models[9];
+};
+
+/* ------------------------------------------------------------------------
+ * Set up the residency state for the map's chunks. The pool of baked layers
+ * is configured from the 'pf.video.terrain_bake_*' settings.
+ * ------------------------------------------------------------------------
+ */
+bool   M_TerrainBake_Init(const struct map *map);
+void   M_TerrainBake_Shutdown(void);
+
+/* ------------------------------------------------------------------------
+ * Re-create the pool of baked layers; every chunk is baked again.
+ * ------------------------------------------------------------------------
+ */
+void   M_TerrainBake_Reconfigure(int res, bool compress);
+
+void   M_TerrainBake_ChunkFrame(const struct map *map, int r, int c,
+                                struct terrain_bake_frame *out);
+
+/* ------------------------------------------------------------------------
+ * A stale chunk is drawn from its mesh until it has been baked again.
+ * ------------------------------------------------------------------------
+ */
+void   M_TerrainBake_MarkChunkStale(int r, int c);
+void   M_TerrainBake_MarkAllStale(void);
+void   M_TerrainBake_OnLightChanged(vec3_t light_pos, vec3_t ambient, vec3_t emit);
+
+/* ------------------------------------------------------------------------
+ * Once per frame, before the render passes are queued: advance the in-flight
+ * bake and return the per-chunk layer indices (-1 for chunks drawn from the
+ * mesh), allocated in the frame's render workspace. NULL when disabled.
+ * ------------------------------------------------------------------------
+ */
+const int *M_TerrainBake_Tick(const struct camera *cam);
 
 /* ------------------------------------------------------------------------
  * Sets the virtual resolution. This determines how the other minimap 

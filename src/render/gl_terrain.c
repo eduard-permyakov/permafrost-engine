@@ -299,6 +299,7 @@ void R_GL_MapBegin(const bool *shadows, const vec2_t *pos,
         R_GL_Texture_BindArrayNormal(&s_map_normals[i], shader_prog);
     }
     R_GL_RingbufferBindLast(s_fog_ring, GL_TEXTURE5, shader_prog, "visbuff");
+    R_GL_TerrainBakeBind();
 
     glActiveTexture(HEIGHT_MAP_TUNIT);
     glBindTexture(GL_TEXTURE_BUFFER, s_heightmap.tex_buff);

@@ -102,6 +102,8 @@ struct render_input{
      * Set by the water reflection/refraction passes. */
     bool                 water_only;
     vec3_t               light_pos;
+    /* Per-chunk baked terrain layer, or -1 to draw the chunk from its mesh */
+    const int           *terrain_layers;
     /* The visible entities to render */
     vec_rstat_t         cam_vis_stat;
     vec_ranim_t         cam_vis_anim;

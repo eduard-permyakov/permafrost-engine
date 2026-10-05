@@ -95,6 +95,8 @@ static int gpu_texel_bytes(GLenum ifmt)
 {
     switch(ifmt) {
     case GL_R8: case GL_RED:                return 1;
+    case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:  return 1;
+    case GL_RGBA32UI:                       return 16;
     case GL_RG8: case GL_DEPTH_COMPONENT16: return 2;
     case GL_RGBA16F:                        return 8;
     case GL_RGBA32F:                        return 16;

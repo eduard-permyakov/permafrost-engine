@@ -436,7 +436,8 @@ static void render_init_ctx(struct render_init_arg *arg)
     || !R_GL_Batch_Init()
     || !R_GL_Billboard_InitCtx()
     || !R_GL_AnimInit()
-    || !R_GL_SwapchainInit()) {
+    || !R_GL_SwapchainInit()
+    || !R_GL_TerrainBakeInit()) {
 
         arg->out_success = false;
         return;
@@ -454,6 +455,7 @@ static void render_init_ctx(struct render_init_arg *arg)
 
 static void render_destroy_ctx(void)
 {
+    R_GL_TerrainBakeShutdown();
     R_GL_SwapchainShutdown();
     R_GL_AnimShutdown();
     R_GL_Billboard_ShutdownCtx();

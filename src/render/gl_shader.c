@@ -75,6 +75,8 @@ struct shader{
     const char     *geo_path;
     const char     *frag_path;
     const char     *compute_path;
+    /* Preprocessor lines compiled into the fragment shader after its #version */
+    const char     *frag_defines;
     struct uniform *uniforms;
 };
 
@@ -211,6 +213,81 @@ static struct shader s_shaders[] = {
             { UTYPE_INT,       GL_U_HEIGHT_MAP        },
             { UTYPE_INT,       GL_U_SPLAT_MAP         },
             { UTYPE_ARRAY,     GL_U_SPLATS            },
+            {0}
+        },
+    },
+    {
+        .prog_id        = (intptr_t)NULL,
+        .name           = "terrain-baked",
+        .vertex_path    = "shaders/vertex/terrain-shadowed.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/terrain-shadowed.glsl",
+        .frag_defines   = "#define TERRAIN_BAKED 1\n",
+        .uniforms       = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_MODEL             },
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
+            { UTYPE_MAT4,      GL_U_LS_TRANS          },
+            { UTYPE_VEC3,      GL_U_LIGHT_COLOR       },
+            { UTYPE_VEC3,      GL_U_VIEW_POS          },
+            { UTYPE_INT,       "visbuff",             },
+            { UTYPE_INT,       "visbuff_offset",      },
+            { UTYPE_IVEC4,     GL_U_MAP_RES,          },
+            { UTYPE_VEC2,      GL_U_MAP_POS,          },
+            { UTYPE_INT,       GL_U_SHADOWS_ON        },
+            { UTYPE_INT,       GL_U_SHADOW_MAP        },
+            { UTYPE_INT,       GL_U_BAKE_TEX          },
+            { UTYPE_INT,       GL_U_BAKE_LAYER        },
+            { UTYPE_VEC4,      GL_U_BAKE_XFORM        },
+            {0}
+        },
+    },
+    {
+        .prog_id        = (intptr_t)NULL,
+        .name           = "terrain-bake-src",
+        .vertex_path    = "shaders/vertex/terrain-shadowed.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/terrain-shadowed.glsl",
+        .frag_defines   = "#define TERRAIN_BAKE_SRC 1\n",
+        .uniforms       = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_MODEL             },
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
+            { UTYPE_MAT4,      GL_U_LS_TRANS          },
+            { UTYPE_VEC3,      GL_U_AMBIENT_COLOR     },
+            { UTYPE_VEC3,      GL_U_LIGHT_COLOR       },
+            { UTYPE_VEC3,      GL_U_LIGHT_POS         },
+            { UTYPE_INT,       GL_U_TEX_ARRAY0        },
+            { UTYPE_INT,       GL_U_TEX_ARRAY1        },
+            { UTYPE_INT,       GL_U_TEX_ARRAY2        },
+            { UTYPE_INT,       GL_U_TEX_ARRAY3        },
+            { UTYPE_INT,       GL_U_NORM_ARRAY0       },
+            { UTYPE_INT,       GL_U_NORM_ARRAY1       },
+            { UTYPE_INT,       GL_U_NORM_ARRAY2       },
+            { UTYPE_INT,       GL_U_NORM_ARRAY3       },
+            { UTYPE_IVEC4,     GL_U_MAP_RES,          },
+            { UTYPE_VEC2,      GL_U_MAP_POS,          },
+            { UTYPE_INT,       GL_U_HEIGHT_MAP        },
+            { UTYPE_INT,       GL_U_SPLAT_MAP         },
+            { UTYPE_ARRAY,     GL_U_SPLATS            },
+            { UTYPE_VEC3,      GL_U_BAKE_VIEW_DIR     },
+            {0}
+        },
+    },
+    {
+        .prog_id        = (intptr_t)NULL,
+        .name           = "terrain-bake-bc3",
+        .vertex_path    = "shaders/vertex/fullscreen.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/bc3-encode.glsl",
+        .uniforms       = (struct uniform[]){
+            { UTYPE_INT,       GL_U_BC3_SRC_TEX       },
+            { UTYPE_INT,       GL_U_BC3_SRC_LEVEL     },
             {0}
         },
     },
@@ -644,15 +721,25 @@ const char *shader_text_load(const char *path)
     return ret;
 }
 
-static bool shader_init(const char *text, GLuint *out, GLint type)
+static bool shader_init(const char *text, const char *defines, GLuint *out, GLint type)
 {
     ASSERT_IN_RENDER_THREAD();
 
     char info[512];
     GLint success;
 
+    /* The #version directive must stay the first line, so the defines
+     * are spliced in right after it.
+     */
+    const char *version = strstr(text, "#version");
+    const char *rest = version ? strchr(version, '\n') : NULL;
+    rest = rest ? rest + 1 : text;
+
+    const char *sources[] = { text, defines ? defines : "", rest };
+    GLint lengths[] = { (GLint)(rest - text), -1, -1 };
+
     *out = glCreateShader(type);
-    glShaderSource(*out, 1, &text, NULL);
+    glShaderSource(*out, 3, sources, lengths);
     glCompileShader(*out);
 
     glGetShaderiv(*out, GL_COMPILE_STATUS, &success);
@@ -667,7 +754,7 @@ static bool shader_init(const char *text, GLuint *out, GLint type)
     return true;
 }
 
-static bool shader_load_and_init(const char *path, GLuint *out, GLint type)
+static bool shader_load_and_init(const char *path, const char *defines, GLuint *out, GLint type)
 {
     ASSERT_IN_RENDER_THREAD();
     char buff[512];
@@ -679,7 +766,7 @@ static bool shader_load_and_init(const char *path, GLuint *out, GLint type)
         goto fail;
     }
     
-    if(!shader_init(text, out, type)){
+    if(!shader_init(text, defines, out, type)){
         pf_snprintf(buff, sizeof(buff), "Could not compile shader at: %s\n", path);
         PRINT(buff);
         goto fail;
@@ -786,7 +873,7 @@ bool R_GL_Shader_InitAll(const char *base_path)
 
         if(res->vertex_path) {
             pf_snprintf(path, sizeof(path), "%s/%s", base_path, res->vertex_path);
-            if(!shader_load_and_init(path, &vertex, GL_VERTEX_SHADER)) {
+            if(!shader_load_and_init(path, NULL, &vertex, GL_VERTEX_SHADER)) {
                 PRINT("Failed to load and init vertex shader.\n");
                 goto fail;
             }
@@ -795,7 +882,7 @@ bool R_GL_Shader_InitAll(const char *base_path)
 
         if(res->geo_path) {
             pf_snprintf(path, sizeof(path), "%s/%s", base_path, res->geo_path);
-            if(!shader_load_and_init(path, &geometry, GL_GEOMETRY_SHADER)) {
+            if(!shader_load_and_init(path, NULL, &geometry, GL_GEOMETRY_SHADER)) {
                 PRINT("Failed to load and init geometry shader.\n");
                 goto fail;
             }
@@ -804,7 +891,7 @@ bool R_GL_Shader_InitAll(const char *base_path)
 
         if(res->frag_path) {
             pf_snprintf(path, sizeof(path), "%s/%s", base_path, res->frag_path);
-            if(!shader_load_and_init(path, &fragment, GL_FRAGMENT_SHADER)) {
+            if(!shader_load_and_init(path, res->frag_defines, &fragment, GL_FRAGMENT_SHADER)) {
                 PRINT("Failed to load and init fragment shader.\n");
                 goto fail;
             }
@@ -822,7 +909,7 @@ bool R_GL_Shader_InitAll(const char *base_path)
             }
 
             pf_snprintf(path, sizeof(path), "%s/%s", base_path, res->compute_path);
-            if(!shader_load_and_init(path, &compute, GL_COMPUTE_SHADER)) {
+            if(!shader_load_and_init(path, NULL, &compute, GL_COMPUTE_SHADER)) {
                 PRINT("Failed to load and init compute shader.\n");
                 goto fail;
             }
