@@ -2047,8 +2047,13 @@ static void entity_target_enemy(uint32_t uid, uint32_t enemy)
         return;
     }
 
+    /* A ranged unit acquires only what it can already shoot; one whose target
+     * slipped out of range between the snapshot and now waits for the next
+     * acquisition rather than leaving its order and formation to chase.
+     */
     uint32_t flags = G_FlagsGet(uid);
-    if(cs->stance == COMBAT_STANCE_AGGRESSIVE && (flags & ENTITY_FLAG_MOVABLE)) {
+    if(cs->stance == COMBAT_STANCE_AGGRESSIVE && (flags & ENTITY_FLAG_MOVABLE)
+    && cs->stats.attack_range == 0.0f) {
 
         cs->target_uid = enemy;
         cs->retarget_hold = retarget_hold_for_dist(target_distance(uid, enemy));
@@ -2121,24 +2126,29 @@ static void entity_hold_ground(uint32_t uid, uint32_t threat)
     }
 }
 
-uint32_t closest_eligible_entity(uint32_t uid)
-{
-    struct combat_gamestate *gs = &s_combat_work.gamestate;
-    struct combatstate *cs = combatstate_get(uid);
-    vec2_t pos = G_Pos_GetXZFrom(gs->positions, uid);
-    float range = MAX(TARGET_ACQUISITION_RANGE, combat_effective_range(cs));
-
-    return G_Pos_NearestWithPredFrom(gs->postree, gs->positions, gs->flags,
-        pos, valid_enemy, (void*)((uintptr_t)uid), range);
-}
-
+/* The nearest eligible enemy within the range. The tree query answers by
+ * grid cell, so the nearest candidate can still lie past the range.
+ */
 static uint32_t closest_eligible_entity_range(uint32_t uid, float range)
 {
     struct combat_gamestate *gs = &s_combat_work.gamestate;
     vec2_t pos = G_Pos_GetXZFrom(gs->positions, uid);
 
-    return G_Pos_NearestWithPredFrom(gs->postree, gs->positions, gs->flags,
+    uint32_t ret = G_Pos_NearestWithPredFrom(gs->postree, gs->positions, gs->flags,
         pos, valid_enemy, (void*)((uintptr_t)uid), range);
+    if(ret == NULL_UID)
+        return NULL_UID;
+
+    vec2_t delta, target_pos = G_Pos_GetXZFrom(gs->positions, ret);
+    PFM_Vec2_Sub(&target_pos, &pos, &delta);
+    return (PFM_Vec2_Len(&delta) <= range) ? ret : NULL_UID;
+}
+
+uint32_t closest_eligible_entity(uint32_t uid)
+{
+    struct combatstate *cs = combatstate_get(uid);
+    float range = MAX(TARGET_ACQUISITION_RANGE, combat_effective_range(cs));
+    return closest_eligible_entity_range(uid, range);
 }
 
 static float target_distance(uint32_t uid, uint32_t target)
