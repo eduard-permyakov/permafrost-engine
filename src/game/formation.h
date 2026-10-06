@@ -46,6 +46,29 @@
  */
 #define MAX_FORMATION_UNITS (512)
 
+/* The layout of a box formation: a set of concentric square shells, one per
+ * unit group, with the highest-priority group forming the outer wall and the
+ * lowest-priority one the solid core.
+ *
+ * A shell is described by the side of its bounding square and the side of the
+ * unused square at its centre, which is the bounding square of the next shell
+ * inwards. Both share a parity, so shells are concentric with an integer inset
+ * of (outer_side - side) / 2 cells.
+ *
+ * Cell grids are row-major and follow the formation convention that row
+ * (side - 1) is the front row and row 0 the back row.
+ */
+
+/* The box is abandoned in favour of a rank layout past this side, bounding a
+ * selection made up of pathologically many distinct unit types.
+ */
+#define MAX_BOX_SIDE (47)
+
+struct box_shell{
+    int side;
+    int hole;
+};
+
 typedef uint32_t formation_id_t;
 
 struct map;
@@ -104,6 +127,19 @@ struct formation_submit_state{
 bool           G_Formation_SubmitState(uint32_t uid, struct formation_submit_state *out);
 bool           G_Formation_SubmitStateGather(uint32_t uid, struct formation_submit_state *out);
 void           G_Formation_SetGatherActive(bool active);
+
+/* Size one shell per group, from the innermost group outwards. 'counts' is
+ * ordered from the outermost group to the innermost and must hold no zeroes.
+ * Returns false if the box would grow past MAX_BOX_SIDE.
+ */
+bool           G_FormationBox_Shells(const size_t *counts, size_t ngroups, struct box_shell *out);
+
+/* Mark the 'nunits' cells of 'shell' which the group occupies in the
+ * (side * side) row-major grid 'out'. Cells are taken ring by ring from the
+ * outside in, and front-first within a ring, so a group too small to fill its
+ * shell screens the front and leaves its gap at the back centre.
+ */
+void           G_FormationBox_Mask(struct box_shell shell, size_t nunits, uint8_t *out);
 
 bool           G_Formation_SaveState(struct SDL_RWops *stream);
 bool           G_Formation_LoadState(struct SDL_RWops *stream);

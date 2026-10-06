@@ -37,7 +37,6 @@
 #define MEM_FILE_SUB MEM_SUB_GAME_FORMATION
 
 #include "formation.h"
-#include "formation_box.h"
 #include "position.h"
 #include "movement.h"
 #include "../main.h"
@@ -2118,6 +2117,39 @@ static void group_ranges(size_t nunits, uint64_t *types, size_t ntypes,
         out_offsets[i] = offset;
         offset = next_type_range(offset, nunits, types, out_counts + i);
     }
+}
+
+static int box_side(size_t nunits)
+{
+    int side = 1;
+    while((size_t)side * side < nunits)
+        side++;
+    return side;
+}
+
+/* The i-th column of a width-'w' row, walking outwards from the centre. Mirrors
+ * the order in which the leader scan sweeps a row.
+ */
+static int centre_out(int w, int i)
+{
+    int centre = w / 2;
+    if(i % 2)
+        return centre - (i + 1) / 2;
+    return centre + i / 2;
+}
+
+/* The i-th of 'm' cells, walking inwards from both ends. */
+static int edge_in(int m, int i)
+{
+    if(i % 2)
+        return m - 1 - (i - 1) / 2;
+    return i / 2;
+}
+
+static void mark_cell(uint8_t *out, int side, int r, int c, size_t *inout_placed)
+{
+    out[r * side + c] = 1;
+    (*inout_placed)++;
 }
 
 static uint8_t *box_cell_mask(struct box_shell shell, size_t nunits)
@@ -6379,3 +6411,58 @@ bool G_Formation_LoadState(struct SDL_RWops *stream)
     return true;
 }
 
+bool G_FormationBox_Shells(const size_t *counts, size_t ngroups, struct box_shell *out)
+{
+    if(ngroups == 0)
+        return false;
+
+    int inner = box_side(counts[ngroups - 1]);
+    if(inner > MAX_BOX_SIDE)
+        return false;
+    out[ngroups - 1] = (struct box_shell){inner, 0};
+
+    /* Grow each shell outwards in steps of 2 until it holds its group. Keeping
+     * the parity of the core makes every shell concentric with it.
+     */
+    for(int i = (int)ngroups - 2; i >= 0; i--) {
+
+        int side = inner + 2;
+        while((side <= MAX_BOX_SIDE)
+           && ((size_t)side * side - (size_t)inner * inner < counts[i])) {
+            side += 2;
+        }
+        if(side > MAX_BOX_SIDE)
+            return false;
+
+        out[i] = (struct box_shell){side, inner};
+        inner = side;
+    }
+    return true;
+}
+
+void G_FormationBox_Mask(struct box_shell shell, size_t nunits, uint8_t *out)
+{
+    memset(out, 0, (size_t)shell.side * shell.side);
+
+    size_t placed = 0;
+    int nrings = (shell.side - shell.hole + 1) / 2;
+
+    for(int ring = 0; (ring < nrings) && (placed < nunits); ring++) {
+
+        int lo = ring;
+        int hi = shell.side - 1 - ring;
+        int w = hi - lo + 1;
+
+        for(int i = 0; (i < w) && (placed < nunits); i++)
+            mark_cell(out, shell.side, hi, lo + centre_out(w, i), &placed);
+
+        for(int r = hi - 1; (r >= lo) && (placed < nunits); r--) {
+            mark_cell(out, shell.side, r, hi, &placed);
+            if((w > 1) && (placed < nunits))
+                mark_cell(out, shell.side, r, lo, &placed);
+        }
+
+        for(int i = 0; (i < w - 2) && (placed < nunits); i++)
+            mark_cell(out, shell.side, lo, lo + 1 + edge_in(w - 2, i), &placed);
+    }
+}
