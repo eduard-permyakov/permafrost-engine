@@ -1105,7 +1105,7 @@ static void entity_turn_to_target(uint32_t uid, uint32_t target)
     && G_Move_GetDest(uid, &cs->move_cmd_xz, &cs->move_cmd_attacking)) {
         cs->move_cmd_interrupted = true;
     }
-    G_Move_Stop(uid);
+    G_Move_StopForCombat(uid);
 
     if(!(flags & ENTITY_FLAG_MOVABLE)) {
         cs->state = STATE_CAN_ATTACK;
@@ -1622,7 +1622,8 @@ static void do_stop_attack(uint32_t uid)
 
     if(!cmd && cs->move_cmd_interrupted) {
         assert(cs->stance != COMBAT_STANCE_HOLD_POSITION);
-        G_Move_SetDest(uid, cs->move_cmd_xz, cs->move_cmd_attacking);
+        if(!G_Move_ResumeOrder(uid))
+            G_Move_SetDest(uid, cs->move_cmd_xz, cs->move_cmd_attacking);
         cs->move_cmd_interrupted = false;
     }
 }
@@ -2082,19 +2083,23 @@ static void entity_stop_combat(uint32_t uid)
     if(!(flags & ENTITY_FLAG_MOVABLE))
         return;
 
+    /* A unit the fight took off its order goes back to it: to its formation
+     * cell or its place at the destination, if it still has them.
+     */
+    struct combat_cmd *cmd = snoop_most_recent_command(COMBAT_CMD_SET_RANGE,
+        (void*)(uintptr_t)uid, uids_match);
+    if(!cmd && cs->move_cmd_interrupted) {
+        if(!G_Move_ResumeOrder(uid))
+            G_Move_SetDest(uid, cs->move_cmd_xz, cs->move_cmd_attacking);
+        cs->move_cmd_interrupted = false;
+        return;
+    }
+
     /* Formation members keep their move state so they rejoin the advance once the hold lifts. */
     if(G_Formation_GetForEnt(uid) != NULL_FID)
         return;
 
-    struct combat_cmd *cmd = snoop_most_recent_command(COMBAT_CMD_SET_RANGE,
-        (void*)(uintptr_t)uid, uids_match);
-
-    if(!cmd && cs->move_cmd_interrupted) {
-        G_Move_SetDest(uid, cs->move_cmd_xz, cs->move_cmd_attacking);
-        cs->move_cmd_interrupted = false;
-    }else {
-        G_Move_Stop(uid);
-    }
+    G_Move_Stop(uid);
 }
 
 static bool under_attack_order(uint32_t uid)

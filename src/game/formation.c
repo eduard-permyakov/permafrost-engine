@@ -4078,6 +4078,7 @@ static bool will_collide(const uint8_t *field, int arrival_res, enum nav_layer l
 static bool member_away(uint32_t uid)
 {
     return G_Move_SeekingFiringPosition(uid)
+        || G_Move_Seeking(uid)
         || (G_FlagsGet(uid) & ENTITY_FLAG_COMBAT_HELD);
 }
 
@@ -5144,15 +5145,13 @@ bool G_Formation_InRangeOfCell(uint32_t uid)
     return inside_arrival_field_bounds(formation, pos);
 }
 
-vec2_t G_Formation_DesiredArrivalVelocity(uint32_t uid)
+/* The cell field's direction at a point. The field is laid out on the nav
+ * grid, whose axes run opposite to the formation's own, so the point is
+ * binned with the centre and the point swapped.
+ */
+static vec2_t cell_field_dir(const struct formation *formation, const uint8_t *field, vec2_t pos)
 {
-    ASSERT_IN_MAIN_THREAD();
-    
-    struct formation *formation = formation_for_ent(uid);
-    assert(formation);
-
     int arrival_res = formation->field_res + 1;
-    vec2_t pos = G_Pos_GetXZ(uid);
     struct coord coord = pos_to_tile(pos, formation->center, formation->field_res);
     /* Account for the difference between the occupied and cell arrival
      * field resolutions. Clamp in case the position lies outside the
@@ -5160,10 +5159,37 @@ vec2_t G_Formation_DesiredArrivalVelocity(uint32_t uid)
      */
     coord.r = CLAMP(coord.r + 1, 0, arrival_res - 1);
     coord.c = CLAMP(coord.c + 1, 0, arrival_res - 1);
+    return N_FlowDir(cell_get_dir(field, arrival_res, coord.r, coord.c));
+}
+
+vec2_t G_Formation_DesiredArrivalVelocity(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+    
+    struct formation *formation = formation_for_ent(uid);
+    assert(formation);
 
     const uint8_t *field = cell_get_field(uid);
-    enum flow_dir dir = cell_get_dir(field, arrival_res, coord.r, coord.c);
-    return N_FlowDir(dir);
+    vec2_t pos = G_Pos_GetXZ(uid);
+
+    /* The field holds one of eight directions per tile; followed raw, a unit
+     * zig-zags in 45 degree steps along the tile edges and its facing with
+     * it. Averaged over the tile's width around the unit it turns smoothly.
+     */
+    vec2_t tile = N_TileDims();
+    const vec2_t offsets[] = {
+        {-0.5f, -0.5f}, {0.5f, -0.5f}, {-0.5f, 0.5f}, {0.5f, 0.5f}
+    };
+    vec2_t sum = (vec2_t){0.0f, 0.0f};
+    for(int i = 0; i < ARR_SIZE(offsets); i++) {
+        vec2_t sample = (vec2_t){pos.x + offsets[i].x * tile.x, pos.z + offsets[i].z * tile.z};
+        vec2_t dir = cell_field_dir(formation, field, sample);
+        PFM_Vec2_Add(&sum, &dir, &sum);
+    }
+    if(PFM_Vec2_Len(&sum) < EPSILON)
+        return cell_field_dir(formation, field, pos);
+    PFM_Vec2_Normal(&sum, &sum);
+    return sum;
 }
 
 vec2_t G_Formation_ApproximateDesiredArrivalVelocity(uint32_t uid)
@@ -5248,6 +5274,11 @@ static bool cell_done(struct subformation *sub, int idx)
     if(k == kh_end(sub->reverse))
         return true;
     uint32_t uid = kh_val(sub->reverse, k);
+    /* A member off fighting holds its cell for its return but nobody up, and
+     * one that has stopped for good elsewhere is not coming back to it.
+     */
+    if(G_Move_Seeking(uid) || G_Move_Arrived(uid))
+        return true;
     return G_Move_Still(uid) && arrived_at_cell(uid, cell);
 }
 
