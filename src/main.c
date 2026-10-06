@@ -100,6 +100,19 @@ enum engine_state{
 VEC_TYPE(event, SDL_Event)
 VEC_IMPL(static inline, event, SDL_Event)
 
+/* The points through a running frame at which its profiling report is timed. */
+enum frame_stamp{
+    FT_BEGIN,
+    FT_EVENTS,
+    FT_EVENTS_DONE,
+    FT_UPDATE_DONE,
+    FT_RENDER_DONE,
+    FT_SCHED_DONE,
+    FT_RENDER_WAIT_DONE,
+    FT_SWAP_DONE,
+    NFRAME_STAMPS
+};
+
 /*****************************************************************************/
 /* GLOBAL VARIABLES                                                          */
 /*****************************************************************************/
@@ -130,6 +143,8 @@ static vec_event_t               s_prev_tick_events;
 
 static SDL_Thread               *s_render_thread;
 static struct render_sync_state  s_rstate;
+
+static Uint64                    s_frame_stamps[NFRAME_STAMPS];
 
 static int                       s_argc;
 static char                    **s_argv;
@@ -379,6 +394,71 @@ static void engine_set_icon(void)
     SDL_FreeSurface(surface);
 fail_surface:
     PF_FREE(image);
+}
+
+static bool frame_prof_enabled(void)
+{
+    struct sval setting;
+    return (Settings_Get("pf.debug.log_perf_csv", &setting) == SS_OKAY)
+        && setting.as_bool;
+}
+
+static void frame_stamp(enum frame_stamp stamp)
+{
+    s_frame_stamps[stamp] = SDL_GetPerformanceCounter();
+}
+
+static double span_us(enum frame_stamp from, enum frame_stamp to)
+{
+    return (s_frame_stamps[to] - s_frame_stamps[from]) * 1e6 / SDL_GetPerformanceFrequency();
+}
+
+/* The timing counters behind the report are reset as they are read, so they are
+ * read every frame whether or not the report is printed.
+ */
+static void frame_prof_report(bool enabled)
+{
+    uint64_t task_us, quiesce_us;
+    Sched_LastTickTimes(&task_us, &quiesce_us);
+    uint64_t ev_us[E_TIME_NBUCKETS];
+    E_LastServiceTimes(ev_us);
+    if(!enabled)
+        return;
+
+    fprintf(stdout, "[event-prof] %lu", g_frame_idx);
+    for(int i = 0; i < E_TIME_NBUCKETS; i++)
+        fprintf(stdout, ",%lu", (unsigned long)ev_us[i]);
+    fputc('\n', stdout);
+
+    double frame_us = span_us(FT_BEGIN, FT_SWAP_DONE);
+    int ncands, nvis;
+    G_CullStats(&ncands, &nvis);
+    uint32_t ninterp, interp_us, nmoved;
+    float disp;
+    G_Move_InterpStats(&ninterp, &interp_us);
+    G_Pos_FlowStats(&nmoved, &disp);
+    fprintf(stdout, "[flow-csv] %lu,%.0f,%u,%.3f\n", g_frame_idx, frame_us,
+        nmoved, disp);
+
+    uint32_t stage[7];
+    G_StageTimes(stage);
+    fprintf(stdout, "[gstage-csv] %lu,%u,%u,%u,%u,%u,%u,%u\n", g_frame_idx, stage[0],
+        stage[1], stage[2], stage[3], stage[4], stage[5], stage[6]);
+
+    fprintf(stdout, "[frame-prof] %lu,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%lu,%lu,%.0f,%.0f,"
+        "%lu,%lu,%lu,%lu,%d,%d,%u,%u\n",
+        g_frame_idx, frame_us,
+        span_us(FT_BEGIN, FT_EVENTS),
+        span_us(FT_EVENTS, FT_EVENTS_DONE),
+        span_us(FT_EVENTS_DONE, FT_UPDATE_DONE),
+        span_us(FT_UPDATE_DONE, FT_RENDER_DONE),
+        span_us(FT_RENDER_DONE, FT_SCHED_DONE),
+        (unsigned long)task_us, (unsigned long)quiesce_us,
+        span_us(FT_SCHED_DONE, FT_RENDER_WAIT_DONE),
+        span_us(FT_RENDER_WAIT_DONE, FT_SWAP_DONE),
+        (unsigned long)s_rstate.t_cmds_us, (unsigned long)s_rstate.t_present_us,
+        (unsigned long)s_rstate.t_swap_us, (unsigned long)s_rstate.t_gpu_us,
+        ncands, nvis, ninterp, interp_us);
 }
 
 static bool engine_init(void)
@@ -846,10 +926,8 @@ int main(int argc, char **argv)
             LoadingScreen_Tick();
         }
 
-        struct sval csv_setting;
-        bool frame_prof = (Settings_Get("pf.debug.log_perf_csv", &csv_setting) == SS_OKAY)
-                       && csv_setting.as_bool;
-        Uint64 ft0 = SDL_GetPerformanceCounter();
+        bool frame_prof = frame_prof_enabled();
+        frame_stamp(FT_BEGIN);
 
         render_maybe_enable();
         s_rstate.timing = frame_prof;
@@ -865,56 +943,25 @@ int main(int argc, char **argv)
         case ENGINE_STATE_RUNNING:
 
         {
-            Uint64 ft1 = SDL_GetPerformanceCounter();
+            frame_stamp(FT_EVENTS);
             process_sdl_events();
             E_ServiceQueue();
-            Uint64 ft2 = SDL_GetPerformanceCounter();
+            frame_stamp(FT_EVENTS_DONE);
 
             G_Update();
-            Uint64 ft3 = SDL_GetPerformanceCounter();
+            frame_stamp(FT_UPDATE_DONE);
             G_Render();
-            Uint64 ft4 = SDL_GetPerformanceCounter();
+            frame_stamp(FT_RENDER_DONE);
             Sched_Tick();
-            Uint64 ft5 = SDL_GetPerformanceCounter();
+            frame_stamp(FT_SCHED_DONE);
 
             render_status = render_thread_wait_done();
-            Uint64 ft6 = SDL_GetPerformanceCounter();
+            frame_stamp(FT_RENDER_WAIT_DONE);
             Sched_QuiesceWorkers();
             G_SwapBuffers();
-            Uint64 ft7 = SDL_GetPerformanceCounter();
+            frame_stamp(FT_SWAP_DONE);
 
-            uint64_t task_us, quiesce_us;
-            Sched_LastTickTimes(&task_us, &quiesce_us);
-            uint64_t ev_us[E_TIME_NBUCKETS];
-            E_LastServiceTimes(ev_us);
-            if(frame_prof) {
-                fprintf(stdout, "[event-prof] %lu", g_frame_idx);
-                for(int i = 0; i < E_TIME_NBUCKETS; i++)
-                    fprintf(stdout, ",%lu", (unsigned long)ev_us[i]);
-                fputc('\n', stdout);
-                double us = 1e6 / SDL_GetPerformanceFrequency();
-                int ncands, nvis;
-                G_CullStats(&ncands, &nvis);
-                uint32_t ninterp, interp_us, nmoved;
-                float disp;
-                G_Move_InterpStats(&ninterp, &interp_us);
-                G_Pos_FlowStats(&nmoved, &disp);
-                fprintf(stdout, "[flow-csv] %lu,%.0f,%u,%.3f\n", g_frame_idx, (ft7 - ft0) * us,
-                    nmoved, disp);
-                uint32_t stage[7];
-                G_StageTimes(stage);
-                fprintf(stdout, "[gstage-csv] %lu,%u,%u,%u,%u,%u,%u,%u\n", g_frame_idx, stage[0],
-                    stage[1], stage[2], stage[3], stage[4], stage[5], stage[6]);
-                fprintf(stdout, "[frame-prof] %lu,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%lu,%lu,%.0f,%.0f,"
-                    "%lu,%lu,%lu,%lu,%d,%d,%u,%u\n",
-                    g_frame_idx, (ft7 - ft0) * us, (ft1 - ft0) * us, (ft2 - ft1) * us,
-                    (ft3 - ft2) * us, (ft4 - ft3) * us, (ft5 - ft4) * us,
-                    (unsigned long)task_us, (unsigned long)quiesce_us,
-                    (ft6 - ft5) * us, (ft7 - ft6) * us,
-                    (unsigned long)s_rstate.t_cmds_us, (unsigned long)s_rstate.t_present_us,
-                    (unsigned long)s_rstate.t_swap_us, (unsigned long)s_rstate.t_gpu_us,
-                    ncands, nvis, ninterp, interp_us);
-            }
+            frame_prof_report(frame_prof);
             break;
         }
 
