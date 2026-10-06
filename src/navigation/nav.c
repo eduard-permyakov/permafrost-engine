@@ -3374,9 +3374,15 @@ void *N_NewReaderCtx(const void *live_nav)
 
     struct nav_chunk *cbase = (struct nav_chunk*)pf_cow_reader_base(live->cow);
     size_t layer_chunks = live->width * live->height;
+    /* A reader sees the published chunks, whose islands and edges were
+     * brought up to date when they were published; the writer's pending
+     * changes, and the sets that track them, are not its own.
+     */
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
         r->chunks[i] = cbase + i * layer_chunks;
         r->dirty_chunks[i] = NULL;
+        r->local_islands_dirty[i] = false;
+        r->edge_chunks_dirty[i] = false;
     }
     return r;
 }
