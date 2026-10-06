@@ -283,12 +283,10 @@ struct movestate_aux{
     bool               way_paced;
     /* The heading gate held its step while it turned to its way. */
     bool               way_gated;
-    /* Whether the approach to its formation cell was judged short enough to
-     * side-step all the way, facing the way the rank faces; judged once, on
-     * entering the approach. Transient.
+    /* Stepping into its formation cell facing the way the rank faces; once
+     * begun, kept for the rest of the approach. Transient.
      */
-    bool               dress_judged;
-    bool               dress_all;
+    bool               dressing;
     /* Stopped to fight, short of the end of its order, which it goes back to
      * when the fight is over. Transient.
      */
@@ -835,8 +833,9 @@ static struct result navigation_tick_task(void *arg);
 #define SCALED_MAX_TURN_RATE            (MAX_TURN_RATE / hz_count(s_move_work.hz) * 20.0)
 #define MOVE_HEADING_HALT               (90.0f) /* degrees; halt a moving unit to re-aim past this */
 #define MOVE_HEADING_RESUME             (10.0f) /* degrees; resume/start a halted unit within this */
-#define MOVE_STEP_BAND                  (30.0f) /* degrees; a step keeps this close to the facing */
-#define CELL_DRESS_TIME_S               (1.5f)  /* a cell this many seconds of travel away is side-stepped into */
+#define MOVE_STEP_BAND                  (30.0f) /* degrees; a shove keeps this close to the facing */
+#define MOVE_WALK_BAND                  (45.0f) /* degrees; a walking step keeps this close to the facing */
+#define CELL_DRESS_TIME_S               (1.5f)  /* a cell this many seconds of shuffling away is side-stepped into */
 #define MOTION_IDLE_S                   (0.5f)  /* held up this long, a unit shows its idle clip */
 #define MAX_NEIGHBOURS                  (32)
 #define CLEARPATH_STILL_SPEED           (0.3f)  /* A neighbour slower than this is treated as static (full, non-reciprocal avoidance) so a settling unit is not passed through */
@@ -3785,9 +3784,9 @@ static vec2_t vel_wma(const struct movestate_aux *aux)
     for(int i = 0; i < VEL_HIST_LEN; i++) {
 
         vec2_t term = aux->vel_hist[(aux->vel_hist_idx + i) % VEL_HIST_LEN];
-        PFM_Vec2_Scale(&term, VEL_HIST_LEN-i, &term);
+        PFM_Vec2_Scale(&term, i+1, &term);
         PFM_Vec2_Add(&ret, &term, &ret);
-        denom += (VEL_HIST_LEN-i);
+        denom += (i+1);
     }
 
     if(denom > EPSILON) {
@@ -3990,9 +3989,8 @@ static bool move_gated_by_heading(enum move_state state)
 /* The part of a step a unit can take facing the way it does. Within the
  * band of the facing the step is kept whole; beyond it, only its share along
  * the nearer edge of the band. A slow step is a shove, and keeps within
- * MOVE_STEP_BAND, so it moves the unit forward at most, never sideways or
- * backward; a unit walking in earnest turns after its travel and keeps within
- * MOVE_HEADING_HALT, so it never runs backward.
+ * MOVE_STEP_BAND; a unit walking in earnest turns after its travel and keeps
+ * within MOVE_WALK_BAND. Neither moves the unit sideways or backward.
  */
 static vec2_t step_within_heading(vec2_t step, vec2_t facing, float max_step)
 {
@@ -4003,7 +4001,7 @@ static vec2_t step_within_heading(vec2_t step, vec2_t facing, float max_step)
     float dot = PFM_Vec2_Dot(&facing, &step);
     float angle = atan2f(cross, dot);
     bool shove = PFM_Vec2_Len(&step) < FACING_FOLLOW_ENGAGE * max_step;
-    float band = DEG_TO_RAD(shove ? MOVE_STEP_BAND : MOVE_HEADING_HALT);
+    float band = DEG_TO_RAD(shove ? MOVE_STEP_BAND : MOVE_WALK_BAND);
     if(fabsf(angle) <= band)
         return step;
 
@@ -4017,6 +4015,33 @@ static vec2_t step_within_heading(vec2_t step, vec2_t facing, float max_step)
         return (vec2_t){0.0f, 0.0f};
     PFM_Vec2_Scale(&edge, along, &edge);
     return edge;
+}
+
+/* A unit dressing its rank faces the way the rank does and steps into its
+ * cell from there: ahead at its pace, any other way at a shuffle.
+ */
+static vec2_t dress_step(vec2_t step, vec2_t facing, float max_step)
+{
+    float len = PFM_Vec2_Len(&step);
+    float shuffle = FACING_FOLLOW_ENGAGE * max_step;
+    if(len <= shuffle)
+        return step;
+
+    float cross = facing.x * step.z - facing.z * step.x;
+    float dot = PFM_Vec2_Dot(&facing, &step);
+    if(fabsf(atan2f(cross, dot)) <= DEG_TO_RAD(MOVE_STEP_BAND))
+        return step;
+
+    PFM_Vec2_Scale(&step, shuffle / len, &step);
+    return step;
+}
+
+static float cell_bearing_from_rank(vec2_t to_cell, quat_t rank_orientation)
+{
+    vec2_t rank_dir = facing_dir(rank_orientation);
+    float cross = rank_dir.x * to_cell.z - rank_dir.z * to_cell.x;
+    float dot = PFM_Vec2_Dot(&rank_dir, &to_cell);
+    return RAD_TO_DEG(fabsf(atan2f(cross, dot)));
 }
 
 static vec2_t intended_heading(vec2_t vdes, vec2_t new_vel)
@@ -4116,27 +4141,26 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
             new_vel = slide;
     }
 
-    /* The last body-length into a formation cell is dressing the rank: the
-     * unit steps to its place facing the way the rank faces, rather than
-     * turning to each small correction and back.
+    /* Dressing the rank: the unit steps to its place facing the way the
+     * rank faces, rather than turning to each small correction and back. It
+     * dresses a correction short enough to shuffle that does not take it
+     * back more than a step, or the last stretch of a cell straight ahead of
+     * the rank; any other approach it walks facing its way, and turns to the
+     * rank on the cell.
      */
-    bool dressing = false;
     if(ms->state == STATE_ARRIVING_TO_CELL && in->fstate.assigned_to_cell && !in->range_field) {
         vec2_t to_cell;
         PFM_Vec2_Sub((vec2_t*)&in->cell_pos, &curr_xz, &to_cell);
         float dist = PFM_Vec2_Len(&to_cell);
-        /* A short correction is a side-step all the way: turning to walk it
-         * and turning back reads as a glance aside. A long one is walked,
-         * and dressed only over the last body-length.
-         */
-        if(!aux->dress_judged) {
-            aux->dress_judged = true;
-            aux->dress_all = dist < in->speed * CELL_DRESS_TIME_S;
-        }
-        dressing = aux->dress_all || dist < cell_closing_radius(radius);
+        float shuffle_reach = FACING_FOLLOW_ENGAGE * in->speed * CELL_DRESS_TIME_S;
+        float bearing = cell_bearing_from_rank(to_cell, in->fstate.target_orientation);
+        if((dist < shuffle_reach && (bearing <= 90.0f || dist <= radius))
+        || (dist < cell_closing_radius(radius) && bearing <= MOVE_STEP_BAND))
+            aux->dressing = true;
     }else{
-        aux->dress_judged = false;
+        aux->dressing = false;
     }
+    bool dressing = aux->dressing;
 
     /* A member in range of its cell switches to it this tick: neither turn
      * nor step toward the ordered point on the way.
@@ -4162,8 +4186,8 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         }
     }
 
-    if(!dressing)
-        new_vel = step_within_heading(new_vel, facing_dir(ms->next_rot), in->speed / hz_count(hz));
+    new_vel = dressing ? dress_step(new_vel, facing_dir(ms->next_rot), in->speed / hz_count(hz))
+                       : step_within_heading(new_vel, facing_dir(ms->next_rot), in->speed / hz_count(hz));
     vec2_t new_pos_xz = new_pos_for_vel(uid, new_vel);
 
     if(flags & ENTITY_FLAG_GARRISONED) {
