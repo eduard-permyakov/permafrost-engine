@@ -1228,6 +1228,8 @@ static void n_update_blockers(struct nav_private *priv, enum nav_layer layer, in
         assert(chunk->blockers[curr.tile_r][curr.tile_c] < 16383);
 
         int val = chunk->blockers[curr.tile_r][curr.tile_c];
+        if(val == 0 && prev_val > 0)
+            chunk->freed_gen[curr.tile_r / FREED_CELL_TILES][curr.tile_c / FREED_CELL_TILES]++;
         if(!!val != !!prev_val) { /* The tile changed states between occupied/non-occupied */
 
             int ret;
@@ -5382,6 +5384,22 @@ void N_TilePatch(void *nav_private, int layer, int row0, int col0, int dim,
         if(chunk->blockers[tr][tc] > 0)
             out_words[bit / 32] |= 2u << (bit % 32);
     }}
+}
+
+uint32_t N_CellFreedGeneration(void *nav_private, vec3_t map_pos, enum nav_layer layer,
+                               vec2_t xz_pos)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct tile_desc tile;
+    if(!M_Tile_DescForPoint2D(res, map_pos, xz_pos, &tile))
+        return 0;
+
+    const struct nav_chunk *chunk =
+        &priv->chunks[layer][IDX(tile.chunk_r, priv->width, tile.chunk_c)];
+    return chunk->freed_gen[tile.tile_r / FREED_CELL_TILES][tile.tile_c / FREED_CELL_TILES];
 }
 
 bool N_PositionBlocked(vec2_t xz_pos, enum nav_layer layer, void *nav_private, vec3_t map_pos)

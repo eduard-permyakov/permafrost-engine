@@ -930,6 +930,11 @@ bool M_NavPositionPathable(const struct map *map, enum nav_layer layer, vec2_t x
     return N_PositionPathable(xz_pos, layer, map->nav_private, map->pos);
 }
 
+uint32_t M_NavCellFreedGeneration(const struct map *map, enum nav_layer layer, vec2_t xz_pos)
+{
+    return N_CellFreedGeneration(map->nav_private, map->pos, layer, xz_pos);
+}
+
 bool M_NavPositionBlocked(const struct map *map, enum nav_layer layer, vec2_t xz_pos)
 {
     struct box map_box = (struct  box){

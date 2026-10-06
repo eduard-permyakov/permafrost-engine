@@ -482,6 +482,14 @@ bool   M_NavPositionBlocked(const struct map *map, enum nav_layer layer,
                             vec2_t xz_pos);
 
 /* ------------------------------------------------------------------------
+ * The count of times a tile of the cell (a few tiles on a side) holding the
+ * XZ position has been freed of its last blocker on the layer.
+ * ------------------------------------------------------------------------
+ */
+uint32_t M_NavCellFreedGeneration(const struct map *map, enum nav_layer layer,
+                                  vec2_t xz_pos);
+
+/* ------------------------------------------------------------------------
  * Returns the closest position to the destination that is pathable to from
  * the (valid) source position. In the best case, this is the destination
  * itself.

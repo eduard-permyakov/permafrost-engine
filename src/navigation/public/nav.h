@@ -531,6 +531,14 @@ bool      N_PositionBlocked(vec2_t xz_pos, enum nav_layer layer,
                             void *nav_private, vec3_t map_pos);
 
 /* ------------------------------------------------------------------------
+ * Returns the count of times a tile of the cell (a few tiles on a side)
+ * holding the XZ position has been freed of its last blocker on the layer.
+ * ------------------------------------------------------------------------
+ */
+uint32_t  N_CellFreedGeneration(void *nav_private, vec3_t map_pos, enum nav_layer layer,
+                                vec2_t xz_pos);
+
+/* ------------------------------------------------------------------------
  * Returns the X and Z dimentions (in OpenGL coordinates) of a single 
  * navigation tile.
  * ------------------------------------------------------------------------

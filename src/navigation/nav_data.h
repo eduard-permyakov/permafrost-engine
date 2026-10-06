@@ -115,6 +115,8 @@ struct portal{
     portal_ref        connected;
 };
 
+#define FREED_CELL_TILES (8)
+
 struct nav_chunk{
     size_t          num_portals; 
     struct portal   portals[MAX_PORTALS_PER_CHUNK];
@@ -133,6 +135,11 @@ struct nav_chunk{
      * as impassable when computing flow fields. 
      */
     uint16_t        blockers[FIELD_RES_R][FIELD_RES_C];
+    /* Per cell of FREED_CELL_TILES tiles on a side, bumped whenever a tile
+     * of the cell loses its last blocker: a held unit waits on the cells on
+     * its way to try again.
+     */
+    uint32_t        freed_gen[FIELD_RES_R / FREED_CELL_TILES][FIELD_RES_C / FREED_CELL_TILES];
     /* Ground a group has claimed for its arrival, in the shape of the
      * stamps its bodies will make once parked. Only placement reads it:
      * reserved tiles may be walked across but not stood on.

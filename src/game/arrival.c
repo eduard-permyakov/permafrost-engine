@@ -58,11 +58,12 @@
 
 #define ARRIVAL_FIELD_PLAN_RADIUS (150.0f) /* Plan the zone once a member is this near the goal */
 #define ARRIVAL_MIN_UNITS         (4)      /* Below this, just seek the goal; no ball fill */
+#define ARRIVAL_SLOT_SPACING      (1.85f)  /* Inter-slot spacing, x unit radius */
+#define ARRIVAL_SETTLE_RANGE      (1.875f) /* Give up only within this x the region radius of the centre */
 #define ARRIVAL_STUCK_LIMIT       (12)     /* Wedged this many ticks -> settle in place */
 #define ARRIVAL_STUCK_DISP        (1.875f) /* Travel under this over the window = no progress */
 #define ARRIVAL_LOS_HYST          (12)     /* Opposite-LOS ticks before the approach stage flips */
 #define ARRIVAL_ENGAGE_DIST       (4.0f)   /* Travel this far from the order point before settling */
-#define ARRIVAL_SETTLE_RANGE      (1.875f) /* Give up only within this x the region radius of the centre */
 #define ARRIVAL_REALLOC_PERIOD    (4)      /* Re-balance + advance the frontier every N ticks */
 #define ARRIVAL_ROW_FILL_THRESH   (1.0f)   /* Row this full -> advance the frontier */
 #define ARRIVAL_ROW_STALL_TICKS   (80)     /* Frontier flat this long -> force past the row */
@@ -72,7 +73,6 @@
 #define ARRIVAL_FILL_RELAX_2      (0.75f)  /* Ball this full -> settle on 2 neighbours */
 #define ARRIVAL_FILL_RELAX_1      (0.90f)  /* Ball this full -> settle on 1 neighbour */
 #define ARRIVAL_SINK_TOLERANCE    (1.5f)   /* Settle within this x radius of the slot */
-#define ARRIVAL_SLOT_SPACING      (1.85f)  /* Inter-slot spacing, x unit radius */
 #define ARRIVAL_ZONE_PAD          (3)      /* Tiles of open border around the packed ball */
 
 /*****************************************************************************/

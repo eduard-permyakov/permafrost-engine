@@ -196,6 +196,9 @@ struct movestate{
 /* State needed only by specific movement state machines, split from the hot
  * movestate so the many cheap probes across the engine pull a small value.
  */
+/* Contacts in a unit's way recorded per tick for the settle judgement */
+#define MAX_WAY_LINKS                   (8)
+
 struct movestate_aux{
     /* Information for waking up from the 'WAITING' state 
      */
@@ -256,18 +259,39 @@ struct movestate_aux{
      * yet taken: visually settled, but neither blocking nor immovable.
      */
     bool               parked;
-    /* Where the unit last moved on from, the tick it did, and the ticks it
-     * has stood within reach of there since. Transient.
+    /* The goal the ratchet below measures against, the nearest the unit has
+     * come to it, and the ticks since it last came nearer. Transient.
      */
-    vec2_t             progress_ref;
-    unsigned           progress_tick;
-    uint16_t           noprogress_ticks;
+    vec2_t             goal_ref;
+    float              best_goal_dist;
+    uint16_t           noapproach_ticks;
+    /* What stood in the unit's way on the tick last consumed: the contacts
+     * ahead, whether the field had nothing to say, and the direction it
+     * wanted. Transient.
+     */
+    uint8_t            way_links;
+    bool               way_void;
+    /* Its formation asked it to stand: the cell assignment was still being
+     * computed, it was parked on its cell, or the drag was pacing it. */
+    bool               way_paced;
+    /* The heading gate held its step while it turned to its way. */
+    bool               way_gated;
+    /* Diagnostic: the tick's flags, for the [root] and [hold] lines */
+    uint16_t           way_bits;
+    uint32_t           way[MAX_WAY_LINKS];
+    vec2_t             way_dir;
+    /* What a held unit waits on: the body in its way that may yet move, its
+     * goal, and how many tiles of its layer's cells here and ahead had been
+     * freed when it stopped. Transient.
+     */
+    bool               hold_way;
+    uint32_t           hold_link;
+    vec2_t             hold_goal;
+    uint32_t           hold_gen_here;
+    uint32_t           hold_gen_ahead;
+    vec2_t             hold_ahead;
     /* Whether the facing is following the travel direction. Transient. */
     bool               facing_follows;
-    /* Whether a chain of contacts joins the unit to one that has progressed
-     * within the window or is fighting. Transient.
-     */
-    bool               crowd_busy;
     /* Walled out of its cell by its own side: walks through its own side's
      * bodies and stamps to reach it, for a bounded number of ticks.
      */
@@ -400,7 +424,7 @@ struct move_work_in{
     size_t         ntiles;
     /* In-reach neighbours in non-still movement states (jam evidence) */
     size_t         njam;
-    /* Contacts in the way that have not settled, capacity MAX_BUSY_LINKS */
+    /* Contacts in the way, stopped or not, capacity MAX_WAY_LINKS */
     uint32_t      *links;
     size_t         nlinks;
     /* Nearest neighbour in reach, and whether this unit gives it the lane */
@@ -411,6 +435,8 @@ struct move_work_in{
     size_t         nterrain;
     /* The field sample was void and the unit is coasting toward the goal */
     bool           field_void;
+    /* Diagnostic: the arrival ball, not the field, gave the desired velocity */
+    bool           arrival_vdes;
     bool           has_dest_los;
     bool           needs_los_build;
     bool           los_queried;
@@ -754,6 +780,10 @@ static void interp_reset(void);
 static void move_interpolate_frame(void);
 static void handle_split_submit(void);
 static void resume_waiting_units(void);
+static void settle_reset(struct movestate_aux *aux);
+static bool body_rooted(uint32_t uid);
+static uint32_t way_first_open(uint32_t uid, const struct movestate_aux *aux);
+static void hold_begin(uint32_t uid, const struct movestate *ms, struct movestate_aux *aux);
 static void move_tick(void *user, void *event);
 static struct result navigation_tick_task(void *arg);
 
@@ -768,7 +798,6 @@ static struct result navigation_tick_task(void *arg);
 #define ARRIVE_SLOWING_RADIUS           (10.0f)
 #define ADJACENCY_SEP_DIST              (5.0f)
 /* A gap to a still crowd within this fraction of the unit's radius is contact */
-#define CONTACT_GAP_RADIUS_FRAC         (0.5f)
 #define SEPARATION_NEIGHB_RADIUS        (30.0f)
 /* Beyond this multiple of the radius sum the separation term is e^-10 of its
  * contact value; the floor keeps the soldier query as it was. */
@@ -786,8 +815,6 @@ static struct result navigation_tick_task(void *arg);
 #define MOVE_STEP_BAND                  (30.0f) /* degrees; a step keeps this close to the facing */
 #define MOTION_IDLE_S                   (0.5f)  /* held up this long, a unit shows its idle clip */
 #define MAX_NEIGHBOURS                  (32)
-/* Contacts in the way a unit links into the busy chain per tick */
-#define MAX_BUSY_LINKS                  (8)
 #define CLEARPATH_STILL_SPEED           (0.3f)  /* A neighbour slower than this is treated as static (full, non-reciprocal avoidance) so a settling unit is not passed through */
 /* Movables wider than this (the rare siege engines and skyships) are matched
  * against a small registry so they do not widen every soldier's crowd query. */
@@ -813,7 +840,8 @@ static struct result navigation_tick_task(void *arg);
  * the one terminal timer; every other settle rule is a distance to the
  * unit's own goal.
  */
-#define GROUP_NOPROGRESS_S              (10.0f)
+#define SETTLE_WINDOW_S                 (5.0f)
+#define SETTLE_WALK_WINDOW_S            (20.0f) /* walking without coming nearer the goal this long = stuck */
 /* Standing this far from where it last moved on from is progress, whichever
  * way: a detour round a wall gains no straight-line distance for a while, and
  * a unit shuffling on the spot gains nothing.
@@ -1389,6 +1417,7 @@ static void entity_finish_moving(uint32_t uid, enum move_state newstate, bool bl
         struct movestate_aux *aux = movestate_aux_get(uid);
         aux->wait_prev = ms->state;
         aux->wait_ticks_left = WAIT_TICKS;
+        hold_begin(uid, ms, aux);
     }
 
     ms->state = newstate;
@@ -1533,9 +1562,7 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
         caux->range_miss_ticks = 0;
         G_Arrival_InitUnit(&caux->arrival,
             G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr_ent));
-        caux->progress_ref = G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr_ent);
-        caux->progress_tick = 0;
-        caux->noprogress_ticks = 0;
+        settle_reset(caux);
     }
 
     /* The flow fields will be computed on-demand during the next movement update tick */
@@ -1656,18 +1683,19 @@ static bool member_on_the_way(uint32_t uid, const struct movestate *ms)
     case STATE_WAITING: {
         const struct movestate_aux *aux = movestate_aux_get(uid);
         return aux->wait_prev == STATE_MOVING
-            || aux->wait_prev == STATE_MOVING_IN_FORMATION;
+            || aux->wait_prev == STATE_MOVING_IN_FORMATION
+            || aux->wait_prev == STATE_ARRIVING_TO_CELL;
     }
     default:
         return false;
     }
 }
 
-/* The group has stopped coming nearer its ground: every member still on the
- * way, and not held up by traffic, takes the ground it stands on, and a
- * formation member gives up its cell so that it holds nobody up.
+/* A member stops for good where it stands: at its goal, or against bodies
+ * that have. A formation member gives up its cell so that it holds nobody up.
  */
-static void settle_member_in_place(struct flock *flock, uint32_t uid, struct movestate *ms)
+static void root_member_in_place(struct flock *flock, uint32_t uid, struct movestate *ms,
+                                 const char *why)
 {
     if(G_Formation_GetForEnt(uid) != NULL_FID)
         G_Formation_ConcedeCell(uid);
@@ -1677,10 +1705,11 @@ static void settle_member_in_place(struct flock *flock, uint32_t uid, struct mov
         vec2_t to_goal;
         PFM_Vec2_Sub(&goal, &pos, &to_goal);
         const struct movestate_aux *taux = movestate_aux_get(uid);
-        fprintf(stdout, "[settle-taken] %u,%u,%s,%.1f,%d,%d,%u,%d,%.2f\n", s_move_trace_tick,
-            uid, s_state_str[ms->state], PFM_Vec2_Len(&to_goal), (int)taux->parked,
-            (int)taux->crowd_busy, (unsigned)taux->cp_stall_ticks,
-            (int)taux->soft_blocking, PFM_Vec2_Len(&ms->velocity));
+        fprintf(stdout, "[root] %u,%u,%s,%s,%.1f,%d,%d,%u,%d,%x,%u,%u\n", s_move_trace_tick,
+            uid, why, s_state_str[ms->state], PFM_Vec2_Len(&to_goal), (int)taux->parked,
+            (int)taux->way_links, (unsigned)taux->cp_stall_ticks, (int)taux->soft_blocking,
+            (unsigned)taux->way_bits, (unsigned)taux->standing_ticks,
+            (unsigned)taux->noapproach_ticks);
     }
 
     /* A waiting member already blocks and has announced its stop. */
@@ -1692,61 +1721,233 @@ static void settle_member_in_place(struct flock *flock, uint32_t uid, struct mov
     entity_finish_moving(uid, STATE_ARRIVED, true);
 }
 
-/* A member makes progress when it has moved on from where it last did. One
- * that has not for a window has stopped for good and takes the ground it
- * stands on, unless it is in someone else's hands (a work mover, a combat
- * hold), which answers to its target, or among traffic, which waits for the
- * traffic to pass.
+/* A member that cannot come nearer while something in its way may yet move
+ * is held up, not done: it waits, standing and blocking like a settled unit,
+ * and is sent on again when what held it changes.
  */
-static void update_flock_progress(enum movement_hz hz)
+static void hold_member_for_way(uint32_t uid, struct movestate *ms, struct movestate_aux *aux,
+                                const char *why, uint32_t open)
+{
+    aux->noapproach_ticks = 0;
+    if(ent_still(ms))
+        return;
+    if(s_log_perf_csv) {
+        fprintf(stdout, "[hold] %u,%u,%s,%s,%u,%d,%x\n", s_move_trace_tick, uid, why,
+            s_state_str[ms->state], open, (int)aux->soft_blocking, (unsigned)aux->way_bits);
+    }
+    aux->hold_link = open;
+    entity_reset_seek_counters(uid);
+    entity_finish_moving(uid, STATE_WAITING, true);
+}
+
+/* Start the approach ratchet afresh: a new goal has no best distance yet. */
+static void settle_reset(struct movestate_aux *aux)
+{
+    aux->goal_ref = (vec2_t){0.0f, 0.0f};
+    aux->best_goal_dist = INFINITY;
+    aux->noapproach_ticks = 0;
+    aux->way_links = 0;
+    aux->way_void = false;
+    aux->way_paced = false;
+    aux->way_gated = false;
+    aux->way_dir = (vec2_t){0.0f, 0.0f};
+}
+
+/* Whether a body in a unit's way has stopped for good: settled, and not
+ * merely standing to fight.
+ */
+static bool body_rooted(uint32_t uid)
+{
+    const struct movestate *ms = movestate_get(uid);
+    if(!ms || ms->state != STATE_ARRIVED)
+        return false;
+    return !(G_FlagsGet(uid) & ENTITY_FLAG_COMBAT_HELD);
+}
+
+/* What the tick just consumed found in the unit's way, kept for the settle
+ * pass, which runs after the work arrays are released.
+ */
+static void record_way(struct movestate_aux *aux, const struct move_work_in *in,
+                       const struct move_work_out *out)
+{
+    aux->way_bits = ((out->patch.flags & UPDATE_HEADING_GATED)   ? 0x001 : 0)
+                  | ((out->patch.flags & UPDATE_VETO_BLOCKED)    ? 0x002 : 0)
+                  | ((out->patch.flags & UPDATE_VETO_UNPATHABLE) ? 0x004 : 0)
+                  | ((out->patch.flags & UPDATE_FIELD_VOID)      ? 0x008 : 0)
+                  | (in->has_dest_los                            ? 0x010 : 0)
+                  | (in->field_starved                           ? 0x020 : 0)
+                  | (in->fstate.assignment_ready                 ? 0x040 : 0)
+                  | (in->fstate.assigned_to_cell                 ? 0x080 : 0)
+                  | (in->fstate.in_range_of_cell                 ? 0x100 : 0)
+                  | ((out->cp_flags & CP_OUT_STALLED)            ? 0x200 : 0)
+                  | ((PFM_Vec2_Len(&out->ent_vel) > EPSILON)     ? 0x400 : 0)
+                  | ((PFM_Vec2_Len(&out->patch.next_velocity) > EPSILON) ? 0x800 : 0)
+                  | (in->arrival_vdes                            ? 0x1000 : 0);
+    aux->way_links = MIN(in->nlinks, MAX_WAY_LINKS);
+    aux->way_void = PFM_Vec2_Len(&in->ent_des_v) < EPSILON;
+    aux->way_paced = (in->fstate.fid != NULL_FID)
+                  && (!in->fstate.assignment_ready || aux->parked
+                      || PFM_Vec2_Len((vec2_t*)&in->fstate.normal_drag_force) > EPSILON);
+    aux->way_gated = !!(out->patch.flags & UPDATE_HEADING_GATED);
+    aux->way_dir = (vec2_t){0.0f, 0.0f};
+    if(!aux->way_void)
+        PFM_Vec2_Normal((vec2_t*)&in->ent_des_v, &aux->way_dir);
+    for(size_t l = 0; l < aux->way_links; l++) {
+        aux->way[l] = in->links[l];
+    }
+}
+
+/* Whether a body in the way will never move on its own: it has stopped for
+ * good, or it is held up on a chain of held bodies that leads back to this
+ * unit, ends at one held with nothing in its way, or ends at one that has
+ * stopped for good. A chain that reaches a body still moving, or standing to
+ * fight, may open yet.
+ */
+static bool way_body_final(uint32_t uid, uint32_t body)
+{
+    uint32_t seen[MAX_WAY_LINKS];
+    for(int hop = 0; hop < MAX_WAY_LINKS; hop++) {
+
+        if(body == NULL_UID || body == uid || body_rooted(body))
+            return true;
+        for(int i = 0; i < hop; i++) {
+            if(seen[i] == body)
+                return true;
+        }
+        seen[hop] = body;
+
+        const struct movestate *ms = movestate_get(body);
+        const struct movestate_aux *aux = movestate_aux_get(body);
+        if(!ms || !aux || !G_EntityExists(body))
+            return true;
+        if(ms->state != STATE_WAITING || !aux->hold_way)
+            return false;
+        body = aux->hold_link;
+    }
+    return false;
+}
+
+/* The first body in the unit's way that may yet move, or NULL_UID. */
+static uint32_t way_first_open(uint32_t uid, const struct movestate_aux *aux)
+{
+    for(int l = 0; l < aux->way_links; l++) {
+        if(!way_body_final(uid, aux->way[l]))
+            return aux->way[l];
+    }
+    return NULL_UID;
+}
+
+/* A member makes progress when it comes nearer its goal than it has been.
+ * One that has stood without for a window, or walked without for a longer
+ * one (the way may lead away from the goal for a while; walking out and
+ * back does not), is judged by what stands in its way: if every body there
+ * has stopped for good, this is as near as it gets and it stops for good
+ * too; if one of them may yet move, or the field has gone quiet with
+ * nothing in contact, it is held until that changes. Members in someone
+ * else's hands (a work mover, a combat hold, a latched shooter, a formation
+ * standing its ranks, the heading gate) answer to those and are left alone.
+ */
+static void settle_members(enum movement_hz hz)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    int window = GROUP_NOPROGRESS_S * hz_count(hz);
+    int window = SETTLE_WINDOW_S * hz_count(hz);
+    int walk_window = SETTLE_WALK_WINDOW_S * hz_count(hz);
     for(int i = 0; i < vec_size(&s_flocks); i++) {
 
         struct flock *flock = &vec_AT(&s_flocks, i);
-        int nsettled = 0;
-        int taken = 0;
-
         uint32_t uid;
         kh_foreach_key(flock->ents, uid, {
 
             struct movestate *ms = movestate_get(uid);
             if(!ms || !G_EntityExists(uid))
                 continue;
-            if(ms->state == STATE_ARRIVED) {
-                nsettled++;
-                continue;
-            }
-            if(ms->state == STATE_TURNING || !member_on_the_way(uid, ms)
+            if(ent_still(ms) || ms->state == STATE_TURNING || !member_on_the_way(uid, ms)
             || (G_FlagsGet(uid) & ENTITY_FLAG_COMBAT_HELD))
                 continue;
 
             struct movestate_aux *aux = movestate_aux_get(uid);
-            vec2_t pos = G_Pos_GetXZ(uid);
-            vec2_t moved;
-            PFM_Vec2_Sub(&pos, &aux->progress_ref, &moved);
-            if(PFM_Vec2_Len(&moved) >= GROUP_PROGRESS_MIN) {
-                aux->progress_ref = pos;
-                aux->progress_tick = s_move_trace_tick;
-                aux->noprogress_ticks = 0;
+            if(aux->range_latched)
                 continue;
-            }
-            if(aux->noprogress_ticks < window) {
-                aux->noprogress_ticks++;
-                continue;
-            }
-            if(aux->crowd_busy)
-                continue;
-            settle_member_in_place(flock, uid, ms);
-            taken++;
-        });
 
-        if(taken > 0 && s_log_perf_csv) {
-            fprintf(stdout, "[settle-in-place] %u,%d,%d,%d\n", s_move_trace_tick,
-                (int)kh_size(flock->ents), nsettled, taken);
+            vec2_t goal = member_goal(flock, uid);
+            vec2_t pos = G_Pos_GetXZ(uid);
+            vec2_t to_goal, goal_moved;
+            PFM_Vec2_Sub(&goal, &pos, &to_goal);
+            PFM_Vec2_Sub(&goal, &aux->goal_ref, &goal_moved);
+            float dist = PFM_Vec2_Len(&to_goal);
+
+            /* A goal that moved is measured afresh, but the wait for an
+             * approach goes on: hopping goals are no approach either.
+             */
+            if(aux->best_goal_dist == INFINITY || PFM_Vec2_Len(&goal_moved) > EPSILON) {
+                aux->goal_ref = goal;
+                aux->best_goal_dist = dist;
+            }else if(dist < aux->best_goal_dist - GROUP_PROGRESS_MIN) {
+                aux->best_goal_dist = dist;
+                aux->noapproach_ticks = 0;
+                continue;
+            }
+            /* A member its formation holds back is keeping station, not
+             * stuck: a formation assigning cells or pacing its ranks stands
+             * its members for seconds at a time. One turning to its way
+             * under the heading gate has not been let go yet.
+             */
+            if(aux->way_paced || aux->way_gated) {
+                aux->noapproach_ticks = 0;
+                continue;
+            }
+            if(aux->noapproach_ticks < walk_window)
+                aux->noapproach_ticks++;
+            bool standing = aux->standing_ticks >= window;
+            if(aux->noapproach_ticks < window
+            || (!standing && aux->noapproach_ticks < walk_window))
+                continue;
+
+            uint32_t open = way_first_open(uid, aux);
+            if(open != NULL_UID) {
+                hold_member_for_way(uid, ms, aux, "way", open);
+                continue;
+            }
+            if(aux->way_links == 0 && aux->way_void) {
+                hold_member_for_way(uid, ms, aux, "void", NULL_UID);
+                continue;
+            }
+            root_member_in_place(flock, uid, ms, aux->way_links > 0 ? "way" : "ground");
+        });
+    }
+}
+
+/* Every unit's movement state, every 30 seconds, for offline analysis of who
+ * stands where and why (pf.debug.log_perf_csv).
+ */
+static void move_log_census(enum movement_hz hz)
+{
+    if(!s_log_perf_csv || (s_move_trace_tick % (30 * hz_count(hz))) != 0)
+        return;
+
+    for(khiter_t k = kh_begin(s_entity_state_table); k != kh_end(s_entity_state_table); k++) {
+
+        if(!kh_exist(s_entity_state_table, k))
+            continue;
+        uint32_t uid = kh_key(s_entity_state_table, k);
+        if(!G_EntityExists(uid))
+            continue;
+        const struct movestate *ms = &kh_value(s_entity_state_table, k);
+        const struct movestate_aux *aux = movestate_aux_get(uid);
+        const struct flock *flock = flock_for_ent(uid);
+        vec2_t pos = G_Pos_GetXZ(uid);
+        float goal_dist = -1.0f;
+        if(flock) {
+            vec2_t to_goal;
+            PFM_Vec2_Sub((vec2_t*)&flock->target_xz, &pos, &to_goal);
+            goal_dist = PFM_Vec2_Len(&to_goal);
         }
+        fprintf(stdout, "[census] %u,%u,%d,%s,%d,%d,%d,%d,%.1f,%.1f,%.1f,%.2f,%.2f\n",
+            s_move_trace_tick, uid, G_GetFactionID(uid), s_state_str[ms->state],
+            !!(G_FlagsGet(uid) & ENTITY_FLAG_COMBAT_HELD), (int)aux->soft_blocking,
+            (int)aux->parked, G_Formation_GetForEnt(uid) != NULL_FID, pos.x, pos.z,
+            goal_dist, G_GetSelectionRadius(uid), PFM_Vec2_Len(&ms->velocity));
     }
 }
 
@@ -2553,6 +2754,7 @@ static vec2_t ent_desired_velocity(struct move_work_in *in)
     const struct map *map = s_move_work.gamestate.map;
     *out_seek_pinned = false;
     in->range_field = false;
+    in->arrival_vdes = false;
 
     switch(ms->state) {
     case STATE_TURNING:
@@ -2598,8 +2800,10 @@ static vec2_t ent_desired_velocity(struct move_work_in *in)
         vec2_t arrival_vel;
         if(!in->range_field && as
         && G_Arrival_DesiredVelocity(as, &movestate_aux_get(uid)->arrival, s_map,
-            map, pos_xz, mms->velocity, has_dest_los, &arrival_vel))
+            map, pos_xz, mms->velocity, has_dest_los, &arrival_vel)) {
+            in->arrival_vdes = true;
             return arrival_vel;
+        }
 
         /* A zero on the reach field's passable ground is the firing position. */
         vec2_t field_vdes = M_NavDesiredVelocityForTargetCached(map, target, pos_xz);
@@ -3675,12 +3879,14 @@ static bool move_gated_by_heading(enum move_state state)
     }
 }
 
-/* The part of a step a unit can take facing the way it does. Within
- * MOVE_STEP_BAND of the facing the step is kept whole; beyond it, only its
- * share along the nearer edge of the band, so a shove from the side or from
- * behind moves the unit forward at most, never sideways or backward.
+/* The part of a step a unit can take facing the way it does. Within the
+ * band of the facing the step is kept whole; beyond it, only its share along
+ * the nearer edge of the band. A slow step is a shove, and keeps within
+ * MOVE_STEP_BAND, so it moves the unit forward at most, never sideways or
+ * backward; a unit walking in earnest turns after its travel and keeps within
+ * MOVE_HEADING_HALT, so it never runs backward.
  */
-static vec2_t step_within_heading(vec2_t step, vec2_t facing)
+static vec2_t step_within_heading(vec2_t step, vec2_t facing, float max_step)
 {
     if(PFM_Vec2_Len(&step) < EPSILON)
         return step;
@@ -3688,7 +3894,8 @@ static vec2_t step_within_heading(vec2_t step, vec2_t facing)
     float cross = facing.x * step.z - facing.z * step.x;
     float dot = PFM_Vec2_Dot(&facing, &step);
     float angle = atan2f(cross, dot);
-    float band = DEG_TO_RAD(MOVE_STEP_BAND);
+    bool shove = PFM_Vec2_Len(&step) < FACING_FOLLOW_ENGAGE * max_step;
+    float band = DEG_TO_RAD(shove ? MOVE_STEP_BAND : MOVE_HEADING_HALT);
     if(fabsf(angle) <= band)
         return step;
 
@@ -3744,93 +3951,11 @@ enum settle_verdict{
     SETTLE_AT_GOAL,
     /* The arrival ball took the unit */
     SETTLE_AT_SLOT,
-    /* Touching a settled member of a group too small for a ball */
-    SETTLE_WITH_GROUP,
-    /* Touching its order's settled crowd, which holds the ground ahead */
-    SETTLE_AT_CROWD,
 };
 
-/* How near a body counts as touching: the solve holds a wide unit off a
- * still crowd by a gap that grows with its radius.
- */
-static float contact_gap(float radius)
-{
-    return MAX(ADJACENCY_SEP_DIST, CONTACT_GAP_RADIUS_FRAC * radius);
-}
-
-/* A query reach covering contact_gap of either body */
-static float contact_reach(float radius_sum)
-{
-    return radius_sum + contact_gap(radius_sum);
-}
-
-/* Whether a flock was sent to the same ground as 'flock' by the same order:
- * an order makes one flock per nav layer, all with the one target.
- */
-static bool same_order_flock(const struct flock *a, const struct flock *b)
-{
-    vec2_t delta;
-    PFM_Vec2_Sub((vec2_t*)&a->target_xz, (vec2_t*)&b->target_xz, &delta);
-    return PFM_Vec2_Len(&delta) < EPSILON;
-}
-
-/* The unit touches a settled unit of its own order standing between it and
- * the point it stops at: its group's crowd holds that ground, so here is as
- * near as it gets. Units of other orders, and settled units off to the side,
- * leave a way on.
- */
-static bool touches_settled_crowd(uint32_t uid, const struct flock *flock, vec2_t pos,
-                                  float radius, vec2_t goal)
-{
-    vec2_t to_goal;
-    PFM_Vec2_Sub(&goal, &pos, &to_goal);
-    float travel = PFM_Vec2_Len(&to_goal);
-    if(travel < EPSILON)
-        return false;
-
-    uint32_t ent_flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
-    struct cp_ent self = (struct cp_ent){ .xz_pos = pos, .radius = radius };
-
-    uint32_t near_ents[128];
-    int num_near = gather_movable_neighbours(uid, pos, radius, ent_flags, contact_reach,
-        near_ents, ARR_SIZE(near_ents));
-
-    for(int i = 0; i < num_near; i++) {
-
-        uint32_t curr = near_ents[i];
-        if(curr == uid)
-            continue;
-        uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, curr);
-        if(!(flags & ENTITY_FLAG_MOVABLE))
-            continue;
-        if((ent_flags & ENTITY_FLAG_AIR) != (flags & ENTITY_FLAG_AIR))
-            continue;
-        const struct movestate *cms = movestate_get(curr);
-        if(!cms || cms->state != STATE_ARRIVED)
-            continue;
-
-        struct cp_ent still = (struct cp_ent){
-            .xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr),
-            .radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr)
-        };
-        vec2_t diff;
-        PFM_Vec2_Sub(&still.xz_pos, &pos, &diff);
-        if(PFM_Vec2_Len(&diff) > radius + still.radius + contact_gap(radius))
-            continue;
-        if(!G_ClearPath_StandsInWay(self, still, to_goal, travel))
-            continue;
-
-        const struct flock *cflock = flock_for_ent(curr);
-        if(cflock && same_order_flock(flock, cflock))
-            return true;
-    }
-    return false;
-}
-
 /* The one answer to whether a plain mover may stop where it is. A formation
- * member stops at its cell (STATE_ARRIVING_TO_CELL) and a group that has
- * stopped coming nearer its ground is settled in place by the tick
- * (update_flock_progress).
+ * member stops at its cell (STATE_ARRIVING_TO_CELL) and a member that cannot
+ * come nearer its goal is settled or held by the tick (settle_members).
  */
 static enum settle_verdict mover_settle_verdict(uint32_t uid, vec2_t new_pos_xz, float radius,
                                                 enum nav_layer layer, struct movestate *ms,
@@ -3840,12 +3965,7 @@ static enum settle_verdict mover_settle_verdict(uint32_t uid, vec2_t new_pos_xz,
     assert(flock);
 
     struct arrival_state *as = G_ArrivalGroup_ForLayer(&flock->arrival, layer);
-    bool ball = as && G_Arrival_IsActive(as);
-    vec2_t goal = (ball && aux->arrival.sink_valid) ? aux->arrival.sink : flock->target_xz;
-    if(touches_settled_crowd(uid, flock, new_pos_xz, radius, goal))
-        return SETTLE_AT_CROWD;
-
-    if(ball) {
+    if(as && G_Arrival_IsActive(as)) {
         int n_settled = adjacent_settled_count(uid);
         bool at_slot = G_Arrival_ShouldSettle(as, &aux->arrival, s_map,
             s_move_work.gamestate.map, new_pos_xz, ms->velocity, radius, n_settled);
@@ -3854,16 +3974,6 @@ static enum settle_verdict mover_settle_verdict(uint32_t uid, vec2_t new_pos_xz,
 
     if(arrived(uid, new_pos_xz))
         return SETTLE_AT_GOAL;
-
-    uint32_t adjacent[128];
-    size_t num_adj = adjacent_flock_members(uid, flock, adjacent, ARR_SIZE(adjacent));
-    for(int j = 0; j < num_adj; j++) {
-
-        struct movestate *adj_ms = movestate_get(adjacent[j]);
-        assert(adj_ms);
-        if(adj_ms->state == STATE_ARRIVED)
-            return SETTLE_WITH_GROUP;
-    }
     return SETTLE_NONE;
 }
 
@@ -3914,7 +4024,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         }
     }
 
-    new_vel = step_within_heading(new_vel, facing_dir(ms->next_rot));
+    new_vel = step_within_heading(new_vel, facing_dir(ms->next_rot), in->speed / hz_count(hz));
     vec2_t new_pos_xz = new_pos_for_vel(uid, new_vel);
 
     if(flags & ENTITY_FLAG_GARRISONED) {
@@ -4015,8 +4125,16 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
             break;
         }
 
-        if(!in->range_field
-        && mover_settle_verdict(uid, new_pos_xz, radius, layer, ms, aux) != SETTLE_NONE) {
+        enum settle_verdict verdict = in->range_field ? SETTLE_NONE
+            : mover_settle_verdict(uid, new_pos_xz, radius, layer, ms, aux);
+        if(verdict != SETTLE_NONE) {
+            if(s_log_perf_csv) {
+                const struct flock *vflock = flock_for_ent(uid);
+                vec2_t to_target;
+                PFM_Vec2_Sub((vec2_t*)&vflock->target_xz, &new_pos_xz, &to_target);
+                fprintf(stdout, "[settle-verdict] %u,%u,%d,%.2f,%.1f\n", s_move_trace_tick,
+                    uid, (int)verdict, radius, PFM_Vec2_Len(&to_target));
+            }
             out->flags |= UPDATE_SET_STATE;
             out->next_state = STATE_ARRIVED;
             out->next_block = true;
@@ -4231,6 +4349,16 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
             out->next_state = STATE_TURNING;
             break;
         }
+
+        /* The cell field has no way to the cell from here: hold until the
+         * ground around changes, rather than stand to be jostled.
+         */
+        if(PFM_Vec2_Len(&vdes) < EPSILON && !in->fstate.arrived_at_cell
+        && !in->range_field && !aux->soft_blocking) {
+            out->flags |= UPDATE_SET_STATE;
+            out->next_state = STATE_WAITING;
+            out->next_block = true;
+        }
         break;
     }
     default: 
@@ -4318,7 +4446,10 @@ static void entity_apply_update(uint32_t uid, struct movestate *ms,
     }
 
     if(patch->flags & UPDATE_SET_VELOCITY) {
-        ms->velocity = patch->next_velocity;
+        /* A unit that stopped this tick stands with no velocity, whatever
+         * step the solve had found for it.
+         */
+        ms->velocity = ent_still(ms) ? (vec2_t){0.0f, 0.0f} : patch->next_velocity;
         bool pivoting = (patch->flags & UPDATE_TURNING_IN_PLACE) || ms->state == STATE_TURNING;
         if(pivoting || PFM_Vec2_Len(&ms->velocity) >= CLEARPATH_STILL_SPEED)
             aux->standing_ticks = 0;
@@ -4592,13 +4723,14 @@ static void find_neighbours(uint32_t uid, vec2_t ahead,
         bool at_slot = G_Arrival_NeighbourSettling(&curr_aux->arrival,
             curr_xz_pos, newdesc.radius);
 
-        /* A contact standing in this unit's way that has not settled links the
-         * two in the chain the busy test follows (mark_crowd_busy).
+        /* A contact in this unit's way, stopped or not, is what the settle
+         * judgement weighs (settle_members); with no wish to move, every
+         * contact is in the way.
          */
         vec2_t to_curr;
         PFM_Vec2_Sub(&curr_xz_pos, &ent_pos, &to_curr);
         bool in_the_way = (PFM_Vec2_Len(&ahead) < EPSILON) || (PFM_Vec2_Dot(&to_curr, &ahead) > 0.0f);
-        if(in_the_way && !ent_still(ms) && *out_nlinks < MAX_BUSY_LINKS)
+        if(in_the_way && *out_nlinks < MAX_WAY_LINKS)
             out_links[(*out_nlinks)++] = curr;
 
         if(ent_still(ms) || PFM_Vec2_Len(&ms->velocity) < CLEARPATH_STILL_SPEED || at_slot) {
@@ -4824,9 +4956,7 @@ static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack)
         flock_add(fl, uid);
         fl->plan_pending = true;
         struct movestate_aux *jaux = movestate_aux_get(uid);
-        jaux->progress_ref = G_Pos_GetXZ(uid);
-        jaux->progress_tick = 0;
-        jaux->noprogress_ticks = 0;
+        settle_reset(jaux);
 
         struct movestate *ms = movestate_get(uid);
         assert(ms);
@@ -6132,87 +6262,6 @@ static void move_update_gamestate(void)
     move_copy_gamestate();
 }
 
-/* A unit is waiting on traffic when a chain of "in its way" contacts leads
- * from it to one that has progressed within the window or is fighting. The
- * links point the way the waiting does: the fight behind a unit does not
- * hold the unit up. A chain with no such end is a crowd stuck for good, and
- * nobody in it holds anybody up.
- */
-static void mark_crowd_busy(enum movement_hz hz, uint32_t now)
-{
-    static khash_t(findex) *index;
-    if(!index)
-        index = kh_init(findex);
-    kh_clear(findex, index);
-
-    size_t n = s_move_work.nwork;
-    unsigned window = GROUP_NOPROGRESS_S * hz_count(hz);
-    STALLOC(bool, busy, n > 0 ? n : 1);
-    STALLOC(int, queue, n > 0 ? n : 1);
-    STALLOC(int, waiters_at, n + 1);
-    STALLOC(int, waiters, n * MAX_BUSY_LINKS + 1);
-
-    size_t nqueue = 0;
-    for(int i = 0; i < n; i++) {
-        uint32_t uid = s_move_work.in[i].ent_uid;
-        const struct movestate_aux *aux = movestate_aux_get(uid);
-        int ret;
-        khiter_t k = kh_put(findex, index, uid, &ret);
-        kh_val(index, k) = i;
-        busy[i] = (G_FlagsGetFrom(s_move_work.gamestate.flags, uid) & ENTITY_FLAG_COMBAT_HELD)
-               || (aux && aux->progress_tick > 0
-                   && now - aux->progress_tick <= window);
-        if(busy[i])
-            queue[nqueue++] = i;
-        waiters_at[i] = 0;
-    }
-    waiters_at[n] = 0;
-
-    /* Each unit's waiters, grouped: the units that have it in their way. */
-    for(int i = 0; i < n; i++) {
-        const struct move_work_in *in = &s_move_work.in[i];
-        for(size_t l = 0; l < in->nlinks; l++) {
-            khiter_t k = kh_get(findex, index, in->links[l]);
-            if(k != kh_end(index))
-                waiters_at[kh_val(index, k) + 1]++;
-        }
-    }
-    for(int i = 0; i < n; i++)
-        waiters_at[i + 1] += waiters_at[i];
-    STALLOC(int, fill, n > 0 ? n : 1);
-    for(int i = 0; i < n; i++)
-        fill[i] = waiters_at[i];
-    for(int i = 0; i < n; i++) {
-        const struct move_work_in *in = &s_move_work.in[i];
-        for(size_t l = 0; l < in->nlinks; l++) {
-            khiter_t k = kh_get(findex, index, in->links[l]);
-            if(k != kh_end(index))
-                waiters[fill[kh_val(index, k)]++] = i;
-        }
-    }
-
-    for(size_t head = 0; head < nqueue; head++) {
-        int v = queue[head];
-        for(int w = waiters_at[v]; w < waiters_at[v + 1]; w++) {
-            int u = waiters[w];
-            if(busy[u])
-                continue;
-            busy[u] = true;
-            queue[nqueue++] = u;
-        }
-    }
-    for(int i = 0; i < n; i++) {
-        struct movestate_aux *aux = movestate_aux_get(s_move_work.in[i].ent_uid);
-        if(aux)
-            aux->crowd_busy = busy[i];
-    }
-    STFREE(fill);
-    STFREE(waiters);
-    STFREE(waiters_at);
-    STFREE(queue);
-    STFREE(busy);
-}
-
 static void move_consume_work_results(void)
 {
     PERF_ENTER();
@@ -6230,6 +6279,8 @@ static void move_consume_work_results(void)
         struct movestate_aux *aux = movestate_aux_get(out->ent_uid);
         if(!aux)
             continue;
+        /* A stop applied below records what stood in the way this tick. */
+        record_way(aux, &s_move_work.in[i], out);
         entity_apply_cp_stall(aux, !!(out->cp_flags & CP_OUT_STALLED));
         entity_apply_update(out->ent_uid, ms, aux, &out->patch);
         entity_apply_cp_side(aux, out->cp_side);
@@ -6266,7 +6317,7 @@ static void move_prepare_work(enum movement_hz hz)
     s_move_work.tile_mem = stalloc(&s_move_work.mem,
         nmax * CLEARPATH_MAX_TILE_OBS * sizeof(vec2_t));
     s_move_work.link_mem = stalloc(&s_move_work.mem,
-        nmax * MAX_BUSY_LINKS * sizeof(uint32_t));
+        nmax * MAX_WAY_LINKS * sizeof(uint32_t));
     s_move_work.trace = (s_move_trace_min_radius >= 0.0f)
                       ? stalloc(&s_move_work.mem, nmax * sizeof(struct move_trace))
                       : NULL;
@@ -6331,7 +6382,7 @@ static void move_push_work(struct move_work_in in)
     in.dyn_neighbs  = s_move_work.neighb_mem + (2 * idx + 0) * MAX_NEIGHBOURS;
     in.stat_neighbs = s_move_work.neighb_mem + (2 * idx + 1) * MAX_NEIGHBOURS;
     in.tile_obs = s_move_work.tile_mem + idx * CLEARPATH_MAX_TILE_OBS;
-    in.links = s_move_work.link_mem + idx * MAX_BUSY_LINKS;
+    in.links = s_move_work.link_mem + idx * MAX_WAY_LINKS;
     in.ndyn = 0;
     in.nstat = 0;
     in.ntiles = 0;
@@ -7518,8 +7569,6 @@ static struct result navigation_tick_task(void *arg)
     phase_start = SDL_GetPerformanceCounter();
 
     fork_join_state_updates();
-    /* The tick counter advances when these results are collected. */
-    mark_crowd_busy(s_move_work.hz, s_move_trace_tick + 1);
 
     s_last_nav_tick_stats.upd_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
@@ -7532,12 +7581,82 @@ static struct result navigation_tick_task(void *arg)
     return NULL_RESULT;
 }
 
-/* A unit that stopped short of its cell is skipped by the per-tick work for
- * good, so a formation that settles around it leaves it stranded wherever it
- * gave up. Once the formation has taken its tiles, put it back on the road with
- * a phase permit, until its budget runs out.
+/* A unit held on its way waits on the things that stopped it, not on a clock:
+ * the body in its way, its goal, and the tiles of its layer's chunks here and
+ * one step ahead. The cell counts are read before its own stop lands on the
+ * map, so its own stamp never wakes it: a stop frees nothing.
  */
-/* Waiting units aren't in the per-tick work; tick their resume countdown here. */
+static void hold_begin(uint32_t uid, const struct movestate *ms, struct movestate_aux *aux)
+{
+    aux->hold_way = (ms->state == STATE_MOVING)
+                 || (ms->state == STATE_MOVING_IN_FORMATION)
+                 || (ms->state == STATE_ARRIVING_TO_CELL);
+    if(!aux->hold_way)
+        return;
+    /* Held up is standing, however it was moving the tick before. */
+    aux->standing_ticks = UINT16_MAX;
+
+    float radius = G_GetSelectionRadius(uid);
+    enum nav_layer layer = Entity_NavLayerWithRadius(G_FlagsGet(uid), radius);
+    vec2_t pos = G_Pos_GetXZ(uid);
+    vec2_t tile = N_TileDims();
+    vec2_t ahead = aux->way_dir;
+    PFM_Vec2_Scale(&ahead, radius + 2.0f * MAX(tile.x, tile.z), &ahead);
+    PFM_Vec2_Add(&pos, &ahead, &ahead);
+
+    const struct flock *flock = flock_for_ent(uid);
+    if(ms->state != STATE_WAITING)
+        aux->hold_link = way_first_open(uid, aux);
+    aux->hold_goal = flock ? member_goal(flock, uid) : pos;
+    aux->hold_ahead = M_ClampedMapCoordinate(s_map, ahead);
+    aux->hold_gen_here = M_NavCellFreedGeneration(s_map, layer, pos);
+    aux->hold_gen_ahead = M_NavCellFreedGeneration(s_map, layer, aux->hold_ahead);
+}
+
+/* The reason a held unit goes on again, or NULL while nothing it waits on has
+ * changed.
+ */
+static const char *hold_wake_reason(uint32_t uid, struct movestate_aux *aux)
+{
+    /* The body it waited on is gone, has stopped for good, or is out of its
+     * way: beyond contact, or no longer ahead. A body jostled about in
+     * contact ahead of it still bars the way.
+     */
+    uint32_t link = aux->hold_link;
+    if(link != NULL_UID) {
+        if(!G_EntityExists(link) || body_rooted(link) || !movestate_get(link))
+            return "link";
+        vec2_t pos = G_Pos_GetXZ(uid);
+        vec2_t to_link;
+        vec2_t lpos = G_Pos_GetXZ(link);
+        PFM_Vec2_Sub(&lpos, &pos, &to_link);
+        float reach = clearpath_reach(G_GetSelectionRadius(uid) + G_GetSelectionRadius(link));
+        if(PFM_Vec2_Len(&to_link) > reach)
+            return "link";
+        if(PFM_Vec2_Len(&aux->way_dir) > EPSILON && PFM_Vec2_Dot(&to_link, &aux->way_dir) <= 0.0f)
+            return "link";
+    }
+
+    const struct flock *flock = flock_for_ent(uid);
+    if(flock) {
+        vec2_t goal = member_goal(flock, uid);
+        vec2_t goal_moved;
+        PFM_Vec2_Sub(&goal, &aux->hold_goal, &goal_moved);
+        if(PFM_Vec2_Len(&goal_moved) > EPSILON)
+            return "goal";
+    }
+
+    float radius = G_GetSelectionRadius(uid);
+    enum nav_layer layer = Entity_NavLayerWithRadius(G_FlagsGet(uid), radius);
+    if(M_NavCellFreedGeneration(s_map, layer, G_Pos_GetXZ(uid)) != aux->hold_gen_here
+    || M_NavCellFreedGeneration(s_map, layer, aux->hold_ahead) != aux->hold_gen_ahead)
+        return "freed";
+    return NULL;
+}
+
+/* Waiting units aren't in the per-tick work; wake them here: a unit held on
+ * its way when what held it changes, the rest on their countdown.
+ */
 static void resume_waiting_units(void)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -7554,18 +7673,35 @@ static void resume_waiting_units(void)
             continue;
 
         struct movestate_aux *aux = movestate_aux_get(uid);
-        if(aux->wait_ticks_left > 0 && --aux->wait_ticks_left > 0)
+        if(aux->hold_way) {
+            const char *why = hold_wake_reason(uid, aux);
+            if(!why)
+                continue;
+            if(s_log_perf_csv)
+                fprintf(stdout, "[wake] %u,%u,%s\n", s_move_trace_tick, uid, why);
+        }else if(aux->wait_ticks_left > 0 && --aux->wait_ticks_left > 0) {
             continue;
+        }
 
         assert(aux->wait_prev == STATE_MOVING
             || aux->wait_prev == STATE_MOVING_IN_FORMATION
+            || aux->wait_prev == STATE_ARRIVING_TO_CELL
             || aux->wait_prev == STATE_SEEK_ENEMIES
             || aux->wait_prev == STATE_SURROUND_ENTITY
             || aux->wait_prev == STATE_ENTER_ENTITY_RANGE);
 
         if(ms->blocking)
             entity_unblock(uid);
-        move_notify_motion_start(uid, ms);
+        /* A unit trying its way again is standing until it finds a step; the
+         * submit's level-triggered clip logic announces the motion when it
+         * does. Pivots and scripts rotate a still unit behind the shadow's
+         * back; motion resumes from the rotation the unit is showing.
+         */
+        if(aux->hold_way) {
+            ms->prev_rot = ms->next_rot = Entity_GetRot(uid);
+        }else{
+            move_notify_motion_start(uid, ms);
+        }
         ms->state = aux->wait_prev;
     }
 }
@@ -7758,7 +7894,8 @@ static void move_do_tick_submit(enum movement_hz hz)
         perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
 
     /* Settling stamps through the gamestate copies, so this waits for them. */
-    update_flock_progress(hz);
+    settle_members(hz);
+    move_log_census(hz);
 
     PERF_PUSH("submit move work");
     phase_start = SDL_GetPerformanceCounter();
@@ -7871,15 +8008,10 @@ static void move_do_tick_submit(enum movement_hz hz)
             caux->phase_ticks = 0;
         else if(caux->phase_ticks < UINT16_MAX)
             caux->phase_ticks++;
-        bool pass = straggler && (caux->phase_ticks <= PHASE_MAX_TICKS);
-        /* The pass is bounded: a straggler that has spent it concedes its
-         * cell and takes the ground it stands on.
+        /* The pass is bounded; a straggler that has spent it is judged like
+         * every other member (settle_members).
          */
-        if(straggler && !pass) {
-            G_Formation_ConcedeCell(curr);
-            entity_finish_moving(curr, STATE_ARRIVED, true);
-            continue;
-        }
+        bool pass = straggler && (caux->phase_ticks <= PHASE_MAX_TICKS);
         /* The last few units onto a cell cross the clearance rings of the
          * parked neighbours; the lattice keeps the cell itself body-clear, so
          * the rings are transit margin here, not bodies.
