@@ -3382,6 +3382,8 @@ static void on_mousedown(void *user, void *event)
 
         if(!(flags & ENTITY_FLAG_COMBATABLE))
             continue;
+        if(G_Combat_GroundAttackOnly(curr))
+            continue;
         if(!(flags & ENTITY_FLAG_AIR)
         && (G_FlagsGet(target) & ENTITY_FLAG_AIR)
         && (G_Combat_GetRange(curr) == 0.0f))
@@ -3822,6 +3824,17 @@ bool G_Combat_Idle(uint32_t uid)
     return (cs->state == STATE_NOT_IN_COMBAT)
         || (cs->state == STATE_STANDING_GROUND)
         || (cs->state == STATE_NON_COMBATANT_FLEEING);
+}
+
+bool G_Combat_GroundAttackOnly(uint32_t uid)
+{
+    struct sval setting;
+    ss_e status = Settings_Get("pf.game.disable_single_unit_targeting", &setting);
+    assert(status == SS_OKAY);
+
+    if(setting.as_bool)
+        return true;
+    return (G_Group_ForEnt(uid) != 0);
 }
 
 void G_Combat_AttackUnit(uint32_t uid, uint32_t target)

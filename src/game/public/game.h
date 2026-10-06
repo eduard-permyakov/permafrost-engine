@@ -261,6 +261,8 @@ uint32_t        G_FlagsGetFrom(struct kh_id_s *table, uint32_t uid);
 
 void            G_SetShowUnitIcons(bool show);
 bool            G_GetShowUnitIcons(void);
+void            G_SetAttackOnRightClick(bool on);
+bool            G_GetAttackOnRightClick(void);
 
 /*###########################################################################*/
 /* GAME SELECTION                                                            */
@@ -415,6 +417,7 @@ struct proj_fire_desc{
 };
 
 void  G_Combat_AttackUnit(uint32_t uid, uint32_t target);
+bool  G_Combat_GroundAttackOnly(uint32_t uid);
 
 void  G_Combat_SetStance(uint32_t uid, enum combat_stance stance);
 void  G_Combat_SetCurrentHP(uint32_t uid, int hp);

@@ -1442,6 +1442,18 @@ static void g_create_settings(void)
     assert(status == SS_OKAY);
 
     status = Settings_Create((struct setting){
+        .name = "pf.game.disable_single_unit_targeting",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
         .name = "pf.game.show_map_foliage",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
@@ -2219,6 +2231,7 @@ bool G_Init(void)
     vec_entity_init(&s_gs.cull_cands);
     vec_entity_init(&s_gs.removed);
     g_create_settings();
+    s_gs.attack_on_rclick = true;
 
     vec_entity_resize(&s_gs.visible, 2048);
     vec_drawcand_resize(&s_gs.draw_cands, 2048);
@@ -3966,6 +3979,16 @@ bool G_GetShowUnitIcons(void)
     return s_gs.show_unit_icons;
 }
 
+void G_SetAttackOnRightClick(bool on)
+{
+    s_gs.attack_on_rclick = on;
+}
+
+bool G_GetAttackOnRightClick(void)
+{
+    return s_gs.attack_on_rclick;
+}
+
 bool G_SaveGlobalState(SDL_RWops *stream)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -4162,6 +4185,12 @@ bool G_SaveGlobalState(SDL_RWops *stream)
     };
     CHK_TRUE_RET(Attr_Write(stream, &minimap_render_all, "minimap_render_all"));
 
+    struct attr attack_on_rclick = (struct attr){
+        .type = TYPE_BOOL, 
+        .val.as_bool = s_gs.attack_on_rclick
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &attack_on_rclick, "attack_on_rclick"));
+
     Sched_TryYield();
 
     if(!G_Region_SaveState(stream))
@@ -4312,6 +4341,10 @@ bool G_LoadGlobalState(SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_BOOL);
     s_gs.minimap_render_all = attr.val.as_bool;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_BOOL);
+    s_gs.attack_on_rclick = attr.val.as_bool;
     Sched_TryYield();
 
     if(!G_Region_LoadState(stream))

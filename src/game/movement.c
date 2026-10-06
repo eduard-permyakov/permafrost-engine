@@ -2258,6 +2258,34 @@ static void move_order(const vec_entity_t *sel, bool attack, vec3_t mouse_coord,
     vec_entity_destroy(&capped);
 }
 
+/* The units that may not target a unit attack-move to the clicked enemy's
+ * position instead; the combat click handler orders the rest.
+ */
+static void ground_attack_order(const vec_entity_t *sel, uint32_t target)
+{
+    vec_entity_t ground;
+    vec_entity_init(&ground);
+
+    for(int i = 0; i < vec_size(sel); i++) {
+        uint32_t curr = vec_AT(sel, i);
+        if(!(G_FlagsGet(curr) & ENTITY_FLAG_COMBATABLE))
+            continue;
+        if(!G_Combat_GroundAttackOnly(curr))
+            continue;
+        vec_entity_push(&ground, curr);
+    }
+
+    if(vec_size(&ground) > 0) {
+        vec3_t pos = G_Pos_Get(target);
+        vec2_t orientation = (vec2_t){0.0f, 0.0f};
+        if(G_Formation_PreferredForSet(&ground) != FORMATION_NONE) {
+            orientation = G_Formation_AutoOrientation((vec2_t){pos.x, pos.z}, &ground);
+        }
+        move_order(&ground, true, pos, orientation);
+    }
+    vec_entity_destroy(&ground);
+}
+
 static void on_mousedown(void *user, void *event)
 {
     SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
@@ -2266,6 +2294,11 @@ static void on_mousedown(void *user, void *event)
     bool attack = s_attack_on_lclick && (mouse_event->button == SDL_BUTTON_LEFT);
     bool move = s_move_on_lclick ? mouse_event->button == SDL_BUTTON_LEFT
                                  : mouse_event->button == SDL_BUTTON_RIGHT;
+
+    if(move && !s_move_on_lclick && G_GetAttackOnRightClick()) {
+        attack = true;
+        move = false;
+    }
 
     assert(!s_move_on_lclick || !s_attack_on_lclick);
     assert(!attack || !move);
@@ -2285,11 +2318,27 @@ static void on_mousedown(void *user, void *event)
     if(!attack && !move)
         return;
 
-    if(G_CurrContextualAction() != CTX_ACTION_NONE)
+    int ctx_action = G_CurrContextualAction();
+    if(ctx_action != CTX_ACTION_NONE && ctx_action != CTX_ACTION_ATTACK)
         return;
 
     if(G_MouseInTargetMode() && !targeting)
         return;
+
+    if(ctx_action == CTX_ACTION_ATTACK) {
+
+        enum selection_type sel_type;
+        const vec_entity_t *sel = G_Sel_Get(&sel_type);
+
+        vec_entity_t fsel;
+        filter_selection_pathable(sel, &fsel);
+
+        if(vec_size(&fsel) > 0 && sel_type == SELECTION_TYPE_PLAYER) {
+            ground_attack_order(&fsel, G_Sel_GetHovered());
+        }
+        vec_entity_destroy(&fsel);
+        return;
+    }
 
     vec3_t mouse_coord;
     if(!M_MinimapMouseMapCoords(s_map, &mouse_coord)

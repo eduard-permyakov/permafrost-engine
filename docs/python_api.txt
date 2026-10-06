@@ -301,6 +301,11 @@ BUILT-IN FUNCTIONS
     Returns the total amount of a particular resource between all
     player-controlled storage sites.
 
+    [get_right_click_attack]
+    ----------------------------------------------------------------------------
+    Returns whether every right click issues an attack-move order rather than a
+    move order.
+
     [get_rts_camera_zoom_enabled]
     ----------------------------------------------------------------------------
     Returns whether the RTS camera's mousewheel zoom is currently enabled.
@@ -334,6 +339,11 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Broadcast a global event so all handlers can get invoked. Any weakref
     argument is automatically unpacked before being sent to the handler.
+
+    [group_bonuses]
+    ----------------------------------------------------------------------------
+    Returns the bonuses granted to the members of the group with the specified
+    ID, as a list of (tag, icon, kind, amount, percent) tuples.
 
     [group_for_ent]
     ----------------------------------------------------------------------------
@@ -739,6 +749,11 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Specify an image path (string) to be used as the icon for a resource with
     the specified resource name.
+
+    [set_right_click_attack]
+    ----------------------------------------------------------------------------
+    Set whether every right click issues an attack-move order rather than a
+    move order. Saved with the session.
 
     [set_rts_camera_zoom_enabled]
     ----------------------------------------------------------------------------

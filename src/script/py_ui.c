@@ -2077,6 +2077,9 @@ static int PyWindow_set_spacing(PyWindowObject *self, PyObject *value, void *clo
     }
 
     self->style.spacing = (struct nk_vec2){x, y};
+    if(s_nk_ctx->current && !strcmp(s_nk_ctx->current->name_string, self->name)) {
+        s_nk_ctx->style.window.spacing = self->style.spacing;
+    }
     return 0;
 }
 

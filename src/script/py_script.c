@@ -183,6 +183,8 @@ static PyObject *PyPf_hide_healthbars(PyObject *self);
 static PyObject *PyPf_show_healthbars(PyObject *self);
 static PyObject *PyPf_hide_unit_icons(PyObject *self);
 static PyObject *PyPf_show_unit_icons(PyObject *self);
+static PyObject *PyPf_set_right_click_attack(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_right_click_attack(PyObject *self);
 
 static PyObject *PyPf_get_resource_list(PyObject *self);
 static PyObject *PyPf_get_resource_stored(PyObject *self, PyObject *args);
@@ -307,6 +309,7 @@ static PyObject *PyPf_set_group_ui_bonus_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_highlight(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_clear_group_highlight(PyObject *self);
 static PyObject *PyPf_group_for_ent(PyObject *self, PyObject *args);
+static PyObject *PyPf_group_bonuses(PyObject *self, PyObject *args);
 static PyObject *PyPf_show_range_indicator(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_hide_range_indicator(PyObject *self);
 static PyObject *PyPf_show_console(PyObject *self);
@@ -621,6 +624,15 @@ static PyMethodDef pf_module_methods[] = {
     {"show_unit_icons", 
     (PyCFunction)PyPf_show_unit_icons, METH_NOARGS,
     "Enable rendering of icons on top of entities."},
+
+    {"set_right_click_attack", 
+    (PyCFunction)PyPf_set_right_click_attack, METH_VARARGS,
+    "Set whether every right click issues an attack-move order rather than a move order. "
+    "Saved with the session."},
+
+    {"get_right_click_attack", 
+    (PyCFunction)PyPf_get_right_click_attack, METH_NOARGS,
+    "Returns whether every right click issues an attack-move order rather than a move order."},
 
     {"get_resource_list",
     (PyCFunction)PyPf_get_resource_list, METH_NOARGS,
@@ -1122,6 +1134,11 @@ static PyMethodDef pf_module_methods[] = {
     {"group_for_ent",
     (PyCFunction)PyPf_group_for_ent, METH_VARARGS,
     "Returns the ID of the group the specified entity is locked into, or 0 if it is not in one."},
+
+    {"group_bonuses",
+    (PyCFunction)PyPf_group_bonuses, METH_VARARGS,
+    "Returns the bonuses granted to the members of the group with the specified ID, as a list of "
+    "(tag, icon, kind, amount, percent) tuples."},
 
     {"show_range_indicator",
     (PyCFunction)PyPf_show_range_indicator, METH_VARARGS | METH_KEYWORDS,
@@ -2160,6 +2177,24 @@ static PyObject *PyPf_show_unit_icons(PyObject *self)
 {
     G_SetShowUnitIcons(true);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_right_click_attack(PyObject *self, PyObject *args)
+{
+    int on;
+    if(!PyArg_ParseTuple(args, "i", &on)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a boolean.");
+        return NULL;
+    }
+    G_SetAttackOnRightClick(on);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_get_right_click_attack(PyObject *self)
+{
+    if(G_GetAttackOnRightClick())
+        Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
 }
 
 static PyObject *PyPf_get_resource_list(PyObject *self)
@@ -4676,6 +4711,33 @@ static PyObject *PyPf_group_for_ent(PyObject *self, PyObject *args)
     uint32_t uid = 0;
     S_Entity_UIDForObj(obj, &uid);
     return PyInt_FromLong(G_Group_ForEnt(uid));
+}
+
+static PyObject *PyPf_group_bonuses(PyObject *self, PyObject *args)
+{
+    int group_id;
+    if(!PyArg_ParseTuple(args, "i", &group_id)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer group ID.");
+        return NULL;
+    }
+
+    struct group_bonus_desc bonuses[16];
+    int nbonuses = G_Group_GetBonuses(group_id, bonuses, ARR_SIZE(bonuses));
+
+    PyObject *ret = PyList_New(nbonuses);
+    if(!ret)
+        return NULL;
+
+    for(int i = 0; i < nbonuses; i++) {
+        PyObject *desc = Py_BuildValue("(ssifO)", bonuses[i].tag, bonuses[i].icon,
+            (int)bonuses[i].kind, bonuses[i].amount, bonuses[i].percent ? Py_True : Py_False);
+        if(!desc) {
+            Py_DECREF(ret);
+            return NULL;
+        }
+        PyList_SET_ITEM(ret, i, desc);
+    }
+    return ret;
 }
 
 static PyObject *PyPf_show_range_indicator(PyObject *self, PyObject *args, PyObject *kwargs)
