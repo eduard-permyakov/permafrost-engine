@@ -381,6 +381,11 @@ struct formation{
     uint32_t             snapshot_gen;
     /* Whether the placed cells hold a reservation on the live map. */
     bool                 reserved;
+    /* The cells are laid out at the order and once more, against the ground
+     * as it stands, when the formation reaches it; this marks the second.
+     * Transient.
+     */
+    bool                 laid_out_on_arrival;
 };
 
 KHASH_MAP_INIT_INT(formation, struct formation)
@@ -393,6 +398,13 @@ static void collect_cell_assignment_result(const struct cell_assignment_work *wo
                                            struct formation *formation, struct subformation *out);
 
 static void complete_cell_field_work(struct subformation *formation, bool yield);
+static void layout_arriving_formations(void);
+static bool inside_arrival_field_bounds(struct formation *formation, vec2_t pos);
+static size_t formation_layers(vec_subformation_t *subformations, enum nav_layer *out_layers);
+static void dispatch_cell_assignment_work(struct formation *parent);
+static void cell_assignment_work_init(struct cell_assignment_work *work,
+                                      const struct subformation *sub,
+                                      formation_id_t fid, int idx);
 static uint8_t *cell_get_field(uint32_t uid);
 static enum flow_dir cell_get_dir(const uint8_t *field, int arrival_res, int r, int c);
 static void invalidate_cell_arrival_fields(struct subformation *formation);
@@ -1157,7 +1169,26 @@ static void init_occupied_field(const struct map *map, enum nav_layer layer, vec
     for(int i = 0; i < field_res * field_res; i++) {
         occupied[i] = occupied[i] ? TILE_BLOCKED : TILE_FREE;
     }
-    block_unreachable(occupied, field_res, pos_to_tile(center, target, field_res));
+
+    /* Whether ground can be reached from the target is a question for the
+     * terrain alone: bodies move and reservations are walked through, so a
+     * pocket between them is no wall. A cell still needs a free tile.
+     */
+    size_t n = (size_t)field_res * field_res;
+    uint8_t *walls = PF_MALLOC(n);
+    if(walls) {
+        M_NavCopyBlockedFieldView(map, center, field_res, field_res, layer, false, UINT16_MAX,
+            walls);
+        for(size_t i = 0; i < n; i++) {
+            walls[i] = walls[i] ? TILE_BLOCKED : TILE_FREE;
+        }
+        block_unreachable(walls, field_res, pos_to_tile(center, target, field_res));
+        for(size_t i = 0; i < n; i++) {
+            if(walls[i] == TILE_BLOCKED)
+                occupied[i] = TILE_BLOCKED;
+        }
+        PF_FREE(walls);
+    }
 
     PERF_RETURN_VOID();
 }
@@ -1746,13 +1777,16 @@ static void place_subformation(enum formation_type type, float cell_radius,
                 lattice_root->nrows, lattice_root->ncols, curr.r + inset, curr.c + inset);
         }
 
+        /* A cell with no free ground near its place is left unplaced; the
+         * rest are laid out around it from their other neighbours.
+         */
         bool success = place_cell(curr_cell, center, target_pos, 
             formation->reachable_target, orientation, formation->unit_radius, 
             formation->layer, target_offsets, left_cell, right_cell, front_cell, back_cell, 
             have_origin ? &ideal : NULL, box ? COMMIT_FOOTPRINT : COMMIT_TILE,
             field_res, occupied, islands, visited);
         if(!success)
-            break;
+            continue;
 
         /* The first cell down anchors the lattice the rest are laid out on: the
          * outermost shell's front-centre cell for a box, this subformation's
@@ -3800,6 +3834,8 @@ static void complete_cell_field_work(struct subformation *formation, bool yield)
 
 static void on_update_start(void *user, void *event)
 {
+    layout_arriving_formations();
+
     /* Consume cell assignment work results 
     */
     struct formation *formation;
@@ -3856,6 +3892,124 @@ static void on_update_start(void *user, void *event)
                 }
             }
         }
+    });
+}
+
+/* Whether a member of the formation has no placed cell to go to. */
+static bool formation_has_unplaced_member(struct formation *formation)
+{
+    for(int i = 0; i < vec_size(&formation->subformations); i++) {
+        struct subformation *sub = &vec_AT(&formation->subformations, i);
+        struct coord coord;
+        kh_foreach_value(sub->assignment, coord, {
+            struct cell *cell = &vec_AT(&sub->cells, CELL_IDX(coord.r, coord.c, sub->ncols));
+            if(cell->state == CELL_NOT_PLACED)
+                return true;
+        });
+    }
+    return false;
+}
+
+/* The cells were laid out against the ground as it stood at the order, which
+ * a battle may have filled; once the formation reaches its ground, and only
+ * if some members were left without a cell, it is laid out again as the
+ * ground stands now. This happens at most once per order.
+ */
+static bool formation_wants_layout(struct formation *formation)
+{
+    if(formation->laid_out_on_arrival)
+        return false;
+    for(int i = 0; i < vec_size(&formation->subformations); i++) {
+        struct subformation *sub = &vec_AT(&formation->subformations, i);
+        if(sub->state != SUBFORMATION_READY || !vec_AT(&formation->work, i).destroyed)
+            return false;
+    }
+    bool arrived = false;
+    uint32_t uid;
+    kh_foreach_key(formation->ents, uid, {
+        if(inside_arrival_field_bounds(formation, G_Pos_GetXZ(uid))) {
+            arrived = true;
+            break;
+        }
+    });
+    if(!arrived)
+        return false;
+    /* Judged once on arrival, whatever the answer. */
+    formation->laid_out_on_arrival = true;
+    return formation_has_unplaced_member(formation);
+}
+
+static void layout_formation_on_arrival(formation_id_t fid, struct formation *formation)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    /* The cell fields in flight write into buffers the new layout replaces. */
+    for(int i = 0; i < vec_size(&formation->subformations); i++) {
+        complete_cell_field_work(&vec_AT(&formation->subformations, i), false);
+    }
+    if(formation->reserved) {
+        reserve_cells(formation, -1);
+        formation->reserved = false;
+    }
+
+    enum nav_layer layers[NAV_LAYER_MAX];
+    size_t nlayers = formation_layers(&formation->subformations, layers);
+    for(int i = 0; i < nlayers; i++) {
+        init_occupied_field(s_map, layers[i], formation->center, formation->target,
+            formation->field_res, true, formation_enemies(formation),
+            occupied_layer(formation, layers[i]));
+        init_islands_field(s_map, layers[i], formation->center, formation->field_res,
+            islands_layer(formation, layers[i]));
+    }
+
+    size_t before = 0, after = 0;
+    float box_radius = box_cell_radius(&formation->subformations);
+    for(int i = 0; i < vec_size(&formation->subformations); i++) {
+        struct subformation *sub = &vec_AT(&formation->subformations, i);
+        for(int j = 0; j < vec_size(&sub->cells); j++) {
+            struct cell *cell = &vec_AT(&sub->cells, j);
+            if(cell->state == CELL_NOT_OCCUPIED || cell->state == CELL_OCCUPIED)
+                before++;
+            if(cell->state != CELL_NOT_USED || formation->type != FORMATION_BOX)
+                *cell = (struct cell){CELL_NOT_PLACED};
+        }
+        kh_clear(assignment, sub->assignment);
+        kh_clear(reverse, sub->reverse);
+        kh_clear(result, sub->results);
+        sub->state = SUBFORMATION_COMPUTING_ASSIGNMENT;
+
+        float cell_radius = (formation->type == FORMATION_BOX) ? box_radius : sub->unit_radius;
+        place_subformation(formation->type, cell_radius, sub, formation->center,
+            formation->target, formation->orientation, formation->field_res,
+            formation->occupied, formation->islands);
+        mark_unused_cells(sub);
+        for(int j = 0; j < vec_size(&sub->cells); j++) {
+            if(vec_AT(&sub->cells, j).state == CELL_NOT_OCCUPIED)
+                after++;
+        }
+
+        struct cell_assignment_work *work = &vec_AT(&formation->work, i);
+        cell_assignment_work_init(work, sub, fid, i);
+    }
+    reserve_cells(formation, +1);
+    formation->reserved = true;
+    formation->snapshot_gen = G_Move_NavSnapshotGeneration();
+    dispatch_cell_assignment_work(formation);
+
+    struct sval log_setting;
+    if((Settings_Get("pf.debug.log_perf_csv", &log_setting) == SS_OKAY) && log_setting.as_bool) {
+        fprintf(stdout, "[form-layout] %u,%d,%zu,%zu\n", fid,
+            (int)kh_size(formation->ents), before, after);
+    }
+}
+
+static void layout_arriving_formations(void)
+{
+    formation_id_t fid;
+    struct formation *formation;
+    kh_foreach_val_ptr(s_formations, fid, formation, {
+        if(formation_wants_layout(formation))
+            layout_formation_on_arrival(fid, formation);
     });
 }
 
