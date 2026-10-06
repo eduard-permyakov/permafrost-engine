@@ -414,6 +414,11 @@ BUILT-IN FUNCTIONS
     Returns the Y-dimension map height at the specified XZ coordinate. Returns
     None if the specified coordinate is outside the map bounds.
 
+    [map_locations_reachable]
+    ----------------------------------------------------------------------------
+    Returns whether two XZ map positions lie on the same island of the layer a
+    unit of the optional 'radius' walks, ignoring blockers.
+
     [map_nearest_pathable]
     ----------------------------------------------------------------------------
     Returns the closest XZ map position that is pathable and not currently
@@ -520,6 +525,11 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Get the number of bytes that were allocated with malloc during the previous
     frame.
+
+    [prev_frame_billboard_stats]
+    ----------------------------------------------------------------------------
+    Get a dictionary with the number of camera-visible entities rendered as
+    billboards and the total number drawn for the previous frame.
 
     [prev_frame_gpu_mem_accounting]
     ----------------------------------------------------------------------------

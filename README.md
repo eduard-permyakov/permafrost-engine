@@ -42,6 +42,7 @@ Download the free demo on [Steam](https://store.steampowered.com/app/1309720/EVE
 * Terrain texture splatting
 * Skybox
 * Distance-based mesh level-of-detal (LOD) rendering
+* Billboarding for efficient rendering of huge numbers of distant entities
 * Batched rendering with dynamic batches
 * Ringbuffer-based streaming of data to GPU
 * RTS camera, FPS camera
