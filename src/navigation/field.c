@@ -1734,6 +1734,29 @@ static size_t field_passable_frontier(
     return ret;
 }
 
+/* The seed tiles inside the chunk are the field's goal: a unit standing on
+ * one is where the field leads, not off it.
+ */
+static void field_mark_goals(struct flow_field *inout_flow, struct map_resolution res,
+                             struct tile_desc base, const struct tile_desc *seeds, size_t nseeds,
+                             int roff, int coff)
+{
+    for(int r = 0; r < FIELD_RES_R; r++) {
+    for(int c = 0; c < FIELD_RES_C; c++) {
+        inout_flow->field[r][c].goal = 0;
+    }}
+    for(size_t i = 0; i < nseeds; i++) {
+        int dr, dc;
+        struct tile_desc seed = seeds[i];
+        M_Tile_Distance(res, &base, &seed, &dr, &dc);
+        dr -= roff;
+        dc -= coff;
+        if(dr < 0 || dr >= FIELD_RES_R || dc < 0 || dc >= FIELD_RES_C)
+            continue;
+        inout_flow->field[dr][dc].goal = 1;
+    }
+}
+
 /* Update the field to guide towards the nearest possible enemy of the 
  * specified faction.
  */
@@ -1804,6 +1827,7 @@ static void field_update_enemies(
         region, integration_field, NULL)) {
         field_build_flow_region(rdim, cdim, roff, coff, integration_field, inout_flow);
     }
+    field_mark_goals(inout_flow, res, base, init_frontier, ninit, roff, coff);
 
     STFREE(integration_field);
     STFREE(init_frontier);
@@ -1875,6 +1899,7 @@ static void field_update_entity(
     if(field_build_integration_region(&frontier, priv, layer, 0, region, integration_field, NULL)) {
         field_build_flow_region(rdim, cdim, roff, coff, integration_field, inout_flow);
     }
+    field_mark_goals(inout_flow, res, base, init_frontier, ninit, roff, coff);
 
     STFREE(integration_field);
     STFREE(init_frontier);

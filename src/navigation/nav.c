@@ -6461,7 +6461,7 @@ bool N_DestIDIsAttacking(dest_id_t id)
     return (N_DestFactionID(id) != FACTION_ID_NONE);
 }
 
-bool N_HasEnemyRangeFlowAt(void *nav_private, vec3_t map_pos, enum nav_layer layer,
+enum range_field_state N_EnemyRangeFieldState(void *nav_private, vec3_t map_pos, enum nav_layer layer,
                            int faction_id, float range, vec2_t xz_pos)
 {
     struct nav_private *priv = nav_private;
@@ -6470,7 +6470,7 @@ bool N_HasEnemyRangeFlowAt(void *nav_private, vec3_t map_pos, enum nav_layer lay
 
     struct tile_desc tile;
     if(!M_Tile_DescForPoint2D(res, map_pos, xz_pos, &tile))
-        return false;
+        return RANGE_FIELD_ABSENT;
 
     struct coord chunk = (struct coord){tile.chunk_r, tile.chunk_c};
     ff_id_t ffid = N_FlowFieldID(chunk, (struct field_target){
@@ -6481,13 +6481,16 @@ bool N_HasEnemyRangeFlowAt(void *nav_private, vec3_t map_pos, enum nav_layer lay
         .enemies.range = range
     }, layer);
 
+
     const struct flow_field *ff = N_FC_PeekFlowField(priv->fieldcache, ffid);
     if(!ff)
-        return false;
-    return (ff->field[tile.tile_r][tile.tile_c].dir_idx != FD_NONE);
+        return RANGE_FIELD_ABSENT;
+    if(ff->field[tile.tile_r][tile.tile_c].dir_idx != FD_NONE)
+        return RANGE_FIELD_FLOW;
+    return ff->field[tile.tile_r][tile.tile_c].goal ? RANGE_FIELD_AT_GOAL : RANGE_FIELD_VOID;
 }
 
-bool N_HasEntityRangeFlowAt(void *nav_private, vec3_t map_pos, enum nav_layer layer,
+enum range_field_state N_EntityRangeFieldState(void *nav_private, vec3_t map_pos, enum nav_layer layer,
                             uint32_t ent, float range, vec2_t xz_pos)
 {
     struct nav_private *priv = nav_private;
@@ -6496,7 +6499,7 @@ bool N_HasEntityRangeFlowAt(void *nav_private, vec3_t map_pos, enum nav_layer la
 
     struct tile_desc tile;
     if(!M_Tile_DescForPoint2D(res, map_pos, xz_pos, &tile))
-        return false;
+        return RANGE_FIELD_ABSENT;
 
     struct coord chunk = (struct coord){tile.chunk_r, tile.chunk_c};
     ff_id_t ffid = N_FlowFieldID(chunk, (struct field_target){
@@ -6506,10 +6509,13 @@ bool N_HasEntityRangeFlowAt(void *nav_private, vec3_t map_pos, enum nav_layer la
         .ent.range = range
     }, layer);
 
+
     const struct flow_field *ff = N_FC_PeekFlowField(priv->fieldcache, ffid);
     if(!ff)
-        return false;
-    return (ff->field[tile.tile_r][tile.tile_c].dir_idx != FD_NONE);
+        return RANGE_FIELD_ABSENT;
+    if(ff->field[tile.tile_r][tile.tile_c].dir_idx != FD_NONE)
+        return RANGE_FIELD_FLOW;
+    return ff->field[tile.tile_r][tile.tile_c].goal ? RANGE_FIELD_AT_GOAL : RANGE_FIELD_VOID;
 }
 
 vec2_t N_ClosestReachableInRange(void *nav_private, vec3_t map_pos, 

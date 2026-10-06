@@ -2633,8 +2633,9 @@ static struct target build_target(uint32_t uid, const struct flock *fl)
          */
         struct movestate_aux *eaux = movestate_aux_get(uid);
         vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
-        bool present = M_NavHasEntityRangeFlowAt(s_move_work.gamestate.map, layer,
-            ms->surround_target_uid, eaux->target_range, pos_xz);
+        enum range_field_state state = M_NavEntityRangeFieldState(s_move_work.gamestate.map,
+            layer, ms->surround_target_uid, eaux->target_range, pos_xz);
+        bool present = (state == RANGE_FIELD_FLOW) || (state == RANGE_FIELD_AT_GOAL);
 
         if(present) {
             eaux->range_latched = true;
@@ -2666,8 +2667,9 @@ static struct target build_target(uint32_t uid, const struct flock *fl)
     if(reach > 0.0f && raux) {
 
         vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
-        bool present = M_NavHasEnemyRangeFlowAt(s_move_work.gamestate.map, layer, faction_id,
-            reach, pos_xz);
+        enum range_field_state state = M_NavEnemyRangeFieldState(s_move_work.gamestate.map,
+            layer, faction_id, reach, pos_xz);
+        bool present = (state == RANGE_FIELD_FLOW) || (state == RANGE_FIELD_AT_GOAL);
 
         if(present) {
             raux->range_latched = true;

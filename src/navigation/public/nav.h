@@ -91,6 +91,14 @@ enum nav_layer{
     NAV_LAYER_MAX,
 };
 
+/* What a reach field (enemies or entity, with a range) says at a tile */
+enum range_field_state{
+    RANGE_FIELD_ABSENT,  /* not built, or evicted */
+    RANGE_FIELD_VOID,    /* built, nothing to shoot from here */
+    RANGE_FIELD_FLOW,    /* leads toward a firing position */
+    RANGE_FIELD_AT_GOAL  /* this tile is a firing position */
+};
+
 enum flow_dir{
     FD_NONE = 0,
     FD_NW,
@@ -951,14 +959,14 @@ void N_RequestAsyncEnemySeekField(vec2_t curr_pos, void *nav_private, enum nav_l
  * direction at the specified position, so a unit can be steered by it.
  * ------------------------------------------------------------------------
  */
-bool N_HasEnemyRangeFlowAt(void *nav_private, vec3_t map_pos, enum nav_layer layer,
+enum range_field_state N_EnemyRangeFieldState(void *nav_private, vec3_t map_pos, enum nav_layer layer,
                            int faction_id, float range, vec2_t xz_pos);
 
 /* ------------------------------------------------------------------------
  * Likewise for the entity field seeded at the specified reach.
  * ------------------------------------------------------------------------
  */
-bool N_HasEntityRangeFlowAt(void *nav_private, vec3_t map_pos, enum nav_layer layer,
+enum range_field_state N_EntityRangeFieldState(void *nav_private, vec3_t map_pos, enum nav_layer layer,
                             uint32_t ent, float range, vec2_t xz_pos);
 
 /* ------------------------------------------------------------------------

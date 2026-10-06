@@ -122,6 +122,10 @@ struct flow_field{
     uint8_t patched;   /* blocked tiles filled toward the nearest flowing tile */
     struct{
         uint8_t dir_idx : 4;
+        /* A tile the field was seeded from: the destination itself, where
+         * the flow reads none. Set by the enemies and entity builds.
+         */
+        uint8_t goal    : 1;
     }field[FIELD_RES_R][FIELD_RES_C];
 };
 

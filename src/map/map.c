@@ -1226,16 +1226,16 @@ void M_NavRequestAsyncEnemySeekField(const struct map *map, enum nav_layer layer
     N_RequestAsyncEnemySeekField(curr_pos, map->nav_private, layer, map->pos, faction_id, range);
 }
 
-bool M_NavHasEnemyRangeFlowAt(const struct map *map, enum nav_layer layer,
+enum range_field_state M_NavEnemyRangeFieldState(const struct map *map, enum nav_layer layer,
                               int faction_id, float range, vec2_t xz_pos)
 {
-    return N_HasEnemyRangeFlowAt(map->nav_private, map->pos, layer, faction_id, range, xz_pos);
+    return N_EnemyRangeFieldState(map->nav_private, map->pos, layer, faction_id, range, xz_pos);
 }
 
-bool M_NavHasEntityRangeFlowAt(const struct map *map, enum nav_layer layer,
+enum range_field_state M_NavEntityRangeFieldState(const struct map *map, enum nav_layer layer,
                                uint32_t ent, float range, vec2_t xz_pos)
 {
-    return N_HasEntityRangeFlowAt(map->nav_private, map->pos, layer, ent, range, xz_pos);
+    return N_EntityRangeFieldState(map->nav_private, map->pos, layer, ent, range, xz_pos);
 }
 
 void M_NavRequestAsyncSurroundField(const struct map *map, enum nav_layer layer, 

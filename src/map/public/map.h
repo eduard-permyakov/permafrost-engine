@@ -673,9 +673,9 @@ void M_NavRequestAsyncEnemySeekField(const struct map *map, enum nav_layer layer
  * direction at the specified position.
  * ------------------------------------------------------------------------
  */
-bool   M_NavHasEnemyRangeFlowAt(const struct map *map, enum nav_layer layer,
+enum range_field_state M_NavEnemyRangeFieldState(const struct map *map, enum nav_layer layer,
                                 int faction_id, float range, vec2_t xz_pos);
-bool   M_NavHasEntityRangeFlowAt(const struct map *map, enum nav_layer layer,
+enum range_field_state M_NavEntityRangeFieldState(const struct map *map, enum nav_layer layer,
                                  uint32_t ent, float range, vec2_t xz_pos);
 void M_NavRequestAsyncSurroundField(const struct map *map, enum nav_layer layer, 
                                     vec2_t curr_pos, uint32_t ent, int faction_id, float range);
