@@ -1979,6 +1979,21 @@ static void make_flocks(const vec_entity_t *sel, vec2_t target_xz, vec2_t target
     vec_entity_t layer_flocks[NAV_LAYER_MAX];
     split_into_layers(&fsel, layer_flocks);
 
+    /* One ground for the whole order: the ordered point if the widest ground
+     * layer present can reach it, else the nearest point that layer can. The
+     * per-layer flocks and the formation's cells then agree on where the
+     * order ends, and a box of guns and guards stays whole where the guns can
+     * go.
+     */
+    for(int i = NAV_LAYER_GROUND_7X7; i >= NAV_LAYER_GROUND_1X1; i--) {
+        if(vec_size(&layer_flocks[i]) == 0)
+            continue;
+        vec2_t first_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions,
+            vec_AT(&layer_flocks[i], 0));
+        target_xz = M_NavClosestReachableDest(s_map, i, first_pos, target_xz);
+        break;
+    }
+
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
         make_flock(layer_flocks + i, target_xz, i, attack, type);
         vec_entity_destroy(layer_flocks + i);
