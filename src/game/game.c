@@ -205,6 +205,7 @@ static void g_init_map(void)
     M_Raycast_Install(s_gs.map, s_gs.active_cam);
     M_InitMinimap(s_gs.map, g_default_minimap_pos());
     M_FoliageInit(s_gs.map);
+    M_Decal_Init(s_gs.map);
     M_AL_InitTileUpdateBuffer(s_gs.map);
     M_TerrainBake_Init(s_gs.map);
     G_Pos_Init(s_gs.map);
@@ -305,6 +306,11 @@ static void g_draw_pass(struct render_input *in)
     if(in->map) {
         M_RenderVisibleMap(in->map, in->cam, in->shadows, RENDER_PASS_REGULAR, in->water_only,
             in->terrain_layers);
+    }
+
+    /* The water passes re-enter here on the render thread */
+    if(in->map && !in->water_only) {
+        M_Decal_Render(in->cam);
     }
 
     if(s_gs.use_batch_rendering) {
@@ -1038,6 +1044,13 @@ static bool terrain_bake_res_validate(const struct sval *new_val)
     return (new_val->as_int == 1024 || new_val->as_int == 2048 || new_val->as_int == 4096);
 }
 
+static bool decal_res_validate(const struct sval *new_val)
+{
+    if(new_val->type != ST_TYPE_INT)
+        return false;
+    return (new_val->as_int == 256 || new_val->as_int == 512 || new_val->as_int == 1024);
+}
+
 static void terrain_bake_commit(const struct sval *new_val)
 {
     if(!s_gs.active)
@@ -1237,6 +1250,7 @@ static void g_clear_map_state(void)
         G_ClearPath_Shutdown();
         G_Pos_Shutdown();
         M_FoliageShutdown();
+        M_Decal_Shutdown();
         M_TerrainBake_Shutdown();
         M_AL_DestroyTileUpdateBuffer();
 
@@ -1575,6 +1589,18 @@ static void g_create_settings(void)
         .prio = 0,
         .validate = terrain_bake_res_validate,
         .commit = terrain_bake_commit,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.video.decal_res",
+        .val = (struct sval) {
+            .type = ST_TYPE_INT,
+            .as_int = 512
+        },
+        .prio = 0,
+        .validate = decal_res_validate,
+        .commit = NULL,
     });
     assert(status == SS_OKAY);
 
@@ -3631,6 +3657,7 @@ bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile)
     if(!M_AL_UpdateTile(s_gs.map, desc, tile))
         return false;
     M_FoliageUpdateTile(*desc);
+    M_Decal_UpdateTile(*desc);
     G_Fog_OnTileUpdated(desc->chunk_r, desc->chunk_c);
     return true;
 }
@@ -4034,6 +4061,7 @@ bool G_SaveGlobalState(SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Write(stream, &highlight_size, "highlight_size"));
 
         CHK_TRUE_RET(G_Fog_SaveState(stream));
+        CHK_TRUE_RET(M_Decal_SaveState(stream));
     }
 
     Sched_TryYield();
@@ -4229,6 +4257,7 @@ bool G_LoadGlobalState(SDL_RWops *stream)
         M_Raycast_SetHighlightSize(attr.val.as_int);
 
         CHK_TRUE_RET(G_Fog_LoadState(stream));
+        CHK_TRUE_RET(M_Decal_LoadState(stream));
         Sched_TryYield();
     }else{
         G_ClearState();

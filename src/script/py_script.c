@@ -116,6 +116,18 @@ static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_add_splat(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_remove_splat(PyObject *self, PyObject *args);
+static PyObject *PyPf_add_decal(PyObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPf_remove_decal(PyObject *self, PyObject *args);
+static PyObject *PyPf_update_decal(PyObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPf_get_decal(PyObject *self, PyObject *args);
+static PyObject *PyPf_decals_at(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_all_decals(PyObject *self);
+static PyObject *PyPf_set_decal_order(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_decal_highlight(PyObject *self, PyObject *args);
+static PyObject *PyPf_clear_decals(PyObject *self);
+static PyObject *PyPf_decal_image_size(PyObject *self, PyObject *args);
+static PyObject *PyPf_decals_in_screen_rect(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_decal_drag_box(PyObject *self, PyObject *args);
 static PyObject *PyPf_load_scene(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_open_url(PyObject *self, PyObject *args);
 static PyObject *PyPf_preload_pfobj(PyObject *self, PyObject *args);
@@ -353,6 +365,61 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_map_remove_splat, METH_VARARGS,
     "Remove a secondary texture for a particular texture. Takes 2 integers, the base material index "
     "and the accent material index."},
+
+    {"add_decal", 
+    (PyCFunction)PyPf_add_decal, METH_VARARGS | METH_KEYWORDS,
+    "Place an image (specified as a path relative to the base directory) on the map surface. "
+    "Takes the image path, the XZ position of its centre and its XZ dimensions, followed by an "
+    "optional 'rotation' (degrees), 'alpha' and 'hide_foliage' (no foliage where the decal is "
+    "mostly opaque). Returns the new decal's integer ID."},
+
+    {"remove_decal", 
+    (PyCFunction)PyPf_remove_decal, METH_VARARGS,
+    "Remove the decal with the specified ID."},
+
+    {"update_decal", 
+    (PyCFunction)PyPf_update_decal, METH_VARARGS | METH_KEYWORDS,
+    "Change the attributes of the decal with the specified ID. Takes any of the 'path', 'pos', "
+    "'dims', 'rotation', 'alpha' and 'hide_foliage' keyword arguments."},
+
+    {"get_decal", 
+    (PyCFunction)PyPf_get_decal, METH_VARARGS,
+    "Returns a dictionary of the attributes of the decal with the specified ID."},
+
+    {"decals_at", 
+    (PyCFunction)PyPf_decals_at, METH_VARARGS,
+    "Returns a list of the IDs of the decals covering the specified XZ position, top-most first."},
+
+    {"get_all_decals", 
+    (PyCFunction)PyPf_get_all_decals, METH_NOARGS,
+    "Returns a list of the IDs of all decals, in the order that they are drawn."},
+
+    {"set_decal_order", 
+    (PyCFunction)PyPf_set_decal_order, METH_VARARGS,
+    "Move the decal with the specified ID to the specified index of the draw order."},
+
+    {"set_decal_highlight", 
+    (PyCFunction)PyPf_set_decal_highlight, METH_VARARGS,
+    "Set whether the decal with the specified ID is drawn highlighted."},
+
+    {"clear_decals", 
+    (PyCFunction)PyPf_clear_decals, METH_NOARGS,
+    "Remove all decals from the map."},
+
+    {"decal_image_size", 
+    (PyCFunction)PyPf_decal_image_size, METH_VARARGS,
+    "Returns the (width, height) in pixels of the image at the specified path (relative to the "
+    "base directory)."},
+
+    {"decals_in_screen_rect", 
+    (PyCFunction)PyPf_decals_in_screen_rect, METH_VARARGS,
+    "Returns a list of the IDs of the decals whose centres lie within the screen rectangle "
+    "spanned by two (x, y) corners, as seen by the active camera."},
+
+    {"set_decal_drag_box", 
+    (PyCFunction)PyPf_set_decal_drag_box, METH_VARARGS,
+    "Draw a selection box from the specified (x, y) screen position to the cursor, or stop "
+    "drawing it when passed None."},
 
     {"load_scene", 
     (PyCFunction)PyPf_load_scene, METH_VARARGS | METH_KEYWORDS,
@@ -1414,6 +1481,285 @@ static PyObject *PyPf_map_remove_splat(PyObject *self, PyObject *args)
     }
 
     G_MapRemoveSplat(base_mat_idx, accent_mat_idx);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_add_decal(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    static char *kwlist[] = {"path", "pos", "dims", "rotation", "alpha", "hide_foliage", NULL};
+    const char *path;
+    PyObject *hide_foliage = NULL;
+    struct decal_desc desc = (struct decal_desc){
+        .rotation = 0.0f,
+        .alpha    = 1.0f,
+    };
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "s(ff)(ff)|ffO", kwlist, &path, 
+        &desc.pos.x, &desc.pos.z, &desc.dims.x, &desc.dims.z, &desc.rotation, &desc.alpha,
+        &hide_foliage)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string, two tuples of two floats "
+            "and optional 'rotation' and 'alpha' floats and 'hide_foliage' boolean.");
+        return NULL;
+    }
+    desc.hide_foliage = hide_foliage && PyObject_IsTrue(hide_foliage);
+
+    if(strlen(path) >= sizeof(desc.path)) {
+        PyErr_SetString(PyExc_ValueError, "The path is too long.");
+        return NULL;
+    }
+    pf_strlcpy(desc.path, path, sizeof(desc.path));
+
+    uint32_t id = M_Decal_Add(&desc);
+    if(id == NULL_DECAL_ID) {
+        PyErr_Format(PyExc_RuntimeError, "Could not add the decal. A map must be loaded, '%s' "
+            "must be a readable image, the dimensions positive and the alpha within [0, 1].", path);
+        return NULL;
+    }
+    return Py_BuildValue("I", id);
+}
+
+static PyObject *PyPf_remove_decal(PyObject *self, PyObject *args)
+{
+    unsigned id;
+    if(!PyArg_ParseTuple(args, "I", &id)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer (decal ID).");
+        return NULL;
+    }
+
+    if(!M_Decal_Remove(id)) {
+        PyErr_Format(PyExc_ValueError, "No decal with ID %u.", id);
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static bool parse_vec2(PyObject *obj, vec2_t *out)
+{
+    return PyArg_ParseTuple(obj, "ff", &out->x, &out->z);
+}
+
+static PyObject *PyPf_update_decal(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    static char *kwlist[] = {"id", "path", "pos", "dims", "rotation", "alpha", "hide_foliage", NULL};
+    unsigned id;
+    const char *path = NULL;
+    PyObject *pos = NULL, *dims = NULL;
+    PyObject *rotation = NULL, *alpha = NULL, *hide_foliage = NULL;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "I|sOOOOO", kwlist, &id, 
+        &path, &pos, &dims, &rotation, &alpha, &hide_foliage)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an integer (decal ID) and any of the "
+            "'path', 'pos', 'dims', 'rotation', 'alpha' and 'hide_foliage' keyword arguments.");
+        return NULL;
+    }
+
+    struct decal_desc desc;
+    if(!M_Decal_Get(id, &desc)) {
+        PyErr_Format(PyExc_ValueError, "No decal with ID %u.", id);
+        return NULL;
+    }
+
+    if(path) {
+        if(strlen(path) >= sizeof(desc.path)) {
+            PyErr_SetString(PyExc_ValueError, "The path is too long.");
+            return NULL;
+        }
+        pf_strlcpy(desc.path, path, sizeof(desc.path));
+    }
+    if(pos && !parse_vec2(pos, &desc.pos)) {
+        PyErr_SetString(PyExc_TypeError, "'pos' must be a tuple of two floats.");
+        return NULL;
+    }
+    if(dims && !parse_vec2(dims, &desc.dims)) {
+        PyErr_SetString(PyExc_TypeError, "'dims' must be a tuple of two floats.");
+        return NULL;
+    }
+    if(rotation) {
+        desc.rotation = PyFloat_AsDouble(rotation);
+        if(PyErr_Occurred())
+            return NULL;
+    }
+    if(alpha) {
+        desc.alpha = PyFloat_AsDouble(alpha);
+        if(PyErr_Occurred())
+            return NULL;
+    }
+    if(hide_foliage) {
+        desc.hide_foliage = PyObject_IsTrue(hide_foliage);
+    }
+
+    if(!M_Decal_Update(id, &desc)) {
+        PyErr_Format(PyExc_RuntimeError, "Could not update the decal. '%s' must be a readable "
+            "image, the dimensions positive and the alpha within [0, 1].", desc.path);
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_get_decal(PyObject *self, PyObject *args)
+{
+    unsigned id;
+    if(!PyArg_ParseTuple(args, "I", &id)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer (decal ID).");
+        return NULL;
+    }
+
+    struct decal_desc desc;
+    if(!M_Decal_Get(id, &desc)) {
+        PyErr_Format(PyExc_ValueError, "No decal with ID %u.", id);
+        return NULL;
+    }
+
+    return Py_BuildValue("{s:s, s:(ff), s:(ff), s:f, s:f, s:N}", 
+        "path",         desc.path,
+        "pos",          desc.pos.x, desc.pos.z,
+        "dims",         desc.dims.x, desc.dims.z,
+        "rotation",     desc.rotation,
+        "alpha",        desc.alpha,
+        "hide_foliage", PyBool_FromLong(desc.hide_foliage));
+}
+
+static PyObject *decal_id_list(const uint32_t *ids, size_t count)
+{
+    PyObject *ret = PyList_New(count);
+    if(!ret)
+        return NULL;
+
+    for(size_t i = 0; i < count; i++) {
+        PyObject *id = Py_BuildValue("I", ids[i]);
+        if(!id) {
+            Py_DECREF(ret);
+            return NULL;
+        }
+        PyList_SET_ITEM(ret, i, id);
+    }
+    return ret;
+}
+
+static PyObject *PyPf_decals_at(PyObject *self, PyObject *args)
+{
+    vec2_t pos;
+    if(!PyArg_ParseTuple(args, "(ff)", &pos.x, &pos.z)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of two floats.");
+        return NULL;
+    }
+
+    size_t max = M_Decal_Count();
+    uint32_t *ids = PF_MALLOC(sizeof(uint32_t) * (max + 1));
+    if(!ids)
+        return PyErr_NoMemory();
+    size_t count = M_Decal_At(pos, max, ids);
+
+    PyObject *ret = decal_id_list(ids, count);
+    PF_FREE(ids);
+    return ret;
+}
+
+static PyObject *PyPf_get_all_decals(PyObject *self)
+{
+    size_t max = M_Decal_Count();
+    uint32_t *ids = PF_MALLOC(sizeof(uint32_t) * (max + 1));
+    if(!ids)
+        return PyErr_NoMemory();
+    size_t count = M_Decal_GetAll(max, ids);
+
+    PyObject *ret = decal_id_list(ids, count);
+    PF_FREE(ids);
+    return ret;
+}
+
+static PyObject *PyPf_set_decal_order(PyObject *self, PyObject *args)
+{
+    unsigned id;
+    int order;
+    if(!PyArg_ParseTuple(args, "Ii", &id, &order)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two integers (decal ID and index).");
+        return NULL;
+    }
+
+    if(!M_Decal_SetOrder(id, order)) {
+        PyErr_Format(PyExc_ValueError, "No decal with ID %u.", id);
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_decal_highlight(PyObject *self, PyObject *args)
+{
+    unsigned id;
+    PyObject *on;
+    if(!PyArg_ParseTuple(args, "IO", &id, &on)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an integer (decal ID) and a boolean.");
+        return NULL;
+    }
+
+    if(!M_Decal_SetHighlight(id, PyObject_IsTrue(on))) {
+        PyErr_Format(PyExc_ValueError, "No decal with ID %u.", id);
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_clear_decals(PyObject *self)
+{
+    M_Decal_Clear();
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_decal_image_size(PyObject *self, PyObject *args)
+{
+    const char *path;
+    if(!PyArg_ParseTuple(args, "s", &path)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a string (image path).");
+        return NULL;
+    }
+
+    int w, h;
+    if(!M_Decal_ImageSize(path, &w, &h)) {
+        PyErr_Format(PyExc_RuntimeError, "Could not read the image '%s'.", path);
+        return NULL;
+    }
+    return Py_BuildValue("(ii)", w, h);
+}
+
+static PyObject *PyPf_decals_in_screen_rect(PyObject *self, PyObject *args)
+{
+    vec2_t a, b;
+    if(!PyArg_ParseTuple(args, "(ff)(ff)", &a.x, &a.z, &b.x, &b.z)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two tuples of two floats (screen corners).");
+        return NULL;
+    }
+
+    size_t max = M_Decal_Count();
+    uint32_t *ids = PF_MALLOC(sizeof(uint32_t) * (max + 1));
+    if(!ids)
+        return PyErr_NoMemory();
+    size_t count = M_Decal_InScreenRect(G_GetActiveCamera(), a, b, max, ids);
+
+    PyObject *ret = decal_id_list(ids, count);
+    PF_FREE(ids);
+    return ret;
+}
+
+static PyObject *PyPf_set_decal_drag_box(PyObject *self, PyObject *args)
+{
+    PyObject *start;
+    if(!PyArg_ParseTuple(args, "O", &start)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an (x, y) tuple or None.");
+        return NULL;
+    }
+
+    if(start == Py_None) {
+        M_Decal_SetDragBox(NULL);
+        Py_RETURN_NONE;
+    }
+
+    vec2_t pos;
+    if(!PyArg_ParseTuple(start, "ff", &pos.x, &pos.z)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an (x, y) tuple or None.");
+        return NULL;
+    }
+    M_Decal_SetDragBox(&pos);
     Py_RETURN_NONE;
 }
 

@@ -876,8 +876,6 @@ static void tile_patch_verts_blend(struct terrain_vert *tile_verts_base,
 static void tile_patch_verts_smooth(struct terrain_vert *tile_verts_base,
                                     const struct map *map, const struct tile_desc *tile)
 {
-    ASSERT_IN_RENDER_THREAD();
-
     union top_face_vbuff *tfvb = (union top_face_vbuff*)(tile_verts_base + (4 * VERTS_PER_SIDE_FACE));
 
     struct map_resolution res;
@@ -1522,5 +1520,36 @@ int R_TileGetTriMesh(const struct map *map, struct tile_desc *td, mat4x4_t *mode
 
     assert(i % 3 == 0);
     PERF_RETURN(i);
+}
+
+int R_TileGetTopFace(const struct map *map, struct tile_desc *td, mat4x4_t *model, 
+                     vec3_t out_pos[], vec3_t out_normals[])
+{
+    struct tile *tile;
+    int ret = M_TileForDesc(map, *td, &tile);
+    assert(ret);
+    (void)ret;
+
+    struct terrain_vert verts[VERTS_PER_TILE];
+    R_TileGetVertices(map, *td, verts);
+    if(tile->blend_normals) {
+        tile_patch_verts_smooth(verts, map, td);
+    }
+
+    for(int i = 0; i < VERTS_PER_TOP_FACE; i++) {
+
+        const struct terrain_vert *curr = &verts[4 * VERTS_PER_SIDE_FACE + i];
+        vec4_t pos_homo = (vec4_t){curr->pos.x, curr->pos.y, curr->pos.z, 1.0f};
+        vec4_t ws_pos_homo;
+        PFM_Mat4x4_Mult4x1(model, &pos_homo, &ws_pos_homo);
+
+        out_pos[i] = (vec3_t){
+            ws_pos_homo.x / ws_pos_homo.w, 
+            ws_pos_homo.y / ws_pos_homo.w, 
+            ws_pos_homo.z / ws_pos_homo.w
+        };
+        out_normals[i] = curr->normal;
+    }
+    return VERTS_PER_TOP_FACE;
 }
 

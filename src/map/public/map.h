@@ -1024,5 +1024,56 @@ void M_NavAddLosSamples(const struct map *map, unsigned query, unsigned hit);
 bool M_FoliageInit(const struct map *map);
 void M_FoliageShutdown(void);
 void M_FoliageUpdateTile(struct tile_desc td);
+/* Regenerate the foliage of the chunks overlapping the XZ box */
+void M_FoliageInvalidateArea(vec2_t xz_min, vec2_t xz_max);
+
+/*###########################################################################*/
+/* MAP DECALS                                                                */
+/*###########################################################################*/
+
+#define NULL_DECAL_ID       (0)
+#define MAX_DECAL_LAYERS    (256)
+#define MAX_DECAL_SEGMENTS  (8)
+#define MAX_DECAL_PATH_LEN  (256)
+
+struct decal_desc{
+    /* Relative to the base path */
+    char   path[MAX_DECAL_PATH_LEN];
+    vec2_t pos;
+    vec2_t dims;
+    /* Degrees about the Y axis */
+    float  rotation;
+    float  alpha;
+    /* Foliage isn't placed within a tile of where the decal is mostly opaque */
+    bool   hide_foliage;
+};
+
+bool     M_Decal_Init(const struct map *map);
+void     M_Decal_Shutdown(void);
+uint32_t M_Decal_Add(const struct decal_desc *desc);
+bool     M_Decal_Remove(uint32_t id);
+bool     M_Decal_Update(uint32_t id, const struct decal_desc *desc);
+bool     M_Decal_Get(uint32_t id, struct decal_desc *out);
+/* Top-most first */
+size_t   M_Decal_At(vec2_t xz, size_t maxout, uint32_t out[]);
+size_t   M_Decal_Count(void);
+/* In draw order */
+size_t   M_Decal_GetAll(size_t maxout, uint32_t out[]);
+bool     M_Decal_SetOrder(uint32_t id, int order);
+bool     M_Decal_SetHighlight(uint32_t id, bool on);
+void     M_Decal_Clear(void);
+bool     M_Decal_ImageSize(const char *path, int *out_w, int *out_h);
+void     M_Decal_UpdateTile(struct tile_desc td);
+/* The decals whose centres lie within the screen rectangle, in draw order */
+size_t   M_Decal_InScreenRect(const struct camera *cam, vec2_t corner_a, vec2_t corner_b,
+                              size_t maxout, uint32_t out[]);
+/* Draw a selection box from 'start' to the cursor, or none when NULL */
+void     M_Decal_SetDragBox(const vec2_t *start);
+/* Gather the foliage-hiding decals over a chunk for M_Decal_HidesFoliage */
+void     M_Decal_FoliageQueryBegin(int chunk_r, int chunk_c);
+bool     M_Decal_HidesFoliage(vec2_t xz);
+void     M_Decal_Render(const struct camera *cam);
+bool     M_Decal_SaveState(SDL_RWops *stream);
+bool     M_Decal_LoadState(SDL_RWops *stream);
 
 #endif

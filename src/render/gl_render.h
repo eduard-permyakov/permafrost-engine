@@ -46,6 +46,7 @@
 #include <stdbool.h>
 
 
+#define DECAL_TUNIT      (GL_TEXTURE4)
 #define NORM_ARRAY0_TUNIT (GL_TEXTURE6)   /* terrain normal-map arrays use units 6..9 */
 #define TERRAIN_BAKE_TUNIT (GL_TEXTURE10)
 #define POSE_BUFF_TUNINT (GL_TEXTURE11)

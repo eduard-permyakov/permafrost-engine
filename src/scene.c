@@ -42,6 +42,7 @@
 #include "main.h"
 #include "script/public/script.h"
 #include "game/public/game.h"
+#include "map/public/map.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/attr.h"
 
@@ -60,7 +61,7 @@
 
 
 #define PFSCENE_VERSION_MAJOR (1)
-#define PFSCENE_VERSION_MINOR (1)
+#define PFSCENE_VERSION_MINOR (2)
 
 #define VERSION_REACHED(_v, _major, _minor) \
     (((_v).major > _major) || ((_v).major == _major && (_v).minor >= _minor))
@@ -337,6 +338,77 @@ fail_parse:
     return false;
 }
 
+static bool scene_load_decal(struct version version, SDL_RWops *stream)
+{
+    char line[MAX_LINE_LEN];
+    unsigned num_atts;
+    struct decal_desc desc = (struct decal_desc){
+        .dims  = (vec2_t){ 1.0f, 1.0f },
+        .alpha = 1.0f,
+    };
+
+    READ_LINE(stream, line, fail_parse);
+    if(!sscanf(line, " decal %255s %u", desc.path, &num_atts))
+        goto fail_parse;
+
+    for(int i = 0; i < num_atts; i++) {
+        struct attr attr;
+        if(!Attr_Parse(stream, &attr, true))
+            goto fail_parse;
+
+        if(0 == strcmp(attr.key, "pos")) {
+            if(attr.type != TYPE_VEC2)
+                goto fail_parse;
+            desc.pos = attr.val.as_vec2;
+        }else if(0 == strcmp(attr.key, "dimensions")) {
+            if(attr.type != TYPE_VEC2)
+                goto fail_parse;
+            desc.dims = attr.val.as_vec2;
+        }else if(0 == strcmp(attr.key, "rotation")) {
+            if(attr.type != TYPE_FLOAT)
+                goto fail_parse;
+            desc.rotation = attr.val.as_float;
+        }else if(0 == strcmp(attr.key, "alpha")) {
+            if(attr.type != TYPE_FLOAT)
+                goto fail_parse;
+            desc.alpha = attr.val.as_float;
+        }else if(0 == strcmp(attr.key, "hide_foliage")) {
+            if(attr.type != TYPE_BOOL)
+                goto fail_parse;
+            desc.hide_foliage = attr.val.as_bool;
+        }else
+            goto fail_parse;
+    }
+
+    /* A missing image drops just that decal, not the whole scene */
+    if(M_Decal_Add(&desc) == NULL_DECAL_ID) {
+        fprintf(stderr, "Failed to add decal: %s\n", desc.path);
+    }
+    return true;
+
+fail_parse:
+    return false;
+}
+
+static bool scene_load_decals(struct version version, SDL_RWops *stream)
+{
+    char line[MAX_LINE_LEN];
+    unsigned num_decals;
+
+    READ_LINE(stream, line, fail_parse);
+    if(!sscanf(line, " num_decals %u", &num_decals))
+        goto fail_parse;
+
+    for(int i = 0; i < num_decals; i++) {
+        if(!scene_load_decal(version, stream))
+            goto fail_parse;
+    }
+    return true;
+
+fail_parse:
+    return false;
+}
+
 static bool scene_load_general(struct version version, SDL_RWops *stream)
 {
     char line[MAX_LINE_LEN];
@@ -452,7 +524,8 @@ static bool scene_load_section(struct version version, SDL_RWops *stream)
         {"factions",     scene_load_factions},
         {"entities",     scene_load_entities},
         {"regions",      scene_load_regions },
-        {"cameras",      scene_load_cameras}
+        {"cameras",      scene_load_cameras},
+        {"decals",       scene_load_decals}
     };
 
     READ_LINE(stream, line, fail_parse);

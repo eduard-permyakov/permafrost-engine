@@ -503,6 +503,7 @@ const char *Mem_SubName(uint16_t sys, uint16_t sub)
         [MEM_SUB_MAP_RAYCAST]    = "raycast",
         [MEM_SUB_MAP_TILE]       = "tile",
         [MEM_SUB_MAP_TERRAIN_BAKE] = "terrain_bake",
+        [MEM_SUB_MAP_DECAL]      = "decal",
     };
     static const char *nav_subs[] = {
         [MEM_SUB_NAV_A_STAR]     = "a_star",
@@ -520,6 +521,7 @@ const char *Mem_SubName(uint16_t sys, uint16_t sub)
         [MEM_SUB_RENDER_GL_ANIM]        = "anim",
         [MEM_SUB_RENDER_GL_BATCH]       = "batch",
         [MEM_SUB_RENDER_GL_BILLBOARD]   = "billboard",
+        [MEM_SUB_RENDER_GL_DECAL]       = "decal",
         [MEM_SUB_RENDER_GL_FOLIAGE]     = "foliage",
         [MEM_SUB_RENDER_GL_IMAGE_QUILT] = "image_quilt",
         [MEM_SUB_RENDER_GL_MEM]         = "mem",

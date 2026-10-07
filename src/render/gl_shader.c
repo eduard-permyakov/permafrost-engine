@@ -678,6 +678,26 @@ static struct shader s_shaders[] = {
             {0}
         },
     },
+    {
+        .prog_id        = (intptr_t)NULL,
+        .name           = "decal",
+        .vertex_path    = "shaders/vertex/decal.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/decal.glsl",
+        .uniforms       = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_MAT4,      GL_U_LS_TRANS          },
+            { UTYPE_VEC3,      GL_U_AMBIENT_COLOR     },
+            { UTYPE_VEC3,      GL_U_LIGHT_POS         },
+            { UTYPE_VEC3,      GL_U_LIGHT_COLOR       },
+            { UTYPE_INT,       GL_U_DECAL_TEX         },
+            { UTYPE_INT,       GL_U_SHADOWS_ON        },
+            { UTYPE_INT,       GL_U_SHADOW_MAP        },
+            {0}
+        },
+    },
 };
 
 /*****************************************************************************/

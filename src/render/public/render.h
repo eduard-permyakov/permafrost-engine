@@ -521,6 +521,62 @@ void  R_GL_MapFoliageBeginDraw(const struct camera *cam, const float *scale,
 void  R_GL_MapFoliageDrawChunk(const size_t *chunk_idx);
 void  R_GL_MapFoliageEndDraw(void);
 
+/* ---------------------------------------------------------------------------
+ * A vertex of a decal's terrain-conforming mesh, in world space.
+ * ---------------------------------------------------------------------------
+ */
+struct decal_vert{
+    vec3_t pos;
+    vec3_t normal;
+    vec2_t uv;
+    float  layer;
+    float  alpha;
+    float  highlight;
+};
+
+/* ---------------------------------------------------------------------------
+ * Allocate the per-chunk decal meshes. 'res' is the side length of each layer
+ * of the decal texture array.
+ * ---------------------------------------------------------------------------
+ */
+void  R_GL_DecalMapInit(const size_t *num_chunks, const int *res);
+void  R_GL_DecalMapShutdown(void);
+
+/* ---------------------------------------------------------------------------
+ * One of 'count' equal bands of an image, split along its long side.
+ * ---------------------------------------------------------------------------
+ */
+struct decal_segment{
+    int  index;
+    int  count;
+    bool vertical;
+};
+
+/* ---------------------------------------------------------------------------
+ * Load a segment of the image at 'abspath' into the given layer of the decal
+ * texture array, growing it as needed. 'relpath' keys the asset cache.
+ * ---------------------------------------------------------------------------
+ */
+void  R_GL_DecalSetTexture(const int *layer, const struct decal_segment *seg, 
+                           const char *abspath, const char *relpath);
+
+/* ---------------------------------------------------------------------------
+ * Replace the mesh of a chunk. 'verts' may be NULL when *count is 0.
+ * ---------------------------------------------------------------------------
+ */
+void  R_GL_DecalSetChunk(const size_t *chunk_idx, const struct decal_vert *verts, 
+                         const size_t *count);
+
+/* ---------------------------------------------------------------------------
+ * Per-frame draw sequence: call BeginDraw once, then DrawChunk for each
+ * visible chunk, then EndDraw.
+ * ---------------------------------------------------------------------------
+ */
+void  R_GL_DecalBeginDraw(const struct camera *cam, const struct map_resolution *res, 
+                          const vec2_t *map_pos);
+void  R_GL_DecalDrawChunk(const size_t *chunk_idx);
+void  R_GL_DecalEndDraw(void);
+
 /*###########################################################################*/
 /* RENDER SHADOWS                                                            */
 /*###########################################################################*/

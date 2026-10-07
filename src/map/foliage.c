@@ -150,6 +150,7 @@ static void generate_chunk_positions(const struct map *map, int cr, int cc,
     M_GetResolution(map, &res);
 
     const struct pfchunk *chunk = &map->chunks[cr * res.chunk_w + cc];
+    M_Decal_FoliageQueryBegin(cr, cc);
 
     /* Count pass */
     size_t total = 0;
@@ -206,17 +207,20 @@ static void generate_chunk_positions(const struct map *map, int cr, int cc,
         for(int i = 0; i < n; i++) {
             float rx = bounds.x - bounds.width  * lcg_frand(&seed);
             float rz = bounds.z + bounds.height * lcg_frand(&seed);
+            float rot = lcg_frand(&seed) * 2.0f * (float)M_PI;
+            if(M_Decal_HidesFoliage((vec2_t){rx, rz}))
+                continue;
             float y  = M_HeightAtPoint(map, (vec2_t){rx, rz});
             positions[idx] = (vec3_t){rx, y, rz};
-            rotations[idx] = lcg_frand(&seed) * 2.0f * (float)M_PI;
+            rotations[idx] = rot;
             idx++;
         }
     }}
-    assert(idx == total);
+    assert(idx <= total);
 
     out->positions = positions;
     out->rotations = rotations;
-    out->count     = total;
+    out->count     = idx;
 }
 
 static void push_chunk_to_render(size_t chunk_idx)
@@ -433,6 +437,24 @@ static void mark_neighbour_chunks_dirty(struct map_resolution res, int gr, int g
         int cr = ngr / (int)res.tile_h;
         int cc = ngc / (int)res.tile_w;
         s_dirty[(size_t)cr * res.chunk_w + (size_t)cc] = true;
+    }}
+}
+
+void M_FoliageInvalidateArea(vec2_t xz_min, vec2_t xz_max)
+{
+    if(!s_dirty)
+        return;
+
+    struct map_resolution res;
+    M_GetResolution(s_map, &res);
+
+    for(int cr = 0; cr < res.chunk_h; cr++) {
+    for(int cc = 0; cc < res.chunk_w; cc++) {
+        struct aabb chunk;
+        aabb_for_chunk(cr, cc, &chunk);
+        if(xz_min.x < chunk.x_max && xz_max.x > chunk.x_min
+        && xz_min.z < chunk.z_max && xz_max.z > chunk.z_min)
+            s_dirty[(size_t)cr * res.chunk_w + (size_t)cc] = true;
     }}
 }
 

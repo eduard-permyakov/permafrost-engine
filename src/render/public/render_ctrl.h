@@ -148,6 +148,9 @@ void        R_LightVisibilityFrustum(const struct camera *cam, vec3_t light_pos,
 
 /* Tile */
 int         R_TileGetTriMesh(const struct map *map, struct tile_desc *td, mat4x4_t *model, vec3_t out[]);
+/* The top face triangles with the (smoothed) normals the terrain is lit with */
+int         R_TileGetTopFace(const struct map *map, struct tile_desc *td, mat4x4_t *model, 
+                             vec3_t out_pos[], vec3_t out_normals[]);
 
 /* UI */
 int         R_UI_GetFontTexID(void);
