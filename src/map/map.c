@@ -954,6 +954,16 @@ bool M_NavPositionBlocked(const struct map *map, enum nav_layer layer, vec2_t xz
     return N_PositionBlocked(xz_pos, layer, map->nav_private, map->pos);
 }
 
+int M_NavPositionLocalIsland(const struct map *map, enum nav_layer layer, vec2_t xz_pos)
+{
+    return N_PositionLocalIsland(xz_pos, layer, map->nav_private, map->pos);
+}
+
+bool M_NavPositionIsPortal(const struct map *map, enum nav_layer layer, vec2_t xz_pos)
+{
+    return N_PositionIsPortal(xz_pos, layer, map->nav_private, map->pos);
+}
+
 vec2_t M_NavClosestReachableDest(const struct map *map, enum nav_layer layer, 
                                  vec2_t xz_src, vec2_t xz_dst)
 {

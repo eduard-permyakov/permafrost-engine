@@ -135,12 +135,12 @@ void                     N_FC_PutFlowField(struct fieldcache_ctx *ctx,
 bool                     N_FC_GetDestFFMapping(struct fieldcache_ctx *ctx, 
                                                dest_id_t id, 
                                                struct coord chunk_coord, 
-                                               ff_id_t *out_ff);
+                                               uint16_t iid, ff_id_t *out_ff);
 
 void                     N_FC_PutDestFFMapping(struct fieldcache_ctx *ctx, 
                                                dest_id_t dest_id, 
                                                struct coord chunk_coord, 
-                                               ff_id_t ffid);
+                                               uint16_t iid, ff_id_t ffid);
 
 /* Non-mutating reads (no LRU recency bump, no stats, no nav-task assert). Safe to call
  * concurrently from worker fibers so long as no thread mutates the cache.
@@ -151,7 +151,7 @@ bool                     N_FC_DestLOSRebuildDue(struct fieldcache_ctx *ctx, dest
                                                 struct coord chunk_coord);
 const struct flow_field *N_FC_PeekFlowField(struct fieldcache_ctx *ctx, ff_id_t ffid);
 bool                     N_FC_PeekDestFFMapping(struct fieldcache_ctx *ctx, dest_id_t id,
-                                               struct coord chunk_coord, ff_id_t *out_ff);
+                                               struct coord chunk_coord, uint16_t iid, ff_id_t *out_ff);
 
 /* A route solved around blocked portal edges is registered under the chunks
  * holding them; an edge there opening again marks the destination's fields for

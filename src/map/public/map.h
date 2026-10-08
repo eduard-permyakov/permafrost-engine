@@ -480,6 +480,8 @@ bool   M_NavPositionPathable(const struct map *map, enum nav_layer layer,
  */
 bool   M_NavPositionBlocked(const struct map *map, enum nav_layer layer, 
                             vec2_t xz_pos);
+int    M_NavPositionLocalIsland(const struct map *map, enum nav_layer layer, vec2_t xz_pos);
+bool   M_NavPositionIsPortal(const struct map *map, enum nav_layer layer, vec2_t xz_pos);
 
 /* ------------------------------------------------------------------------
  * The count of times a tile of the cell (a few tiles on a side) holding the

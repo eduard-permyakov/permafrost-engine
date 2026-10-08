@@ -135,6 +135,9 @@ struct nav_chunk{
      * as impassable when computing flow fields. 
      */
     uint16_t        blockers[FIELD_RES_R][FIELD_RES_C];
+    /* The share of each tile's blockers that will not move on: the
+     * footprints of buildings and static props. */
+    uint16_t        static_blockers[FIELD_RES_R][FIELD_RES_C];
     /* Per cell of FREED_CELL_TILES tiles on a side, bumped whenever a tile
      * of the cell loses its last blocker: a held unit waits on the cells on
      * its way to try again.

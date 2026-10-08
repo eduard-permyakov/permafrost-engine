@@ -166,9 +166,20 @@ uint32_t key_for_chunk(struct coord chunk)
     return (((uint64_t)chunk.r & 0xffff) << 16) | ((uint64_t)chunk.c & 0xffff);
 }
 
+/* A destination's fields are kept per chunk and per local island of that
+ * chunk: a route may leave a chunk one of its islands lies on and come back
+ * to another, and each island then follows its own flow.
+ */
+uint64_t key_for_dest_chunk_island(dest_id_t id, struct coord chunk, uint16_t iid)
+{
+    assert(chunk.r < 256 && chunk.c < 256);
+    return (((uint64_t)id) << 32) | (((uint64_t)iid) << 16)
+         | (((uint64_t)chunk.r & 0xff) << 8) | ((uint64_t)chunk.c & 0xff);
+}
+
 uint64_t key_for_dest_and_chunk(dest_id_t id, struct coord chunk)
 {
-    return ((((uint64_t)id) << 32) | key_for_chunk(chunk));
+    return key_for_dest_chunk_island(id, chunk, 0);
 }
 
 dest_id_t key_dest(uint64_t key)
@@ -179,8 +190,8 @@ dest_id_t key_dest(uint64_t key)
 struct coord key_chunk(uint64_t key)
 {
     return (struct coord){
-        (key >> 16) & 0xffff,
-        (key >>  0) & 0xffff,
+        (key >> 8) & 0xff,
+        (key >> 0) & 0xff,
     };
 }
 
@@ -589,10 +600,10 @@ void N_FC_PutFlowField(struct fieldcache_ctx *ctx, ff_id_t ffid,
 }
 
 bool N_FC_GetDestFFMapping(struct fieldcache_ctx *ctx, dest_id_t id, 
-                           struct coord chunk_coord, ff_id_t *out_ff)
+                           struct coord chunk_coord, uint16_t iid, ff_id_t *out_ff)
 {
     FC_ASSERT_NAV_TASK();
-    uint64_t key = key_for_dest_and_chunk(id, chunk_coord);
+    uint64_t key = key_for_dest_chunk_island(id, chunk_coord, iid);
     bool ret = lru_ffid_get(&ctx->ffid_cache, key, out_ff);
 
     ctx->perfstats.ffid_query++;
@@ -623,9 +634,9 @@ const struct flow_field *N_FC_PeekFlowField(struct fieldcache_ctx *ctx, ff_id_t 
 }
 
 bool N_FC_PeekDestFFMapping(struct fieldcache_ctx *ctx, dest_id_t id,
-                            struct coord chunk_coord, ff_id_t *out_ff)
+                            struct coord chunk_coord, uint16_t iid, ff_id_t *out_ff)
 {
-    const ff_id_t *p = lru_ffid_peek(&ctx->ffid_cache, key_for_dest_and_chunk(id, chunk_coord));
+    const ff_id_t *p = lru_ffid_peek(&ctx->ffid_cache, key_for_dest_chunk_island(id, chunk_coord, iid));
     if(!p)
         return false;
     *out_ff = *p;
@@ -633,10 +644,10 @@ bool N_FC_PeekDestFFMapping(struct fieldcache_ctx *ctx, dest_id_t id,
 }
 
 void N_FC_PutDestFFMapping(struct fieldcache_ctx *ctx, dest_id_t dest_id, 
-                           struct coord chunk_coord, ff_id_t ffid)
+                           struct coord chunk_coord, uint16_t iid, ff_id_t ffid)
 {
     FC_ASSERT_NAV_TASK();
-    uint64_t key = key_for_dest_and_chunk(dest_id, chunk_coord);
+    uint64_t key = key_for_dest_chunk_island(dest_id, chunk_coord, iid);
     lru_ffid_put(&ctx->ffid_cache, key, &ffid);
 }
 

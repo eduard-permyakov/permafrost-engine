@@ -447,6 +447,8 @@ int    N_BlockedTilesAround(void *nav_private, vec3_t map_pos, int layer, vec2_t
  */
 void   N_TilePatch(void *nav_private, int layer, int row0, int col0, int dim,
                    uint32_t *out_words);
+int       N_PositionLocalIsland(vec2_t xz_pos, enum nav_layer layer, void *nav_private, vec3_t map_pos);
+bool      N_PositionIsPortal(vec2_t xz_pos, enum nav_layer layer, void *nav_private, vec3_t map_pos);
 
 /* ------------------------------------------------------------------------
  * Build (and cache) the field that 'target' needs for the chunk holding 'xz',

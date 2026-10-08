@@ -3636,7 +3636,8 @@ static vec2_t arrive_force_seek(uint32_t uid, vec2_t target_xz, vec2_t vdes,
  */
 static vec2_t escape_wish(uint32_t uid, vec2_t vpref, vec2_t vdes, int side, float max_step)
 {
-    if(!yields_behind_band(movestate_get(uid)->state))
+    enum move_state state = movestate_get(uid)->state;
+    if(state != STATE_SURROUND_ENTITY && state != STATE_ENTER_ENTITY_RANGE)
         return vpref;
     if(PFM_Vec2_Len(&vdes) < EPSILON || PFM_Vec2_Len(&vpref) >= MOVE_ESCAPE_FLOOR * max_step)
         return vpref;
@@ -6963,14 +6964,21 @@ static void move_trace_emit(void)
                    && PFM_Vec2_Len(&app) < EPSILON
                    && !(out->patch.flags & UPDATE_HEADING_GATED);
         bool voided = PFM_Vec2_Len(&in->ent_des_v) < EPSILON && !ent_still(ms)
-                   && ms->state == STATE_SURROUND_ENTITY;
-        if((zeroed || voided || (out->cp_flags & CP_OUT_STALLED)) && in->flock
-        && (s_move_trace_tick + uid) % 50 == 0) {
+                   && (ms->state == STATE_SURROUND_ENTITY || ms->state == STATE_MOVING);
+        bool slow = PFM_Vec2_Len(&app) < CLEARPATH_STILL_SPEED && !ent_still(ms)
+                 && (PFM_Vec2_Len(&in->ent_des_v) > EPSILON || voided);
+        if((zeroed || voided || slow || (out->cp_flags & CP_OUT_STALLED))
+        && in->flock && (s_move_trace_tick + uid) % 47 == 0) {
             const struct map *map = s_move_work.gamestate.map;
             vec2_t nt = N_TileDims();
             vec2_t pos = in->cp_ent.xz_pos;
             struct target target = build_target(uid, in->flock);
-            fprintf(stdout, "[mv-grid] %u,%u,%.2f,%.2f,", s_move_trace_tick, uid, pos.x, pos.z);
+            struct map_resolution gres;
+            struct tile_desc gtd;
+            M_NavGetResolution(map, &gres);
+            M_Tile_DescForPoint2D(gres, M_GetPos(map), pos, &gtd);
+            fprintf(stdout, "[mv-grid] %u,%u,%.2f,%.2f,%d,%d,%d,%d,", s_move_trace_tick, uid,
+                pos.x, pos.z, gtd.chunk_r, gtd.chunk_c, gtd.tile_r, gtd.tile_c);
             for(int dz = 4; dz >= -4; dz--) {
                 for(int dx = -4; dx <= 4; dx++) {
                     vec2_t p = (vec2_t){pos.x + dx * nt.x, pos.z + dz * nt.z};
@@ -6978,6 +6986,15 @@ static void move_trace_emit(void)
                            : M_NavPositionBlocked(map, layer, p)   ? 'B' : '.';
                     int dir = M_NavFlowFieldDirAt(map, target, p);
                     fprintf(stdout, "%c%d", c, dir);
+                }
+                fputc(dz > -4 ? '|' : '\n', stdout);
+            }
+            fprintf(stdout, "[mv-isl] %u,%u,", s_move_trace_tick, uid);
+            for(int dz = 4; dz >= -4; dz--) {
+                for(int dx = -4; dx <= 4; dx++) {
+                    vec2_t p = (vec2_t){pos.x + dx * nt.x, pos.z + dz * nt.z};
+                    fprintf(stdout, "%d%c ", M_NavPositionLocalIsland(map, layer, p),
+                        M_NavPositionIsPortal(map, layer, p) ? 'P' : ' ');
                 }
                 fputc(dz > -4 ? '|' : '\n', stdout);
             }
