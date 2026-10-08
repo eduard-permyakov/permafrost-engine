@@ -67,7 +67,11 @@ VEC_IMPL(static inline, str, const char*)
 
 #define LOADING_SCREEN_CHANGE_PERIOD_MS (5000)
 #define MAX_STATUS_TEXT_LEN             (80)
+#define STATUS_BOX_WIDTH                (1400)
+#define STATUS_TEXT_PAD                 (80)
 #define SPRITE_FPS                      (1)
+
+#define MIN(a, b)                       ((a) < (b) ? (a) : (b))
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -188,7 +192,7 @@ static void draw_status_text_bounds(struct rect bounds)
     struct nk_context *ctx = UI_GetContext();
 
     struct rect padded = (struct rect){
-        (vres.x - 1400)/2, bounds.y - 8, 1400, bounds.h + 12 
+        (vres.x - STATUS_BOX_WIDTH)/2, bounds.y - 8, STATUS_BOX_WIDTH, bounds.h + 12 
     };
     struct rect adj_bounds = UI_BoundsForAspectRatio(padded, vres, adj_vres, ANCHOR_DEFAULT); 
     const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
@@ -391,7 +395,7 @@ void LoadingScreen_Tick(void)
 
     const vec2_t vres = (vec2_t){1920, 1080};
     const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
-    const float width = strlen(buff) * 17 + 18;
+    const float width = MIN(strlen(buff) * 17 + 18, STATUS_BOX_WIDTH - 2 * STATUS_TEXT_PAD);
     const struct rect bounds = (struct rect){
         .x = (adj_vres.x / 2) - (width / 2),
         .y = adj_vres.y - 45,
