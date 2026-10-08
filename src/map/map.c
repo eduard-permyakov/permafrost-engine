@@ -142,6 +142,10 @@ static struct tile *tile_for_desc(const struct map *map, const struct tile_desc 
     return ret;
 }
 
+/* A static target is judged by its rest pose, as its nav stamp and the
+ * snapshot form are: an animated pose (a windmill's sails) would swing the
+ * verdict away from the one movement arrived on.
+ */
 static struct nav_target_geom nav_target_geom_live(uint32_t uid)
 {
     struct nav_target_geom ret;
@@ -150,7 +154,7 @@ static struct nav_target_geom nav_target_geom_live(uint32_t uid)
         ret.xz = G_Pos_GetXZ(uid);
         ret.radius = G_GetSelectionRadius(uid);
     }else{
-        Entity_CurrentOBB(uid, &ret.obb, false);
+        Entity_CurrentOBB(uid, &ret.obb, true);
     }
     return ret;
 }

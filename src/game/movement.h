@@ -119,6 +119,9 @@ bool G_Move_InOrderDrag(void);
 void G_Move_Unblock(uint32_t uid);
 void G_Move_BlockAt(uint32_t uid, vec3_t pos);
 
+/* Diagnostic: the movement tick counter of the [mv-trace] lines */
+unsigned G_Move_TraceTick(void);
+
 bool G_Move_SaveState(struct SDL_RWops *stream);
 bool G_Move_LoadState(struct SDL_RWops *stream);
 

@@ -920,6 +920,20 @@ static void on_arrive_at_resource(void *user, void *event)
         (void*)((uintptr_t)uid), G_RUNNING);
 }
 
+static void cart_leg_log(uint32_t uid, const char *event, uint32_t src, uint32_t dest)
+{
+    struct sval setting;
+    if(Settings_Get("pf.debug.log_perf_csv", &setting) != SS_OKAY || !setting.as_bool)
+        return;
+    struct hstate *hs = hstate_get(uid);
+    vec2_t pos = G_Pos_GetXZ(uid);
+    fprintf(stdout, "[cart-leg] %u,%u,%s,%d,%u,%u,%d,%d,%d,%.2f,%.2f\n", G_Move_TraceTick(), uid,
+        event, hs ? (int)hs->state : -1, src, dest,
+        src != NULL_UID && G_EntityExists(src) ? (int)M_NavObjAdjacent(s_map, uid, src) : -1,
+        dest != NULL_UID && G_EntityExists(dest) ? (int)M_NavObjAdjacent(s_map, uid, dest) : -1,
+        G_Harvester_GetCurrTotalCarry(uid), pos.x, pos.z);
+}
+
 static void on_arrive_at_storage(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
@@ -993,6 +1007,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
     assert(hs);
     uint32_t ent_flags = G_FlagsGet(uid);
 
+    cart_leg_log(uid, "arrive-src", hs->transport_src_uid, hs->transport_dest_uid);
     if((!G_EntityExists(hs->transport_src_uid) || G_EntityIsZombie(hs->transport_src_uid))
     || !(G_FlagsGet(hs->transport_src_uid) & ENTITY_FLAG_STORAGE_SITE)
     || !M_NavObjAdjacent(s_map, uid, hs->transport_src_uid)
@@ -1000,6 +1015,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
 
         /* harvester could not reach the storage site, 
          * or the 'do not take' option for it was set */
+        cart_leg_log(uid, "src-fail", hs->transport_src_uid, hs->transport_dest_uid);
         uint32_t dest = hs->transport_dest_uid;
         finish_transporing(hs);
 
@@ -1073,6 +1089,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
             E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
                 (void*)((uintptr_t)uid), G_RUNNING);
 
+            cart_leg_log(uid, "next-src", newsrc, hs->transport_dest_uid);
             G_Move_SetSurroundEntity(uid, newsrc);
             hs->transport_src_uid = newsrc;
             return;
@@ -1081,6 +1098,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
 
     if(curr_carry + take == 0) {
     
+        cart_leg_log(uid, "empty-src", hs->transport_src_uid, hs->transport_dest_uid);
         hs->transport_dest_uid = NULL_UID;
         hs->transport_src_uid = NULL_UID;
         hs->res_name = NULL;
@@ -1095,6 +1113,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
     E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
         (void*)((uintptr_t)uid), G_RUNNING);
 
+    cart_leg_log(uid, "to-dest", hs->transport_src_uid, hs->transport_dest_uid);
     G_Move_SetSurroundEntity(uid, hs->transport_dest_uid);
     hs->state = STATE_TRANSPORT_PUTTING;
     E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, uid, 
@@ -1119,6 +1138,7 @@ static void on_arrive_at_transport_dest(void *user, void *event)
      * begin work immediately.
      */
     uint32_t dest_uid = hs->transport_dest_uid;
+    cart_leg_log(uid, "arrive-dest", hs->transport_src_uid, dest_uid);
     if(!G_EntityExists(dest_uid) || G_EntityIsZombie(dest_uid)) {
         finish_transporing(hs);
         return;
@@ -1137,6 +1157,7 @@ static void on_arrive_at_transport_dest(void *user, void *event)
     if(!(G_FlagsGet(dest_uid) & ENTITY_FLAG_STORAGE_SITE)
     || !M_NavObjAdjacent(s_map, uid, dest_uid)) {
         /* harvester could not reach the destination storage site */
+        cart_leg_log(uid, "dest-fail", hs->transport_src_uid, dest_uid);
         finish_transporing(hs);
         return;
     }
@@ -1180,7 +1201,8 @@ static void on_arrive_at_transport_dest(void *user, void *event)
 
     uint32_t dest = hs->transport_dest_uid;
     finish_transporing(hs);
-    G_Harvester_Transport(uid, dest);
+    if(!G_Harvester_Transport(uid, dest))
+        cart_leg_log(uid, "idle", NULL_UID, dest);
 }
 
 static void selection_try_order_gather(bool targeting)
@@ -2132,6 +2154,7 @@ bool G_Harvester_Transport(uint32_t harvester, uint32_t storage)
     E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, harvester, 
         (void*)(uintptr_t)storage, ES_ENGINE);
 
+    cart_leg_log(harvester, "issue", src, storage);
     if(M_NavObjAdjacent(s_map, harvester, src)) {
         on_arrive_at_transport_source((void*)((uintptr_t)harvester), NULL);
     }else{
