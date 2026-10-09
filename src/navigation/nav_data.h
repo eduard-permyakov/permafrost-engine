@@ -47,6 +47,9 @@
 #define COST_IMPASSABLE       0xff
 #define ISLAND_NONE           0xffff
 #define FACTION_ID_NONE       0xf
+/* A road cell costs this fraction of the same cell off the road. A power of
+ * two fraction, so road-free costs and their sums stay exact. */
+#define ROAD_COST_FACTOR      0.625f
 
 /* portal_travel_costs are octile distances within a chunk (max ~5800), stored as
  * 16-bit fixed-point with 3 fractional bits; UNREACHABLE is the 'no path' sentinel. */
@@ -73,6 +76,15 @@ static inline float portal_cost_unpack(uint16_t packed)
 struct coord{
     int r, c;
 };
+
+static inline float n_cell_cost(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C],
+                                const uint8_t road[FIELD_RES_R][FIELD_RES_C], int r, int c)
+{
+    float cost = cost_field[r][c];
+    if(road && road[r][c])
+        return cost * ROAD_COST_FACTOR;
+    return cost;
+}
 
 enum edge_state{
     EDGE_STATE_ACTIVE,
@@ -124,6 +136,10 @@ struct nav_chunk{
      * cost may never be reached.
      */
     uint8_t         cost_base[FIELD_RES_R][FIELD_RES_C]; 
+    /* Non-zero for cells under a road, which cost ROAD_COST_FACTOR of their
+     * 'cost_base'. Never makes a cell passable or impassable. */
+    uint8_t         road[FIELD_RES_R][FIELD_RES_C];
+    uint16_t        nroad;
     /* Per-tile cost to reach each portal (octile distance, synced with cost_base),
      * 16-bit fixed-point — use portal_cost_pack/unpack. Inlined so the chunk is
      * self-contained and the nav buffer can be forked as one contiguous window.

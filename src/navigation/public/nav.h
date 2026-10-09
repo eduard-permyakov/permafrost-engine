@@ -345,6 +345,23 @@ void      N_CutoutStaticObject(void *nav_private, vec3_t map_pos,
 void      N_UpdatePortals(void *nav_private);
 
 /* ------------------------------------------------------------------------
+ * Marks the cells whose centres lie inside the rectangle as being under 
+ * a road (or no longer), which makes them cheaper to cross on the ground 
+ * layers. The portals follow on the next N_Update.
+ * ------------------------------------------------------------------------
+ */
+void      N_SetRoadCells(void *nav_private, vec3_t map_pos, vec2_t xz_min, 
+                         vec2_t xz_max, bool on);
+
+/* ------------------------------------------------------------------------
+ * Whether the point is on a road and if so, how far the road reaches from 
+ * it along 'across' (right) and against it (left), up to 'max_dist'.
+ * ------------------------------------------------------------------------
+ */
+bool      N_RoadSpan(void *nav_private, vec3_t map_pos, vec2_t xz, vec2_t across,
+                     float max_dist, float *out_left, float *out_right);
+
+/* ------------------------------------------------------------------------
  * Update the islands (sets of tiles which are reachable from one another)
  * information after there have been changes to the cost field.
  * ------------------------------------------------------------------------

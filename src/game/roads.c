@@ -435,6 +435,13 @@ static void retain_tileset(bool retain)
     s_tileset_retained = retain;
 }
 
+static void set_nav_road(struct road_desc rd, bool on)
+{
+    vec2_t min, max;
+    G_Roads_Bounds(rd, &min, &max);
+    M_NavSetRoad(s_map, min, max, on);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -513,6 +520,8 @@ void G_Roads_Clear(void)
     for(int i = 0; i < s_rows * s_cols; i++) {
         if(s_decal_ids[i] != NULL_DECAL_ID)
             M_Decal_RemoveInternal(s_decal_ids[i]);
+        if(s_tiles[i] & ROAD_PRESENT)
+            set_nav_road((struct road_desc){i / s_cols, i % s_cols}, false);
     }
     memset(s_decal_ids, 0, s_rows * s_cols * sizeof(s_decal_ids[0]));
     vec_road_idx_reset(&s_stale);
@@ -569,6 +578,7 @@ bool G_Roads_Add(struct road_desc rd)
         return true;
 
     *tile_at(rd) = (*tile_at(rd) & ROAD_DECAL_STALE) | ROAD_PRESENT;
+    set_nav_road(rd, true);
     s_chunk_counts[chunk_index(rd)]++;
     s_chunk_dirty[chunk_index(rd)] = true;
     s_count++;
@@ -588,6 +598,7 @@ bool G_Roads_Remove(struct road_desc rd)
     }
 
     *tile_at(rd) &= ROAD_DECAL_STALE;
+    set_nav_road(rd, false);
     s_chunk_counts[chunk_index(rd)]--;
     s_chunk_dirty[chunk_index(rd)] = true;
     s_count--;

@@ -368,6 +368,21 @@ void   M_NavCutoutStaticObject(const struct map *map, const struct obb *obb);
 void   M_NavUpdatePortals(const struct map *map);
 
 /* ------------------------------------------------------------------------
+ * Makes the ground inside the rectangle cheaper to path over (or no longer),
+ * for the extent of a road.
+ * ------------------------------------------------------------------------
+ */
+void   M_NavSetRoad(const struct map *map, vec2_t xz_min, vec2_t xz_max, bool on);
+
+/* ------------------------------------------------------------------------
+ * Whether the point is on a road and if so, how far the road reaches from
+ * it along 'across' (right) and against it (left), up to 'max_dist'.
+ * ------------------------------------------------------------------------
+ */
+bool   M_NavRoadSpan(const struct map *map, vec2_t xz, vec2_t across, float max_dist,
+                     float *out_left, float *out_right);
+
+/* ------------------------------------------------------------------------
  * Update navigation private data (regarding which tile is reachanble from
  * which other tiles) after changes to the cost field.
  * ------------------------------------------------------------------------

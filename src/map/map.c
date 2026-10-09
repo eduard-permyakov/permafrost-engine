@@ -618,6 +618,17 @@ void M_NavCutoutStaticObject(const struct map *map, const struct obb *obb)
     N_CutoutStaticObject(map->nav_private, map->pos, obb);
 }
 
+void M_NavSetRoad(const struct map *map, vec2_t xz_min, vec2_t xz_max, bool on)
+{
+    N_SetRoadCells(map->nav_private, map->pos, xz_min, xz_max, on);
+}
+
+bool M_NavRoadSpan(const struct map *map, vec2_t xz, vec2_t across, float max_dist,
+                   float *out_left, float *out_right)
+{
+    return N_RoadSpan(map->nav_private, map->pos, xz, across, max_dist, out_left, out_right);
+}
+
 void M_NavUpdatePortals(const struct map *map)
 {
     N_UpdatePortals(map->nav_private);

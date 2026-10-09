@@ -103,7 +103,6 @@ static void los_defer_create(struct nav_private *priv, vec3_t map_pos, dest_id_t
                              const struct coord *prev_coord);
 
 #define IDX(r, width, c)   ((r) * (width) + (c))
-#define CURSOR_OFF(cursor, base) ((ptrdiff_t)((cursor) - (base)))
 #define ARR_SIZE(a)              (sizeof(a)/sizeof(a[0]))
 
 #define MIN(a, b)                ((a) < (b) ? (a) : (b))
@@ -143,6 +142,9 @@ struct cost_coord{
 
 QUEUE_TYPE(cc, struct cost_coord)
 QUEUE_IMPL(static, cc, struct cost_coord)
+
+PQUEUE_TYPE(coord, struct coord)
+PQUEUE_IMPL(static, coord, struct coord)
 
 enum edge_type{
     EDGE_BOT   = (1 << 0),
@@ -192,6 +194,8 @@ static vec_inval_t s_pending_inval;
  * merged into s_pending_inval in layer order once every layer is done. */
 static vec_inval_t s_inval_stage[NAV_LAYER_MAX];
 static bool        s_full_layer[NAV_LAYER_MAX];
+/* Road cells on the live map's 1x1 ground layer */
+static SDL_atomic_t s_road_cells;
 
 VEC_TYPE(crange, struct cow_range)
 VEC_IMPL(static inline, crange, struct cow_range)
@@ -673,89 +677,108 @@ static void n_erode_impassable(struct nav_private *priv, enum nav_layer layer)
     PF_FREE(eroded);
 }
 
+/* A border splits into no more portals at road crossings than this, so that 
+ * a chunk can never run out of portals. */
+#define MAX_ROAD_SPLIT_SPANS (12)
+
+struct border_span{
+    int begin, end; /* inclusive, along the border */
+};
+
+static int n_border_fixed_idx(enum edge_type type)
+{
+    return type == EDGE_TOP   ? 0
+         : type == EDGE_BOT   ? FIELD_RES_R-1
+         : type == EDGE_LEFT  ? 0
+         : type == EDGE_RIGHT ? FIELD_RES_C-1
+         : (assert(0), 0);
+}
+
+static struct coord n_border_cell(enum edge_type type, int i)
+{
+    int fixed = n_border_fixed_idx(type);
+    return (type & (EDGE_TOP | EDGE_BOT)) ? (struct coord){fixed, i}
+                                          : (struct coord){i, fixed};
+}
+
+/* Where the border between two chunks may be crossed, as maximal runs of cells. 
+ * A run is split where a road crossing (a road cell on both sides) begins or 
+ * ends, so that a road gets a portal of its own. Depends on nothing but the two 
+ * chunks' cells along the border, so both sides always agree on the spans.
+ */
+static size_t n_border_spans(const struct nav_chunk *a, enum edge_type a_type,
+                             const struct nav_chunk *b, enum edge_type b_type,
+                             struct border_span *out)
+{
+    size_t line_len = (a_type & (EDGE_BOT | EDGE_TOP)) ? FIELD_RES_C : FIELD_RES_R;
+    int keys[FIELD_RES_R > FIELD_RES_C ? FIELD_RES_R : FIELD_RES_C];
+
+    for(int split = 1; split >= 0; split--) {
+
+        for(int i = 0; i < line_len; i++) {
+
+            struct coord ac = n_border_cell(a_type, i);
+            struct coord bc = n_border_cell(b_type, i);
+            bool can_cross = a->cost_base[ac.r][ac.c] != COST_IMPASSABLE 
+                          && b->cost_base[bc.r][bc.c] != COST_IMPASSABLE;
+            bool road = split && a->road[ac.r][ac.c] && b->road[bc.r][bc.c];
+            keys[i] = !can_cross ? 0 : (road ? 2 : 1);
+        }
+
+        size_t ret = 0;
+        for(int i = 0; i < line_len; i++) {
+
+            if(keys[i] == 0)
+                continue;
+            if(i > 0 && keys[i - 1] == keys[i])
+                continue;
+            int end = i;
+            while(end + 1 < line_len && keys[end + 1] == keys[i])
+                end++;
+            out[ret++] = (struct border_span){i, end};
+        }
+
+        bool has_roads = a->nroad && b->nroad;
+        if(!split || !has_roads || ret <= MAX_ROAD_SPLIT_SPANS)
+            return ret;
+    }
+    assert(0);
+    return 0;
+}
+
 static void n_link_chunks(struct nav_chunk *a, enum edge_type a_type, struct coord a_coord,
                           struct nav_chunk *b, enum edge_type b_type, struct coord b_coord,
                           size_t width)
 {
     assert(((a_type | b_type) == (EDGE_BOT | EDGE_TOP)) || ((a_type | b_type) == (EDGE_LEFT | EDGE_RIGHT)));
-    size_t stride = (a_type & (EDGE_BOT | EDGE_TOP)) ? 1 : FIELD_RES_C;
-    size_t line_len = (a_type & (EDGE_BOT | EDGE_TOP)) ? FIELD_RES_C : FIELD_RES_R;
 
-    uint8_t *a_cursor = &a->cost_base[a_type == EDGE_BOT   ? FIELD_RES_R-1 : 0]
-                                     [a_type == EDGE_RIGHT ? FIELD_RES_C-1 : 0];
-    uint8_t *b_cursor = &b->cost_base[b_type == EDGE_BOT   ? FIELD_RES_R-1 : 0]
-                                     [b_type == EDGE_RIGHT ? FIELD_RES_C-1 : 0];
+    struct border_span spans[FIELD_RES_R > FIELD_RES_C ? FIELD_RES_R : FIELD_RES_C];
+    size_t nspans = n_border_spans(a, a_type, b, b_type, spans);
 
-    int a_fixed_idx = a_type == EDGE_TOP   ? 0
-                    : a_type == EDGE_BOT   ? FIELD_RES_R-1
-                    : a_type == EDGE_LEFT  ? 0
-                    : a_type == EDGE_RIGHT ? FIELD_RES_C-1
-                    : (assert(0), 0);
-    int b_fixed_idx = b_type == EDGE_TOP   ? 0
-                    : b_type == EDGE_BOT   ? FIELD_RES_R-1
-                    : b_type == EDGE_LEFT  ? 0
-                    : b_type == EDGE_RIGHT ? FIELD_RES_C-1
-                    : (assert(0), 0);
+    for(int i = 0; i < nspans; i++) {
 
-    bool in_portal = false;
-    for(int i = 0; i < line_len; i++) {
+        a->portals[a->num_portals] = (struct portal) {
+            .component_id   = 0,
+            .chunk          = a_coord,
+            .endpoints[0]   = n_border_cell(a_type, spans[i].begin),
+            .endpoints[1]   = n_border_cell(a_type, spans[i].end),
+            .num_neighbours = 0,
+            .connected      = portal_ref_make(IDX(b_coord.r, width, b_coord.c), b->num_portals)
+        };
+        b->portals[b->num_portals] = (struct portal) {
+            .component_id   = 0,
+            .chunk          = b_coord,
+            .endpoints[0]   = n_border_cell(b_type, spans[i].begin),
+            .endpoints[1]   = n_border_cell(b_type, spans[i].end),
+            .num_neighbours = 0,
+            .connected      = portal_ref_make(IDX(a_coord.r, width, a_coord.c), a->num_portals)
+        };
 
-        assert(CURSOR_OFF(a_cursor, &a->cost_base[0][0]) >= 0 
-            && CURSOR_OFF(a_cursor, &a->cost_base[0][0]) < (FIELD_RES_R*FIELD_RES_C));
-        assert(CURSOR_OFF(b_cursor, &b->cost_base[0][0]) >= 0 
-            && CURSOR_OFF(a_cursor, &b->cost_base[0][0]) < (FIELD_RES_R*FIELD_RES_C));
+        a->num_portals++;
+        b->num_portals++;
 
-        bool can_cross = *a_cursor != COST_IMPASSABLE && *b_cursor != COST_IMPASSABLE;
-        /* First tile of portal */
-        if(can_cross && !in_portal) {
-
-            in_portal = true;
-            a->portals[a->num_portals] = (struct portal) {
-                .component_id   = 0,
-                .chunk          = a_coord,
-                .endpoints[0]   = (a_type & (EDGE_TOP | EDGE_BOT))    
-                                ? (struct coord){a_fixed_idx, i}
-                                : (a_type & (EDGE_LEFT | EDGE_RIGHT)) 
-                                ? (struct coord){i, a_fixed_idx}
-                                : (assert(0), (struct coord){0}),
-                .num_neighbours = 0,
-                .connected      = portal_ref_make(IDX(b_coord.r, width, b_coord.c), b->num_portals)
-            };
-            b->portals[b->num_portals] = (struct portal) {
-                .component_id   = 0,
-                .chunk          = b_coord,
-                .endpoints[0]   = (b_type & (EDGE_TOP | EDGE_BOT))    
-                                ? (struct coord){b_fixed_idx, i}
-                                : (b_type & (EDGE_LEFT | EDGE_RIGHT)) 
-                                ? (struct coord){i, b_fixed_idx}
-                                : (assert(0), (struct coord){0}),
-                .num_neighbours = 0,
-                .connected      = portal_ref_make(IDX(a_coord.r, width, a_coord.c), a->num_portals)
-            };
-
-        /* Last tile of portal */
-        }else if(in_portal && (!can_cross || i == line_len - 1)) {
-
-            int idx = !can_cross ? i-1 : i;
-            in_portal = false;
-            a->portals[a->num_portals].endpoints[1] 
-                = (a_type & (EDGE_TOP | EDGE_BOT))    ? (struct coord){a_fixed_idx, idx}
-                : (a_type & (EDGE_LEFT | EDGE_RIGHT)) ? (struct coord){idx, a_fixed_idx}
-                : (assert(0), (struct coord){0});
-            b->portals[b->num_portals].endpoints[1] 
-                = (b_type & (EDGE_TOP | EDGE_BOT))    ? (struct coord){b_fixed_idx, idx}
-                : (b_type & (EDGE_LEFT | EDGE_RIGHT)) ? (struct coord){idx, b_fixed_idx}
-                : (assert(0), (struct coord){0});
-
-            a->num_portals++;
-            b->num_portals++;
-
-            assert(a->num_portals <= MAX_PORTALS_PER_CHUNK);
-            assert(b->num_portals <= MAX_PORTALS_PER_CHUNK);
-        }
-
-        a_cursor += stride;
-        b_cursor += stride;
+        assert(a->num_portals <= MAX_PORTALS_PER_CHUNK);
+        assert(b->num_portals <= MAX_PORTALS_PER_CHUNK);
     }
 }
 
@@ -789,11 +812,17 @@ static void n_create_portals(struct nav_private *priv, enum nav_layer layer)
     assert(n_links == (priv->height)*(priv->width-1) + (priv->width)*(priv->height-1));
 }
 
+/* The grid path cache is keyed without the roads, so only road-free chunks may
+ * use it, and only from the thread that owns it.
+ */
 static void n_link_chunk_portals(struct nav_private *priv, struct nav_chunk *chunk, 
-                                 struct coord chunk_coord, enum nav_layer layer)
+                                 struct coord chunk_coord, enum nav_layer layer,
+                                 bool may_cache)
 {
     vec_coord_t path;
     vec_coord_init(&path);
+    struct fieldcache_ctx *cache = (may_cache && chunk->nroad == 0) ? priv->fieldcache : NULL;
+    const uint8_t (*road)[FIELD_RES_C] = chunk->nroad ? chunk->road : NULL;
 
     for(int i = 0; i < chunk->num_portals; i++) {
 
@@ -814,8 +843,8 @@ static void n_link_chunk_portals(struct nav_private *priv, struct nav_chunk *chu
             };
 
             float cost;
-            bool has_path = AStar_GridPath(priv->fieldcache, a, b, chunk_coord, chunk->cost_base, 
-                layer, &path, &cost);
+            bool has_path = AStar_GridPath(cache, a, b, chunk_coord, chunk->cost_base, 
+                road, layer, &path, &cost);
             if(has_path) {
                 port->edges[port->num_neighbours] = (struct edge){
                     EDGE_STATE_ACTIVE,
@@ -1673,8 +1702,69 @@ done:
     return ret; 
 }
 
+/* Road cells make the costs uneven, so a chunk with roads needs a proper 
+ * Dijkstra flood where a plain breadth-first one did. */
+static void n_build_road_portal_travel_index(struct nav_chunk *chunk)
+{
+    pq_coord_t frontier;
+    pq_coord_init(&frontier);
+
+    for(int pi = 0; pi < chunk->num_portals; pi++) {
+
+        float dist[FIELD_RES_R][FIELD_RES_C];
+        for(int r = 0; r < FIELD_RES_R; r++) {
+        for(int c = 0; c < FIELD_RES_C; c++) {
+
+            dist[r][c] = FLT_MAX;
+            chunk->portal_travel_costs[pi][r][c] = PORTAL_COST_UNREACHABLE;
+        }}
+
+        const struct portal *port = &chunk->portals[pi];
+        for(int r = port->endpoints[0].r; r <= port->endpoints[1].r; r++) {
+        for(int c = port->endpoints[0].c; c <= port->endpoints[1].c; c++) {
+
+            dist[r][c] = 0.0f;
+            pq_coord_push(&frontier, 0.0f, (struct coord){r, c});
+        }}
+
+        while(pq_size(&frontier) > 0) {
+
+            float cost;
+            struct coord curr;
+            pq_coord_top_prio(&frontier, &cost);
+            pq_coord_pop(&frontier, &curr);
+            if(cost > dist[curr.r][curr.c])
+                continue;
+
+            chunk->portal_travel_costs[pi][curr.r][curr.c] = portal_cost_pack(cost);
+
+            struct coord neighbours[8];
+            float costs[8];
+            int num_neighbours = N_GridNeighbours(chunk->cost_base, chunk->road, curr, 
+                neighbours, costs);
+
+            for(int i = 0; i < num_neighbours; i++) {
+
+                struct coord next = neighbours[i];
+                float next_cost = cost + costs[i];
+                if(next_cost >= dist[next.r][next.c])
+                    continue;
+                dist[next.r][next.c] = next_cost;
+                pq_coord_push(&frontier, next_cost, next);
+            }
+        }
+    }
+
+    pq_coord_destroy(&frontier);
+}
+
 static void n_build_portal_travel_index(struct nav_chunk *chunk)
 {
+    if(chunk->nroad > 0) {
+        n_build_road_portal_travel_index(chunk);
+        return;
+    }
+
     queue_cc_t frontier;
     queue_cc_init(&frontier, 1024);
 
@@ -1707,7 +1797,7 @@ static void n_build_portal_travel_index(struct nav_chunk *chunk)
 
             struct coord neighbours[8];
             float costs[8];
-            int num_neighbours = N_GridNeighbours(chunk->cost_base, curr.coord, neighbours, costs);
+            int num_neighbours = N_GridNeighbours(chunk->cost_base, NULL, curr.coord, neighbours, costs);
 
             for(int i = 0; i < num_neighbours; i++) {
 
@@ -1722,6 +1812,43 @@ static void n_build_portal_travel_index(struct nav_chunk *chunk)
     }
 
     queue_cc_destroy(&frontier);
+}
+
+/* Links the portals of a chunk with roads, from its travel index: the cost of 
+ * an edge is that of the cheapest way from anywhere on one portal to anywhere 
+ * on the other. Roads split portals into narrow road crossings and wide spans
+ * around them, whose midpoints can lie far from where they are crossed. 
+ */
+static void n_link_road_chunk_portals(struct nav_private *priv, struct nav_chunk *chunk,
+                                      struct coord chunk_coord)
+{
+    int chunk_idx = IDX(chunk_coord.r, priv->width, chunk_coord.c);
+    for(int i = 0; i < chunk->num_portals; i++) {
+
+        struct portal *port = &chunk->portals[i];
+        port->num_neighbours = 0;
+
+        for(int j = 0; j < chunk->num_portals; j++) {
+
+            if(i == j)
+                continue;
+            const struct portal *other = &chunk->portals[j];
+            uint16_t best = PORTAL_COST_UNREACHABLE;
+
+            for(int r = other->endpoints[0].r; r <= other->endpoints[1].r; r++) {
+            for(int c = other->endpoints[0].c; c <= other->endpoints[1].c; c++) {
+                best = MIN(best, chunk->portal_travel_costs[i][r][c]);
+            }}
+            if(best == PORTAL_COST_UNREACHABLE)
+                continue;
+
+            port->edges[port->num_neighbours++] = (struct edge){
+                EDGE_STATE_ACTIVE,
+                portal_ref_make(chunk_idx, j),
+                portal_cost_unpack(best)
+            };
+        }
+    }
 }
 
 static const struct portal *n_closest_reachable_portal(const struct nav_chunk *chunk, 
@@ -2100,9 +2227,363 @@ static void n_update_portals(struct nav_private *priv, enum nav_layer layer)
             
         struct nav_chunk *curr_chunk = &priv->chunks[layer]
                                                     [IDX(chunk_r, priv->width, chunk_c)];
-        n_link_chunk_portals(priv, curr_chunk, (struct coord){chunk_r, chunk_c}, layer);
-        n_build_portal_travel_index(curr_chunk);
+        if(curr_chunk->nroad) {
+            n_build_portal_travel_index(curr_chunk);
+            n_link_road_chunk_portals(priv, curr_chunk, (struct coord){chunk_r, chunk_c});
+        }else{
+            n_link_chunk_portals(priv, curr_chunk, (struct coord){chunk_r, chunk_c}, layer, true);
+            n_build_portal_travel_index(curr_chunk);
+        }
     }}
+}
+
+/*****************************************************************************/
+/* ROADS                                                                     */
+/*****************************************************************************/
+
+static bool n_ground_layer(enum nav_layer layer)
+{
+    return layer >= NAV_LAYER_GROUND_1X1 && layer <= NAV_LAYER_GROUND_7X7;
+}
+
+static uint32_t n_chunk_key(struct coord chunk)
+{
+    return (((uint32_t)chunk.r) << 16) | (((uint32_t)chunk.c) & 0xffff);
+}
+
+static bool n_set_has(khash_t(coord) *set, struct coord chunk)
+{
+    return kh_get(coord, set, n_chunk_key(chunk)) != kh_end(set);
+}
+
+static void n_set_add(khash_t(coord) *set, struct coord chunk)
+{
+    int ret;
+    kh_put(coord, set, n_chunk_key(chunk), &ret);
+    assert(ret != -1);
+}
+
+struct border_nb{
+    enum edge_type type, nb_type;
+    int            dr, dc;
+};
+
+static const struct border_nb s_borders[4] = {
+    {EDGE_TOP,   EDGE_BOT,   -1,  0},
+    {EDGE_BOT,   EDGE_TOP,   +1,  0},
+    {EDGE_LEFT,  EDGE_RIGHT,  0, -1},
+    {EDGE_RIGHT, EDGE_LEFT,   0, +1},
+};
+
+static bool n_chunk_exists(const struct nav_private *priv, struct coord chunk)
+{
+    return chunk.r >= 0 && chunk.r < priv->height && chunk.c >= 0 && chunk.c < priv->width;
+}
+
+static struct nav_chunk *n_chunk_at(struct nav_private *priv, enum nav_layer layer, struct coord chunk)
+{
+    return &priv->chunks[layer][IDX(chunk.r, priv->width, chunk.c)];
+}
+
+/* Whether the portals the chunk has toward its neighbour no longer match the 
+ * spans of their shared border. */
+static bool n_border_changed(struct nav_private *priv, enum nav_layer layer,
+                             struct coord chunk, const struct border_nb *bd)
+{
+    struct coord nb = (struct coord){chunk.r + bd->dr, chunk.c + bd->dc};
+    struct nav_chunk *a = n_chunk_at(priv, layer, chunk);
+    struct nav_chunk *b = n_chunk_at(priv, layer, nb);
+
+    struct border_span spans[FIELD_RES_R > FIELD_RES_C ? FIELD_RES_R : FIELD_RES_C];
+    size_t nspans = n_border_spans(a, bd->type, b, bd->nb_type, spans);
+
+    size_t nmatched = 0;
+    int nb_idx = IDX(nb.r, priv->width, nb.c);
+    for(int i = 0; i < a->num_portals; i++) {
+
+        const struct portal *port = &a->portals[i];
+        if(port->connected == PORTAL_REF_NONE)
+            continue;
+        if((port->connected >> PORTAL_REF_PORTAL_BITS) != nb_idx)
+            continue;
+
+        bool found = false;
+        for(int j = 0; j < nspans; j++) {
+            struct coord first = n_border_cell(bd->type, spans[j].begin);
+            struct coord last = n_border_cell(bd->type, spans[j].end);
+            if(0 == memcmp(&first, &port->endpoints[0], sizeof(first))
+            && 0 == memcmp(&last, &port->endpoints[1], sizeof(last))) {
+                found = true;
+                break;
+            }
+        }
+        if(!found)
+            return true;
+        nmatched++;
+    }
+    return nmatched != nspans;
+}
+
+/* Creates the chunk's own side of the portals toward a neighbour outside the 
+ * window, whose portals stay as they are and are linked back to the new ones.
+ */
+static void n_link_chunks_one_side(struct nav_private *priv, enum nav_layer layer,
+                                   struct coord chunk, const struct border_nb *bd)
+{
+    struct coord nb = (struct coord){chunk.r + bd->dr, chunk.c + bd->dc};
+    struct nav_chunk *a = n_chunk_at(priv, layer, chunk);
+    struct nav_chunk *b = n_chunk_at(priv, layer, nb);
+    int a_idx = IDX(chunk.r, priv->width, chunk.c);
+    int b_idx = IDX(nb.r, priv->width, nb.c);
+
+    struct border_span spans[FIELD_RES_R > FIELD_RES_C ? FIELD_RES_R : FIELD_RES_C];
+    size_t nspans = n_border_spans(a, bd->type, b, bd->nb_type, spans);
+
+    for(int i = 0; i < nspans; i++) {
+
+        struct coord b_first = n_border_cell(bd->nb_type, spans[i].begin);
+        struct coord b_last = n_border_cell(bd->nb_type, spans[i].end);
+        portal_ref connected = PORTAL_REF_NONE;
+
+        for(int j = 0; j < b->num_portals; j++) {
+            struct portal *other = &b->portals[j];
+            if(other->connected == PORTAL_REF_NONE
+            || (other->connected >> PORTAL_REF_PORTAL_BITS) != a_idx)
+                continue;
+            if(0 != memcmp(&b_first, &other->endpoints[0], sizeof(b_first))
+            || 0 != memcmp(&b_last, &other->endpoints[1], sizeof(b_last)))
+                continue;
+            other->connected = portal_ref_make(a_idx, a->num_portals);
+            connected = portal_ref_make(b_idx, j);
+            break;
+        }
+        assert(connected != PORTAL_REF_NONE);
+
+        a->portals[a->num_portals] = (struct portal) {
+            .component_id   = 0,
+            .chunk          = chunk,
+            .endpoints[0]   = n_border_cell(bd->type, spans[i].begin),
+            .endpoints[1]   = n_border_cell(bd->type, spans[i].end),
+            .num_neighbours = 0,
+            .connected      = connected
+        };
+        a->num_portals++;
+        assert(a->num_portals <= MAX_PORTALS_PER_CHUNK);
+    }
+}
+
+/* Same edges as 'n_link_chunk_portals' for a chunk without roads, from one 
+ * flood per portal instead of a search per pair of portals, and without 
+ * touching the grid path cache.
+ */
+static void n_link_chunk_portals_flood(struct nav_private *priv, struct nav_chunk *chunk,
+                                       struct coord chunk_coord)
+{
+    assert(chunk->nroad == 0);
+    int chunk_idx = IDX(chunk_coord.r, priv->width, chunk_coord.c);
+    pq_coord_t frontier;
+    pq_coord_init(&frontier);
+
+    for(int i = 0; i < chunk->num_portals; i++) {
+
+        struct portal *port = &chunk->portals[i];
+        port->num_neighbours = 0;
+
+        float dist[FIELD_RES_R][FIELD_RES_C];
+        for(int r = 0; r < FIELD_RES_R; r++) {
+        for(int c = 0; c < FIELD_RES_C; c++) {
+            dist[r][c] = FLT_MAX;
+        }}
+
+        struct coord start = (struct coord){
+            (port->endpoints[0].r + port->endpoints[1].r) / 2,
+            (port->endpoints[0].c + port->endpoints[1].c) / 2,
+        };
+        dist[start.r][start.c] = 0.0f;
+        pq_coord_push(&frontier, 0.0f, start);
+
+        while(pq_size(&frontier) > 0) {
+
+            float cost;
+            struct coord curr;
+            pq_coord_top_prio(&frontier, &cost);
+            pq_coord_pop(&frontier, &curr);
+            if(cost > dist[curr.r][curr.c])
+                continue;
+
+            struct coord neighbours[8];
+            float costs[8];
+            int num_neighbours = N_GridNeighbours(chunk->cost_base, NULL, curr, neighbours, costs);
+
+            for(int j = 0; j < num_neighbours; j++) {
+                struct coord next = neighbours[j];
+                float next_cost = cost + costs[j];
+                if(next_cost >= dist[next.r][next.c])
+                    continue;
+                dist[next.r][next.c] = next_cost;
+                pq_coord_push(&frontier, next_cost, next);
+            }
+        }
+
+        for(int j = 0; j < chunk->num_portals; j++) {
+
+            if(i == j)
+                continue;
+            const struct portal *other = &chunk->portals[j];
+            struct coord end = (struct coord){
+                (other->endpoints[0].r + other->endpoints[1].r) / 2,
+                (other->endpoints[0].c + other->endpoints[1].c) / 2,
+            };
+            if(dist[end.r][end.c] == FLT_MAX)
+                continue;
+            port->edges[port->num_neighbours++] = (struct edge){
+                EDGE_STATE_ACTIVE,
+                portal_ref_make(chunk_idx, j),
+                dist[end.r][end.c]
+            };
+        }
+    }
+    pq_coord_destroy(&frontier);
+}
+
+/* Recreates the portals of the chunks whose roads changed, and of the 
+ * neighbours whose shared border changed with them. The portals of every 
+ * other chunk keep their indices; only their links back into the window are 
+ * redone. Returns the number of chunks in the window, written to 'out'. Their
+ * portals still have to be linked.
+ */
+static size_t n_recreate_road_window(struct nav_private *priv, enum nav_layer layer,
+                                    const struct coord *dirty, size_t ndirty,
+                                    struct coord *out, size_t maxout)
+{
+    khash_t(coord) *window = kh_init(coord);
+    if(!window)
+        return 0;
+
+    size_t nwindow = 0;
+    for(int i = 0; i < ndirty && nwindow < maxout; i++) {
+        if(n_set_has(window, dirty[i]))
+            continue;
+        n_set_add(window, dirty[i]);
+        out[nwindow++] = dirty[i];
+    }
+
+    for(int i = 0; i < ndirty; i++) {
+        for(int b = 0; b < ARR_SIZE(s_borders); b++) {
+
+            struct coord nb = (struct coord){dirty[i].r + s_borders[b].dr, dirty[i].c + s_borders[b].dc};
+            if(!n_chunk_exists(priv, nb) || n_set_has(window, nb))
+                continue;
+            if(!n_border_changed(priv, layer, dirty[i], &s_borders[b]))
+                continue;
+            if(nwindow == maxout)
+                continue;
+            n_set_add(window, nb);
+            out[nwindow++] = nb;
+        }
+    }
+
+    for(int i = 0; i < nwindow; i++) {
+        n_chunk_at(priv, layer, out[i])->num_portals = 0;
+    }
+
+    for(int i = 0; i < nwindow; i++) {
+        for(int b = 0; b < ARR_SIZE(s_borders); b++) {
+
+            const struct border_nb *bd = &s_borders[b];
+            struct coord nb = (struct coord){out[i].r + bd->dr, out[i].c + bd->dc};
+            if(!n_chunk_exists(priv, nb))
+                continue;
+
+            if(!n_set_has(window, nb)) {
+                n_link_chunks_one_side(priv, layer, out[i], bd);
+                continue;
+            }
+            /* Both sides are in the window: link the pair once */
+            if(IDX(out[i].r, priv->width, out[i].c) > IDX(nb.r, priv->width, nb.c))
+                continue;
+            n_link_chunks(n_chunk_at(priv, layer, out[i]), bd->type, out[i],
+                n_chunk_at(priv, layer, nb), bd->nb_type, nb, priv->width);
+        }
+    }
+
+    kh_destroy(coord, window);
+    return nwindow;
+}
+
+struct road_relink{
+    struct nav_private *priv;
+    enum nav_layer      layer;
+    struct coord        chunk;
+};
+
+static void n_relink_range(int begin, int end, void *arg)
+{
+    struct road_relink *items = arg;
+    for(int i = begin; i <= end; i++) {
+
+        struct nav_private *priv = items[i].priv;
+        struct nav_chunk *chunk = n_chunk_at(priv, items[i].layer, items[i].chunk);
+        if(chunk->nroad) {
+            n_build_portal_travel_index(chunk);
+            n_link_road_chunk_portals(priv, chunk, items[i].chunk);
+        }else{
+            n_link_chunk_portals_flood(priv, chunk, items[i].chunk);
+            n_build_portal_travel_index(chunk);
+        }
+        n_update_edge_states(priv, items[i].layer, chunk, NULL);
+    }
+}
+
+/* Brings the portals of every ground layer up to date with the road cells, 
+ * and queues the invalidation of the fields that crossed the rebuilt chunks.
+ */
+static void n_apply_road_changes(struct nav_private *priv)
+{
+    const int nlayers = NAV_LAYER_GROUND_7X7 - NAV_LAYER_GROUND_1X1 + 1;
+    size_t ndirty = kh_size(priv->road_dirty);
+    STALLOC(struct coord, dirty, ndirty);
+    STALLOC(struct coord, window, nlayers * ndirty * 5);
+    STALLOC(struct road_relink, items, nlayers * ndirty * 5);
+    size_t nitems = 0;
+
+    size_t n = 0;
+    for(int i = kh_begin(priv->road_dirty); i != kh_end(priv->road_dirty); i++) {
+        if(!kh_exist(priv->road_dirty, i))
+            continue;
+        uint32_t key = kh_key(priv->road_dirty, i);
+        dirty[n++] = (struct coord){ key >> 16, key & 0xffff };
+    }
+    assert(n == ndirty);
+
+    for(int layer = NAV_LAYER_GROUND_1X1; layer <= NAV_LAYER_GROUND_7X7; layer++) {
+
+        struct coord *lwindow = window + (layer - NAV_LAYER_GROUND_1X1) * ndirty * 5;
+        size_t nwindow = n_recreate_road_window(priv, layer, dirty, ndirty, lwindow, ndirty * 5);
+        for(int i = 0; i < nwindow; i++) {
+            items[nitems++] = (struct road_relink){priv, layer, lwindow[i]};
+            vec_inval_push(&s_pending_inval, (struct fc_inval_cmd){
+                .chunk   = lwindow[i],
+                .layer   = layer,
+                .width   = priv->width,
+                .height  = priv->height,
+                .through = true,
+                .opened  = true
+            });
+        }
+        s_full_layer[layer] = true;
+    }
+
+    /* Every chunk of every layer is linked on its own */
+    Sched_ParallelFor(n_relink_range, items, nitems, 1);
+    for(int layer = NAV_LAYER_GROUND_1X1; layer <= NAV_LAYER_GROUND_7X7; layer++) {
+        n_update_components(priv, layer);
+    }
+
+    kh_clear(coord, priv->road_dirty);
+    STFREE(items);
+    STFREE(window);
+    STFREE(dirty);
 }
 
 static void n_update_island_field(struct nav_private *priv, enum nav_layer layer)
@@ -3199,6 +3680,12 @@ void N_Update(void *nav_private)
     bool *full_layer = s_full_layer;
     memset(s_full_layer, 0, sizeof(s_full_layer));
 
+    if(kh_size(priv->road_dirty) > 0) {
+        PERF_PUSH("roads");
+        n_apply_road_changes(priv);
+        PERF_POP();
+    }
+
     PERF_PUSH("recompute");
     Sched_ParallelFor(n_update_layer_range, priv, NAV_LAYER_MAX, 1);
     for(int layer = 0; layer < NAV_LAYER_MAX; layer++) {
@@ -3317,6 +3804,7 @@ void N_DestroyCtx(void *nav_private)
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
         kh_destroy(coord, priv->dirty_chunks[i]);
     }
+    kh_destroy(coord, priv->road_dirty);
 }
 
 bool N_InitCtx(void *nav_private)
@@ -3334,6 +3822,8 @@ bool N_InitCtx(void *nav_private)
             goto fail_alloc;
         priv->edge_states_dirty[i] = true;
     }
+    if((priv->road_dirty = kh_init(coord)) == NULL)
+        goto fail_alloc;
     return true;
 
 fail_alloc:
@@ -3352,6 +3842,7 @@ void N_ClearCtx(void *nav_private)
         priv->edge_chunks_dirty[i] = false;
         kh_clear(coord, priv->dirty_chunks[i]);
     }
+    kh_clear(coord, priv->road_dirty);
 
     N_FC_ClearAll(priv->fieldcache);
     N_FC_ClearStats(priv->fieldcache);
@@ -3371,6 +3862,7 @@ void *N_NewCtxForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
     ret->width = w;
     ret->height = h;
     ret->layer_mask = NAV_LAYER_MASK_ALL;
+    SDL_AtomicSet(&s_road_cells, 0);
     ret->window = (struct nav_window){0, 0, (int)h - 1, (int)w - 1};
 
     /* One copy-on-write region holds all layers' chunks (inlined portal_travel_costs
@@ -3395,6 +3887,8 @@ void *N_NewCtxForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
             struct nav_chunk *curr_chunk = &ret->chunks[layer][IDX(chunk_r, ret->width, chunk_c)];
             const struct tile *curr_tiles = chunk_tiles[IDX(chunk_r, ret->width, chunk_c)];
             curr_chunk->num_portals = 0;
+            memset(curr_chunk->road, 0, sizeof(curr_chunk->road));
+            curr_chunk->nroad = 0;
 
             for(int tile_r = 0; tile_r < chunk_h; tile_r++) {
             for(int tile_c = 0; tile_c < chunk_w; tile_c++) {
@@ -4407,8 +4901,8 @@ void N_RenderNavigationPortals(void *nav_private, const struct map *map,
                               : (assert(0), (vec3_t){0});
 
             float cost;
-            bool has_path = AStar_GridPath(priv->fieldcache, a, b, 
-                (struct coord){chunk_r, chunk_c}, chunk->cost_base, layer, &path, &cost);
+            bool has_path = AStar_GridPath(NULL, a, b, (struct coord){chunk_r, chunk_c}, 
+                chunk->cost_base, chunk->nroad ? chunk->road : NULL, layer, &path, &cost);
             assert(has_path);
             n_render_grid_path(chunk, chunk_model, map, &path, link_color);
         }
@@ -4455,6 +4949,98 @@ void N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *o
         }
         priv->edge_states_dirty[layer] = true;
     }
+}
+
+void N_SetRoadCells(void *nav_private, vec3_t map_pos, vec2_t xz_min, vec2_t xz_max, bool on)
+{
+    ASSERT_IN_MAIN_THREAD();
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    /* Cells whose centres lie inside the rectangle */
+    const float inset = 0.25f * X_COORDS_PER_TILE;
+    struct tile_desc corners[2];
+    if(!M_Tile_DescForPoint2D(res, map_pos, (vec2_t){xz_min.x + inset, xz_min.z + inset}, &corners[0]))
+        return;
+    if(!M_Tile_DescForPoint2D(res, map_pos, (vec2_t){xz_max.x - inset, xz_max.z - inset}, &corners[1]))
+        return;
+
+    int abs_r[2], abs_c[2];
+    for(int i = 0; i < 2; i++) {
+        abs_r[i] = corners[i].chunk_r * res.tile_h + corners[i].tile_r;
+        abs_c[i] = corners[i].chunk_c * res.tile_w + corners[i].tile_c;
+    }
+
+    int delta = 0;
+    for(int r = MIN(abs_r[0], abs_r[1]); r <= MAX(abs_r[0], abs_r[1]); r++) {
+    for(int c = MIN(abs_c[0], abs_c[1]); c <= MAX(abs_c[0], abs_c[1]); c++) {
+
+        struct coord chunk = (struct coord){r / res.tile_h, c / res.tile_w};
+        struct coord cell = (struct coord){r % res.tile_h, c % res.tile_w};
+
+        for(int layer = 0; layer < NAV_LAYER_MAX; layer++) {
+
+            if(!n_ground_layer(layer))
+                continue;
+            struct nav_chunk *curr = n_chunk_at(priv, layer, chunk);
+            if(!!curr->road[cell.r][cell.c] == on)
+                continue;
+
+            curr->road[cell.r][cell.c] = on;
+            curr->nroad += on ? 1 : -1;
+            if(layer == NAV_LAYER_GROUND_1X1)
+                delta += on ? 1 : -1;
+            n_set_add(priv->road_dirty, chunk);
+        }
+    }}
+    SDL_AtomicAdd(&s_road_cells, delta);
+}
+
+bool N_RoadSpan(void *nav_private, vec3_t map_pos, vec2_t xz, vec2_t across, float max_dist,
+                float *out_left, float *out_right)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    const float step = X_COORDS_PER_TILE / 2.0f;
+    float len = PFM_Vec2_Len(&across);
+    if(len < EPSILON)
+        return false;
+    vec2_t dir = (vec2_t){across.x / len, across.z / len};
+
+    for(int side = 0; side < 2; side++) {
+
+        float sign = side ? 1.0f : -1.0f;
+        float reach = 0.0f;
+        for(float d = 0.0f; d <= max_dist; d += step) {
+
+            vec2_t p = (vec2_t){xz.x + dir.x * d * sign, xz.z + dir.z * d * sign};
+            struct tile_desc td;
+            if(!M_Tile_DescForPoint2D(res, map_pos, p, &td))
+                break;
+            const struct nav_chunk *chunk = &priv->chunks[NAV_LAYER_GROUND_1X1]
+                                                         [IDX(td.chunk_r, priv->width, td.chunk_c)];
+            if(!chunk->road[td.tile_r][td.tile_c]) {
+                if(d == 0.0f)
+                    return false;
+                break;
+            }
+            reach = d;
+        }
+        if(side) {
+            *out_right = reach;
+        }else{
+            *out_left = reach;
+        }
+    }
+    return true;
+}
+
+float N_MinCellCost(void)
+{
+    return SDL_AtomicGet(&s_road_cells) > 0 ? ROAD_COST_FACTOR : 1.0f;
 }
 
 void N_UpdatePortals(void *nav_private)
@@ -6410,7 +6996,8 @@ bool N_PortalReachableFromTile(const struct portal *port, struct coord tile,
     return false;
 }
 
-int N_GridNeighbours(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], struct coord coord, 
+int N_GridNeighbours(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], 
+                     const uint8_t road[FIELD_RES_R][FIELD_RES_C], struct coord coord, 
                      struct coord out_neighbours[], float out_costs[])
 {
     int ret = 0;
@@ -6437,7 +7024,7 @@ int N_GridNeighbours(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], struct 
         float cost_mult = diag ? sqrt(2) : 1.0f;
 
         out_neighbours[ret] = (struct coord){abs_r, abs_c};
-        out_costs[ret] = cost_field[abs_r][abs_c] * cost_mult;
+        out_costs[ret] = n_cell_cost(cost_field, road, abs_r, abs_c) * cost_mult;
         ret++;
     }}
     assert(ret < 9);

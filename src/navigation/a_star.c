@@ -101,7 +101,8 @@ static uint64_t phop_to_key(const struct portal_hop *ph)
          | (((uint64_t)ph->portal->endpoints[1].c & 0xff  ) <<  0);
 }
 
-static int neighbours_grid(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], struct coord coord, 
+static int neighbours_grid(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], 
+                           const uint8_t road[FIELD_RES_R][FIELD_RES_C], struct coord coord, 
                            struct coord *out_neighbours, float *out_costs)
 {
     int ret = 0;
@@ -128,7 +129,7 @@ static int neighbours_grid(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], s
         float cost_mult = diag ? sqrt(2) : 1.0f;
 
         out_neighbours[ret] = (struct coord){abs_r, abs_c};
-        out_costs[ret] = cost_field[abs_r][abs_c] * cost_mult;
+        out_costs[ret] = n_cell_cost(cost_field, road, abs_r, abs_c) * cost_mult;
         ret++;
     }}
     assert(ret < 9);
@@ -291,13 +292,12 @@ static bool portal_path_found(const struct nav_private *priv, enum nav_layer lay
     return false;
 }
 
-static float heuristic(struct coord a, struct coord b)
+static float heuristic(struct coord a, struct coord b, float D)
 {
     /* Octile Distance:
      * Compute the number of steps you can take if you can't take
      * a diagonal, then subtract the steps you save by using the 
      * diagonal. Uses cost 'D' for orthogonal traversal of one tile.*/
-    const float D = 1.0f;
     const float D2 = sqrt(2) * D;
 
     int dx = abs(a.r - b.r);
@@ -326,9 +326,12 @@ static float portal_node_penalty(void)
 bool AStar_GridPath(struct fieldcache_ctx *cache,
                     struct coord start, struct coord finish, struct coord chunk,
                     const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], 
+                    const uint8_t road[FIELD_RES_R][FIELD_RES_C],
                     enum nav_layer layer, vec_coord_t *out_path, float *out_cost)
 {
     PERF_ENTER();
+    /* The cheapest cell bounds the estimate, so that it stays admissible */
+    const float D = road ? ROAD_COST_FACTOR : 1.0f;
 
     struct grid_path_desc gp = {0};
     vec_coord_init(&gp.path);
@@ -370,7 +373,7 @@ bool AStar_GridPath(struct fieldcache_ctx *cache,
 
         struct coord neighbours[8];
         float neighbour_costs[8];
-        int num_neighbours = neighbours_grid(cost_field, curr, neighbours, neighbour_costs);
+        int num_neighbours = neighbours_grid(cost_field, road, curr, neighbours, neighbour_costs);
 
         for(int i = 0; i < num_neighbours; i++) {
 
@@ -383,7 +386,7 @@ bool AStar_GridPath(struct fieldcache_ctx *cache,
             || new_cost < kh_value(running_cost, k)) {
 
                 kh_put_val(key_float, running_cost, coord_to_key(*next), new_cost);
-                float priority = new_cost + heuristic(finish, *next);
+                float priority = new_cost + heuristic(finish, *next, D);
                 pq_coord_push(&frontier, priority, *next);
                 kh_put_val(key_coord, came_from, coord_to_key(*next), curr);
             }
@@ -546,7 +549,7 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_til
             continue;
         struct portal_hop hop = (struct portal_hop){&bchunk->portals[i], start_liid};
         kh_put_val(key_float, running_cost, phop_to_key(&hop), cost);
-        pq_portal_push(&frontier, cost + portal_octile_estimate(&bchunk->portals[i], end_tile), hop);
+        pq_portal_push(&frontier, cost + N_MinCellCost() * portal_octile_estimate(&bchunk->portals[i], end_tile), hop);
     }
 
     while(pq_size(&frontier) > 0) {
@@ -577,7 +580,7 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_til
             || new_cost < kh_value(running_cost, k)) {
 
                 kh_put_val(key_float, running_cost, phop_to_key(&next_hop), new_cost);
-                float priority = new_cost + portal_octile_estimate(next, end_tile);
+                float priority = new_cost + N_MinCellCost() * portal_octile_estimate(next, end_tile);
                 pq_portal_push(&frontier, priority, next_hop);
                 kh_put_val(key_portal, came_from, phop_to_key(&next_hop), curr);
             }

@@ -70,6 +70,10 @@
 PQUEUE_TYPE(coord, struct coord)
 PQUEUE_IMPL(static, coord, struct coord)
 
+/* In cells: how far from the destination its chunk's line of sight reaches 
+ * when the chunk has roads */
+#define LOS_ROAD_RADIUS (16)
+
 PQUEUE_TYPE(td, struct tile_desc)
 PQUEUE_IMPL(static, td, struct tile_desc)
 
@@ -209,7 +213,7 @@ static int field_neighbours_grid(
     int                        faction_id,
     uint16_t                   enemies,
     struct coord              *out_neighbours,
-    uint8_t                   *out_costs)
+    float                     *out_costs)
 {
     int ret = 0;
     for(int r = -1; r <= 1; r++) {
@@ -239,7 +243,7 @@ static int field_neighbours_grid(
         }
 
         out_neighbours[ret] = (struct coord){abs_r, abs_c};
-        out_costs[ret] = chunk->cost_base[abs_r][abs_c];
+        out_costs[ret] = n_cell_cost(chunk->cost_base, chunk->road, abs_r, abs_c);
 
         ret++;
     }}
@@ -254,7 +258,7 @@ static int field_neighbours_grid_global(
     bool                      only_passable, 
     uint16_t                  enemies,
     struct tile_desc         *out_neighbours, 
-    uint8_t                  *out_costs)
+    float                    *out_costs)
 {
     int ret = 0;
 
@@ -290,7 +294,7 @@ static int field_neighbours_grid_global(
         }
 
         out_neighbours[ret] = curr;
-        out_costs[ret] = chunk->cost_base[curr.tile_r][curr.tile_c];
+        out_costs[ret] = n_cell_cost(chunk->cost_base, chunk->road, curr.tile_r, curr.tile_c);
 
         ret++;
     }}
@@ -542,7 +546,7 @@ static void field_build_integration(
         pq_coord_pop(frontier, &curr);
 
         struct coord neighbours[8];
-        uint8_t neighbour_costs[8];
+        float neighbour_costs[8];
         int num_neighbours = field_neighbours_grid(chunk, curr, true, faction_id,
             enemies, neighbours, neighbour_costs);
 
@@ -610,7 +614,7 @@ static bool field_build_integration_region(
         pq_td_pop(frontier, &curr);
 
         struct tile_desc neighbours[8];
-        uint8_t neighbour_costs[8];
+        float neighbour_costs[8];
         int num_neighbours = field_neighbours_grid_global(priv, layer, curr, true, enemies, 
             neighbours, neighbour_costs);
 
@@ -663,7 +667,7 @@ static void field_build_integration_nonpass(
         pq_coord_pop(frontier, &curr);
 
         struct coord neighbours[8];
-        uint8_t neighbour_costs[8];
+        float neighbour_costs[8];
         int num_neighbours = field_neighbours_grid(chunk, curr, false, faction_id,
             enemies, neighbours, neighbour_costs);
 
@@ -710,7 +714,7 @@ static bool field_build_integration_nonpass_region(
         pq_td_pop(frontier, &curr);
 
         struct tile_desc neighbours[8];
-        uint8_t neighbour_costs[8];
+        float neighbour_costs[8];
         int num_neighbours = field_neighbours_grid_global(priv, layer, curr, false, enemies, 
             neighbours, neighbour_costs);
 
@@ -2496,11 +2500,18 @@ void N_LOSFieldCreate(
      * accross chunk borders. */
     }else{
 
+        assert(prev_los);
+        /* A road may well be a cheaper way on than the straight line, so units
+         * crossing a chunk with roads follow the flow field there instead. */
+        if(chunk->nroad > 0) {
+            pq_coord_destroy(&frontier);
+            return;
+        }
+
         bool horizontal = {0};
         int curr_edge_idx = {0};
         int prev_edge_idx = {0};
-        
-        assert(prev_los);
+
         if(prev_los->chunk.r < chunk_coord.r) {
 
             horizontal = false;
@@ -2577,6 +2588,11 @@ void N_LOSFieldCreate(
         enemies = enemy_faction_from(faction_id, ctx);
     }
 
+    /* With roads in the destination's chunk, only the last stretch is walked
+     * in a straight line: farther out a road may be the cheaper way. */
+    bool near_only = (chunk->nroad > 0);
+    const int near_r2 = LOS_ROAD_RADIUS * LOS_ROAD_RADIUS;
+
     while(pq_size(&frontier) > 0) {
 
         struct coord curr;
@@ -2604,6 +2620,12 @@ void N_LOSFieldCreate(
                 };
                 field_create_wavefront_blocked_line(target, src_desc, priv, map_pos, out_los);
             }else{
+
+                if(near_only) {
+                    int dr = nr - target.tile_r, dc = nc - target.tile_c;
+                    if(dr * dr + dc * dc > near_r2)
+                        continue;
+                }
 
                 float new_cost = integration_field[curr.r][curr.c] + 1;
                 out_los->field[nr][nc].visible = 1;

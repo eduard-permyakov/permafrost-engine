@@ -60,6 +60,9 @@ struct nav_private{
     struct fieldcache_ctx *fieldcache;
     /* Data used for fieldcache invalidation */
     khash_t(coord)        *dirty_chunks[NAV_LAYER_MAX];
+    /* Chunks whose road cells changed since the last update, on every ground 
+     * layer alike. Their portals are rebuilt by the next N_Update. */
+    khash_t(coord)        *road_dirty;
     bool                   local_islands_dirty[NAV_LAYER_MAX];
     /* Full-layer edge-state sweep flag: set only by static geometry changes
      * (portal rebuilds, static cutouts, context init/clear). Blocker flips
@@ -99,8 +102,12 @@ bool           N_PortalReachableFromIsland(const struct portal *port, uint16_t l
 bool           N_PortalReachableFromTile(const struct portal *port, struct coord tile, 
                                          const struct nav_chunk *chunk);
 
-int            N_GridNeighbours(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], struct coord coord, 
+int            N_GridNeighbours(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], 
+                                const uint8_t road[FIELD_RES_R][FIELD_RES_C], struct coord coord, 
                                 struct coord out_neighbours[], float out_costs[]);
+/* The cost of the cheapest cell on the map: ROAD_COST_FACTOR once it has a road, 
+ * else 1. Scales the distance estimates so that they stay admissible. */
+float          N_MinCellCost(void);
 
 uint16_t       N_ClosestPathableLocalIsland(const struct nav_private *priv, const struct nav_chunk *chunk, 
                                             struct tile_desc target);

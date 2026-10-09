@@ -110,12 +110,13 @@ VEC_IMPL(static inline, portal, struct portal_hop)
 /* ------------------------------------------------------------------------
  * Finds the shortest path in a rectangular cost field. Returns true if a 
  * path is found, false otherwise. If returning true, 'out_path' holds the
- * tiles to be traversed, in order.
+ * tiles to be traversed, in order. 'road' is NULL for a chunk without roads.
  * ------------------------------------------------------------------------
  */
 bool AStar_GridPath(struct fieldcache_ctx *cache,
                     struct coord start, struct coord finish, struct coord chunk,
                     const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], 
+                    const uint8_t road[FIELD_RES_R][FIELD_RES_C],
                     enum nav_layer layer, vec_coord_t *out_path, float *out_cost);
 
 /* ------------------------------------------------------------------------
