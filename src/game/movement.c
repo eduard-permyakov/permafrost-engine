@@ -45,6 +45,7 @@
 #include "position.h"
 #include "fog_of_war.h"
 #include "public/game.h"
+#include "road_route.h"
 #include "../config.h"
 #include "../camera.h"
 #include "../asset_load.h"
@@ -2287,7 +2288,21 @@ static void move_order(const vec_entity_t *sel, bool attack, vec3_t mouse_coord,
         }
     }
 
-    if(nmoved) {
+    /* Units sent along the roads leave the flock */
+    vec2_t target_xz = (vec2_t){mouse_coord.x, mouse_coord.z};
+    for(int i = vec_size(&capped) - 1; nmoved && i >= 0; i--) {
+
+        uint32_t curr = vec_AT(&capped, i);
+        if(!(G_FlagsGet(curr) & ENTITY_FLAG_MOVABLE))
+            continue;
+        if(!G_RoadRoute_MoveTo(curr, target_xz, attack))
+            continue;
+        vec_entity_del(&capped, i);
+    }
+
+    if(nmoved && vec_size(&capped) == 0) {
+        move_marker_add(mouse_coord, attack);
+    }else if(nmoved) {
         move_marker_add(mouse_coord, attack);
         vec_entity_t *copy = PF_MALLOC(sizeof(vec_entity_t));
         vec_entity_init(copy);

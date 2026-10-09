@@ -775,6 +775,13 @@ bool   G_Roads_Get(struct road_desc rd, uint8_t *out_links);
 size_t G_Roads_Count(void);
 size_t G_Roads_GetAll(size_t maxout, struct road_desc out[], uint8_t out_links[]);
 void   G_Roads_SetHover(const struct road_desc *rd);
+/* The road tile closest to the point, at most 'max_dist' away */
+bool   G_Roads_Nearest(vec2_t xz, float max_dist, struct road_desc *out);
+vec2_t G_Roads_Centre(struct road_desc rd);
+/* The tiles of the shortest way along linked road tiles, both ends included,
+ * or 0 when there is none or it is longer than 'maxout' */
+size_t G_Roads_Route(struct road_desc from, struct road_desc to, size_t maxout, 
+                     struct road_desc out[]);
 void   G_Roads_SetRender(bool on);
 /* NULL removes the decals from the roads */
 bool   G_Roads_SetTileset(const struct road_tileset *tileset);

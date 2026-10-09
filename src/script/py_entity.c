@@ -47,6 +47,7 @@
 #include "../anim/public/anim.h"
 #include "../game/public/game.h"
 #include "../game/population.h"
+#include "../game/road_route.h"
 #include "../phys/public/phys.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/SDL_vec_rwops.h"
@@ -1072,6 +1073,11 @@ static PyObject *PyMovableEntity_get_preferred_formation(PyMovableEntityObject *
 static int       PyMovableEntity_set_preferred_formation(PyMovableEntityObject *self, 
                                                          PyObject *value, void *closure);
 static PyObject *PyMovableEntity_get_effective_speed(PyMovableEntityObject *self, void *closure);
+static PyObject *PyMovableEntity_get_road_locked(PyMovableEntityObject *self, void *closure);
+static int       PyMovableEntity_set_road_locked(PyMovableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyMovableEntity_get_road_preference(PyMovableEntityObject *self, void *closure);
+static int       PyMovableEntity_set_road_preference(PyMovableEntityObject *self, PyObject *value, 
+                                                     void *closure);
 
 static PyGetSetDef PyMovableEntity_getset[] = {
     {"speed",
@@ -1081,6 +1087,15 @@ static PyGetSetDef PyMovableEntity_getset[] = {
     {"effective_speed",
     (getter)PyMovableEntity_get_effective_speed, NULL,
     "The speed the entity actually moves at: the base speed plus every live speed modifier.",
+    NULL},
+    {"road_locked",
+    (getter)PyMovableEntity_get_road_locked, (setter)PyMovableEntity_set_road_locked,
+    "Whether the entity keeps to the roads: it is only ever ordered along them.",
+    NULL},
+    {"road_preference",
+    (getter)PyMovableEntity_get_road_preference, (setter)PyMovableEntity_set_road_preference,
+    "Sends the entity along the roads when the way along them is at most this many times "
+    "the straight way. 0 (the default) leaves the choice to the pathfinding.",
     NULL},
     {"preferred_formation",
     (getter)PyMovableEntity_get_preferred_formation, 
@@ -4795,6 +4810,52 @@ static PyObject *PyMovableEntity_get_speed(PyMovableEntityObject *self, void *cl
     return PyFloat_FromDouble(speed);
 }
 
+static PyObject *PyMovableEntity_get_road_locked(PyMovableEntityObject *self, void *closure)
+{
+    if(G_RoadRoute_GetLocked(self->super.ent))
+        Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
+}
+
+static int PyMovableEntity_set_road_locked(PyMovableEntityObject *self, PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+    G_RoadRoute_SetLocked(self->super.ent, PyObject_IsTrue(value));
+    return 0;
+}
+
+static PyObject *PyMovableEntity_get_road_preference(PyMovableEntityObject *self, void *closure)
+{
+    return PyFloat_FromDouble(G_RoadRoute_GetPreference(self->super.ent));
+}
+
+static int PyMovableEntity_set_road_preference(PyMovableEntityObject *self, PyObject *value, 
+                                               void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+    if(!PyNumber_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a number.");
+        return -1;
+    }
+    PyObject *flt = PyNumber_Float(value);
+    if(!flt)
+        return -1;
+    float limit = PyFloat_AsDouble(flt);
+    Py_DECREF(flt);
+    if(!isfinite(limit) || limit < 0.0f) {
+        PyErr_SetString(PyExc_ValueError, "The limit must be a finite number, 0 or more.");
+        return -1;
+    }
+    G_RoadRoute_SetPreference(self->super.ent, limit);
+    return 0;
+}
+
 static PyObject *PyMovableEntity_get_effective_speed(PyMovableEntityObject *self, void *closure)
 {
     if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
@@ -4875,7 +4936,9 @@ static PyObject *PyMovableEntity_move(PyMovableEntityObject *self, PyObject *arg
         return NULL;
     }
 
-    G_Move_SetDest(self->super.ent, xz_pos, false);
+    if(!G_RoadRoute_MoveTo(self->super.ent, xz_pos, false)) {
+        G_Move_SetDest(self->super.ent, xz_pos, false);
+    }
     Py_RETURN_NONE;
 }
 

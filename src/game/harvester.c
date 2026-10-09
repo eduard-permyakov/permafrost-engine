@@ -38,6 +38,7 @@
 
 #include "harvester.h"
 #include "movement.h"
+#include "road_route.h"
 #include "resource.h"
 #include "storage_site.h"
 #include "game_private.h"
@@ -633,7 +634,7 @@ static void entity_drop_off(uint32_t uid, uint32_t ss)
         (void*)((uintptr_t)uid), G_RUNNING);
 
     E_Entity_Notify(EVENT_STORAGE_TARGET_ACQUIRED, uid, (void*)(uintptr_t)ss, ES_ENGINE);
-    G_Move_SetSurroundEntity(uid, ss);
+    G_RoadRoute_SurroundEntity(uid, ss);
 }
 
 static void entity_try_drop_off(uint32_t uid)
@@ -1090,7 +1091,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
                 (void*)((uintptr_t)uid), G_RUNNING);
 
             cart_leg_log(uid, "next-src", newsrc, hs->transport_dest_uid);
-            G_Move_SetSurroundEntity(uid, newsrc);
+            G_RoadRoute_SurroundEntity(uid, newsrc);
             hs->transport_src_uid = newsrc;
             return;
         }
@@ -1114,7 +1115,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
         (void*)((uintptr_t)uid), G_RUNNING);
 
     cart_leg_log(uid, "to-dest", hs->transport_src_uid, hs->transport_dest_uid);
-    G_Move_SetSurroundEntity(uid, hs->transport_dest_uid);
+    G_RoadRoute_SurroundEntity(uid, hs->transport_dest_uid);
     hs->state = STATE_TRANSPORT_PUTTING;
     E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, uid, 
         (void*)(uintptr_t)hs->transport_dest_uid, ES_ENGINE);
@@ -1493,7 +1494,7 @@ static void entity_try_gather_nearest_source(uint32_t harvester,
             (void*)((uintptr_t)harvester), G_RUNNING);
         E_Entity_Register(EVENT_ORDER_ISSUED, harvester, on_motion_begin_travel, 
             (void*)((uintptr_t)harvester), G_RUNNING);
-        G_Move_SetSurroundEntity(harvester, newtarget);
+        G_RoadRoute_SurroundEntity(harvester, newtarget);
     }
 }
 
@@ -1538,7 +1539,7 @@ static void on_arrive_at_resource_source(void *user, void *event)
         E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
             (void*)((uintptr_t)uid), G_RUNNING);
 
-        G_Move_SetSurroundEntity(uid, hs->res_uid);
+        G_RoadRoute_SurroundEntity(uid, hs->res_uid);
         hs->state = STATE_TRANSPORT_PUTTING;
         E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, uid, 
             (void*)(uintptr_t)hs->transport_dest_uid, ES_ENGINE);
@@ -1630,7 +1631,7 @@ static void on_harvest_anim_finished_source(void *user, void *event)
         E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
             (void*)((uintptr_t)uid), G_RUNNING);
 
-        G_Move_SetSurroundEntity(uid, hs->transport_dest_uid);
+        G_RoadRoute_SurroundEntity(uid, hs->transport_dest_uid);
         hs->state = STATE_TRANSPORT_PUTTING;
         E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, uid, 
             (void*)(uintptr_t)hs->transport_dest_uid, ES_ENGINE);
@@ -1674,7 +1675,7 @@ static bool harvester_transport_from_resources(uint32_t harvester, uint32_t stor
             (void*)((uintptr_t)harvester), G_RUNNING);
         E_Entity_Register(EVENT_ORDER_ISSUED, harvester, on_motion_begin_travel, 
             (void*)((uintptr_t)harvester), G_RUNNING);
-        G_Move_SetSurroundEntity(harvester, resource);
+        G_RoadRoute_SurroundEntity(harvester, resource);
     }
 
     return true;
@@ -2027,7 +2028,7 @@ bool G_Harvester_Gather(uint32_t harvester, uint32_t resource)
             vec2_t center = G_Pos_GetXZ(resource);
             G_Move_SetDest(harvester, center, false);
         }else{
-            G_Move_SetSurroundEntity(harvester, resource);
+            G_RoadRoute_SurroundEntity(harvester, resource);
         }
     }
 
@@ -2083,7 +2084,7 @@ bool G_Harvester_PickUp(uint32_t harvester, uint32_t storage)
             (void*)((uintptr_t)harvester), G_RUNNING);
         E_Entity_Register(EVENT_ORDER_ISSUED, harvester, on_motion_begin_travel, 
             (void*)((uintptr_t)harvester), G_RUNNING);
-        G_Move_SetSurroundEntity(harvester, storage);
+        G_RoadRoute_SurroundEntity(harvester, storage);
     }
 
     return true;
@@ -2162,7 +2163,7 @@ bool G_Harvester_Transport(uint32_t harvester, uint32_t storage)
             (void*)((uintptr_t)harvester), G_RUNNING);
         E_Entity_Register(EVENT_ORDER_ISSUED, harvester, on_motion_begin_travel, 
             (void*)((uintptr_t)harvester), G_RUNNING);
-        G_Move_SetSurroundEntity(harvester, src);
+        G_RoadRoute_SurroundEntity(harvester, src);
     }
 
     return true;
