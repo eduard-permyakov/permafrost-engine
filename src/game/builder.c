@@ -351,6 +351,11 @@ bool G_Builder_Build(uint32_t uid, uint32_t building)
     E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin);
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_build_anim_finished);
 
+    /* Taken off a building it was still working on */
+    if(bs->state == STATE_BUILDING) {
+        E_Entity_Notify(EVENT_BUILD_END, uid, NULL, ES_ENGINE);
+    }
+
     bs->state = STATE_MOVING_TO_TARGET;
     bs->target_uid = building;
     E_Entity_Notify(EVENT_BUILD_TARGET_ACQUIRED, uid, (void*)((uintptr_t)building), ES_ENGINE);
