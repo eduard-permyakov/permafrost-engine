@@ -257,8 +257,12 @@ static uint32_t target_site_for_resource(uint32_t uid, const char *rname)
         };
     }
     qsort(costs, left, sizeof(struct cost_mapping), compare_jobs);
-    if(left > 0) {
-        ret = costs[0].site;
+    /* The cheapest job that can be done: one the resource can be had for */
+    for(int i = 0; i < left; i++) {
+        if(G_Harvester_HasTransportSource(uid, costs[i].site, rname)) {
+            ret = costs[i].site;
+            break;
+        }
     }
 
     STFREE(costs);
@@ -383,10 +387,11 @@ static void assign_transport_jobs(void)
         uint32_t site = target_site(uid);
         if(site == NULL_UID)
             continue;
+        if(!G_Harvester_Transport(uid, site))
+            continue;
 
         increment_assigned_transporters(site);
         astate->transport_target = site;
-        G_Harvester_Transport(uid, site);
     });
 }
 

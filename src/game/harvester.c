@@ -772,6 +772,17 @@ uint32_t transport_source(uint32_t uid, uint32_t storage, const char *rname)
     return nearest_storage_site_source(uid, storage, rname, hs->strategy);
 }
 
+bool G_Harvester_HasTransportSource(uint32_t uid, uint32_t storage, const char *rname)
+{
+    struct hstate *hs = hstate_get(uid);
+    if(!hs)
+        return false;
+    if(hs->strategy == TRANSPORT_STRATEGY_GATHERING
+    && G_Harvester_GetGatherSpeed(uid, rname) > 0)
+        return true;
+    return transport_source(uid, storage, rname) != NULL_UID;
+}
+
 static void finish_transporing(struct hstate *hs)
 {
     hs->transport_dest_uid = NULL_UID;
@@ -1445,6 +1456,64 @@ static const char *transport_resource(struct hstate *hs, uint32_t target)
         }
     }
     return ret;
+}
+
+/* How much of the resource other transporters are already bringing to the 
+ * target: the loads of those on their way to it and the planned loads of 
+ * those still fetching for it */
+static int amount_en_route(uint32_t target, const char *rname, uint32_t exclude)
+{
+    int ret = 0;
+    uint32_t uid;
+    struct hstate *hs;
+
+    kh_foreach_val_ptr(s_entity_state_table, uid, hs, {
+
+        if(uid == exclude || hs->transport_dest_uid != target)
+            continue;
+        if(!hs->res_name || strcmp(hs->res_name, rname))
+            continue;
+
+        int amount = 0;
+        if(hs->state == STATE_TRANSPORT_GETTING) {
+            amount = G_Harvester_GetMaxCarry(uid, rname);
+        }else if(hs->state == STATE_TRANSPORT_PUTTING) {
+            hstate_get_key_int(hs->curr_carry, rname, &amount);
+        }
+        ret += amount;
+    });
+    return ret;
+}
+
+/* Like 'transport_resource', skipping the resources nothing can be fetched 
+ * from, so that a site wanting several goods is not starved of all of them by 
+ * the first one being out, and the ones other transporters are already 
+ * bringing enough of, so that a lower priority one gets its turn */
+static const char *transport_resource_with_source(uint32_t uid, struct hstate *hs, 
+                                                  uint32_t target, uint32_t *out_src)
+{
+    for(int i = 0; i < vec_size(&hs->priority); i++) {
+
+        const char *rname = vec_AT(&hs->priority, i);
+        int do_not_transport = 0;
+        hstate_get_key_int(hs->do_not_transport, rname, &do_not_transport);
+        if(do_not_transport)
+            continue;
+
+        int desired = ss_desired(target, rname);
+        int stored = G_StorageSite_GetCurr(target, rname);
+        if(desired <= stored)
+            continue;
+        if(desired <= stored + amount_en_route(target, rname, uid))
+            continue;
+
+        uint32_t src = transport_source(uid, target, rname);
+        if(src == NULL_UID)
+            continue;
+        *out_src = src;
+        return rname;
+    }
+    return NULL;
 }
 
 static const char *pick_up_resource(struct hstate *hs, uint32_t target)
@@ -2143,8 +2212,9 @@ bool G_Harvester_Transport(uint32_t harvester, uint32_t storage)
         return true;
     }
 
-    uint32_t src = transport_source(harvester, storage, rname);
-    if(src == NULL_UID)
+    uint32_t src = NULL_UID;
+    rname = transport_resource_with_source(harvester, hs, storage, &src);
+    if(rname == NULL)
         return false;
 
     G_Harvester_Stop(harvester);
