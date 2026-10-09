@@ -125,6 +125,15 @@ MPOOL_ALLOCATOR_IMPL(static, buff, buff_t)
 KHASH_MAP_INIT_INT(state, struct ss_state)
 KHASH_MAP_INIT_STR(res, int)
 
+/* Running totals of a resource brought into and used up from each faction's
+ * economy; moving it between storage sites counts as neither */
+struct flow{
+    int produced[MAX_FACTIONS];
+    int consumed[MAX_FACTIONS];
+};
+
+KHASH_MAP_INIT_STR(flow, struct flow)
+
 #define GREEN_CLR (struct nk_color){22, 84, 5, 255}
 
 /*****************************************************************************/
@@ -138,6 +147,7 @@ static struct memstack  s_eventargs;
 static khash_t(state)  *s_entity_state_table;
 static khash_t(res)    *s_global_resource_tables[MAX_FACTIONS];
 static khash_t(res)    *s_global_capacity_tables[MAX_FACTIONS];
+static khash_t(flow)   *s_flows;
 
 static struct nk_style_item s_bg_style = {0};
 static struct nk_color      s_border_clr = {0};
@@ -319,6 +329,43 @@ static bool update_res_delta(const char *rname, int delta, int faction_id)
     assert(status == 1);
     kh_value(s_global_resource_tables[faction_id], k) = delta;
     return true;
+}
+
+static void record_flow(int faction_id, const char *rname, int produced, int consumed)
+{
+    if(faction_id < 0 || faction_id >= MAX_FACTIONS)
+        return;
+
+    const char *key = si_intern(rname, &s_stringpool, s_stridx);
+    if(!key)
+        return;
+
+    khiter_t k = kh_get(flow, s_flows, key);
+    if(k == kh_end(s_flows)) {
+        int status;
+        k = kh_put(flow, s_flows, key, &status);
+        if(status == -1)
+            return;
+        kh_value(s_flows, k) = (struct flow){0};
+    }
+    kh_value(s_flows, k).produced[faction_id] += produced;
+    kh_value(s_flows, k).consumed[faction_id] += consumed;
+}
+
+static int player_flow_total(const char *rname, bool produced)
+{
+    khiter_t k = kh_get(flow, s_flows, rname);
+    if(k == kh_end(s_flows))
+        return 0;
+
+    int ret = 0;
+    uint16_t pfacs = G_GetPlayerControlledFactions();
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+        if(!(pfacs & (0x1 << i)))
+            continue;
+        ret += produced ? kh_value(s_flows, k).produced[i] : kh_value(s_flows, k).consumed[i];
+    }
+    return ret;
 }
 
 static bool update_cap_delta(const char *rname, int delta, int faction_id)
@@ -742,6 +789,9 @@ bool G_StorageSite_Init(void)
     if(!stalloc_init(&s_eventargs))
         goto fail_eventargs;
 
+    if(!(s_flows = kh_init(flow)))
+        goto fail_flows;
+
     struct nk_context ctx;
     nk_style_default(&ctx);
 
@@ -768,6 +818,8 @@ bool G_StorageSite_Init(void)
     s_show_ui = true;
     return true;
 
+fail_flows:
+    stalloc_destroy(&s_eventargs);
 fail_eventargs:
     si_shutdown(&s_stringpool, s_stridx);
 fail_strintern:
@@ -794,6 +846,7 @@ void G_StorageSite_Shutdown(void)
     for(int i = 0; i < MAX_FACTIONS; i++)
         kh_destroy(res, s_global_resource_tables[i]);
 
+    kh_destroy(flow, s_flows);
     stalloc_destroy(&s_eventargs);
     si_shutdown(&s_stringpool, s_stridx);
     kh_destroy(state, s_entity_state_table);
@@ -827,6 +880,7 @@ void G_StorageSite_RemoveEntity(uint32_t uid)
 
     kh_foreach(ss->curr, key, amount, {
         update_res_delta(key, -amount, G_GetFactionID(uid));
+        record_flow(G_GetFactionID(uid), key, 0, amount);
     });
 
     khash_t(int) *cap = ss->use_alt ? ss->alt_capacity : ss->capacity;
@@ -976,6 +1030,26 @@ int G_StorageSite_GetPlayerCapacity(const char *rname)
     return ret;
 }
 
+void G_StorageSite_RecordProduced(int faction_id, const char *rname, int amount)
+{
+    record_flow(faction_id, rname, amount, 0);
+}
+
+void G_StorageSite_RecordConsumed(int faction_id, const char *rname, int amount)
+{
+    record_flow(faction_id, rname, 0, amount);
+}
+
+int G_StorageSite_GetPlayerProduced(const char *rname)
+{
+    return player_flow_total(rname, true);
+}
+
+int G_StorageSite_GetPlayerConsumed(const char *rname)
+{
+    return player_flow_total(rname, false);
+}
+
 int G_StorageSite_GetStorableResources(uint32_t uid, size_t maxout, const char *out[])
 {
     struct ss_state *ss = ss_state_get(uid);
@@ -1121,6 +1195,7 @@ void G_StorageSite_ClearCurr(uint32_t uid)
 
     kh_foreach(ss->curr, key, amount, {
         update_res_delta(key, -amount, G_GetFactionID(uid));
+        record_flow(G_GetFactionID(uid), key, 0, amount);
     });
     kh_clear(int, ss->curr);
 }

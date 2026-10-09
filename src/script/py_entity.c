@@ -4633,6 +4633,7 @@ static PyObject *PyStorageSiteEntity_set_curr_amount(PyStorageSiteEntityObject *
         return NULL;
     }
 
+    int prev = G_StorageSite_GetCurr(self->super.ent, name);
     if(!G_StorageSite_SetCurr(self->super.ent, name, amount)) {
         char buff[256];
         pf_snprintf(buff, sizeof(buff), "Unable to set amount (%d) for resource (%s).", amount, name);
@@ -4640,6 +4641,13 @@ static PyObject *PyStorageSiteEntity_set_curr_amount(PyStorageSiteEntityObject *
         return NULL;
     }
 
+    /* Scripts make and spend resources: production, training, research */
+    int faction_id = G_GetFactionID(self->super.ent);
+    if(amount > prev) {
+        G_StorageSite_RecordProduced(faction_id, name, amount - prev);
+    }else if(amount < prev) {
+        G_StorageSite_RecordConsumed(faction_id, name, prev - amount);
+    }
     Py_RETURN_NONE;
 }
 

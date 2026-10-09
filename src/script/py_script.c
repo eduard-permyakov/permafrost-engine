@@ -216,6 +216,8 @@ static PyObject *PyPf_get_right_click_attack(PyObject *self);
 static PyObject *PyPf_get_resource_list(PyObject *self);
 static PyObject *PyPf_get_resource_stored(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_resource_capacity(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_resource_produced(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_resource_consumed(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_resource_icon(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_resource_icon(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_render_settings(PyObject *self);
@@ -798,6 +800,16 @@ static PyMethodDef pf_module_methods[] = {
     {"get_resource_capacity",
     (PyCFunction)PyPf_get_resource_capacity, METH_VARARGS,
     "Returns the total capacity for storing a particular resource between all player-controlled storage sites."},
+
+    {"get_resource_produced",
+    (PyCFunction)PyPf_get_resource_produced, METH_VARARGS,
+    "Returns the total amount of a particular resource the player-controlled factions have gathered or made "
+    "since the session began."},
+
+    {"get_resource_consumed",
+    (PyCFunction)PyPf_get_resource_consumed, METH_VARARGS,
+    "Returns the total amount of a particular resource the player-controlled factions have used up "
+    "since the session began."},
 
     {"set_resource_icon",
     (PyCFunction)PyPf_set_resource_icon, METH_VARARGS,
@@ -2954,6 +2966,26 @@ static PyObject *PyPf_get_resource_capacity(PyObject *self, PyObject *args)
 
     int cap = G_StorageSite_GetPlayerCapacity(name);
     return PyInt_FromLong(cap);
+}
+
+static PyObject *PyPf_get_resource_produced(PyObject *self, PyObject *args)
+{
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: resource name (string).");
+        return NULL;
+    }
+    return PyInt_FromLong(G_StorageSite_GetPlayerProduced(name));
+}
+
+static PyObject *PyPf_get_resource_consumed(PyObject *self, PyObject *args)
+{
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: resource name (string).");
+        return NULL;
+    }
+    return PyInt_FromLong(G_StorageSite_GetPlayerConsumed(name));
 }
 
 static PyObject *PyPf_set_resource_icon(PyObject *self, PyObject *args)
