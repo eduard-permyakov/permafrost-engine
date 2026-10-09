@@ -97,6 +97,7 @@ struct decal{
     float    alpha;
     bool     highlight;
     bool     hide_foliage;
+    bool     internal;
 };
 
 /* Images much longer than they are wide are split along their long side into
@@ -156,8 +157,9 @@ VEC_IMPL(static inline, masker, struct foliage_masker)
 /*****************************************************************************/
 
 static const struct map *s_map         = NULL;
-/* In draw order */
+/* In draw order, the internal decals first */
 static vec_decal_t       s_decals;
+static size_t            s_num_internal = 0;
 static vec_dtex_t        s_textures;
 static bool              s_layer_used[MAX_DECAL_LAYERS];
 /* Side of a texture array layer */
@@ -188,7 +190,7 @@ static struct uv_map decal_uv_map(const struct decal *decal)
     float c = cosf(rad), s = sinf(rad);
 
     struct plane2d u = (struct plane2d){ -c / decal->dims.x, -s / decal->dims.x, 0.0f };
-    struct plane2d v = (struct plane2d){ -s / decal->dims.z,  c / decal->dims.z, 0.0f };
+    struct plane2d v = (struct plane2d){  s / decal->dims.z, -c / decal->dims.z, 0.0f };
     u.c = 0.5f - (u.a * decal->pos.x + u.b * decal->pos.z);
     v.c = 0.5f - (v.a * decal->pos.x + v.b * decal->pos.z);
     return (struct uv_map){ u, v };
@@ -508,9 +510,11 @@ static void aabb_for_chunk(int cr, int cc, struct aabb *out)
     out->y_max = (float)(MAX_HEIGHT_LEVEL * Y_COORDS_PER_TILE);
 }
 
-static int decal_index(uint32_t id)
+static int decal_index(uint32_t id, bool internal)
 {
-    for(int i = 0; i < vec_size(&s_decals); i++) {
+    int begin = internal ? 0 : s_num_internal;
+    int end = internal ? s_num_internal : vec_size(&s_decals);
+    for(int i = begin; i < end; i++) {
         if(vec_AT(&s_decals, i).id == id)
             return i;
     }
@@ -670,7 +674,7 @@ static bool desc_valid(const struct decal_desc *desc)
         && (desc->alpha >= 0.0f) && (desc->alpha <= 1.0f);
 }
 
-static bool decal_add(uint32_t id, const struct decal_desc *desc)
+static bool decal_add(uint32_t id, const struct decal_desc *desc, bool internal)
 {
     if(!desc_valid(desc) || !texture_valid(desc->path))
         return false;
@@ -688,12 +692,59 @@ static bool decal_add(uint32_t id, const struct decal_desc *desc)
         .alpha     = desc->alpha,
         .highlight = false,
         .hide_foliage = desc->hide_foliage,
+        .internal  = internal,
     };
     if(!vec_decal_push(&s_decals, decal)) {
         texture_release(tex);
         return false;
     }
+
+    if(internal) {
+        size_t last = vec_size(&s_decals) - 1;
+        memmove(&vec_AT(&s_decals, s_num_internal + 1), &vec_AT(&s_decals, s_num_internal),
+            (last - s_num_internal) * sizeof(struct decal));
+        vec_AT(&s_decals, s_num_internal) = decal;
+        s_num_internal++;
+    }
     mark_dirty(&decal);
+    return true;
+}
+
+static void decal_remove(int idx)
+{
+    struct decal *decal = &vec_AT(&s_decals, idx);
+    if(decal->internal)
+        s_num_internal--;
+
+    mark_dirty(decal);
+    texture_release(decal->tex);
+    vec_decal_del(&s_decals, idx);
+}
+
+static bool decal_update(int idx, const struct decal_desc *desc)
+{
+    if(!desc_valid(desc))
+        return false;
+
+    struct decal *decal = &vec_AT(&s_decals, idx);
+    if(0 != strcmp(vec_AT(&s_textures, decal->tex).path, desc->path)) {
+
+        if(!texture_valid(desc->path))
+            return false;
+        int tex = texture_acquire(desc->path);
+        if(tex < 0)
+            return false;
+        texture_release(decal->tex);
+        decal->tex = tex;
+    }
+
+    mark_dirty(decal);
+    decal->pos = desc->pos;
+    decal->dims = desc->dims;
+    decal->rotation = desc->rotation;
+    decal->alpha = desc->alpha;
+    decal->hide_foliage = desc->hide_foliage;
+    mark_dirty(decal);
     return true;
 }
 
@@ -757,6 +808,7 @@ bool M_Decal_Init(const struct map *map)
     s_map = map;
     s_num_chunks = (size_t)(map->width * map->height);
     s_next_id = 1;
+    s_num_internal = 0;
 
     s_dirty  = PF_CALLOC(s_num_chunks, sizeof(bool));
     s_counts = PF_CALLOC(s_num_chunks, sizeof(size_t));
@@ -821,13 +873,14 @@ void M_Decal_Shutdown(void)
     s_counts     = NULL;
     s_num_chunks = 0;
     s_next_id    = 1;
+    s_num_internal = 0;
 }
 
 uint32_t M_Decal_Add(const struct decal_desc *desc)
 {
     if(!s_map)
         return NULL_DECAL_ID;
-    if(!decal_add(s_next_id, desc))
+    if(!decal_add(s_next_id, desc, false))
         return NULL_DECAL_ID;
     return s_next_id++;
 }
@@ -837,14 +890,11 @@ bool M_Decal_Remove(uint32_t id)
     if(!s_map)
         return false;
 
-    int idx = decal_index(id);
+    int idx = decal_index(id, false);
     if(idx < 0)
         return false;
 
-    struct decal *decal = &vec_AT(&s_decals, idx);
-    mark_dirty(decal);
-    texture_release(decal->tex);
-    vec_decal_del(&s_decals, idx);
+    decal_remove(idx);
     return true;
 }
 
@@ -853,32 +903,45 @@ bool M_Decal_Update(uint32_t id, const struct decal_desc *desc)
     if(!s_map)
         return false;
 
-    int idx = decal_index(id);
+    int idx = decal_index(id, false);
     if(idx < 0)
         return false;
-    if(!desc_valid(desc))
+
+    return decal_update(idx, desc);
+}
+
+uint32_t M_Decal_AddInternal(const struct decal_desc *desc)
+{
+    if(!s_map)
+        return NULL_DECAL_ID;
+    if(!decal_add(s_next_id, desc, true))
+        return NULL_DECAL_ID;
+    return s_next_id++;
+}
+
+bool M_Decal_RemoveInternal(uint32_t id)
+{
+    if(!s_map)
         return false;
 
-    struct decal *decal = &vec_AT(&s_decals, idx);
-    if(0 != strcmp(vec_AT(&s_textures, decal->tex).path, desc->path)) {
+    int idx = decal_index(id, true);
+    if(idx < 0)
+        return false;
 
-        if(!texture_valid(desc->path))
-            return false;
-        int tex = texture_acquire(desc->path);
-        if(tex < 0)
-            return false;
-        texture_release(decal->tex);
-        decal->tex = tex;
-    }
-
-    mark_dirty(decal);
-    decal->pos = desc->pos;
-    decal->dims = desc->dims;
-    decal->rotation = desc->rotation;
-    decal->alpha = desc->alpha;
-    decal->hide_foliage = desc->hide_foliage;
-    mark_dirty(decal);
+    decal_remove(idx);
     return true;
+}
+
+bool M_Decal_UpdateInternal(uint32_t id, const struct decal_desc *desc)
+{
+    if(!s_map)
+        return false;
+
+    int idx = decal_index(id, true);
+    if(idx < 0)
+        return false;
+
+    return decal_update(idx, desc);
 }
 
 bool M_Decal_Get(uint32_t id, struct decal_desc *out)
@@ -886,7 +949,7 @@ bool M_Decal_Get(uint32_t id, struct decal_desc *out)
     if(!s_map)
         return false;
 
-    int idx = decal_index(id);
+    int idx = decal_index(id, false);
     if(idx < 0)
         return false;
 
@@ -902,7 +965,7 @@ size_t M_Decal_At(vec2_t xz, size_t maxout, uint32_t out[])
     size_t ret = 0;
     vec3_t pos = (vec3_t){ xz.x, 0.0f, xz.z };
 
-    for(int i = vec_size(&s_decals) - 1; i >= 0 && ret < maxout; i--) {
+    for(int i = vec_size(&s_decals) - 1; i >= (int)s_num_internal && ret < maxout; i--) {
 
         const struct decal *decal = &vec_AT(&s_decals, i);
         struct uv_map map = decal_uv_map(decal);
@@ -918,7 +981,7 @@ size_t M_Decal_Count(void)
 {
     if(!s_map)
         return 0;
-    return vec_size(&s_decals);
+    return vec_size(&s_decals) - s_num_internal;
 }
 
 size_t M_Decal_GetAll(size_t maxout, uint32_t out[])
@@ -927,7 +990,7 @@ size_t M_Decal_GetAll(size_t maxout, uint32_t out[])
         return 0;
 
     size_t ret = 0;
-    for(int i = 0; i < vec_size(&s_decals) && ret < maxout; i++) {
+    for(int i = s_num_internal; i < vec_size(&s_decals) && ret < maxout; i++) {
         out[ret++] = vec_AT(&s_decals, i).id;
     }
     return ret;
@@ -938,11 +1001,11 @@ bool M_Decal_SetOrder(uint32_t id, int order)
     if(!s_map)
         return false;
 
-    int idx = decal_index(id);
+    int idx = decal_index(id, false);
     if(idx < 0)
         return false;
 
-    order = MAX(order, 0);
+    order = MAX(order, 0) + s_num_internal;
     order = MIN(order, vec_size(&s_decals) - 1);
 
     struct decal decal = vec_AT(&s_decals, idx);
@@ -963,7 +1026,7 @@ bool M_Decal_SetHighlight(uint32_t id, bool on)
     if(!s_map)
         return false;
 
-    int idx = decal_index(id);
+    int idx = decal_index(id, false);
     if(idx < 0)
         return false;
 
@@ -980,11 +1043,11 @@ void M_Decal_Clear(void)
     if(!s_map)
         return;
 
-    for(int i = 0; i < vec_size(&s_decals); i++) {
+    for(int i = s_num_internal; i < vec_size(&s_decals); i++) {
         mark_dirty(&vec_AT(&s_decals, i));
         texture_release(vec_AT(&s_decals, i).tex);
     }
-    vec_decal_reset(&s_decals);
+    s_decals.size = s_num_internal;
 }
 
 bool M_Decal_ImageSize(const char *path, int *out_w, int *out_h)
@@ -1011,7 +1074,7 @@ size_t M_Decal_InScreenRect(const struct camera *cam, vec2_t corner_a, vec2_t co
     float y_min = MIN(corner_a.z, corner_b.z), y_max = MAX(corner_a.z, corner_b.z);
 
     size_t ret = 0;
-    for(int i = 0; i < vec_size(&s_decals) && ret < maxout; i++) {
+    for(int i = s_num_internal; i < vec_size(&s_decals) && ret < maxout; i++) {
 
         const struct decal *decal = &vec_AT(&s_decals, i);
         float y = M_PointInsideMap(s_map, decal->pos) ? M_HeightAtPoint(s_map, decal->pos) : 0.0f;
@@ -1198,7 +1261,7 @@ bool M_Decal_SaveState(SDL_RWops *stream)
     };
     CHK_TRUE_RET(Attr_Write(stream, &next_id, "next_id"));
 
-    for(int i = 0; i < num_decals.val.as_int; i++) {
+    for(int i = s_num_internal; i < vec_size(&s_decals); i++) {
 
         const struct decal *decal = &vec_AT(&s_decals, i);
         struct decal_desc desc;
@@ -1293,9 +1356,9 @@ bool M_Decal_LoadState(SDL_RWops *stream)
         desc.hide_foliage = attr.val.as_bool;
 
         /* A texture missing since the save drops just that decal */
-        decal_add(id, &desc);
+        decal_add(id, &desc, false);
     }
 
-    s_next_id = next_id;
+    s_next_id = MAX(s_next_id, next_id);
     return true;
 }

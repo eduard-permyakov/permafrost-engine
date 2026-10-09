@@ -1055,6 +1055,12 @@ void     M_Decal_Shutdown(void);
 uint32_t M_Decal_Add(const struct decal_desc *desc);
 bool     M_Decal_Remove(uint32_t id);
 bool     M_Decal_Update(uint32_t id, const struct decal_desc *desc);
+/* Decals owned by another engine system: drawn beneath all others, and left 
+ * out of the queries, the ordering, Clear and the saved state.
+ */
+uint32_t M_Decal_AddInternal(const struct decal_desc *desc);
+bool     M_Decal_RemoveInternal(uint32_t id);
+bool     M_Decal_UpdateInternal(uint32_t id, const struct decal_desc *desc);
 bool     M_Decal_Get(uint32_t id, struct decal_desc *out);
 /* Top-most first */
 size_t   M_Decal_At(vec2_t xz, size_t maxout, uint32_t out[]);
