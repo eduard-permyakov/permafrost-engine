@@ -1071,6 +1071,10 @@ bool     M_Decal_SetOrder(uint32_t id, int order);
 bool     M_Decal_SetHighlight(uint32_t id, bool on);
 void     M_Decal_Clear(void);
 bool     M_Decal_ImageSize(const char *path, int *out_w, int *out_h);
+/* Keeps an image loaded while no decal shows it, so that showing it again
+ * costs nothing. Every retain is matched by a release. */
+bool     M_Decal_RetainImage(const char *path);
+void     M_Decal_ReleaseImage(const char *path);
 void     M_Decal_UpdateTile(struct tile_desc td);
 /* The decals whose centres lie within the screen rectangle, in draw order */
 size_t   M_Decal_InScreenRect(const struct camera *cam, vec2_t corner_a, vec2_t corner_b,

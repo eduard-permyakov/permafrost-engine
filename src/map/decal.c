@@ -1050,6 +1050,32 @@ void M_Decal_Clear(void)
     s_decals.size = s_num_internal;
 }
 
+bool M_Decal_RetainImage(const char *path)
+{
+    if(!s_map || !texture_valid(path))
+        return false;
+
+    int slot = texture_acquire(path);
+    if(slot < 0)
+        return false;
+    texture_mask(slot);
+    return true;
+}
+
+void M_Decal_ReleaseImage(const char *path)
+{
+    if(!s_map)
+        return;
+
+    for(int i = 0; i < vec_size(&s_textures); i++) {
+        struct decal_tex *tex = &vec_AT(&s_textures, i);
+        if(tex->refcount > 0 && 0 == strcmp(tex->path, path)) {
+            texture_release(i);
+            return;
+        }
+    }
+}
+
 bool M_Decal_ImageSize(const char *path, int *out_w, int *out_h)
 {
     char abspath[512];

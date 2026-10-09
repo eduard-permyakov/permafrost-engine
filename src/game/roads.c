@@ -107,6 +107,9 @@ static vec_road_idx_t       s_stale;
 /* Kept across maps, as it is set up by the scripts */
 static struct road_tileset  s_tileset;
 static bool                 s_has_tileset;
+/* Whether the map's decals keep the tileset's images loaded, so that a tile 
+ * taking on a new shape never has to wait for its image */
+static bool                 s_tileset_retained;
 
 /* Per chunk: the number of road tiles and whether any of them changed. 
  * The dirty flags are left for the consumers of the road layout to drain. 
@@ -416,6 +419,22 @@ static void on_render_3d(void *user, void *event)
     }}
 }
 
+static void retain_tileset(bool retain)
+{
+    if(s_tileset_retained == retain)
+        return;
+    for(int m = 0; s_has_tileset && m < ROAD_NUM_MASKS; m++) {
+        for(int v = 0; v < s_tileset.nvariants[m]; v++) {
+            if(retain) {
+                M_Decal_RetainImage(s_tileset.paths[m][v]);
+            }else{
+                M_Decal_ReleaseImage(s_tileset.paths[m][v]);
+            }
+        }
+    }
+    s_tileset_retained = retain;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -447,6 +466,8 @@ bool G_Roads_Init(const struct map *map)
 
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_ALL);
     E_Global_Register(EVENT_UPDATE_START, on_update_start, NULL, G_ALL);
+    if(s_has_tileset)
+        retain_tileset(true);
     return true;
 
 fail:
@@ -464,6 +485,7 @@ void G_Roads_Shutdown(void)
 
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
+    retain_tileset(false);
 
     vec_road_idx_destroy(&s_stale);
     PF_FREE(s_decal_ids);
@@ -655,12 +677,18 @@ bool G_Roads_SetTileset(const struct road_tileset *tileset)
                     return false;
             }
         }
-        s_tileset = *tileset;
     }
+    if(s_map)
+        retain_tileset(false);
+    if(tileset)
+        s_tileset = *tileset;
     s_has_tileset = (tileset != NULL);
 
-    if(s_map)
+    if(s_map) {
+        if(s_has_tileset)
+            retain_tileset(true);
         mark_all_stale();
+    }
     return true;
 }
 
