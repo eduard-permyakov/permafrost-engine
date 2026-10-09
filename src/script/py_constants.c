@@ -900,6 +900,14 @@ static void s_expose_game_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, COMBAT_MOD_INVULNERABLE);
 
     PY_EXPOSE_ENUM(module, AIR_UNIT_HEIGHT);
+
+    PY_EXPOSE_ENUM(module, ROAD_TILE_SPAN);
+    PY_EXPOSE_ENUM(module, ROAD_LINK_UP);
+    PY_EXPOSE_ENUM(module, ROAD_LINK_RIGHT);
+    PY_EXPOSE_ENUM(module, ROAD_LINK_DOWN);
+    PY_EXPOSE_ENUM(module, ROAD_LINK_LEFT);
+    PY_EXPOSE_ENUM(module, ROAD_LINK_ALL);
+    PY_EXPOSE_ENUM(module, MAX_ROAD_VARIANTS);
 }
 
 static void s_expose_anim_constants(PyObject *module)

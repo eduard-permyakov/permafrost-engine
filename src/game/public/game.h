@@ -732,6 +732,56 @@ bool   G_Region_ExploreFog(const char *name, int faction_id);
 bool   G_Region_Explored(const char *name, uint16_t player_mask, bool *out);
 
 /*###########################################################################*/
+/* GAME ROADS                                                                */
+/*###########################################################################*/
+
+/* A road tile covers ROAD_TILE_SPAN x ROAD_TILE_SPAN map tiles, aligned to the
+ * tiles of a chunk.
+ */
+#define ROAD_TILE_SPAN (4)
+
+/* The neighbours a road tile leads to, named by the direction on the road grid */
+enum road_link{
+    ROAD_LINK_UP    = (1 << 0), /* row - 1 */
+    ROAD_LINK_RIGHT = (1 << 1), /* column + 1 */
+    ROAD_LINK_DOWN  = (1 << 2), /* row + 1 */
+    ROAD_LINK_LEFT  = (1 << 3), /* column - 1 */
+    ROAD_LINK_ALL   = 0xf,
+};
+
+struct road_desc{
+    int r, c;
+};
+
+#define MAX_ROAD_VARIANTS (4)
+
+/* The decal images drawn for a road tile, by its mask of road_link flags. A 
+ * tile picks one of the variants for its mask.
+ */
+struct road_tileset{
+    int  nvariants[ROAD_LINK_ALL + 1];
+    char paths[ROAD_LINK_ALL + 1][MAX_ROAD_VARIANTS][MAX_DECAL_PATH_LEN];
+};
+
+void   G_Roads_Clear(void);
+bool   G_Roads_DescForPoint(vec2_t xz, struct road_desc *out);
+bool   G_Roads_DescForTile(const struct tile_desc *td, struct road_desc *out);
+bool   G_Roads_Bounds(struct road_desc rd, vec2_t *out_min, vec2_t *out_max);
+bool   G_Roads_Add(struct road_desc rd);
+bool   G_Roads_Remove(struct road_desc rd);
+bool   G_Roads_Link(struct road_desc a, struct road_desc b);
+bool   G_Roads_Unlink(struct road_desc a, struct road_desc b);
+bool   G_Roads_Get(struct road_desc rd, uint8_t *out_links);
+size_t G_Roads_Count(void);
+size_t G_Roads_GetAll(size_t maxout, struct road_desc out[], uint8_t out_links[]);
+void   G_Roads_SetHover(const struct road_desc *rd);
+void   G_Roads_SetRender(bool on);
+/* NULL removes the decals from the roads */
+bool   G_Roads_SetTileset(const struct road_tileset *tileset);
+bool   G_Roads_GetTileset(struct road_tileset *out);
+bool   G_Roads_GetRender(void);
+
+/*###########################################################################*/
 /* GAME FORMATION                                                            */
 /*###########################################################################*/
 

@@ -128,6 +128,21 @@ static PyObject *PyPf_clear_decals(PyObject *self);
 static PyObject *PyPf_decal_image_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_decals_in_screen_rect(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_decal_drag_box(PyObject *self, PyObject *args);
+static PyObject *PyPf_road_at(PyObject *self, PyObject *args);
+static PyObject *PyPf_road_for_tile(PyObject *self, PyObject *args);
+static PyObject *PyPf_road_bounds(PyObject *self, PyObject *args);
+static PyObject *PyPf_add_road(PyObject *self, PyObject *args);
+static PyObject *PyPf_remove_road(PyObject *self, PyObject *args);
+static PyObject *PyPf_link_roads(PyObject *self, PyObject *args);
+static PyObject *PyPf_unlink_roads(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_road(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_all_roads(PyObject *self);
+static PyObject *PyPf_clear_roads(PyObject *self);
+static PyObject *PyPf_set_road_hover(PyObject *self, PyObject *args);
+static PyObject *PyPf_show_roads(PyObject *self);
+static PyObject *PyPf_hide_roads(PyObject *self);
+static PyObject *PyPf_set_road_tileset(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_road_tileset(PyObject *self);
 static PyObject *PyPf_load_scene(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_open_url(PyObject *self, PyObject *args);
 static PyObject *PyPf_preload_pfobj(PyObject *self, PyObject *args);
@@ -420,6 +435,77 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_set_decal_drag_box, METH_VARARGS,
     "Draw a selection box from the specified (x, y) screen position to the cursor, or stop "
     "drawing it when passed None."},
+
+    {"road_at", 
+    (PyCFunction)PyPf_road_at, METH_VARARGS,
+    "Returns the (row, column) of the road tile covering the specified XZ position, or None "
+    "when the position is off the map. Road tiles exist whether or not a road is placed on them."},
+
+    {"road_for_tile", 
+    (PyCFunction)PyPf_road_for_tile, METH_VARARGS,
+    "Returns the (row, column) of the road tile covering the specified map tile, given as "
+    "((chunk_r, chunk_c), (tile_r, tile_c))."},
+
+    {"road_bounds", 
+    (PyCFunction)PyPf_road_bounds, METH_VARARGS,
+    "Returns the ((min_x, min_z), (max_x, max_z)) world bounds of the specified road tile."},
+
+    {"add_road", 
+    (PyCFunction)PyPf_add_road, METH_VARARGS,
+    "Place a road on the specified (row, column) road tile, linked to nothing. Returns False "
+    "when the tile is off the map."},
+
+    {"remove_road", 
+    (PyCFunction)PyPf_remove_road, METH_VARARGS,
+    "Remove the road from the specified (row, column) road tile, along with its links. Returns "
+    "False when there is no road there."},
+
+    {"link_roads", 
+    (PyCFunction)PyPf_link_roads, METH_VARARGS,
+    "Link two orthogonally adjacent (row, column) road tiles which both have a road. Returns "
+    "False when they cannot be linked."},
+
+    {"unlink_roads", 
+    (PyCFunction)PyPf_unlink_roads, METH_VARARGS,
+    "Remove the link between two orthogonally adjacent (row, column) road tiles. Returns False "
+    "when they cannot be unlinked."},
+
+    {"get_road", 
+    (PyCFunction)PyPf_get_road, METH_VARARGS,
+    "Returns the mask of ROAD_LINK_* flags of the road on the specified (row, column) road tile, "
+    "or None when there is no road there."},
+
+    {"get_all_roads", 
+    (PyCFunction)PyPf_get_all_roads, METH_NOARGS,
+    "Returns a list of (row, column, links) tuples, one for every road tile with a road."},
+
+    {"clear_roads", 
+    (PyCFunction)PyPf_clear_roads, METH_NOARGS,
+    "Remove all roads from the map."},
+
+    {"set_road_hover", 
+    (PyCFunction)PyPf_set_road_hover, METH_VARARGS,
+    "Outline the specified (row, column) road tile, or stop outlining when passed None."},
+
+    {"show_roads", 
+    (PyCFunction)PyPf_show_roads, METH_NOARGS,
+    "Draw an overlay of the road tiles and their links."},
+
+    {"hide_roads", 
+    (PyCFunction)PyPf_hide_roads, METH_NOARGS,
+    "Stop drawing the overlay of the road tiles and their links."},
+
+    {"set_road_tileset", 
+    (PyCFunction)PyPf_set_road_tileset, METH_VARARGS,
+    "Set the images drawn on the road tiles. Takes a list of 16 entries, indexed by the mask of "
+    "ROAD_LINK_* flags of a tile, each an image path (relative to the base directory) or a list "
+    "of up to 4 variant image paths. Each image covers a whole road tile, with its top edge "
+    "towards ROAD_LINK_UP and its right edge towards ROAD_LINK_RIGHT. None stops drawing the "
+    "roads."},
+
+    {"get_road_tileset", 
+    (PyCFunction)PyPf_get_road_tileset, METH_NOARGS,
+    "Returns the road tileset as a list of 16 lists of image paths, or None when there is none."},
 
     {"load_scene", 
     (PyCFunction)PyPf_load_scene, METH_VARARGS | METH_KEYWORDS,
@@ -1761,6 +1847,289 @@ static PyObject *PyPf_set_decal_drag_box(PyObject *self, PyObject *args)
     }
     M_Decal_SetDragBox(&pos);
     Py_RETURN_NONE;
+}
+
+static PyObject *road_desc_tuple(struct road_desc rd)
+{
+    return Py_BuildValue("(ii)", rd.r, rd.c);
+}
+
+static PyObject *PyPf_road_at(PyObject *self, PyObject *args)
+{
+    vec2_t pos;
+    if(!PyArg_ParseTuple(args, "(ff)", &pos.x, &pos.z)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of two floats.");
+        return NULL;
+    }
+
+    struct road_desc rd;
+    if(!G_Roads_DescForPoint(pos, &rd))
+        Py_RETURN_NONE;
+    return road_desc_tuple(rd);
+}
+
+static PyObject *PyPf_road_for_tile(PyObject *self, PyObject *args)
+{
+    struct tile_desc td;
+    if(!PyArg_ParseTuple(args, "((ii)(ii))", &td.chunk_r, &td.chunk_c, &td.tile_r, &td.tile_c)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of two tuples of two integers.");
+        return NULL;
+    }
+
+    struct road_desc rd;
+    if(!G_Roads_DescForTile(&td, &rd)) {
+        PyErr_SetString(PyExc_ValueError, "The tile is off the map.");
+        return NULL;
+    }
+    return road_desc_tuple(rd);
+}
+
+static PyObject *PyPf_road_bounds(PyObject *self, PyObject *args)
+{
+    struct road_desc rd;
+    if(!PyArg_ParseTuple(args, "(ii)", &rd.r, &rd.c)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of two integers.");
+        return NULL;
+    }
+
+    vec2_t min, max;
+    if(!G_Roads_Bounds(rd, &min, &max)) {
+        PyErr_SetString(PyExc_ValueError, "The road tile is off the map.");
+        return NULL;
+    }
+    return Py_BuildValue("(ff)(ff)", min.x, min.z, max.x, max.z);
+}
+
+static PyObject *PyPf_add_road(PyObject *self, PyObject *args)
+{
+    struct road_desc rd;
+    if(!PyArg_ParseTuple(args, "(ii)", &rd.r, &rd.c)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of two integers.");
+        return NULL;
+    }
+    return PyBool_FromLong(G_Roads_Add(rd));
+}
+
+static PyObject *PyPf_remove_road(PyObject *self, PyObject *args)
+{
+    struct road_desc rd;
+    if(!PyArg_ParseTuple(args, "(ii)", &rd.r, &rd.c)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of two integers.");
+        return NULL;
+    }
+    return PyBool_FromLong(G_Roads_Remove(rd));
+}
+
+static PyObject *PyPf_link_roads(PyObject *self, PyObject *args)
+{
+    struct road_desc a, b;
+    if(!PyArg_ParseTuple(args, "(ii)(ii)", &a.r, &a.c, &b.r, &b.c)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two tuples of two integers.");
+        return NULL;
+    }
+    return PyBool_FromLong(G_Roads_Link(a, b));
+}
+
+static PyObject *PyPf_unlink_roads(PyObject *self, PyObject *args)
+{
+    struct road_desc a, b;
+    if(!PyArg_ParseTuple(args, "(ii)(ii)", &a.r, &a.c, &b.r, &b.c)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two tuples of two integers.");
+        return NULL;
+    }
+    return PyBool_FromLong(G_Roads_Unlink(a, b));
+}
+
+static PyObject *PyPf_get_road(PyObject *self, PyObject *args)
+{
+    struct road_desc rd;
+    if(!PyArg_ParseTuple(args, "(ii)", &rd.r, &rd.c)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of two integers.");
+        return NULL;
+    }
+
+    uint8_t links;
+    if(!G_Roads_Get(rd, &links))
+        Py_RETURN_NONE;
+    return Py_BuildValue("i", links);
+}
+
+static PyObject *PyPf_get_all_roads(PyObject *self)
+{
+    size_t max = G_Roads_Count();
+    struct road_desc *roads = PF_MALLOC(sizeof(struct road_desc) * (max + 1));
+    uint8_t *links = PF_MALLOC(sizeof(uint8_t) * (max + 1));
+    if(!roads || !links) {
+        PF_FREE(roads);
+        PF_FREE(links);
+        return PyErr_NoMemory();
+    }
+    size_t count = G_Roads_GetAll(max, roads, links);
+
+    PyObject *ret = PyList_New(count);
+    if(!ret)
+        goto out;
+
+    for(int i = 0; i < count; i++) {
+        PyObject *road = Py_BuildValue("(iii)", roads[i].r, roads[i].c, links[i]);
+        if(!road) {
+            Py_CLEAR(ret);
+            goto out;
+        }
+        PyList_SET_ITEM(ret, i, road);
+    }
+
+out:
+    PF_FREE(roads);
+    PF_FREE(links);
+    return ret;
+}
+
+static PyObject *PyPf_clear_roads(PyObject *self)
+{
+    G_Roads_Clear();
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_road_hover(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    if(!PyArg_ParseTuple(args, "O", &obj)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of two integers or None.");
+        return NULL;
+    }
+
+    if(obj == Py_None) {
+        G_Roads_SetHover(NULL);
+        Py_RETURN_NONE;
+    }
+
+    struct road_desc rd;
+    if(!PyArg_ParseTuple(obj, "ii", &rd.r, &rd.c)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of two integers or None.");
+        return NULL;
+    }
+    G_Roads_SetHover(&rd);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_show_roads(PyObject *self)
+{
+    G_Roads_SetRender(true);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_hide_roads(PyObject *self)
+{
+    G_Roads_SetRender(false);
+    Py_RETURN_NONE;
+}
+
+static bool parse_tileset_entry(PyObject *entry, struct road_tileset *ts, int mask)
+{
+    if(PyString_Check(entry)) {
+        if(PyString_Size(entry) >= MAX_DECAL_PATH_LEN)
+            return false;
+        pf_strlcpy(ts->paths[mask][0], PyString_AS_STRING(entry), MAX_DECAL_PATH_LEN);
+        ts->nvariants[mask] = 1;
+        return true;
+    }
+
+    if(!PySequence_Check(entry))
+        return false;
+    Py_ssize_t n = PySequence_Size(entry);
+    if(n < 1 || n > MAX_ROAD_VARIANTS)
+        return false;
+
+    for(int i = 0; i < n; i++) {
+        PyObject *path = PySequence_GetItem(entry, i);
+        bool ok = path && PyString_Check(path) && PyString_Size(path) < MAX_DECAL_PATH_LEN;
+        if(ok) {
+            pf_strlcpy(ts->paths[mask][i], PyString_AS_STRING(path), MAX_DECAL_PATH_LEN);
+        }
+        Py_XDECREF(path);
+        if(!ok)
+            return false;
+    }
+    ts->nvariants[mask] = n;
+    return true;
+}
+
+static PyObject *PyPf_set_road_tileset(PyObject *self, PyObject *args)
+{
+    PyObject *list;
+    if(!PyArg_ParseTuple(args, "O", &list)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a list of 16 entries or None.");
+        return NULL;
+    }
+
+    if(list == Py_None) {
+        G_Roads_SetTileset(NULL);
+        Py_RETURN_NONE;
+    }
+
+    if(!PySequence_Check(list) || PySequence_Size(list) != ROAD_LINK_ALL + 1) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a list of 16 entries or None.");
+        return NULL;
+    }
+
+    struct road_tileset *ts = PF_MALLOC(sizeof(struct road_tileset));
+    if(!ts)
+        return PyErr_NoMemory();
+
+    for(int m = 0; m <= ROAD_LINK_ALL; m++) {
+        PyObject *entry = PySequence_GetItem(list, m);
+        bool ok = entry && parse_tileset_entry(entry, ts, m);
+        Py_XDECREF(entry);
+        if(!ok) {
+            PF_FREE(ts);
+            PyErr_Format(PyExc_TypeError, "Entry %d must be an image path or a list of 1 to %d "
+                "image paths.", m, MAX_ROAD_VARIANTS);
+            return NULL;
+        }
+    }
+
+    bool ok = G_Roads_SetTileset(ts);
+    PF_FREE(ts);
+    if(!ok) {
+        PyErr_SetString(PyExc_RuntimeError, "Could not set the road tileset. Every path must be "
+            "a readable image.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_get_road_tileset(PyObject *self)
+{
+    struct road_tileset *ts = PF_MALLOC(sizeof(struct road_tileset));
+    if(!ts)
+        return PyErr_NoMemory();
+
+    if(!G_Roads_GetTileset(ts)) {
+        PF_FREE(ts);
+        Py_RETURN_NONE;
+    }
+
+    PyObject *ret = PyList_New(ROAD_LINK_ALL + 1);
+    for(int m = 0; ret && m <= ROAD_LINK_ALL; m++) {
+        PyObject *variants = PyList_New(ts->nvariants[m]);
+        for(int v = 0; variants && v < ts->nvariants[m]; v++) {
+            PyObject *path = PyString_FromString(ts->paths[m][v]);
+            if(!path) {
+                Py_CLEAR(variants);
+                break;
+            }
+            PyList_SET_ITEM(variants, v, path);
+        }
+        if(!variants) {
+            Py_CLEAR(ret);
+            break;
+        }
+        PyList_SET_ITEM(ret, m, variants);
+    }
+
+    PF_FREE(ts);
+    return ret;
 }
 
 static PyObject *register_handler(PyObject *self, PyObject *args, int simmask)

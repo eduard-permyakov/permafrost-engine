@@ -61,7 +61,7 @@
 
 
 #define PFSCENE_VERSION_MAJOR (1)
-#define PFSCENE_VERSION_MINOR (2)
+#define PFSCENE_VERSION_MINOR (3)
 
 #define VERSION_REACHED(_v, _major, _minor) \
     (((_v).major > _major) || ((_v).major == _major && (_v).minor >= _minor))
@@ -409,6 +409,58 @@ fail_parse:
     return false;
 }
 
+static bool scene_load_roads(struct version version, SDL_RWops *stream)
+{
+    char line[MAX_LINE_LEN];
+    unsigned num_roads;
+
+    READ_LINE(stream, line, fail_parse);
+    if(!sscanf(line, " num_roads %u", &num_roads))
+        goto fail_parse;
+
+    struct road_desc *roads = PF_MALLOC(sizeof(struct road_desc) * num_roads);
+    uint8_t *links = PF_MALLOC(sizeof(uint8_t) * num_roads);
+    if(num_roads > 0 && (!roads || !links))
+        goto fail_alloc;
+
+    for(int i = 0; i < num_roads; i++) {
+        unsigned mask;
+        READ_LINE(stream, line, fail_read);
+        if(3 != sscanf(line, " road %d %d %u", &roads[i].r, &roads[i].c, &mask))
+            goto fail_read;
+        links[i] = mask;
+    }
+
+    /* Links are made only once every tile is in, and only between tiles that 
+     * are both present, so a hand-edited file cannot break the road layout.
+     */
+    for(int i = 0; i < num_roads; i++) {
+        G_Roads_Add(roads[i]);
+    }
+    for(int i = 0; i < num_roads; i++) {
+        struct road_desc rd = roads[i];
+        if(links[i] & ROAD_LINK_UP)
+            G_Roads_Link(rd, (struct road_desc){rd.r - 1, rd.c});
+        if(links[i] & ROAD_LINK_RIGHT)
+            G_Roads_Link(rd, (struct road_desc){rd.r, rd.c + 1});
+        if(links[i] & ROAD_LINK_DOWN)
+            G_Roads_Link(rd, (struct road_desc){rd.r + 1, rd.c});
+        if(links[i] & ROAD_LINK_LEFT)
+            G_Roads_Link(rd, (struct road_desc){rd.r, rd.c - 1});
+    }
+
+    PF_FREE(roads);
+    PF_FREE(links);
+    return true;
+
+fail_read:
+fail_alloc:
+    PF_FREE(roads);
+    PF_FREE(links);
+fail_parse:
+    return false;
+}
+
 static bool scene_load_general(struct version version, SDL_RWops *stream)
 {
     char line[MAX_LINE_LEN];
@@ -525,7 +577,8 @@ static bool scene_load_section(struct version version, SDL_RWops *stream)
         {"entities",     scene_load_entities},
         {"regions",      scene_load_regions },
         {"cameras",      scene_load_cameras},
-        {"decals",       scene_load_decals}
+        {"decals",       scene_load_decals},
+        {"roads",        scene_load_roads}
     };
 
     READ_LINE(stream, line, fail_parse);
