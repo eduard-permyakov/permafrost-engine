@@ -1119,6 +1119,9 @@ void G_StorageSite_ClearCurr(uint32_t uid)
         update_cap_delta(key, -amount, G_GetFactionID(uid));
     });
 
+    kh_foreach(ss->curr, key, amount, {
+        update_res_delta(key, -amount, G_GetFactionID(uid));
+    });
     kh_clear(int, ss->curr);
 }
 
