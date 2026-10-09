@@ -103,6 +103,7 @@ static int hz_count(enum movement_hz hz);
 #define SIGNUM(x)    (((x) > 0) - ((x) < 0))
 #define MAX(a, b)    ((a) > (b) ? (a) : (b))
 #define MIN(a, b)    ((a) < (b) ? (a) : (b))
+#define CLAMP(a, min, max) (MIN(MAX((a), (min)), (max)))
 #define ARR_SIZE(a)  (sizeof(a)/sizeof(a[0]))
 #define CHUNK_WIDTH  (X_COORDS_PER_TILE * TILES_PER_CHUNK_WIDTH)
 #define CHUNK_HEIGHT (Z_COORDS_PER_TILE * TILES_PER_CHUNK_HEIGHT)
@@ -814,6 +815,8 @@ static float cell_closing_radius(float radius);
 static bool body_rooted(uint32_t uid);
 static uint32_t way_first_open(uint32_t uid, const struct movestate_aux *aux);
 static bool way_body_final(uint32_t uid, uint32_t body);
+static vec2_t keep_right_vpref(const struct move_work_in *in, const struct movestate *ms,
+                               const struct flock *flock, vec2_t vpref, int *inout_side);
 static void hold_begin(uint32_t uid, const struct movestate *ms, struct movestate_aux *aux);
 static void move_tick(void *user, void *event);
 static struct result navigation_tick_task(void *arg);
@@ -853,6 +856,20 @@ static struct result navigation_tick_task(void *arg);
 #define MOVE_BAND_YIELD_S               (0.5f)  /* held behind the band this long, a unit turns to the step */
 #define MOVE_BAND_YIELD_HOLD_S          (1.0f)  /* and keeps to the step's heading this long */
 #define CELL_DRESS_TIME_S               (1.5f)  /* a cell this many seconds of shuffling away is side-stepped into */
+/* On a road, a moving unit keeps to the middle of the right half of it, 
+ * steering at most this share of its pace sideways to get there */
+#define KEEP_RIGHT_MAX_LATERAL          (0.35f)
+/* Per unit of distance off the lane, the share of its pace it steers back */
+#define KEEP_RIGHT_GAIN                 (0.08f)
+/* Roads narrower or wider than this across the way (junctions, squares) 
+ * have no lanes */
+#define KEEP_RIGHT_MIN_WIDTH            (12.0f)
+#define KEEP_RIGHT_MAX_WIDTH            (44.0f)
+/* This close to its goal a unit lines up for arriving instead */
+#define KEEP_RIGHT_GOAL_DIST            (48.0f)
+/* The passing side, in cp_side_of's sense, that keeps a unit to its right as
+ * seen on screen: the view mirrors the world */
+#define KEEP_RIGHT_SIDE                 (1)
 #define MOTION_IDLE_S                   (0.5f)  /* held up this long, a unit shows its idle clip */
 #define MAX_NEIGHBOURS                  (32)
 #define CLEARPATH_REACT_S               (0.5f)  /* An approaching pair comes into each other's solve this long before contact */
@@ -1012,6 +1029,8 @@ static const struct map       *s_map;
 static bool                    s_attack_on_lclick = false;
 static bool                    s_move_on_lclick = false;
 static bool                    s_click_move_enabled = true;
+/* pf.game.road_keep_right, read once per tick for the velocity workers */
+static bool                    s_keep_right = true;
 
 static bool                    s_mouse_dragged = false;
 static vec3_t                  s_drag_begin_pos;
@@ -6097,6 +6116,54 @@ static float travel_to_stop(const struct move_work_in *in, const struct movestat
  * takes it, into the unit's work item. False when the unit needs no solve and
  * its output is written already.
  */
+/* On a road, a unit on its way keeps to the right half of it and passes the
+ * units it meets on the right, so that two streams along one road go by each 
+ * other instead of meeting head on.
+ */
+static vec2_t keep_right_vpref(const struct move_work_in *in, const struct movestate *ms,
+                               const struct flock *flock, vec2_t vpref, int *inout_side)
+{
+    if(!s_keep_right)
+        return vpref;
+    if(ms->state != STATE_MOVING && ms->state != STATE_SURROUND_ENTITY)
+        return vpref;
+
+    float speed = PFM_Vec2_Len(&vpref);
+    if(speed < EPSILON)
+        return vpref;
+
+    vec2_t pos = in->cp_ent.xz_pos;
+    vec2_t to_goal;
+    PFM_Vec2_Sub((vec2_t*)&flock->target_xz, &pos, &to_goal);
+    if(PFM_Vec2_Len(&to_goal) < KEEP_RIGHT_GOAL_DIST)
+        return vpref;
+
+    vec2_t dir = (vec2_t){vpref.x / speed, vpref.z / speed};
+    /* Right as seen on screen, which mirrors the world */
+    vec2_t right = (vec2_t){dir.z, -dir.x};
+    float to_left, to_right;
+    if(!M_NavRoadSpan(s_move_work.gamestate.map, pos, right, KEEP_RIGHT_MAX_WIDTH,
+                      &to_left, &to_right))
+        return vpref;
+
+    float width = to_left + to_right;
+    if(width < KEEP_RIGHT_MIN_WIDTH || width > KEEP_RIGHT_MAX_WIDTH)
+        return vpref;
+
+    /* How far right of the road's middle the unit is, and of its lane */
+    float offset = (to_left - to_right) / 2.0f;
+    float lane = width / 4.0f;
+    float lateral = CLAMP((lane - offset) * KEEP_RIGHT_GAIN, 
+        -KEEP_RIGHT_MAX_LATERAL, KEEP_RIGHT_MAX_LATERAL);
+
+    vec2_t steer = (vec2_t){dir.x + right.x * lateral, dir.z + right.z * lateral};
+    float len = PFM_Vec2_Len(&steer);
+    if(in->ntiles == 0) {
+        *inout_side = KEEP_RIGHT_SIDE;
+    }
+    return (vec2_t){steer.x / len * speed, steer.z / len * speed};
+}
+
 static bool velocity_gather(int i)
 {
     struct move_work_in *in = &s_move_work.in[i];
@@ -6228,6 +6295,7 @@ static bool velocity_gather(int i)
         assert(flock);
         vpref = point_seek_vpref(in->ent_uid, flock, in->fsnap, in->ent_des_v,
             in->has_dest_los && !in->range_field, in->speed, side, in->range_field);
+        vpref = keep_right_vpref(in, ms, flock, vpref, &side);
     }
     assert(vpref.x == vpref.x && vpref.z == vpref.z); /* a NaN vpref would corrupt the integration */
 
@@ -8292,6 +8360,9 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
 static void move_do_tick_prepare(void)
 {
     ASSERT_IN_MAIN_THREAD();
+    struct sval keep_right;
+    s_keep_right = (Settings_Get("pf.game.road_keep_right", &keep_right) == SS_OKAY)
+                && keep_right.as_bool;
     PERF_PUSH("movement::tick prepare");
     uint64_t tick_start = SDL_GetPerformanceCounter();
 
