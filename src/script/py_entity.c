@@ -55,6 +55,7 @@
 #include "../mem.h"
 
 #include <assert.h>
+#include <math.h>
 
 #undef PF_MALLOC
 #undef PF_CALLOC
@@ -1843,12 +1844,23 @@ static PyObject *PyEntity_get_pfobj_path(PyEntityObject *self, void *closure)
     return ret;
 }
 
+/* Points near or behind the camera plane project to huge or non-finite
+ * coordinates; keep them far off-screen but within script arithmetic range.
+ */
+static int screen_coord(float v)
+{
+    const float limit = 1 << 20;
+    if(!isfinite(v))
+        return -limit;
+    return (int)fmaxf(-limit, fminf(limit, v));
+}
+
 static PyObject *PyEntity_get_top_screen_pos(PyEntityObject *self, void *closure)
 {
     int width, height;
     Engine_WinDrawableSize(&width, &height);
     vec2_t coord = Entity_TopScreenPos(self->ent, width, height);
-    return Py_BuildValue("ii", (int)coord.x, (int)coord.y);
+    return Py_BuildValue("ii", screen_coord(coord.x), screen_coord(coord.y));
 }
 
 static PyObject *PyEntity_get_faction_id(PyEntityObject *self, void *closure)
