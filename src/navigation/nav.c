@@ -7623,6 +7623,7 @@ void N_CloneCtx(void *nav_private, void *out, const enum nav_layer *layers,
      * pointer over. */
     for(int i = 0; i < NAV_LAYER_MAX; i++)
         to->dirty_chunks[i] = kh_copy(coord, from->dirty_chunks[i]);
+    to->road_dirty = kh_copy(coord, from->road_dirty);
 
     PERF_RETURN_VOID();
 }
