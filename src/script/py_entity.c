@@ -5352,9 +5352,10 @@ static PyObject *s_new_custom_class(const char *name, const vec_attr_t *construc
     }
     Py_DECREF(modules);
     if(!class) {
-        char buff[256];
-        pf_snprintf(buff, sizeof(buff), "Unable to find class %s", name);
-        PyErr_SetString(PyExc_RuntimeError, buff);
+        /* A soft error: a script may load a scene without importing every class
+         * it names, and the plain entity below stands in for it.
+         */
+        printf("[IMPORT] Unable to find class %s\n", name);
         return NULL;
     }
     if(!PyType_Check(class)) {
