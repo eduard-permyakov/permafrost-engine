@@ -58,7 +58,6 @@
 #include "group.h"
 #include "population.h"
 #include "roads.h"
-#include "road_route.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../anim/public/anim.h"
@@ -221,7 +220,6 @@ static void g_init_map(void)
     G_Resource_Init(s_gs.map);
     G_Region_Init(s_gs.map);
     G_Roads_Init(s_gs.map);
-    G_RoadRoute_Init();
     G_Harvester_Init(s_gs.map);
     G_Automation_Init();
     G_Group_Init();
@@ -1249,7 +1247,6 @@ static void g_clear_map_state(void)
         G_Resource_Shutdown();
         G_Region_Shutdown();
         G_Roads_Shutdown();
-        G_RoadRoute_Shutdown();
         G_Harvester_Shutdown();
         G_Automation_Shutdown();
         G_Group_Shutdown();
@@ -3158,7 +3155,6 @@ bool G_RemoveEntity(uint32_t uid)
     G_Building_RemoveEntity(uid);
     G_Builder_RemoveEntity(uid);
     G_Harvester_RemoveEntity(uid);
-    G_RoadRoute_RemoveEntity(uid);
     G_Resource_RemoveEntity(uid);
     G_StorageSite_RemoveEntity(uid);
     G_Garrison_RemoveGarrison(uid);
@@ -3834,7 +3830,6 @@ void G_Zombiefy(uint32_t uid, bool invis)
     G_Building_RemoveEntity(uid);
     G_Builder_RemoveEntity(uid);
     G_Harvester_RemoveEntity(uid);
-    G_RoadRoute_RemoveEntity(uid);
     G_Resource_RemoveEntity(uid);
     G_StorageSite_RemoveEntity(uid);
     G_Garrison_RemoveGarrison(uid);
@@ -4083,7 +4078,6 @@ bool G_SaveGlobalState(SDL_RWops *stream)
         CHK_TRUE_RET(G_Fog_SaveState(stream));
         CHK_TRUE_RET(M_Decal_SaveState(stream));
         CHK_TRUE_RET(G_Roads_SaveState(stream));
-        CHK_TRUE_RET(G_RoadRoute_SaveState(stream));
     }
 
     Sched_TryYield();
@@ -4281,7 +4275,6 @@ bool G_LoadGlobalState(SDL_RWops *stream)
         CHK_TRUE_RET(G_Fog_LoadState(stream));
         CHK_TRUE_RET(M_Decal_LoadState(stream));
         CHK_TRUE_RET(G_Roads_LoadState(stream));
-        CHK_TRUE_RET(G_RoadRoute_LoadState(stream));
         Sched_TryYield();
     }else{
         G_ClearState();

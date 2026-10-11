@@ -48,13 +48,10 @@
 #include "../map/public/tile.h"
 #include "../lib/public/attr.h"
 #include "../lib/public/vec.h"
-#include "../lib/public/pqueue.h"
 #include "../lib/public/pf_string.h"
 
 #include <assert.h>
 #include <string.h>
-#include <stdlib.h>
-#include <math.h>
 #include <SDL.h>
 
 #include "../mem.h"
@@ -72,10 +69,6 @@
             return false;               \
     }while(0)
 
-#define MIN(a, b)           ((a) < (b) ? (a) : (b))
-#define MAX(a, b)           ((a) > (b) ? (a) : (b))
-#define CLAMP(a, min, max)  (MIN(MAX((a), (min)), (max)))
-
 #define ROAD_PRESENT        (1 << 7)
 #define ROAD_DECAL_STALE    (1 << 6)
 #define ROAD_NUM_MASKS      (ROAD_LINK_ALL + 1)
@@ -90,9 +83,6 @@ _Static_assert(TILES_PER_CHUNK_HEIGHT % ROAD_TILE_SPAN == 0, "Road tiles must no
 
 VEC_TYPE(road_idx, int)
 VEC_IMPL(static inline, road_idx, int)
-
-PQUEUE_TYPE(road, int)
-PQUEUE_IMPL(static, road, int)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -665,125 +655,6 @@ size_t G_Roads_GetAll(size_t maxout, struct road_desc out[], uint8_t out_links[]
         out_links[ret] = *tile_at(rd) & ROAD_LINK_ALL;
         ret++;
     }}
-    return ret;
-}
-
-bool G_Roads_Nearest(vec2_t xz, float max_dist, struct road_desc *out)
-{
-    struct road_desc centre;
-    if(!G_Roads_DescForPoint(xz, &centre)) {
-        /* Off the map's edge: start from the nearest tile on it */
-        vec2_t clamped = xz;
-        clamped.x = CLAMP(clamped.x, s_map_pos.x - s_cols * ROAD_TILE_X_DIM + 1.0f, s_map_pos.x - 1.0f);
-        clamped.z = CLAMP(clamped.z, s_map_pos.z + 1.0f, s_map_pos.z + s_rows * ROAD_TILE_Z_DIM - 1.0f);
-        if(!G_Roads_DescForPoint(clamped, &centre))
-            return false;
-    }
-
-    const int max_ring = (int)(max_dist / MIN(ROAD_TILE_X_DIM, ROAD_TILE_Z_DIM)) + 1;
-    float best = INFINITY;
-    for(int ring = 0; ring <= max_ring; ring++) {
-        /* A tile one ring further out can not be nearer than this */
-        if(ring > 0 && best < (ring - 1) * MIN(ROAD_TILE_X_DIM, ROAD_TILE_Z_DIM))
-            break;
-        for(int dr = -ring; dr <= ring; dr++) {
-        for(int dc = -ring; dc <= ring; dc++) {
-
-            if(abs(dr) != ring && abs(dc) != ring)
-                continue;
-            struct road_desc rd = (struct road_desc){centre.r + dr, centre.c + dc};
-            if(!present(rd))
-                continue;
-            vec2_t min, max;
-            G_Roads_Bounds(rd, &min, &max);
-            float dx = MAX(MAX(min.x - xz.x, 0.0f), xz.x - max.x);
-            float dz = MAX(MAX(min.z - xz.z, 0.0f), xz.z - max.z);
-            float dist = sqrtf(dx * dx + dz * dz);
-            if(dist < best && dist <= max_dist) {
-                best = dist;
-                *out = rd;
-            }
-        }}
-    }
-    return isfinite(best);
-}
-
-vec2_t G_Roads_Centre(struct road_desc rd)
-{
-    vec2_t min, max;
-    G_Roads_Bounds(rd, &min, &max);
-    return (vec2_t){(min.x + max.x) / 2.0f, (min.z + max.z) / 2.0f};
-}
-
-size_t G_Roads_Route(struct road_desc from, struct road_desc to, size_t maxout, 
-                     struct road_desc out[])
-{
-    if(!present(from) || !present(to) || maxout == 0)
-        return 0;
-
-    const int ntiles = s_rows * s_cols;
-    int *came_from = PF_MALLOC(ntiles * sizeof(int));
-    float *cost = PF_MALLOC(ntiles * sizeof(float));
-    if(!came_from || !cost) {
-        PF_FREE(came_from);
-        PF_FREE(cost);
-        return 0;
-    }
-    for(int i = 0; i < ntiles; i++) {
-        came_from[i] = -1;
-        cost[i] = INFINITY;
-    }
-
-    pq(road) frontier;
-    pq_road_init(&frontier);
-    const int start = from.r * s_cols + from.c;
-    const int goal = to.r * s_cols + to.c;
-    cost[start] = 0.0f;
-    came_from[start] = start;
-    pq_road_push(&frontier, 0.0f, start);
-
-    while(pq_size(&frontier) > 0) {
-
-        int curr;
-        pq_road_pop(&frontier, &curr);
-        if(curr == goal)
-            break;
-
-        struct road_desc rd = (struct road_desc){curr / s_cols, curr % s_cols};
-        uint8_t links = s_tiles[curr] & ROAD_LINK_ALL;
-
-        for(uint8_t link = ROAD_LINK_UP; link & ROAD_LINK_ALL; link <<= 1) {
-
-            if(!(links & link))
-                continue;
-            struct road_desc nb = neighbour(rd, link);
-            int next = nb.r * s_cols + nb.c;
-            float next_cost = cost[curr] + 1.0f;
-            if(next_cost >= cost[next])
-                continue;
-            cost[next] = next_cost;
-            came_from[next] = curr;
-            float h = abs(nb.r - to.r) + abs(nb.c - to.c);
-            pq_road_push(&frontier, next_cost + h, next);
-        }
-    }
-    pq_road_destroy(&frontier);
-
-    size_t ret = 0;
-    if(came_from[goal] >= 0) {
-        size_t len = 1;
-        for(int i = goal; i != start; i = came_from[i])
-            len++;
-        if(len <= maxout) {
-            ret = len;
-            int i = goal;
-            for(size_t j = len; j-- > 0; i = came_from[i])
-                out[j] = (struct road_desc){i / s_cols, i % s_cols};
-        }
-    }
-
-    PF_FREE(came_from);
-    PF_FREE(cost);
     return ret;
 }
 
