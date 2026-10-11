@@ -253,6 +253,9 @@ struct movestate_aux{
     /* Consecutive stand-still solves, and the relaxed solves they buy. Transient. */
     uint16_t           cp_stall_ticks;
     uint16_t           cp_relax_ticks;
+    /* Ticks left in which the unit follows the field though its goal is in
+     * sight: the straight way is shut by bodies. Transient. */
+    uint16_t           los_off_ticks;
     /* Set once the unit has been flowing since its last order; only then may
      * it wall itself as jam-stuck (a queued launch rear is not a jam). */
     bool               seek_progressed;
@@ -924,6 +927,9 @@ static struct result navigation_tick_task(void *arg);
 /* A unit standing still this long inside a crowd becomes a soft blocker,
  * released once the local crowd thins for the hold duration. */
 #define SEEK_STUCK_BLOCK_S              (1.0f)
+/* A unit stuck pressing straight at a goal it can see follows the field round
+ * the bodies in the way for this long instead */
+#define LOS_STUCK_FIELD_S               (3.0f)
 /* Neighbours in ClearPath reach that are themselves trying to move: a jam is
  * mutual obstruction, so parked bodies are not evidence of one.
  */
@@ -1408,6 +1414,7 @@ static void entity_reset_seek_counters(uint32_t uid)
     aux->seek_stuck_ticks = 0;
     aux->seek_clear_ticks = 0;
     aux->seek_progressed = false;
+    aux->los_off_ticks = 0;
     aux->band_held_ticks = 0;
     aux->band_yield_ticks = 0;
 }
@@ -4914,6 +4921,11 @@ static void entity_apply_update(uint32_t uid, struct movestate *ms,
             aux->seek_progressed = true;
         aux->seek_stuck_ticks = stuck ? MIN(aux->seek_stuck_ticks + 1, UINT16_MAX) : 0;
         aux->seek_clear_ticks = clear ? MIN(aux->seek_clear_ticks + 1, UINT16_MAX) : 0;
+        if(stuck) {
+            aux->los_off_ticks = LOS_STUCK_FIELD_S * hz_count(s_move_work.hz);
+        }else if(aux->los_off_ticks > 0) {
+            aux->los_off_ticks--;
+        }
 
         /* A unit that never got going is queueing, not jammed, so only one
          * that has moved may wall itself off. Pinned units hold their line by
@@ -7427,6 +7439,11 @@ static void move_interpolate_frame(void)
     PERF_RETURN_VOID();
 }
 
+static bool los_held_off(uint32_t uid)
+{
+    return movestate_aux_get(uid)->los_off_ticks > 0;
+}
+
 static void move_los_peek_work(int begin_idx, int end_idx)
 {
     const struct map *map = s_move_work.gamestate.map;
@@ -7450,7 +7467,7 @@ static void move_los_peek_work(int begin_idx, int end_idx)
         if(fl && !field_led) {
             bool present;
             bool vis = M_NavHasDestLOSCached(map, fl->dest_id, pos, &present);
-            in->has_dest_los = present && vis;
+            in->has_dest_los = present && vis && !los_held_off(in->ent_uid);
             in->needs_los_build = !present
                                || M_NavDestLOSRebuildDue(map, fl->dest_id, pos);
             in->los_queried = true;
@@ -7529,7 +7546,7 @@ static void compute_los_state(void)
         bool present;
         bool vis = M_NavHasDestLOSCached(map, fl->dest_id, pos, &present);
         if(present) {
-            in->has_dest_los = vis;
+            in->has_dest_los = vis && !los_held_off(in->ent_uid);
             if(!M_NavDestLOSRebuildDue(map, fl->dest_id, pos))
                 continue;
         }
@@ -7559,7 +7576,7 @@ static void compute_los_state(void)
         ensure_ticks += SDL_GetPerformanceCounter() - ensure_t0;
         switch(ensured) {
         case LOS_ENSURE_ANSWER:
-            in->has_dest_los = vis;
+            in->has_dest_los = vis && !los_held_off(in->ent_uid);
             break;
         case LOS_ENSURE_DEFERRED:
             in->los_deferred = true;
