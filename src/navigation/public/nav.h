@@ -362,6 +362,12 @@ bool      N_RoadSpan(void *nav_private, vec3_t map_pos, vec2_t xz, vec2_t across
                      float max_dist, float *out_left, float *out_right);
 
 /* ------------------------------------------------------------------------
+ * Whether the point is on a road.
+ * ------------------------------------------------------------------------
+ */
+bool      N_OnRoad(void *nav_private, vec3_t map_pos, vec2_t xz);
+
+/* ------------------------------------------------------------------------
  * Update the islands (sets of tiles which are reachable from one another)
  * information after there have been changes to the cost field.
  * ------------------------------------------------------------------------
@@ -390,6 +396,19 @@ dest_id_t N_DestIDForPosAttacking(void *nav_private, vec3_t map_pos, vec2_t xz_p
  * ------------------------------------------------------------------------
  */
 bool     N_DestIDIsAttacking(dest_id_t id);
+
+/* ------------------------------------------------------------------------
+ * The same destination, for a path that prefers the roads. Paths of other
+ * IDs ignore them. IDs on layers without roads are returned unchanged.
+ * ------------------------------------------------------------------------
+ */
+dest_id_t N_DestIDWithRoads(dest_id_t id);
+
+/* ------------------------------------------------------------------------
+ * Whether the path for this ID prefers the roads.
+ * ------------------------------------------------------------------------
+ */
+bool      N_DestUsesRoads(dest_id_t id);
 
 /* ------------------------------------------------------------------------
  * Generate the required flowfield and LOS sectors for moving towards the 

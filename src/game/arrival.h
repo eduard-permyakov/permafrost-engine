@@ -147,11 +147,13 @@ void G_Arrival_InitUnit(struct arrival_unit_state *us, vec2_t order_pos);
 bool G_Arrival_IsActive(const struct arrival_state *as);
 
 /* Build the footprint once the members near the goal, or right away when
- * 'plan' is set, and keep the slot allocation current thereafter.
+ * 'plan' is set, and keep the slot allocation current thereafter. A flock
+ * going its way along the 'roads' falls back on a field along them.
  */
 void G_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2_t target_xz,
                            enum nav_layer layer, float unit_radius, int total_members,
-                           const struct arrival_member *members, int nmembers, bool plan);
+                           const struct arrival_member *members, int nmembers, bool plan,
+                           bool roads);
 void G_Arrival_RequestField(const struct arrival_state *as, const struct map *map);
 
 bool G_Arrival_DesiredVelocity(const struct arrival_state *as, struct arrival_unit_state *us,
@@ -174,10 +176,10 @@ void G_ArrivalGroup_Destroy(struct arrival_group *grp);
 void G_ArrivalGroup_Reset(struct arrival_group *grp);
 void G_ArrivalGroup_Deactivate(struct arrival_group *grp);
 void G_ArrivalGroup_Update(struct arrival_group *grp, const struct map *map, vec2_t target_xz,
-                           const struct arrival_member *members, int nmembers);
+                           const struct arrival_member *members, int nmembers, bool roads);
 /* Choose and reserve the landing ground at the order, ahead of the approach. */
 void G_ArrivalGroup_Plan(struct arrival_group *grp, const struct map *map, vec2_t target_xz,
-                         const struct arrival_member *members, int nmembers);
+                         const struct arrival_member *members, int nmembers, bool roads);
 void G_ArrivalGroup_RequestFields(const struct arrival_group *grp, const struct map *map);
 bool G_ArrivalGroup_IsActive(const struct arrival_group *grp);
 struct arrival_state *G_ArrivalGroup_ForLayer(const struct arrival_group *grp, enum nav_layer layer);

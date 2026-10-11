@@ -89,6 +89,7 @@ static uint16_t n_lookup_island(const struct nav_private *priv, enum nav_layer l
                                 struct tile_desc tile);
 static void n_share_dest_field(struct nav_private *priv, dest_id_t ret, struct coord chunk,
                                uint16_t from_iid, uint16_t to_iid);
+static bool n_ground_layer(enum nav_layer layer);
 static bool field_work_pending(ff_id_t ffid);
 struct field_work_in;
 static void field_submit_work(struct field_work_in entry);
@@ -113,6 +114,9 @@ static void los_defer_create(struct nav_private *priv, vec3_t map_pos, dest_id_t
 #define MAX_FIELD_TASKS          (512)
 #define MAX_LOS_CHAINS           (128)
 #define MAX_LOS_ENTRIES          (512)
+/* A destination ID's layer field holds the ground layers of paths taking the
+ * roads from this value on */
+#define DEST_ROADS_LAYER_BASE    (12)
 
 #define FOREACH_PORTAL(_priv, _layer, _local, ...)                                              \
     do{                                                                                         \
@@ -849,6 +853,7 @@ static void n_link_chunk_portals(struct nav_private *priv, struct nav_chunk *chu
                 port->edges[port->num_neighbours] = (struct edge){
                     EDGE_STATE_ACTIVE,
                     portal_ref_make(IDX(chunk_coord.r, priv->width, chunk_coord.c), j),
+                    cost,
                     cost
                 };
                 port->num_neighbours++;    
@@ -1081,6 +1086,14 @@ static dest_id_t n_dest_id(struct tile_desc dst_desc, enum nav_layer layer, int 
          | (((uint32_t)dst_desc.tile_c  & 0x3f) <<  8)
          | (((uint32_t)layer            & 0x0f) <<  4)
          | (((uint32_t)faction_id       & 0x0f) <<  0);
+}
+
+static dest_id_t n_dest_id_with_roads(dest_id_t id)
+{
+    enum nav_layer layer = N_DestLayer(id);
+    if(!n_ground_layer(layer))
+        return id;
+    return (id & ~((dest_id_t)0xf << 4)) | ((dest_id_t)(layer + DEST_ROADS_LAYER_BASE) << 4);
 }
 
 static void n_visit_island(struct nav_private *priv, uint16_t id, 
@@ -1814,7 +1827,48 @@ static void n_build_portal_travel_index(struct nav_chunk *chunk)
     queue_cc_destroy(&frontier);
 }
 
-/* Links the portals of a chunk with roads, from its travel index: the cost of 
+/* The cost of the cheapest way from anywhere on the portal to every tile of its
+ * chunk, as if the chunk had no roads */
+static void n_plain_dist_from_portal(const struct nav_chunk *chunk, const struct portal *port,
+                                     pq_coord_t *frontier, float out[FIELD_RES_R][FIELD_RES_C])
+{
+    for(int r = 0; r < FIELD_RES_R; r++) {
+    for(int c = 0; c < FIELD_RES_C; c++) {
+        out[r][c] = FLT_MAX;
+    }}
+
+    for(int r = port->endpoints[0].r; r <= port->endpoints[1].r; r++) {
+    for(int c = port->endpoints[0].c; c <= port->endpoints[1].c; c++) {
+        out[r][c] = 0.0f;
+        pq_coord_push(frontier, 0.0f, (struct coord){r, c});
+    }}
+
+    while(pq_size(frontier) > 0) {
+
+        float cost;
+        struct coord curr;
+        pq_coord_top_prio(frontier, &cost);
+        pq_coord_pop(frontier, &curr);
+        if(cost > out[curr.r][curr.c])
+            continue;
+
+        struct coord neighbours[8];
+        float costs[8];
+        int num_neighbours = N_GridNeighbours(chunk->cost_base, NULL, curr, neighbours, costs);
+
+        for(int i = 0; i < num_neighbours; i++) {
+
+            struct coord next = neighbours[i];
+            float next_cost = cost + costs[i];
+            if(next_cost >= out[next.r][next.c])
+                continue;
+            out[next.r][next.c] = next_cost;
+            pq_coord_push(frontier, next_cost, next);
+        }
+    }
+}
+
+/* Links the portals of a chunk with roads, from its travel index: the cost of
  * an edge is that of the cheapest way from anywhere on one portal to anywhere 
  * on the other. Roads split portals into narrow road crossings and wide spans
  * around them, whose midpoints can lie far from where they are crossed. 
@@ -1823,10 +1877,16 @@ static void n_link_road_chunk_portals(struct nav_private *priv, struct nav_chunk
                                       struct coord chunk_coord)
 {
     int chunk_idx = IDX(chunk_coord.r, priv->width, chunk_coord.c);
+    pq_coord_t frontier;
+    pq_coord_init(&frontier);
+
     for(int i = 0; i < chunk->num_portals; i++) {
 
         struct portal *port = &chunk->portals[i];
         port->num_neighbours = 0;
+
+        float plain[FIELD_RES_R][FIELD_RES_C];
+        n_plain_dist_from_portal(chunk, port, &frontier, plain);
 
         for(int j = 0; j < chunk->num_portals; j++) {
 
@@ -1834,10 +1894,12 @@ static void n_link_road_chunk_portals(struct nav_private *priv, struct nav_chunk
                 continue;
             const struct portal *other = &chunk->portals[j];
             uint16_t best = PORTAL_COST_UNREACHABLE;
+            float best_plain = FLT_MAX;
 
             for(int r = other->endpoints[0].r; r <= other->endpoints[1].r; r++) {
             for(int c = other->endpoints[0].c; c <= other->endpoints[1].c; c++) {
                 best = MIN(best, chunk->portal_travel_costs[i][r][c]);
+                best_plain = MIN(best_plain, plain[r][c]);
             }}
             if(best == PORTAL_COST_UNREACHABLE)
                 continue;
@@ -1845,10 +1907,12 @@ static void n_link_road_chunk_portals(struct nav_private *priv, struct nav_chunk
             port->edges[port->num_neighbours++] = (struct edge){
                 EDGE_STATE_ACTIVE,
                 portal_ref_make(chunk_idx, j),
-                portal_cost_unpack(best)
+                portal_cost_unpack(best),
+                best_plain
             };
         }
     }
+    pq_coord_destroy(&frontier);
 }
 
 static const struct portal *n_closest_reachable_portal(const struct nav_chunk *chunk, 
@@ -1927,7 +1991,7 @@ static const struct portal *n_closest_reachable_from_location(struct nav_private
             if(!arr_contains(liids, nliids, curr_liid) && nliids < ARR_SIZE(liids)) {
                 liids[nliids++] = curr_liid;
                 s_tick_diag.nastar++;
-                if(AStar_PortalGraphPath(loc, curr, port, priv, layer, &path, &cost, NULL)
+                if(AStar_PortalGraphPath(loc, curr, port, priv, layer, true, &path, &cost, NULL)
                 && cost < shortest_dist) {
 
                     nearest = curr;
@@ -2439,6 +2503,7 @@ static void n_link_chunk_portals_flood(struct nav_private *priv, struct nav_chun
             port->edges[port->num_neighbours++] = (struct edge){
                 EDGE_STATE_ACTIVE,
                 portal_ref_make(chunk_idx, j),
+                dist[end.r][end.c],
                 dist[end.r][end.c]
             };
         }
@@ -2748,7 +2813,8 @@ static void n_build_dest_fields(struct nav_private *priv, vec3_t map_pos, enum n
 
         struct field_target target = (struct field_target){
             .type = TARGET_TILE,
-            .tile = (struct coord){dst_desc.tile_r, dst_desc.tile_c}
+            .tile = (struct coord){dst_desc.tile_r, dst_desc.tile_c},
+            .roads = N_DestUsesRoads(ret)
         };
 
         struct flow_field ff;
@@ -2791,7 +2857,7 @@ static void n_build_dest_fields(struct nav_private *priv, vec3_t map_pos, enum n
 }
 
 static bool n_request_path_impl(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int faction_id,
-                           vec3_t map_pos, enum nav_layer layer, dest_id_t *out_dest_id)
+                           vec3_t map_pos, enum nav_layer layer, bool roads, dest_id_t *out_dest_id)
 {
     PERF_ENTER();
 
@@ -2839,6 +2905,9 @@ static bool n_request_path_impl(void *nav_private, vec2_t xz_src, vec2_t xz_dest
     struct tile_desc orig_dst_desc = dst_desc;
 
     dest_id_t ret = n_dest_id(dst_desc, layer, faction_id);
+    if(roads) {
+        ret = n_dest_id_with_roads(ret);
+    }
 
     /* Handle the case where no path exists between the source and destination 
      * (i.e. they are on different 'islands'). 
@@ -2977,7 +3046,7 @@ static bool n_request_path_impl(void *nav_private, vec2_t xz_src, vec2_t xz_dest
     s_tick_diag.nastar++;
     uint64_t astar_t0 = SDL_GetPerformanceCounter();
     bool path_exists = AStar_PortalGraphPath(src_desc, dst_desc, dst_port,
-        priv, layer, &path, &cost, &skipped);
+        priv, layer, roads, &path, &cost, &skipped);
     s_tick_diag.astar_us += (SDL_GetPerformanceCounter() - astar_t0) * 1000000
                           / SDL_GetPerformanceFrequency();
     if(!path_exists) {
@@ -3009,7 +3078,7 @@ static bool n_request_path_impl(void *nav_private, vec2_t xz_src, vec2_t xz_dest
             s_tick_diag.nastar++;
             uint64_t retry_t0 = SDL_GetPerformanceCounter();
             path_exists = AStar_PortalGraphPath(src_desc, dst_desc, dst_port,
-                priv, layer, &path, &cost, &skipped);
+                priv, layer, roads, &path, &cost, &skipped);
             s_tick_diag.astar_us += (SDL_GetPerformanceCounter() - retry_t0) * 1000000
                                   / SDL_GetPerformanceFrequency();
         }
@@ -3029,7 +3098,7 @@ static bool n_request_path_impl(void *nav_private, vec2_t xz_src, vec2_t xz_dest
             s_tick_diag.nastar++;
             uint64_t near_t0 = SDL_GetPerformanceCounter();
             path_exists = AStar_PortalGraphPath(src_desc, near_tile, near_port,
-                priv, layer, &path, &cost, &skipped);
+                priv, layer, roads, &path, &cost, &skipped);
             s_tick_diag.astar_us += (SDL_GetPerformanceCounter() - near_t0) * 1000000
                                   / SDL_GetPerformanceFrequency();
             if(path_exists) {
@@ -3113,7 +3182,8 @@ walk:;
                 n_portal(priv, layer, next_hop.portal->connected),
                 (i < vec_size(&path)-1) ? vec_AT(&path, next_hop_idx + 1).liid 
                                         : N_ClosestPathableLocalIsland(priv, dst_chunk, dst_desc),
-            }
+            },
+            .roads = roads
         };
 
         ff_id_t new_id = N_FlowFieldID(chunk_coord, target, layer);
@@ -3268,11 +3338,11 @@ walk:;
 }
 
 static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int faction_id,
-                           vec3_t map_pos, enum nav_layer layer, dest_id_t *out_dest_id)
+                           vec3_t map_pos, enum nav_layer layer, bool roads, dest_id_t *out_dest_id)
 {
     uint64_t t0 = SDL_GetPerformanceCounter();
     bool ret = n_request_path_impl(nav_private, xz_src, xz_dest, faction_id, map_pos, layer,
-                                   out_dest_id);
+                                   roads, out_dest_id);
     s_tick_diag.req_total_us += (SDL_GetPerformanceCounter() - t0) * 1000000
                               / SDL_GetPerformanceFrequency();
     s_tick_diag.nreq++;
@@ -5038,6 +5108,20 @@ bool N_RoadSpan(void *nav_private, vec3_t map_pos, vec2_t xz, vec2_t across, flo
     return true;
 }
 
+bool N_OnRoad(void *nav_private, vec3_t map_pos, vec2_t xz)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct tile_desc td;
+    if(!M_Tile_DescForPoint2D(res, map_pos, xz, &td))
+        return false;
+    const struct nav_chunk *chunk = &priv->chunks[NAV_LAYER_GROUND_1X1]
+                                                 [IDX(td.chunk_r, priv->width, td.chunk_c)];
+    return chunk->road[td.tile_r][td.tile_c];
+}
+
 float N_MinCellCost(void)
 {
     return SDL_AtomicGet(&s_road_cells) > 0 ? ROAD_COST_FACTOR : 1.0f;
@@ -5084,7 +5168,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
                    vec3_t map_pos, enum nav_layer layer, dest_id_t *out_dest_id)
 {
     return n_request_path(nav_private, xz_src, xz_dest, FACTION_ID_NONE, 
-                          map_pos, layer, out_dest_id);
+                          map_pos, layer, false, out_dest_id);
 }
 
 bool N_RequestPathAttacking(void *nav_private, vec2_t xz_src, vec2_t xz_dest, 
@@ -5092,7 +5176,7 @@ bool N_RequestPathAttacking(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
                             dest_id_t *out_dest_id)
 {
     return n_request_path(nav_private, xz_src, xz_dest, faction_id, 
-                          map_pos, layer, out_dest_id);
+                          map_pos, layer, false, out_dest_id);
 }
 
 /* Bilinearly blend the flow directions of the four tiles bracketing 'curr_pos', so a
@@ -5434,7 +5518,8 @@ void N_ServicePathRequest(void *nav_private, vec3_t map_pos, struct target targe
 
         if(!N_FC_GetDestFFMapping(priv->fieldcache, id, chunk, n_lookup_island(priv, layer, tile), &ffid)) {
             dest_id_t ret;
-            if(!n_request_path(nav_private, xz, target.point_seek.dest_xz, faction_id, map_pos, layer, &ret))
+            if(!n_request_path(nav_private, xz, target.point_seek.dest_xz, faction_id, map_pos, layer,
+                               N_DestUsesRoads(id), &ret))
                 return;
             assert(ret == id);
             N_FC_GetDestFFMapping(priv->fieldcache, id, chunk, n_lookup_island(priv, layer, tile), &ffid);
@@ -5443,7 +5528,8 @@ void N_ServicePathRequest(void *nav_private, vec3_t map_pos, struct target targe
         if(!cur || cur->field[tile.tile_r][tile.tile_c].dir_idx == FD_NONE
         || N_FC_FlowFieldRebuildDue(priv->fieldcache, ffid)) {
             dest_id_t ret;
-            if(!n_request_path(nav_private, xz, target.point_seek.dest_xz, faction_id, map_pos, layer, &ret))
+            if(!n_request_path(nav_private, xz, target.point_seek.dest_xz, faction_id, map_pos, layer,
+                               N_DestUsesRoads(id), &ret))
                 return;
             assert(ret == id);
             N_FC_GetDestFFMapping(priv->fieldcache, id, chunk, n_lookup_island(priv, layer, tile), &ffid);
@@ -5880,7 +5966,7 @@ bool N_HasDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_private, vec3_t map_p
     if(!N_FC_ContainsLOSField(priv->fieldcache, id, chunk)) {
         dest_id_t ret;
         if(!n_request_path(priv, curr_pos, xz_dest, N_DestFactionID(id), map_pos,
-                           N_DestLayer(id), &ret)
+                           N_DestLayer(id), N_DestUsesRoads(id), &ret)
         || !N_FC_ContainsLOSField(priv->fieldcache, id, chunk))
             return false;
     }
@@ -5961,7 +6047,7 @@ enum los_ensure_result N_EnsureDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_
 
     dest_id_t ret;
     if(!n_request_path(priv, curr_pos, xz_dest, N_DestFactionID(id), map_pos,
-                       N_DestLayer(id), &ret))
+                       N_DestLayer(id), N_DestUsesRoads(id), &ret))
         return LOS_ENSURE_FAIL;
 
     /* A capacity flush inside the request may have published the field already */
@@ -7170,7 +7256,21 @@ out:
 
 enum nav_layer N_DestLayer(dest_id_t id)
 {
-    return ((id >> 4) & 0xf);
+    int layer = (id >> 4) & 0xf;
+    return (layer >= DEST_ROADS_LAYER_BASE) ? (layer - DEST_ROADS_LAYER_BASE) : layer;
+}
+
+bool N_DestUsesRoads(dest_id_t id)
+{
+    return (((id >> 4) & 0xf) >= DEST_ROADS_LAYER_BASE);
+}
+
+dest_id_t N_DestIDWithRoads(dest_id_t id)
+{
+    /* Without roads, the paths are the same either way: keep to one */
+    if(SDL_AtomicGet(&s_road_cells) == 0)
+        return id;
+    return n_dest_id_with_roads(id);
 }
 
 int N_DestFactionID(dest_id_t id)

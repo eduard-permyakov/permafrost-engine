@@ -114,6 +114,8 @@ struct field_target{
         struct entity_desc   ent;
         struct zone_desc     zone;
     };
+    /* Road cells are cheaper (portal and tile targets only) */
+    bool roads;
 };
 
 struct flow_field{

@@ -38,6 +38,7 @@
 #include "../camera.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
+#include "../navigation/public/nav.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../mem.h"
@@ -805,7 +806,8 @@ void G_Arrival_InitUnit(struct arrival_unit_state *us, vec2_t order_pos)
 
 void G_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2_t target_xz,
                            enum nav_layer layer, float unit_radius, int total_members,
-                           const struct arrival_member *members, int nmembers, bool plan)
+                           const struct arrival_member *members, int nmembers, bool plan,
+                           bool roads)
 {
     bool built = (as->phase != ARRIVAL_PHASE_INACTIVE);
     if(built) {
@@ -885,6 +887,9 @@ void G_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2
         vec2_t com_snapped;
         as->com = M_NavClosestPathable(map, layer, com, &com_snapped) ? com_snapped : com;
         as->com_dest_id = M_NavDestIDForPos(map, as->com, layer);
+        if(roads) {
+            as->com_dest_id = N_DestIDWithRoads(as->com_dest_id);
+        }
 
         /* Sort frame for the far->near + lateral ordering. */
         s_slot_sort_ref  = as->centre;
@@ -1172,7 +1177,7 @@ bool G_ArrivalGroup_IsActive(const struct arrival_group *grp)
 
 static void arrival_group_update(struct arrival_group *grp, const struct map *map,
                                  vec2_t target_xz, const struct arrival_member *members,
-                                 int nmembers, bool plan)
+                                 int nmembers, bool plan, bool roads)
 {
     STALLOC(struct arrival_member, sub, nmembers > 0 ? nmembers : 1);
     for(int l = 0; l < NAV_LAYER_MAX; l++) {
@@ -1205,21 +1210,21 @@ static void arrival_group_update(struct arrival_group *grp, const struct map *ma
             G_Arrival_InitFlock(grp->layers[l]);
         }
         G_Arrival_UpdateFlock(grp->layers[l], map, target_xz, (enum nav_layer)l, maxr, sn, sub, sn,
-            plan);
+            plan, roads);
     }
     STFREE(sub);
 }
 
 void G_ArrivalGroup_Update(struct arrival_group *grp, const struct map *map, vec2_t target_xz,
-                           const struct arrival_member *members, int nmembers)
+                           const struct arrival_member *members, int nmembers, bool roads)
 {
-    arrival_group_update(grp, map, target_xz, members, nmembers, false);
+    arrival_group_update(grp, map, target_xz, members, nmembers, false, roads);
 }
 
 void G_ArrivalGroup_Plan(struct arrival_group *grp, const struct map *map, vec2_t target_xz,
-                         const struct arrival_member *members, int nmembers)
+                         const struct arrival_member *members, int nmembers, bool roads)
 {
-    arrival_group_update(grp, map, target_xz, members, nmembers, true);
+    arrival_group_update(grp, map, target_xz, members, nmembers, true, roads);
 }
 
 void G_ArrivalGroup_RequestFields(const struct arrival_group *grp, const struct map *map)

@@ -49,7 +49,7 @@
 #define FACTION_ID_NONE       0xf
 /* A road cell costs this fraction of the same cell off the road. A power of
  * two fraction, so road-free costs and their sums stay exact. */
-#define ROAD_COST_FACTOR      0.625f
+#define ROAD_COST_FACTOR      0.375f
 
 /* portal_travel_costs are octile distances within a chunk (max ~5800), stored as
  * 16-bit fixed-point with 3 fractional bits; UNREACHABLE is the 'no path' sentinel. */
@@ -112,6 +112,8 @@ struct edge{
     /* Cost of moving from the center of one portal to the center
      * of the next. */
     float           cost;
+    /* The same cost for paths that ignore the roads */
+    float           cost_plain;
 };
 
 struct portal{

@@ -629,6 +629,11 @@ bool M_NavRoadSpan(const struct map *map, vec2_t xz, vec2_t across, float max_di
     return N_RoadSpan(map->nav_private, map->pos, xz, across, max_dist, out_left, out_right);
 }
 
+bool M_NavOnRoad(const struct map *map, vec2_t xz)
+{
+    return N_OnRoad(map->nav_private, map->pos, xz);
+}
+
 void M_NavUpdatePortals(const struct map *map)
 {
     N_UpdatePortals(map->nav_private);

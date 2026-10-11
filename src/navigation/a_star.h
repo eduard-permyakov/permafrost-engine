@@ -123,13 +123,14 @@ bool AStar_GridPath(struct fieldcache_ctx *cache,
  * Finds the shortest path between a tile and a node in a portal graph. Returns 
  * true if a path is found, false otherwise. If returning true, 'out_path' holds 
  * the portal nodes to be traversed, in order. 'out_skipped', when given, collects
- * the chunks whose blocked edges the search passed over.
+ * the chunks whose blocked edges the search passed over. Without 'roads', the
+ * road cells cost what they would off the road.
  * ------------------------------------------------------------------------
  */
 bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_tile, 
                            const struct portal *finish, const struct nav_private *priv, 
-                           enum nav_layer layer, vec_portal_t *out_path, float *out_cost,
-                           vec_coord_t *out_skipped);
+                           enum nav_layer layer, bool roads, vec_portal_t *out_path, 
+                           float *out_cost, vec_coord_t *out_skipped);
 
 /* ------------------------------------------------------------------------
  * For a goal no portal path reaches, finds the portal reachable from the

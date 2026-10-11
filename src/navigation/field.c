@@ -210,6 +210,7 @@ static int field_neighbours_grid(
     const struct nav_chunk    *chunk,
     struct coord               coord,
     bool                       only_passable,
+    bool                       roads,
     int                        faction_id,
     uint16_t                   enemies,
     struct coord              *out_neighbours,
@@ -243,7 +244,7 @@ static int field_neighbours_grid(
         }
 
         out_neighbours[ret] = (struct coord){abs_r, abs_c};
-        out_costs[ret] = n_cell_cost(chunk->cost_base, chunk->road, abs_r, abs_c);
+        out_costs[ret] = n_cell_cost(chunk->cost_base, roads ? chunk->road : NULL, abs_r, abs_c);
 
         ret++;
     }}
@@ -294,7 +295,8 @@ static int field_neighbours_grid_global(
         }
 
         out_neighbours[ret] = curr;
-        out_costs[ret] = n_cell_cost(chunk->cost_base, chunk->road, curr.tile_r, curr.tile_c);
+        /* Region fields guide groups too, which keep off the roads */
+        out_costs[ret] = n_cell_cost(chunk->cost_base, NULL, curr.tile_r, curr.tile_c);
 
         ret++;
     }}
@@ -535,6 +537,7 @@ static void field_pad_wavefront(struct LOS_field *out_los)
 static void field_build_integration(
     pq_coord_t                *frontier, 
     const struct nav_chunk    *chunk, 
+    bool                       roads,
     int                        faction_id, 
     struct nav_unit_query_ctx *ctx,
     float                      inout[FIELD_RES_R][FIELD_RES_C])
@@ -547,7 +550,7 @@ static void field_build_integration(
 
         struct coord neighbours[8];
         float neighbour_costs[8];
-        int num_neighbours = field_neighbours_grid(chunk, curr, true, faction_id,
+        int num_neighbours = field_neighbours_grid(chunk, curr, true, roads, faction_id,
             enemies, neighbours, neighbour_costs);
 
         for(int i = 0; i < num_neighbours; i++) {
@@ -668,7 +671,7 @@ static void field_build_integration_nonpass(
 
         struct coord neighbours[8];
         float neighbour_costs[8];
-        int num_neighbours = field_neighbours_grid(chunk, curr, false, faction_id,
+        int num_neighbours = field_neighbours_grid(chunk, curr, false, false, faction_id,
             enemies, neighbours, neighbour_costs);
 
         for(int i = 0; i < num_neighbours; i++) {
@@ -1228,6 +1231,82 @@ static size_t field_portal_initial_frontier(
     return ret;
 }
 
+/* Whether the two portals of a chunk lie on the same border, end to end */
+static bool field_portals_abut(const struct nav_private *priv, enum nav_layer layer,
+                               const struct portal *a, const struct portal *b)
+{
+    const struct portal *aconn = n_portal(priv, layer, a->connected);
+    const struct portal *bconn = n_portal(priv, layer, b->connected);
+    if(aconn->chunk.r != bconn->chunk.r || aconn->chunk.c != bconn->chunk.c)
+        return false;
+
+    bool horizontal = (a->endpoints[0].r == a->endpoints[1].r)
+                   && (b->endpoints[0].r == b->endpoints[1].r)
+                   && (a->endpoints[0].r == b->endpoints[0].r);
+    bool vertical = (a->endpoints[0].c == a->endpoints[1].c)
+                 && (b->endpoints[0].c == b->endpoints[1].c)
+                 && (a->endpoints[0].c == b->endpoints[0].c);
+    if(horizontal) {
+        return (a->endpoints[1].c + 1 == b->endpoints[0].c)
+            || (b->endpoints[1].c + 1 == a->endpoints[0].c);
+    }
+    if(vertical) {
+        return (a->endpoints[1].r + 1 == b->endpoints[0].r)
+            || (b->endpoints[1].r + 1 == a->endpoints[0].r);
+    }
+    return false;
+}
+
+/* The tiles of the portals a road crossing split off the target portal's
+ * stretch of border. A path that keeps off the roads may cross anywhere along
+ * it, instead of squeezing through the narrow road crossing.
+ */
+static size_t field_portal_run_frontier(
+    const struct nav_private  *priv,
+    enum nav_layer             layer,
+    struct portal_desc         pd,
+    const struct nav_chunk    *chunk,
+    bool                       ignoreblock,
+    int                        faction_id,
+    struct nav_unit_query_ctx *ctx,
+    struct coord              *out,
+    size_t                     maxout)
+{
+    bool in_run[MAX_PORTALS_PER_CHUNK] = {0};
+    in_run[pd.port - chunk->portals] = true;
+
+    bool grew = true;
+    while(grew) {
+        grew = false;
+        for(int i = 0; i < chunk->num_portals; i++) {
+            if(in_run[i])
+                continue;
+            for(int j = 0; j < chunk->num_portals; j++) {
+                if(!in_run[j] || !field_portals_abut(priv, layer, &chunk->portals[i], &chunk->portals[j]))
+                    continue;
+                in_run[i] = grew = true;
+                break;
+            }
+        }
+    }
+
+    size_t ret = 0;
+    for(int i = 0; i < chunk->num_portals; i++) {
+
+        if(!in_run[i] || &chunk->portals[i] == pd.port)
+            continue;
+        struct portal_desc sibling = (struct portal_desc){
+            &chunk->portals[i],
+            pd.port_iid,
+            n_portal(priv, layer, chunk->portals[i].connected),
+            pd.next_iid
+        };
+        ret += field_portal_initial_frontier(priv, layer, sibling, chunk, ignoreblock,
+            faction_id, ctx, out + ret, maxout - ret);
+    }
+    return ret;
+}
+
 /* The body clearance a unit of the layer needs around a tile it is to stand on,
  * in tiles. Movable blockers are stamped at body size only, so that passing one
  * in a corridor stays possible; a tile a unit is sent to STOP on has to fit its
@@ -1570,9 +1649,13 @@ static size_t field_initial_frontier(
     size_t ninit = 0;
     switch(target.type) {
     case TARGET_PORTAL:
-        
-        ninit = field_portal_initial_frontier(priv, layer, target.pd, chunk, ignoreblock, 
+
+        ninit = field_portal_initial_frontier(priv, layer, target.pd, chunk, ignoreblock,
             faction_id, ctx, init_frontier, maxout);
+        if(!target.roads && chunk->nroad > 0) {
+            ninit += field_portal_run_frontier(priv, layer, target.pd, chunk, ignoreblock,
+                faction_id, ctx, init_frontier + ninit, maxout - ninit);
+        }
         break;
 
     case TARGET_TILE:
@@ -2192,6 +2275,7 @@ ff_id_t N_FlowFieldID(struct coord chunk, struct field_target target, enum nav_l
     if(target.type == TARGET_PORTAL) {
 
         return (((uint64_t)layer)                          << 60)
+             | (((uint64_t)target.roads)                   << 59)
              | (((uint64_t)target.type)                    << 56)
              | (((uint64_t)target.pd.next_iid & 0xf)       << 48)
              | (((uint64_t)target.pd.port_iid & 0xf)       << 40)
@@ -2205,6 +2289,7 @@ ff_id_t N_FlowFieldID(struct coord chunk, struct field_target target, enum nav_l
     }else if(target.type == TARGET_TILE) {
 
         return (((uint64_t)layer)                          << 60)
+             | (((uint64_t)target.roads)                   << 59)
              | (((uint64_t)target.type)                    << 56)
              | (((uint64_t)target.tile.r)                  << 24)
              | (((uint64_t)target.tile.c)                  << 16)
@@ -2254,7 +2339,7 @@ enum nav_layer N_FlowFieldLayer(ff_id_t id)
 
 int N_FlowFieldTargetType(ff_id_t id)
 {
-    return (id >> 56) & 0xf;
+    return (id >> 56) & 0x7;
 }
 
 void N_FlowFieldInit(struct coord chunk_coord, struct flow_field *out)
@@ -2324,7 +2409,7 @@ void N_FlowFieldUpdate(
     }
 
     inout_flow->target = target;
-    field_build_integration(&frontier, chunk, faction_id, ctx, integration_field);
+    field_build_integration(&frontier, chunk, target.roads, faction_id, ctx, integration_field);
     field_build_flow(integration_field, inout_flow);
     field_fixup(priv, layer, target, integration_field, inout_flow, chunk);
 
@@ -2448,7 +2533,7 @@ void N_FlowFieldUpdateIslandToNearest(
         integration_field[curr.r][curr.c] = 0.0f;
     }
 
-    field_build_integration(&frontier, chunk, faction_id, ctx, integration_field);
+    field_build_integration(&frontier, chunk, inout_flow->target.roads, faction_id, ctx, integration_field);
     field_build_flow(integration_field, inout_flow);
     field_fixup(priv, layer, inout_flow->target, integration_field, inout_flow, chunk);
 
@@ -2503,7 +2588,7 @@ void N_LOSFieldCreate(
         assert(prev_los);
         /* A road may well be a cheaper way on than the straight line, so units
          * crossing a chunk with roads follow the flow field there instead. */
-        if(chunk->nroad > 0) {
+        if(chunk->nroad > 0 && N_DestUsesRoads(id)) {
             pq_coord_destroy(&frontier);
             return;
         }
@@ -2590,7 +2675,7 @@ void N_LOSFieldCreate(
 
     /* With roads in the destination's chunk, only the last stretch is walked
      * in a straight line: farther out a road may be the cheaper way. */
-    bool near_only = (chunk->nroad > 0);
+    bool near_only = (chunk->nroad > 0 && N_DestUsesRoads(id));
     const int near_r2 = LOS_ROAD_RADIUS * LOS_ROAD_RADIUS;
 
     while(pq_size(&frontier) > 0) {

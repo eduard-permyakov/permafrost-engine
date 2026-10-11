@@ -383,6 +383,12 @@ bool   M_NavRoadSpan(const struct map *map, vec2_t xz, vec2_t across, float max_
                      float *out_left, float *out_right);
 
 /* ------------------------------------------------------------------------
+ * Whether the point is on a road.
+ * ------------------------------------------------------------------------
+ */
+bool   M_NavOnRoad(const struct map *map, vec2_t xz);
+
+/* ------------------------------------------------------------------------
  * Update navigation private data (regarding which tile is reachanble from
  * which other tiles) after changes to the cost field.
  * ------------------------------------------------------------------------

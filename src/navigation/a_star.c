@@ -217,7 +217,7 @@ static void skipped_add(vec_coord_t *skipped, struct coord chunk)
  * be written to the corresponding index in the 'out_enter_liids' array.
  */
 static int neighbours_portal_graph(const struct nav_private *priv, enum nav_layer layer,
-                                   const struct portal *portal, uint16_t liid, 
+                                   const struct portal *portal, uint16_t liid, bool roads,
                                    const struct portal **out_neighbours, float *out_costs, 
                                    uint16_t *out_enter_liids, size_t maxout,
                                    vec_coord_t *out_skipped)
@@ -245,7 +245,7 @@ static int neighbours_portal_graph(const struct nav_private *priv, enum nav_laye
             continue;
 
         out_neighbours[ret] = n_portal(priv, layer, edge->neighbour);
-        out_costs[ret] = edge->cost;
+        out_costs[ret] = roads ? edge->cost : edge->cost_plain;
         out_enter_liids[ret] = liid;
         ret++;
     }
@@ -483,7 +483,7 @@ static float portal_octile_estimate(const struct portal *port, struct tile_desc 
  * has no travel costs of its own.
  */
 static bool start_portal_cost(const struct nav_chunk *bchunk, int i, struct tile_desc start_tile,
-                              uint16_t start_liid, float *out_cost)
+                              uint16_t start_liid, bool roads, float *out_cost)
 {
     const struct portal *port = &bchunk->portals[i];
     struct coord tile_coord = (struct coord){start_tile.tile_r, start_tile.tile_c};
@@ -491,7 +491,8 @@ static bool start_portal_cost(const struct nav_chunk *bchunk, int i, struct tile
     if(N_PortalReachableFromTile(port, tile_coord, bchunk)) {
         float cost = portal_cost_unpack(bchunk->portal_travel_costs[i][tile_coord.r][tile_coord.c]);
         if(cost != FLT_MAX) {
-            *out_cost = cost;
+            /* The travel costs of a chunk with roads are along them */
+            *out_cost = (roads || !bchunk->nroad) ? cost : portal_octile_estimate(port, start_tile);
             return true;
         }
     }
@@ -503,8 +504,8 @@ static bool start_portal_cost(const struct nav_chunk *bchunk, int i, struct tile
 
 bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_tile, 
                            const struct portal *finish, const struct nav_private *priv, 
-                           enum nav_layer layer, vec_portal_t *out_path, float *out_cost,
-                           vec_coord_t *out_skipped)
+                           enum nav_layer layer, bool roads, vec_portal_t *out_path, 
+                           float *out_cost, vec_coord_t *out_skipped)
 {
     PERF_ENTER();
 
@@ -533,6 +534,7 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_til
     uint16_t start_liid = N_ClosestPathableLocalIsland(priv, bchunk, start_tile);
     if(start_liid == ISLAND_NONE)
         goto fail_find_path;
+    const float min_cell_cost = roads ? N_MinCellCost() : 1.0f;
 
     const struct nav_chunk *echunk = &priv->chunks[layer][end_tile.chunk_r * priv->width + end_tile.chunk_c];
     uint16_t end_liid = N_ClosestPathableLocalIsland(priv, echunk, end_tile);
@@ -545,11 +547,11 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_til
     for(int i = 0; i < bchunk->num_portals; i++) {
 
         float cost;
-        if(!start_portal_cost(bchunk, i, start_tile, start_liid, &cost))
+        if(!start_portal_cost(bchunk, i, start_tile, start_liid, roads, &cost))
             continue;
         struct portal_hop hop = (struct portal_hop){&bchunk->portals[i], start_liid};
         kh_put_val(key_float, running_cost, phop_to_key(&hop), cost);
-        pq_portal_push(&frontier, cost + N_MinCellCost() * portal_octile_estimate(&bchunk->portals[i], end_tile), hop);
+        pq_portal_push(&frontier, cost + min_cell_cost * portal_octile_estimate(&bchunk->portals[i], end_tile), hop);
     }
 
     while(pq_size(&frontier) > 0) {
@@ -564,8 +566,8 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_til
         float neighbour_costs[MAX_PORTAL_NEIGHBS];
         uint16_t neighb_enter_liids[MAX_PORTAL_NEIGHBS];
 
-        int num_neighbours = neighbours_portal_graph(priv, layer, curr.portal, curr.liid, neighbours, 
-            neighbour_costs, neighb_enter_liids, ARR_SIZE(neighbours), out_skipped);
+        int num_neighbours = neighbours_portal_graph(priv, layer, curr.portal, curr.liid, roads,
+            neighbours, neighbour_costs, neighb_enter_liids, ARR_SIZE(neighbours), out_skipped);
 
         for(int i = 0; i < num_neighbours; i++) {
 
@@ -574,13 +576,14 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_til
 
             khiter_t k = kh_get(key_float, running_cost, phop_to_key(&curr));
             assert(k != kh_end(running_cost));
-            float new_cost = kh_value(running_cost, k) + neighbour_costs[i] + portal_node_penalty();
+            float new_cost = kh_value(running_cost, k) + neighbour_costs[i] 
+                           + min_cell_cost * portal_node_penalty();
 
             if((k = kh_get(key_float, running_cost, phop_to_key(&next_hop))) == kh_end(running_cost)
             || new_cost < kh_value(running_cost, k)) {
 
                 kh_put_val(key_float, running_cost, phop_to_key(&next_hop), new_cost);
-                float priority = new_cost + N_MinCellCost() * portal_octile_estimate(next, end_tile);
+                float priority = new_cost + min_cell_cost * portal_octile_estimate(next, end_tile);
                 pq_portal_push(&frontier, priority, next_hop);
                 kh_put_val(key_portal, came_from, phop_to_key(&next_hop), curr);
             }
@@ -651,7 +654,7 @@ bool AStar_NearestReachablePortal(struct tile_desc start_tile, struct tile_desc 
     for(int i = 0; i < bchunk->num_portals; i++) {
 
         float cost;
-        if(!start_portal_cost(bchunk, i, start_tile, start_liid, &cost))
+        if(!start_portal_cost(bchunk, i, start_tile, start_liid, true, &cost))
             continue;
         struct portal_hop hop = (struct portal_hop){&bchunk->portals[i], start_liid};
         kh_put_val(key_float, best_cost, phop_to_key(&hop), cost);
@@ -680,8 +683,8 @@ bool AStar_NearestReachablePortal(struct tile_desc start_tile, struct tile_desc 
         const struct portal *neighbours[MAX_PORTAL_NEIGHBS];
         float neighbour_costs[MAX_PORTAL_NEIGHBS];
         uint16_t neighb_enter_liids[MAX_PORTAL_NEIGHBS];
-        int num_neighbours = neighbours_portal_graph(priv, layer, curr.portal, curr.liid, neighbours,
-            neighbour_costs, neighb_enter_liids, ARR_SIZE(neighbours), NULL);
+        int num_neighbours = neighbours_portal_graph(priv, layer, curr.portal, curr.liid, true,
+            neighbours, neighbour_costs, neighb_enter_liids, ARR_SIZE(neighbours), NULL);
 
         for(int i = 0; i < num_neighbours; i++) {
 
