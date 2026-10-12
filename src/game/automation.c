@@ -156,6 +156,8 @@ KHASH_MAP_INIT_INT64(pending, struct pending)
 static void on_order_issued(void *user, void *event);
 static bool try_assign_transport_job(uint32_t uid, struct automation_state *astate);
 static bool try_assign_work(uint32_t uid, struct automation_state *astate);
+static vec2_t work_origin(uint32_t uid, const struct automation_state *astate);
+static void reconsider_work(uint32_t uid, struct automation_state *astate);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -690,6 +692,39 @@ static int resource_need(int faction, const char *rname, const vec_request_t *re
     return ret;
 }
 
+/* Where a worker looks for work: about its home hub when it is away from its
+ * district, else about itself */
+static vec2_t work_origin(uint32_t uid, const struct automation_state *astate)
+{
+    vec2_t pos = G_Pos_GetXZ(uid);
+    if(astate->home_district == 0 || G_District_Of(uid) == astate->home_district)
+        return pos;
+    uint32_t anchor = G_Cluster_Anchor(astate->home_district);
+    if(anchor == NULL_UID || !G_EntityExists(anchor))
+        return pos;
+    return G_Pos_GetXZ(anchor);
+}
+
+/* Drops the gathering a worker's new standing orders no longer cover */
+static void reconsider_work(uint32_t uid, struct automation_state *astate)
+{
+    if(!astate->automatic_work || !(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER))
+        return;
+    uint32_t src, dest;
+    const char *rname;
+    int state;
+    if(!G_Harvester_JobInfo(uid, &src, &dest, &rname, &state))
+        return;
+    if(src != NULL_UID || dest != NULL_UID || !rname)
+        return;
+    bool off_good = astate->pinned[0] && strcmp(astate->pinned, rname);
+    bool off_home = astate->home_district && G_District_Of(uid) != astate->home_district;
+    if(!off_good && !off_home)
+        return;
+    G_Harvester_Stop(uid);
+    try_assign_work(uid, astate);
+}
+
 static bool try_assign_work(uint32_t uid, struct automation_state *astate)
 {
     if(!astate->automatic_work)
@@ -697,7 +732,7 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
 
     uint32_t flags = G_FlagsGet(uid);
     int faction = G_GetFactionID(uid);
-    vec2_t pos = G_Pos_GetXZ(uid);
+    vec2_t pos = work_origin(uid, astate);
 
     if((flags & ENTITY_FLAG_BUILDER) && !astate->pinned[0]) {
         struct site_search arg = (struct site_search){ .faction = faction };
@@ -708,8 +743,9 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
 
     if(!(flags & ENTITY_FLAG_HARVESTER))
         return false;
+    /* A load left in hand is brought in before anything else */
     if(G_Harvester_GetCurrTotalCarry(uid))
-        return false;
+        return G_Harvester_BringInLoad(uid, NULL_UID);
 
     const char *candidates[MAX_RESOURCES];
     size_t ncandidates;
@@ -750,7 +786,7 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
         }
         if(best == -1)
             break;
-        uint32_t node = G_Harvester_NearestResource(uid, candidates[best], WORK_RADIUS);
+        uint32_t node = G_Harvester_NearestResource(uid, pos, candidates[best], WORK_RADIUS);
         if(node != NULL_UID && G_Harvester_Gather(uid, node))
             return true;
         scores[best] = -1.0f;
@@ -1059,7 +1095,10 @@ void G_Automation_SetHomeDistrict(uint32_t uid, int district)
     struct automation_state *astate = astate_get(uid);
     if(!astate)
         return;
+    if(astate->home_district == district)
+        return;
     astate->home_district = district;
+    reconsider_work(uid, astate);
 }
 
 int G_Automation_GetHomeDistrict(uint32_t uid)
@@ -1091,7 +1130,10 @@ void G_Automation_SetPinnedWork(uint32_t uid, const char *rname)
     struct automation_state *astate = astate_get(uid);
     if(!astate)
         return;
+    if(!strcmp(astate->pinned, rname ? rname : ""))
+        return;
     pf_strlcpy(astate->pinned, rname ? rname : "", sizeof(astate->pinned));
+    reconsider_work(uid, astate);
 }
 
 const char *G_Automation_GetPinnedWork(uint32_t uid)

@@ -1914,16 +1914,15 @@ size_t G_Harvester_GetGatherable(uint32_t uid, size_t maxout, const char *out[])
     return ret;
 }
 
-uint32_t G_Harvester_NearestResource(uint32_t uid, const char *rname, float radius)
+uint32_t G_Harvester_NearestResource(uint32_t uid, vec2_t origin, const char *rname, float radius)
 {
-    vec2_t pos = G_Pos_GetXZ(uid);
     struct valid_resource_arg arg = (struct valid_resource_arg){
-        .ent_pos = pos,
+        .ent_pos = G_Pos_GetXZ(uid),
         .ent_layer = Entity_NavLayer(uid),
         .rname = rname,
         .exclude = UID_NONE
     };
-    return G_Pos_NearestWithPred(pos, valid_resource, (void*)&arg, radius);
+    return G_Pos_NearestWithPred(origin, valid_resource, (void*)&arg, radius);
 }
 
 int G_Harvester_CountGathering(int faction, const char *rname)
@@ -2226,10 +2225,17 @@ bool G_Harvester_BringInLoad(uint32_t harvester, uint32_t site)
         return false;
     if(hs->transport_src_uid != NULL_UID || hs->transport_dest_uid != NULL_UID)
         return false;
+    const char *rname = carried_resource_name(hs);
+    if(!rname)
+        return false;
+    if(site == NULL_UID) {
+        site = nearest_storage_site_dropoff(harvester, rname);
+        if(site == NULL_UID)
+            return false;
+    }
     if(hs->state == STATE_HARVESTING_SEEK_STORAGE && hs->ss_uid == site)
         return true;
-    const char *rname = carried_resource_name(hs);
-    if(!rname || !G_StorageSite_Accepts(site, rname))
+    if(!G_StorageSite_Accepts(site, rname))
         return false;
     return G_Harvester_DropOff(harvester, site);
 }

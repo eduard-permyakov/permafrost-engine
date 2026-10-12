@@ -59,8 +59,9 @@ void G_Harvester_ClearQueuedCmd(uint32_t uid);
 bool G_Harvester_Idle(uint32_t uid);
 bool G_Harvester_ReplenishResource(uint32_t harvester, uint32_t resource);
 uint32_t G_Harvester_TransportTarget(uint32_t harvester);
-/* A gatherer brings the load in its hands to 'site' and stops there. Fails for
- * a carrier on a transport job or a site that does not take the load. */
+/* A gatherer brings the load in its hands to 'site', or the nearest site that
+ * takes it with NULL_UID, and stops there. Fails for a carrier on a transport 
+ * job or a site that does not take the load. */
 bool G_Harvester_BringInLoad(uint32_t harvester, uint32_t site);
 
 bool G_Harvester_SaveState(struct SDL_RWops *stream);

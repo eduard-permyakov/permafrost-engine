@@ -716,7 +716,8 @@ bool  G_Harvester_HasTransportSource(uint32_t uid, uint32_t storage, const char 
 bool  G_Harvester_TransportJob(uint32_t uid, uint32_t src, uint32_t dest, const char *rname, int amount);
 int   G_Harvester_EnRoute(uint32_t dest, const char *rname);
 size_t G_Harvester_GetGatherable(uint32_t uid, size_t maxout, const char *out[]);
-uint32_t G_Harvester_NearestResource(uint32_t uid, const char *rname, float radius);
+/* The nearest node of 'rname' within 'radius' of 'origin' that the harvester can gather */
+uint32_t G_Harvester_NearestResource(uint32_t uid, vec2_t origin, const char *rname, float radius);
 int   G_Harvester_CountGathering(int faction, const char *rname);
 bool  G_Harvester_CanReachSite(uint32_t uid, uint32_t site);
 bool  G_Harvester_JobInfo(uint32_t uid, uint32_t *out_src, uint32_t *out_dest, const char **out_rname, int *out_state);
