@@ -102,6 +102,7 @@
 #define CAM_SPEED           0.20f
 #define CAM_SENS            0.05f
 #define MAX_VIS_RANGE       150.0f
+#define UNIT_ICON_SIZE      21
 
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
@@ -2225,15 +2226,15 @@ static void on_update_ui(void *user, void *event)
         const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
 
         vec2_t ss_pos = Entity_TopScreenPos(uid, adj_vres.x, adj_vres.y);
-        const int width = 32 * nicons;
-        const int height = 32;
+        const int width = UNIT_ICON_SIZE * nicons;
+        const int height = UNIT_ICON_SIZE;
 
         float yoffset = 0;
         if((G_FlagsGet(uid) & ENTITY_FLAG_STORAGE_SITE) && G_StorageSite_GetShowUI()) {
             yoffset = G_StorageSite_GetWindowHeight(uid) / 8.0f;
         }
 
-        const vec2_t pos = (vec2_t){ss_pos.x - width/2, ss_pos.y - 14 + yoffset};
+        const vec2_t pos = (vec2_t){ss_pos.x - width/2, ss_pos.y - 9 + yoffset};
         const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
 
         struct rect adj_bounds = UI_BoundsForAspectRatio(
@@ -2245,8 +2246,8 @@ static void on_update_ui(void *user, void *event)
             (struct nk_rect){adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h}, 
             flags, (struct nk_vec2i){adj_vres.x, adj_vres.y})) {
 
-            nk_layout_row_begin(ctx, NK_STATIC, 32, nicons);
-            nk_layout_row_push(ctx, 32);
+            nk_layout_row_begin(ctx, NK_STATIC, UNIT_ICON_SIZE, nicons);
+            nk_layout_row_push(ctx, UNIT_ICON_SIZE);
             for(int i = 0; i < nicons; i++) {
                 nk_image_texpath(ctx, icons[i]);
             }
