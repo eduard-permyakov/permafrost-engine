@@ -915,7 +915,7 @@ bool G_StorageSite_SetCapacity(uint32_t uid, const char *rname, int max)
     assert(ss);
 
     int prev = 0;
-    ss_state_get_key(ss->curr, rname, &prev);
+    ss_state_get_key(ss->capacity, rname, &prev);
     int delta = max - prev;
 
     if(!ss->use_alt) {
@@ -1206,7 +1206,7 @@ bool G_StorageSite_SetAltCapacity(uint32_t uid, const char *rname, int max)
     assert(ss);
 
     int prev = 0;
-    ss_state_get_key(ss->curr, rname, &prev);
+    ss_state_get_key(ss->alt_capacity, rname, &prev);
     int delta = max - prev;
 
     if(ss->use_alt) {
