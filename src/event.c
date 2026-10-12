@@ -169,6 +169,8 @@ static const char *s_event_str_table[] = {
     STR(EVENT_UNIT_BECAME_IDLE),
     STR(EVENT_UNIT_BECAME_ACTIVE),
     STR(EVENT_UNIT_IDLE_PENDING),
+    STR(EVENT_CLUSTER_CHANGED),
+    STR(EVENT_RESOURCES_SPILLED),
 };
 
 static khash_t(handler_desc) *s_event_handler_table;

@@ -81,6 +81,9 @@ struct rstate{
     vec2_t      blocking_pos;
     float       blocking_radius;
     bool        replenishable;
+    /* Taken in one go, as much as the harvester can carry, rather than 
+     * worked a swing at a time */
+    bool        instant;
     kh_int_t   *replenish_resources;
     bool        is_storage_site;
     bool        ss_do_not_take_land;
@@ -187,6 +190,7 @@ bool G_Resource_AddEntity(uint32_t uid)
         .blocking_pos = G_Pos_GetXZ(uid),
         .blocking_radius = G_GetSelectionRadius(uid),
         .replenishable = false,
+        .instant = false,
         .replenish_resources = kh_init(int),
         .is_storage_site = false,
         .ss_do_not_take_land = false,
@@ -277,6 +281,20 @@ void G_Resource_SetReplenishable(uint32_t uid, bool set)
     struct rstate *rs = rstate_get(uid);
     assert(rs);
     rs->replenishable = set;
+}
+
+bool G_Resource_GetInstant(uint32_t uid)
+{
+    struct rstate *rs = rstate_get(uid);
+    assert(rs);
+    return rs->instant;
+}
+
+void G_Resource_SetInstant(uint32_t uid, bool set)
+{
+    struct rstate *rs = rstate_get(uid);
+    assert(rs);
+    rs->instant = set;
 }
 
 bool G_Resource_SetReplenishAmount(uint32_t uid, const char *rname, int amount)
@@ -538,6 +556,12 @@ bool G_Resource_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &replenishable, "replenishable"));
 
+        struct attr instant = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr.instant
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &instant, "instant"));
+
         struct attr num_replenish_resources = (struct attr){
             .type = TYPE_INT,
             .val.as_int = kh_size(curr.replenish_resources)
@@ -674,6 +698,10 @@ bool G_Resource_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_BOOL);
         G_Resource_SetReplenishable(uid, attr.val.as_bool);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        G_Resource_SetInstant(uid, attr.val.as_bool);
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);

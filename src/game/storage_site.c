@@ -104,6 +104,13 @@ struct ss_state{
      * from this site */
     bool                   do_not_take_land;
     bool                   do_not_take_water;
+    /* The cluster whose pool holds this site's stock, or 0. A site in a 
+     * pool keeps only its share of the capacity in its own state. */
+    int                    pool;
+    /* For a pool's own state: how many sites share it, and the one that 
+     * shows it */
+    int                    nmembers;
+    uint32_t               anchor;
 };
 
 typedef char buff_t[512];
@@ -145,6 +152,8 @@ static khash_t(stridx) *s_stridx;
 static mp_strbuff_t     s_stringpool;
 static struct memstack  s_eventargs;
 static khash_t(state)  *s_entity_state_table;
+/* The pooled state of every cluster of storage sites */
+static khash_t(state)  *s_pools;
 static khash_t(res)    *s_global_resource_tables[MAX_FACTIONS];
 static khash_t(res)    *s_global_capacity_tables[MAX_FACTIONS];
 static khash_t(flow)   *s_flows;
@@ -242,7 +251,29 @@ static bool ss_state_init(struct ss_state *hs)
     hs->use_alt = false;
     hs->do_not_take_land = false;
     hs->do_not_take_water = false;
+    hs->pool = 0;
+    hs->nmembers = 0;
+    hs->anchor = NULL_UID;
     return true;
+}
+
+static struct ss_state *pool_get(int pool)
+{
+    khiter_t k = kh_get(state, s_pools, pool);
+    if(k == kh_end(s_pools))
+        return NULL;
+    return &kh_value(s_pools, k);
+}
+
+/* The state that a site's stock and settings live in: its cluster's pool,
+ * or its own. */
+static struct ss_state *ss_view(uint32_t uid)
+{
+    struct ss_state *ss = ss_state_get(uid);
+    if(!ss || !ss->pool)
+        return ss;
+    struct ss_state *pool = pool_get(ss->pool);
+    return pool ? pool : ss;
 }
 
 static int compare_keys(const void *a, const void *b)
@@ -424,6 +455,15 @@ static void on_update_ui(void *user, void *event)
     nk_style_push_vec2(ctx, &ctx->style.window.padding, nk_vec2(8.0f, 16.0f));
 
     kh_foreach(s_entity_state_table, key, curr, {
+
+        /* A pool is shown once, over its anchor */
+        if(curr.pool) {
+            struct ss_state *pool = pool_get(curr.pool);
+            if(pool && pool->anchor != key)
+                continue;
+            if(pool)
+                curr = *pool;
+        }
 
         if(ui_setting.as_int == SS_UI_SHOW_SELECTED && !G_Sel_IsSelected(key))
             continue;
@@ -754,6 +794,74 @@ static bool storage_site_ui_mode_validate(const struct sval *val)
     return true;
 }
 
+/* Throws 'amount' of a resource out of the economy onto the ground by the 
+ * site, for the scripts to leave lying there to be picked up. */
+static void spill(uint32_t uid, const char *rname, int amount)
+{
+    if(amount <= 0)
+        return;
+
+    int faction = G_GetFactionID(uid);
+    update_res_delta(rname, -amount, faction);
+    record_flow(faction, rname, 0, amount);
+
+    vec2_t pos = G_Pos_GetXZ(uid);
+    struct ss_spill_event *event = stalloc(&s_eventargs, sizeof(struct ss_spill_event));
+    *event = (struct ss_spill_event){
+        .x = pos.x,
+        .z = pos.z,
+        .faction_id = faction,
+        .name = si_intern(rname, &s_stringpool, s_stridx),
+        .amount = amount
+    };
+    E_Global_Notify(EVENT_RESOURCES_SPILLED, event, ES_ENGINE);
+}
+
+static bool save_table(khash_t(int) *table, const char *name, SDL_RWops *stream)
+{
+    struct attr num = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(table)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num, name));
+
+    const char *key;
+    int amount;
+    kh_foreach(table, key, amount, {
+
+        struct attr key_attr = (struct attr){ .type = TYPE_STRING, };
+        pf_strlcpy(key_attr.val.as_string, key, sizeof(key_attr.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &key_attr, "key"));
+
+        struct attr amount_attr = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = amount
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &amount_attr, "amount"));
+    });
+    return true;
+}
+
+static bool load_table(khash_t(int) *table, SDL_RWops *stream)
+{
+    struct attr attr;
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num = attr.val.as_int;
+
+    for(int i = 0; i < num; i++) {
+
+        struct attr keyattr;
+        CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
+        CHK_TRUE_RET(keyattr.type == TYPE_STRING);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        CHK_TRUE_RET(ss_state_set_key(table, keyattr.val.as_string, attr.val.as_int));
+    }
+    return true;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -766,6 +874,8 @@ bool G_StorageSite_Init(void)
         goto fail_mpool; 
     if(!(s_entity_state_table = kh_init(state)))
         goto fail_table;
+    if(!(s_pools = kh_init(state)))
+        goto fail_pools;
 
     for(int i = 0; i < MAX_FACTIONS; i++) {
         if(!(s_global_resource_tables[i] = kh_init(res))) {
@@ -829,6 +939,8 @@ fail_cap:
     for(int i = 0; i < MAX_FACTIONS; i++)
         kh_destroy(res, s_global_resource_tables[i]);
 fail_res:
+    kh_destroy(state, s_pools);
+fail_pools:
     kh_destroy(state, s_entity_state_table);
 fail_table:
     mpa_buff_destroy(&s_mpool);
@@ -849,6 +961,7 @@ void G_StorageSite_Shutdown(void)
     kh_destroy(flow, s_flows);
     stalloc_destroy(&s_eventargs);
     si_shutdown(&s_stringpool, s_stridx);
+    kh_destroy(state, s_pools);
     kh_destroy(state, s_entity_state_table);
     mpa_buff_destroy(&s_mpool);
 }
@@ -875,6 +988,10 @@ void G_StorageSite_RemoveEntity(uint32_t uid)
     if(!ss)
         return;
 
+    if(ss->pool) {
+        G_StorageSite_PoolLeave(uid, ss->pool, false);
+    }
+
     const char *key;
     int amount;
 
@@ -892,9 +1009,135 @@ void G_StorageSite_RemoveEntity(uint32_t uid)
     ss_state_remove(uid);
 }
 
-bool G_StorageSite_IsSaturated(uint32_t uid)
+void G_StorageSite_PoolJoin(uint32_t uid, int pool_id)
 {
     struct ss_state *ss = ss_state_get(uid);
+    if(!ss || ss->pool == pool_id)
+        return;
+    assert(!ss->use_alt);
+
+    struct ss_state *pool = pool_get(pool_id);
+    if(!pool) {
+        struct ss_state newpool;
+        if(!ss_state_init(&newpool))
+            return;
+        int status;
+        khiter_t k = kh_put(state, s_pools, pool_id, &status);
+        if(status == -1) {
+            ss_state_destroy(&newpool);
+            return;
+        }
+        newpool.do_not_take_land = ss->do_not_take_land;
+        newpool.do_not_take_water = ss->do_not_take_water;
+        newpool.anchor = uid;
+        kh_value(s_pools, k) = newpool;
+        pool = &kh_value(s_pools, k);
+    }
+
+    const char *key;
+    int amount;
+
+    kh_foreach(ss->capacity, key, amount, {
+        int prev = 0;
+        ss_state_get_key(pool->capacity, key, &prev);
+        ss_state_set_key(pool->capacity, key, prev + amount);
+    });
+    /* The stock moves into the pool: the faction's totals stay the same */
+    kh_foreach(ss->curr, key, amount, {
+        int prev = 0;
+        ss_state_get_key(pool->curr, key, &prev);
+        ss_state_set_key(pool->curr, key, prev + amount);
+    });
+    kh_clear(int, ss->curr);
+    kh_foreach(ss->desired, key, amount, {
+        int prev = 0;
+        ss_state_get_key(pool->desired, key, &prev);
+        ss_state_set_key(pool->desired, key, MAX(prev, amount));
+    });
+
+    pool->nmembers++;
+    ss->pool = pool_id;
+}
+
+void G_StorageSite_PoolLeave(uint32_t uid, int pool_id, bool died)
+{
+    struct ss_state *ss = ss_state_get(uid);
+    if(!ss || ss->pool != pool_id)
+        return;
+    struct ss_state *pool = pool_get(pool_id);
+    ss->pool = 0;
+    if(!pool)
+        return;
+
+    const char *key;
+    int amount;
+
+    kh_foreach(ss->capacity, key, amount, {
+        int prev = 0;
+        ss_state_get_key(pool->capacity, key, &prev);
+        ss_state_set_key(pool->capacity, key, MAX(prev - amount, 0));
+    });
+    pool->nmembers--;
+
+    if(pool->nmembers <= 0) {
+        /* The last site takes back what is left */
+        kh_foreach(pool->curr, key, amount, {
+            ss_state_set_key(ss->curr, key, amount);
+        });
+        ss_state_destroy(pool);
+        kh_del(state, s_pools, kh_get(state, s_pools, pool_id));
+        return;
+    }
+
+    /* What the remaining sites cannot hold goes with the one leaving, which 
+     * spills it if it is falling */
+    kh_foreach(pool->curr, key, amount, {
+        int cap = 0;
+        ss_state_get_key(pool->capacity, key, &cap);
+        int over = amount - cap;
+        if(over <= 0)
+            continue;
+        ss_state_set_key(pool->curr, key, cap);
+        if(died) {
+            spill(uid, key, over);
+        }else{
+            int own_cap = 0;
+            ss_state_get_key(ss->capacity, key, &own_cap);
+            int keep = MIN(over, own_cap);
+            ss_state_set_key(ss->curr, key, keep);
+            spill(uid, key, over - keep);
+        }
+    });
+    kh_foreach(pool->desired, key, amount, {
+        constrain_desired(pool, key);
+    });
+}
+
+void G_StorageSite_PoolSetAnchor(int pool_id, uint32_t anchor)
+{
+    struct ss_state *pool = pool_get(pool_id);
+    if(!pool)
+        return;
+    pool->anchor = anchor;
+}
+
+void G_StorageSite_OnDeath(uint32_t uid)
+{
+    struct ss_state *ss = ss_state_get(uid);
+    if(!ss)
+        return;
+
+    const char *key;
+    int amount;
+    kh_foreach(ss->curr, key, amount, {
+        spill(uid, key, amount);
+    });
+    kh_clear(int, ss->curr);
+}
+
+bool G_StorageSite_IsSaturated(uint32_t uid)
+{
+    struct ss_state *ss = ss_view(uid);
     assert(ss);
 
     const char *key;
@@ -924,13 +1167,21 @@ bool G_StorageSite_SetCapacity(uint32_t uid, const char *rname, int max)
 
     bool ret = ss_state_set_key(ss->capacity, rname, max);
     constrain_desired(ss, rname);
+
+    struct ss_state *pool = ss->pool ? pool_get(ss->pool) : NULL;
+    if(pool) {
+        int pool_prev = 0;
+        ss_state_get_key(pool->capacity, rname, &pool_prev);
+        ss_state_set_key(pool->capacity, rname, pool_prev + delta);
+        constrain_desired(pool, rname);
+    }
     return ret;
 }
 
 int G_StorageSite_GetCapacity(uint32_t uid, const char *rname)
 {
     int ret = DEFAULT_CAPACITY;
-    struct ss_state *ss = ss_state_get(uid);
+    struct ss_state *ss = ss_view(uid);
     assert(ss);
 
     khash_t(int) *table = (ss->use_alt) ? ss->alt_capacity : ss->capacity;
@@ -938,9 +1189,18 @@ int G_StorageSite_GetCapacity(uint32_t uid, const char *rname)
     return ret;
 }
 
+int G_StorageSite_GetOwnCapacity(uint32_t uid, const char *rname)
+{
+    int ret = DEFAULT_CAPACITY;
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
+    ss_state_get_key(ss->capacity, rname, &ret);
+    return ret;
+}
+
 bool G_StorageSite_SetCurr(uint32_t uid, const char *rname, int curr)
 {
-    struct ss_state *ss = ss_state_get(uid);
+    struct ss_state *ss = ss_view(uid);
     assert(ss);
 
     int cap = 0;
@@ -972,7 +1232,7 @@ bool G_StorageSite_SetCurr(uint32_t uid, const char *rname, int curr)
 int G_StorageSite_GetCurr(uint32_t uid, const char *rname)
 {
     int ret = 0;
-    struct ss_state *ss = ss_state_get(uid);
+    struct ss_state *ss = ss_view(uid);
     assert(ss);
 
     ss_state_get_key(ss->curr, rname, &ret);
@@ -981,7 +1241,7 @@ int G_StorageSite_GetCurr(uint32_t uid, const char *rname)
 
 bool G_StorageSite_SetDesired(uint32_t uid, const char *rname, int des)
 {
-    struct ss_state *ss = ss_state_get(uid);
+    struct ss_state *ss = ss_view(uid);
     assert(ss);
     bool ret = ss_state_set_key(ss->desired, rname, des);
     constrain_desired(ss, rname);
@@ -991,7 +1251,7 @@ bool G_StorageSite_SetDesired(uint32_t uid, const char *rname, int des)
 int G_StorageSite_GetDesired(uint32_t uid, const char *rname)
 {
     int ret = DEFAULT_CAPACITY;
-    struct ss_state *ss = ss_state_get(uid);
+    struct ss_state *ss = ss_view(uid);
     assert(ss);
 
     ss_state_get_key(ss->desired, rname, &ret);
@@ -1052,7 +1312,7 @@ int G_StorageSite_GetPlayerConsumed(const char *rname)
 
 int G_StorageSite_GetStorableResources(uint32_t uid, size_t maxout, const char *out[])
 {
-    struct ss_state *ss = ss_state_get(uid);
+    struct ss_state *ss = ss_view(uid);
     assert(ss);
     return ss_get_keys(ss, out, maxout);
 }
@@ -1092,28 +1352,28 @@ void G_StorageSite_GetAll(vec_entity_t *out)
 
 bool G_StorageSite_GetDoNotTakeLand(uint32_t uid)
 {
-    struct ss_state *ss = ss_state_get(uid);
+    struct ss_state *ss = ss_view(uid);
     assert(ss);
     return ss->do_not_take_land;
 }
 
 void G_StorageSite_SetDoNotTakeLand(uint32_t uid, bool on)
 {
-    struct ss_state *ss = ss_state_get(uid);
+    struct ss_state *ss = ss_view(uid);
     assert(ss);
     ss->do_not_take_land = on;
 }
 
 bool G_StorageSite_GetDoNotTakeWater(uint32_t uid)
 {
-    struct ss_state *ss = ss_state_get(uid);
+    struct ss_state *ss = ss_view(uid);
     assert(ss);
     return ss->do_not_take_water;
 }
 
 void G_StorageSite_SetDoNotTakeWater(uint32_t uid, bool on)
 {
-    struct ss_state *ss = ss_state_get(uid);
+    struct ss_state *ss = ss_view(uid);
     assert(ss);
     ss->do_not_take_water = on;
 }
@@ -1270,7 +1530,7 @@ void G_StorageSite_UpdateFaction(uint32_t uid, int oldfac, int newfac)
 
 bool G_StorageSite_Desires(uint32_t uid, const char *rname)
 {
-    struct ss_state *ss = ss_state_get(uid);
+    struct ss_state *ss = ss_view(uid);
     assert(ss);
     khash_t(int) *des = ss->use_alt ? ss->alt_desired  : ss->desired;
 
@@ -1284,8 +1544,11 @@ bool G_StorageSite_Desires(uint32_t uid, const char *rname)
 
 float G_StorageSite_GetWindowHeight(uint32_t uid)
 {
-    struct ss_state *ss = ss_state_get(uid);
-    assert(ss);
+    struct ss_state *own = ss_state_get(uid);
+    assert(own);
+    struct ss_state *ss = ss_view(uid);
+    if(own->pool && ss->anchor != uid)
+        return 0.0f;
     khash_t(int) *table = (ss->use_alt) ? ss->alt_capacity : ss->capacity;
     return MIN(kh_size(table), 16) * 20 + 32;
 }
@@ -1432,6 +1695,57 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
             .val.as_bool = curr.do_not_take_water
         };
         CHK_TRUE_RET(Attr_Write(stream, &do_not_take_water, "do_not_take_water"));
+
+        struct attr pool = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.pool
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &pool, "pool"));
+        Sched_TryYield();
+    });
+
+    struct attr num_pools = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_pools)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_pools, "num_pools"));
+
+    int pool_id;
+    kh_foreach(s_pools, pool_id, curr, {
+
+        struct attr id = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = pool_id
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &id, "pool_id"));
+
+        struct attr nmembers = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.nmembers
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &nmembers, "nmembers"));
+
+        struct attr anchor = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.anchor
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &anchor, "anchor"));
+
+        struct attr do_not_take_land = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr.do_not_take_land
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &do_not_take_land, "do_not_take_land"));
+
+        struct attr do_not_take_water = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr.do_not_take_water
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &do_not_take_water, "do_not_take_water"));
+
+        CHK_TRUE_RET(save_table(curr.capacity, "num_capacity", stream));
+        CHK_TRUE_RET(save_table(curr.curr, "num_curr", stream));
+        CHK_TRUE_RET(save_table(curr.desired, "num_desired", stream));
         Sched_TryYield();
     });
 
@@ -1624,6 +1938,50 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_BOOL);
         ss->do_not_take_water = attr.val.as_bool;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        ss->pool = attr.val.as_int;
+        Sched_TryYield();
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_pools = attr.val.as_int;
+
+    for(int i = 0; i < num_pools; i++) {
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int pool_id = attr.val.as_int;
+
+        struct ss_state pool;
+        CHK_TRUE_RET(ss_state_init(&pool));
+        int status;
+        khiter_t k = kh_put(state, s_pools, pool_id, &status);
+        CHK_TRUE_RET(status != -1);
+        kh_value(s_pools, k) = pool;
+        struct ss_state *ps = &kh_value(s_pools, k);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        ps->nmembers = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        ps->anchor = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        ps->do_not_take_land = attr.val.as_bool;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        ps->do_not_take_water = attr.val.as_bool;
+
+        CHK_TRUE_RET(load_table(ps->capacity, stream));
+        CHK_TRUE_RET(load_table(ps->curr, stream));
+        CHK_TRUE_RET(load_table(ps->desired, stream));
         Sched_TryYield();
     }
 

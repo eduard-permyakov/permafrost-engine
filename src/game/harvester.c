@@ -895,6 +895,27 @@ static void on_motion_begin_travel(void *user, void *event)
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_transport_dest);
 }
 
+/* A pile on the ground is picked up rather than worked: as much as can be 
+ * carried, at once, and then taken to be stored. */
+static void take_instant(uint32_t uid, struct hstate *hs)
+{
+    const char *rname = G_Resource_GetName(hs->res_uid);
+    int left = G_Resource_GetAmount(hs->res_uid);
+    int old_carry = G_Harvester_GetCurrCarry(uid, rname);
+    int max_carry = G_Harvester_GetMaxCarry(uid, rname);
+    int taken = MIN(max_carry - old_carry, left);
+
+    G_Resource_SetAmount(hs->res_uid, left - taken);
+    G_Harvester_SetCurrCarry(uid, rname, old_carry + taken);
+    G_StorageSite_RecordProduced(G_GetFactionID(uid), rname, taken);
+
+    if(left - taken == 0) {
+        E_Entity_NotifyImmediate(EVENT_RESOURCE_EXHAUSTED, hs->res_uid, NULL, ES_ENGINE);
+        G_Zombiefy(hs->res_uid, true);
+    }
+    entity_try_drop_off(uid);
+}
+
 static void on_arrive_at_resource(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
@@ -922,6 +943,11 @@ static void on_arrive_at_resource(void *user, void *event)
 
         /* harvester cannot carry any more of the resource */
         entity_try_drop_off(uid);
+        return;
+    }
+
+    if(G_Resource_GetInstant(hs->res_uid)) {
+        take_instant(uid, hs);
         return;
     }
 

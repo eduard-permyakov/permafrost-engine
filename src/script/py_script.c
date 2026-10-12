@@ -332,6 +332,9 @@ static PyObject *PyPf_group_lock(PyObject *self, PyObject *args);
 static PyObject *PyPf_group_unlock(PyObject *self, PyObject *args);
 static PyObject *PyPf_group_for_set(PyObject *self, PyObject *args);
 static PyObject *PyPf_group_members(PyObject *self, PyObject *args);
+static PyObject *PyPf_cluster_members(PyObject *self, PyObject *args);
+static PyObject *PyPf_cluster_anchor(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_cluster_icon(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_style(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_font_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_bonus_color(PyObject *self, PyObject *args);
@@ -1273,6 +1276,18 @@ static PyMethodDef pf_module_methods[] = {
     {"group_members",
     (PyCFunction)PyPf_group_members, METH_VARARGS,
     "Returns a list of the entities locked to the group with the specified ID."},
+
+    {"cluster_members",
+    (PyCFunction)PyPf_cluster_members, METH_VARARGS,
+    "Returns a list of the buildings in the cluster with the specified ID, oldest first."},
+
+    {"cluster_anchor",
+    (PyCFunction)PyPf_cluster_anchor, METH_VARARGS,
+    "Returns the building that anchors the cluster with the specified ID, or None."},
+
+    {"set_cluster_icon",
+    (PyCFunction)PyPf_set_cluster_icon, METH_VARARGS,
+    "Sets the image shown over the buildings of a cluster that has more than one."},
 
     {"set_group_ui_style",
     (PyCFunction)PyPf_set_group_ui_style, METH_VARARGS,
@@ -5581,6 +5596,57 @@ static PyObject *PyPf_group_members(PyObject *self, PyObject *args)
     return ret;
 }
 
+static PyObject *PyPf_cluster_members(PyObject *self, PyObject *args)
+{
+    int cluster_id;
+    if(!PyArg_ParseTuple(args, "i", &cluster_id)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer cluster ID.");
+        return NULL;
+    }
+
+    uint32_t members[256];
+    size_t nmembers = G_Cluster_Members(cluster_id, ARR_SIZE(members), members);
+
+    PyObject *list = PyList_New(0);
+    if(!list)
+        return NULL;
+    for(int i = 0; i < nmembers; i++) {
+        PyObject *obj = S_Entity_ObjForUID(members[i]);
+        if(!obj)
+            continue;
+        if(0 != PyList_Append(list, obj)) {
+            Py_DECREF(list);
+            return NULL;
+        }
+    }
+    return list;
+}
+
+static PyObject *PyPf_cluster_anchor(PyObject *self, PyObject *args)
+{
+    int cluster_id;
+    if(!PyArg_ParseTuple(args, "i", &cluster_id)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer cluster ID.");
+        return NULL;
+    }
+    PyObject *obj = S_Entity_ObjForUID(G_Cluster_Anchor(cluster_id));
+    if(!obj)
+        Py_RETURN_NONE;
+    Py_INCREF(obj);
+    return obj;
+}
+
+static PyObject *PyPf_set_cluster_icon(PyObject *self, PyObject *args)
+{
+    const char *path;
+    if(!PyArg_ParseTuple(args, "s", &path)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a string path.");
+        return NULL;
+    }
+    G_Cluster_SetIcon(path);
+    Py_RETURN_NONE;
+}
+
 static PyObject *PyPf_show_console(PyObject *self)
 {
     S_Console_Show();
@@ -5940,6 +6006,12 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
         struct ss_delta_event *event = arg;
         return Py_BuildValue("si", event->name, event->delta);
     }
+    case EVENT_RESOURCES_SPILLED: {
+        struct ss_spill_event *event = arg;
+        return Py_BuildValue("(ff)isi", event->x, event->z, event->faction_id, event->name, event->amount);
+    }
+    case EVENT_CLUSTER_CHANGED:
+        return PyInt_FromLong((intptr_t)arg);
     case EVENT_PROJECTILE_HIT: {
         struct proj_hit *hit = arg;
         PyObject *ent = S_Entity_ObjForUID(hit->ent_uid);

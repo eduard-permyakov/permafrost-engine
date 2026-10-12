@@ -120,6 +120,8 @@ static PyObject *PyEntity_add_tag(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_remove_tag(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_is_garrisoned(PyEntityObject *self);
 static PyObject *PyEntity_set_icons(PyEntityObject *self, PyObject *value);
+static PyObject *PyEntity_set_cluster_type(PyEntityObject *self, PyObject *args);
+static PyObject *PyEntity_get_cluster_id(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_icons(PyEntityObject *self);
 static PyObject *PyEntity_clear_icons(PyEntityObject *self);
 static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject *kwargs);
@@ -189,6 +191,12 @@ static PyMethodDef PyEntity_methods[] = {
     (PyCFunction)PyEntity_set_icons, METH_VARARGS,
     "Assign a set of icons to be displayed over the entity."},
 
+    {"set_cluster_type", 
+    (PyCFunction)PyEntity_set_cluster_type, METH_VARARGS,
+    "Takes a type name and a link radius. Once completed, the building joins the oldest cluster of "
+    "that type and faction whose anchor is within the radius, or starts one, and pools its storage "
+    "with the rest of the cluster."},
+
     {"clear_icons", 
     (PyCFunction)PyEntity_clear_icons, METH_NOARGS,
     "Clear the set of icons displayed over the entity."},
@@ -213,6 +221,10 @@ static PyGetSetDef PyEntity_getset[] = {
     {"uid",
     (getter)PyEntity_get_uid, NULL,
     "The unique integer ID of this entity",
+    NULL},
+    {"cluster_id",
+    (getter)PyEntity_get_cluster_id, NULL,
+    "The ID of the cluster of buildings this one belongs to, or 0.",
     NULL},
     {"name",
     (getter)PyEntity_get_name, (setter)PyEntity_set_name,
@@ -759,6 +771,8 @@ static PyObject *PyResourceEntity_get_amount(PyResourceEntityObject *self, void 
 static int       PyResourceEntity_set_amount(PyResourceEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyResourceEntity_get_replenishable(PyResourceEntityObject *self, void *closure);
 static int       PyResourceEntity_set_replenishable(PyResourceEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyResourceEntity_get_instant(PyResourceEntityObject *self, void *closure);
+static int       PyResourceEntity_set_instant(PyResourceEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyResourceEntity_get_restored_amount(PyResourceEntityObject *self, void *closure);
 static int       PyResourceEntity_set_restored_amount(PyResourceEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyResourceEntity_get_replenish_amount(PyResourceEntityObject *self, PyObject *args);
@@ -798,6 +812,11 @@ static PyGetSetDef PyResourceEntity_getset[] = {
     {"replenishable",
     (getter)PyResourceEntity_get_replenishable, (setter)PyResourceEntity_set_replenishable,
     "Boolean indicating whether this resource can be replenished after it is exhausted.",
+    NULL},
+    {"instant",
+    (getter)PyResourceEntity_get_instant, (setter)PyResourceEntity_set_instant,
+    "Boolean indicating whether a harvester takes as much of the resource as it can carry at once, "
+    "on arriving, rather than working it a swing at a time.",
     NULL},
     {"restored_amount",
     (getter)PyResourceEntity_get_restored_amount, (setter)PyResourceEntity_set_restored_amount,
@@ -977,6 +996,7 @@ static PyObject *PyStorageSiteEntity_del(PyStorageSiteEntityObject *self);
 static PyObject *PyStorageSiteEntity_get_curr_amount(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_set_curr_amount(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_capacity(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_get_own_capacity(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_set_capacity(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_storable(PyStorageSiteEntityObject *self, void *closure);
 static PyObject *PyStorageSiteEntity_get_desired(PyStorageSiteEntityObject *self, PyObject *args);
@@ -1005,6 +1025,11 @@ static PyMethodDef PyStorageSiteEntity_methods[] = {
     {"get_capacity", 
     (PyCFunction)PyStorageSiteEntity_get_capacity, METH_VARARGS,
     "Gets the maximum amount of the specified resource that can be stored in the storage site."},
+
+    {"get_own_capacity", 
+    (PyCFunction)PyStorageSiteEntity_get_own_capacity, METH_VARARGS,
+    "Gets the site's own capacity for the specified resource, as set with 'set_capacity': not that of "
+    "its cluster's pool, nor its capacity while under construction."},
 
     {"set_capacity", 
     (PyCFunction)PyStorageSiteEntity_set_capacity, METH_VARARGS,
@@ -2124,6 +2149,25 @@ static PyObject *PyEntity_is_garrisoned(PyEntityObject *self)
         Py_RETURN_TRUE;
     }
     Py_RETURN_FALSE;
+}
+
+static PyObject *PyEntity_set_cluster_type(PyEntityObject *self, PyObject *args)
+{
+    const char *type;
+    float radius;
+    if(!PyArg_ParseTuple(args, "sf", &type, &radius)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string type name and a float radius.");
+        return NULL;
+    }
+    if(G_FlagsGet(self->ent) & ENTITY_FLAG_ZOMBIE)
+        Py_RETURN_NONE;
+    G_Cluster_SetType(self->ent, type, radius);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_get_cluster_id(PyEntityObject *self, void *closure)
+{
+    return PyInt_FromLong(G_Cluster_Of(self->ent));
 }
 
 static PyObject *PyEntity_set_icons(PyEntityObject *self, PyObject *value)
@@ -4194,6 +4238,28 @@ static int PyResourceEntity_set_replenishable(PyResourceEntityObject *self, PyOb
     return 0;
 }
 
+static PyObject *PyResourceEntity_get_instant(PyResourceEntityObject *self, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+    if(G_Resource_GetInstant(self->super.ent)) {
+        Py_RETURN_TRUE;
+    }
+    Py_RETURN_FALSE;
+}
+
+static int PyResourceEntity_set_instant(PyResourceEntityObject *self, PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+    G_Resource_SetInstant(self->super.ent, PyObject_IsTrue(value));
+    return 0;
+}
+
 static PyObject *PyResourceEntity_get_restored_amount(PyResourceEntityObject *self, void *closure)
 {
     if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
@@ -4686,6 +4752,21 @@ static PyObject *PyStorageSiteEntity_get_capacity(PyStorageSiteEntityObject *sel
 
     int cap = G_StorageSite_GetCapacity(self->super.ent, name);
     return PyInt_FromLong(cap);
+}
+
+static PyObject *PyStorageSiteEntity_get_own_capacity(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
+        return NULL;
+    }
+    return PyInt_FromLong(G_StorageSite_GetOwnCapacity(self->super.ent, name));
 }
 
 static PyObject *PyStorageSiteEntity_set_capacity(PyStorageSiteEntityObject *self, PyObject *args)

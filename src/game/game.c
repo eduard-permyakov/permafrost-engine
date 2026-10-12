@@ -58,6 +58,7 @@
 #include "group.h"
 #include "population.h"
 #include "roads.h"
+#include "cluster.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../anim/public/anim.h"
@@ -224,6 +225,7 @@ static void g_init_map(void)
     G_Harvester_Init(s_gs.map);
     G_Automation_Init();
     G_Group_Init();
+    G_Cluster_Init();
     G_ClearPath_Init(s_gs.map);
     N_ClearState();
 }
@@ -1251,6 +1253,7 @@ static void g_clear_map_state(void)
         G_Harvester_Shutdown();
         G_Automation_Shutdown();
         G_Group_Shutdown();
+        G_Cluster_Shutdown();
         G_ClearPath_Shutdown();
         G_Pos_Shutdown();
         M_FoliageShutdown();
@@ -3157,6 +3160,7 @@ bool G_RemoveEntity(uint32_t uid)
     G_Builder_RemoveEntity(uid);
     G_Harvester_RemoveEntity(uid);
     G_Resource_RemoveEntity(uid);
+    G_Cluster_RemoveEntity(uid);
     G_StorageSite_RemoveEntity(uid);
     G_Garrison_RemoveGarrison(uid);
     G_Garrison_RemoveGarrisonable(uid);
@@ -3832,6 +3836,7 @@ void G_Zombiefy(uint32_t uid, bool invis)
     G_Builder_RemoveEntity(uid);
     G_Harvester_RemoveEntity(uid);
     G_Resource_RemoveEntity(uid);
+    G_Cluster_RemoveEntity(uid);
     G_StorageSite_RemoveEntity(uid);
     G_Garrison_RemoveGarrison(uid);
     G_Garrison_RemoveGarrisonable(uid);
@@ -4430,6 +4435,9 @@ bool G_SaveEntityState(SDL_RWops *stream)
     if(!G_Builder_SaveState(stream))
         return false;
 
+    if(!G_Cluster_SaveState(stream))
+        return false;
+
     if(!G_StorageSite_SaveState(stream))
         return false;
 
@@ -4494,6 +4502,11 @@ bool G_LoadEntityState(SDL_RWops *stream)
 
     if(!G_Builder_LoadState(stream)) {
         fprintf(stderr, "could not load builder state.\n");
+        return false;
+    }
+
+    if(!G_Cluster_LoadState(stream)) {
+        fprintf(stderr, "Could not load cluster state.\n");
         return false;
     }
 

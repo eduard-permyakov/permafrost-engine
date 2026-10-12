@@ -44,6 +44,8 @@
 #include "fog_of_war.h"
 #include "position.h"
 #include "garrison.h"
+#include "cluster.h"
+#include "storage_site.h"
 #include "public/game.h"
 #include "../ui.h"
 #include "../event.h"
@@ -1154,6 +1156,12 @@ static void entity_die(uint32_t uid)
     E_Global_Notify(EVENT_ENTITY_DIED, (void*)((uintptr_t)uid), ES_ENGINE);
     E_Entity_Notify(EVENT_ENTITY_DEATH, uid, NULL, ES_ENGINE);
     vec_entity_push(&s_dying_ents, uid);
+
+    /* What a falling storage site holds is spilled on the ground */
+    G_Cluster_OnDeath(uid);
+    if(flags & ENTITY_FLAG_STORAGE_SITE) {
+        G_StorageSite_OnDeath(uid);
+    }
 
     /* The units defending a 'dead' entity die also, while the ones it 
      * held as ingredients walk out of it.

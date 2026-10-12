@@ -49,6 +49,12 @@ bool G_StorageSite_Init(void);
 void G_StorageSite_Shutdown(void);
 bool G_StorageSite_AddEntity(uint32_t uid);
 void G_StorageSite_RemoveEntity(uint32_t uid);
+/* Pools a site's capacity and stock with the rest of its cluster */
+void G_StorageSite_PoolJoin(uint32_t uid, int pool_id);
+void G_StorageSite_PoolLeave(uint32_t uid, int pool_id, bool died);
+void G_StorageSite_PoolSetAnchor(int pool_id, uint32_t anchor);
+/* Spills everything the site holds onto the ground as it falls */
+void G_StorageSite_OnDeath(uint32_t uid);
 bool G_StorageSite_IsSaturated(uint32_t uid);
 void G_StorageSite_UpdateFaction(uint32_t uid, int oldfac, int newfac);
 bool G_StorageSite_Desires(uint32_t uid, const char *rname);

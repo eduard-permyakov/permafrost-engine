@@ -286,6 +286,19 @@ uint32_t              G_Sel_GetHovered(void);
 void                  G_Sel_Set(uint32_t *ents, size_t nents);
 
 /*###########################################################################*/
+/* GAME CLUSTERS                                                             */
+/*###########################################################################*/
+
+/* Buildings of one type within 'radius' of a cluster's anchor join it when
+ * they are completed, and act as one: their storage is pooled. */
+void                  G_Cluster_SetType(uint32_t uid, const char *type, float radius);
+int                   G_Cluster_Of(uint32_t uid);
+uint32_t              G_Cluster_Anchor(int cluster_id);
+size_t                G_Cluster_Members(int cluster_id, size_t maxout, uint32_t out[]);
+uint32_t              G_Cluster_NearestMember(int cluster_id, vec2_t pos);
+void                  G_Cluster_SetIcon(const char *path);
+
+/*###########################################################################*/
 /* GAME GROUPS                                                               */
 /*###########################################################################*/
 
@@ -598,6 +611,8 @@ int         G_Resource_GetAllNames(size_t maxout, const char* out[]);
 void        G_Resource_UpdateSelectionRadius(uint32_t uid, float radius);
 bool        G_Resource_GetReplenishable(uint32_t uid);
 void        G_Resource_SetReplenishable(uint32_t uid, bool set);
+bool        G_Resource_GetInstant(uint32_t uid);
+void        G_Resource_SetInstant(uint32_t uid, bool set);
 bool        G_Resource_SetReplenishAmount(uint32_t uid, const char *rname, int amount);
 int         G_Resource_GetReplenishAmount(uint32_t uid, const char *rname);
 int         G_Resource_GetRestoredAmount(uint32_t uid);
@@ -659,6 +674,15 @@ struct ss_delta_event{
     int delta;
 };
 
+/* Goods that a falling storage site, or one leaving its cluster, could not 
+ * keep, thrown on the ground by it */
+struct ss_spill_event{
+    float       x, z;
+    int         faction_id;
+    const char *name;
+    int         amount;
+};
+
 enum ss_ui_mode{
     SS_UI_SHOW_ALWAYS,
     SS_UI_SHOW_SELECTED,
@@ -667,6 +691,7 @@ enum ss_ui_mode{
 
 bool G_StorageSite_SetCapacity(uint32_t uid, const char *rname, int max);
 int  G_StorageSite_GetCapacity(uint32_t uid, const char *rname);
+int  G_StorageSite_GetOwnCapacity(uint32_t uid, const char *rname);
 bool G_StorageSite_SetCurr(uint32_t uid, const char *rname, int curr);
 int  G_StorageSite_GetCurr(uint32_t uid, const char *rname);
 bool G_StorageSite_SetCurr(uint32_t uid, const char *rname, int curr);
