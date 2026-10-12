@@ -297,6 +297,56 @@ uint32_t              G_Cluster_Anchor(int cluster_id);
 size_t                G_Cluster_Members(int cluster_id, size_t maxout, uint32_t out[]);
 uint32_t              G_Cluster_NearestMember(int cluster_id, vec2_t pos);
 void                  G_Cluster_SetIcon(const char *path);
+size_t                G_Cluster_GetAll(size_t maxout, int out[]);
+const char           *G_Cluster_Type(int cluster_id);
+int                   G_Cluster_Faction(int cluster_id);
+/* The cluster a building of 'type' placed at 'pos' would join, or 0 for a new one */
+int                   G_Cluster_PreviewJoin(const char *type, int faction, vec2_t pos, float radius);
+
+/*###########################################################################*/
+/* GAME DISTRICTS                                                            */
+/*###########################################################################*/
+
+/* Every cell of the map belongs, for each faction, to the hub cluster nearest
+ * by path; within this cost of it, the cell is the hub's own territory. */
+#define G_DISTRICT_TERRITORY_COST (480.0f)
+
+int                   G_District_At(int faction, bool water, vec2_t pos, float *out_cost);
+int                   G_District_Of(uint32_t uid);
+bool                  G_District_InTerritory(int faction, bool water, vec2_t pos);
+void                  G_District_Update(void);
+void                  G_District_SetShow(bool on);
+bool                  G_District_GetShow(void);
+/* Shows the cells a hub placed at 'pos' would take over; returns how many */
+int                   G_District_SetPreview(bool on, int faction, vec2_t pos);
+
+/*###########################################################################*/
+/* GAME PROVISIONS                                                           */
+/*###########################################################################*/
+
+enum provision_tier{
+    PROVISION_FED = 0,
+    PROVISION_HUNGRY,
+    PROVISION_STARVING,
+    PROVISION_NUM_TIERS
+};
+
+/* How long a unit is hungry before it starves, unless told otherwise */
+#define PROVISION_STARVE_AFTER_S (180.0f)
+
+/* Makes the unit live on 'good': it holds 'max_meals' and eats one every 
+ * 'interval_s', starving after 'starve_after_s' without; with 'automatic', 
+ * it goes for food by itself when hungry */
+bool G_Provision_Set(uint32_t uid, const char *good, int max_meals, float interval_s, 
+                     float starve_after_s, bool automatic);
+int  G_Provision_Tier(uint32_t uid);
+void G_Provision_SetAutomatic(uint32_t uid, bool on);
+bool G_Provision_GetAutomatic(uint32_t uid);
+/* Sends the unit to eat at the nearest store of its food; false if there is none */
+bool G_Provision_Fetch(uint32_t uid);
+void G_Provision_Counts(int faction, int out[PROVISION_NUM_TIERS]);
+/* The meals per minute the faction's units eat, per district they are in */
+size_t G_Provision_Demand(int faction, size_t maxout, int out_districts[], float out_rates[]);
 
 /*###########################################################################*/
 /* GAME GROUPS                                                               */
@@ -569,6 +619,7 @@ bool   G_Building_Found(uint32_t uid, bool blocking);
 bool   G_Building_Supply(uint32_t uid);
 bool   G_Building_Complete(uint32_t uid);
 bool   G_Building_Unobstructed(uint32_t uid);
+bool   G_Building_IsMarked(uint32_t uid);
 bool   G_Building_IsFounded(uint32_t uid);
 bool   G_Building_IsSupplied(uint32_t uid);
 bool   G_Building_IsCompleted(uint32_t uid);
@@ -664,6 +715,9 @@ bool  G_Harvester_HasTransportSource(uint32_t uid, uint32_t storage, const char 
 /* Fetches 'amount' of 'rname' from 'src' to 'dest' and goes idle: the jobs the automation hands out */
 bool  G_Harvester_TransportJob(uint32_t uid, uint32_t src, uint32_t dest, const char *rname, int amount);
 int   G_Harvester_EnRoute(uint32_t dest, const char *rname);
+size_t G_Harvester_GetGatherable(uint32_t uid, size_t maxout, const char *out[]);
+uint32_t G_Harvester_NearestResource(uint32_t uid, const char *rname, float radius);
+int   G_Harvester_CountGathering(int faction, const char *rname);
 bool  G_Harvester_CanReachSite(uint32_t uid, uint32_t site);
 bool  G_Harvester_JobInfo(uint32_t uid, uint32_t *out_src, uint32_t *out_dest, const char **out_rname, int *out_state);
 int   G_Harvester_GetCurrTotalCarry(uint32_t uid);
@@ -688,6 +742,8 @@ enum request_status{
     REQUEST_NO_CARRIER,
     /* No free carrier can reach both the source and the site */
     REQUEST_UNREACHABLE,
+    /* The goods are only in other districts, and no carrier serves both */
+    REQUEST_NOT_CONNECTED,
 };
 
 /* What a storage site does with a resource */
@@ -898,6 +954,14 @@ void G_Automation_GetIdle(vec_entity_t *out);
 bool G_Automation_IsIdle(uint32_t uid);
 void G_Automation_SetAutomaticTransport(uint32_t uid, bool on);
 bool G_Automation_GetAutomaticTransport(uint32_t uid);
+void G_Automation_SetAutomaticWork(uint32_t uid, bool on);
+/* Puts a carrier on District duty in the district of the hub cluster, or on Free duty with 0 */
+void G_Automation_SetHomeDistrict(uint32_t uid, int district);
+int  G_Automation_GetHomeDistrict(uint32_t uid);
+bool G_Automation_GetAutomaticWork(uint32_t uid);
+/* Keeps a worker left to itself to gathering one resource; "" lets it choose */
+void G_Automation_SetPinnedWork(uint32_t uid, const char *rname);
+const char *G_Automation_GetPinnedWork(uint32_t uid);
 /* Why the site's request for the resource is unserved, and for how long it has waited */
 enum request_status G_Automation_RequestStatus(uint32_t site, const char *rname, int *out_waited_ms);
 

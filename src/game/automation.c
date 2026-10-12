@@ -43,6 +43,7 @@
 #include "combat.h"
 #include "position.h"
 #include "storage_site.h"
+#include "provision.h"
 #include "harvester.h"
 #include "../event.h"
 #include "../entity.h"
@@ -84,6 +85,12 @@
  * drown out every other one */
 #define SCORED_LOAD                  (25)
 #define MAX_RESOURCES                (64)
+/* How far a worker will go for work it finds by itself */
+#define WORK_RADIUS                  (600.0f)
+#define PINNED_LEN                   (32)
+/* What every good counts for before anything asks for it, so that idle
+ * workers still gather into stock */
+#define BASE_NEED                    (10)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -107,6 +114,13 @@ struct automation_state{
     int               transient_ticks;
     bool              automatic_transport;
     uint32_t          transport_target;
+    /* A worker left to itself finds its own work: building, then gathering 
+     * what the realm is shortest of, or only the good it is pinned to */
+    bool              automatic_work;
+    char              pinned[PINNED_LEN];
+    /* A carrier on District duty serves only the requests of its hub's 
+     * district, from sources in it; 0 is Free duty */
+    int               home_district;
 };
 
 /* A site's want of one resource */
@@ -141,6 +155,7 @@ KHASH_MAP_INIT_INT64(pending, struct pending)
 
 static void on_order_issued(void *user, void *event);
 static bool try_assign_transport_job(uint32_t uid, struct automation_state *astate);
+static bool try_assign_work(uint32_t uid, struct automation_state *astate);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -242,7 +257,7 @@ static void settle_stopping(void)
         if(!astate || astate->state != STATE_STOPPING)
             continue;
 
-        if(try_assign_transport_job(uid, astate)) {
+        if(try_assign_transport_job(uid, astate) || try_assign_work(uid, astate)) {
             astate->state = STATE_ACTIVE;
             continue;
         }
@@ -424,12 +439,17 @@ static void collect_requests(vec_request_t *out, const vec_entity_t *sites)
                 continue;
             pend->touched = true;
             float waited_s = (s_tick - pend->since_tick) * TICK_MS / 1000.0f;
+            float good_weight = weight;
+            if(G_StorageSite_GetChip(site, names[j]) == SS_CHIP_COLLECT
+            && G_Provision_IsUpkeepGood(names[j])) {
+                good_weight = MAX(weight, priority_weight(SS_PRIORITY_UPKEEP));
+            }
 
             vec_request_push(out, (struct job_request){
                 .site = site,
                 .rname = names[j],
                 .shortfall = shortfall,
-                .urgency = weight * (1.0f + waited_s / WAIT_DOUBLING_S) * MIN(shortfall, SCORED_LOAD)
+                .urgency = good_weight * (1.0f + waited_s / WAIT_DOUBLING_S) * MIN(shortfall, SCORED_LOAD)
             });
         }
     }
@@ -522,6 +542,8 @@ static void assign_jobs(vec_entity_t *carriers)
 
         bool any_carrier = false;
         bool any_reachable = false;
+        bool any_district_bar = false;
+        int dest_district = G_District_Of(req->site);
 
         while(req->shortfall > 0 && vec_size(carriers) > 0 && njobs < MAX_JOBS_PER_PASS) {
 
@@ -535,6 +557,12 @@ static void assign_jobs(vec_entity_t *carriers)
                     continue;
                 if(!carrier_can_take(carrier, req->rname))
                     continue;
+                struct automation_state *cstate = astate_get(carrier);
+                int home = cstate ? cstate->home_district : 0;
+                if(home && dest_district != home) {
+                    any_district_bar = true;
+                    continue;
+                }
                 any_carrier = true;
                 vec2_t cpos = G_Pos_GetXZ(carrier);
                 uint32_t flags = G_FlagsGet(carrier);
@@ -543,6 +571,10 @@ static void assign_jobs(vec_entity_t *carriers)
                     struct job_source *src = &vec_AT(&sources, s);
                     if(src->surplus <= 0)
                         continue;
+                    if(home && G_District_Of(src->site) != home) {
+                        any_district_bar = true;
+                        continue;
+                    }
                     if(G_StorageSite_GetDoNotTake(flags, src->site))
                         continue;
                     vec2_t spos = G_Pos_GetXZ(src->site);
@@ -598,6 +630,8 @@ static void assign_jobs(vec_entity_t *carriers)
         if(req->shortfall > 0) {
             if(vec_size(&sources) == 0) {
                 note_blocked(req, REQUEST_NO_SOURCE);
+            }else if(!any_reachable && any_district_bar) {
+                note_blocked(req, REQUEST_NOT_CONNECTED);
             }else if(!any_carrier) {
                 note_blocked(req, REQUEST_NO_CARRIER);
             }else if(!any_reachable) {
@@ -625,6 +659,103 @@ static bool waiting_carrier(uint32_t uid, struct automation_state *astate)
     if(G_Harvester_GetCurrTotalCarry(uid))
         return false;
     return true;
+}
+
+struct site_search{
+    int faction;
+};
+
+static bool unfinished_site(uint32_t uid, void *arg)
+{
+    struct site_search *ss = arg;
+    if(!(G_FlagsGet(uid) & ENTITY_FLAG_BUILDING))
+        return false;
+    if(G_EntityIsZombie(uid) || G_GetFactionID(uid) != ss->faction)
+        return false;
+    return G_Building_IsMarked(uid) && !G_Building_IsCompleted(uid);
+}
+
+/* The total of the faction's requests for a resource, met by gathering */
+static int resource_need(int faction, const char *rname, const vec_request_t *requests)
+{
+    int ret = BASE_NEED;
+    for(int i = 0; i < vec_size(requests); i++) {
+        const struct job_request *req = &vec_AT(requests, i);
+        if(G_GetFactionID(req->site) != faction)
+            continue;
+        if(strcmp(req->rname, rname))
+            continue;
+        ret += req->shortfall;
+    }
+    return ret;
+}
+
+static bool try_assign_work(uint32_t uid, struct automation_state *astate)
+{
+    if(!astate->automatic_work)
+        return false;
+
+    uint32_t flags = G_FlagsGet(uid);
+    int faction = G_GetFactionID(uid);
+    vec2_t pos = G_Pos_GetXZ(uid);
+
+    if((flags & ENTITY_FLAG_BUILDER) && !astate->pinned[0]) {
+        struct site_search arg = (struct site_search){ .faction = faction };
+        uint32_t site = G_Pos_NearestWithPred(pos, unfinished_site, &arg, WORK_RADIUS);
+        if(site != NULL_UID && G_Builder_Build(uid, site))
+            return true;
+    }
+
+    if(!(flags & ENTITY_FLAG_HARVESTER))
+        return false;
+    if(G_Harvester_GetCurrTotalCarry(uid))
+        return false;
+
+    const char *candidates[MAX_RESOURCES];
+    size_t ncandidates;
+    if(astate->pinned[0]) {
+        candidates[0] = astate->pinned;
+        ncandidates = 1;
+    }else{
+        ncandidates = G_Harvester_GetGatherable(uid, ARR_SIZE(candidates), candidates);
+    }
+    if(ncandidates == 0)
+        return false;
+
+    vec_entity_t sites;
+    vec_entity_init(&sites);
+    G_StorageSite_GetAll(&sites);
+    vec_request_t requests;
+    vec_request_init(&requests);
+    collect_requests(&requests, &sites);
+
+    /* Most wanted per worker already at it, weighted by how fast this one
+     * gathers it, so that a specialist keeps to his trade */
+    float scores[MAX_RESOURCES];
+    for(int i = 0; i < ncandidates; i++) {
+        int need = resource_need(faction, candidates[i], &requests);
+        int workers = G_Harvester_CountGathering(faction, candidates[i]);
+        scores[i] = need * G_Harvester_GetGatherSpeed(uid, candidates[i]) / (1.0f + workers);
+    }
+    vec_request_destroy(&requests);
+    vec_entity_destroy(&sites);
+
+    for(int tries = 0; tries < ncandidates; tries++) {
+        int best = -1;
+        for(int i = 0; i < ncandidates; i++) {
+            if(scores[i] < 0.0f)
+                continue;
+            if(best == -1 || scores[i] > scores[best])
+                best = i;
+        }
+        if(best == -1)
+            break;
+        uint32_t node = G_Harvester_NearestResource(uid, candidates[best], WORK_RADIUS);
+        if(node != NULL_UID && G_Harvester_Gather(uid, node))
+            return true;
+        scores[best] = -1.0f;
+    }
+    return false;
 }
 
 static bool try_assign_transport_job(uint32_t uid, struct automation_state *astate)
@@ -660,6 +791,29 @@ static void assign_transport_jobs(void)
     vec_entity_destroy(&carriers);
 }
 
+static void assign_work(void)
+{
+    vec_entity_t workers;
+    vec_entity_init(&workers);
+
+    uint32_t uid;
+    struct automation_state *astate;
+    kh_foreach_val_ptr(s_entity_state_table, uid, astate, {
+        if(astate->state != STATE_IDLE || !astate->automatic_work)
+            continue;
+        vec_entity_push(&workers, uid);
+    });
+
+    for(int i = 0; i < vec_size(&workers); i++) {
+        uint32_t uid = vec_AT(&workers, i);
+        struct automation_state *astate = astate_get(uid);
+        if(astate && astate->state == STATE_IDLE) {
+            try_assign_work(uid, astate);
+        }
+    }
+    vec_entity_destroy(&workers);
+}
+
 static void on_20hz_tick(void *user, void *event)
 {
     s_tick++;
@@ -667,6 +821,7 @@ static void on_20hz_tick(void *user, void *event)
     settle_stopping();
     if(s_tick % JOB_PASS_TICKS == 0) {
         assign_transport_jobs();
+        assign_work();
     }
 }
 
@@ -772,6 +927,9 @@ bool G_Automation_AddEntity(uint32_t uid)
         .transient_ticks = 0,
         .automatic_transport = false,
         .transport_target = NULL_UID,
+        .automatic_work = false,
+        .pinned = {0},
+        .home_district = 0,
     };
     return astate_set(uid, state);
 }
@@ -896,6 +1054,54 @@ void G_Automation_SetAutomaticTransport(uint32_t uid, bool on)
     astate->automatic_transport = on;
 }
 
+void G_Automation_SetHomeDistrict(uint32_t uid, int district)
+{
+    struct automation_state *astate = astate_get(uid);
+    if(!astate)
+        return;
+    astate->home_district = district;
+}
+
+int G_Automation_GetHomeDistrict(uint32_t uid)
+{
+    struct automation_state *astate = astate_get(uid);
+    if(!astate)
+        return 0;
+    return astate->home_district;
+}
+
+void G_Automation_SetAutomaticWork(uint32_t uid, bool on)
+{
+    struct automation_state *astate = astate_get(uid);
+    if(!astate)
+        return;
+    astate->automatic_work = on;
+}
+
+bool G_Automation_GetAutomaticWork(uint32_t uid)
+{
+    struct automation_state *astate = astate_get(uid);
+    if(!astate)
+        return false;
+    return astate->automatic_work;
+}
+
+void G_Automation_SetPinnedWork(uint32_t uid, const char *rname)
+{
+    struct automation_state *astate = astate_get(uid);
+    if(!astate)
+        return;
+    pf_strlcpy(astate->pinned, rname ? rname : "", sizeof(astate->pinned));
+}
+
+const char *G_Automation_GetPinnedWork(uint32_t uid)
+{
+    struct automation_state *astate = astate_get(uid);
+    if(!astate)
+        return "";
+    return astate->pinned;
+}
+
 bool G_Automation_GetAutomaticTransport(uint32_t uid)
 {
     struct automation_state *astate = astate_get(uid);
@@ -946,6 +1152,22 @@ bool G_Automation_SaveState(struct SDL_RWops *stream)
             .val.as_int = astate.transport_target
         };
         CHK_TRUE_RET(Attr_Write(stream, &transport_target, "transport_target"));
+
+        struct attr automatic_work = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = astate.automatic_work
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &automatic_work, "automatic_work"));
+
+        struct attr pinned = (struct attr){ .type = TYPE_STRING };
+        pf_strlcpy(pinned.val.as_string, astate.pinned, sizeof(pinned.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &pinned, "pinned"));
+
+        struct attr home_district = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = astate.home_district
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &home_district, "home_district"));
         Sched_TryYield();
     });
 
@@ -1012,6 +1234,18 @@ bool G_Automation_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         astate->transport_target = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        astate->automatic_work = attr.val.as_bool;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        pf_strlcpy(astate->pinned, attr.val.as_string, sizeof(astate->pinned));
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        astate->home_district = attr.val.as_int;
         Sched_TryYield();
     }
 

@@ -427,6 +427,51 @@ uint32_t G_Cluster_NearestMember(int cluster_id, vec2_t pos)
     return ret;
 }
 
+size_t G_Cluster_GetAll(size_t maxout, int out[])
+{
+    size_t ret = 0;
+    int id;
+    struct cluster *cl;
+    kh_foreach_val_ptr(s_clusters, id, cl, {
+        (void)cl;
+        if(ret == maxout)
+            break;
+        out[ret++] = id;
+    });
+    return ret;
+}
+
+const char *G_Cluster_Type(int cluster_id)
+{
+    struct cluster *cl = cluster_get(cluster_id);
+    return cl ? cl->type : "";
+}
+
+int G_Cluster_Faction(int cluster_id)
+{
+    struct cluster *cl = cluster_get(cluster_id);
+    return cl ? cl->faction : -1;
+}
+
+int G_Cluster_PreviewJoin(const char *type, int faction, vec2_t pos, float radius)
+{
+    int best = 0;
+    int id;
+    struct cluster *cl;
+    kh_foreach_val_ptr(s_clusters, id, cl, {
+        if(cl->faction != faction || strcmp(cl->type, type))
+            continue;
+        vec2_t apos = G_Pos_GetXZ(cl->anchor);
+        vec2_t delta;
+        PFM_Vec2_Sub(&apos, &pos, &delta);
+        if(PFM_Vec2_Len(&delta) > radius)
+            continue;
+        if(best == 0 || id < best)
+            best = id;
+    });
+    return best;
+}
+
 void G_Cluster_SetIcon(const char *path)
 {
     pf_strlcpy(s_icon_path, path, sizeof(s_icon_path));

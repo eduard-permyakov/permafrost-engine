@@ -121,6 +121,11 @@ static PyObject *PyEntity_remove_tag(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_is_garrisoned(PyEntityObject *self);
 static PyObject *PyEntity_set_icons(PyEntityObject *self, PyObject *value);
 static PyObject *PyEntity_set_cluster_type(PyEntityObject *self, PyObject *args);
+static PyObject *PyEntity_set_provision(PyEntityObject *self, PyObject *args);
+static PyObject *PyEntity_replenish(PyEntityObject *self);
+static PyObject *PyEntity_get_provision_tier(PyEntityObject *self, void *closure);
+static PyObject *PyEntity_get_auto_replenish(PyEntityObject *self, void *closure);
+static int       PyEntity_set_auto_replenish(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_cluster_id(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_icons(PyEntityObject *self);
 static PyObject *PyEntity_clear_icons(PyEntityObject *self);
@@ -191,6 +196,17 @@ static PyMethodDef PyEntity_methods[] = {
     (PyCFunction)PyEntity_set_icons, METH_VARARGS,
     "Assign a set of icons to be displayed over the entity."},
 
+    {"set_provision", 
+    (PyCFunction)PyEntity_set_provision, METH_VARARGS,
+    "Takes a resource name, a number of meals, an interval in seconds and whether to fetch food by "
+    "itself, and optionally how many seconds of hunger it takes to starve. The unit then eats a meal "
+    "every interval, and when it has none left goes hungry, and after a while starves, until it eats "
+    "at a store of the resource."},
+
+    {"replenish", 
+    (PyCFunction)PyEntity_replenish, METH_NOARGS,
+    "Sends the unit to eat at the nearest store of its food. Returns False if there is none."},
+
     {"set_cluster_type", 
     (PyCFunction)PyEntity_set_cluster_type, METH_VARARGS,
     "Takes a type name and a link radius. Once completed, the building joins the oldest cluster of "
@@ -221,6 +237,14 @@ static PyGetSetDef PyEntity_getset[] = {
     {"uid",
     (getter)PyEntity_get_uid, NULL,
     "The unique integer ID of this entity",
+    NULL},
+    {"provision_tier",
+    (getter)PyEntity_get_provision_tier, NULL,
+    "How hungry the unit is: pf.PROVISION_FED, pf.PROVISION_HUNGRY or pf.PROVISION_STARVING.",
+    NULL},
+    {"auto_replenish",
+    (getter)PyEntity_get_auto_replenish, (setter)PyEntity_set_auto_replenish,
+    "Whether the unit goes for food by itself as soon as it is hungry.",
     NULL},
     {"cluster_id",
     (getter)PyEntity_get_cluster_id, NULL,
@@ -873,6 +897,12 @@ static PyObject *PyHarvesterEntity_unpickle(PyObject *cls, PyObject *args, PyObj
 static PyObject *PyHarvesterEntity_get_strategy(PyHarvesterEntityObject *self, void *closure);
 static int       PyHarvesterEntity_set_strategy(PyHarvesterEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyHarvesterEntity_get_automatic_transport(PyHarvesterEntityObject *self, void *closure);
+static PyObject *PyHarvesterEntity_get_automatic_work(PyHarvesterEntityObject *self, void *closure);
+static int       PyHarvesterEntity_set_automatic_work(PyHarvesterEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyHarvesterEntity_get_pinned_work(PyHarvesterEntityObject *self, void *closure);
+static PyObject *PyHarvesterEntity_get_home_district(PyHarvesterEntityObject *self, void *closure);
+static int       PyHarvesterEntity_set_home_district(PyHarvesterEntityObject *self, PyObject *value, void *closure);
+static int       PyHarvesterEntity_set_pinned_work(PyHarvesterEntityObject *self, PyObject *value, void *closure);
 static int       PyHarvesterEntity_set_automatic_transport(PyHarvesterEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyHarvesterEntity_get_total_carry(PyHarvesterEntityObject *self, void *closure);
 static PyObject *PyHarvesterEntity_get_transport_priority(PyHarvesterEntityObject *self, void *closure);
@@ -970,6 +1000,19 @@ static PyGetSetDef PyHarvesterEntity_getset[] = {
     (getter)PyHarvesterEntity_get_strategy, (setter)PyHarvesterEntity_set_strategy,
     "The approach used by the harvester to pick the next storage site to get resources from. "
     "Must be a pf.TRANSPORT_ enum value.",
+    NULL},
+    {"automatic_work",
+    (getter)PyHarvesterEntity_get_automatic_work, (setter)PyHarvesterEntity_set_automatic_work,
+    "Whether the worker, when it has no order, finds its own work: building nearby, then gathering "
+    "what is most wanted.",
+    NULL},
+    {"home_district",
+    (getter)PyHarvesterEntity_get_home_district, (setter)PyHarvesterEntity_set_home_district,
+    "The hub cluster whose district a carrier on District duty serves, or 0 for Free duty.",
+    NULL},
+    {"pinned_work",
+    (getter)PyHarvesterEntity_get_pinned_work, (setter)PyHarvesterEntity_set_pinned_work,
+    "The one resource a worker finding its own work gathers, or an empty string to let it choose.",
     NULL},
     {"automatic_transport",
     (getter)PyHarvesterEntity_get_automatic_transport, (setter)PyHarvesterEntity_set_automatic_transport,
@@ -2198,6 +2241,51 @@ static PyObject *PyEntity_is_garrisoned(PyEntityObject *self)
         Py_RETURN_TRUE;
     }
     Py_RETURN_FALSE;
+}
+
+static PyObject *PyEntity_set_provision(PyEntityObject *self, PyObject *args)
+{
+    const char *good;
+    int meals;
+    float interval;
+    PyObject *automatic;
+    float starve_after = PROVISION_STARVE_AFTER_S;
+    if(!PyArg_ParseTuple(args, "sifO|f", &good, &meals, &interval, &automatic, &starve_after)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a resource name, a number of meals, "
+            "an interval in seconds, a boolean and an optional number of seconds.");
+        return NULL;
+    }
+    if(G_FlagsGet(self->ent) & ENTITY_FLAG_ZOMBIE)
+        Py_RETURN_NONE;
+    G_Provision_Set(self->ent, good, meals, interval, starve_after, PyObject_IsTrue(automatic));
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_replenish(PyEntityObject *self)
+{
+    if(G_FlagsGet(self->ent) & ENTITY_FLAG_ZOMBIE)
+        Py_RETURN_FALSE;
+    if(G_Provision_Fetch(self->ent))
+        Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
+}
+
+static PyObject *PyEntity_get_provision_tier(PyEntityObject *self, void *closure)
+{
+    return PyInt_FromLong(G_Provision_Tier(self->ent));
+}
+
+static PyObject *PyEntity_get_auto_replenish(PyEntityObject *self, void *closure)
+{
+    if(G_Provision_GetAutomatic(self->ent))
+        Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
+}
+
+static int PyEntity_set_auto_replenish(PyEntityObject *self, PyObject *value, void *closure)
+{
+    G_Provision_SetAutomatic(self->ent, PyObject_IsTrue(value));
+    return 0;
 }
 
 static PyObject *PyEntity_set_cluster_type(PyEntityObject *self, PyObject *args)
@@ -4702,6 +4790,58 @@ static int PyHarvesterEntity_set_strategy(PyHarvesterEntityObject *self, PyObjec
     }
 
     G_Harvester_SetStrategy(self->super.ent, PyInt_AS_LONG(value));
+    return 0;
+}
+
+static PyObject *PyHarvesterEntity_get_automatic_work(PyHarvesterEntityObject *self, void *closure)
+{
+    if(G_Automation_GetAutomaticWork(self->super.ent)) {
+        Py_RETURN_TRUE;
+    }
+    Py_RETURN_FALSE;
+}
+
+static int PyHarvesterEntity_set_automatic_work(PyHarvesterEntityObject *self, PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+    G_Automation_SetAutomaticWork(self->super.ent, PyObject_IsTrue(value));
+    return 0;
+}
+
+static PyObject *PyHarvesterEntity_get_home_district(PyHarvesterEntityObject *self, void *closure)
+{
+    return PyInt_FromLong(G_Automation_GetHomeDistrict(self->super.ent));
+}
+
+static int PyHarvesterEntity_set_home_district(PyHarvesterEntityObject *self, PyObject *value, void *closure)
+{
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "The home district must be a cluster ID.");
+        return -1;
+    }
+    G_Automation_SetHomeDistrict(self->super.ent, PyInt_AS_LONG(value));
+    return 0;
+}
+
+static PyObject *PyHarvesterEntity_get_pinned_work(PyHarvesterEntityObject *self, void *closure)
+{
+    return PyString_FromString(G_Automation_GetPinnedWork(self->super.ent));
+}
+
+static int PyHarvesterEntity_set_pinned_work(PyHarvesterEntityObject *self, PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+    if(value != Py_None && !PyString_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Pinned work must be a resource name or None.");
+        return -1;
+    }
+    G_Automation_SetPinnedWork(self->super.ent, value == Py_None ? "" : PyString_AS_STRING(value));
     return 0;
 }
 

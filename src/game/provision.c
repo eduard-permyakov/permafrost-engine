@@ -1,0 +1,554 @@
+/*
+ *  This file is part of Permafrost Engine.
+ *  Copyright (C) 2026 Eduard Permyakov
+ *
+ *  Permafrost Engine is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  Permafrost Engine is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *  Linking this software statically or dynamically with other modules is making
+ *  a combined work based on this software. Thus, the terms and conditions of
+ *  the GNU General Public License cover the whole combination.
+ *
+ *  As a special exception, the copyright holders of Permafrost Engine give
+ *  you permission to link Permafrost Engine with independent modules to produce
+ *  an executable, regardless of the license terms of these independent
+ *  modules, and to copy and distribute the resulting executable under
+ *  terms of your choice, provided that you also meet, for each linked
+ *  independent module, the terms and conditions of the license of that
+ *  module. An independent module is a module which is not derived from
+ *  or based on Permafrost Engine. If you modify Permafrost Engine, you may
+ *  extend this exception to your version of Permafrost Engine, but you are not
+ *  obliged to do so. If you do not wish to do so, delete this exception
+ *  statement from your version.
+ *
+ */
+
+#define MEM_FILE_SYS MEM_SYS_GAME
+#define MEM_FILE_SUB MEM_SUB_GAME_PROVISION
+
+#include "provision.h"
+#include "public/game.h"
+#include "game_private.h"
+#include "movement.h"
+#include "combat.h"
+#include "position.h"
+#include "storage_site.h"
+#include "harvester.h"
+#include "../event.h"
+#include "../entity.h"
+#include "../sched.h"
+#include "../lib/public/khash.h"
+#include "../lib/public/attr.h"
+#include "../lib/public/pf_string.h"
+#include "../lib/public/string_intern.h"
+#include "../map/public/map.h"
+
+#include <assert.h>
+#include <string.h>
+
+#include "../mem.h"
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_GAME, MEM_SUB_GAME_PROVISION)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_GAME, MEM_SUB_GAME_PROVISION)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_PROVISION)
+
+#define TICK_MS             (50)
+/* Each unit is looked at once a second, a twentieth of them each tick */
+#define BUCKETS             (20)
+/* A unit visiting a store eats there if its next meal is due this soon */
+#define EAT_AHEAD_MS        (60 * 1000)
+#define GOOD_LEN            (32)
+#define FETCH_RETRY_MS      (5 * 1000)
+#define MAX_UPKEEP_GOODS    (4)
+
+#define CHK_TRUE_RET(_pred)             \
+    do{                                 \
+        if(!(_pred))                    \
+            return false;               \
+    }while(0)
+
+/* What a unit lives on: the meals it has in it, how often it eats, and how
+ * hungry it is when it has none */
+struct provision{
+    char     good[GOOD_LEN];
+    int      meals;
+    int      max_meals;
+    uint32_t interval_ms;
+    uint32_t starve_after_ms;
+    uint32_t next_due_ms;
+    int      tier;
+    uint32_t tier_since_ms;
+    /* Goes for food by itself as soon as it is hungry */
+    bool     automatic;
+    /* On its way to eat at this site */
+    uint32_t fetching;
+    /* No store had food the last time it looked */
+    uint32_t retry_ms;
+};
+
+KHASH_MAP_INIT_INT(prov, struct provision)
+
+static void on_20hz_tick(void *user, void *event);
+static void on_arrive(void *user, void *event);
+static void on_ordered(void *user, void *event);
+static void note_upkeep_good(const char *good);
+static uint32_t first_meal_delay_ms(uint32_t uid, uint32_t interval_ms);
+static bool carrying(uint32_t uid);
+
+/*****************************************************************************/
+/* STATIC VARIABLES                                                          */
+/*****************************************************************************/
+
+static const struct map *s_map;
+static khash_t(prov) *s_table;
+static uint32_t       s_now_ms;
+static uint32_t       s_tick;
+/* Every good some unit lives on */
+static char           s_upkeep_goods[MAX_UPKEEP_GOODS][GOOD_LEN];
+static int            s_num_upkeep_goods;
+
+/*****************************************************************************/
+/* STATIC FUNCTIONS                                                          */
+/*****************************************************************************/
+
+static struct provision *prov_get(uint32_t uid)
+{
+    khiter_t k = kh_get(prov, s_table, uid);
+    if(k == kh_end(s_table))
+        return NULL;
+    return &kh_value(s_table, k);
+}
+
+/* Units made together do not all go hungry together */
+static uint32_t first_meal_delay_ms(uint32_t uid, uint32_t interval_ms)
+{
+    uint32_t spread = interval_ms / 2;
+    if(spread == 0)
+        return interval_ms;
+    return interval_ms - spread + (uint32_t)((uid * 2654435761u) % spread);
+}
+
+static void note_upkeep_good(const char *good)
+{
+    for(int i = 0; i < s_num_upkeep_goods; i++) {
+        if(!strcmp(s_upkeep_goods[i], good))
+            return;
+    }
+    if(s_num_upkeep_goods == MAX_UPKEEP_GOODS)
+        return;
+    pf_strlcpy(s_upkeep_goods[s_num_upkeep_goods++], good, GOOD_LEN);
+}
+
+static void set_tier(uint32_t uid, struct provision *p, int tier)
+{
+    if(p->tier == tier)
+        return;
+    p->tier = tier;
+    p->tier_since_ms = s_now_ms;
+    E_Global_Notify(EVENT_PROVISION_CHANGED, (void*)(uintptr_t)uid, ES_ENGINE);
+}
+
+static void eat(uint32_t uid, struct provision *p, uint32_t site)
+{
+    int stock = G_StorageSite_GetCurr(site, p->good);
+    if(stock <= 0)
+        return;
+    G_StorageSite_SetCurr(site, p->good, stock - 1);
+    G_StorageSite_RecordConsumed(G_GetFactionID(site), p->good, 1);
+    p->meals = p->max_meals;
+    p->next_due_ms = s_now_ms + p->interval_ms;
+    set_tier(uid, p, PROVISION_FED);
+}
+
+struct food_search{
+    int         faction;
+    const char *good;
+    uint32_t    eater;
+};
+
+static bool has_food(uint32_t site, void *arg)
+{
+    struct food_search *fs = arg;
+    if(!(G_FlagsGet(site) & ENTITY_FLAG_STORAGE_SITE))
+        return false;
+    if(G_EntityIsZombie(site) || G_GetFactionID(site) != fs->faction)
+        return false;
+    if(G_StorageSite_GetUseAlt(site))
+        return false;
+    if(G_StorageSite_GetCurr(site, fs->good) <= 0)
+        return false;
+    if((G_FlagsGet(fs->eater) & ENTITY_FLAG_HARVESTER) && !G_Harvester_CanReachSite(fs->eater, site))
+        return false;
+    return true;
+}
+
+static bool fetch(uint32_t uid, struct provision *p)
+{
+    struct food_search arg = (struct food_search){
+        .faction = G_GetFactionID(uid),
+        .good = p->good,
+        .eater = uid
+    };
+    uint32_t site = G_Pos_NearestWithPred(G_Pos_GetXZ(uid), has_food, &arg, 0.0f);
+    if(site == NULL_UID) {
+        p->retry_ms = s_now_ms + FETCH_RETRY_MS;
+        return false;
+    }
+
+    if(carrying(uid)) {
+        if(!G_Harvester_BringInLoad(uid, site)) {
+            p->retry_ms = s_now_ms + FETCH_RETRY_MS;
+            return false;
+        }
+        return true;
+    }
+
+    p->fetching = site;
+    if(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER) {
+        G_Harvester_Stop(uid);
+    }
+    E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive);
+    E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_ordered);
+    E_Entity_Register(EVENT_MOTION_END, uid, on_arrive, (void*)(uintptr_t)uid, G_RUNNING);
+    E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_ordered, (void*)(uintptr_t)uid, G_RUNNING);
+    G_Move_SetSurroundEntity(uid, site);
+    return true;
+}
+
+static void on_arrive(void *user, void *event)
+{
+    uint32_t uid = (uintptr_t)user;
+    if(!G_Move_Still(uid))
+        return;
+    E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive);
+    E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_ordered);
+
+    struct provision *p = prov_get(uid);
+    if(!p || p->fetching == NULL_UID)
+        return;
+    uint32_t site = p->fetching;
+    p->fetching = NULL_UID;
+    if(!G_EntityExists(site) || G_EntityIsZombie(site))
+        return;
+    /* Others crowding the store kept it out of reach: try again */
+    if(!M_NavObjAdjacent(s_map, uid, site)) {
+        fetch(uid, p);
+        return;
+    }
+    eat(uid, p, site);
+}
+
+static bool carrying(uint32_t uid)
+{
+    return (G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER) && G_Harvester_GetCurrTotalCarry(uid) > 0;
+}
+
+static void on_ordered(void *user, void *event)
+{
+    uint32_t uid = (uintptr_t)user;
+    E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive);
+    E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_ordered);
+
+    struct provision *p = prov_get(uid);
+    if(p) {
+        p->fetching = NULL_UID;
+    }
+}
+
+/* Whether the unit can leave what it is doing to go and eat */
+static bool free_to_fetch(uint32_t uid)
+{
+    uint32_t flags = G_FlagsGet(uid);
+    if(flags & (ENTITY_FLAG_GARRISONED | ENTITY_FLAG_ZOMBIE))
+        return false;
+    if((flags & ENTITY_FLAG_COMBATABLE) && !G_Combat_Idle(uid))
+        return false;
+    return true;
+}
+
+static void update(uint32_t uid, struct provision *p)
+{
+    if(p->interval_ms == 0)
+        return;
+    if(s_now_ms >= p->next_due_ms) {
+        if(p->meals > 0) {
+            p->meals--;
+            p->next_due_ms = s_now_ms + p->interval_ms;
+        }else if(p->tier == PROVISION_FED) {
+            set_tier(uid, p, PROVISION_HUNGRY);
+        }
+    }
+    if(p->tier == PROVISION_HUNGRY && s_now_ms - p->tier_since_ms >= p->starve_after_ms) {
+        set_tier(uid, p, PROVISION_STARVING);
+    }
+    if(p->tier != PROVISION_FED && p->automatic && p->fetching == NULL_UID 
+    && s_now_ms >= p->retry_ms && free_to_fetch(uid)) {
+        fetch(uid, p);
+    }
+}
+
+static void on_20hz_tick(void *user, void *event)
+{
+    s_tick++;
+    s_now_ms += TICK_MS;
+    int bucket = s_tick % BUCKETS;
+
+    uint32_t uid;
+    struct provision *p;
+    kh_foreach_val_ptr(s_table, uid, p, {
+        if(uid % BUCKETS != bucket)
+            continue;
+        update(uid, p);
+    });
+}
+
+/*****************************************************************************/
+/* EXTERN FUNCTIONS                                                          */
+/*****************************************************************************/
+
+bool G_Provision_Init(const struct map *map)
+{
+    if(!(s_table = kh_init(prov)))
+        return false;
+    s_now_ms = 0;
+    s_tick = 0;
+    s_num_upkeep_goods = 0;
+    s_map = map;
+    E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
+    return true;
+}
+
+void G_Provision_Shutdown(void)
+{
+    E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
+    kh_destroy(prov, s_table);
+}
+
+void G_Provision_RemoveEntity(uint32_t uid)
+{
+    khiter_t k = kh_get(prov, s_table, uid);
+    if(k == kh_end(s_table))
+        return;
+    E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive);
+    E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_ordered);
+    kh_del(prov, s_table, k);
+}
+
+void G_Provision_OnVisit(uint32_t uid, uint32_t site)
+{
+    struct provision *p = prov_get(uid);
+    if(!p)
+        return;
+    if(p->tier == PROVISION_FED && p->meals > 0)
+        return;
+    if(p->tier == PROVISION_FED && p->next_due_ms > s_now_ms + EAT_AHEAD_MS)
+        return;
+    eat(uid, p, site);
+}
+
+bool G_Provision_Set(uint32_t uid, const char *good, int max_meals, float interval_s, 
+                     float starve_after_s, bool automatic)
+{
+    int status;
+    khiter_t k = kh_put(prov, s_table, uid, &status);
+    if(status == -1)
+        return false;
+    struct provision *p = &kh_value(s_table, k);
+    if(status != 0) {
+        *p = (struct provision){0};
+        p->tier = PROVISION_FED;
+        p->fetching = NULL_UID;
+        p->meals = max_meals;
+    }
+    pf_strlcpy(p->good, good, sizeof(p->good));
+    note_upkeep_good(good);
+    p->max_meals = max_meals;
+    p->interval_ms = (uint32_t)(interval_s * 1000.0f);
+    p->starve_after_ms = (uint32_t)(starve_after_s * 1000.0f);
+    p->next_due_ms = s_now_ms + first_meal_delay_ms(uid, p->interval_ms);
+    p->automatic = automatic;
+    return true;
+}
+
+bool G_Provision_IsUpkeepGood(const char *good)
+{
+    for(int i = 0; i < s_num_upkeep_goods; i++) {
+        if(!strcmp(s_upkeep_goods[i], good))
+            return true;
+    }
+    return false;
+}
+
+int G_Provision_Tier(uint32_t uid)
+{
+    struct provision *p = prov_get(uid);
+    return p ? p->tier : PROVISION_FED;
+}
+
+void G_Provision_SetAutomatic(uint32_t uid, bool on)
+{
+    struct provision *p = prov_get(uid);
+    /* A unit being loaded gets its flag before the rest of its provision */
+    if(!p && on) {
+        int status;
+        khiter_t k = kh_put(prov, s_table, uid, &status);
+        if(status == -1)
+            return;
+        p = &kh_value(s_table, k);
+        *p = (struct provision){0};
+        p->tier = PROVISION_FED;
+        p->fetching = NULL_UID;
+    }
+    if(p) {
+        p->automatic = on;
+    }
+}
+
+bool G_Provision_GetAutomatic(uint32_t uid)
+{
+    struct provision *p = prov_get(uid);
+    return p && p->automatic;
+}
+
+bool G_Provision_Fetch(uint32_t uid)
+{
+    struct provision *p = prov_get(uid);
+    if(!p)
+        return false;
+    return fetch(uid, p);
+}
+
+void G_Provision_Counts(int faction, int out[PROVISION_NUM_TIERS])
+{
+    for(int i = 0; i < PROVISION_NUM_TIERS; i++) {
+        out[i] = 0;
+    }
+    uint32_t uid;
+    struct provision *p;
+    kh_foreach_val_ptr(s_table, uid, p, {
+        if(G_GetFactionID(uid) != faction || p->interval_ms == 0)
+            continue;
+        out[p->tier]++;
+    });
+}
+
+size_t G_Provision_Demand(int faction, size_t maxout, int out_districts[], float out_rates[])
+{
+    size_t ret = 0;
+    uint32_t uid;
+    struct provision *p;
+    kh_foreach_val_ptr(s_table, uid, p, {
+        if(G_GetFactionID(uid) != faction || p->interval_ms == 0)
+            continue;
+        int district = G_District_Of(uid);
+        if(district == 0)
+            continue;
+        int i = 0;
+        while(i < ret && out_districts[i] != district)
+            i++;
+        if(i == ret) {
+            if(ret == maxout)
+                continue;
+            out_districts[ret] = district;
+            out_rates[ret] = 0.0f;
+            ret++;
+        }
+        out_rates[i] += 60000.0f / p->interval_ms;
+    });
+    return ret;
+}
+
+bool G_Provision_SaveState(struct SDL_RWops *stream)
+{
+    struct attr now = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = s_now_ms
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &now, "now_ms"));
+
+    struct attr num = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_table)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num, "num_ents"));
+
+    uint32_t uid;
+    struct provision p;
+    kh_foreach(s_table, uid, p, {
+
+        struct attr attrs[] = {
+            {.type = TYPE_INT,  .val.as_int = uid},
+            {.type = TYPE_STRING},
+            {.type = TYPE_INT,  .val.as_int = p.meals},
+            {.type = TYPE_INT,  .val.as_int = p.max_meals},
+            {.type = TYPE_INT,  .val.as_int = p.interval_ms},
+            {.type = TYPE_INT,  .val.as_int = p.starve_after_ms},
+            {.type = TYPE_INT,  .val.as_int = p.next_due_ms},
+            {.type = TYPE_INT,  .val.as_int = p.tier},
+            {.type = TYPE_INT,  .val.as_int = p.tier_since_ms},
+            {.type = TYPE_BOOL, .val.as_bool = p.automatic},
+        };
+        pf_strlcpy(attrs[1].val.as_string, p.good, sizeof(attrs[1].val.as_string));
+        for(int i = 0; i < sizeof(attrs) / sizeof(attrs[0]); i++) {
+            CHK_TRUE_RET(Attr_Write(stream, &attrs[i], "provision"));
+        }
+        Sched_TryYield();
+    });
+    return true;
+}
+
+bool G_Provision_LoadState(struct SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    s_now_ms = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num = attr.val.as_int;
+
+    for(int i = 0; i < num; i++) {
+
+        struct attr a[10];
+        static const int types[10] = {TYPE_INT, TYPE_STRING, TYPE_INT, TYPE_INT, TYPE_INT, 
+                                      TYPE_INT, TYPE_INT, TYPE_INT, TYPE_INT, TYPE_BOOL};
+        for(int j = 0; j < 10; j++) {
+            CHK_TRUE_RET(Attr_Parse(stream, &a[j], true));
+            CHK_TRUE_RET(a[j].type == types[j]);
+        }
+
+        int status;
+        khiter_t k = kh_put(prov, s_table, a[0].val.as_int, &status);
+        CHK_TRUE_RET(status != -1);
+        struct provision *p = &kh_value(s_table, k);
+        pf_strlcpy(p->good, a[1].val.as_string, sizeof(p->good));
+        note_upkeep_good(p->good);
+        p->meals = a[2].val.as_int;
+        p->max_meals = a[3].val.as_int;
+        p->interval_ms = a[4].val.as_int;
+        p->starve_after_ms = a[5].val.as_int;
+        p->next_due_ms = a[6].val.as_int;
+        p->tier = a[7].val.as_int;
+        p->tier_since_ms = a[8].val.as_int;
+        p->automatic = a[9].val.as_bool;
+        p->fetching = NULL_UID;
+        p->retry_ms = 0;
+        Sched_TryYield();
+    }
+    return true;
+}

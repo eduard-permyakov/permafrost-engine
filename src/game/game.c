@@ -59,6 +59,8 @@
 #include "population.h"
 #include "roads.h"
 #include "cluster.h"
+#include "district.h"
+#include "provision.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../anim/public/anim.h"
@@ -224,8 +226,10 @@ static void g_init_map(void)
     G_Roads_Init(s_gs.map);
     G_Harvester_Init(s_gs.map);
     G_Automation_Init();
+    G_Provision_Init(s_gs.map);
     G_Group_Init();
     G_Cluster_Init();
+    G_District_Init(s_gs.map);
     G_ClearPath_Init(s_gs.map);
     N_ClearState();
 }
@@ -1252,7 +1256,9 @@ static void g_clear_map_state(void)
         G_Roads_Shutdown();
         G_Harvester_Shutdown();
         G_Automation_Shutdown();
+        G_Provision_Shutdown();
         G_Group_Shutdown();
+        G_District_Shutdown();
         G_Cluster_Shutdown();
         G_ClearPath_Shutdown();
         G_Pos_Shutdown();
@@ -3167,6 +3173,7 @@ bool G_RemoveEntity(uint32_t uid)
     G_Population_RemoveContributor(uid);
     G_Population_RemoveLimitContributor(uid);
     G_Automation_RemoveEntity(uid);
+    G_Provision_RemoveEntity(uid);
     G_Group_RemoveEntity(uid);
     G_Pos_SyncRefs(uid);
     G_Region_RemoveEnt(uid);
@@ -3843,6 +3850,7 @@ void G_Zombiefy(uint32_t uid, bool invis)
     G_Population_RemoveContributor(uid);
     G_Population_RemoveLimitContributor(uid);
     G_Automation_RemoveEntity(uid);
+    G_Provision_RemoveEntity(uid);
     G_Group_RemoveEntity(uid);
 
     G_Pos_SyncRefs(uid);
@@ -4453,6 +4461,9 @@ bool G_SaveEntityState(SDL_RWops *stream)
     if(!G_Automation_SaveState(stream))
         return false;
 
+    if(!G_Provision_SaveState(stream))
+        return false;
+
     if(!G_Group_SaveState(stream))
         return false;
 
@@ -4532,6 +4543,11 @@ bool G_LoadEntityState(SDL_RWops *stream)
 
     if(!G_Automation_LoadState(stream)) {
         fprintf(stderr, "Could not load automation state.\n");
+        return false;
+    }
+
+    if(!G_Provision_LoadState(stream)) {
+        fprintf(stderr, "Could not load provision state.\n");
         return false;
     }
 

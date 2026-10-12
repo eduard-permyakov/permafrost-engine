@@ -172,6 +172,7 @@ static const char *s_event_str_table[] = {
     STR(EVENT_CLUSTER_CHANGED),
     STR(EVENT_RESOURCES_SPILLED),
     STR(EVENT_REQUEST_BLOCKED),
+    STR(EVENT_PROVISION_CHANGED),
 };
 
 static khash_t(handler_desc) *s_event_handler_table;

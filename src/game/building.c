@@ -817,6 +817,13 @@ bool G_Building_Unobstructed(uint32_t uid)
     }
 }
 
+bool G_Building_IsMarked(uint32_t uid)
+{
+    struct buildstate *bs = buildstate_get(uid);
+    assert(bs);
+    return (bs->state >= BUILDING_STATE_MARKED);
+}
+
 bool G_Building_IsFounded(uint32_t uid)
 {
     struct buildstate *bs = buildstate_get(uid);

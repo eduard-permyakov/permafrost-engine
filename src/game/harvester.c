@@ -40,6 +40,7 @@
 #include "movement.h"
 #include "resource.h"
 #include "storage_site.h"
+#include "provision.h"
 #include "game_private.h"
 #include "public/game.h"
 #include "../sched.h"
@@ -1012,6 +1013,7 @@ static void on_arrive_at_storage(void *user, void *event)
     if(left > 0) {
         E_Entity_Notify(EVENT_RESOURCE_DROPPED_OFF, uid, NULL, ES_ENGINE);
     }
+    G_Provision_OnVisit(uid, hs->ss_uid);
 
     if(left >= carry) {
         G_Harvester_SetCurrCarry(uid, rname, 0);
@@ -1071,6 +1073,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
         return;
     }
 
+    G_Provision_OnVisit(uid, hs->transport_src_uid);
     int store_cap = ss_capacity(hs->transport_src_uid, hs->res_name);
     int store_curr = G_StorageSite_GetCurr(hs->transport_src_uid, hs->res_name);
     int desired = ss_desired(hs->transport_src_uid, hs->res_name);
@@ -1893,6 +1896,54 @@ bool G_Harvester_SetGatherSpeed(uint32_t uid, const char *rname, float speed)
     return hstate_set_key_float(hs->gather_speeds, rname, speed);
 }
 
+size_t G_Harvester_GetGatherable(uint32_t uid, size_t maxout, const char *out[])
+{
+    struct hstate *hs = hstate_get(uid);
+    if(!hs)
+        return 0;
+    size_t ret = 0;
+    const char *key;
+    float speed;
+    kh_foreach(hs->gather_speeds, key, speed, {
+        if(ret == maxout)
+            break;
+        if(speed > 0.0f) {
+            out[ret++] = key;
+        }
+    });
+    return ret;
+}
+
+uint32_t G_Harvester_NearestResource(uint32_t uid, const char *rname, float radius)
+{
+    vec2_t pos = G_Pos_GetXZ(uid);
+    struct valid_resource_arg arg = (struct valid_resource_arg){
+        .ent_pos = pos,
+        .ent_layer = Entity_NavLayer(uid),
+        .rname = rname,
+        .exclude = UID_NONE
+    };
+    return G_Pos_NearestWithPred(pos, valid_resource, (void*)&arg, radius);
+}
+
+int G_Harvester_CountGathering(int faction, const char *rname)
+{
+    int ret = 0;
+    uint32_t uid;
+    struct hstate *hs;
+    kh_foreach_val_ptr(s_entity_state_table, uid, hs, {
+        if(hs->state != STATE_HARVESTING && hs->state != STATE_HARVESTING_SEEK_RESOURCE
+        && hs->state != STATE_HARVESTING_SEEK_STORAGE)
+            continue;
+        if(!hs->res_name || strcmp(hs->res_name, rname))
+            continue;
+        if(G_GetFactionID(uid) != faction)
+            continue;
+        ret++;
+    });
+    return ret;
+}
+
 float G_Harvester_GetGatherSpeed(uint32_t uid, const char *rname)
 {
     float ret = DEFAULT_GATHER_SPEED;
@@ -2166,6 +2217,21 @@ bool G_Harvester_DropOff(uint32_t harvester, uint32_t storage)
     hs->drop_off_only = true;
     entity_drop_off(harvester, storage);
     return true;
+}
+
+bool G_Harvester_BringInLoad(uint32_t harvester, uint32_t site)
+{
+    struct hstate *hs = hstate_get(harvester);
+    if(!hs)
+        return false;
+    if(hs->transport_src_uid != NULL_UID || hs->transport_dest_uid != NULL_UID)
+        return false;
+    if(hs->state == STATE_HARVESTING_SEEK_STORAGE && hs->ss_uid == site)
+        return true;
+    const char *rname = carried_resource_name(hs);
+    if(!rname || !G_StorageSite_Accepts(site, rname))
+        return false;
+    return G_Harvester_DropOff(harvester, site);
 }
 
 bool G_Harvester_PickUp(uint32_t harvester, uint32_t storage)

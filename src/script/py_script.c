@@ -335,6 +335,12 @@ static PyObject *PyPf_group_members(PyObject *self, PyObject *args);
 static PyObject *PyPf_cluster_members(PyObject *self, PyObject *args);
 static PyObject *PyPf_cluster_anchor(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_cluster_icon(PyObject *self, PyObject *args);
+static PyObject *PyPf_district_at(PyObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPf_show_districts(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_district_preview(PyObject *self, PyObject *args);
+static PyObject *PyPf_cluster_preview_join(PyObject *self, PyObject *args);
+static PyObject *PyPf_provision_counts(PyObject *self, PyObject *args);
+static PyObject *PyPf_provision_demand(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_style(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_font_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_bonus_color(PyObject *self, PyObject *args);
@@ -1288,6 +1294,35 @@ static PyMethodDef pf_module_methods[] = {
     {"set_cluster_icon",
     (PyCFunction)PyPf_set_cluster_icon, METH_VARARGS,
     "Sets the image shown over the buildings of a cluster that has more than one."},
+
+    {"provision_counts",
+    (PyCFunction)PyPf_provision_counts, METH_VARARGS,
+    "Takes a faction ID and returns a tuple of how many of its units are fed, hungry and starving."},
+
+    {"provision_demand",
+    (PyCFunction)PyPf_provision_demand, METH_VARARGS,
+    "Takes a faction ID and returns a dictionary of the meals per minute its units eat, keyed by the "
+    "ID of the district they are in."},
+
+    {"cluster_preview_join",
+    (PyCFunction)PyPf_cluster_preview_join, METH_VARARGS,
+    "Takes a cluster type, a faction ID, an (X, Z) position and a link radius. Returns the ID of the "
+    "cluster a building placed there would join, or 0 if it would start one."},
+
+    {"district_at",
+    (PyCFunction)PyPf_district_at, METH_VARARGS | METH_KEYWORDS,
+    "Takes an (X, Z) position and a faction ID, and an optional 'water' flag. Returns a tuple of the "
+    "ID of the hub cluster whose district the position is in (0 for none), the path cost to its hub, "
+    "and whether the position is within the hub's own territory."},
+
+    {"show_districts",
+    (PyCFunction)PyPf_show_districts, METH_VARARGS,
+    "Turns the district lens, which tints each district of the player's factions, on or off."},
+
+    {"set_district_preview",
+    (PyCFunction)PyPf_set_district_preview, METH_VARARGS,
+    "Takes a faction ID and an (X, Z) position, or None to clear it. Shows the cells a hub placed "
+    "there would take over, and returns how many."},
 
     {"set_group_ui_style",
     (PyCFunction)PyPf_set_group_ui_style, METH_VARARGS,
@@ -5647,6 +5682,106 @@ static PyObject *PyPf_set_cluster_icon(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+static PyObject *PyPf_provision_counts(PyObject *self, PyObject *args)
+{
+    int faction;
+    if(!PyArg_ParseTuple(args, "i", &faction) || faction < 0 || faction >= MAX_FACTIONS) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a faction ID.");
+        return NULL;
+    }
+    int counts[PROVISION_NUM_TIERS];
+    G_Provision_Counts(faction, counts);
+    return Py_BuildValue("(iii)", counts[PROVISION_FED], counts[PROVISION_HUNGRY], counts[PROVISION_STARVING]);
+}
+
+static PyObject *PyPf_provision_demand(PyObject *self, PyObject *args)
+{
+    int faction;
+    if(!PyArg_ParseTuple(args, "i", &faction) || faction < 0 || faction >= MAX_FACTIONS) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a faction ID.");
+        return NULL;
+    }
+    int districts[256];
+    float rates[256];
+    size_t n = G_Provision_Demand(faction, ARR_SIZE(districts), districts, rates);
+
+    PyObject *ret = PyDict_New();
+    if(!ret)
+        return NULL;
+    for(int i = 0; i < n; i++) {
+        PyObject *key = PyInt_FromLong(districts[i]);
+        PyObject *val = PyFloat_FromDouble(rates[i]);
+        int status = (key && val) ? PyDict_SetItem(ret, key, val) : -1;
+        Py_XDECREF(key);
+        Py_XDECREF(val);
+        if(status) {
+            Py_DECREF(ret);
+            return NULL;
+        }
+    }
+    return ret;
+}
+
+static PyObject *PyPf_cluster_preview_join(PyObject *self, PyObject *args)
+{
+    const char *type;
+    int faction;
+    vec2_t pos;
+    float radius;
+    if(!PyArg_ParseTuple(args, "si(ff)f", &type, &faction, &pos.x, &pos.z, &radius)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a type string, a faction ID, an (X, Z) tuple and a radius.");
+        return NULL;
+    }
+    return PyInt_FromLong(G_Cluster_PreviewJoin(type, faction, pos, radius));
+}
+
+static PyObject *PyPf_district_at(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    static char *kwlist[] = {"pos", "faction_id", "water", NULL};
+    vec2_t pos;
+    int faction;
+    int water = 0;
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "(ff)i|i", kwlist, &pos.x, &pos.z, &faction, &water)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an (X, Z) tuple and a faction ID.");
+        return NULL;
+    }
+    G_District_Update();
+    float cost;
+    int id = G_District_At(faction, water, pos, &cost);
+    return Py_BuildValue("(ifO)", id, cost, cost <= G_DISTRICT_TERRITORY_COST && id ? Py_True : Py_False);
+}
+
+static PyObject *PyPf_show_districts(PyObject *self, PyObject *args)
+{
+    PyObject *on;
+    if(!PyArg_ParseTuple(args, "O", &on)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a boolean.");
+        return NULL;
+    }
+    G_District_SetShow(PyObject_IsTrue(on));
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_district_preview(PyObject *self, PyObject *args)
+{
+    int faction;
+    PyObject *posobj;
+    if(!PyArg_ParseTuple(args, "iO", &faction, &posobj)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a faction ID and an (X, Z) tuple or None.");
+        return NULL;
+    }
+    if(posobj == Py_None) {
+        G_District_SetPreview(false, faction, (vec2_t){0});
+        return PyInt_FromLong(0);
+    }
+    vec2_t pos;
+    if(!PyArg_ParseTuple(posobj, "ff", &pos.x, &pos.z)) {
+        PyErr_SetString(PyExc_TypeError, "The position must be an (X, Z) tuple.");
+        return NULL;
+    }
+    return PyInt_FromLong(G_District_SetPreview(true, faction, pos));
+}
+
 static PyObject *PyPf_show_console(PyObject *self)
 {
     S_Console_Show();
@@ -5991,6 +6126,7 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
     case EVENT_UNIT_BECAME_ACTIVE:
     case EVENT_UNIT_IDLE_PENDING:
     case EVENT_REQUEST_BLOCKED:
+    case EVENT_PROVISION_CHANGED:
     case EVENT_ENTITY_DIED: {
         PyObject *ent = S_Entity_ObjForUID((uintptr_t)arg);
         if(ent) {
