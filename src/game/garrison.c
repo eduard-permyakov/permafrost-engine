@@ -451,7 +451,7 @@ static void on_20hz_tick(void *user, void *event)
                 if(!target_state) {
                     gu_state->wait_ticks = 0;
                     gu_state->target_rendevouz_issued = false;
-                    gu_state = STATE_NOT_GARRISONED;
+                    gu_state->state = STATE_NOT_GARRISONED;
                     break;
                 }
                 if(target_state->state == STATE_MOVING_TO_PICKUP_POINT) {
