@@ -413,11 +413,16 @@ static int       PyCombatableEntity_set_armour_type(PyCombatableEntityObject *se
 static int       PyCombatableEntity_set_corpse_model(PyCombatableEntityObject *self, PyObject *value, void *closure);
 static int       PyCombatableEntity_set_projectile_fire_desc(PyCombatableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyCombatableEntity_hold_position(PyCombatableEntityObject *self);
+static PyObject *PyCombatableEntity_die(PyCombatableEntityObject *self);
 static PyObject *PyCombatableEntity_attack(PyCombatableEntityObject *self, PyObject *args);
 static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 static PyMethodDef PyCombatableEntity_methods[] = {
+    {"die", 
+    (PyCFunction)PyCombatableEntity_die, METH_NOARGS,
+    "Kills the entity through the ordinary death path, as if its health had run out."},
+
     {"hold_position", 
     (PyCFunction)PyCombatableEntity_hold_position, METH_NOARGS,
     "Issues a 'hold position' order to the entity, stopping it and preventing it from moving to attack."},
@@ -1218,6 +1223,8 @@ typedef struct {
 }PyGarrisonEntityObject;
 
 static PyObject *PyGarrisonEntity_garrison(PyGarrisonEntityObject *self, PyObject *args);
+static PyObject *PyGarrisonEntity_enter_as_ingredient(PyGarrisonEntityObject *self, PyObject *args);
+static PyObject *PyGarrisonEntity_get_is_ingredient(PyGarrisonEntityObject *self, void *closure);
 static PyObject *PyGarrisonEntity_del(PyGarrisonEntityObject *self);
 static PyObject *PyGarrisonEntity_pickle(PyGarrisonEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyGarrisonEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
@@ -1228,6 +1235,10 @@ static int       PyGarrisonEntity_set_garrison_capacity(PyGarrisonEntityObject *
                                                         PyObject *value, void *closure);
 
 static PyGetSetDef PyGarrisonEntity_getset[] = {
+    {"is_ingredient",
+    (getter)PyGarrisonEntity_get_is_ingredient, NULL,
+    "Whether the entity is held, or on its way to be held, by a building as an ingredient.",
+    NULL},
     {"garrison_capacity",
     (getter)PyGarrisonEntity_get_garrison_capacity, (setter)PyGarrisonEntity_set_garrison_capacity,
     "The capacity of the garrisonable entity that is used up when this entity is garrisoned.",
@@ -1241,6 +1252,11 @@ static PyMethodDef PyGarrisonEntity_methods[] = {
     (PyCFunction)PyGarrisonEntity_garrison, METH_VARARGS,
     "Issues a 'garrison' order to the entity to try and enter the garrisonable entity specified "
     "by the argument."},
+
+    {"enter_as_ingredient", 
+    (PyCFunction)PyGarrisonEntity_enter_as_ingredient, METH_VARARGS,
+    "Orders the entity into the garrisonable building given by the argument, to be held there as "
+    "an ingredient of what it makes rather than as a defender. Returns False if it cannot."},
 
     {"__del__", 
     (PyCFunction)PyGarrisonEntity_del, METH_NOARGS,
@@ -1279,6 +1295,8 @@ typedef struct {
 }PyGarrisonableEntityObject;
 
 static PyObject *PyGarrisonableEntity_del(PyGarrisonableEntityObject *self);
+static PyObject *PyGarrisonableEntity_ingredients(PyGarrisonableEntityObject *self);
+static PyObject *PyGarrisonableEntity_eject_ingredient(PyGarrisonableEntityObject *self, PyObject *args);
 static PyObject *PyGarrisonableEntity_pickle(PyGarrisonableEntityObject *self, PyObject *args, 
                                              PyObject *kwargs);
 static PyObject *PyGarrisonableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
@@ -1305,6 +1323,15 @@ static PyGetSetDef PyGarrisonableEntity_getset[] = {
 };
 
 static PyMethodDef PyGarrisonableEntity_methods[] = {
+
+    {"ingredients", 
+    (PyCFunction)PyGarrisonableEntity_ingredients, METH_NOARGS,
+    "Returns a list of the entities held inside as ingredients."},
+
+    {"eject_ingredient", 
+    (PyCFunction)PyGarrisonableEntity_eject_ingredient, METH_VARARGS,
+    "Lets the given ingredient entity out of the building. Returns False if it is not held here "
+    "or cannot be placed outside."},
 
     {"__del__", 
     (PyCFunction)PyGarrisonableEntity_del, METH_NOARGS,
@@ -2414,6 +2441,14 @@ fail_unpickle:
     SDL_RWclose(stream);
 fail_args:
     return ret;
+}
+
+static PyObject *PyCombatableEntity_die(PyCombatableEntityObject *self)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE)
+        Py_RETURN_NONE;
+    G_Combat_Kill(self->super.ent);
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyCombatableEntity_hold_position(PyCombatableEntityObject *self)
@@ -4961,12 +4996,89 @@ static PyObject *PyGarrisonEntity_garrison(PyGarrisonEntityObject *self, PyObjec
         return NULL;
     }
 
-    if(!G_Garrison_Enter(self->super.ent, garrisonable->super.ent)) {
+    if(!G_Garrison_Enter(garrisonable->super.ent, self->super.ent)) {
         PyErr_SetString(PyExc_TypeError, "Unable to garrison inside specified "
             "pf.GarrisonableEntity instance.");
         return NULL;
     }
     Py_RETURN_NONE;
+}
+
+static PyObject *PyGarrisonEntity_enter_as_ingredient(PyGarrisonEntityObject *self, PyObject *args)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+
+    PyGarrisonableEntityObject *garrisonable;
+    if(!PyArg_ParseTuple(args, "O", &garrisonable)
+    || !PyObject_IsInstance((PyObject*)garrisonable, (PyObject*)&PyGarrisonableEntity_type)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a pf.GarrisonableEntity instance.");
+        return NULL;
+    }
+    if(G_FlagsGet(garrisonable->super.ent) & ENTITY_FLAG_ZOMBIE)
+        Py_RETURN_FALSE;
+
+    if(!G_Garrison_EnterAsIngredient(garrisonable->super.ent, self->super.ent))
+        Py_RETURN_FALSE;
+    Py_RETURN_TRUE;
+}
+
+static PyObject *PyGarrisonEntity_get_is_ingredient(PyGarrisonEntityObject *self, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE)
+        Py_RETURN_FALSE;
+    if(G_Garrison_IsIngredient(self->super.ent))
+        Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
+}
+
+static PyObject *PyGarrisonableEntity_ingredients(PyGarrisonableEntityObject *self)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+
+    vec_entity_t ingredients;
+    vec_entity_init(&ingredients);
+    G_Garrison_GetIngredients(self->super.ent, &ingredients);
+
+    PyObject *ret = PyList_New(0);
+    if(!ret)
+        goto out;
+
+    for(int i = 0; i < vec_size(&ingredients); i++) {
+        PyObject *obj = S_Entity_ObjForUID(vec_AT(&ingredients, i));
+        if(!obj)
+            continue;
+        if(0 != PyList_Append(ret, obj)) {
+            Py_CLEAR(ret);
+            goto out;
+        }
+    }
+out:
+    vec_entity_destroy(&ingredients);
+    return ret;
+}
+
+static PyObject *PyGarrisonableEntity_eject_ingredient(PyGarrisonableEntityObject *self, PyObject *args)
+{
+    PyEntityObject *unit;
+    if(!PyArg_ParseTuple(args, "O!", &PyEntity_type, &unit)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a pf.Entity instance.");
+        return NULL;
+    }
+    if((G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE)
+    || (G_FlagsGet(unit->ent) & ENTITY_FLAG_ZOMBIE)
+    || !G_Garrison_IsIngredient(unit->ent))
+        Py_RETURN_FALSE;
+
+    vec2_t pos = G_Pos_GetXZ(self->super.ent);
+    if(!G_Garrison_Evict(self->super.ent, unit->ent, pos))
+        Py_RETURN_FALSE;
+    Py_RETURN_TRUE;
 }
 
 static PyObject *PyGarrisonEntity_del(PyGarrisonEntityObject *self)

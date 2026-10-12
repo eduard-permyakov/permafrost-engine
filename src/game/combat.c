@@ -301,6 +301,7 @@ enum combat_cmd_type{
     COMBAT_CMD_SET_BASE_ARMOUR,
     COMBAT_CMD_SET_BASE_DAMAGE,
     COMBAT_CMD_SET_MAX_HP,
+    COMBAT_CMD_KILL,
     COMBAT_CMD_SET_RANGE,
     COMBAT_CMD_CLEAR_SAVED_MOVE_CMD,
     COMBAT_CMD_ADD_TIME_DELTA,
@@ -1154,12 +1155,14 @@ static void entity_die(uint32_t uid)
     E_Entity_Notify(EVENT_ENTITY_DEATH, uid, NULL, ES_ENGINE);
     vec_entity_push(&s_dying_ents, uid);
 
-    /* All units garrisoned inside a 'dead' entity die also. 
+    /* The units defending a 'dead' entity die also, while the ones it 
+     * held as ingredients walk out of it.
      */
     if(flags & ENTITY_FLAG_GARRISONABLE) {
+        G_Garrison_EjectIngredients(uid);
         vec_entity_t garrisoned;
         vec_entity_init(&garrisoned);
-        G_Garrison_GetUnits(uid, &garrisoned);
+        G_Garrison_GetDefenders(uid, &garrisoned);
         for(int i = 0; i < vec_size(&garrisoned); i++) {
             uint32_t unit = vec_AT(&garrisoned, i);
             E_Global_Notify(EVENT_ENTITY_DIED, (void*)((uintptr_t)unit), ES_ENGINE);
@@ -1871,6 +1874,19 @@ static void do_set_current_hp(uint32_t uid, int hp)
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
     cs->current_hp = MIN(hp, cs->stats.max_hp);
+}
+
+static void do_kill(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct combatstate *cs = combatstate_get(uid);
+    if(!cs || cs->current_hp == 0)
+        return;
+    if(G_FlagsGet(uid) & ENTITY_FLAG_ZOMBIE)
+        return;
+    cs->current_hp = 0;
+    entity_die(uid);
 }
 
 static void do_set_max_hp(uint32_t uid, int hp)
@@ -2906,6 +2922,10 @@ static void combat_process_cmds(void)
         }
         case COMBAT_CMD_SET_MAX_HP: {
             do_set_max_hp(cmd.uid, cmd.u.max_hp.hp);
+            break;
+        }
+        case COMBAT_CMD_KILL: {
+            do_kill(cmd.uid);
             break;
         }
         case COMBAT_CMD_SET_RANGE: {
@@ -4342,6 +4362,14 @@ void G_Combat_SetCurrentHP(uint32_t uid, int hp)
         .type = COMBAT_CMD_SET_CURRENT_HP,
         .uid = uid,
         .u.current_hp.hp = hp
+    });
+}
+
+void G_Combat_Kill(uint32_t uid)
+{
+    combat_push_cmd((struct combat_cmd){
+        .type = COMBAT_CMD_KILL,
+        .uid = uid,
     });
 }
 

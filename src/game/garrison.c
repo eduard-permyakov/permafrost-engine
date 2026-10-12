@@ -98,6 +98,11 @@ struct garrison_state{
     bool            target_rendevouz_issued;
     enum unit_state state;
     int             wait_ticks;
+    /* Held by the building as an input to what it makes, rather than as
+     * one of its defenders: it takes no garrison capacity and leaves
+     * alive when the building falls.
+     */
+    bool            ingredient;
 };
 
 struct garrisonable_state{
@@ -110,6 +115,7 @@ struct garrisonable_state{
     int               wait_ticks;
     int               capacity;
     int               current;
+    int               ingredients;
     vec_entity_t      garrisoned;
 };
 
@@ -124,6 +130,9 @@ KHASH_MAP_INIT_INT(garrisonable, struct garrisonable_state)
 
 VEC_TYPE(evict, struct evict_work)
 VEC_IMPL(static inline, evict, struct evict_work)
+
+static bool garrison_enter(uint32_t garrisonable, uint32_t unit);
+static void get_units(uint32_t garrisonable, bool ingredients, vec_entity_t *out);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -215,6 +224,9 @@ static void on_update_ui(void *user, void *event)
     nk_style_push_style_item(ctx, &ctx->style.window.fixed_background, s_bg_style);
 
     kh_foreach(s_garrisonable_state_table, uid, gbs, {
+
+        if(gbs.capacity == 0)
+            continue;
 
         struct obb obb;
         Entity_CurrentOBB(uid, &obb, true);
@@ -358,6 +370,8 @@ static bool can_garrison(uint32_t uid, uint32_t target)
     struct garrison_state *gus = gu_state_get(uid);
     struct garrisonable_state *gbs = gb_state_get(target);
     assert(gus && gbs);
+    if(gus->ingredient)
+        return true;
     int capacity_left = gbs->capacity - gbs->current;
     return (capacity_left >= gus->capacity_consumed);
 }
@@ -369,7 +383,11 @@ static void do_garrison(uint32_t uid, uint32_t target)
     assert(gus && gbs);
 
     /* Add the unit to the garrisonable's units */
-    gbs->current += gus->capacity_consumed;
+    if(gus->ingredient) {
+        gbs->ingredients++;
+    }else{
+        gbs->current += gus->capacity_consumed;
+    }
     vec_entity_push(&gbs->garrisoned, uid);
 
     /* Remove the garrisoned unit from the game simulation */
@@ -740,6 +758,20 @@ static bool load_color(struct nk_color *out, SDL_RWops *stream)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
+static void get_units(uint32_t garrisonable, bool ingredients, vec_entity_t *out)
+{
+    struct garrisonable_state *gbs = gb_state_get(garrisonable);
+    if(!gbs)
+        return;
+    for(int i = 0; i < vec_size(&gbs->garrisoned); i++) {
+        uint32_t unit = vec_AT(&gbs->garrisoned, i);
+        struct garrison_state *gus = gu_state_get(unit);
+        if(!gus || gus->ingredient != ingredients)
+            continue;
+        vec_entity_push(out, unit);
+    }
+}
+
 bool G_Garrison_Init(const struct map *map)
 {
     if((s_garrison_state_table = kh_init(garrison)) == NULL)
@@ -785,11 +817,28 @@ bool G_Garrison_AddGarrison(uint32_t uid)
     gus.target_rendevouz_issued = false;
     gus.state = STATE_NOT_GARRISONED;
     gus.wait_ticks = 0;
+    gus.ingredient = false;
     return gu_state_set(uid, gus);
 }
 
 void G_Garrison_RemoveGarrison(uint32_t uid)
 {
+    struct garrison_state *gus = gu_state_get(uid);
+    if(!gus)
+        return;
+
+    struct garrisonable_state *gbs = gb_state_get(gus->target);
+    if(gus->state == STATE_GARRISONED && gbs) {
+        int idx = vec_entity_indexof(&gbs->garrisoned, uid, compare_uids);
+        if(idx != -1) {
+            vec_entity_del(&gbs->garrisoned, idx);
+            if(gus->ingredient) {
+                gbs->ingredients--;
+            }else{
+                gbs->current -= gus->capacity_consumed;
+            }
+        }
+    }
     gu_state_remove(uid);
 }
 
@@ -800,12 +849,17 @@ bool G_Garrison_AddGarrisonable(uint32_t uid)
     gbs.wait_ticks = 0;
     gbs.capacity = 0;
     gbs.current = 0;
+    gbs.ingredients = 0;
     vec_entity_init(&gbs.garrisoned);
     return gb_state_set(uid, gbs);
 }
 
 void G_Garrison_RemoveGarrisonable(uint32_t uid)
 {
+    struct garrisonable_state *gbs = gb_state_get(uid);
+    if(!gbs)
+        return;
+    vec_entity_destroy(&gbs->garrisoned);
     gb_state_remove(uid);
 }
 
@@ -844,7 +898,30 @@ int G_Garrison_GetCurrentGarrisoned(uint32_t uid)
     return gbs->current;
 }
 
+bool G_Garrison_EnterAsIngredient(uint32_t garrisonable, uint32_t unit)
+{
+    struct garrisonable_state *gbs = gb_state_get(garrisonable);
+    struct garrison_state *gus = gu_state_get(unit);
+    if(!gbs || !gus)
+        return false;
+    if(gus->state == STATE_GARRISONED)
+        return false;
+    if(!garrison_enter(garrisonable, unit))
+        return false;
+    gus->ingredient = true;
+    return true;
+}
+
 bool G_Garrison_Enter(uint32_t garrisonable, uint32_t unit)
+{
+    struct garrison_state *gus = gu_state_get(unit);
+    if(gus && gus->state != STATE_GARRISONED) {
+        gus->ingredient = false;
+    }
+    return garrison_enter(garrisonable, unit);
+}
+
+static bool garrison_enter(uint32_t garrisonable, uint32_t unit)
 {
     /* In cases where land units are ordered inside a water-based transport, the 
      * transport should "automatically" go to the shore to pick up the units
@@ -977,9 +1054,14 @@ bool G_Garrison_Evict(uint32_t garrisonable, uint32_t unit, vec2_t target)
     }
 
     /* Now it is certain that eviction can take place */
-    int capacity_consumed = gus->capacity_consumed;
     vec_entity_del(&gbs->garrisoned, idx);
-    gbs->current -= capacity_consumed;
+    if(gus->ingredient) {
+        gbs->ingredients--;
+    }else{
+        gbs->current -= gus->capacity_consumed;
+    }
+    gus->state = STATE_NOT_GARRISONED;
+    gus->ingredient = false;
 
     /* Place the evicted unit at the closest location and issue it a move order */
     uint32_t flags = G_FlagsGet(unit);
@@ -1118,11 +1200,49 @@ void G_Garrison_GetUnits(uint32_t uid, vec_entity_t *out)
     vec_entity_copy(out, &gbs->garrisoned);
 }
 
+void G_Garrison_GetDefenders(uint32_t uid, vec_entity_t *out)
+{
+    get_units(uid, false, out);
+}
+
+void G_Garrison_GetIngredients(uint32_t uid, vec_entity_t *out)
+{
+    get_units(uid, true, out);
+}
+
+bool G_Garrison_IsIngredient(uint32_t uid)
+{
+    struct garrison_state *gus = gu_state_get(uid);
+    return gus && gus->ingredient && gus->state != STATE_NOT_GARRISONED;
+}
+
+bool G_Garrison_EjectIngredients(uint32_t garrisonable)
+{
+    struct garrisonable_state *gbs = gb_state_get(garrisonable);
+    if(!gbs)
+        return false;
+
+    vec_entity_t ingredients;
+    vec_entity_init(&ingredients);
+    get_units(garrisonable, true, &ingredients);
+
+    vec2_t pos = G_Pos_GetXZ(garrisonable);
+    bool ret = true;
+    for(int i = 0; i < vec_size(&ingredients); i++) {
+        uint32_t unit = vec_AT(&ingredients, i);
+        ret &= G_Garrison_Evict(garrisonable, unit, pos);
+    }
+    vec_entity_destroy(&ingredients);
+    return ret;
+}
+
 void G_Garrison_ClearGarrison(uint32_t uid)
 {
     struct garrisonable_state *gbs = gb_state_get(uid);
     assert(gbs);
     vec_entity_reset(&gbs->garrisoned);
+    gbs->current = 0;
+    gbs->ingredients = 0;
 }
 
 bool G_Garrison_SaveState(struct SDL_RWops *stream)
@@ -1175,6 +1295,12 @@ bool G_Garrison_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr_gus.wait_ticks
         };
         CHK_TRUE_RET(Attr_Write(stream, &wait_ticks, "wait_ticks"));
+
+        struct attr ingredient = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr_gus.ingredient
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &ingredient, "ingredient"));
         Sched_TryYield();
     });
 
@@ -1234,6 +1360,12 @@ bool G_Garrison_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr_gbs.current
         };
         CHK_TRUE_RET(Attr_Write(stream, &current, "current"));
+
+        struct attr ingredients = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr_gbs.ingredients
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &ingredients, "ingredients"));
 
         struct attr garrisoned_size = (struct attr){
             .type = TYPE_INT,
@@ -1359,6 +1491,10 @@ bool G_Garrison_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         gus->wait_ticks = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        gus->ingredient = attr.val.as_bool;
         Sched_TryYield();
     }
 
@@ -1405,6 +1541,10 @@ bool G_Garrison_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         gbs->current = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        gbs->ingredients = attr.val.as_int;
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);

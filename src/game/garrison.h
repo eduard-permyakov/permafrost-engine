@@ -54,6 +54,8 @@ int  G_Garrison_CurrContextualAction(void);
 bool G_Garrison_InTargetMode(void);
 void G_Garrison_Stop(uint32_t uid);
 void G_Garrison_GetUnits(uint32_t uid, vec_entity_t *out);
+void G_Garrison_GetDefenders(uint32_t uid, vec_entity_t *out);
+bool G_Garrison_EjectIngredients(uint32_t garrisonable);
 void G_Garrison_ClearGarrison(uint32_t uid);
 bool G_Garrison_SaveState(struct SDL_RWops *stream);
 bool G_Garrison_LoadState(struct SDL_RWops *stream);
