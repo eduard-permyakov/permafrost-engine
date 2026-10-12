@@ -810,6 +810,7 @@ static void s_expose_event_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, EVENT_UNIT_IDLE_PENDING);
     PY_EXPOSE_ENUM(module, EVENT_CLUSTER_CHANGED);
     PY_EXPOSE_ENUM(module, EVENT_RESOURCES_SPILLED);
+    PY_EXPOSE_ENUM(module, EVENT_REQUEST_BLOCKED);
     PY_EXPOSE_ENUM(module, EVENT_ENGINE_LAST);
 }
 
@@ -866,6 +867,19 @@ static void s_expose_game_constants(PyObject *module)
 
     PY_EXPOSE_ENUM(module, TRANSPORT_STRATEGY_EXCESS);
     PY_EXPOSE_ENUM(module, TRANSPORT_STRATEGY_NEAREST);
+
+    PyModule_AddIntConstant(module, "CHIP_STORE", SS_CHIP_STORE);
+    PyModule_AddIntConstant(module, "CHIP_COLLECT", SS_CHIP_COLLECT);
+    PyModule_AddIntConstant(module, "CHIP_HOLD", SS_CHIP_HOLD);
+    PyModule_AddIntConstant(module, "CHIP_OFF", SS_CHIP_OFF);
+    PyModule_AddIntConstant(module, "PRIORITY_LOW", SS_PRIORITY_LOW);
+    PyModule_AddIntConstant(module, "PRIORITY_NORMAL", SS_PRIORITY_NORMAL);
+    PyModule_AddIntConstant(module, "PRIORITY_URGENT", SS_PRIORITY_URGENT);
+    PyModule_AddIntConstant(module, "PRIORITY_UPKEEP", SS_PRIORITY_UPKEEP);
+    PY_EXPOSE_ENUM(module, REQUEST_OK);
+    PY_EXPOSE_ENUM(module, REQUEST_NO_SOURCE);
+    PY_EXPOSE_ENUM(module, REQUEST_NO_CARRIER);
+    PY_EXPOSE_ENUM(module, REQUEST_UNREACHABLE);
     PY_EXPOSE_ENUM(module, TRANSPORT_STRATEGY_GATHERING);
 
     PY_EXPOSE_ENUM(module, REGION_RECTANGLE);

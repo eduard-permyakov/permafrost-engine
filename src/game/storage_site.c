@@ -111,6 +111,12 @@ struct ss_state{
      * shows it */
     int                    nmembers;
     uint32_t               anchor;
+    /* How much the requests of this site count against others' */
+    int                    priority;
+    /* Per resource: the reserve never given away, and what the site does 
+     * with the resource (enum ss_chip) */
+    kh_int_t              *keep;
+    kh_int_t              *chip;
 };
 
 typedef char buff_t[512];
@@ -225,6 +231,8 @@ static void ss_state_remove(uint32_t uid)
 
 static void ss_state_destroy(struct ss_state *hs)
 {
+    kh_destroy(int, hs->keep);
+    kh_destroy(int, hs->chip);
     kh_destroy(int, hs->capacity);
     kh_destroy(int, hs->curr);
     kh_destroy(int, hs->desired);
@@ -240,9 +248,12 @@ static bool ss_state_init(struct ss_state *hs)
     hs->desired = kh_init(int);
     hs->alt_capacity = kh_init(int);
     hs->alt_desired = kh_init(int);
+    hs->keep = kh_init(int);
+    hs->chip = kh_init(int);
 
     if(!hs->capacity || !hs->curr || !hs->desired
-    || !hs->alt_capacity || !hs->alt_desired) {
+    || !hs->alt_capacity || !hs->alt_desired
+    || !hs->keep || !hs->chip) {
 
         ss_state_destroy(hs);
         return false;
@@ -254,6 +265,7 @@ static bool ss_state_init(struct ss_state *hs)
     hs->pool = 0;
     hs->nmembers = 0;
     hs->anchor = NULL_UID;
+    hs->priority = SS_PRIORITY_NORMAL;
     return true;
 }
 
@@ -1030,6 +1042,7 @@ void G_StorageSite_PoolJoin(uint32_t uid, int pool_id)
         newpool.do_not_take_land = ss->do_not_take_land;
         newpool.do_not_take_water = ss->do_not_take_water;
         newpool.anchor = uid;
+        newpool.priority = ss->priority;
         kh_value(s_pools, k) = newpool;
         pool = &kh_value(s_pools, k);
     }
@@ -1053,6 +1066,16 @@ void G_StorageSite_PoolJoin(uint32_t uid, int pool_id)
         int prev = 0;
         ss_state_get_key(pool->desired, key, &prev);
         ss_state_set_key(pool->desired, key, MAX(prev, amount));
+    });
+    kh_foreach(ss->keep, key, amount, {
+        int prev = 0;
+        ss_state_get_key(pool->keep, key, &prev);
+        ss_state_set_key(pool->keep, key, MAX(prev, amount));
+    });
+    kh_foreach(ss->chip, key, amount, {
+        if(!ss_state_get_key(pool->chip, key, &(int){0})) {
+            ss_state_set_key(pool->chip, key, amount);
+        }
     });
 
     pool->nmembers++;
@@ -1133,6 +1156,100 @@ void G_StorageSite_OnDeath(uint32_t uid)
         spill(uid, key, amount);
     });
     kh_clear(int, ss->curr);
+}
+
+void G_StorageSite_SetPriority(uint32_t uid, int priority)
+{
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+    ss->priority = MAX(SS_PRIORITY_LOW, MIN(priority, SS_PRIORITY_UPKEEP));
+}
+
+int G_StorageSite_GetPriority(uint32_t uid)
+{
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+    return ss->priority;
+}
+
+void G_StorageSite_SetKeep(uint32_t uid, const char *rname, int keep)
+{
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+    ss_state_set_key(ss->keep, rname, MAX(keep, 0));
+}
+
+int G_StorageSite_GetKeep(uint32_t uid, const char *rname)
+{
+    int ret = 0;
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+    ss_state_get_key(ss->keep, rname, &ret);
+    return ret;
+}
+
+void G_StorageSite_SetChip(uint32_t uid, const char *rname, enum ss_chip chip)
+{
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+    ss_state_set_key(ss->chip, rname, chip);
+}
+
+enum ss_chip G_StorageSite_GetChip(uint32_t uid, const char *rname)
+{
+    int ret = SS_CHIP_STORE;
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+    ss_state_get_key(ss->chip, rname, &ret);
+    return ret;
+}
+
+int G_StorageSite_Request(uint32_t uid, const char *rname)
+{
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+
+    int desired = 0;
+    if(ss->use_alt) {
+        ss_state_get_key(ss->alt_desired, rname, &desired);
+        return desired;
+    }
+    ss_state_get_key(ss->desired, rname, &desired);
+
+    switch(G_StorageSite_GetChip(uid, rname)) {
+    case SS_CHIP_COLLECT:
+        return MAX(desired, G_StorageSite_GetKeep(uid, rname));
+    case SS_CHIP_OFF:
+        return 0;
+    default:
+        return desired;
+    }
+}
+
+int G_StorageSite_Surplus(uint32_t uid, const char *rname)
+{
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+    if(ss->use_alt)
+        return 0;
+
+    int curr = 0, desired = 0;
+    ss_state_get_key(ss->curr, rname, &curr);
+    ss_state_get_key(ss->desired, rname, &desired);
+
+    switch(G_StorageSite_GetChip(uid, rname)) {
+    case SS_CHIP_HOLD:
+        return 0;
+    case SS_CHIP_OFF:
+        return curr;
+    default:
+        return MAX(curr - MAX(desired, G_StorageSite_GetKeep(uid, rname)), 0);
+    }
+}
+
+bool G_StorageSite_Accepts(uint32_t uid, const char *rname)
+{
+    return G_StorageSite_GetChip(uid, rname) != SS_CHIP_OFF;
 }
 
 bool G_StorageSite_IsSaturated(uint32_t uid)
@@ -1701,6 +1818,14 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr.pool
         };
         CHK_TRUE_RET(Attr_Write(stream, &pool, "pool"));
+
+        struct attr priority = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.priority
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &priority, "priority"));
+        CHK_TRUE_RET(save_table(curr.keep, "num_keep", stream));
+        CHK_TRUE_RET(save_table(curr.chip, "num_chip", stream));
         Sched_TryYield();
     });
 
@@ -1746,6 +1871,14 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
         CHK_TRUE_RET(save_table(curr.capacity, "num_capacity", stream));
         CHK_TRUE_RET(save_table(curr.curr, "num_curr", stream));
         CHK_TRUE_RET(save_table(curr.desired, "num_desired", stream));
+
+        struct attr priority = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.priority
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &priority, "priority"));
+        CHK_TRUE_RET(save_table(curr.keep, "num_keep", stream));
+        CHK_TRUE_RET(save_table(curr.chip, "num_chip", stream));
         Sched_TryYield();
     });
 
@@ -1942,6 +2075,12 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         ss->pool = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        ss->priority = attr.val.as_int;
+        CHK_TRUE_RET(load_table(ss->keep, stream));
+        CHK_TRUE_RET(load_table(ss->chip, stream));
         Sched_TryYield();
     }
 
@@ -1982,6 +2121,12 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(load_table(ps->capacity, stream));
         CHK_TRUE_RET(load_table(ps->curr, stream));
         CHK_TRUE_RET(load_table(ps->desired, stream));
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        ps->priority = attr.val.as_int;
+        CHK_TRUE_RET(load_table(ps->keep, stream));
+        CHK_TRUE_RET(load_table(ps->chip, stream));
         Sched_TryYield();
     }
 

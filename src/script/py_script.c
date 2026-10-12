@@ -5990,6 +5990,7 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
     case EVENT_UNIT_BECAME_IDLE:
     case EVENT_UNIT_BECAME_ACTIVE:
     case EVENT_UNIT_IDLE_PENDING:
+    case EVENT_REQUEST_BLOCKED:
     case EVENT_ENTITY_DIED: {
         PyObject *ent = S_Entity_ObjForUID((uintptr_t)arg);
         if(ent) {

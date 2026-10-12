@@ -139,6 +139,9 @@ struct hstate{
     }queued;
     uint32_t    transport_src_uid;
     uint32_t    transport_dest_uid;
+    /* For a transport the automation assigned: how much to bring. The 
+     * carrier takes no more, makes no other stops, and goes idle after. */
+    int         job_amount;
 };
 
 struct searcharg{
@@ -314,6 +317,7 @@ static bool hstate_init(struct hstate *hs)
     hs->queued.cmd = CMD_NONE;
     hs->transport_src_uid = NULL_UID;
     hs->transport_dest_uid = NULL_UID;
+    hs->job_amount = 0;
     return true;
 }
 
@@ -478,6 +482,8 @@ static bool valid_storage_site_dropoff(uint32_t curr, void *arg)
     if(cap == 0)
         return false;
     if(stored == cap)
+        return false;
+    if(!G_StorageSite_Accepts(curr, sarg->rname))
         return false;
 
     return true;
@@ -788,6 +794,7 @@ static void finish_transporing(struct hstate *hs)
     hs->transport_src_uid = NULL_UID;
     hs->res_name = NULL;
     hs->state = STATE_NOT_HARVESTING;
+    hs->job_amount = 0;
 }
 
 static void on_harvest_anim_finished(void *user, void *event)
@@ -1076,7 +1083,10 @@ static void on_arrive_at_transport_source(void *user, void *event)
     /* Figure out how much resource to take. Add it to our carry .
      */
     int take = 0;
-    switch(hs->strategy) {
+    if(hs->job_amount > 0) {
+        take = MIN(carry_cap, MIN(hs->job_amount, G_StorageSite_Surplus(hs->transport_src_uid, hs->res_name)));
+        take = MAX(take, 0);
+    }else switch(hs->strategy) {
     case TRANSPORT_STRATEGY_EXCESS: {
         /* If there are absolutely no valid storage sites which have excess 
          * of our target resource, then we are allowed to overstep the 'desired' 
@@ -1118,7 +1128,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
      * where we can get the rest of the desired resource. Make a stop there 
      * as well.
      */
-    if(curr_carry + take < max_carry) {
+    if(curr_carry + take < max_carry && hs->job_amount == 0) {
     
         uint32_t newsrc = transport_source(uid, hs->transport_dest_uid, hs->res_name);
         if(G_EntityExists(newsrc) && !G_EntityIsZombie(newsrc)) {
@@ -1137,10 +1147,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
     if(curr_carry + take == 0) {
     
         cart_leg_log(uid, "empty-src", hs->transport_src_uid, hs->transport_dest_uid);
-        hs->transport_dest_uid = NULL_UID;
-        hs->transport_src_uid = NULL_UID;
-        hs->res_name = NULL;
-        hs->state = STATE_NOT_HARVESTING;
+        finish_transporing(hs);
         return;
     }
 
@@ -1238,7 +1245,19 @@ static void on_arrive_at_transport_dest(void *user, void *event)
     }
 
     uint32_t dest = hs->transport_dest_uid;
+    bool job = (hs->job_amount > 0);
     finish_transporing(hs);
+
+    /* An assigned job ends here; the automation gives the next one */
+    if(job) {
+        if(G_Harvester_GetCurrTotalCarry(uid)) {
+            uint32_t store = nearest_storage_site_dropoff(uid, rname);
+            if(store != NULL_UID) {
+                G_Harvester_DropOff(uid, store);
+            }
+        }
+        return;
+    }
     if(!G_Harvester_Transport(uid, dest))
         cart_leg_log(uid, "idle", NULL_UID, dest);
 }
@@ -1502,7 +1521,7 @@ static int amount_en_route(uint32_t target, const char *rname, uint32_t exclude)
 
         int amount = 0;
         if(hs->state == STATE_TRANSPORT_GETTING) {
-            amount = G_Harvester_GetMaxCarry(uid, rname);
+            amount = hs->job_amount ? hs->job_amount : G_Harvester_GetMaxCarry(uid, rname);
         }else if(hs->state == STATE_TRANSPORT_PUTTING) {
             hstate_get_key_int(hs->curr_carry, rname, &amount);
         }
@@ -2266,6 +2285,66 @@ bool G_Harvester_Transport(uint32_t harvester, uint32_t storage)
     return true;
 }
 
+bool G_Harvester_TransportJob(uint32_t harvester, uint32_t src, uint32_t dest, 
+                              const char *rname, int amount)
+{
+    struct hstate *hs = hstate_get(harvester);
+    if(!hs || amount <= 0)
+        return false;
+    if(G_Harvester_GetCurrTotalCarry(harvester))
+        return false;
+    if(G_Harvester_GetMaxCarry(harvester, rname) == 0)
+        return false;
+
+    const char *key = si_intern(rname, &s_stringpool, s_stridx);
+    if(!key)
+        return false;
+
+    G_Harvester_Stop(harvester);
+    hs->state = STATE_TRANSPORT_GETTING;
+    hs->transport_dest_uid = dest;
+    hs->transport_src_uid = src;
+    hs->res_name = key;
+    hs->job_amount = MIN(amount, G_Harvester_GetMaxCarry(harvester, rname));
+    E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, harvester, 
+        (void*)(uintptr_t)dest, ES_ENGINE);
+
+    cart_leg_log(harvester, "job", src, dest);
+    if(M_NavObjAdjacent(s_map, harvester, src)) {
+        on_arrive_at_transport_source((void*)((uintptr_t)harvester), NULL);
+    }else{
+        E_Entity_Register(EVENT_MOTION_END, harvester, on_arrive_at_transport_source, 
+            (void*)((uintptr_t)harvester), G_RUNNING);
+        E_Entity_Register(EVENT_ORDER_ISSUED, harvester, on_motion_begin_travel, 
+            (void*)((uintptr_t)harvester), G_RUNNING);
+        G_Move_SetSurroundEntity(harvester, src);
+    }
+    return true;
+}
+
+int G_Harvester_EnRoute(uint32_t dest, const char *rname)
+{
+    return amount_en_route(dest, rname, NULL_UID);
+}
+
+bool G_Harvester_CanReachSite(uint32_t harvester, uint32_t site)
+{
+    return storage_site_reachable(harvester, site);
+}
+
+bool G_Harvester_JobInfo(uint32_t harvester, uint32_t *out_src, uint32_t *out_dest, 
+                         const char **out_rname, int *out_state)
+{
+    struct hstate *hs = hstate_get(harvester);
+    if(!hs)
+        return false;
+    *out_src = hs->transport_src_uid;
+    *out_dest = hs->transport_dest_uid;
+    *out_rname = hs->res_name;
+    *out_state = hs->state;
+    return true;
+}
+
 bool G_Harvester_SupplyBuilding(uint32_t harvester, uint32_t building)
 {
     struct hstate *hs = hstate_get(harvester);
@@ -2342,6 +2421,7 @@ void G_Harvester_Stop(uint32_t uid)
         E_Entity_Notify(EVENT_HARVEST_END, uid, NULL, ES_ENGINE);
     }
     hs->state = STATE_NOT_HARVESTING;
+    hs->job_amount = 0;
 
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished);
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished_source);
@@ -2641,6 +2721,12 @@ bool G_Harvester_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr.transport_dest_uid
         };
         CHK_TRUE_RET(Attr_Write(stream, &transport_dest_uid, "transport_dest_uid"));
+
+        struct attr job_amount = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.job_amount
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &job_amount, "job_amount"));
         Sched_TryYield();
     });
     return true;
@@ -2866,6 +2952,10 @@ bool G_Harvester_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         hs->transport_dest_uid = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        hs->job_amount = attr.val.as_int;
         Sched_TryYield();
     };
 

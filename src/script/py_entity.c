@@ -877,7 +877,14 @@ static int       PyHarvesterEntity_set_automatic_transport(PyHarvesterEntityObje
 static PyObject *PyHarvesterEntity_get_total_carry(PyHarvesterEntityObject *self, void *closure);
 static PyObject *PyHarvesterEntity_get_transport_priority(PyHarvesterEntityObject *self, void *closure);
 
+static PyObject *PyHarvesterEntity_current_job(PyHarvesterEntityObject *self);
+
 static PyMethodDef PyHarvesterEntity_methods[] = {
+
+    {"current_job", 
+    (PyCFunction)PyHarvesterEntity_current_job, METH_NOARGS,
+    "Returns a tuple of the carrier's state, the site it fetches from, the site it brings to and the "
+    "resource, with None for whatever it does not have."},
 
     {"__del__", 
     (PyCFunction)PyHarvesterEntity_del, METH_NOARGS,
@@ -997,6 +1004,14 @@ static PyObject *PyStorageSiteEntity_get_curr_amount(PyStorageSiteEntityObject *
 static PyObject *PyStorageSiteEntity_set_curr_amount(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_capacity(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_own_capacity(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_get_keep(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_set_keep(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_get_chip(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_set_chip(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_get_surplus(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_request_status(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_get_priority(PyStorageSiteEntityObject *self, void *closure);
+static int       PyStorageSiteEntity_set_priority(PyStorageSiteEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyStorageSiteEntity_set_capacity(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_storable(PyStorageSiteEntityObject *self, void *closure);
 static PyObject *PyStorageSiteEntity_get_desired(PyStorageSiteEntityObject *self, PyObject *args);
@@ -1025,6 +1040,35 @@ static PyMethodDef PyStorageSiteEntity_methods[] = {
     {"get_capacity", 
     (PyCFunction)PyStorageSiteEntity_get_capacity, METH_VARARGS,
     "Gets the maximum amount of the specified resource that can be stored in the storage site."},
+
+    {"get_keep", 
+    (PyCFunction)PyStorageSiteEntity_get_keep, METH_VARARGS,
+    "Gets the reserve of the resource the site never gives away."},
+
+    {"set_keep", 
+    (PyCFunction)PyStorageSiteEntity_set_keep, METH_VARARGS,
+    "Sets the reserve of the resource the site never gives away. With the Collect chip, the site asks "
+    "to be brought the resource up to it."},
+
+    {"get_chip", 
+    (PyCFunction)PyStorageSiteEntity_get_chip, METH_VARARGS,
+    "Gets what the site does with the resource: one of pf.CHIP_STORE, pf.CHIP_COLLECT, pf.CHIP_HOLD "
+    "or pf.CHIP_OFF."},
+
+    {"set_chip", 
+    (PyCFunction)PyStorageSiteEntity_set_chip, METH_VARARGS,
+    "Sets what the site does with the resource: one of pf.CHIP_STORE, pf.CHIP_COLLECT, pf.CHIP_HOLD "
+    "or pf.CHIP_OFF."},
+
+    {"get_surplus", 
+    (PyCFunction)PyStorageSiteEntity_get_surplus, METH_VARARGS,
+    "Gets how much of the resource the site can give away."},
+
+    {"request_status", 
+    (PyCFunction)PyStorageSiteEntity_request_status, METH_VARARGS,
+    "Returns a tuple of why the site's request for the resource is unserved (one of pf.REQUEST_OK, "
+    "pf.REQUEST_NO_SOURCE, pf.REQUEST_NO_CARRIER, pf.REQUEST_UNREACHABLE) and how many seconds it "
+    "has waited."},
 
     {"get_own_capacity", 
     (PyCFunction)PyStorageSiteEntity_get_own_capacity, METH_VARARGS,
@@ -1059,6 +1103,11 @@ static PyGetSetDef PyStorageSiteEntity_getset[] = {
     {"storable",
     (getter)PyStorageSiteEntity_get_storable, NULL,
     "The list of resources that are currently able to be held at this storage site.",
+    NULL},
+    {"priority",
+    (getter)PyStorageSiteEntity_get_priority, (setter)PyStorageSiteEntity_set_priority,
+    "How much the site's requests count against others': one of pf.PRIORITY_LOW, pf.PRIORITY_NORMAL, "
+    "pf.PRIORITY_URGENT or pf.PRIORITY_UPKEEP.",
     NULL},
     {"do_not_take_land",
     (getter)PyStorageSiteEntity_get_do_not_take_land, (setter)PyStorageSiteEntity_set_do_not_take_land,
@@ -4767,6 +4816,121 @@ static PyObject *PyStorageSiteEntity_get_own_capacity(PyStorageSiteEntityObject 
         return NULL;
     }
     return PyInt_FromLong(G_StorageSite_GetOwnCapacity(self->super.ent, name));
+}
+
+#define SS_CHECK_ALIVE(_ret)                                                    \
+    do{                                                                         \
+        if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {                  \
+            PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity."); \
+            return _ret;                                                        \
+        }                                                                       \
+    }while(0)
+
+static PyObject *PyHarvesterEntity_current_job(PyHarvesterEntityObject *self)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+    uint32_t src, dest;
+    const char *rname;
+    int state;
+    if(!G_Harvester_JobInfo(self->super.ent, &src, &dest, &rname, &state))
+        Py_RETURN_NONE;
+
+    PyObject *srcobj = (src != NULL_UID) ? S_Entity_ObjForUID(src) : NULL;
+    PyObject *destobj = (dest != NULL_UID) ? S_Entity_ObjForUID(dest) : NULL;
+    return Py_BuildValue("(iOOs)", state, srcobj ? srcobj : Py_None, destobj ? destobj : Py_None, 
+        rname ? rname : "");
+}
+
+static PyObject *PyStorageSiteEntity_get_keep(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
+        return NULL;
+    }
+    return PyInt_FromLong(G_StorageSite_GetKeep(self->super.ent, name));
+}
+
+static PyObject *PyStorageSiteEntity_set_keep(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *name;
+    int keep;
+    if(!PyArg_ParseTuple(args, "si", &name, &keep)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting two arguments: name (string) and amount (int).");
+        return NULL;
+    }
+    G_StorageSite_SetKeep(self->super.ent, name, keep);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyStorageSiteEntity_get_chip(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
+        return NULL;
+    }
+    return PyInt_FromLong(G_StorageSite_GetChip(self->super.ent, name));
+}
+
+static PyObject *PyStorageSiteEntity_set_chip(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *name;
+    int chip;
+    if(!PyArg_ParseTuple(args, "si", &name, &chip) || chip < SS_CHIP_STORE || chip > SS_CHIP_OFF) {
+        PyErr_SetString(PyExc_TypeError, "Expecting two arguments: name (string) and one of the pf.CHIP_ values.");
+        return NULL;
+    }
+    G_StorageSite_SetChip(self->super.ent, name, chip);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyStorageSiteEntity_get_surplus(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
+        return NULL;
+    }
+    return PyInt_FromLong(G_StorageSite_Surplus(self->super.ent, name));
+}
+
+static PyObject *PyStorageSiteEntity_request_status(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
+        return NULL;
+    }
+    int waited_ms;
+    enum request_status status = G_Automation_RequestStatus(self->super.ent, name, &waited_ms);
+    return Py_BuildValue("(if)", (int)status, waited_ms / 1000.0f);
+}
+
+static PyObject *PyStorageSiteEntity_get_priority(PyStorageSiteEntityObject *self, void *closure)
+{
+    SS_CHECK_ALIVE(NULL);
+    return PyInt_FromLong(G_StorageSite_GetPriority(self->super.ent));
+}
+
+static int PyStorageSiteEntity_set_priority(PyStorageSiteEntityObject *self, PyObject *value, void *closure)
+{
+    SS_CHECK_ALIVE(-1);
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Priority must be an integer.");
+        return -1;
+    }
+    G_StorageSite_SetPriority(self->super.ent, PyInt_AS_LONG(value));
+    return 0;
 }
 
 static PyObject *PyStorageSiteEntity_set_capacity(PyStorageSiteEntityObject *self, PyObject *args)

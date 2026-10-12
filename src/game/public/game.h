@@ -661,6 +661,11 @@ bool  G_Harvester_DecreaseTransportPrio(uint32_t uid, const char *rname);
 int   G_Harvester_GetTransportPrio(uint32_t uid, size_t maxout, const char* out[]);
 /* Whether the harvester could fetch the resource from somewhere for the site */
 bool  G_Harvester_HasTransportSource(uint32_t uid, uint32_t storage, const char *rname);
+/* Fetches 'amount' of 'rname' from 'src' to 'dest' and goes idle: the jobs the automation hands out */
+bool  G_Harvester_TransportJob(uint32_t uid, uint32_t src, uint32_t dest, const char *rname, int amount);
+int   G_Harvester_EnRoute(uint32_t dest, const char *rname);
+bool  G_Harvester_CanReachSite(uint32_t uid, uint32_t site);
+bool  G_Harvester_JobInfo(uint32_t uid, uint32_t *out_src, uint32_t *out_dest, const char **out_rname, int *out_state);
 int   G_Harvester_GetCurrTotalCarry(uint32_t uid);
 bool  G_Harvester_SetDoNotTransport(uint32_t uid, const char *rname, bool set);
 bool  G_Harvester_GetDoNotTransport(uint32_t uid, const char *rname);
@@ -672,6 +677,37 @@ bool  G_Harvester_GetDoNotTransport(uint32_t uid, const char *rname);
 struct ss_delta_event{
     const char *name;
     int delta;
+};
+
+/* Why a site's request for a resource has gone unserved */
+enum request_status{
+    REQUEST_OK = 0,
+    /* No site of the faction can spare any */
+    REQUEST_NO_SOURCE,
+    /* No carrier is free to bring it */
+    REQUEST_NO_CARRIER,
+    /* No free carrier can reach both the source and the site */
+    REQUEST_UNREACHABLE,
+};
+
+/* What a storage site does with a resource */
+enum ss_chip{
+    /* Takes it in, and gives away what is above its Keep */
+    SS_CHIP_STORE = 0,
+    /* Also asks for it, up to its Keep */
+    SS_CHIP_COLLECT,
+    /* Takes it in, and never gives it away */
+    SS_CHIP_HOLD,
+    /* Has no room for it: takes none in, and gives all of it away */
+    SS_CHIP_OFF,
+};
+
+enum ss_priority{
+    SS_PRIORITY_LOW = 0,
+    SS_PRIORITY_NORMAL,
+    SS_PRIORITY_URGENT,
+    /* Above everything the player can set: the rations workers live on */
+    SS_PRIORITY_UPKEEP,
 };
 
 /* Goods that a falling storage site, or one leaving its cluster, could not 
@@ -692,6 +728,17 @@ enum ss_ui_mode{
 bool G_StorageSite_SetCapacity(uint32_t uid, const char *rname, int max);
 int  G_StorageSite_GetCapacity(uint32_t uid, const char *rname);
 int  G_StorageSite_GetOwnCapacity(uint32_t uid, const char *rname);
+void G_StorageSite_SetPriority(uint32_t uid, int priority);
+int  G_StorageSite_GetPriority(uint32_t uid);
+void G_StorageSite_SetKeep(uint32_t uid, const char *rname, int keep);
+int  G_StorageSite_GetKeep(uint32_t uid, const char *rname);
+void G_StorageSite_SetChip(uint32_t uid, const char *rname, enum ss_chip chip);
+enum ss_chip G_StorageSite_GetChip(uint32_t uid, const char *rname);
+/* How much of a resource the site asks to be brought */
+int  G_StorageSite_Request(uint32_t uid, const char *rname);
+/* How much of a resource the site can give away */
+int  G_StorageSite_Surplus(uint32_t uid, const char *rname);
+bool G_StorageSite_Accepts(uint32_t uid, const char *rname);
 bool G_StorageSite_SetCurr(uint32_t uid, const char *rname, int curr);
 int  G_StorageSite_GetCurr(uint32_t uid, const char *rname);
 bool G_StorageSite_SetCurr(uint32_t uid, const char *rname, int curr);
@@ -851,6 +898,8 @@ void G_Automation_GetIdle(vec_entity_t *out);
 bool G_Automation_IsIdle(uint32_t uid);
 void G_Automation_SetAutomaticTransport(uint32_t uid, bool on);
 bool G_Automation_GetAutomaticTransport(uint32_t uid);
+/* Why the site's request for the resource is unserved, and for how long it has waited */
+enum request_status G_Automation_RequestStatus(uint32_t site, const char *rname, int *out_waited_ms);
 
 #endif
 

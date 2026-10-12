@@ -68,8 +68,22 @@
 #define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_AUTOMATION)
 
 #define TRANSIENT_STATE_TICKS        (2) 
-#define TRANSPORT_UNIT_COST_DISTANCE (150)
 #define ARR_SIZE(a)                  (sizeof(a)/sizeof((a)[0]))
+#define MIN(a, b)                    ((a) < (b) ? (a) : (b))
+#define MAX(a, b)                    ((a) > (b) ? (a) : (b))
+
+#define TICK_MS                      (50)
+/* How often the waiting carriers are matched to the requests */
+#define JOB_PASS_TICKS               (10)
+#define MAX_JOBS_PER_PASS            (32)
+/* A request goes unserved this long before it says why */
+#define BLOCKED_AFTER_MS             (20000)
+/* A request that has waited this long counts twice as much */
+#define WAIT_DOUBLING_S              (30.0f)
+/* The load a request is scored by, so that a large shortfall does not
+ * drown out every other one */
+#define SCORED_LOAD                  (25)
+#define MAX_RESOURCES                (64)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -95,15 +109,35 @@ struct automation_state{
     uint32_t          transport_target;
 };
 
-struct cost_mapping{
-    uint32_t site;
-    int      cost;
-    float    distance;
-    int      num_assigned;
+/* A site's want of one resource */
+struct job_request{
+    uint32_t    site;
+    const char *rname;
+    int         shortfall;
+    float       urgency;
 };
+
+/* A site that can give some of a resource away */
+struct job_source{
+    uint32_t site;
+    int      surplus;
+};
+
+/* How long a request has been waiting, and why, if it has waited too long */
+struct pending{
+    uint32_t            since_tick;
+    enum request_status reason;
+    bool                touched;
+};
+
+VEC_TYPE(request, struct job_request)
+VEC_IMPL(static inline, request, struct job_request)
+VEC_TYPE(source, struct job_source)
+VEC_IMPL(static inline, source, struct job_source)
 
 KHASH_MAP_INIT_INT(state, struct automation_state)
 KHASH_MAP_INIT_INT(count, uint32_t);
+KHASH_MAP_INIT_INT64(pending, struct pending)
 
 static void on_order_issued(void *user, void *event);
 static bool try_assign_transport_job(uint32_t uid, struct automation_state *astate);
@@ -117,6 +151,9 @@ static khash_t(state) *s_entity_state_table;
 static khash_t(count) *s_transport_count;
 /* Units whose work ended this tick, to be given a job or let go idle */
 static vec_entity_t    s_stopping;
+/* Keyed by site and resource */
+static khash_t(pending)*s_pending;
+static uint32_t        s_tick;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -162,128 +199,6 @@ static bool idle(uint32_t uid)
     if((flags & ENTITY_FLAG_COMBATABLE) && !G_Combat_Idle(uid))
         return false;
     return true;
-}
-
-static bool transporter_compatible_for_resource(uint32_t worker, uint32_t site, const char *rname)
-{
-    if(!G_StorageSite_Desires(site, rname))
-        return false;
-    if(G_Harvester_GetDoNotTransport(worker, rname))
-        return false;
-    if(G_Harvester_GetMaxCarry(worker, rname) == 0)
-        return false;
-    return true;
-}
-
-static int transport_job_cost(uint32_t worker, uint32_t site, int *out_num_assigned, float *out_dist)
-{
-    /* The job 'cost' takes into account both the distance from
-     * the target site, and the number of automated workers 
-     * currently 'servicing' that site, in order to stike a 
-     * balance between 'fairness' and redundant traveling due 
-     * to far-off assignments.
-     */
-    vec2_t worker_pos = G_Pos_GetXZ(worker);
-    vec2_t site_pos = G_Pos_GetXZ(site);
-
-    vec2_t delta;
-    PFM_Vec2_Sub(&site_pos, &worker_pos, &delta);
-    float len = PFM_Vec2_Len(&delta);
-    *out_dist = len;
-
-    int num_assigned = 0;
-    khiter_t k = kh_get(count, s_transport_count, site);
-    if(k != kh_end(s_transport_count)) {
-        num_assigned = kh_value(s_transport_count, k);
-    }
-    *out_num_assigned = num_assigned;
-
-    int distance_cost = ((int)len) / TRANSPORT_UNIT_COST_DISTANCE;
-    int fairness_cost = num_assigned;
-    return (distance_cost + fairness_cost);
-}
-
-static int compare_jobs(const void *a, const void *b)
-{
-    struct cost_mapping mappinga = *(const struct cost_mapping*)a;
-    struct cost_mapping mappingb = *(const struct cost_mapping*)b;
-
-    if (mappinga.cost < mappingb.cost) return -1;
-    if (mappinga.cost > mappingb.cost) return 1;
-
-    /* When costs are the same, resort to sorting by number of
-     * assigned workers.
-     */
-    if(mappinga.num_assigned < mappingb.num_assigned) return -1;
-    if(mappinga.num_assigned > mappingb.num_assigned) return 1;
-
-    /* Lastly, resort to distance. 
-     */
-    if(mappinga.distance < mappingb.distance) return -1;
-    if(mappinga.distance > mappingb.distance) return 1;
-
-    return 0;
-}
-
-static uint32_t target_site_for_resource(uint32_t uid, const char *rname)
-{
-    uint32_t ret = NULL_UID;
-
-    vec_entity_t sites;
-    vec_entity_init(&sites);
-    G_StorageSite_GetAll(&sites);
-
-    const size_t nsites = vec_size(&sites);
-    STALLOC(struct cost_mapping, costs, nsites);
-
-    /* Prune sites which are not compatible */
-    for(int i = nsites - 1; i >= 0; i--) {
-        uint32_t site = vec_AT(&sites, i);
-        if(!transporter_compatible_for_resource(uid, site, rname)) {
-            vec_entity_del(&sites, i);
-        }
-    }
-
-    size_t left = vec_size(&sites);
-    for(int i = 0; i < left; i++) {
-
-        uint32_t site = vec_AT(&sites, i);
-        int num_assigned;
-        float distance;
-        int cost = transport_job_cost(uid, site, &num_assigned, &distance);
-
-        costs[i] = (struct cost_mapping){
-            .site = site,
-            .cost = cost,
-            .num_assigned = num_assigned,
-            .distance = distance,
-        };
-    }
-    qsort(costs, left, sizeof(struct cost_mapping), compare_jobs);
-    /* The cheapest job that can be done: one the resource can be had for */
-    for(int i = 0; i < left; i++) {
-        if(G_Harvester_HasTransportSource(uid, costs[i].site, rname)) {
-            ret = costs[i].site;
-            break;
-        }
-    }
-
-    STFREE(costs);
-    vec_entity_destroy(&sites);
-    return ret;
-}
-
-static uint32_t target_site(uint32_t uid)
-{
-    const char *transportable[64];
-    size_t ntransportable = G_Harvester_GetTransportPrio(uid, ARR_SIZE(transportable), transportable);
-
-    for(int i = 0; i < ntransportable; i++) {
-        uint32_t target = target_site_for_resource(uid, transportable[i]);
-        if(target != NULL_UID)
-            return target;
-    }
-    return NULL_UID;
 }
 
 static void increment_assigned_transporters(uint32_t site)
@@ -403,42 +318,356 @@ static void recompute_idle(void)
     });
 }
 
-static bool try_assign_transport_job(uint32_t uid, struct automation_state *astate)
+static uint64_t pending_key(uint32_t site, const char *rname)
+{
+    return ((uint64_t)site << 32) ^ (uint64_t)(uintptr_t)rname;
+}
+
+static struct pending *pending_get(uint32_t site, const char *rname, bool create)
+{
+    uint64_t key = pending_key(site, rname);
+    khiter_t k = kh_get(pending, s_pending, key);
+    if(k != kh_end(s_pending))
+        return &kh_value(s_pending, k);
+    if(!create)
+        return NULL;
+    int status;
+    k = kh_put(pending, s_pending, key, &status);
+    if(status == -1)
+        return NULL;
+    kh_value(s_pending, k) = (struct pending){
+        .since_tick = s_tick,
+        .reason = REQUEST_OK,
+        .touched = true
+    };
+    return &kh_value(s_pending, k);
+}
+
+static float priority_weight(int priority)
+{
+    switch(priority) {
+    case SS_PRIORITY_LOW:    return 0.5f;
+    case SS_PRIORITY_URGENT: return 3.0f;
+    case SS_PRIORITY_UPKEEP: return 4.0f;
+    default:                 return 1.0f;
+    }
+}
+
+/* The site that stands for its cluster's pool, or itself */
+static bool is_representative(uint32_t site)
+{
+    int cid = G_Cluster_Of(site);
+    return (cid == 0 || G_Cluster_Anchor(cid) == site);
+}
+
+static int pool_en_route(uint32_t site, const char *rname)
+{
+    int cid = G_Cluster_Of(site);
+    if(cid == 0)
+        return G_Harvester_EnRoute(site, rname);
+
+    uint32_t members[64];
+    size_t nmembers = G_Cluster_Members(cid, ARR_SIZE(members), members);
+    int ret = 0;
+    for(int i = 0; i < nmembers; i++) {
+        ret += G_Harvester_EnRoute(members[i], rname);
+    }
+    return ret;
+}
+
+static uint32_t nearest_member(uint32_t site, vec2_t pos)
+{
+    int cid = G_Cluster_Of(site);
+    if(cid == 0)
+        return site;
+    uint32_t ret = G_Cluster_NearestMember(cid, pos);
+    return (ret == NULL_UID) ? site : ret;
+}
+
+static float distance(vec2_t a, vec2_t b)
+{
+    vec2_t delta;
+    PFM_Vec2_Sub(&a, &b, &delta);
+    return PFM_Vec2_Len(&delta);
+}
+
+static void collect_requests(vec_request_t *out, const vec_entity_t *sites)
+{
+    for(khint_t k = kh_begin(s_pending); k != kh_end(s_pending); k++) {
+        if(kh_exist(s_pending, k)) {
+            kh_value(s_pending, k).touched = false;
+        }
+    }
+
+    for(int i = 0; i < vec_size(sites); i++) {
+
+        uint32_t site = vec_AT(sites, i);
+        if(G_EntityIsZombie(site) || !is_representative(site))
+            continue;
+
+        const char *names[MAX_RESOURCES];
+        size_t nnames = G_StorageSite_GetStorableResources(site, ARR_SIZE(names), names);
+        float weight = priority_weight(G_StorageSite_GetPriority(site));
+
+        for(int j = 0; j < nnames; j++) {
+
+            int want = G_StorageSite_Request(site, names[j]);
+            if(want <= 0)
+                continue;
+            int have = G_StorageSite_GetCurr(site, names[j]) + pool_en_route(site, names[j]);
+            int shortfall = want - have;
+            if(shortfall <= 0)
+                continue;
+
+            struct pending *pend = pending_get(site, names[j], true);
+            if(!pend)
+                continue;
+            pend->touched = true;
+            float waited_s = (s_tick - pend->since_tick) * TICK_MS / 1000.0f;
+
+            vec_request_push(out, (struct job_request){
+                .site = site,
+                .rname = names[j],
+                .shortfall = shortfall,
+                .urgency = weight * (1.0f + waited_s / WAIT_DOUBLING_S) * MIN(shortfall, SCORED_LOAD)
+            });
+        }
+    }
+
+    /* Requests that are met are no longer waiting */
+    for(khint_t k = kh_begin(s_pending); k != kh_end(s_pending); k++) {
+        if(kh_exist(s_pending, k) && !kh_value(s_pending, k).touched) {
+            kh_del(pending, s_pending, k);
+        }
+    }
+}
+
+static int compare_requests(const void *a, const void *b)
+{
+    const struct job_request *ra = a, *rb = b;
+    if(ra->urgency > rb->urgency) return -1;
+    if(ra->urgency < rb->urgency) return 1;
+    return 0;
+}
+
+static void collect_sources(vec_source_t *out, const vec_entity_t *sites, const char *rname, 
+                            int faction, uint32_t exclude)
+{
+    for(int i = 0; i < vec_size(sites); i++) {
+        uint32_t site = vec_AT(sites, i);
+        if(G_EntityIsZombie(site) || !is_representative(site))
+            continue;
+        if(G_GetFactionID(site) != faction)
+            continue;
+        if(site == exclude)
+            continue;
+        int surplus = G_StorageSite_Surplus(site, rname);
+        if(surplus <= 0)
+            continue;
+        vec_source_push(out, (struct job_source){ .site = site, .surplus = surplus });
+    }
+}
+
+static bool carrier_can_take(uint32_t carrier, const char *rname)
+{
+    if(G_Harvester_GetMaxCarry(carrier, rname) == 0)
+        return false;
+    if(G_Harvester_GetDoNotTransport(carrier, rname))
+        return false;
+    return true;
+}
+
+static void note_blocked(const struct job_request *req, enum request_status reason)
+{
+    struct pending *pend = pending_get(req->site, req->rname, false);
+    if(!pend)
+        return;
+    if((s_tick - pend->since_tick) * TICK_MS < BLOCKED_AFTER_MS)
+        return;
+    bool changed = (pend->reason != reason);
+    pend->reason = reason;
+    if(changed) {
+        E_Global_Notify(EVENT_REQUEST_BLOCKED, (void*)(uintptr_t)req->site, ES_ENGINE);
+    }
+}
+
+/* Gives the waiting carriers the most pressing requests: each request takes 
+ * the carrier and source that get its goods to it soonest. */
+static void assign_jobs(vec_entity_t *carriers)
+{
+    if(vec_size(carriers) == 0)
+        return;
+
+    vec_entity_t sites;
+    vec_entity_init(&sites);
+    G_StorageSite_GetAll(&sites);
+
+    vec_request_t requests;
+    vec_request_init(&requests);
+    collect_requests(&requests, &sites);
+    qsort(requests.array, vec_size(&requests), sizeof(struct job_request), compare_requests);
+
+    vec_source_t sources;
+    vec_source_init(&sources);
+    int njobs = 0;
+
+    for(int i = 0; i < vec_size(&requests) && njobs < MAX_JOBS_PER_PASS; i++) {
+
+        struct job_request *req = &vec_AT(&requests, i);
+        int faction = G_GetFactionID(req->site);
+        vec2_t dest_pos = G_Pos_GetXZ(req->site);
+
+        vec_source_reset(&sources);
+        collect_sources(&sources, &sites, req->rname, faction, req->site);
+
+        bool any_carrier = false;
+        bool any_reachable = false;
+
+        while(req->shortfall > 0 && vec_size(carriers) > 0 && njobs < MAX_JOBS_PER_PASS) {
+
+            int best_carrier = -1, best_source = -1;
+            float best_travel = 0.0f;
+
+            for(int c = 0; c < vec_size(carriers); c++) {
+
+                uint32_t carrier = vec_AT(carriers, c);
+                if(G_GetFactionID(carrier) != faction)
+                    continue;
+                if(!carrier_can_take(carrier, req->rname))
+                    continue;
+                any_carrier = true;
+                vec2_t cpos = G_Pos_GetXZ(carrier);
+                uint32_t flags = G_FlagsGet(carrier);
+
+                for(int s = 0; s < vec_size(&sources); s++) {
+                    struct job_source *src = &vec_AT(&sources, s);
+                    if(src->surplus <= 0)
+                        continue;
+                    if(G_StorageSite_GetDoNotTake(flags, src->site))
+                        continue;
+                    vec2_t spos = G_Pos_GetXZ(src->site);
+                    float travel = distance(cpos, spos) + distance(spos, dest_pos);
+                    if(best_carrier == -1 || travel < best_travel) {
+                        uint32_t srcm = nearest_member(src->site, cpos);
+                        uint32_t dstm = nearest_member(req->site, spos);
+                        if(!G_Harvester_CanReachSite(carrier, srcm)
+                        || !G_Harvester_CanReachSite(carrier, dstm))
+                            continue;
+                        best_carrier = c;
+                        best_source = s;
+                        best_travel = travel;
+                    }
+                }
+            }
+
+            if(best_carrier == -1)
+                break;
+            any_reachable = true;
+
+            uint32_t carrier = vec_AT(carriers, best_carrier);
+            struct job_source *src = &vec_AT(&sources, best_source);
+            vec2_t cpos = G_Pos_GetXZ(carrier);
+            uint32_t srcm = nearest_member(src->site, cpos);
+            uint32_t dstm = nearest_member(req->site, G_Pos_GetXZ(srcm));
+            int amount = MIN(req->shortfall, MIN(src->surplus, G_Harvester_GetMaxCarry(carrier, req->rname)));
+
+            vec_entity_del(carriers, best_carrier);
+            if(!G_Harvester_TransportJob(carrier, srcm, dstm, req->rname, amount))
+                continue;
+
+            struct automation_state *astate = astate_get(carrier);
+            if(astate) {
+                if(astate->transport_target != NULL_UID) {
+                    try_decrement_assigned_transporters(astate->transport_target);
+                }
+                increment_assigned_transporters(dstm);
+                astate->transport_target = dstm;
+            }
+            req->shortfall -= amount;
+            src->surplus -= amount;
+            njobs++;
+
+            /* A request waits from its last load, so that one left unserved 
+             * comes to outweigh the ones being served */
+            struct pending *pend = pending_get(req->site, req->rname, false);
+            if(pend) {
+                pend->since_tick = s_tick;
+            }
+        }
+
+        if(req->shortfall > 0) {
+            if(vec_size(&sources) == 0) {
+                note_blocked(req, REQUEST_NO_SOURCE);
+            }else if(!any_carrier) {
+                note_blocked(req, REQUEST_NO_CARRIER);
+            }else if(!any_reachable) {
+                note_blocked(req, REQUEST_UNREACHABLE);
+            }
+        }else{
+            struct pending *pend = pending_get(req->site, req->rname, false);
+            if(pend) {
+                pend->reason = REQUEST_OK;
+            }
+        }
+    }
+
+    vec_source_destroy(&sources);
+    vec_request_destroy(&requests);
+    vec_entity_destroy(&sites);
+}
+
+static bool waiting_carrier(uint32_t uid, struct automation_state *astate)
 {
     if(!(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER))
         return false;
     if(!astate->automatic_transport)
         return false;
-
-    uint32_t site = target_site(uid);
-    if(site == NULL_UID)
+    if(G_Harvester_GetCurrTotalCarry(uid))
         return false;
-    if(!G_Harvester_Transport(uid, site))
-        return false;
-
-    increment_assigned_transporters(site);
-    astate->transport_target = site;
     return true;
+}
+
+static bool try_assign_transport_job(uint32_t uid, struct automation_state *astate)
+{
+    if(!waiting_carrier(uid, astate))
+        return false;
+
+    vec_entity_t carriers;
+    vec_entity_init(&carriers);
+    vec_entity_push(&carriers, uid);
+    assign_jobs(&carriers);
+    bool assigned = (vec_size(&carriers) == 0);
+    vec_entity_destroy(&carriers);
+    return assigned;
 }
 
 static void assign_transport_jobs(void)
 {
+    vec_entity_t carriers;
+    vec_entity_init(&carriers);
+
     uint32_t uid;
     struct automation_state *astate;
-
     kh_foreach_val_ptr(s_entity_state_table, uid, astate, {
-
         if(astate->state != STATE_IDLE)
             continue;
-        try_assign_transport_job(uid, astate);
+        if(!waiting_carrier(uid, astate))
+            continue;
+        vec_entity_push(&carriers, uid);
     });
+
+    assign_jobs(&carriers);
+    vec_entity_destroy(&carriers);
 }
 
 static void on_20hz_tick(void *user, void *event)
 {
+    s_tick++;
     recompute_idle();
     settle_stopping();
-    assign_transport_jobs();
+    if(s_tick % JOB_PASS_TICKS == 0) {
+        assign_transport_jobs();
+    }
 }
 
 static void on_update_ui(void *user, void *event)
@@ -568,16 +797,45 @@ bool G_Automation_Init(void)
     if((s_transport_count = kh_init(count)) == NULL)
         goto fail_transport_count_table;
     vec_entity_init(&s_stopping);
+    if((s_pending = kh_init(pending)) == NULL)
+        goto fail_pending;
+    s_tick = 0;
 
     E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
     E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING);
     E_Global_Register(EVENT_ORDER_ISSUED, on_order_issued, NULL, G_RUNNING);
     return true;
 
+fail_pending:
+    vec_entity_destroy(&s_stopping);
+    kh_destroy(count, s_transport_count);
 fail_transport_count_table:
     kh_destroy(state, s_entity_state_table);
 fail_entity_state_table:
     return false;
+}
+
+enum request_status G_Automation_RequestStatus(uint32_t site, const char *rname, int *out_waited_ms)
+{
+    *out_waited_ms = 0;
+    int cid = G_Cluster_Of(site);
+    if(cid) {
+        site = G_Cluster_Anchor(cid);
+    }
+
+    /* Waiting entries are keyed by the interned name the sites report */
+    const char *names[MAX_RESOURCES];
+    size_t nnames = G_StorageSite_GetStorableResources(site, ARR_SIZE(names), names);
+    for(int i = 0; i < nnames; i++) {
+        if(strcmp(names[i], rname))
+            continue;
+        struct pending *pend = pending_get(site, names[i], false);
+        if(!pend)
+            return REQUEST_OK;
+        *out_waited_ms = (s_tick - pend->since_tick) * TICK_MS;
+        return pend->reason;
+    }
+    return REQUEST_OK;
 }
 
 void G_Automation_Shutdown(void)
@@ -586,6 +844,7 @@ void G_Automation_Shutdown(void)
     E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
     E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
     vec_entity_destroy(&s_stopping);
+    kh_destroy(pending, s_pending);
     kh_destroy(count, s_transport_count);
     kh_destroy(state, s_entity_state_table);
 }
