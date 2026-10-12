@@ -807,6 +807,7 @@ static void s_expose_event_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, EVENT_RALLY_POINT_SET);
     PY_EXPOSE_ENUM(module, EVENT_UNIT_BECAME_IDLE);
     PY_EXPOSE_ENUM(module, EVENT_UNIT_BECAME_ACTIVE);
+    PY_EXPOSE_ENUM(module, EVENT_UNIT_IDLE_PENDING);
     PY_EXPOSE_ENUM(module, EVENT_ENGINE_LAST);
 }
 

@@ -168,6 +168,7 @@ static const char *s_event_str_table[] = {
     STR(EVENT_RALLY_POINT_SET),
     STR(EVENT_UNIT_BECAME_IDLE),
     STR(EVENT_UNIT_BECAME_ACTIVE),
+    STR(EVENT_UNIT_IDLE_PENDING),
 };
 
 static khash_t(handler_desc) *s_event_handler_table;

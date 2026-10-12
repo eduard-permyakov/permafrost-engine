@@ -106,6 +106,7 @@ KHASH_MAP_INIT_INT(state, struct automation_state)
 KHASH_MAP_INIT_INT(count, uint32_t);
 
 static void on_order_issued(void *user, void *event);
+static bool try_assign_transport_job(uint32_t uid, struct automation_state *astate);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -114,6 +115,8 @@ static void on_order_issued(void *user, void *event);
 static khash_t(state) *s_entity_state_table;
 /* Maps storage sites to the number of automated transporters servicing it */
 static khash_t(count) *s_transport_count;
+/* Units whose work ended this tick, to be given a job or let go idle */
+static vec_entity_t    s_stopping;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -311,6 +314,39 @@ static int get_assigned_transporters(uint32_t site)
     return kh_val(s_transport_count, k);
 }
 
+/* A unit at the end of its work is given its next job before it is let go
+ * idle, so that one with more work to do never shows as idle in between.
+ * The job finders may add entities, so this runs outside the table walk.
+ */
+static void settle_stopping(void)
+{
+    for(int i = 0; i < vec_size(&s_stopping); i++) {
+
+        uint32_t uid = vec_AT(&s_stopping, i);
+        struct automation_state *astate = astate_get(uid);
+        if(!astate || astate->state != STATE_STOPPING)
+            continue;
+
+        if(try_assign_transport_job(uid, astate)) {
+            astate->state = STATE_ACTIVE;
+            continue;
+        }
+
+        E_Global_NotifyImmediate(EVENT_UNIT_IDLE_PENDING, (void*)((uintptr_t)uid), ES_ENGINE);
+        astate = astate_get(uid);
+        if(!astate || astate->state != STATE_STOPPING)
+            continue;
+
+        if(!idle(uid)) {
+            astate->state = STATE_ACTIVE;
+            continue;
+        }
+        astate->state = STATE_IDLE;
+        E_Global_Notify(EVENT_UNIT_BECAME_IDLE, (void*)((uintptr_t)uid), ES_ENGINE);
+    }
+    vec_entity_reset(&s_stopping);
+}
+
 static void recompute_idle(void)
 {
     uint32_t uid;
@@ -354,18 +390,35 @@ static void recompute_idle(void)
             astate->transient_ticks++;
             if(astate->transient_ticks == TRANSIENT_STATE_TICKS) {
                 astate->transient_ticks = 0;
-                astate->state = STATE_IDLE;
                 if(astate->transport_target != NULL_UID) {
                     try_decrement_assigned_transporters(astate->transport_target);
                     astate->transport_target = NULL_UID;
                 }
-                E_Global_Notify(EVENT_UNIT_BECAME_IDLE, (void*)((uintptr_t)uid), ES_ENGINE);
+                vec_entity_push(&s_stopping, uid);
             }
             break;
         }
         default: assert(0);
         }
     });
+}
+
+static bool try_assign_transport_job(uint32_t uid, struct automation_state *astate)
+{
+    if(!(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER))
+        return false;
+    if(!astate->automatic_transport)
+        return false;
+
+    uint32_t site = target_site(uid);
+    if(site == NULL_UID)
+        return false;
+    if(!G_Harvester_Transport(uid, site))
+        return false;
+
+    increment_assigned_transporters(site);
+    astate->transport_target = site;
+    return true;
 }
 
 static void assign_transport_jobs(void)
@@ -377,27 +430,14 @@ static void assign_transport_jobs(void)
 
         if(astate->state != STATE_IDLE)
             continue;
-
-        if(!(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER))
-            continue;
-        
-        if(!astate->automatic_transport)
-            continue;
-
-        uint32_t site = target_site(uid);
-        if(site == NULL_UID)
-            continue;
-        if(!G_Harvester_Transport(uid, site))
-            continue;
-
-        increment_assigned_transporters(site);
-        astate->transport_target = site;
+        try_assign_transport_job(uid, astate);
     });
 }
 
 static void on_20hz_tick(void *user, void *event)
 {
     recompute_idle();
+    settle_stopping();
     assign_transport_jobs();
 }
 
@@ -509,6 +549,11 @@ bool G_Automation_AddEntity(uint32_t uid)
 
 void G_Automation_RemoveEntity(uint32_t uid)
 {
+    khiter_t k = kh_get(count, s_transport_count, uid);
+    if(k != kh_end(s_transport_count)) {
+        kh_del(count, s_transport_count, k);
+    }
+
     struct automation_state *astate = astate_get(uid);
     if(!astate)
         return;
@@ -522,6 +567,7 @@ bool G_Automation_Init(void)
         goto fail_entity_state_table;
     if((s_transport_count = kh_init(count)) == NULL)
         goto fail_transport_count_table;
+    vec_entity_init(&s_stopping);
 
     E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
     E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING);
@@ -539,6 +585,7 @@ void G_Automation_Shutdown(void)
     E_Global_Unregister(EVENT_ORDER_ISSUED, on_order_issued);
     E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
     E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
+    vec_entity_destroy(&s_stopping);
     kh_destroy(count, s_transport_count);
     kh_destroy(state, s_entity_state_table);
 }
