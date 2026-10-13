@@ -704,6 +704,8 @@ bool G_Building_Mark(uint32_t uid)
     if(bs->state != BUILDING_STATE_PLACEMENT)
         return false;
 
+    /* A marked site can be picked out, to be called off */
+    G_FlagsSet(uid, G_FlagsGet(uid) | ENTITY_FLAG_SELECTABLE);
     bs->state = BUILDING_STATE_MARKED;
     return true;
 }
