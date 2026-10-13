@@ -124,12 +124,14 @@ static PyObject *PyEntity_set_cluster_type(PyEntityObject *self, PyObject *args)
 static PyObject *PyEntity_set_provision(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_replenish(PyEntityObject *self);
 static PyObject *PyEntity_get_provision_tier(PyEntityObject *self, void *closure);
+static PyObject *PyEntity_get_provision_timer_ms(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_auto_replenish(PyEntityObject *self, void *closure);
 static int       PyEntity_set_auto_replenish(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_set_quiver(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_resupply(PyEntityObject *self);
 static PyObject *PyEntity_set_ammo(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_get_ammo(PyEntityObject *self, void *closure);
+static PyObject *PyEntity_get_max_ammo(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_auto_resupply(PyEntityObject *self, void *closure);
 static int       PyEntity_set_auto_resupply(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_cluster_id(PyEntityObject *self, void *closure);
@@ -262,6 +264,11 @@ static PyGetSetDef PyEntity_getset[] = {
     (getter)PyEntity_get_provision_tier, NULL,
     "How hungry the unit is: pf.PROVISION_FED, pf.PROVISION_HUNGRY or pf.PROVISION_STARVING.",
     NULL},
+    {"provision_timer_ms",
+    (getter)PyEntity_get_provision_timer_ms, NULL,
+    "The milliseconds until the unit's next meal when fed, until it starves when hungry, and for "
+    "which it has starved when starving.",
+    NULL},
     {"auto_replenish",
     (getter)PyEntity_get_auto_replenish, (setter)PyEntity_set_auto_replenish,
     "Whether the unit goes for food by itself as soon as it is hungry.",
@@ -269,6 +276,10 @@ static PyGetSetDef PyEntity_getset[] = {
     {"ammo",
     (getter)PyEntity_get_ammo, NULL,
     "The shots the unit has left, or -1 if it needs none.",
+    NULL},
+    {"max_ammo",
+    (getter)PyEntity_get_max_ammo, NULL,
+    "The shots the unit's quiver holds when full, or 0 if it has none.",
     NULL},
     {"auto_resupply",
     (getter)PyEntity_get_auto_resupply, (setter)PyEntity_set_auto_resupply,
@@ -2303,6 +2314,11 @@ static PyObject *PyEntity_get_provision_tier(PyEntityObject *self, void *closure
     return PyInt_FromLong(G_Provision_Tier(self->ent));
 }
 
+static PyObject *PyEntity_get_provision_timer_ms(PyEntityObject *self, void *closure)
+{
+    return PyInt_FromLong(G_Provision_TimerMs(self->ent));
+}
+
 static PyObject *PyEntity_get_auto_replenish(PyEntityObject *self, void *closure)
 {
     if(G_Provision_GetAutomatic(self->ent))
@@ -2356,6 +2372,11 @@ static PyObject *PyEntity_set_ammo(PyEntityObject *self, PyObject *args)
 static PyObject *PyEntity_get_ammo(PyEntityObject *self, void *closure)
 {
     return PyInt_FromLong(G_Combat_GetAmmo(self->ent));
+}
+
+static PyObject *PyEntity_get_max_ammo(PyEntityObject *self, void *closure)
+{
+    return PyInt_FromLong(G_Provision_QuiverCapacity(self->ent));
 }
 
 static PyObject *PyEntity_get_auto_resupply(PyEntityObject *self, void *closure)

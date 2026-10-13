@@ -1198,7 +1198,7 @@ static void batch_render_anim(struct ent_anim_rstate *ents, size_t nents, enum r
     GL_PERF_RETURN_VOID();
 }
 
-static void batch_render_anim_all(vec_ranim_t *ents, bool shadows, enum render_pass pass)
+static void batch_render_anim_all(vec_ranim_t *ents, bool shadows, enum render_pass pass, bool translucent)
 {
     size_t nanim = vec_size(ents);
     if(nanim == 0)
@@ -1217,19 +1217,22 @@ static void batch_render_anim_all(vec_ranim_t *ents, bool shadows, enum render_p
     size_t ntranslucent = batch_anim_sort_by_transparency(ents, nanim);
     size_t nopaque = nanim - ntranslucent;
 
-    if(nopaque > 0) {
+    if(!translucent && nopaque > 0) {
         batch_render_anim(&vec_AT(ents, 0), nopaque, pass);
     }
-    if(ntranslucent > 0) {
+    if(translucent && ntranslucent > 0) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR);
+        /* What shows through must still be drawn behind it */
+        glDepthMask(pass != RENDER_PASS_REGULAR);
         batch_render_anim(&vec_AT(ents, nopaque), ntranslucent, pass);
+        glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
     }
     GL_ASSERT_OK();
 }
 
-static void batch_render_stat_all(vec_rstat_t *ents, bool shadows, enum render_pass pass)
+static void batch_render_stat_all(vec_rstat_t *ents, bool shadows, enum render_pass pass, bool translucent)
 {
     size_t nents = vec_size(ents);
     if(nents == 0)
@@ -1250,13 +1253,16 @@ static void batch_render_stat_all(vec_rstat_t *ents, bool shadows, enum render_p
     size_t ntranslucent = batch_sort_by_transparency(ents, nents);
     size_t nopaque = nents - ntranslucent;
 
-    if(nopaque > 0) {
+    if(!translucent && nopaque > 0) {
         batch_render_stat(&vec_AT(ents, 0), nopaque, pass);
     }
-    if(ntranslucent > 0) {
+    if(translucent && ntranslucent > 0) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR);
+        /* What shows through must still be drawn behind it */
+        glDepthMask(pass != RENDER_PASS_REGULAR);
         batch_render_stat(&vec_AT(ents, nopaque), ntranslucent, pass);
+        glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
     }
     GL_ASSERT_OK();
@@ -1413,8 +1419,11 @@ void R_GL_Batch_Draw(struct render_input *in)
     GL_PERF_PUSH_GROUP(0, "batch::Draw");
 
     R_GL_ShadowMapBind();
-    batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_REGULAR);
-    batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_REGULAR);
+    /* The translucent come after everything they may show */
+    batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_REGULAR, false);
+    batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_REGULAR, false);
+    batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_REGULAR, true);
+    batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_REGULAR, true);
 
     GL_PERF_POP_GROUP();
     GL_PERF_RETURN_VOID();
@@ -1425,8 +1434,10 @@ void R_GL_Batch_RenderDepthMap(struct render_input *in)
     GL_PERF_ENTER();
     GL_PERF_PUSH_GROUP(0, "batch::RenderDepthMap");
 
-    batch_render_anim_all(&in->light_vis_anim, true, RENDER_PASS_DEPTH);
-    batch_render_stat_all(&in->light_vis_stat, true, RENDER_PASS_DEPTH);
+    batch_render_anim_all(&in->light_vis_anim, true, RENDER_PASS_DEPTH, false);
+    batch_render_anim_all(&in->light_vis_anim, true, RENDER_PASS_DEPTH, true);
+    batch_render_stat_all(&in->light_vis_stat, true, RENDER_PASS_DEPTH, false);
+    batch_render_stat_all(&in->light_vis_stat, true, RENDER_PASS_DEPTH, true);
 
     GL_PERF_POP_GROUP();
     GL_PERF_RETURN_VOID();

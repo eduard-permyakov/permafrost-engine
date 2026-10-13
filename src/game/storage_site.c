@@ -446,6 +446,22 @@ static void constrain_desired(struct ss_state *ss, const char *rname)
     ss_state_set_key(ss->desired, rname, desired);
 }
 
+/* A pool is selected when any of its members is */
+static bool pool_selected(uint32_t key, int pool)
+{
+    if(G_Sel_IsSelected(key))
+        return true;
+    if(!pool)
+        return false;
+    uint32_t members[64];
+    size_t nmembers = G_Cluster_Members(pool, ARR_SIZE(members), members);
+    for(int i = 0; i < nmembers; i++) {
+        if(G_Sel_IsSelected(members[i]))
+            return true;
+    }
+    return false;
+}
+
 static void on_update_ui(void *user, void *event)
 {
     if(!s_show_ui)
@@ -469,6 +485,7 @@ static void on_update_ui(void *user, void *event)
     kh_foreach(s_entity_state_table, key, curr, {
 
         /* A pool is shown once, over its anchor */
+        int pool_id = curr.pool;
         if(curr.pool) {
             struct ss_state *pool = pool_get(curr.pool);
             if(pool && pool->anchor != key)
@@ -477,7 +494,7 @@ static void on_update_ui(void *user, void *event)
                 curr = *pool;
         }
 
-        if(ui_setting.as_int == SS_UI_SHOW_SELECTED && !G_Sel_IsSelected(key))
+        if(ui_setting.as_int == SS_UI_SHOW_SELECTED && !pool_selected(key, pool_id))
             continue;
 
         struct obb obb;

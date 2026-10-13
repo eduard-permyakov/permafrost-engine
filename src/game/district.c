@@ -72,6 +72,7 @@
 #define MAX_SEED_CLUSTERS   (1024)
 #define OVERLAY_BATCH       (1024)
 #define HUB_TYPE            "hub"
+#define ARR_SIZE(a)         (sizeof(a)/sizeof((a)[0]))
 
 enum{
     LAYER_GROUND = 0,
@@ -88,6 +89,11 @@ struct field{
 struct cell_node{
     int   idx;
     float cost;
+};
+
+struct district{
+    int cluster;
+    int slot;
 };
 
 PQUEUE_TYPE(cell, struct cell_node)
@@ -117,6 +123,13 @@ static bool              s_preview_on;
 static int               s_preview_faction;
 static vec2_t            s_preview_pos;
 static bool             *s_preview_cells;
+/* Hues far enough apart that no two read as shades of one colour, the most
+ * distinct first */
+static const float       s_palette[] = {0.0f, 130.0f, 230.0f, 60.0f, 305.0f,
+                                        180.0f, 30.0f, 270.0f, 90.0f, 340.0f};
+/* The districts with cells in a field, by id, each with its palette slot */
+static struct district   s_districts[MAX_SEED_CLUSTERS];
+static size_t            s_ndistricts;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -244,6 +257,109 @@ static void seed(int layer, uint32_t uid, int cluster, float *cost, int *owner, 
     pq_cell_push(pq, 0.0f, (struct cell_node){idx, 0.0f});
 }
 
+static int district_index(const struct district *list, size_t n, int cluster)
+{
+    for(int i = 0; i < n; i++) {
+        if(list[i].cluster == cluster)
+            return i;
+    }
+    return -1;
+}
+
+static void district_add(int cluster)
+{
+    if(district_index(s_districts, s_ndistricts, cluster) >= 0 || s_ndistricts == MAX_SEED_CLUSTERS)
+        return;
+    int i = s_ndistricts++;
+    while(i > 0 && s_districts[i - 1].cluster > cluster) {
+        s_districts[i] = s_districts[i - 1];
+        i--;
+    }
+    s_districts[i] = (struct district){cluster, 0};
+}
+
+static void mark_adjacent(uint32_t *adj, size_t words, int a, int b)
+{
+    if(!a || !b || a == b)
+        return;
+    int i = district_index(s_districts, s_ndistricts, a);
+    int j = district_index(s_districts, s_ndistricts, b);
+    if(i < 0 || j < 0)
+        return;
+    adj[i * words + j / 32] |= (1u << (j % 32));
+    adj[j * words + i / 32] |= (1u << (i % 32));
+}
+
+static bool adjacent(const uint32_t *adj, size_t words, int i, int j)
+{
+    return adj[i * words + j / 32] & (1u << (j % 32));
+}
+
+/* Gives bordering districts different palette slots, keeping a district's
+ * old slot wherever it still fits so colours stay put as the map changes */
+static void recolour(void)
+{
+    STALLOC(struct district, prev, MAX_SEED_CLUSTERS);
+    size_t nprev = s_ndistricts;
+    memcpy(prev, s_districts, nprev * sizeof(struct district));
+    s_ndistricts = 0;
+
+    for(int fac = 0; fac < MAX_FACTIONS; fac++) {
+        const int *owner = s_fields[fac][LAYER_GROUND].owner;
+        if(!owner)
+            continue;
+        for(int i = 0; i < s_rows * s_cols; i++) {
+            if(owner[i]) {
+                district_add(owner[i]);
+            }
+        }
+    }
+
+    const size_t words = (s_ndistricts + 31) / 32;
+    uint32_t *adj = PF_CALLOC(s_ndistricts * words, sizeof(uint32_t));
+    if(!adj) {
+        STFREE(prev);
+        return;
+    }
+
+    for(int fac = 0; fac < MAX_FACTIONS; fac++) {
+        const int *owner = s_fields[fac][LAYER_GROUND].owner;
+        if(!owner)
+            continue;
+        for(int r = 0; r < s_rows; r++) {
+        for(int c = 0; c < s_cols; c++) {
+            int idx = r * s_cols + c;
+            if(c + 1 < s_cols) {
+                mark_adjacent(adj, words, owner[idx], owner[idx + 1]);
+            }
+            if(r + 1 < s_rows) {
+                mark_adjacent(adj, words, owner[idx], owner[idx + s_cols]);
+            }
+        }}
+    }
+
+    for(int i = 0; i < s_ndistricts; i++) {
+        int uses[ARR_SIZE(s_palette)] = {0};
+        for(int j = 0; j < i; j++) {
+            if(adjacent(adj, words, i, j)) {
+                uses[s_districts[j].slot]++;
+            }
+        }
+        int p = district_index(prev, nprev, s_districts[i].cluster);
+        int slot = (p >= 0) ? prev[p].slot : 0;
+        if(p < 0 || uses[slot] > 0) {
+            for(int k = 0; k < ARR_SIZE(s_palette); k++) {
+                if(uses[k] < uses[slot]) {
+                    slot = k;
+                }
+            }
+        }
+        s_districts[i].slot = slot;
+    }
+    PF_FREE(adj);
+    STFREE(prev);
+}
+
 static void recompute(void)
 {
     update_terrain();
@@ -293,6 +409,7 @@ static void recompute(void)
         }
         pq_cell_destroy(&pq);
     }}
+    recolour();
     s_dirty = false;
 }
 
@@ -328,8 +445,8 @@ static void recompute_preview(void)
 
 static vec3_t cluster_color(int cluster, bool core)
 {
-    /* Spread the hues of neighbouring ids apart */
-    float h = fmodf(cluster * 0.61803398875f, 1.0f) * 6.0f;
+    int i = district_index(s_districts, s_ndistricts, cluster);
+    float h = s_palette[i >= 0 ? s_districts[i].slot : 0] / 60.0f;
     float x = 1.0f - fabsf(fmodf(h, 2.0f) - 1.0f);
     vec3_t rgb;
     switch((int)h) {
@@ -468,6 +585,7 @@ bool G_District_Init(const struct map *map)
     s_nroads = 0;
     s_show = false;
     s_preview_on = false;
+    s_ndistricts = 0;
 
     E_Global_Register(EVENT_CLUSTER_CHANGED, on_cluster_changed, NULL, G_ALL);
     E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);

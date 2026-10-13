@@ -945,20 +945,31 @@ static bool try_assign_transport_job(uint32_t uid, struct automation_state *asta
 
 static void assign_transport_jobs(void)
 {
-    vec_entity_t carriers;
+    vec_entity_t carriers, laden;
     vec_entity_init(&carriers);
+    vec_entity_init(&laden);
 
     uint32_t uid;
     struct automation_state *astate;
     kh_foreach_val_ptr(s_entity_state_table, uid, astate, {
         if(astate->state != STATE_IDLE)
             continue;
+        /* A carrier whose drop-off fell through brings the load in itself */
+        if(astate->automatic_transport && (G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER)
+        && G_Harvester_GetCurrTotalCarry(uid)) {
+            vec_entity_push(&laden, uid);
+            continue;
+        }
         if(!waiting_carrier(uid, astate))
             continue;
         vec_entity_push(&carriers, uid);
     });
 
+    for(int i = 0; i < vec_size(&laden); i++) {
+        G_Harvester_BringInLoad(vec_AT(&laden, i), NULL_UID);
+    }
     assign_jobs(&carriers);
+    vec_entity_destroy(&laden);
     vec_entity_destroy(&carriers);
 }
 

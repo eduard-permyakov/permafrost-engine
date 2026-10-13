@@ -825,6 +825,11 @@ bool G_Building_Complete(uint32_t uid)
     flags &= ~ENTITY_FLAG_INVISIBLE;
     G_FlagsSet(uid, flags);
 
+    /* Finished by any means, it stands at full strength */
+    if(flags & ENTITY_FLAG_COMBATABLE) {
+        G_Combat_SetCurrentHP(uid, G_Combat_GetMaxHP(uid));
+    }
+
     if(bs->blocking && (!(flags & ENTITY_FLAG_COLLISION) || bs->pathable)) {
         bs->blocking = false;
         M_NavBlockersDecrefOBB(s_map, G_GetFactionID(uid), G_FlagsGet(uid), &bs->obb);

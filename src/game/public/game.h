@@ -340,6 +340,9 @@ enum provision_tier{
 bool G_Provision_Set(uint32_t uid, const char *good, int max_meals, float interval_s, 
                      float starve_after_s, bool automatic);
 int  G_Provision_Tier(uint32_t uid);
+/* The ms until the unit's next meal when fed, until it starves when hungry,
+ * and for which it has starved when starving */
+uint32_t G_Provision_TimerMs(uint32_t uid);
 void G_Provision_SetAutomatic(uint32_t uid, bool on);
 bool G_Provision_GetAutomatic(uint32_t uid);
 /* Sends the unit to eat at the nearest store of its food; false if there is none */
@@ -352,6 +355,8 @@ bool G_Provision_SetQuiver(uint32_t uid, const char *good, int shots_per_unit, i
 void G_Provision_SetAutoResupply(uint32_t uid, bool on);
 bool G_Provision_GetAutoResupply(uint32_t uid);
 bool G_Provision_Resupply(uint32_t uid);
+/* The shots the unit's quiver holds when full; 0 without one */
+int  G_Provision_QuiverCapacity(uint32_t uid);
 void G_Provision_Counts(int faction, int out[PROVISION_NUM_TIERS]);
 /* The meals per minute the faction's units eat, per district they are in */
 size_t G_Provision_Demand(int faction, size_t maxout, int out_districts[], float out_rates[]);

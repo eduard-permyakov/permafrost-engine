@@ -294,6 +294,7 @@ void R_GL_Draw(const void *render_private, mat4x4_t *model, const bool *transluc
     if(*translucent) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR);
+        glDepthMask(GL_FALSE);
     }
 
     R_GL_StateSet(GL_U_MODEL, (struct uval){
@@ -325,6 +326,7 @@ void R_GL_Draw(const void *render_private, mat4x4_t *model, const bool *transluc
     glDrawArrays(GL_TRIANGLES, first, priv->mesh.num_verts);
 
     if(*translucent) {
+        glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
     }
 

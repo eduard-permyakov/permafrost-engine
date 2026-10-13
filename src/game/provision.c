@@ -76,6 +76,8 @@
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
 #define FETCH_RETRY_MS      (5 * 1000)
+/* Standing still this long on the way to a store counts as having got there */
+#define FETCH_STALL_MS      (10 * 1000)
 /* A unit kept off a crowded store by others takes what it came for this close */
 #define STORE_REACH         (30.0f)
 #define MAX_UPKEEP_GOODS    (4)
@@ -101,6 +103,7 @@ struct provision{
     bool     automatic;
     /* On its way to eat at this site */
     uint32_t fetching;
+    uint32_t fetch_ms;
     /* No store had food the last time it looked: look again then, and work meanwhile */
     uint32_t retry_ms;
     bool     no_food;
@@ -122,6 +125,7 @@ struct quiver{
     /* Goes for more by itself when running low */
     bool     automatic;
     uint32_t fetching;
+    uint32_t fetch_ms;
     uint32_t retry_ms;
     /* Empty when last told, to tell again only on a change */
     bool     empty;
@@ -259,6 +263,7 @@ static bool fetch(uint32_t uid, struct provision *p)
         p->tries = 0;
     }
     p->fetching = site;
+    p->fetch_ms = s_now_ms;
     if(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER) {
         G_Harvester_Stop(uid);
     }
@@ -359,6 +364,10 @@ static void update(uint32_t uid, struct provision *p)
     if(p->tier == PROVISION_HUNGRY && s_now_ms - p->tier_since_ms >= p->starve_after_ms) {
         set_tier(uid, p, PROVISION_STARVING);
     }
+    /* One jostled at the store gets no second arrival */
+    if(p->fetching != NULL_UID && s_now_ms - p->fetch_ms >= FETCH_STALL_MS && G_Move_Still(uid)) {
+        on_arrive((void*)(uintptr_t)uid, NULL);
+    }
     if(p->tier != PROVISION_FED && p->automatic && p->fetching == NULL_UID 
     && s_now_ms >= p->retry_ms && free_to_fetch(uid)) {
         fetch(uid, p);
@@ -403,6 +412,7 @@ static bool fetch_quiver(uint32_t uid, struct quiver *q)
         return false;
     }
     q->fetching = site;
+    q->fetch_ms = s_now_ms;
     q->post = G_Pos_GetXZ(uid);
     q->tries = 0;
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_quiver);
@@ -470,6 +480,9 @@ static void update_quiver(uint32_t uid, struct quiver *q)
         E_Global_Notify(EVENT_PROVISION_CHANGED, (void*)(uintptr_t)uid, ES_ENGINE);
     }
     bool low = (shots >= 0) && (shots * 4 <= quiver_max_shots(q));
+    if(q->fetching != NULL_UID && s_now_ms - q->fetch_ms >= FETCH_STALL_MS && G_Move_Still(uid)) {
+        on_arrive_quiver((void*)(uintptr_t)uid, NULL);
+    }
     if(low && q->automatic && q->fetching == NULL_UID && s_now_ms >= q->retry_ms 
     && !eating(uid) && free_to_fetch(uid)) {
         fetch_quiver(uid, q);
@@ -597,6 +610,12 @@ bool G_Provision_Resupply(uint32_t uid)
     return fetch_quiver(uid, q);
 }
 
+int G_Provision_QuiverCapacity(uint32_t uid)
+{
+    struct quiver *q = quiver_get(uid);
+    return q ? quiver_max_shots(q) : 0;
+}
+
 void G_Provision_OnVisit(uint32_t uid, uint32_t site)
 {
     struct provision *p = prov_get(uid);
@@ -662,6 +681,23 @@ int G_Provision_Tier(uint32_t uid)
 {
     struct provision *p = prov_get(uid);
     return p ? p->tier : PROVISION_FED;
+}
+
+uint32_t G_Provision_TimerMs(uint32_t uid)
+{
+    struct provision *p = prov_get(uid);
+    if(!p)
+        return 0;
+    switch(p->tier) {
+    case PROVISION_FED:
+        return (p->next_due_ms > s_now_ms) ? p->next_due_ms - s_now_ms : 0;
+    case PROVISION_HUNGRY: {
+        uint32_t hungry_ms = s_now_ms - p->tier_since_ms;
+        return (p->starve_after_ms > hungry_ms) ? p->starve_after_ms - hungry_ms : 0;
+    }
+    default:
+        return s_now_ms - p->tier_since_ms;
+    }
 }
 
 void G_Provision_SetAutomatic(uint32_t uid, bool on)
