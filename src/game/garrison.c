@@ -42,6 +42,8 @@
 #include "fog_of_war.h"
 #include "selection.h"
 #include "movement.h"
+#include "harvester.h"
+#include "builder.h"
 #include "position.h"
 #include "../main.h"
 #include "../ui.h"
@@ -70,6 +72,8 @@
 #define GARRISON_THRESHOLD_DIST (25.0f)
 #define GARRISON_BUFFER_DIST    (15.0f)
 #define GARRISON_WAIT_TICKS     (5)
+/* Approaches to a door it cannot get next to before a unit gives up */
+#define MAX_APPROACHES          (4)
 #define GARRISONABLE_WAIT_TICKS (10)
 #define EPSILON                 (1.0f/1024)
 
@@ -98,6 +102,7 @@ struct garrison_state{
     bool            target_rendevouz_issued;
     enum unit_state state;
     int             wait_ticks;
+    int             approaches;
     /* Held by the building as an input to what it makes, rather than as
      * one of its defenders: it takes no garrison capacity and leaves
      * alive when the building falls.
@@ -493,13 +498,14 @@ static void on_20hz_tick(void *user, void *event)
                 /* The transport is stopped, possibly due to a new command
                  * from the player.
                  */
-                if(target_state->state == STATE_IDLE) {
+                if(target_state->state == STATE_IDLE && gu_state->approaches < MAX_APPROACHES) {
                     /* If it is reachable, retry going to its' location 
                      */
                     if(M_NavIsAdjacentToIsland(s_map, unit_layer, target_pos, 
                         garrison_thresh + GARRISON_THRESHOLD_DIST, ent_pos)) {
                         gu_state->wait_ticks = 0;
-                        G_Garrison_Enter(gu_state->target, uid);
+                        gu_state->approaches++;
+                        garrison_enter(gu_state->target, uid);
                         break;
                     }
                 }
@@ -823,6 +829,7 @@ bool G_Garrison_AddGarrison(uint32_t uid)
     gus.target_rendevouz_issued = false;
     gus.state = STATE_NOT_GARRISONED;
     gus.wait_ticks = 0;
+    gus.approaches = 0;
     gus.ingredient = false;
     gus.entered_from = (vec2_t){0};
     gus.has_entered_from = false;
@@ -914,6 +921,15 @@ bool G_Garrison_EnterAsIngredient(uint32_t garrisonable, uint32_t unit)
         return false;
     if(gus->state == STATE_GARRISONED)
         return false;
+    /* The work it was about must not steer it away from the door */
+    uint32_t flags = G_FlagsGet(unit);
+    if(flags & ENTITY_FLAG_HARVESTER) {
+        G_Harvester_Stop(unit);
+    }
+    if(flags & ENTITY_FLAG_BUILDER) {
+        G_Builder_Stop(unit);
+    }
+    gus->approaches = 0;
     if(!garrison_enter(garrisonable, unit))
         return false;
     gus->ingredient = true;
@@ -925,6 +941,7 @@ bool G_Garrison_Enter(uint32_t garrisonable, uint32_t unit)
     struct garrison_state *gus = gu_state_get(unit);
     if(gus && gus->state != STATE_GARRISONED) {
         gus->ingredient = false;
+        gus->approaches = 0;
     }
     return garrison_enter(garrisonable, unit);
 }
@@ -1306,6 +1323,12 @@ bool G_Garrison_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &wait_ticks, "wait_ticks"));
 
+        struct attr approaches = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr_gus.approaches
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &approaches, "approaches"));
+
         struct attr ingredient = (struct attr){
             .type = TYPE_BOOL,
             .val.as_bool = curr_gus.ingredient
@@ -1513,6 +1536,10 @@ bool G_Garrison_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         gus->wait_ticks = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        gus->approaches = attr.val.as_int;
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_BOOL);

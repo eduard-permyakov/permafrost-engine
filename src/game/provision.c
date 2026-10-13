@@ -70,6 +70,8 @@
 #define BUCKETS             (20)
 /* A unit visiting a store eats there if its next meal is due this soon */
 #define EAT_AHEAD_MS        (60 * 1000)
+/* A worker whose next meal is due this soon eats before it takes on more work */
+#define WORK_AHEAD_MS       (90 * 1000)
 #define GOOD_LEN            (32)
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
@@ -105,6 +107,8 @@ struct provision{
     /* A unit with no work to go back to returns here once it has eaten */
     bool     go_back;
     vec2_t   post;
+    /* Got there this many times without reaching the store, each time from further out */
+    int      tries;
 };
 
 KHASH_MAP_INIT_INT(prov, struct provision)
@@ -123,6 +127,7 @@ struct quiver{
     bool     empty;
     /* Where it stood when it went for more, to go back to */
     vec2_t   post;
+    int      tries;
 };
 
 KHASH_MAP_INIT_INT(quiver, struct quiver)
@@ -133,7 +138,7 @@ static void on_ordered(void *user, void *event);
 static void note_upkeep_good(const char *good);
 static uint32_t first_meal_delay_ms(uint32_t uid, uint32_t interval_ms);
 static bool carrying(uint32_t uid);
-static bool at_store(uint32_t uid, uint32_t site);
+static bool at_store(uint32_t uid, uint32_t site, int tries);
 static void on_arrive_quiver(void *user, void *event);
 static void on_ordered_quiver(void *user, void *event);
 
@@ -251,6 +256,7 @@ static bool fetch(uint32_t uid, struct provision *p)
     if(p->fetching == NULL_UID) {
         p->go_back = !(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER);
         p->post = G_Pos_GetXZ(uid);
+        p->tries = 0;
     }
     p->fetching = site;
     if(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER) {
@@ -280,12 +286,14 @@ static void on_arrive(void *user, void *event)
     if(!G_EntityExists(site) || G_EntityIsZombie(site))
         return;
     /* Others crowding the store kept it out of reach: try again */
-    if(!at_store(uid, site)) {
+    if(!at_store(uid, site, p->tries)) {
         bool go_back = p->go_back;
         vec2_t post = p->post;
+        int tries = p->tries + 1;
         fetch(uid, p);
         p->go_back = go_back;
         p->post = post;
+        p->tries = tries;
         return;
     }
     eat(uid, p, site);
@@ -294,14 +302,14 @@ static void on_arrive(void *user, void *event)
     }
 }
 
-static bool at_store(uint32_t uid, uint32_t site)
+static bool at_store(uint32_t uid, uint32_t site, int tries)
 {
     if(M_NavObjAdjacent(s_map, uid, site))
         return true;
     vec2_t a = G_Pos_GetXZ(uid), b = G_Pos_GetXZ(site);
     vec2_t delta;
     PFM_Vec2_Sub(&a, &b, &delta);
-    float reach = G_GetSelectionRadius(uid) + G_GetSelectionRadius(site) + STORE_REACH;
+    float reach = G_GetSelectionRadius(uid) + G_GetSelectionRadius(site) + STORE_REACH * (1 + tries);
     return PFM_Vec2_Len(&delta) <= reach;
 }
 
@@ -329,6 +337,9 @@ static bool free_to_fetch(uint32_t uid)
     if(flags & (ENTITY_FLAG_GARRISONED | ENTITY_FLAG_ZOMBIE))
         return false;
     if((flags & ENTITY_FLAG_COMBATABLE) && !G_Combat_Idle(uid))
+        return false;
+    /* On its way into a building, to be made into something else */
+    if((flags & ENTITY_FLAG_GARRISON) && G_Garrison_IsIngredient(uid))
         return false;
     return true;
 }
@@ -393,6 +404,7 @@ static bool fetch_quiver(uint32_t uid, struct quiver *q)
     }
     q->fetching = site;
     q->post = G_Pos_GetXZ(uid);
+    q->tries = 0;
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_quiver);
     E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_ordered_quiver);
     E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_quiver, (void*)(uintptr_t)uid, G_RUNNING);
@@ -416,10 +428,12 @@ static void on_arrive_quiver(void *user, void *event)
     q->fetching = NULL_UID;
     if(!G_EntityExists(site) || G_EntityIsZombie(site))
         return;
-    if(!at_store(uid, site)) {
+    if(!at_store(uid, site, q->tries)) {
         vec2_t post = q->post;
+        int tries = q->tries + 1;
         if(fetch_quiver(uid, q)) {
             q->post = post;
+            q->tries = tries;
         }
         return;
     }
@@ -623,6 +637,16 @@ bool G_Provision_WantsFood(uint32_t uid)
 {
     struct provision *p = prov_get(uid);
     return p && p->automatic && p->interval_ms && p->tier != PROVISION_FED && !p->no_food;
+}
+
+bool G_Provision_DueSoon(uint32_t uid)
+{
+    struct provision *p = prov_get(uid);
+    if(!p || !p->automatic || !p->interval_ms || p->no_food)
+        return false;
+    if(p->tier != PROVISION_FED)
+        return true;
+    return p->meals == 0 && p->next_due_ms <= s_now_ms + WORK_AHEAD_MS;
 }
 
 bool G_Provision_IsUpkeepGood(const char *good)

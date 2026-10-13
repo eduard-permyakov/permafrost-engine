@@ -69,6 +69,10 @@
 #define UID_NONE  (~((uint32_t)0))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
+#define FOUND_RETRY_TICKS (10)
+#define FOUND_CLEAR_TICKS (40)
+#define FOUND_WAIT_TICKS  (600) /* half a minute for a busy footprint to empty before giving up */
+
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
         if(!(_pred))                    \
@@ -80,15 +84,18 @@ struct builderstate{
         STATE_NOT_BUILDING,
         STATE_MOVING_TO_TARGET,
         STATE_BUILDING,
+        STATE_WAIT_FOUND,
     }state;
     int build_speed;
     uint32_t target_uid;
+    int wait_ticks;
 };
 
 KHASH_MAP_INIT_INT(state, struct builderstate)
 
 static void on_build_anim_finished(void *user, void *event);
 static void on_motion_end(void *user, void *event);
+static void proceed_at_site(uint32_t uid, struct builderstate *bs);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -197,6 +204,15 @@ static void on_build_anim_finished(void *user, void *event)
     }
 }
 
+static bool try_found_site(uint32_t target)
+{
+    bool clear = G_Building_GetPathable(target) || G_Building_Unobstructed(target);
+    if(!clear || !G_Building_Found(target, true))
+        return false;
+    E_Entity_Notify(EVENT_BUILDING_FOUNDED, target, NULL, ES_ENGINE);
+    return true;
+}
+
 static void on_motion_end(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
@@ -217,19 +233,18 @@ static void on_motion_end(void *user, void *event)
         return; /* builder could not reach the building */
     }
 
-    if(!G_Building_IsFounded(bs->target_uid)) {
-
-        bool clear = G_Building_GetPathable(bs->target_uid) || G_Building_Unobstructed(bs->target_uid);
-        if(clear && G_Building_Found(bs->target_uid, true)) {
-            E_Entity_Notify(EVENT_BUILDING_FOUNDED, bs->target_uid, NULL, ES_ENGINE);
-        }else{
-            bs->state = STATE_NOT_BUILDING;
-            bs->target_uid = UID_NONE;
-            E_Entity_Notify(EVENT_BUILD_FAIL_FOUND, uid, NULL, ES_ENGINE);
-            return; 
-        }
+    if(!G_Building_IsFounded(bs->target_uid) && !try_found_site(bs->target_uid)) {
+        G_Building_ClearFootprint(bs->target_uid);
+        bs->state = STATE_WAIT_FOUND;
+        bs->wait_ticks = 0;
+        return;
     }
 
+    proceed_at_site(uid, bs);
+}
+
+static void proceed_at_site(uint32_t uid, struct builderstate *bs)
+{
     if(!G_Building_IsSupplied(bs->target_uid)
     && G_StorageSite_IsSaturated(bs->target_uid)) {
         G_Building_Supply(bs->target_uid);
@@ -257,6 +272,49 @@ static void on_motion_end(void *user, void *event)
     E_Entity_Register(EVENT_MOTION_START, uid, on_motion_begin, (void*)((uintptr_t)uid), G_RUNNING);
     E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, uid, on_build_anim_finished, 
         (void*)((uintptr_t)uid), G_RUNNING);
+}
+
+static void on_20hz_tick(void *user, void *event)
+{
+    uint32_t uid;
+    struct builderstate *bs;
+
+    kh_foreach_val_ptr(s_entity_state_table, uid, bs, {
+
+        if(bs->state != STATE_WAIT_FOUND)
+            continue;
+
+        if(!G_EntityExists(bs->target_uid) || G_EntityIsZombie(bs->target_uid)) {
+            bs->state = STATE_NOT_BUILDING;
+            bs->target_uid = UID_NONE;
+            continue;
+        }
+
+        bs->wait_ticks++;
+        if(bs->wait_ticks % FOUND_RETRY_TICKS == 0) {
+            /* One pushed off the footprint itself walks back before trying again */
+            if(!G_Move_Still(uid))
+                continue;
+            if(!M_NavObjAdjacent(s_map, uid, bs->target_uid)) {
+                G_Builder_Build(uid, bs->target_uid);
+                continue;
+            }
+            if(try_found_site(bs->target_uid)) {
+                proceed_at_site(uid, bs);
+                continue;
+            }
+        }
+
+        if(bs->wait_ticks % FOUND_CLEAR_TICKS == 0) {
+            G_Building_ClearFootprint(bs->target_uid);
+        }
+
+        if(bs->wait_ticks >= FOUND_WAIT_TICKS) {
+            bs->state = STATE_NOT_BUILDING;
+            bs->target_uid = UID_NONE;
+            E_Entity_Notify(EVENT_BUILD_FAIL_FOUND, uid, NULL, ES_ENGINE);
+        }
+    });
 }
 
 static void on_mousedown(void *user, void *event)
@@ -330,12 +388,14 @@ bool G_Builder_Init(struct map *map)
     s_map = map;
     s_build_on_lclick = false;
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
+    E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
     return true;
 }
 
 void G_Builder_Shutdown(void)
 {
     s_map = NULL;
+    E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     kh_destroy(state, s_entity_state_table);
 }
@@ -379,6 +439,7 @@ void G_Builder_AddEntity(uint32_t uid)
         .state = STATE_NOT_BUILDING,
         .build_speed = 0.0,
         .target_uid = UID_NONE,
+        .wait_ticks = 0,
     });
 }
 
@@ -539,6 +600,12 @@ bool G_Builder_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr.target_uid
         };
         CHK_TRUE_RET(Attr_Write(stream, &target, "builder_target"));
+
+        struct attr wait_ticks = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.wait_ticks
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &wait_ticks, "builder_wait_ticks"));
         Sched_TryYield();
     });
 
@@ -572,15 +639,21 @@ bool G_Builder_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(attr.type == TYPE_INT);
         int target = attr.val.as_int;
 
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int wait_ticks = attr.val.as_int;
+
         struct builderstate *bs = builderstate_get(uid);
         CHK_TRUE_RET(bs);
 
         bs->state = state;
         bs->build_speed = speed;
         bs->target_uid = target;
+        bs->wait_ticks = wait_ticks;
 
         switch(state) {
         case STATE_NOT_BUILDING:
+        case STATE_WAIT_FOUND:
             break;
         case STATE_MOVING_TO_TARGET:
             E_Entity_Register(EVENT_MOTION_END, uid, 

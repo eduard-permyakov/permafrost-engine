@@ -337,6 +337,7 @@ static PyObject *PyPf_cluster_anchor(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_cluster_icon(PyObject *self, PyObject *args);
 static PyObject *PyPf_district_at(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_show_districts(PyObject *self, PyObject *args);
+static PyObject *PyPf_districts_shown(PyObject *self);
 static PyObject *PyPf_set_district_preview(PyObject *self, PyObject *args);
 static PyObject *PyPf_cluster_preview_join(PyObject *self, PyObject *args);
 static PyObject *PyPf_provision_counts(PyObject *self, PyObject *args);
@@ -1325,6 +1326,10 @@ static PyMethodDef pf_module_methods[] = {
     {"show_districts",
     (PyCFunction)PyPf_show_districts, METH_VARARGS,
     "Turns the district lens, which tints each district of the player's factions, on or off."},
+
+    {"districts_shown",
+    (PyCFunction)PyPf_districts_shown, METH_NOARGS,
+    "Returns whether the district lens is on."},
 
     {"set_district_preview",
     (PyCFunction)PyPf_set_district_preview, METH_VARARGS,
@@ -5782,6 +5787,15 @@ static PyObject *PyPf_show_districts(PyObject *self, PyObject *args)
     }
     G_District_SetShow(PyObject_IsTrue(on));
     Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_districts_shown(PyObject *self)
+{
+    if(G_District_GetShow()) {
+        Py_RETURN_TRUE;
+    }else{
+        Py_RETURN_FALSE;
+    }
 }
 
 static PyObject *PyPf_set_district_preview(PyObject *self, PyObject *args)

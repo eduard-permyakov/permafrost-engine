@@ -88,6 +88,8 @@
  * the request has waited MIN_LOAD_WAIT_S */
 #define MIN_LOAD                     (5)
 #define MIN_LOAD_WAIT_S              (30.0f)
+/* A haul this long waits for a full load */
+#define FULL_LOAD_TRAVEL             (400.0f)
 #define MAX_RESOURCES                (64)
 /* How far a worker will go for work it finds by itself */
 #define WORK_RADIUS                  (600.0f)
@@ -220,6 +222,9 @@ static bool idle(uint32_t uid)
     uint32_t flags = G_FlagsGet(uid);
     if(flags & ENTITY_FLAG_GARRISONED)
         return true;
+    /* On its way into a building, to be made into something else */
+    if((flags & ENTITY_FLAG_GARRISON) && G_Garrison_IsIngredient(uid))
+        return false;
     /* A combat-held unit is stationary even though its move state is not a still one. */
     if((flags & ENTITY_FLAG_MOVABLE) && !(flags & ENTITY_FLAG_COMBAT_HELD) && !G_Move_Still(uid))
         return false;
@@ -273,8 +278,8 @@ static void settle_stopping(void)
         if(!astate || astate->state != STATE_STOPPING)
             continue;
 
-        /* A hungry worker's next job is its meal */
-        if((G_Provision_WantsFood(uid) && G_Provision_Fetch(uid))
+        /* A hungry worker's next job is its meal, and so is one about to be */
+        if((G_Provision_DueSoon(uid) && G_Provision_Fetch(uid))
         || try_assign_transport_job(uid, astate) || try_assign_work(uid, astate)) {
             astate->state = STATE_ACTIVE;
             continue;
@@ -393,6 +398,13 @@ static bool is_representative(uint32_t site)
     return (cid == 0 || G_Cluster_Anchor(cid) == site);
 }
 
+static uint32_t pool_representative(uint32_t site)
+{
+    int cid = G_Cluster_Of(site);
+    uint32_t anchor = (cid == 0) ? NULL_UID : G_Cluster_Anchor(cid);
+    return (anchor == NULL_UID) ? site : anchor;
+}
+
 static int pool_en_route(uint32_t site, const char *rname)
 {
     int cid = G_Cluster_Of(site);
@@ -439,6 +451,19 @@ static float distance(vec2_t a, vec2_t b)
     return PFM_Vec2_Len(&delta);
 }
 
+/* A larder asks for a load, not a unit */
+static bool worth_asking(uint32_t site, const char *rname, int want, int shortfall)
+{
+    enum ss_chip chip = G_StorageSite_GetChip(site, rname);
+    if(chip != SS_CHIP_COLLECT && chip != SS_CHIP_RELAY)
+        return true;
+    if(G_StorageSite_GetKeep(site, rname) <= 0)
+        return true;
+    if(shortfall >= MIN(MIN_LOAD, MAX(1, want / 2)))
+        return true;
+    return G_StorageSite_GetCurr(site, rname) == 0;
+}
+
 static void collect_requests(vec_request_t *out, const vec_entity_t *sites)
 {
     for(khint_t k = kh_begin(s_pending); k != kh_end(s_pending); k++) {
@@ -465,6 +490,8 @@ static void collect_requests(vec_request_t *out, const vec_entity_t *sites)
             int have = G_StorageSite_GetCurr(site, names[j]) + pool_en_route(site, names[j]);
             int shortfall = want - have;
             if(shortfall <= 0)
+                continue;
+            if(!worth_asking(site, names[j], want, shortfall))
                 continue;
 
             struct pending *pend = pending_get(site, names[j], true);
@@ -548,6 +575,17 @@ static void note_blocked(const struct job_request *req, enum request_status reas
     }
 }
 
+/* The load a haul this long is worth, any at all once the request has waited long enough */
+static int min_load_for(float travel, int max_carry, int shortfall, float waited_s)
+{
+    float fullness = MIN(travel / FULL_LOAD_TRAVEL, 1.0f);
+    int want = MAX(MIN_LOAD, (int)(max_carry * fullness));
+    float patience = MIN_LOAD_WAIT_S * (1.0f + fullness);
+    if(waited_s >= patience)
+        want = 1;
+    return MIN(want, shortfall);
+}
+
 /* Gives the waiting carriers the most pressing requests: each request takes 
  * the carrier and source that get its goods to it soonest. */
 static void assign_jobs(vec_entity_t *carriers)
@@ -584,7 +622,6 @@ static void assign_jobs(vec_entity_t *carriers)
         int dest_district = G_District_Of(req->site);
         struct pending *req_pend = pending_get(req->site, req->rname, false);
         float waited_s = req_pend ? (s_tick - req_pend->since_tick) * TICK_MS / 1000.0f : 0.0f;
-        int min_load = (waited_s < MIN_LOAD_WAIT_S) ? MIN(MIN_LOAD, req->shortfall) : 1;
 
         while(req->shortfall > 0 && vec_size(carriers) > 0 && njobs < MAX_JOBS_PER_PASS) {
 
@@ -607,10 +644,13 @@ static void assign_jobs(vec_entity_t *carriers)
                 any_carrier = true;
                 vec2_t cpos = G_Pos_GetXZ(carrier);
                 uint32_t flags = G_FlagsGet(carrier);
+                int max_carry = G_Harvester_GetMaxCarry(carrier, req->rname);
 
                 for(int s = 0; s < vec_size(&sources); s++) {
                     struct job_source *src = &vec_AT(&sources, s);
-                    if(src->surplus < min_load) {
+                    vec2_t spos = G_Pos_GetXZ(src->site);
+                    float travel = distance(cpos, spos) + distance(spos, dest_pos);
+                    if(src->surplus < min_load_for(travel, max_carry, req->shortfall, waited_s)) {
                         any_small = any_small || src->surplus > 0;
                         continue;
                     }
@@ -620,8 +660,6 @@ static void assign_jobs(vec_entity_t *carriers)
                     }
                     if(G_StorageSite_GetDoNotTake(flags, src->site))
                         continue;
-                    vec2_t spos = G_Pos_GetXZ(src->site);
-                    float travel = distance(cpos, spos) + distance(spos, dest_pos);
                     if(best_carrier == -1 || travel < best_travel) {
                         uint32_t srcm = nearest_member(src->site, cpos);
                         uint32_t dstm = nearest_member(req->site, spos);
@@ -1274,6 +1312,14 @@ void G_Automation_Balance(int faction, const char *rname, int *out_surplus, int 
         *out_shortfall += MAX(want - have, 0);
     }
     vec_entity_destroy(&sites);
+}
+
+int G_Automation_Shortfall(uint32_t site, const char *rname, int own_load)
+{
+    uint32_t rep = pool_representative(site);
+    int want = G_StorageSite_Request(rep, rname);
+    int have = G_StorageSite_GetCurr(rep, rname) + pool_en_route(rep, rname) - own_load;
+    return MAX(want - have, 0);
 }
 
 const char *G_Automation_GetPinnedWork(uint32_t uid)

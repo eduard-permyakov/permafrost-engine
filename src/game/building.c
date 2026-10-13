@@ -84,6 +84,10 @@ static void  pfree(void *ptr);
 #define kfree    pfree
 
 #define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
+#define MIN(a, b)           ((a) < (b) ? (a) : (b))
+#define MAX(a, b)           ((a) > (b) ? (a) : (b))
+/* Units obstruct by the tiles they cover, so they go a couple of tiles past the edge */
+#define FOOTPRINT_CLEARANCE (2.0f * X_COORDS_PER_TILE)
 #define MARKER_DIR          "assets/models/build_site_marker"
 #define MARKER_OBJ          "build-site-marker.pfobj"
 #define CENTER_MARKER_DIR   "assets/models/build_site"
@@ -507,6 +511,43 @@ static void try_apply_ground_texture(const struct buildstate *bs, const char *te
     }
 }
 
+static void obb_xz_bounds(const struct obb *obb, vec2_t *out_min, vec2_t *out_max)
+{
+    *out_min = (vec2_t){obb->corners[0].x, obb->corners[0].z};
+    *out_max = *out_min;
+    for(int i = 1; i < 8; i++) {
+        out_min->x = MIN(out_min->x, obb->corners[i].x);
+        out_min->z = MIN(out_min->z, obb->corners[i].z);
+        out_max->x = MAX(out_max->x, obb->corners[i].x);
+        out_max->z = MAX(out_max->z, obb->corners[i].z);
+    }
+}
+
+struct footprint_ctx{
+    uint32_t          building;
+    const struct obb *obb;
+};
+
+static bool standing_in_footprint(uint32_t uid, void *arg)
+{
+    const struct footprint_ctx *ctx = arg;
+    if(uid == ctx->building)
+        return false;
+
+    uint32_t flags = G_FlagsGet(uid);
+    if(!(flags & ENTITY_FLAG_MOVABLE)
+    ||  (flags & (ENTITY_FLAG_ZOMBIE | ENTITY_FLAG_BUILDING)))
+        return false;
+
+    if(!G_Move_Still(uid))
+        return false;
+
+    /* Test at the OBB's own height so only the XZ footprint decides */
+    vec2_t xz = G_Pos_GetXZ(uid);
+    vec3_t point = (vec3_t){xz.x, ctx->obb->center.y, xz.z};
+    return C_PointInsideOBB(point, *ctx->obb);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -815,6 +856,60 @@ bool G_Building_Unobstructed(uint32_t uid)
             && M_ObjectAdjacentToLand(s_map, &obb);
     }else{
         return M_NavObjectBuildable(s_map, NAV_LAYER_GROUND_1X1, false, &obb);
+    }
+}
+
+/* The spot just past the nearest side of the footprint */
+static vec2_t beside_footprint(const struct obb *obb, vec2_t xz, float clearance)
+{
+    vec2_t centre = (vec2_t){obb->center.x, obb->center.z};
+    vec2_t rel;
+    PFM_Vec2_Sub(&xz, &centre, &rel);
+
+    vec2_t out_dir = (vec2_t){1.0f, 0.0f};
+    float out_dist = 0.0f;
+    bool found = false;
+    for(int i = 0; i < 3; i++) {
+        vec2_t axis = (vec2_t){obb->axes[i].x, obb->axes[i].z};
+        float len = PFM_Vec2_Len(&axis);
+        if(len < 1e-3f)
+            continue;
+        PFM_Vec2_Scale(&axis, 1.0f / len, &axis);
+        float d = PFM_Vec2_Dot(&rel, &axis);
+        float dist = obb->half_lengths[i] - ((d < 0.0f) ? -d : d);
+        if(!found || dist < out_dist) {
+            found = true;
+            out_dist = dist;
+            out_dir = (d < 0.0f) ? (vec2_t){-axis.x, -axis.z} : axis;
+        }
+    }
+    vec2_t step, ret;
+    PFM_Vec2_Scale(&out_dir, MAX(out_dist, 0.0f) + clearance, &step);
+    PFM_Vec2_Add(&xz, &step, &ret);
+    return ret;
+}
+
+void G_Building_ClearFootprint(uint32_t uid)
+{
+    struct obb obb;
+    Entity_CurrentOBB(uid, &obb, true);
+
+    vec2_t xz_min, xz_max;
+    obb_xz_bounds(&obb, &xz_min, &xz_max);
+
+    struct footprint_ctx ctx = (struct footprint_ctx){uid, &obb};
+    uint32_t ents[128];
+    int nents = G_Pos_EntsInRectWithPred(xz_min, xz_max, ents, ARR_SIZE(ents),
+        standing_in_footprint, &ctx);
+
+    for(int i = 0; i < nents; i++) {
+        uint32_t unit = ents[i];
+        float clearance = G_GetSelectionRadius(unit) + FOOTPRINT_CLEARANCE;
+        vec2_t beside = beside_footprint(&obb, G_Pos_GetXZ(unit), clearance);
+        vec2_t dest;
+        if(!M_NavClosestPathable(s_map, Entity_NavLayer(unit), beside, &dest))
+            continue;
+        G_Move_SetDest(unit, dest, false);
     }
 }
 

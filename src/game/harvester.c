@@ -1095,7 +1095,10 @@ static void on_arrive_at_transport_source(void *user, void *event)
      */
     int take = 0;
     if(hs->job_amount > 0) {
-        take = MIN(carry_cap, MIN(hs->job_amount, G_StorageSite_Surplus(hs->transport_src_uid, hs->res_name)));
+        /* A job tops up with what the pool came to need while the carrier was on its way */
+        int need = MAX(hs->job_amount,
+            G_Automation_Shortfall(hs->transport_dest_uid, hs->res_name, hs->job_amount));
+        take = MIN(carry_cap, MIN(need, G_StorageSite_Surplus(hs->transport_src_uid, hs->res_name)));
         take = MAX(take, 0);
     }else switch(hs->strategy) {
     case TRANSPORT_STRATEGY_EXCESS: {

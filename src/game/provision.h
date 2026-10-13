@@ -50,6 +50,8 @@ void G_Provision_OnVisit(uint32_t uid, uint32_t site);
 bool G_Provision_IsUpkeepGood(const char *good);
 /* A hungry unit that goes for food by itself: no work is given to it until it has eaten */
 bool G_Provision_WantsFood(uint32_t uid);
+/* A unit that goes for food by itself and is hungry, or soon will be */
+bool G_Provision_DueSoon(uint32_t uid);
 bool G_Provision_SaveState(struct SDL_RWops *stream);
 bool G_Provision_LoadState(struct SDL_RWops *stream);
 

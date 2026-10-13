@@ -631,6 +631,7 @@ bool   G_Building_Found(uint32_t uid, bool blocking);
 bool   G_Building_Supply(uint32_t uid);
 bool   G_Building_Complete(uint32_t uid);
 bool   G_Building_Unobstructed(uint32_t uid);
+void   G_Building_ClearFootprint(uint32_t uid);
 bool   G_Building_IsMarked(uint32_t uid);
 bool   G_Building_IsFounded(uint32_t uid);
 bool   G_Building_IsSupplied(uint32_t uid);
@@ -989,6 +990,8 @@ bool G_Automation_LeavesGathering(uint32_t uid, const char *rname);
 /* What the faction's sites can give away of a resource, and what they ask 
  * for and are not yet getting */
 void G_Automation_Balance(int faction, const char *rname, int *out_surplus, int *out_shortfall);
+/* What the site's pool still asks for, net of what carriers bring it other than 'own_load' */
+int  G_Automation_Shortfall(uint32_t site, const char *rname, int own_load);
 
 #endif
 
