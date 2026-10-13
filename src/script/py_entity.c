@@ -126,6 +126,12 @@ static PyObject *PyEntity_replenish(PyEntityObject *self);
 static PyObject *PyEntity_get_provision_tier(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_auto_replenish(PyEntityObject *self, void *closure);
 static int       PyEntity_set_auto_replenish(PyEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyEntity_set_quiver(PyEntityObject *self, PyObject *args);
+static PyObject *PyEntity_resupply(PyEntityObject *self);
+static PyObject *PyEntity_set_ammo(PyEntityObject *self, PyObject *args);
+static PyObject *PyEntity_get_ammo(PyEntityObject *self, void *closure);
+static PyObject *PyEntity_get_auto_resupply(PyEntityObject *self, void *closure);
+static int       PyEntity_set_auto_resupply(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_cluster_id(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_icons(PyEntityObject *self);
 static PyObject *PyEntity_clear_icons(PyEntityObject *self);
@@ -207,6 +213,20 @@ static PyMethodDef PyEntity_methods[] = {
     (PyCFunction)PyEntity_replenish, METH_NOARGS,
     "Sends the unit to eat at the nearest store of its food. Returns False if there is none."},
 
+    {"set_quiver", 
+    (PyCFunction)PyEntity_set_quiver, METH_VARARGS,
+    "Takes a resource name, the shots in one unit of it, the units carried when full and whether "
+    "to go for more by itself. The ranged unit then fires only while it has shots, starting full."},
+
+    {"resupply", 
+    (PyCFunction)PyEntity_resupply, METH_NOARGS,
+    "Sends the unit to fill its quiver at the nearest store of its shots. Returns False if there is "
+    "none."},
+
+    {"set_ammo", 
+    (PyCFunction)PyEntity_set_ammo, METH_VARARGS,
+    "Sets the shots the unit has left; a negative number makes them unlimited."},
+
     {"set_cluster_type", 
     (PyCFunction)PyEntity_set_cluster_type, METH_VARARGS,
     "Takes a type name and a link radius. Once completed, the building joins the oldest cluster of "
@@ -245,6 +265,14 @@ static PyGetSetDef PyEntity_getset[] = {
     {"auto_replenish",
     (getter)PyEntity_get_auto_replenish, (setter)PyEntity_set_auto_replenish,
     "Whether the unit goes for food by itself as soon as it is hungry.",
+    NULL},
+    {"ammo",
+    (getter)PyEntity_get_ammo, NULL,
+    "The shots the unit has left, or -1 if it needs none.",
+    NULL},
+    {"auto_resupply",
+    (getter)PyEntity_get_auto_resupply, (setter)PyEntity_set_auto_resupply,
+    "Whether the unit goes to fill its quiver by itself when it runs low.",
     NULL},
     {"cluster_id",
     (getter)PyEntity_get_cluster_id, NULL,
@@ -2285,6 +2313,61 @@ static PyObject *PyEntity_get_auto_replenish(PyEntityObject *self, void *closure
 static int PyEntity_set_auto_replenish(PyEntityObject *self, PyObject *value, void *closure)
 {
     G_Provision_SetAutomatic(self->ent, PyObject_IsTrue(value));
+    return 0;
+}
+
+static PyObject *PyEntity_set_quiver(PyEntityObject *self, PyObject *args)
+{
+    const char *good;
+    int per_unit, max_units;
+    PyObject *automatic;
+    if(!PyArg_ParseTuple(args, "siiO", &good, &per_unit, &max_units, &automatic)
+    || per_unit <= 0 || max_units <= 0) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a resource name, two positive integers "
+            "and a boolean.");
+        return NULL;
+    }
+    if(G_FlagsGet(self->ent) & ENTITY_FLAG_ZOMBIE)
+        Py_RETURN_NONE;
+    G_Provision_SetQuiver(self->ent, good, per_unit, max_units, PyObject_IsTrue(automatic));
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_resupply(PyEntityObject *self)
+{
+    if(G_FlagsGet(self->ent) & ENTITY_FLAG_ZOMBIE)
+        Py_RETURN_FALSE;
+    if(G_Provision_Resupply(self->ent))
+        Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
+}
+
+static PyObject *PyEntity_set_ammo(PyEntityObject *self, PyObject *args)
+{
+    int shots;
+    if(!PyArg_ParseTuple(args, "i", &shots)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer.");
+        return NULL;
+    }
+    G_Combat_SetAmmo(self->ent, shots);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_get_ammo(PyEntityObject *self, void *closure)
+{
+    return PyInt_FromLong(G_Combat_GetAmmo(self->ent));
+}
+
+static PyObject *PyEntity_get_auto_resupply(PyEntityObject *self, void *closure)
+{
+    if(G_Provision_GetAutoResupply(self->ent))
+        Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
+}
+
+static int PyEntity_set_auto_resupply(PyEntityObject *self, PyObject *value, void *closure)
+{
+    G_Provision_SetAutoResupply(self->ent, PyObject_IsTrue(value));
     return 0;
 }
 
@@ -5024,7 +5107,7 @@ static PyObject *PyStorageSiteEntity_set_chip(PyStorageSiteEntityObject *self, P
     SS_CHECK_ALIVE(NULL);
     const char *name;
     int chip;
-    if(!PyArg_ParseTuple(args, "si", &name, &chip) || chip < SS_CHIP_STORE || chip > SS_CHIP_OFF) {
+    if(!PyArg_ParseTuple(args, "si", &name, &chip) || chip < SS_CHIP_STORE || chip > SS_CHIP_RELAY) {
         PyErr_SetString(PyExc_TypeError, "Expecting two arguments: name (string) and one of the pf.CHIP_ values.");
         return NULL;
     }

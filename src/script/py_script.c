@@ -341,6 +341,7 @@ static PyObject *PyPf_set_district_preview(PyObject *self, PyObject *args);
 static PyObject *PyPf_cluster_preview_join(PyObject *self, PyObject *args);
 static PyObject *PyPf_provision_counts(PyObject *self, PyObject *args);
 static PyObject *PyPf_provision_demand(PyObject *self, PyObject *args);
+static PyObject *PyPf_resource_balance(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_style(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_font_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_bonus_color(PyObject *self, PyObject *args);
@@ -804,7 +805,8 @@ static PyMethodDef pf_module_methods[] = {
 
     {"get_resource_stored",
     (PyCFunction)PyPf_get_resource_stored, METH_VARARGS,
-    "Returns the total amount of a particular resource between all player-controlled storage sites."},
+    "Returns the total amount of a particular resource between all player-controlled storage sites, "
+    "or between the storage sites of the faction with the optional ID."},
 
     {"get_resource_capacity",
     (PyCFunction)PyPf_get_resource_capacity, METH_VARARGS,
@@ -1298,6 +1300,11 @@ static PyMethodDef pf_module_methods[] = {
     {"provision_counts",
     (PyCFunction)PyPf_provision_counts, METH_VARARGS,
     "Takes a faction ID and returns a tuple of how many of its units are fed, hungry and starving."},
+
+    {"resource_balance",
+    (PyCFunction)PyPf_resource_balance, METH_VARARGS,
+    "Takes a resource name and a faction ID. Returns a tuple of how much of the resource the faction's "
+    "storage sites can give away, and how much they ask for and are not yet getting."},
 
     {"provision_demand",
     (PyCFunction)PyPf_provision_demand, METH_VARARGS,
@@ -2997,12 +3004,14 @@ static PyObject *PyPf_get_resource_list(PyObject *self)
 static PyObject *PyPf_get_resource_stored(PyObject *self, PyObject *args)
 {
     const char *name;
-    if(!PyArg_ParseTuple(args, "s", &name)) {
-        PyErr_SetString(PyExc_TypeError, "Expecting one arguments: resource name (string).");
+    int faction = -1;
+    if(!PyArg_ParseTuple(args, "s|i", &name, &faction)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting a resource name (string) and an optional faction ID.");
         return NULL;
     }
 
-    int stored = G_StorageSite_GetPlayerStored(name);
+    int stored = (faction < 0) ? G_StorageSite_GetPlayerStored(name)
+                               : G_StorageSite_GetFactionStored(faction, name);
     return PyInt_FromLong(stored);
 }
 
@@ -5692,6 +5701,19 @@ static PyObject *PyPf_provision_counts(PyObject *self, PyObject *args)
     int counts[PROVISION_NUM_TIERS];
     G_Provision_Counts(faction, counts);
     return Py_BuildValue("(iii)", counts[PROVISION_FED], counts[PROVISION_HUNGRY], counts[PROVISION_STARVING]);
+}
+
+static PyObject *PyPf_resource_balance(PyObject *self, PyObject *args)
+{
+    const char *name;
+    int faction;
+    if(!PyArg_ParseTuple(args, "si", &name, &faction) || faction < 0 || faction >= MAX_FACTIONS) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a resource name and a faction ID.");
+        return NULL;
+    }
+    int surplus, shortfall;
+    G_Automation_Balance(faction, name, &surplus, &shortfall);
+    return Py_BuildValue("(ii)", surplus, shortfall);
 }
 
 static PyObject *PyPf_provision_demand(PyObject *self, PyObject *args)

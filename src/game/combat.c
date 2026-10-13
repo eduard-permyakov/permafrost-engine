@@ -223,6 +223,8 @@ struct combatstate{
     const char        *corpse_dir;
     const char        *corpse_pfobj;
     vec3_t             corpse_scale;
+    /* Shots left, or AMMO_UNLIMITED; a unit out of them is harmless until resupplied */
+    int                ammo;
 };
 
 struct combat_work_in{
@@ -320,7 +322,8 @@ enum combat_cmd_type{
     COMBAT_CMD_CLEAR_MODIFIERS,
     COMBAT_CMD_SET_GROUP_BONUS,
     COMBAT_CMD_CLEAR_GROUP_BONUS,
-    COMBAT_CMD_REFRESH_BONUSES
+    COMBAT_CMD_REFRESH_BONUSES,
+    COMBAT_CMD_SET_AMMO
 };
 
 /* Commands carry small typed payloads; the uid is hoisted out of the union so
@@ -384,6 +387,9 @@ struct combat_cmd{
         struct{
             int dmg;
         }base_damage;
+        struct{
+            int shots;
+        }ammo;
         struct{
             int hp;
         }max_hp;
@@ -968,9 +974,16 @@ static bool entity_can_attack_melee(uint32_t uid, uint32_t target)
     return entities_adjacent(uid, target);
 }
 
+static bool harmless(const struct combatstate *cs)
+{
+    return cs->stats.base_dmg == 0 || cs->ammo == 0;
+}
+
 static bool entity_can_attack(uint32_t uid, uint32_t target)
 {
     const struct combatstate *cs = combatstate_get(uid);
+    if(cs->ammo == 0)
+        return false;
     if(cs->stats.attack_range == 0.0f) {
         return entity_can_attack_melee(uid, target);
     }
@@ -1274,9 +1287,14 @@ static void entity_ranged_attack(uint32_t uid, uint32_t target, vec3_t proj_pos)
     }
     if(!ok)
         return; /* Degenerate: the target is right on top of the muzzle. */
+    if(cs->ammo == 0)
+        return;
 
     P_Projectile_Add(proj_pos, vel, uid, G_GetFactionID(uid),
         ent_dmg, cs->stats.dmg_type, flags, cs->pd);
+    if(cs->ammo > 0) {
+        cs->ammo--;
+    }
 }
 
 static bool garrisoned(uint32_t uid)
@@ -1392,6 +1410,7 @@ static void do_add_entity(uint32_t uid, enum combat_stance initial)
         .fd = combat_default_fire(),
         .corpse_dir = NULL,
         .corpse_pfobj = NULL,
+        .ammo = AMMO_UNLIMITED,
     };
     combatstate_set(uid, &new_cs);
 }
@@ -2243,7 +2262,7 @@ static void entity_compute_update(uint32_t uid, struct combat_work_out *out)
         && !G_Building_IsCompletedFrom(gs->buildstate, uid))
             break;
 
-        if(curr->stats.base_dmg == 0) {
+        if(harmless(curr)) {
 
             /* Non-combatants don't acquire targets; movable ones instead
              * hold back from nearby threats during an attack-move. */
@@ -2515,7 +2534,7 @@ static void entity_compute_update(uint32_t uid, struct combat_work_out *out)
     }
     case STATE_STANDING_GROUND: {
 
-        if(curr->stance == COMBAT_STANCE_NO_ENGAGEMENT || curr->stats.base_dmg > 0) {
+        if(curr->stance == COMBAT_STANCE_NO_ENGAGEMENT || !harmless(curr)) {
             curr->state = STATE_NOT_IN_COMBAT;
             out->action = COMBAT_ACTION_RESUME_MOVE;
             out->action_args[0] = (struct attr){
@@ -2559,7 +2578,7 @@ static void entity_compute_update(uint32_t uid, struct combat_work_out *out)
     }
     case STATE_NON_COMBATANT_FLEEING: {
 
-        if(curr->stance == COMBAT_STANCE_NO_ENGAGEMENT || curr->stats.base_dmg > 0) {
+        if(curr->stance == COMBAT_STANCE_NO_ENGAGEMENT || !harmless(curr)) {
             curr->state = STATE_NOT_IN_COMBAT;
             out->action = COMBAT_ACTION_RESUME_MOVE;
             out->action_args[0] = (struct attr){
@@ -2755,7 +2774,7 @@ static void entity_apply_update(struct combat_work_out *out)
     }
 
     /* A player order can race the snapshot; reconcile in combat's favour. */
-    if(cs->stats.base_dmg == 0 && cs->state != STATE_NON_COMBATANT_FLEEING
+    if(harmless(cs) && cs->state != STATE_NON_COMBATANT_FLEEING
     && G_Move_IsFleeing(uid)) {
         G_Move_StopFlee(uid);
     }
@@ -2922,6 +2941,13 @@ static void combat_process_cmds(void)
         }
         case COMBAT_CMD_SET_BASE_DAMAGE: {
             do_set_base_damage(cmd.uid, cmd.u.base_damage.dmg);
+            break;
+        }
+        case COMBAT_CMD_SET_AMMO: {
+            struct combatstate *cs = combatstate_get(cmd.uid);
+            if(cs) {
+                cs->ammo = cmd.u.ammo.shots;
+            }
             break;
         }
         case COMBAT_CMD_SET_CURRENT_HP: {
@@ -3843,6 +3869,25 @@ int G_Combat_CurrContextualAction(void)
     }
 }
 
+void G_Combat_SetAmmo(uint32_t uid, int shots)
+{
+    combat_push_cmd((struct combat_cmd){
+        .type = COMBAT_CMD_SET_AMMO,
+        .uid = uid,
+        .u.ammo.shots = (shots < 0) ? AMMO_UNLIMITED : shots
+    });
+}
+
+int G_Combat_GetAmmo(uint32_t uid)
+{
+    struct combat_cmd *cmd = snoop_most_recent_command(COMBAT_CMD_SET_AMMO,
+        (void*)(uintptr_t)uid, uids_match);
+    if(cmd)
+        return cmd->u.ammo.shots;
+    struct combatstate *cs = combatstate_get(uid);
+    return cs ? cs->ammo : AMMO_UNLIMITED;
+}
+
 bool G_Combat_Idle(uint32_t uid)
 {
     struct combatstate *cs = combatstate_get(uid);
@@ -4723,6 +4768,12 @@ bool G_Combat_SaveState(struct SDL_RWops *stream)
             .val.as_vec3 = curr.corpse_scale,
         };
         CHK_TRUE_RET(Attr_Write(stream, &corpse_scale, "corpse_scale"));
+
+        struct attr ammo = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.ammo
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &ammo, "ammo"));
         Sched_TryYield();
     });
 
@@ -5090,6 +5141,10 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_VEC3);
         cs->corpse_scale = attr.val.as_vec3;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        cs->ammo = attr.val.as_int;
         Sched_TryYield();
     }
 

@@ -219,7 +219,8 @@ static void on_motion_end(void *user, void *event)
 
     if(!G_Building_IsFounded(bs->target_uid)) {
 
-        if(G_Building_Unobstructed(bs->target_uid) && G_Building_Found(bs->target_uid, true)) {
+        bool clear = G_Building_GetPathable(bs->target_uid) || G_Building_Unobstructed(bs->target_uid);
+        if(clear && G_Building_Found(bs->target_uid, true)) {
             E_Entity_Notify(EVENT_BUILDING_FOUNDED, bs->target_uid, NULL, ES_ENGINE);
         }else{
             bs->state = STATE_NOT_BUILDING;
@@ -488,6 +489,17 @@ bool G_Builder_Idle(uint32_t uid)
     struct builderstate *bs = builderstate_get(uid);
     assert(bs);
     return (bs->state == STATE_NOT_BUILDING);
+}
+
+int G_Builder_CountOn(uint32_t building)
+{
+    int ret = 0;
+    struct builderstate bs;
+    kh_foreach_value(s_entity_state_table, bs, {
+        if(bs.state != STATE_NOT_BUILDING && bs.target_uid == building)
+            ret++;
+    });
+    return ret;
 }
 
 bool G_Builder_SaveState(struct SDL_RWops *stream)

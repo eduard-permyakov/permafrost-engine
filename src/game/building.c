@@ -713,7 +713,8 @@ bool G_Building_Found(uint32_t uid, bool blocking)
     building_place_markers(bs, uid);
     bs->state = BUILDING_STATE_FOUNDED;
 
-    bs->blocking = blocking;
+    /* What units walk over stays out of their way while it is built too */
+    bs->blocking = blocking && (ent_flags & ENTITY_FLAG_COLLISION) && !bs->pathable;
     if(bs->blocking) {
         M_NavBlockersIncrefOBB(s_map, G_GetFactionID(uid), ent_flags, &obb);
         bs->obb = obb;

@@ -344,6 +344,14 @@ void G_Provision_SetAutomatic(uint32_t uid, bool on);
 bool G_Provision_GetAutomatic(uint32_t uid);
 /* Sends the unit to eat at the nearest store of its food; false if there is none */
 bool G_Provision_Fetch(uint32_t uid);
+/* Makes a ranged unit shoot 'good': each unit of it holds 'shots_per_unit' 
+ * shots and it carries 'max_units'; with 'automatic', it goes for more by 
+ * itself when running low. The unit starts with a full quiver. */
+bool G_Provision_SetQuiver(uint32_t uid, const char *good, int shots_per_unit, int max_units, 
+                           bool automatic);
+void G_Provision_SetAutoResupply(uint32_t uid, bool on);
+bool G_Provision_GetAutoResupply(uint32_t uid);
+bool G_Provision_Resupply(uint32_t uid);
 void G_Provision_Counts(int faction, int out[PROVISION_NUM_TIERS]);
 /* The meals per minute the faction's units eat, per district they are in */
 size_t G_Provision_Demand(int faction, size_t maxout, int out_districts[], float out_rates[]);
@@ -536,6 +544,10 @@ void  G_Combat_SetBaseDamage(uint32_t uid, int dmg);
 int   G_Combat_GetBaseDamage(uint32_t uid);
 void  G_Combat_SetMaxHP(uint32_t uid, int hp);
 void  G_Combat_Kill(uint32_t uid);
+/* Shots a ranged unit has left; AMMO_UNLIMITED for one that needs no ammunition */
+#define AMMO_UNLIMITED (-1)
+void  G_Combat_SetAmmo(uint32_t uid, int shots);
+int   G_Combat_GetAmmo(uint32_t uid);
 int   G_Combat_GetMaxHP(uint32_t uid);
 void  G_Combat_SetRange(uint32_t uid, float range);
 float G_Combat_GetRange(uint32_t uid);
@@ -715,6 +727,8 @@ bool  G_Harvester_HasTransportSource(uint32_t uid, uint32_t storage, const char 
 /* Fetches 'amount' of 'rname' from 'src' to 'dest' and goes idle: the jobs the automation hands out */
 bool  G_Harvester_TransportJob(uint32_t uid, uint32_t src, uint32_t dest, const char *rname, int amount);
 int   G_Harvester_EnRoute(uint32_t dest, const char *rname);
+/* How much of 'rname' carriers on their way to 'src' are to take from it */
+int   G_Harvester_PickupsPending(uint32_t src, const char *rname);
 size_t G_Harvester_GetGatherable(uint32_t uid, size_t maxout, const char *out[]);
 /* The nearest node of 'rname' within 'radius' of 'origin' that the harvester can gather */
 uint32_t G_Harvester_NearestResource(uint32_t uid, vec2_t origin, const char *rname, float radius);
@@ -757,6 +771,9 @@ enum ss_chip{
     SS_CHIP_HOLD,
     /* Has no room for it: takes none in, and gives all of it away */
     SS_CHIP_OFF,
+    /* Asks for it up to its Keep, and lets all of it go on: a staging point,
+     * such as a dock between boats and carts */
+    SS_CHIP_RELAY,
 };
 
 enum ss_priority{
@@ -803,6 +820,7 @@ int  G_StorageSite_GetDesired(uint32_t uid, const char *rname);
 bool G_StorageSite_SetDesired(uint32_t uid, const char *rname, int des);
 int  G_StorageSite_GetStorableResources(uint32_t uid, size_t maxout, const char* out[]);
 int  G_StorageSite_GetPlayerStored(const char *rname);
+int  G_StorageSite_GetFactionStored(int faction, const char *rname);
 int  G_StorageSite_GetPlayerCapacity(const char *rname);
 void G_StorageSite_RecordProduced(int faction_id, const char *rname, int amount);
 void G_StorageSite_RecordConsumed(int faction_id, const char *rname, int amount);
@@ -965,6 +983,12 @@ void G_Automation_SetPinnedWork(uint32_t uid, const char *rname);
 const char *G_Automation_GetPinnedWork(uint32_t uid);
 /* Why the site's request for the resource is unserved, and for how long it has waited */
 enum request_status G_Automation_RequestStatus(uint32_t site, const char *rname, int *out_waited_ms);
+/* Whether a worker that gathered 'rname' by its own choice should stop at a
+ * drop-off: the realm holds enough of it, or a site near it wants builders */
+bool G_Automation_LeavesGathering(uint32_t uid, const char *rname);
+/* What the faction's sites can give away of a resource, and what they ask 
+ * for and are not yet getting */
+void G_Automation_Balance(int faction, const char *rname, int *out_surplus, int *out_shortfall);
 
 #endif
 

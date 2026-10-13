@@ -103,6 +103,10 @@ struct garrison_state{
      * alive when the building falls.
      */
     bool            ingredient;
+    /* Where it stood when it went in: a spot it is let out next to, rather
+     * than one cut off between buildings */
+    vec2_t          entered_from;
+    bool            has_entered_from;
 };
 
 struct garrisonable_state{
@@ -392,6 +396,8 @@ static void do_garrison(uint32_t uid, uint32_t target)
 
     /* Remove the garrisoned unit from the game simulation */
     G_Sel_Remove(uid);
+    gus->entered_from = G_Pos_GetXZ(uid);
+    gus->has_entered_from = true;
     gus->state = STATE_GARRISONED;
     uint32_t flags = G_FlagsGet(uid);
     flags |= ENTITY_FLAG_GARRISONED;
@@ -818,6 +824,8 @@ bool G_Garrison_AddGarrison(uint32_t uid)
     gus.state = STATE_NOT_GARRISONED;
     gus.wait_ticks = 0;
     gus.ingredient = false;
+    gus.entered_from = (vec2_t){0};
+    gus.has_entered_from = false;
     return gu_state_set(uid, gus);
 }
 
@@ -1030,7 +1038,9 @@ bool G_Garrison_Evict(uint32_t garrisonable, uint32_t unit, vec2_t target)
     uint32_t unit_flags = G_FlagsGet(unit);
 
     vec2_t closest;
-    if(!M_NavClosestPathable(s_map, target_layer, garrisonable_pos, &closest))
+    if(!(gus->has_entered_from && M_NavClosestReachableAdjacentPos(s_map, target_layer, 
+        gus->entered_from, garrisonable, &closest))
+    && !M_NavClosestPathable(s_map, target_layer, garrisonable_pos, &closest))
         return false;
 
     /* Check if we are able to evict the unit */
@@ -1301,6 +1311,18 @@ bool G_Garrison_SaveState(struct SDL_RWops *stream)
             .val.as_bool = curr_gus.ingredient
         };
         CHK_TRUE_RET(Attr_Write(stream, &ingredient, "ingredient"));
+
+        struct attr has_entered_from = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr_gus.has_entered_from
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &has_entered_from, "has_entered_from"));
+
+        struct attr entered_from = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = curr_gus.entered_from
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &entered_from, "entered_from"));
         Sched_TryYield();
     });
 
@@ -1495,6 +1517,14 @@ bool G_Garrison_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_BOOL);
         gus->ingredient = attr.val.as_bool;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        gus->has_entered_from = attr.val.as_bool;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        gus->entered_from = attr.val.as_vec2;
         Sched_TryYield();
     }
 

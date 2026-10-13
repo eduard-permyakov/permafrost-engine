@@ -943,8 +943,16 @@ static void on_arrive_at_resource(void *user, void *event)
     || !M_NavObjAdjacent(s_map, uid, hs->res_uid)) {
 
         /* harvester could not reach the resource */
-        entity_try_gather_nearest_with_exclusion(uid, hs->res_name, hs->res_uid);
+        if(hs->res_name) {
+            entity_try_gather_nearest_with_exclusion(uid, hs->res_name, hs->res_uid);
+        }else{
+            hs->state = STATE_NOT_HARVESTING;
+        }
         return; 
+    }
+    /* A job that ended on the way may have taken the name with it */
+    if(!hs->res_name) {
+        hs->res_name = G_Resource_GetName(hs->res_uid);
     }
 
     if(G_Harvester_GetCurrCarry(uid, hs->res_name) == G_Harvester_GetMaxCarry(uid, hs->res_name)) {
@@ -1020,7 +1028,7 @@ static void on_arrive_at_storage(void *user, void *event)
         G_StorageSite_SetCurr(hs->ss_uid, rname, curr + carry);
 
         uint32_t resource = target_resource(uid, hs, rname);
-        if(hs->drop_off_only) {
+        if(hs->drop_off_only || G_Automation_LeavesGathering(uid, rname)) {
             hs->state = STATE_NOT_HARVESTING;
             hs->ss_uid = NULL_UID;
             hs->res_name = NULL;
@@ -2397,6 +2405,22 @@ bool G_Harvester_TransportJob(uint32_t harvester, uint32_t src, uint32_t dest,
 int G_Harvester_EnRoute(uint32_t dest, const char *rname)
 {
     return amount_en_route(dest, rname, NULL_UID);
+}
+
+int G_Harvester_PickupsPending(uint32_t src, const char *rname)
+{
+    int ret = 0;
+    uint32_t uid;
+    struct hstate *hs;
+
+    kh_foreach_val_ptr(s_entity_state_table, uid, hs, {
+        if(hs->transport_src_uid != src || hs->state != STATE_TRANSPORT_GETTING)
+            continue;
+        if(!hs->res_name || strcmp(hs->res_name, rname))
+            continue;
+        ret += hs->job_amount ? hs->job_amount : G_Harvester_GetMaxCarry(uid, rname);
+    });
+    return ret;
 }
 
 bool G_Harvester_CanReachSite(uint32_t harvester, uint32_t site)

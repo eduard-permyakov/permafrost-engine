@@ -873,6 +873,7 @@ static void s_expose_game_constants(PyObject *module)
     PyModule_AddIntConstant(module, "CHIP_COLLECT", SS_CHIP_COLLECT);
     PyModule_AddIntConstant(module, "CHIP_HOLD", SS_CHIP_HOLD);
     PyModule_AddIntConstant(module, "CHIP_OFF", SS_CHIP_OFF);
+    PyModule_AddIntConstant(module, "CHIP_RELAY", SS_CHIP_RELAY);
     PyModule_AddIntConstant(module, "PRIORITY_LOW", SS_PRIORITY_LOW);
     PyModule_AddIntConstant(module, "PRIORITY_NORMAL", SS_PRIORITY_NORMAL);
     PyModule_AddIntConstant(module, "PRIORITY_URGENT", SS_PRIORITY_URGENT);

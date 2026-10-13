@@ -50,6 +50,8 @@ bool G_Builder_InTargetMode(void);
 int  G_Builder_CurrContextualAction(void);
 void G_Builder_Stop(uint32_t uid);
 bool G_Builder_Idle(uint32_t uid);
+/* How many builders are on their way to or at work on the building */
+int  G_Builder_CountOn(uint32_t building);
 
 bool G_Builder_SaveState(struct SDL_RWops *stream);
 bool G_Builder_LoadState(struct SDL_RWops *stream);

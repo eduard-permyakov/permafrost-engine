@@ -1218,6 +1218,7 @@ int G_StorageSite_Request(uint32_t uid, const char *rname)
 
     switch(G_StorageSite_GetChip(uid, rname)) {
     case SS_CHIP_COLLECT:
+    case SS_CHIP_RELAY:
         return MAX(desired, G_StorageSite_GetKeep(uid, rname));
     case SS_CHIP_OFF:
         return 0;
@@ -1242,6 +1243,8 @@ int G_StorageSite_Surplus(uint32_t uid, const char *rname)
         return 0;
     case SS_CHIP_OFF:
         return curr;
+    case SS_CHIP_RELAY:
+        return MAX(curr - desired, 0);
     default:
         return MAX(curr - MAX(desired, G_StorageSite_GetKeep(uid, rname)), 0);
     }
@@ -1389,6 +1392,16 @@ int G_StorageSite_GetPlayerStored(const char *rname)
         ret += kh_value(s_global_resource_tables[i], k);
     }
     return ret;
+}
+
+int G_StorageSite_GetFactionStored(int faction, const char *rname)
+{
+    if(faction < 0 || faction >= MAX_FACTIONS)
+        return 0;
+    khiter_t k = kh_get(res, s_global_resource_tables[faction], rname);
+    if(k == kh_end(s_global_resource_tables[faction]))
+        return 0;
+    return kh_value(s_global_resource_tables[faction], k);
 }
 
 int G_StorageSite_GetPlayerCapacity(const char *rname)

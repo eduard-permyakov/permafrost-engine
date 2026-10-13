@@ -71,7 +71,11 @@
 /* A unit visiting a store eats there if its next meal is due this soon */
 #define EAT_AHEAD_MS        (60 * 1000)
 #define GOOD_LEN            (32)
+#define MIN(a, b)           ((a) < (b) ? (a) : (b))
+#define MAX(a, b)           ((a) > (b) ? (a) : (b))
 #define FETCH_RETRY_MS      (5 * 1000)
+/* A unit kept off a crowded store by others takes what it came for this close */
+#define STORE_REACH         (30.0f)
 #define MAX_UPKEEP_GOODS    (4)
 
 #define CHK_TRUE_RET(_pred)             \
@@ -95,11 +99,33 @@ struct provision{
     bool     automatic;
     /* On its way to eat at this site */
     uint32_t fetching;
-    /* No store had food the last time it looked */
+    /* No store had food the last time it looked: look again then, and work meanwhile */
     uint32_t retry_ms;
+    bool     no_food;
+    /* A unit with no work to go back to returns here once it has eaten */
+    bool     go_back;
+    vec2_t   post;
 };
 
 KHASH_MAP_INIT_INT(prov, struct provision)
+
+/* What a ranged unit shoots: the good its shots come in, the shots in one of 
+ * it, and how many it carries when full */
+struct quiver{
+    char     good[GOOD_LEN];
+    int      shots_per_unit;
+    int      max_units;
+    /* Goes for more by itself when running low */
+    bool     automatic;
+    uint32_t fetching;
+    uint32_t retry_ms;
+    /* Empty when last told, to tell again only on a change */
+    bool     empty;
+    /* Where it stood when it went for more, to go back to */
+    vec2_t   post;
+};
+
+KHASH_MAP_INIT_INT(quiver, struct quiver)
 
 static void on_20hz_tick(void *user, void *event);
 static void on_arrive(void *user, void *event);
@@ -107,6 +133,9 @@ static void on_ordered(void *user, void *event);
 static void note_upkeep_good(const char *good);
 static uint32_t first_meal_delay_ms(uint32_t uid, uint32_t interval_ms);
 static bool carrying(uint32_t uid);
+static bool at_store(uint32_t uid, uint32_t site);
+static void on_arrive_quiver(void *user, void *event);
+static void on_ordered_quiver(void *user, void *event);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -114,6 +143,7 @@ static bool carrying(uint32_t uid);
 
 static const struct map *s_map;
 static khash_t(prov) *s_table;
+static khash_t(quiver) *s_quivers;
 static uint32_t       s_now_ms;
 static uint32_t       s_tick;
 /* Every good some unit lives on */
@@ -203,19 +233,25 @@ static bool fetch(uint32_t uid, struct provision *p)
         .eater = uid
     };
     uint32_t site = G_Pos_NearestWithPred(G_Pos_GetXZ(uid), has_food, &arg, 0.0f);
+    p->no_food = (site == NULL_UID);
     if(site == NULL_UID) {
         p->retry_ms = s_now_ms + FETCH_RETRY_MS;
         return false;
     }
 
+    /* A load the store with food does not take goes to one that does first */
     if(carrying(uid)) {
-        if(!G_Harvester_BringInLoad(uid, site)) {
+        if(!G_Harvester_BringInLoad(uid, site) && !G_Harvester_BringInLoad(uid, NULL_UID)) {
             p->retry_ms = s_now_ms + FETCH_RETRY_MS;
             return false;
         }
         return true;
     }
 
+    if(p->fetching == NULL_UID) {
+        p->go_back = !(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER);
+        p->post = G_Pos_GetXZ(uid);
+    }
     p->fetching = site;
     if(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER) {
         G_Harvester_Stop(uid);
@@ -244,11 +280,29 @@ static void on_arrive(void *user, void *event)
     if(!G_EntityExists(site) || G_EntityIsZombie(site))
         return;
     /* Others crowding the store kept it out of reach: try again */
-    if(!M_NavObjAdjacent(s_map, uid, site)) {
+    if(!at_store(uid, site)) {
+        bool go_back = p->go_back;
+        vec2_t post = p->post;
         fetch(uid, p);
+        p->go_back = go_back;
+        p->post = post;
         return;
     }
     eat(uid, p, site);
+    if(p->go_back) {
+        G_Move_SetDest(uid, p->post, true);
+    }
+}
+
+static bool at_store(uint32_t uid, uint32_t site)
+{
+    if(M_NavObjAdjacent(s_map, uid, site))
+        return true;
+    vec2_t a = G_Pos_GetXZ(uid), b = G_Pos_GetXZ(site);
+    vec2_t delta;
+    PFM_Vec2_Sub(&a, &b, &delta);
+    float reach = G_GetSelectionRadius(uid) + G_GetSelectionRadius(site) + STORE_REACH;
+    return PFM_Vec2_Len(&delta) <= reach;
 }
 
 static bool carrying(uint32_t uid)
@@ -300,6 +354,114 @@ static void update(uint32_t uid, struct provision *p)
     }
 }
 
+static struct quiver *quiver_get(uint32_t uid)
+{
+    khiter_t k = kh_get(quiver, s_quivers, uid);
+    if(k == kh_end(s_quivers))
+        return NULL;
+    return &kh_value(s_quivers, k);
+}
+
+static int quiver_max_shots(const struct quiver *q)
+{
+    return q->shots_per_unit * q->max_units;
+}
+
+static void refill(uint32_t uid, struct quiver *q, uint32_t site)
+{
+    int shots = MAX(G_Combat_GetAmmo(uid), 0);
+    int want = (quiver_max_shots(q) - shots + q->shots_per_unit - 1) / q->shots_per_unit;
+    int take = MIN(want, G_StorageSite_GetCurr(site, q->good));
+    if(take <= 0)
+        return;
+    G_StorageSite_SetCurr(site, q->good, G_StorageSite_GetCurr(site, q->good) - take);
+    G_StorageSite_RecordConsumed(G_GetFactionID(site), q->good, take);
+    G_Combat_SetAmmo(uid, MIN(shots + take * q->shots_per_unit, quiver_max_shots(q)));
+}
+
+static bool fetch_quiver(uint32_t uid, struct quiver *q)
+{
+    struct food_search arg = (struct food_search){
+        .faction = G_GetFactionID(uid),
+        .good = q->good,
+        .eater = uid
+    };
+    uint32_t site = G_Pos_NearestWithPred(G_Pos_GetXZ(uid), has_food, &arg, 0.0f);
+    if(site == NULL_UID) {
+        q->retry_ms = s_now_ms + FETCH_RETRY_MS;
+        return false;
+    }
+    q->fetching = site;
+    q->post = G_Pos_GetXZ(uid);
+    E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_quiver);
+    E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_ordered_quiver);
+    E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_quiver, (void*)(uintptr_t)uid, G_RUNNING);
+    E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_ordered_quiver, (void*)(uintptr_t)uid, G_RUNNING);
+    G_Move_SetSurroundEntity(uid, site);
+    return true;
+}
+
+static void on_arrive_quiver(void *user, void *event)
+{
+    uint32_t uid = (uintptr_t)user;
+    if(!G_Move_Still(uid))
+        return;
+    E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_quiver);
+    E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_ordered_quiver);
+
+    struct quiver *q = quiver_get(uid);
+    if(!q || q->fetching == NULL_UID)
+        return;
+    uint32_t site = q->fetching;
+    q->fetching = NULL_UID;
+    if(!G_EntityExists(site) || G_EntityIsZombie(site))
+        return;
+    if(!at_store(uid, site)) {
+        vec2_t post = q->post;
+        if(fetch_quiver(uid, q)) {
+            q->post = post;
+        }
+        return;
+    }
+    refill(uid, q, site);
+    G_Move_SetDest(uid, q->post, true);
+}
+
+static void on_ordered_quiver(void *user, void *event)
+{
+    uint32_t uid = (uintptr_t)user;
+    E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_quiver);
+    E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_ordered_quiver);
+
+    struct quiver *q = quiver_get(uid);
+    if(q) {
+        q->fetching = NULL_UID;
+    }
+}
+
+static bool eating(uint32_t uid)
+{
+    struct provision *p = prov_get(uid);
+    return p && p->fetching != NULL_UID;
+}
+
+static void update_quiver(uint32_t uid, struct quiver *q)
+{
+    if(q->shots_per_unit == 0)
+        return;
+    int shots = G_Combat_GetAmmo(uid);
+    bool empty = (shots == 0);
+    if(empty != q->empty) {
+        q->empty = empty;
+        E_Global_Notify(EVENT_PROVISION_CHANGED, (void*)(uintptr_t)uid, ES_ENGINE);
+    }
+    bool low = (shots >= 0) && (shots * 4 <= quiver_max_shots(q));
+    if(low && q->automatic && q->fetching == NULL_UID && s_now_ms >= q->retry_ms 
+    && !eating(uid) && free_to_fetch(uid)) {
+        fetch_quiver(uid, q);
+    }
+}
+
 static void on_20hz_tick(void *user, void *event)
 {
     s_tick++;
@@ -313,6 +475,13 @@ static void on_20hz_tick(void *user, void *event)
             continue;
         update(uid, p);
     });
+
+    struct quiver *q;
+    kh_foreach_val_ptr(s_quivers, uid, q, {
+        if(uid % BUCKETS != bucket)
+            continue;
+        update_quiver(uid, q);
+    });
 }
 
 /*****************************************************************************/
@@ -323,6 +492,10 @@ bool G_Provision_Init(const struct map *map)
 {
     if(!(s_table = kh_init(prov)))
         return false;
+    if(!(s_quivers = kh_init(quiver))) {
+        kh_destroy(prov, s_table);
+        return false;
+    }
     s_now_ms = 0;
     s_tick = 0;
     s_num_upkeep_goods = 0;
@@ -335,16 +508,79 @@ void G_Provision_Shutdown(void)
 {
     E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
     kh_destroy(prov, s_table);
+    kh_destroy(quiver, s_quivers);
 }
 
 void G_Provision_RemoveEntity(uint32_t uid)
 {
     khiter_t k = kh_get(prov, s_table, uid);
-    if(k == kh_end(s_table))
-        return;
-    E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive);
-    E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_ordered);
-    kh_del(prov, s_table, k);
+    if(k != kh_end(s_table)) {
+        E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive);
+        E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_ordered);
+        kh_del(prov, s_table, k);
+    }
+    k = kh_get(quiver, s_quivers, uid);
+    if(k != kh_end(s_quivers)) {
+        E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_quiver);
+        E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_ordered_quiver);
+        kh_del(quiver, s_quivers, k);
+    }
+}
+
+bool G_Provision_SetQuiver(uint32_t uid, const char *good, int shots_per_unit, int max_units, 
+                           bool automatic)
+{
+    if(shots_per_unit <= 0 || max_units <= 0)
+        return false;
+    int status;
+    khiter_t k = kh_put(quiver, s_quivers, uid, &status);
+    if(status == -1)
+        return false;
+    struct quiver *q = &kh_value(s_quivers, k);
+    if(status != 0) {
+        *q = (struct quiver){0};
+        q->fetching = NULL_UID;
+    }
+    pf_strlcpy(q->good, good, sizeof(q->good));
+    q->shots_per_unit = shots_per_unit;
+    q->max_units = max_units;
+    q->automatic = automatic;
+    if(status != 0) {
+        G_Combat_SetAmmo(uid, quiver_max_shots(q));
+    }
+    return true;
+}
+
+void G_Provision_SetAutoResupply(uint32_t uid, bool on)
+{
+    struct quiver *q = quiver_get(uid);
+    /* A unit being loaded gets its flag before the rest of its quiver */
+    if(!q && on) {
+        int status;
+        khiter_t k = kh_put(quiver, s_quivers, uid, &status);
+        if(status == -1)
+            return;
+        q = &kh_value(s_quivers, k);
+        *q = (struct quiver){0};
+        q->fetching = NULL_UID;
+    }
+    if(q) {
+        q->automatic = on;
+    }
+}
+
+bool G_Provision_GetAutoResupply(uint32_t uid)
+{
+    struct quiver *q = quiver_get(uid);
+    return q && q->automatic;
+}
+
+bool G_Provision_Resupply(uint32_t uid)
+{
+    struct quiver *q = quiver_get(uid);
+    if(!q || q->shots_per_unit == 0)
+        return false;
+    return fetch_quiver(uid, q);
 }
 
 void G_Provision_OnVisit(uint32_t uid, uint32_t site)
@@ -381,6 +617,12 @@ bool G_Provision_Set(uint32_t uid, const char *good, int max_meals, float interv
     p->next_due_ms = s_now_ms + first_meal_delay_ms(uid, p->interval_ms);
     p->automatic = automatic;
     return true;
+}
+
+bool G_Provision_WantsFood(uint32_t uid)
+{
+    struct provision *p = prov_get(uid);
+    return p && p->automatic && p->interval_ms && p->tier != PROVISION_FED && !p->no_food;
 }
 
 bool G_Provision_IsUpkeepGood(const char *good)
@@ -507,6 +749,29 @@ bool G_Provision_SaveState(struct SDL_RWops *stream)
         }
         Sched_TryYield();
     });
+
+    struct attr num_quivers = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_quivers)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_quivers, "num_quivers"));
+
+    struct quiver q;
+    kh_foreach(s_quivers, uid, q, {
+
+        struct attr attrs[] = {
+            {.type = TYPE_INT,  .val.as_int = uid},
+            {.type = TYPE_STRING},
+            {.type = TYPE_INT,  .val.as_int = q.shots_per_unit},
+            {.type = TYPE_INT,  .val.as_int = q.max_units},
+            {.type = TYPE_BOOL, .val.as_bool = q.automatic},
+        };
+        pf_strlcpy(attrs[1].val.as_string, q.good, sizeof(attrs[1].val.as_string));
+        for(int i = 0; i < sizeof(attrs) / sizeof(attrs[0]); i++) {
+            CHK_TRUE_RET(Attr_Write(stream, &attrs[i], "quiver"));
+        }
+        Sched_TryYield();
+    });
     return true;
 }
 
@@ -548,6 +813,34 @@ bool G_Provision_LoadState(struct SDL_RWops *stream)
         p->automatic = a[9].val.as_bool;
         p->fetching = NULL_UID;
         p->retry_ms = 0;
+        p->no_food = false;
+        Sched_TryYield();
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_quivers = attr.val.as_int;
+
+    for(int i = 0; i < num_quivers; i++) {
+
+        struct attr a[5];
+        static const int types[5] = {TYPE_INT, TYPE_STRING, TYPE_INT, TYPE_INT, TYPE_BOOL};
+        for(int j = 0; j < 5; j++) {
+            CHK_TRUE_RET(Attr_Parse(stream, &a[j], true));
+            CHK_TRUE_RET(a[j].type == types[j]);
+        }
+
+        int status;
+        khiter_t k = kh_put(quiver, s_quivers, a[0].val.as_int, &status);
+        CHK_TRUE_RET(status != -1);
+        struct quiver *q = &kh_value(s_quivers, k);
+        *q = (struct quiver){0};
+        pf_strlcpy(q->good, a[1].val.as_string, sizeof(q->good));
+        q->shots_per_unit = a[2].val.as_int;
+        q->max_units = a[3].val.as_int;
+        q->automatic = a[4].val.as_bool;
+        q->fetching = NULL_UID;
+        q->empty = (G_Combat_GetAmmo(a[0].val.as_int) == 0);
         Sched_TryYield();
     }
     return true;

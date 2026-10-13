@@ -7022,11 +7022,13 @@ bool N_IsAdjacentToIslandOBB(void *nav_private, enum nav_layer layer, vec3_t map
 
     struct tile_desc tds[2048];
     size_t ntiles = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
+    /* A wide body's island stops its clearance short of the object's edge */
+    const int reach = 1 + n_layer_rings(layer);
 
     for(int i = 0; i < ntiles; i++) {
 
-        for(int dr = -1; dr <= 1; dr++) {
-        for(int dc = -1; dc <= 1; dc++) {
+        for(int dr = -reach; dr <= reach; dr++) {
+        for(int dc = -reach; dc <= reach; dc++) {
             struct tile_desc td = tds[i];
             if(!M_Tile_RelativeDesc(res, &td, dc, dr))
                 continue;
