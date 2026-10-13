@@ -1327,6 +1327,10 @@ void G_Automation_Balance(int faction, const char *rname, int *out_surplus, int 
 
 int G_Automation_Shortfall(uint32_t site, const char *rname, int own_load)
 {
+    /* A site finished, cancelled or razed while the carrier was on its way */
+    if(!G_EntityExists(site) || G_EntityIsZombie(site)
+    || !(G_FlagsGet(site) & ENTITY_FLAG_STORAGE_SITE))
+        return 0;
     uint32_t rep = pool_representative(site);
     int want = G_StorageSite_Request(rep, rname);
     int have = G_StorageSite_GetCurr(rep, rname) + pool_en_route(rep, rname) - own_load;
