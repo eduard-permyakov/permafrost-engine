@@ -92,6 +92,8 @@
 /* A haul this long waits for a full load */
 #define FULL_LOAD_TRAVEL             (400.0f)
 #define MAX_RESOURCES                (64)
+#define MAX_DEMANDS                  (256)
+#define MAX_WORK_SITES               (512)
 /* How far a worker will go for work it finds by itself */
 #define WORK_RADIUS                  (600.0f)
 #define PINNED_LEN                   (32)
@@ -161,6 +163,34 @@ struct pending{
 
 VEC_TYPE(request, struct job_request)
 VEC_IMPL(static inline, request, struct job_request)
+
+/* How short a faction is of a good, how many gather it and how many it wants */
+struct good_demand{
+    int         faction;
+    char        rname[PINNED_LEN];
+    int         need;
+    int         workers;
+    int         wanted;
+    bool        stocked;
+};
+
+/* A site to be built, and how many builders are on it or on their way */
+struct work_site{
+    uint32_t uid;
+    int      faction;
+    int      builders;
+};
+
+/* What every worker looking for a job this tick weighs, gathered once for all of them */
+struct work_snapshot{
+    bool               valid;
+    uint32_t           tick;
+    vec_request_t      requests;
+    size_t             ndemands;
+    struct good_demand demands[MAX_DEMANDS];
+    size_t             nsites;
+    struct work_site   sites[MAX_WORK_SITES];
+};
 VEC_TYPE(source, struct job_source)
 VEC_IMPL(static inline, source, struct job_source)
 
@@ -171,10 +201,12 @@ KHASH_MAP_INIT_INT64(pending, struct pending)
 static void on_order_issued(void *user, void *event);
 static bool try_assign_transport_job(uint32_t uid, struct automation_state *astate);
 static bool try_assign_work(uint32_t uid, struct automation_state *astate);
-static bool stocked(int faction, const char *rname);
-static int gatherers_wanted(int faction, const char *rname);
+static bool stocked(int surplus, int shortfall);
+static int gatherers_wanted(int surplus, int shortfall);
 static vec2_t work_origin(uint32_t uid, const struct automation_state *astate);
 static void reconsider_work(uint32_t uid, struct automation_state *astate);
+static struct work_snapshot *snapshot_get(void);
+static struct good_demand *demand_get(struct work_snapshot *snap, int faction, const char *rname);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -188,6 +220,7 @@ static vec_entity_t    s_stopping;
 /* Keyed by site and resource */
 static khash_t(pending)*s_pending;
 static uint32_t        s_tick;
+static struct work_snapshot s_snapshot;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -761,18 +794,38 @@ struct site_search{
     bool supplied;
 };
 
-static bool unfinished_site(uint32_t uid, void *arg)
+static bool unfinished_site(uint32_t uid)
 {
-    struct site_search *ss = arg;
-    if(!(G_FlagsGet(uid) & ENTITY_FLAG_BUILDING))
+    if(!G_EntityExists(uid) || !(G_FlagsGet(uid) & ENTITY_FLAG_BUILDING) || G_EntityIsZombie(uid))
         return false;
-    if(G_EntityIsZombie(uid) || G_GetFactionID(uid) != ss->faction)
-        return false;
-    if(!G_Building_IsMarked(uid) || G_Building_IsCompleted(uid))
-        return false;
-    if(ss->supplied && !G_Building_IsSupplied(uid))
-        return false;
-    return ss->max_builders == 0 || G_Builder_CountOn(uid) < ss->max_builders;
+    return G_Building_IsMarked(uid) && !G_Building_IsCompleted(uid);
+}
+
+/* The nearest of this tick's unfinished sites within reach that the search admits */
+static struct work_site *nearest_site(struct work_snapshot *snap, vec2_t pos, 
+                                      const struct site_search *ss)
+{
+    struct work_site *ret = NULL;
+    float best = WORK_RADIUS;
+    for(int i = 0; i < snap->nsites; i++) {
+        struct work_site *curr = &snap->sites[i];
+        if(curr->faction != ss->faction)
+            continue;
+        if(ss->max_builders && curr->builders >= ss->max_builders)
+            continue;
+        vec2_t delta, site_pos = G_Pos_GetXZ(curr->uid);
+        PFM_Vec2_Sub(&site_pos, &pos, &delta);
+        float dist = PFM_Vec2_Len(&delta);
+        if(dist > best)
+            continue;
+        if(!unfinished_site(curr->uid))
+            continue;
+        if(ss->supplied && !G_Building_IsSupplied(curr->uid))
+            continue;
+        best = dist;
+        ret = curr;
+    }
+    return ret;
 }
 
 /* The total of the faction's requests for a resource, met by gathering */
@@ -793,10 +846,8 @@ static int resource_need(int faction, const char *rname, const vec_request_t *re
 /* How many may gather the good: one for each GOOD_PER_GATHERER still short of
  * what is asked for and the stock beyond it, so that a lone wanted good does 
  * not draw everyone */
-static int gatherers_wanted(int faction, const char *rname)
+static int gatherers_wanted(int surplus, int shortfall)
 {
-    int surplus, shortfall;
-    G_Automation_Balance(faction, rname, &surplus, &shortfall);
     int short_by = shortfall + STOCK_TARGET - surplus;
     if(short_by <= 0)
         return 0;
@@ -804,10 +855,8 @@ static int gatherers_wanted(int faction, const char *rname)
 }
 
 /* Whether the faction can spare enough of the good, beyond what is asked for */
-static bool stocked(int faction, const char *rname)
+static bool stocked(int surplus, int shortfall)
 {
-    int surplus, shortfall;
-    G_Automation_Balance(faction, rname, &surplus, &shortfall);
     return surplus >= shortfall + STOCK_TARGET;
 }
 
@@ -844,6 +893,61 @@ static void reconsider_work(uint32_t uid, struct automation_state *astate)
     try_assign_work(uid, astate);
 }
 
+static struct work_snapshot *snapshot_get(void)
+{
+    if(s_snapshot.valid && s_snapshot.tick == s_tick)
+        return &s_snapshot;
+
+    vec_entity_t sites;
+    vec_entity_init(&sites);
+    G_StorageSite_GetAll(&sites);
+    vec_request_reset(&s_snapshot.requests);
+    collect_requests(&s_snapshot.requests, &sites);
+
+    s_snapshot.nsites = 0;
+    for(int i = 0; i < vec_size(&sites) && s_snapshot.nsites < MAX_WORK_SITES; i++) {
+        uint32_t uid = vec_AT(&sites, i);
+        if(!unfinished_site(uid))
+            continue;
+        s_snapshot.sites[s_snapshot.nsites++] = (struct work_site){
+            .uid = uid,
+            .faction = G_GetFactionID(uid),
+            .builders = G_Builder_CountOn(uid)
+        };
+    }
+    vec_entity_destroy(&sites);
+
+    s_snapshot.ndemands = 0;
+    s_snapshot.tick = s_tick;
+    s_snapshot.valid = true;
+    return &s_snapshot;
+}
+
+static struct good_demand *demand_get(struct work_snapshot *snap, int faction, const char *rname)
+{
+    for(int i = 0; i < snap->ndemands; i++) {
+        struct good_demand *curr = &snap->demands[i];
+        if(curr->faction == faction && !strcmp(curr->rname, rname))
+            return curr;
+    }
+    if(snap->ndemands == MAX_DEMANDS)
+        return NULL;
+
+    int surplus, shortfall;
+    G_Automation_Balance(faction, rname, &surplus, &shortfall);
+
+    struct good_demand *ret = &snap->demands[snap->ndemands++];
+    *ret = (struct good_demand){
+        .faction = faction,
+        .need = resource_need(faction, rname, &snap->requests),
+        .workers = G_Harvester_CountGathering(faction, rname),
+        .wanted = gatherers_wanted(surplus, shortfall),
+        .stocked = stocked(surplus, shortfall)
+    };
+    pf_strlcpy(ret->rname, rname, sizeof(ret->rname));
+    return ret;
+}
+
 static bool try_assign_work(uint32_t uid, struct automation_state *astate)
 {
     if(!astate->automatic_work)
@@ -854,6 +958,7 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
     uint32_t flags = G_FlagsGet(uid);
     int faction = G_GetFactionID(uid);
     vec2_t pos = work_origin(uid, astate);
+    struct work_snapshot *snap = snapshot_get();
 
     if((flags & ENTITY_FLAG_BUILDER) && !astate->pinned[0]) {
         /* Builders spread over the sites that can be worked on; one waiting on its 
@@ -863,13 +968,15 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
             .max_builders = SITE_BUILDERS,
             .supplied = true
         };
-        uint32_t site = G_Pos_NearestWithPred(pos, unfinished_site, &arg, WORK_RADIUS);
-        if(site == NULL_UID) {
+        struct work_site *site = nearest_site(snap, pos, &arg);
+        if(!site) {
             arg = (struct site_search){ .faction = faction, .max_builders = 1 };
-            site = G_Pos_NearestWithPred(pos, unfinished_site, &arg, WORK_RADIUS);
+            site = nearest_site(snap, pos, &arg);
         }
-        if(site != NULL_UID && G_Builder_Build(uid, site))
+        if(site && G_Builder_Build(uid, site->uid)) {
+            site->builders++;
             return true;
+        }
     }
 
     if(!(flags & ENTITY_FLAG_HARVESTER))
@@ -889,28 +996,20 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
     if(ncandidates == 0)
         return false;
 
-    vec_entity_t sites;
-    vec_entity_init(&sites);
-    G_StorageSite_GetAll(&sites);
-    vec_request_t requests;
-    vec_request_init(&requests);
-    collect_requests(&requests, &sites);
-
     /* Most wanted per worker already at it, weighted by how fast this one
      * gathers it, so that a specialist keeps to his trade */
     float scores[MAX_RESOURCES];
+    struct good_demand *demands[MAX_RESOURCES];
     for(int i = 0; i < ncandidates; i++) {
-        int need = resource_need(faction, candidates[i], &requests);
-        int workers = G_Harvester_CountGathering(faction, candidates[i]);
+        demands[i] = demand_get(snap, faction, candidates[i]);
         bool pinned = !strcmp(astate->pinned, candidates[i]);
-        if(!pinned && workers >= gatherers_wanted(faction, candidates[i])) {
+        if(!demands[i] || (!pinned && demands[i]->workers >= demands[i]->wanted)) {
             scores[i] = -1.0f;
             continue;
         }
-        scores[i] = need * G_Harvester_GetGatherSpeed(uid, candidates[i]) / (1.0f + workers);
+        scores[i] = demands[i]->need * G_Harvester_GetGatherSpeed(uid, candidates[i]) 
+                  / (1.0f + demands[i]->workers);
     }
-    vec_request_destroy(&requests);
-    vec_entity_destroy(&sites);
 
     for(int tries = 0; tries < ncandidates; tries++) {
         int best = -1;
@@ -929,6 +1028,7 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
         }
         if(node != NULL_UID && G_Harvester_Gather(uid, node)) {
             pf_strlcpy(astate->working, candidates[best], sizeof(astate->working));
+            demands[best]->workers++;
             return true;
         }
         scores[best] = -1.0f;
@@ -1148,6 +1248,8 @@ bool G_Automation_Init(void)
     if((s_pending = kh_init(pending)) == NULL)
         goto fail_pending;
     s_tick = 0;
+    vec_request_init(&s_snapshot.requests);
+    s_snapshot.valid = false;
 
     E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
     E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING);
@@ -1206,6 +1308,7 @@ void G_Automation_Shutdown(void)
     E_Global_Unregister(EVENT_ORDER_ISSUED, on_order_issued);
     E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
     E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
+    vec_request_destroy(&s_snapshot.requests);
     vec_entity_destroy(&s_stopping);
     kh_destroy(pending, s_pending);
     kh_destroy(count, s_transport_count);
@@ -1313,7 +1416,9 @@ bool G_Automation_LeavesGathering(uint32_t uid, const char *rname)
     if(strcmp(astate->working, rname) || !strcmp(astate->pinned, rname))
         return false;
     int faction = G_GetFactionID(uid);
-    if(stocked(faction, rname))
+    struct work_snapshot *snap = snapshot_get();
+    struct good_demand *demand = demand_get(snap, faction, rname);
+    if(demand && demand->stocked)
         return true;
     if(astate->pinned[0] || !(G_FlagsGet(uid) & ENTITY_FLAG_BUILDER))
         return false;
@@ -1323,7 +1428,7 @@ bool G_Automation_LeavesGathering(uint32_t uid, const char *rname)
         .max_builders = SITE_BUILDERS,
         .supplied = true
     };
-    return G_Pos_NearestWithPred(work_origin(uid, astate), unfinished_site, &arg, WORK_RADIUS) != NULL_UID;
+    return nearest_site(snap, work_origin(uid, astate), &arg) != NULL;
 }
 
 void G_Automation_Balance(int faction, const char *rname, int *out_surplus, int *out_shortfall)
@@ -1467,6 +1572,7 @@ bool G_Automation_SaveState(struct SDL_RWops *stream)
 
 bool G_Automation_LoadState(struct SDL_RWops *stream)
 {
+    s_snapshot.valid = false;
     struct attr attr;
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
