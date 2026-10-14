@@ -354,11 +354,13 @@ static void on_20hz_tick(void *user, void *event)
         bool founded = G_Building_IsFounded(bs->target_uid);
         if(!founded && bs->wait_ticks % FOUND_CLEAR_TICKS == 0) {
             int left = G_Building_ClearFootprint(bs->target_uid);
-            /* The wait does not run out while those on the site are still leaving it */
+            /* The wait does not run out while those on the site are still leaving it:
+             * fewer than ever before, not just fewer than a moment ago, or two
+             * shuffling about on it would keep it waiting for good */
             if(left < bs->clear_left) {
                 bs->wait_ticks = 0;
+                bs->clear_left = left;
             }
-            bs->clear_left = left;
         }
 
         if(bs->wait_ticks >= FOUND_WAIT_TICKS) {

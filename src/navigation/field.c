@@ -64,6 +64,7 @@
 #define CLAMP(a, min, max)  (MIN(MAX((a), (min)), (max)))
 #define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
 #define MAX_ENTS_PER_CHUNK  (4096)
+#define SOFT_BLOCK_COST_FACTOR (6.0f)
 #define SEARCH_BUFFER       (16.0f)
 #define IDX(r, width, c)    ((r) * (width) + (c))
 
@@ -258,12 +259,16 @@ static int field_neighbours_grid(
             }else{
                 passable = field_tile_passable_no_enemies(chunk, (struct coord){abs_r, abs_c}, enemies);
             }
-            if(!passable || (chunk->soft_blocks[abs_r][abs_c] & soft_mask))
+            if(!passable)
                 continue;
         }
 
         out_neighbours[ret] = (struct coord){abs_r, abs_c};
         out_costs[ret] = n_cell_cost(chunk->cost_base, roads ? chunk->road : NULL, abs_r, abs_c);
+        /* Set aside ground is to be kept off, not walled off: a way round is taken
+         * where there is one near, and it is crossed where the only way in is over it */
+        if(only_passable && (chunk->soft_blocks[abs_r][abs_c] & soft_mask))
+            out_costs[ret] *= SOFT_BLOCK_COST_FACTOR;
 
         ret++;
     }}
