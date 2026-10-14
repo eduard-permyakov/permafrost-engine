@@ -661,6 +661,8 @@ const char *G_BuildingGetGroundTexture(uint32_t uid);
 /*###########################################################################*/
 
 bool G_Builder_Build(uint32_t uid, uint32_t building);
+/* As the player's order: the builder sees the site through its supply until it stands */
+bool G_Builder_Order(uint32_t uid, uint32_t building);
 void G_Builder_SetBuildSpeed(uint32_t uid, int speed);
 int  G_Builder_GetBuildSpeed(uint32_t uid);
 /* The building it is on its way to or at work on, or NULL_UID */

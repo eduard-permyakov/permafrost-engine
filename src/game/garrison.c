@@ -355,6 +355,10 @@ static void on_mousedown(void *user, void *event)
     if(right && targeting)
         return;
 
+    /* While a tool such as placement holds the mouse, a right click gives no order */
+    if(right && !G_Move_GetClickEnabled())
+        return;
+
     if(left && !targeting)
         return;
 

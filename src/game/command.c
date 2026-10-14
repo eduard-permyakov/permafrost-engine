@@ -142,7 +142,7 @@ static bool command_start(uint32_t uid, const struct command *cmd)
 {
     switch(cmd->kind) {
     case CMD_BUILD:
-        return G_Builder_Build(uid, cmd->target);
+        return G_Builder_Order(uid, cmd->target);
     default:
         return false;
     }
@@ -219,6 +219,22 @@ bool G_Command_Push(uint32_t uid, struct command cmd)
     if(!unit_working(uid)) {
         G_Command_Next(uid);
     }
+    return true;
+}
+
+bool G_Command_PushFront(uint32_t uid, struct command cmd)
+{
+    if(!G_EntityExists(uid) || G_EntityIsZombie(uid))
+        return false;
+    if(!command_valid(uid, &cmd))
+        return false;
+
+    vec_cmd_t *queue = queue_get_or_create(uid);
+    if(!queue || !vec_cmd_push(queue, cmd))
+        return false;
+
+    memmove(&vec_AT(queue, 1), &vec_AT(queue, 0), (vec_size(queue) - 1) * sizeof(struct command));
+    vec_AT(queue, 0) = cmd;
     return true;
 }
 

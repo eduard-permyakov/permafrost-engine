@@ -93,6 +93,8 @@ struct builderstate{
     int wait_ticks;
     /* How many were last found standing on the site to be founded */
     int clear_left;
+    /* Sent by the player, it sees the site through its supply to the end */
+    bool ordered;
 };
 
 KHASH_MAP_INIT_INT(state, struct builderstate)
@@ -296,6 +298,9 @@ static void proceed_at_site(uint32_t uid, struct builderstate *bs)
         bs->state = STATE_NOT_BUILDING;
         if(!supplying) {
             next_command(uid);
+        }else if(bs->ordered) {
+            /* Back to it once the materials are in */
+            G_Command_PushFront(uid, (struct command){CMD_BUILD, bs->target_uid});
         }
         return;
     }
@@ -417,6 +422,10 @@ static void on_mousedown(void *user, void *event)
     if(right && targeting)
         return;
 
+    /* While a tool such as placement holds the mouse, a right click gives no order */
+    if(right && !G_Move_GetClickEnabled())
+        return;
+
     if(left && !targeting)
         return;
 
@@ -447,7 +456,7 @@ static void on_mousedown(void *user, void *event)
 
         finish_building(bs, curr);
         G_StopEntity(curr, true, true);
-        G_Builder_Build(curr, target);
+        G_Builder_Order(curr, target);
         G_NotifyOrderIssued(curr, true);
         nbuilding++;
     }
@@ -497,7 +506,17 @@ bool G_Builder_Build(uint32_t uid, uint32_t building)
 
     bs->wait_ticks = 0;
     bs->clear_left = INT_MAX;
+    bs->ordered = false;
     approach(uid, bs, building);
+    return true;
+}
+
+bool G_Builder_Order(uint32_t uid, uint32_t building)
+{
+    if(!G_Builder_Build(uid, building))
+        return false;
+    struct builderstate *bs = builderstate_get(uid);
+    bs->ordered = true;
     return true;
 }
 
@@ -511,6 +530,7 @@ void G_Builder_AddEntity(uint32_t uid)
         .target_uid = UID_NONE,
         .wait_ticks = 0,
         .clear_left = INT_MAX,
+        .ordered = false,
     });
 }
 
@@ -691,6 +711,12 @@ bool G_Builder_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr.clear_left
         };
         CHK_TRUE_RET(Attr_Write(stream, &clear_left, "builder_clear_left"));
+
+        struct attr ordered = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr.ordered
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &ordered, "builder_ordered"));
         Sched_TryYield();
     });
 
@@ -736,6 +762,13 @@ bool G_Builder_LoadState(struct SDL_RWops *stream)
             clear_left = attr.val.as_int;
         }
 
+        bool ordered = false;
+        if(Attr_NextKeyIs(stream, "builder_ordered")) {
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_BOOL);
+            ordered = attr.val.as_bool;
+        }
+
         struct builderstate *bs = builderstate_get(uid);
         CHK_TRUE_RET(bs);
 
@@ -744,6 +777,7 @@ bool G_Builder_LoadState(struct SDL_RWops *stream)
         bs->target_uid = target;
         bs->wait_ticks = wait_ticks;
         bs->clear_left = clear_left;
+        bs->ordered = ordered;
 
         switch(state) {
         case STATE_NOT_BUILDING:

@@ -4209,7 +4209,7 @@ static PyObject *PyBuilderEntity_build(PyBuilderEntityObject *self, PyObject *ar
         return NULL;
     }
 
-    G_Builder_Build(self->super.ent, ((PyBuildableEntityObject*)building)->super.ent);
+    G_Builder_Order(self->super.ent, ((PyBuildableEntityObject*)building)->super.ent);
     Py_RETURN_NONE;
 }
 

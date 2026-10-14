@@ -60,6 +60,8 @@ void G_Command_RemoveEntity(uint32_t uid);
 /* Queue an order behind the unit's others. One with no work to do takes it up
  * at once. */
 bool G_Command_Push(uint32_t uid, struct command cmd);
+/* Put an order ahead of the unit's others, to be taken up when its work ends */
+bool G_Command_PushFront(uint32_t uid, struct command cmd);
 void G_Command_Clear(uint32_t uid);
 /* Take up the next of the unit's orders that can still be carried out. Returns
  * false once there are none left. */
