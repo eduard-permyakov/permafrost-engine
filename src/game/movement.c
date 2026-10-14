@@ -211,6 +211,9 @@ struct movestate_aux{
     int                vel_hist_idx;
     vec2_t             surround_target_prev;
     vec2_t             surround_nearest_prev;
+    /* Tick from which a unit held up short of its target may look for a
+     * nearer free side again; 0 asks at once. A cooldown, not saved. */
+    unsigned           surround_requery_tick;
     /* Additional state for entities in 'ENTER_ENTITY_RANGE' state 
      */
     vec2_t             target_prev_pos;
@@ -958,6 +961,12 @@ static struct result navigation_tick_task(void *arg);
 /* A shuttle jams against its destination's edge, where the building takes up
  * half the contact ring; the crowd test is correspondingly lower. */
 #define SURROUND_RELEASE_NEIGHBS        (3)
+/* A unit held up short of its target looks for a nearer free side about once
+ * a second, staggered, and only moves to one clearly nearer or when its own
+ * is taken; asking every tick both costs a flood and turns it back and forth. */
+#define SURROUND_REQUERY_TICKS          (15)
+#define SURROUND_REQUERY_SPREAD         (8)
+#define SURROUND_SWITCH_MARGIN          (8.0f)
 /* Terrain walls take contact-ring slots a unit could never fill; credit them
  * toward the crowd test so jams against walls can arm the drain. Blocker
  * stamps get none: a stamp is the output of walling, not evidence for it.
@@ -3578,6 +3587,16 @@ static vec2_t new_pos_for_vel(uint32_t uid, vec2_t velocity)
  * body's or building's stamp only for a unit already standing on one, which
  * must be free to step off it, or phasing through its own side.
  */
+static bool surround_switch_ok(enum nav_layer layer, vec2_t pos, vec2_t curr, vec2_t found)
+{
+    if(M_NavPositionBlocked(s_move_work.gamestate.map, layer, curr))
+        return true;
+    vec2_t to_curr, to_found;
+    PFM_Vec2_Sub(&curr, &pos, &to_curr);
+    PFM_Vec2_Sub(&found, &pos, &to_found);
+    return PFM_Vec2_Len(&to_found) + SURROUND_SWITCH_MARGIN < PFM_Vec2_Len(&to_curr);
+}
+
 static bool landing_ok(enum nav_layer layer, bool on_blocked, vec2_t pos)
 {
     const struct map *map = s_move_work.gamestate.map;
@@ -4592,10 +4611,22 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
 
         vec2_t delta;
         PFM_Vec2_Sub(&target_pos, &aux->surround_target_prev, &delta);
-        if(PFM_Vec2_Len(&delta) > EPSILON || PFM_Vec2_Len(&ms->velocity) < EPSILON) {
+        bool target_moved = PFM_Vec2_Len(&delta) > EPSILON;
+        bool held_up = PFM_Vec2_Len(&ms->velocity) < EPSILON;
+        bool first_pick = aux->surround_requery_tick == 0;
+        bool requery_due = first_pick || s_move_trace_tick >= aux->surround_requery_tick;
 
+        if(target_moved || (held_up && requery_due)) {
+
+            vec2_t found;
             bool hasdest = M_NavClosestReachableAdjacentPosFrom(s_move_work.gamestate.map, layer,
-                new_pos_xz, ms->surround_target_uid, &s_move_work.unit_query_ctx, &dest);
+                new_pos_xz, ms->surround_target_uid, &s_move_work.unit_query_ctx, &found);
+            aux->surround_requery_tick = s_move_trace_tick + SURROUND_REQUERY_TICKS
+                                       + uid % SURROUND_REQUERY_SPREAD;
+
+            if(hasdest && (target_moved || first_pick
+            || surround_switch_ok(layer, new_pos_xz, dest, found)))
+                dest = found;
 
             if(!hasdest) {
                 if(s_log_perf_csv)
@@ -5235,6 +5266,7 @@ static void do_add_entity(uint32_t uid, vec3_t pos, float selection_radius, int 
         .seek_pin_target = NULL_UID,
         .surround_target_prev = (vec2_t){0},
         .surround_nearest_prev = (vec2_t){0},
+        .surround_requery_tick = 0,
         .motion_stopped = true,
     };
     memset(new_aux.vel_hist, 0, sizeof(new_aux.vel_hist));
@@ -5521,6 +5553,11 @@ static void do_set_surround_entity(uint32_t uid, uint32_t target)
     ms->state = STATE_SURROUND_ENTITY;
     ms->surround_target_uid = target;
     ms->using_surround_field = using_surround_field(uid, target);
+
+    struct movestate_aux *aux = movestate_aux_get(uid);
+    if(aux) {
+        aux->surround_requery_tick = 0;
+    }
 }
 
 static void do_set_seek_enemies(uint32_t uid)
