@@ -100,7 +100,7 @@
 /* Stock of a good beyond what is asked for, past which gathering more of it waits */
 #define STOCK_TARGET                 (150)
 /* A good short by this much more takes one more gatherer */
-#define GOOD_PER_GATHERER            (30)
+#define GOOD_PER_GATHERER            (15)
 /* Gatherers leave off to build a site that has fewer builders than this */
 #define SITE_BUILDERS                (3)
 
