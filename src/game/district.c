@@ -244,17 +244,40 @@ static void flood(int layer, float *cost, int *owner, pq_cell_t *pq,
     }
 }
 
+static void seed_cell(int idx, float at, int cluster, float *cost, int *owner, pq_cell_t *pq)
+{
+    if(at >= cost[idx])
+        return;
+    cost[idx] = at;
+    if(owner) {
+        owner[idx] = cluster;
+    }
+    pq_cell_push(pq, at, (struct cell_node){idx, at});
+}
+
 static void seed(int layer, uint32_t uid, int cluster, float *cost, int *owner, pq_cell_t *pq)
 {
     int r, c;
     if(!cell_for_pos(G_Pos_GetXZ(uid), &r, &c))
         return;
     int idx = r * s_cols + c;
-    cost[idx] = 0.0f;
-    if(owner) {
-        owner[idx] = cluster;
+    if(s_passable[layer][idx]) {
+        seed_cell(idx, 0.0f, cluster, cost, owner, pq);
+        return;
     }
-    pq_cell_push(pq, 0.0f, (struct cell_node){idx, 0.0f});
+    /* One standing where the layer cannot go, such as a dock out on the
+     * water, reaches it from the cells about its footprint */
+    int reach = (int)ceilf((G_GetSelectionRadius(uid) + CELL_SIZE) / CELL_SIZE);
+    for(int dr = -reach; dr <= reach; dr++) {
+    for(int dc = -reach; dc <= reach; dc++) {
+        int nr = r + dr, nc = c + dc;
+        if(nr < 0 || nr >= s_rows || nc < 0 || nc >= s_cols)
+            continue;
+        int nidx = nr * s_cols + nc;
+        if(!s_passable[layer][nidx])
+            continue;
+        seed_cell(nidx, sqrtf(dr * dr + dc * dc) * CELL_SIZE, cluster, cost, owner, pq);
+    }}
 }
 
 static int district_index(const struct district *list, size_t n, int cluster)
