@@ -353,6 +353,13 @@ static void update(uint32_t uid, struct provision *p)
 {
     if(p->interval_ms == 0)
         return;
+    /* Held in a building to be made into something else, it is kept there */
+    uint32_t flags = G_FlagsGet(uid);
+    if((flags & ENTITY_FLAG_GARRISONED) && (flags & ENTITY_FLAG_GARRISON) && G_Garrison_IsIngredient(uid)) {
+        p->next_due_ms += TICK_MS * BUCKETS;
+        p->tier_since_ms += TICK_MS * BUCKETS;
+        return;
+    }
     if(s_now_ms >= p->next_due_ms) {
         if(p->meals > 0) {
             p->meals--;
