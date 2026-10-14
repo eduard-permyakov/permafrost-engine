@@ -1179,6 +1179,21 @@ enum request_status G_Automation_RequestStatus(uint32_t site, const char *rname,
     return REQUEST_OK;
 }
 
+int G_Automation_AssignedTransporters(uint32_t site)
+{
+    int cid = G_Cluster_Of(site);
+    if(cid == 0)
+        return get_assigned_transporters(site);
+
+    uint32_t members[64];
+    size_t nmembers = G_Cluster_Members(cid, ARR_SIZE(members), members);
+    int ret = 0;
+    for(int i = 0; i < nmembers; i++) {
+        ret += get_assigned_transporters(members[i]);
+    }
+    return ret;
+}
+
 void G_Automation_Shutdown(void)
 {
     E_Global_Unregister(EVENT_ORDER_ISSUED, on_order_issued);

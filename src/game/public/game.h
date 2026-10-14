@@ -989,6 +989,8 @@ void G_Automation_SetPinnedWork(uint32_t uid, const char *rname);
 const char *G_Automation_GetPinnedWork(uint32_t uid);
 /* Why the site's request for the resource is unserved, and for how long it has waited */
 enum request_status G_Automation_RequestStatus(uint32_t site, const char *rname, int *out_waited_ms);
+/* How many automated carriers are bound for the site's pool */
+int  G_Automation_AssignedTransporters(uint32_t site);
 /* Whether a worker that gathered 'rname' by its own choice should stop at a
  * drop-off: the realm holds enough of it, or a site near it wants builders */
 bool G_Automation_LeavesGathering(uint32_t uid, const char *rname);

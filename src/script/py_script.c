@@ -190,6 +190,8 @@ static PyObject *PyPf_get_key_name(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_get_active_font(PyObject *self);
 static PyObject *PyPf_set_active_font(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_text_outline(PyObject *self);
+static PyObject *PyPf_set_text_outline(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_skybox(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_show_regions(PyObject *self);
@@ -717,6 +719,15 @@ static PyMethodDef pf_module_methods[] = {
     {"set_active_font", 
     (PyCFunction)PyPf_set_active_font, METH_VARARGS,
     "Set the current active font to that of the specified name."},
+
+    {"get_text_outline", 
+    (PyCFunction)PyPf_get_text_outline, METH_NOARGS,
+    "Get the outline drawn around label text, as an ((R, G, B, A), width) tuple."},
+
+    {"set_text_outline", 
+    (PyCFunction)PyPf_set_text_outline, METH_VARARGS,
+    "Set the outline drawn around label text from an (R, G, B, A) color and a width. "
+    "A width of 0 turns the outline off. The outline is as thick as the font baked it."},
 
     {"set_skybox", 
     (PyCFunction)PyPf_set_skybox, METH_VARARGS,
@@ -2767,6 +2778,33 @@ static PyObject *PyPf_set_active_font(PyObject *self, PyObject *args)
     }else{
         Py_RETURN_TRUE;
     }
+}
+
+static PyObject *PyPf_get_text_outline(PyObject *self)
+{
+    const struct nk_style_text *text = &UI_GetContext()->style.text;
+    return Py_BuildValue("(iiii)f", 
+        text->outline_color.r, 
+        text->outline_color.g, 
+        text->outline_color.b, 
+        text->outline_color.a, 
+        text->outline_width);
+}
+
+static PyObject *PyPf_set_text_outline(PyObject *self, PyObject *args)
+{
+    int r, g, b, a;
+    float width;
+
+    if(!PyArg_ParseTuple(args, "(iiii)f", &r, &g, &b, &a, &width)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an (R, G, B, A) tuple and a float.");
+        return NULL;
+    }
+
+    struct nk_style_text *text = &UI_GetContext()->style.text;
+    text->outline_color = nk_rgba(r, g, b, a);
+    text->outline_width = width;
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_set_skybox(PyObject *self, PyObject *args)

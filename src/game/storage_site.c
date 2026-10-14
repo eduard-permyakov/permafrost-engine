@@ -147,7 +147,57 @@ struct flow{
 
 KHASH_MAP_INIT_STR(flow, struct flow)
 
+/* How the stock of one good in a pool has been moving */
+struct trend{
+    const char *rname;
+    int         last;
+    /* Moving average of the change per second */
+    float       rate;
+    int         arrow;
+    uint32_t    unchanged_s;
+};
+
+/* The goods trends of one pool, or of a site in none */
+struct strip{
+    uint32_t     stamp;
+    size_t       ntrends;
+    struct trend trends[16];
+};
+
+KHASH_MAP_INIT_INT64(strip, struct strip)
+
+/* A good as the overlay strip shows it */
+struct strip_good{
+    const char *icon;
+    char        count[8];
+    float       count_w;
+    int         arrow;
+    bool        blocked;
+};
+
 #define GREEN_CLR (struct nk_color){22, 84, 5, 255}
+
+#define STRIP_TEXT_CLR      (struct nk_color){235, 228, 210, 255}
+#define STRIP_OUTLINE_CLR   (struct nk_color){20, 16, 12, 230}
+#define STRIP_WARN_CLR      (struct nk_color){255, 150, 40, 255}
+#define TREND_UP_CLR        (struct nk_color){110, 205, 80, 255}
+#define TREND_DOWN_CLR      (struct nk_color){225, 70, 55, 255}
+#define TREND_FLAT_CLR      (struct nk_color){185, 180, 170, 255}
+#define CART_CLR            (struct nk_color){170, 120, 70, 255}
+
+#define STRIP_MAX_SITES     (64)
+#define STRIP_MAX_GOODS     (8)
+#define STRIP_ICON_SZ       (22.0f)
+#define STRIP_GAP           (8.0f)
+#define TREND_W             (7.0f)
+#define PENNANT_W           (11.0f)
+#define CART_W              (13.0f)
+/* Weight of each one-second sample in the moving average of a stock's change */
+#define TREND_ALPHA         (0.1f)
+/* Goods per second that turn the arrow on, and that it must fall back under to turn off */
+#define TREND_ON            (0.05f)
+#define TREND_OFF           (0.02f)
+#define RECENT_CHANGE_S     (30)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -163,6 +213,9 @@ static khash_t(state)  *s_pools;
 static khash_t(res)    *s_global_resource_tables[MAX_FACTIONS];
 static khash_t(res)    *s_global_capacity_tables[MAX_FACTIONS];
 static khash_t(flow)   *s_flows;
+/* Keyed by strip_key */
+static khash_t(strip)  *s_strips;
+static uint32_t         s_strip_stamp;
 
 static struct nk_style_item s_bg_style = {0};
 static struct nk_color      s_border_clr = {0};
@@ -462,6 +515,319 @@ static bool pool_selected(uint32_t key, int pool)
     return false;
 }
 
+static bool pool_hovered(uint32_t key, int pool)
+{
+    uint32_t hovered = G_Sel_GetHovered();
+    if(hovered == NULL_UID)
+        return false;
+    if(hovered == key)
+        return true;
+    return (pool && G_Cluster_Of(hovered) == pool);
+}
+
+/* The state shown over a site: its pool's over the pool's anchor, none over
+ * the pool's other members */
+static struct ss_state *shown_state(uint32_t uid)
+{
+    struct ss_state *own = ss_state_get(uid);
+    if(!own || !own->pool)
+        return own;
+    struct ss_state *pool = pool_get(own->pool);
+    if(pool && pool->anchor != uid)
+        return NULL;
+    return pool ? pool : own;
+}
+
+static uint64_t strip_key(uint32_t uid)
+{
+    struct ss_state *own = ss_state_get(uid);
+    if(own && own->pool)
+        return ((uint64_t)1 << 32) | (uint32_t)own->pool;
+    return uid;
+}
+
+static const struct trend *trend_find(const struct strip *strip, const char *rname)
+{
+    for(int i = 0; i < strip->ntrends; i++) {
+        if(strip->trends[i].rname == rname)
+            return &strip->trends[i];
+    }
+    return NULL;
+}
+
+static int trend_arrow(int arrow, float rate)
+{
+    if(rate > TREND_ON)
+        return 1;
+    if(rate < -TREND_ON)
+        return -1;
+    if(arrow > 0 && rate < TREND_OFF)
+        return 0;
+    if(arrow < 0 && rate > -TREND_OFF)
+        return 0;
+    return arrow;
+}
+
+static void update_trends(uint32_t uid, struct ss_state *ss)
+{
+    int status;
+    khiter_t k = kh_put(strip, s_strips, strip_key(uid), &status);
+    if(status == -1)
+        return;
+    struct strip *strip = &kh_value(s_strips, k);
+    if(status != 0) {
+        strip->ntrends = 0;
+    }
+    strip->stamp = s_strip_stamp;
+
+    const char *names[16];
+    size_t nnames = ss_get_keys(ss, names, ARR_SIZE(names));
+
+    struct trend trends[16];
+    for(int i = 0; i < nnames; i++) {
+
+        int amount = 0;
+        ss_state_get_key(ss->curr, names[i], &amount);
+
+        const struct trend *old = trend_find(strip, names[i]);
+        if(!old) {
+            trends[i] = (struct trend){
+                .rname = names[i],
+                .last = amount,
+                .rate = 0.0f,
+                .arrow = 0,
+                .unchanged_s = RECENT_CHANGE_S
+            };
+            continue;
+        }
+
+        int delta = amount - old->last;
+        float rate = old->rate + (delta - old->rate) * TREND_ALPHA;
+        trends[i] = (struct trend){
+            .rname = names[i],
+            .last = amount,
+            .rate = rate,
+            .arrow = trend_arrow(old->arrow, rate),
+            .unchanged_s = delta ? 0 : MIN(old->unchanged_s + 1, RECENT_CHANGE_S)
+        };
+    }
+    memcpy(strip->trends, trends, nnames * sizeof(struct trend));
+    strip->ntrends = nnames;
+}
+
+static bool strip_shows(uint32_t uid, const char *rname, const struct trend *trend)
+{
+    if(G_StorageSite_Request(uid, rname) > 0)
+        return true;
+    if(G_StorageSite_GetKeep(uid, rname) > 0)
+        return true;
+    return trend && (trend->arrow != 0 || trend->unchanged_s < RECENT_CHANGE_S);
+}
+
+static const char *reason_code(enum request_status status)
+{
+    switch(status) {
+    case REQUEST_NO_SOURCE:     return "No source";
+    case REQUEST_NO_CARRIER:    return "No carrier";
+    case REQUEST_UNREACHABLE:   return "Unreachable";
+    case REQUEST_NOT_CONNECTED: return "Not connected";
+    default:                    return NULL;
+    }
+}
+
+static float text_width(const struct nk_user_font *font, const char *text)
+{
+    return font->width(font->userdata, font->height, text, strlen(text));
+}
+
+static void draw_strip_text(struct nk_command_buffer *canvas, const struct nk_user_font *font,
+                            float x, float y, float w, const char *text, struct nk_color clr)
+{
+    nk_draw_text_outlined(canvas, nk_rect(x, y, w + 1, font->height), text, strlen(text),
+        font, nk_rgba(0, 0, 0, 0), clr, STRIP_OUTLINE_CLR);
+}
+
+static void draw_trend(struct nk_command_buffer *canvas, float x, float cy, int arrow)
+{
+    if(arrow == 0) {
+        nk_fill_rect(canvas, nk_rect(x - 1, cy - 2.5f, TREND_W + 2, 5), 0, STRIP_OUTLINE_CLR);
+        nk_fill_rect(canvas, nk_rect(x, cy - 1.5f, TREND_W, 3), 0, TREND_FLAT_CLR);
+        return;
+    }
+    const float dir = (arrow > 0) ? 1.0f : -1.0f;
+    const float tip = cy - dir * 5.0f;
+    const float base = cy + dir * 4.0f;
+    nk_fill_triangle(canvas, x - 1.5f, base + dir, x + TREND_W / 2, tip - dir * 2.0f,
+        x + TREND_W + 1.5f, base + dir, STRIP_OUTLINE_CLR);
+    nk_fill_triangle(canvas, x, base, x + TREND_W / 2, tip, x + TREND_W, base,
+        (arrow > 0) ? TREND_UP_CLR : TREND_DOWN_CLR);
+}
+
+static void draw_pennant(struct nk_command_buffer *canvas, float x, float y, int priority)
+{
+    struct nk_color clr;
+    switch(priority) {
+    case SS_PRIORITY_LOW:    clr = nk_rgba(110, 140, 190, 255); break;
+    case SS_PRIORITY_URGENT: clr = nk_rgba(215, 45, 35, 255);   break;
+    default:                 clr = nk_rgba(230, 175, 45, 255);  break;
+    }
+    nk_fill_rect(canvas, nk_rect(x - 1, y, 3, STRIP_ICON_SZ), 0, STRIP_OUTLINE_CLR);
+    nk_fill_triangle(canvas, x + 1, y - 1, x + PENNANT_W + 1, y + 4, x + 1, y + 9, STRIP_OUTLINE_CLR);
+    nk_fill_rect(canvas, nk_rect(x, y + 1, 1, STRIP_ICON_SZ - 2), 0, STRIP_TEXT_CLR);
+    nk_fill_triangle(canvas, x + 1, y + 1, x + PENNANT_W - 1, y + 4, x + 1, y + 7, clr);
+}
+
+static void draw_cart(struct nk_command_buffer *canvas, float x, float y)
+{
+    nk_fill_rect(canvas, nk_rect(x - 1, y + 3, CART_W + 2, 8), 1, STRIP_OUTLINE_CLR);
+    nk_fill_rect(canvas, nk_rect(x, y + 4, CART_W, 6), 0, CART_CLR);
+    nk_fill_circle(canvas, nk_rect(x + 1, y + 8, 6, 6), STRIP_OUTLINE_CLR);
+    nk_fill_circle(canvas, nk_rect(x + CART_W - 7, y + 8, 6, 6), STRIP_OUTLINE_CLR);
+    nk_fill_circle(canvas, nk_rect(x + 2.5f, y + 9.5f, 3, 3), TREND_FLAT_CLR);
+    nk_fill_circle(canvas, nk_rect(x + CART_W - 5.5f, y + 9.5f, 3, 3), TREND_FLAT_CLR);
+}
+
+/* One row over a pool's anchor: the goods that matter now, the pool's
+ * priority, the carriers bound for it, and why a request of it is stuck */
+static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_font *font,
+                       uint32_t key, vec2_t anchor)
+{
+    struct ss_state *ss = shown_state(key);
+    if(!ss)
+        return;
+
+    khiter_t k = kh_get(strip, s_strips, strip_key(key));
+    const struct strip *strip = (k != kh_end(s_strips)) ? &kh_value(s_strips, k) : NULL;
+
+    const char *names[16];
+    size_t nnames = ss_get_keys(ss, names, ARR_SIZE(names));
+
+    struct strip_good goods[STRIP_MAX_GOODS];
+    size_t ngoods = 0;
+    const char *reason = NULL;
+    float width = 0.0f;
+
+    for(int i = 0; i < nnames; i++) {
+
+        int waited_ms;
+        enum request_status status = G_Automation_RequestStatus(key, names[i], &waited_ms);
+        if(!reason) {
+            reason = reason_code(status);
+        }
+
+        const struct trend *trend = strip ? trend_find(strip, names[i]) : NULL;
+        if(ngoods == STRIP_MAX_GOODS || !strip_shows(key, names[i], trend))
+            continue;
+
+        struct strip_good *good = &goods[ngoods++];
+        good->icon = G_Resource_GetIcon(names[i]);
+        pf_snprintf(good->count, sizeof(good->count), "%d", G_StorageSite_GetCurr(key, names[i]));
+        good->count_w = text_width(font, good->count);
+        good->arrow = trend ? trend->arrow : 0;
+        good->blocked = (status != REQUEST_OK);
+        width += STRIP_ICON_SZ + 2 + good->count_w + 2 + TREND_W + STRIP_GAP;
+    }
+
+    int priority = ss->priority;
+    if(priority != SS_PRIORITY_NORMAL) {
+        width += PENNANT_W + STRIP_GAP;
+    }
+
+    char carriers[8] = {0};
+    float carriers_w = 0.0f;
+    int ncarriers = G_Automation_AssignedTransporters(key);
+    if(ncarriers > 0) {
+        pf_snprintf(carriers, sizeof(carriers), "%d", ncarriers);
+        carriers_w = text_width(font, carriers);
+        width += CART_W + 3 + carriers_w + STRIP_GAP;
+    }
+
+    float reason_w = reason ? text_width(font, reason) : 0.0f;
+    width += reason_w;
+
+    if(width == 0.0f)
+        return;
+    if(!reason)
+        width -= STRIP_GAP;
+
+    float x = anchor.x - width / 2.0f;
+    const float y = anchor.y + 20;
+    const float text_y = y + (STRIP_ICON_SZ - font->height) / 2.0f;
+    const float cy = y + STRIP_ICON_SZ / 2.0f;
+
+    for(int i = 0; i < ngoods; i++) {
+
+        const struct strip_good *good = &goods[i];
+        if(good->icon) {
+            nk_draw_texpath(canvas, nk_rect(x, y, STRIP_ICON_SZ, STRIP_ICON_SZ), good->icon,
+                nk_rgba(255, 255, 255, 255));
+        }
+        x += STRIP_ICON_SZ + 2;
+        draw_strip_text(canvas, font, x, text_y, good->count_w, good->count,
+            good->blocked ? STRIP_WARN_CLR : STRIP_TEXT_CLR);
+        x += good->count_w + 2;
+        draw_trend(canvas, x, cy, good->arrow);
+        x += TREND_W + STRIP_GAP;
+    }
+
+    if(priority != SS_PRIORITY_NORMAL) {
+        draw_pennant(canvas, x, y, priority);
+        x += PENNANT_W + STRIP_GAP;
+    }
+
+    if(ncarriers > 0) {
+        draw_cart(canvas, x, y);
+        x += CART_W + 3;
+        draw_strip_text(canvas, font, x, text_y, carriers_w, carriers, STRIP_TEXT_CLR);
+        x += carriers_w + STRIP_GAP;
+    }
+
+    if(reason) {
+        draw_strip_text(canvas, font, x, text_y, reason_w, reason, STRIP_WARN_CLR);
+    }
+}
+
+static void draw_strips(struct nk_context *ctx, const uint32_t *keys, size_t nkeys)
+{
+    const vec2_t vres = (vec2_t){1920, 1080};
+    const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
+    struct rect adj_bounds = UI_BoundsForAspectRatio(
+        (struct rect){0, 0, vres.x, vres.y},
+        vres, adj_vres, ANCHOR_DEFAULT
+    );
+
+    nk_style_push_color(ctx, &ctx->style.window.background, nk_rgba(0, 0, 0, 0));
+    nk_style_push_style_item(ctx, &ctx->style.window.fixed_background,
+        nk_style_item_color(nk_rgba(0, 0, 0, 0)));
+
+    if(nk_begin_with_vres(ctx, "__storage_site_strips__",
+        nk_rect(adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h),
+        NK_WINDOW_NO_INPUT | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR,
+        (struct nk_vec2i){adj_vres.x, adj_vres.y})) {
+
+        /* In the normal size of whichever face the scripts left active */
+        char prev[64], face[64];
+        pf_strlcpy(prev, UI_GetActiveFont(), sizeof(prev));
+        pf_strlcpy(face, prev, sizeof(face));
+        char *suffix = strrchr(face, '.');
+        if(suffix && (!strcmp(suffix, ".11") || !strcmp(suffix, ".13") || !strcmp(suffix, ".32"))) {
+            *suffix = '\0';
+        }
+        UI_SetActiveFont(face);
+
+        struct nk_command_buffer *canvas = nk_window_get_canvas(ctx);
+        for(int i = 0; i < nkeys; i++) {
+            vec2_t anchor = Entity_TopScreenPos(keys[i], adj_vres.x, adj_vres.y);
+            draw_strip(canvas, ctx->style.font, keys[i], anchor);
+        }
+        UI_SetActiveFont(prev);
+    }
+    nk_end(ctx);
+
+    nk_style_pop_color(ctx);
+    nk_style_pop_style_item(ctx);
+}
+
 static void on_update_ui(void *user, void *event)
 {
     if(!s_show_ui)
@@ -473,6 +839,15 @@ static void on_update_ui(void *user, void *event)
 
     if(ui_setting.as_int == SS_UI_SHOW_NEVER)
         return;
+
+    struct sval strip_setting;
+    status = Settings_Get("pf.game.storage_site_strip", &strip_setting);
+    assert(status == SS_OKAY);
+    (void)status;
+
+    uint32_t strips[STRIP_MAX_SITES];
+    size_t nstrips = 0;
+    const uint16_t player_factions = G_GetPlayerControlledFactions();
 
     uint32_t key;
     struct ss_state curr;
@@ -494,13 +869,25 @@ static void on_update_ui(void *user, void *event)
                 curr = *pool;
         }
 
-        if(ui_setting.as_int == SS_UI_SHOW_SELECTED && !pool_selected(key, pool_id))
+        bool full = (ui_setting.as_int != SS_UI_SHOW_SELECTED)
+                 || pool_selected(key, pool_id)
+                 || pool_hovered(key, pool_id);
+        bool strip = !full && strip_setting.as_bool
+                  && (player_factions & (1 << G_GetFactionID(key)));
+        if(!full && !strip)
             continue;
 
         struct obb obb;
         Entity_CurrentOBB(key, &obb, true);
         if(!G_Fog_ObjExplored(G_GetPlayerControlledFactions(), key, &obb))
             continue;
+
+        if(strip) {
+            if(nstrips < ARR_SIZE(strips)) {
+                strips[nstrips++] = key;
+            }
+            continue;
+        }
 
         char name[256];
         pf_snprintf(name, sizeof(name), "__storage_site__.%x", key);
@@ -571,6 +958,31 @@ static void on_update_ui(void *user, void *event)
     nk_style_pop_vec2(ctx);
     nk_style_pop_style_item(ctx);
     nk_style_pop_color(ctx);
+
+    if(nstrips > 0) {
+        draw_strips(ctx, strips, nstrips);
+    }
+}
+
+static void on_1hz_tick(void *user, void *event)
+{
+    uint32_t key;
+    struct ss_state curr;
+    (void)curr;
+
+    s_strip_stamp++;
+    kh_foreach(s_entity_state_table, key, curr, {
+        struct ss_state *ss = shown_state(key);
+        if(ss) {
+            update_trends(key, ss);
+        }
+    });
+
+    for(khiter_t k = kh_begin(s_strips); k != kh_end(s_strips); k++) {
+        if(kh_exist(s_strips, k) && kh_value(s_strips, k).stamp != s_strip_stamp) {
+            kh_del(strip, s_strips, k);
+        }
+    }
 }
 
 static void on_update(void *user, void *event)
@@ -823,6 +1235,11 @@ static bool storage_site_ui_mode_validate(const struct sval *val)
     return true;
 }
 
+static bool storage_site_strip_validate(const struct sval *val)
+{
+    return (val->type == ST_TYPE_BOOL);
+}
+
 /* Throws 'amount' of a resource out of the economy onto the ground by the 
  * site, for the scripts to leave lying there to be picked up. */
 static void spill(uint32_t uid, const char *rname, int amount)
@@ -931,6 +1348,9 @@ bool G_StorageSite_Init(void)
     if(!(s_flows = kh_init(flow)))
         goto fail_flows;
 
+    if(!(s_strips = kh_init(strip)))
+        goto fail_strips;
+
     struct nk_context ctx;
     nk_style_default(&ctx);
 
@@ -952,11 +1372,26 @@ bool G_StorageSite_Init(void)
     });
     assert(status == SS_OKAY);
 
+    status = Settings_Create((struct setting){
+        .name = "pf.game.storage_site_strip",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = true
+        },
+        .prio = 0,
+        .validate = storage_site_strip_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
     E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
     E_Global_Register(EVENT_UPDATE_START, on_update, NULL, G_RUNNING);
+    E_Global_Register(EVENT_1HZ_TICK, on_1hz_tick, NULL, G_RUNNING);
     s_show_ui = true;
     return true;
 
+fail_strips:
+    kh_destroy(flow, s_flows);
 fail_flows:
     stalloc_destroy(&s_eventargs);
 fail_eventargs:
@@ -979,6 +1414,7 @@ fail_mpool:
 
 void G_StorageSite_Shutdown(void)
 {
+    E_Global_Unregister(EVENT_1HZ_TICK, on_1hz_tick);
     E_Global_Unregister(EVENT_UPDATE_START, on_update);
     E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
 
@@ -987,6 +1423,7 @@ void G_StorageSite_Shutdown(void)
     for(int i = 0; i < MAX_FACTIONS; i++)
         kh_destroy(res, s_global_resource_tables[i]);
 
+    kh_destroy(strip, s_strips);
     kh_destroy(flow, s_flows);
     stalloc_destroy(&s_eventargs);
     si_shutdown(&s_stringpool, s_stridx);

@@ -3897,6 +3897,8 @@ struct nk_user_font {
 #ifdef NK_INCLUDE_VERTEX_BUFFER_OUTPUT
     nk_query_font_glyph_f query;
     /* font glyph callback to query drawing info */
+    nk_query_font_glyph_f query_outline;
+    /* outline glyph callback to query drawing info, or NULL for a font without outlines */
     nk_handle texture;
     /* texture handle to the used font atlas or texture */
 #endif
@@ -3941,6 +3943,10 @@ struct nk_font_config {
     unsigned char oversample_v, oversample_h;
     /* rasterize at hight quality for sub-pixel position */
     unsigned char padding[3];
+    unsigned char outline_width;
+    /* radius in pixels of the dilated outline glyphs baked beside the glyphs, 0 for none */
+    const nk_rune *outline_range;
+    /* the codepoints that get outline glyphs (pairs of from/to, 0 terminated), NULL for all */
 
     float size;
     /* baked pixel height of the font */
@@ -3971,6 +3977,8 @@ struct nk_font {
     struct nk_baked_font info;
     float scale;
     struct nk_font_glyph *glyphs;
+    /* parallel to 'glyphs': the outline of each glyph, of zero size where there is none */
+    struct nk_font_glyph *outlines;
     const struct nk_font_glyph *fallback;
     nk_rune fallback_codepoint;
     nk_handle texture;
@@ -3995,6 +4003,7 @@ struct nk_font_atlas {
 
     int glyph_count;
     struct nk_font_glyph *glyphs;
+    struct nk_font_glyph *outline_glyphs;
     struct nk_font *default_font;
     struct nk_font *fonts;
     struct nk_font_config *config;
@@ -4552,6 +4561,7 @@ struct nk_command_text {
     const struct nk_user_font *font;
     struct nk_color background;
     struct nk_color foreground;
+    struct nk_color outline;
     short x, y;
     unsigned short w, h;
     float height;
@@ -4597,6 +4607,7 @@ NK_API void nk_draw_texpath_region(struct nk_command_buffer *b, struct nk_rect r
 NK_API void nk_draw_nine_slice(struct nk_command_buffer*, struct nk_rect, const struct nk_nine_slice*, struct nk_color);
 NK_API void nk_draw_nine_slice_texpath(struct nk_command_buffer*, struct nk_rect, const struct nk_nine_slice_texpath*, struct nk_color);
 NK_API void nk_draw_text(struct nk_command_buffer*, struct nk_rect, const char *text, int len, const struct nk_user_font*, struct nk_color, struct nk_color);
+NK_API void nk_draw_text_outlined(struct nk_command_buffer*, struct nk_rect, const char *text, int len, const struct nk_user_font*, struct nk_color bg, struct nk_color fg, struct nk_color outline);
 NK_API void nk_push_scissor(struct nk_command_buffer*, struct nk_rect);
 NK_API void nk_push_custom(struct nk_command_buffer*, struct nk_rect, nk_command_custom_callback, nk_handle usr);
 
@@ -4803,6 +4814,7 @@ NK_API void nk_draw_list_fill_poly_convex(struct nk_draw_list*, const struct nk_
 /* misc */
 NK_API void nk_draw_list_add_image(struct nk_draw_list*, struct nk_image texture, struct nk_rect rect, struct nk_color);
 NK_API void nk_draw_list_add_text(struct nk_draw_list*, const struct nk_user_font*, struct nk_rect, const char *text, int len, float font_height, struct nk_color);
+NK_API void nk_draw_list_add_text_outline(struct nk_draw_list*, const struct nk_user_font*, struct nk_rect, const char *text, int len, float font_height, struct nk_color);
 NK_API void nk_draw_list_add_set_vres(struct nk_draw_list *list, struct nk_vec2i vres);
 #ifdef NK_INCLUDE_COMMAND_USERDATA
 NK_API void nk_draw_list_push_userdata(struct nk_draw_list*, nk_handle userdata);
@@ -4854,6 +4866,8 @@ struct nk_style_item {
 struct nk_style_text {
     struct nk_color color;
     struct nk_vec2 padding;
+    struct nk_color outline_color;
+    float outline_width;
 };
 
 struct nk_style_button {
@@ -5964,7 +5978,9 @@ struct nk_text {
     struct nk_color text;
 };
 NK_LIB void nk_widget_text(struct nk_command_buffer *o, struct nk_rect b, const char *string, int len, const struct nk_text *t, nk_flags a, const struct nk_user_font *f);
+NK_LIB void nk_widget_text_outlined(struct nk_command_buffer *o, struct nk_rect b, const char *string, int len, const struct nk_text *t, nk_flags a, const struct nk_user_font *f, struct nk_color outline);
 NK_LIB void nk_widget_text_wrap(struct nk_command_buffer *o, struct nk_rect b, const char *string, int len, const struct nk_text *t, const struct nk_user_font *f);
+NK_LIB void nk_widget_text_wrap_outlined(struct nk_command_buffer *o, struct nk_rect b, const char *string, int len, const struct nk_text *t, const struct nk_user_font *f, struct nk_color outline);
 
 /* button */
 NK_LIB int nk_button_behavior(nk_flags *state, struct nk_rect r, const struct nk_input *i, enum nk_button_behavior behavior);
@@ -9463,6 +9479,13 @@ nk_draw_text(struct nk_command_buffer *b, struct nk_rect r,
     const char *string, int length, const struct nk_user_font *font,
     struct nk_color bg, struct nk_color fg)
 {
+    nk_draw_text_outlined(b, r, string, length, font, bg, fg, nk_rgba(0,0,0,0));
+}
+NK_API void
+nk_draw_text_outlined(struct nk_command_buffer *b, struct nk_rect r,
+    const char *string, int length, const struct nk_user_font *font,
+    struct nk_color bg, struct nk_color fg, struct nk_color outline)
+{
     float text_width = 0;
     struct nk_command_text *cmd;
 
@@ -9493,6 +9516,7 @@ nk_draw_text(struct nk_command_buffer *b, struct nk_rect r,
     cmd->h = (unsigned short)r.h;
     cmd->background = bg;
     cmd->foreground = fg;
+    cmd->outline = outline;
     cmd->font = font;
     cmd->length = length;
     cmd->height = font->height;
@@ -10628,10 +10652,10 @@ nk_draw_list_add_image(struct nk_draw_list *list, struct nk_image texture,
             nk_vec2(rect.x + rect.w, rect.y + rect.h),
             nk_vec2(0.0f, 0.0f), nk_vec2(1.0f, 1.0f),color);
 }
-NK_API void
-nk_draw_list_add_text(struct nk_draw_list *list, const struct nk_user_font *font,
-    struct nk_rect rect, const char *text, int len, float font_height,
-    struct nk_color fg)
+NK_INTERN void
+nk_draw_list_add_glyphs(struct nk_draw_list *list, const struct nk_user_font *font,
+    nk_query_font_glyph_f query, struct nk_rect rect, const char *text, int len,
+    float font_height, struct nk_color fg)
 {
     float x = 0;
     int text_len = 0;
@@ -10660,7 +10684,7 @@ nk_draw_list_add_text(struct nk_draw_list *list, const struct nk_user_font *font
 
         /* query currently drawn glyph information */
         next_glyph_len = nk_utf_decode(text + text_len + glyph_len, &next, (int)len - text_len);
-        font->query(font->userdata, font_height, &g, unicode,
+        query(font->userdata, font_height, &g, unicode,
                     (next == NK_UTF_INVALID) ? '\0' : next);
 
         /* calculate and draw glyph drawing rectangle and image */
@@ -10668,8 +10692,9 @@ nk_draw_list_add_text(struct nk_draw_list *list, const struct nk_user_font *font
         gy = rect.y + g.offset.y;
         gw = g.width; gh = g.height;
         char_width = g.xadvance;
-        nk_draw_list_push_rect_uv(list, nk_vec2(gx,gy), nk_vec2(gx + gw, gy+ gh),
-            g.uv[0], g.uv[1], fg);
+        if (gw > 0 && gh > 0)
+            nk_draw_list_push_rect_uv(list, nk_vec2(gx,gy), nk_vec2(gx + gw, gy+ gh),
+                g.uv[0], g.uv[1], fg);
 
         /* offset next glyph */
         text_len += glyph_len;
@@ -10677,6 +10702,21 @@ nk_draw_list_add_text(struct nk_draw_list *list, const struct nk_user_font *font
         glyph_len = next_glyph_len;
         unicode = next;
     }
+}
+NK_API void
+nk_draw_list_add_text(struct nk_draw_list *list, const struct nk_user_font *font,
+    struct nk_rect rect, const char *text, int len, float font_height,
+    struct nk_color fg)
+{
+    nk_draw_list_add_glyphs(list, font, font->query, rect, text, len, font_height, fg);
+}
+NK_API void
+nk_draw_list_add_text_outline(struct nk_draw_list *list, const struct nk_user_font *font,
+    struct nk_rect rect, const char *text, int len, float font_height,
+    struct nk_color outline)
+{
+    if (!font->query_outline) return;
+    nk_draw_list_add_glyphs(list, font, font->query_outline, rect, text, len, font_height, outline);
 }
 
 NK_API void
@@ -10903,6 +10943,9 @@ nk_convert(struct nk_context *ctx, struct nk_buffer *cmds,
         } break;
         case NK_COMMAND_TEXT: {
             const struct nk_command_text *t = (const struct nk_command_text*)cmd;
+            if (t->outline.a)
+                nk_draw_list_add_text_outline(&ctx->draw_list, t->font, nk_rect(t->x, t->y, t->w, t->h),
+                    t->string, t->length, t->height, t->outline);
             nk_draw_list_add_text(&ctx->draw_list, t->font, nk_rect(t->x, t->y, t->w, t->h),
                 t->string, t->length, t->height, t->foreground);
         } break;
@@ -11309,7 +11352,12 @@ nk_rp_pack_rects(struct nk_rp_context *context, struct nk_rp_rect *rects, int nu
     nk_rp_qsort(rects, (unsigned)num_rects, nk_rect_height_compare);
 
     for (i=0; i < num_rects; ++i) {
-        struct nk_rp__findresult fr = nk_rp__skyline_pack_rectangle(context, rects[i].w, rects[i].h);
+        struct nk_rp__findresult fr;
+        if (rects[i].w == 0 || rects[i].h == 0) {
+            rects[i].x = rects[i].y = 0;
+            continue;
+        }
+        fr = nk_rp__skyline_pack_rectangle(context, rects[i].w, rects[i].h);
         if (fr.prev_link) {
             rects[i].x = (nk_rp_coord) fr.x;
             rects[i].y = (nk_rp_coord) fr.y;
@@ -13000,6 +13048,7 @@ nk_tt_GetPackedQuad(struct nk_tt_packedchar *chardata, int pw, int ph,
 struct nk_font_bake_data {
     struct nk_tt_fontinfo info;
     struct nk_rp_rect *rects;
+    struct nk_rp_rect *outline_rects;
     struct nk_tt_pack_range *ranges;
     nk_rune range_count;
 };
@@ -13010,6 +13059,7 @@ struct nk_font_baker {
     struct nk_font_bake_data *build;
     struct nk_tt_packedchar *packed_chars;
     struct nk_rp_rect *rects;
+    struct nk_rp_rect *outline_rects;
     struct nk_tt_pack_range *ranges;
 };
 
@@ -13109,12 +13159,12 @@ nk_font_baker_memory(nk_size *temp, int *glyph_count,
             *glyph_count += nk_range_glyph_count(i->range, range_count);
         } while ((i = i->n) != iter);
     }
-    *temp = (nk_size)*glyph_count * sizeof(struct nk_rp_rect);
+    *temp = (nk_size)*glyph_count * sizeof(struct nk_rp_rect) * 2;
     *temp += (nk_size)total_range_count * sizeof(struct nk_tt_pack_range);
     *temp += (nk_size)*glyph_count * sizeof(struct nk_tt_packedchar);
     *temp += (nk_size)count * sizeof(struct nk_font_bake_data);
     *temp += sizeof(struct nk_font_baker);
-    *temp += nk_rect_align + nk_range_align + nk_char_align;
+    *temp += nk_rect_align * 2 + nk_range_align + nk_char_align;
     *temp += nk_build_align + nk_baker_align;
 }
 NK_INTERN struct nk_font_baker*
@@ -13127,9 +13177,120 @@ nk_font_baker(void *memory, int glyph_count, int count, struct nk_allocator *all
     baker->build = (struct nk_font_bake_data*)NK_ALIGN_PTR((baker + 1), nk_build_align);
     baker->packed_chars = (struct nk_tt_packedchar*)NK_ALIGN_PTR((baker->build + count), nk_char_align);
     baker->rects = (struct nk_rp_rect*)NK_ALIGN_PTR((baker->packed_chars + glyph_count), nk_rect_align);
-    baker->ranges = (struct nk_tt_pack_range*)NK_ALIGN_PTR((baker->rects + glyph_count), nk_range_align);
+    baker->outline_rects = (struct nk_rp_rect*)NK_ALIGN_PTR((baker->rects + glyph_count), nk_rect_align);
+    baker->ranges = (struct nk_tt_pack_range*)NK_ALIGN_PTR((baker->outline_rects + glyph_count), nk_range_align);
     baker->alloc = *alloc;
     return baker;
+}
+NK_INTERN int
+nk_range_contains(const nk_rune *range, nk_rune codepoint)
+{
+    for (; range[0] && range[1]; range += 2) {
+        if (codepoint >= range[0] && codepoint <= range[1])
+            return nk_true;
+    }
+    return nk_false;
+}
+NK_INTERN void
+nk_font_outline_rects(const struct nk_font_config *cfg, struct nk_font_bake_data *tmp)
+{
+    int i, j, k = 0;
+    for (i = 0; i < (int)tmp->range_count; ++i) {
+        const struct nk_tt_pack_range *range = &tmp->ranges[i];
+        for (j = 0; j < range->num_chars; ++j, ++k) {
+            struct nk_rp_rect *o = &tmp->outline_rects[k];
+            nk_rune codepoint = (nk_rune)(range->first_unicode_codepoint_in_range + j);
+            nk_zero(o, sizeof(*o));
+            if (!cfg->outline_width)
+                continue;
+            if (cfg->outline_range && !nk_range_contains(cfg->outline_range, codepoint))
+                continue;
+            o->w = (nk_rp_coord)(tmp->rects[k].w + 2 * cfg->outline_width * cfg->oversample_h);
+            o->h = (nk_rp_coord)(tmp->rects[k].h + 2 * cfg->outline_width * cfg->oversample_v);
+        }
+    }
+}
+/* Fills each outline rect with the max-filter of its glyph's alpha over a
+ * disc of the outline radius */
+NK_INTERN void
+nk_font_bake_outlines(unsigned char *pixels, int stride, int pad,
+    const struct nk_font_config *cfg, const struct nk_font_bake_data *tmp)
+{
+    int i, j, k = 0;
+    const int rx = cfg->outline_width * cfg->oversample_h;
+    const int ry = cfg->outline_width * cfg->oversample_v;
+    const float limit = (float)(cfg->outline_width * cfg->outline_width + cfg->outline_width);
+
+    for (i = 0; i < (int)tmp->range_count; ++i) {
+        const struct nk_tt_pack_range *range = &tmp->ranges[i];
+        for (j = 0; j < range->num_chars; ++j, ++k) {
+            const struct nk_rp_rect *o = &tmp->outline_rects[k];
+            const struct nk_tt_packedchar *pc = &range->chardata_for_range[j];
+            int x, y, dx, dy, gw, gh;
+            if (!o->w || !o->was_packed || !tmp->rects[k].was_packed)
+                continue;
+            gw = pc->x1 - pc->x0;
+            gh = pc->y1 - pc->y0;
+            for (y = 0; y < gh + 2 * ry; ++y) {
+                for (x = 0; x < gw + 2 * rx; ++x) {
+                    unsigned char best = 0;
+                    for (dy = -ry; dy <= ry; ++dy) {
+                        int sy = y - ry + dy;
+                        float fy = (float)dy / (float)cfg->oversample_v;
+                        if (sy < 0 || sy >= gh)
+                            continue;
+                        for (dx = -rx; dx <= rx; ++dx) {
+                            int sx = x - rx + dx;
+                            float fx = (float)dx / (float)cfg->oversample_h;
+                            unsigned char a;
+                            if (sx < 0 || sx >= gw || fx * fx + fy * fy > limit)
+                                continue;
+                            a = pixels[(pc->y0 + sy) * stride + pc->x0 + sx];
+                            best = NK_MAX(best, a);
+                        }
+                    }
+                    pixels[(o->y + pad + y) * stride + o->x + pad + x] = best;
+                }
+            }
+        }
+    }
+}
+NK_INTERN void
+nk_font_outline_glyph(struct nk_font_glyph *outline, const struct nk_font_glyph *glyph,
+    const struct nk_rp_rect *o, const struct nk_tt_packedchar *pc,
+    const struct nk_font_config *cfg, int width, int height, int pad)
+{
+    float r = (float)cfg->outline_width;
+    float u0, v0, u1, v1;
+
+    nk_zero(outline, sizeof(*outline));
+    if (!o->w || !o->was_packed)
+        return;
+
+    outline->codepoint = glyph->codepoint;
+    outline->xadvance = glyph->xadvance;
+    outline->x0 = glyph->x0 - r;
+    outline->y0 = glyph->y0 - r;
+    outline->x1 = glyph->x1 + r;
+    outline->y1 = glyph->y1 + r;
+    outline->w = glyph->w + 2 * r;
+    outline->h = glyph->h + 2 * r;
+
+    u0 = (float)(o->x + pad);
+    v0 = (float)(o->y + pad);
+    u1 = u0 + (float)(pc->x1 - pc->x0 + 2 * cfg->outline_width * cfg->oversample_h);
+    v1 = v0 + (float)(pc->y1 - pc->y0 + 2 * cfg->outline_width * cfg->oversample_v);
+    if (cfg->coord_type == NK_COORD_PIXEL) {
+        outline->u0 = u0;
+        outline->v0 = v0;
+        outline->u1 = u1;
+        outline->v1 = v1;
+    } else {
+        outline->u0 = u0 / (float)width;
+        outline->v0 = v0 / (float)height;
+        outline->u1 = u1 / (float)width;
+        outline->v1 = v1 / (float)height;
+    }
 }
 NK_INTERN int
 nk_font_bake_pack(struct nk_font_baker *baker,
@@ -13230,10 +13391,16 @@ nk_font_bake_pack(struct nk_font_baker *baker,
                     tmp->ranges, (int)tmp->range_count, tmp->rects);
                 nk_rp_pack_rects((struct nk_rp_context*)baker->spc.pack_info, tmp->rects, (int)n);
 
+                tmp->outline_rects = baker->outline_rects + (tmp->rects - baker->rects);
+                nk_font_outline_rects(cfg, tmp);
+                nk_rp_pack_rects((struct nk_rp_context*)baker->spc.pack_info, tmp->outline_rects, (int)n);
+
                 /* texture height */
                 for (i = 0; i < n; ++i) {
                     if (tmp->rects[i].was_packed)
                         *height = NK_MAX(*height, tmp->rects[i].y + tmp->rects[i].h);
+                    if (tmp->outline_rects[i].was_packed)
+                        *height = NK_MAX(*height, tmp->outline_rects[i].y + tmp->outline_rects[i].h);
                 }
             } while ((it = it->n) != config_iter);
         }
@@ -13247,7 +13414,7 @@ nk_font_bake_pack(struct nk_font_baker *baker,
 }
 NK_INTERN void
 nk_font_bake(struct nk_font_baker *baker, void *image_memory, int width, int height,
-    struct nk_font_glyph *glyphs, int glyphs_count,
+    struct nk_font_glyph *glyphs, struct nk_font_glyph *outlines, int glyphs_count,
     const struct nk_font_config *config_list, int font_count)
 {
     int input_i = 0;
@@ -13278,6 +13445,8 @@ nk_font_bake(struct nk_font_baker *baker, void *image_memory, int width, int hei
             nk_tt_PackSetOversampling(&baker->spc, cfg->oversample_h, cfg->oversample_v);
             nk_tt_PackFontRangesRenderIntoRects(&baker->spc, &tmp->info, tmp->ranges,
                 (int)tmp->range_count, tmp->rects, &baker->alloc);
+            nk_font_bake_outlines(baker->spc.pixels, baker->spc.stride_in_bytes,
+                baker->spc.padding, cfg, tmp);
         } while ((it = it->n) != config_iter);
     } nk_tt_PackEnd(&baker->spc, &baker->alloc);
 
@@ -13347,6 +13516,9 @@ nk_font_bake(struct nk_font_baker *baker, void *image_memory, int width, int hei
                     glyph->xadvance = (pc->xadvance + cfg->spacing.x);
                     if (cfg->pixel_snap)
                         glyph->xadvance = (float)(int)(glyph->xadvance + 0.5f);
+                    nk_font_outline_glyph(&outlines[glyph - glyphs], glyph,
+                        &tmp->outline_rects[pc - tmp->ranges[0].chardata_for_range],
+                        pc, cfg, width, height, baker->spc.padding);
                     glyph_count++;
                 }
             }
@@ -13467,6 +13639,33 @@ nk_font_query_font_glyph(nk_handle handle, float height,
     glyph->uv[0] = nk_vec2(g->u0, g->v0);
     glyph->uv[1] = nk_vec2(g->u1, g->v1);
 }
+NK_INTERN void
+nk_font_query_outline_glyph(nk_handle handle, float height,
+    struct nk_user_font_glyph *glyph, nk_rune codepoint, nk_rune next_codepoint)
+{
+    float scale;
+    const struct nk_font_glyph *g;
+    struct nk_font *font;
+
+    NK_ASSERT(glyph);
+    NK_UNUSED(next_codepoint);
+
+    font = (struct nk_font*)handle.ptr;
+    NK_ASSERT(font);
+    NK_ASSERT(font->outlines);
+    if (!font || !glyph)
+        return;
+
+    scale = height/font->info.height;
+    g = nk_font_find_glyph(font, codepoint);
+    glyph->xadvance = (g->xadvance * scale);
+    g = &font->outlines[g - font->glyphs];
+    glyph->width = (g->x1 - g->x0) * scale;
+    glyph->height = (g->y1 - g->y0) * scale;
+    glyph->offset = nk_vec2(g->x0 * scale, g->y0 * scale);
+    glyph->uv[0] = nk_vec2(g->u0, g->v0);
+    glyph->uv[1] = nk_vec2(g->u1, g->v1);
+}
 #endif
 NK_API const struct nk_font_glyph*
 nk_font_find_glyph(struct nk_font *font, nk_rune unicode)
@@ -13499,7 +13698,8 @@ nk_font_find_glyph(struct nk_font *font, nk_rune unicode)
 NK_INTERN void
 nk_font_init(struct nk_font *font, float pixel_height,
     nk_rune fallback_codepoint, struct nk_font_glyph *glyphs,
-    const struct nk_baked_font *baked_font, nk_handle atlas)
+    struct nk_font_glyph *outlines, const struct nk_baked_font *baked_font,
+    nk_handle atlas)
 {
     struct nk_baked_font baked;
     NK_ASSERT(font);
@@ -13513,6 +13713,7 @@ nk_font_init(struct nk_font *font, float pixel_height,
     font->info = baked;
     font->scale = (float)pixel_height / (float)font->info.height;
     font->glyphs = &glyphs[baked_font->glyph_offset];
+    font->outlines = &outlines[baked_font->glyph_offset];
     font->texture = atlas;
     font->fallback_codepoint = fallback_codepoint;
     font->fallback = nk_font_find_glyph(font, fallback_codepoint);
@@ -13522,6 +13723,7 @@ nk_font_init(struct nk_font *font, float pixel_height,
     font->handle.userdata.ptr = font;
 #ifdef NK_INCLUDE_VERTEX_BUFFER_OUTPUT
     font->handle.query = nk_font_query_font_glyph;
+    font->handle.query_outline = nk_font_query_outline_glyph;
     font->handle.texture = font->texture;
 #endif
 }
@@ -13891,6 +14093,10 @@ nk_font_atlas_begin(struct nk_font_atlas *atlas)
         atlas->permanent.free(atlas->permanent.userdata, atlas->glyphs);
         atlas->glyphs = 0;
     }
+    if (atlas->outline_glyphs) {
+        atlas->permanent.free(atlas->permanent.userdata, atlas->outline_glyphs);
+        atlas->outline_glyphs = 0;
+    }
     if (atlas->pixel) {
         atlas->permanent.free(atlas->permanent.userdata, atlas->pixel);
         atlas->pixel = 0;
@@ -14157,6 +14363,12 @@ nk_font_atlas_bake(struct nk_font_atlas *atlas, int *width, int *height,
     NK_ASSERT(atlas->glyphs);
     if (!atlas->glyphs)
         goto failed;
+    atlas->outline_glyphs = (struct nk_font_glyph*)atlas->permanent.alloc(
+        atlas->permanent.userdata,0, sizeof(struct nk_font_glyph)*(nk_size)atlas->glyph_count);
+    NK_ASSERT(atlas->outline_glyphs);
+    if (!atlas->outline_glyphs)
+        goto failed;
+    nk_zero(atlas->outline_glyphs, sizeof(struct nk_font_glyph)*(nk_size)atlas->glyph_count);
 
     /* pack all glyphs into a tight fit space */
     atlas->custom.w = (NK_CURSOR_DATA_W*2)+1;
@@ -14173,7 +14385,7 @@ nk_font_atlas_bake(struct nk_font_atlas *atlas, int *width, int *height,
 
     /* bake glyphs and custom white pixel into image */
     nk_font_bake(baker, atlas->pixel, *width, *height,
-        atlas->glyphs, atlas->glyph_count, atlas->config, atlas->font_num);
+        atlas->glyphs, atlas->outline_glyphs, atlas->glyph_count, atlas->config, atlas->font_num);
     nk_font_bake_custom_data(atlas->pixel, *width, *height, atlas->custom,
             nk_custom_cursor_data, NK_CURSOR_DATA_W, NK_CURSOR_DATA_H, '.', 'X');
 
@@ -14195,7 +14407,7 @@ nk_font_atlas_bake(struct nk_font_atlas *atlas, int *width, int *height,
         struct nk_font *font = font_iter;
         struct nk_font_config *config = font->config;
         nk_font_init(font, config->size, config->fallback_glyph, atlas->glyphs,
-            config->font, nk_handle_ptr(0));
+            atlas->outline_glyphs, config->font, nk_handle_ptr(0));
     }
 
     /* initialize each cursor */
@@ -14230,6 +14442,10 @@ failed:
     if (atlas->glyphs) {
         atlas->permanent.free(atlas->permanent.userdata, atlas->glyphs);
         atlas->glyphs = 0;
+    }
+    if (atlas->outline_glyphs) {
+        atlas->permanent.free(atlas->permanent.userdata, atlas->outline_glyphs);
+        atlas->outline_glyphs = 0;
     }
     if (atlas->pixel) {
         atlas->temporary.free(atlas->temporary.userdata, atlas->pixel);
@@ -14331,6 +14547,8 @@ nk_font_atlas_clear(struct nk_font_atlas *atlas)
     }
     if (atlas->glyphs)
         atlas->permanent.free(atlas->permanent.userdata, atlas->glyphs);
+    if (atlas->outline_glyphs)
+        atlas->permanent.free(atlas->permanent.userdata, atlas->outline_glyphs);
     nk_zero_struct(*atlas);
 }
 #endif
@@ -14773,6 +14991,8 @@ nk_style_from_table(struct nk_context *ctx, const struct nk_color *table)
     text = &style->text;
     text->color = table[NK_COLOR_TEXT];
     text->padding = nk_vec2(0,0);
+    text->outline_color = nk_rgba(0,0,0,0);
+    text->outline_width = 0;
 
     /* default button */
     button = &style->button;
@@ -19739,6 +19959,13 @@ nk_widget_text(struct nk_command_buffer *o, struct nk_rect b,
     const char *string, int len, const struct nk_text *t,
     nk_flags a, const struct nk_user_font *f)
 {
+    nk_widget_text_outlined(o, b, string, len, t, a, f, nk_rgba(0,0,0,0));
+}
+NK_LIB void
+nk_widget_text_outlined(struct nk_command_buffer *o, struct nk_rect b,
+    const char *string, int len, const struct nk_text *t,
+    nk_flags a, const struct nk_user_font *f, struct nk_color outline)
+{
     struct nk_rect label;
     float text_width;
 
@@ -19777,12 +20004,19 @@ nk_widget_text(struct nk_command_buffer *o, struct nk_rect b,
         label.y = b.y + b.h - f->height;
         label.h = f->height;
     }
-    nk_draw_text(o, label, (const char*)string, len, f, t->background, t->text);
+    nk_draw_text_outlined(o, label, (const char*)string, len, f, t->background, t->text, outline);
 }
 NK_LIB void
 nk_widget_text_wrap(struct nk_command_buffer *o, struct nk_rect b,
     const char *string, int len, const struct nk_text *t,
     const struct nk_user_font *f)
+{
+    nk_widget_text_wrap_outlined(o, b, string, len, t, f, nk_rgba(0,0,0,0));
+}
+NK_LIB void
+nk_widget_text_wrap_outlined(struct nk_command_buffer *o, struct nk_rect b,
+    const char *string, int len, const struct nk_text *t,
+    const struct nk_user_font *f, struct nk_color outline)
 {
     float width;
     int glyphs = 0;
@@ -19812,11 +20046,16 @@ nk_widget_text_wrap(struct nk_command_buffer *o, struct nk_rect b,
     fitting = nk_text_clamp(f, string, len, line.w, &glyphs, &width, seperator,NK_LEN(seperator));
     while (done < len) {
         if (!fitting || line.y + line.h >= (b.y + b.h)) break;
-        nk_widget_text(o, line, &string[done], fitting, &text, NK_TEXT_LEFT, f);
+        nk_widget_text_outlined(o, line, &string[done], fitting, &text, NK_TEXT_LEFT, f, outline);
         done += fitting;
         line.y += f->height + 2 * t->padding.y;
         fitting = nk_text_clamp(f, &string[done], len - done, line.w, &glyphs, &width, seperator,NK_LEN(seperator));
     }
+}
+NK_INTERN struct nk_color
+nk_style_text_outline(const struct nk_style *style)
+{
+    return (style->text.outline_width > 0) ? style->text.outline_color : nk_rgba(0,0,0,0);
 }
 NK_API void
 nk_text_colored(struct nk_context *ctx, const char *str, int len,
@@ -19843,7 +20082,8 @@ nk_text_colored(struct nk_context *ctx, const char *str, int len,
     text.padding.y = item_padding.y;
     text.background = style->window.background;
     text.text = color;
-    nk_widget_text(&win->buffer, bounds, str, len, &text, alignment, style->font);
+    nk_widget_text_outlined(&win->buffer, bounds, str, len, &text, alignment, style->font,
+        nk_style_text_outline(style));
 }
 NK_API void
 nk_text_wrap_colored(struct nk_context *ctx, const char *str,
@@ -19870,7 +20110,8 @@ nk_text_wrap_colored(struct nk_context *ctx, const char *str,
     text.padding.y = item_padding.y;
     text.background = style->window.background;
     text.text = color;
-    nk_widget_text_wrap(&win->buffer, bounds, str, len, &text, style->font);
+    nk_widget_text_wrap_outlined(&win->buffer, bounds, str, len, &text, style->font,
+        nk_style_text_outline(style));
 }
 NK_API int nk_text_lines(struct nk_context *ctx, const char *str)
 {

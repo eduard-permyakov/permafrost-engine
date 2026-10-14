@@ -335,6 +335,17 @@ static void ui_init_font_stash(struct nk_context *ctx)
             0
         };
 
+        static const nk_rune outline_ranges[] = {
+            /* English */
+            0x0020, 0x00FF,
+            /* Cyrillic */
+            0x0400, 0x052F,
+            0x2DE0, 0x2DFF,
+            0xA640, 0xA69F,
+            /* Terminator */
+            0
+        };
+
         enum font_size{
             FONT_NORMAL,
             FONT_LARGE,
@@ -355,6 +366,8 @@ static void ui_init_font_stash(struct nk_context *ctx)
             config.oversample_h = 1;
             config.oversample_v = 1;
             config.range = glyph_ranges;
+            config.outline_width = (font_size >= 32) ? 2 : 1;
+            config.outline_range = outline_ranges;
 
             struct nk_font *font = nk_font_atlas_add_from_file(&s_atlas, path, font_size, &config);
             if(!font)
