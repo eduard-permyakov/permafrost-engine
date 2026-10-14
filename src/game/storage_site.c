@@ -843,6 +843,10 @@ static void on_update_ui(void *user, void *event)
     struct sval strip_setting;
     status = Settings_Get("pf.game.storage_site_strip", &strip_setting);
     assert(status == SS_OKAY);
+
+    struct sval hover_setting;
+    status = Settings_Get("pf.game.storage_site_ui_on_hover", &hover_setting);
+    assert(status == SS_OKAY);
     (void)status;
 
     uint32_t strips[STRIP_MAX_SITES];
@@ -871,7 +875,7 @@ static void on_update_ui(void *user, void *event)
 
         bool full = (ui_setting.as_int != SS_UI_SHOW_SELECTED)
                  || pool_selected(key, pool_id)
-                 || pool_hovered(key, pool_id);
+                 || (hover_setting.as_bool && pool_hovered(key, pool_id));
         bool strip = !full && strip_setting.as_bool
                   && (player_factions & (1 << G_GetFactionID(key)));
         if(!full && !strip)
@@ -1235,7 +1239,7 @@ static bool storage_site_ui_mode_validate(const struct sval *val)
     return true;
 }
 
-static bool storage_site_strip_validate(const struct sval *val)
+static bool bool_setting_validate(const struct sval *val)
 {
     return (val->type == ST_TYPE_BOOL);
 }
@@ -1379,7 +1383,19 @@ bool G_StorageSite_Init(void)
             .as_bool = true
         },
         .prio = 0,
-        .validate = storage_site_strip_validate,
+        .validate = bool_setting_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.game.storage_site_ui_on_hover",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_setting_validate,
         .commit = NULL,
     });
     assert(status == SS_OKAY);
