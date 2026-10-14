@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2019-2023 Eduard Permyakov 
+ *  Copyright (C) 2019-2026 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -1641,6 +1641,36 @@ static bool attr_is_user_descr(PyObject *obj, PyObject *name)
     return false;
 }
 
+/* Query if an attribute of an object is found on its' type (or one of
+ * the type's bases) rather than on the object itself, in which case
+ * writing it back would shadow it with a copy in the object's own dict.
+ */
+static bool attr_is_inherited(PyObject *obj, PyObject *name)
+{
+    assert(PyString_Check(name));
+
+    PyObject *dict;
+    if(PyType_Check(obj)) {
+        dict = ((PyTypeObject*)obj)->tp_dict;
+    }else{
+        PyObject **dictptr = _PyObject_GetDictPtr(obj);
+        if(!dictptr)
+            return false;
+        dict = *dictptr;
+    }
+
+    if(dict && PyDict_GetItem(dict, name))
+        return false;
+
+    PyObject *descr = _PyType_Lookup(obj->ob_type, name);
+    if(descr
+    && PyType_HasFeature(descr->ob_type, Py_TPFLAGS_HAVE_CLASS)
+    && descr->ob_type->tp_descr_set)
+        return false;
+
+    return PyType_Check(obj) || (descr != NULL);
+}
+
 
 /* Non-derived attributes are those that don't return a new 
  * object on attribute lookup. 
@@ -1665,6 +1695,9 @@ static PyObject *nonderived_writable_attrs(PyObject *obj)
         assert(PyString_Check(name));
 
         if(attr_is_user_descr(obj, name))
+            continue;
+
+        if(attr_is_inherited(obj, name))
             continue;
 
         /* Don't touch the frame's locals - getting this causes modification of 
