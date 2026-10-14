@@ -5056,7 +5056,7 @@ static int PyHarvesterEntity_set_pinned_work(PyHarvesterEntityObject *self, PyOb
         PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
         return -1;
     }
-    if(value != Py_None && !PyString_Check(value)) {
+    if(!value || (value != Py_None && !PyString_Check(value))) {
         PyErr_SetString(PyExc_TypeError, "Pinned work must be a resource name or None.");
         return -1;
     }

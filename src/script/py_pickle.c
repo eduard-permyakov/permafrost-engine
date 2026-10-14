@@ -1582,7 +1582,10 @@ static int setattr_nondestructive(PyObject *obj, PyObject *name, PyObject *val)
     if(PyType_Check(obj) && PyFunction_Check(val)) {
     
         PyObject *descr =_PyType_Lookup((PyTypeObject*)obj, name);
-        assert(descr);
+        if(!descr) {
+            SET_RUNTIME_EXC("No descriptor for attribute [%s] of a type", PyString_AS_STRING(name));
+            return -1;
+        }
         PyObject_SetAttr(obj, name, descr);
     }else{
         PyObject_SetAttr(obj, name, val);
@@ -1593,6 +1596,11 @@ static int setattr_nondestructive(PyObject *obj, PyObject *name, PyObject *val)
 
     int ret = 0;
     PyObject *readback = PyObject_GetAttr(obj, name);
+    if(!readback) {
+        PyErr_Clear();
+        SET_RUNTIME_EXC("Attribute [%s] could not be read back after it was set", PyString_AS_STRING(name));
+        return -1;
+    }
 
     if(readback != val) {
 
@@ -1671,6 +1679,29 @@ static bool attr_is_inherited(PyObject *obj, PyObject *name)
     return PyType_Check(obj) || (descr != NULL);
 }
 
+/* Only what the object holds itself can be deleted; the rest belongs to its type */
+static bool attr_in_own_dict(PyObject *obj, PyObject *name)
+{
+    PyObject *dict;
+    if(PyType_Check(obj)) {
+        dict = ((PyTypeObject*)obj)->tp_dict;
+    }else{
+        PyObject **dictptr = _PyObject_GetDictPtr(obj);
+        dict = dictptr ? *dictptr : NULL;
+    }
+    return dict && PyDict_GetItem(dict, name);
+}
+
+/* A property's value is computed from the rest of the object's state, which
+ * may not be restored yet when it is set back. */
+static bool attr_is_property(PyObject *obj, PyObject *name)
+{
+    if(PyType_Check(obj))
+        return false;
+    PyObject *descr = _PyType_Lookup(obj->ob_type, name);
+    return descr && PyObject_TypeCheck(descr, &PyProperty_Type);
+}
+
 
 /* Non-derived attributes are those that don't return a new 
  * object on attribute lookup. 
@@ -1698,6 +1729,9 @@ static PyObject *nonderived_writable_attrs(PyObject *obj)
             continue;
 
         if(attr_is_inherited(obj, name))
+            continue;
+
+        if(attr_is_property(obj, name))
             continue;
 
         /* Don't touch the frame's locals - getting this causes modification of 
@@ -4997,7 +5031,7 @@ static void del_extra_attrs(PyObject *obj, PyObject **attrs_base, size_t npairs)
             }
         }
 
-        if(!contains) {
+        if(!contains && attr_in_own_dict(obj, key)) {
             Py_INCREF(key);
             todel[ndel++] = key;
         }
@@ -5051,7 +5085,12 @@ static int op_ext_setattrs(struct unpickle_ctx *ctx, SDL_RWops *rw)
         PyObject *val = vec_pobj_pop(&ctx->stack);
         PyObject *key = vec_pobj_pop(&ctx->stack);
 
-        ret = (0 == setattr_nondestructive(obj, key, val)) ? 0 : -1;
+        /* Older saves hold computed properties too */
+        if(PyString_Check(key) && attr_is_property(obj, key)) {
+            ret = 0;
+        }else{
+            ret = (0 == setattr_nondestructive(obj, key, val)) ? 0 : -1;
+        }
 
         Py_DECREF(key);
         Py_DECREF(val);
@@ -6106,15 +6145,11 @@ static int convert_frame(PyFrameObject *frame, PyCodeObject *code,
                 builtins = NULL;
         }
         if (builtins == NULL) {
-            /* No builtins!              Make up a minimal one
-               Give them 'None', at least. */
-            builtins = PyDict_New();
-            if (builtins == NULL
-            || PyDict_SetItemString(builtins, "None", Py_None) < 0)
-                return -1;
+            /* The globals may not be filled in yet while the graph is being
+             * unpickled: take the interpreter's own builtins */
+            builtins = tstate->interp->builtins;
         }
-        else
-            Py_INCREF(builtins);
+        Py_INCREF(builtins);
     }
     else {
         /* If we share the globals, we share the builtins.
