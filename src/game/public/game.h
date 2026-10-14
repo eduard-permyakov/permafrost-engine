@@ -637,6 +637,9 @@ bool   G_Building_Supply(uint32_t uid);
 bool   G_Building_Complete(uint32_t uid);
 bool   G_Building_Unobstructed(uint32_t uid);
 bool   G_Building_Placeable(uint32_t uid);
+/* Whether a marked site can be founded: placeable but for its own set aside ground,
+ * with nobody standing on it */
+bool   G_Building_Foundable(uint32_t uid);
 int    G_Building_ClearFootprint(uint32_t uid);
 bool   G_Building_IsMarked(uint32_t uid);
 bool   G_Building_IsFounded(uint32_t uid);

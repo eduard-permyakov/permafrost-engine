@@ -2285,11 +2285,12 @@ static khash_t(td) *n_moving_entities_tileset(struct nav_private *priv, vec3_t m
  * another building, as the placing faction and its allies are cleared away.
  */
 static bool n_tile_obstructs_building(const struct nav_chunk *chunk, struct tile_desc td,
-                                      int faction_id, uint16_t enemies)
+                                      int faction_id, uint16_t enemies, bool reserved)
 {
     if(faction_id < 0)
         return chunk->blockers[td.tile_r][td.tile_c] > 0;
-    if(chunk->static_blockers[td.tile_r][td.tile_c] || chunk->soft_blocks[td.tile_r][td.tile_c])
+    if(chunk->static_blockers[td.tile_r][td.tile_c] 
+    || (reserved && chunk->soft_blocks[td.tile_r][td.tile_c]))
         return true;
     for(int i = 0; i < MAX_FACTIONS; i++) {
         if((enemies & (0x1 << i)) && chunk->factions[i][td.tile_r][td.tile_c])
@@ -4963,7 +4964,7 @@ void N_RenderBuildableTiles(void *nav_private, const struct map *map,
         assert(tile);
         bool shore = (tile->ramp_height > 1) && (tile->base_height < 0);
 
-        if((n_tile_obstructs_building(chunk, tds[i], faction_id, enemies)
+        if((n_tile_obstructs_building(chunk, tds[i], faction_id, enemies, true)
         || ((allow_shore ? !shore : true) && chunk->cost_base[tds[i].tile_r][tds[i].tile_c] == COST_IMPASSABLE)
         || !G_Fog_PlayerExplored((vec2_t){ws_center_homo.x, ws_center_homo.z})
         || (kh_get(td, tileset, td_key(tds + i)) != kh_end(tileset))
@@ -7351,7 +7352,8 @@ void N_GetResolution(const void *nav_private, struct map_resolution *out)
 }
 
 bool N_ObjectBuildable(void *nav_private, const struct map *map, enum nav_layer layer, 
-                       bool allow_shore, int faction_id, vec3_t map_pos, const struct obb *obb)
+                       bool allow_shore, int faction_id, bool reserved, vec3_t map_pos, 
+                       const struct obb *obb)
 {
     assert(Sched_UsingBigStack());
 
@@ -7395,7 +7397,7 @@ bool N_ObjectBuildable(void *nav_private, const struct map *map, enum nav_layer 
         assert(tile);
         bool shore = (tile->ramp_height > 1) && (tile->base_height < 0);
     
-        if(n_tile_obstructs_building(chunk, tds[i], faction_id, enemies)
+        if(n_tile_obstructs_building(chunk, tds[i], faction_id, enemies, reserved)
         || ((allow_shore ? !shore : true) && chunk->cost_base[tds[i].tile_r][tds[i].tile_c] == COST_IMPASSABLE)
         || !G_Fog_PlayerExplored((vec2_t){center.x, center.z})
         || (kh_get(td, tileset, td_key(tds + i)) != kh_end(tileset))

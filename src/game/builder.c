@@ -217,7 +217,7 @@ static void on_build_anim_finished(void *user, void *event)
 
 static bool try_found_site(uint32_t target)
 {
-    bool clear = G_Building_GetPathable(target) || G_Building_Unobstructed(target);
+    bool clear = G_Building_GetPathable(target) || G_Building_Foundable(target);
     if(!clear || !G_Building_Found(target, true))
         return false;
     E_Entity_Notify(EVENT_BUILDING_FOUNDED, target, NULL, ES_ENGINE);

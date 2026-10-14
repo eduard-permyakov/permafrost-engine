@@ -1246,9 +1246,11 @@ void M_NavGetResolution(const struct map *map, struct map_resolution *out)
 }
 
 bool M_NavObjectBuildable(const struct map *map, enum nav_layer layer, 
-                          bool allow_shore, int faction_id, const struct obb *obb)
+                          bool allow_shore, int faction_id, bool reserved, 
+                          const struct obb *obb)
 {
-    return N_ObjectBuildable(map->nav_private, map, layer, allow_shore, faction_id, map->pos, obb);
+    return N_ObjectBuildable(map->nav_private, map, layer, allow_shore, faction_id, 
+        reserved, map->pos, obb);
 }
 
 bool M_NavHasEntityLOS(const struct map *map, enum nav_layer layer, 

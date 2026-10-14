@@ -658,11 +658,12 @@ uint32_t M_NavDestIDForPos(const struct map *map, vec2_t xz_pos, enum nav_layer 
 uint32_t M_NavDestIDForPosAttacking(const struct map *map, vec2_t xz_pos, 
                                     enum nav_layer layer, int faction_id);
 void     M_NavGetResolution(const struct map *map, struct map_resolution *out);
-/* A negative 'faction_id' asks whether the object can be founded, which any
- * unit under it prevents; otherwise, whether the faction may place it, which
- * its own and its allies' units do not prevent but ground set aside does */
+/* A negative 'faction_id' asks whether nothing at all stands under the object;
+ * otherwise, whether the faction may place it, which its own and its allies'
+ * units do not prevent, and ground set aside does when 'reserved' */
 bool     M_NavObjectBuildable(const struct map *map, enum nav_layer layer,
-                              bool allow_shore, int faction_id, const struct obb *obb);
+                              bool allow_shore, int faction_id, bool reserved, 
+                              const struct obb *obb);
 bool     M_NavIsMaximallyClose(const struct map *map, enum nav_layer layer, 
                                vec2_t xz_pos, vec2_t xz_dest, float tolerance);
 bool     M_NavIsAdjacentToImpassable(const struct map *map, enum nav_layer layer, vec2_t xz_pos);

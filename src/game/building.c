@@ -899,29 +899,61 @@ bool G_Building_Complete(uint32_t uid)
     return true;
 }
 
-static bool building_buildable(uint32_t uid, int faction_id)
+static bool building_buildable(uint32_t uid, int faction_id, bool reserved)
 {
     struct obb obb;
     Entity_CurrentOBB(uid, &obb, true);
     uint32_t flags = G_FlagsGet(uid);
 
     if(flags & ENTITY_FLAG_WATER) {
-        return M_NavObjectBuildable(s_map, NAV_LAYER_WATER_1X1, true, faction_id, &obb)
+        return M_NavObjectBuildable(s_map, NAV_LAYER_WATER_1X1, true, faction_id, reserved, &obb)
             && M_ObjectAdjacentToWater(s_map, &obb)
             && M_ObjectAdjacentToLand(s_map, &obb);
     }else{
-        return M_NavObjectBuildable(s_map, NAV_LAYER_GROUND_1X1, false, faction_id, &obb);
+        return M_NavObjectBuildable(s_map, NAV_LAYER_GROUND_1X1, false, faction_id, reserved, &obb);
     }
+}
+
+static bool centred_in_footprint(uint32_t uid, void *arg)
+{
+    const struct footprint_ctx *ctx = arg;
+    if(uid == ctx->building)
+        return false;
+
+    uint32_t flags = G_FlagsGet(uid);
+    if(!(flags & ENTITY_FLAG_MOVABLE)
+    ||  (flags & (ENTITY_FLAG_ZOMBIE | ENTITY_FLAG_BUILDING)))
+        return false;
+
+    vec2_t xz = G_Pos_GetXZ(uid);
+    vec3_t point = (vec3_t){xz.x, ctx->obb->center.y, xz.z};
+    return C_PointInsideOBB(point, *ctx->obb);
 }
 
 bool G_Building_Unobstructed(uint32_t uid)
 {
-    return building_buildable(uid, -1);
+    return building_buildable(uid, -1, true);
 }
 
 bool G_Building_Placeable(uint32_t uid)
 {
-    return building_buildable(uid, G_GetFactionID(uid));
+    return building_buildable(uid, G_GetFactionID(uid), true);
+}
+
+bool G_Building_Foundable(uint32_t uid)
+{
+    /* Its own set aside ground lies under it */
+    if(!building_buildable(uid, G_GetFactionID(uid), false))
+        return false;
+
+    /* A body standing just outside it overlaps its edge, but takes no harm from it rising */
+    struct obb obb;
+    Entity_CurrentOBB(uid, &obb, true);
+    vec2_t xz_min, xz_max;
+    obb_xz_bounds(&obb, &xz_min, &xz_max);
+    struct footprint_ctx ctx = (struct footprint_ctx){ uid, &obb, 0 };
+    uint32_t ents[8];
+    return G_Pos_EntsInRectWithPred(xz_min, xz_max, ents, ARR_SIZE(ents), centred_in_footprint, &ctx) == 0;
 }
 
 /* The spot just past the nearest side of the footprint */

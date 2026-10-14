@@ -789,7 +789,7 @@ void      N_GetResolution(const void *nav_private, struct map_resolution *out);
  */
 bool      N_ObjectBuildable(void *nav_private, const struct map *map, 
                             enum nav_layer layer, bool allow_shore, int faction_id,
-                            vec3_t map_pos, const struct obb *obb);
+                            bool reserved, vec3_t map_pos, const struct obb *obb);
 
 /* ------------------------------------------------------------------------
  * Will return the XZ map position that the entity at the source location
