@@ -4477,6 +4477,9 @@ bool G_SaveEntityState(SDL_RWops *stream)
     if(!G_Group_SaveState(stream))
         return false;
 
+    if(!G_Population_SaveState(stream))
+        return false;
+
     return true;
 }
 
@@ -4546,7 +4549,8 @@ bool G_LoadEntityState(SDL_RWops *stream)
         return false;
     }
 
-    if(!G_Command_LoadState(stream)) {
+    /* Saves made before units kept a queue of orders have none */
+    if(Attr_NextKeyIs(stream, "num_queues") && !G_Command_LoadState(stream)) {
         fprintf(stderr, "Could not load command state.\n");
         return false;
     }
@@ -4568,6 +4572,12 @@ bool G_LoadEntityState(SDL_RWops *stream)
 
     if(!G_Group_LoadState(stream)) {
         fprintf(stderr, "Could not load group state.\n");
+        return false;
+    }
+
+    /* Saves made before the population was kept end here */
+    if(Attr_NextKeyIs(stream, "num_contributors") && !G_Population_LoadState(stream)) {
+        fprintf(stderr, "Could not load population state.\n");
         return false;
     }
 
