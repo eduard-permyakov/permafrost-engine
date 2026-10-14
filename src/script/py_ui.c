@@ -353,7 +353,7 @@ static PyMethodDef PyWindow_methods[] = {
 
     {"image", 
     (PyCFunction)PyWindow_image, METH_VARARGS,
-    "Present an image at the specified path."},
+    "Present an image at the specified path, optionally tinted by an RGBA colour."},
 
     {"spacer", 
     (PyCFunction)PyWindow_spacer, METH_VARARGS,
@@ -1585,13 +1585,14 @@ static PyObject *PyWindow_color_picker(PyWindowObject *self, PyObject *args)
 static PyObject *PyWindow_image(PyWindowObject *self, PyObject *args)
 {
     const char *path;
+    int rgba[4] = {255, 255, 255, 255};
 
-    if(!PyArg_ParseTuple(args, "s", &path)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must be a string.");
+    if(!PyArg_ParseTuple(args, "s|(iiii)", &path, &rgba[0], &rgba[1], &rgba[2], &rgba[3])) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string and optionally an RGBA tuple.");
         return NULL;
     }
 
-    nk_image_texpath(s_nk_ctx, path);
+    nk_image_texpath_color(s_nk_ctx, path, nk_rgba(rgba[0], rgba[1], rgba[2], rgba[3]));
     Py_RETURN_NONE;
 }
 

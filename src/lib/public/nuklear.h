@@ -3048,6 +3048,7 @@ NK_API void nk_label_wrap(struct nk_context*, const char*);
 NK_API void nk_label_colored_wrap(struct nk_context*, const char*, struct nk_color);
 NK_API void nk_image(struct nk_context*, struct nk_image);
 NK_API void nk_image_texpath(struct nk_context *ctx, const char *texpath);
+NK_API void nk_image_texpath_color(struct nk_context *ctx, const char *texpath, struct nk_color col);
 NK_API void nk_image_color(struct nk_context*, struct nk_image, struct nk_color);
 #ifdef NK_INCLUDE_STANDARD_VARARGS
 NK_API void nk_labelf(struct nk_context*, nk_flags, NK_PRINTF_FORMAT_STRING const char*, ...) NK_PRINTF_VARARG_FUNC(3);
@@ -20226,6 +20227,11 @@ nk_image(struct nk_context *ctx, struct nk_image img)
 NK_API void
 nk_image_texpath(struct nk_context *ctx, const char *texpath)
 {
+    nk_image_texpath_color(ctx, texpath, nk_white);
+}
+NK_API void
+nk_image_texpath_color(struct nk_context *ctx, const char *texpath, struct nk_color col)
+{
     struct nk_window *win;
     struct nk_rect bounds;
 
@@ -20236,7 +20242,7 @@ nk_image_texpath(struct nk_context *ctx, const char *texpath)
 
     win = ctx->current;
     if (!nk_widget(&bounds, ctx)) return;
-    nk_draw_texpath(&win->buffer, bounds, texpath, nk_white);
+    nk_draw_texpath(&win->buffer, bounds, texpath, col);
 }
 NK_API void
 nk_image_color(struct nk_context *ctx, struct nk_image img, struct nk_color col)
