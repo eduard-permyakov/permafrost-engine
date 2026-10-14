@@ -286,13 +286,13 @@ void      N_RenderNavigationBlockers(void *nav_private, const struct map *map,
 /* ------------------------------------------------------------------------
  * Render the tiles under the OBB on which buildings can be placed. Buildable
  * tiles are those that are pathable, explored by the player, and not currently
- * blocked.
+ * blocked. See N_ObjectBuildable for 'faction_id'.
  * ------------------------------------------------------------------------
  */
 void      N_RenderBuildableTiles(void *nav_private, const struct map *map, 
                                  mat4x4_t *chunk_model, int chunk_r, int chunk_c, 
                                  const struct obb *obb, enum nav_layer layer,
-                                 bool blocked, bool allows_shore);
+                                 bool blocked, bool allows_shore, int faction_id);
 
 /* ------------------------------------------------------------------------
  * Debug rendering to show the 'cover' attribute of every map tile.
@@ -713,6 +713,18 @@ void      N_ReserveIncref(vec2_t xz_pos, float range, enum nav_layer layer, vec3
 void      N_ReserveDecref(vec2_t xz_pos, float range, enum nav_layer layer, vec3_t map_pos,
                           void *nav_private);
 
+/* ------------------------------------------------------------------------
+ * Set the tiles under the OBB aside for a faction, or give them back. Flow
+ * fields made for a faction keep off the ground set aside by any faction it
+ * is not at war with; those made for no faction keep off all of it.
+ * Buildings may not be placed on it.
+ * ------------------------------------------------------------------------
+ */
+void      N_SoftBlockIncrefOBB(void *nav_private, int faction_id, uint32_t flags,
+                               vec3_t map_pos, const struct obb *obb);
+void      N_SoftBlockDecrefOBB(void *nav_private, int faction_id, uint32_t flags,
+                               vec3_t map_pos, const struct obb *obb);
+
 void      N_BlockersIncrefOBB(void *nav_private, int faction_id, uint32_t flags,
                               vec3_t map_pos, const struct obb *obb);
 void      N_BlockersDecrefOBB(void *nav_private, int faction_id, uint32_t flags,
@@ -769,11 +781,14 @@ void      N_GetResolution(const void *nav_private, struct map_resolution *out);
 /* ------------------------------------------------------------------------
  * Returns true if the building with the specified OBB can be successfully
  * placed, meaning all tiles under it are pathable, explored by the player, 
- * and not currently blocked.
+ * and not currently blocked. A negative 'faction_id' asks whether it can be
+ * founded, which any unit on it prevents. Otherwise, it asks whether the
+ * faction may place it: units of factions not at war with it are not in the
+ * way, but ground another building has set aside is.
  * ------------------------------------------------------------------------
  */
 bool      N_ObjectBuildable(void *nav_private, const struct map *map, 
-                            enum nav_layer layer, bool allow_shore,
+                            enum nav_layer layer, bool allow_shore, int faction_id,
                             vec3_t map_pos, const struct obb *obb);
 
 /* ------------------------------------------------------------------------

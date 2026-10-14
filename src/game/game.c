@@ -50,6 +50,7 @@
 #include "building.h"
 #include "builder.h"
 #include "harvester.h"
+#include "command.h"
 #include "storage_site.h"
 #include "resource.h"
 #include "region.h"
@@ -225,6 +226,7 @@ static void g_init_map(void)
     G_Region_Init(s_gs.map);
     G_Roads_Init(s_gs.map);
     G_Harvester_Init(s_gs.map);
+    G_Command_Init();
     G_Automation_Init();
     G_Provision_Init(s_gs.map);
     G_Group_Init();
@@ -1255,6 +1257,7 @@ static void g_clear_map_state(void)
         G_Region_Shutdown();
         G_Roads_Shutdown();
         G_Harvester_Shutdown();
+        G_Command_Shutdown();
         G_Automation_Shutdown();
         G_Provision_Shutdown();
         G_Group_Shutdown();
@@ -3165,6 +3168,7 @@ bool G_RemoveEntity(uint32_t uid)
     G_Building_RemoveEntity(uid);
     G_Builder_RemoveEntity(uid);
     G_Harvester_RemoveEntity(uid);
+    G_Command_RemoveEntity(uid);
     G_Resource_RemoveEntity(uid);
     G_Cluster_RemoveEntity(uid);
     G_StorageSite_RemoveEntity(uid);
@@ -3215,6 +3219,7 @@ void G_StopEntity(uint32_t uid, bool stop_move, bool stop_garrison)
     if(flags & ENTITY_FLAG_BUILDER) {
         G_Builder_Stop(uid);
     }
+    G_Command_Clear(uid);
     if(stop_garrison && ((flags & ENTITY_FLAG_GARRISON) || (flags & ENTITY_FLAG_GARRISONABLE))) {
         G_Garrison_Stop(uid);
     }
@@ -3842,6 +3847,7 @@ void G_Zombiefy(uint32_t uid, bool invis)
     G_Building_RemoveEntity(uid);
     G_Builder_RemoveEntity(uid);
     G_Harvester_RemoveEntity(uid);
+    G_Command_RemoveEntity(uid);
     G_Resource_RemoveEntity(uid);
     G_Cluster_RemoveEntity(uid);
     G_StorageSite_RemoveEntity(uid);
@@ -3990,6 +3996,7 @@ void G_NotifyOrderIssued(uint32_t uid, bool clear_harvester)
     if(flags & ENTITY_FLAG_COMBATABLE) {
         G_Combat_ClearSavedMoveCmd(uid);
     }
+    G_Command_Clear(uid);
     E_Global_Notify(EVENT_ORDER_ISSUED, (void*)(uintptr_t)uid, ES_ENGINE);
 }
 
@@ -4455,6 +4462,9 @@ bool G_SaveEntityState(SDL_RWops *stream)
     if(!G_Harvester_SaveState(stream))
         return false;
 
+    if(!G_Command_SaveState(stream))
+        return false;
+
     if(!G_Garrison_SaveState(stream))
         return false;
 
@@ -4533,6 +4543,11 @@ bool G_LoadEntityState(SDL_RWops *stream)
 
     if(!G_Harvester_LoadState(stream)) {
         fprintf(stderr, "Could not load harvester state.\n");
+        return false;
+    }
+
+    if(!G_Command_LoadState(stream)) {
+        fprintf(stderr, "Could not load command state.\n");
         return false;
     }
 

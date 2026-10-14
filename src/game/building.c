@@ -120,6 +120,8 @@ struct buildstate{
     float       vision_range;
     bool        pathable;
     bool        blocking;
+    /* Its footprint is set aside while it is marked, in 'obb' */
+    bool        reserved;
     bool        is_storage_site;
     vec2_t      rally_point;
     struct obb  obb;
@@ -241,12 +243,15 @@ static void on_render_3d(void *user, void *event)
         Entity_CurrentOBB(key, &obb, true);
         uint32_t flags = G_FlagsGet(key);
 
+        int faction_id = G_GetFactionID(key);
+
         if(flags & ENTITY_FLAG_WATER) {
             M_NavRenderBuildableTiles(s_map, cam, &obb, NAV_LAYER_WATER_1X1,
                 !(M_ObjectAdjacentToLand(s_map, &obb) && M_ObjectAdjacentToWater(s_map, &obb)), 
-                true);
+                true, faction_id);
         }else{
-            M_NavRenderBuildableTiles(s_map, cam, &obb, NAV_LAYER_GROUND_1X1, false, false);
+            M_NavRenderBuildableTiles(s_map, cam, &obb, NAV_LAYER_GROUND_1X1, false, false,
+                faction_id);
         }
     });
 }
@@ -526,6 +531,7 @@ static void obb_xz_bounds(const struct obb *obb, vec2_t *out_min, vec2_t *out_ma
 struct footprint_ctx{
     uint32_t          building;
     const struct obb *obb;
+    uint16_t          enemies;
 };
 
 static bool standing_in_footprint(uint32_t uid, void *arg)
@@ -542,10 +548,54 @@ static bool standing_in_footprint(uint32_t uid, void *arg)
     if(!G_Move_Still(uid))
         return false;
 
+    if(ctx->enemies & (0x1 << G_GetFactionID(uid)))
+        return false;
+
     /* Test at the OBB's own height so only the XZ footprint decides */
     vec2_t xz = G_Pos_GetXZ(uid);
     vec3_t point = (vec3_t){xz.x, ctx->obb->center.y, xz.z};
     return C_PointInsideOBB(point, *ctx->obb);
+}
+
+/* A site that units cannot walk over sets its footprint aside from when it
+ * is marked, so that the faction's units keep off it until it is founded */
+static void building_reserve(struct buildstate *bs, uint32_t uid)
+{
+    uint32_t flags = G_FlagsGet(uid);
+    if(bs->reserved || !(flags & ENTITY_FLAG_COLLISION) || bs->pathable)
+        return;
+
+    Entity_CurrentOBB(uid, &bs->obb, true);
+    M_NavSoftBlockIncrefOBB(s_map, G_GetFactionID(uid), flags, &bs->obb);
+    bs->reserved = true;
+}
+
+static void building_release(struct buildstate *bs, uint32_t uid)
+{
+    if(!bs->reserved)
+        return;
+
+    M_NavSoftBlockDecrefOBB(s_map, G_GetFactionID(uid), G_FlagsGet(uid), &bs->obb);
+    bs->reserved = false;
+}
+
+static bool building_mark(uint32_t uid, bool clear_footprint)
+{
+    struct buildstate *bs = buildstate_get(uid);
+    assert(bs);
+
+    if(bs->state != BUILDING_STATE_PLACEMENT)
+        return false;
+
+    /* A marked site can be picked out, to be called off */
+    G_FlagsSet(uid, G_FlagsGet(uid) | ENTITY_FLAG_SELECTABLE);
+    bs->state = BUILDING_STATE_MARKED;
+    building_reserve(bs, uid);
+
+    if(clear_footprint) {
+        G_Building_ClearFootprint(uid);
+    }
+    return true;
 }
 
 /*****************************************************************************/
@@ -618,6 +668,7 @@ bool G_Building_AddEntity(uint32_t uid)
         .progress_model = UID_NONE,
         .obb = {0},
         .pathable = false,
+        .reserved = false,
         .is_storage_site = !!(G_FlagsGet(uid) & ENTITY_FLAG_STORAGE_SITE),
         .rally_point = G_Pos_GetXZ(uid),
         .ground_texture = NULL
@@ -652,6 +703,7 @@ void G_Building_RemoveEntity(uint32_t uid)
     struct buildstate *bs = buildstate_get(uid);
     assert(bs);
 
+    building_release(bs, uid);
     if(bs->state >= BUILDING_STATE_FOUNDED && bs->blocking) {
         M_NavBlockersDecrefOBB(s_map, G_GetFactionID(uid), G_FlagsGet(uid), &bs->obb);
         struct entity_block_desc *desc = stalloc(&s_eventargs, sizeof(struct entity_block_desc));
@@ -698,16 +750,7 @@ bool G_Building_IsCompletedFrom(void *state, uint32_t uid)
 
 bool G_Building_Mark(uint32_t uid)
 {
-    struct buildstate *bs = buildstate_get(uid);
-    assert(bs);
-
-    if(bs->state != BUILDING_STATE_PLACEMENT)
-        return false;
-
-    /* A marked site can be picked out, to be called off */
-    G_FlagsSet(uid, G_FlagsGet(uid) | ENTITY_FLAG_SELECTABLE);
-    bs->state = BUILDING_STATE_MARKED;
-    return true;
+    return building_mark(uid, true);
 }
 
 bool G_Building_Found(uint32_t uid, bool blocking)
@@ -726,6 +769,7 @@ bool G_Building_Found(uint32_t uid, bool blocking)
     if(!ent)
         return false;
 
+    building_release(bs, uid);
     uint32_t progress_flags;
     uint32_t progress_uid = Entity_NewUID();
     bool result = AL_EntityFromPFObj(ent->basedir, ent->filename, ent->name, 
@@ -851,19 +895,29 @@ bool G_Building_Complete(uint32_t uid)
     return true;
 }
 
-bool G_Building_Unobstructed(uint32_t uid)
+static bool building_buildable(uint32_t uid, int faction_id)
 {
     struct obb obb;
     Entity_CurrentOBB(uid, &obb, true);
     uint32_t flags = G_FlagsGet(uid);
 
     if(flags & ENTITY_FLAG_WATER) {
-        return M_NavObjectBuildable(s_map, NAV_LAYER_WATER_1X1, true, &obb)
+        return M_NavObjectBuildable(s_map, NAV_LAYER_WATER_1X1, true, faction_id, &obb)
             && M_ObjectAdjacentToWater(s_map, &obb)
             && M_ObjectAdjacentToLand(s_map, &obb);
     }else{
-        return M_NavObjectBuildable(s_map, NAV_LAYER_GROUND_1X1, false, &obb);
+        return M_NavObjectBuildable(s_map, NAV_LAYER_GROUND_1X1, false, faction_id, &obb);
     }
+}
+
+bool G_Building_Unobstructed(uint32_t uid)
+{
+    return building_buildable(uid, -1);
+}
+
+bool G_Building_Placeable(uint32_t uid)
+{
+    return building_buildable(uid, G_GetFactionID(uid));
 }
 
 /* The spot just past the nearest side of the footprint */
@@ -896,7 +950,7 @@ static vec2_t beside_footprint(const struct obb *obb, vec2_t xz, float clearance
     return ret;
 }
 
-void G_Building_ClearFootprint(uint32_t uid)
+int G_Building_ClearFootprint(uint32_t uid)
 {
     struct obb obb;
     Entity_CurrentOBB(uid, &obb, true);
@@ -904,7 +958,9 @@ void G_Building_ClearFootprint(uint32_t uid)
     vec2_t xz_min, xz_max;
     obb_xz_bounds(&obb, &xz_min, &xz_max);
 
-    struct footprint_ctx ctx = (struct footprint_ctx){uid, &obb};
+    struct footprint_ctx ctx = (struct footprint_ctx){
+        uid, &obb, G_GetEnemyFactions(G_GetFactionID(uid))
+    };
     uint32_t ents[128];
     int nents = G_Pos_EntsInRectWithPred(xz_min, xz_max, ents, ARR_SIZE(ents),
         standing_in_footprint, &ctx);
@@ -918,6 +974,7 @@ void G_Building_ClearFootprint(uint32_t uid)
             continue;
         G_Move_SetDest(unit, dest, false);
     }
+    return nents;
 }
 
 bool G_Building_IsMarked(uint32_t uid)
@@ -996,6 +1053,10 @@ void G_Building_UpdateBounds(uint32_t uid)
         return;
 
     bs->rally_point = G_Pos_GetXZ(uid);
+    if(bs->reserved) {
+        building_release(bs, uid);
+        building_reserve(bs, uid);
+    }
     if(!G_Building_IsFounded(uid))
         return;
 
@@ -1013,6 +1074,12 @@ void G_Building_UpdateFactionID(uint32_t uid, int oldfac, int newfac)
     struct buildstate *bs = buildstate_get(uid);
     if(!bs)
         return;
+
+    if(bs->reserved) {
+        uint32_t flags = G_FlagsGet(uid);
+        M_NavSoftBlockDecrefOBB(s_map, oldfac, flags, &bs->obb);
+        M_NavSoftBlockIncrefOBB(s_map, newfac, flags, &bs->obb);
+    }
 
     if(!G_Building_IsFounded(uid))
         return;
@@ -1341,20 +1408,20 @@ bool G_Building_LoadState(struct SDL_RWops *stream)
         case BUILDING_STATE_PLACEMENT:
             break;
         case BUILDING_STATE_MARKED:
-            G_Building_Mark(uid);
+            building_mark(uid, false);
             break;
         case BUILDING_STATE_FOUNDED:
-            G_Building_Mark(uid);
+            building_mark(uid, false);
             G_Building_Found(uid, blocking);
             break;
         case BUILDING_STATE_SUPPLIED:
-            G_Building_Mark(uid);
+            building_mark(uid, false);
             G_Building_Found(uid, blocking);
             G_Building_Supply(uid);
             G_Building_UpdateProgress(uid, frac_done);
             break;
         case BUILDING_STATE_COMPLETED:
-            G_Building_Mark(uid);
+            building_mark(uid, false);
             G_Building_Found(uid, blocking);
             G_Building_Supply(uid);
             G_Building_Complete(uid);

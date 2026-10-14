@@ -470,6 +470,7 @@ const char *Mem_SubName(uint16_t sys, uint16_t sub)
         [MEM_SUB_GAME_CLEARPATH]    = "clearpath",
         [MEM_SUB_GAME_CLUSTER]      = "cluster",
         [MEM_SUB_GAME_COMBAT]       = "combat",
+        [MEM_SUB_GAME_COMMAND]      = "command",
         [MEM_SUB_GAME_DISPATCH]     = "dispatch",
         [MEM_SUB_GAME_DISTRICT]     = "district",
         [MEM_SUB_GAME_FOG_OF_WAR]   = "fog_of_war",

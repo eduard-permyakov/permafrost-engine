@@ -47,6 +47,7 @@
 #include "../anim/public/anim.h"
 #include "../game/public/game.h"
 #include "../game/population.h"
+#include "../game/command.h"
 #include "../phys/public/phys.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/SDL_vec_rwops.h"
@@ -663,6 +664,7 @@ static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self, PyObject
 static PyObject *PyBuildableEntity_supply(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_complete(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_unobstructed(PyBuildableEntityObject *self);
+static PyObject *PyBuildableEntity_placeable(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_get_pos(PyBuildableEntityObject *self, void *closure);
 static int       PyBuildableEntity_set_pos(PyBuildableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyBuildableEntity_get_founded(PyBuildableEntityObject *self, void *closure);
@@ -680,7 +682,8 @@ static PyMethodDef PyBuildableEntity_methods[] = {
     {"mark", 
     (PyCFunction)PyBuildableEntity_mark, METH_NOARGS,
     "Advance a building to the 'MARKED' state from the initial 'PLACEMENT' state, "
-    "where it will wait for a worker to found it."},
+    "where it will wait for a worker to found it. Its footprint is set aside for its faction "
+    "until then, and the units of the faction and its allies standing on it are sent off it."},
 
     {"found", 
     (PyCFunction)PyBuildableEntity_found, METH_VARARGS | METH_KEYWORDS,
@@ -699,6 +702,12 @@ static PyMethodDef PyBuildableEntity_methods[] = {
     {"unobstructed", 
     (PyCFunction)PyBuildableEntity_unobstructed, METH_NOARGS,
     "Returns True if there is no obstruction under any of the building's tiles."},
+
+    {"placeable", 
+    (PyCFunction)PyBuildableEntity_placeable, METH_NOARGS,
+    "Returns True if the building's faction may mark it where it stands: units of the faction "
+    "and its allies are not in the way, as marking sends them off, but the footprint of another "
+    "marked building is."},
 
     {"__del__", 
     (PyCFunction)PyBuildableEntity_del, METH_NOARGS,
@@ -779,6 +788,9 @@ static PyObject *PyBuilderEntity_del(PyBuilderEntityObject *self);
 static int       PyBuilderEntity_init(PyBuilderEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyBuilderEntity_build(PyBuilderEntityObject *self, PyObject *args);
 static PyObject *PyBuilderEntity_build_target(PyBuilderEntityObject *self);
+static PyObject *PyBuilderEntity_queue_build(PyBuilderEntityObject *self, PyObject *args);
+static PyObject *PyBuilderEntity_command_queue(PyBuilderEntityObject *self);
+static PyObject *PyBuilderEntity_clear_command_queue(PyBuilderEntityObject *self);
 static PyObject *PyBuilderEntity_pickle(PyBuilderEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyBuilderEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
@@ -790,6 +802,21 @@ static PyMethodDef PyBuilderEntity_methods[] = {
     {"build_target", 
     (PyCFunction)PyBuilderEntity_build_target, METH_NOARGS,
     "The building this entity is on its way to or at work on, or None."},
+
+    {"queue_build", 
+    (PyCFunction)PyBuilderEntity_queue_build, METH_VARARGS,
+    "Queue an order to build a specific buildable entity behind the entity's other queued "
+    "orders. An entity with no work to do takes it up at once. The sites in the queue are "
+    "all founded before any is supplied and built. An order given without queueing clears "
+    "the queue."},
+
+    {"command_queue", 
+    (PyCFunction)PyBuilderEntity_command_queue, METH_NOARGS,
+    "The targets of the entity's queued orders, in the order they are to be carried out."},
+
+    {"clear_command_queue", 
+    (PyCFunction)PyBuilderEntity_clear_command_queue, METH_NOARGS,
+    "Drop all of the entity's queued orders."},
 
     {"__del__", 
     (PyCFunction)PyBuilderEntity_del, METH_NOARGS,
@@ -3957,6 +3984,20 @@ static PyObject *PyBuildableEntity_unobstructed(PyBuildableEntityObject *self)
     }
 }
 
+static PyObject *PyBuildableEntity_placeable(PyBuildableEntityObject *self)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+
+    if(G_Building_Placeable(self->super.ent)) {
+        Py_RETURN_TRUE;
+    }else{
+        Py_RETURN_FALSE;
+    }
+}
+
 static PyObject *PyBuildableEntity_get_pos(PyBuildableEntityObject *self, void *closure)
 {
     vec3_t pos = G_Pos_Get(self->super.ent);
@@ -4183,6 +4224,62 @@ static PyObject *PyBuilderEntity_build_target(PyBuilderEntityObject *self)
         Py_RETURN_NONE;
     Py_INCREF(ret);
     return ret;
+}
+
+static PyObject *PyBuilderEntity_queue_build(PyBuilderEntityObject *self, PyObject *args)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+
+    PyObject *building;
+    if(!PyArg_ParseTuple(args, "O", &building)
+    || !PyObject_IsInstance(building, (PyObject*)&PyBuildableEntity_type)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting 1 argument: a pf.BuildableEntity instance");
+        return NULL;
+    }
+
+    uint32_t target = ((PyBuildableEntityObject*)building)->super.ent;
+    if(G_FlagsGet(target) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot build a zombie entity.");
+        return NULL;
+    }
+
+    if(G_Command_Push(self->super.ent, (struct command){CMD_BUILD, target})) {
+        Py_RETURN_TRUE;
+    }else{
+        Py_RETURN_FALSE;
+    }
+}
+
+static PyObject *PyBuilderEntity_command_queue(PyBuilderEntityObject *self)
+{
+    PyObject *ret = PyList_New(0);
+    if(!ret)
+        return NULL;
+
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE)
+        return ret;
+
+    size_t ncmds;
+    const struct command *cmds = G_Command_Get(self->super.ent, &ncmds);
+    for(int i = 0; i < ncmds; i++) {
+        PyObject *target = S_Entity_ObjForUID(cmds[i].target);
+        if(!target)
+            continue;
+        if(0 != PyList_Append(ret, target)) {
+            Py_DECREF(ret);
+            return NULL;
+        }
+    }
+    return ret;
+}
+
+static PyObject *PyBuilderEntity_clear_command_queue(PyBuilderEntityObject *self)
+{
+    G_Command_Clear(self->super.ent);
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyBuilderEntity_pickle(PyBuilderEntityObject *self, PyObject *args, PyObject *kwargs)

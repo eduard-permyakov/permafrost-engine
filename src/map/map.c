@@ -759,7 +759,7 @@ void M_NavRenderNavigationBlockers(const struct map *map, const struct camera *c
 
 void M_NavRenderBuildableTiles(const struct map *map, const struct camera *cam, 
                                const struct obb *obb, enum nav_layer layer, bool blocked, 
-                               bool allow_shore)
+                               bool allow_shore, int faction_id)
 {
     struct frustum frustum;
     Camera_MakeFrustum(cam, &frustum);
@@ -775,7 +775,8 @@ void M_NavRenderBuildableTiles(const struct map *map, const struct camera *cam,
 
         mat4x4_t chunk_model;
         M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
-        N_RenderBuildableTiles(map->nav_private, map, &chunk_model, r, c, obb, layer, blocked, allow_shore);
+        N_RenderBuildableTiles(map->nav_private, map, &chunk_model, r, c, obb, layer, blocked,
+            allow_shore, faction_id);
     }}
 }
 
@@ -1061,7 +1062,19 @@ void M_NavReserveDecref(vec2_t xz_pos, float range, enum nav_layer layer, const 
     N_ReserveDecref(xz_pos, range, layer, map->pos, map->nav_private);
 }
 
-void M_NavBlockersIncrefOBB(const struct map *map, int faction_id, 
+void M_NavSoftBlockIncrefOBB(const struct map *map, int faction_id,
+                             uint32_t flags, const struct obb *obb)
+{
+    N_SoftBlockIncrefOBB(map->nav_private, faction_id, flags, map->pos, obb);
+}
+
+void M_NavSoftBlockDecrefOBB(const struct map *map, int faction_id,
+                             uint32_t flags, const struct obb *obb)
+{
+    N_SoftBlockDecrefOBB(map->nav_private, faction_id, flags, map->pos, obb);
+}
+
+void M_NavBlockersIncrefOBB(const struct map *map, int faction_id,
                             uint32_t flags, const struct obb *obb)
 {
     N_BlockersIncrefOBB(map->nav_private, faction_id, flags, map->pos, obb);
@@ -1233,9 +1246,9 @@ void M_NavGetResolution(const struct map *map, struct map_resolution *out)
 }
 
 bool M_NavObjectBuildable(const struct map *map, enum nav_layer layer, 
-                          bool allow_shore, const struct obb *obb)
+                          bool allow_shore, int faction_id, const struct obb *obb)
 {
-    return N_ObjectBuildable(map->nav_private, map, layer, allow_shore, map->pos, obb);
+    return N_ObjectBuildable(map->nav_private, map, layer, allow_shore, faction_id, map->pos, obb);
 }
 
 bool M_NavHasEntityLOS(const struct map *map, enum nav_layer layer, 

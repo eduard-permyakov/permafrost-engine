@@ -275,6 +275,7 @@ struct los_work{
 };
 
 __KHASH_IMPL(coord, static inline, khint32_t, struct coord, 1, kh_int_hash_func, kh_int_hash_equal)
+__KHASH_IMPL(softref, static inline, khint64_t, uint16_t, 1, kh_int64_hash_func, kh_int64_hash_equal)
 KHASH_SET_INIT_INT64(td)
 
 /* How far a ball flood looks for open ground when its goal tile is taken */
@@ -1614,6 +1615,116 @@ static void n_update_blockers_obb_air(struct nav_private *priv, const struct obb
     n_update_blockers(priv, NAV_LAYER_AIR_7X7, faction_id, outline7x7, noutline7x7, ref_delta, true);
 }
 
+static uint64_t n_soft_ref_key(enum nav_layer layer, struct tile_desc td, int faction_id)
+{
+    return (((uint64_t)layer          & 0xff)   << 56)
+         | (((uint64_t)td.chunk_r     & 0xffff) << 40)
+         | (((uint64_t)td.chunk_c     & 0xffff) << 24)
+         | (((uint64_t)td.tile_r      & 0xff)   << 16)
+         | (((uint64_t)td.tile_c      & 0xff)   <<  8)
+         | (((uint64_t)faction_id     & 0xff)   <<  0);
+}
+
+static void n_update_soft_blocks(struct nav_private *priv, enum nav_layer layer, int faction_id,
+                                 struct tile_desc *tds, size_t ntds, int ref_delta)
+{
+    if(!(priv->layer_mask & (1u << layer)))
+        return;
+
+    for(int i = 0; i < ntds; i++) {
+
+        struct tile_desc curr = tds[i];
+        if(curr.chunk_r < priv->window.min_r || curr.chunk_r > priv->window.max_r
+        || curr.chunk_c < priv->window.min_c || curr.chunk_c > priv->window.max_c)
+            continue;
+
+        uint64_t key = n_soft_ref_key(layer, curr, faction_id);
+        khiter_t k = kh_get(softref, priv->soft_refs, key);
+        int refs = (k == kh_end(priv->soft_refs)) ? 0 : kh_value(priv->soft_refs, k);
+        assert(refs + ref_delta >= 0);
+        refs = MAX(refs + ref_delta, 0);
+
+        if(refs == 0) {
+            if(k != kh_end(priv->soft_refs))
+                kh_del(softref, priv->soft_refs, k);
+        }else{
+            int status;
+            k = kh_put(softref, priv->soft_refs, key, &status);
+            if(status == -1)
+                continue;
+            kh_value(priv->soft_refs, k) = refs;
+        }
+
+        struct nav_chunk *chunk =
+            &priv->chunks[layer][IDX(curr.chunk_r, priv->width, curr.chunk_c)];
+        uint16_t prev = chunk->soft_blocks[curr.tile_r][curr.tile_c];
+        if(refs) {
+            chunk->soft_blocks[curr.tile_r][curr.tile_c] |= (0x1 << faction_id);
+        }else{
+            chunk->soft_blocks[curr.tile_r][curr.tile_c] &= ~(0x1 << faction_id);
+        }
+        if(chunk->soft_blocks[curr.tile_r][curr.tile_c] == prev)
+            continue;
+
+        /* The fields over the chunk are stale and its new state is to be published */
+        int ret;
+        uint32_t chunk_key = ((((uint32_t)curr.chunk_r) & 0xffff) << 16)
+                           | (((uint32_t)curr.chunk_c) & 0xffff);
+        kh_put(coord, priv->dirty_chunks[layer], chunk_key, &ret);
+        assert(ret != -1);
+    }
+}
+
+/* A reservation covers the same tiles on every layer as the blockers of a
+ * building with the same footprint, matching n_update_blockers_obb_*.
+ */
+static void n_update_soft_blocks_obb(struct nav_private *priv, const struct obb *obb,
+                                     int faction_id, vec3_t map_pos, int ref_delta,
+                                     const enum nav_layer layers[4])
+{
+    struct tile_desc tds[1024];
+    int ntds = M_Tile_AllUnderObj(map_pos, n_res(priv), obb, tds, ARR_SIZE(tds));
+
+    struct tile_desc outlines[3][1024];
+    size_t noutlines[3];
+    noutlines[0] = M_Tile_Contour(ntds, tds, n_res(priv), outlines[0], ARR_SIZE(outlines[0]));
+    noutlines[1] = M_Tile_Contour(noutlines[0], outlines[0], n_res(priv), outlines[1],
+        ARR_SIZE(outlines[1]));
+    noutlines[2] = M_Tile_Contour(noutlines[1], outlines[1], n_res(priv), outlines[2],
+        ARR_SIZE(outlines[2]));
+
+    for(int i = 0; i < 4; i++) {
+        n_update_soft_blocks(priv, layers[i], faction_id, tds, ntds, ref_delta);
+        for(int ring = 0; ring < i; ring++) {
+            n_update_soft_blocks(priv, layers[i], faction_id, outlines[ring], noutlines[ring],
+                ref_delta);
+        }
+    }
+}
+
+static void n_update_soft_blocks_class(struct nav_private *priv, const struct obb *obb,
+                                       int faction_id, uint32_t flags, vec3_t map_pos,
+                                       int ref_delta)
+{
+    static const enum nav_layer ground[4] = {
+        NAV_LAYER_GROUND_1X1, NAV_LAYER_GROUND_3X3, NAV_LAYER_GROUND_5X5, NAV_LAYER_GROUND_7X7
+    };
+    static const enum nav_layer water[4] = {
+        NAV_LAYER_WATER_1X1, NAV_LAYER_WATER_3X3, NAV_LAYER_WATER_5X5, NAV_LAYER_WATER_7X7
+    };
+    static const enum nav_layer air[4] = {
+        NAV_LAYER_AIR_1X1, NAV_LAYER_AIR_3X3, NAV_LAYER_AIR_5X5, NAV_LAYER_AIR_7X7
+    };
+    if(faction_id < 0 || faction_id >= MAX_FACTIONS)
+        return;
+    if(flags & ENTITY_FLAG_AIR) {
+        n_update_soft_blocks_obb(priv, obb, faction_id, map_pos, ref_delta, air);
+    }else{
+        n_update_soft_blocks_obb(priv, obb, faction_id, map_pos, ref_delta, water);
+        n_update_soft_blocks_obb(priv, obb, faction_id, map_pos, ref_delta, ground);
+    }
+}
+
 static int manhattan_dist(struct tile_desc a, struct tile_desc b)
 {
     int dr = abs(
@@ -2121,6 +2232,9 @@ static bool n_blocked_off(const struct nav_chunk *chunk, struct coord tile)
 
 static bool n_moving_entity(uint32_t ent, void *arg)
 {
+    const uint16_t *factions = arg;
+    if(factions && !(*factions & (0x1 << G_GetFactionID(ent))))
+        return false;
     return !G_Move_Still(ent);
 }
 
@@ -2133,7 +2247,7 @@ static bool n_non_collidable_building(uint32_t ent, void *arg)
 }
 
 static khash_t(td) *n_moving_entities_tileset(struct nav_private *priv, vec3_t map_pos, 
-                                              const struct obb *area)
+                                              const struct obb *area, const uint16_t *factions)
 {
     assert(Sched_UsingBigStack());
 
@@ -2145,7 +2259,7 @@ static khash_t(td) *n_moving_entities_tileset(struct nav_private *priv, vec3_t m
 
     uint32_t ents[1024];
     size_t nents = G_Pos_EntsInCircleWithPred(center_xz, radius, ents, 
-        ARR_SIZE(ents), n_moving_entity, NULL);
+        ARR_SIZE(ents), n_moving_entity, (void*)factions);
 
     khash_t(td) *ret = kh_init(td);
     if(!ret)
@@ -2164,6 +2278,24 @@ static khash_t(td) *n_moving_entities_tileset(struct nav_private *priv, vec3_t m
     }
 
     return ret;
+}
+
+/* The founding check (a negative 'faction_id') is held up by any unit on the
+ * tile. Placement is held up only by enemies and by ground set aside for
+ * another building, as the placing faction and its allies are cleared away.
+ */
+static bool n_tile_obstructs_building(const struct nav_chunk *chunk, struct tile_desc td,
+                                      int faction_id, uint16_t enemies)
+{
+    if(faction_id < 0)
+        return chunk->blockers[td.tile_r][td.tile_c] > 0;
+    if(chunk->static_blockers[td.tile_r][td.tile_c] || chunk->soft_blocks[td.tile_r][td.tile_c])
+        return true;
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+        if((enemies & (0x1 << i)) && chunk->factions[i][td.tile_r][td.tile_c])
+            return true;
+    }
+    return false;
 }
 
 static khash_t(td) *n_non_collidable_buildings_tileset(struct nav_private *priv, vec3_t map_pos,
@@ -3875,6 +4007,7 @@ void N_DestroyCtx(void *nav_private)
         kh_destroy(coord, priv->dirty_chunks[i]);
     }
     kh_destroy(coord, priv->road_dirty);
+    kh_destroy(softref, priv->soft_refs);
 }
 
 bool N_InitCtx(void *nav_private)
@@ -3893,6 +4026,8 @@ bool N_InitCtx(void *nav_private)
         priv->edge_states_dirty[i] = true;
     }
     if((priv->road_dirty = kh_init(coord)) == NULL)
+        goto fail_alloc;
+    if((priv->soft_refs = kh_init(softref)) == NULL)
         goto fail_alloc;
     return true;
 
@@ -3913,6 +4048,7 @@ void N_ClearCtx(void *nav_private)
         kh_clear(coord, priv->dirty_chunks[i]);
     }
     kh_clear(coord, priv->road_dirty);
+    kh_clear(softref, priv->soft_refs);
 
     N_FC_ClearAll(priv->fieldcache);
     N_FC_ClearStats(priv->fieldcache);
@@ -3974,6 +4110,7 @@ void *N_NewCtxForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
             memset(curr_chunk->blockers, 0, sizeof(curr_chunk->blockers));
             memset(curr_chunk->static_blockers, 0, sizeof(curr_chunk->static_blockers));
             memset(curr_chunk->reserved, 0, sizeof(curr_chunk->reserved));
+            memset(curr_chunk->soft_blocks, 0, sizeof(curr_chunk->soft_blocks));
             memset(curr_chunk->factions, 0, sizeof(curr_chunk->factions));
         }}
 
@@ -4017,6 +4154,7 @@ void *N_NewReaderCtx(const void *live_nav)
     *r = *live;
     r->cow = NULL;
     r->unit_query_ctx = NULL;
+    r->soft_refs = NULL;
 
     struct nav_chunk *cbase = (struct nav_chunk*)pf_cow_reader_base(live->cow);
     size_t layer_chunks = live->width * live->height;
@@ -4750,7 +4888,7 @@ void N_RenderMapCover(void *nav_private, const struct map *map,
 void N_RenderBuildableTiles(void *nav_private, const struct map *map,
                             mat4x4_t *chunk_model, int chunk_r, int chunk_c,
                             const struct obb *obb, enum nav_layer layer, 
-                            bool blocked, bool allow_shore)
+                            bool blocked, bool allow_shore, int faction_id)
 {
     assert(Sched_UsingBigStack());
 
@@ -4771,7 +4909,9 @@ void N_RenderBuildableTiles(void *nav_private, const struct map *map,
     struct tile_desc tds[2048];
     size_t ntiles = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
 
-    khash_t(td) *tileset = n_moving_entities_tileset(priv, map_pos, obb);
+    uint16_t enemies = (faction_id < 0) ? 0 : G_GetEnemyFactions(faction_id);
+    khash_t(td) *tileset = n_moving_entities_tileset(priv, map_pos, obb,
+        (faction_id < 0) ? NULL : &enemies);
     assert(tileset);
 
     khash_t(td) *building_tileset = n_non_collidable_buildings_tileset(priv, map_pos, obb);
@@ -4823,7 +4963,7 @@ void N_RenderBuildableTiles(void *nav_private, const struct map *map,
         assert(tile);
         bool shore = (tile->ramp_height > 1) && (tile->base_height < 0);
 
-        if((chunk->blockers [tds[i].tile_r][tds[i].tile_c]
+        if((n_tile_obstructs_building(chunk, tds[i], faction_id, enemies)
         || ((allow_shore ? !shore : true) && chunk->cost_base[tds[i].tile_r][tds[i].tile_c] == COST_IMPASSABLE)
         || !G_Fog_PlayerExplored((vec2_t){ws_center_homo.x, ws_center_homo.z})
         || (kh_get(td, tileset, td_key(tds + i)) != kh_end(tileset))
@@ -6897,6 +7037,18 @@ void N_BlockersDecrefOBB(void *nav_private, int faction_id, uint32_t flags,
     }
 }
 
+void N_SoftBlockIncrefOBB(void *nav_private, int faction_id, uint32_t flags,
+                          vec3_t map_pos, const struct obb *obb)
+{
+    n_update_soft_blocks_class(nav_private, obb, faction_id, flags, map_pos, +1);
+}
+
+void N_SoftBlockDecrefOBB(void *nav_private, int faction_id, uint32_t flags,
+                          vec3_t map_pos, const struct obb *obb)
+{
+    n_update_soft_blocks_class(nav_private, obb, faction_id, flags, map_pos, -1);
+}
+
 bool N_IsMaximallyClose(void *nav_private, enum nav_layer layer, vec3_t map_pos, 
                         vec2_t xz_pos, vec2_t xz_dest, float tolerance)
 {
@@ -7199,7 +7351,7 @@ void N_GetResolution(const void *nav_private, struct map_resolution *out)
 }
 
 bool N_ObjectBuildable(void *nav_private, const struct map *map, enum nav_layer layer, 
-                       bool allow_shore, vec3_t map_pos, const struct obb *obb)
+                       bool allow_shore, int faction_id, vec3_t map_pos, const struct obb *obb)
 {
     assert(Sched_UsingBigStack());
 
@@ -7213,7 +7365,9 @@ bool N_ObjectBuildable(void *nav_private, const struct map *map, enum nav_layer 
     struct tile_desc tds[2048];
     size_t ntiles = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
 
-    khash_t(td) *tileset = n_moving_entities_tileset(priv, map_pos, obb);
+    uint16_t enemies = (faction_id < 0) ? 0 : G_GetEnemyFactions(faction_id);
+    khash_t(td) *tileset = n_moving_entities_tileset(priv, map_pos, obb,
+        (faction_id < 0) ? NULL : &enemies);
     assert(tileset);
 
     khash_t(td) *building_tileset = n_non_collidable_buildings_tileset(priv, map_pos, obb);
@@ -7241,7 +7395,7 @@ bool N_ObjectBuildable(void *nav_private, const struct map *map, enum nav_layer 
         assert(tile);
         bool shore = (tile->ramp_height > 1) && (tile->base_height < 0);
     
-        if(chunk->blockers [tds[i].tile_r][tds[i].tile_c]
+        if(n_tile_obstructs_building(chunk, tds[i], faction_id, enemies)
         || ((allow_shore ? !shore : true) && chunk->cost_base[tds[i].tile_r][tds[i].tile_c] == COST_IMPASSABLE)
         || !G_Fog_PlayerExplored((vec2_t){center.x, center.z})
         || (kh_get(td, tileset, td_key(tds + i)) != kh_end(tileset))
@@ -7726,6 +7880,7 @@ void N_CloneCtx(void *nav_private, void *out, const enum nav_layer *layers,
     for(int i = 0; i < NAV_LAYER_MAX; i++)
         to->dirty_chunks[i] = kh_copy(coord, from->dirty_chunks[i]);
     to->road_dirty = kh_copy(coord, from->road_dirty);
+    to->soft_refs = kh_copy(softref, from->soft_refs);
 
     PERF_RETURN_VOID();
 }

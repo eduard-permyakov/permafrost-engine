@@ -60,6 +60,15 @@
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
+bool Attr_NextKeyIs(struct SDL_RWops *stream, const char *key)
+{
+    Sint64 mark = SDL_RWtell(stream);
+    struct attr attr;
+    bool ret = Attr_Parse(stream, &attr, true) && !strcmp(attr.key, key);
+    SDL_RWseek(stream, mark, RW_SEEK_SET);
+    return ret;
+}
+
 bool Attr_Parse(struct SDL_RWops *stream, struct attr *out, bool named)
 {
     char line[MAX_LINE_LEN];

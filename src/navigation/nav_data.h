@@ -166,6 +166,11 @@ struct nav_chunk{
      * reserved tiles may be walked across but not stood on.
      */
     uint16_t        reserved[FIELD_RES_R][FIELD_RES_C];
+    /* A bit per faction that has set the tile aside, such as for a building
+     * it is yet to found. The reference counts behind the bits are kept by
+     * the live context only.
+     */
+    uint16_t        soft_blocks[FIELD_RES_R][FIELD_RES_C];
     /* Keep a reference count of how many unit of every faction are 
      * currently blocking the corresponding tile. This additional 
      * data allows determine units belonging to which faction are 

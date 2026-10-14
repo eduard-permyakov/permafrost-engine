@@ -164,12 +164,13 @@ void   M_NavRenderNavigationBlockers(const struct map *map, const struct camera 
 /* ------------------------------------------------------------------------
  * Render a layer over the visible map surface showing which tiles under
  * an object's OBB can currently be built on. The 'blocked' flag can be used
- * to render all tiles as non-buildable.
+ * to render all tiles as non-buildable. See M_NavObjectBuildable for
+ * 'faction_id'.
  * ------------------------------------------------------------------------
  */
-void   M_NavRenderBuildableTiles(const struct map *map, const struct camera *cam, 
-                                 const struct obb *obb, enum nav_layer layer, 
-                                 bool blocked, bool allow_cliffs);
+void   M_NavRenderBuildableTiles(const struct map *map, const struct camera *cam,
+                                 const struct obb *obb, enum nav_layer layer,
+                                 bool blocked, bool allow_cliffs, int faction_id);
 
 /* ------------------------------------------------------------------------
  * Render a layer over the visible map surface showing portals between chunks
@@ -634,7 +635,17 @@ void   M_NavReserveIncref(vec2_t xz_pos, float range, enum nav_layer layer,
 void   M_NavReserveDecref(vec2_t xz_pos, float range, enum nav_layer layer,
                           const struct map *map);
 
-void   M_NavBlockersIncrefOBB(const struct map *map, int faction_id, 
+/* ------------------------------------------------------------------------
+ * Set the tiles under the OBB aside for the faction, or give them back, so
+ * that the faction and those not at war with it route around them.
+ * ------------------------------------------------------------------------
+ */
+void   M_NavSoftBlockIncrefOBB(const struct map *map, int faction_id,
+                               uint32_t flags, const struct obb *obb);
+void   M_NavSoftBlockDecrefOBB(const struct map *map, int faction_id,
+                               uint32_t flags, const struct obb *obb);
+
+void   M_NavBlockersIncrefOBB(const struct map *map, int faction_id,
                               uint32_t flags, const struct obb *obb);
 void   M_NavBlockersDecrefOBB(const struct map *map, int faction_id, 
                               uint32_t flags, const struct obb *obb);
@@ -647,8 +658,11 @@ uint32_t M_NavDestIDForPos(const struct map *map, vec2_t xz_pos, enum nav_layer 
 uint32_t M_NavDestIDForPosAttacking(const struct map *map, vec2_t xz_pos, 
                                     enum nav_layer layer, int faction_id);
 void     M_NavGetResolution(const struct map *map, struct map_resolution *out);
-bool     M_NavObjectBuildable(const struct map *map, enum nav_layer layer, 
-                              bool allow_shore, const struct obb *obb);
+/* A negative 'faction_id' asks whether the object can be founded, which any
+ * unit under it prevents; otherwise, whether the faction may place it, which
+ * its own and its allies' units do not prevent but ground set aside does */
+bool     M_NavObjectBuildable(const struct map *map, enum nav_layer layer,
+                              bool allow_shore, int faction_id, const struct obb *obb);
 bool     M_NavIsMaximallyClose(const struct map *map, enum nav_layer layer, 
                                vec2_t xz_pos, vec2_t xz_dest, float tolerance);
 bool     M_NavIsAdjacentToImpassable(const struct map *map, enum nav_layer layer, vec2_t xz_pos);

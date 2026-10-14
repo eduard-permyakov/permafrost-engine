@@ -45,6 +45,7 @@
 #include "storage_site.h"
 #include "provision.h"
 #include "harvester.h"
+#include "command.h"
 #include "../event.h"
 #include "../entity.h"
 #include "../settings.h"
@@ -277,6 +278,12 @@ static void settle_stopping(void)
         struct automation_state *astate = astate_get(uid);
         if(!astate || astate->state != STATE_STOPPING)
             continue;
+
+        /* Orders queued by the player come before any job, its meal too */
+        if(G_Command_Next(uid)) {
+            astate->state = STATE_ACTIVE;
+            continue;
+        }
 
         /* A hungry worker's next job is its meal, and so is one about to be */
         if((G_Provision_DueSoon(uid) && G_Provision_Fetch(uid))

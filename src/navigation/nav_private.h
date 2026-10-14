@@ -44,6 +44,7 @@
 #include <stddef.h>
 
 __KHASH_TYPE(coord, khint32_t, struct coord)
+__KHASH_TYPE(softref, khint64_t, uint16_t)
 
 struct portal;
 struct fieldcache_ctx;
@@ -63,6 +64,9 @@ struct nav_private{
     /* Chunks whose road cells changed since the last update, on every ground 
      * layer alike. Their portals are rebuilt by the next N_Update. */
     khash_t(coord)        *road_dirty;
+    /* The reference count of every faction's reservation of every tile
+     * that has one, behind the chunks' 'soft_blocks' bits. */
+    khash_t(softref)      *soft_refs;
     bool                   local_islands_dirty[NAV_LAYER_MAX];
     /* Full-layer edge-state sweep flag: set only by static geometry changes
      * (portal rebuilds, static cutouts, context init/clear). Blocker flips

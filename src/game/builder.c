@@ -39,6 +39,7 @@
 #include "builder.h"
 #include "building.h"
 #include "harvester.h"
+#include "command.h"
 #include "storage_site.h"
 #include "game_private.h"
 #include "movement.h"
@@ -55,6 +56,7 @@
 #include "../lib/public/attr.h"
 
 #include <stdint.h>
+#include <limits.h>
 #include <assert.h>
 
 #include "../mem.h"
@@ -89,6 +91,8 @@ struct builderstate{
     int build_speed;
     uint32_t target_uid;
     int wait_ticks;
+    /* How many were last found standing on the site to be founded */
+    int clear_left;
 };
 
 KHASH_MAP_INIT_INT(state, struct builderstate)
@@ -97,6 +101,7 @@ static void on_build_anim_finished(void *user, void *event);
 static void on_motion_end(void *user, void *event);
 static void proceed_at_site(uint32_t uid, struct builderstate *bs);
 static void approach(uint32_t uid, struct builderstate *bs, uint32_t building);
+static void next_command(uint32_t uid);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -183,12 +188,14 @@ static void on_build_anim_finished(void *user, void *event)
 
     if(!G_EntityExists(bs->target_uid)|| (G_FlagsGet(bs->target_uid) & ENTITY_FLAG_ZOMBIE)) {
         finish_building(bs, uid);
+        next_command(uid);
         return;
     }
 
     if(!(G_FlagsGet(bs->target_uid) & ENTITY_FLAG_COMBATABLE)) {
         G_Building_Complete(bs->target_uid);
         finish_building(bs, uid);
+        next_command(uid);
         return;
     }
 
@@ -201,6 +208,7 @@ static void on_build_anim_finished(void *user, void *event)
     if(hp == max_hp) {
         G_Building_Complete(bs->target_uid);
         finish_building(bs, uid);
+        next_command(uid);
         return;
     }
 }
@@ -229,6 +237,7 @@ static void on_motion_end(void *user, void *event)
     if(!G_EntityExists(bs->target_uid) || G_EntityIsZombie(bs->target_uid)) {
         bs->state = STATE_NOT_BUILDING;
         bs->target_uid = UID_NONE;
+        next_command(uid);
         return;
     }
 
@@ -247,8 +256,31 @@ static void on_motion_end(void *user, void *event)
     proceed_at_site(uid, bs);
 }
 
+static bool unfounded_site_queued(uint32_t uid)
+{
+    size_t ncmds;
+    const struct command *cmds = G_Command_Get(uid, &ncmds);
+    for(int i = 0; i < ncmds; i++) {
+        uint32_t site = cmds[i].target;
+        if(cmds[i].kind != CMD_BUILD || !G_EntityExists(site) || G_EntityIsZombie(site))
+            continue;
+        if((G_FlagsGet(site) & ENTITY_FLAG_BUILDING) && !G_Building_IsFounded(site))
+            return true;
+    }
+    return false;
+}
+
 static void proceed_at_site(uint32_t uid, struct builderstate *bs)
 {
+    /* The ground for every site in the queue is laid before any is raised */
+    if(unfounded_site_queued(uid)) {
+        uint32_t site = bs->target_uid;
+        bs->state = STATE_NOT_BUILDING;
+        bs->target_uid = UID_NONE;
+        G_Command_Push(uid, (struct command){CMD_BUILD, site});
+        return;
+    }
+
     if(!G_Building_IsSupplied(bs->target_uid)
     && G_StorageSite_IsSaturated(bs->target_uid)) {
         G_Building_Supply(bs->target_uid);
@@ -256,11 +288,15 @@ static void proceed_at_site(uint32_t uid, struct builderstate *bs)
 
     if(!G_Building_IsSupplied(bs->target_uid)) {
         uint32_t flags = G_FlagsGet(uid);
+        bool supplying = false;
         if(flags & ENTITY_FLAG_HARVESTER) {
             G_Harvester_Stop(uid);
-            G_Harvester_SupplyBuilding(uid, bs->target_uid);
+            supplying = G_Harvester_SupplyBuilding(uid, bs->target_uid);
         }
         bs->state = STATE_NOT_BUILDING;
+        if(!supplying) {
+            next_command(uid);
+        }
         return;
     }
 
@@ -291,6 +327,7 @@ static void on_20hz_tick(void *user, void *event)
         if(!G_EntityExists(bs->target_uid) || G_EntityIsZombie(bs->target_uid)) {
             bs->state = STATE_NOT_BUILDING;
             bs->target_uid = UID_NONE;
+            next_command(uid);
             continue;
         }
 
@@ -311,7 +348,12 @@ static void on_20hz_tick(void *user, void *event)
 
         bool founded = G_Building_IsFounded(bs->target_uid);
         if(!founded && bs->wait_ticks % FOUND_CLEAR_TICKS == 0) {
-            G_Building_ClearFootprint(bs->target_uid);
+            int left = G_Building_ClearFootprint(bs->target_uid);
+            /* The wait does not run out while those on the site are still leaving it */
+            if(left < bs->clear_left) {
+                bs->wait_ticks = 0;
+            }
+            bs->clear_left = left;
         }
 
         if(bs->wait_ticks >= FOUND_WAIT_TICKS) {
@@ -320,6 +362,7 @@ static void on_20hz_tick(void *user, void *event)
             if(!founded) {
                 E_Entity_Notify(EVENT_BUILD_FAIL_FOUND, uid, NULL, ES_ENGINE);
             }
+            next_command(uid);
         }
     });
 }
@@ -345,6 +388,14 @@ static void approach(uint32_t uid, struct builderstate *bs, uint32_t building)
         G_Move_SetSurroundEntity(uid, building);
         E_Entity_Register(EVENT_MOTION_END, uid, on_motion_end, (void*)((uintptr_t)uid), G_RUNNING);
     }
+}
+
+/* Takes up the unit's next queued order once its work comes to an end */
+static void next_command(uint32_t uid)
+{
+    if((G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER) && !G_Harvester_Idle(uid))
+        return;
+    G_Command_Next(uid);
 }
 
 static void on_mousedown(void *user, void *event)
@@ -445,6 +496,7 @@ bool G_Builder_Build(uint32_t uid, uint32_t building)
     }
 
     bs->wait_ticks = 0;
+    bs->clear_left = INT_MAX;
     approach(uid, bs, building);
     return true;
 }
@@ -458,6 +510,7 @@ void G_Builder_AddEntity(uint32_t uid)
         .build_speed = 0.0,
         .target_uid = UID_NONE,
         .wait_ticks = 0,
+        .clear_left = INT_MAX,
     });
 }
 
@@ -632,6 +685,12 @@ bool G_Builder_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr.wait_ticks
         };
         CHK_TRUE_RET(Attr_Write(stream, &wait_ticks, "builder_wait_ticks"));
+
+        struct attr clear_left = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.clear_left
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &clear_left, "builder_clear_left"));
         Sched_TryYield();
     });
 
@@ -669,6 +728,14 @@ bool G_Builder_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(attr.type == TYPE_INT);
         int wait_ticks = attr.val.as_int;
 
+        /* Saves from before builders counted the units left on a footprint */
+        int clear_left = INT_MAX;
+        if(Attr_NextKeyIs(stream, "builder_clear_left")) {
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            clear_left = attr.val.as_int;
+        }
+
         struct builderstate *bs = builderstate_get(uid);
         CHK_TRUE_RET(bs);
 
@@ -676,6 +743,7 @@ bool G_Builder_LoadState(struct SDL_RWops *stream)
         bs->build_speed = speed;
         bs->target_uid = target;
         bs->wait_ticks = wait_ticks;
+        bs->clear_left = clear_left;
 
         switch(state) {
         case STATE_NOT_BUILDING:

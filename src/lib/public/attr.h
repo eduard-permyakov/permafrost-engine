@@ -67,6 +67,8 @@ struct attr{
 
 /* 'named' attributes start with a single token for the name */
 bool Attr_Parse(struct SDL_RWops *stream, struct attr *out, bool named);
+/* Whether the next named attribute is called 'key'; the stream is left where it was */
+bool Attr_NextKeyIs(struct SDL_RWops *stream, const char *key);
 bool Attr_Write(struct SDL_RWops *stream, const struct attr *in, const char name[]);
 
 #endif

@@ -206,6 +206,24 @@ static bool field_tile_passable_no_enemies(
     return true;
 }
 
+/* The factions whose set aside ground a field keeps off: that of all of them for
+ * a field made for no faction, else that of the factions not at war with its own */
+static uint16_t field_soft_mask(int faction_id, uint16_t enemies)
+{
+    if(faction_id == FACTION_ID_NONE)
+        return 0xffff;
+    return ~enemies;
+}
+
+/* A field whose goal lies on set aside ground leads onto it */
+static uint16_t field_soft_mask_for_goal(const struct nav_chunk *goal_chunk, struct coord goal,
+                                         uint16_t soft_mask)
+{
+    if(goal_chunk->soft_blocks[goal.r][goal.c] & soft_mask)
+        return 0;
+    return soft_mask;
+}
+
 static int field_neighbours_grid(
     const struct nav_chunk    *chunk,
     struct coord               coord,
@@ -213,6 +231,7 @@ static int field_neighbours_grid(
     bool                       roads,
     int                        faction_id,
     uint16_t                   enemies,
+    uint16_t                   soft_mask,
     struct coord              *out_neighbours,
     float                     *out_costs)
 {
@@ -239,7 +258,7 @@ static int field_neighbours_grid(
             }else{
                 passable = field_tile_passable_no_enemies(chunk, (struct coord){abs_r, abs_c}, enemies);
             }
-            if(!passable)
+            if(!passable || (chunk->soft_blocks[abs_r][abs_c] & soft_mask))
                 continue;
         }
 
@@ -310,6 +329,7 @@ static int field_neighbours_grid_los(
     int                        faction_id,
     struct coord            coord,
     uint16_t                   enemies,
+    uint16_t                   soft_mask,
     struct coord              *out_neighbours,
     uint8_t                   *out_costs)
 {
@@ -341,7 +361,7 @@ static int field_neighbours_grid_los(
             passable = field_tile_passable_no_enemies(chunk, (struct coord){abs_r, abs_c}, enemies);
         }
 
-        if(!passable) {
+        if(!passable || (chunk->soft_blocks[abs_r][abs_c] & soft_mask)) {
             out_costs[ret] = COST_IMPASSABLE;
         }
         ret++;
@@ -433,14 +453,18 @@ static enum flow_dir field_flow_dir(
 static bool field_is_los_corner(
     struct coord  cell, 
     const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C],
-    const uint16_t blockers_field[FIELD_RES_R][FIELD_RES_C])
+    const uint16_t blockers_field[FIELD_RES_R][FIELD_RES_C],
+    const uint16_t soft_field[FIELD_RES_R][FIELD_RES_C],
+    uint16_t       soft_mask)
 {
     if(cell.r > 0 && cell.r < FIELD_RES_R-1) {
 
         bool left_blocked  = cost_field    [cell.r - 1][cell.c] == COST_IMPASSABLE
-                          || blockers_field[cell.r - 1][cell.c] > 0;
+                          || blockers_field[cell.r - 1][cell.c] > 0
+                          || (soft_field   [cell.r - 1][cell.c] & soft_mask);
         bool right_blocked = cost_field    [cell.r + 1][cell.c] == COST_IMPASSABLE
-                          || blockers_field[cell.r + 1][cell.c] > 0;
+                          || blockers_field[cell.r + 1][cell.c] > 0
+                          || (soft_field   [cell.r + 1][cell.c] & soft_mask);
         if(left_blocked ^ right_blocked)
             return true;
     }
@@ -448,9 +472,11 @@ static bool field_is_los_corner(
     if(cell.c > 0 && cell.c < FIELD_RES_C-1) {
 
         bool top_blocked = cost_field    [cell.r][cell.c - 1] == COST_IMPASSABLE
-                        || blockers_field[cell.r][cell.c - 1] > 0;
+                        || blockers_field[cell.r][cell.c - 1] > 0
+                        || (soft_field   [cell.r][cell.c - 1] & soft_mask);
         bool bot_blocked = cost_field    [cell.r][cell.c + 1] == COST_IMPASSABLE
-                        || blockers_field[cell.r][cell.c + 1] > 0;
+                        || blockers_field[cell.r][cell.c + 1] > 0
+                        || (soft_field   [cell.r][cell.c + 1] & soft_mask);
         if(top_blocked ^ bot_blocked)
             return true;
     }
@@ -539,6 +565,7 @@ static void field_build_integration(
     const struct nav_chunk    *chunk, 
     bool                       roads,
     int                        faction_id, 
+    uint16_t                   soft_mask,
     struct nav_unit_query_ctx *ctx,
     float                      inout[FIELD_RES_R][FIELD_RES_C])
 {
@@ -551,7 +578,7 @@ static void field_build_integration(
         struct coord neighbours[8];
         float neighbour_costs[8];
         int num_neighbours = field_neighbours_grid(chunk, curr, true, roads, faction_id,
-            enemies, neighbours, neighbour_costs);
+            enemies, soft_mask, neighbours, neighbour_costs);
 
         for(int i = 0; i < num_neighbours; i++) {
 
@@ -672,7 +699,7 @@ static void field_build_integration_nonpass(
         struct coord neighbours[8];
         float neighbour_costs[8];
         int num_neighbours = field_neighbours_grid(chunk, curr, false, false, faction_id,
-            enemies, neighbours, neighbour_costs);
+            enemies, 0, neighbours, neighbour_costs);
 
         for(int i = 0; i < num_neighbours; i++) {
 
@@ -2388,17 +2415,24 @@ void N_FlowFieldUpdate(
         integration_field[r][c] = INFINITY;
     }}
 
+    uint16_t soft_mask = field_soft_mask(faction_id, enemies_for_faction(faction_id, ctx));
+    if(target.type == TARGET_TILE) {
+        soft_mask = field_soft_mask_for_goal(chunk, target.tile, soft_mask);
+    }
+
     struct coord init_frontier[FIELD_RES_R * FIELD_RES_C];
     size_t ninit = field_initial_frontier(layer, target, chunk, priv, false, faction_id,
         ctx, init_frontier, ARR_SIZE(init_frontier));
 
     /* An empty frontier means the goal is occupied rather than unreachable.
      * Seed it anyway so the surrounding tiles guide units to the ring around
-     * it, instead of leaving the whole field void.
+     * it, instead of leaving the whole field void. Ground set aside around
+     * the goal would seal the seed in, so it is crossed.
      */
     if(!ninit) {
         ninit = field_initial_frontier(layer, target, chunk, priv, true, faction_id,
             ctx, init_frontier, ARR_SIZE(init_frontier));
+        soft_mask = 0;
     }
 
     for(int i = 0; i < ninit; i++) {
@@ -2409,7 +2443,8 @@ void N_FlowFieldUpdate(
     }
 
     inout_flow->target = target;
-    field_build_integration(&frontier, chunk, target.roads, faction_id, ctx, integration_field);
+    field_build_integration(&frontier, chunk, target.roads, faction_id, soft_mask, ctx,
+        integration_field);
     field_build_flow(integration_field, inout_flow);
     field_fixup(priv, layer, target, integration_field, inout_flow, chunk);
 
@@ -2440,6 +2475,7 @@ void N_FlowFieldUpdateIslandToNearest(
 
     struct coord init_frontier[FIELD_RES_R * FIELD_RES_C];
     size_t ninit = 0;
+    uint16_t soft_mask = field_soft_mask(faction_id, enemies_for_faction(faction_id, ctx));
 
     if(inout_flow->target.type == TARGET_ENEMIES) {
 
@@ -2468,6 +2504,9 @@ void N_FlowFieldUpdateIslandToNearest(
         assert(ninit == ntds);
 
     }else{
+        if(inout_flow->target.type == TARGET_TILE) {
+            soft_mask = field_soft_mask_for_goal(chunk, inout_flow->target.tile, soft_mask);
+        }
         ninit = field_initial_frontier(layer, inout_flow->target, chunk, priv, false, faction_id,
             ctx, init_frontier, ARR_SIZE(init_frontier));
         /* If there were no tiles in the initial frontier, that means the target
@@ -2476,6 +2515,7 @@ void N_FlowFieldUpdateIslandToNearest(
         if(!ninit) {
             ninit = field_initial_frontier(layer, inout_flow->target, chunk, priv, true, faction_id,
                 ctx, init_frontier, ARR_SIZE(init_frontier));
+            soft_mask = 0;
         }
     }
 
@@ -2533,7 +2573,8 @@ void N_FlowFieldUpdateIslandToNearest(
         integration_field[curr.r][curr.c] = 0.0f;
     }
 
-    field_build_integration(&frontier, chunk, inout_flow->target.roads, faction_id, ctx, integration_field);
+    field_build_integration(&frontier, chunk, inout_flow->target.roads, faction_id, soft_mask, ctx,
+        integration_field);
     field_build_flow(integration_field, inout_flow);
     field_fixup(priv, layer, inout_flow->target, integration_field, inout_flow, chunk);
 
@@ -2672,6 +2713,10 @@ void N_LOSFieldCreate(
     if(faction_id != FACTION_ID_NONE) {
         enemies = enemy_faction_from(faction_id, ctx);
     }
+    const struct nav_chunk *goal_chunk = &priv->chunks[N_DestLayer(id)]
+                                                      [target.chunk_r * priv->width + target.chunk_c];
+    uint16_t soft_mask = field_soft_mask_for_goal(goal_chunk, (struct coord){target.tile_r, target.tile_c},
+        field_soft_mask(faction_id, enemies));
 
     /* With roads in the destination's chunk, only the last stretch is walked
      * in a straight line: farther out a road may be the cheaper way. */
@@ -2687,14 +2732,15 @@ void N_LOSFieldCreate(
         struct coord neighbours[8];
         uint8_t neighbour_costs[8];
         int num_neighbours = field_neighbours_grid_los(chunk, out_los, faction_id,
-            curr, enemies, neighbours, neighbour_costs);
+            curr, enemies, soft_mask, neighbours, neighbour_costs);
 
         for(int i = 0; i < num_neighbours; i++) {
 
             int nr = neighbours[i].r, nc = neighbours[i].c;
             if(neighbour_costs[i] > 1) {
                 
-                if(!field_is_los_corner(neighbours[i], chunk->cost_base, chunk->blockers))
+                if(!field_is_los_corner(neighbours[i], chunk->cost_base, chunk->blockers,
+                                        chunk->soft_blocks, soft_mask))
                     continue;
 
                 struct tile_desc src_desc = (struct tile_desc) {
