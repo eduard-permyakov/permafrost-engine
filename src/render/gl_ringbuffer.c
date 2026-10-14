@@ -233,7 +233,7 @@ struct gl_ring *R_GL_RingbufferInit(size_t size, enum ring_format fmt)
     ret->imark_tail = 0;
     ret->nmarkers = 0;
     memset(&ret->fences, 0, sizeof(ret->fences));
-    memset(&ret->markers, 0, sizeof(ret->fences));
+    memset(&ret->markers, 0, sizeof(ret->markers));
 
     if(GLEW_ARB_buffer_storage) {
         ret->mode = MODE_PERSISTENT_MAPPED_BUFFER;

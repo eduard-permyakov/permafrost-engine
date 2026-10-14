@@ -578,8 +578,10 @@ static size_t batch_sort_by_batch_stat(struct ent_stat_rstate *ents, size_t nent
             break;
     }
 
-    curr.end_idx = i - 1;
-    out[ret++] = curr;
+    if(ret < maxout) {
+        curr.end_idx = i - 1;
+        out[ret++] = curr;
+    }
     return ret;
 }
 
@@ -621,8 +623,10 @@ static size_t batch_sort_by_batch_anim(struct ent_anim_rstate *ents, size_t nent
             break;
     }
 
-    curr.end_idx = i - 1;
-    out[ret++] = curr;
+    if(ret < maxout) {
+        curr.end_idx = i - 1;
+        out[ret++] = curr;
+    }
     return ret;
 }
 
@@ -717,8 +721,10 @@ static size_t batch_sort_by_inst_stat(struct ent_stat_rstate *ents, size_t nents
             break;
     }
 
-    curr.end_idx = i - 1;
-    out[ret++] = curr;
+    if(ret < maxout) {
+        curr.end_idx = i - 1;
+        out[ret++] = curr;
+    }
 
     return ret;
 }
@@ -760,8 +766,10 @@ static size_t batch_sort_by_inst_anim(struct ent_anim_rstate *ents, size_t nents
             break;
     }
 
-    curr.end_idx = i - 1;
-    out[ret++] = curr;
+    if(ret < maxout) {
+        curr.end_idx = i - 1;
+        out[ret++] = curr;
+    }
 
     return ret;
 }
@@ -801,8 +809,10 @@ static size_t batch_sort_by_vbo(struct inst_group_desc *descs, size_t ndescs,
             break;
     }
 
-    curr.end_idx = i - 1;
-    out[ret++] = curr;
+    if(ret < maxout) {
+        curr.end_idx = i - 1;
+        out[ret++] = curr;
+    }
 
     return ret;
 }
