@@ -45,6 +45,7 @@
 #include "sprite.h"
 #include "asset_load.h"
 #include "loading_screen.h"
+#include "settings.h"
 #include "lib/public/attr.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/vec.h"
@@ -561,6 +562,12 @@ static struct result session_task(void* arg)
                                                      : EVENT_SESSION_FAIL_LOAD;
 
     if(result) {
+        /* For automated runs: a session saved from a menu loads paused */
+        struct sval resume;
+        if(s_current == SESH_REQ_LOAD
+        && Settings_Get("pf.debug.resume_on_load", &resume) == SS_OKAY && resume.as_bool) {
+            G_SetSimState(G_RUNNING);
+        }
         E_Global_Notify(success_event, NULL, ES_ENGINE);
     }else {
         E_Global_Notify(failure_event, s_errbuff, ES_ENGINE);
