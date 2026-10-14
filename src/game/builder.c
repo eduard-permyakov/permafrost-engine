@@ -96,6 +96,7 @@ KHASH_MAP_INIT_INT(state, struct builderstate)
 static void on_build_anim_finished(void *user, void *event);
 static void on_motion_end(void *user, void *event);
 static void proceed_at_site(uint32_t uid, struct builderstate *bs);
+static void approach(uint32_t uid, struct builderstate *bs, uint32_t building);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -225,18 +226,21 @@ static void on_motion_end(void *user, void *event)
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_motion_end);
     assert(bs->target_uid != UID_NONE);
 
-    if(!G_EntityExists(bs->target_uid)
-    ||  G_EntityIsZombie(bs->target_uid)
-    || !M_NavObjAdjacent(s_map, uid, bs->target_uid)) {
+    if(!G_EntityExists(bs->target_uid) || G_EntityIsZombie(bs->target_uid)) {
         bs->state = STATE_NOT_BUILDING;
         bs->target_uid = UID_NONE;
-        return; /* builder could not reach the building */
+        return;
+    }
+
+    /* Others crowding the site kept it out of reach: it walks up again from the wait */
+    if(!M_NavObjAdjacent(s_map, uid, bs->target_uid)) {
+        bs->state = STATE_WAIT_FOUND;
+        return;
     }
 
     if(!G_Building_IsFounded(bs->target_uid) && !try_found_site(bs->target_uid)) {
         G_Building_ClearFootprint(bs->target_uid);
         bs->state = STATE_WAIT_FOUND;
-        bs->wait_ticks = 0;
         return;
     }
 
@@ -296,25 +300,51 @@ static void on_20hz_tick(void *user, void *event)
             if(!G_Move_Still(uid))
                 continue;
             if(!M_NavObjAdjacent(s_map, uid, bs->target_uid)) {
-                G_Builder_Build(uid, bs->target_uid);
+                approach(uid, bs, bs->target_uid);
                 continue;
             }
-            if(try_found_site(bs->target_uid)) {
+            if(G_Building_IsFounded(bs->target_uid) || try_found_site(bs->target_uid)) {
                 proceed_at_site(uid, bs);
                 continue;
             }
         }
 
-        if(bs->wait_ticks % FOUND_CLEAR_TICKS == 0) {
+        bool founded = G_Building_IsFounded(bs->target_uid);
+        if(!founded && bs->wait_ticks % FOUND_CLEAR_TICKS == 0) {
             G_Building_ClearFootprint(bs->target_uid);
         }
 
         if(bs->wait_ticks >= FOUND_WAIT_TICKS) {
             bs->state = STATE_NOT_BUILDING;
             bs->target_uid = UID_NONE;
-            E_Entity_Notify(EVENT_BUILD_FAIL_FOUND, uid, NULL, ES_ENGINE);
+            if(!founded) {
+                E_Entity_Notify(EVENT_BUILD_FAIL_FOUND, uid, NULL, ES_ENGINE);
+            }
         }
     });
+}
+
+static void approach(uint32_t uid, struct builderstate *bs, uint32_t building)
+{
+    E_Entity_Unregister(EVENT_MOTION_END, uid, on_motion_end);
+    E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin);
+    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_build_anim_finished);
+
+    /* Taken off a building it was still working on */
+    if(bs->state == STATE_BUILDING) {
+        E_Entity_Notify(EVENT_BUILD_END, uid, NULL, ES_ENGINE);
+    }
+
+    bs->state = STATE_MOVING_TO_TARGET;
+    bs->target_uid = building;
+    E_Entity_Notify(EVENT_BUILD_TARGET_ACQUIRED, uid, (void*)((uintptr_t)building), ES_ENGINE);
+
+    if(M_NavObjAdjacent(s_map, uid, building)) {
+        on_motion_end((void*)((uintptr_t)uid), NULL);
+    }else{
+        G_Move_SetSurroundEntity(uid, building);
+        E_Entity_Register(EVENT_MOTION_END, uid, on_motion_end, (void*)((uintptr_t)uid), G_RUNNING);
+    }
 }
 
 static void on_mousedown(void *user, void *event)
@@ -408,26 +438,14 @@ bool G_Builder_Build(uint32_t uid, uint32_t building)
     if(!(G_FlagsGet(building) & ENTITY_FLAG_BUILDING))
         return false;
 
-    E_Entity_Unregister(EVENT_MOTION_END, uid, on_motion_end);
-    E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin);
-    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_build_anim_finished);
-
-    /* Taken off a building it was still working on */
-    if(bs->state == STATE_BUILDING) {
-        E_Entity_Notify(EVENT_BUILD_END, uid, NULL, ES_ENGINE);
+    /* A gatherer's trip would otherwise take it off to drop its load once it is there */
+    if(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER) {
+        G_Harvester_Stop(uid);
+        G_Harvester_ClearQueuedCmd(uid);
     }
 
-    bs->state = STATE_MOVING_TO_TARGET;
-    bs->target_uid = building;
-    E_Entity_Notify(EVENT_BUILD_TARGET_ACQUIRED, uid, (void*)((uintptr_t)building), ES_ENGINE);
-
-    if(M_NavObjAdjacent(s_map, uid, building)) {
-        on_motion_end((void*)((uintptr_t)uid), NULL);
-    }else{
-        G_Move_SetSurroundEntity(uid, building);
-        E_Entity_Register(EVENT_MOTION_END, uid, on_motion_end, (void*)((uintptr_t)uid), G_RUNNING);
-    }
-
+    bs->wait_ticks = 0;
+    approach(uid, bs, building);
     return true;
 }
 
@@ -550,6 +568,14 @@ bool G_Builder_Idle(uint32_t uid)
     struct builderstate *bs = builderstate_get(uid);
     assert(bs);
     return (bs->state == STATE_NOT_BUILDING);
+}
+
+uint32_t G_Builder_Target(uint32_t uid)
+{
+    struct builderstate *bs = builderstate_get(uid);
+    if(!bs || bs->state == STATE_NOT_BUILDING)
+        return NULL_UID;
+    return bs->target_uid;
 }
 
 int G_Builder_CountOn(uint32_t building)

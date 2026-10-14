@@ -44,6 +44,7 @@
 #include "position.h"
 #include "storage_site.h"
 #include "harvester.h"
+#include "builder.h"
 #include "../event.h"
 #include "../entity.h"
 #include "../sched.h"
@@ -143,6 +144,7 @@ static void note_upkeep_good(const char *good);
 static uint32_t first_meal_delay_ms(uint32_t uid, uint32_t interval_ms);
 static bool carrying(uint32_t uid);
 static bool at_store(uint32_t uid, uint32_t site, int tries);
+static bool free_to_fetch(uint32_t uid);
 static void on_arrive_quiver(void *user, void *event);
 static void on_ordered_quiver(void *user, void *event);
 
@@ -290,6 +292,9 @@ static void on_arrive(void *user, void *event)
     p->fetching = NULL_UID;
     if(!G_EntityExists(site) || G_EntityIsZombie(site))
         return;
+    /* Sent to build on the way, it eats once the building is done */
+    if(!free_to_fetch(uid))
+        return;
     /* Others crowding the store kept it out of reach: try again */
     if(!at_store(uid, site, p->tries)) {
         bool go_back = p->go_back;
@@ -345,6 +350,9 @@ static bool free_to_fetch(uint32_t uid)
         return false;
     /* On its way into a building, to be made into something else */
     if((flags & ENTITY_FLAG_GARRISON) && G_Garrison_IsIngredient(uid))
+        return false;
+    /* A site it was sent to found or build would be left as a ghost */
+    if((flags & ENTITY_FLAG_BUILDER) && !G_Builder_Idle(uid))
         return false;
     return true;
 }

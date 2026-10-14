@@ -662,6 +662,8 @@ const char *G_BuildingGetGroundTexture(uint32_t uid);
 bool G_Builder_Build(uint32_t uid, uint32_t building);
 void G_Builder_SetBuildSpeed(uint32_t uid, int speed);
 int  G_Builder_GetBuildSpeed(uint32_t uid);
+/* The building it is on its way to or at work on, or NULL_UID */
+uint32_t G_Builder_Target(uint32_t uid);
 void G_Builder_SetBuildOnLeftClick(void);
 
 /*###########################################################################*/

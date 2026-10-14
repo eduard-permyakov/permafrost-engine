@@ -778,6 +778,7 @@ typedef struct {
 static PyObject *PyBuilderEntity_del(PyBuilderEntityObject *self);
 static int       PyBuilderEntity_init(PyBuilderEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyBuilderEntity_build(PyBuilderEntityObject *self, PyObject *args);
+static PyObject *PyBuilderEntity_build_target(PyBuilderEntityObject *self);
 static PyObject *PyBuilderEntity_pickle(PyBuilderEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyBuilderEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
@@ -785,6 +786,10 @@ static PyMethodDef PyBuilderEntity_methods[] = {
     {"build", 
     (PyCFunction)PyBuilderEntity_build, METH_VARARGS,
     "Issue an order to build a specific buildable entity."},
+
+    {"build_target", 
+    (PyCFunction)PyBuilderEntity_build_target, METH_NOARGS,
+    "The building this entity is on its way to or at work on, or None."},
 
     {"__del__", 
     (PyCFunction)PyBuilderEntity_del, METH_NOARGS,
@@ -4165,6 +4170,19 @@ static PyObject *PyBuilderEntity_build(PyBuilderEntityObject *self, PyObject *ar
 
     G_Builder_Build(self->super.ent, ((PyBuildableEntityObject*)building)->super.ent);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyBuilderEntity_build_target(PyBuilderEntityObject *self)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE)
+        Py_RETURN_NONE;
+
+    uint32_t target = G_Builder_Target(self->super.ent);
+    PyObject *ret = (target != NULL_UID) ? S_Entity_ObjForUID(target) : NULL;
+    if(!ret)
+        Py_RETURN_NONE;
+    Py_INCREF(ret);
+    return ret;
 }
 
 static PyObject *PyBuilderEntity_pickle(PyBuilderEntityObject *self, PyObject *args, PyObject *kwargs)
