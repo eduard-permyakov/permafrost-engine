@@ -251,6 +251,30 @@ static PyThreadState *s_main_thread_state;
 static khash_t(task) *s_tid_task_map;
 static uint32_t       s_pause_tick;
 
+
+/* An error left set by an earlier call would surface in the next Python code
+ * run, wherever it happens to test for one (e.g. a %d of -1): report where it
+ * was found and clear it. */
+static void clear_stale_error(const char *where, PyObject *what)
+{
+    if(!PyErr_Occurred())
+        return;
+    PyObject *type, *value, *tb;
+    PyErr_Fetch(&type, &value, &tb);
+    PyObject *vr = value ? PyObject_Repr(value) : NULL;
+    PyObject *wr = what ? PyObject_Repr(what) : NULL;
+    fprintf(stderr, "[stale-exc] %s: %s %s left set before %s\n", where,
+        type ? ((PyTypeObject*)type)->tp_name : "?",
+        vr && PyString_Check(vr) ? PyString_AS_STRING(vr) : "?",
+        wr && PyString_Check(wr) ? PyString_AS_STRING(wr) : "?");
+    Py_XDECREF(vr);
+    Py_XDECREF(wr);
+    Py_XDECREF(type);
+    Py_XDECREF(value);
+    Py_XDECREF(tb);
+    PyErr_Clear();
+}
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -456,6 +480,7 @@ static PyObject *pytask_resume(PyTaskObject *self)
         PyFrameObject *fr = self->ts->frame;
         if(!_PyObject_GC_IS_TRACKED((PyObject*)fr))
             PyObject_GC_Track((PyObject*)fr);
+        clear_stale_error("task-resume", (PyObject*)fr->f_code);
         ret = PyEval_EvalFrameEx(fr, 0);
         /* EvalFrameEx nulls tstate->frame on exit without DECREF; release
          * the owned reference unpickle (or our task setup) put on it. */

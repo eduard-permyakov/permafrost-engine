@@ -1416,6 +1416,30 @@ static PyMethodDef pf_module_methods[] = {
 static const char        *s_progname = NULL;
 static struct py_err_ctx  s_err_ctx = {false,};
 
+
+/* An error left set by an earlier call would surface in the next Python code
+ * run, wherever it happens to test for one (e.g. a %d of -1): report where it
+ * was found and clear it. */
+static void clear_stale_error(const char *where, PyObject *what)
+{
+    if(!PyErr_Occurred())
+        return;
+    PyObject *type, *value, *tb;
+    PyErr_Fetch(&type, &value, &tb);
+    PyObject *vr = value ? PyObject_Repr(value) : NULL;
+    PyObject *wr = what ? PyObject_Repr(what) : NULL;
+    fprintf(stderr, "[stale-exc] %s: %s %s left set before %s\n", where,
+        type ? ((PyTypeObject*)type)->tp_name : "?",
+        vr && PyString_Check(vr) ? PyString_AS_STRING(vr) : "?",
+        wr && PyString_Check(wr) ? PyString_AS_STRING(wr) : "?");
+    Py_XDECREF(vr);
+    Py_XDECREF(wr);
+    Py_XDECREF(type);
+    Py_XDECREF(value);
+    Py_XDECREF(tb);
+    PyErr_Clear();
+}
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -6123,6 +6147,7 @@ void S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, scrip
      * The reason is that the invoked handler may unregister itself, thus removing the last 
      * living reference to it. */
     Py_INCREF(callable);
+    clear_stale_error("handler", callable);
     ret = PyObject_CallObject(callable, args);
     Py_DECREF(callable);
     Py_DECREF(args);
