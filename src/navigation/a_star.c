@@ -319,6 +319,41 @@ static float portal_node_penalty(void)
     return sqrt(pow(FIELD_RES_R, 2.0f) + pow(FIELD_RES_C, 2.0f));
 }
 
+static bool hops_share_island(const struct portal_hop *a, const struct portal_hop *b)
+{
+    return a->portal->chunk.r == b->portal->chunk.r
+        && a->portal->chunk.c == b->portal->chunk.c
+        && a->liid == b->liid;
+}
+
+/* A path is walked with one flow field per chunk island, so one that leaves
+ * an island and comes back to it (round an obstacle through the chunk next
+ * door, cheap where roads make crossings cheap) cannot be followed: the
+ * island's field would have to lead out and back in at once, and merged it
+ * sends units back and forth across the border. Each such loop is cut out,
+ * crossing the island in one go instead.
+ */
+static void path_drop_revisits(vec_portal_t *path)
+{
+    for(int i = 0; i < vec_size(path); i++) {
+
+        int last = i;
+        for(int j = vec_size(path) - 1; j > i + 1; j--) {
+            if(hops_share_island(&vec_AT(path, i), &vec_AT(path, j))) {
+                last = j;
+                break;
+            }
+        }
+        int ncut = last - i - 1;
+        if(ncut <= 0)
+            continue;
+        for(int j = last; j < vec_size(path); j++) {
+            vec_AT(path, j - ncut) = vec_AT(path, j);
+        }
+        path->size -= ncut;
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -614,6 +649,7 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_til
         vec_AT(out_path, i) = vec_AT(out_path, j);
         vec_AT(out_path, j) = tmp;
     }
+    path_drop_revisits(out_path);
 
     khiter_t k = kh_get(key_float, running_cost, phop_to_key(&last));
     assert(k != kh_end(running_cost));
