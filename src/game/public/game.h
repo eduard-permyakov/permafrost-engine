@@ -956,11 +956,20 @@ bool   G_Roads_Get(struct road_desc rd, uint8_t *out_links);
 size_t G_Roads_Count(void);
 size_t G_Roads_GetAll(size_t maxout, struct road_desc out[], uint8_t out_links[]);
 void   G_Roads_SetHover(const struct road_desc *rd);
+/* Whether a road site may stand on the tile, which only ground that is not 
+ * passable or explored and buildings prevent: units on it do not
+ */
+bool   G_Roads_Buildable(struct road_desc rd, int faction_id);
+void   G_Roads_SetRefused(size_t ntiles, const struct road_desc tiles[]);
 void   G_Roads_SetRender(bool on);
 /* NULL removes the decals from the roads */
 bool   G_Roads_SetTileset(const struct road_tileset *tileset);
 bool   G_Roads_GetTileset(struct road_tileset *out);
 bool   G_Roads_GetRender(void);
+/* The road tiles, built on or not, that the building's footprint overlaps, which a 
+ * building units walk over leaves alone
+ */
+size_t G_Roads_TilesUnder(uint32_t uid, size_t maxout, struct road_desc out[]);
 
 /*###########################################################################*/
 /* GAME FORMATION                                                            */

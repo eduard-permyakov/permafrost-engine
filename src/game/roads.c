@@ -41,6 +41,7 @@
 #include "game_private.h"
 #include "../event.h"
 #include "../camera.h"
+#include "../entity.h"
 #include "../phys/public/collision.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
@@ -49,9 +50,11 @@
 #include "../lib/public/attr.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/pf_string.h"
+#include "../pf_math.h"
 
 #include <assert.h>
 #include <string.h>
+#include <math.h>
 #include <SDL.h>
 
 #include "../mem.h"
@@ -77,6 +80,9 @@
 #define ROADS_PER_CHUNK_R   (TILES_PER_CHUNK_HEIGHT / ROAD_TILE_SPAN)
 #define ROADS_PER_CHUNK_C   (TILES_PER_CHUNK_WIDTH / ROAD_TILE_SPAN)
 #define OVERLAY_MAX_QUADS   (ROADS_PER_CHUNK_R * ROADS_PER_CHUNK_C * 5)
+#define REFUSED_BATCH       (OVERLAY_MAX_QUADS / (ROAD_TILE_SPAN * ROAD_TILE_SPAN))
+#define MIN(a, b)           ((a) < (b) ? (a) : (b))
+#define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
 
 _Static_assert(TILES_PER_CHUNK_WIDTH % ROAD_TILE_SPAN == 0, "Road tiles must not cross chunks");
 _Static_assert(TILES_PER_CHUNK_HEIGHT % ROAD_TILE_SPAN == 0, "Road tiles must not cross chunks");
@@ -120,6 +126,8 @@ static bool                *s_chunk_dirty;
 static bool                 s_render;
 static bool                 s_hover_set;
 static struct road_desc     s_hover;
+/* The tiles drawn in red, as no road can be laid on them */
+static vec_road_idx_t       s_refused;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -384,10 +392,62 @@ static void render_hover(void)
     });
 }
 
+/* One square per map tile, as a single quad would not lie on the terrain 
+ * over a cliff
+ */
+static void render_refused(int first, int ntiles)
+{
+    const vec3_t color = (vec3_t){1.0f, 0.0f, 0.0f};
+    size_t count = ntiles * ROAD_TILE_SPAN * ROAD_TILE_SPAN;
+
+    STALLOC(vec2_t, corners_buff, 4 * count);
+    STALLOC(vec3_t, colors_buff, count);
+
+    vec2_t *corners = corners_buff;
+    vec3_t *colors = colors_buff;
+
+    for(int i = first; i < first + ntiles; i++) {
+        int idx = vec_AT(&s_refused, i);
+        vec2_t min, max;
+        G_Roads_Bounds((struct road_desc){idx / s_cols, idx % s_cols}, &min, &max);
+
+        for(int r = 0; r < ROAD_TILE_SPAN; r++) {
+        for(int c = 0; c < ROAD_TILE_SPAN; c++) {
+            vec2_t tile_min = (vec2_t){min.x + c * X_COORDS_PER_TILE, min.z + r * Z_COORDS_PER_TILE};
+            vec2_t tile_max = (vec2_t){tile_min.x + X_COORDS_PER_TILE, tile_min.z + Z_COORDS_PER_TILE};
+            push_rect(&corners, &colors, tile_min, tile_max, color);
+        }}
+    }
+
+    mat4x4_t model;
+    PFM_Mat4x4_Identity(&model);
+    bool on_water_surface = true;
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawMapOverlayQuads,
+        .nargs = 6,
+        .args = {
+            R_PushArg(corners_buff, sizeof(vec2_t) * 4 * count),
+            R_PushArg(colors_buff, sizeof(vec3_t) * count),
+            R_PushArg(&count, sizeof(count)),
+            R_PushArg(&model, sizeof(model)),
+            R_PushArg(&on_water_surface, sizeof(bool)),
+            (void*)G_GetPrevTickMap(),
+        },
+    });
+
+    STFREE(corners_buff);
+    STFREE(colors_buff);
+}
+
 static void on_render_3d(void *user, void *event)
 {
     if(s_hover_set)
         render_hover();
+
+    for(int i = 0; i < vec_size(&s_refused); i += REFUSED_BATCH) {
+        render_refused(i, MIN(REFUSED_BATCH, vec_size(&s_refused) - i));
+    }
 
     if(!s_render || s_count == 0)
         return;
@@ -442,6 +502,75 @@ static void set_nav_road(struct road_desc rd, bool on)
     M_NavSetRoad(s_map, min, max, on);
 }
 
+/* The footprint of a road site standing on the tile, kept just inside its
+ * edges, as a cell on the edge would be taken from the neighbouring tile
+ */
+static void site_obb(struct road_desc rd, struct obb *out)
+{
+    const float inset = 0.05f;
+
+    vec2_t min, max;
+    G_Roads_Bounds(rd, &min, &max);
+    vec2_t center = (vec2_t){(min.x + max.x) / 2.0f, (min.z + max.z) / 2.0f};
+    vec3_t pos = (vec3_t){center.x, M_HeightAtPoint(s_map, center), center.z};
+
+    struct aabb aabb = (struct aabb){
+        .x_min = -ROAD_TILE_X_DIM / 2.0f + inset,
+        .x_max =  ROAD_TILE_X_DIM / 2.0f - inset,
+        .y_min = 0.0f,
+        .y_max = 0.0f,
+        .z_min = -ROAD_TILE_Z_DIM / 2.0f + inset,
+        .z_max =  ROAD_TILE_Z_DIM / 2.0f - inset,
+    };
+    vec3_t scale = (vec3_t){1.0f, 1.0f, 1.0f};
+    mat4x4_t model;
+    Entity_ModelMatrixFrom(pos, (quat_t){0.0f, 0.0f, 0.0f, 1.0f}, scale, &model);
+    Entity_CurrentOBBFrom(&aabb, model, scale, out);
+}
+
+static bool obb_overlaps_tile(const struct obb *obb, vec2_t min, vec2_t max)
+{
+    vec2_t centre = (vec2_t){obb->center.x, obb->center.z};
+    vec2_t tile_centre = (vec2_t){(min.x + max.x) / 2.0f, (min.z + max.z) / 2.0f};
+    vec2_t tile_half = (vec2_t){(max.x - min.x) / 2.0f, (max.z - min.z) / 2.0f};
+    vec2_t rel = (vec2_t){centre.x - tile_centre.x, centre.z - tile_centre.z};
+
+    vec2_t axes[5] = {{1.0f, 0.0f}, {0.0f, 1.0f}};
+    int naxes = 2;
+    for(int i = 0; i < 3; i++) {
+        vec2_t axis = (vec2_t){obb->axes[i].x, obb->axes[i].z};
+        float len = PFM_Vec2_Len(&axis);
+        if(len < 1e-3f)
+            continue;
+        PFM_Vec2_Scale(&axis, 1.0f / len, &axes[naxes++]);
+    }
+
+    for(int i = 0; i < naxes; i++) {
+        float tile_radius = tile_half.x * fabsf(axes[i].x) + tile_half.z * fabsf(axes[i].z);
+        float obb_radius = 0.0f;
+        for(int j = 0; j < 3; j++) {
+            vec2_t axis = (vec2_t){obb->axes[j].x, obb->axes[j].z};
+            obb_radius += obb->half_lengths[j] * fabsf(PFM_Vec2_Dot(&axis, &axes[i]));
+        }
+        if(fabsf(PFM_Vec2_Dot(&rel, &axes[i])) > tile_radius + obb_radius)
+            return false;
+    }
+    return true;
+}
+
+static void on_building_placed(void *user, void *event)
+{
+    const struct entity_block_desc *desc = event;
+    if(!G_EntityExists(desc->uid) || G_EntityIsZombie(desc->uid))
+        return;
+
+    struct road_desc tiles[64];
+    size_t ntiles = G_Roads_TilesUnder(desc->uid, ARR_SIZE(tiles), tiles);
+    for(int i = 0; i < ntiles; i++) {
+        G_Roads_Remove(tiles[i]);
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -462,6 +591,7 @@ bool G_Roads_Init(const struct map *map)
     if(!s_tiles || !s_decal_ids || !s_chunk_counts || !s_chunk_dirty)
         goto fail;
     vec_road_idx_init(&s_stale);
+    vec_road_idx_init(&s_refused);
 
     s_map = map;
     s_res = res;
@@ -473,6 +603,7 @@ bool G_Roads_Init(const struct map *map)
 
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_ALL);
     E_Global_Register(EVENT_UPDATE_START, on_update_start, NULL, G_ALL);
+    E_Global_Register(EVENT_BUILDING_PLACED, on_building_placed, NULL, G_ALL);
     if(s_has_tileset)
         retain_tileset(true);
     return true;
@@ -492,9 +623,11 @@ void G_Roads_Shutdown(void)
 
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
+    E_Global_Unregister(EVENT_BUILDING_PLACED, on_building_placed);
     retain_tileset(false);
 
     vec_road_idx_destroy(&s_stale);
+    vec_road_idx_destroy(&s_refused);
     PF_FREE(s_decal_ids);
     PF_FREE(s_tiles);
     PF_FREE(s_chunk_counts);
@@ -525,6 +658,7 @@ void G_Roads_Clear(void)
     }
     memset(s_decal_ids, 0, s_rows * s_cols * sizeof(s_decal_ids[0]));
     vec_road_idx_reset(&s_stale);
+    vec_road_idx_reset(&s_refused);
 
     memset(s_tiles, 0, s_rows * s_cols * sizeof(s_tiles[0]));
     memset(s_chunk_counts, 0, nchunks * sizeof(s_chunk_counts[0]));
@@ -663,6 +797,63 @@ void G_Roads_SetHover(const struct road_desc *rd)
     s_hover_set = (rd != NULL);
     if(rd) {
         s_hover = *rd;
+    }
+}
+
+bool G_Roads_Buildable(struct road_desc rd, int faction_id)
+{
+    if(!s_map || !in_bounds(rd))
+        return false;
+
+    struct obb obb;
+    site_obb(rd, &obb);
+    return M_NavObjectPermanentlyBuildable(s_map, NAV_LAYER_GROUND_1X1, &obb);
+}
+
+size_t G_Roads_TilesUnder(uint32_t uid, size_t maxout, struct road_desc out[])
+{
+    if(!s_map || G_EntityIsZombie(uid) || !(G_FlagsGet(uid) & ENTITY_FLAG_BUILDING)
+    || G_Building_GetPathable(uid))
+        return 0;
+
+    struct obb obb;
+    Entity_CurrentOBB(uid, &obb, true);
+
+    float extent_x = 0.0f, extent_z = 0.0f;
+    for(int i = 0; i < 3; i++) {
+        extent_x += fabsf(obb.axes[i].x) * obb.half_lengths[i];
+        extent_z += fabsf(obb.axes[i].z) * obb.half_lengths[i];
+    }
+    int c_min = (int)floorf((s_map_pos.x - (obb.center.x + extent_x)) / ROAD_TILE_X_DIM);
+    int c_max = (int)floorf((s_map_pos.x - (obb.center.x - extent_x)) / ROAD_TILE_X_DIM);
+    int r_min = (int)floorf(((obb.center.z - extent_z) - s_map_pos.z) / ROAD_TILE_Z_DIM);
+    int r_max = (int)floorf(((obb.center.z + extent_z) - s_map_pos.z) / ROAD_TILE_Z_DIM);
+
+    size_t ret = 0;
+    for(int r = r_min; r <= r_max; r++) {
+    for(int c = c_min; c <= c_max; c++) {
+
+        struct road_desc rd = (struct road_desc){r, c};
+        vec2_t min, max;
+        if(ret == maxout || !G_Roads_Bounds(rd, &min, &max))
+            continue;
+        if(obb_overlaps_tile(&obb, min, max))
+            out[ret++] = rd;
+    }}
+    return ret;
+}
+
+void G_Roads_SetRefused(size_t ntiles, const struct road_desc tiles[])
+{
+    if(!s_map)
+        return;
+
+    vec_road_idx_reset(&s_refused);
+    for(int i = 0; i < ntiles; i++) {
+        if(!in_bounds(tiles[i]))
+            continue;
+        if(!vec_road_idx_push(&s_refused, tiles[i].r * s_cols + tiles[i].c))
+            return;
     }
 }
 

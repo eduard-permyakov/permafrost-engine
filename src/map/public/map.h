@@ -664,6 +664,8 @@ void     M_NavGetResolution(const struct map *map, struct map_resolution *out);
 bool     M_NavObjectBuildable(const struct map *map, enum nav_layer layer,
                               bool allow_shore, int faction_id, bool reserved, 
                               const struct obb *obb);
+bool     M_NavObjectPermanentlyBuildable(const struct map *map, enum nav_layer layer,
+                                         const struct obb *obb);
 bool     M_NavIsMaximallyClose(const struct map *map, enum nav_layer layer, 
                                vec2_t xz_pos, vec2_t xz_dest, float tolerance);
 bool     M_NavIsAdjacentToImpassable(const struct map *map, enum nav_layer layer, vec2_t xz_pos);

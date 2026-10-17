@@ -1253,6 +1253,12 @@ bool M_NavObjectBuildable(const struct map *map, enum nav_layer layer,
         reserved, map->pos, obb);
 }
 
+bool M_NavObjectPermanentlyBuildable(const struct map *map, enum nav_layer layer,
+                                     const struct obb *obb)
+{
+    return N_ObjectPermanentlyBuildable(map->nav_private, map, layer, map->pos, obb);
+}
+
 bool M_NavHasEntityLOS(const struct map *map, enum nav_layer layer, 
                        vec2_t xz_pos, uint32_t uid)
 {

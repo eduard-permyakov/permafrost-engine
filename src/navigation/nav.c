@@ -7412,6 +7412,46 @@ out:
     return ret;
 }
 
+bool N_ObjectPermanentlyBuildable(void *nav_private, const struct map *map, enum nav_layer layer,
+                                  vec3_t map_pos, const struct obb *obb)
+{
+    assert(Sched_UsingBigStack());
+
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct tile_desc tds[2048];
+    size_t ntiles = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
+
+    khash_t(td) *building_tileset = n_non_collidable_buildings_tileset(priv, map_pos, obb);
+    assert(building_tileset);
+
+    bool ret = false;
+    for(int i = 0; i < ntiles; i++) {
+
+        const struct nav_chunk *chunk = 
+            &priv->chunks[layer][IDX(tds[i].chunk_r, priv->width, tds[i].chunk_c)];
+        struct box bounds = M_Tile_Bounds(res, map_pos, tds[i]);
+        vec2_t center = (vec2_t){
+            bounds.x - bounds.width / 2.0f,
+            bounds.z + bounds.height / 2.0f
+        };
+
+        if(chunk->static_blockers[tds[i].tile_r][tds[i].tile_c]
+        || chunk->soft_blocks[tds[i].tile_r][tds[i].tile_c]
+        || chunk->cost_base[tds[i].tile_r][tds[i].tile_c] == COST_IMPASSABLE
+        || !G_Fog_PlayerExplored((vec2_t){center.x, center.z})
+        || (kh_get(td, building_tileset, td_key(tds + i)) != kh_end(building_tileset))) {
+            goto out;
+        }
+    }
+    ret = true;
+out:
+    PF_FREE(building_tileset);
+    return ret;
+}
+
 enum nav_layer N_DestLayer(dest_id_t id)
 {
     int layer = (id >> 4) & 0xf;

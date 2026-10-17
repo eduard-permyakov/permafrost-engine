@@ -792,6 +792,16 @@ bool      N_ObjectBuildable(void *nav_private, const struct map *map,
                             bool reserved, vec3_t map_pos, const struct obb *obb);
 
 /* ------------------------------------------------------------------------
+ * Like N_ObjectBuildable, but only false for what does not clear by itself:
+ * units never stand in the way, whereas impassable or unexplored ground and
+ * buildings (including ones set aside for and ones not colliding) do.
+ * ------------------------------------------------------------------------
+ */
+bool      N_ObjectPermanentlyBuildable(void *nav_private, const struct map *map,
+                                       enum nav_layer layer, vec3_t map_pos,
+                                       const struct obb *obb);
+
+/* ------------------------------------------------------------------------
  * Will return the XZ map position that the entity at the source location
  * should travel to in order to get in range of the target position using
  * the shortest path.

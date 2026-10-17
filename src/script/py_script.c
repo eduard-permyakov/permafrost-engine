@@ -139,6 +139,9 @@ static PyObject *PyPf_get_road(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_all_roads(PyObject *self);
 static PyObject *PyPf_clear_roads(PyObject *self);
 static PyObject *PyPf_set_road_hover(PyObject *self, PyObject *args);
+static PyObject *PyPf_road_buildable(PyObject *self, PyObject *args);
+static PyObject *PyPf_road_tiles_under(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_road_refused(PyObject *self, PyObject *args);
 static PyObject *PyPf_show_roads(PyObject *self);
 static PyObject *PyPf_hide_roads(PyObject *self);
 static PyObject *PyPf_set_road_tileset(PyObject *self, PyObject *args);
@@ -501,6 +504,21 @@ static PyMethodDef pf_module_methods[] = {
     {"set_road_hover", 
     (PyCFunction)PyPf_set_road_hover, METH_VARARGS,
     "Outline the specified (row, column) road tile, or stop outlining when passed None."},
+
+    {"road_buildable", 
+    (PyCFunction)PyPf_road_buildable, METH_VARARGS,
+    "Returns True if a road site of the specified faction may stand on the specified (row, column) "
+    "road tile: its ground is passable and explored, with no building on it. Units on it do not matter."},
+
+    {"road_tiles_under", 
+    (PyCFunction)PyPf_road_tiles_under, METH_VARARGS,
+    "Returns the list of (row, column) road tiles, built on or not, that the footprint of the building "
+    "with the specified UID overlaps, which a building units walk over leaves alone."},
+
+    {"set_road_refused", 
+    (PyCFunction)PyPf_set_road_refused, METH_VARARGS,
+    "Draw the specified list of (row, column) road tiles in red, as tiles no road can be laid on. "
+    "An empty list or None stops drawing them."},
 
     {"show_roads", 
     (PyCFunction)PyPf_show_roads, METH_NOARGS,
@@ -2119,6 +2137,79 @@ static PyObject *PyPf_set_road_hover(PyObject *self, PyObject *args)
         return NULL;
     }
     G_Roads_SetHover(&rd);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_road_buildable(PyObject *self, PyObject *args)
+{
+    struct road_desc rd;
+    int faction_id;
+    if(!PyArg_ParseTuple(args, "(ii)i", &rd.r, &rd.c, &faction_id)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a tuple of two integers and an integer.");
+        return NULL;
+    }
+    if(faction_id < 0 || faction_id >= MAX_FACTIONS) {
+        PyErr_SetString(PyExc_ValueError, "Invalid faction ID.");
+        return NULL;
+    }
+    return PyBool_FromLong(G_Roads_Buildable(rd, faction_id));
+}
+
+static PyObject *PyPf_road_tiles_under(PyObject *self, PyObject *args)
+{
+    unsigned uid;
+    if(!PyArg_ParseTuple(args, "I", &uid)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer.");
+        return NULL;
+    }
+    if(!G_EntityExists(uid)) {
+        PyErr_SetString(PyExc_RuntimeError, "No entity with the specified UID exists.");
+        return NULL;
+    }
+
+    struct road_desc tiles[64];
+    size_t ntiles = G_Roads_TilesUnder(uid, ARR_SIZE(tiles), tiles);
+    PyObject *ret = PyList_New(ntiles);
+    if(!ret)
+        return NULL;
+    for(size_t i = 0; i < ntiles; i++) {
+        PyList_SET_ITEM(ret, i, Py_BuildValue("(ii)", tiles[i].r, tiles[i].c));
+    }
+    return ret;
+}
+
+static PyObject *PyPf_set_road_refused(PyObject *self, PyObject *args)
+{
+    PyObject *list;
+    if(!PyArg_ParseTuple(args, "O", &list)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a list of tuples of two integers or None.");
+        return NULL;
+    }
+
+    if(list == Py_None) {
+        G_Roads_SetRefused(0, NULL);
+        Py_RETURN_NONE;
+    }
+
+    if(!PyList_Check(list)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a list of tuples of two integers or None.");
+        return NULL;
+    }
+
+    size_t ntiles = PyList_GET_SIZE(list);
+    struct road_desc *tiles = PF_MALLOC(sizeof(struct road_desc) * (ntiles + 1));
+    if(!tiles)
+        return PyErr_NoMemory();
+
+    for(int i = 0; i < ntiles; i++) {
+        if(!PyArg_ParseTuple(PyList_GET_ITEM(list, i), "ii", &tiles[i].r, &tiles[i].c)) {
+            PF_FREE(tiles);
+            PyErr_SetString(PyExc_TypeError, "Argument must be a list of tuples of two integers or None.");
+            return NULL;
+        }
+    }
+    G_Roads_SetRefused(ntiles, tiles);
+    PF_FREE(tiles);
     Py_RETURN_NONE;
 }
 
@@ -6282,6 +6373,13 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
     case EVENT_ENTERED_REGION:
     case EVENT_EXITED_REGION: {
         return PyString_FromString(arg);
+    }
+    case EVENT_BUILDING_PLACED: {
+        PyObject *ent = S_Entity_ObjForUID(((struct entity_block_desc*)arg)->uid);
+        if(!ent)
+            Py_RETURN_NONE;
+        Py_INCREF(ent);
+        return ent;
     }
     default:
         Py_RETURN_NONE;
