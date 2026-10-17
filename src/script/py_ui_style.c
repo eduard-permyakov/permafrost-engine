@@ -2213,7 +2213,7 @@ static int parse_nine_patch(PyObject *tuple, struct nk_nine_slice_texpath *out)
     if(!PyTuple_Check(tuple))
         return -1;
 
-    if(PyTuple_GET_SIZE(tuple) != 5)
+    if(PyTuple_GET_SIZE(tuple) != 5 && PyTuple_GET_SIZE(tuple) != 6)
         return -1;
 
     if(!PyString_Check(PyTuple_GET_ITEM(tuple, 0)))
@@ -2246,8 +2246,17 @@ static int parse_nine_patch(PyObject *tuple, struct nk_nine_slice_texpath *out)
     out->r = PyInt_AS_LONG(PyTuple_GET_ITEM(tuple, 2));
     out->t = PyInt_AS_LONG(PyTuple_GET_ITEM(tuple, 3));
     out->b = PyInt_AS_LONG(PyTuple_GET_ITEM(tuple, 4));
+    out->tile = (PyTuple_GET_SIZE(tuple) == 6) && PyInt_AS_LONG(PyTuple_GET_ITEM(tuple, 5));
 
     return 0;
+}
+
+static PyObject *nine_patch_tuple(const struct nk_nine_slice_texpath *slc)
+{
+    if(slc->tile) {
+        return Py_BuildValue("(s,i,i,i,i,O)", slc->texpath, slc->l, slc->r, slc->t, slc->b, Py_True);
+    }
+    return Py_BuildValue("(s,i,i,i,i)", slc->texpath, slc->l, slc->r, slc->t, slc->b);
 }
 
 static PyObject *style_get_item(const struct nk_style_item *item)
@@ -2259,12 +2268,7 @@ static PyObject *style_get_item(const struct nk_style_item *item)
             item->data.color.b,
             item->data.color.a);
     }else if(item->type == NK_STYLE_ITEM_NINE_SLICE_TEXPATH) {
-        return Py_BuildValue("(s,i,i,i,i)",
-            item->data.slice_texpath.texpath,
-            item->data.slice_texpath.l,
-            item->data.slice_texpath.r,
-            item->data.slice_texpath.t,
-            item->data.slice_texpath.b);
+        return nine_patch_tuple(&item->data.slice_texpath);
     }else{
         return PyString_FromString(item->data.texpath);
     }
@@ -2294,8 +2298,8 @@ static int style_set_item(PyObject *value, struct nk_style_item *out)
 
     }else{
         PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple, an image path, "
-            "or a tuple of 5 items (image path and Left, Right, Top, Bottom padding) specifying a "
-            "9-patch skin.");
+            "or a tuple of 5 items (image path and Left, Right, Top, Bottom padding, then optionally "
+            "True to repeat the edges rather than stretch them) specifying a 9-patch skin.");
         return -1; 
     }
 }
@@ -2659,12 +2663,7 @@ bool save_item(struct SDL_RWops *stream, const struct nk_style_item *item)
                             item->data.color.b, 
                             item->data.color.a)
                   : item->type == NK_STYLE_ITEM_NINE_SLICE_TEXPATH 
-                        ? Py_BuildValue("siiii",
-                            item->data.slice_texpath.texpath,
-                            item->data.slice_texpath.l,
-                            item->data.slice_texpath.r,
-                            item->data.slice_texpath.t,
-                            item->data.slice_texpath.b)
+                        ? nine_patch_tuple(&item->data.slice_texpath)
                   : PyString_FromString(item->data.texpath);
 
     PyObject *pickle = Py_BuildValue("iO", item->type, val);

@@ -67,6 +67,8 @@
 
 #define INDICATOR_SIZE      (15.0f)
 #define INDICATOR_PERIOD_MS (1500)
+#define CORNER_LABEL_INSET  (7.0f)
+#define CORNER_LABEL_PAD    (3.0f)
 
 #define TO_VEC2T(_nk_vec2i) ((vec2_t){_nk_vec2i.x, _nk_vec2i.y})
 #define TO_VEC2I(_pf_vec2t) ((struct nk_vec2i){_pf_vec2t.x, _pf_vec2t.y})
@@ -138,6 +140,7 @@ static PyObject *PyWindow_progress(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_progress_text(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_text_lines(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_text_lines_width(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_content_width(PyWindowObject *self);
 static PyObject *PyWindow_text_width(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_font_height(PyWindowObject *self);
 static PyObject *PyWindow_show(PyWindowObject *self);
@@ -155,6 +158,7 @@ static PyObject *PyWindow_get_header(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_pos(PyWindowObject *self, void *closure);
 static int       PyWindow_set_pos(PyWindowObject *self, PyObject *value, void *closure);
 static PyObject *PyWindow_get_size(PyWindowObject *self, void *closure);
+static int       PyWindow_set_size(PyWindowObject *self, PyObject *value, void *closure);
 static PyObject *PyWindow_get_header_height(PyWindowObject *self, void *closure);
 
 static PyObject *PyWindow_get_border_color(PyWindowObject *self, void *closure);
@@ -227,6 +231,8 @@ NK_API struct nk_window *nk_find_window(struct nk_context *ctx, nk_hash hash, co
 struct nk_button_userdata{
     const char *texpath;
     struct nk_rect bounds;
+    const char *corner_label;
+    const struct nk_style_button *style;
 };
 
 /*****************************************************************************/
@@ -273,11 +279,13 @@ static PyMethodDef PyWindow_methods[] = {
     {"button_label_with_overlay", 
     (PyCFunction)PyWindow_button_label_with_overlay, METH_VARARGS | METH_KEYWORDS,
     "Add a button with a label and action. Specify a semi-transparent image that is rendered over "
-    "the button."},
+    "the button. A 'corner_label', such as a hotkey, is drawn on a small plate in its bottom-right "
+    "corner in the button style's text and text background colours."},
 
     {"animated_button_label", 
     (PyCFunction)PyWindow_animated_button_label, METH_VARARGS | METH_KEYWORDS,
-    "Add a button with a label and action with a circling animation around it."},
+    "Add a button with a label and action with a circling animation around it. Takes a "
+    "'corner_label' as button_label_with_overlay does."},
 
     {"simple_chart", 
     (PyCFunction)PyWindow_simple_chart, METH_VARARGS,
@@ -286,7 +294,8 @@ static PyMethodDef PyWindow_methods[] = {
     {"multi_chart",
     (PyCFunction)PyWindow_multi_chart, METH_VARARGS,
     "Add a line chart with multiple slots. Args: chart type, (min, max) tuple, a list "
-    "of series (each a list of ints), and optionally a list of per-series (r, g, b) colors."},
+    "of series (each a list of ints), and optionally a list of per-series (r, g, b) colors, "
+    "an (R, G, B, A) background and an (R, G, B, A) border color."},
 
     {"selectable_label", 
     (PyCFunction)PyWindow_selectable_label, METH_VARARGS,
@@ -395,6 +404,10 @@ static PyMethodDef PyWindow_methods[] = {
     (PyCFunction)PyWindow_text_lines_width, METH_VARARGS,
     "Returns the number of lines taken up by the specified text in a widget of the specified width."},
 
+    {"content_width", 
+    (PyCFunction)PyWindow_content_width, METH_NOARGS,
+    "Returns the width that the rows of the updating window are laid out in, inside its padding."},
+
     {"text_width", 
     (PyCFunction)PyWindow_text_width, METH_VARARGS,
     "Returns the width, in virtual pixels, that the specified text takes up in the active font."},
@@ -450,8 +463,9 @@ static PyGetSetDef PyWindow_getset[] = {
     "A tuple of two integers specifying the X and Y position of the window.",
     NULL},
     {"size",
-    (getter)PyWindow_get_size, NULL,
-    "A tuple of two integers specifying the width and height dimentions of the window.",
+    (getter)PyWindow_get_size, (setter)PyWindow_set_size,
+    "A tuple of two integers specifying the width and height dimentions of the window. "
+    "Set outside of the window's own update, it resizes a window the user cannot move or scale.",
     NULL},
     {"header_height",
     (getter)PyWindow_get_header_height, NULL,
@@ -683,7 +697,7 @@ static int parse_nine_patch(PyObject *tuple, struct nk_nine_slice_texpath *out)
     if(!PyTuple_Check(tuple))
         return -1;
 
-    if(PyTuple_GET_SIZE(tuple) != 5)
+    if(PyTuple_GET_SIZE(tuple) != 5 && PyTuple_GET_SIZE(tuple) != 6)
         return -1;
 
     if(!PyString_Check(PyTuple_GET_ITEM(tuple, 0)))
@@ -716,6 +730,7 @@ static int parse_nine_patch(PyObject *tuple, struct nk_nine_slice_texpath *out)
     out->r = PyInt_AS_LONG(PyTuple_GET_ITEM(tuple, 2));
     out->t = PyInt_AS_LONG(PyTuple_GET_ITEM(tuple, 3));
     out->b = PyInt_AS_LONG(PyTuple_GET_ITEM(tuple, 4));
+    out->tile = (PyTuple_GET_SIZE(tuple) == 6) && PyInt_AS_LONG(PyTuple_GET_ITEM(tuple, 5));
 
     return 0;
 }
@@ -933,26 +948,50 @@ static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args, PyO
     return Py_BuildValue("(OO)", hoverobj, rclickobj);
 }
 
+static void draw_corner_label(struct nk_command_buffer *buffer, const struct nk_button_userdata *user)
+{
+    const struct nk_user_font *font = s_nk_ctx->style.font;
+    int len = strlen(user->corner_label);
+    float text_width = font->width(font->userdata, font->height, user->corner_label, len);
+    float w = text_width + 2 * CORNER_LABEL_PAD;
+    float h = font->height + 2;
+    struct nk_rect plate = nk_rect(
+        user->bounds.x + user->bounds.w - w - CORNER_LABEL_INSET,
+        user->bounds.y + user->bounds.h - h - CORNER_LABEL_INSET, w, h);
+
+    nk_fill_rect(buffer, plate, 3.0f, user->style->text_background);
+    nk_stroke_rect(buffer, plate, 3.0f, 1.0f, user->style->border_color);
+    nk_draw_text(buffer, nk_rect(plate.x + CORNER_LABEL_PAD, plate.y + 1, text_width, font->height),
+        user->corner_label, len, font, user->style->text_background, user->style->text_normal);
+}
+
 static void draw_button_overlay(struct nk_command_buffer *buffer, nk_handle userdata)
 {
     struct nk_button_userdata *user = userdata.ptr;
     struct nk_color white = (struct nk_color){255,255,255,255};
-    nk_draw_texpath(buffer, user->bounds, user->texpath, white);
+    if(user->texpath) {
+        nk_draw_texpath(buffer, user->bounds, user->texpath, white);
+    }
+    if(user->corner_label && strlen(user->corner_label)) {
+        draw_corner_label(buffer, user);
+    }
 }
 
 static PyObject *PyWindow_button_label_with_overlay(PyWindowObject *self, PyObject *args, PyObject *kwargs)
 {
-    const char *str, *overlay, *tooltip = NULL;
+    const char *str, *overlay, *tooltip = NULL, *corner_label = NULL;
     PyObject *callable, *cargs = NULL;
     float x_padding = 0, y_padding = 0;
     float x_overlay_padding = 0, y_overlay_padding = 0;
     static char *kwlist[] = { "string", "overlay", "callable", 
-        "args", "tooltip", "x_padding", "y_padding", "x_overlay_padding", "y_overlay_padding", NULL };
+        "args", "tooltip", "x_padding", "y_padding", "x_overlay_padding", "y_overlay_padding", 
+        "corner_label", NULL };
     struct nk_rect bounds = nk_widget_bounds(s_nk_ctx);
     const struct nk_input *in = &s_nk_ctx->input;
 
-    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "ssO|Osffff", kwlist, &str, &overlay, &callable, 
-        &cargs, &tooltip, &x_padding, &y_padding, &x_overlay_padding, &y_overlay_padding)) {
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "ssO|Osffffs", kwlist, &str, &overlay, &callable, 
+        &cargs, &tooltip, &x_padding, &y_padding, &x_overlay_padding, &y_overlay_padding,
+        &corner_label)) {
         PyErr_SetString(PyExc_TypeError, "Arguments must be a string, a string (image path), and "
             "an object. Optionally, an argument to the callable can be provided, as well as "
             "tooltip text.");
@@ -974,6 +1013,8 @@ static PyObject *PyWindow_button_label_with_overlay(PyWindowObject *self, PyObje
     struct nk_button_userdata userdata = (struct nk_button_userdata){
         .texpath = overlay,
         .bounds = overlay_bounds,
+        .corner_label = corner_label,
+        .style = &style,
     };
     style.userdata.ptr = &userdata;
     style.draw_end = draw_button_overlay;
@@ -1007,15 +1048,16 @@ static PyObject *PyWindow_animated_button_label(PyWindowObject *self, PyObject *
     PyObject *callable, *cargs = NULL;
     const char *indicator_image = NULL;
     const char *overlay_image = NULL;
+    const char *corner_label = NULL;
     float x_padding = 0, y_padding = 0;
     static char *kwlist[] = { "string", "callable", "timestamp", "fraction", "args", "tooltip", 
-        "indicator_image", "overlay", "x_padding", "y_padding", NULL };
+        "indicator_image", "overlay", "x_padding", "y_padding", "corner_label", NULL };
     struct nk_rect bounds = nk_widget_bounds(s_nk_ctx);
     const struct nk_input *in = &s_nk_ctx->input;
 
-    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "sOIf|Osssff", kwlist, &str, &callable, 
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "sOIf|Osssffs", kwlist, &str, &callable, 
         &last_ts, &fraction, &cargs, &tooltip, &indicator_image, &overlay_image,
-        &x_padding, &y_padding)) {
+        &x_padding, &y_padding, &corner_label)) {
         PyErr_SetString(PyExc_TypeError, "Arguments must be a string, an object, an integer "
             "and a float. "
             "Optionally, an argument to the callable can be provided, as well as tooltip text "
@@ -1032,8 +1074,10 @@ static PyObject *PyWindow_animated_button_label(PyWindowObject *self, PyObject *
     struct nk_button_userdata userdata = (struct nk_button_userdata){
         .texpath = overlay_image,
         .bounds = bounds,
+        .corner_label = corner_label,
+        .style = &style,
     };
-    if(overlay_image) {
+    if(overlay_image || corner_label) {
         style.userdata.ptr = &userdata;
         style.draw_end = draw_button_overlay;
     }
@@ -1166,10 +1210,13 @@ static PyObject *PyWindow_multi_chart(PyWindowObject *self, PyObject *args)
     int type;
     long long min, max;
     PyObject *series_list, *color_list = NULL;
+    int bg[4] = {-1, 0, 0, 0}, border[4] = {-1, 0, 0, 0};
 
-    if(!PyArg_ParseTuple(args, "i(LL)O|O", &type, &min, &max, &series_list, &color_list)) {
+    if(!PyArg_ParseTuple(args, "i(LL)O|O(iiii)(iiii)", &type, &min, &max, &series_list, &color_list,
+        &bg[0], &bg[1], &bg[2], &bg[3], &border[0], &border[1], &border[2], &border[3])) {
         PyErr_SetString(PyExc_TypeError, "Expected: an integer chart type, a (min, max) tuple, a "
-            "list of series (each a list of integers), and optionally a list of (r, g, b) colors.");
+            "list of series (each a list of integers), and optionally a list of (r, g, b) colors, "
+            "then an (R, G, B, A) background and an (R, G, B, A) border color.");
         return NULL;
     }
 
@@ -1181,6 +1228,14 @@ static PyObject *PyWindow_multi_chart(PyWindowObject *self, PyObject *args)
 
     int nseries = PyList_Size(series_list);
     int num_datapoints = PyList_Size(PyList_GetItem(series_list, 0));
+
+    struct nk_style_chart saved = s_nk_ctx->style.chart;
+    if(bg[0] >= 0) {
+        s_nk_ctx->style.chart.background = nk_style_item_color(nk_rgba(bg[0], bg[1], bg[2], bg[3]));
+    }
+    if(border[0] >= 0) {
+        s_nk_ctx->style.chart.border_color = nk_rgba(border[0], border[1], border[2], border[3]);
+    }
 
     struct nk_color col0 = chart_slot_color(color_list, 0);
     if(nk_chart_begin_colored(s_nk_ctx, type, col0, col0, num_datapoints, min, max)) {
@@ -1204,6 +1259,7 @@ static PyObject *PyWindow_multi_chart(PyWindowObject *self, PyObject *args)
         }
     }
     nk_chart_end(s_nk_ctx);
+    s_nk_ctx->style.chart = saved;
 
     Py_RETURN_NONE;
 }
@@ -1801,6 +1857,15 @@ static PyObject *PyWindow_text_lines_width(PyWindowObject *self, PyObject *args)
     return PyInt_FromLong(ret);
 }
 
+static PyObject *PyWindow_content_width(PyWindowObject *self)
+{
+    if(!s_nk_ctx->current) {
+        PyErr_SetString(PyExc_RuntimeError, "The content can only be measured while a window is updating.");
+        return NULL;
+    }
+    return PyFloat_FromDouble(s_nk_ctx->current->layout->bounds.w);
+}
+
 static PyObject *PyWindow_show(PyWindowObject *self)
 {
     self->flags &= ~(NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED);
@@ -2054,6 +2119,18 @@ static int PyWindow_set_pos(PyWindowObject *self, PyObject *value, void *closure
 static PyObject *PyWindow_get_size(PyWindowObject *self, void *closure)
 {
     return Py_BuildValue("(ii)", self->rect.w, self->rect.h);
+}
+
+static int PyWindow_set_size(PyWindowObject *self, PyObject *value, void *closure)
+{
+    int w, h;
+    if(!PyArg_ParseTuple(value, "ii", &w, &h)) {
+        PyErr_SetString(PyExc_TypeError, "Value must be a tuple of 2 integers.");
+        return -1;
+    }
+    self->rect.w = w;
+    self->rect.h = h;
+    return 0;
 }
 
 static PyObject *PyWindow_get_header_height(PyWindowObject *self, void *closure)
@@ -2607,6 +2684,9 @@ static PyObject *PyWindow_get_fixed_background(PyWindowObject *self, void *closu
         return PyString_FromString(self->style.fixed_background.data.texpath);
     }else if(self->style.fixed_background.type == NK_STYLE_ITEM_NINE_SLICE_TEXPATH) {
         struct nk_nine_slice_texpath data = self->style.fixed_background.data.slice_texpath;
+        if(data.tile) {
+            return Py_BuildValue("siiiiO", data.texpath, data.l, data.r, data.t, data.b, Py_True);
+        }
         return Py_BuildValue("siiii", data.texpath, data.l, data.r, data.t, data.b);
     }else{
         assert(self->style.fixed_background.type == NK_STYLE_ITEM_COLOR);

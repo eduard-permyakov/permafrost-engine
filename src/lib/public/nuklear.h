@@ -4847,6 +4847,8 @@ struct nk_nine_slice_texpath {
     nk_ushort w, h;
     nk_ushort region[4];
     nk_ushort l, t, r, b;
+    /* The edges repeat a whole number of times instead of stretching */
+    int       tile;
     char      texpath[256];
 };
 
@@ -9377,6 +9379,37 @@ nk_draw_nine_slice(struct nk_command_buffer *b, struct nk_rect r,
 
 #undef IMG_RGN
 }
+NK_LIB void
+nk_draw_texpath_region_tiled(struct nk_command_buffer *b, struct nk_rect r, struct nk_rect region,
+    const char *texpath, struct nk_vec2i image_size, struct nk_color col)
+{
+    int i, j, nx, ny;
+    float w, h;
+    if (region.w <= 0 || region.h <= 0)
+        return;
+
+    /* Whole copies, slightly resized to fit, so that no copy is cut short */
+    nx = NK_MAX(1, (int)(r.w / region.w + 0.5f));
+    ny = NK_MAX(1, (int)(r.h / region.h + 0.5f));
+    w = r.w / (float)nx;
+    h = r.h / (float)ny;
+
+    for (j = 0; j < ny; j++) {
+        for (i = 0; i < nx; i++) {
+            nk_draw_texpath_region(b, nk_rect(r.x + i * w, r.y + j * h, w, h),
+                region, texpath, image_size, col);
+        }
+    }
+}
+NK_LIB void
+nk_draw_nine_slice_texpath_edge(struct nk_command_buffer *b, struct nk_rect r, struct nk_rect region,
+    const struct nk_nine_slice_texpath *slc, struct nk_vec2i image_size, struct nk_color col)
+{
+    if (slc->tile)
+        nk_draw_texpath_region_tiled(b, r, region, slc->texpath, image_size, col);
+    else
+        nk_draw_texpath_region(b, r, region, slc->texpath, image_size, col);
+}
 NK_API void 
 nk_draw_nine_slice_texpath(struct nk_command_buffer *b, struct nk_rect r, 
     const struct nk_nine_slice_texpath *slc, struct nk_color col)
@@ -9403,9 +9436,9 @@ nk_draw_nine_slice_texpath(struct nk_command_buffer *b, struct nk_rect r,
 
     /* top-center */
     IMG_RGN(rgnX + slc->l, rgnY, rgnW - slc->l - slc->r, slc->t);
-    nk_draw_texpath_region(b,
+    nk_draw_nine_slice_texpath_edge(b,
         nk_rect(r.x + (float)slc->l, r.y, (float)(r.w - slc->l - slc->r), (float)slc->t),
-        region, slc->texpath, image_size, col);
+        region, slc, image_size, col);
 
     /* top-right */
     IMG_RGN(rgnX + rgnW - slc->r, rgnY, slc->r, slc->t);
@@ -9415,9 +9448,9 @@ nk_draw_nine_slice_texpath(struct nk_command_buffer *b, struct nk_rect r,
 
     /* center-left */
     IMG_RGN(rgnX, rgnY + slc->t, slc->l, rgnH - slc->t - slc->b);
-    nk_draw_texpath_region(b,
+    nk_draw_nine_slice_texpath_edge(b,
         nk_rect(r.x, r.y + (float)slc->t, (float)slc->l, (float)(r.h - slc->t - slc->b)),
-        region, slc->texpath, image_size, col);
+        region, slc, image_size, col);
 
     /* center */
     IMG_RGN(rgnX + slc->l, rgnY + slc->t, rgnW - slc->l - slc->r, rgnH - slc->t - slc->b);
@@ -9427,9 +9460,9 @@ nk_draw_nine_slice_texpath(struct nk_command_buffer *b, struct nk_rect r,
 
     /* center-right */
     IMG_RGN(rgnX + rgnW - slc->r, rgnY + slc->t, slc->r, rgnH - slc->t - slc->b);
-    nk_draw_texpath_region(b,
+    nk_draw_nine_slice_texpath_edge(b,
         nk_rect(r.x + r.w - (float)slc->r, r.y + (float)slc->t, (float)slc->r, (float)(r.h - slc->t - slc->b)),
-        region, slc->texpath, image_size, col);
+        region, slc, image_size, col);
 
     /* bottom-left */
     IMG_RGN(rgnX, rgnY + rgnH - slc->b, slc->l, slc->b);
@@ -9439,9 +9472,9 @@ nk_draw_nine_slice_texpath(struct nk_command_buffer *b, struct nk_rect r,
 
     /* bottom-center */
     IMG_RGN(rgnX + slc->l, rgnY + rgnH - slc->b, rgnW - slc->l - slc->r, slc->b);
-    nk_draw_texpath_region(b,
+    nk_draw_nine_slice_texpath_edge(b,
         nk_rect(r.x + (float)slc->l, r.y + r.h - (float)slc->b, (float)(r.w - slc->l - slc->r), (float)slc->b),
-        region, slc->texpath, image_size, col);
+        region, slc, image_size, col);
 
     /* bottom-right */
     IMG_RGN(rgnX + rgnW - slc->r, rgnY + rgnH - slc->b, slc->r, slc->b);
@@ -14944,10 +14977,11 @@ nk_draw_texpath_region(struct nk_command_buffer *b, struct nk_rect r, struct nk_
     cmd = (struct nk_command_image_texpath*)
         nk_command_buffer_push(b, NK_COMMAND_IMAGE_TEXPATH_REGION, sizeof(*cmd));
     if (!cmd) return;
-    cmd->x = (short)r.x;
-    cmd->y = (short)r.y;
-    cmd->w = (unsigned short)NK_MAX(0, r.w);
-    cmd->h = (unsigned short)NK_MAX(0, r.h);
+    /* Rounding both edges lets the slices of a fractional rect meet without gaps */
+    cmd->x = (short)nk_ifloorf(r.x + 0.5f);
+    cmd->y = (short)nk_ifloorf(r.y + 0.5f);
+    cmd->w = (unsigned short)NK_MAX(0, nk_ifloorf(r.x + r.w + 0.5f) - cmd->x);
+    cmd->h = (unsigned short)NK_MAX(0, nk_ifloorf(r.y + r.h + 0.5f) - cmd->y);
     cmd->col = col;
 
     strncpy(cmd->texpath, texpath, sizeof(cmd->texpath)-1);
@@ -22453,10 +22487,10 @@ nk_draw_progress(struct nk_command_buffer *out, nk_flags state,
     if (cursor->type == NK_STYLE_ITEM_COLOR) {
         nk_fill_rect(out, *scursor, style->rounding, cursor->data.color);
         nk_stroke_rect(out, *scursor, style->rounding, style->border, style->border_color);
-    } else if (background->type == NK_STYLE_ITEM_TEXPATH) {
-        nk_draw_texpath(out, *bounds, cursor->data.texpath, nk_white);
-    } else if (background->type == NK_STYLE_ITEM_NINE_SLICE_TEXPATH) {
-        nk_draw_nine_slice_texpath(out, *bounds, &cursor->data.slice_texpath, nk_white);
+    } else if (cursor->type == NK_STYLE_ITEM_TEXPATH) {
+        nk_draw_texpath(out, *scursor, cursor->data.texpath, nk_white);
+    } else if (cursor->type == NK_STYLE_ITEM_NINE_SLICE_TEXPATH) {
+        nk_draw_nine_slice_texpath(out, *scursor, &cursor->data.slice_texpath, nk_white);
     } else nk_draw_image(out, *scursor, &cursor->data.image, nk_white);
 }
 NK_LIB nk_size
@@ -24250,6 +24284,12 @@ nk_do_edit(nk_flags *state, struct nk_command_buffer *out,
     if (background->type == NK_STYLE_ITEM_COLOR) {
         nk_stroke_rect(out, bounds, style->rounding, style->border, style->border_color);
         nk_fill_rect(out, bounds, style->rounding, background->data.color);
+    } else if (background->type == NK_STYLE_ITEM_TEXPATH) {
+        nk_draw_texpath(out, bounds, background->data.texpath, nk_white);
+    } else if (background->type == NK_STYLE_ITEM_NINE_SLICE) {
+        nk_draw_nine_slice(out, bounds, &background->data.slice, nk_white);
+    } else if (background->type == NK_STYLE_ITEM_NINE_SLICE_TEXPATH) {
+        nk_draw_nine_slice_texpath(out, bounds, &background->data.slice_texpath, nk_white);
     } else nk_draw_image(out, bounds, &background->data.image, nk_white);}
 
     area.w = NK_MAX(0, area.w - style->cursor_size);
