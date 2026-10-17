@@ -111,6 +111,8 @@ struct provision{
     /* A unit with no work to go back to returns here once it has eaten */
     bool     go_back;
     vec2_t   post;
+    /* The good a gatherer sent by the player goes back to gathering about its post */
+    char     resume[GOOD_LEN];
     /* Got there this many times without reaching the store, each time from further out */
     int      tries;
 };
@@ -144,6 +146,7 @@ static void note_upkeep_good(const char *good);
 static uint32_t first_meal_delay_ms(uint32_t uid, uint32_t interval_ms);
 static bool carrying(uint32_t uid);
 static bool at_store(uint32_t uid, uint32_t site, int tries);
+static void ordered_gathering(uint32_t uid, char *out, size_t maxout);
 static bool free_to_fetch(uint32_t uid);
 static void on_arrive_quiver(void *user, void *event);
 static void on_ordered_quiver(void *user, void *event);
@@ -263,6 +266,7 @@ static bool fetch(uint32_t uid, struct provision *p)
         p->go_back = !(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER);
         p->post = G_Pos_GetXZ(uid);
         p->tries = 0;
+        ordered_gathering(uid, p->resume, sizeof(p->resume));
     }
     p->fetching = site;
     p->fetch_ms = s_now_ms;
@@ -300,15 +304,36 @@ static void on_arrive(void *user, void *event)
         bool go_back = p->go_back;
         vec2_t post = p->post;
         int tries = p->tries + 1;
+        char resume[GOOD_LEN];
+        pf_strlcpy(resume, p->resume, sizeof(resume));
         fetch(uid, p);
         p->go_back = go_back;
         p->post = post;
         p->tries = tries;
+        pf_strlcpy(p->resume, resume, sizeof(p->resume));
         return;
     }
     eat(uid, p, site);
-    if(p->go_back) {
+    if(p->resume[0]) {
+        uint32_t node = G_Harvester_NearestResource(uid, p->post, p->resume, 0.0f);
+        if(node != NULL_UID) {
+            G_Harvester_Gather(uid, node);
+        }
+        p->resume[0] = '\0';
+    }else if(p->go_back) {
         G_Move_SetDest(uid, p->post, true);
+    }
+}
+
+/* The good the harvester gathers by the player's order, or an empty string */
+static void ordered_gathering(uint32_t uid, char *out, size_t maxout)
+{
+    out[0] = '\0';
+    if(!(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER) || G_Automation_ChoseWork(uid))
+        return;
+    const char *rname = G_Harvester_Gathering(uid);
+    if(rname) {
+        pf_strlcpy(out, rname, maxout);
     }
 }
 
@@ -337,6 +362,7 @@ static void on_ordered(void *user, void *event)
     struct provision *p = prov_get(uid);
     if(p) {
         p->fetching = NULL_UID;
+        p->resume[0] = '\0';
     }
 }
 
@@ -889,6 +915,7 @@ bool G_Provision_LoadState(struct SDL_RWops *stream)
         p->fetching = NULL_UID;
         p->retry_ms = 0;
         p->no_food = false;
+        p->resume[0] = '\0';
         Sched_TryYield();
     }
 

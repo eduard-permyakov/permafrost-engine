@@ -106,6 +106,7 @@
 #define GOOD_PER_GATHERER            (15)
 /* Gatherers leave off to build a site that has fewer builders than this */
 #define SITE_BUILDERS                (3)
+#define MAX_TRACE_STEPS              (24)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -171,6 +172,8 @@ struct good_demand{
     int         need;
     int         workers;
     int         wanted;
+    int         surplus;
+    int         shortfall;
     bool        stocked;
 };
 
@@ -179,6 +182,8 @@ struct work_site{
     uint32_t uid;
     int      faction;
     int      builders;
+    /* Waiting on materials that nothing can bring it now */
+    bool     starved;
 };
 
 /* What every worker looking for a job this tick weighs, gathered once for all of them */
@@ -194,9 +199,17 @@ struct work_snapshot{
 VEC_TYPE(source, struct job_source)
 VEC_IMPL(static inline, source, struct job_source)
 
+/* A worker's last decision about its work */
+struct work_trace{
+    uint32_t         tick;
+    size_t           nsteps;
+    struct work_step steps[MAX_TRACE_STEPS];
+};
+
 KHASH_MAP_INIT_INT(state, struct automation_state)
 KHASH_MAP_INIT_INT(count, uint32_t);
 KHASH_MAP_INIT_INT64(pending, struct pending)
+KHASH_MAP_INIT_INT(trace, struct work_trace)
 
 static void on_order_issued(void *user, void *event);
 static bool try_assign_transport_job(uint32_t uid, struct automation_state *astate);
@@ -207,6 +220,8 @@ static vec2_t work_origin(uint32_t uid, const struct automation_state *astate);
 static void reconsider_work(uint32_t uid, struct automation_state *astate);
 static struct work_snapshot *snapshot_get(void);
 static struct good_demand *demand_get(struct work_snapshot *snap, int faction, const char *rname);
+static void trace_note(uint32_t uid, const char *kind, const char *verdict, const char *why, 
+                       const char *rname, uint32_t target);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -221,6 +236,7 @@ static vec_entity_t    s_stopping;
 static khash_t(pending)*s_pending;
 static uint32_t        s_tick;
 static struct work_snapshot s_snapshot;
+static khash_t(trace)  *s_traces;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -249,6 +265,93 @@ static void astate_remove(uint32_t uid)
     khiter_t k = kh_get(state, s_entity_state_table, uid);
     if(k != kh_end(s_entity_state_table))
         kh_del(state, s_entity_state_table, k);
+}
+
+/* The record of the decision being made about the worker this tick, begun 
+ * afresh by its first step, or by a 'fresh' one */
+static struct work_trace *trace_get(uint32_t uid, bool fresh)
+{
+    if(!(G_FlagsGet(uid) & (ENTITY_FLAG_HARVESTER | ENTITY_FLAG_BUILDER)))
+        return NULL;
+    int status;
+    khiter_t k = kh_put(trace, s_traces, uid, &status);
+    if(status == -1)
+        return NULL;
+    struct work_trace *ret = &kh_value(s_traces, k);
+    if(status != 0 || fresh || ret->tick != s_tick) {
+        ret->tick = s_tick;
+        ret->nsteps = 0;
+    }
+    return ret;
+}
+
+static void trace_push(uint32_t uid, struct work_step step)
+{
+    struct work_trace *trace = trace_get(uid, false);
+    if(!trace || trace->nsteps == MAX_TRACE_STEPS)
+        return;
+    trace->steps[trace->nsteps++] = step;
+}
+
+static void trace_note(uint32_t uid, const char *kind, const char *verdict, const char *why, 
+                       const char *rname, uint32_t target)
+{
+    struct work_step step = (struct work_step){
+        .kind = kind,
+        .verdict = verdict,
+        .why = why,
+        .target = target
+    };
+    pf_strlcpy(step.rname, rname ? rname : "", sizeof(step.rname));
+    trace_push(uid, step);
+}
+
+static void trace_good(uint32_t uid, const char *verdict, const char *why, const char *rname,
+                       const struct good_demand *demand, float score)
+{
+    struct work_step step = (struct work_step){
+        .kind = "good",
+        .verdict = verdict,
+        .why = why,
+        .target = NULL_UID,
+        .need = demand ? demand->need : 0,
+        .workers = demand ? demand->workers : 0,
+        .wanted = demand ? demand->wanted : 0,
+        .stock = demand ? demand->surplus : 0,
+        .stock_target = demand ? demand->shortfall + STOCK_TARGET : 0,
+        .score = score
+    };
+    pf_strlcpy(step.rname, rname, sizeof(step.rname));
+    trace_push(uid, step);
+}
+
+/* The carrying job the worker was just given */
+static void trace_carry_taken(uint32_t uid)
+{
+    uint32_t src = NULL_UID, dest = NULL_UID;
+    const char *rname = NULL;
+    int state;
+    G_Harvester_JobInfo(uid, &src, &dest, &rname, &state);
+    trace_note(uid, "carry", "taken", "request", rname, dest);
+}
+
+/* The goods the worker weighed, the most wanted first */
+static void trace_goods(uint32_t uid, size_t ncandidates, const char *candidates[], 
+                        struct good_demand *demands[], const float ranks[], const char *why[])
+{
+    bool done[MAX_RESOURCES] = {0};
+    for(int n = 0; n < ncandidates; n++) {
+        int next = -1;
+        for(int i = 0; i < ncandidates; i++) {
+            if(!done[i] && (next == -1 || ranks[i] > ranks[next]))
+                next = i;
+        }
+        done[next] = true;
+        const char *verdict = !strcmp(why[next], "chosen") ? "taken"
+                            : (!strcmp(why[next], "no_node") || !strcmp(why[next], "unreachable")) ? "failed"
+                            : "skipped";
+        trace_good(uid, verdict, why[next], candidates[next], demands[next], MAX(ranks[next], 0.0f));
+    }
 }
 
 static bool idle(uint32_t uid)
@@ -314,13 +417,21 @@ static void settle_stopping(void)
 
         /* Orders queued by the player come before any job, its meal too */
         if(G_Command_Next(uid)) {
+            trace_note(uid, "order", "taken", "queued", NULL, NULL_UID);
             astate->state = STATE_ACTIVE;
             continue;
         }
 
         /* A hungry worker's next job is its meal, and so is one about to be */
-        if((G_Provision_DueSoon(uid) && G_Provision_Fetch(uid))
-        || try_assign_transport_job(uid, astate) || try_assign_work(uid, astate)) {
+        bool due = G_Provision_DueSoon(uid);
+        if(due && G_Provision_Fetch(uid)) {
+            trace_note(uid, "meal", "taken", "due", NULL, NULL_UID);
+            astate->state = STATE_ACTIVE;
+            continue;
+        }
+        trace_note(uid, "meal", due ? "failed" : "skipped", due ? "no_food" : "not_due", NULL, NULL_UID);
+
+        if(try_assign_transport_job(uid, astate) || try_assign_work(uid, astate)) {
             astate->state = STATE_ACTIVE;
             continue;
         }
@@ -331,10 +442,12 @@ static void settle_stopping(void)
             continue;
 
         if(!idle(uid)) {
+            trace_note(uid, "script", "taken", "script", NULL, NULL_UID);
             astate->state = STATE_ACTIVE;
             continue;
         }
         astate->state = STATE_IDLE;
+        trace_note(uid, "idle", "taken", "no_work", NULL, NULL_UID);
         E_Global_Notify(EVENT_UNIT_BECAME_IDLE, (void*)((uintptr_t)uid), ES_ENGINE);
     }
     vec_entity_reset(&s_stopping);
@@ -460,6 +573,21 @@ static int pool_en_route(uint32_t site, const char *rname)
     return ret;
 }
 
+static int pool_bound_for(uint32_t site, const char *rname)
+{
+    int cid = G_Cluster_Of(site);
+    if(cid == 0)
+        return G_Harvester_BoundFor(site, rname);
+
+    uint32_t members[64];
+    size_t nmembers = G_Cluster_Members(cid, ARR_SIZE(members), members);
+    int ret = 0;
+    for(int i = 0; i < nmembers; i++) {
+        ret += G_Harvester_BoundFor(members[i], rname);
+    }
+    return ret;
+}
+
 static int pool_pickups_pending(uint32_t site, const char *rname)
 {
     int cid = G_Cluster_Of(site);
@@ -570,11 +698,17 @@ static int compare_requests(const void *a, const void *b)
     return 0;
 }
 
+static int source_surplus(uint32_t site, const char *rname, bool for_site)
+{
+    return for_site ? G_StorageSite_SurplusForSite(site, rname) : G_StorageSite_Surplus(site, rname);
+}
+
 static void collect_sources(vec_source_t *out, const vec_entity_t *sites, const char *rname, 
                             int faction, uint32_t exclude)
 {
     /* Relays pass goods on to the sites that want them, never to each other */
     bool relaying = G_StorageSite_GetChip(exclude, rname) == SS_CHIP_RELAY;
+    bool for_site = G_StorageSite_GetUseAlt(exclude);
     for(int i = 0; i < vec_size(sites); i++) {
         uint32_t site = vec_AT(sites, i);
         if(G_EntityIsZombie(site) || !is_representative(site))
@@ -585,11 +719,33 @@ static void collect_sources(vec_source_t *out, const vec_entity_t *sites, const 
             continue;
         if(relaying && G_StorageSite_GetChip(site, rname) == SS_CHIP_RELAY)
             continue;
-        int surplus = G_StorageSite_Surplus(site, rname) - pool_pickups_pending(site, rname);
+        int surplus = source_surplus(site, rname, for_site) - pool_pickups_pending(site, rname);
         if(surplus <= 0)
             continue;
         vec_source_push(out, (struct job_source){ .site = site, .surplus = surplus });
     }
+}
+
+/* Why no site can give a request any of its good: there is none outside the
+ * buildings being built, all there is is set aside, or all that is spare is
+ * already promised to carriers */
+static enum request_status no_source_reason(const vec_entity_t *sites, const struct job_request *req)
+{
+    int faction = G_GetFactionID(req->site);
+    bool for_site = G_StorageSite_GetUseAlt(req->site);
+    int held = 0, spare = 0;
+    for(int i = 0; i < vec_size(sites); i++) {
+        uint32_t site = vec_AT(sites, i);
+        if(G_EntityIsZombie(site) || !is_representative(site) || site == req->site)
+            continue;
+        if(G_GetFactionID(site) != faction || G_StorageSite_GetUseAlt(site))
+            continue;
+        held += G_StorageSite_GetCurr(site, req->rname);
+        spare += source_surplus(site, req->rname, for_site);
+    }
+    if(held == 0)
+        return REQUEST_NO_SOURCE;
+    return (spare > 0) ? REQUEST_PROMISED : REQUEST_KEPT;
 }
 
 static bool carrier_can_take(uint32_t carrier, const char *rname)
@@ -627,8 +783,9 @@ static int min_load_for(float travel, int max_carry, int shortfall, float waited
 }
 
 /* Gives the waiting carriers the most pressing requests: each request takes 
- * the carrier and source that get its goods to it soonest. */
-static void assign_jobs(vec_entity_t *carriers)
+ * the carrier and source that get its goods to it soonest. Only a pass over 
+ * all the waiting carriers can 'judge' why a request goes unserved. */
+static void assign_jobs(vec_entity_t *carriers, bool judge)
 {
     if(vec_size(carriers) == 0)
         return;
@@ -748,11 +905,14 @@ static void assign_jobs(vec_entity_t *carriers)
             }
         }
 
-        /* Waiting for a load worth the trip is not being blocked */
-        if(req->shortfall > 0 && !any_reachable && any_small) {
-        }else if(req->shortfall > 0) {
+        if(!judge)
+            continue;
+
+        /* Waiting for a load worth the trip, or for one on its way, is not being blocked */
+        if(req->shortfall > 0 && !any_reachable && !any_small 
+        && !pool_bound_for(req->site, req->rname)) {
             if(vec_size(&sources) == 0) {
-                note_blocked(req, REQUEST_NO_SOURCE);
+                note_blocked(req, no_source_reason(&sites, req));
             }else if(!any_reachable && any_district_bar) {
                 note_blocked(req, REQUEST_NOT_CONNECTED);
             }else if(!any_carrier) {
@@ -794,6 +954,31 @@ struct site_search{
     bool supplied;
 };
 
+/* Whether a site being built still lacks a good that no site of its faction can spare */
+static bool site_starved(uint32_t uid, const vec_entity_t *sites)
+{
+    if(!G_Building_IsFounded(uid) || G_Building_IsSupplied(uid))
+        return false;
+    int faction = G_GetFactionID(uid);
+    const char *names[MAX_RESOURCES];
+    size_t nnames = G_StorageSite_GetStorableResources(uid, ARR_SIZE(names), names);
+    for(int i = 0; i < nnames; i++) {
+        int want = G_StorageSite_Request(uid, names[i]);
+        if(want - G_StorageSite_GetCurr(uid, names[i]) - pool_en_route(uid, names[i]) <= 0)
+            continue;
+        int spare = 0;
+        for(int j = 0; j < vec_size(sites) && spare <= 0; j++) {
+            uint32_t src = vec_AT(sites, j);
+            if(src == uid || G_EntityIsZombie(src) || !is_representative(src) || G_GetFactionID(src) != faction)
+                continue;
+            spare += G_StorageSite_SurplusForSite(src, names[i]) - pool_pickups_pending(src, names[i]);
+        }
+        if(spare <= 0)
+            return true;
+    }
+    return false;
+}
+
 static bool unfinished_site(uint32_t uid)
 {
     if(!G_EntityExists(uid) || !(G_FlagsGet(uid) & ENTITY_FLAG_BUILDING) || G_EntityIsZombie(uid))
@@ -821,6 +1006,8 @@ static struct work_site *nearest_site(struct work_snapshot *snap, vec2_t pos,
         if(!unfinished_site(curr->uid))
             continue;
         if(ss->supplied && !G_Building_IsSupplied(curr->uid))
+            continue;
+        if(!ss->supplied && curr->starved)
             continue;
         best = dist;
         ret = curr;
@@ -912,7 +1099,8 @@ static struct work_snapshot *snapshot_get(void)
         s_snapshot.sites[s_snapshot.nsites++] = (struct work_site){
             .uid = uid,
             .faction = G_GetFactionID(uid),
-            .builders = G_Builder_CountOn(uid)
+            .builders = G_Builder_CountOn(uid),
+            .starved = site_starved(uid, &sites)
         };
     }
     vec_entity_destroy(&sites);
@@ -942,25 +1130,58 @@ static struct good_demand *demand_get(struct work_snapshot *snap, int faction, c
         .need = resource_need(faction, rname, &snap->requests),
         .workers = G_Harvester_CountGathering(faction, rname),
         .wanted = gatherers_wanted(surplus, shortfall),
+        .surplus = surplus,
+        .shortfall = shortfall,
         .stocked = stocked(surplus, shortfall)
     };
     pf_strlcpy(ret->rname, rname, sizeof(ret->rname));
     return ret;
 }
 
+/* Why the nearest unfinished site, if any, took no builder */
+static void note_passed_site(uint32_t uid, struct work_snapshot *snap, vec2_t pos, int faction)
+{
+    struct work_site *nearest = NULL;
+    float best = 0.0f;
+    for(int i = 0; i < snap->nsites; i++) {
+        struct work_site *curr = &snap->sites[i];
+        if(curr->faction != faction || !unfinished_site(curr->uid))
+            continue;
+        float dist = distance(G_Pos_GetXZ(curr->uid), pos);
+        if(nearest == NULL || dist < best) {
+            nearest = curr;
+            best = dist;
+        }
+    }
+    if(nearest == NULL) {
+        trace_note(uid, "build", "skipped", "no_site", NULL, NULL_UID);
+        return;
+    }
+    const char *why = (best > WORK_RADIUS) ? "far"
+                    : nearest->starved ? "no_material"
+                    : "crewed";
+    trace_note(uid, "build", "skipped", why, NULL, nearest->uid);
+}
+
 static bool try_assign_work(uint32_t uid, struct automation_state *astate)
 {
-    if(!astate->automatic_work)
+    if(!astate->automatic_work) {
+        trace_note(uid, "work", "skipped", "manual", NULL, NULL_UID);
         return false;
-    if(G_Provision_WantsFood(uid))
+    }
+    if(G_Provision_WantsFood(uid)) {
+        trace_note(uid, "work", "skipped", "hungry", NULL, NULL_UID);
         return false;
+    }
 
     uint32_t flags = G_FlagsGet(uid);
     int faction = G_GetFactionID(uid);
     vec2_t pos = work_origin(uid, astate);
     struct work_snapshot *snap = snapshot_get();
 
-    if((flags & ENTITY_FLAG_BUILDER) && !astate->pinned[0]) {
+    if((flags & ENTITY_FLAG_BUILDER) && astate->pinned[0]) {
+        trace_note(uid, "build", "skipped", "pinned", astate->pinned, NULL_UID);
+    }else if(flags & ENTITY_FLAG_BUILDER) {
         /* Builders spread over the sites that can be worked on; one waiting on its 
          * materials gets one to found it, and the rest gather and carry them */
         struct site_search arg = (struct site_search){ 
@@ -974,16 +1195,25 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
             site = nearest_site(snap, pos, &arg);
         }
         if(site && G_Builder_Build(uid, site->uid)) {
+            trace_note(uid, "build", "taken", "site", NULL, site->uid);
             site->builders++;
             return true;
+        }
+        if(site) {
+            trace_note(uid, "build", "failed", "unreachable", NULL, site->uid);
+        }else{
+            note_passed_site(uid, snap, pos, faction);
         }
     }
 
     if(!(flags & ENTITY_FLAG_HARVESTER))
         return false;
     /* A load left in hand is brought in before anything else */
-    if(G_Harvester_GetCurrTotalCarry(uid))
-        return G_Harvester_BringInLoad(uid, NULL_UID);
+    if(G_Harvester_GetCurrTotalCarry(uid)) {
+        bool ret = G_Harvester_BringInLoad(uid, NULL_UID);
+        trace_note(uid, "load", ret ? "taken" : "failed", "in_hand", NULL, NULL_UID);
+        return ret;
+    }
 
     const char *candidates[MAX_RESOURCES];
     size_t ncandidates;
@@ -1000,16 +1230,22 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
      * gathers it, so that a specialist keeps to his trade */
     float scores[MAX_RESOURCES];
     struct good_demand *demands[MAX_RESOURCES];
+    const char *why[MAX_RESOURCES];
     for(int i = 0; i < ncandidates; i++) {
         demands[i] = demand_get(snap, faction, candidates[i]);
         bool pinned = !strcmp(astate->pinned, candidates[i]);
         if(!demands[i] || (!pinned && demands[i]->workers >= demands[i]->wanted)) {
             scores[i] = -1.0f;
+            why[i] = (demands[i] && demands[i]->stocked) ? "stocked" : "enough";
             continue;
         }
         scores[i] = demands[i]->need * G_Harvester_GetGatherSpeed(uid, candidates[i]) 
                   / (1.0f + demands[i]->workers);
+        why[i] = "lower";
     }
+    float ranks[MAX_RESOURCES];
+    memcpy(ranks, scores, sizeof(float) * ncandidates);
+    int chosen = -1;
 
     for(int tries = 0; tries < ncandidates; tries++) {
         int best = -1;
@@ -1028,25 +1264,50 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
         }
         if(node != NULL_UID && G_Harvester_Gather(uid, node)) {
             pf_strlcpy(astate->working, candidates[best], sizeof(astate->working));
-            demands[best]->workers++;
-            return true;
+            why[best] = "chosen";
+            chosen = best;
+            break;
         }
+        why[best] = (node == NULL_UID) ? "no_node" : "unreachable";
         scores[best] = -1.0f;
     }
-    return false;
+
+    trace_goods(uid, ncandidates, candidates, demands, ranks, why);
+    if(chosen == -1)
+        return false;
+    demands[chosen]->workers++;
+    return true;
+}
+
+/* Why the worker is not a carrier waiting for a job */
+static const char *not_waiting_why(uint32_t uid, struct automation_state *astate)
+{
+    if(!astate->automatic_transport)
+        return "off";
+    if(G_Harvester_GetCurrTotalCarry(uid))
+        return "laden";
+    return "hungry";
 }
 
 static bool try_assign_transport_job(uint32_t uid, struct automation_state *astate)
 {
-    if(!waiting_carrier(uid, astate))
+    if(!waiting_carrier(uid, astate)) {
+        trace_note(uid, "carry", "skipped", not_waiting_why(uid, astate), NULL, NULL_UID);
         return false;
+    }
 
     vec_entity_t carriers;
     vec_entity_init(&carriers);
     vec_entity_push(&carriers, uid);
-    assign_jobs(&carriers);
+    assign_jobs(&carriers, false);
     bool assigned = (vec_size(&carriers) == 0);
     vec_entity_destroy(&carriers);
+
+    if(assigned) {
+        trace_carry_taken(uid);
+    }else{
+        trace_note(uid, "carry", "skipped", "nothing", NULL, NULL_UID);
+    }
     return assigned;
 }
 
@@ -1073,9 +1334,26 @@ static void assign_transport_jobs(void)
     });
 
     for(int i = 0; i < vec_size(&laden); i++) {
-        G_Harvester_BringInLoad(vec_AT(&laden, i), NULL_UID);
+        uint32_t uid = vec_AT(&laden, i);
+        bool ret = G_Harvester_BringInLoad(uid, NULL_UID);
+        trace_note(uid, "load", ret ? "taken" : "failed", "in_hand", NULL, NULL_UID);
     }
-    assign_jobs(&carriers);
+
+    vec_entity_t waiting;
+    vec_entity_init(&waiting);
+    vec_entity_copy(&waiting, &carriers);
+    assign_jobs(&carriers, true);
+
+    for(int i = 0; i < vec_size(&waiting); i++) {
+        uint32_t uid = vec_AT(&waiting, i);
+        struct automation_state *astate = astate_get(uid);
+        if(astate && astate->transport_target != NULL_UID) {
+            trace_carry_taken(uid);
+        }else{
+            trace_note(uid, "carry", "skipped", "nothing", NULL, NULL_UID);
+        }
+    }
+    vec_entity_destroy(&waiting);
     vec_entity_destroy(&laden);
     vec_entity_destroy(&carriers);
 }
@@ -1096,8 +1374,11 @@ static void assign_work(void)
     for(int i = 0; i < vec_size(&workers); i++) {
         uint32_t uid = vec_AT(&workers, i);
         struct automation_state *astate = astate_get(uid);
-        if(astate && astate->state == STATE_IDLE) {
-            try_assign_work(uid, astate);
+        /* A carrier handed a job in this pass is still counted idle until the next tick */
+        if(!astate || astate->state != STATE_IDLE || !idle(uid))
+            continue;
+        if(!try_assign_work(uid, astate)) {
+            trace_note(uid, "idle", "taken", "no_work", NULL, NULL_UID);
         }
     }
     vec_entity_destroy(&workers);
@@ -1192,6 +1473,9 @@ static void on_order_issued(void *user, void *event)
     if(!astate)
         return;
     astate->working[0] = '\0';
+    if(trace_get(uid, true)) {
+        trace_note(uid, "order", "taken", "player", NULL, NULL_UID);
+    }
 
     if(!astate->automatic_transport)
         return;
@@ -1236,6 +1520,11 @@ void G_Automation_RemoveEntity(uint32_t uid)
         return;
     E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_order_issued);
     astate_remove(uid);
+
+    k = kh_get(trace, s_traces, uid);
+    if(k != kh_end(s_traces)) {
+        kh_del(trace, s_traces, k);
+    }
 }
 
 bool G_Automation_Init(void)
@@ -1247,6 +1536,8 @@ bool G_Automation_Init(void)
     vec_entity_init(&s_stopping);
     if((s_pending = kh_init(pending)) == NULL)
         goto fail_pending;
+    if((s_traces = kh_init(trace)) == NULL)
+        goto fail_traces;
     s_tick = 0;
     vec_request_init(&s_snapshot.requests);
     s_snapshot.valid = false;
@@ -1256,6 +1547,8 @@ bool G_Automation_Init(void)
     E_Global_Register(EVENT_ORDER_ISSUED, on_order_issued, NULL, G_RUNNING);
     return true;
 
+fail_traces:
+    kh_destroy(pending, s_pending);
 fail_pending:
     vec_entity_destroy(&s_stopping);
     kh_destroy(count, s_transport_count);
@@ -1288,6 +1581,19 @@ enum request_status G_Automation_RequestStatus(uint32_t site, const char *rname,
     return REQUEST_OK;
 }
 
+size_t G_Automation_GetTrace(uint32_t uid, size_t maxout, struct work_step out[], int *out_age_ms)
+{
+    *out_age_ms = 0;
+    khiter_t k = kh_get(trace, s_traces, uid);
+    if(k == kh_end(s_traces))
+        return 0;
+    const struct work_trace *trace = &kh_value(s_traces, k);
+    size_t ret = MIN(trace->nsteps, maxout);
+    memcpy(out, trace->steps, ret * sizeof(struct work_step));
+    *out_age_ms = (s_tick - trace->tick) * TICK_MS;
+    return ret;
+}
+
 int G_Automation_AssignedTransporters(uint32_t site)
 {
     int cid = G_Cluster_Of(site);
@@ -1310,6 +1616,7 @@ void G_Automation_Shutdown(void)
     E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
     vec_request_destroy(&s_snapshot.requests);
     vec_entity_destroy(&s_stopping);
+    kh_destroy(trace, s_traces);
     kh_destroy(pending, s_pending);
     kh_destroy(count, s_transport_count);
     kh_destroy(state, s_entity_state_table);
@@ -1462,6 +1769,20 @@ int G_Automation_Shortfall(uint32_t site, const char *rname, int own_load)
     int want = G_StorageSite_Request(rep, rname);
     int have = G_StorageSite_GetCurr(rep, rname) + pool_en_route(rep, rname) - own_load;
     return MAX(want - have, 0);
+}
+
+void G_Automation_TraceFollowOn(uint32_t uid, const char *kind, const char *why, 
+                                const char *rname, uint32_t target)
+{
+    if(!trace_get(uid, true))
+        return;
+    trace_note(uid, kind, "taken", why, rname, target);
+}
+
+bool G_Automation_ChoseWork(uint32_t uid)
+{
+    struct automation_state *astate = astate_get(uid);
+    return astate && astate->working[0];
 }
 
 const char *G_Automation_GetPinnedWork(uint32_t uid)

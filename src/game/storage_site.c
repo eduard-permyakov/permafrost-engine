@@ -644,6 +644,8 @@ static const char *reason_code(enum request_status status)
     case REQUEST_NO_CARRIER:    return "No carrier";
     case REQUEST_UNREACHABLE:   return "Unreachable";
     case REQUEST_NOT_CONNECTED: return "Not connected";
+    case REQUEST_KEPT:          return "Kept back";
+    case REQUEST_PROMISED:      return "On its way";
     default:                    return NULL;
     }
 }
@@ -937,14 +939,13 @@ static void on_update_ui(void *user, void *event)
 
                 int capacity = curr.use_alt ? G_StorageSite_GetAltCapacity(key, names[i]) 
                                             : G_StorageSite_GetCapacity(key, names[i]);
-                int desired = curr.use_alt ? G_StorageSite_GetAltDesired(key, names[i]) 
-                                           : G_StorageSite_GetDesired(key, names[i]);
+                int reserve = G_StorageSite_GetReserve(key, names[i]);
                 int curr_amount = G_StorageSite_GetCurr(key, names[i]);
 
                 char curr[5], cap[5], des[7];
                 pf_snprintf(curr, sizeof(curr), "%4d", curr_amount);
                 pf_snprintf(cap, sizeof(cap), "%4d", capacity);
-                pf_snprintf(des, sizeof(des), "(%4d)", desired);
+                pf_snprintf(des, sizeof(des), "(%4d)", reserve);
 
                 nk_layout_row_begin(ctx, NK_STATIC, 16, 5);
                 nk_layout_row_push(ctx, 16);
@@ -1801,6 +1802,45 @@ int G_StorageSite_Surplus(uint32_t uid, const char *rname)
         return MAX(curr - desired, 0);
     default:
         return MAX(curr - MAX(desired, G_StorageSite_GetKeep(uid, rname)), 0);
+    }
+}
+
+int G_StorageSite_GetReserve(uint32_t uid, const char *rname)
+{
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+
+    int desired = 0;
+    if(ss->use_alt) {
+        ss_state_get_key(ss->alt_desired, rname, &desired);
+        return desired;
+    }
+    if(G_StorageSite_GetChip(uid, rname) == SS_CHIP_OFF)
+        return 0;
+    ss_state_get_key(ss->desired, rname, &desired);
+    return MAX(desired, G_StorageSite_GetKeep(uid, rname));
+}
+
+/* What a building being built may take: all but the player's reserve, as it
+ * comes before the stock any building asks for to work from */
+int G_StorageSite_SurplusForSite(uint32_t uid, const char *rname)
+{
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+    if(ss->use_alt)
+        return 0;
+
+    int curr = 0;
+    ss_state_get_key(ss->curr, rname, &curr);
+
+    switch(G_StorageSite_GetChip(uid, rname)) {
+    case SS_CHIP_HOLD:
+        return 0;
+    case SS_CHIP_OFF:
+    case SS_CHIP_RELAY:
+        return curr;
+    default:
+        return MAX(curr - G_StorageSite_GetKeep(uid, rname), 0);
     }
 }
 

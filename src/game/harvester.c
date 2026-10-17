@@ -72,8 +72,12 @@
 
 #define UID_NONE            (~((uint32_t)0))
 #define REACQUIRE_RADIUS    (150.0)
+#define ARR_SIZE(a)         (sizeof(a)/sizeof((a)[0]))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
+
+/* Standing still this long on its way is taken as having arrived */
+#define STILL_ARRIVAL_TICKS (60)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -143,6 +147,8 @@ struct hstate{
     /* For a transport the automation assigned: how much to bring. The 
      * carrier takes no more, makes no other stops, and goes idle after. */
     int         job_amount;
+    /* Ticks it has stood still on its way somewhere, to catch an arrival it never heard */
+    int         still_ticks;
 };
 
 struct searcharg{
@@ -186,6 +192,7 @@ static void on_arrive_at_transport_source(void *user, void *event);
 static void on_arrive_at_transport_dest(void *user, void *event);
 static void on_harvest_anim_finished(void *user, void *event);
 static void on_harvest_anim_finished_source(void *user, void *event);
+static void on_20hz_tick(void *user, void *event);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -319,6 +326,7 @@ static bool hstate_init(struct hstate *hs)
     hs->transport_src_uid = NULL_UID;
     hs->transport_dest_uid = NULL_UID;
     hs->job_amount = 0;
+    hs->still_ticks = 0;
     return true;
 }
 
@@ -490,6 +498,22 @@ static bool valid_storage_site_dropoff(uint32_t curr, void *arg)
     return true;
 }
 
+static bool building_site(uint32_t uid)
+{
+    if(uid == NULL_UID || !G_EntityExists(uid) || G_EntityIsZombie(uid))
+        return false;
+    return (G_FlagsGet(uid) & ENTITY_FLAG_STORAGE_SITE) && G_StorageSite_GetUseAlt(uid);
+}
+
+/* What a source can give the destination: a building being built takes all
+ * but the player's reserve */
+static int source_spare(uint32_t src, uint32_t dest, const char *rname)
+{
+    if(building_site(dest))
+        return G_StorageSite_SurplusForSite(src, rname);
+    return G_StorageSite_Surplus(src, rname);
+}
+
 static bool valid_storage_site_source(uint32_t curr, void *arg)
 {
     struct searcharg *sarg = arg;
@@ -523,6 +547,9 @@ static bool valid_storage_site_source(uint32_t curr, void *arg)
     if(cap == 0)
         return false;
     if(stored == 0)
+        return false;
+    /* What is kept back is not for building with */
+    if(building_site(sarg->storage) && G_StorageSite_SurplusForSite(curr, sarg->rname) <= 0)
         return false;
 
     return true;
@@ -1097,8 +1124,10 @@ static void on_arrive_at_transport_source(void *user, void *event)
         /* A job tops up with what the pool came to need while the carrier was on its way */
         int need = MAX(hs->job_amount,
             G_Automation_Shortfall(hs->transport_dest_uid, hs->res_name, hs->job_amount));
-        take = MIN(carry_cap, MIN(need, G_StorageSite_Surplus(hs->transport_src_uid, hs->res_name)));
+        take = MIN(carry_cap, MIN(need, source_spare(hs->transport_src_uid, hs->transport_dest_uid, hs->res_name)));
         take = MAX(take, 0);
+    }else if(building_site(hs->transport_dest_uid)) {
+        take = MAX(MIN(carry_cap, source_spare(hs->transport_src_uid, hs->transport_dest_uid, hs->res_name)), 0);
     }else switch(hs->strategy) {
     case TRANSPORT_STRATEGY_EXCESS: {
         /* If there are absolutely no valid storage sites which have excess 
@@ -1843,6 +1872,59 @@ static void on_render_ui(void *user, void *event)
     });
 }
 
+/* The arrival a harvester on its way waits for, if it has what that arrival needs */
+static void (*awaited_arrival(const struct hstate *hs))(void*, void*)
+{
+    switch(hs->state) {
+    case STATE_HARVESTING_SEEK_RESOURCE:
+        return (hs->res_uid != NULL_UID) ? on_arrive_at_resource : NULL;
+    case STATE_HARVESTING_SEEK_STORAGE:
+        return (hs->ss_uid != NULL_UID) ? on_arrive_at_storage : NULL;
+    case STATE_TRANSPORT_GETTING:
+        return on_arrive_at_transport_source;
+    case STATE_TRANSPORT_PUTTING:
+        return on_arrive_at_transport_dest;
+    case STATE_TRANSPORT_SEEK_RESOURCE:
+        return on_arrive_at_resource_source;
+    default:
+        return NULL;
+    }
+}
+
+/* A unit can come to rest without the motion end its arrival waits for: it was
+ * still moving when that came, or never set off. It is taken as arrived once it
+ * has stood still a while, which sends it on, or back on its way. */
+static void on_20hz_tick(void *user, void *event)
+{
+    uint32_t arrived[256];
+    size_t narrived = 0;
+
+    uint32_t uid;
+    struct hstate *hs;
+    kh_foreach_val_ptr(s_entity_state_table, uid, hs, {
+        if(!awaited_arrival(hs) || !G_Move_Still(uid)) {
+            hs->still_ticks = 0;
+            continue;
+        }
+        if(++hs->still_ticks < STILL_ARRIVAL_TICKS)
+            continue;
+        hs->still_ticks = 0;
+        if(narrived < ARR_SIZE(arrived)) {
+            arrived[narrived++] = uid;
+        }
+    });
+
+    for(int i = 0; i < narrived; i++) {
+        struct hstate *curr = hstate_get(arrived[i]);
+        if(!curr || G_EntityIsZombie(arrived[i]))
+            continue;
+        void (*arrival)(void*, void*) = awaited_arrival(curr);
+        if(arrival) {
+            arrival((void*)((uintptr_t)arrived[i]), NULL);
+        }
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1861,6 +1943,7 @@ bool G_Harvester_Init(const struct map *map)
     s_map = map;
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_UI, on_render_ui, NULL, G_RUNNING);
+    E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
     return true;
 
 fail_strintern:
@@ -1874,6 +1957,7 @@ fail_mpool:
 void G_Harvester_Shutdown(void)
 {
     s_map = NULL;
+    E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
     E_Global_Unregister(EVENT_RENDER_UI, on_render_ui);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
 
@@ -2411,6 +2495,33 @@ bool G_Harvester_TransportJob(uint32_t harvester, uint32_t src, uint32_t dest,
 int G_Harvester_EnRoute(uint32_t dest, const char *rname)
 {
     return amount_en_route(dest, rname, NULL_UID);
+}
+
+const char *G_Harvester_Gathering(uint32_t uid)
+{
+    struct hstate *hs = hstate_get(uid);
+    if(!hs)
+        return NULL;
+    if(hs->state != STATE_HARVESTING && hs->state != STATE_HARVESTING_SEEK_RESOURCE
+    && hs->state != STATE_HARVESTING_SEEK_STORAGE)
+        return NULL;
+    return hs->res_name;
+}
+
+int G_Harvester_BoundFor(uint32_t dest, const char *rname)
+{
+    int ret = 0;
+    for(khiter_t k = kh_begin(s_entity_state_table); k != kh_end(s_entity_state_table); k++) {
+        if(!kh_exist(s_entity_state_table, k))
+            continue;
+        const struct hstate *hs = &kh_value(s_entity_state_table, k);
+        if(hs->transport_dest_uid != dest || hs->state < STATE_TRANSPORT_GETTING)
+            continue;
+        if(!hs->res_name || strcmp(hs->res_name, rname))
+            continue;
+        ret++;
+    }
+    return ret;
 }
 
 int G_Harvester_PickupsPending(uint32_t src, const char *rname)

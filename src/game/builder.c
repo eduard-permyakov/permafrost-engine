@@ -74,6 +74,7 @@
 #define FOUND_RETRY_TICKS (10)
 #define FOUND_CLEAR_TICKS (40)
 #define FOUND_WAIT_TICKS  (600) /* half a minute for a busy footprint to empty before giving up */
+#define STILL_ARRIVAL_TICKS (40)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -175,10 +176,16 @@ static void finish_building(struct builderstate *bs, uint32_t uid)
     if(!G_EntityExists(building) || G_EntityIsZombie(building))
         return;
 
+    /* With more orders queued, it goes on to them rather than working the field */
+    size_t ncmds;
+    G_Command_Get(uid, &ncmds);
+
     if(G_Building_IsCompleted(building)
     && (G_FlagsGet(building) & ENTITY_FLAG_RESOURCE)
-    && (G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER)) {
-        G_Harvester_Gather(uid, building);
+    && (G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER)
+    && ncmds == 0
+    && G_Harvester_Gather(uid, building)) {
+        G_Automation_TraceFollowOn(uid, "gather", "field", G_Resource_GetName(building), building);
     }
 }
 
@@ -305,10 +312,12 @@ static void proceed_at_site(uint32_t uid, struct builderstate *bs)
         return;
     }
 
+    /* A finished field is worked, and its builder is done with it */
     if(G_Building_IsCompleted(bs->target_uid)
     && (G_FlagsGet(bs->target_uid) & ENTITY_FLAG_RESOURCE)
     && (G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER)) {
-        G_Harvester_Gather(uid, bs->target_uid);
+        finish_building(bs, uid);
+        next_command(uid);
         return;
     }
 
@@ -319,12 +328,41 @@ static void proceed_at_site(uint32_t uid, struct builderstate *bs)
         (void*)((uintptr_t)uid), G_RUNNING);
 }
 
+/* Saves from before a builder let go of the finished field it went to work
+ * still have it on its way there while it gathers */
+static bool working_field(uint32_t uid, const struct builderstate *bs)
+{
+    if(!G_EntityExists(bs->target_uid) || G_EntityIsZombie(bs->target_uid))
+        return false;
+    if(!(G_FlagsGet(bs->target_uid) & ENTITY_FLAG_RESOURCE) || !G_Building_IsCompleted(bs->target_uid))
+        return false;
+    return (G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER) && G_Harvester_Gathering(uid) != NULL;
+}
+
 static void on_20hz_tick(void *user, void *event)
 {
     uint32_t uid;
     struct builderstate *bs;
 
     kh_foreach_val_ptr(s_entity_state_table, uid, bs, {
+
+        if(bs->state == STATE_MOVING_TO_TARGET && working_field(uid, bs)) {
+            E_Entity_Unregister(EVENT_MOTION_END, uid, on_motion_end);
+            bs->state = STATE_NOT_BUILDING;
+            bs->target_uid = UID_NONE;
+            continue;
+        }
+
+        /* An arrival whose motion end it never heard is taken as one */
+        if(bs->state == STATE_MOVING_TO_TARGET) {
+            if(!G_Move_Still(uid)) {
+                bs->wait_ticks = 0;
+            }else if(++bs->wait_ticks >= STILL_ARRIVAL_TICKS) {
+                bs->wait_ticks = 0;
+                on_motion_end((void*)((uintptr_t)uid), NULL);
+            }
+            continue;
+        }
 
         if(bs->state != STATE_WAIT_FOUND)
             continue;

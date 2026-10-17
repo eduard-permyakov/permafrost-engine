@@ -741,6 +741,10 @@ bool  G_Harvester_HasTransportSource(uint32_t uid, uint32_t storage, const char 
 /* Fetches 'amount' of 'rname' from 'src' to 'dest' and goes idle: the jobs the automation hands out */
 bool  G_Harvester_TransportJob(uint32_t uid, uint32_t src, uint32_t dest, const char *rname, int amount);
 int   G_Harvester_EnRoute(uint32_t dest, const char *rname);
+/* The resource the harvester is out gathering for the stores, or NULL */
+const char *G_Harvester_Gathering(uint32_t uid);
+/* How many units are fetching, gathering or bringing 'rname' for 'dest' */
+int   G_Harvester_BoundFor(uint32_t dest, const char *rname);
 /* How much of 'rname' carriers on their way to 'src' are to take from it */
 int   G_Harvester_PickupsPending(uint32_t src, const char *rname);
 size_t G_Harvester_GetGatherable(uint32_t uid, size_t maxout, const char *out[]);
@@ -773,6 +777,10 @@ enum request_status{
     REQUEST_UNREACHABLE,
     /* The goods are only in other districts, and no carrier serves both */
     REQUEST_NOT_CONNECTED,
+    /* The faction has some, but all of it is set aside where it lies */
+    REQUEST_KEPT,
+    /* The faction's spare goods are all promised to carriers already */
+    REQUEST_PROMISED,
 };
 
 /* What a storage site does with a resource */
@@ -826,6 +834,9 @@ enum ss_chip G_StorageSite_GetChip(uint32_t uid, const char *rname);
 int  G_StorageSite_Request(uint32_t uid, const char *rname);
 /* How much of a resource the site can give away */
 int  G_StorageSite_Surplus(uint32_t uid, const char *rname);
+int  G_StorageSite_SurplusForSite(uint32_t uid, const char *rname);
+/* The reserve the site holds back: its keep, or more for what its recipes need */
+int  G_StorageSite_GetReserve(uint32_t uid, const char *rname);
 bool G_StorageSite_Accepts(uint32_t uid, const char *rname);
 bool G_StorageSite_SetCurr(uint32_t uid, const char *rname, int curr);
 int  G_StorageSite_GetCurr(uint32_t uid, const char *rname);
@@ -997,8 +1008,32 @@ bool G_Automation_GetAutomaticWork(uint32_t uid);
 /* Keeps a worker left to itself to gathering one resource; "" lets it choose */
 void G_Automation_SetPinnedWork(uint32_t uid, const char *rname);
 const char *G_Automation_GetPinnedWork(uint32_t uid);
+/* Whether the worker's gathering is of its own choosing, not an order */
+bool G_Automation_ChoseWork(uint32_t uid);
+/* Records work a unit took up on its own, with 'kind' and 'why' strings that live for good */
+void G_Automation_TraceFollowOn(uint32_t uid, const char *kind, const char *why, 
+                                const char *rname, uint32_t target);
 /* Why the site's request for the resource is unserved, and for how long it has waited */
 enum request_status G_Automation_RequestStatus(uint32_t site, const char *rname, int *out_waited_ms);
+
+/* One step of a worker's last decision about its work: what was weighed, and what came of it */
+struct work_step{
+    const char *kind;
+    const char *verdict;
+    const char *why;
+    char        rname[32];
+    uint32_t    target;
+    int         need;
+    int         workers;
+    int         wanted;
+    /* What the realm can spare of the good, and what it means to have spare */
+    int         stock;
+    int         stock_target;
+    float       score;
+};
+
+/* The steps of the worker's last decision, in the order they were weighed, and how long ago it was made */
+size_t G_Automation_GetTrace(uint32_t uid, size_t maxout, struct work_step out[], int *out_age_ms);
 /* How many automated carriers are bound for the site's pool */
 int  G_Automation_AssignedTransporters(uint32_t site);
 /* Whether a worker that gathered 'rname' by its own choice should stop at a

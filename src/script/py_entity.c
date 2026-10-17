@@ -971,6 +971,7 @@ static PyObject *PyHarvesterEntity_get_automatic_transport(PyHarvesterEntityObje
 static PyObject *PyHarvesterEntity_get_automatic_work(PyHarvesterEntityObject *self, void *closure);
 static int       PyHarvesterEntity_set_automatic_work(PyHarvesterEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyHarvesterEntity_get_pinned_work(PyHarvesterEntityObject *self, void *closure);
+static PyObject *PyHarvesterEntity_get_work_trace(PyHarvesterEntityObject *self, void *closure);
 static PyObject *PyHarvesterEntity_get_home_district(PyHarvesterEntityObject *self, void *closure);
 static int       PyHarvesterEntity_set_home_district(PyHarvesterEntityObject *self, PyObject *value, void *closure);
 static int       PyHarvesterEntity_set_pinned_work(PyHarvesterEntityObject *self, PyObject *value, void *closure);
@@ -1085,6 +1086,12 @@ static PyGetSetDef PyHarvesterEntity_getset[] = {
     (getter)PyHarvesterEntity_get_pinned_work, (setter)PyHarvesterEntity_set_pinned_work,
     "The one resource a worker finding its own work gathers, or an empty string to let it choose.",
     NULL},
+    {"work_trace",
+    (getter)PyHarvesterEntity_get_work_trace, NULL,
+    "The worker's last decision about its work: (seconds ago, [(kind, verdict, why, resource, "
+    "target, need, workers, wanted, stock, stock target, score), ...]), the steps in the order "
+    "they were weighed.",
+    NULL},
     {"automatic_transport",
     (getter)PyHarvesterEntity_get_automatic_transport, (setter)PyHarvesterEntity_set_automatic_transport,
     "Boolean indicating whether the unit is currently in 'automatic transport' mode. When in "
@@ -1120,6 +1127,7 @@ static PyObject *PyStorageSiteEntity_get_capacity(PyStorageSiteEntityObject *sel
 static PyObject *PyStorageSiteEntity_get_own_capacity(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_keep(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_set_keep(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_get_reserve(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_chip(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_set_chip(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_surplus(PyStorageSiteEntityObject *self, PyObject *args);
@@ -1163,6 +1171,11 @@ static PyMethodDef PyStorageSiteEntity_methods[] = {
     (PyCFunction)PyStorageSiteEntity_set_keep, METH_VARARGS,
     "Sets the reserve of the resource the site never gives away. With the Collect chip, the site asks "
     "to be brought the resource up to it."},
+
+    {"get_reserve", 
+    (PyCFunction)PyStorageSiteEntity_get_reserve, METH_VARARGS,
+    "Gets the reserve the site holds back and shows over itself: its keep, or more for what its "
+    "recipes need."},
 
     {"get_chip", 
     (PyCFunction)PyStorageSiteEntity_get_chip, METH_VARARGS,
@@ -5045,6 +5058,30 @@ static int PyHarvesterEntity_set_home_district(PyHarvesterEntityObject *self, Py
     return 0;
 }
 
+static PyObject *PyHarvesterEntity_get_work_trace(PyHarvesterEntityObject *self, void *closure)
+{
+    struct work_step steps[32];
+    int age_ms;
+    size_t nsteps = G_Automation_GetTrace(self->super.ent, ARR_SIZE(steps), steps, &age_ms);
+
+    PyObject *list = PyList_New(nsteps);
+    if(!list)
+        return NULL;
+    for(int i = 0; i < nsteps; i++) {
+        const struct work_step *step = &steps[i];
+        PyObject *target = (step->target != NULL_UID) ? S_Entity_ObjForUID(step->target) : NULL;
+        PyObject *tuple = Py_BuildValue("(ssssOiiiiif)", step->kind, step->verdict, step->why, 
+            step->rname, target ? target : Py_None, step->need, step->workers, step->wanted, 
+            step->stock, step->stock_target, step->score);
+        if(!tuple) {
+            Py_DECREF(list);
+            return NULL;
+        }
+        PyList_SET_ITEM(list, i, tuple);
+    }
+    return Py_BuildValue("(fN)", age_ms / 1000.0f, list);
+}
+
 static PyObject *PyHarvesterEntity_get_pinned_work(PyHarvesterEntityObject *self, void *closure)
 {
     return PyString_FromString(G_Automation_GetPinnedWork(self->super.ent));
@@ -5225,6 +5262,17 @@ static PyObject *PyStorageSiteEntity_set_keep(PyStorageSiteEntityObject *self, P
     }
     G_StorageSite_SetKeep(self->super.ent, name, keep);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyStorageSiteEntity_get_reserve(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
+        return NULL;
+    }
+    return PyInt_FromLong(G_StorageSite_GetReserve(self->super.ent, name));
 }
 
 static PyObject *PyStorageSiteEntity_get_chip(PyStorageSiteEntityObject *self, PyObject *args)
