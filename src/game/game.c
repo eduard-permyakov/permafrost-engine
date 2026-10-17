@@ -861,6 +861,11 @@ static bool bool_val_validate(const struct sval *new_val)
     return (new_val->type == ST_TYPE_BOOL);
 }
 
+static bool string_val_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_STRING);
+}
+
 static bool float_val_validate(const struct sval *new_val)
 {
     return (new_val->type == ST_TYPE_FLOAT);
@@ -1763,6 +1768,18 @@ static void g_create_settings(void)
         },
         .prio = 0,
         .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.exec_on_load",
+        .val = (struct sval) {
+            .type = ST_TYPE_STRING,
+            .as_string = {0}
+        },
+        .prio = 0,
+        .validate = string_val_validate,
         .commit = NULL,
     });
     assert(status == SS_OKAY);

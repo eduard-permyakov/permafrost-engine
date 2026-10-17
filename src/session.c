@@ -568,6 +568,14 @@ static struct result session_task(void* arg)
         && Settings_Get("pf.debug.resume_on_load", &resume) == SS_OKAY && resume.as_bool) {
             G_SetSimState(G_RUNNING);
         }
+        /* For probes of a saved session: a script run in the loaded interpreter */
+        struct sval script;
+        if(s_current == SESH_REQ_LOAD
+        && Settings_Get("pf.debug.exec_on_load", &script) == SS_OKAY && script.as_string[0]) {
+            if(!S_RunFile(script.as_string, 0, NULL)) {
+                fprintf(stderr, "Could not run the script %s after loading the session\n", script.as_string);
+            }
+        }
         E_Global_Notify(success_event, NULL, ES_ENGINE);
     }else {
         E_Global_Notify(failure_event, s_errbuff, ES_ENGINE);
