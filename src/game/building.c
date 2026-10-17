@@ -561,12 +561,12 @@ static bool standing_in_footprint(uint32_t uid, void *arg)
     return C_PointInsideOBB(point, *ctx->obb);
 }
 
-/* A site that units cannot walk over sets its footprint aside from when it
- * is marked, so that the faction's units keep off it until it is founded */
+/* A site sets its footprint aside from when it is marked, so that the faction's
+ * units keep off it and no other site is placed over it until it is founded */
 static void building_reserve(struct buildstate *bs, uint32_t uid)
 {
     uint32_t flags = G_FlagsGet(uid);
-    if(bs->reserved || !(flags & ENTITY_FLAG_COLLISION) || bs->pathable)
+    if(bs->reserved || bs->pathable)
         return;
 
     Entity_CurrentOBB(uid, &bs->obb, true);
@@ -596,7 +596,8 @@ static bool building_mark(uint32_t uid, bool clear_footprint)
     bs->state = BUILDING_STATE_MARKED;
     building_reserve(bs, uid);
 
-    if(clear_footprint) {
+    /* Those on ground they may walk over once it is built are left where they stand */
+    if(clear_footprint && (G_FlagsGet(uid) & ENTITY_FLAG_COLLISION)) {
         G_Building_ClearFootprint(uid);
     }
     return true;
@@ -945,6 +946,10 @@ bool G_Building_Foundable(uint32_t uid)
     /* Its own set aside ground lies under it */
     if(!building_buildable(uid, G_GetFactionID(uid), false))
         return false;
+
+    /* Those standing on ground they may walk over once it is built take no harm from its founding */
+    if(!(G_FlagsGet(uid) & ENTITY_FLAG_COLLISION))
+        return true;
 
     /* A body standing just outside it overlaps its edge, but takes no harm from it rising */
     struct obb obb;
