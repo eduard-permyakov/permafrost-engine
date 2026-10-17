@@ -73,7 +73,7 @@ PQUEUE_IMPL(static, coord, struct coord)
 
 /* In cells: how far from the destination its chunk's line of sight reaches 
  * when the chunk has roads */
-#define LOS_ROAD_RADIUS (16)
+#define LOS_ROAD_RADIUS (4)
 
 PQUEUE_TYPE(td, struct tile_desc)
 PQUEUE_IMPL(static, td, struct tile_desc)

@@ -64,7 +64,7 @@
 
 /* A district cell is 4x4 map tiles */
 #define CELL_SIZE           (32.0f)
-#define ROAD_COST_FACTOR    (0.375f)
+#define ROAD_COST_FACTOR    (0.125f)
 #define DIAGONAL            (1.41421356f)
 #define UNREACHED           (1e30f)
 /* Floods wait this long after a change, so that a burst of them is one */

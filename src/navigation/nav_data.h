@@ -49,7 +49,7 @@
 #define FACTION_ID_NONE       0xf
 /* A road cell costs this fraction of the same cell off the road. A power of
  * two fraction, so road-free costs and their sums stay exact. */
-#define ROAD_COST_FACTOR      0.375f
+#define ROAD_COST_FACTOR      0.125f
 
 /* portal_travel_costs are octile distances within a chunk (max ~5800), stored as
  * 16-bit fixed-point with 3 fractional bits; UNREACHABLE is the 'no path' sentinel. */
