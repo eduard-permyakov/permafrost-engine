@@ -1045,5 +1045,8 @@ void G_Automation_Balance(int faction, const char *rname, int *out_surplus, int 
 /* What the site's pool still asks for, net of what carriers bring it other than 'own_load' */
 int  G_Automation_Shortfall(uint32_t site, const char *rname, int own_load);
 
+/* Sends the builder to the site as the player's right click does: false when it is no site to build or mend */
+bool G_Builder_PlayerOrder(uint32_t uid, uint32_t building);
+
 #endif
 

@@ -105,6 +105,7 @@ static void on_motion_end(void *user, void *event);
 static void proceed_at_site(uint32_t uid, struct builderstate *bs);
 static void approach(uint32_t uid, struct builderstate *bs, uint32_t building);
 static void next_command(uint32_t uid);
+static bool wants_builder(uint32_t building);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -435,6 +436,16 @@ static void approach(uint32_t uid, struct builderstate *bs, uint32_t building)
     }
 }
 
+/* A site still to be founded is taken up as one to be raised or mended */
+static bool wants_builder(uint32_t building)
+{
+    if(!(G_FlagsGet(building) & ENTITY_FLAG_BUILDING))
+        return false;
+    if(G_Building_IsMarked(building) && !G_Building_IsFounded(building))
+        return true;
+    return G_Building_NeedsRepair(building);
+}
+
 /* Takes up the unit's next queued order once its work comes to an end */
 static void next_command(uint32_t uid)
 {
@@ -473,7 +484,7 @@ static void on_mousedown(void *user, void *event)
         return;
 
     uint32_t target = G_Sel_GetHovered();
-    if(!G_EntityExists(target)|| !(G_FlagsGet(target) & ENTITY_FLAG_BUILDING) || !G_Building_NeedsRepair(target))
+    if(!G_EntityExists(target) || !wants_builder(target))
         return;
 
     enum selection_type sel_type;
@@ -491,14 +502,9 @@ static void on_mousedown(void *user, void *event)
         if(!(flags & ENTITY_FLAG_BUILDER))
             continue;
 
-        struct builderstate *bs = builderstate_get(curr);
-        assert(bs);
-
-        finish_building(bs, curr);
-        G_StopEntity(curr, true, true);
-        G_Builder_Order(curr, target);
-        G_NotifyOrderIssued(curr, true);
-        nbuilding++;
+        if(G_Builder_PlayerOrder(curr, target)) {
+            nbuilding++;
+        }
     }
 
     if(nbuilding) {
@@ -558,6 +564,19 @@ bool G_Builder_Order(uint32_t uid, uint32_t building)
     struct builderstate *bs = builderstate_get(uid);
     bs->ordered = true;
     return true;
+}
+
+bool G_Builder_PlayerOrder(uint32_t uid, uint32_t building)
+{
+    struct builderstate *bs = builderstate_get(uid);
+    if(!bs || !G_EntityExists(building) || !wants_builder(building))
+        return false;
+
+    finish_building(bs, uid);
+    G_StopEntity(uid, true, true);
+    /* Before the order, which may already queue the return to the site it is to supply */
+    G_NotifyOrderIssued(uid, true);
+    return G_Builder_Order(uid, building);
 }
 
 void G_Builder_AddEntity(uint32_t uid)
@@ -662,8 +681,7 @@ int G_Builder_CurrContextualAction(void)
     if(G_GetFactionID(hovered) != G_GetFactionID(first))
         return false;
 
-    if(G_FlagsGet(hovered) & ENTITY_FLAG_BUILDING
-    && G_Building_NeedsRepair(hovered))
+    if(wants_builder(hovered))
         return CTX_ACTION_BUILD;
 
     return CTX_ACTION_NONE;

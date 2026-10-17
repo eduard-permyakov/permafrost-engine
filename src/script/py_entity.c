@@ -791,6 +791,7 @@ static PyObject *PyBuilderEntity_build_target(PyBuilderEntityObject *self);
 static PyObject *PyBuilderEntity_queue_build(PyBuilderEntityObject *self, PyObject *args);
 static PyObject *PyBuilderEntity_command_queue(PyBuilderEntityObject *self);
 static PyObject *PyBuilderEntity_clear_command_queue(PyBuilderEntityObject *self);
+static PyObject *PyBuilderEntity_order_build(PyBuilderEntityObject *self, PyObject *args);
 static PyObject *PyBuilderEntity_pickle(PyBuilderEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyBuilderEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
@@ -817,6 +818,11 @@ static PyMethodDef PyBuilderEntity_methods[] = {
     {"clear_command_queue", 
     (PyCFunction)PyBuilderEntity_clear_command_queue, METH_NOARGS,
     "Drop all of the entity's queued orders."},
+
+    {"order_build", 
+    (PyCFunction)PyBuilderEntity_order_build, METH_VARARGS,
+    "Send the entity to build or mend a building as the player's right click on it does, a site "
+    "not yet founded included. Returns False when the building has no need of a builder."},
 
     {"__del__", 
     (PyCFunction)PyBuilderEntity_del, METH_NOARGS,
@@ -4293,6 +4299,31 @@ static PyObject *PyBuilderEntity_clear_command_queue(PyBuilderEntityObject *self
 {
     G_Command_Clear(self->super.ent);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyBuilderEntity_order_build(PyBuilderEntityObject *self, PyObject *args)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+
+    PyObject *building;
+    if(!PyArg_ParseTuple(args, "O", &building)
+    || !PyObject_IsInstance(building, (PyObject*)&PyBuildableEntity_type)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting 1 argument: a pf.BuildableEntity instance");
+        return NULL;
+    }
+
+    uint32_t target = ((PyBuildableEntityObject*)building)->super.ent;
+    if(G_FlagsGet(target) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot build a zombie entity.");
+        return NULL;
+    }
+
+    if(G_Builder_PlayerOrder(self->super.ent, target))
+        Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
 }
 
 static PyObject *PyBuilderEntity_pickle(PyBuilderEntityObject *self, PyObject *args, PyObject *kwargs)
