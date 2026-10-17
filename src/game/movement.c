@@ -3056,6 +3056,21 @@ static vec2_t ent_desired_velocity(struct move_work_in *in)
             return arrival_vel;
         }
 
+        /* In sight of the goal the unit heads straight for it, and so must the
+         * way it wants to go: a field in a chunk it strayed into may lead the
+         * other way, and the two cancel out on the border.
+         */
+        if(has_dest_los && target.kind == TARGET_KIND_POINT_SEEK) {
+            vec2_t seek = as ? G_Arrival_SeekTarget(as, &movestate_aux_get(uid)->arrival,
+                fl->target_xz) : fl->target_xz;
+            vec2_t to_seek;
+            PFM_Vec2_Sub(&seek, &pos_xz, &to_seek);
+            if(PFM_Vec2_Len(&to_seek) > EPSILON) {
+                PFM_Vec2_Normal(&to_seek, &to_seek);
+                return to_seek;
+            }
+        }
+
         /* A zero on the reach field's passable ground is the firing position. */
         vec2_t field_vdes = M_NavDesiredVelocityForTargetCached(map, target, pos_xz);
         if(in->range_field || PFM_Vec2_Len(&field_vdes) > EPSILON)
