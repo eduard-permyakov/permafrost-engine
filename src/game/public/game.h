@@ -840,6 +840,8 @@ void G_StorageSite_RecordProduced(int faction_id, const char *rname, int amount)
 void G_StorageSite_RecordConsumed(int faction_id, const char *rname, int amount);
 int  G_StorageSite_GetPlayerProduced(const char *rname);
 int  G_StorageSite_GetPlayerConsumed(const char *rname);
+/* Every resource stored, made or used up in the session */
+int  G_StorageSite_GetAllNames(size_t maxout, const char *out[]);
 void G_StorageSite_SetFontColor(const struct nk_color *clr);
 void G_StorageSite_SetBorderColor(const struct nk_color *clr);
 void G_StorageSite_SetBackgroundStyle(const struct nk_style_item *style);

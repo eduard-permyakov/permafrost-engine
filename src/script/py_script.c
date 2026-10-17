@@ -3050,8 +3050,21 @@ static PyObject *PyPf_get_right_click_attack(PyObject *self)
 
 static PyObject *PyPf_get_resource_list(PyObject *self)
 {
-    const char *names[64];
-    int nres = G_Resource_GetAllNames(ARR_SIZE(names), names);
+    const char *names[128];
+    int nres = G_Resource_GetAllNames(ARR_SIZE(names) / 2, names);
+
+    /* Goods made in buildings are no resource on the map */
+    const char *stored[64];
+    int nstored = G_StorageSite_GetAllNames(ARR_SIZE(stored), stored);
+    for(int i = 0; i < nstored; i++) {
+        bool listed = false;
+        for(int j = 0; j < nres && !listed; j++) {
+            listed = (0 == strcmp(names[j], stored[i]));
+        }
+        if(!listed) {
+            names[nres++] = stored[i];
+        }
+    }
 
     PyObject *ret = PyList_New(nres);
     if(!ret)
@@ -3064,6 +3077,10 @@ static PyObject *PyPf_get_resource_list(PyObject *self)
             return NULL;
         }
         PyList_SetItem(ret, i, str);
+    }
+    if(PyList_Sort(ret) < 0) {
+        Py_DECREF(ret);
+        return NULL;
     }
     return ret;
 }

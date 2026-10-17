@@ -464,6 +464,19 @@ static int player_flow_total(const char *rname, bool produced)
     return ret;
 }
 
+/* Names are interned, so the same name is the same pointer */
+static size_t add_unique_name(const char *name, size_t nout, size_t maxout, const char *out[])
+{
+    if(nout == maxout)
+        return nout;
+    for(size_t i = 0; i < nout; i++) {
+        if(out[i] == name)
+            return nout;
+    }
+    out[nout] = name;
+    return nout + 1;
+}
+
 static bool update_cap_delta(const char *rname, int delta, int faction_id)
 {
     const char *key = si_intern(rname, &s_stringpool, s_stridx);
@@ -1230,6 +1243,77 @@ static bool load_global_capacities(int i, SDL_RWops *stream)
     return true;
 }
 
+static bool save_flows(SDL_RWops *stream)
+{
+    struct attr num_flows = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_flows)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_flows, "num_flows"));
+
+    const char *key;
+    struct flow curr;
+
+    kh_foreach(s_flows, key, curr, {
+
+        struct attr key_attr = (struct attr){ .type = TYPE_STRING, };
+        pf_strlcpy(key_attr.val.as_string, key, sizeof(key_attr.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &key_attr, "flow_key"));
+
+        for(int i = 0; i < MAX_FACTIONS; i++) {
+
+            struct attr produced = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = curr.produced[i]
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &produced, "produced"));
+
+            struct attr consumed = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = curr.consumed[i]
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &consumed, "consumed"));
+        }
+    });
+    return true;
+}
+
+static bool load_flows(SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_flows = attr.val.as_int;
+
+    for(int j = 0; j < num_flows; j++) {
+
+        struct attr keyattr;
+        CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
+        CHK_TRUE_RET(keyattr.type == TYPE_STRING);
+        const char *key = si_intern(keyattr.val.as_string, &s_stringpool, s_stridx);
+        CHK_TRUE_RET(key);
+
+        struct flow val;
+        for(int i = 0; i < MAX_FACTIONS; i++) {
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            val.produced[i] = attr.val.as_int;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            val.consumed[i] = attr.val.as_int;
+        }
+
+        int status;
+        khiter_t k = kh_put(flow, s_flows, key, &status);
+        CHK_TRUE_RET(status != -1);
+        kh_value(s_flows, k) = val;
+    }
+    return true;
+}
+
 static bool storage_site_ui_mode_validate(const struct sval *val)
 {
     if(val->type != ST_TYPE_INT)
@@ -1244,8 +1328,9 @@ static bool bool_setting_validate(const struct sval *val)
     return (val->type == ST_TYPE_BOOL);
 }
 
-/* Throws 'amount' of a resource out of the economy onto the ground by the 
- * site, for the scripts to leave lying there to be picked up. */
+/* Throws 'amount' of a resource out of storage onto the ground by the 
+ * site, for the scripts to leave lying there to be picked up. Picking it up 
+ * again is not production, so the spill is not consumption either. */
 static void spill(uint32_t uid, const char *rname, int amount)
 {
     if(amount <= 0)
@@ -1253,7 +1338,6 @@ static void spill(uint32_t uid, const char *rname, int amount)
 
     int faction = G_GetFactionID(uid);
     update_res_delta(rname, -amount, faction);
-    record_flow(faction, rname, 0, amount);
 
     vec2_t pos = G_Pos_GetXZ(uid);
     struct ss_spill_event *event = stalloc(&s_eventargs, sizeof(struct ss_spill_event));
@@ -1910,6 +1994,22 @@ int G_StorageSite_GetPlayerConsumed(const char *rname)
     return player_flow_total(rname, false);
 }
 
+int G_StorageSite_GetAllNames(size_t maxout, const char *out[])
+{
+    size_t ret = 0;
+    const char *key;
+
+    kh_foreach_key(s_flows, key, {
+        ret = add_unique_name(key, ret, maxout, out);
+    });
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+        kh_foreach_key(s_global_resource_tables[i], key, {
+            ret = add_unique_name(key, ret, maxout, out);
+        });
+    }
+    return ret;
+}
+
 int G_StorageSite_GetStorableResources(uint32_t uid, size_t maxout, const char *out[])
 {
     struct ss_state *ss = ss_view(uid);
@@ -2415,6 +2515,9 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Write(stream, &ui_shown, "ui_shown"));
     Sched_TryYield();
 
+    CHK_TRUE_RET(save_flows(stream));
+    Sched_TryYield();
+
     return true;
 }
 
@@ -2657,6 +2760,11 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
     CHK_TRUE_RET(attr.type == TYPE_BOOL);
     s_show_ui = attr.val.as_bool;
     Sched_TryYield();
+
+    if(Attr_NextKeyIs(stream, "num_flows")) {
+        CHK_TRUE_RET(load_flows(stream));
+        Sched_TryYield();
+    }
 
     return true;
 }

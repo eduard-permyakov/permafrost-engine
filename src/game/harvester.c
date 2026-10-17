@@ -915,7 +915,6 @@ static void take_instant(uint32_t uid, struct hstate *hs)
 
     G_Resource_SetAmount(hs->res_uid, left - taken);
     G_Harvester_SetCurrCarry(uid, rname, old_carry + taken);
-    G_StorageSite_RecordProduced(G_GetFactionID(uid), rname, taken);
 
     if(left - taken == 0) {
         E_Entity_NotifyImmediate(EVENT_RESOURCE_EXHAUSTED, hs->res_uid, NULL, ES_ENGINE);
