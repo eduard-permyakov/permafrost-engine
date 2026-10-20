@@ -2731,13 +2731,14 @@ static int PyWindow_set_fixed_background(PyWindowObject *self, PyObject *value, 
     return 0;
 }
 
-static void call_registered(PyObject *obj, char *method_name)
+static bool call_registered(PyObject *obj, char *method_name)
 {
     PyObject *ret = PyObject_CallMethod(obj, method_name, NULL);
     if(!ret) {
         S_ShowLastError();
     }
     Py_XDECREF(ret);
+    return (ret != NULL);
 }
 
 static void call_registered_arg(PyObject *obj, char *method_name, PyObject *arg)
@@ -2791,7 +2792,12 @@ static void active_windows_update(void *user, void *event)
             win->flags, adj_vres)) {
 
             PERF_PUSH(win->name);
-            call_registered((PyObject*)win, "update");
+            /* A window that raises would raise again on every frame after the
+             * error is dismissed, so it is closed until it is shown again
+             */
+            if(!call_registered((PyObject*)win, "update")) {
+                win->hide = true;
+            }
             PERF_POP();
         }
 

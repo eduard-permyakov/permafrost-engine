@@ -6785,6 +6785,8 @@ fail:
 
 void S_ShowLastError(void)
 {
+    /* A second error over one still shown must not lose the state to go back to */
+    bool showing = s_err_ctx.occurred;
     Py_CLEAR(s_err_ctx.type);
     Py_CLEAR(s_err_ctx.value);
     Py_CLEAR(s_err_ctx.traceback);
@@ -6794,7 +6796,9 @@ void S_ShowLastError(void)
     PyErr_NormalizeException(&s_err_ctx.type, &s_err_ctx.value, &s_err_ctx.traceback);
 
     if(s_err_ctx.occurred) {
-        s_err_ctx.prev_state = G_GetSimState();
+        if(!showing) {
+            s_err_ctx.prev_state = G_GetSimState();
+        }
         G_SetSimState(G_PAUSED_FULL);
 
         struct sval setting;
