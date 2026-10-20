@@ -48,6 +48,7 @@
 #include "lib/public/pf_string.h"
 #include "lib/public/nk_file_browser.h"
 #include "lib/public/khash.h"
+#include "lib/public/stb_image.h"
 #include "mem.h"
 #include "game/public/game.h"
 
@@ -80,6 +81,7 @@ VEC_TYPE(td, struct text_desc)
 VEC_IMPL(static inline, td, struct text_desc)
 
 KHASH_MAP_INIT_STR(font, struct nk_font*)
+KHASH_MAP_INIT_STR(imgsize, uint64_t)
 
 static void *ui_nk_alloc(nk_handle h, void *old, nk_size n)
 {
@@ -110,6 +112,8 @@ static struct nk_font_atlas         s_atlas;
 static struct nk_draw_null_texture  s_null;
 static vec_td_t                     s_curr_frame_labels;
 static khash_t(font)               *s_fontmap;
+/* Image dimensions by path, width in the high half */
+static khash_t(imgsize)            *s_image_sizes;
 static const char                  *s_active_font = NULL;
 static SDL_mutex                   *s_lock;
 static vec2_t                       s_vres = {1920, 1080};
@@ -523,8 +527,15 @@ bool UI_Init(const char *basedir, SDL_Window *win)
     if(!s_fontmap)
         return false;
 
+    s_image_sizes = kh_init(imgsize);
+    if(!s_image_sizes) {
+        kh_destroy(font, s_fontmap);
+        return false;
+    }
+
     s_lock = SDL_CreateMutex();
     if(!s_lock) {
+        kh_destroy(imgsize, s_image_sizes);
         kh_destroy(font, s_fontmap);
         return false;
     }
@@ -565,6 +576,11 @@ void UI_Shutdown(void)
 
     kh_foreach(s_fontmap, key, curr, { PF_FREE(key); });
     kh_destroy(font, s_fontmap);
+
+    uint64_t size;
+    (void)size;
+    kh_foreach(s_image_sizes, key, size, { PF_FREE(key); });
+    kh_destroy(imgsize, s_image_sizes);
 
     R_PushCmd((struct rcmd){ R_GL_UI_Shutdown, 0});
 }
@@ -758,6 +774,35 @@ bool UI_SetActiveFont(const char *name)
 void UI_ClearState(void)
 {
     UI_SetActiveFont("__default__");
+}
+
+bool UI_ImageSize(const char *texpath, int *out_w, int *out_h)
+{
+    khiter_t k = kh_get(imgsize, s_image_sizes, texpath);
+    if(k == kh_end(s_image_sizes)) {
+
+        char path[512];
+        pf_snprintf(path, sizeof(path), "%s/%s", g_basepath, texpath);
+
+        int w, h, components;
+        if(stbi_info(path, &w, &h, &components) != 1)
+            return false;
+
+        char *key = pf_strdup(texpath);
+        if(!key)
+            return false;
+        int status;
+        k = kh_put(imgsize, s_image_sizes, key, &status);
+        if(status == -1) {
+            PF_FREE(key);
+            return false;
+        }
+        kh_value(s_image_sizes, k) = ((uint64_t)(uint32_t)w << 32) | (uint32_t)h;
+    }
+    uint64_t size = kh_value(s_image_sizes, k);
+    *out_w = (int)(size >> 32);
+    *out_h = (int)(uint32_t)size;
+    return true;
 }
 
 void UI_LoadingScreenTick(void)

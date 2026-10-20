@@ -45,10 +45,10 @@
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/vec.h"
 #include "../mem.h"
+#include "../perf.h"
 #include "../lib/public/SDL_vec_rwops.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/nk_file_browser.h"
-#include "../lib/public/stb_image.h"
 #include "../game/public/game.h"
 #include "../phys/public/collision.h"
 #include "../event.h"
@@ -711,12 +711,8 @@ static int parse_nine_patch(PyObject *tuple, struct nk_nine_slice_texpath *out)
     const char *texpath = PyString_AS_STRING(PyTuple_GET_ITEM(tuple, 0));
     pf_strlcpy(out->texpath, texpath, sizeof(out->texpath));
 
-    char path[512];
-    pf_snprintf(path, sizeof(path), "%s/%s", g_basepath, texpath);
-
-    int x, y, components;
-    int status = stbi_info(path, &x, &y, &components);
-    if(status != 1)
+    int x, y;
+    if(!UI_ImageSize(texpath, &x, &y))
         return -1;
 
     out->w = x;
@@ -2794,7 +2790,9 @@ static void active_windows_update(void *user, void *event)
             nk_rect(adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h), 
             win->flags, adj_vres)) {
 
+            PERF_PUSH(win->name);
             call_registered((PyObject*)win, "update");
+            PERF_POP();
         }
 
         if(win->hide || (s_nk_ctx->current->flags & NK_WINDOW_HIDDEN 

@@ -92,5 +92,9 @@ void               UI_ClearState(void);
 const char        *UI_GetActiveFont(void);
 bool               UI_SetActiveFont(const char *name);
 
+/* The dimensions of the image at 'texpath', relative to the base directory: read
+ * from the file once, as styles naming images are set many times a frame */
+bool               UI_ImageSize(const char *texpath, int *out_w, int *out_h);
+
 #endif
 

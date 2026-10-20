@@ -43,7 +43,6 @@
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/SDL_vec_rwops.h"
-#include "../lib/public/stb_image.h"
 #include "../render/public/render.h"
 
 #include <string.h>
@@ -2227,12 +2226,8 @@ static int parse_nine_patch(PyObject *tuple, struct nk_nine_slice_texpath *out)
     const char *texpath = PyString_AS_STRING(PyTuple_GET_ITEM(tuple, 0));
     pf_strlcpy(out->texpath, texpath, sizeof(out->texpath));
 
-    char path[512];
-    pf_snprintf(path, sizeof(path), "%s/%s", g_basepath, texpath);
-
-    int x, y, components;
-    int status = stbi_info(path, &x, &y, &components);
-    if(status != 1)
+    int x, y;
+    if(!UI_ImageSize(texpath, &x, &y))
         return -1;
 
     out->w = x;
