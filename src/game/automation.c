@@ -51,6 +51,7 @@
 #include "../settings.h"
 #include "../camera.h"
 #include "../sched.h"
+#include "../perf.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/stalloc.h"
 #include "../lib/public/pf_string.h"
@@ -719,7 +720,12 @@ static void collect_sources(vec_source_t *out, const vec_entity_t *sites, const 
             continue;
         if(relaying && G_StorageSite_GetChip(site, rname) == SS_CHIP_RELAY)
             continue;
-        int surplus = source_surplus(site, rname, for_site) - pool_pickups_pending(site, rname);
+        /* Counting the pickups pending walks every carrier, so it is left for
+         * the sites with something to spare */
+        int surplus = source_surplus(site, rname, for_site);
+        if(surplus <= 0)
+            continue;
+        surplus -= pool_pickups_pending(site, rname);
         if(surplus <= 0)
             continue;
         vec_source_push(out, (struct job_source){ .site = site, .surplus = surplus });
@@ -789,6 +795,7 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
 {
     if(vec_size(carriers) == 0)
         return;
+    PERF_ENTER();
 
     vec_entity_t sites;
     vec_entity_init(&sites);
@@ -796,7 +803,9 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
 
     vec_request_t requests;
     vec_request_init(&requests);
+    PERF_PUSH("automation::collect_requests");
     collect_requests(&requests, &sites);
+    PERF_POP();
     qsort(requests.array, vec_size(&requests), sizeof(struct job_request), compare_requests);
 
     vec_source_t sources;
@@ -804,6 +813,11 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
     int njobs = 0;
 
     for(int i = 0; i < vec_size(&requests) && njobs < MAX_JOBS_PER_PASS; i++) {
+
+        /* With no carrier left there is nothing more to give out, and only a
+         * judging pass looks further */
+        if(vec_size(carriers) == 0 && !judge)
+            break;
 
         struct job_request *req = &vec_AT(&requests, i);
         int faction = G_GetFactionID(req->site);
@@ -931,6 +945,7 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
     vec_source_destroy(&sources);
     vec_request_destroy(&requests);
     vec_entity_destroy(&sites);
+    PERF_RETURN_VOID();
 }
 
 static bool waiting_carrier(uint32_t uid, struct automation_state *astate)
@@ -1084,6 +1099,7 @@ static struct work_snapshot *snapshot_get(void)
 {
     if(s_snapshot.valid && s_snapshot.tick == s_tick)
         return &s_snapshot;
+    PERF_ENTER();
 
     vec_entity_t sites;
     vec_entity_init(&sites);
@@ -1108,7 +1124,7 @@ static struct work_snapshot *snapshot_get(void)
     s_snapshot.ndemands = 0;
     s_snapshot.tick = s_tick;
     s_snapshot.valid = true;
-    return &s_snapshot;
+    PERF_RETURN(&s_snapshot);
 }
 
 static struct good_demand *demand_get(struct work_snapshot *snap, int faction, const char *rname)
@@ -1387,11 +1403,19 @@ static void assign_work(void)
 static void on_20hz_tick(void *user, void *event)
 {
     s_tick++;
+    PERF_PUSH("automation::recompute_idle");
     recompute_idle();
+    PERF_POP();
+    PERF_PUSH("automation::settle_stopping");
     settle_stopping();
+    PERF_POP();
     if(s_tick % JOB_PASS_TICKS == 0) {
+        PERF_PUSH("automation::assign_transport_jobs");
         assign_transport_jobs();
+        PERF_POP();
+        PERF_PUSH("automation::assign_work");
         assign_work();
+        PERF_POP();
     }
 }
 
