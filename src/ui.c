@@ -165,7 +165,7 @@ static int left_x_point(struct rect from_bounds, vec2_t from_res, vec2_t to_res,
     int x_res_mask = resize_mask & ANCHOR_X_MASK;
     int from_left_margin = from_bounds.x;
     int from_right_margin = from_res.x - (from_bounds.x + from_bounds.w);
-    int from_center_off = (from_res.x / 2) - (from_bounds.x + from_bounds.w/2);
+    int from_center_off = (from_bounds.x + from_bounds.w/2) - (from_res.x / 2);
 
     if(x_res_mask & ANCHOR_X_LEFT)
         return from_left_margin;
@@ -191,7 +191,7 @@ static int right_x_point(struct rect from_bounds, vec2_t from_res, vec2_t to_res
     int x_res_mask = resize_mask & ANCHOR_X_MASK;
     int from_left_margin = from_bounds.x;
     int from_right_margin = from_res.x - (from_bounds.x + from_bounds.w);
-    int from_center_off = (from_res.x / 2) - (from_bounds.x + from_bounds.w/2);
+    int from_center_off = (from_bounds.x + from_bounds.w/2) - (from_res.x / 2);
 
     if(x_res_mask & ANCHOR_X_RIGHT)
         return to_res.x - from_right_margin;
@@ -217,7 +217,7 @@ static int top_y_point(struct rect from_bounds, vec2_t from_res, vec2_t to_res, 
     int y_res_mask = resize_mask & ANCHOR_Y_MASK;
     int from_top_margin = from_bounds.y;
     int from_bot_margin = from_res.y - (from_bounds.y + from_bounds.h);
-    int from_center_off = (from_res.y / 2) - (from_bounds.y + from_bounds.h / 2);
+    int from_center_off = (from_bounds.y + from_bounds.h / 2) - (from_res.y / 2);
 
     if(y_res_mask & ANCHOR_Y_TOP)
         return from_top_margin;
@@ -243,7 +243,7 @@ static int bot_y_point(struct rect from_bounds, vec2_t from_res, vec2_t to_res, 
     int y_res_mask = resize_mask & ANCHOR_Y_MASK;
     int from_top_margin = from_bounds.y;
     int from_bot_margin = from_res.y - (from_bounds.y + from_bounds.h);
-    int from_center_off = (from_res.y / 2) - (from_bounds.y + from_bounds.h / 2);
+    int from_center_off = (from_bounds.y + from_bounds.h / 2) - (from_res.y / 2);
 
     if(y_res_mask & ANCHOR_Y_BOT)
         return to_res.y - from_bot_margin;
