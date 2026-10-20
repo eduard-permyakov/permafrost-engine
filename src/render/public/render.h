@@ -83,6 +83,13 @@ struct sprite_desc{
     vec3_t                   ws_pos;
 };
 
+/* A vertex of a mesh laid over the map, in world coordinates */
+struct overlay_vert{
+    vec3_t pos;
+    vec4_t color;
+};
+
+#define MAP_OVERLAY_MESHES   (2)
 #define VERTS_PER_SIDE_FACE  (6)
 #define VERTS_PER_TOP_FACE   (24)
 #define VERTS_PER_TILE       (4 * VERTS_PER_SIDE_FACE + VERTS_PER_TOP_FACE)
@@ -274,6 +281,21 @@ void   R_GL_DrawQuad(vec2_t corners[], const float *width, const vec3_t *color,
  */
 void   R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *count, mat4x4_t *model, 
                                 bool *on_water_surface, const struct map *map);
+
+/* ---------------------------------------------------------------------------
+ * Set the triangles, then the lines, of one of the meshes laid over the map,
+ * in world coordinates. It is kept on the GPU and drawn as it is until set
+ * again; setting it empty clears it.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_MapOverlayMeshSet(const int *slot, const struct overlay_vert *verts, 
+                              const size_t *ntri_verts, const size_t *nline_verts);
+
+/* ---------------------------------------------------------------------------
+ * Render one of the meshes laid over the map, translucent.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_MapOverlayMeshDraw(const int *slot);
 
 /* ---------------------------------------------------------------------------
  * Render an array of 2d vectors over the map surface. The positions are 

@@ -44,10 +44,12 @@
 #include "../entity.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
+#include "../phys/public/collision.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 #include "../lib/public/pqueue.h"
 #include "../lib/public/stalloc.h"
+#include "../lib/public/vec.h"
 
 #include <assert.h>
 #include <string.h>
@@ -64,15 +66,20 @@
 
 /* A district cell is 4x4 map tiles */
 #define CELL_SIZE           (32.0f)
-#define ROAD_COST_FACTOR    (0.125f)
 #define DIAGONAL            (1.41421356f)
 #define UNREACHED           (1e30f)
 /* Floods wait this long after a change, so that a burst of them is one */
 #define DEBOUNCE_TICKS      (20)
 #define MAX_SEED_CLUSTERS   (1024)
-#define OVERLAY_BATCH       (1024)
+#define TILES_PER_CELL      (4)
+/* Lifted this far over the ground, so as not to fight it */
+#define OVERLAY_LIFT        (0.1f)
+#define MESH_DISTRICTS      (0)
+#define MESH_PREVIEW        (1)
 #define HUB_TYPE            "hub"
 #define ARR_SIZE(a)         (sizeof(a)/sizeof((a)[0]))
+#define MAX(a, b)           ((a) > (b) ? (a) : (b))
+#define MIN(a, b)           ((a) < (b) ? (a) : (b))
 
 enum{
     LAYER_GROUND = 0,
@@ -99,9 +106,13 @@ struct district{
 PQUEUE_TYPE(cell, struct cell_node)
 PQUEUE_IMPL(static, cell, struct cell_node)
 
+VEC_TYPE(overlay, struct overlay_vert)
+VEC_IMPL(static inline, overlay, struct overlay_vert)
+
 static void on_cluster_changed(void *user, void *event);
 static void on_20hz_tick(void *user, void *event);
 static void on_render_3d(void *user, void *event);
+static void preview_flood(void);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -109,6 +120,7 @@ static void on_render_3d(void *user, void *event);
 
 static const struct map *s_map;
 static vec3_t            s_map_pos;
+static struct map_resolution s_res;
 static int               s_rows, s_cols;
 /* Per layer and cell: whether a unit of the layer can be there */
 static bool             *s_passable[NUM_LAYERS];
@@ -123,6 +135,11 @@ static bool              s_preview_on;
 static int               s_preview_faction;
 static vec2_t            s_preview_pos;
 static bool             *s_preview_cells;
+static bool             *s_preview_prev;
+/* The overlay meshes to build again before they are next drawn, and the
+ * player factions they were built for */
+static bool              s_mesh_dirty[MAP_OVERLAY_MESHES];
+static uint16_t          s_mesh_factions[MAP_OVERLAY_MESHES];
 /* Hues far enough apart that no two read as shades of one colour, the most
  * distinct first */
 static const float       s_palette[] = {0.0f, 130.0f, 230.0f, 60.0f, 305.0f,
@@ -191,11 +208,13 @@ static void field_free(struct field *f)
     f->cost = NULL;
 }
 
+/* A district is as far as its workers walk in a while, so a road takes it
+ * only as much further as they go faster on it */
 static float step_cost(int layer, int from, int to, bool diagonal)
 {
     float base = diagonal ? DIAGONAL : 1.0f;
     if(layer == LAYER_GROUND && s_road[from] && s_road[to]) {
-        base *= ROAD_COST_FACTOR;
+        base /= ROAD_SPEED_BONUS;
     }
     return base * CELL_SIZE;
 }
@@ -255,6 +274,38 @@ static void seed_cell(int idx, float at, int cluster, float *cost, int *owner, p
     pq_cell_push(pq, at, (struct cell_node){idx, at});
 }
 
+/* A hub reaches as far from its walls as any other, so every cell under its
+ * footprint starts the flood. False when none of them is passable. */
+static bool seed_footprint(int layer, uint32_t uid, int cluster, float *cost, int *owner, pq_cell_t *pq)
+{
+    struct obb obb;
+    Entity_CurrentOBB(uid, &obb, true);
+
+    float extent_x = 0.0f, extent_z = 0.0f;
+    for(int i = 0; i < 3; i++) {
+        extent_x += fabsf(obb.axes[i].x) * obb.half_lengths[i];
+        extent_z += fabsf(obb.axes[i].z) * obb.half_lengths[i];
+    }
+    int c_min = MAX((int)floorf((s_map_pos.x - (obb.center.x + extent_x)) / CELL_SIZE), 0);
+    int c_max = MIN((int)floorf((s_map_pos.x - (obb.center.x - extent_x)) / CELL_SIZE), s_cols - 1);
+    int r_min = MAX((int)floorf(((obb.center.z - extent_z) - s_map_pos.z) / CELL_SIZE), 0);
+    int r_max = MIN((int)floorf(((obb.center.z + extent_z) - s_map_pos.z) / CELL_SIZE), s_rows - 1);
+
+    bool seeded = false;
+    for(int r = r_min; r <= r_max; r++) {
+    for(int c = c_min; c <= c_max; c++) {
+        int idx = r * s_cols + c;
+        if(!s_passable[layer][idx])
+            continue;
+        vec2_t center = cell_center(r, c);
+        if(!C_PointInsideOBB((vec3_t){center.x, obb.center.y, center.z}, obb))
+            continue;
+        seed_cell(idx, 0.0f, cluster, cost, owner, pq);
+        seeded = true;
+    }}
+    return seeded;
+}
+
 static void seed(int layer, uint32_t uid, int cluster, float *cost, int *owner, pq_cell_t *pq)
 {
     int r, c;
@@ -263,8 +314,9 @@ static void seed(int layer, uint32_t uid, int cluster, float *cost, int *owner, 
     int idx = r * s_cols + c;
     if(s_passable[layer][idx]) {
         seed_cell(idx, 0.0f, cluster, cost, owner, pq);
-        return;
     }
+    if(seed_footprint(layer, uid, cluster, cost, owner, pq) || s_passable[layer][idx])
+        return;
     /* One standing where the layer cannot go, such as a dock out on the
      * water, reaches it from the cells about its footprint */
     int reach = (int)ceilf((G_GetSelectionRadius(uid) + CELL_SIZE) / CELL_SIZE);
@@ -434,9 +486,20 @@ static void recompute(void)
     }}
     recolour();
     s_dirty = false;
+    s_mesh_dirty[MESH_DISTRICTS] = true;
 }
 
 static void recompute_preview(void)
+{
+    const size_t size = s_rows * s_cols * sizeof(bool);
+    memcpy(s_preview_prev, s_preview_cells, size);
+    preview_flood();
+    if(memcmp(s_preview_prev, s_preview_cells, size)) {
+        s_mesh_dirty[MESH_PREVIEW] = true;
+    }
+}
+
+static void preview_flood(void)
 {
     memset(s_preview_cells, 0, s_rows * s_cols * sizeof(bool));
     if(!s_preview_on)
@@ -484,74 +547,222 @@ static vec3_t cluster_color(int cluster, bool core)
     return (vec3_t){rgb.x * scale, rgb.y * scale, rgb.z * scale};
 }
 
-static void flush_quads(vec2_t *corners, vec3_t *colors, size_t count)
+static vec4_t overlay_color(vec3_t rgb, float alpha)
 {
-    if(count == 0)
-        return;
-    mat4x4_t model;
-    PFM_Mat4x4_Identity(&model);
-    bool on_water_surface = true;
+    return (vec4_t){rgb.x, rgb.y, rgb.z, alpha};
+}
 
+/* Over water, the overlay lies on its surface */
+static float lifted(float y)
+{
+    return MAX(y, 0.0f) + OVERLAY_LIFT;
+}
+
+static void push_vert(vec_overlay_t *out, float x, float y, float z, vec4_t color)
+{
+    vec_overlay_push(out, (struct overlay_vert){(vec3_t){x, y, z}, color});
+}
+
+static void push_flat_rect(vec_overlay_t *tris, vec2_t min, vec2_t max, float y, vec4_t color)
+{
+    push_vert(tris, max.x, y, min.z, color);
+    push_vert(tris, max.x, y, max.z, color);
+    push_vert(tris, min.x, y, max.z, color);
+    push_vert(tris, max.x, y, min.z, color);
+    push_vert(tris, min.x, y, max.z, color);
+    push_vert(tris, min.x, y, min.z, color);
+}
+
+/* The tile under the centre of each of the cell's tiles, row by row; false
+ * where it is off the map */
+static void cell_tiles(int r, int c, struct tile_desc descs[], struct tile *tiles[], bool have[])
+{
+    vec2_t center = cell_center(r, c);
+    const float half = CELL_SIZE * 0.5f;
+    for(int i = 0; i < TILES_PER_CELL; i++) {
+    for(int j = 0; j < TILES_PER_CELL; j++) {
+        int k = i * TILES_PER_CELL + j;
+        vec2_t point = (vec2_t){
+            center.x + half - (j + 0.5f) * X_COORDS_PER_TILE,
+            center.z - half + (i + 0.5f) * Z_COORDS_PER_TILE
+        };
+        have[k] = M_Tile_DescForPoint2D(s_res, s_map_pos, point, &descs[k])
+               && M_TileForDesc(s_map, descs[k], &tiles[k]);
+    }}
+}
+
+static bool cell_level(struct tile *tiles[], const bool have[], int *out_height)
+{
+    for(int k = 0; k < TILES_PER_CELL * TILES_PER_CELL; k++) {
+        if(!have[k] || tiles[k]->type != TILETYPE_FLAT || tiles[k]->base_height != tiles[0]->base_height)
+            return false;
+    }
+    *out_height = tiles[0]->base_height;
+    return true;
+}
+
+/* The cell's tint over the top faces of its tiles, following the ground up
+ * and down cliffs, as one rectangle where the cell is level */
+static void emit_cell_surface(vec_overlay_t *tris, int r, int c, vec4_t color)
+{
+    struct tile_desc descs[TILES_PER_CELL * TILES_PER_CELL];
+    struct tile *tiles[TILES_PER_CELL * TILES_PER_CELL];
+    bool have[TILES_PER_CELL * TILES_PER_CELL];
+    cell_tiles(r, c, descs, tiles, have);
+
+    vec2_t center = cell_center(r, c);
+    const float half = CELL_SIZE * 0.5f;
+    int height;
+    if(cell_level(tiles, have, &height)) {
+        push_flat_rect(tris, (vec2_t){center.x - half, center.z - half},
+            (vec2_t){center.x + half, center.z + half}, lifted(height * Y_COORDS_PER_TILE), color);
+        return;
+    }
+
+    for(int k = 0; k < TILES_PER_CELL * TILES_PER_CELL; k++) {
+        if(!have[k])
+            continue;
+        if(tiles[k]->type == TILETYPE_FLAT) {
+            int i = k / TILES_PER_CELL, j = k % TILES_PER_CELL;
+            vec2_t max = (vec2_t){
+                center.x + half - j * X_COORDS_PER_TILE,
+                center.z - half + (i + 1) * Z_COORDS_PER_TILE
+            };
+            vec2_t min = (vec2_t){max.x - X_COORDS_PER_TILE, max.z - Z_COORDS_PER_TILE};
+            push_flat_rect(tris, min, max, lifted(tiles[k]->base_height * Y_COORDS_PER_TILE), color);
+            continue;
+        }
+        mat4x4_t model;
+        M_ModelMatrixForChunk(s_map, (struct chunkpos){descs[k].chunk_r, descs[k].chunk_c}, &model);
+        vec3_t pos[VERTS_PER_TOP_FACE], normals[VERTS_PER_TOP_FACE];
+        int nverts = R_TileGetTopFace(s_map, &descs[k], &model, pos, normals);
+        for(int v = 0; v < nverts; v++) {
+            push_vert(tris, pos[v].x, lifted(pos[v].y), pos[v].z, color);
+        }
+    }
+}
+
+/* A side of a cell, in segments each at the height of the ground just
+ * inside the cell, so that it follows the ground over steps and ramps */
+static void emit_cell_edge(vec_overlay_t *lines, vec2_t from, vec2_t to, vec2_t inward,
+                           int nsegs, vec4_t color)
+{
+    vec2_t along;
+    PFM_Vec2_Sub(&to, &from, &along);
+    PFM_Vec2_Normal(&along, &along);
+
+    for(int k = 0; k < nsegs; k++) {
+        float t0 = (float)k / nsegs, t1 = (float)(k + 1) / nsegs;
+        vec2_t a = (vec2_t){from.x + (to.x - from.x) * t0, from.z + (to.z - from.z) * t0};
+        vec2_t b = (vec2_t){from.x + (to.x - from.x) * t1, from.z + (to.z - from.z) * t1};
+        vec2_t sa = (vec2_t){a.x + (along.x + inward.x) * 0.5f, a.z + (along.z + inward.z) * 0.5f};
+        vec2_t sb = (vec2_t){b.x + (inward.x - along.x) * 0.5f, b.z + (inward.z - along.z) * 0.5f};
+        push_vert(lines, a.x, lifted(M_HeightAtPoint(s_map, sa)), a.z, color);
+        push_vert(lines, b.x, lifted(M_HeightAtPoint(s_map, sb)), b.z, color);
+    }
+}
+
+static void emit_cell(vec_overlay_t *tris, vec_overlay_t *lines, int r, int c, vec3_t rgb)
+{
+    emit_cell_surface(tris, r, c, overlay_color(rgb, 0.25f));
+
+    struct tile_desc descs[TILES_PER_CELL * TILES_PER_CELL];
+    struct tile *tiles[TILES_PER_CELL * TILES_PER_CELL];
+    bool have[TILES_PER_CELL * TILES_PER_CELL];
+    cell_tiles(r, c, descs, tiles, have);
+    int height;
+    int nsegs = cell_level(tiles, have, &height) ? 1 : TILES_PER_CELL;
+
+    vec2_t center = cell_center(r, c);
+    const float half = CELL_SIZE * 0.5f;
+    vec2_t corners[4] = {
+        {center.x + half, center.z - half},
+        {center.x + half, center.z + half},
+        {center.x - half, center.z + half},
+        {center.x - half, center.z - half},
+    };
+    vec4_t color = overlay_color(rgb, 0.75f);
+    for(int i = 0; i < 4; i++) {
+        vec2_t from = corners[i], to = corners[(i + 1) % 4];
+        vec2_t mid = (vec2_t){(from.x + to.x) * 0.5f, (from.z + to.z) * 0.5f};
+        vec2_t inward;
+        PFM_Vec2_Sub(&center, &mid, &inward);
+        PFM_Vec2_Normal(&inward, &inward);
+        emit_cell_edge(lines, from, to, inward, nsegs, color);
+    }
+}
+
+/* Lays the districts, or the cells a hub would take, over the ground once,
+ * for the render thread to keep drawing until they change */
+static void build_mesh(int slot, uint16_t factions)
+{
+    vec_overlay_t tris, lines;
+    vec_overlay_init(&tris);
+    vec_overlay_init(&lines);
+
+    for(int fac = 0; fac < MAX_FACTIONS; fac++) {
+
+        if(!(factions & (0x1 << fac)))
+            continue;
+        if(slot == MESH_PREVIEW && fac != s_preview_faction)
+            continue;
+        const struct field *f = &s_fields[fac][LAYER_GROUND];
+        if(slot == MESH_DISTRICTS && !f->owner)
+            continue;
+
+        for(int r = 0; r < s_rows; r++) {
+        for(int c = 0; c < s_cols; c++) {
+            int idx = r * s_cols + c;
+            if(slot == MESH_PREVIEW && s_preview_cells[idx]) {
+                emit_cell(&tris, &lines, r, c, (vec3_t){1.0f, 1.0f, 1.0f});
+            }else if(slot == MESH_DISTRICTS && f->owner[idx]) {
+                emit_cell(&tris, &lines, r, c,
+                    cluster_color(f->owner[idx], f->cost[idx] <= G_DISTRICT_TERRITORY_COST));
+            }
+        }}
+    }
+
+    size_t ntri_verts = vec_size(&tris), nline_verts = vec_size(&lines);
+    vec_overlay_concat(&tris, &lines);
+    size_t total = vec_size(&tris);
     R_PushCmd((struct rcmd){
-        .func = R_GL_DrawMapOverlayQuads,
-        .nargs = 6,
+        .func = R_GL_MapOverlayMeshSet,
+        .nargs = 4,
         .args = {
-            R_PushArg(corners, sizeof(vec2_t) * 4 * count),
-            R_PushArg(colors, sizeof(vec3_t) * count),
-            R_PushArg(&count, sizeof(count)),
-            R_PushArg(&model, sizeof(model)),
-            R_PushArg(&on_water_surface, sizeof(bool)),
-            (void*)G_GetPrevTickMap(),
+            R_PushArg(&slot, sizeof(slot)),
+            total ? R_PushArg(tris.array, total * sizeof(struct overlay_vert)) : NULL,
+            R_PushArg(&ntri_verts, sizeof(ntri_verts)),
+            R_PushArg(&nline_verts, sizeof(nline_verts)),
         },
+    });
+    vec_overlay_destroy(&tris);
+    vec_overlay_destroy(&lines);
+
+    s_mesh_dirty[slot] = false;
+    s_mesh_factions[slot] = factions;
+}
+
+static void draw_mesh(int slot)
+{
+    uint16_t factions = G_GetPlayerControlledFactions();
+    if(s_mesh_dirty[slot] || s_mesh_factions[slot] != factions) {
+        build_mesh(slot, factions);
+    }
+    R_PushCmd((struct rcmd){
+        .func = R_GL_MapOverlayMeshDraw,
+        .nargs = 1,
+        .args = { R_PushArg(&slot, sizeof(slot)) },
     });
 }
 
 static void on_render_3d(void *user, void *event)
 {
-    if(!s_show && !s_preview_on)
-        return;
-
-    STALLOC(vec2_t, corners, 4 * OVERLAY_BATCH);
-    STALLOC(vec3_t, colors, OVERLAY_BATCH);
-    size_t count = 0;
-
-    uint16_t pfacs = G_GetPlayerControlledFactions();
-    for(int fac = 0; fac < MAX_FACTIONS; fac++) {
-
-        if(!(pfacs & (0x1 << fac)))
-            continue;
-        const struct field *f = &s_fields[fac][LAYER_GROUND];
-        if(!f->owner)
-            continue;
-
-        for(int r = 0; r < s_rows; r++) {
-        for(int c = 0; c < s_cols; c++) {
-
-            int idx = r * s_cols + c;
-            bool preview = s_preview_on && s_preview_cells[idx] && fac == s_preview_faction;
-            if(!preview && (!s_show || f->owner[idx] == 0))
-                continue;
-
-            vec3_t color = preview ? (vec3_t){1.0f, 1.0f, 1.0f}
-                                   : cluster_color(f->owner[idx], f->cost[idx] <= G_DISTRICT_TERRITORY_COST);
-            vec2_t center = cell_center(r, c);
-            const float half = CELL_SIZE * 0.5f;
-            vec2_t min = (vec2_t){center.x - half, center.z - half};
-            vec2_t max = (vec2_t){center.x + half, center.z + half};
-            corners[count * 4 + 0] = (vec2_t){max.x, min.z};
-            corners[count * 4 + 1] = (vec2_t){max.x, max.z};
-            corners[count * 4 + 2] = (vec2_t){min.x, max.z};
-            corners[count * 4 + 3] = (vec2_t){min.x, min.z};
-            colors[count] = color;
-            if(++count == OVERLAY_BATCH) {
-                flush_quads(corners, colors, count);
-                count = 0;
-            }
-        }}
+    if(s_show) {
+        draw_mesh(MESH_DISTRICTS);
     }
-    flush_quads(corners, colors, count);
-    STFREE(corners);
-    STFREE(colors);
+    if(s_preview_on) {
+        draw_mesh(MESH_PREVIEW);
+    }
 }
 
 static void on_cluster_changed(void *user, void *event)
@@ -589,6 +800,7 @@ bool G_District_Init(const struct map *map)
 
     s_map = map;
     s_map_pos = M_GetPos(map);
+    s_res = res;
     s_cols = (int)ceilf(res.chunk_w * res.field_w / CELL_SIZE);
     s_rows = (int)ceilf(res.chunk_h * res.field_h / CELL_SIZE);
     const size_t ncells = s_rows * s_cols;
@@ -598,7 +810,9 @@ bool G_District_Init(const struct map *map)
     s_passable[LAYER_WATER] = PF_CALLOC(ncells, sizeof(bool));
     s_road = PF_CALLOC(ncells, sizeof(bool));
     s_preview_cells = PF_CALLOC(ncells, sizeof(bool));
-    if(!s_passable[LAYER_GROUND] || !s_passable[LAYER_WATER] || !s_road || !s_preview_cells) {
+    s_preview_prev = PF_CALLOC(ncells, sizeof(bool));
+    if(!s_passable[LAYER_GROUND] || !s_passable[LAYER_WATER] || !s_road || !s_preview_cells
+    || !s_preview_prev) {
         G_District_Shutdown();
         return false;
     }
@@ -609,6 +823,9 @@ bool G_District_Init(const struct map *map)
     s_show = false;
     s_preview_on = false;
     s_ndistricts = 0;
+    for(int i = 0; i < MAP_OVERLAY_MESHES; i++) {
+        s_mesh_dirty[i] = true;
+    }
 
     E_Global_Register(EVENT_CLUSTER_CHANGED, on_cluster_changed, NULL, G_ALL);
     E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
@@ -631,9 +848,11 @@ void G_District_Shutdown(void)
     PF_FREE(s_passable[LAYER_WATER]);
     PF_FREE(s_road);
     PF_FREE(s_preview_cells);
+    PF_FREE(s_preview_prev);
     s_passable[LAYER_GROUND] = s_passable[LAYER_WATER] = NULL;
     s_road = NULL;
     s_preview_cells = NULL;
+    s_preview_prev = NULL;
 }
 
 void G_District_Update(void)

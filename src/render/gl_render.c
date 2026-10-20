@@ -90,6 +90,11 @@
 #define CHUNK_WALL_INDICES          (CHUNK_TILES * 4 * VERTS_PER_SIDE_FACE)
 #define CHUNK_TOP_INDICES           (CHUNK_TILES * VERTS_PER_TOP_FACE)
 
+struct overlay_mesh{
+    GLuint VAO, VBO;
+    size_t ntri_verts, nline_verts;
+};
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -99,6 +104,8 @@
  */
 static GLuint s_chunk_ebo;
 static GLint  s_terrain_baked_prog = -1;
+/* Meshes laid over the map that stay on the GPU until they are set again */
+static struct overlay_mesh s_overlay_meshes[MAP_OVERLAY_MESHES];
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -1574,6 +1581,79 @@ void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *
 
     STFREE(surf_vbuff);
     STFREE(line_vbuff);
+
+    GL_ASSERT_OK();
+    GL_PERF_RETURN_VOID();
+}
+
+void R_GL_MapOverlayMeshSet(const int *slot, const struct overlay_vert *verts, 
+                            const size_t *ntri_verts, const size_t *nline_verts)
+{
+    GL_PERF_ENTER();
+    ASSERT_IN_RENDER_THREAD();
+    assert(*slot >= 0 && *slot < MAP_OVERLAY_MESHES);
+
+    struct overlay_mesh *mesh = &s_overlay_meshes[*slot];
+    if(!mesh->VAO) {
+        glGenVertexArrays(1, &mesh->VAO);
+        glBindVertexArray(mesh->VAO);
+        glGenBuffers(1, &mesh->VBO);
+        glBindBuffer(GL_ARRAY_BUFFER, mesh->VBO);
+
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(struct overlay_vert), 
+            (void*)offsetof(struct overlay_vert, pos));
+        glEnableVertexAttribArray(0);  
+        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(struct overlay_vert), 
+            (void*)offsetof(struct overlay_vert, color));
+        glEnableVertexAttribArray(1);  
+    }
+
+    size_t total = *ntri_verts + *nline_verts;
+    glBindVertexArray(mesh->VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, mesh->VBO);
+    glBufferData(GL_ARRAY_BUFFER, total * sizeof(struct overlay_vert), total ? verts : NULL, GL_STATIC_DRAW);
+    mesh->ntri_verts = *ntri_verts;
+    mesh->nline_verts = *nline_verts;
+    glBindVertexArray(0);
+
+    GL_ASSERT_OK();
+    GL_PERF_RETURN_VOID();
+}
+
+void R_GL_MapOverlayMeshDraw(const int *slot)
+{
+    GL_PERF_ENTER();
+    ASSERT_IN_RENDER_THREAD();
+    assert(*slot >= 0 && *slot < MAP_OVERLAY_MESHES);
+
+    struct overlay_mesh *mesh = &s_overlay_meshes[*slot];
+    if(!mesh->VAO || mesh->ntri_verts + mesh->nline_verts == 0)
+        GL_PERF_RETURN_VOID();
+
+    glBindVertexArray(mesh->VAO);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    mat4x4_t identity;
+    PFM_Mat4x4_Identity(&identity);
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = identity
+    });
+    R_GL_Shader_Install("mesh.static.colored-per-vert");
+
+    glDrawArrays(GL_TRIANGLES, 0, mesh->ntri_verts);
+
+    GLfloat old_width;
+    glGetFloatv(GL_LINE_WIDTH, &old_width);
+    glLineWidth(3.0f);
+    glDrawArrays(GL_LINES, mesh->ntri_verts, mesh->nline_verts);
+    glLineWidth(old_width);
+
+    glEnable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+    glBindVertexArray(0);
 
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
