@@ -721,7 +721,7 @@ static bool mark_deleted_in_queue(queue_tid_t *queue, uint32_t tid)
 static void cleanup_queued_tasks(queue_tid_t *queue)
 {
     for(int i = 0; i < queue_size(*queue); i++) {
-        uint32_t tid = queue->mem[i];
+        uint32_t tid = queue->mem[(queue->ihead + i) % queue->capacity];
         if(tid & DELETED_MARKER)
             continue;
         sched_task_cleanup(&s_tasks[tid - 1]);
