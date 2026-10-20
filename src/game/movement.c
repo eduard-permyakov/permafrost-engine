@@ -869,16 +869,14 @@ static struct result navigation_tick_task(void *arg);
 /* Per unit of distance off the lane, the share of its pace it steers back */
 #define KEEP_RIGHT_GAIN                 (0.08f)
 /* Roads narrower or wider than this across the way (junctions, squares) 
- * have no lanes */
+ * have no lanes; a road two tiles wide has */
 #define KEEP_RIGHT_MIN_WIDTH            (12.0f)
-#define KEEP_RIGHT_MAX_WIDTH            (44.0f)
+#define KEEP_RIGHT_MAX_WIDTH            (80.0f)
 /* This close to its goal a unit lines up for arriving instead */
 #define KEEP_RIGHT_GOAL_DIST            (48.0f)
 /* The passing side, in cp_side_of's sense, that keeps a unit to its right as
  * seen on screen: the view mirrors the world */
 #define KEEP_RIGHT_SIDE                 (1)
-/* A unit going its way along the roads is this much faster on them */
-#define ROAD_SPEED_BONUS                (1.25f)
 #define MOTION_IDLE_S                   (0.5f)  /* held up this long, a unit shows its idle clip */
 #define MAX_NEIGHBOURS                  (32)
 #define CLEARPATH_REACT_S               (0.5f)  /* An approaching pair comes into each other's solve this long before contact */

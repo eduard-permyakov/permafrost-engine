@@ -928,6 +928,9 @@ bool   G_Region_Explored(const char *name, uint16_t player_mask, bool *out);
  */
 #define ROAD_TILE_SPAN (4)
 
+/* A unit going its way along the roads is this much faster on them */
+#define ROAD_SPEED_BONUS (1.25f)
+
 /* The neighbours a road tile leads to, named by the direction on the road grid */
 enum road_link{
     ROAD_LINK_UP    = (1 << 0), /* row - 1 */
