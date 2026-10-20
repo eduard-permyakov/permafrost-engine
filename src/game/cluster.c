@@ -61,8 +61,15 @@
 #define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_GAME, MEM_SUB_GAME_CLUSTER)
 #define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_CLUSTER)
 
+#define ARR_SIZE(a)      (sizeof(a)/sizeof((a)[0]))
+#define MIN(a, b)        ((a) < (b) ? (a) : (b))
 #define CLUSTER_TYPE_LEN (64)
 #define ICON_SIZE        (18)
+#define DIAMOND_SIZE     (12)
+#define DIAMOND_GAP      (2)
+/* Clusters of a faction whose anchors are this close take different colours
+ * where the palette allows */
+#define COLOUR_REACH     (800.0f)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -79,6 +86,9 @@ struct cluster{
     int          faction;
     char         type[CLUSTER_TYPE_LEN];
     uint32_t     anchor;
+    /* Index into s_palette, -1 until chosen; chosen anew on load, in the 
+     * order the clusters were made, rather than saved */
+    int          colour;
     /* In the order they joined, so that the oldest member is first */
     vec_entity_t members;
 };
@@ -89,6 +99,7 @@ KHASH_MAP_INIT_INT(type, struct cluster_type)
 
 static void on_building_constructed(void *user, void *event);
 static void on_update_ui(void *user, void *event);
+static void draw_diamond(struct nk_context *ctx, int colour);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -101,6 +112,18 @@ static khash_t(member)  *s_member_of;
 static khash_t(type)    *s_types;
 static int               s_next_id = 1;
 static char              s_icon_path[512] = {0};
+
+/* Told apart at a glance, and kin to the skin's embroidery */
+static const struct nk_color s_palette[] = {
+    {198,  37,  45, 255},   /* crimson */
+    { 52, 104, 178, 255},   /* azure */
+    {214, 160,  40, 255},   /* ochre */
+    { 46, 132,  50, 255},   /* green */
+    {122,  64, 150, 255},   /* violet */
+    { 30, 140, 140, 255},   /* teal */
+    {226, 110,  30, 255},   /* orange */
+    {128,  82,  44, 255},   /* brown */
+};
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -136,6 +159,60 @@ static float distance(uint32_t a, uint32_t b)
     return PFM_Vec2_Len(&delta);
 }
 
+/* The palette's colour least used by the faction's clusters near this one,
+ * the cluster's id choosing among equals */
+static int least_used_colour(int id, const struct cluster *cl)
+{
+    int uses[ARR_SIZE(s_palette)] = {0};
+    int oid;
+    struct cluster *other;
+    kh_foreach_val_ptr(s_clusters, oid, other, {
+        if(oid == id || other->colour < 0 || other->faction != cl->faction)
+            continue;
+        if(distance(other->anchor, cl->anchor) > COLOUR_REACH)
+            continue;
+        uses[other->colour]++;
+    });
+
+    int best = -1;
+    for(int i = 0; i < ARR_SIZE(s_palette); i++) {
+        int idx = (id + i) % ARR_SIZE(s_palette);
+        if(best < 0 || uses[idx] < uses[best])
+            best = idx;
+    }
+    return best;
+}
+
+static int compare_ids(const void *a, const void *b)
+{
+    return *(const int*)a - *(const int*)b;
+}
+
+static void choose_colours(void)
+{
+    size_t nclusters = kh_size(s_clusters);
+    if(nclusters == 0)
+        return;
+    int *ids = PF_MALLOC(nclusters * sizeof(int));
+    if(!ids)
+        return;
+
+    size_t n = 0;
+    int id;
+    struct cluster *cl;
+    kh_foreach_val_ptr(s_clusters, id, cl, {
+        cl->colour = -1;
+        ids[n++] = id;
+    });
+    qsort(ids, n, sizeof(int), compare_ids);
+
+    for(int i = 0; i < n; i++) {
+        cl = cluster_get(ids[i]);
+        cl->colour = least_used_colour(ids[i], cl);
+    }
+    PF_FREE(ids);
+}
+
 static int create_cluster(uint32_t anchor, const struct cluster_type *type)
 {
     int id = s_next_id++;
@@ -148,7 +225,9 @@ static int create_cluster(uint32_t anchor, const struct cluster_type *type)
     cl->faction = G_GetFactionID(anchor);
     pf_strlcpy(cl->type, type->name, sizeof(cl->type));
     cl->anchor = anchor;
+    cl->colour = -1;
     vec_entity_init(&cl->members);
+    cl->colour = least_used_colour(id, cl);
     return id;
 }
 
@@ -245,6 +324,26 @@ static void on_building_constructed(void *user, void *event)
     join(uid);
 }
 
+/* The cluster's colour, as a diamond beside its chain */
+static void draw_diamond(struct nk_context *ctx, int colour)
+{
+    struct nk_rect bounds;
+    if(colour < 0 || !nk_widget(&bounds, ctx))
+        return;
+
+    const struct nk_color fill = s_palette[colour];
+    const struct nk_color edge = (struct nk_color){fill.r / 2, fill.g / 2, fill.b / 2, 255};
+    const float half = bounds.w - DIAMOND_GAP;
+    const float cx = bounds.x + DIAMOND_GAP + half / 2.0f;
+    const float cy = bounds.y + bounds.h / 2.0f;
+    const float r = MIN(half, bounds.h) / 2.0f - 0.5f;
+
+    float points[] = {cx, cy - r, cx + r, cy, cx, cy + r, cx - r, cy};
+    struct nk_command_buffer *canvas = nk_window_get_canvas(ctx);
+    nk_fill_polygon(canvas, points, 4, fill);
+    nk_stroke_polygon(canvas, points, 4, 1.0f, edge);
+}
+
 static void on_update_ui(void *user, void *event)
 {
     if(!s_icon_path[0])
@@ -283,11 +382,12 @@ static void on_update_ui(void *user, void *event)
             const vec2_t vres = (vec2_t){1920, 1080};
             const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
             vec2_t ss_pos = Entity_TopScreenPos(uid, adj_vres.x, adj_vres.y);
-            const vec2_t pos = (vec2_t){ss_pos.x - ICON_SIZE / 2, ss_pos.y - ICON_SIZE - 4};
+            const int width = ICON_SIZE + DIAMOND_GAP + DIAMOND_SIZE;
+            const vec2_t pos = (vec2_t){ss_pos.x - width / 2, ss_pos.y - ICON_SIZE - 4};
             const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
 
             struct rect adj_bounds = UI_BoundsForAspectRatio(
-                (struct rect){pos.x, pos.y, ICON_SIZE, ICON_SIZE},
+                (struct rect){pos.x, pos.y, width, ICON_SIZE},
                 vres, adj_vres, ANCHOR_DEFAULT
             );
 
@@ -295,8 +395,12 @@ static void on_update_ui(void *user, void *event)
                 (struct nk_rect){adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h},
                 flags, (struct nk_vec2i){adj_vres.x, adj_vres.y})) {
 
-                nk_layout_row_static(ctx, ICON_SIZE, ICON_SIZE, 1);
+                nk_layout_row_begin(ctx, NK_STATIC, ICON_SIZE, 2);
+                nk_layout_row_push(ctx, ICON_SIZE);
                 nk_image_texpath(ctx, s_icon_path);
+                nk_layout_row_push(ctx, DIAMOND_GAP + DIAMOND_SIZE);
+                draw_diamond(ctx, cl->colour);
+                nk_layout_row_end(ctx);
             }
             nk_end(ctx);
         }
@@ -451,6 +555,15 @@ int G_Cluster_Faction(int cluster_id)
 {
     struct cluster *cl = cluster_get(cluster_id);
     return cl ? cl->faction : -1;
+}
+
+bool G_Cluster_Colour(int cluster_id, struct nk_color *out)
+{
+    struct cluster *cl = cluster_get(cluster_id);
+    if(!cl || cl->colour < 0)
+        return false;
+    *out = s_palette[cl->colour];
+    return true;
 }
 
 int G_Cluster_PreviewJoin(const char *type, int faction, vec2_t pos, float radius)
@@ -618,6 +731,7 @@ bool G_Cluster_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(status != -1);
         struct cluster *cl = &kh_value(s_clusters, k);
         vec_entity_init(&cl->members);
+        cl->colour = -1;
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
@@ -647,5 +761,6 @@ bool G_Cluster_LoadState(struct SDL_RWops *stream)
         }
         Sched_TryYield();
     }
+    choose_colours();
     return true;
 }

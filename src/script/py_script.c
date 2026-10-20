@@ -339,6 +339,7 @@ static PyObject *PyPf_group_for_set(PyObject *self, PyObject *args);
 static PyObject *PyPf_group_members(PyObject *self, PyObject *args);
 static PyObject *PyPf_cluster_members(PyObject *self, PyObject *args);
 static PyObject *PyPf_cluster_anchor(PyObject *self, PyObject *args);
+static PyObject *PyPf_cluster_colour(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_cluster_icon(PyObject *self, PyObject *args);
 static PyObject *PyPf_district_at(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_show_districts(PyObject *self, PyObject *args);
@@ -1322,6 +1323,10 @@ static PyMethodDef pf_module_methods[] = {
     {"cluster_anchor",
     (PyCFunction)PyPf_cluster_anchor, METH_VARARGS,
     "Returns the building that anchors the cluster with the specified ID, or None."},
+
+    {"cluster_colour",
+    (PyCFunction)PyPf_cluster_colour, METH_VARARGS,
+    "Returns the (R, G, B) colour the cluster with the specified ID is told apart by, or None."},
 
     {"set_cluster_icon",
     (PyCFunction)PyPf_set_cluster_icon, METH_VARARGS,
@@ -5853,6 +5858,19 @@ static PyObject *PyPf_cluster_anchor(PyObject *self, PyObject *args)
         Py_RETURN_NONE;
     Py_INCREF(obj);
     return obj;
+}
+
+static PyObject *PyPf_cluster_colour(PyObject *self, PyObject *args)
+{
+    int cluster_id;
+    if(!PyArg_ParseTuple(args, "i", &cluster_id)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer cluster ID.");
+        return NULL;
+    }
+    struct nk_color clr;
+    if(!G_Cluster_Colour(cluster_id, &clr))
+        Py_RETURN_NONE;
+    return Py_BuildValue("(iii)", clr.r, clr.g, clr.b);
 }
 
 static PyObject *PyPf_set_cluster_icon(PyObject *self, PyObject *args)
