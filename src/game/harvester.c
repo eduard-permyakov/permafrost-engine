@@ -78,6 +78,10 @@
 
 /* Standing still this long on its way is taken as having arrived */
 #define STILL_ARRIVAL_TICKS (60)
+/* A carrier short of a full load stops at most this many more sources on a
+ * trip, each only for at least this much (or what it has room for) */
+#define MAX_TOP_UPS         (2)
+#define MIN_TOP_UP          (5)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -147,6 +151,9 @@ struct hstate{
     /* For a transport the automation assigned: how much to bring. The 
      * carrier takes no more, makes no other stops, and goes idle after. */
     int         job_amount;
+    /* Sources stopped at on this trip after the first; not saved, a trip
+     * under way when the session loads starts its count over */
+    int         top_ups;
     /* Ticks it has stood still on its way somewhere, to catch an arrival it never heard */
     int         still_ticks;
 };
@@ -326,6 +333,7 @@ static bool hstate_init(struct hstate *hs)
     hs->transport_src_uid = NULL_UID;
     hs->transport_dest_uid = NULL_UID;
     hs->job_amount = 0;
+    hs->top_ups = 0;
     hs->still_ticks = 0;
     return true;
 }
@@ -823,6 +831,23 @@ static void finish_transporing(struct hstate *hs)
     hs->res_name = NULL;
     hs->state = STATE_NOT_HARVESTING;
     hs->job_amount = 0;
+    hs->top_ups = 0;
+}
+
+/* Another source worth a stop on the way to fill up: never the one just
+ * left, and only for a worthwhile load, so that a carrier does not shuttle
+ * between producers a unit at a time instead of delivering.
+ */
+static uint32_t top_up_source(uint32_t uid, const struct hstate *hs, int carry_cap)
+{
+    if(hs->top_ups >= MAX_TOP_UPS)
+        return NULL_UID;
+    uint32_t src = transport_source(uid, hs->transport_dest_uid, hs->res_name);
+    if(!G_EntityExists(src) || G_EntityIsZombie(src) || src == hs->transport_src_uid)
+        return NULL_UID;
+    if(source_spare(src, hs->transport_dest_uid, hs->res_name) < MIN(carry_cap, MIN_TOP_UP))
+        return NULL_UID;
+    return src;
 }
 
 static void on_harvest_anim_finished(void *user, void *event)
@@ -1172,8 +1197,9 @@ static void on_arrive_at_transport_source(void *user, void *event)
      */
     if(curr_carry + take < max_carry && hs->job_amount == 0) {
     
-        uint32_t newsrc = transport_source(uid, hs->transport_dest_uid, hs->res_name);
-        if(G_EntityExists(newsrc) && !G_EntityIsZombie(newsrc)) {
+        uint32_t newsrc = top_up_source(uid, hs, max_carry - curr_carry - take);
+        if(newsrc != NULL_UID) {
+            hs->top_ups++;
             E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_at_transport_source, 
                 (void*)((uintptr_t)uid), G_RUNNING);
             E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
@@ -2635,6 +2661,7 @@ void G_Harvester_Stop(uint32_t uid)
     }
     hs->state = STATE_NOT_HARVESTING;
     hs->job_amount = 0;
+    hs->top_ups = 0;
 
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished);
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished_source);
