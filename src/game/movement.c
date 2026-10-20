@@ -5542,8 +5542,9 @@ static void do_set_enter_range(uint32_t uid, uint32_t target, float range)
 
 static bool using_surround_field(uint32_t uid, uint32_t target)
 {
-    vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
-    vec2_t target_pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, target);
+    /* Either may be newer than the tick's snapshot */
+    vec2_t pos_xz = G_Pos_GetXZ(uid);
+    vec2_t target_pos_xz = G_Pos_GetXZ(target);
 
     float dx = fabs(target_pos_xz.x - pos_xz.x);
     float dz = fabs(target_pos_xz.z - pos_xz.z);
