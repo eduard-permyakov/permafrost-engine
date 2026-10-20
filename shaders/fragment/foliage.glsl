@@ -265,7 +265,7 @@ void main()
     vec3 ambient = ambient_color * base_color;
 
     /* Diffuse - use abs(dot) so both faces of the cross-quad are lit */
-    vec3 light_dir = normalize(light_pos - from_vertex.world_pos);
+    vec3 light_dir = normalize(light_pos);
     float diff     = abs(dot(from_vertex.normal, light_dir));
     vec3 diffuse   = diff * light_color * base_color;
 

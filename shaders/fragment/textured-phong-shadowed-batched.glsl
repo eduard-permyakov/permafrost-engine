@@ -193,7 +193,7 @@ void main()
     vec3 ambient = ambient_intensity * ambient_color;
 
     /* Diffuse calculations */
-    vec3 light_dir = normalize(light_pos - from_vertex.world_pos);  
+    vec3 light_dir = normalize(light_pos);  
     float diff = max(dot(from_vertex.normal, light_dir), 0.0);
     vec3 diffuse = light_color * (diff * diffuse_clr);
 

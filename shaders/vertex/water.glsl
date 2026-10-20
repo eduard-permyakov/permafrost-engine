@@ -75,7 +75,7 @@ void main()
     to_fragment.world_pos = ws_pos.xyz;
     to_fragment.uv = vec2(in_pos.x/2.0 + 0.5, in_pos.z/2.0 + 0.5) * water_tiling;
     to_fragment.view_dir = normalize(view_pos - ws_pos.xyz);
-    to_fragment.light_dir = normalize(light_pos - ws_pos.xyz);
+    to_fragment.light_dir = normalize(light_pos);
 
     gl_Position = clip_space_pos;
 }
