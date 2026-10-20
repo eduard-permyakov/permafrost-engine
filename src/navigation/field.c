@@ -2457,6 +2457,53 @@ void N_FlowFieldUpdate(
     PERF_RETURN_VOID();
 }
 
+/* The tiles of the island nearest the entity, for a chunk that holds none of
+ * its tiles: the field then leads to the side of the chunk facing it */
+static size_t field_entity_nearest_island_tiles(
+    const struct nav_private  *priv,
+    const struct nav_chunk    *chunk,
+    struct coord               chunk_coord,
+    const struct entity_desc  *ent,
+    uint16_t                   local_iid,
+    struct nav_unit_query_ctx *ctx,
+    struct coord              *out,
+    size_t                     maxout)
+{
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+    vec2_t target = ent_pos_xz(ent->target, ctx);
+
+    float dists[FIELD_RES_R][FIELD_RES_C];
+    float min_dist = INFINITY;
+    for(int r = 0; r < FIELD_RES_R; r++) {
+    for(int c = 0; c < FIELD_RES_C; c++) {
+
+        dists[r][c] = INFINITY;
+        if(chunk->local_islands[r][c] != local_iid)
+            continue;
+        struct tile_desc td = (struct tile_desc){chunk_coord.r, chunk_coord.c, r, c};
+        struct box bounds = M_Tile_Bounds(res, ent->map_pos, td);
+        vec2_t centre = (vec2_t){
+            bounds.x - bounds.width / 2.0f,
+            bounds.z + bounds.height / 2.0f
+        };
+        vec2_t delta;
+        PFM_Vec2_Sub(&target, &centre, &delta);
+        dists[r][c] = PFM_Vec2_Len(&delta);
+        min_dist = MIN(min_dist, dists[r][c]);
+    }}
+
+    size_t ret = 0;
+    float band = min_dist + res.field_w / 2.0f;
+    for(int r = 0; r < FIELD_RES_R && ret < maxout; r++) {
+    for(int c = 0; c < FIELD_RES_C && ret < maxout; c++) {
+        if(dists[r][c] <= band) {
+            out[ret++] = (struct coord){r, c};
+        }
+    }}
+    return ret;
+}
+
 void N_FlowFieldUpdateIslandToNearest(
     uint16_t                   local_iid,
     const struct nav_private  *priv,
@@ -2507,6 +2554,10 @@ void N_FlowFieldUpdateIslandToNearest(
             };
         }
         assert(ninit == ntds);
+        if(!ninit) {
+            ninit = field_entity_nearest_island_tiles(priv, chunk, chunk_coord,
+                &inout_flow->target.ent, local_iid, ctx, init_frontier, ARR_SIZE(init_frontier));
+        }
 
     }else{
         if(inout_flow->target.type == TARGET_TILE) {
