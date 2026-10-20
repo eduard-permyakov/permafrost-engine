@@ -51,6 +51,7 @@
 #include "../lib/public/pf_nuklear.h"
 
 #include <assert.h>
+#include <math.h>
 
 #include "../mem.h"
 
@@ -64,9 +65,10 @@
 #define ARR_SIZE(a)      (sizeof(a)/sizeof((a)[0]))
 #define MIN(a, b)        ((a) < (b) ? (a) : (b))
 #define CLUSTER_TYPE_LEN (64)
-#define ICON_SIZE        (18)
-#define DIAMOND_SIZE     (12)
-#define DIAMOND_GAP      (2)
+#define ICON_SIZE        (24)
+#define DIAMOND_SIZE     (16)
+#define DIAMOND_GAP      (3)
+#define DIAMOND_EDGE     (1.5f)
 /* Clusters of a faction whose anchors are this close take different colours
  * where the palette allows */
 #define COLOUR_REACH     (800.0f)
@@ -333,15 +335,17 @@ static void draw_diamond(struct nk_context *ctx, int colour)
 
     const struct nk_color fill = s_palette[colour];
     const struct nk_color edge = (struct nk_color){fill.r / 2, fill.g / 2, fill.b / 2, 255};
-    const float half = bounds.w - DIAMOND_GAP;
-    const float cx = bounds.x + DIAMOND_GAP + half / 2.0f;
-    const float cy = bounds.y + bounds.h / 2.0f;
-    const float r = MIN(half, bounds.h) / 2.0f - 0.5f;
+    /* Whole pixels for the centre and corners, so the sides are even */
+    const float cx = floorf(bounds.x + DIAMOND_GAP + DIAMOND_SIZE / 2.0f);
+    const float cy = floorf(bounds.y + bounds.h / 2.0f);
+    const float r = DIAMOND_SIZE / 2.0f;
+    const float ri = r - DIAMOND_EDGE;
 
-    float points[] = {cx, cy - r, cx + r, cy, cx, cy + r, cx - r, cy};
     struct nk_command_buffer *canvas = nk_window_get_canvas(ctx);
-    nk_fill_polygon(canvas, points, 4, fill);
-    nk_stroke_polygon(canvas, points, 4, 1.0f, edge);
+    float outer[] = {cx, cy - r, cx + r, cy, cx, cy + r, cx - r, cy};
+    float inner[] = {cx, cy - ri, cx + ri, cy, cx, cy + ri, cx - ri, cy};
+    nk_fill_polygon(canvas, outer, 4, edge);
+    nk_fill_polygon(canvas, inner, 4, fill);
 }
 
 static void on_update_ui(void *user, void *event)
@@ -383,7 +387,7 @@ static void on_update_ui(void *user, void *event)
             const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
             vec2_t ss_pos = Entity_TopScreenPos(uid, adj_vres.x, adj_vres.y);
             const int width = ICON_SIZE + DIAMOND_GAP + DIAMOND_SIZE;
-            const vec2_t pos = (vec2_t){ss_pos.x - width / 2, ss_pos.y - ICON_SIZE - 4};
+            const vec2_t pos = (vec2_t){floorf(ss_pos.x - width / 2), floorf(ss_pos.y - ICON_SIZE - 4)};
             const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
 
             struct rect adj_bounds = UI_BoundsForAspectRatio(

@@ -1013,6 +1013,9 @@ void G_Garrison_SetFontColor(const struct nk_color *clr);
 void G_Garrison_SetBackgroundStyle(const struct nk_style_item *item);
 void G_Garrison_SetIcon(const char *path);
 void G_Garrison_SetShowUI(bool show);
+/* How far below the building's top its garrison count reaches on screen, 0 when
+ * it shows none */
+float G_Garrison_UIBottom(uint32_t uid);
 void G_Garrison_SetEvictOnLeftClick(void);
 
 /*###########################################################################*/

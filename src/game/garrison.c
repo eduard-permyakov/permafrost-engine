@@ -75,6 +75,11 @@
 /* Approaches to a door it cannot get next to before a unit gives up */
 #define MAX_APPROACHES          (4)
 #define GARRISONABLE_WAIT_TICKS (10)
+/* The count over a garrisonable building: its size, and how far it sits below
+ * the building's top */
+#define COUNT_UI_W              (100)
+#define COUNT_UI_H              (32)
+#define COUNT_UI_DROP           (20)
 #define EPSILON                 (1.0f/1024)
 
 #define CHK_TRUE_RET(_pred)             \
@@ -249,9 +254,9 @@ static void on_update_ui(void *user, void *event)
         const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
 
         vec2_t ss_pos = Entity_TopScreenPos(uid, adj_vres.x, adj_vres.y);
-        const int width = 100;
-        const int height = 32;
-        const vec2_t pos = (vec2_t){ss_pos.x - width/2, ss_pos.y + 20};
+        const int width = COUNT_UI_W;
+        const int height = COUNT_UI_H;
+        const vec2_t pos = (vec2_t){ss_pos.x - width/2, ss_pos.y + COUNT_UI_DROP};
         const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
 
         struct rect adj_bounds = UI_BoundsForAspectRatio(
@@ -1152,6 +1157,16 @@ void G_Garrison_SetBackgroundStyle(const struct nk_style_item *item)
 void G_Garrison_SetShowUI(bool show)
 {
     s_show_ui = show;
+}
+
+float G_Garrison_UIBottom(uint32_t uid)
+{
+    if(!s_show_ui)
+        return 0.0f;
+    struct garrisonable_state *gbs = gb_state_get(uid);
+    if(!gbs || gbs->capacity == 0)
+        return 0.0f;
+    return COUNT_UI_DROP + COUNT_UI_H;
 }
 
 int G_Garrison_CurrContextualAction(void)

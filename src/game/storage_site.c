@@ -224,6 +224,10 @@ struct strip_good{
 #define STRIP_ROW_GOODS     (6)
 #define STRIP_MAX_MADE      (4)
 #define STRIP_ICON_SZ       (22.0f)
+/* How far below the anchor the first row sits, and the gap kept under a
+ * garrison count */
+#define STRIP_DROP          (20.0f)
+#define STRIP_GAP_Y         (2.0f)
 #define STRIP_GAP           (8.0f)
 #define TREND_W             (7.0f)
 #define PENNANT_W           (11.0f)
@@ -261,6 +265,11 @@ static struct nk_style_item s_bg_style = {0};
 static struct nk_color      s_border_clr = {0};
 static struct nk_color      s_font_clr = {0};
 static bool                 s_show_ui = true;
+/* Where the outline passes of the strip's text and icons are drawn */
+static const float          s_outline_offsets[][2] = {
+    {-1.0f, 0.0f}, {1.0f, 0.0f}, {0.0f, -1.0f}, {0.0f, 1.0f},
+    {-1.0f, -1.0f}, {1.0f, -1.0f}, {-1.0f, 1.0f}, {1.0f, 1.0f},
+};
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -697,11 +706,30 @@ static float text_width(const struct nk_user_font *font, const char *text)
     return font->width(font->userdata, font->height, text, strlen(text));
 }
 
+/* The font's outline is a pixel wide; the text is first drawn all in the
+ * outline's colour a pixel off each way, which thickens it to two */
 static void draw_strip_text(struct nk_command_buffer *canvas, const struct nk_user_font *font,
                             float x, float y, float w, const char *text, struct nk_color clr)
 {
+    for(int i = 0; i < ARR_SIZE(s_outline_offsets); i++) {
+        const float *off = s_outline_offsets[i];
+        nk_draw_text_outlined(canvas, nk_rect(x + off[0], y + off[1], w + 1, font->height), text,
+            strlen(text), font, nk_rgba(0, 0, 0, 0), STRIP_OUTLINE_CLR, STRIP_OUTLINE_CLR);
+    }
     nk_draw_text_outlined(canvas, nk_rect(x, y, w + 1, font->height), text, strlen(text),
         font, nk_rgba(0, 0, 0, 0), clr, STRIP_OUTLINE_CLR);
+}
+
+/* The icon over its own silhouette in the outline's colour, a pixel off each
+ * way, so that it stands out from the ground */
+static void draw_strip_icon(struct nk_command_buffer *canvas, float x, float y, const char *icon)
+{
+    for(int i = 0; i < ARR_SIZE(s_outline_offsets); i++) {
+        const float *off = s_outline_offsets[i];
+        nk_draw_texpath(canvas, nk_rect(x + off[0], y + off[1], STRIP_ICON_SZ, STRIP_ICON_SZ), icon,
+            STRIP_OUTLINE_CLR);
+    }
+    nk_draw_texpath(canvas, nk_rect(x, y, STRIP_ICON_SZ, STRIP_ICON_SZ), icon, nk_rgba(255, 255, 255, 255));
 }
 
 static void draw_trend(struct nk_command_buffer *canvas, float x, float cy, int arrow)
@@ -855,7 +883,7 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
     /* The rows start together, centred as a block over the anchor */
     const float left = anchor.x - MAX(width, made_width) / 2.0f;
     float x = left;
-    const float y = anchor.y + 20;
+    const float y = anchor.y + STRIP_DROP;
     const float text_y = y + (STRIP_ICON_SZ - font->height) / 2.0f;
     const float cy = y + STRIP_ICON_SZ / 2.0f;
 
@@ -869,8 +897,7 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
         }
         const struct strip_good *good = &goods[i];
         if(good->icon) {
-            nk_draw_texpath(canvas, nk_rect(x, row_y, STRIP_ICON_SZ, STRIP_ICON_SZ), good->icon,
-                nk_rgba(255, 255, 255, 255));
+            draw_strip_icon(canvas, x, row_y, good->icon);
         }
         x += STRIP_ICON_SZ + 2;
         draw_strip_text(canvas, font, x, text_y + (row_y - y), good->count_w, good->count,
@@ -901,8 +928,7 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
     const float made_y = (width > 0.0f) ? marks_y + row_h : y;
     for(int i = 0; i < nmade; i++) {
         if(made[i]->icon) {
-            nk_draw_texpath(canvas, nk_rect(x, made_y, STRIP_ICON_SZ, STRIP_ICON_SZ), made[i]->icon,
-                nk_rgba(255, 255, 255, 255));
+            draw_strip_icon(canvas, x, made_y, made[i]->icon);
         }
         x += STRIP_ICON_SZ + 2;
         draw_strip_text(canvas, font, x, made_y + (STRIP_ICON_SZ - font->height) / 2.0f,
@@ -942,6 +968,11 @@ static void draw_strips(struct nk_context *ctx, const uint32_t *keys, size_t nke
         struct nk_command_buffer *canvas = nk_window_get_canvas(ctx);
         for(int i = 0; i < nkeys; i++) {
             vec2_t anchor = Entity_TopScreenPos(keys[i], adj_vres.x, adj_vres.y);
+            /* Under the building's garrison count, if it shows one */
+            float garrison = G_Garrison_UIBottom(keys[i]);
+            if(garrison > 0.0f) {
+                anchor.y += garrison - STRIP_DROP + STRIP_GAP_Y;
+            }
             draw_strip(canvas, ctx->style.font, keys[i], anchor);
         }
         UI_SetActiveFont(prev);
@@ -1024,9 +1055,13 @@ static void on_update_ui(void *user, void *event)
         const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
 
         vec2_t ss_pos = Entity_TopScreenPos(key, adj_vres.x, adj_vres.y);
+        float garrison = G_Garrison_UIBottom(key);
+        if(garrison > 0.0f) {
+            ss_pos.y += garrison - STRIP_DROP + STRIP_GAP_Y;
+        }
         const int width = 198;
         const int height = G_StorageSite_GetWindowHeight(key);
-        const vec2_t pos = (vec2_t){ss_pos.x - width/2, ss_pos.y + 20};
+        const vec2_t pos = (vec2_t){ss_pos.x - width/2, ss_pos.y + STRIP_DROP};
         const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BORDER | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
 
         struct rect adj_bounds = UI_BoundsForAspectRatio(
