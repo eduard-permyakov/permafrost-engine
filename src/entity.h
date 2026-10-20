@@ -150,6 +150,9 @@ void     Entity_ModelMatrix(uint32_t uid, mat4x4_t *out);
 uint32_t Entity_NewUID(void);
 void     Entity_SetNextUID(uint32_t uid);
 void     Entity_CurrentOBB(uint32_t uid, struct obb *out, bool identity);
+/* The identity OBB drawn in by 'inset' world units on each side across the
+ * ground, so that a box edge on a cell boundary covers no cell past it */
+void     Entity_InsetOBB(uint32_t uid, float inset, struct obb *out);
 vec3_t   Entity_CenterPos(uint32_t uid);
 vec3_t   Entity_TopCenterPointWS(uint32_t uid);
 void     Entity_FaceTowards(uint32_t uid, vec2_t point);

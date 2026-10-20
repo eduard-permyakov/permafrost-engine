@@ -117,6 +117,9 @@ static void los_defer_create(struct nav_private *priv, vec3_t map_pos, dest_id_t
 /* A destination ID's layer field holds the ground layers of paths taking the
  * roads from this value on */
 #define DEST_ROADS_LAYER_BASE    (12)
+/* How far a non-collidable building's edge is drawn in before the cells under
+ * it are taken, so one on a cell boundary takes none of its neighbour's */
+#define FOOTPRINT_INSET          (0.05f)
 
 #define FOREACH_PORTAL(_priv, _layer, _local, ...)                                              \
     do{                                                                                         \
@@ -2238,12 +2241,14 @@ static bool n_moving_entity(uint32_t ent, void *arg)
     return !G_Move_Still(ent);
 }
 
+/* A site laying a road is marked over its tile from the start, and nothing
+ * may be built over it before it is founded either */
 static bool n_non_collidable_building(uint32_t ent, void *arg)
 {
     uint32_t flags = G_FlagsGet(ent);
     return  (flags & (ENTITY_FLAG_BUILDING)
-        && !(flags & ENTITY_FLAG_COLLISION)
-        && G_Building_IsFounded(ent));
+        && !(flags & (ENTITY_FLAG_COLLISION | ENTITY_FLAG_ZOMBIE))
+        && (G_Building_IsFounded(ent) || G_Building_GetPathable(ent)));
 }
 
 static khash_t(td) *n_moving_entities_tileset(struct nav_private *priv, vec3_t map_pos, 
@@ -2321,7 +2326,7 @@ static khash_t(td) *n_non_collidable_buildings_tileset(struct nav_private *priv,
     for(int i = 0; i < nents; i++) {
 
         struct obb obb;
-        Entity_CurrentOBB(ents[i], &obb, true);
+        Entity_InsetOBB(ents[i], FOOTPRINT_INSET, &obb);
 
         struct tile_desc tds[1024];
         size_t ntiles = M_Tile_AllUnderObj(map_pos, res, &obb, tds, ARR_SIZE(tds));
@@ -4965,6 +4970,7 @@ void N_RenderBuildableTiles(void *nav_private, const struct map *map,
         bool shore = (tile->ramp_height > 1) && (tile->base_height < 0);
 
         if((n_tile_obstructs_building(chunk, tds[i], faction_id, enemies, true)
+        || chunk->road[tds[i].tile_r][tds[i].tile_c]
         || ((allow_shore ? !shore : true) && chunk->cost_base[tds[i].tile_r][tds[i].tile_c] == COST_IMPASSABLE)
         || !G_Fog_PlayerExplored((vec2_t){ws_center_homo.x, ws_center_homo.z})
         || (kh_get(td, tileset, td_key(tds + i)) != kh_end(tileset))
@@ -7398,6 +7404,7 @@ bool N_ObjectBuildable(void *nav_private, const struct map *map, enum nav_layer 
         bool shore = (tile->ramp_height > 1) && (tile->base_height < 0);
     
         if(n_tile_obstructs_building(chunk, tds[i], faction_id, enemies, reserved)
+        || chunk->road[tds[i].tile_r][tds[i].tile_c]
         || ((allow_shore ? !shore : true) && chunk->cost_base[tds[i].tile_r][tds[i].tile_c] == COST_IMPASSABLE)
         || !G_Fog_PlayerExplored((vec2_t){center.x, center.z})
         || (kh_get(td, tileset, td_key(tds + i)) != kh_end(tileset))

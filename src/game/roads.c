@@ -558,19 +558,6 @@ static bool obb_overlaps_tile(const struct obb *obb, vec2_t min, vec2_t max)
     return true;
 }
 
-static void on_building_placed(void *user, void *event)
-{
-    const struct entity_block_desc *desc = event;
-    if(!G_EntityExists(desc->uid) || G_EntityIsZombie(desc->uid))
-        return;
-
-    struct road_desc tiles[64];
-    size_t ntiles = G_Roads_TilesUnder(desc->uid, ARR_SIZE(tiles), tiles);
-    for(int i = 0; i < ntiles; i++) {
-        G_Roads_Remove(tiles[i]);
-    }
-}
-
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -603,7 +590,6 @@ bool G_Roads_Init(const struct map *map)
 
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_ALL);
     E_Global_Register(EVENT_UPDATE_START, on_update_start, NULL, G_ALL);
-    E_Global_Register(EVENT_BUILDING_PLACED, on_building_placed, NULL, G_ALL);
     if(s_has_tileset)
         retain_tileset(true);
     return true;
@@ -623,7 +609,6 @@ void G_Roads_Shutdown(void)
 
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
-    E_Global_Unregister(EVENT_BUILDING_PLACED, on_building_placed);
     retain_tileset(false);
 
     vec_road_idx_destroy(&s_stale);

@@ -93,6 +93,9 @@ static void  pfree(void *ptr);
 #define CENTER_MARKER_DIR   "assets/models/build_site"
 #define CENTER_MARKER_OBJ   "build-site.pfobj"
 #define EPSILON             (1.0 / 1024)
+/* How far a non-collidable building's edge is drawn in before the cells under
+ * it are fenced, matching how the navigation counts them */
+#define FOOTPRINT_INSET     (0.05f)
 #define UID_NONE            (~((uint32_t)0))
 
 #define CHK_TRUE_RET(_pred)             \
@@ -337,8 +340,13 @@ static void building_place_markers(struct buildstate *bs, uint32_t uid)
 {
     assert(Sched_UsingBigStack());
 
+    /* Ground that may be built right up to, as a road tile's, is fenced along its edge */
     struct obb obb;
-    Entity_CurrentOBB(uid, &obb, true);
+    if(G_FlagsGet(uid) & ENTITY_FLAG_COLLISION) {
+        Entity_CurrentOBB(uid, &obb, true);
+    }else{
+        Entity_InsetOBB(uid, FOOTPRINT_INSET, &obb);
+    }
 
     struct map_resolution res;
     M_NavGetResolution(s_map, &res);
@@ -902,6 +910,10 @@ bool G_Building_Complete(uint32_t uid)
 
 static bool building_buildable(uint32_t uid, int faction_id, bool reserved)
 {
+    /* Ground that stays walkable needs no clearing; a road site's tile is checked as a road's */
+    if(G_Building_GetPathable(uid))
+        return true;
+
     struct obb obb;
     Entity_CurrentOBB(uid, &obb, true);
     uint32_t flags = G_FlagsGet(uid);

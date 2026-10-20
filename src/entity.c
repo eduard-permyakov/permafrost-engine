@@ -422,6 +422,25 @@ void Entity_CurrentOBB(uint32_t uid, struct obb *out, bool identity)
     }
 }
 
+void Entity_InsetOBB(uint32_t uid, float inset, struct obb *out)
+{
+    struct entity *ent = AL_EntityGet(uid);
+    struct aabb aabb = ent->identity_aabb;
+    vec3_t scale = Entity_GetScale(uid);
+
+    /* The inset is in world units, taken before the box is scaled */
+    float dx = MIN(inset / fabsf(scale.x), (aabb.x_max - aabb.x_min) / 2.0f);
+    float dz = MIN(inset / fabsf(scale.z), (aabb.z_max - aabb.z_min) / 2.0f);
+    aabb.x_min += dx;
+    aabb.x_max -= dx;
+    aabb.z_min += dz;
+    aabb.z_max -= dz;
+
+    mat4x4_t model;
+    Entity_ModelMatrix(uid, &model);
+    Entity_CurrentOBBFrom(&aabb, model, scale, out);
+}
+
 vec3_t Entity_CenterPos(uint32_t uid)
 {
     struct obb obb;
