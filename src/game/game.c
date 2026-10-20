@@ -4513,6 +4513,9 @@ bool G_SaveEntityState(SDL_RWops *stream)
     if(!G_Population_SaveState(stream))
         return false;
 
+    if(!G_Automation_SavePriorities(stream))
+        return false;
+
     return true;
 }
 
@@ -4611,6 +4614,12 @@ bool G_LoadEntityState(SDL_RWops *stream)
     /* Saves made before the population was kept end here */
     if(Attr_NextKeyIs(stream, "num_contributors") && !G_Population_LoadState(stream)) {
         fprintf(stderr, "Could not load population state.\n");
+        return false;
+    }
+
+    /* Saves made before the realm and its districts set their own priorities end here */
+    if(Attr_NextKeyIs(stream, "num_good_priorities") && !G_Automation_LoadPriorities(stream)) {
+        fprintf(stderr, "Could not load automation priorities.\n");
         return false;
     }
 

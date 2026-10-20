@@ -1029,6 +1029,17 @@ bool G_Automation_ChoseWork(uint32_t uid);
 /* Records work a unit took up on its own, with 'kind' and 'why' strings that live for good */
 void G_Automation_TraceFollowOn(uint32_t uid, const char *kind, const char *why, 
                                 const char *rname, uint32_t target);
+/* How much a faction's workers favour gathering the good, 1 by default and 0 for 
+ * not at all; a weight above 1 also lets that many times more gather it */
+void  G_Automation_SetGoodWeight(int faction, const char *rname, float weight);
+float G_Automation_GetGoodWeight(int faction, const char *rname);
+/* The spare stock of the good a faction's gatherers keep up beyond what is asked for */
+void  G_Automation_SetStockTarget(int faction, const char *rname, int target);
+int   G_Automation_GetStockTarget(int faction, const char *rname);
+/* A district's own weight for the good in place of its faction's; a negative 
+ * weight is none, and what the getter returns when the district has none */
+void  G_Automation_SetDistrictWeight(int district, const char *rname, float weight);
+float G_Automation_GetDistrictWeight(int district, const char *rname);
 /* Why the site's request for the resource is unserved, and for how long it has waited */
 enum request_status G_Automation_RequestStatus(uint32_t site, const char *rname, int *out_waited_ms);
 

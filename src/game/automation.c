@@ -60,6 +60,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <math.h>
 
 #include "../mem.h"
 
@@ -170,6 +171,8 @@ VEC_IMPL(static inline, request, struct job_request)
 struct good_demand{
     int         faction;
     char        rname[PINNED_LEN];
+    /* The spare stock it keeps up beyond what is asked for */
+    int         target;
     int         need;
     int         workers;
     int         wanted;
@@ -207,6 +210,20 @@ struct work_trace{
     struct work_step steps[MAX_TRACE_STEPS];
 };
 
+/* The realm's, or one district's, own say over the gathering of one good */
+struct good_priority{
+    int   faction;
+    /* A district's override of its faction's setting, or 0 for the faction's own */
+    int   district;
+    char  rname[PINNED_LEN];
+    /* Negative where not set */
+    float weight;
+    int   stock_target;
+};
+
+VEC_TYPE(priority, struct good_priority)
+VEC_IMPL(static inline, priority, struct good_priority)
+
 KHASH_MAP_INIT_INT(state, struct automation_state)
 KHASH_MAP_INIT_INT(count, uint32_t);
 KHASH_MAP_INIT_INT64(pending, struct pending)
@@ -215,8 +232,10 @@ KHASH_MAP_INIT_INT(trace, struct work_trace)
 static void on_order_issued(void *user, void *event);
 static bool try_assign_transport_job(uint32_t uid, struct automation_state *astate);
 static bool try_assign_work(uint32_t uid, struct automation_state *astate);
-static bool stocked(int surplus, int shortfall);
-static int gatherers_wanted(int surplus, int shortfall);
+static bool stocked(int surplus, int shortfall, int target);
+static int gatherers_wanted(int surplus, int shortfall, int target);
+static float good_weight(int faction, int district, const char *rname);
+static int stock_target(int faction, const char *rname);
 static vec2_t work_origin(uint32_t uid, const struct automation_state *astate);
 static void reconsider_work(uint32_t uid, struct automation_state *astate);
 static struct work_snapshot *snapshot_get(void);
@@ -238,6 +257,8 @@ static khash_t(pending)*s_pending;
 static uint32_t        s_tick;
 static struct work_snapshot s_snapshot;
 static khash_t(trace)  *s_traces;
+/* Settings of the realms and their districts, few enough to look up in turn */
+static vec_priority_t  s_priorities;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -319,7 +340,7 @@ static void trace_good(uint32_t uid, const char *verdict, const char *why, const
         .workers = demand ? demand->workers : 0,
         .wanted = demand ? demand->wanted : 0,
         .stock = demand ? demand->surplus : 0,
-        .stock_target = demand ? demand->shortfall + STOCK_TARGET : 0,
+        .stock_target = demand ? demand->shortfall + demand->target : 0,
         .score = score
     };
     pf_strlcpy(step.rname, rname, sizeof(step.rname));
@@ -1048,18 +1069,62 @@ static int resource_need(int faction, const char *rname, const vec_request_t *re
 /* How many may gather the good: one for each GOOD_PER_GATHERER still short of
  * what is asked for and the stock beyond it, so that a lone wanted good does 
  * not draw everyone */
-static int gatherers_wanted(int surplus, int shortfall)
+static int gatherers_wanted(int surplus, int shortfall, int target)
 {
-    int short_by = shortfall + STOCK_TARGET - surplus;
+    int short_by = shortfall + target - surplus;
     if(short_by <= 0)
         return 0;
     return 1 + short_by / GOOD_PER_GATHERER;
 }
 
 /* Whether the faction can spare enough of the good, beyond what is asked for */
-static bool stocked(int surplus, int shortfall)
+static bool stocked(int surplus, int shortfall, int target)
 {
-    return surplus >= shortfall + STOCK_TARGET;
+    return surplus >= shortfall + target;
+}
+
+static struct good_priority *priority_get(int faction, int district, const char *rname, bool create)
+{
+    for(int i = 0; i < vec_size(&s_priorities); i++) {
+        struct good_priority *curr = &vec_AT(&s_priorities, i);
+        if(curr->faction == faction && curr->district == district && !strcmp(curr->rname, rname))
+            return curr;
+    }
+    if(!create)
+        return NULL;
+    struct good_priority prio = (struct good_priority){
+        .faction = faction,
+        .district = district,
+        .weight = -1.0f,
+        .stock_target = -1
+    };
+    pf_strlcpy(prio.rname, rname, sizeof(prio.rname));
+    if(!vec_priority_push(&s_priorities, prio))
+        return NULL;
+    return &vec_AT(&s_priorities, vec_size(&s_priorities) - 1);
+}
+
+/* How much the good's gathering is favoured where the worker works: by its 
+ * district's own weight if it has one, else by its faction's */
+static float good_weight(int faction, int district, const char *rname)
+{
+    const struct good_priority *own = district ? priority_get(-1, district, rname, false) : NULL;
+    if(own && own->weight >= 0.0f)
+        return own->weight;
+    const struct good_priority *realm = priority_get(faction, 0, rname, false);
+    return (realm && realm->weight >= 0.0f) ? realm->weight : 1.0f;
+}
+
+static int stock_target(int faction, const char *rname)
+{
+    const struct good_priority *realm = priority_get(faction, 0, rname, false);
+    return (realm && realm->stock_target >= 0) ? realm->stock_target : STOCK_TARGET;
+}
+
+/* The district a worker's work counts for: its home, else where it stands */
+static int work_district(uint32_t uid, const struct automation_state *astate)
+{
+    return astate->home_district ? astate->home_district : G_District_Of(uid);
 }
 
 /* Where a worker looks for work: about its home hub when it is away from its
@@ -1139,16 +1204,18 @@ static struct good_demand *demand_get(struct work_snapshot *snap, int faction, c
 
     int surplus, shortfall;
     G_Automation_Balance(faction, rname, &surplus, &shortfall);
+    int target = stock_target(faction, rname);
 
     struct good_demand *ret = &snap->demands[snap->ndemands++];
     *ret = (struct good_demand){
         .faction = faction,
+        .target = target,
         .need = resource_need(faction, rname, &snap->requests),
         .workers = G_Harvester_CountGathering(faction, rname),
-        .wanted = gatherers_wanted(surplus, shortfall),
+        .wanted = gatherers_wanted(surplus, shortfall, target),
         .surplus = surplus,
         .shortfall = shortfall,
-        .stocked = stocked(surplus, shortfall)
+        .stocked = stocked(surplus, shortfall, target)
     };
     pf_strlcpy(ret->rname, rname, sizeof(ret->rname));
     return ret;
@@ -1243,19 +1310,28 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
         return false;
 
     /* Most wanted per worker already at it, weighted by how fast this one
-     * gathers it, so that a specialist keeps to his trade */
+     * gathers it, so that a specialist keeps to his trade, and by how much 
+     * the realm or the worker's district favours it */
+    int district = work_district(uid, astate);
     float scores[MAX_RESOURCES];
     struct good_demand *demands[MAX_RESOURCES];
     const char *why[MAX_RESOURCES];
     for(int i = 0; i < ncandidates; i++) {
         demands[i] = demand_get(snap, faction, candidates[i]);
         bool pinned = !strcmp(astate->pinned, candidates[i]);
-        if(!demands[i] || (!pinned && demands[i]->workers >= demands[i]->wanted)) {
+        float weight = good_weight(faction, district, candidates[i]);
+        if(!pinned && weight <= 0.0f) {
+            scores[i] = -1.0f;
+            why[i] = "not_wanted";
+            continue;
+        }
+        int wanted = demands[i] ? (int)ceilf(demands[i]->wanted * MAX(weight, 1.0f)) : 0;
+        if(!demands[i] || (!pinned && demands[i]->workers >= wanted)) {
             scores[i] = -1.0f;
             why[i] = (demands[i] && demands[i]->stocked) ? "stocked" : "enough";
             continue;
         }
-        scores[i] = demands[i]->need * G_Harvester_GetGatherSpeed(uid, candidates[i]) 
+        scores[i] = weight * demands[i]->need * G_Harvester_GetGatherSpeed(uid, candidates[i]) 
                   / (1.0f + demands[i]->workers);
         why[i] = "lower";
     }
@@ -1564,6 +1640,7 @@ bool G_Automation_Init(void)
         goto fail_traces;
     s_tick = 0;
     vec_request_init(&s_snapshot.requests);
+    vec_priority_init(&s_priorities);
     s_snapshot.valid = false;
 
     E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
@@ -1639,6 +1716,7 @@ void G_Automation_Shutdown(void)
     E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
     E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
     vec_request_destroy(&s_snapshot.requests);
+    vec_priority_destroy(&s_priorities);
     vec_entity_destroy(&s_stopping);
     kh_destroy(trace, s_traces);
     kh_destroy(pending, s_pending);
@@ -1751,6 +1829,8 @@ bool G_Automation_LeavesGathering(uint32_t uid, const char *rname)
     struct good_demand *demand = demand_get(snap, faction, rname);
     if(demand && demand->stocked)
         return true;
+    if(good_weight(faction, work_district(uid, astate), rname) <= 0.0f)
+        return true;
     if(astate->pinned[0] || !(G_FlagsGet(uid) & ENTITY_FLAG_BUILDER))
         return false;
     /* Only for a site that can be worked: one waiting on its materials needs gatherers more */
@@ -1823,6 +1903,130 @@ bool G_Automation_GetAutomaticTransport(uint32_t uid)
     if(!astate)
         return false;
     return astate->automatic_transport;
+}
+
+void G_Automation_SetGoodWeight(int faction, const char *rname, float weight)
+{
+    struct good_priority *prio = priority_get(faction, 0, rname, true);
+    if(prio) {
+        prio->weight = MAX(weight, 0.0f);
+    }
+    s_snapshot.valid = false;
+}
+
+float G_Automation_GetGoodWeight(int faction, const char *rname)
+{
+    return good_weight(faction, 0, rname);
+}
+
+void G_Automation_SetStockTarget(int faction, const char *rname, int target)
+{
+    struct good_priority *prio = priority_get(faction, 0, rname, true);
+    if(prio) {
+        prio->stock_target = MAX(target, 0);
+    }
+    s_snapshot.valid = false;
+}
+
+int G_Automation_GetStockTarget(int faction, const char *rname)
+{
+    return stock_target(faction, rname);
+}
+
+void G_Automation_SetDistrictWeight(int district, const char *rname, float weight)
+{
+    struct good_priority *prio = priority_get(-1, district, rname, weight >= 0.0f);
+    if(prio) {
+        prio->weight = weight;
+    }
+    s_snapshot.valid = false;
+}
+
+float G_Automation_GetDistrictWeight(int district, const char *rname)
+{
+    const struct good_priority *prio = priority_get(-1, district, rname, false);
+    return prio ? prio->weight : -1.0f;
+}
+
+bool G_Automation_SavePriorities(struct SDL_RWops *stream)
+{
+    struct attr num_priorities = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = vec_size(&s_priorities)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_priorities, "num_good_priorities"));
+
+    for(int i = 0; i < vec_size(&s_priorities); i++) {
+        const struct good_priority *prio = &vec_AT(&s_priorities, i);
+
+        struct attr faction = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = prio->faction
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &faction, "faction"));
+
+        struct attr district = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = prio->district
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &district, "district"));
+
+        struct attr rname = (struct attr){ .type = TYPE_STRING };
+        pf_strlcpy(rname.val.as_string, prio->rname, sizeof(rname.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &rname, "rname"));
+
+        struct attr weight = (struct attr){
+            .type = TYPE_FLOAT,
+            .val.as_float = prio->weight
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &weight, "weight"));
+
+        struct attr target = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = prio->stock_target
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &target, "stock_target"));
+    }
+    return true;
+}
+
+bool G_Automation_LoadPriorities(struct SDL_RWops *stream)
+{
+    struct attr attr;
+    vec_priority_reset(&s_priorities);
+    s_snapshot.valid = false;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_priorities = attr.val.as_int;
+
+    for(int i = 0; i < num_priorities; i++) {
+
+        struct good_priority prio;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        prio.faction = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        prio.district = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        pf_strlcpy(prio.rname, attr.val.as_string, sizeof(prio.rname));
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        prio.weight = attr.val.as_float;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        prio.stock_target = attr.val.as_int;
+
+        CHK_TRUE_RET(vec_priority_push(&s_priorities, prio));
+    }
+    return true;
 }
 
 bool G_Automation_SaveState(struct SDL_RWops *stream)

@@ -49,6 +49,8 @@ void G_Automation_RemoveEntity(uint32_t uid);
 
 bool G_Automation_SaveState(struct SDL_RWops *stream);
 bool G_Automation_LoadState(struct SDL_RWops *stream);
+bool G_Automation_SavePriorities(struct SDL_RWops *stream);
+bool G_Automation_LoadPriorities(struct SDL_RWops *stream);
 
 #endif
 

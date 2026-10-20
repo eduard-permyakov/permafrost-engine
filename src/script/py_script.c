@@ -349,6 +349,13 @@ static PyObject *PyPf_cluster_preview_join(PyObject *self, PyObject *args);
 static PyObject *PyPf_provision_counts(PyObject *self, PyObject *args);
 static PyObject *PyPf_provision_demand(PyObject *self, PyObject *args);
 static PyObject *PyPf_resource_balance(PyObject *self, PyObject *args);
+static PyObject *PyPf_clusters(PyObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPf_good_weight(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_good_weight(PyObject *self, PyObject *args);
+static PyObject *PyPf_stock_target(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_stock_target(PyObject *self, PyObject *args);
+static PyObject *PyPf_district_weight(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_district_weight(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_style(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_font_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_bonus_color(PyObject *self, PyObject *args);
@@ -1340,6 +1347,41 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_resource_balance, METH_VARARGS,
     "Takes a resource name and a faction ID. Returns a tuple of how much of the resource the faction's "
     "storage sites can give away, and how much they ask for and are not yet getting."},
+
+    {"clusters",
+    (PyCFunction)PyPf_clusters, METH_VARARGS | METH_KEYWORDS,
+    "Returns a sorted list of the IDs of every cluster, or of those of the 'type' and the "
+    "'faction' given as keywords."},
+
+    {"good_weight",
+    (PyCFunction)PyPf_good_weight, METH_VARARGS,
+    "Takes a resource name and a faction ID. Returns how much the faction's automated workers "
+    "favour gathering it: 1.0 by default, 0.0 for not at all."},
+
+    {"set_good_weight",
+    (PyCFunction)PyPf_set_good_weight, METH_VARARGS,
+    "Takes a resource name, a faction ID and a weight: how much the faction's automated workers "
+    "favour gathering it. Above 1.0 it also lets that many times more of them gather it."},
+
+    {"stock_target",
+    (PyCFunction)PyPf_stock_target, METH_VARARGS,
+    "Takes a resource name and a faction ID. Returns the spare stock of it the faction's "
+    "gatherers keep up beyond what is asked for."},
+
+    {"set_stock_target",
+    (PyCFunction)PyPf_set_stock_target, METH_VARARGS,
+    "Takes a resource name, a faction ID and the spare stock of it the faction's gatherers "
+    "keep up beyond what is asked for."},
+
+    {"district_weight",
+    (PyCFunction)PyPf_district_weight, METH_VARARGS,
+    "Takes a district ID and a resource name. Returns the district's own weight for gathering "
+    "it, or None when the district follows its faction's."},
+
+    {"set_district_weight",
+    (PyCFunction)PyPf_set_district_weight, METH_VARARGS,
+    "Takes a district ID, a resource name and the district's own weight for gathering it, "
+    "or None to follow its faction's."},
 
     {"provision_demand",
     (PyCFunction)PyPf_provision_demand, METH_VARARGS,
@@ -5907,6 +5949,136 @@ static PyObject *PyPf_resource_balance(PyObject *self, PyObject *args)
     int surplus, shortfall;
     G_Automation_Balance(faction, name, &surplus, &shortfall);
     return Py_BuildValue("(ii)", surplus, shortfall);
+}
+
+static int compare_ints(const void *a, const void *b)
+{
+    return *(const int*)a - *(const int*)b;
+}
+
+static PyObject *PyPf_clusters(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    static char *kwlist[] = {"type", "faction", NULL};
+    const char *type = NULL;
+    int faction = -1;
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "|zi", kwlist, &type, &faction)) {
+        PyErr_SetString(PyExc_TypeError, "Optional keywords: 'type' (string) and 'faction' (integer).");
+        return NULL;
+    }
+    int ids[1024];
+    size_t nids = G_Cluster_GetAll(ARR_SIZE(ids), ids);
+    qsort(ids, nids, sizeof(ids[0]), compare_ints);
+
+    PyObject *ret = PyList_New(0);
+    if(!ret)
+        return NULL;
+    for(int i = 0; i < nids; i++) {
+        if(type && strcmp(G_Cluster_Type(ids[i]), type))
+            continue;
+        if(faction >= 0 && G_Cluster_Faction(ids[i]) != faction)
+            continue;
+        PyObject *id = PyInt_FromLong(ids[i]);
+        if(!id || 0 != PyList_Append(ret, id)) {
+            Py_XDECREF(id);
+            Py_DECREF(ret);
+            return NULL;
+        }
+        Py_DECREF(id);
+    }
+    return ret;
+}
+
+static bool parse_good_faction(PyObject *args, const char **out_name, int *out_faction)
+{
+    if(!PyArg_ParseTuple(args, "si", out_name, out_faction) 
+    || *out_faction < 0 || *out_faction >= MAX_FACTIONS) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a resource name and a faction ID.");
+        return false;
+    }
+    return true;
+}
+
+static PyObject *PyPf_good_weight(PyObject *self, PyObject *args)
+{
+    const char *name;
+    int faction;
+    if(!parse_good_faction(args, &name, &faction))
+        return NULL;
+    return PyFloat_FromDouble(G_Automation_GetGoodWeight(faction, name));
+}
+
+static PyObject *PyPf_set_good_weight(PyObject *self, PyObject *args)
+{
+    const char *name;
+    int faction;
+    float weight;
+    if(!PyArg_ParseTuple(args, "sif", &name, &faction, &weight) 
+    || faction < 0 || faction >= MAX_FACTIONS || weight < 0.0f) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a resource name, a faction ID and a weight of 0 or more.");
+        return NULL;
+    }
+    G_Automation_SetGoodWeight(faction, name, weight);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_stock_target(PyObject *self, PyObject *args)
+{
+    const char *name;
+    int faction;
+    if(!parse_good_faction(args, &name, &faction))
+        return NULL;
+    return PyInt_FromLong(G_Automation_GetStockTarget(faction, name));
+}
+
+static PyObject *PyPf_set_stock_target(PyObject *self, PyObject *args)
+{
+    const char *name;
+    int faction, target;
+    if(!PyArg_ParseTuple(args, "sii", &name, &faction, &target) 
+    || faction < 0 || faction >= MAX_FACTIONS || target < 0) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a resource name, a faction ID and a stock of 0 or more.");
+        return NULL;
+    }
+    G_Automation_SetStockTarget(faction, name, target);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_district_weight(PyObject *self, PyObject *args)
+{
+    int district;
+    const char *name;
+    if(!PyArg_ParseTuple(args, "is", &district, &name)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a district ID and a resource name.");
+        return NULL;
+    }
+    float weight = G_Automation_GetDistrictWeight(district, name);
+    if(weight < 0.0f)
+        Py_RETURN_NONE;
+    return PyFloat_FromDouble(weight);
+}
+
+static PyObject *PyPf_set_district_weight(PyObject *self, PyObject *args)
+{
+    int district;
+    const char *name;
+    PyObject *weight_obj;
+    if(!PyArg_ParseTuple(args, "isO", &district, &name, &weight_obj)
+    || district <= 0 || (weight_obj != Py_None && !PyNumber_Check(weight_obj))) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a district ID, a resource name and a weight or None.");
+        return NULL;
+    }
+    float weight = -1.0f;
+    if(weight_obj != Py_None) {
+        weight = PyFloat_AsDouble(weight_obj);
+        if(PyErr_Occurred())
+            return NULL;
+        if(weight < 0.0f) {
+            PyErr_SetString(PyExc_ValueError, "A district's weight cannot be negative.");
+            return NULL;
+        }
+    }
+    G_Automation_SetDistrictWeight(district, name, weight);
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_provision_demand(PyObject *self, PyObject *args)
