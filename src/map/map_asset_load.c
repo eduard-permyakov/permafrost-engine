@@ -724,6 +724,7 @@ bool M_AL_UpdateTile(struct map *map, const struct tile_desc *desc, const struct
 
     struct pfchunk *chunk = &map->chunks[desc->chunk_r * map->width + desc->chunk_c];
     int old_wang_idx = chunk->tiles[desc->tile_r * TILES_PER_CHUNK_WIDTH + desc->tile_c].wang_idx;
+    bool was_water = chunk->tiles[desc->tile_r * TILES_PER_CHUNK_WIDTH + desc->tile_c].base_height < 0;
     chunk->tiles[desc->tile_r * TILES_PER_CHUNK_WIDTH + desc->tile_c] = *tile;
     chunk->tiles[desc->tile_r * TILES_PER_CHUNK_WIDTH + desc->tile_c].wang_idx = old_wang_idx;
 
@@ -735,8 +736,12 @@ bool M_AL_UpdateTile(struct map *map, const struct tile_desc *desc, const struct
         }
     }
 
-    /* A water edit can shift proximity far outside this chunk; full rebuild. */
-    m_refresh_near_water(map);
+    /* A water edit can shift proximity far outside this chunk; full rebuild.
+     * Nearness to water depends on nothing else, so other edits keep it.
+     */
+    if(was_water != (tile->base_height < 0)) {
+        m_refresh_near_water(map);
+    }
 
     struct map_resolution res;
     M_GetResolution(map, &res);
