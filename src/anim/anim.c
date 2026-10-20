@@ -531,6 +531,17 @@ bool A_LoadState(struct SDL_RWops *stream, uint32_t uid)
     return true;
 }
 
+bool A_SkipState(struct SDL_RWops *stream)
+{
+    struct attr attr;
+    /* The active and idle clips, then mode, key_fps, frame and its start */
+    for(int i = 0; i < 6; i++) {
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == (i < 2 ? TYPE_STRING : TYPE_INT));
+    }
+    return true;
+}
+
 void A_ClearState(void)
 {
     kh_clear(ctx, s_anim_ctx);

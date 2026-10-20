@@ -211,6 +211,13 @@ bool                   A_SaveState(struct SDL_RWops *stream, uint32_t uid);
 bool                   A_LoadState(struct SDL_RWops *stream, uint32_t uid);
 
 /* ---------------------------------------------------------------------------
+ * Reads past an animation context written by A_SaveState, for an entity that
+ * is gone.
+ * ---------------------------------------------------------------------------
+ */
+bool                   A_SkipState(struct SDL_RWops *stream);
+
+/* ---------------------------------------------------------------------------
  * Initialize/teardown animation subsystem.
  * ---------------------------------------------------------------------------
  */

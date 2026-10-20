@@ -1148,7 +1148,11 @@ static bool g_load_anim_state(SDL_RWops *stream)
         CHK_TRUE_RET(attr.type == TYPE_INT);
         uid = attr.val.as_int;
 
-        CHK_TRUE_RET(G_EntityExists(uid));
+        /* The scripts did not keep the entity */
+        if(!G_EntityExists(uid)) {
+            CHK_TRUE_RET(A_SkipState(stream));
+            continue;
+        }
         CHK_TRUE_RET(A_LoadState(stream, uid));
         Sched_TryYield();
     }
