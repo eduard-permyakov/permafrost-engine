@@ -56,6 +56,7 @@
 
 #include <assert.h>
 #include <ctype.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "../mem.h"
@@ -224,6 +225,13 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
                           void **out_vbuff, size_t *out_vbuff_size)
 {
     PERF_ENTER();
+    /* Draws bind a texture unit per material, and batches hold this many */
+    if(header->num_materials > MAX_MATERIALS) {
+        fprintf(stderr, "Model has %d materials, more than the %d supported\n",
+            (int)header->num_materials, MAX_MATERIALS);
+        PERF_RETURN(NULL);
+    }
+
     struct render_private *priv = PF_MALLOC(R_AL_PrivBuffSize(header));
     if(!priv)
         goto fail_alloc_priv;
