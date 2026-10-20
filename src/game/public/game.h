@@ -851,6 +851,11 @@ int  G_StorageSite_GetFactionStored(int faction, const char *rname);
 int  G_StorageSite_GetPlayerCapacity(const char *rname);
 void G_StorageSite_RecordProduced(int faction_id, const char *rname, int amount);
 void G_StorageSite_RecordConsumed(int faction_id, const char *rname, int amount);
+/* Something the site made: its products or the units it trained. 'icon' NULL
+ * shows the resource's icon */
+void G_StorageSite_RecordMade(uint32_t uid, const char *name, const char *icon, int amount);
+/* How many of 'name' the site, or the pool it is in, made in the last minute */
+int  G_StorageSite_MadePerMinute(uint32_t uid, const char *name);
 int  G_StorageSite_GetPlayerProduced(const char *rname);
 int  G_StorageSite_GetPlayerConsumed(const char *rname);
 /* Every resource stored, made or used up in the session */

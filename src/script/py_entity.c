@@ -1134,6 +1134,8 @@ static PyObject *PyStorageSiteEntity_get_own_capacity(PyStorageSiteEntityObject 
 static PyObject *PyStorageSiteEntity_get_keep(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_set_keep(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_reserve(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_record_made(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_made_per_minute(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_chip(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_set_chip(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_surplus(PyStorageSiteEntityObject *self, PyObject *args);
@@ -1182,6 +1184,16 @@ static PyMethodDef PyStorageSiteEntity_methods[] = {
     (PyCFunction)PyStorageSiteEntity_get_reserve, METH_VARARGS,
     "Gets the reserve the site holds back and shows over itself: its keep, or more for what its "
     "recipes need."},
+
+    {"record_made", 
+    (PyCFunction)PyStorageSiteEntity_record_made, METH_VARARGS,
+    "Records that the site made an amount of something (a good, or a unit by any name), shown "
+    "over the site as a rate per minute. An optional icon path stands for it; goods default "
+    "to their own."},
+
+    {"made_per_minute", 
+    (PyCFunction)PyStorageSiteEntity_made_per_minute, METH_VARARGS,
+    "How many of the named thing the site, or the cluster it is in, made in the last minute."},
 
     {"get_chip", 
     (PyCFunction)PyStorageSiteEntity_get_chip, METH_VARARGS,
@@ -5293,6 +5305,31 @@ static PyObject *PyStorageSiteEntity_set_keep(PyStorageSiteEntityObject *self, P
     }
     G_StorageSite_SetKeep(self->super.ent, name, keep);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyStorageSiteEntity_record_made(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *name, *icon = NULL;
+    int amount;
+    if(!PyArg_ParseTuple(args, "si|z", &name, &amount, &icon)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting a name (string), an amount (int) and "
+            "optionally an icon path (string or None).");
+        return NULL;
+    }
+    G_StorageSite_RecordMade(self->super.ent, name, icon, amount);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyStorageSiteEntity_made_per_minute(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting a name (string).");
+        return NULL;
+    }
+    return PyInt_FromLong(G_StorageSite_MadePerMinute(self->super.ent, name));
 }
 
 static PyObject *PyStorageSiteEntity_get_reserve(PyStorageSiteEntityObject *self, PyObject *args)

@@ -166,6 +166,26 @@ struct strip{
 
 KHASH_MAP_INIT_INT64(strip, struct strip)
 
+/* What a pool, or a site in none, made in each of the last seconds: its
+ * products and the units it trained, never what was only brought to it. Only
+ * the strip reads it, and it is not saved, as it fills again in a minute. */
+#define MADE_WINDOW_S       (60)
+
+struct made{
+    const char *name;
+    const char *icon;
+    uint16_t    per_s[MADE_WINDOW_S];
+    /* The sum of per_s: how many were made in the last minute */
+    int         total;
+};
+
+struct made_record{
+    size_t      nmade;
+    struct made made[8];
+};
+
+KHASH_MAP_INIT_INT64(made, struct made_record)
+
 /* A good as the overlay strip shows it */
 struct strip_good{
     const char *icon;
@@ -186,7 +206,9 @@ struct strip_good{
 #define CART_CLR            (struct nk_color){170, 120, 70, 255}
 
 #define STRIP_MAX_SITES     (64)
-#define STRIP_MAX_GOODS     (8)
+#define STRIP_MAX_GOODS     (32)
+#define STRIP_ROW_GOODS     (6)
+#define STRIP_MAX_MADE      (4)
 #define STRIP_ICON_SZ       (22.0f)
 #define STRIP_GAP           (8.0f)
 #define TREND_W             (7.0f)
@@ -213,6 +235,9 @@ static khash_t(state)  *s_pools;
 static khash_t(res)    *s_global_resource_tables[MAX_FACTIONS];
 static khash_t(res)    *s_global_capacity_tables[MAX_FACTIONS];
 static khash_t(flow)   *s_flows;
+static khash_t(made)   *s_made;
+/* The second of the window that the records are filling now */
+static int              s_made_slot;
 /* Keyed by strip_key */
 static khash_t(strip)  *s_strips;
 static uint32_t         s_strip_stamp;
@@ -630,6 +655,8 @@ static void update_trends(uint32_t uid, struct ss_state *ss)
 
 static bool strip_shows(uint32_t uid, const char *rname, const struct trend *trend)
 {
+    if(G_StorageSite_GetCurr(uid, rname) > 0)
+        return true;
     if(G_StorageSite_Request(uid, rname) > 0)
         return true;
     if(G_StorageSite_GetKeep(uid, rname) > 0)
@@ -702,8 +729,20 @@ static void draw_cart(struct nk_command_buffer *canvas, float x, float y)
     nk_fill_circle(canvas, nk_rect(x + CART_W - 5.5f, y + 9.5f, 3, 3), TREND_FLAT_CLR);
 }
 
-/* One row over a pool's anchor: the goods that matter now, the pool's
- * priority, the carriers bound for it, and why a request of it is stuck */
+static int compare_made(const void *a, const void *b)
+{
+    return (*(const struct made**)b)->total - (*(const struct made**)a)->total;
+}
+
+static float strip_good_width(const struct strip_good *good)
+{
+    return STRIP_ICON_SZ + 2 + good->count_w + 2 + TREND_W + STRIP_GAP;
+}
+
+/* Over a pool's anchor, rows of the goods it holds or wants, the last one
+ * followed by the pool's priority, the carriers bound for it, and why a
+ * request of it is stuck; under them, a row of what the pool made in the
+ * last minute */
 static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_font *font,
                        uint32_t key, vec2_t anchor)
 {
@@ -714,13 +753,12 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
     khiter_t k = kh_get(strip, s_strips, strip_key(key));
     const struct strip *strip = (k != kh_end(s_strips)) ? &kh_value(s_strips, k) : NULL;
 
-    const char *names[16];
+    const char *names[STRIP_MAX_GOODS];
     size_t nnames = ss_get_keys(ss, names, ARR_SIZE(names));
 
     struct strip_good goods[STRIP_MAX_GOODS];
     size_t ngoods = 0;
     const char *reason = NULL;
-    float width = 0.0f;
 
     for(int i = 0; i < nnames; i++) {
 
@@ -740,7 +778,16 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
         good->count_w = text_width(font, good->count);
         good->arrow = trend ? trend->arrow : 0;
         good->blocked = (status != REQUEST_OK);
-        width += STRIP_ICON_SZ + 2 + good->count_w + 2 + TREND_W + STRIP_GAP;
+    }
+
+    /* The goods wrap into rows; the last row also carries the pool's marks */
+    float rows_w = 0.0f, width = 0.0f;
+    for(int i = 0; i < ngoods; i++) {
+        width += strip_good_width(&goods[i]);
+        if((i + 1) % STRIP_ROW_GOODS == 0 && i + 1 < ngoods) {
+            rows_w = MAX(rows_w, width - STRIP_GAP);
+            width = 0.0f;
+        }
     }
 
     int priority = ss->priority;
@@ -759,46 +806,93 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
 
     float reason_w = reason ? text_width(font, reason) : 0.0f;
     width += reason_w;
-
-    if(width == 0.0f)
-        return;
-    if(!reason)
+    if(width > 0.0f && !reason)
         width -= STRIP_GAP;
+    width = MAX(width, rows_w);
 
-    float x = anchor.x - width / 2.0f;
+    /* The second row: what the pool made in the last minute, most first */
+    const struct made *made[ARR_SIZE(((struct made_record*)NULL)->made)];
+    size_t nmade = 0;
+    khiter_t km = kh_get(made, s_made, strip_key(key));
+    if(km != kh_end(s_made)) {
+        const struct made_record *rec = &kh_value(s_made, km);
+        for(int i = 0; i < rec->nmade; i++) {
+            made[nmade++] = &rec->made[i];
+        }
+        qsort(made, nmade, sizeof(made[0]), compare_made);
+        nmade = MIN(nmade, STRIP_MAX_MADE);
+    }
+
+    char rates[STRIP_MAX_MADE][16];
+    float rates_w[STRIP_MAX_MADE];
+    float made_width = 0.0f;
+    for(int i = 0; i < nmade; i++) {
+        pf_snprintf(rates[i], sizeof(rates[i]), "%d/min", made[i]->total);
+        rates_w[i] = text_width(font, rates[i]);
+        made_width += STRIP_ICON_SZ + 2 + rates_w[i] + STRIP_GAP;
+    }
+    if(nmade > 0)
+        made_width -= STRIP_GAP;
+
+    if(width == 0.0f && made_width == 0.0f)
+        return;
+
+    /* The rows start together, centred as a block over the anchor */
+    const float left = anchor.x - MAX(width, made_width) / 2.0f;
+    float x = left;
     const float y = anchor.y + 20;
     const float text_y = y + (STRIP_ICON_SZ - font->height) / 2.0f;
     const float cy = y + STRIP_ICON_SZ / 2.0f;
 
+    const float row_h = STRIP_ICON_SZ + 2;
+    float row_y = y;
     for(int i = 0; i < ngoods; i++) {
 
+        if(i > 0 && i % STRIP_ROW_GOODS == 0) {
+            x = left;
+            row_y += row_h;
+        }
         const struct strip_good *good = &goods[i];
         if(good->icon) {
-            nk_draw_texpath(canvas, nk_rect(x, y, STRIP_ICON_SZ, STRIP_ICON_SZ), good->icon,
+            nk_draw_texpath(canvas, nk_rect(x, row_y, STRIP_ICON_SZ, STRIP_ICON_SZ), good->icon,
                 nk_rgba(255, 255, 255, 255));
         }
         x += STRIP_ICON_SZ + 2;
-        draw_strip_text(canvas, font, x, text_y, good->count_w, good->count,
+        draw_strip_text(canvas, font, x, text_y + (row_y - y), good->count_w, good->count,
             good->blocked ? STRIP_WARN_CLR : STRIP_TEXT_CLR);
         x += good->count_w + 2;
-        draw_trend(canvas, x, cy, good->arrow);
+        draw_trend(canvas, x, cy + (row_y - y), good->arrow);
         x += TREND_W + STRIP_GAP;
     }
+    const float marks_y = row_y;
 
     if(priority != SS_PRIORITY_NORMAL) {
-        draw_pennant(canvas, x, y, priority);
+        draw_pennant(canvas, x, marks_y, priority);
         x += PENNANT_W + STRIP_GAP;
     }
 
     if(ncarriers > 0) {
-        draw_cart(canvas, x, y);
+        draw_cart(canvas, x, marks_y);
         x += CART_W + 3;
-        draw_strip_text(canvas, font, x, text_y, carriers_w, carriers, STRIP_TEXT_CLR);
+        draw_strip_text(canvas, font, x, text_y + (marks_y - y), carriers_w, carriers, STRIP_TEXT_CLR);
         x += carriers_w + STRIP_GAP;
     }
 
     if(reason) {
-        draw_strip_text(canvas, font, x, text_y, reason_w, reason, STRIP_WARN_CLR);
+        draw_strip_text(canvas, font, x, text_y + (marks_y - y), reason_w, reason, STRIP_WARN_CLR);
+    }
+
+    x = left;
+    const float made_y = (width > 0.0f) ? marks_y + row_h : y;
+    for(int i = 0; i < nmade; i++) {
+        if(made[i]->icon) {
+            nk_draw_texpath(canvas, nk_rect(x, made_y, STRIP_ICON_SZ, STRIP_ICON_SZ), made[i]->icon,
+                nk_rgba(255, 255, 255, 255));
+        }
+        x += STRIP_ICON_SZ + 2;
+        draw_strip_text(canvas, font, x, made_y + (STRIP_ICON_SZ - font->height) / 2.0f,
+            rates_w[i], rates[i], STRIP_TEXT_CLR);
+        x += rates_w[i] + STRIP_GAP;
     }
 }
 
@@ -982,12 +1076,38 @@ static void on_update_ui(void *user, void *event)
     }
 }
 
+/* Moves every record on by a second, forgetting the second a minute ago */
+static void advance_made(void)
+{
+    s_made_slot = (s_made_slot + 1) % MADE_WINDOW_S;
+
+    for(khiter_t k = kh_begin(s_made); k != kh_end(s_made); k++) {
+        if(!kh_exist(s_made, k))
+            continue;
+        struct made_record *rec = &kh_value(s_made, k);
+        size_t left = 0;
+        for(int i = 0; i < rec->nmade; i++) {
+            struct made *m = &rec->made[i];
+            m->total -= m->per_s[s_made_slot];
+            m->per_s[s_made_slot] = 0;
+            if(m->total > 0) {
+                rec->made[left++] = *m;
+            }
+        }
+        rec->nmade = left;
+        if(left == 0) {
+            kh_del(made, s_made, k);
+        }
+    }
+}
+
 static void on_1hz_tick(void *user, void *event)
 {
     uint32_t key;
     struct ss_state curr;
     (void)curr;
 
+    advance_made();
     s_strip_stamp++;
     kh_foreach(s_entity_state_table, key, curr, {
         struct ss_state *ss = shown_state(key);
@@ -1440,6 +1560,10 @@ bool G_StorageSite_Init(void)
     if(!(s_strips = kh_init(strip)))
         goto fail_strips;
 
+    if(!(s_made = kh_init(made)))
+        goto fail_made;
+    s_made_slot = 0;
+
     struct nk_context ctx;
     nk_style_default(&ctx);
 
@@ -1491,6 +1615,8 @@ bool G_StorageSite_Init(void)
     s_show_ui = true;
     return true;
 
+fail_made:
+    kh_destroy(strip, s_strips);
 fail_strips:
     kh_destroy(flow, s_flows);
 fail_flows:
@@ -1524,6 +1650,7 @@ void G_StorageSite_Shutdown(void)
     for(int i = 0; i < MAX_FACTIONS; i++)
         kh_destroy(res, s_global_resource_tables[i]);
 
+    kh_destroy(made, s_made);
     kh_destroy(strip, s_strips);
     kh_destroy(flow, s_flows);
     stalloc_destroy(&s_eventargs);
@@ -2017,6 +2144,62 @@ int G_StorageSite_GetPlayerCapacity(const char *rname)
 void G_StorageSite_RecordProduced(int faction_id, const char *rname, int amount)
 {
     record_flow(faction_id, rname, amount, 0);
+}
+
+void G_StorageSite_RecordMade(uint32_t uid, const char *name, const char *icon, int amount)
+{
+    if(amount <= 0)
+        return;
+
+    int status;
+    khiter_t k = kh_put(made, s_made, strip_key(uid), &status);
+    if(status == -1)
+        return;
+    struct made_record *rec = &kh_value(s_made, k);
+    if(status != 0) {
+        rec->nmade = 0;
+    }
+
+    const char *key = si_intern(name, &s_stringpool, s_stridx);
+    if(!key)
+        return;
+    struct made *m = NULL;
+    for(int i = 0; i < rec->nmade; i++) {
+        if(rec->made[i].name == key) {
+            m = &rec->made[i];
+            break;
+        }
+    }
+    if(!m) {
+        if(rec->nmade == ARR_SIZE(rec->made))
+            return;
+        m = &rec->made[rec->nmade++];
+        *m = (struct made){ .name = key };
+    }
+    if(icon) {
+        m->icon = si_intern(icon, &s_stringpool, s_stridx);
+    }else if(!m->icon) {
+        const char *ricon = G_Resource_GetIcon(name);
+        m->icon = ricon ? si_intern(ricon, &s_stringpool, s_stridx) : NULL;
+    }
+
+    int prev = m->per_s[s_made_slot];
+    m->per_s[s_made_slot] = MIN(UINT16_MAX, prev + amount);
+    m->total += m->per_s[s_made_slot] - prev;
+}
+
+int G_StorageSite_MadePerMinute(uint32_t uid, const char *name)
+{
+    khiter_t k = kh_get(made, s_made, strip_key(uid));
+    if(k == kh_end(s_made))
+        return 0;
+    const char *key = si_intern(name, &s_stringpool, s_stridx);
+    const struct made_record *rec = &kh_value(s_made, k);
+    for(int i = 0; i < rec->nmade; i++) {
+        if(rec->made[i].name == key)
+            return rec->made[i].total;
+    }
+    return 0;
 }
 
 void G_StorageSite_RecordConsumed(int faction_id, const char *rname, int amount)
