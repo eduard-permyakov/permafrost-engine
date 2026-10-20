@@ -850,6 +850,10 @@ int  G_StorageSite_GetPlayerStored(const char *rname);
 int  G_StorageSite_GetFactionStored(int faction, const char *rname);
 int  G_StorageSite_GetPlayerCapacity(const char *rname);
 void G_StorageSite_RecordProduced(int faction_id, const char *rname, int amount);
+/* Gathered by the harvester, counted for the district it gathers in */
+void G_StorageSite_RecordGathered(uint32_t uid, const char *rname, int amount);
+/* The goods gathered in the district since the session began and how many of each */
+size_t G_StorageSite_DistrictGathered(int district, const char **out_names, int *out_totals, size_t maxout);
 void G_StorageSite_RecordConsumed(int faction_id, const char *rname, int amount);
 /* Something the site made: its products or the units it trained. 'icon' NULL
  * shows the resource's icon */

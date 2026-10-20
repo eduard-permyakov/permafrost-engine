@@ -344,6 +344,7 @@ static PyObject *PyPf_set_cluster_icon(PyObject *self, PyObject *args);
 static PyObject *PyPf_district_at(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_show_districts(PyObject *self, PyObject *args);
 static PyObject *PyPf_districts_shown(PyObject *self);
+static PyObject *PyPf_district_gathered(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_district_preview(PyObject *self, PyObject *args);
 static PyObject *PyPf_cluster_preview_join(PyObject *self, PyObject *args);
 static PyObject *PyPf_provision_counts(PyObject *self, PyObject *args);
@@ -1406,6 +1407,11 @@ static PyMethodDef pf_module_methods[] = {
     {"districts_shown",
     (PyCFunction)PyPf_districts_shown, METH_NOARGS,
     "Returns whether the district lens is on."},
+
+    {"district_gathered",
+    (PyCFunction)PyPf_district_gathered, METH_VARARGS,
+    "Returns a dictionary of how much of each good was gathered in the district with the specified "
+    "ID since the session began."},
 
     {"set_district_preview",
     (PyCFunction)PyPf_set_district_preview, METH_VARARGS,
@@ -6156,6 +6162,33 @@ static PyObject *PyPf_districts_shown(PyObject *self)
     }else{
         Py_RETURN_FALSE;
     }
+}
+
+static PyObject *PyPf_district_gathered(PyObject *self, PyObject *args)
+{
+    int district;
+    if(!PyArg_ParseTuple(args, "i", &district)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer (district ID).");
+        return NULL;
+    }
+
+    const char *names[16];
+    int totals[16];
+    size_t ngoods = G_StorageSite_DistrictGathered(district, names, totals, ARR_SIZE(names));
+
+    PyObject *ret = PyDict_New();
+    if(!ret)
+        return NULL;
+    for(int i = 0; i < ngoods; i++) {
+        PyObject *total = PyInt_FromLong(totals[i]);
+        if(!total || PyDict_SetItemString(ret, names[i], total) < 0) {
+            Py_XDECREF(total);
+            Py_DECREF(ret);
+            return NULL;
+        }
+        Py_DECREF(total);
+    }
+    return ret;
 }
 
 static PyObject *PyPf_set_district_preview(PyObject *self, PyObject *args)

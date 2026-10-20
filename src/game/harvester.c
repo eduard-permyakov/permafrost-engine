@@ -883,6 +883,7 @@ static void on_harvest_anim_finished(void *user, void *event)
     G_Resource_SetAmount(hs->res_uid, resource_left);
     G_Harvester_SetCurrCarry(uid, rname, new_carry);
     G_StorageSite_RecordProduced(G_GetFactionID(uid), rname, new_carry - old_carry);
+    G_StorageSite_RecordGathered(uid, rname, new_carry - old_carry);
 
     if(resource_left == 0) {
 
@@ -1783,6 +1784,7 @@ static void on_harvest_anim_finished_source(void *user, void *event)
     G_Resource_SetAmount(hs->res_uid, resource_left);
     G_Harvester_SetCurrCarry(uid, rname, new_carry);
     G_StorageSite_RecordProduced(G_GetFactionID(uid), rname, new_carry - old_carry);
+    G_StorageSite_RecordGathered(uid, rname, new_carry - old_carry);
 
     if(resource_left == 0) {
 

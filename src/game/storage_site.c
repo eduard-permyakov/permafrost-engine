@@ -186,6 +186,20 @@ struct made_record{
 
 KHASH_MAP_INIT_INT64(made, struct made_record)
 
+/* How much of each good was gathered in a district since the session began;
+ * not saved, as the scripts only read how it grows */
+struct gathered{
+    const char *name;
+    int         total;
+};
+
+struct gathered_record{
+    size_t          ngoods;
+    struct gathered goods[16];
+};
+
+KHASH_MAP_INIT_INT(gathered, struct gathered_record)
+
 /* A good as the overlay strip shows it */
 struct strip_good{
     const char *icon;
@@ -236,6 +250,7 @@ static khash_t(res)    *s_global_resource_tables[MAX_FACTIONS];
 static khash_t(res)    *s_global_capacity_tables[MAX_FACTIONS];
 static khash_t(flow)   *s_flows;
 static khash_t(made)   *s_made;
+static khash_t(gathered) *s_gathered;
 /* The second of the window that the records are filling now */
 static int              s_made_slot;
 /* Keyed by strip_key */
@@ -1564,6 +1579,9 @@ bool G_StorageSite_Init(void)
         goto fail_made;
     s_made_slot = 0;
 
+    if(!(s_gathered = kh_init(gathered)))
+        goto fail_gathered;
+
     struct nk_context ctx;
     nk_style_default(&ctx);
 
@@ -1615,6 +1633,8 @@ bool G_StorageSite_Init(void)
     s_show_ui = true;
     return true;
 
+fail_gathered:
+    kh_destroy(made, s_made);
 fail_made:
     kh_destroy(strip, s_strips);
 fail_strips:
@@ -1650,6 +1670,7 @@ void G_StorageSite_Shutdown(void)
     for(int i = 0; i < MAX_FACTIONS; i++)
         kh_destroy(res, s_global_resource_tables[i]);
 
+    kh_destroy(gathered, s_gathered);
     kh_destroy(made, s_made);
     kh_destroy(strip, s_strips);
     kh_destroy(flow, s_flows);
@@ -2144,6 +2165,49 @@ int G_StorageSite_GetPlayerCapacity(const char *rname)
 void G_StorageSite_RecordProduced(int faction_id, const char *rname, int amount)
 {
     record_flow(faction_id, rname, amount, 0);
+}
+
+void G_StorageSite_RecordGathered(uint32_t uid, const char *rname, int amount)
+{
+    int district = G_District_Of(uid);
+    if(amount <= 0 || !district)
+        return;
+
+    int status;
+    khiter_t k = kh_put(gathered, s_gathered, district, &status);
+    if(status == -1)
+        return;
+    struct gathered_record *rec = &kh_value(s_gathered, k);
+    if(status != 0) {
+        rec->ngoods = 0;
+    }
+
+    const char *key = si_intern(rname, &s_stringpool, s_stridx);
+    if(!key)
+        return;
+    for(int i = 0; i < rec->ngoods; i++) {
+        if(rec->goods[i].name == key) {
+            rec->goods[i].total += amount;
+            return;
+        }
+    }
+    if(rec->ngoods == ARR_SIZE(rec->goods))
+        return;
+    rec->goods[rec->ngoods++] = (struct gathered){key, amount};
+}
+
+size_t G_StorageSite_DistrictGathered(int district, const char **out_names, int *out_totals, size_t maxout)
+{
+    khiter_t k = kh_get(gathered, s_gathered, district);
+    if(k == kh_end(s_gathered))
+        return 0;
+    const struct gathered_record *rec = &kh_value(s_gathered, k);
+    size_t ret = MIN(rec->ngoods, maxout);
+    for(int i = 0; i < ret; i++) {
+        out_names[i] = rec->goods[i].name;
+        out_totals[i] = rec->goods[i].total;
+    }
+    return ret;
 }
 
 void G_StorageSite_RecordMade(uint32_t uid, const char *name, const char *icon, int amount)
