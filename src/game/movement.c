@@ -1828,9 +1828,13 @@ static void root_member_in_place(struct flock *flock, uint32_t uid, struct moves
             (unsigned)taux->noapproach_ticks);
     }
 
-    /* A waiting member already blocks and has announced its stop. */
+    /* A waiting member already blocks, but its watchers ignored the stop it
+     * announced while it was still to move on, so it announces the arrival
+     */
     if(ent_still(ms)) {
         ms->state = STATE_ARRIVED;
+        if(!(G_FlagsGet(uid) & ENTITY_FLAG_COMBAT_HELD))
+            move_notify_motion_finished(uid);
         return;
     }
     entity_reset_seek_counters(uid);
