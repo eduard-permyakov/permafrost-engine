@@ -884,6 +884,7 @@ static void on_harvest_anim_finished(void *user, void *event)
     G_Harvester_SetCurrCarry(uid, rname, new_carry);
     G_StorageSite_RecordProduced(G_GetFactionID(uid), rname, new_carry - old_carry);
     G_StorageSite_RecordGathered(uid, rname, new_carry - old_carry);
+    G_Automation_NoteGathered(uid, rname, new_carry - old_carry);
 
     if(resource_left == 0) {
 

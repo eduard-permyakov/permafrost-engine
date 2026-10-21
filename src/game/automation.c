@@ -106,6 +106,16 @@
 #define STOCK_TARGET                 (150)
 /* A good short by this much more takes one more gatherer */
 #define GOOD_PER_GATHERER            (15)
+/* A gatherer's output is measured over about this long */
+#define RATE_WINDOW_S                (120.0f)
+/* What one gatherer is taken to bring in a minute until enough is measured */
+#define GATHERER_RATE                (8.0f)
+#define MIN_RATE_SAMPLE_S            (30.0f)
+/* Once a second */
+#define RATE_SAMPLE_TICKS            (20)
+/* Stock past the spare target by at least this much takes no gatherers for
+ * a rate either, so that a good used slower than asked for does not pile up */
+#define RATE_STOCK_MARGIN            (50)
 /* Gatherers leave off to build a site that has fewer builders than this */
 #define SITE_BUILDERS                (3)
 #define MAX_TRACE_STEPS              (24)
@@ -219,6 +229,11 @@ struct good_priority{
     /* Negative where not set */
     float weight;
     int   stock_target;
+    /* What its gatherers are to bring in a minute; 0 where not set */
+    float gather_rate;
+    /* Gathered, and seconds of gatherers' time spent at it, fading over RATE_WINDOW_S */
+    float gathered;
+    float gatherer_s;
 };
 
 VEC_TYPE(priority, struct good_priority)
@@ -233,7 +248,9 @@ static void on_order_issued(void *user, void *event);
 static bool try_assign_transport_job(uint32_t uid, struct automation_state *astate);
 static bool try_assign_work(uint32_t uid, struct automation_state *astate);
 static bool stocked(int surplus, int shortfall, int target);
-static int gatherers_wanted(int surplus, int shortfall, int target);
+static int gatherers_wanted(int surplus, int shortfall, int target, int for_rate);
+static int gatherers_for_rate(int faction, const char *rname);
+static struct good_priority *priority_get(int faction, int district, const char *rname, bool create);
 static float good_weight(int faction, int district, const char *rname);
 static int stock_target(int faction, const char *rname);
 static vec2_t work_origin(uint32_t uid, const struct automation_state *astate);
@@ -1066,15 +1083,47 @@ static int resource_need(int faction, const char *rname, const vec_request_t *re
     return ret;
 }
 
-/* How many may gather the good: one for each GOOD_PER_GATHERER still short of
- * what is asked for and the stock beyond it, so that a lone wanted good does 
- * not draw everyone */
-static int gatherers_wanted(int surplus, int shortfall, int target)
+/* How many may gather the good: as many as bring in its rate, and one more 
+ * for each GOOD_PER_GATHERER still short of what is asked for and the stock 
+ * beyond it, so that a lone wanted good does not draw everyone */
+static int gatherers_wanted(int surplus, int shortfall, int target, int for_rate)
 {
     int short_by = shortfall + target - surplus;
-    if(short_by <= 0)
+    if(short_by <= -MAX(target, RATE_STOCK_MARGIN))
         return 0;
-    return 1 + short_by / GOOD_PER_GATHERER;
+    if(short_by <= 0)
+        return for_rate;
+    return for_rate + 1 + short_by / GOOD_PER_GATHERER;
+}
+
+/* What one of the faction's gatherers brings in of the good a minute, walks
+ * to and from the store included */
+static float gatherer_rate(const struct good_priority *realm)
+{
+    if(!realm || realm->gatherer_s < MIN_RATE_SAMPLE_S || realm->gathered <= 0.0f)
+        return GATHERER_RATE;
+    return realm->gathered * 60.0f / realm->gatherer_s;
+}
+
+static int gatherers_for_rate(int faction, const char *rname)
+{
+    const struct good_priority *realm = priority_get(faction, 0, rname, false);
+    if(!realm || realm->gather_rate <= 0.0f)
+        return 0;
+    return (int)ceilf(realm->gather_rate / gatherer_rate(realm));
+}
+
+static void sample_gather_rates(float dt_s)
+{
+    float fade = expf(-dt_s / RATE_WINDOW_S);
+    for(int i = 0; i < vec_size(&s_priorities); i++) {
+        struct good_priority *curr = &vec_AT(&s_priorities, i);
+        if(curr->district != 0)
+            continue;
+        curr->gathered *= fade;
+        curr->gatherer_s = curr->gatherer_s * fade 
+                         + G_Harvester_CountGathering(curr->faction, curr->rname) * dt_s;
+    }
 }
 
 /* Whether the faction can spare enough of the good, beyond what is asked for */
@@ -1212,7 +1261,7 @@ static struct good_demand *demand_get(struct work_snapshot *snap, int faction, c
         .target = target,
         .need = resource_need(faction, rname, &snap->requests),
         .workers = G_Harvester_CountGathering(faction, rname),
-        .wanted = gatherers_wanted(surplus, shortfall, target),
+        .wanted = gatherers_wanted(surplus, shortfall, target, gatherers_for_rate(faction, rname)),
         .surplus = surplus,
         .shortfall = shortfall,
         .stocked = stocked(surplus, shortfall, target)
@@ -1485,6 +1534,9 @@ static void on_20hz_tick(void *user, void *event)
     PERF_PUSH("automation::settle_stopping");
     settle_stopping();
     PERF_POP();
+    if(s_tick % RATE_SAMPLE_TICKS == 0) {
+        sample_gather_rates(RATE_SAMPLE_TICKS / 20.0f);
+    }
     if(s_tick % JOB_PASS_TICKS == 0) {
         PERF_PUSH("automation::assign_transport_jobs");
         assign_transport_jobs();
@@ -1827,8 +1879,11 @@ bool G_Automation_LeavesGathering(uint32_t uid, const char *rname)
     int faction = G_GetFactionID(uid);
     struct work_snapshot *snap = snapshot_get();
     struct good_demand *demand = demand_get(snap, faction, rname);
-    if(demand && demand->stocked)
+    /* The few that keep up its rate stay on */
+    if(demand && demand->stocked && demand->workers > demand->wanted) {
+        demand->workers--;
         return true;
+    }
     if(good_weight(faction, work_district(uid, astate), rname) <= 0.0f)
         return true;
     if(astate->pinned[0] || !(G_FlagsGet(uid) & ENTITY_FLAG_BUILDER))
@@ -1931,6 +1986,34 @@ void G_Automation_SetStockTarget(int faction, const char *rname, int target)
 int G_Automation_GetStockTarget(int faction, const char *rname)
 {
     return stock_target(faction, rname);
+}
+
+void G_Automation_SetGatherRate(int faction, const char *rname, float per_min)
+{
+    struct good_priority *prio = priority_get(faction, 0, rname, true);
+    if(prio && prio->gather_rate != MAX(per_min, 0.0f)) {
+        prio->gather_rate = MAX(per_min, 0.0f);
+        s_snapshot.valid = false;
+    }
+}
+
+float G_Automation_GetGatherRate(int faction, const char *rname)
+{
+    const struct good_priority *prio = priority_get(faction, 0, rname, false);
+    return prio ? prio->gather_rate : 0.0f;
+}
+
+float G_Automation_GathererRate(int faction, const char *rname)
+{
+    return gatherer_rate(priority_get(faction, 0, rname, false));
+}
+
+void G_Automation_NoteGathered(uint32_t uid, const char *rname, int amount)
+{
+    struct good_priority *prio = priority_get(G_GetFactionID(uid), 0, rname, false);
+    if(prio && amount > 0) {
+        prio->gathered += amount;
+    }
 }
 
 void G_Automation_SetDistrictWeight(int district, const char *rname, float weight)

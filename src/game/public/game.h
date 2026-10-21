@@ -1046,6 +1046,13 @@ float G_Automation_GetGoodWeight(int faction, const char *rname);
 /* The spare stock of the good a faction's gatherers keep up beyond what is asked for */
 void  G_Automation_SetStockTarget(int faction, const char *rname, int target);
 int   G_Automation_GetStockTarget(int faction, const char *rname);
+/* What a faction's gatherers are to bring in of the good a minute, beyond 
+ * filling its stock; 0 for nothing */
+void  G_Automation_SetGatherRate(int faction, const char *rname, float per_min);
+float G_Automation_GetGatherRate(int faction, const char *rname);
+/* What one of a faction's gatherers brings in of the good a minute */
+float G_Automation_GathererRate(int faction, const char *rname);
+void  G_Automation_NoteGathered(uint32_t uid, const char *rname, int amount);
 /* A district's own weight for the good in place of its faction's; a negative 
  * weight is none, and what the getter returns when the district has none */
 void  G_Automation_SetDistrictWeight(int district, const char *rname, float weight);
