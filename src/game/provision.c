@@ -77,8 +77,10 @@
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
 #define FETCH_RETRY_MS      (5 * 1000)
-/* Standing still this long on the way to a store counts as having got there */
+/* Standing still this long on the way to a store, or jostled in a crowd at it
+ * for this long without getting any nearer, counts as having got there */
 #define FETCH_STALL_MS      (10 * 1000)
+#define FETCH_MIN_PROGRESS  (16.0f)
 /* A unit kept off a crowded store by others takes what it came for this close */
 #define STORE_REACH         (30.0f)
 #define MAX_UPKEEP_GOODS    (4)
@@ -105,6 +107,8 @@ struct provision{
     /* On its way to eat at this site */
     uint32_t fetching;
     uint32_t fetch_ms;
+    /* How far from the store it was when the stall was last looked at */
+    float    fetch_dist;
     /* No store had food the last time it looked: look again then, and work meanwhile */
     uint32_t retry_ms;
     bool     no_food;
@@ -141,6 +145,8 @@ KHASH_MAP_INIT_INT(quiver, struct quiver)
 
 static void on_20hz_tick(void *user, void *event);
 static void on_arrive(void *user, void *event);
+static void arrive(uint32_t uid);
+static float dist_to(uint32_t uid, uint32_t site);
 static void on_ordered(void *user, void *event);
 static void note_upkeep_good(const char *good);
 static uint32_t first_meal_delay_ms(uint32_t uid, uint32_t interval_ms);
@@ -270,6 +276,7 @@ static bool fetch(uint32_t uid, struct provision *p)
     }
     p->fetching = site;
     p->fetch_ms = s_now_ms;
+    p->fetch_dist = dist_to(uid, site);
     if(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER) {
         G_Harvester_Stop(uid);
     }
@@ -281,11 +288,24 @@ static bool fetch(uint32_t uid, struct provision *p)
     return true;
 }
 
+static float dist_to(uint32_t uid, uint32_t site)
+{
+    vec2_t a = G_Pos_GetXZ(uid), b = G_Pos_GetXZ(site);
+    vec2_t delta;
+    PFM_Vec2_Sub(&a, &b, &delta);
+    return PFM_Vec2_Len(&delta);
+}
+
 static void on_arrive(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
     if(!G_Move_Still(uid))
         return;
+    arrive(uid);
+}
+
+static void arrive(uint32_t uid)
+{
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive);
     E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_ordered);
 
@@ -405,9 +425,16 @@ static void update(uint32_t uid, struct provision *p)
     if(p->tier == PROVISION_HUNGRY && s_now_ms - p->tier_since_ms >= p->starve_after_ms) {
         set_tier(uid, p, PROVISION_STARVING);
     }
-    /* One jostled at the store gets no second arrival */
-    if(p->fetching != NULL_UID && s_now_ms - p->fetch_ms >= FETCH_STALL_MS && G_Move_Still(uid)) {
-        on_arrive((void*)(uintptr_t)uid, NULL);
+    /* One jostled at the store gets no second arrival, and one kept moving in
+     * the crowd about it none at all */
+    if(p->fetching != NULL_UID && s_now_ms - p->fetch_ms >= FETCH_STALL_MS) {
+        float dist = dist_to(uid, p->fetching);
+        if(G_Move_Still(uid) || dist > p->fetch_dist - FETCH_MIN_PROGRESS) {
+            arrive(uid);
+        }else{
+            p->fetch_ms = s_now_ms;
+            p->fetch_dist = dist;
+        }
     }
     if(p->tier != PROVISION_FED && p->automatic && p->fetching == NULL_UID 
     && s_now_ms >= p->retry_ms && free_to_fetch(uid)) {
