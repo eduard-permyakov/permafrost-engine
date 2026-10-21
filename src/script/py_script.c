@@ -355,6 +355,9 @@ static PyObject *PyPf_good_weight(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_good_weight(PyObject *self, PyObject *args);
 static PyObject *PyPf_stock_target(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_stock_target(PyObject *self, PyObject *args);
+static PyObject *PyPf_gather_rate(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_gather_rate(PyObject *self, PyObject *args);
+static PyObject *PyPf_gatherer_rate(PyObject *self, PyObject *args);
 static PyObject *PyPf_district_weight(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_district_weight(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_style(PyObject *self, PyObject *args);
@@ -1373,6 +1376,21 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_set_stock_target, METH_VARARGS,
     "Takes a resource name, a faction ID and the spare stock of it the faction's gatherers "
     "keep up beyond what is asked for."},
+
+    {"gather_rate",
+    (PyCFunction)PyPf_gather_rate, METH_VARARGS,
+    "Takes a resource name and a faction ID. Returns how much of it a minute the faction's "
+    "gatherers are to bring in beyond filling its stock: 0.0 for nothing."},
+
+    {"set_gather_rate",
+    (PyCFunction)PyPf_set_gather_rate, METH_VARARGS,
+    "Takes a resource name, a faction ID and how much of it a minute the faction's gatherers "
+    "are to bring in beyond filling its stock. As many gather it as bring that in."},
+
+    {"gatherer_rate",
+    (PyCFunction)PyPf_gatherer_rate, METH_VARARGS,
+    "Takes a resource name and a faction ID. Returns how much of it one of the faction's "
+    "gatherers brings in a minute, as measured over the last few minutes."},
 
     {"district_weight",
     (PyCFunction)PyPf_district_weight, METH_VARARGS,
@@ -6047,6 +6065,38 @@ static PyObject *PyPf_set_stock_target(PyObject *self, PyObject *args)
     }
     G_Automation_SetStockTarget(faction, name, target);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_gather_rate(PyObject *self, PyObject *args)
+{
+    const char *name;
+    int faction;
+    if(!parse_good_faction(args, &name, &faction))
+        return NULL;
+    return PyFloat_FromDouble(G_Automation_GetGatherRate(faction, name));
+}
+
+static PyObject *PyPf_set_gather_rate(PyObject *self, PyObject *args)
+{
+    const char *name;
+    int faction;
+    float rate;
+    if(!PyArg_ParseTuple(args, "sif", &name, &faction, &rate) 
+    || faction < 0 || faction >= MAX_FACTIONS || rate < 0.0f) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a resource name, a faction ID and a rate of 0 or more.");
+        return NULL;
+    }
+    G_Automation_SetGatherRate(faction, name, rate);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_gatherer_rate(PyObject *self, PyObject *args)
+{
+    const char *name;
+    int faction;
+    if(!parse_good_faction(args, &name, &faction))
+        return NULL;
+    return PyFloat_FromDouble(G_Automation_GathererRate(faction, name));
 }
 
 static PyObject *PyPf_district_weight(PyObject *self, PyObject *args)
