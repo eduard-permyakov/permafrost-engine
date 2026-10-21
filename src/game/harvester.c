@@ -976,11 +976,25 @@ static void take_instant(uint32_t uid, struct hstate *hs)
     entity_try_drop_off(uid);
 }
 
+/* A field is walked onto, not around: one held up in the crowd on it is
+ * there, and is stopped where it stands
+ */
+static bool held_up_on_field(uint32_t uid)
+{
+    struct hstate *hs = hstate_get(uid);
+    if(!G_EntityExists(hs->res_uid)
+    || (G_FlagsGet(hs->res_uid) & (ENTITY_FLAG_COLLISION | ENTITY_FLAG_ZOMBIE))
+    || !M_NavObjAdjacent(s_map, uid, hs->res_uid))
+        return false;
+    G_Move_Stop(uid);
+    return true;
+}
+
 static void on_arrive_at_resource(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
 
-    if(!G_Move_Still(uid))
+    if(!G_Move_Still(uid) && !held_up_on_field(uid))
         return; 
 
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_resource);
