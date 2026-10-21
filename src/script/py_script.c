@@ -6696,6 +6696,10 @@ fail_handlers:
     Py_DECREF(saved_handlers);
 fail_tuple:
     PF_FREE(handlers);
+    /* Shown here, or the error is left set for whatever script runs next */
+    if(!ret && PyErr_Occurred()) {
+        S_ShowLastError();
+    }
     return ret;
 }
 
