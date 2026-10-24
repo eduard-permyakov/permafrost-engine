@@ -214,6 +214,10 @@ struct movestate_aux{
     /* Tick from which a unit held up short of its target may look for a
      * nearer free side again; 0 asks at once. A cooldown, not saved. */
     unsigned           surround_requery_tick;
+    /* How far from its target the unit took up the surround field, and the
+     * tick before which it keeps off it after the field led it away. Not saved. */
+    float              surround_on_dist;
+    unsigned           surround_shun_tick;
     /* Additional state for entities in 'ENTER_ENTITY_RANGE' state 
      */
     vec2_t             target_prev_pos;
@@ -890,6 +894,11 @@ static struct result navigation_tick_task(void *arg);
 #define SURROUND_HIGH_WATER_X           (CHUNK_WIDTH/2.0f)
 #define SURROUND_LOW_WATER_Z            (CHUNK_HEIGHT/3.0f)
 #define SURROUND_HIGH_WATER_Z           (CHUNK_HEIGHT/2.0f)
+/* A surround field leading a unit this much further from its target than where
+ * it took the field up goes the long way round a crowd sealing the near side;
+ * the unit keeps to the path field for a while instead of pacing between the two */
+#define SURROUND_DETOUR_SLACK           (32.0f)
+#define SURROUND_SHUN_TICKS             (200)
 
 /* How long a unit heads for its goal across a stale hole in the field before
  * treating the destination as genuinely unreachable.
@@ -4798,13 +4807,25 @@ static void ent_update_using_surround_field(uint32_t uid, struct movestate *ms)
     float dx = fabs(target_pos_xz.x - pos_xz.x);
     float dz = fabs(target_pos_xz.z - pos_xz.z);
 
+    struct movestate_aux *aux = movestate_aux_get(uid);
+    float dist = sqrtf(dx * dx + dz * dz);
+
     if(!ms->using_surround_field) {
-        if(dx < SURROUND_LOW_WATER_X && dz < SURROUND_LOW_WATER_Z) {
+        if(dx < SURROUND_LOW_WATER_X && dz < SURROUND_LOW_WATER_Z
+        && (!aux || s_move_trace_tick >= aux->surround_shun_tick)) {
             ms->using_surround_field = true;
+            if(aux) {
+                aux->surround_on_dist = dist;
+            }
         }
     }else{
         if(dx >= SURROUND_HIGH_WATER_X || dz >= SURROUND_HIGH_WATER_Z) {
             ms->using_surround_field = false;
+        }else if(aux && dist > aux->surround_on_dist + SURROUND_DETOUR_SLACK) {
+            ms->using_surround_field = false;
+            aux->surround_shun_tick = s_move_trace_tick + SURROUND_SHUN_TICKS;
+        }else if(aux) {
+            aux->surround_on_dist = MIN(aux->surround_on_dist, dist);
         }
     }
 }
@@ -5286,6 +5307,7 @@ static void do_add_entity(uint32_t uid, vec3_t pos, float selection_radius, int 
         .surround_target_prev = (vec2_t){0},
         .surround_nearest_prev = (vec2_t){0},
         .surround_requery_tick = 0,
+        .surround_on_dist = INFINITY,
         .motion_stopped = true,
     };
     memset(new_aux.vel_hist, 0, sizeof(new_aux.vel_hist));
@@ -5577,6 +5599,8 @@ static void do_set_surround_entity(uint32_t uid, uint32_t target)
     struct movestate_aux *aux = movestate_aux_get(uid);
     if(aux) {
         aux->surround_requery_tick = 0;
+        aux->surround_shun_tick = 0;
+        aux->surround_on_dist = INFINITY;
     }
 }
 
