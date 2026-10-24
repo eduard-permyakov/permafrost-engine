@@ -79,6 +79,14 @@ bool M_TileAdjacentToLand(const struct map *map, const struct tile_desc *td);
 static bool n_closest_pathable_tile(const struct nav_private *priv, const struct nav_chunk *chunk,
                                     struct tile_desc target, bool static_only, struct tile_desc *out);
 static bool n_statically_joined(const struct nav_chunk *chunk, struct coord a, struct coord b);
+struct island_ref;
+static int  n_island_components(struct nav_private *priv, enum nav_layer layer,
+                                struct island_ref isl, int maxout, int out[]);
+static bool n_islands_connected(struct nav_private *priv, enum nav_layer layer,
+                                struct island_ref a, struct island_ref b);
+static bool n_closest_connected_tile(struct nav_private *priv, enum nav_layer layer,
+                                     struct tile_desc target, struct island_ref from,
+                                     struct tile_desc *out);
 static void n_static_reach(const struct nav_chunk *chunk, struct coord from,
                            bool out_mask[FIELD_RES_R][FIELD_RES_C]);
 static bool n_closest_open_tile(const struct nav_private *priv, const struct nav_chunk *chunk,
@@ -141,6 +149,12 @@ QUEUE_IMPL(static, td, struct tile_desc)
 
 PQUEUE_TYPE(td, struct tile_desc)
 PQUEUE_IMPL(static, td, struct tile_desc)
+
+/* A chunk's local island, which portal components join to the others */
+struct island_ref{
+    struct coord chunk;
+    uint16_t     liid;
+};
 
 struct cost_coord{
     float        cost;
@@ -3064,6 +3078,30 @@ static bool n_request_path_impl(void *nav_private, vec2_t xz_src, vec2_t xz_dest
 
     if(src_iid != dst_iid) {
         PERF_RETURN(false);
+    }
+
+    /* A destination inside a building resolves to the open ground nearest it, which
+     * may be a pocket the buildings about it shut in: then the unit is sent to the
+     * nearest ground it can get to instead. One parted from it only by bodies keeps
+     * its destination, to get as close as it can and wait on them. */
+    bool dst_walled = n_tile_walled(dst_chunk, dst_desc.tile_r, dst_desc.tile_c);
+    struct island_ref src_isl = (struct island_ref){
+        (struct coord){src_desc.chunk_r, src_desc.chunk_c},
+        N_ClosestPathableLocalIsland(priv, src_chunk, src_desc)
+    };
+    struct island_ref dst_isl = (struct island_ref){
+        (struct coord){dst_desc.chunk_r, dst_desc.chunk_c},
+        N_ClosestPathableLocalIsland(priv, dst_chunk, dst_desc)
+    };
+    struct tile_desc reachable_dst;
+    if(dst_walled && src_isl.liid != ISLAND_NONE && !n_islands_connected(priv, layer, src_isl, dst_isl)
+    && n_closest_connected_tile(priv, layer, dst_desc, src_isl, &reachable_dst)) {
+        dst_desc = reachable_dst;
+        dst_chunk = &priv->chunks[layer][dst_desc.chunk_r * priv->width + dst_desc.chunk_c];
+        ret = n_dest_id(dst_desc, layer, faction_id);
+        if(roads) {
+            ret = n_dest_id_with_roads(ret);
+        }
     }
 
     n_build_dest_fields(priv, map_pos, layer, faction_id, ret, dst_desc, on_task, true);
@@ -7205,6 +7243,199 @@ bool N_IsAdjacentToIslandOBB(void *nav_private, enum nav_layer layer, vec3_t map
         }}
     }
 
+    PERF_RETURN(false);
+}
+
+/* The components of the portals the chunk's local island touches */
+static int n_island_components(struct nav_private *priv, enum nav_layer layer,
+                               struct island_ref isl, int maxout, int out[])
+{
+    const struct nav_chunk *chunk = &priv->chunks[layer][IDX(isl.chunk.r, priv->width, isl.chunk.c)];
+    int ret = 0;
+    for(int i = 0; i < chunk->num_portals && ret < maxout; i++) {
+        const struct portal *port = &chunk->portals[i];
+        if(!N_PortalReachableFromIsland(port, isl.liid, chunk))
+            continue;
+        out[ret++] = port->component_id;
+    }
+    return ret;
+}
+
+/* Whether a unit on one island can walk to the other: the same island, or
+ * islands whose portals the components join */
+static bool n_islands_connected(struct nav_private *priv, enum nav_layer layer,
+                                struct island_ref a, struct island_ref b)
+{
+    enum{ MAX_COMPONENTS = 64 };
+    if(a.liid == ISLAND_NONE || b.liid == ISLAND_NONE)
+        return false;
+    if(a.liid == b.liid && a.chunk.r == b.chunk.r && a.chunk.c == b.chunk.c)
+        return true;
+    int acomps[MAX_COMPONENTS], bcomps[MAX_COMPONENTS];
+    int na = n_island_components(priv, layer, a, MAX_COMPONENTS, acomps);
+    int nb = n_island_components(priv, layer, b, MAX_COMPONENTS, bcomps);
+    for(int i = 0; i < na; i++) {
+    for(int j = 0; j < nb; j++) {
+        if(acomps[i] == bcomps[j])
+            return true;
+    }}
+    return false;
+}
+
+/* The open tile nearest the target that a unit on 'from' can walk to, found in
+ * rings out from it across chunk borders: a target inside a building resolves
+ * to the side the unit can get to, not to a pocket shut in by the buildings
+ * about it */
+static bool n_closest_connected_tile(struct nav_private *priv, enum nav_layer layer,
+                                     struct tile_desc target, struct island_ref from,
+                                     struct tile_desc *out)
+{
+    enum{ REACH = 32, DIM = 2 * REACH + 1 };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    bool *visited = PF_CALLOC(DIM * DIM, sizeof(bool));
+    struct coord *queue = PF_MALLOC(DIM * DIM * sizeof(struct coord));
+    if(!visited || !queue) {
+        PF_FREE(visited);
+        PF_FREE(queue);
+        return false;
+    }
+
+    static const struct coord deltas[4] = {{0, -1}, {0, 1}, {-1, 0}, {1, 0}};
+    size_t head = 0, tail = 0;
+    queue[tail++] = (struct coord){0, 0};
+    visited[REACH * DIM + REACH] = true;
+    bool found = false;
+
+    while(head < tail && !found) {
+        struct coord off = queue[head++];
+        struct tile_desc td = target;
+        if(!M_Tile_RelativeDesc(res, &td, off.c, off.r))
+            continue;
+
+        const struct nav_chunk *chunk = &priv->chunks[layer][IDX(td.chunk_r, priv->width, td.chunk_c)];
+        struct island_ref isl = (struct island_ref){
+            (struct coord){td.chunk_r, td.chunk_c},
+            chunk->local_islands[td.tile_r][td.tile_c]
+        };
+        if(n_islands_connected(priv, layer, from, isl)) {
+            *out = td;
+            found = true;
+            break;
+        }
+
+        for(int i = 0; i < 4; i++) {
+            struct coord next = (struct coord){off.r + deltas[i].r, off.c + deltas[i].c};
+            if(abs(next.r) > REACH || abs(next.c) > REACH)
+                continue;
+            size_t idx = (next.r + REACH) * DIM + (next.c + REACH);
+            if(visited[idx])
+                continue;
+            visited[idx] = true;
+            queue[tail++] = next;
+        }
+    }
+
+    PF_FREE(visited);
+    PF_FREE(queue);
+    return found;
+}
+
+/* The local island of the free tile nearest the point, within 'reach' tiles: a
+ * standing unit's own tile lies under its own stamp */
+static bool n_free_island_near(struct nav_private *priv, enum nav_layer layer, vec3_t map_pos,
+                               vec2_t xz, int reach, struct island_ref *out)
+{
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct tile_desc base;
+    if(!M_Tile_DescForPoint2D(res, map_pos, xz, &base))
+        return false;
+
+    for(int ring = 0; ring <= reach; ring++) {
+    for(int dr = -ring; dr <= ring; dr++) {
+    for(int dc = -ring; dc <= ring; dc++) {
+
+        if(abs(dr) != ring && abs(dc) != ring)
+            continue;
+        struct tile_desc td = base;
+        if(!M_Tile_RelativeDesc(res, &td, dc, dr))
+            continue;
+        const struct nav_chunk *chunk = &priv->chunks[layer][IDX(td.chunk_r, priv->width, td.chunk_c)];
+        uint16_t liid = chunk->local_islands[td.tile_r][td.tile_c];
+        if(liid == ISLAND_NONE)
+            continue;
+        *out = (struct island_ref){(struct coord){td.chunk_r, td.chunk_c}, liid};
+        return true;
+    }}}
+    return false;
+}
+
+bool N_ObjReachableNowOBB(void *nav_private, enum nav_layer layer, vec3_t map_pos,
+                          vec2_t xz_src, const struct obb *obb)
+{
+    PERF_ENTER();
+    assert(Sched_UsingBigStack());
+
+    enum{ MAX_COMPONENTS = 64, MAX_ISLANDS = 32, SRC_REACH = 4, CROWD_RINGS = 2 };
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    /* With no free ground about it to judge from, the unit is taken at its word */
+    struct island_ref src;
+    if(!n_free_island_near(priv, layer, map_pos, xz_src, SRC_REACH, &src))
+        PERF_RETURN(true);
+
+    int src_comps[MAX_COMPONENTS];
+    int nsrc = n_island_components(priv, layer, src, MAX_COMPONENTS, src_comps);
+
+    struct tile_desc tds[2048];
+    size_t ntiles = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
+    /* Past a ring of units standing at its walls, which step aside, but not past
+     * the next building over */
+    const int reach = 1 + n_layer_rings(layer) + CROWD_RINGS;
+
+    struct island_ref seen[MAX_ISLANDS];
+    int nseen = 0;
+
+    for(int i = 0; i < ntiles; i++) {
+        for(int dr = -reach; dr <= reach; dr++) {
+        for(int dc = -reach; dc <= reach; dc++) {
+
+            struct tile_desc td = tds[i];
+            if(!M_Tile_RelativeDesc(res, &td, dc, dr))
+                continue;
+            const struct nav_chunk *chunk = &priv->chunks[layer][IDX(td.chunk_r, priv->width, td.chunk_c)];
+            uint16_t liid = chunk->local_islands[td.tile_r][td.tile_c];
+            if(liid == ISLAND_NONE)
+                continue;
+            struct island_ref isl = (struct island_ref){(struct coord){td.chunk_r, td.chunk_c}, liid};
+
+            bool known = false;
+            for(int j = 0; j < nseen && !known; j++) {
+                known = seen[j].liid == isl.liid
+                     && seen[j].chunk.r == isl.chunk.r && seen[j].chunk.c == isl.chunk.c;
+            }
+            if(known)
+                continue;
+            if(nseen < MAX_ISLANDS)
+                seen[nseen++] = isl;
+
+            if(isl.liid == src.liid && isl.chunk.r == src.chunk.r && isl.chunk.c == src.chunk.c)
+                PERF_RETURN(true);
+
+            int comps[MAX_COMPONENTS];
+            int ncomps = n_island_components(priv, layer, isl, MAX_COMPONENTS, comps);
+            for(int j = 0; j < ncomps; j++) {
+            for(int k = 0; k < nsrc; k++) {
+                if(comps[j] == src_comps[k])
+                    PERF_RETURN(true);
+            }}
+        }}
+    }
     PERF_RETURN(false);
 }
 

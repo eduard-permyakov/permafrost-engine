@@ -261,6 +261,8 @@ static PyObject *PyPf_map_locations_reachable(PyObject *self, PyObject *args, Py
 static PyObject *PyPf_map_nearest_pathable_water(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_map_nearest_pathable_air(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_map_pos_pathable(PyObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPf_map_ground_open(PyObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPf_map_reachable_now(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_map_pos_under_cursor(PyObject *self);
 static PyObject *PyPf_draw_text(PyObject *self, PyObject *args);
 static PyObject *PyPf_dump_framebuffer(PyObject *self, PyObject *args);
@@ -1018,6 +1020,17 @@ static PyMethodDef pf_module_methods[] = {
     "Returns true if the XZ position is pathable terrain for a unit of the specified radius. "
     "Terrain cut out by static objects such as cliffs is not pathable. Other units standing "
     "at the position are not taken into account."},
+
+    {"map_reachable_now",
+    (PyCFunction)PyPf_map_reachable_now, METH_VARARGS | METH_KEYWORDS,
+    "Returns whether a unit of the optional 'radius' at the XZ position can get beside the "
+    "entity as the ground is now, past the buildings and standing units in the way."},
+
+    {"map_ground_open",
+    (PyCFunction)PyPf_map_ground_open, METH_VARARGS | METH_KEYWORDS,
+    "Returns true if the ground within 'radius' of the XZ position is pathable and no unit or "
+    "building stands on it, on the layer a unit of 'unit_radius' walks. With 'off_road' set, "
+    "it must also be clear of roads."},
 
     {"map_pos_under_cursor",
     (PyCFunction)PyPf_map_pos_under_cursor, METH_NOARGS,
@@ -3956,6 +3969,50 @@ static PyObject *PyPf_map_pos_pathable(PyObject *self, PyObject *args, PyObject 
     enum nav_layer layer = Entity_NavLayerWithRadius(flags, radius);
 
     bool result = G_MapPositionPathable((vec2_t){x, z}, layer);
+    return PyBool_FromLong(result);
+}
+
+static PyObject *PyPf_map_reachable_now(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    float x, z;
+    PyObject *obj;
+    static char *kwlist[] = {"pos", "entity", "radius", NULL};
+    float radius = 0.0f;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "(ff)O|f", kwlist, &x, &z, &obj, &radius)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a tuple of two floats and an entity. "
+            "An optional (float) 'radius' argument is allowed.");
+        return NULL;
+    }
+
+    if(!S_Entity_Check(obj)) {
+        PyErr_SetString(PyExc_TypeError, "The second argument must be a pf.Entity object.");
+        return NULL;
+    }
+    uint32_t uid;
+    S_Entity_UIDForObj(obj, &uid);
+    enum nav_layer layer = Entity_NavLayerWithRadius(0, radius);
+    return PyBool_FromLong(G_MapObjReachableNow((vec2_t){x, z}, uid, layer));
+}
+
+static PyObject *PyPf_map_ground_open(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    float x, z;
+    static char *kwlist[] = {"pos", "radius", "off_road", "unit_radius", NULL};
+    float radius = 0.0f;
+    int off_road = false;
+    float unit_radius = 0.0f;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "(ff)|fif", kwlist, &x, &z, &radius, &off_road,
+        &unit_radius)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a tuple of two floats. "
+            "Optional (float) 'radius', (bool) 'off_road' and (float) 'unit_radius' arguments "
+            "are allowed.");
+        return NULL;
+    }
+
+    enum nav_layer layer = Entity_NavLayerWithRadius(0, unit_radius);
+    bool result = G_MapGroundOpen((vec2_t){x, z}, radius, layer, off_road);
     return PyBool_FromLong(result);
 }
 

@@ -1478,6 +1478,12 @@ bool M_NavIsAdjacentToIslandOBB(const struct map *map, enum nav_layer layer,
     return N_IsAdjacentToIslandOBB(map->nav_private, layer, map->pos, obb, island_pos);
 }
 
+bool M_NavObjReachableNowOBB(const struct map *map, enum nav_layer layer,
+                             vec2_t xz_src, const struct obb *obb)
+{
+    return N_ObjReachableNowOBB(map->nav_private, layer, map->pos, xz_src, obb);
+}
+
 size_t M_NavCostBaseBufferSize(const struct map *map)
 {
     return N_CostBaseBufferSize(map->nav_private);

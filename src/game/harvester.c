@@ -475,6 +475,11 @@ static bool storage_site_reachable(uint32_t ent, uint32_t site)
             return false;
         if(!M_NavLocationsReachable(s_map, ent_layer, ent_pos, site_pos))
             return false;
+        /* Not one walled in by the buildings about it */
+        struct obb obb;
+        Entity_CurrentOBB(site, &obb, false);
+        if(!M_NavObjReachableNowOBB(s_map, ent_layer, ent_pos, &obb))
+            return false;
     }
     return true;
 }

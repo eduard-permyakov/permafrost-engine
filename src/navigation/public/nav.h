@@ -684,6 +684,14 @@ bool N_IsAdjacentToIslandOBB(void *nav_private, enum nav_layer layer, vec3_t map
                              const struct obb *obb, vec2_t island_pos);
 
 /* ------------------------------------------------------------------------
+ * Returns 'true' if a unit at the source can get beside the object as the ground
+ * is now: with the buildings and standing units that block it, not only the terrain.
+ * ------------------------------------------------------------------------
+ */
+bool N_ObjReachableNowOBB(void *nav_private, enum nav_layer layer, vec3_t map_pos,
+                          vec2_t xz_src, const struct obb *obb);
+
+/* ------------------------------------------------------------------------
  * Returns 'true' if the two locations are currenntly reachable from one another.
  * ------------------------------------------------------------------------
  */

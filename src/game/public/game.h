@@ -164,6 +164,11 @@ bool            G_MapHeightAtPoint(vec2_t xz, float *out_height);
 bool            G_MapClosestPathable(vec2_t xz, vec2_t *out, enum nav_layer layer);
 bool            G_MapLocationsReachable(vec2_t a, vec2_t b, enum nav_layer layer);
 bool            G_MapPositionPathable(vec2_t xz, enum nav_layer layer);
+/* Whether a unit at 'src' can get beside the object past what blocks the way now */
+bool            G_MapObjReachableNow(vec2_t src, uint32_t obj, enum nav_layer layer);
+/* Whether the ground within 'radius' is free to stand on: pathable, unblocked and, with
+ * 'off_road', clear of roads */
+bool            G_MapGroundOpen(vec2_t xz, float radius, enum nav_layer layer, bool off_road);
 bool            G_PointInsideMap(vec2_t xz);
 bool            G_PointOverWater(vec2_t xz);
 bool            G_PointOverLand(vec2_t xz);

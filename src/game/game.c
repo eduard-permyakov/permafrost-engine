@@ -2644,6 +2644,17 @@ bool G_MapLocationsReachable(vec2_t a, vec2_t b, enum nav_layer layer)
     return M_NavLocationsReachable(s_gs.map, layer, a, b);
 }
 
+bool G_MapObjReachableNow(vec2_t src, uint32_t obj, enum nav_layer layer)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(!s_gs.map || !G_EntityExists(obj))
+        return false;
+    struct obb obb;
+    Entity_CurrentOBB(obj, &obb, false);
+    return M_NavObjReachableNowOBB(s_gs.map, layer, src, &obb);
+}
+
 bool G_MapPositionPathable(vec2_t xz, enum nav_layer layer)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -2651,6 +2662,28 @@ bool G_MapPositionPathable(vec2_t xz, enum nav_layer layer)
     if(!s_gs.map)
         return false;
     return M_NavPositionPathable(s_gs.map, layer, xz);
+}
+
+bool G_MapGroundOpen(vec2_t xz, float radius, enum nav_layer layer, bool off_road)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(!s_gs.map)
+        return false;
+    int span = ceilf(radius / X_COORDS_PER_TILE);
+    for(int dr = -span; dr <= span; dr++) {
+    for(int dc = -span; dc <= span; dc++) {
+        vec2_t pt = (vec2_t){xz.x + dc * X_COORDS_PER_TILE, xz.z + dr * Z_COORDS_PER_TILE};
+        if(dr * dr + dc * dc > span * span)
+            continue;
+        if(!G_PointInsideMap(pt))
+            return false;
+        if(!M_NavPositionPathable(s_gs.map, layer, pt) || M_NavPositionBlocked(s_gs.map, layer, pt))
+            return false;
+        if(off_road && M_NavOnRoad(s_gs.map, pt))
+            return false;
+    }}
+    return true;
 }
 
 bool G_PointInsideMap(vec2_t xz)

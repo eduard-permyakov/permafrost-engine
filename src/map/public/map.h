@@ -693,6 +693,10 @@ bool     M_NavIsAdjacentToIsland(const struct map *map, enum nav_layer layer, ve
                                  float radius, vec2_t island_pos);
 bool     M_NavIsAdjacentToIslandOBB(const struct map *map, enum nav_layer layer, 
                                     const struct obb *obb, vec2_t island_pos);
+/* Whether a unit at 'xz_src' can get beside the object past the buildings and
+ * standing units in the way now, not the terrain alone */
+bool     M_NavObjReachableNowOBB(const struct map *map, enum nav_layer layer,
+                                 vec2_t xz_src, const struct obb *obb);
 
 size_t   M_NavCostBaseBufferSize(const struct map *map);
 size_t   M_NavBlockersBufferSize(const struct map *map);
