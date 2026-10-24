@@ -397,9 +397,12 @@ static bool free_to_fetch(uint32_t uid)
     /* On its way into a building, to be made into something else */
     if((flags & ENTITY_FLAG_GARRISON) && G_Garrison_IsIngredient(uid))
         return false;
-    /* A site it was sent to found or build would be left as a ghost */
-    if((flags & ENTITY_FLAG_BUILDER) && !G_Builder_Idle(uid))
-        return false;
+    /* A site it was sent to found or build would be left as a ghost, but not
+     * one it would starve at: the site is someone else's to take up */
+    if((flags & ENTITY_FLAG_BUILDER) && !G_Builder_Idle(uid)) {
+        struct provision *p = prov_get(uid);
+        return p && p->tier == PROVISION_STARVING;
+    }
     return true;
 }
 
