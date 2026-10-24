@@ -1021,6 +1021,8 @@ static bool waiting_carrier(uint32_t uid, struct automation_state *astate)
 {
     if(!(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER))
         return false;
+    if(G_FlagsGet(uid) & ENTITY_FLAG_GARRISONED)
+        return false;
     if(!astate->automatic_transport)
         return false;
     if(G_Harvester_GetCurrTotalCarry(uid))
@@ -1328,6 +1330,11 @@ static void note_passed_site(uint32_t uid, struct work_snapshot *snap, vec2_t po
 
 static bool try_assign_work(uint32_t uid, struct automation_state *astate)
 {
+    /* Held in a building, as a defender or to be made into something else */
+    if(G_FlagsGet(uid) & ENTITY_FLAG_GARRISONED) {
+        trace_note(uid, "work", "skipped", "inside", NULL, NULL_UID);
+        return false;
+    }
     if(!astate->automatic_work) {
         trace_note(uid, "work", "skipped", "manual", NULL, NULL_UID);
         return false;
@@ -1463,6 +1470,8 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
 /* Why the worker is not a carrier waiting for a job */
 static const char *not_waiting_why(uint32_t uid, struct automation_state *astate)
 {
+    if(G_FlagsGet(uid) & ENTITY_FLAG_GARRISONED)
+        return "inside";
     if(!astate->automatic_transport)
         return "off";
     if(G_Harvester_GetCurrTotalCarry(uid))
