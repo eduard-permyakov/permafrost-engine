@@ -78,6 +78,8 @@
 
 /* Standing still this long on its way is taken as having arrived */
 #define STILL_ARRIVAL_TICKS (60)
+/* How often a harvester on its way to a building checks it can still get there */
+#define REACH_CHECK_TICKS   (40)
 /* A carrier short of a full load stops at most this many more sources on a
  * trip, each only for at least this much (or what it has room for) */
 #define MAX_TOP_UPS         (2)
@@ -210,6 +212,8 @@ static khash_t(stridx)  *s_stridx;
 static mp_strbuff_t      s_stringpool;
 static khash_t(state)   *s_entity_state_table;
 static const struct map *s_map;
+/* The 20 Hz ticks so far, to spread the reach checks over */
+static uint32_t          s_tick;
 
 static bool              s_gather_on_lclick = false;
 static bool              s_pick_up_on_lclick = false;
@@ -1939,11 +1943,80 @@ static void (*awaited_arrival(const struct hstate *hs))(void*, void*)
     }
 }
 
+static bool transporting(const struct hstate *hs)
+{
+    switch(hs->state) {
+    case STATE_TRANSPORT_GETTING:
+    case STATE_TRANSPORT_PUTTING:
+    case STATE_TRANSPORT_SEEK_RESOURCE:
+    case STATE_TRANSPORT_HARVESTING:
+        return true;
+    default:
+        return false;
+    }
+}
+
+/* The building a harvester on its way is making for, or NULL_UID */
+static uint32_t making_for(const struct hstate *hs)
+{
+    switch(hs->state) {
+    case STATE_HARVESTING_SEEK_STORAGE:
+        return hs->ss_uid;
+    case STATE_TRANSPORT_GETTING:
+        return hs->transport_src_uid;
+    case STATE_TRANSPORT_PUTTING:
+        return hs->transport_dest_uid;
+    default:
+        return NULL_UID;
+    }
+}
+
+/* A building walled in or gone since it was set off for is given up, so that
+ * the unit brings its load where it can and takes other work, rather than
+ * pressing against the walls for good */
+static void give_up_unreachable(uint32_t tick)
+{
+    uint32_t stranded[256];
+    size_t nstranded = 0;
+
+    uint32_t uid;
+    struct hstate *hs;
+    kh_foreach_val_ptr(s_entity_state_table, uid, hs, {
+        if(uid % REACH_CHECK_TICKS != tick % REACH_CHECK_TICKS)
+            continue;
+        uint32_t target = making_for(hs);
+        if(target == NULL_UID || G_Move_Still(uid))
+            continue;
+        /* Gone from under it, such as a road site laid since */
+        bool gone = !G_EntityExists(target) || G_EntityIsZombie(target);
+        if(!gone && !(G_FlagsGet(target) & ENTITY_FLAG_BUILDING))
+            continue;
+        if(!gone && storage_site_reachable(uid, target))
+            continue;
+        if(nstranded < ARR_SIZE(stranded)) {
+            stranded[nstranded++] = uid;
+        }
+    });
+
+    for(int i = 0; i < nstranded; i++) {
+        if(!hstate_get(stranded[i]) || G_EntityIsZombie(stranded[i]))
+            continue;
+        uint32_t target = making_for(hstate_get(stranded[i]));
+        bool gone = !G_EntityExists(target) || G_EntityIsZombie(target);
+        G_Automation_TraceFollowOn(stranded[i], "walled", gone ? "gone" : "unreachable", "",
+            gone ? NULL_UID : target);
+        G_Harvester_Stop(stranded[i]);
+        G_Move_Stop(stranded[i]);
+    }
+}
+
 /* A unit can come to rest without the motion end its arrival waits for: it was
  * still moving when that came, or never set off. It is taken as arrived once it
  * has stood still a while, which sends it on, or back on its way. */
 static void on_20hz_tick(void *user, void *event)
 {
+    give_up_unreachable(s_tick++);
+
     uint32_t arrived[256];
     size_t narrived = 0;
 
@@ -2369,7 +2442,8 @@ bool G_Harvester_BringInLoad(uint32_t harvester, uint32_t site)
     struct hstate *hs = hstate_get(harvester);
     if(!hs)
         return false;
-    if(hs->transport_src_uid != NULL_UID || hs->transport_dest_uid != NULL_UID)
+    /* A carrier at its transport keeps the load for where it is going */
+    if(transporting(hs))
         return false;
     const char *rname = carried_resource_name(hs);
     if(!rname)
@@ -2684,6 +2758,10 @@ void G_Harvester_Stop(uint32_t uid)
     hs->state = STATE_NOT_HARVESTING;
     hs->job_amount = 0;
     hs->top_ups = 0;
+    /* A transport stopped is given up: one left set would keep the load in hand
+     * from ever being brought in, and the carrier from eating */
+    hs->transport_src_uid = NULL_UID;
+    hs->transport_dest_uid = NULL_UID;
 
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished);
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished_source);
