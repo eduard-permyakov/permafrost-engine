@@ -1403,6 +1403,15 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
         if(node == NULL_UID && astate->home_district == 0) {
             node = G_Harvester_NearestResource(uid, pos, candidates[best], 0.0f);
         }
+        /* One of no district goes by the weight of the district it would gather in */
+        bool pinned = !strcmp(astate->pinned, candidates[best]);
+        int at = (node != NULL_UID) ? G_District_At(faction, false, G_Pos_GetXZ(node), NULL) : 0;
+        if(node != NULL_UID && astate->home_district == 0 && !pinned
+        && good_weight(faction, at, candidates[best]) <= 0.0f) {
+            why[best] = "not_wanted";
+            scores[best] = -1.0f;
+            continue;
+        }
         if(node != NULL_UID && G_Harvester_Gather(uid, node)) {
             pf_strlcpy(astate->working, candidates[best], sizeof(astate->working));
             why[best] = "chosen";
