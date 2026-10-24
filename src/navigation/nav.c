@@ -920,6 +920,8 @@ static bool n_local_ports_connected(struct portal *a, struct portal *b,
             if(chunk->blockers[r2][c2] > 0)
                 continue;
 
+            if(chunk->local_islands[r1][c1] == ISLAND_NONE)
+                continue;
             if(chunk->local_islands[r1][c1] == chunk->local_islands[r2][c2])
                 return true;
         }}
@@ -1177,6 +1179,8 @@ static void n_visit_island_local(struct nav_private *priv, struct coord chunk_co
             continue;
         if(chunk->cost_base[curr.tile_r][curr.tile_c] == COST_IMPASSABLE)
             continue;
+        if(N_TileInSlit(chunk, curr.tile_r, curr.tile_c))
+            continue;
         if(chunk->blockers[curr.tile_r][curr.tile_c] > 0)
             continue;
         if(chunk->local_islands[curr.tile_r][curr.tile_c] != ISLAND_NONE)
@@ -1234,7 +1238,7 @@ static void n_update_local_islands(struct nav_private *priv, struct coord chunk_
             continue;
         if(chunk->cost_base[r][c] == COST_IMPASSABLE)
             continue;
-        if(chunk->blockers[r][c] > 0)
+        if(chunk->blockers[r][c] > 0 || N_TileInSlit(chunk, r, c))
             continue;
         want[nislands] = old[r][c];
         n_visit_island_local(priv, chunk_coord, chunk, nislands + 1, (struct coord){r, c});
@@ -4101,6 +4105,7 @@ void *N_NewCtxForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
             curr_chunk->num_portals = 0;
             memset(curr_chunk->road, 0, sizeof(curr_chunk->road));
             curr_chunk->nroad = 0;
+            curr_chunk->close_slits = (layer == NAV_LAYER_GROUND_1X1);
 
             for(int tile_r = 0; tile_r < chunk_h; tile_r++) {
             for(int tile_c = 0; tile_c < chunk_w; tile_c++) {

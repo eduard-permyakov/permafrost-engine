@@ -156,6 +156,9 @@ struct nav_chunk{
     /* The share of each tile's blockers that will not move on: the
      * footprints of buildings and static props. */
     uint16_t        static_blockers[FIELD_RES_R][FIELD_RES_C];
+    /* Set on the finest ground layer, whose units are up to two tiles wide: a free
+     * tile there between two walls is a slit none of them fits through */
+    bool            close_slits;
     /* Per cell of FREED_CELL_TILES tiles on a side, bumped whenever a tile
      * of the cell loses its last blocker: a held unit waits on the cells on
      * its way to try again.
@@ -194,5 +197,22 @@ struct nav_chunk{
      */
     uint16_t        local_islands[FIELD_RES_R][FIELD_RES_C];
 };
+/* A wall a unit cannot squeeze past: impassable terrain or a building's footprint */
+static inline bool n_tile_walled(const struct nav_chunk *chunk, int r, int c)
+{
+    if(r < 0 || r >= FIELD_RES_R || c < 0 || c >= FIELD_RES_C)
+        return false;
+    return chunk->cost_base[r][c] == COST_IMPASSABLE || chunk->static_blockers[r][c] > 0;
+}
+
+/* A free tile walled in on two opposite sides, on a layer too coarse for a slit */
+static inline bool N_TileInSlit(const struct nav_chunk *chunk, int r, int c)
+{
+    if(!chunk->close_slits)
+        return false;
+    return (n_tile_walled(chunk, r, c - 1) && n_tile_walled(chunk, r, c + 1))
+        || (n_tile_walled(chunk, r - 1, c) && n_tile_walled(chunk, r + 1, c));
+}
+
 
 #endif

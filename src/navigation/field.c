@@ -127,6 +127,8 @@ static bool field_tile_passable(const struct nav_chunk *chunk, struct coord tile
         return false;
     if(chunk->blockers[tile.r][tile.c] > 0)
         return false;
+    if(N_TileInSlit(chunk, tile.r, tile.c))
+        return false;
     return true;
 }
 
@@ -189,6 +191,8 @@ static bool field_tile_passable_no_enemies(
     uint16_t                enemies)
 {
     if(chunk->cost_base[tile.r][tile.c] == COST_IMPASSABLE)
+        return false;
+    if(N_TileInSlit(chunk, tile.r, tile.c))
         return false;
 
     bool enemies_only = true;
