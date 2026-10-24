@@ -876,6 +876,11 @@ static bool lod_dist_validate(const struct sval *new_val)
     return (new_val->type == ST_TYPE_FLOAT) && (new_val->as_float >= 0.0f);
 }
 
+static bool int_val_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_INT);
+}
+
 static bool water_prune_radius_validate(const struct sval *new_val)
 {
     return (new_val->type == ST_TYPE_INT)
@@ -1833,6 +1838,19 @@ static void g_create_settings(void)
         },
         .prio = 0,
         .validate = float_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    /* [mv-trace] lines for this unit too, while those lines are on; negative = none */
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.log_move_trace_uid",
+        .val = (struct sval) {
+            .type = ST_TYPE_INT,
+            .as_int = -1
+        },
+        .prio = 0,
+        .validate = int_val_validate,
         .commit = NULL,
     });
     assert(status == SS_OKAY);

@@ -1095,6 +1095,8 @@ static SDL_atomic_t            s_cp_ncaptures;
 
 /* pf.debug.log_move_trace_min_radius, hoisted once per tick; negative = off */
 static float                   s_move_trace_min_radius = -1.0f;
+/* pf.debug.log_move_trace_uid, hoisted once per tick; negative = none */
+static int                     s_move_trace_uid = -1;
 /* Traced whatever their radius, so a session can be driven by the selection */
 static const vec_entity_t     *s_move_trace_sel;
 static unsigned                s_move_trace_tick;
@@ -6978,6 +6980,7 @@ static void move_push_work(struct move_work_in in)
         s_move_work.trace[idx] = (struct move_trace){
             .traced = (in.cp_ent.radius >= s_move_trace_min_radius)
                    || ent_selected(in.ent_uid)
+                   || (int)in.ent_uid == s_move_trace_uid
         };
     }
 }
@@ -8382,6 +8385,9 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
     s_move_trace_min_radius =
         (Settings_Get("pf.debug.log_move_trace_min_radius", &trace_setting) == SS_OKAY)
         ? trace_setting.as_float : -1.0f;
+    s_move_trace_uid =
+        (Settings_Get("pf.debug.log_move_trace_uid", &trace_setting) == SS_OKAY)
+        ? trace_setting.as_int : -1;
 
     struct sval exec_setting;
     s_move_parallel_executor =
