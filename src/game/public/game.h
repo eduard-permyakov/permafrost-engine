@@ -1024,6 +1024,8 @@ void G_Garrison_SetEvictOnLeftClick(void);
 
 void G_Automation_GetIdle(vec_entity_t *out);
 bool G_Automation_IsIdle(uint32_t uid);
+/* Sends an idle unit somewhere to wait for work without it counting as busy on the way */
+bool G_Automation_WalkIdle(uint32_t uid, vec2_t xz);
 void G_Automation_SetAutomaticTransport(uint32_t uid, bool on);
 bool G_Automation_GetAutomaticTransport(uint32_t uid);
 void G_Automation_SetAutomaticWork(uint32_t uid, bool on);

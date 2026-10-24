@@ -1286,6 +1286,7 @@ typedef struct {
 }PyMovableEntityObject;
 
 static PyObject *PyMovableEntity_move(PyMovableEntityObject *self, PyObject *args);
+static PyObject *PyMovableEntity_walk_idle(PyMovableEntityObject *self, PyObject *args);
 static PyObject *PyMovableEntity_del(PyMovableEntityObject *self);
 static PyObject *PyMovableEntity_pickle(PyMovableEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyMovableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
@@ -1320,6 +1321,11 @@ static PyMethodDef PyMovableEntity_methods[] = {
     {"move", 
     (PyCFunction)PyMovableEntity_move, METH_VARARGS,
     "Issues a 'move' order to the entity at the XZ position specified by the argument."},
+
+    {"walk_idle", 
+    (PyCFunction)PyMovableEntity_walk_idle, METH_VARARGS,
+    "Sends an idle unit to the XZ position to wait for work there, still counted idle on the "
+    "way and free to be given work. Returns False for a unit that is not idle."},
 
     {"__del__", 
     (PyCFunction)PyMovableEntity_del, METH_NOARGS,
@@ -5652,6 +5658,21 @@ static PyObject *PyMovableEntity_move(PyMovableEntityObject *self, PyObject *arg
 
     G_Move_SetDest(self->super.ent, xz_pos, false);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyMovableEntity_walk_idle(PyMovableEntityObject *self, PyObject *args)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+
+    vec2_t xz_pos;
+    if(!PyArg_ParseTuple(args, "(ff)", &xz_pos.x, &xz_pos.z)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of 2 floats.");
+        return NULL;
+    }
+    return PyBool_FromLong(G_Automation_WalkIdle(self->super.ent, xz_pos));
 }
 
 static PyObject *PyMovableEntity_del(PyMovableEntityObject *self)

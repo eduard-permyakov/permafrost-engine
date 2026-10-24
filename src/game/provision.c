@@ -726,6 +726,11 @@ bool G_Provision_WantsFood(uint32_t uid)
     return p && p->automatic && p->interval_ms && p->tier != PROVISION_FED && !p->no_food;
 }
 
+bool G_Provision_Fetching(uint32_t uid)
+{
+    return eating(uid);
+}
+
 bool G_Provision_DueSoon(uint32_t uid)
 {
     struct provision *p = prov_get(uid);

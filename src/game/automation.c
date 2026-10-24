@@ -111,6 +111,8 @@
 /* What one gatherer is taken to bring in a minute until enough is measured */
 #define GATHERER_RATE                (8.0f)
 #define MIN_RATE_SAMPLE_S            (30.0f)
+/* How far the movement may move an idle walk's destination to where it can be reached */
+#define IDLE_DEST_SLACK              (16.0f)
 /* Once a second */
 #define RATE_SAMPLE_TICKS            (20)
 /* Stock past the spare target by at least this much takes no gatherers for
@@ -151,6 +153,10 @@ struct automation_state{
     int               home_district;
     /* The good its own search last set it gathering; an order makes it something else */
     char              working[PINNED_LEN];
+    /* An idle worker sent to wait somewhere stays idle on the way; not saved, as one
+     * loaded walking only shows as busy until it gets there */
+    bool              idle_walk;
+    vec2_t            idle_dest;
 };
 
 /* A site's want of one resource */
@@ -393,6 +399,27 @@ static void trace_goods(uint32_t uid, size_t ncandidates, const char *candidates
     }
 }
 
+/* Whether the unit is still on the walk it was sent on while idle, not on another order */
+static bool idle_walking(uint32_t uid)
+{
+    struct automation_state *astate = astate_get(uid);
+    if(!astate || !astate->idle_walk)
+        return false;
+    vec2_t dest;
+    bool attack;
+    if(!G_Move_GetDest(uid, &dest, &attack) || attack) {
+        astate->idle_walk = false;
+        return false;
+    }
+    vec2_t delta;
+    PFM_Vec2_Sub(&dest, &astate->idle_dest, &delta);
+    if(PFM_Vec2_Len(&delta) > IDLE_DEST_SLACK) {
+        astate->idle_walk = false;
+        return false;
+    }
+    return true;
+}
+
 static bool idle(uint32_t uid)
 {
     uint32_t flags = G_FlagsGet(uid);
@@ -402,7 +429,8 @@ static bool idle(uint32_t uid)
     if((flags & ENTITY_FLAG_GARRISON) && G_Garrison_IsIngredient(uid))
         return false;
     /* A combat-held unit is stationary even though its move state is not a still one. */
-    if((flags & ENTITY_FLAG_MOVABLE) && !(flags & ENTITY_FLAG_COMBAT_HELD) && !G_Move_Still(uid))
+    if((flags & ENTITY_FLAG_MOVABLE) && !(flags & ENTITY_FLAG_COMBAT_HELD) && !G_Move_Still(uid)
+    && !idle_walking(uid))
         return false;
     if((flags & ENTITY_FLAG_HARVESTER) && !G_Harvester_Idle(uid))
         return false;
@@ -503,6 +531,9 @@ static void recompute_idle(void)
         case STATE_IDLE: {
             if(!idle(uid)) {
                 astate->state = STATE_WAKING;
+                astate->idle_walk = false;
+            }else if(astate->idle_walk && G_Move_Still(uid)) {
+                astate->idle_walk = false;
             }
             break;
         }
@@ -1797,6 +1828,20 @@ void G_Automation_GetIdle(vec_entity_t *out)
             continue;
         vec_entity_push(out, uid);
     });
+}
+
+bool G_Automation_WalkIdle(uint32_t uid, vec2_t xz)
+{
+    struct automation_state *astate = astate_get(uid);
+    if(!astate || astate->state != STATE_IDLE || !(G_FlagsGet(uid) & ENTITY_FLAG_MOVABLE))
+        return false;
+    /* One going to eat is not idle for long, and the walk would call off its meal */
+    if(!G_PointInsideMap(xz) || G_Provision_WantsFood(uid) || G_Provision_Fetching(uid))
+        return false;
+    G_Move_SetDest(uid, xz, false);
+    astate->idle_walk = true;
+    astate->idle_dest = xz;
+    return true;
 }
 
 bool G_Automation_IsIdle(uint32_t uid)
