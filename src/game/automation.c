@@ -1694,25 +1694,43 @@ static void assign_work(void)
     vec_entity_destroy(&workers);
 }
 
+static uint64_t tick_us(uint64_t since)
+{
+    return (SDL_GetPerformanceCounter() - since) * 1000000 / SDL_GetPerformanceFrequency();
+}
+
 static void on_20hz_tick(void *user, void *event)
 {
     s_tick++;
+    uint64_t t0 = SDL_GetPerformanceCounter();
     PERF_PUSH("automation::recompute_idle");
     recompute_idle();
     PERF_POP();
     PERF_PUSH("automation::settle_stopping");
     settle_stopping();
     PERF_POP();
+    uint64_t t1 = SDL_GetPerformanceCounter();
     if(s_tick % RATE_SAMPLE_TICKS == 0) {
         sample_gather_rates(RATE_SAMPLE_TICKS / 20.0f);
     }
+    uint64_t t2 = SDL_GetPerformanceCounter(), t3 = t2;
     if(s_tick % JOB_PASS_TICKS == 0) {
         PERF_PUSH("automation::assign_transport_jobs");
         assign_transport_jobs();
         PERF_POP();
+        t3 = SDL_GetPerformanceCounter();
         PERF_PUSH("automation::assign_work");
         assign_work();
         PERF_POP();
+    }
+    struct sval setting;
+    if(Settings_Get("pf.debug.log_perf_csv", &setting) == SS_OKAY && setting.as_bool
+    && tick_us(t0) > 5000) {
+        fprintf(stdout, "[auto-prof] %u,%lu,%lu,%lu,%lu\n", s_tick,
+            (unsigned long)((t1 - t0) * 1000000 / SDL_GetPerformanceFrequency()),
+            (unsigned long)((t2 - t1) * 1000000 / SDL_GetPerformanceFrequency()),
+            (unsigned long)((t3 - t2) * 1000000 / SDL_GetPerformanceFrequency()),
+            (unsigned long)tick_us(t3));
     }
 }
 
