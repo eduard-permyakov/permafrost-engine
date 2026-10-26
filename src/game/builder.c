@@ -72,6 +72,7 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
 #define FOUND_RETRY_TICKS (10)
+#define SUPPLY_RETRY_TICKS (20)
 #define FOUND_CLEAR_TICKS (40)
 #define FOUND_WAIT_TICKS  (600) /* half a minute for a busy footprint to empty before giving up */
 #define STILL_ARRIVAL_TICKS (40)
@@ -88,6 +89,7 @@ struct builderstate{
         STATE_MOVING_TO_TARGET,
         STATE_BUILDING,
         STATE_WAIT_FOUND,
+        STATE_WAIT_SUPPLY,
     }state;
     int build_speed;
     uint32_t target_uid;
@@ -106,6 +108,7 @@ static void proceed_at_site(uint32_t uid, struct builderstate *bs);
 static void approach(uint32_t uid, struct builderstate *bs, uint32_t building);
 static void next_command(uint32_t uid);
 static bool wants_builder(uint32_t building);
+static bool start_build(uint32_t uid, uint32_t building, bool ordered);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -303,12 +306,19 @@ static void proceed_at_site(uint32_t uid, struct builderstate *bs)
             G_Harvester_Stop(uid);
             supplying = G_Harvester_SupplyBuilding(uid, bs->target_uid);
         }
-        bs->state = STATE_NOT_BUILDING;
-        if(!supplying) {
-            next_command(uid);
+        if(supplying) {
+            bs->state = STATE_NOT_BUILDING;
+            if(bs->ordered) {
+                /* Back to it once the materials are in */
+                G_Command_PushFront(uid, (struct command){CMD_BUILD, bs->target_uid});
+            }
         }else if(bs->ordered) {
-            /* Back to it once the materials are in */
-            G_Command_PushFront(uid, (struct command){CMD_BUILD, bs->target_uid});
+            /* The materials are on their way with others: it waits at the site for them */
+            bs->state = STATE_WAIT_SUPPLY;
+            bs->wait_ticks = 0;
+        }else{
+            bs->state = STATE_NOT_BUILDING;
+            next_command(uid);
         }
         return;
     }
@@ -362,6 +372,23 @@ static void on_20hz_tick(void *user, void *event)
                 bs->wait_ticks = 0;
                 on_motion_end((void*)((uintptr_t)uid), NULL);
             }
+            continue;
+        }
+
+        if(bs->state == STATE_WAIT_SUPPLY) {
+            if(!G_EntityExists(bs->target_uid) || G_EntityIsZombie(bs->target_uid)) {
+                bs->state = STATE_NOT_BUILDING;
+                bs->target_uid = UID_NONE;
+                next_command(uid);
+                continue;
+            }
+            if(++bs->wait_ticks % SUPPLY_RETRY_TICKS != 0 || !G_Move_Still(uid))
+                continue;
+            if(!M_NavObjAdjacent(s_map, uid, bs->target_uid)) {
+                approach(uid, bs, bs->target_uid);
+                continue;
+            }
+            proceed_at_site(uid, bs);
             continue;
         }
 
@@ -447,6 +474,28 @@ static bool wants_builder(uint32_t building)
 }
 
 /* Takes up the unit's next queued order once its work comes to an end */
+static bool start_build(uint32_t uid, uint32_t building, bool ordered)
+{
+    struct builderstate *bs = builderstate_get(uid);
+    assert(bs);
+
+    if(!(G_FlagsGet(building) & ENTITY_FLAG_BUILDING))
+        return false;
+
+    /* A gatherer's trip would otherwise take it off to drop its load once it is there */
+    if(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER) {
+        G_Harvester_Stop(uid);
+        G_Harvester_ClearQueuedCmd(uid);
+    }
+
+    bs->wait_ticks = 0;
+    bs->clear_left = INT_MAX;
+    /* Set before the approach, which finds a site at hand and goes on at once */
+    bs->ordered = ordered;
+    approach(uid, bs, building);
+    return true;
+}
+
 static void next_command(uint32_t uid)
 {
     if((G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER) && !G_Harvester_Idle(uid))
@@ -538,32 +587,12 @@ void G_Builder_Shutdown(void)
 
 bool G_Builder_Build(uint32_t uid, uint32_t building)
 {
-    struct builderstate *bs = builderstate_get(uid);
-    assert(bs);
-
-    if(!(G_FlagsGet(building) & ENTITY_FLAG_BUILDING))
-        return false;
-
-    /* A gatherer's trip would otherwise take it off to drop its load once it is there */
-    if(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER) {
-        G_Harvester_Stop(uid);
-        G_Harvester_ClearQueuedCmd(uid);
-    }
-
-    bs->wait_ticks = 0;
-    bs->clear_left = INT_MAX;
-    bs->ordered = false;
-    approach(uid, bs, building);
-    return true;
+    return start_build(uid, building, false);
 }
 
 bool G_Builder_Order(uint32_t uid, uint32_t building)
 {
-    if(!G_Builder_Build(uid, building))
-        return false;
-    struct builderstate *bs = builderstate_get(uid);
-    bs->ordered = true;
-    return true;
+    return start_build(uid, building, true);
 }
 
 bool G_Builder_PlayerOrder(uint32_t uid, uint32_t building)
@@ -840,6 +869,7 @@ bool G_Builder_LoadState(struct SDL_RWops *stream)
         switch(state) {
         case STATE_NOT_BUILDING:
         case STATE_WAIT_FOUND:
+        case STATE_WAIT_SUPPLY:
             break;
         case STATE_MOVING_TO_TARGET:
             E_Entity_Register(EVENT_MOTION_END, uid, 
