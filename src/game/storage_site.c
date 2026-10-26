@@ -213,6 +213,7 @@ struct strip_good{
 };
 
 #define GREEN_CLR (struct nk_color){22, 84, 5, 255}
+#define RED_CLR   (struct nk_color){150, 30, 20, 255}
 
 #define STRIP_TEXT_CLR      (struct nk_color){235, 228, 210, 255}
 #define STRIP_OUTLINE_CLR   (struct nk_color){20, 16, 12, 230}
@@ -680,6 +681,19 @@ static int bound_for(uint32_t uid)
         ret += bound_get(s_bound, members[i]);
     }
     return ret;
+}
+
+static float good_rate(uint32_t uid, const char *rname)
+{
+    khiter_t k = kh_get(strip, s_strips, strip_key(uid));
+    if(k == kh_end(s_strips))
+        return 0.0f;
+    const struct strip *strip = &kh_value(s_strips, k);
+    for(int i = 0; i < strip->ntrends; i++) {
+        if(!strcmp(strip->trends[i].rname, rname))
+            return strip->trends[i].rate;
+    }
+    return 0.0f;
 }
 
 static int trend_arrow(int arrow, float rate)
@@ -1150,7 +1164,7 @@ static void on_update_ui(void *user, void *event)
         if(garrison > 0.0f) {
             ss_pos.y += garrison - STRIP_DROP + STRIP_GAP_Y;
         }
-        const int width = 198;
+        const int width = 280;
         const int height = G_StorageSite_GetWindowHeight(key);
         const vec2_t pos = (vec2_t){ss_pos.x - width/2, ss_pos.y + STRIP_DROP};
         const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BORDER | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
@@ -1177,12 +1191,17 @@ static void on_update_ui(void *user, void *event)
                 int reserve = G_StorageSite_GetReserve(key, names[i]);
                 int curr_amount = G_StorageSite_GetCurr(key, names[i]);
 
-                char curr[5], cap[5], des[7];
+                char curr[5], cap[5], keep[5], rate[10] = {0};
                 pf_snprintf(curr, sizeof(curr), "%4d", curr_amount);
                 pf_snprintf(cap, sizeof(cap), "%4d", capacity);
-                pf_snprintf(des, sizeof(des), "(%4d)", reserve);
+                pf_snprintf(keep, sizeof(keep), "%d", reserve);
+                float per_min = good_rate(key, names[i]) * 60.0f;
+                int rounded = (int)(per_min + (per_min < 0.0f ? -0.5f : 0.5f));
+                if(rounded != 0) {
+                    pf_snprintf(rate, sizeof(rate), "%+d/m", rounded);
+                }
 
-                nk_layout_row_begin(ctx, NK_STATIC, 16, 5);
+                nk_layout_row_begin(ctx, NK_STATIC, 16, 8);
                 nk_layout_row_push(ctx, 16);
                 const char *icon = G_Resource_GetIcon(names[i]);
                 if(icon) {
@@ -1201,8 +1220,19 @@ static void on_update_ui(void *user, void *event)
                 nk_layout_row_push(ctx, 40);
                 nk_label_colored(ctx, cap, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
 
-                nk_layout_row_push(ctx, 68);
-                nk_label_colored(ctx, des, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
+                /* The braces keep their columns whatever the width of the number between */
+                nk_layout_row_push(ctx, 8);
+                nk_label_colored(ctx, "(", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
+
+                nk_layout_row_push(ctx, 32);
+                nk_label_colored(ctx, keep, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
+
+                nk_layout_row_push(ctx, 8);
+                nk_label_colored(ctx, ")", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
+
+                nk_layout_row_push(ctx, 56);
+                nk_label_colored(ctx, rate, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE,
+                    (rounded > 0) ? GREEN_CLR : RED_CLR);
             }
         }
         nk_end(ctx);
@@ -2680,6 +2710,11 @@ void G_StorageSite_SetGatherers(uint32_t uid, int count)
     if(status != -1) {
         kh_value(s_gatherers, k) = count;
     }
+}
+
+float G_StorageSite_Rate(uint32_t uid, const char *rname)
+{
+    return good_rate(uid, rname);
 }
 
 float G_StorageSite_GetWindowHeight(uint32_t uid)

@@ -860,6 +860,7 @@ void G_StorageSite_SetKeep(uint32_t uid, const char *rname, int keep);
 int  G_StorageSite_GetKeep(uint32_t uid, const char *rname);
 int  G_StorageSite_BoundFor(uint32_t uid);
 void G_StorageSite_SetGatherers(uint32_t uid, int count);
+float G_StorageSite_Rate(uint32_t uid, const char *rname);
 void G_StorageSite_SetChip(uint32_t uid, const char *rname, enum ss_chip chip);
 enum ss_chip G_StorageSite_GetChip(uint32_t uid, const char *rname);
 /* How much of a resource the site asks to be brought */
