@@ -116,6 +116,9 @@ static khash_t(member)  *s_member_of;
 static khash_t(type)    *s_types;
 static int               s_next_id = 1;
 static char              s_icon_path[512] = {0};
+/* The building being placed and the cluster it would join, shown over it */
+static uint32_t          s_preview_uid = NULL_UID;
+static int               s_preview_cluster = 0;
 
 /* Told apart at a glance, and kin to the skin's embroidery */
 static const struct nk_color s_palette[] = {
@@ -330,7 +333,7 @@ static void on_building_constructed(void *user, void *event)
 }
 
 /* The cluster's colour, as a diamond beside its chain */
-static void draw_diamond(struct nk_context *ctx, int colour)
+static void draw_diamond(struct nk_context *ctx, int colour, int scale)
 {
     struct nk_rect bounds;
     if(colour < 0 || !nk_widget(&bounds, ctx))
@@ -339,10 +342,10 @@ static void draw_diamond(struct nk_context *ctx, int colour)
     const struct nk_color fill = s_palette[colour];
     const struct nk_color edge = (struct nk_color){fill.r / 2, fill.g / 2, fill.b / 2, 255};
     /* Whole pixels for the centre and corners, so the sides are even */
-    const float cx = floorf(bounds.x + DIAMOND_GAP + DIAMOND_SIZE / 2.0f);
+    const float cx = floorf(bounds.x + (DIAMOND_GAP + DIAMOND_SIZE / 2.0f) * scale);
     const float cy = floorf(bounds.y + bounds.h / 2.0f);
-    const float r = DIAMOND_SIZE / 2.0f;
-    const float ri = r - DIAMOND_EDGE;
+    const float r = DIAMOND_SIZE * scale / 2.0f;
+    const float ri = r - DIAMOND_EDGE * scale;
 
     struct nk_command_buffer *canvas = nk_window_get_canvas(ctx);
     float outer[] = {cx, cy - r, cx + r, cy, cx, cy + r, cx - r, cy};
@@ -402,20 +405,62 @@ static void on_update_ui(void *user, void *event)
                 (struct nk_rect){adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h},
                 flags, (struct nk_vec2i){adj_vres.x, adj_vres.y})) {
 
-                nk_layout_row_begin(ctx, NK_STATIC, ICON_SIZE, 2);
-                nk_layout_row_push(ctx, ICON_SIZE);
-                nk_image_texpath(ctx, s_icon_path);
+                nk_layout_row_begin(ctx, NK_STATIC, ICON_SIZE, linked ? 2 : 1);
+                if(linked) {
+                    nk_layout_row_push(ctx, ICON_SIZE);
+                    nk_image_texpath(ctx, s_icon_path);
+                }
                 nk_layout_row_push(ctx, DIAMOND_GAP + DIAMOND_SIZE);
-                draw_diamond(ctx, cl->colour);
+                draw_diamond(ctx, cl->colour, 1);
                 nk_layout_row_end(ctx);
             }
             nk_end(ctx);
         }
     });
+    draw_preview(ctx);
 
     nk_style_pop_vec2(ctx);
     nk_style_pop_vec2(ctx);
     nk_style_pop_style_item(ctx);
+}
+
+/* The chain and colour of the cluster the building being placed would join,
+ * large over its ghost */
+static void draw_preview(struct nk_context *ctx)
+{
+    if(s_preview_uid == NULL_UID || !G_EntityExists(s_preview_uid))
+        return;
+    struct cluster *cl = cluster_get(s_preview_cluster);
+    if(!cl)
+        return;
+
+    const int scale = 2;
+    const int icon = ICON_SIZE * scale;
+    const int diamond = (DIAMOND_GAP + DIAMOND_SIZE) * scale;
+    const vec2_t vres = (vec2_t){1920, 1080};
+    const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
+    vec2_t ss_pos = Entity_TopScreenPos(s_preview_uid, adj_vres.x, adj_vres.y);
+    const int width = icon + diamond;
+    const vec2_t pos = (vec2_t){floorf(ss_pos.x - width / 2), floorf(ss_pos.y - icon - 4)};
+    const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
+
+    struct rect adj_bounds = UI_BoundsForAspectRatio(
+        (struct rect){pos.x, pos.y, width, icon},
+        vres, adj_vres, ANCHOR_DEFAULT
+    );
+
+    if(nk_begin_with_vres(ctx, "__cluster_preview__",
+        (struct nk_rect){adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h},
+        flags, (struct nk_vec2i){adj_vres.x, adj_vres.y})) {
+
+        nk_layout_row_begin(ctx, NK_STATIC, icon, 2);
+        nk_layout_row_push(ctx, icon);
+        nk_image_texpath(ctx, s_icon_path);
+        nk_layout_row_push(ctx, diamond);
+        draw_diamond(ctx, cl->colour, scale);
+        nk_layout_row_end(ctx);
+    }
+    nk_end(ctx);
 }
 
 /*****************************************************************************/
@@ -641,6 +686,22 @@ int G_Cluster_PreviewJoin(const char *type, int faction, vec2_t pos, float radiu
             best = id;
     });
     return best;
+}
+
+void G_Cluster_SetPreview(uint32_t uid, int cluster_id)
+{
+    s_preview_uid = uid;
+    s_preview_cluster = cluster_id;
+}
+
+bool G_Cluster_TypeOf(uint32_t uid, char *out_type, size_t len, float *out_radius)
+{
+    const struct cluster_type *type = type_get(uid);
+    if(!type)
+        return false;
+    pf_strlcpy(out_type, type->name, len);
+    *out_radius = type->radius;
+    return true;
 }
 
 void G_Cluster_SetIcon(const char *path)

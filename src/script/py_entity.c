@@ -136,6 +136,7 @@ static PyObject *PyEntity_get_max_ammo(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_auto_resupply(PyEntityObject *self, void *closure);
 static int       PyEntity_set_auto_resupply(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_cluster_id(PyEntityObject *self, void *closure);
+static PyObject *PyEntity_get_cluster_type(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_icons(PyEntityObject *self);
 static PyObject *PyEntity_clear_icons(PyEntityObject *self);
 static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject *kwargs);
@@ -289,6 +290,10 @@ static PyGetSetDef PyEntity_getset[] = {
     {"cluster_id",
     (getter)PyEntity_get_cluster_id, NULL,
     "The ID of the cluster of buildings this one belongs to, or 0.",
+    NULL},
+    {"cluster_type",
+    (getter)PyEntity_get_cluster_type, NULL,
+    "The (type name, link radius) tuple the building clusters by, or None.",
     NULL},
     {"name",
     (getter)PyEntity_get_name, (setter)PyEntity_set_name,
@@ -2488,6 +2493,15 @@ static PyObject *PyEntity_set_cluster_type(PyEntityObject *self, PyObject *args)
 static PyObject *PyEntity_get_cluster_id(PyEntityObject *self, void *closure)
 {
     return PyInt_FromLong(G_Cluster_Of(self->ent));
+}
+
+static PyObject *PyEntity_get_cluster_type(PyEntityObject *self, void *closure)
+{
+    char type[64];
+    float radius;
+    if(!G_Cluster_TypeOf(self->ent, type, sizeof(type), &radius))
+        Py_RETURN_NONE;
+    return Py_BuildValue("(sf)", type, radius);
 }
 
 static PyObject *PyEntity_set_icons(PyEntityObject *self, PyObject *value)

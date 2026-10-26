@@ -321,6 +321,8 @@ int                   G_Cluster_Faction(int cluster_id);
 bool                  G_Cluster_Colour(int cluster_id, struct nk_color *out);
 /* The cluster a building of 'type' placed at 'pos' would join, or 0 for a new one */
 int                   G_Cluster_PreviewJoin(const char *type, int faction, vec2_t pos, float radius);
+void                  G_Cluster_SetPreview(uint32_t uid, int cluster_id);
+bool                  G_Cluster_TypeOf(uint32_t uid, char *out_type, size_t len, float *out_radius);
 
 /*###########################################################################*/
 /* GAME DISTRICTS                                                            */

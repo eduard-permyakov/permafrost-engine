@@ -145,6 +145,7 @@ static PyObject *PyPf_set_road_refused(PyObject *self, PyObject *args);
 static PyObject *PyPf_show_roads(PyObject *self);
 static PyObject *PyPf_hide_roads(PyObject *self);
 static PyObject *PyPf_show_placement_grid(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_cluster_preview(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_road_tileset(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_road_tileset(PyObject *self);
 static PyObject *PyPf_load_scene(PyObject *self, PyObject *args, PyObject *kwargs);
@@ -1431,6 +1432,11 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_cluster_preview_join, METH_VARARGS,
     "Takes a cluster type, a faction ID, an (X, Z) position and a link radius. Returns the ID of the "
     "cluster a building placed there would join, or 0 if it would start one."},
+
+    {"set_cluster_preview",
+    (PyCFunction)PyPf_set_cluster_preview, METH_VARARGS,
+    "Takes a building being placed, or None, and a cluster ID. Shows the cluster's chain and colour "
+    "over the building, large, while it would link up with that cluster."},
 
     {"district_at",
     (PyCFunction)PyPf_district_at, METH_VARARGS | METH_KEYWORDS,
@@ -6257,6 +6263,23 @@ static PyObject *PyPf_cluster_preview_join(PyObject *self, PyObject *args)
         return NULL;
     }
     return PyInt_FromLong(G_Cluster_PreviewJoin(type, faction, pos, radius));
+}
+
+static PyObject *PyPf_set_cluster_preview(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    int cluster_id;
+    if(!PyArg_ParseTuple(args, "Oi", &obj, &cluster_id)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an entity or None, and a cluster ID.");
+        return NULL;
+    }
+    uint32_t uid = NULL_UID;
+    if(obj != Py_None && !S_Entity_UIDForObj(obj, &uid)) {
+        PyErr_SetString(PyExc_TypeError, "The first argument must be an entity or None.");
+        return NULL;
+    }
+    G_Cluster_SetPreview(uid, cluster_id);
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_district_at(PyObject *self, PyObject *args, PyObject *kwargs)
