@@ -55,7 +55,6 @@ const khash_t(entity) *G_GetDynamicEntsSet(void);
 const khash_t(entity) *G_GetAllEntsSet(void);
 
 enum ctx_action        G_CurrContextualAction(void);
-void                   G_NotifyOrderIssued(uint32_t uid, bool clear_harvester);
 
 khash_t(id)           *G_FlagsCopyTable(void);
 khash_t(id)           *G_FlagsCopyTableInto(khash_t(id) *dst);

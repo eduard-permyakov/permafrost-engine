@@ -4246,7 +4246,15 @@ static PyObject *PyBuilderEntity_build(PyBuilderEntityObject *self, PyObject *ar
         return NULL;
     }
 
-    G_Builder_Order(self->super.ent, ((PyBuildableEntityObject*)building)->super.ent);
+    /* A script's order is the player's: it is announced, so that a meal or a
+     * job under way gives way to it and the unit's record shows it */
+    uint32_t target = ((PyBuildableEntityObject*)building)->super.ent;
+    if(G_FlagsGet(target) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot build a zombie entity.");
+        return NULL;
+    }
+    G_NotifyOrderIssued(self->super.ent, true);
+    G_Builder_Order(self->super.ent, target);
     Py_RETURN_NONE;
 }
 
