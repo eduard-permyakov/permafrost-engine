@@ -2252,6 +2252,28 @@ size_t G_Harvester_AimedTargets(size_t maxout, uint32_t out[])
     return ret;
 }
 
+/* The site each carrier is bringing goods to: on its trip there, or on the
+ * drop-off it makes first */
+size_t G_Harvester_BoundDests(size_t maxout, uint32_t out[])
+{
+    if(!s_entity_state_table)
+        return 0;
+    size_t ret = 0;
+    uint32_t uid;
+    struct hstate *hs;
+    kh_foreach_val_ptr(s_entity_state_table, uid, hs, {
+        (void)uid;
+        if(ret == maxout)
+            break;
+        if(hs->state >= STATE_TRANSPORT_GETTING && hs->transport_dest_uid != NULL_UID) {
+            out[ret++] = hs->transport_dest_uid;
+        }else if(hs->queued.cmd == CMD_TRANSPORT || hs->queued.cmd == CMD_SUPPLY) {
+            out[ret++] = hs->queued.uid_arg;
+        }
+    });
+    return ret;
+}
+
 int G_Harvester_CountGathering(int faction, const char *rname)
 {
     int ret = 0;

@@ -155,6 +155,8 @@ struct trend{
     float       rate;
     int         arrow;
     uint32_t    unchanged_s;
+    /* The strip stamp at which the good last qualified for a row, 0 if never */
+    uint32_t    listed_stamp;
 };
 
 /* The goods trends of one pool, or of a site in none */
@@ -199,6 +201,7 @@ struct gathered_record{
 };
 
 KHASH_MAP_INIT_INT(gathered, struct gathered_record)
+KHASH_MAP_INIT_INT(bound, int)
 
 /* A good as the overlay strip shows it */
 struct strip_good{
@@ -217,7 +220,6 @@ struct strip_good{
 #define TREND_UP_CLR        (struct nk_color){110, 205, 80, 255}
 #define TREND_DOWN_CLR      (struct nk_color){225, 70, 55, 255}
 #define TREND_FLAT_CLR      (struct nk_color){185, 180, 170, 255}
-#define CART_CLR            (struct nk_color){170, 120, 70, 255}
 
 #define STRIP_MAX_SITES     (64)
 #define STRIP_MAX_GOODS     (32)
@@ -231,13 +233,17 @@ struct strip_good{
 #define STRIP_GAP           (8.0f)
 #define TREND_W             (7.0f)
 #define PENNANT_W           (11.0f)
-#define CART_W              (13.0f)
 /* Weight of each one-second sample in the moving average of a stock's change */
 #define TREND_ALPHA         (0.1f)
 /* Goods per second that turn the arrow on, and that it must fall back under to turn off */
 #define TREND_ON            (0.05f)
 #define TREND_OFF           (0.02f)
 #define RECENT_CHANGE_S     (30)
+/* How long a row stays on the strip after it stops qualifying, so that one
+ * flickering in and out does not reshape it */
+#define STRIP_GRACE_S       (2)
+#define CARRIERS_ICON       "assets/icons/transport-icon.png"
+#define GATHERERS_ICON      "assets/icons/gather-command-normal.png"
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -260,6 +266,10 @@ static int              s_made_slot;
 /* Keyed by strip_key */
 static khash_t(strip)  *s_strips;
 static uint32_t         s_strip_stamp;
+/* Per site: who is bringing it goods, tallied once per UI pass, and the
+ * gatherers the scripts count for a hub */
+static khash_t(bound)  *s_bound;
+static khash_t(bound)  *s_gatherers;
 
 static struct nk_style_item s_bg_style = {0};
 static struct nk_color      s_border_clr = {0};
@@ -617,6 +627,61 @@ static const struct trend *trend_find(const struct strip *strip, const char *rna
     return NULL;
 }
 
+static int bound_get(khash_t(bound) *table, uint32_t uid)
+{
+    khiter_t k = kh_get(bound, table, uid);
+    return (k == kh_end(table)) ? 0 : kh_value(table, k);
+}
+
+static void bound_add(uint32_t uid)
+{
+    int status;
+    khiter_t k = kh_put(bound, s_bound, uid, &status);
+    if(status == -1)
+        return;
+    if(status != 0) {
+        kh_value(s_bound, k) = 0;
+    }
+    kh_value(s_bound, k)++;
+}
+
+/* Carriers on a trip to the site, or on the drop-off they make first, and
+ * builders ordered to a site whose materials have not reached it */
+static void rebuild_bound(void)
+{
+    kh_clear(bound, s_bound);
+
+    uint32_t targets[2048];
+    size_t ntargets = G_Harvester_BoundDests(ARR_SIZE(targets), targets);
+    for(int i = 0; i < ntargets; i++) {
+        bound_add(targets[i]);
+    }
+    ntargets = G_Builder_Targets(ARR_SIZE(targets), targets);
+    for(int i = 0; i < ntargets; i++) {
+        uint32_t site = targets[i];
+        if(!G_EntityExists(site) || !(G_FlagsGet(site) & ENTITY_FLAG_BUILDING))
+            continue;
+        if(G_Building_IsSupplied(site))
+            continue;
+        bound_add(site);
+    }
+}
+
+static int bound_for(uint32_t uid)
+{
+    int cid = G_Cluster_Of(uid);
+    if(cid == 0)
+        return bound_get(s_bound, uid);
+
+    uint32_t members[64];
+    size_t nmembers = G_Cluster_Members(cid, ARR_SIZE(members), members);
+    int ret = 0;
+    for(int i = 0; i < nmembers; i++) {
+        ret += bound_get(s_bound, members[i]);
+    }
+    return ret;
+}
+
 static int trend_arrow(int arrow, float rate)
 {
     if(rate > TREND_ON)
@@ -628,6 +693,17 @@ static int trend_arrow(int arrow, float rate)
     if(arrow < 0 && rate > -TREND_OFF)
         return 0;
     return arrow;
+}
+
+static bool strip_shows(uint32_t uid, const char *rname, const struct trend *trend)
+{
+    if(G_StorageSite_GetCurr(uid, rname) > 0)
+        return true;
+    if(G_StorageSite_Request(uid, rname) > 0)
+        return true;
+    if(G_StorageSite_GetKeep(uid, rname) > 0)
+        return true;
+    return trend && (trend->arrow != 0 || trend->unchanged_s < RECENT_CHANGE_S);
 }
 
 static void update_trends(uint32_t uid, struct ss_state *ss)
@@ -658,8 +734,10 @@ static void update_trends(uint32_t uid, struct ss_state *ss)
                 .last = amount,
                 .rate = 0.0f,
                 .arrow = 0,
-                .unchanged_s = RECENT_CHANGE_S
+                .unchanged_s = RECENT_CHANGE_S,
+                .listed_stamp = 0
             };
+            trends[i].listed_stamp = strip_shows(uid, names[i], &trends[i]) ? s_strip_stamp : 0;
             continue;
         }
 
@@ -670,22 +748,22 @@ static void update_trends(uint32_t uid, struct ss_state *ss)
             .last = amount,
             .rate = rate,
             .arrow = trend_arrow(old->arrow, rate),
-            .unchanged_s = delta ? 0 : MIN(old->unchanged_s + 1, RECENT_CHANGE_S)
+            .unchanged_s = delta ? 0 : MIN(old->unchanged_s + 1, RECENT_CHANGE_S),
+            .listed_stamp = old->listed_stamp
         };
+        if(strip_shows(uid, names[i], &trends[i])) {
+            trends[i].listed_stamp = s_strip_stamp;
+        }
     }
     memcpy(strip->trends, trends, nnames * sizeof(struct trend));
     strip->ntrends = nnames;
 }
 
-static bool strip_shows(uint32_t uid, const char *rname, const struct trend *trend)
+static bool strip_lists(uint32_t uid, const char *rname, const struct trend *trend)
 {
-    if(G_StorageSite_GetCurr(uid, rname) > 0)
+    if(strip_shows(uid, rname, trend))
         return true;
-    if(G_StorageSite_Request(uid, rname) > 0)
-        return true;
-    if(G_StorageSite_GetKeep(uid, rname) > 0)
-        return true;
-    return trend && (trend->arrow != 0 || trend->unchanged_s < RECENT_CHANGE_S);
+    return trend && trend->listed_stamp && (s_strip_stamp - trend->listed_stamp) <= STRIP_GRACE_S;
 }
 
 static const char *reason_code(enum request_status status)
@@ -762,19 +840,13 @@ static void draw_pennant(struct nk_command_buffer *canvas, float x, float y, int
     nk_fill_triangle(canvas, x + 1, y + 1, x + PENNANT_W - 1, y + 4, x + 1, y + 7, clr);
 }
 
-static void draw_cart(struct nk_command_buffer *canvas, float x, float y)
-{
-    nk_fill_rect(canvas, nk_rect(x - 1, y + 3, CART_W + 2, 8), 1, STRIP_OUTLINE_CLR);
-    nk_fill_rect(canvas, nk_rect(x, y + 4, CART_W, 6), 0, CART_CLR);
-    nk_fill_circle(canvas, nk_rect(x + 1, y + 8, 6, 6), STRIP_OUTLINE_CLR);
-    nk_fill_circle(canvas, nk_rect(x + CART_W - 7, y + 8, 6, 6), STRIP_OUTLINE_CLR);
-    nk_fill_circle(canvas, nk_rect(x + 2.5f, y + 9.5f, 3, 3), TREND_FLAT_CLR);
-    nk_fill_circle(canvas, nk_rect(x + CART_W - 5.5f, y + 9.5f, 3, 3), TREND_FLAT_CLR);
-}
-
 static int compare_made(const void *a, const void *b)
 {
-    return (*(const struct made**)b)->total - (*(const struct made**)a)->total;
+    const struct made *ma = *(const struct made**)a;
+    const struct made *mb = *(const struct made**)b;
+    if(ma->total != mb->total)
+        return mb->total - ma->total;
+    return strcmp(ma->name, mb->name);
 }
 
 static float strip_good_width(const struct strip_good *good)
@@ -812,7 +884,7 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
         }
 
         const struct trend *trend = strip ? trend_find(strip, names[i]) : NULL;
-        if(ngoods == STRIP_MAX_GOODS || !strip_shows(key, names[i], trend))
+        if(ngoods == STRIP_MAX_GOODS || !strip_lists(key, names[i], trend))
             continue;
 
         struct strip_good *good = &goods[ngoods++];
@@ -839,12 +911,12 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
     }
 
     char carriers[8] = {0};
-    float carriers_w = 0.0f;
-    int ncarriers = G_Automation_AssignedTransporters(key);
+    float carriers_w = 0.0f, carriers_row_w = 0.0f;
+    int ncarriers = bound_for(key);
     if(ncarriers > 0) {
         pf_snprintf(carriers, sizeof(carriers), "%d", ncarriers);
         carriers_w = text_width(font, carriers);
-        width += CART_W + 3 + carriers_w + STRIP_GAP;
+        carriers_row_w = STRIP_ICON_SZ + 2 + carriers_w;
     }
 
     float reason_w = reason ? text_width(font, reason) : 0.0f;
@@ -852,6 +924,17 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
     if(width > 0.0f && !reason)
         width -= STRIP_GAP;
     width = MAX(width, rows_w);
+    const bool has_marks = (width > 0.0f);
+    width = MAX(width, carriers_row_w);
+
+    char gatherers[8] = {0};
+    float gatherers_w = 0.0f;
+    int ngatherers = bound_get(s_gatherers, key);
+    if(ngatherers > 0) {
+        pf_snprintf(gatherers, sizeof(gatherers), "%d", ngatherers);
+        gatherers_w = text_width(font, gatherers);
+        width = MAX(width, STRIP_ICON_SZ + 2 + gatherers_w);
+    }
 
     /* The second row: what the pool made in the last minute, most first */
     const struct made *made[ARR_SIZE(((struct made_record*)NULL)->made)];
@@ -913,19 +996,26 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
         x += PENNANT_W + STRIP_GAP;
     }
 
-    if(ncarriers > 0) {
-        draw_cart(canvas, x, marks_y);
-        x += CART_W + 3;
-        draw_strip_text(canvas, font, x, text_y + (marks_y - y), carriers_w, carriers, STRIP_TEXT_CLR);
-        x += carriers_w + STRIP_GAP;
-    }
-
     if(reason) {
         draw_strip_text(canvas, font, x, text_y + (marks_y - y), reason_w, reason, STRIP_WARN_CLR);
     }
 
+    float carriers_y = has_marks ? marks_y + row_h : y;
+    if(ncarriers > 0) {
+        draw_strip_icon(canvas, left, carriers_y, CARRIERS_ICON);
+        draw_strip_text(canvas, font, left + STRIP_ICON_SZ + 2, carriers_y + (STRIP_ICON_SZ - font->height) / 2.0f,
+            carriers_w, carriers, STRIP_TEXT_CLR);
+        carriers_y += row_h;
+    }
+    if(ngatherers > 0) {
+        draw_strip_icon(canvas, left, carriers_y, GATHERERS_ICON);
+        draw_strip_text(canvas, font, left + STRIP_ICON_SZ + 2, carriers_y + (STRIP_ICON_SZ - font->height) / 2.0f,
+            gatherers_w, gatherers, STRIP_TEXT_CLR);
+        carriers_y += row_h;
+    }
+
     x = left;
-    const float made_y = (width > 0.0f) ? marks_y + row_h : y;
+    const float made_y = carriers_y;
     for(int i = 0; i < nmade; i++) {
         if(made[i]->icon) {
             draw_strip_icon(canvas, x, made_y, made[i]->icon);
@@ -1004,6 +1094,7 @@ static void on_update_ui(void *user, void *event)
     assert(status == SS_OKAY);
     (void)status;
 
+    rebuild_bound();
     uint32_t strips[STRIP_MAX_SITES];
     size_t nstrips = 0;
     const uint16_t player_factions = G_GetPlayerControlledFactions();
@@ -1617,6 +1708,12 @@ bool G_StorageSite_Init(void)
     if(!(s_gathered = kh_init(gathered)))
         goto fail_gathered;
 
+    if(!(s_bound = kh_init(bound)))
+        goto fail_bound;
+
+    if(!(s_gatherers = kh_init(bound)))
+        goto fail_gatherers;
+
     struct nk_context ctx;
     nk_style_default(&ctx);
 
@@ -1668,6 +1765,10 @@ bool G_StorageSite_Init(void)
     s_show_ui = true;
     return true;
 
+fail_gatherers:
+    kh_destroy(bound, s_bound);
+fail_bound:
+    kh_destroy(gathered, s_gathered);
 fail_gathered:
     kh_destroy(made, s_made);
 fail_made:
@@ -1705,6 +1806,8 @@ void G_StorageSite_Shutdown(void)
     for(int i = 0; i < MAX_FACTIONS; i++)
         kh_destroy(res, s_global_resource_tables[i]);
 
+    kh_destroy(bound, s_gatherers);
+    kh_destroy(bound, s_bound);
     kh_destroy(gathered, s_gathered);
     kh_destroy(made, s_made);
     kh_destroy(strip, s_strips);
@@ -2564,6 +2667,21 @@ bool G_StorageSite_Desires(uint32_t uid, const char *rname)
     return (rdes > rcurr);
 }
 
+int G_StorageSite_BoundFor(uint32_t uid)
+{
+    rebuild_bound();
+    return bound_for(uid);
+}
+
+void G_StorageSite_SetGatherers(uint32_t uid, int count)
+{
+    int status;
+    khiter_t k = kh_put(bound, s_gatherers, uid, &status);
+    if(status != -1) {
+        kh_value(s_gatherers, k) = count;
+    }
+}
+
 float G_StorageSite_GetWindowHeight(uint32_t uid)
 {
     struct ss_state *own = ss_state_get(uid);
@@ -2571,8 +2689,8 @@ float G_StorageSite_GetWindowHeight(uint32_t uid)
     struct ss_state *ss = ss_view(uid);
     if(own->pool && ss->anchor != uid)
         return 0.0f;
-    khash_t(int) *table = (ss->use_alt) ? ss->alt_capacity : ss->capacity;
-    return MIN(kh_size(table), 16) * 20 + 32;
+    const char *names[16];
+    return ss_get_keys(ss, names, ARR_SIZE(names)) * 20 + 32;
 }
 
 bool G_StorageSite_SaveState(struct SDL_RWops *stream)

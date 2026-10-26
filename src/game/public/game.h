@@ -689,6 +689,7 @@ void G_Builder_SetBuildSpeed(uint32_t uid, int speed);
 int  G_Builder_GetBuildSpeed(uint32_t uid);
 /* The building it is on its way to or at work on, or NULL_UID */
 uint32_t G_Builder_Target(uint32_t uid);
+size_t   G_Builder_Targets(size_t maxout, uint32_t out[]);
 void G_Builder_SetBuildOnLeftClick(void);
 
 /*###########################################################################*/
@@ -778,6 +779,7 @@ bool  G_Harvester_ResourceReachable(uint32_t uid, uint32_t resource);
 uint32_t G_Automation_BestResource(uint32_t uid, const char *rname);
 /* The node every gatherer on its way to one or at one is bound for, one entry each */
 size_t G_Harvester_AimedTargets(size_t maxout, uint32_t out[]);
+size_t G_Harvester_BoundDests(size_t maxout, uint32_t out[]);
 int   G_Harvester_CountGathering(int faction, const char *rname);
 bool  G_Harvester_CanReachSite(uint32_t uid, uint32_t site);
 bool  G_Harvester_JobInfo(uint32_t uid, uint32_t *out_src, uint32_t *out_dest, const char **out_rname, int *out_state);
@@ -856,6 +858,8 @@ void G_StorageSite_SetPriority(uint32_t uid, int priority);
 int  G_StorageSite_GetPriority(uint32_t uid);
 void G_StorageSite_SetKeep(uint32_t uid, const char *rname, int keep);
 int  G_StorageSite_GetKeep(uint32_t uid, const char *rname);
+int  G_StorageSite_BoundFor(uint32_t uid);
+void G_StorageSite_SetGatherers(uint32_t uid, int count);
 void G_StorageSite_SetChip(uint32_t uid, const char *rname, enum ss_chip chip);
 enum ss_chip G_StorageSite_GetChip(uint32_t uid, const char *rname);
 /* How much of a resource the site asks to be brought */

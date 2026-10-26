@@ -749,6 +749,20 @@ int G_Builder_CountOn(uint32_t building)
     return ret;
 }
 
+size_t G_Builder_Targets(size_t maxout, uint32_t out[])
+{
+    if(!s_entity_state_table)
+        return 0;
+    size_t ret = 0;
+    struct builderstate bs;
+    kh_foreach_value(s_entity_state_table, bs, {
+        if(ret < maxout && bs.state != STATE_NOT_BUILDING) {
+            out[ret++] = bs.target_uid;
+        }
+    });
+    return ret;
+}
+
 bool G_Builder_SaveState(struct SDL_RWops *stream)
 {
     struct attr num_builders = (struct attr){

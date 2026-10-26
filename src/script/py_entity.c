@@ -1132,6 +1132,8 @@ static PyObject *PyStorageSiteEntity_set_curr_amount(PyStorageSiteEntityObject *
 static PyObject *PyStorageSiteEntity_get_capacity(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_own_capacity(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_keep(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_get_suppliers(PyStorageSiteEntityObject *self);
+static PyObject *PyStorageSiteEntity_set_gatherers(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_set_keep(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_reserve(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_record_made(PyStorageSiteEntityObject *self, PyObject *args);
@@ -1174,6 +1176,14 @@ static PyMethodDef PyStorageSiteEntity_methods[] = {
     {"get_keep", 
     (PyCFunction)PyStorageSiteEntity_get_keep, METH_VARARGS,
     "Gets the reserve of the resource the site never gives away."},
+
+    {"get_suppliers", 
+    (PyCFunction)PyStorageSiteEntity_get_suppliers, METH_NOARGS,
+    "The number of units bringing goods to the site, or ordered to build it before its materials are in."},
+
+    {"set_gatherers", 
+    (PyCFunction)PyStorageSiteEntity_set_gatherers, METH_VARARGS,
+    "Sets the number of gatherers shown on the site's overhead strip."},
 
     {"set_keep", 
     (PyCFunction)PyStorageSiteEntity_set_keep, METH_VARARGS,
@@ -5306,6 +5316,24 @@ static PyObject *PyStorageSiteEntity_get_keep(PyStorageSiteEntityObject *self, P
         return NULL;
     }
     return PyInt_FromLong(G_StorageSite_GetKeep(self->super.ent, name));
+}
+
+static PyObject *PyStorageSiteEntity_get_suppliers(PyStorageSiteEntityObject *self)
+{
+    SS_CHECK_ALIVE(NULL);
+    return PyInt_FromLong(G_StorageSite_BoundFor(self->super.ent));
+}
+
+static PyObject *PyStorageSiteEntity_set_gatherers(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    int count;
+    if(!PyArg_ParseTuple(args, "i", &count)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: count (integer).");
+        return NULL;
+    }
+    G_StorageSite_SetGatherers(self->super.ent, count);
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyStorageSiteEntity_set_keep(PyStorageSiteEntityObject *self, PyObject *args)
