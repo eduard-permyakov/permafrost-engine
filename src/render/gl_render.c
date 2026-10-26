@@ -111,6 +111,11 @@ static struct overlay_mesh s_overlay_meshes[MAP_OVERLAY_MESHES];
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
+static float overlay_line_width(int slot)
+{
+    return (slot == MAP_OVERLAY_MESH_GRID) ? 1.0f : 3.0f;
+}
+
 static void init_shader_progs(struct render_private *priv, const char *shader)
 {
     priv->shader_prog = R_GL_Shader_GetProgForName(shader);
@@ -1647,7 +1652,7 @@ void R_GL_MapOverlayMeshDraw(const int *slot)
 
     GLfloat old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
-    glLineWidth(3.0f);
+    glLineWidth(overlay_line_width(*slot));
     glDrawArrays(GL_LINES, mesh->ntri_verts, mesh->nline_verts);
     glLineWidth(old_width);
 

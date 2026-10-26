@@ -144,6 +144,7 @@ static PyObject *PyPf_road_tiles_under(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_road_refused(PyObject *self, PyObject *args);
 static PyObject *PyPf_show_roads(PyObject *self);
 static PyObject *PyPf_hide_roads(PyObject *self);
+static PyObject *PyPf_show_placement_grid(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_road_tileset(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_road_tileset(PyObject *self);
 static PyObject *PyPf_load_scene(PyObject *self, PyObject *args, PyObject *kwargs);
@@ -541,6 +542,12 @@ static PyMethodDef pf_module_methods[] = {
     {"hide_roads", 
     (PyCFunction)PyPf_hide_roads, METH_NOARGS,
     "Stop drawing the overlay of the road tiles and their links."},
+
+    {"show_placement_grid", 
+    (PyCFunction)PyPf_show_placement_grid, METH_VARARGS,
+    "Takes a boolean and an optional (X, Z) point. Turns on or off a grid, the size of a road tile and "
+    "lined up with the road tiles, drawn over the terrain about the cursor, or about the point if it is "
+    "given."},
 
     {"set_road_tileset", 
     (PyCFunction)PyPf_set_road_tileset, METH_VARARGS,
@@ -2306,6 +2313,23 @@ static PyObject *PyPf_show_roads(PyObject *self)
 static PyObject *PyPf_hide_roads(PyObject *self)
 {
     G_Roads_SetRender(false);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_show_placement_grid(PyObject *self, PyObject *args)
+{
+    PyObject *on;
+    vec2_t centre;
+    PyObject *point = NULL;
+    if(!PyArg_ParseTuple(args, "O|O", &on, &point)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a boolean and optionally a tuple of two numbers.");
+        return NULL;
+    }
+    if(point && point != Py_None && !PyArg_ParseTuple(point, "ff", &centre.x, &centre.z)) {
+        PyErr_SetString(PyExc_TypeError, "The centre must be a tuple of two numbers.");
+        return NULL;
+    }
+    G_Roads_SetPlacementGrid(PyObject_IsTrue(on), (point && point != Py_None) ? &centre : NULL);
     Py_RETURN_NONE;
 }
 

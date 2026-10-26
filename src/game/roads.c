@@ -81,7 +81,14 @@
 #define ROADS_PER_CHUNK_C   (TILES_PER_CHUNK_WIDTH / ROAD_TILE_SPAN)
 #define OVERLAY_MAX_QUADS   (ROADS_PER_CHUNK_R * ROADS_PER_CHUNK_C * 5)
 #define REFUSED_BATCH       (OVERLAY_MAX_QUADS / (ROAD_TILE_SPAN * ROAD_TILE_SPAN))
+#define GRID_CELLS          (8)
+#define GRID_LINES          (2 * GRID_CELLS + 2)
+#define GRID_SAMPLES        ((2 * GRID_CELLS + 1) * ROAD_TILE_SPAN)
+#define GRID_MAX_VERTS      (2 * GRID_LINES * GRID_SAMPLES * 2)
+#define GRID_LIFT           (0.1f)
+#define GRID_ALPHA          (0.5f)
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
+#define MAX(a, b)           ((a) > (b) ? (a) : (b))
 #define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
 
 _Static_assert(TILES_PER_CHUNK_WIDTH % ROAD_TILE_SPAN == 0, "Road tiles must not cross chunks");
@@ -128,6 +135,16 @@ static bool                 s_hover_set;
 static struct road_desc     s_hover;
 /* The tiles drawn in red, as no road can be laid on them */
 static vec_road_idx_t       s_refused;
+
+/* The lines of the road tile lattice about the cursor, or about a fixed
+ * point, which the render thread keeps until they are laid out again
+ */
+static bool                 s_grid_on;
+static bool                 s_grid_fixed;
+static vec2_t               s_grid_fixed_xz;
+static bool                 s_grid_built;
+static struct road_desc     s_grid_cell;
+static struct overlay_vert  s_grid_verts[GRID_MAX_VERTS];
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -440,8 +457,94 @@ static void render_refused(int first, int ntiles)
     STFREE(colors_buff);
 }
 
+/* The lines fade out toward the edge of the grid, so that it has none */
+static struct overlay_vert grid_vert(float x, float z, vec2_t centre)
+{
+    const float radius = (GRID_CELLS + 0.5f) * ROAD_TILE_X_DIM;
+    float dist = sqrtf((x - centre.x) * (x - centre.x) + (z - centre.z) * (z - centre.z));
+    float alpha = GRID_ALPHA * MAX(1.0f - dist / radius, 0.0f);
+    float y = MAX(M_HeightAtPoint(s_map, (vec2_t){x, z}), 0.0f) + GRID_LIFT;
+    return (struct overlay_vert){(vec3_t){x, y, z}, (vec4_t){1.0f, 1.0f, 1.0f, alpha}};
+}
+
+/* Samples every map tile along the lines so they follow the ground */
+static size_t build_grid(struct road_desc centre)
+{
+    vec2_t min, max;
+    G_Roads_Bounds(centre, &min, &max);
+    vec2_t middle = (vec2_t){(min.x + max.x) / 2.0f, (min.z + max.z) / 2.0f};
+
+    struct overlay_vert *out = s_grid_verts;
+    for(int line = 0; line < GRID_LINES; line++) {
+    for(int dir = 0; dir < 2; dir++) {
+
+        int edge = (dir ? centre.r : centre.c) - GRID_CELLS + line;
+        if(edge < 0 || edge > (dir ? s_rows : s_cols))
+            continue;
+        int first = ((dir ? centre.c : centre.r) - GRID_CELLS) * ROAD_TILE_SPAN;
+
+        for(int i = 0; i < GRID_SAMPLES; i++) {
+            int from = first + i;
+            if(from < 0 || from + 1 > (dir ? s_cols : s_rows) * ROAD_TILE_SPAN)
+                continue;
+            for(int end = 0; end < 2; end++) {
+                int step = from + end;
+                *out++ = dir ? grid_vert(s_map_pos.x - step * X_COORDS_PER_TILE,
+                                         s_map_pos.z + edge * ROAD_TILE_Z_DIM, middle)
+                             : grid_vert(s_map_pos.x - edge * ROAD_TILE_X_DIM,
+                                         s_map_pos.z + step * Z_COORDS_PER_TILE, middle);
+            }
+        }
+    }}
+    return out - s_grid_verts;
+}
+
+static bool grid_centre_cell(struct road_desc *out)
+{
+    vec3_t pos;
+    if(s_grid_fixed)
+        return G_Roads_DescForPoint(s_grid_fixed_xz, out);
+    return M_Raycast_MouseIntersecCoord(&pos) && G_Roads_DescForPoint((vec2_t){pos.x, pos.z}, out);
+}
+
+static void render_placement_grid(void)
+{
+    struct road_desc cell;
+    if(grid_centre_cell(&cell)
+    && (!s_grid_built || cell.r != s_grid_cell.r || cell.c != s_grid_cell.c)) {
+
+        int slot = MAP_OVERLAY_MESH_GRID;
+        size_t ntri_verts = 0;
+        size_t nline_verts = build_grid(cell);
+        R_PushCmd((struct rcmd){
+            .func = R_GL_MapOverlayMeshSet,
+            .nargs = 4,
+            .args = {
+                R_PushArg(&slot, sizeof(slot)),
+                R_PushArg(s_grid_verts, nline_verts * sizeof(struct overlay_vert)),
+                R_PushArg(&ntri_verts, sizeof(ntri_verts)),
+                R_PushArg(&nline_verts, sizeof(nline_verts)),
+            },
+        });
+        s_grid_cell = cell;
+        s_grid_built = true;
+    }
+    if(!s_grid_built)
+        return;
+
+    int slot = MAP_OVERLAY_MESH_GRID;
+    R_PushCmd((struct rcmd){
+        .func = R_GL_MapOverlayMeshDraw,
+        .nargs = 1,
+        .args = { R_PushArg(&slot, sizeof(slot)) },
+    });
+}
+
 static void on_render_3d(void *user, void *event)
 {
+    if(s_grid_on)
+        render_placement_grid();
+
     if(s_hover_set)
         render_hover();
 
@@ -622,6 +725,7 @@ void G_Roads_Shutdown(void)
     s_rows = s_cols = 0;
     s_count = 0;
     s_hover_set = false;
+    s_grid_built = false;
 }
 
 void G_Roads_Clear(void)
@@ -850,6 +954,15 @@ void G_Roads_SetRender(bool on)
 bool G_Roads_GetRender(void)
 {
     return s_render;
+}
+
+void G_Roads_SetPlacementGrid(bool on, const vec2_t *centre)
+{
+    s_grid_on = on;
+    s_grid_fixed = (on && centre);
+    if(s_grid_fixed)
+        s_grid_fixed_xz = *centre;
+    s_grid_built = false;
 }
 
 bool G_Roads_SetTileset(const struct road_tileset *tileset)

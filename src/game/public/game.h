@@ -1006,6 +1006,10 @@ void   G_Roads_SetRender(bool on);
 bool   G_Roads_SetTileset(const struct road_tileset *tileset);
 bool   G_Roads_GetTileset(struct road_tileset *out);
 bool   G_Roads_GetRender(void);
+/* Draws the lines between road tiles about the cursor, or about the point
+ * given, so that things can be lined up with roads not yet laid
+ */
+void   G_Roads_SetPlacementGrid(bool on, const vec2_t *centre);
 /* The road tiles, built on or not, that the building's footprint overlaps, which a 
  * building units walk over leaves alone
  */

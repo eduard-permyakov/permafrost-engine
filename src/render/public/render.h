@@ -89,7 +89,9 @@ struct overlay_vert{
     vec4_t color;
 };
 
-#define MAP_OVERLAY_MESHES   (2)
+#define MAP_OVERLAY_MESHES   (3)
+/* The overlay mesh slot of the placement grid, which is drawn in thin lines */
+#define MAP_OVERLAY_MESH_GRID (2)
 #define VERTS_PER_SIDE_FACE  (6)
 #define VERTS_PER_TOP_FACE   (24)
 #define VERTS_PER_TILE       (4 * VERTS_PER_SIDE_FACE + VERTS_PER_TOP_FACE)
