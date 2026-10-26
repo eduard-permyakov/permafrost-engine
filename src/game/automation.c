@@ -793,7 +793,8 @@ static void collect_sources(vec_source_t *out, const vec_entity_t *sites, const 
             continue;
         if(G_GetFactionID(site) != faction)
             continue;
-        if(site == exclude)
+        /* A pool holds its goods in common: nothing is carried within it */
+        if(site == exclude || pool_representative(site) == pool_representative(exclude))
             continue;
         if(relaying && G_StorageSite_GetChip(site, rname) == SS_CHIP_RELAY)
             continue;
