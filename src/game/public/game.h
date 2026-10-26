@@ -768,6 +768,15 @@ int   G_Harvester_PickupsPending(uint32_t src, const char *rname);
 size_t G_Harvester_GetGatherable(uint32_t uid, size_t maxout, const char *out[]);
 /* The nearest node of 'rname' within 'radius' of 'origin' that the harvester can gather */
 uint32_t G_Harvester_NearestResource(uint32_t uid, vec2_t origin, const char *rname, float radius);
+/* The nodes of the good within the radius of the origin, the way there untested */
+size_t G_Harvester_ResourcesNear(uint32_t uid, vec2_t origin, const char *rname, float radius,
+                                 size_t maxout, uint32_t out[]);
+bool  G_Harvester_ResourceReachable(uint32_t uid, uint32_t resource);
+/* The node of the good an automated worker is best sent to from where it
+ * works: the nearest with room about it; NULL_UID for one not automated */
+uint32_t G_Automation_BestResource(uint32_t uid, const char *rname);
+/* The node every gatherer on its way to one or at one is bound for, one entry each */
+size_t G_Harvester_AimedTargets(size_t maxout, uint32_t out[]);
 int   G_Harvester_CountGathering(int faction, const char *rname);
 bool  G_Harvester_CanReachSite(uint32_t uid, uint32_t site);
 bool  G_Harvester_JobInfo(uint32_t uid, uint32_t *out_src, uint32_t *out_dest, const char **out_rname, int *out_state);

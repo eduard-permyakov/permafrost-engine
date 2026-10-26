@@ -98,6 +98,12 @@
 #define MAX_WORK_SITES               (512)
 /* How far a worker will go for work it finds by itself */
 #define WORK_RADIUS                  (600.0f)
+/* Each gatherer already bound for a node makes it read this much further
+ * off, as a share of its distance, so that the workers spread over the
+ * nodes near at hand before any goes further afield, and a node takes no
+ * more than fit about its rim */
+#define CROWD_FACTOR                 (2.0f)
+#define NODE_GAP                     (1.0f)
 #define PINNED_LEN                   (32)
 /* What every good counts for before anything asks for it, so that idle
  * workers still gather into stock */
@@ -210,6 +216,8 @@ struct work_site{
 struct work_snapshot{
     bool               valid;
     uint32_t           tick;
+    /* Gatherers bound for each node, counting those handed one this pass */
+    struct kh_count_s *aimed;
     vec_request_t      requests;
     size_t             ndemands;
     struct good_demand demands[MAX_DEMANDS];
@@ -1242,6 +1250,15 @@ static void reconsider_work(uint32_t uid, struct automation_state *astate)
     try_assign_work(uid, astate);
 }
 
+static void note_aimed(struct work_snapshot *snap, uint32_t node)
+{
+    int status;
+    khiter_t k = kh_put(count, snap->aimed, node, &status);
+    if(status == -1)
+        return;
+    kh_value(snap->aimed, k) = (status == 0) ? kh_value(snap->aimed, k) + 1 : 1;
+}
+
 static struct work_snapshot *snapshot_get(void)
 {
     if(s_snapshot.valid && s_snapshot.tick == s_tick)
@@ -1268,10 +1285,82 @@ static struct work_snapshot *snapshot_get(void)
     }
     vec_entity_destroy(&sites);
 
+    if(!s_snapshot.aimed) {
+        s_snapshot.aimed = kh_init(count);
+    }
+    kh_clear(count, s_snapshot.aimed);
+    uint32_t targets[2048];
+    size_t ntargets = G_Harvester_AimedTargets(ARR_SIZE(targets), targets);
+    for(int i = 0; i < ntargets; i++) {
+        note_aimed(&s_snapshot, targets[i]);
+    }
+
     s_snapshot.ndemands = 0;
     s_snapshot.tick = s_tick;
     s_snapshot.valid = true;
     PERF_RETURN(&s_snapshot);
+}
+
+static int aimed_at(const struct work_snapshot *snap, uint32_t node)
+{
+    khiter_t k = kh_get(count, snap->aimed, node);
+    return (k == kh_end(snap->aimed)) ? 0 : kh_value(snap->aimed, k);
+}
+
+/* How many gatherers stand about a node at once: its rim in worker widths */
+static int node_capacity(uint32_t node, float worker_radius)
+{
+    float rim;
+    if(G_FlagsGet(node) & ENTITY_FLAG_BUILDING) {
+        struct obb obb;
+        Entity_CurrentOBB(node, &obb, true);
+        rim = 4.0f * (obb.half_lengths[0] + obb.half_lengths[2]);
+    }else{
+        rim = 2.0f * M_PI * (G_GetSelectionRadius(node) + worker_radius);
+    }
+    return MAX(1, (int)(rim / (2.0f * worker_radius + NODE_GAP)));
+}
+
+/* The node of the good to gather at: the nearest with room about it, the
+ * gatherers already bound for one weighing against it */
+static uint32_t best_resource(uint32_t uid, vec2_t origin, const char *rname, float radius,
+                              struct work_snapshot *snap)
+{
+    uint32_t nodes[512];
+    float scores[512];
+    size_t nnodes = G_Harvester_ResourcesNear(uid, origin, rname, radius, ARR_SIZE(nodes), nodes);
+    float worker_radius = G_GetSelectionRadius(uid);
+
+    for(int i = 0; i < nnodes; i++) {
+        int aimed = aimed_at(snap, nodes[i]);
+        if(aimed >= node_capacity(nodes[i], worker_radius)) {
+            scores[i] = INFINITY;
+            continue;
+        }
+        vec2_t pos = G_Pos_GetXZ(nodes[i]);
+        vec2_t delta;
+        PFM_Vec2_Sub(&pos, &origin, &delta);
+        scores[i] = PFM_Vec2_Len(&delta) * (1.0f + CROWD_FACTOR * aimed);
+    }
+    for(int tries = 0; tries < nnodes; tries++) {
+        int best = -1;
+        for(int i = 0; i < nnodes; i++) {
+            if(scores[i] < INFINITY && (best == -1 || scores[i] < scores[best]))
+                best = i;
+        }
+        if(best == -1)
+            break;
+        if(G_Harvester_ResourceReachable(uid, nodes[best])) {
+            struct sval setting;
+            if(Settings_Get("pf.debug.log_perf_csv", &setting) == SS_OKAY && setting.as_bool) {
+                fprintf(stdout, "[auto-node] %u,%u,%.1f,%d,%d,%d\n", uid, nodes[best], scores[best],
+                    aimed_at(snap, nodes[best]), node_capacity(nodes[best], worker_radius), (int)nnodes);
+            }
+            return nodes[best];
+        }
+        scores[best] = INFINITY;
+    }
+    return NULL_UID;
 }
 
 static struct good_demand *demand_get(struct work_snapshot *snap, int faction, const char *rname)
@@ -1436,7 +1525,7 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
         }
         if(best == -1)
             break;
-        uint32_t node = G_Harvester_NearestResource(uid, pos, candidates[best], WORK_RADIUS);
+        uint32_t node = best_resource(uid, pos, candidates[best], WORK_RADIUS, snap);
         /* Nothing near: go as far as it takes rather than stand idle */
         if(node == NULL_UID && astate->home_district == 0) {
             node = G_Harvester_NearestResource(uid, pos, candidates[best], 0.0f);
@@ -1451,6 +1540,7 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
             continue;
         }
         if(node != NULL_UID && G_Harvester_Gather(uid, node)) {
+            note_aimed(snap, node);
             pf_strlcpy(astate->working, candidates[best], sizeof(astate->working));
             why[best] = "chosen";
             chosen = best;
@@ -1930,6 +2020,19 @@ void G_Automation_SetPinnedWork(uint32_t uid, const char *rname)
         return;
     pf_strlcpy(astate->pinned, rname ? rname : "", sizeof(astate->pinned));
     reconsider_work(uid, astate);
+}
+
+uint32_t G_Automation_BestResource(uint32_t uid, const char *rname)
+{
+    struct automation_state *astate = astate_get(uid);
+    if(!astate || !astate->automatic_work)
+        return NULL_UID;
+    struct work_snapshot *snap = snapshot_get();
+    uint32_t node = best_resource(uid, work_origin(uid, astate), rname, WORK_RADIUS, snap);
+    if(node != NULL_UID) {
+        note_aimed(snap, node);
+    }
+    return node;
 }
 
 bool G_Automation_LeavesGathering(uint32_t uid, const char *rname)

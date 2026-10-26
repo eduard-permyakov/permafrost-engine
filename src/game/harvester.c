@@ -80,6 +80,11 @@
 #define STILL_ARRIVAL_TICKS (60)
 /* How often a harvester on its way to a building checks it can still get there */
 #define REACH_CHECK_TICKS   (40)
+/* Pressing at a crowded resource this long without coming nearer, a gatherer
+ * goes on to the next one, as it would have had it come up against the crowd
+ * and stopped */
+#define PRESS_GIVE_UP_TICKS (80)
+#define PRESS_STEP          (1.0f)
 /* A carrier short of a full load stops at most this many more sources on a
  * trip, each only for at least this much (or what it has room for) */
 #define MAX_TOP_UPS         (2)
@@ -158,6 +163,9 @@ struct hstate{
     int         top_ups;
     /* Ticks it has stood still on its way somewhere, to catch an arrival it never heard */
     int         still_ticks;
+    /* Ticks it has made no way toward the resource it seeks, and where it last did */
+    int         press_ticks;
+    vec2_t      press_pos;
 };
 
 struct searcharg{
@@ -172,6 +180,8 @@ struct valid_resource_arg{
     enum nav_layer ent_layer;
     const char    *rname;
     uint32_t       exclude;
+    /* The way there is judged apart, for a search that weighs many */
+    bool           skip_reach;
 };
 
 typedef char buff_t[512];
@@ -339,6 +349,8 @@ static bool hstate_init(struct hstate *hs)
     hs->job_amount = 0;
     hs->top_ups = 0;
     hs->still_ticks = 0;
+    hs->press_ticks = 0;
+    hs->press_pos = (vec2_t){0.0f, 0.0f};
     return true;
 }
 
@@ -597,7 +609,7 @@ static bool valid_resource(uint32_t uid, void *arg)
     if(strcmp(vrarg->rname, G_Resource_GetName(uid)))
         return false;
     vec2_t res_pos = G_Pos_GetXZ(uid);
-    if(!M_NavLocationsReachable(s_map, vrarg->ent_layer, vrarg->ent_pos, res_pos))
+    if(!vrarg->skip_reach && !M_NavLocationsReachable(s_map, vrarg->ent_layer, vrarg->ent_pos, res_pos))
         return false;
     return true;
 }
@@ -714,7 +726,11 @@ static void entity_try_drop_off(uint32_t uid)
 
 static void entity_try_gather_nearest(uint32_t uid, const char *rname)
 {
-    uint32_t newtarget = nearest_resource(uid, rname);
+    /* The automation weighs the crowd at each node; by order it is the nearest */
+    uint32_t newtarget = G_Automation_BestResource(uid, rname);
+    if(newtarget == NULL_UID) {
+        newtarget = nearest_resource(uid, rname);
+    }
     if(newtarget != NULL_UID) {
         G_Harvester_Gather(uid, newtarget);
     }else{
@@ -1025,8 +1041,9 @@ static void on_arrive_at_resource(void *user, void *event)
     || (G_FlagsGet(hs->res_uid) & ENTITY_FLAG_ZOMBIE)
     || !M_NavObjAdjacent(s_map, uid, hs->res_uid)) {
 
-        /* harvester could not reach the resource */
-        if(hs->res_name) {
+        /* harvester could not reach the resource; one the realm no longer
+         * wants at the good takes other work instead of the next node */
+        if(hs->res_name && !G_Automation_LeavesGathering(uid, hs->res_name)) {
             entity_try_gather_nearest_with_exclusion(uid, hs->res_name, hs->res_uid);
         }else{
             hs->state = STATE_NOT_HARVESTING;
@@ -2017,12 +2034,54 @@ static void give_up_unreachable(uint32_t tick)
     }
 }
 
+/* A gatherer kept from a resource by the others at it never comes to rest, so
+ * it would never hear that it cannot get in and go on to the next one: one
+ * that makes no way for a while is stopped where it is, which does */
+static void give_up_crowded(void)
+{
+    uint32_t crowded[256];
+    size_t ncrowded = 0;
+
+    uint32_t uid;
+    struct hstate *hs;
+    kh_foreach_val_ptr(s_entity_state_table, uid, hs, {
+        if(hs->state != STATE_HARVESTING_SEEK_RESOURCE || G_Move_Still(uid))
+            continue;
+        vec2_t pos = G_Pos_GetXZ(uid);
+        vec2_t delta;
+        PFM_Vec2_Sub(&pos, &hs->press_pos, &delta);
+        if(PFM_Vec2_Len(&delta) > PRESS_STEP) {
+            hs->press_pos = pos;
+            hs->press_ticks = 0;
+            continue;
+        }
+        if(++hs->press_ticks < PRESS_GIVE_UP_TICKS)
+            continue;
+        hs->press_ticks = 0;
+        if(ncrowded < ARR_SIZE(crowded)) {
+            crowded[ncrowded++] = uid;
+        }
+    });
+
+    for(int i = 0; i < ncrowded; i++) {
+        struct hstate *curr = hstate_get(crowded[i]);
+        if(!curr || G_EntityIsZombie(crowded[i]) || !G_EntityExists(curr->res_uid))
+            continue;
+        if(M_NavObjAdjacent(s_map, crowded[i], curr->res_uid))
+            continue;
+        G_Automation_TraceFollowOn(crowded[i], "crowded", "next", curr->res_name, curr->res_uid);
+        G_Move_Stop(crowded[i]);
+        on_arrive_at_resource((void*)((uintptr_t)crowded[i]), NULL);
+    }
+}
+
 /* A unit can come to rest without the motion end its arrival waits for: it was
  * still moving when that came, or never set off. It is taken as arrived once it
  * has stood still a while, which sends it on, or back on its way. */
 static void on_20hz_tick(void *user, void *event)
 {
     give_up_unreachable(s_tick++);
+    give_up_crowded();
 
     uint32_t arrived[256];
     size_t narrived = 0;
@@ -2149,6 +2208,48 @@ uint32_t G_Harvester_NearestResource(uint32_t uid, vec2_t origin, const char *rn
         .exclude = UID_NONE
     };
     return G_Pos_NearestWithPred(origin, valid_resource, (void*)&arg, radius);
+}
+
+size_t G_Harvester_ResourcesNear(uint32_t uid, vec2_t origin, const char *rname, float radius,
+                                 size_t maxout, uint32_t out[])
+{
+    struct valid_resource_arg arg = (struct valid_resource_arg){
+        .ent_pos = G_Pos_GetXZ(uid),
+        .ent_layer = Entity_NavLayer(uid),
+        .rname = rname,
+        .exclude = UID_NONE,
+        .skip_reach = true
+    };
+    /* The circle holds every entity before the test, a field's wheat and
+     * the units about included, so the search takes many more than it keeps */
+    uint32_t found[4096];
+    size_t nfound = G_Pos_EntsInCircleWithPred(origin, radius, found, ARR_SIZE(found),
+        valid_resource, (void*)&arg);
+    size_t ret = MIN(nfound, maxout);
+    memcpy(out, found, sizeof(uint32_t) * ret);
+    return ret;
+}
+
+bool G_Harvester_ResourceReachable(uint32_t uid, uint32_t resource)
+{
+    return M_NavLocationsReachable(s_map, Entity_NavLayer(uid), G_Pos_GetXZ(uid),
+        G_Pos_GetXZ(resource));
+}
+
+size_t G_Harvester_AimedTargets(size_t maxout, uint32_t out[])
+{
+    size_t ret = 0;
+    uint32_t uid;
+    struct hstate *hs;
+    kh_foreach_val_ptr(s_entity_state_table, uid, hs, {
+        (void)uid;
+        if(ret < maxout && hs->res_uid != NULL_UID
+        && (hs->state == STATE_HARVESTING_SEEK_RESOURCE || hs->state == STATE_HARVESTING
+            || hs->state == STATE_HARVESTING_SEEK_STORAGE)) {
+            out[ret++] = hs->res_uid;
+        }
+    });
+    return ret;
 }
 
 int G_Harvester_CountGathering(int faction, const char *rname)
@@ -2403,6 +2504,8 @@ bool G_Harvester_Gather(uint32_t harvester, uint32_t resource)
     hs->state = STATE_HARVESTING_SEEK_RESOURCE;
     hs->res_uid = resource;
     hs->res_last_pos = G_Pos_GetXZ(resource);
+    hs->press_ticks = 0;
+    hs->press_pos = G_Pos_GetXZ(harvester);
     hs->res_name = G_Resource_GetName(resource);
     E_Entity_Notify(EVENT_HARVEST_TARGET_ACQUIRED, harvester, 
         (void*)(uintptr_t)resource, ES_ENGINE);
