@@ -124,6 +124,10 @@
 /* Stock past the spare target by at least this much takes no gatherers for
  * a rate either, so that a good used slower than asked for does not pile up */
 #define RATE_STOCK_MARGIN            (50)
+/* A good's gatherer count follows what it wants a step at a time, so that a
+ * shortfall does not draw a crowd that is let go all at once when it is met */
+#define ALLOWED_STEP_TICKS           (400)
+#define ALLOWED_STEP_UP              (2)
 /* Gatherers leave off to build a site that has fewer builders than this */
 #define SITE_BUILDERS                (3)
 #define MAX_TRACE_STEPS              (24)
@@ -248,6 +252,9 @@ struct good_priority{
     /* Gathered, and seconds of gatherers' time spent at it, fading over RATE_WINDOW_S */
     float gathered;
     float gatherer_s;
+    /* The gatherer count let gather it now, and the tick it last stepped; not saved */
+    int      allowed;
+    uint32_t allowed_tick;
 };
 
 VEC_TYPE(priority, struct good_priority)
@@ -1147,6 +1154,27 @@ static float gatherer_rate(const struct good_priority *realm)
     return realm->gathered * 60.0f / realm->gatherer_s;
 }
 
+/* The gatherer count stepped toward what the good wants: up two at a time
+ * when it is well short, else one, and down one */
+static int gatherers_allowed(int faction, const char *rname, int want)
+{
+    struct good_priority *realm = priority_get(faction, 0, rname, true);
+    if(!realm)
+        return want;
+    if(realm->allowed_tick == 0 || s_tick < realm->allowed_tick) {
+        realm->allowed = want;
+        realm->allowed_tick = s_tick;
+    }else if(s_tick - realm->allowed_tick >= ALLOWED_STEP_TICKS) {
+        realm->allowed_tick = s_tick;
+        if(want > realm->allowed) {
+            realm->allowed += MIN(want - realm->allowed, ALLOWED_STEP_UP);
+        }else if(want < realm->allowed) {
+            realm->allowed--;
+        }
+    }
+    return realm->allowed;
+}
+
 static int gatherers_for_rate(int faction, const char *rname)
 {
     const struct good_priority *realm = priority_get(faction, 0, rname, false);
@@ -1384,7 +1412,8 @@ static struct good_demand *demand_get(struct work_snapshot *snap, int faction, c
         .target = target,
         .need = resource_need(faction, rname, &snap->requests),
         .workers = G_Harvester_CountGathering(faction, rname),
-        .wanted = gatherers_wanted(surplus, shortfall, target, gatherers_for_rate(faction, rname)),
+        .wanted = gatherers_allowed(faction, rname,
+            gatherers_wanted(surplus, shortfall, target, gatherers_for_rate(faction, rname))),
         .surplus = surplus,
         .shortfall = shortfall,
         .stocked = stocked(surplus, shortfall, target)
