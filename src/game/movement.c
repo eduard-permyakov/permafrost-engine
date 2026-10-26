@@ -323,6 +323,9 @@ struct movestate_aux{
      */
     bool               phasing;
     uint16_t           phase_ticks;
+    /* Steps vetoed in a row for landing on a body, and the pass left to walk through */
+    uint16_t           veto_ticks;
+    uint16_t           wedge_ticks;
     bool               soft_blocking;
     vec2_t             soft_block_pos;
     float              soft_block_radius;
@@ -911,6 +914,10 @@ static struct result navigation_tick_task(void *arg);
  * reach its cell does not walk through its own side for good.
  */
 #define PHASE_MAX_TICKS                 (400)
+/* Every step vetoed this long, the unit is wedged, as between two walls with
+ * another body in the gap, and walks through bodies for a pass this long */
+#define WEDGE_VETO_S                    (3.0f)
+#define WEDGE_PASS_TICKS                (60)
 /* A group none of whose members has come nearer its goal for this long has
  * stopped for good, and each member takes the ground it stands on. This is
  * the one terminal timer; every other settle rule is a distance to the
@@ -1925,6 +1932,7 @@ static void record_way(struct movestate_aux *aux, const struct move_work_in *in,
                   | ((PFM_Vec2_Len(&out->patch.next_velocity) > EPSILON) ? 0x800 : 0)
                   | (in->arrival_vdes                            ? 0x1000 : 0);
     aux->way_links = MIN(in->nlinks, MAX_WAY_LINKS);
+    aux->veto_ticks = (out->patch.flags & UPDATE_VETO_BLOCKED) ? MIN(aux->veto_ticks + 1, UINT16_MAX) : 0;
     aux->way_void = PFM_Vec2_Len(&in->ent_des_v) < EPSILON;
     aux->way_paced = (in->fstate.fid != NULL_FID)
                   && (!in->fstate.assignment_ready || aux->parked
@@ -8716,6 +8724,13 @@ static void move_do_tick_submit(enum movement_hz hz)
          * every other member (settle_members).
          */
         bool pass = straggler && (caux->phase_ticks <= PHASE_MAX_TICKS);
+        if(caux->wedge_ticks > 0) {
+            caux->wedge_ticks--;
+        }else if(caux->veto_ticks >= WEDGE_VETO_S * hz_count(s_move_work.hz)) {
+            caux->wedge_ticks = WEDGE_PASS_TICKS;
+            caux->veto_ticks = 0;
+        }
+        pass = pass || caux->wedge_ticks > 0;
         /* The last few units onto a cell cross the clearance rings of the
          * parked neighbours; the lattice keeps the cell itself body-clear, so
          * the rings are transit margin here, not bodies.
