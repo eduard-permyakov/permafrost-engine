@@ -1626,7 +1626,8 @@ static size_t field_entity_initial_frontier(
     N_GetResolution(priv, &res);
 
     int ntds;
-    struct tile_desc tds[512];
+    /* Room for a whole cluster footprint with its rings */
+    struct tile_desc tds[1024 * CLUSTER_FOOTPRINT_MAX];
     uint32_t ent = target->target;
 
     /* A reach turns the goal from the entity's edge into its in-range set:

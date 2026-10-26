@@ -475,6 +475,9 @@ int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos,
     t_max_z = (step_r > 0) ? fabs(start_z - (bounds.z + bounds.height)) / fabs(line_dir.z)
                            : fabs(start_z - bounds.z) / fabs(line_dir.z);
 
+    if(maxout == 0)
+        return 0;
+
     bool line_ends_inside = C_BoxPointIntersection(line.bx, line.bz, map_box);
     struct tile_desc final_tile_desc;
 
@@ -593,7 +596,7 @@ size_t M_Tile_AllUnderObj(vec3_t map_pos, struct map_resolution res, const struc
         const struct tile_desc *descs = out + ret;
         ret += num_tiles;
 
-        if(ret == maxout)
+        if(ret >= maxout)
             goto done;
 
         for(int j = 0; j < num_tiles; j++) {
@@ -639,7 +642,7 @@ size_t M_Tile_AllUnderObj(vec3_t map_pos, struct map_resolution res, const struc
                 bot_corners_2d[2], bot_corners_2d[3])) {
 
                 out[ret++] = desc;
-                if(ret == maxout)
+                if(ret >= maxout)
                     goto done;
             }
         }
