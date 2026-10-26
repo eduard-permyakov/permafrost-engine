@@ -7416,8 +7416,14 @@ bool N_ObjReachableNowOBB(void *nav_private, enum nav_layer layer, vec3_t map_po
                 continue;
             const struct nav_chunk *chunk = &priv->chunks[layer][IDX(td.chunk_r, priv->width, td.chunk_c)];
             uint16_t liid = chunk->local_islands[td.tile_r][td.tile_c];
-            if(liid == ISLAND_NONE)
+            /* Ground held by standing units alone is open as far as the
+             * buildings go: a store with a crowd about it is not walled in
+             */
+            if(liid == ISLAND_NONE) {
+                if(!n_tile_walled(chunk, td.tile_r, td.tile_c))
+                    PERF_RETURN(true);
                 continue;
+            }
             struct island_ref isl = (struct island_ref){(struct coord){td.chunk_r, td.chunk_c}, liid};
 
             bool known = false;
