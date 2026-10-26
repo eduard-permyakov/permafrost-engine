@@ -530,14 +530,14 @@ vec2_t M_NavClosestReachableDest(const struct map *map, enum nav_layer layer,
  * ------------------------------------------------------------------------
  */
 bool   M_NavClosestReachableAdjacentPos(const struct map *map, enum nav_layer layer,
-                                        vec2_t xz_src, const uint32_t target_uid,
+                                        vec2_t xz_src, const uint32_t target_uid, bool footprint,
                                         vec2_t *out);
 
 /* Like M_NavClosestReachableAdjacentPos, but resolving the target from a
  * snapshot query context instead of live state (safe off the main thread).
  */
 bool   M_NavClosestReachableAdjacentPosFrom(const struct map *map, enum nav_layer layer,
-                                            vec2_t xz_src, uint32_t target_uid,
+                                            vec2_t xz_src, uint32_t target_uid, bool footprint,
                                             const struct nav_unit_query_ctx *ctx, vec2_t *out);
 
 /* ------------------------------------------------------------------------
@@ -722,7 +722,8 @@ enum range_field_state M_NavEnemyRangeFieldState(const struct map *map, enum nav
 enum range_field_state M_NavEntityRangeFieldState(const struct map *map, enum nav_layer layer,
                                  uint32_t ent, float range, vec2_t xz_pos);
 void M_NavRequestAsyncSurroundField(const struct map *map, enum nav_layer layer, 
-                                    vec2_t curr_pos, uint32_t ent, int faction_id, float range);
+                                    vec2_t curr_pos, uint32_t ent, int faction_id, float range,
+                                    bool footprint);
 void M_NavRequestAsyncGroupArrivalField(const struct map *map, enum nav_layer layer,
                                         vec2_t centre_pos, uint16_t radius);
 void M_NavInvalidateZoneFieldsAt(const struct map *map, vec2_t xz_pos, enum nav_layer layer);

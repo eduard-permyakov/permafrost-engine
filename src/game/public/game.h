@@ -300,6 +300,17 @@ void                  G_Cluster_SetType(uint32_t uid, const char *type, float ra
 int                   G_Cluster_Of(uint32_t uid);
 uint32_t              G_Cluster_Anchor(int cluster_id);
 size_t                G_Cluster_Members(int cluster_id, size_t maxout, uint32_t out[]);
+/* The buildings a unit of the owner's side makes for as one when sent to one
+ * of them: those of its cluster, or itself alone */
+#define CLUSTER_FOOTPRINT_MAX (8)
+struct cluster_footprint{
+    uint8_t  nmembers;
+    uint32_t members[CLUSTER_FOOTPRINT_MAX];
+};
+struct kh_footprint_s;
+size_t                G_Cluster_Footprint(uint32_t uid, size_t maxout, uint32_t out[]);
+uint32_t              G_Cluster_FootprintAnchor(uint32_t uid);
+struct kh_footprint_s *G_Cluster_CopyFootprintsInto(struct kh_footprint_s *dst);
 uint32_t              G_Cluster_NearestMember(int cluster_id, vec2_t pos);
 void                  G_Cluster_SetIcon(const char *path);
 size_t                G_Cluster_GetAll(size_t maxout, int out[]);

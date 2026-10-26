@@ -535,6 +535,7 @@ struct move_gamestate{
     struct map            *map;
     /* Additional state needed for nav_unit_query_ctx */
     struct kh_aabb_s      *aabbs;
+    struct kh_footprint_s *footprints;
     void                  *transforms;
     bool                  fog_enabled;
     uint32_t              *fog_state;
@@ -769,6 +770,7 @@ KHASH_MAP_INIT_INT(state, struct movestate)
 KHASH_MAP_INIT_INT(auxstate, struct movestate_aux)
 KHASH_MAP_INIT_INT64(blockref, struct block_ref)
 KHASH_MAP_INIT_INT(aabb, struct aabb)
+KHASH_MAP_INIT_INT(footprint, struct cluster_footprint)
 KHASH_MAP_INIT_INT(findex, int)
 
 QUEUE_TYPE(cmd, struct move_cmd)
@@ -2760,6 +2762,16 @@ static bool entity_exists(uint32_t uid)
     return (k != kh_end(s_move_work.gamestate.positions));
 }
 
+/* A unit sent to a building of its own side makes for the building's whole
+ * cluster as one footprint; an attacker wants the one building */
+static bool surround_footprint(uint32_t uid, const struct movestate *ms)
+{
+    uint32_t target = ms->surround_target_uid;
+    return (G_FlagsGetFrom(s_move_work.gamestate.flags, target) & ENTITY_FLAG_BUILDING)
+        && G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid)
+        == G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, target);
+}
+
 static void request_async_field(uint32_t uid)
 {
     struct movestate *ms = movestate_get(uid);
@@ -2801,7 +2813,7 @@ static void request_async_field(uint32_t uid)
             int layer = Entity_NavLayerWithRadius(flags, radius);
             int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
             return M_NavRequestAsyncSurroundField(s_move_work.gamestate.map, layer, pos_xz, 
-                ms->surround_target_uid, faction_id, 0.0f);
+                ms->surround_target_uid, faction_id, 0.0f, surround_footprint(uid, ms));
         }
         break;
     }
@@ -2819,7 +2831,8 @@ static void request_async_field(uint32_t uid)
             int layer = Entity_NavLayerWithRadius(flags, radius);
             int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
             return M_NavRequestAsyncSurroundField(s_move_work.gamestate.map, layer, pos_xz,
-                ms->surround_target_uid, faction_id, movestate_aux_get(uid)->target_range);
+                ms->surround_target_uid, faction_id, movestate_aux_get(uid)->target_range,
+                surround_footprint(uid, ms));
         }
         break;
     }
@@ -2867,7 +2880,8 @@ static struct target build_target(uint32_t uid, const struct flock *fl)
     && entity_exists(ms->surround_target_uid) && ms->using_surround_field) {
         return (struct target){.kind = TARGET_KIND_SURROUND,
                                .surround = {.layer = layer, .faction_id = faction_id,
-                                            .uid = ms->surround_target_uid}};
+                                            .uid = ms->surround_target_uid,
+                                            .footprint = surround_footprint(uid, ms)}};
     }
     if(ms->state == STATE_ENTER_ENTITY_RANGE
     && entity_exists(ms->surround_target_uid)) {
@@ -2896,7 +2910,8 @@ static struct target build_target(uint32_t uid, const struct flock *fl)
             return (struct target){.kind = TARGET_KIND_SURROUND,
                                    .surround = {.layer = layer, .faction_id = faction_id,
                                                 .uid = ms->surround_target_uid,
-                                                .range = eaux->target_range}};
+                                                .range = eaux->target_range,
+                                                .footprint = surround_footprint(uid, ms)}};
         }
     }
 
@@ -4648,7 +4663,8 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
 
             vec2_t found;
             bool hasdest = M_NavClosestReachableAdjacentPosFrom(s_move_work.gamestate.map, layer,
-                new_pos_xz, ms->surround_target_uid, &s_move_work.unit_query_ctx, &found);
+                new_pos_xz, ms->surround_target_uid, surround_footprint(uid, ms),
+                &s_move_work.unit_query_ctx, &found);
             aux->surround_requery_tick = s_move_trace_tick + SURROUND_REQUERY_TICKS
                                        + uid % SURROUND_REQUERY_SPREAD;
 
@@ -5593,6 +5609,11 @@ static void do_set_surround_entity(uint32_t uid, uint32_t target)
 
     if(!G_EntityExists(target))
         return;
+
+    /* One field serves a whole cluster of the unit's own side */
+    if((G_FlagsGet(target) & ENTITY_FLAG_BUILDING) && G_GetFactionID(target) == G_GetFactionID(uid)) {
+        target = G_Cluster_FootprintAnchor(target);
+    }
 
     do_stop(uid);
     do_set_dest(uid, G_Pos_GetXZ(target), false);
@@ -6646,6 +6667,7 @@ static void move_init_nav_unit_query_ctx(void)
     s_move_work.unit_query_ctx.postree = s_move_work.gamestate.postree;
     s_move_work.unit_query_ctx.faction_ids = s_move_work.gamestate.faction_ids;
     s_move_work.unit_query_ctx.aabbs = s_move_work.gamestate.aabbs;
+    s_move_work.unit_query_ctx.footprints = s_move_work.gamestate.footprints;
     s_move_work.unit_query_ctx.transforms = s_move_work.gamestate.transforms;
     s_move_work.unit_query_ctx.sel_radiuses = s_move_work.gamestate.sel_radiuses;
     s_move_work.unit_query_ctx.fog_enabled = s_move_work.gamestate.fog_enabled;
@@ -6728,6 +6750,8 @@ static void move_copy_gamestate(void)
     s_move_work.gamestate.transforms =
         Entity_CopyTransformsInto(s_move_work.gamestate.transforms);
     s_move_work.gamestate.aabbs = move_update_aabb_cache();
+    s_move_work.gamestate.footprints =
+        G_Cluster_CopyFootprintsInto(s_move_work.gamestate.footprints);
     s_move_work.gamestate.fog_enabled = G_Fog_Enabled();
     s_move_work.gamestate.fog_state =
         G_Fog_CopyStateInto(s_move_work.gamestate.fog_state, &s_fog_snap_ntiles);
@@ -6817,6 +6841,10 @@ static void destroy_gamestate_tables(struct move_gamestate *gs)
     }
     /* Aliases the persistent cache, which is destroyed separately */
     gs->aabbs = NULL;
+    if(gs->footprints) {
+        kh_destroy(footprint, gs->footprints);
+        gs->footprints = NULL;
+    }
     if(gs->fog_state) {
         PF_FREE(gs->fog_state);
         gs->fog_state = NULL;

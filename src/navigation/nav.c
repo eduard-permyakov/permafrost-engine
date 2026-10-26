@@ -5498,7 +5498,8 @@ bool N_RequiresPathRequest(void *nav_private, vec3_t map_pos, struct target targ
             .type = TARGET_ENTITY,
             .ent.target = target.surround.uid,
             .ent.map_pos = map_pos,
-            .ent.range = target.surround.range
+            .ent.range = target.surround.range,
+            .ent.footprint = target.surround.footprint
         }, layer);
         break;
     default:
@@ -5560,7 +5561,8 @@ vec2_t N_DesiredVelocityForTargetCached(void *nav_private, vec3_t map_pos, struc
             .type = TARGET_ENTITY,
             .ent.target = target.surround.uid,
             .ent.map_pos = map_pos,
-            .ent.range = target.surround.range
+            .ent.range = target.surround.range,
+            .ent.footprint = target.surround.footprint
         }, layer);
     }
 
@@ -5613,7 +5615,8 @@ int N_FlowFieldDirAt(void *nav_private, vec3_t map_pos, struct target target, ve
             .type = TARGET_ENTITY,
             .ent.target = target.surround.uid,
             .ent.map_pos = map_pos,
-            .ent.range = target.surround.range
+            .ent.range = target.surround.range,
+            .ent.footprint = target.surround.footprint
         }, target.surround.layer);
     }
 
@@ -5745,7 +5748,8 @@ void N_ServicePathRequest(void *nav_private, vec3_t map_pos, struct target targe
                 .type = TARGET_ENTITY,
                 .ent.target = target.surround.uid,
                 .ent.map_pos = map_pos,
-                .ent.range = target.surround.range
+                .ent.range = target.surround.range,
+                .ent.footprint = target.surround.footprint
             };
         }
         ffid = N_FlowFieldID(chunk, ft, layer);
@@ -5918,7 +5922,8 @@ void N_RequestAsyncEnemySeekField(vec2_t curr_pos, void *nav_private, enum nav_l
 }
 
 void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_layer layer,
-                                 vec3_t map_pos, uint32_t ent, int faction_id, float range)
+                                 vec3_t map_pos, uint32_t ent, int faction_id, float range,
+                                 bool footprint)
 {
     struct nav_private *priv = nav_private;
     struct map_resolution res;
@@ -5937,6 +5942,7 @@ void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_la
         .ent.target = ent,
         .ent.map_pos = map_pos,
         .ent.range = range,
+        .ent.footprint = footprint,
     };
 
     ff_id_t ffid = N_FlowFieldID(chunk, target, layer);

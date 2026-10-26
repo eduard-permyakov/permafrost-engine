@@ -78,6 +78,8 @@ struct entity_desc{
      * seeding, which is what a melee surround wants.
      */
     float        range;
+    /* Seed the tiles of the target's whole cluster, for a unit of its own side */
+    bool         footprint;
 };
 
 struct portal_desc{

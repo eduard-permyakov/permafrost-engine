@@ -69,6 +69,7 @@
 #define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
 
 KHASH_MAP_INIT_INT(aabb, struct aabb)
+KHASH_MAP_INIT_INT(footprint, struct cluster_footprint)
 
 /* Geometry of an adjacency target: a selection circle for a movable
  * entity, else its oriented bounding box.
@@ -77,7 +78,9 @@ struct nav_target_geom{
     bool       movable;
     vec2_t     xz;
     float      radius;
-    struct obb obb;
+    /* A building's own box, or those of its whole cluster as one footprint */
+    int        nobb;
+    struct obb obbs[CLUSTER_FOOTPRINT_MAX];
 };
 
 
@@ -146,7 +149,7 @@ static struct tile *tile_for_desc(const struct map *map, const struct tile_desc 
  * snapshot form are: an animated pose (a windmill's sails) would swing the
  * verdict away from the one movement arrived on.
  */
-static struct nav_target_geom nav_target_geom_live(uint32_t uid)
+static struct nav_target_geom nav_target_geom_live(uint32_t uid, bool footprint)
 {
     struct nav_target_geom ret;
     ret.movable = G_FlagsGet(uid) & ENTITY_FLAG_MOVABLE;
@@ -154,12 +157,21 @@ static struct nav_target_geom nav_target_geom_live(uint32_t uid)
         ret.xz = G_Pos_GetXZ(uid);
         ret.radius = G_GetSelectionRadius(uid);
     }else{
-        Entity_CurrentOBB(uid, &ret.obb, true);
+        uint32_t members[CLUSTER_FOOTPRINT_MAX];
+        size_t nmembers = footprint ? G_Cluster_Footprint(uid, ARR_SIZE(members), members) : 0;
+        if(nmembers == 0) {
+            members[0] = uid;
+            nmembers = 1;
+        }
+        ret.nobb = nmembers;
+        for(int i = 0; i < nmembers; i++) {
+            Entity_CurrentOBB(members[i], &ret.obbs[i], true);
+        }
     }
     return ret;
 }
 
-static struct nav_target_geom nav_target_geom_from(uint32_t uid,
+static struct nav_target_geom nav_target_geom_from(uint32_t uid, bool footprint,
                                                    const struct nav_unit_query_ctx *ctx)
 {
     struct nav_target_geom ret;
@@ -168,18 +180,42 @@ static struct nav_target_geom nav_target_geom_from(uint32_t uid,
         ret.xz = G_Pos_GetXZFrom(ctx->positions, uid);
         ret.radius = G_GetSelectionRadiusFrom(ctx->sel_radiuses, uid);
     }else{
+        uint32_t members[CLUSTER_FOOTPRINT_MAX];
+        size_t nmembers = 0;
+        if(footprint && ctx->footprints) {
+            khiter_t k = kh_get(footprint, ctx->footprints, uid);
+            if(k != kh_end(ctx->footprints)) {
+                const struct cluster_footprint *fp = &kh_value(ctx->footprints, k);
+                memcpy(members, fp->members, sizeof(uint32_t) * fp->nmembers);
+                nmembers = fp->nmembers;
+            }
+        }
+        if(nmembers == 0) {
+            members[0] = uid;
+            nmembers = 1;
+        }
         khash_t(trans) *transforms = ctx->transforms;
-        vec3_t scale = Entity_GetScaleFrom(transforms, uid);
+        ret.nobb = 0;
+        for(int i = 0; i < nmembers; i++) {
+            khiter_t k = kh_get(aabb, ctx->aabbs, members[i]);
+            if(k == kh_end(ctx->aabbs))
+                continue;
+            vec3_t scale = Entity_GetScaleFrom(transforms, members[i]);
 
-        mat4x4_t model;
-        Entity_ModelMatrixFrom(G_Pos_GetFrom(ctx->positions, uid),
-            Entity_GetRotFrom(transforms, uid), scale, &model);
-
-        khiter_t k = kh_get(aabb, ctx->aabbs, uid);
-        assert(k != kh_end(ctx->aabbs));
-        Entity_CurrentOBBFrom(&kh_value(ctx->aabbs, k), model, scale, &ret.obb);
+            mat4x4_t model;
+            Entity_ModelMatrixFrom(G_Pos_GetFrom(ctx->positions, members[i]),
+                Entity_GetRotFrom(transforms, members[i]), scale, &model);
+            Entity_CurrentOBBFrom(&kh_value(ctx->aabbs, k), model, scale, &ret.obbs[ret.nobb++]);
+        }
     }
     return ret;
+}
+
+/* Whether a unit sent to the building makes for its whole cluster: one of
+ * its own side does, an attacker wants the one building */
+static bool footprint_for(int ent_faction, int target_faction, uint32_t target_flags)
+{
+    return (target_flags & ENTITY_FLAG_BUILDING) && ent_faction == target_faction;
 }
 
 static bool nav_obj_adjacent(const struct map *map, vec2_t ent_xz, float ent_radius,
@@ -189,7 +225,11 @@ static bool nav_obj_adjacent(const struct map *map, vec2_t ent_xz, float ent_rad
         return N_ObjAdjacentToDynamicWith(map->nav_private, map->pos, ent_xz, ent_radius,
             tgt->xz, tgt->radius);
     }
-    return N_ObjAdjacentToStaticWith(map->nav_private, map->pos, ent_xz, ent_radius, &tgt->obb);
+    for(int i = 0; i < tgt->nobb; i++) {
+        if(N_ObjAdjacentToStaticWith(map->nav_private, map->pos, ent_xz, ent_radius, &tgt->obbs[i]))
+            return true;
+    }
+    return false;
 }
 
 static bool nav_closest_reachable_adjacent_pos(const struct map *map, enum nav_layer layer,
@@ -200,8 +240,23 @@ static bool nav_closest_reachable_adjacent_pos(const struct map *map, enum nav_l
         return N_ClosestReachableAdjacentPosDynamic(map->nav_private, layer, map->pos,
             xz_src, tgt->xz, tgt->radius, out);
     }
-    return N_ClosestReachableAdjacentPosStatic(map->nav_private, layer, map->pos,
-        xz_src, &tgt->obb, out);
+    bool found = false;
+    float best = INFINITY;
+    for(int i = 0; i < tgt->nobb; i++) {
+        vec2_t pos;
+        if(!N_ClosestReachableAdjacentPosStatic(map->nav_private, layer, map->pos,
+            xz_src, &tgt->obbs[i], &pos))
+            continue;
+        vec2_t delta;
+        PFM_Vec2_Sub(&pos, &xz_src, &delta);
+        float dist = PFM_Vec2_Len(&delta);
+        if(dist < best) {
+            best = dist;
+            *out = pos;
+            found = true;
+        }
+    }
+    return found;
 }
 
 /*****************************************************************************/
@@ -988,17 +1043,18 @@ vec2_t M_NavClosestReachableDest(const struct map *map, enum nav_layer layer,
 }
 
 bool M_NavClosestReachableAdjacentPos(const struct map *map, enum nav_layer layer,
-                                      vec2_t xz_src, const uint32_t target_uid, vec2_t *out)
+                                      vec2_t xz_src, const uint32_t target_uid, bool footprint,
+                                      vec2_t *out)
 {
-    struct nav_target_geom tgt = nav_target_geom_live(target_uid);
+    struct nav_target_geom tgt = nav_target_geom_live(target_uid, footprint);
     return nav_closest_reachable_adjacent_pos(map, layer, xz_src, &tgt, out);
 }
 
 bool M_NavClosestReachableAdjacentPosFrom(const struct map *map, enum nav_layer layer,
-                                          vec2_t xz_src, uint32_t target_uid,
+                                          vec2_t xz_src, uint32_t target_uid, bool footprint,
                                           const struct nav_unit_query_ctx *ctx, vec2_t *out)
 {
-    struct nav_target_geom tgt = nav_target_geom_from(target_uid, ctx);
+    struct nav_target_geom tgt = nav_target_geom_from(target_uid, footprint, ctx);
     return nav_closest_reachable_adjacent_pos(map, layer, xz_src, &tgt, out);
 }
 
@@ -1215,14 +1271,18 @@ uint32_t M_NavDestIDForPosAttacking(const struct map *map, vec2_t xz_pos,
 
 bool M_NavObjAdjacent(const struct map *map, uint32_t uid, uint32_t target_uid)
 {
-    struct nav_target_geom tgt = nav_target_geom_live(target_uid);
+    bool footprint = footprint_for(G_GetFactionID(uid), G_GetFactionID(target_uid),
+        G_FlagsGet(target_uid));
+    struct nav_target_geom tgt = nav_target_geom_live(target_uid, footprint);
     return nav_obj_adjacent(map, G_Pos_GetXZ(uid), G_GetSelectionRadius(uid), &tgt);
 }
 
 bool M_NavObjAdjacentFrom(const struct map *map, uint32_t uid, uint32_t target_uid,
                           const struct nav_unit_query_ctx *ctx)
 {
-    struct nav_target_geom tgt = nav_target_geom_from(target_uid, ctx);
+    bool footprint = footprint_for(G_GetFactionIDFrom(ctx->faction_ids, uid),
+        G_GetFactionIDFrom(ctx->faction_ids, target_uid), G_FlagsGetFrom(ctx->flags, target_uid));
+    struct nav_target_geom tgt = nav_target_geom_from(target_uid, footprint, ctx);
     return nav_obj_adjacent(map, G_Pos_GetXZFrom(ctx->positions, uid),
         G_GetSelectionRadiusFrom(ctx->sel_radiuses, uid), &tgt);
 }
@@ -1290,9 +1350,11 @@ enum range_field_state M_NavEntityRangeFieldState(const struct map *map, enum na
 }
 
 void M_NavRequestAsyncSurroundField(const struct map *map, enum nav_layer layer, 
-                                    vec2_t curr_pos, uint32_t ent, int faction_id, float range)
+                                    vec2_t curr_pos, uint32_t ent, int faction_id, float range,
+                                    bool footprint)
 {
-    N_RequestAsyncSurroundField(curr_pos, map->nav_private, layer, map->pos, ent, faction_id, range);
+    N_RequestAsyncSurroundField(curr_pos, map->nav_private, layer, map->pos, ent, faction_id, range,
+        footprint);
 }
 
 void M_NavRequestAsyncGroupArrivalField(const struct map *map, enum nav_layer layer,

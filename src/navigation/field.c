@@ -79,6 +79,7 @@ PQUEUE_TYPE(td, struct tile_desc)
 PQUEUE_IMPL(static, td, struct tile_desc)
 
 KHASH_MAP_INIT_INT(aabb, struct aabb)
+KHASH_MAP_INIT_INT(footprint, struct cluster_footprint)
 
 KHASH_DECLARE(id, khint32_t, int)
 
@@ -986,6 +987,21 @@ static void ent_curr_obb(uint32_t uid, struct obb *out, bool identity,
     }
 }
 
+/* The buildings the target stands for, from the tick's snapshot or live */
+static size_t ent_footprint(uint32_t uid, struct nav_unit_query_ctx *ctx, uint32_t out[])
+{
+    if(!ctx)
+        return G_Cluster_Footprint(uid, CLUSTER_FOOTPRINT_MAX, out);
+    if(!ctx->footprints)
+        return 0;
+    khiter_t k = kh_get(footprint, ctx->footprints, uid);
+    if(k == kh_end(ctx->footprints))
+        return 0;
+    const struct cluster_footprint *fp = &kh_value(ctx->footprints, k);
+    memcpy(out, fp->members, sizeof(uint32_t) * fp->nmembers);
+    return fp->nmembers;
+}
+
 static vec2_t ent_pos_xz(uint32_t uid, struct nav_unit_query_ctx *ctx)
 {
     if(ctx) {
@@ -1642,9 +1658,18 @@ static size_t field_entity_initial_frontier(
 
     if(ent_flags(ent, ctx) & ENTITY_FLAG_BUILDING) {
 
-        struct obb obb;
-        ent_curr_obb(ent, &obb, true, ctx);
-        ntds = M_Tile_AllUnderObj(target->map_pos, res, &obb, tds, ARR_SIZE(tds));
+        uint32_t members[CLUSTER_FOOTPRINT_MAX];
+        size_t nmembers = target->footprint ? ent_footprint(ent, ctx, members) : 0;
+        if(nmembers == 0) {
+            members[0] = ent;
+            nmembers = 1;
+        }
+        ntds = 0;
+        for(int i = 0; i < nmembers && ntds < ARR_SIZE(tds); i++) {
+            struct obb obb;
+            ent_curr_obb(members[i], &obb, true, ctx);
+            ntds += M_Tile_AllUnderObj(target->map_pos, res, &obb, tds + ntds, ARR_SIZE(tds) - ntds);
+        }
     }else{
         ntds = M_Tile_AllUnderCircle(res, ent_pos_xz(ent, ctx),
             ent_sel_radius(ent, ctx), target->map_pos, tds, ARR_SIZE(tds));
@@ -2345,6 +2370,7 @@ ff_id_t N_FlowFieldID(struct coord chunk, struct field_target target, enum nav_l
     
         return (((uint64_t)layer)                          << 60)
              | (((uint64_t)target.type)                    << 56)
+             | (((uint64_t)!!target.ent.footprint)         << 55)
              | (((uint64_t)target.ent.target)              << 24)
              | (((uint64_t)(uint8_t)(target.ent.range / 4.0f)) << 16)
              | (((uint64_t)chunk.r)                        <<  8)

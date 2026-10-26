@@ -1065,7 +1065,7 @@ bool G_Garrison_Evict(uint32_t garrisonable, uint32_t unit, vec2_t target)
 
     vec2_t closest;
     if(!(gus->has_entered_from && M_NavClosestReachableAdjacentPos(s_map, target_layer, 
-        gus->entered_from, garrisonable, &closest))
+        gus->entered_from, garrisonable, true, &closest))
     && !M_NavClosestPathable(s_map, target_layer, garrisonable_pos, &closest))
         return false;
 

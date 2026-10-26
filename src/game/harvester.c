@@ -479,10 +479,17 @@ static bool storage_site_reachable(uint32_t ent, uint32_t site)
             return false;
         if(!M_NavLocationsReachable(s_map, ent_layer, ent_pos, site_pos))
             return false;
-        /* Not one walled in by the buildings about it */
-        struct obb obb;
-        Entity_CurrentOBB(site, &obb, false);
-        if(!M_NavObjReachableNowOBB(s_map, ent_layer, ent_pos, &obb))
+        /* Not one walled in by the buildings about it, on every side of its
+         * cluster */
+        uint32_t members[CLUSTER_FOOTPRINT_MAX];
+        size_t nmembers = G_Cluster_Footprint(site, ARR_SIZE(members), members);
+        bool open = false;
+        for(int i = 0; i < nmembers && !open; i++) {
+            struct obb obb;
+            Entity_CurrentOBB(members[i], &obb, false);
+            open = M_NavObjReachableNowOBB(s_map, ent_layer, ent_pos, &obb);
+        }
+        if(!open)
             return false;
     }
     return true;

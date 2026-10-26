@@ -98,10 +98,12 @@ struct cluster{
 KHASH_MAP_INIT_INT(cluster, struct cluster)
 KHASH_MAP_INIT_INT(member, int)
 KHASH_MAP_INIT_INT(type, struct cluster_type)
+KHASH_MAP_INIT_INT(footprint, struct cluster_footprint)
 
 static void on_building_constructed(void *user, void *event);
 static void on_update_ui(void *user, void *event);
-static void draw_diamond(struct nk_context *ctx, int colour);
+static void draw_diamond(struct nk_context *ctx, int colour, int scale);
+static void draw_preview(struct nk_context *ctx);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -453,6 +455,10 @@ void G_Cluster_Shutdown(void)
     kh_destroy(type, s_types);
     kh_destroy(member, s_member_of);
     kh_destroy(cluster, s_clusters);
+    /* Movement starts before the clusters on the next load and reads none */
+    s_types = NULL;
+    s_member_of = NULL;
+    s_clusters = NULL;
 }
 
 void G_Cluster_RemoveEntity(uint32_t uid)
@@ -511,6 +517,53 @@ size_t G_Cluster_Members(int cluster_id, size_t maxout, uint32_t out[])
         out[ret++] = vec_AT(&cl->members, i);
     }
     return ret;
+}
+
+size_t G_Cluster_Footprint(uint32_t uid, size_t maxout, uint32_t out[])
+{
+    int cid = G_Cluster_Of(uid);
+    size_t ret = cid ? G_Cluster_Members(cid, maxout, out) : 0;
+    if(ret == 0 && maxout > 0) {
+        out[0] = uid;
+        ret = 1;
+    }
+    return ret;
+}
+
+uint32_t G_Cluster_FootprintAnchor(uint32_t uid)
+{
+    uint32_t anchor = G_Cluster_Anchor(G_Cluster_Of(uid));
+    return (anchor == NULL_UID) ? uid : anchor;
+}
+
+khash_t(footprint) *G_Cluster_CopyFootprintsInto(khash_t(footprint) *dst)
+{
+    if(!dst) {
+        dst = kh_init(footprint);
+    }
+    kh_clear(footprint, dst);
+    /* Taken before the clusters exist, as the map loads */
+    if(!s_clusters)
+        return dst;
+
+    int cid;
+    struct cluster *cl;
+    kh_foreach_val_ptr(s_clusters, cid, cl, {
+        (void)cid;
+        struct cluster_footprint fp = {0};
+        fp.nmembers = MIN(vec_size(&cl->members), CLUSTER_FOOTPRINT_MAX);
+        for(int i = 0; i < fp.nmembers; i++) {
+            fp.members[i] = vec_AT(&cl->members, i);
+        }
+        for(int i = 0; i < vec_size(&cl->members); i++) {
+            int status;
+            khiter_t k = kh_put(footprint, dst, vec_AT(&cl->members, i), &status);
+            if(status != -1) {
+                kh_value(dst, k) = fp;
+            }
+        }
+    });
+    return dst;
 }
 
 uint32_t G_Cluster_NearestMember(int cluster_id, vec2_t pos)

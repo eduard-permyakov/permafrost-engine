@@ -121,6 +121,7 @@ struct kh_id_s;
 struct kh_pos_s;
 struct kh_aabb_s;
 struct kh_range_s;
+struct kh_footprint_s;
 struct bg_ent_s;
 
 struct nav_unit_query_ctx{
@@ -132,6 +133,8 @@ struct nav_unit_query_ctx{
     struct kh_aabb_s      *aabbs;
     void                  *transforms;
     struct kh_range_s     *sel_radiuses;
+    /* The buildings each clustered building stands for, as one footprint */
+    struct kh_footprint_s *footprints;
     /* Fog of war state for querying visibility */
     bool                   fog_enabled;
     uint32_t              *fog_state;
@@ -158,7 +161,7 @@ struct target{
         struct{ dest_id_t dest_id; vec2_t dest_xz; }                  point_seek;
         struct{ enum nav_layer layer; int faction_id; float range; } enemy_seek;
         struct{ enum nav_layer layer; int faction_id; uint32_t uid;
-                float range; }                                        surround;
+                float range; bool footprint; }                        surround;
     };
 };
 
@@ -1046,7 +1049,8 @@ enum range_field_state N_EntityRangeFieldState(void *nav_private, vec3_t map_pos
  * ------------------------------------------------------------------------
  */
 void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_layer layer,
-                                 vec3_t map_pos, uint32_t ent, int faction_id, float range);
+                                 vec3_t map_pos, uint32_t ent, int faction_id, float range,
+                                 bool footprint);
 
 /* ------------------------------------------------------------------------
  * Start an async job computing the required TARGET_ZONE arrival field for a
