@@ -315,6 +315,7 @@ static void leave(uint32_t uid, bool died)
         kh_del(cluster, s_clusters, kh_get(cluster, s_clusters, id));
     }else if(cl->anchor == uid) {
         cl->anchor = vec_AT(&cl->members, 0);
+        cl->colour = least_used_colour(id, cl);
         G_StorageSite_PoolSetAnchor(id, cl->anchor);
     }
     E_Global_Notify(EVENT_CLUSTER_CHANGED, (void*)(uintptr_t)id, ES_ENGINE);
@@ -369,10 +370,10 @@ static void on_update_ui(void *user, void *event)
 
     kh_foreach_val_ptr(s_clusters, (int){0}, cl, {
 
-        if(vec_size(&cl->members) < 2)
-            continue;
         if(!(pfacs & (0x1 << cl->faction)))
             continue;
+
+        const bool linked = (vec_size(&cl->members) > 1);
 
         for(int i = 0; i < vec_size(&cl->members); i++) {
 
@@ -388,7 +389,7 @@ static void on_update_ui(void *user, void *event)
             const vec2_t vres = (vec2_t){1920, 1080};
             const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
             vec2_t ss_pos = Entity_TopScreenPos(uid, adj_vres.x, adj_vres.y);
-            const int width = ICON_SIZE + DIAMOND_GAP + DIAMOND_SIZE;
+            const int width = (linked ? ICON_SIZE : 0) + DIAMOND_GAP + DIAMOND_SIZE;
             const vec2_t pos = (vec2_t){floorf(ss_pos.x - width / 2), floorf(ss_pos.y - ICON_SIZE - 4)};
             const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
 
