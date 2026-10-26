@@ -4882,6 +4882,12 @@ static void entity_apply_update(uint32_t uid, struct movestate *ms,
     if(!ms)
         return;
 
+    /* The next leg of a trip round a target: the state set below stands
+     * over the plain move the new destination starts as.
+     */
+    if(patch->flags & UPDATE_SET_DEST)
+        do_set_dest(uid, patch->next_dest, patch->next_attack);
+
     if(patch->flags & UPDATE_SET_STATE) {
 
         if(patch->next_state == STATE_ARRIVED || (patch->next_state == STATE_WAITING)) {
