@@ -1143,7 +1143,7 @@ static PyObject *PyStorageSiteEntity_set_curr_amount(PyStorageSiteEntityObject *
 static PyObject *PyStorageSiteEntity_get_capacity(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_own_capacity(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_keep(PyStorageSiteEntityObject *self, PyObject *args);
-static PyObject *PyStorageSiteEntity_get_suppliers(PyStorageSiteEntityObject *self);
+static PyObject *PyStorageSiteEntity_get_suppliers(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_set_gatherers(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_set_keep(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_reserve(PyStorageSiteEntityObject *self, PyObject *args);
@@ -1188,9 +1188,10 @@ static PyMethodDef PyStorageSiteEntity_methods[] = {
     (PyCFunction)PyStorageSiteEntity_get_keep, METH_VARARGS,
     "Gets the reserve of the resource the site never gives away."},
 
-    {"get_suppliers", 
-    (PyCFunction)PyStorageSiteEntity_get_suppliers, METH_NOARGS,
-    "The number of units bringing goods to the site, or ordered to build it before its materials are in."},
+    {"get_suppliers",
+    (PyCFunction)PyStorageSiteEntity_get_suppliers, METH_VARARGS,
+    "The number of units bringing goods to the site, or ordered to build it before its materials are in. "
+    "Given a resource name, the number of carriers bringing that good."},
 
     {"set_gatherers", 
     (PyCFunction)PyStorageSiteEntity_set_gatherers, METH_VARARGS,
@@ -5345,9 +5346,17 @@ static PyObject *PyStorageSiteEntity_get_keep(PyStorageSiteEntityObject *self, P
     return PyInt_FromLong(G_StorageSite_GetKeep(self->super.ent, name));
 }
 
-static PyObject *PyStorageSiteEntity_get_suppliers(PyStorageSiteEntityObject *self)
+static PyObject *PyStorageSiteEntity_get_suppliers(PyStorageSiteEntityObject *self, PyObject *args)
 {
     SS_CHECK_ALIVE(NULL);
+    const char *rname = NULL;
+    if(!PyArg_ParseTuple(args, "|s", &rname)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting an optional resource name (string).");
+        return NULL;
+    }
+    if(rname) {
+        return PyInt_FromLong(G_StorageSite_BoundForGood(self->super.ent, rname));
+    }
     return PyInt_FromLong(G_StorageSite_BoundFor(self->super.ent));
 }
 

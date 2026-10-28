@@ -2274,6 +2274,24 @@ size_t G_Harvester_BoundDests(size_t maxout, uint32_t out[])
     return ret;
 }
 
+int G_Harvester_CountBound(uint32_t dest, const char *rname)
+{
+    if(!s_entity_state_table)
+        return 0;
+    int ret = 0;
+    uint32_t uid;
+    struct hstate *hs;
+    kh_foreach_val_ptr(s_entity_state_table, uid, hs, {
+        (void)uid;
+        if(hs->state < STATE_TRANSPORT_GETTING || hs->transport_dest_uid != dest)
+            continue;
+        if(!hs->res_name || strcmp(hs->res_name, rname))
+            continue;
+        ret++;
+    });
+    return ret;
+}
+
 int G_Harvester_CountGathering(int faction, const char *rname)
 {
     int ret = 0;
