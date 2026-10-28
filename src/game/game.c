@@ -2644,6 +2644,37 @@ bool G_MapLocationsReachable(vec2_t a, vec2_t b, enum nav_layer layer)
     return M_NavLocationsReachable(s_gs.map, layer, a, b);
 }
 
+bool G_MapTileInfo(vec2_t xz, enum nav_layer layer, struct nav_tile_report *out)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(!s_gs.map || !G_PointInsideMap(xz))
+        return false;
+    M_NavTileReport(s_gs.map, layer, xz, out);
+    return true;
+}
+
+bool G_ClosestAdjacentPos(uint32_t uid, uint32_t target, vec2_t *out)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(!s_gs.map || !G_EntityExists(uid) || !G_EntityExists(target))
+        return false;
+    enum nav_layer layer = Entity_NavLayerWithRadius(G_FlagsGet(uid), G_GetSelectionRadius(uid));
+    bool footprint = (G_FlagsGet(target) & ENTITY_FLAG_BUILDING)
+                  && G_GetFactionID(target) == G_GetFactionID(uid);
+    return M_NavClosestReachableAdjacentPos(s_gs.map, layer, G_Pos_GetXZ(uid), target, footprint, out);
+}
+
+bool G_ObjAdjacent(uint32_t uid, uint32_t other)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(!s_gs.map || !G_EntityExists(uid) || !G_EntityExists(other))
+        return false;
+    return M_NavObjAdjacent(s_gs.map, uid, other);
+}
+
 bool G_MapObjReachableNow(vec2_t src, uint32_t obj, enum nav_layer layer)
 {
     ASSERT_IN_MAIN_THREAD();

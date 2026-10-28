@@ -503,6 +503,8 @@ bool   M_NavPositionPathable(const struct map *map, enum nav_layer layer,
 bool   M_NavPositionBlocked(const struct map *map, enum nav_layer layer, 
                             vec2_t xz_pos);
 int    M_NavPositionLocalIsland(const struct map *map, enum nav_layer layer, vec2_t xz_pos);
+void   M_NavTileReport(const struct map *map, enum nav_layer layer, vec2_t xz_pos,
+                       struct nav_tile_report *out);
 bool   M_NavPositionIsPortal(const struct map *map, enum nav_layer layer, vec2_t xz_pos);
 
 /* ------------------------------------------------------------------------

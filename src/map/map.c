@@ -1031,6 +1031,12 @@ int M_NavPositionLocalIsland(const struct map *map, enum nav_layer layer, vec2_t
     return N_PositionLocalIsland(xz_pos, layer, map->nav_private, map->pos);
 }
 
+void M_NavTileReport(const struct map *map, enum nav_layer layer, vec2_t xz_pos,
+                     struct nav_tile_report *out)
+{
+    N_PositionTileReport(xz_pos, layer, map->nav_private, map->pos, out);
+}
+
 bool M_NavPositionIsPortal(const struct map *map, enum nav_layer layer, vec2_t xz_pos)
 {
     return N_PositionIsPortal(xz_pos, layer, map->nav_private, map->pos);

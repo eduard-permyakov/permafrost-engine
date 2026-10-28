@@ -6465,6 +6465,32 @@ int N_PositionLocalIsland(vec2_t xz_pos, enum nav_layer layer, void *nav_private
     return (iid == ISLAND_NONE) ? -1 : (int)iid;
 }
 
+void N_PositionTileReport(vec2_t xz_pos, enum nav_layer layer, void *nav_private, vec3_t map_pos,
+                          struct nav_tile_report *out)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    struct tile_desc tile;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, xz_pos, &tile);
+    assert(result);
+
+    const struct nav_chunk *chunk =
+        &priv->chunks[layer][IDX(tile.chunk_r, priv->width, tile.chunk_c)];
+    int r = tile.tile_r, c = tile.tile_c;
+    uint16_t liid = chunk->local_islands[r][c];
+    uint16_t giid = chunk->islands[r][c];
+    *out = (struct nav_tile_report){
+        .pathable = (chunk->cost_base[r][c] != COST_IMPASSABLE),
+        .blockers = chunk->blockers[r][c],
+        .static_blockers = chunk->static_blockers[r][c],
+        .slit = N_TileInSlit(chunk, r, c),
+        .local_island = (liid == ISLAND_NONE) ? -1 : (int)liid,
+        .global_island = (giid == ISLAND_NONE) ? -1 : (int)giid,
+    };
+}
+
 /* Diagnostic: whether the tile under a point lies in one of its chunk's portals */
 bool N_PositionIsPortal(vec2_t xz_pos, enum nav_layer layer, void *nav_private, vec3_t map_pos)
 {

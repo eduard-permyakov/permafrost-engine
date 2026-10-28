@@ -166,6 +166,10 @@ bool            G_MapLocationsReachable(vec2_t a, vec2_t b, enum nav_layer layer
 bool            G_MapPositionPathable(vec2_t xz, enum nav_layer layer);
 /* Whether a unit at 'src' can get beside the object past what blocks the way now */
 bool            G_MapObjReachableNow(vec2_t src, uint32_t obj, enum nav_layer layer);
+bool            G_ObjAdjacent(uint32_t uid, uint32_t other);
+struct nav_tile_report;
+bool            G_MapTileInfo(vec2_t xz, enum nav_layer layer, struct nav_tile_report *out);
+bool            G_ClosestAdjacentPos(uint32_t uid, uint32_t target, vec2_t *out);
 /* Whether the ground within 'radius' is free to stand on: pathable, unblocked and, with
  * 'off_road', clear of roads */
 bool            G_MapGroundOpen(vec2_t xz, float radius, enum nav_layer layer, bool off_road);
@@ -407,6 +411,7 @@ void G_Move_SetAttackOnLeftClick(void);
 void G_Move_SetDest(uint32_t uid, vec2_t dest_xz, bool attack);
 void G_Move_UpdateSelectionRadius(uint32_t uid, float sel_radius);
 bool G_Move_Still(uint32_t uid);
+size_t G_Move_DebugDesc(uint32_t uid, char *out, size_t len);
 void G_Move_SetClickEnabled(bool on);
 bool G_Move_GetClickEnabled(void);
 bool G_Move_GetMaxSpeed(uint32_t uid, float *out);
@@ -692,6 +697,7 @@ void G_Builder_SetBuildSpeed(uint32_t uid, int speed);
 int  G_Builder_GetBuildSpeed(uint32_t uid);
 /* The building it is on its way to or at work on, or NULL_UID */
 uint32_t G_Builder_Target(uint32_t uid);
+size_t G_Builder_DebugDesc(uint32_t uid, char *out, size_t len);
 size_t   G_Builder_Targets(size_t maxout, uint32_t out[]);
 void G_Builder_SetBuildOnLeftClick(void);
 
@@ -784,6 +790,7 @@ uint32_t G_Automation_BestResource(uint32_t uid, const char *rname);
 size_t G_Harvester_AimedTargets(size_t maxout, uint32_t out[]);
 size_t G_Harvester_BoundDests(size_t maxout, uint32_t out[]);
 int    G_Harvester_CountBound(uint32_t dest, const char *rname);
+size_t G_Harvester_DebugDesc(uint32_t uid, char *out, size_t len);
 int   G_Harvester_CountGathering(int faction, const char *rname);
 bool  G_Harvester_CanReachSite(uint32_t uid, uint32_t site);
 bool  G_Harvester_JobInfo(uint32_t uid, uint32_t *out_src, uint32_t *out_dest, const char **out_rname, int *out_state);

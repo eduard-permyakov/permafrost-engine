@@ -54,6 +54,7 @@
 #include "../map/public/map.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/attr.h"
+#include "../lib/public/pf_string.h"
 
 #include <stdint.h>
 #include <limits.h>
@@ -737,6 +738,15 @@ uint32_t G_Builder_Target(uint32_t uid)
     if(!bs || bs->state == STATE_NOT_BUILDING)
         return NULL_UID;
     return bs->target_uid;
+}
+
+size_t G_Builder_DebugDesc(uint32_t uid, char *out, size_t len)
+{
+    struct builderstate *bs = builderstate_get(uid);
+    if(!bs)
+        return pf_snprintf(out, len, "none");
+    return pf_snprintf(out, len, "state=%d target=%u wait=%d clear_left=%d ordered=%d",
+        (int)bs->state, bs->target_uid, bs->wait_ticks, bs->clear_left, (int)bs->ordered);
 }
 
 int G_Builder_CountOn(uint32_t building)

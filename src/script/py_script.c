@@ -264,6 +264,10 @@ static PyObject *PyPf_map_nearest_pathable_water(PyObject *self, PyObject *args,
 static PyObject *PyPf_map_nearest_pathable_air(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_map_pos_pathable(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_map_ground_open(PyObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPf_obj_adjacent(PyObject *self, PyObject *args);
+static PyObject *PyPf_map_tile_info(PyObject *self, PyObject *args);
+static PyObject *PyPf_closest_adjacent_pos(PyObject *self, PyObject *args);
+static PyObject *PyPf_debug_desc(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_reachable_now(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_map_pos_under_cursor(PyObject *self);
 static PyObject *PyPf_draw_text(PyObject *self, PyObject *args);
@@ -1033,6 +1037,25 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_map_reachable_now, METH_VARARGS | METH_KEYWORDS,
     "Returns whether a unit of the optional 'radius' at the XZ position can get beside the "
     "entity as the ground is now, past the buildings and standing units in the way."},
+
+    {"obj_adjacent",
+    (PyCFunction)PyPf_obj_adjacent, METH_VARARGS,
+    "Returns whether the first entity stands beside the second, as the engine judges an arrival."},
+
+    {"map_tile_info",
+    (PyCFunction)PyPf_map_tile_info, METH_VARARGS,
+    "Takes an (X, Z) position and an optional unit radius. Returns a (pathable, blockers, static blockers, "
+    "in a slit, local island, global island) tuple for the tile under it on that unit's layer, or None off the map."},
+
+    {"closest_adjacent_pos",
+    (PyCFunction)PyPf_closest_adjacent_pos, METH_VARARGS,
+    "Takes a unit and a building. Returns the (X, Z) spot the unit makes for to stand beside the building, "
+    "as the navigation picks it, or None when there is none."},
+
+    {"debug_desc",
+    (PyCFunction)PyPf_debug_desc, METH_VARARGS,
+    "Takes 'move', 'build' or 'harvest' and an entity. Returns a line on the entity's state in that "
+    "part of the engine, for probes."},
 
     {"map_ground_open",
     (PyCFunction)PyPf_map_ground_open, METH_VARARGS | METH_KEYWORDS,
@@ -4023,6 +4046,76 @@ static PyObject *PyPf_map_reachable_now(PyObject *self, PyObject *args, PyObject
     S_Entity_UIDForObj(obj, &uid);
     enum nav_layer layer = Entity_NavLayerWithRadius(0, radius);
     return PyBool_FromLong(G_MapObjReachableNow((vec2_t){x, z}, uid, layer));
+}
+
+static PyObject *PyPf_obj_adjacent(PyObject *self, PyObject *args)
+{
+    PyObject *a, *b;
+    if(!PyArg_ParseTuple(args, "OO", &a, &b) || !S_Entity_Check(a) || !S_Entity_Check(b)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two pf.Entity objects.");
+        return NULL;
+    }
+    uint32_t uid, other;
+    S_Entity_UIDForObj(a, &uid);
+    S_Entity_UIDForObj(b, &other);
+    return PyBool_FromLong(G_ObjAdjacent(uid, other));
+}
+
+static PyObject *PyPf_map_tile_info(PyObject *self, PyObject *args)
+{
+    float x, z, radius = 0.0f;
+    if(!PyArg_ParseTuple(args, "(ff)|f", &x, &z, &radius)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a tuple of two floats and an optional unit radius.");
+        return NULL;
+    }
+    struct nav_tile_report rep;
+    if(!G_MapTileInfo((vec2_t){x, z}, Entity_NavLayerWithRadius(0, radius), &rep))
+        Py_RETURN_NONE;
+    return Py_BuildValue("(iiiiii)", (int)rep.pathable, rep.blockers, rep.static_blockers, (int)rep.slit,
+        rep.local_island, rep.global_island);
+}
+
+static PyObject *PyPf_closest_adjacent_pos(PyObject *self, PyObject *args)
+{
+    PyObject *a, *b;
+    if(!PyArg_ParseTuple(args, "OO", &a, &b) || !S_Entity_Check(a) || !S_Entity_Check(b)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two pf.Entity objects.");
+        return NULL;
+    }
+    uint32_t uid, target;
+    S_Entity_UIDForObj(a, &uid);
+    S_Entity_UIDForObj(b, &target);
+    vec2_t out;
+    if(!G_ClosestAdjacentPos(uid, target, &out))
+        Py_RETURN_NONE;
+    return Py_BuildValue("(ff)", out.x, out.z);
+}
+
+/* A line on the unit's state in the engine's movement, building or harvesting, for a probe */
+static PyObject *PyPf_debug_desc(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    const char *which;
+    if(!PyArg_ParseTuple(args, "sO", &which, &obj) || !S_Entity_Check(obj)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string ('move', 'build' or 'harvest') "
+            "and a pf.Entity object.");
+        return NULL;
+    }
+    uint32_t uid;
+    S_Entity_UIDForObj(obj, &uid);
+
+    char buff[256];
+    if(!strcmp(which, "move")) {
+        G_Move_DebugDesc(uid, buff, sizeof(buff));
+    }else if(!strcmp(which, "build")) {
+        G_Builder_DebugDesc(uid, buff, sizeof(buff));
+    }else if(!strcmp(which, "harvest")) {
+        G_Harvester_DebugDesc(uid, buff, sizeof(buff));
+    }else{
+        PyErr_SetString(PyExc_ValueError, "The first argument must be 'move', 'build' or 'harvest'.");
+        return NULL;
+    }
+    return PyString_FromString(buff);
 }
 
 static PyObject *PyPf_map_ground_open(PyObject *self, PyObject *args, PyObject *kwargs)

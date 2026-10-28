@@ -9215,6 +9215,31 @@ bool G_Move_Still(uint32_t uid)
     return snoop_still(uid);
 }
 
+size_t G_Move_DebugDesc(uint32_t uid, char *out, size_t len)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct movestate *ms = movestate_get(uid);
+    if(!ms)
+        return pf_snprintf(out, len, "none");
+
+    size_t ret = pf_snprintf(out, len, "state=%s still=%d vel=(%.2f,%.2f) surround=%u surround_field=%d blocking=%d",
+        s_state_str[ms->state], (int)snoop_still(uid), ms->velocity.x, ms->velocity.z,
+        ms->surround_target_uid, (int)ms->using_surround_field, (int)ms->blocking);
+
+    const struct flock *flock = flock_for_ent(uid);
+    if(flock && ret < len) {
+        enum nav_layer layer = Entity_NavLayerWithRadius(G_FlagsGet(uid), G_GetSelectionRadius(uid));
+        vec2_t pos = G_Pos_GetXZ(uid);
+        ret += pf_snprintf(out + ret, len - ret, " dest=(%.1f,%.1f) dest_pathable=%d dest_blocked=%d here_pathable=%d here_blocked=%d",
+            flock->target_xz.x, flock->target_xz.z,
+            (int)M_NavPositionPathable(s_map, layer, flock->target_xz),
+            (int)M_NavPositionBlocked(s_map, layer, flock->target_xz),
+            (int)M_NavPositionPathable(s_map, layer, pos), (int)M_NavPositionBlocked(s_map, layer, pos));
+    }
+    return ret;
+}
+
 /* Pause/resume the unit's move animation while it holds position to attack. */
 void G_Move_SetCombatHeld(uint32_t uid, bool held)
 {

@@ -487,6 +487,18 @@ int    N_BlockedTilesAround(void *nav_private, vec3_t map_pos, int layer, vec2_t
 void   N_TilePatch(void *nav_private, int layer, int row0, int col0, int dim,
                    uint32_t *out_words);
 int       N_PositionLocalIsland(vec2_t xz_pos, enum nav_layer layer, void *nav_private, vec3_t map_pos);
+
+/* Everything the navigation holds on the tile under a point, for probes */
+struct nav_tile_report{
+    bool pathable;
+    int  blockers;
+    int  static_blockers;
+    bool slit;
+    int  local_island;
+    int  global_island;
+};
+void      N_PositionTileReport(vec2_t xz_pos, enum nav_layer layer, void *nav_private, vec3_t map_pos,
+                               struct nav_tile_report *out);
 bool      N_PositionIsPortal(vec2_t xz_pos, enum nav_layer layer, void *nav_private, vec3_t map_pos);
 
 /* ------------------------------------------------------------------------

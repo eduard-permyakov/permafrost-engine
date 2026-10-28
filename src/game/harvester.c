@@ -2290,6 +2290,16 @@ size_t G_Harvester_BoundDests(size_t maxout, uint32_t out[])
     return ret;
 }
 
+size_t G_Harvester_DebugDesc(uint32_t uid, char *out, size_t len)
+{
+    struct hstate *hs = hstate_get(uid);
+    if(!hs)
+        return pf_snprintf(out, len, "none");
+    return pf_snprintf(out, len, "state=%d src=%u dest=%u res_uid=%u ss=%u job=%d still_ticks=%d press_ticks=%d queued=%d",
+        (int)hs->state, hs->transport_src_uid, hs->transport_dest_uid, hs->res_uid, hs->ss_uid,
+        hs->job_amount, hs->still_ticks, hs->press_ticks, (int)hs->queued.cmd);
+}
+
 int G_Harvester_CountBound(uint32_t dest, const char *rname)
 {
     if(!s_entity_state_table)
