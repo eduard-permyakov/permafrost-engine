@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_GAME_BUILDING
 
 #include "building.h"
+#include "movement.h"
 #include "game_private.h"
 #include "storage_site.h"
 #include "fog_of_war.h"
@@ -59,6 +60,7 @@
 
 #include <assert.h>
 #include <stdint.h>
+#include <math.h>
 
 #undef PF_MALLOC
 #undef PF_CALLOC
@@ -72,6 +74,7 @@ static void *pmalloc(size_t size);
 static void *pcalloc(size_t n, size_t size);
 static void *prealloc(void *ptr, size_t size);
 static void  pfree(void *ptr);
+static bool  within_footprint(const struct obb *obb, vec2_t xz, float margin);
 
 #undef kmalloc
 #undef kcalloc
@@ -88,6 +91,17 @@ static void  pfree(void *ptr);
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
 /* Units obstruct by the tiles they cover, so they go a couple of tiles past the edge */
 #define FOOTPRINT_CLEARANCE (2.0f * X_COORDS_PER_TILE)
+/* Set aside footprints this close run together: one pushed off the one is
+ * not to land on the other */
+#define FOOTPRINT_TOUCH     (4.0f * X_COORDS_PER_TILE)
+/* A body this close beside a set aside footprint is sent off it too, so
+ * that none is left hemmed in a gap between two */
+#define FOOTPRINT_GAP       (1.0f * X_COORDS_PER_TILE)
+#define FOOTPRINT_EVICT_REACH (3.0f * X_COORDS_PER_TILE)
+#define FOOTPRINT_AREA_MAX  (32)
+#define FOOTPRINT_CAST_RINGS (12)
+#define FOOTPRINT_CAST_STEP (X_COORDS_PER_TILE)
+#define FOOTPRINT_CAST_DIRS (16)
 #define MARKER_DIR          "assets/models/build_site_marker"
 #define MARKER_OBJ          "build-site-marker.pfobj"
 #define CENTER_MARKER_DIR   "assets/models/build_site"
@@ -557,16 +571,20 @@ static bool standing_in_footprint(uint32_t uid, void *arg)
     ||  (flags & (ENTITY_FLAG_ZOMBIE | ENTITY_FLAG_BUILDING)))
         return false;
 
-    if(!G_Move_Still(uid))
-        return false;
-
     if(ctx->enemies & (0x1 << G_GetFactionID(uid)))
         return false;
 
-    /* Test at the OBB's own height so only the XZ footprint decides */
-    vec2_t xz = G_Pos_GetXZ(uid);
-    vec3_t point = (vec3_t){xz.x, ctx->obb->center.y, xz.z};
-    return C_PointInsideOBB(point, *ctx->obb);
+    /* A body overlapping the footprint, or hemmed in a gap beside it, is in
+     * the way; one on its way to such a spot, sent off a site set aside a
+     * moment before, is too. Those come to found it stand beside it by
+     * rights, but not on it */
+    const bool founder = (flags & ENTITY_FLAG_BUILDER) && G_Builder_Target(uid) == ctx->building;
+    const float margin = founder ? 0.0f : G_GetSelectionRadius(uid) + FOOTPRINT_GAP;
+    vec2_t dest;
+    bool attack;
+    if(!G_Move_Still(uid))
+        return G_Move_GetDest(uid, &dest, &attack) && within_footprint(ctx->obb, dest, margin);
+    return within_footprint(ctx->obb, G_Pos_GetXZ(uid), margin);
 }
 
 /* A site sets its footprint aside from when it is marked, so that the faction's
@@ -974,16 +992,13 @@ bool G_Building_Foundable(uint32_t uid)
     return G_Pos_EntsInRectWithPred(xz_min, xz_max, ents, ARR_SIZE(ents), centred_in_footprint, &ctx) == 0;
 }
 
-/* The spot just past the nearest side of the footprint */
-static vec2_t beside_footprint(const struct obb *obb, vec2_t xz, float clearance)
+/* Whether the spot on the ground lies within 'margin' of the footprint */
+static bool within_footprint(const struct obb *obb, vec2_t xz, float margin)
 {
     vec2_t centre = (vec2_t){obb->center.x, obb->center.z};
     vec2_t rel;
     PFM_Vec2_Sub(&xz, &centre, &rel);
 
-    vec2_t out_dir = (vec2_t){1.0f, 0.0f};
-    float out_dist = 0.0f;
-    bool found = false;
     for(int i = 0; i < 3; i++) {
         vec2_t axis = (vec2_t){obb->axes[i].x, obb->axes[i].z};
         float len = PFM_Vec2_Len(&axis);
@@ -991,17 +1006,157 @@ static vec2_t beside_footprint(const struct obb *obb, vec2_t xz, float clearance
             continue;
         PFM_Vec2_Scale(&axis, 1.0f / len, &axis);
         float d = PFM_Vec2_Dot(&rel, &axis);
-        float dist = obb->half_lengths[i] - ((d < 0.0f) ? -d : d);
-        if(!found || dist < out_dist) {
-            found = true;
-            out_dist = dist;
-            out_dir = (d < 0.0f) ? (vec2_t){-axis.x, -axis.z} : axis;
+        if(((d < 0.0f) ? -d : d) > obb->half_lengths[i] + margin)
+            return false;
+    }
+    return true;
+}
+
+static bool within_area(const struct obb *area, size_t narea, vec2_t xz, float margin)
+{
+    for(int i = 0; i < narea; i++) {
+        if(within_footprint(&area[i], xz, margin))
+            return true;
+    }
+    return false;
+}
+
+static bool footprints_touch(const struct obb *a, const struct obb *b)
+{
+    vec2_t amin, amax, bmin, bmax;
+    obb_xz_bounds(a, &amin, &amax);
+    obb_xz_bounds(b, &bmin, &bmax);
+    return (amin.x <= bmax.x + FOOTPRINT_TOUCH) && (bmin.x <= amax.x + FOOTPRINT_TOUCH)
+        && (amin.z <= bmax.z + FOOTPRINT_TOUCH) && (bmin.z <= amax.z + FOOTPRINT_TOUCH);
+}
+
+/* The building's footprint along with every set aside one of its faction
+ * running together with it, so that a unit pushed off one is not pushed onto
+ * the next */
+static size_t built_up_area(uint32_t uid, const struct obb *obb, struct obb *out, size_t maxout)
+{
+    size_t ret = 0;
+    out[ret++] = *obb;
+
+    int faction = G_GetFactionID(uid);
+    struct obb reserved[FOOTPRINT_AREA_MAX];
+    size_t nreserved = 0;
+
+    uint32_t other;
+    struct buildstate *bs;
+    kh_foreach_val_ptr(s_entity_state_table, other, bs, {
+        if(nreserved == ARR_SIZE(reserved))
+            break;
+        if(other == uid || !bs->reserved || G_GetFactionID(other) != faction)
+            continue;
+        reserved[nreserved++] = bs->obb;
+    });
+
+    bool grew = true;
+    while(grew && ret < maxout) {
+        grew = false;
+        for(int i = 0; i < nreserved && ret < maxout; i++) {
+            bool touches = false;
+            for(int j = 0; j < ret && !touches; j++) {
+                touches = footprints_touch(&reserved[i], &out[j]);
+            }
+            if(!touches)
+                continue;
+            out[ret++] = reserved[i];
+            reserved[i--] = reserved[--nreserved];
+            grew = true;
         }
     }
-    vec2_t step, ret;
-    PFM_Vec2_Scale(&out_dir, MAX(out_dist, 0.0f) + clearance, &step);
-    PFM_Vec2_Add(&xz, &step, &ret);
     return ret;
+}
+
+/* The spots just past each side of the footprint, level with the unit */
+static size_t beside_sides(const struct obb *obb, vec2_t xz, float clearance, vec2_t out[4])
+{
+    vec2_t centre = (vec2_t){obb->center.x, obb->center.z};
+    vec2_t rel;
+    PFM_Vec2_Sub(&xz, &centre, &rel);
+
+    vec2_t axes[2];
+    float half[2], along[2];
+    int naxes = 0;
+    for(int i = 0; i < 3 && naxes < 2; i++) {
+        vec2_t axis = (vec2_t){obb->axes[i].x, obb->axes[i].z};
+        float len = PFM_Vec2_Len(&axis);
+        if(len < 1e-3f)
+            continue;
+        PFM_Vec2_Scale(&axis, 1.0f / len, &axes[naxes]);
+        half[naxes] = obb->half_lengths[i];
+        along[naxes] = MIN(MAX(PFM_Vec2_Dot(&rel, &axes[naxes]), -half[naxes]), half[naxes]);
+        naxes++;
+    }
+    if(naxes < 2)
+        return 0;
+
+    size_t ret = 0;
+    for(int i = 0; i < 2; i++) {
+        for(int sign = -1; sign <= 1; sign += 2) {
+            vec2_t a, b;
+            PFM_Vec2_Scale(&axes[i], sign * (half[i] + clearance), &a);
+            PFM_Vec2_Scale(&axes[1 - i], along[1 - i], &b);
+            PFM_Vec2_Add(&centre, &a, &out[ret]);
+            PFM_Vec2_Add(&out[ret], &b, &out[ret]);
+            ret++;
+        }
+    }
+    return ret;
+}
+
+/* A spot the unit can walk to that is clear of the whole area: the nearest
+ * past a side of one of its footprints, or failing those, the nearest found
+ * casting about it */
+static bool escape_from_area(const struct obb *area, size_t narea, vec2_t xz, float clearance,
+                             enum nav_layer layer, vec2_t *out)
+{
+    const float margin = clearance - 1.0f;
+    bool found = false;
+    float best = 0.0f;
+
+    for(int i = 0; i < narea; i++) {
+        vec2_t sides[4];
+        size_t nsides = beside_sides(&area[i], xz, clearance, sides);
+        for(int j = 0; j < nsides; j++) {
+            vec2_t dest, delta;
+            if(within_area(area, narea, sides[j], margin))
+                continue;
+            if(!M_NavClosestPathable(s_map, layer, sides[j], &dest))
+                continue;
+            if(within_area(area, narea, dest, margin))
+                continue;
+            PFM_Vec2_Sub(&dest, &xz, &delta);
+            float dist = PFM_Vec2_Len(&delta);
+            if(!found || dist < best) {
+                found = true;
+                best = dist;
+                *out = dest;
+            }
+        }
+    }
+    if(found)
+        return true;
+
+    for(int ring = 1; ring <= FOOTPRINT_CAST_RINGS; ring++) {
+        float dist = clearance + ring * FOOTPRINT_CAST_STEP;
+        for(int i = 0; i < FOOTPRINT_CAST_DIRS; i++) {
+            float angle = i * (2.0f * M_PI / FOOTPRINT_CAST_DIRS);
+            vec2_t cand = (vec2_t){xz.x + cosf(angle) * dist, xz.z + sinf(angle) * dist};
+            vec2_t dest;
+            if(within_area(area, narea, cand, margin))
+                continue;
+            if(!M_NavClosestPathable(s_map, layer, cand, &dest))
+                continue;
+            if(within_area(area, narea, dest, margin))
+                continue;
+            *out = dest;
+            return true;
+        }
+    }
+    return false;
 }
 
 int G_Building_ClearFootprint(uint32_t uid)
@@ -1011,6 +1166,8 @@ int G_Building_ClearFootprint(uint32_t uid)
 
     vec2_t xz_min, xz_max;
     obb_xz_bounds(&obb, &xz_min, &xz_max);
+    xz_min = (vec2_t){xz_min.x - FOOTPRINT_EVICT_REACH, xz_min.z - FOOTPRINT_EVICT_REACH};
+    xz_max = (vec2_t){xz_max.x + FOOTPRINT_EVICT_REACH, xz_max.z + FOOTPRINT_EVICT_REACH};
 
     struct footprint_ctx ctx = (struct footprint_ctx){
         uid, &obb, G_GetEnemyFactions(G_GetFactionID(uid))
@@ -1018,13 +1175,17 @@ int G_Building_ClearFootprint(uint32_t uid)
     uint32_t ents[128];
     int nents = G_Pos_EntsInRectWithPred(xz_min, xz_max, ents, ARR_SIZE(ents),
         standing_in_footprint, &ctx);
+    if(nents == 0)
+        return 0;
+
+    struct obb area[FOOTPRINT_AREA_MAX];
+    size_t narea = built_up_area(uid, &obb, area, ARR_SIZE(area));
 
     for(int i = 0; i < nents; i++) {
         uint32_t unit = ents[i];
         float clearance = G_GetSelectionRadius(unit) + FOOTPRINT_CLEARANCE;
-        vec2_t beside = beside_footprint(&obb, G_Pos_GetXZ(unit), clearance);
         vec2_t dest;
-        if(!M_NavClosestPathable(s_map, Entity_NavLayer(unit), beside, &dest))
+        if(!escape_from_area(area, narea, G_Pos_GetXZ(unit), clearance, Entity_NavLayer(unit), &dest))
             continue;
         G_Move_SetDest(unit, dest, false);
     }
