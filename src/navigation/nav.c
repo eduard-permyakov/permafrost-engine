@@ -1759,9 +1759,37 @@ static int manhattan_dist(struct tile_desc a, struct tile_desc b)
     return dr + dc;
 }
 
+static int chebyshev_dist(struct tile_desc a, struct tile_desc b)
+{
+    int dr = abs(
+        (a.chunk_r * TILES_PER_CHUNK_HEIGHT + a.tile_r)
+      - (b.chunk_r * TILES_PER_CHUNK_HEIGHT + b.tile_r)
+    );
+    int dc = abs(
+        (a.chunk_c * TILES_PER_CHUNK_WIDTH + a.tile_c)
+      - (b.chunk_c * TILES_PER_CHUNK_WIDTH + b.tile_c)
+    );
+    return MAX(dr, dc);
+}
+
+static bool tile_touches_any(struct tile_desc td, size_t ntiles, const struct tile_desc tds[])
+{
+    for(int i = 0; i < ntiles; i++) {
+        if(chebyshev_dist(td, tds[i]) <= 1)
+            return true;
+    }
+    return false;
+}
+
+/* The closest tiles of the island to the target tile, searched outward from it.
+ * Standing bodies are passed over, so that a tile beyond a crowd is found;
+ * walls are not, save those of 'through', the footprint the search sets out
+ * from, so that no tile is found on the far side of a wall or of the building
+ * next door */
 static int n_closest_island_tiles(const struct nav_private *priv, 
                                   enum nav_layer layer, struct tile_desc target, 
                                   uint16_t global_iid, bool ignore_blockers,
+                                  const khash_t(td) *through,
                                   struct tile_desc *out, int maxout)
 {
     struct map_resolution res;
@@ -1837,6 +1865,9 @@ static int n_closest_island_tiles(const struct nav_private *priv,
 
             visited[neighb.chunk_r * stride_a + neighb.chunk_c * stride_b
                   + neighb.tile_r  * stride_c + neighb.tile_c] = true;
+            if(n_tile_walled(chunk, neighb.tile_r, neighb.tile_c)
+            && (!through || kh_get(td, through, td_key(&neighb)) == kh_end(through)))
+                continue;
             queue_td_push(&frontier, &neighb);
         }
     }
@@ -2372,14 +2403,32 @@ bool n_closest_adjacent_pos(void *nav_private, enum nav_layer layer, vec3_t map_
         = &priv->chunks[layer][src_desc.chunk_r * priv->width + src_desc.chunk_c];
     const uint16_t src_iid = src_chunk->islands[src_desc.tile_r][src_desc.tile_c];
 
+    /* The footprint, and the ring about it the layer's stamp is dilated by,
+     * which the search may pass through on its way out */
+    khash_t(td) *footprint = kh_init(td);
+    if(!footprint)
+        return false;
+    const int rings = n_layer_rings(layer);
+    for(int i = 0; i < ntiles; i++) {
+        for(int dr = -rings; dr <= rings; dr++) {
+        for(int dc = -rings; dc <= rings; dc++) {
+            struct tile_desc td = tds[i];
+            if(!M_Tile_RelativeDesc(res, &td, dc, dr))
+                continue;
+            int status;
+            kh_put(td, footprint, td_key(&td), &status);
+        }}
+    }
+
     vec2_t tile_dims = N_TileDims();
     float min_dist = INFINITY;
     vec2_t min_pos = {0};
+    struct tile_desc min_td = {0};
 
     for(int i = 0; i < ntiles; i++) {
 
         struct tile_desc td;
-        int ntd = n_closest_island_tiles(priv, layer, tds[i], src_iid, false, &td, 1);
+        int ntd = n_closest_island_tiles(priv, layer, tds[i], src_iid, false, footprint, &td, 1);
         if(!ntd)
             continue;
 
@@ -2393,12 +2442,30 @@ bool n_closest_adjacent_pos(void *nav_private, enum nav_layer layer, vec3_t map_
         if(PFM_Vec2_Len(&delta) < min_dist) {
             min_dist = PFM_Vec2_Len(&delta);
             min_pos = tile_center;
+            min_td = td;
         }
     }
 
-    if(min_dist == INFINITY)
-        return false;
+    bool found = (min_dist != INFINITY);
 
+    /* The ground beside the footprint may be taken by standing bodies, which
+     * the search passes over: the closest tile then lies out past them, and
+     * the unit waits there for a place. With no such ground in its island
+     * at all, bodies or no bodies, the building cannot be come up to, and
+     * there is nowhere to make for */
+    if(found && !tile_touches_any(min_td, ntiles, tds)) {
+        bool any = false;
+        for(int i = 0; i < ntiles && !any; i++) {
+            struct tile_desc td;
+            any = n_closest_island_tiles(priv, layer, tds[i], src_iid, true, footprint, &td, 1)
+               && chebyshev_dist(td, tds[i]) <= 1;
+        }
+        found = any;
+    }
+    kh_destroy(td, footprint);
+
+    if(!found)
+        return false;
     *out = min_pos;
     return true;
 }
@@ -6450,7 +6517,7 @@ vec2_t N_ClosestReachableDest(void *nav_private, enum nav_layer layer, vec3_t ma
     /* Get the worldspace coordinates of the tile's center */
     vec2_t tile_dims = N_TileDims(); 
     struct tile_desc closest_td;
-    int ntd = n_closest_island_tiles(priv, layer, dst_desc, src_iid, true, &closest_td, 1);
+    int ntd = n_closest_island_tiles(priv, layer, dst_desc, src_iid, true, NULL, &closest_td, 1);
     if(!ntd)
         return xz_src;
      
@@ -7123,7 +7190,7 @@ bool N_IsMaximallyClose(void *nav_private, enum nav_layer layer, vec3_t map_pos,
                                            [IDX(dest_td.chunk_r, priv->width, dest_td.chunk_c)];
 
     uint16_t giid = chunk->islands[dest_td.tile_r][dest_td.tile_c];
-    int ntds = n_closest_island_tiles(priv, layer, dest_td, giid, false, tds, ARR_SIZE(tds));
+    int ntds = n_closest_island_tiles(priv, layer, dest_td, giid, false, NULL, tds, ARR_SIZE(tds));
 
     for(int i = 0; i < ntds; i++) {
 
