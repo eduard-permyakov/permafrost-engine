@@ -791,7 +791,7 @@ typedef struct {
 
 static PyObject *PyBuilderEntity_del(PyBuilderEntityObject *self);
 static int       PyBuilderEntity_init(PyBuilderEntityObject *self, PyObject *args, PyObject *kwds);
-static PyObject *PyBuilderEntity_build(PyBuilderEntityObject *self, PyObject *args);
+static PyObject *PyBuilderEntity_build(PyBuilderEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyBuilderEntity_build_target(PyBuilderEntityObject *self);
 static PyObject *PyBuilderEntity_queue_build(PyBuilderEntityObject *self, PyObject *args);
 static PyObject *PyBuilderEntity_command_queue(PyBuilderEntityObject *self);
@@ -801,9 +801,10 @@ static PyObject *PyBuilderEntity_pickle(PyBuilderEntityObject *self, PyObject *a
 static PyObject *PyBuilderEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 static PyMethodDef PyBuilderEntity_methods[] = {
-    {"build", 
-    (PyCFunction)PyBuilderEntity_build, METH_VARARGS,
-    "Issue an order to build a specific buildable entity."},
+    {"build",
+    (PyCFunction)PyBuilderEntity_build, METH_VARARGS | METH_KEYWORDS,
+    "Issue an order to build a specific buildable entity. The order counts as the player's own "
+    "unless the 'player' keyword is False, as for one a script gives of its own accord."},
 
     {"build_target", 
     (PyCFunction)PyBuilderEntity_build_target, METH_NOARGS,
@@ -4256,28 +4257,30 @@ static int PyBuilderEntity_init(PyBuilderEntityObject *self, PyObject *args, PyO
     return 0;
 }
 
-static PyObject *PyBuilderEntity_build(PyBuilderEntityObject *self, PyObject *args)
+static PyObject *PyBuilderEntity_build(PyBuilderEntityObject *self, PyObject *args, PyObject *kwargs)
 {
     if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
         PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
         return NULL;
     }
 
+    static char *kwlist[] = {"building", "player", NULL};
     PyObject *building;
-    if(!PyArg_ParseTuple(args, "O", &building)
+    int player = 1;
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "O|i", kwlist, &building, &player)
     || !PyObject_IsInstance(building, (PyObject*)&PyBuildableEntity_type)) {
-        PyErr_SetString(PyExc_TypeError, "Expecting 1 argument: a pf.BuildableEntity instance");
+        PyErr_SetString(PyExc_TypeError, "Expecting a pf.BuildableEntity instance and an optional 'player' flag");
         return NULL;
     }
 
-    /* A script's order is the player's: it is announced, so that a meal or a
-     * job under way gives way to it and the unit's record shows it */
+    /* A script's order is announced, so that a meal or a job under way gives
+     * way to it and the unit's record shows it; as the player's unless said otherwise */
     uint32_t target = ((PyBuildableEntityObject*)building)->super.ent;
     if(G_FlagsGet(target) & ENTITY_FLAG_ZOMBIE) {
         PyErr_SetString(PyExc_RuntimeError, "Cannot build a zombie entity.");
         return NULL;
     }
-    G_NotifyOrderIssued(self->super.ent, true);
+    G_NotifyOrderIssued(self->super.ent, true, player);
     G_Builder_Order(self->super.ent, target);
     Py_RETURN_NONE;
 }

@@ -604,7 +604,7 @@ bool G_Builder_PlayerOrder(uint32_t uid, uint32_t building)
     finish_building(bs, uid);
     G_StopEntity(uid, true, true);
     /* Before the order, which may already queue the return to the site it is to supply */
-    G_NotifyOrderIssued(uid, true);
+    G_NotifyOrderIssued(uid, true, true);
     return G_Builder_Order(uid, building);
 }
 

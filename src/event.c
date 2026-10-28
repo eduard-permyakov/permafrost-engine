@@ -173,6 +173,8 @@ static const char *s_event_str_table[] = {
     STR(EVENT_RESOURCES_SPILLED),
     STR(EVENT_REQUEST_BLOCKED),
     STR(EVENT_PROVISION_CHANGED),
+    STR(EVENT_BUILDING_MARKED),
+    STR(EVENT_PLAYER_ORDER_ISSUED),
 };
 
 static khash_t(handler_desc) *s_event_handler_table;

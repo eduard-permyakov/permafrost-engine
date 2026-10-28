@@ -1417,7 +1417,7 @@ static void selection_try_order_gather(bool targeting)
 
         G_StopEntity(curr, true, true);
         G_Harvester_Gather(curr, target);
-        G_NotifyOrderIssued(curr, false);
+        G_NotifyOrderIssued(curr, false, true);
         ngather++;
     }
 
@@ -1458,7 +1458,7 @@ static void selection_try_order_pick_up(bool targeting)
 
         G_StopEntity(curr, true, true);
         G_Harvester_PickUp(curr, target);
-        G_NotifyOrderIssued(curr, false);
+        G_NotifyOrderIssued(curr, false, true);
         ncarry++;
     }
 
@@ -1499,7 +1499,7 @@ static void selection_try_order_drop_off(bool targeting)
 
         G_StopEntity(curr, true, true);
         G_Harvester_DropOff(curr, target);
-        G_NotifyOrderIssued(curr, false);
+        G_NotifyOrderIssued(curr, false, true);
         ncarry++;
     }
 
@@ -1537,7 +1537,7 @@ static void selection_try_order_transport(bool targeting)
 
         G_StopEntity(curr, true, true);
         G_Harvester_Transport(curr, target);
-        G_NotifyOrderIssued(curr, false);
+        G_NotifyOrderIssued(curr, false, true);
         ntransport++;
     }
 

@@ -130,6 +130,9 @@ enum eventtype{
     EVENT_RESOURCES_SPILLED,
     EVENT_REQUEST_BLOCKED,
     EVENT_PROVISION_CHANGED,
+    /* New events go at the end: the handlers a save keeps are registered by number */
+    EVENT_BUILDING_MARKED,
+    EVENT_PLAYER_ORDER_ISSUED,
 
     EVENT_ENGINE_LAST = 0x1ffff,
 };

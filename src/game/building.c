@@ -608,6 +608,7 @@ static bool building_mark(uint32_t uid, bool clear_footprint)
     if(clear_footprint && (G_FlagsGet(uid) & ENTITY_FLAG_COLLISION)) {
         G_Building_ClearFootprint(uid);
     }
+    E_Global_Notify(EVENT_BUILDING_MARKED, (void*)((uintptr_t)uid), ES_ENGINE);
     return true;
 }
 

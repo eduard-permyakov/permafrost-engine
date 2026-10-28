@@ -4069,7 +4069,7 @@ enum ctx_action G_CurrContextualAction(void)
     return CTX_ACTION_NONE;
 }
 
-void G_NotifyOrderIssued(uint32_t uid, bool clear_harvester)
+void G_NotifyOrderIssued(uint32_t uid, bool clear_harvester, bool player)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -4082,6 +4082,9 @@ void G_NotifyOrderIssued(uint32_t uid, bool clear_harvester)
     }
     G_Command_Clear(uid);
     E_Global_Notify(EVENT_ORDER_ISSUED, (void*)(uintptr_t)uid, ES_ENGINE);
+    if(player) {
+        E_Global_Notify(EVENT_PLAYER_ORDER_ISSUED, (void*)(uintptr_t)uid, ES_ENGINE);
+    }
 }
 
 void G_SetHideHealthbars(bool on)

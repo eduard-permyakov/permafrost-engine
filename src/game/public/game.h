@@ -180,7 +180,7 @@ void            G_BakeNavDataForScene(void);
 bool            G_AddEntity(uint32_t uid, uint32_t flags, vec3_t pos);
 bool            G_RemoveEntity(uint32_t uid);
 void            G_StopEntity(uint32_t uid, bool stop_move, bool stop_garrison);
-void            G_NotifyOrderIssued(uint32_t uid, bool clear_harvester);
+void            G_NotifyOrderIssued(uint32_t uid, bool clear_harvester, bool player);
 void            G_UpdateBounds(uint32_t uid);
 void            G_UpdateReach(uint32_t uid);
 void            G_Zombiefy(uint32_t uid, bool invis);
