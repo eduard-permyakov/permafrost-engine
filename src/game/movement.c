@@ -983,6 +983,8 @@ static struct result navigation_tick_task(void *arg);
 #define SURROUND_REQUERY_TICKS          (15)
 #define SURROUND_REQUERY_SPREAD         (8)
 #define SURROUND_SWITCH_MARGIN          (8.0f)
+/* Within this of its spot, a surrounding unit counts as having got there */
+#define SURROUND_AT_SPOT                (8.0f)
 /* Terrain walls take contact-ring slots a unit could never fill; credit them
  * toward the crowd test so jams against walls can arm the drain. Blocker
  * stamps get none: a stamp is the output of walling, not evidence for it.
@@ -3645,6 +3647,10 @@ static bool surround_switch_ok(enum nav_layer layer, vec2_t pos, vec2_t curr, ve
     vec2_t to_curr, to_found;
     PFM_Vec2_Sub(&curr, &pos, &to_curr);
     PFM_Vec2_Sub(&found, &pos, &to_found);
+    /* At its spot and still not beside the target, as when the spot was
+     * picked past a crowd since gone, it takes the next one however far */
+    if(PFM_Vec2_Len(&to_curr) < SURROUND_AT_SPOT)
+        return true;
     return PFM_Vec2_Len(&to_found) + SURROUND_SWITCH_MARGIN < PFM_Vec2_Len(&to_curr);
 }
 
