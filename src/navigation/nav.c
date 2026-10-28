@@ -7484,10 +7484,13 @@ bool N_ObjReachableNowOBB(void *nav_private, enum nav_layer layer, vec3_t map_po
             const struct nav_chunk *chunk = &priv->chunks[layer][IDX(td.chunk_r, priv->width, td.chunk_c)];
             uint16_t liid = chunk->local_islands[td.tile_r][td.tile_c];
             /* Ground held by standing units alone is open as far as the
-             * buildings go: a store with a crowd about it is not walled in
+             * buildings go: a store with a crowd about it is not walled in.
+             * A slit between two walls is not held by anyone, but no unit
+             * of the layer gets into it either
              */
             if(liid == ISLAND_NONE) {
-                if(!n_tile_walled(chunk, td.tile_r, td.tile_c))
+                if(!n_tile_walled(chunk, td.tile_r, td.tile_c)
+                && !N_TileInSlit(chunk, td.tile_r, td.tile_c))
                     PERF_RETURN(true);
                 continue;
             }
