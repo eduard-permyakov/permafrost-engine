@@ -6892,6 +6892,15 @@ bool S_LoadState(SDL_RWops *stream)
     Py_INCREF(interp->codec_search_cache);
     Py_INCREF(interp->codec_error_registry);
 
+    /* The module comes back as it was saved: the bindings and constants the
+     * engine has gained since are set in it afresh, so that newer scripts
+     * and probes find them in an older save */
+    PyObject *pfmod = PyDict_GetItemString(interp->modules, "pf");
+    if(pfmod) {
+        Py_InitModule("pf", pf_module_methods);
+        S_Constants_Expose(pfmod);
+    }
+
     PyObject *handlers = PyTuple_GET_ITEM(state, 7);
     if(!PyTuple_Check(handlers))
         goto fail;
