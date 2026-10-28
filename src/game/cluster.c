@@ -93,6 +93,10 @@ struct cluster{
     int          colour;
     /* In the order they joined, so that the oldest member is first */
     vec_entity_t members;
+    /* Sites marked within reach, promised a place once they stand. They
+     * show the cluster's colour, but count for nothing else; one of them is
+     * the anchor only while no member stands */
+    vec_entity_t pending;
 };
 
 KHASH_MAP_INIT_INT(cluster, struct cluster)
@@ -100,8 +104,10 @@ KHASH_MAP_INIT_INT(member, int)
 KHASH_MAP_INIT_INT(type, struct cluster_type)
 KHASH_MAP_INIT_INT(footprint, struct cluster_footprint)
 
+static void on_building_marked(void *user, void *event);
 static void on_building_constructed(void *user, void *event);
 static void on_update_ui(void *user, void *event);
+static void draw_badge(struct nk_context *ctx, uint32_t uid, int colour, bool linked);
 static void draw_diamond(struct nk_context *ctx, int colour, int scale);
 static void draw_preview(struct nk_context *ctx);
 
@@ -112,6 +118,8 @@ static void draw_preview(struct nk_context *ctx);
 static khash_t(cluster) *s_clusters;
 /* Maps each member building to its cluster */
 static khash_t(member)  *s_member_of;
+/* Maps each pending site to the cluster promised it */
+static khash_t(member)  *s_pending_of;
 /* The cluster type of every building that can join one */
 static khash_t(type)    *s_types;
 static int               s_next_id = 1;
@@ -234,21 +242,16 @@ static int create_cluster(uint32_t anchor, const struct cluster_type *type)
     cl->anchor = anchor;
     cl->colour = -1;
     vec_entity_init(&cl->members);
+    vec_entity_init(&cl->pending);
     cl->colour = least_used_colour(id, cl);
     return id;
 }
 
-/* Joins the oldest cluster of the building's type and faction whose anchor
- * is in reach, or starts a cluster of its own. Measuring from the anchor
- * keeps a row of buildings from chaining one cluster across the map. */
-static void join(uint32_t uid)
+/* The oldest cluster of the building's type and faction whose anchor is in
+ * reach, or 0. Measuring from the anchor keeps a row of buildings from
+ * chaining one cluster across the map. */
+static int cluster_in_reach(uint32_t uid, const struct cluster_type *type)
 {
-    const struct cluster_type *type = type_get(uid);
-    if(!type)
-        return;
-    if(kh_get(member, s_member_of, uid) != kh_end(s_member_of))
-        return;
-
     int faction = G_GetFactionID(uid);
     int best = 0;
 
@@ -264,14 +267,112 @@ static void join(uint32_t uid)
         if(best == 0 || id < best)
             best = id;
     });
+    return best;
+}
 
+static void remove_from(vec_entity_t *vec, uint32_t uid)
+{
+    int idx = vec_entity_indexof(vec, uid, compare_uids);
+    if(idx == -1)
+        return;
+    /* Keep the join order: the oldest left takes over as the anchor */
+    for(int i = idx; i < vec_size(vec) - 1; i++) {
+        vec_AT(vec, i) = vec_AT(vec, i + 1);
+    }
+    vec_entity_pop(vec);
+}
+
+/* Takes the site off the pending list of the cluster promised it, returning that cluster or 0 */
+static int unpend(uint32_t uid)
+{
+    khiter_t k = kh_get(member, s_pending_of, uid);
+    if(k == kh_end(s_pending_of))
+        return 0;
+    int id = kh_value(s_pending_of, k);
+    kh_del(member, s_pending_of, k);
+
+    struct cluster *cl = cluster_get(id);
+    if(cl) {
+        remove_from(&cl->pending, uid);
+    }
+    return id;
+}
+
+/* Deletes a cluster nothing is left of, or hands its anchor on from the building that left it */
+static void settle_anchor(int id, uint32_t left)
+{
+    struct cluster *cl = cluster_get(id);
+    if(!cl)
+        return;
+
+    if(vec_size(&cl->members) == 0 && vec_size(&cl->pending) == 0) {
+        vec_entity_destroy(&cl->members);
+        vec_entity_destroy(&cl->pending);
+        kh_del(cluster, s_clusters, kh_get(cluster, s_clusters, id));
+        return;
+    }
+    if(cl->anchor != left)
+        return;
+
+    cl->anchor = vec_size(&cl->members) ? vec_AT(&cl->members, 0) : vec_AT(&cl->pending, 0);
+    cl->colour = least_used_colour(id, cl);
+    G_StorageSite_PoolSetAnchor(id, cl->anchor);
+}
+
+/* A marked site is promised the cluster in reach, or one of its own, and shows its colour */
+static void pend(uint32_t uid)
+{
+    const struct cluster_type *type = type_get(uid);
+    if(!type)
+        return;
+    if(kh_get(member, s_member_of, uid) != kh_end(s_member_of)
+    || kh_get(member, s_pending_of, uid) != kh_end(s_pending_of))
+        return;
+
+    int best = cluster_in_reach(uid, type);
     if(best == 0) {
         best = create_cluster(uid, type);
         if(best == 0)
             return;
     }
 
-    cl = cluster_get(best);
+    struct cluster *cl = cluster_get(best);
+    vec_entity_push(&cl->pending, uid);
+
+    int status;
+    khiter_t k = kh_put(member, s_pending_of, uid, &status);
+    if(status != -1) {
+        kh_value(s_pending_of, k) = best;
+    }
+}
+
+/* Joins the cluster promised the building when it was marked, else the one
+ * in reach, else starts a cluster of its own */
+static void join(uint32_t uid)
+{
+    const struct cluster_type *type = type_get(uid);
+    if(!type)
+        return;
+    if(kh_get(member, s_member_of, uid) != kh_end(s_member_of))
+        return;
+
+    int best = unpend(uid);
+    if(best == 0) {
+        best = cluster_in_reach(uid, type);
+    }
+    if(best == 0) {
+        best = create_cluster(uid, type);
+        if(best == 0)
+            return;
+    }
+
+    struct cluster *cl = cluster_get(best);
+    if(!cl)
+        return;
+    /* The first to stand of a cluster of sites takes over as its anchor */
+    if(vec_size(&cl->members) == 0) {
+        cl->anchor = uid;
+    }
     vec_entity_push(&cl->members, uid);
 
     int status;
@@ -289,6 +390,12 @@ static void join(uint32_t uid)
 
 static void leave(uint32_t uid, bool died)
 {
+    int pending = unpend(uid);
+    if(pending) {
+        settle_anchor(pending, uid);
+        return;
+    }
+
     khiter_t k = kh_get(member, s_member_of, uid);
     if(k == kh_end(s_member_of))
         return;
@@ -300,28 +407,20 @@ static void leave(uint32_t uid, bool died)
     if(!cl)
         return;
 
-    int idx = vec_entity_indexof(&cl->members, uid, compare_uids);
-    if(idx != -1) {
-        /* Keep the join order: the oldest member takes over as the anchor */
-        for(int i = idx; i < vec_size(&cl->members) - 1; i++) {
-            vec_AT(&cl->members, i) = vec_AT(&cl->members, i + 1);
-        }
-        vec_entity_pop(&cl->members);
-    }
-
+    remove_from(&cl->members, uid);
     if(G_FlagsGet(uid) & ENTITY_FLAG_STORAGE_SITE) {
         G_StorageSite_PoolLeave(uid, id, died);
     }
-
-    if(vec_size(&cl->members) == 0) {
-        vec_entity_destroy(&cl->members);
-        kh_del(cluster, s_clusters, kh_get(cluster, s_clusters, id));
-    }else if(cl->anchor == uid) {
-        cl->anchor = vec_AT(&cl->members, 0);
-        cl->colour = least_used_colour(id, cl);
-        G_StorageSite_PoolSetAnchor(id, cl->anchor);
-    }
+    settle_anchor(id, uid);
     E_Global_Notify(EVENT_CLUSTER_CHANGED, (void*)(uintptr_t)id, ES_ENGINE);
+}
+
+static void on_building_marked(void *user, void *event)
+{
+    uint32_t uid = (uintptr_t)event;
+    if(!G_EntityExists(uid) || G_EntityIsZombie(uid))
+        return;
+    pend(uid);
 }
 
 static void on_building_constructed(void *user, void *event)
@@ -376,45 +475,14 @@ static void on_update_ui(void *user, void *event)
         if(!(pfacs & (0x1 << cl->faction)))
             continue;
 
-        const bool linked = (vec_size(&cl->members) > 1);
+        /* The sites still to stand count toward the chain, as they show it too */
+        const bool linked = (vec_size(&cl->members) + vec_size(&cl->pending) > 1);
 
         for(int i = 0; i < vec_size(&cl->members); i++) {
-
-            uint32_t uid = vec_AT(&cl->members, i);
-            struct obb obb;
-            Entity_CurrentOBB(uid, &obb, true);
-            if(!G_Fog_ObjExplored(pfacs, uid, &obb))
-                continue;
-
-            char name[64];
-            pf_snprintf(name, sizeof(name), "__cluster__.%x", uid);
-
-            const vec2_t vres = (vec2_t){1920, 1080};
-            const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
-            vec2_t ss_pos = Entity_TopScreenPos(uid, adj_vres.x, adj_vres.y);
-            const int width = (linked ? ICON_SIZE : 0) + DIAMOND_GAP + DIAMOND_SIZE;
-            const vec2_t pos = (vec2_t){floorf(ss_pos.x - width / 2), floorf(ss_pos.y - ICON_SIZE - 4)};
-            const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
-
-            struct rect adj_bounds = UI_BoundsForAspectRatio(
-                (struct rect){pos.x, pos.y, width, ICON_SIZE},
-                vres, adj_vres, ANCHOR_DEFAULT
-            );
-
-            if(nk_begin_with_vres(ctx, name,
-                (struct nk_rect){adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h},
-                flags, (struct nk_vec2i){adj_vres.x, adj_vres.y})) {
-
-                nk_layout_row_begin(ctx, NK_STATIC, ICON_SIZE, linked ? 2 : 1);
-                if(linked) {
-                    nk_layout_row_push(ctx, ICON_SIZE);
-                    nk_image_texpath(ctx, s_icon_path);
-                }
-                nk_layout_row_push(ctx, DIAMOND_GAP + DIAMOND_SIZE);
-                draw_diamond(ctx, cl->colour, 1);
-                nk_layout_row_end(ctx);
-            }
-            nk_end(ctx);
+            draw_badge(ctx, vec_AT(&cl->members, i), cl->colour, linked);
+        }
+        for(int i = 0; i < vec_size(&cl->pending); i++) {
+            draw_badge(ctx, vec_AT(&cl->pending, i), cl->colour, linked);
         }
     });
     draw_preview(ctx);
@@ -422,6 +490,46 @@ static void on_update_ui(void *user, void *event)
     nk_style_pop_vec2(ctx);
     nk_style_pop_vec2(ctx);
     nk_style_pop_style_item(ctx);
+}
+
+/* The cluster's colour over the building, beside its chain if it has company */
+static void draw_badge(struct nk_context *ctx, uint32_t uid, int colour, bool linked)
+{
+    uint16_t pfacs = G_GetPlayerControlledFactions();
+    struct obb obb;
+    Entity_CurrentOBB(uid, &obb, true);
+    if(!G_Fog_ObjExplored(pfacs, uid, &obb))
+        return;
+
+    char name[64];
+    pf_snprintf(name, sizeof(name), "__cluster__.%x", uid);
+
+    const vec2_t vres = (vec2_t){1920, 1080};
+    const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
+    vec2_t ss_pos = Entity_TopScreenPos(uid, adj_vres.x, adj_vres.y);
+    const int width = (linked ? ICON_SIZE : 0) + DIAMOND_GAP + DIAMOND_SIZE;
+    const vec2_t pos = (vec2_t){floorf(ss_pos.x - width / 2), floorf(ss_pos.y - ICON_SIZE - 4)};
+    const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
+
+    struct rect adj_bounds = UI_BoundsForAspectRatio(
+        (struct rect){pos.x, pos.y, width, ICON_SIZE},
+        vres, adj_vres, ANCHOR_DEFAULT
+    );
+
+    if(nk_begin_with_vres(ctx, name,
+        (struct nk_rect){adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h},
+        flags, (struct nk_vec2i){adj_vres.x, adj_vres.y})) {
+
+        nk_layout_row_begin(ctx, NK_STATIC, ICON_SIZE, linked ? 2 : 1);
+        if(linked) {
+            nk_layout_row_push(ctx, ICON_SIZE);
+            nk_image_texpath(ctx, s_icon_path);
+        }
+        nk_layout_row_push(ctx, DIAMOND_GAP + DIAMOND_SIZE);
+        draw_diamond(ctx, colour, 1);
+        nk_layout_row_end(ctx);
+    }
+    nk_end(ctx);
 }
 
 /* The chain and colour of the cluster the building being placed would join,
@@ -473,15 +581,20 @@ bool G_Cluster_Init(void)
         goto fail_clusters;
     if(!(s_member_of = kh_init(member)))
         goto fail_member_of;
+    if(!(s_pending_of = kh_init(member)))
+        goto fail_pending_of;
     if(!(s_types = kh_init(type)))
         goto fail_types;
 
     s_next_id = 1;
+    E_Global_Register(EVENT_BUILDING_MARKED, on_building_marked, NULL, G_ALL);
     E_Global_Register(EVENT_BUILDING_CONSTRUCTED, on_building_constructed, NULL, G_ALL);
     E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
     return true;
 
 fail_types:
+    kh_destroy(member, s_pending_of);
+fail_pending_of:
     kh_destroy(member, s_member_of);
 fail_member_of:
     kh_destroy(cluster, s_clusters);
@@ -493,16 +606,20 @@ void G_Cluster_Shutdown(void)
 {
     E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
     E_Global_Unregister(EVENT_BUILDING_CONSTRUCTED, on_building_constructed);
+    E_Global_Unregister(EVENT_BUILDING_MARKED, on_building_marked);
 
     struct cluster *cl;
     kh_foreach_val_ptr(s_clusters, (int){0}, cl, {
         vec_entity_destroy(&cl->members);
+        vec_entity_destroy(&cl->pending);
     });
     kh_destroy(type, s_types);
+    kh_destroy(member, s_pending_of);
     kh_destroy(member, s_member_of);
     kh_destroy(cluster, s_clusters);
     /* Movement starts before the clusters on the next load and reads none */
     s_types = NULL;
+    s_pending_of = NULL;
     s_member_of = NULL;
     s_clusters = NULL;
 }
@@ -531,9 +648,13 @@ void G_Cluster_SetType(uint32_t uid, const char *type, float radius)
     pf_strlcpy(ct->name, type, sizeof(ct->name));
     ct->radius = radius;
 
-    /* A building already standing joins at once */
-    if((G_FlagsGet(uid) & ENTITY_FLAG_BUILDING) && G_Building_IsCompleted(uid)) {
+    /* A building already standing joins at once; a site already marked is promised its place */
+    if(!(G_FlagsGet(uid) & ENTITY_FLAG_BUILDING))
+        return;
+    if(G_Building_IsCompleted(uid)) {
         join(uid);
+    }else if(G_Building_IsMarked(uid)) {
+        pend(uid);
     }
 }
 
@@ -543,6 +664,14 @@ int G_Cluster_Of(uint32_t uid)
     if(k == kh_end(s_member_of))
         return 0;
     return kh_value(s_member_of, k);
+}
+
+int G_Cluster_PendingOf(uint32_t uid)
+{
+    khiter_t k = kh_get(member, s_pending_of, uid);
+    if(k == kh_end(s_pending_of))
+        return 0;
+    return kh_value(s_pending_of, k);
 }
 
 uint32_t G_Cluster_Anchor(int cluster_id)
@@ -640,7 +769,9 @@ size_t G_Cluster_GetAll(size_t maxout, int out[])
     int id;
     struct cluster *cl;
     kh_foreach_val_ptr(s_clusters, id, cl, {
-        (void)cl;
+        /* One of sites alone is a promise, not yet a cluster to anyone else */
+        if(vec_size(&cl->members) == 0)
+            continue;
         if(ret == maxout)
             break;
         out[ret++] = id;
@@ -793,6 +924,20 @@ bool G_Cluster_SaveState(struct SDL_RWops *stream)
             };
             CHK_TRUE_RET(Attr_Write(stream, &member, "member"));
         }
+
+        struct attr num_pending = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = vec_size(&cl->pending)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &num_pending, "num_pending"));
+
+        for(int i = 0; i < vec_size(&cl->pending); i++) {
+            struct attr pending = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = vec_AT(&cl->pending, i)
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &pending, "pending"));
+        }
         Sched_TryYield();
     });
     return true;
@@ -850,6 +995,7 @@ bool G_Cluster_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(status != -1);
         struct cluster *cl = &kh_value(s_clusters, k);
         vec_entity_init(&cl->members);
+        vec_entity_init(&cl->pending);
         cl->colour = -1;
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
@@ -877,6 +1023,25 @@ bool G_Cluster_LoadState(struct SDL_RWops *stream)
             khiter_t km = kh_put(member, s_member_of, member, &status);
             CHK_TRUE_RET(status != -1);
             kh_value(s_member_of, km) = id;
+        }
+
+        /* Saves from before sites were promised a cluster have none listed */
+        if(Attr_NextKeyIs(stream, "num_pending")) {
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            const size_t num_pending = attr.val.as_int;
+
+            for(int j = 0; j < num_pending; j++) {
+                CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+                CHK_TRUE_RET(attr.type == TYPE_INT);
+                uint32_t pending = attr.val.as_int;
+                vec_entity_push(&cl->pending, pending);
+
+                khiter_t kp = kh_put(member, s_pending_of, pending, &status);
+                CHK_TRUE_RET(status != -1);
+                kh_value(s_pending_of, kp) = id;
+            }
         }
         Sched_TryYield();
     }

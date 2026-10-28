@@ -299,6 +299,7 @@ void                  G_Sel_Set(uint32_t *ents, size_t nents);
  * they are completed, and act as one: their storage is pooled. */
 void                  G_Cluster_SetType(uint32_t uid, const char *type, float radius);
 int                   G_Cluster_Of(uint32_t uid);
+int                   G_Cluster_PendingOf(uint32_t uid);
 uint32_t              G_Cluster_Anchor(int cluster_id);
 size_t                G_Cluster_Members(int cluster_id, size_t maxout, uint32_t out[]);
 /* The buildings a unit of the owner's side makes for as one when sent to one

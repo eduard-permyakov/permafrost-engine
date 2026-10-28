@@ -136,6 +136,7 @@ static PyObject *PyEntity_get_max_ammo(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_auto_resupply(PyEntityObject *self, void *closure);
 static int       PyEntity_set_auto_resupply(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_cluster_id(PyEntityObject *self, void *closure);
+static PyObject *PyEntity_get_pending_cluster_id(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_cluster_type(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_icons(PyEntityObject *self);
 static PyObject *PyEntity_clear_icons(PyEntityObject *self);
@@ -290,6 +291,10 @@ static PyGetSetDef PyEntity_getset[] = {
     {"cluster_id",
     (getter)PyEntity_get_cluster_id, NULL,
     "The ID of the cluster of buildings this one belongs to, or 0.",
+    NULL},
+    {"pending_cluster_id",
+    (getter)PyEntity_get_pending_cluster_id, NULL,
+    "The ID of the cluster this marked site is promised a place in once it stands, or 0.",
     NULL},
     {"cluster_type",
     (getter)PyEntity_get_cluster_type, NULL,
@@ -2494,6 +2499,11 @@ static PyObject *PyEntity_set_cluster_type(PyEntityObject *self, PyObject *args)
 static PyObject *PyEntity_get_cluster_id(PyEntityObject *self, void *closure)
 {
     return PyInt_FromLong(G_Cluster_Of(self->ent));
+}
+
+static PyObject *PyEntity_get_pending_cluster_id(PyEntityObject *self, void *closure)
+{
+    return PyInt_FromLong(G_Cluster_PendingOf(self->ent));
 }
 
 static PyObject *PyEntity_get_cluster_type(PyEntityObject *self, void *closure)
