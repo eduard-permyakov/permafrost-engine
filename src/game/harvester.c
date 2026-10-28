@@ -507,6 +507,14 @@ static bool storage_site_reachable(uint32_t ent, uint32_t site)
     return true;
 }
 
+static bool same_pool(uint32_t a, uint32_t b)
+{
+    if(a == NULL_UID || b == NULL_UID)
+        return false;
+    int pool = G_Cluster_Of(a);
+    return (pool != 0) && (G_Cluster_Of(b) == pool);
+}
+
 static bool valid_storage_site_dropoff(uint32_t curr, void *arg)
 {
     struct searcharg *sarg = arg;
@@ -517,6 +525,9 @@ static bool valid_storage_site_dropoff(uint32_t curr, void *arg)
     if(!(curr_flags & ENTITY_FLAG_STORAGE_SITE))
         return false;
     if(G_GetFactionID(sarg->ent) != G_GetFactionID(curr))
+        return false;
+    /* Not back into the pool the load was just taken from */
+    if(curr == sarg->storage || same_pool(curr, sarg->storage))
         return false;
     if(!storage_site_reachable(sarg->ent, curr))
         return false;
@@ -562,6 +573,11 @@ static bool valid_storage_site_source(uint32_t curr, void *arg)
     if(G_GetFactionID(sarg->ent) != G_GetFactionID(curr))
         return false;
     if(curr == sarg->storage)
+        return false;
+    /* A pool holds its goods in common: carried from one of its sites to
+     * another, a load goes round and round, and standing beside the pool a
+     * carrier is beside both at once */
+    if(same_pool(curr, sarg->storage))
         return false;
     if(G_StorageSite_GetDoNotTake(ent_flags, curr))
         return false;
