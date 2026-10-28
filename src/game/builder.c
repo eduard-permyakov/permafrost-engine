@@ -199,7 +199,8 @@ static void on_build_anim_finished(void *user, void *event)
     struct builderstate *bs = builderstate_get(uid);
     assert(bs);
 
-    if(!G_EntityExists(bs->target_uid)|| (G_FlagsGet(bs->target_uid) & ENTITY_FLAG_ZOMBIE)) {
+    if(!G_EntityExists(bs->target_uid)|| (G_FlagsGet(bs->target_uid) & ENTITY_FLAG_ZOMBIE)
+    || G_Combat_IsDying(bs->target_uid)) {
         finish_building(bs, uid);
         next_command(uid);
         return;
