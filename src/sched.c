@@ -189,6 +189,11 @@ __pragma(pack(pop));
 /* The least of the frame budget the task loop keeps when the frame's tail
  * (quiesce, render wait, buffer swap) is long. */
 #define SCHED_MIN_LOOP_US       (10000.0)
+/* The least the task loop runs for in a frame that reached it past its
+ * deadline (a GPU-bound frame), so that the ready tasks are not cut to one a
+ * frame and the main thread's queue does not grow without end.
+ */
+#define SCHED_MIN_SLICE_US      (1000.0)
 #define ALIGNED(val, align)     (((val) + ((align) - 1)) & ~((align) - 1))
 #define DELETED_MARKER          (((uint32_t)0x1) << 31)
 
@@ -1613,7 +1618,10 @@ void Sched_Tick(void)
     double loop_us = budget_us - s_frame_tail_ema_us;
     if(loop_us < SCHED_MIN_LOOP_US)
         loop_us = SCHED_MIN_LOOP_US;
-    const uint64_t deadline = Perf_FrameStartTicks() + (uint64_t)(loop_us * freq / 1e6);
+    uint64_t deadline = Perf_FrameStartTicks() + (uint64_t)(loop_us * freq / 1e6);
+    const uint64_t min_deadline = SDL_GetPerformanceCounter() + (uint64_t)(SCHED_MIN_SLICE_US * freq / 1e6);
+    if(deadline < min_deadline)
+        deadline = min_deadline;
 
     /* Use a do-while to ensure we're always making at least _some_ forward progress */
     do{
