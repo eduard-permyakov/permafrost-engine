@@ -937,6 +937,8 @@ static void s_expose_game_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, ROAD_LINK_LEFT);
     PY_EXPOSE_ENUM(module, ROAD_LINK_ALL);
     PY_EXPOSE_ENUM(module, MAX_ROAD_VARIANTS);
+    PY_EXPOSE_ENUM(module, ROAD_KIND_DIRT);
+    PY_EXPOSE_ENUM(module, ROAD_KIND_PLANK);
 }
 
 static void s_expose_anim_constants(PyObject *module)

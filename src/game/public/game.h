@@ -990,6 +990,12 @@ bool   G_Region_Explored(const char *name, uint16_t player_mask, bool *out);
 
 /* A unit going its way along the roads is this much faster on them */
 #define ROAD_SPEED_BONUS (1.25f)
+#define ROAD_PLANK_SPEED_BONUS (1.5f)
+
+enum road_kind{
+    ROAD_KIND_DIRT,
+    ROAD_KIND_PLANK,
+};
 
 /* The neighbours a road tile leads to, named by the direction on the road grid */
 enum road_link{
@@ -1023,6 +1029,10 @@ bool   G_Roads_Remove(struct road_desc rd);
 bool   G_Roads_Link(struct road_desc a, struct road_desc b);
 bool   G_Roads_Unlink(struct road_desc a, struct road_desc b);
 bool   G_Roads_Get(struct road_desc rd, uint8_t *out_links);
+bool   G_Roads_SetKind(struct road_desc rd, enum road_kind kind);
+bool   G_Roads_GetKind(struct road_desc rd, enum road_kind *out);
+/* The speed bonus of the road under the point, or 1 off the roads */
+float  G_Roads_SpeedFactor(vec2_t xz);
 size_t G_Roads_Count(void);
 size_t G_Roads_GetAll(size_t maxout, struct road_desc out[], uint8_t out_links[]);
 void   G_Roads_SetHover(const struct road_desc *rd);

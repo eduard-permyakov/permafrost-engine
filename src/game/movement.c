@@ -8762,9 +8762,8 @@ static void move_do_tick_submit(enum movement_hz hz)
         }
 
         float max_speed = ms->max_speed;
-        if(!in_formation && flock && N_DestUsesRoads(flock->dest_id)
-        && M_NavOnRoad(s_move_work.gamestate.map, curr_cp.xz_pos)) {
-            max_speed *= ROAD_SPEED_BONUS;
+        if(!in_formation && flock && N_DestUsesRoads(flock->dest_id)) {
+            max_speed *= G_Roads_SpeedFactor(curr_cp.xz_pos);
         }
 
         move_push_work((struct move_work_in){

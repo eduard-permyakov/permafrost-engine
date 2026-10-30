@@ -136,6 +136,9 @@ static PyObject *PyPf_remove_road(PyObject *self, PyObject *args);
 static PyObject *PyPf_link_roads(PyObject *self, PyObject *args);
 static PyObject *PyPf_unlink_roads(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_road(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_road_kind(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_road_kind(PyObject *self, PyObject *args);
+static PyObject *PyPf_road_speed_factor(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_all_roads(PyObject *self);
 static PyObject *PyPf_clear_roads(PyObject *self);
 static PyObject *PyPf_set_road_hover(PyObject *self, PyObject *args);
@@ -523,6 +526,21 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_get_road, METH_VARARGS,
     "Returns the mask of ROAD_LINK_* flags of the road on the specified (row, column) road tile, "
     "or None when there is no road there."},
+
+    {"set_road_kind", 
+    (PyCFunction)PyPf_set_road_kind, METH_VARARGS,
+    "Make the road on the specified (row, column) road tile one of the ROAD_KIND_* kinds. Returns "
+    "False when there is no road there."},
+
+    {"get_road_kind", 
+    (PyCFunction)PyPf_get_road_kind, METH_VARARGS,
+    "Returns the ROAD_KIND_* kind of the road on the specified (row, column) road tile, or None "
+    "when there is no road there."},
+
+    {"road_speed_factor", 
+    (PyCFunction)PyPf_road_speed_factor, METH_VARARGS,
+    "Returns how much faster a unit going its way along the roads moves at the specified XZ "
+    "position: 1.0 off the roads."},
 
     {"get_all_roads", 
     (PyCFunction)PyPf_get_all_roads, METH_NOARGS,
@@ -2262,6 +2280,45 @@ static PyObject *PyPf_get_road(PyObject *self, PyObject *args)
     if(!G_Roads_Get(rd, &links))
         Py_RETURN_NONE;
     return Py_BuildValue("i", links);
+}
+
+static PyObject *PyPf_set_road_kind(PyObject *self, PyObject *args)
+{
+    struct road_desc rd;
+    int kind;
+    if(!PyArg_ParseTuple(args, "(ii)i", &rd.r, &rd.c, &kind)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a tuple of two integers and an integer.");
+        return NULL;
+    }
+    if(kind != ROAD_KIND_DIRT && kind != ROAD_KIND_PLANK) {
+        PyErr_SetString(PyExc_ValueError, "The kind must be one of the ROAD_KIND_* constants.");
+        return NULL;
+    }
+    return PyBool_FromLong(G_Roads_SetKind(rd, kind));
+}
+
+static PyObject *PyPf_get_road_kind(PyObject *self, PyObject *args)
+{
+    struct road_desc rd;
+    if(!PyArg_ParseTuple(args, "(ii)", &rd.r, &rd.c)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of two integers.");
+        return NULL;
+    }
+
+    enum road_kind kind;
+    if(!G_Roads_GetKind(rd, &kind))
+        Py_RETURN_NONE;
+    return Py_BuildValue("i", kind);
+}
+
+static PyObject *PyPf_road_speed_factor(PyObject *self, PyObject *args)
+{
+    vec2_t pos;
+    if(!PyArg_ParseTuple(args, "(ff)", &pos.x, &pos.z)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of two floats.");
+        return NULL;
+    }
+    return PyFloat_FromDouble(G_Roads_SpeedFactor(pos));
 }
 
 static PyObject *PyPf_get_all_roads(PyObject *self)

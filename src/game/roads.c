@@ -74,6 +74,7 @@
 
 #define ROAD_PRESENT        (1 << 7)
 #define ROAD_DECAL_STALE    (1 << 6)
+#define ROAD_PLANK          (1 << 4)
 #define ROAD_NUM_MASKS      (ROAD_LINK_ALL + 1)
 #define ROAD_TILE_X_DIM     (ROAD_TILE_SPAN * X_COORDS_PER_TILE)
 #define ROAD_TILE_Z_DIM     (ROAD_TILE_SPAN * Z_COORDS_PER_TILE)
@@ -107,8 +108,8 @@ static vec3_t               s_map_pos;
 static int                  s_rows, s_cols;
 static size_t               s_count;
 
-/* One byte per road tile: ROAD_PRESENT, ROAD_DECAL_STALE and the road_link 
- * bits. A link is always set on both of the tiles it joins. 
+/* One byte per road tile: ROAD_PRESENT, ROAD_DECAL_STALE, ROAD_PLANK and the
+ * road_link bits. A link is always set on both of the tiles it joins.
  */
 static uint8_t             *s_tiles;
 /* The decal drawn on each road tile, if any, and the tiles whose decal no 
@@ -856,6 +857,41 @@ bool G_Roads_Get(struct road_desc rd, uint8_t *out_links)
     return true;
 }
 
+bool G_Roads_SetKind(struct road_desc rd, enum road_kind kind)
+{
+    if(!present(rd))
+        return false;
+
+    if(kind == ROAD_KIND_PLANK) {
+        *tile_at(rd) |= ROAD_PLANK;
+    }else{
+        *tile_at(rd) &= ~ROAD_PLANK;
+    }
+    return true;
+}
+
+bool G_Roads_GetKind(struct road_desc rd, enum road_kind *out)
+{
+    if(!present(rd))
+        return false;
+
+    *out = (*tile_at(rd) & ROAD_PLANK) ? ROAD_KIND_PLANK : ROAD_KIND_DIRT;
+    return true;
+}
+
+float G_Roads_SpeedFactor(vec2_t xz)
+{
+    if(!s_map)
+        return 1.0f;
+
+    int c = (int)floorf((s_map_pos.x - xz.x) / ROAD_TILE_X_DIM);
+    int r = (int)floorf((xz.z - s_map_pos.z) / ROAD_TILE_Z_DIM);
+    struct road_desc rd = (struct road_desc){r, c};
+    if(!present(rd))
+        return 1.0f;
+    return (*tile_at(rd) & ROAD_PLANK) ? ROAD_PLANK_SPEED_BONUS : ROAD_SPEED_BONUS;
+}
+
 size_t G_Roads_Count(void)
 {
     return s_count;
@@ -1050,7 +1086,7 @@ bool G_Roads_SaveState(struct SDL_RWops *stream)
 
         struct attr links = (struct attr){
             .type = TYPE_INT,
-            .val.as_int = *tile_at(rd) & ROAD_LINK_ALL
+            .val.as_int = *tile_at(rd) & (ROAD_LINK_ALL | ROAD_PLANK)
         };
         CHK_TRUE_RET(Attr_Write(stream, &links, "links"));
     }}
@@ -1108,7 +1144,7 @@ bool G_Roads_LoadState(struct SDL_RWops *stream)
         int links = attr.val.as_int;
 
         CHK_TRUE_RET(in_bounds(rd));
-        CHK_TRUE_RET((links & ~ROAD_LINK_ALL) == 0);
+        CHK_TRUE_RET((links & ~(ROAD_LINK_ALL | ROAD_PLANK)) == 0);
 
         G_Roads_Add(rd);
         *tile_at(rd) |= links;
