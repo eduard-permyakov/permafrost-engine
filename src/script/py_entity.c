@@ -1233,6 +1233,11 @@ static PyMethodDef PyStorageSiteEntity_methods[] = {
     "over the site as a rate per minute. An optional icon path stands for it; goods default "
     "to their own."},
 
+    {"set_note", 
+    (PyCFunction)PyStorageSiteEntity_set_note, METH_VARARGS,
+    "Shows a line of text, after an optional icon path, under the site's strip, in the warning "
+    "colour when the third argument is true. A text of None clears it."},
+
     {"made_per_minute", 
     (PyCFunction)PyStorageSiteEntity_made_per_minute, METH_VARARGS,
     "How many of the named thing the site, or the cluster it is in, made in the last minute."},
@@ -5461,6 +5466,20 @@ static PyObject *PyStorageSiteEntity_record_made(PyStorageSiteEntityObject *self
         return NULL;
     }
     G_StorageSite_RecordMade(self->super.ent, name, icon, amount);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyStorageSiteEntity_set_note(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *icon, *text;
+    int warn = 0;
+    if(!PyArg_ParseTuple(args, "zz|i", &icon, &text, &warn)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting an icon path (string or None), a text (string "
+            "or None) and optionally whether it warns (bool).");
+        return NULL;
+    }
+    G_StorageSite_SetNote(self->super.ent, icon, text, warn);
     Py_RETURN_NONE;
 }
 
