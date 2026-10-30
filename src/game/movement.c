@@ -7410,13 +7410,25 @@ static void interp_begin_segment(uint32_t uid, struct movestate *ms,
 
     bool pending = false;
     vec3_t old_to = {0};
+    quat_t old_rot = {0};
     if(ms->interp_idx >= 0 && ms->interp_idx < vec_size(&s_interp)) {
         struct interp_seg *old = &vec_AT(&s_interp, ms->interp_idx);
         if(old->uid == uid) {
             pending = !old->done;
             old_to = old->to_pos;
+            old_rot = old->to_rot;
             old->done = true;
         }
+    }
+
+    /* A unit not drawn may not have had its turn to snap before the tick
+     * ended; it takes the step it is owed now, else it falls behind where
+     * it is simulated a tick at a time
+     */
+    if(pending && !G_Pos_IsInterpCandidate(uid)
+    && G_Pos_SetInterpolated(uid, old_to, old_rot, false)) {
+        G_Pos_SyncRefs(uid);
+        pending = false;
     }
 
     vec3_t pos = G_Pos_Get(uid);
