@@ -774,6 +774,8 @@ bool  G_Harvester_TransportJob(uint32_t uid, uint32_t src, uint32_t dest, const 
 int   G_Harvester_EnRoute(uint32_t dest, const char *rname);
 /* The resource the harvester is out gathering for the stores, or NULL */
 const char *G_Harvester_Gathering(uint32_t uid);
+/* The resource the harvester is to gather once it is done with what is in hand, or NULL */
+const char *G_Harvester_QueuedGather(uint32_t uid);
 /* How many units are fetching, gathering or bringing 'rname' for 'dest' */
 int   G_Harvester_BoundFor(uint32_t dest, const char *rname);
 /* How much of 'rname' carriers on their way to 'src' are to take from it */
@@ -791,6 +793,7 @@ uint32_t G_Automation_BestResource(uint32_t uid, const char *rname);
 /* The node every gatherer on its way to one or at one is bound for, one entry each */
 size_t G_Harvester_AimedTargets(size_t maxout, uint32_t out[]);
 size_t G_Harvester_BoundDests(size_t maxout, uint32_t out[]);
+size_t G_Harvester_GatherDests(size_t maxout, uint32_t out_dests[], const char *out_rnames[]);
 int    G_Harvester_CountBound(uint32_t dest, const char *rname);
 size_t G_Harvester_DebugDesc(uint32_t uid, char *out, size_t len);
 int   G_Harvester_CountGathering(int faction, const char *rname);
@@ -875,7 +878,8 @@ void G_StorageSite_SetKeep(uint32_t uid, const char *rname, int keep);
 int  G_StorageSite_GetKeep(uint32_t uid, const char *rname);
 int  G_StorageSite_BoundFor(uint32_t uid);
 int  G_StorageSite_BoundForGood(uint32_t uid, const char *rname);
-void G_StorageSite_SetGatherers(uint32_t uid, int count);
+/* The gatherers whose next load goes to the site, or its pool; NULL for all goods */
+int  G_StorageSite_Gatherers(uint32_t uid, const char *rname);
 float G_StorageSite_Rate(uint32_t uid, const char *rname);
 void G_StorageSite_SetChip(uint32_t uid, const char *rname, enum ss_chip chip);
 enum ss_chip G_StorageSite_GetChip(uint32_t uid, const char *rname);

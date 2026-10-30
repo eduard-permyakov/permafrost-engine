@@ -288,9 +288,9 @@ static int              s_made_slot;
 static khash_t(strip)  *s_strips;
 static uint32_t         s_strip_stamp;
 /* Per site: who is bringing it goods, tallied once per UI pass, and the
- * gatherers the scripts count for a hub */
+ * gatherers bringing it their next load, tallied once a second */
 static khash_t(bound)  *s_bound;
-static khash_t(bound)  *s_gatherers;
+static khash_t(gathering) *s_gathering;
 
 static struct nk_style_item s_bg_style = {0};
 static struct nk_color      s_border_clr = {0};
@@ -716,6 +716,80 @@ static int bound_for_good(uint32_t uid, const char *rname)
     for(int i = 0; i < nmembers; i++) {
         ret += G_Harvester_CountBound(members[i], rname);
     }
+    return ret;
+}
+
+static void rebuild_gathering(void)
+{
+    kh_clear(gathering, s_gathering);
+
+    uint32_t dests[2048];
+    const char *rnames[2048];
+    size_t ndests = G_Harvester_GatherDests(ARR_SIZE(dests), dests, rnames);
+    for(int i = 0; i < ndests; i++) {
+
+        int status;
+        khiter_t k = kh_put(gathering, s_gathering, dests[i], &status);
+        if(status == -1)
+            continue;
+        struct gathering *gathering = &kh_value(s_gathering, k);
+        if(status != 0) {
+            gathering->ngoods = 0;
+        }
+        int j = 0;
+        for(; j < gathering->ngoods; j++) {
+            if(!strcmp(gathering->names[j], rnames[i]))
+                break;
+        }
+        if(j == ARR_SIZE(gathering->names))
+            continue;
+        if(j == gathering->ngoods) {
+            gathering->names[j] = rnames[i];
+            gathering->counts[j] = 0;
+            gathering->ngoods++;
+        }
+        gathering->counts[j]++;
+    }
+}
+
+static int gathering_get(uint32_t uid, const char *rname)
+{
+    khiter_t k = kh_get(gathering, s_gathering, uid);
+    if(k == kh_end(s_gathering))
+        return 0;
+    const struct gathering *gathering = &kh_value(s_gathering, k);
+    int ret = 0;
+    for(int i = 0; i < gathering->ngoods; i++) {
+        if(!rname || !strcmp(gathering->names[i], rname)) {
+            ret += gathering->counts[i];
+        }
+    }
+    return ret;
+}
+
+/* Gatherers whose next load goes to the site, or its pool; of every good for a NULL name */
+static int gatherers_for(uint32_t uid, const char *rname)
+{
+    int cid = G_Cluster_Of(uid);
+    if(cid == 0)
+        return gathering_get(uid, rname);
+
+    uint32_t members[64];
+    size_t nmembers = G_Cluster_Members(cid, ARR_SIZE(members), members);
+    int ret = 0;
+    for(int i = 0; i < nmembers; i++) {
+        ret += gathering_get(members[i], rname);
+    }
+    return ret;
+}
+
+/* A request the pool's own gatherers are meeting is not stuck */
+static enum request_status good_status(uint32_t uid, const char *rname)
+{
+    int waited_ms;
+    enum request_status ret = G_Automation_RequestStatus(uid, rname, &waited_ms);
+    if(ret != REQUEST_OK && gatherers_for(uid, rname) > 0)
+        return REQUEST_OK;
     return ret;
 }
 
@@ -1205,23 +1279,22 @@ static void draw_window(struct nk_context *ctx, uint32_t key, const struct ss_st
         int reserve = G_StorageSite_GetReserve(key, rname);
         int curr_amount = G_StorageSite_GetCurr(key, rname);
         int ncarts = bound_for_good(key, rname);
-        int waited_ms;
-        bool blocked = (G_Automation_RequestStatus(key, rname, &waited_ms) != REQUEST_OK);
+        int ngather = gatherers_for(key, rname);
+        int arrow = good_arrow(key, rname);
+        bool blocked = (good_status(key, rname) != REQUEST_OK);
 
-        char amount[8], cap[8], keep[8], rate[10] = {0}, carts[8] = {0};
+        char amount[8], cap[8], keep[8], carts[8] = {0}, gather[8] = {0};
         pf_snprintf(amount, sizeof(amount), "%d", curr_amount);
         pf_snprintf(cap, sizeof(cap), "%d", capacity);
         pf_snprintf(keep, sizeof(keep), "%d", reserve);
-        float per_min = good_rate(key, rname) * 60.0f;
-        int rounded = (int)(per_min + (per_min < 0.0f ? -0.5f : 0.5f));
-        if(rounded != 0) {
-            pf_snprintf(rate, sizeof(rate), "%+d/m", rounded);
-        }
         if(ncarts > 0) {
             pf_snprintf(carts, sizeof(carts), "%d", ncarts);
         }
+        if(ngather > 0) {
+            pf_snprintf(gather, sizeof(gather), "%d", ngather);
+        }
 
-        nk_layout_row_begin(ctx, NK_STATIC, WIN_ROW_H, WIN_COLS);
+        nk_layout_row_begin(ctx, NK_STATIC, WIN_ROW_H, ncols);
         nk_layout_row_push(ctx, cols[0]);
         window_icon(ctx, G_Resource_GetIcon(rname));
 
@@ -1454,6 +1527,7 @@ static void on_1hz_tick(void *user, void *event)
     (void)curr;
 
     advance_made();
+    rebuild_gathering();
     s_strip_stamp++;
     kh_foreach(s_entity_state_table, key, curr, {
         struct ss_state *ss = shown_state(key);
@@ -1916,8 +1990,11 @@ bool G_StorageSite_Init(void)
     if(!(s_bound = kh_init(bound)))
         goto fail_bound;
 
-    if(!(s_gatherers = kh_init(bound)))
-        goto fail_gatherers;
+    if(!(s_gathering = kh_init(gathering)))
+        goto fail_gathering;
+
+    if(!(s_notes = kh_init(note)))
+        goto fail_notes;
 
     struct nk_context ctx;
     nk_style_default(&ctx);
@@ -2883,13 +2960,9 @@ int G_StorageSite_BoundForGood(uint32_t uid, const char *rname)
     return bound_for_good(uid, rname);
 }
 
-void G_StorageSite_SetGatherers(uint32_t uid, int count)
+int G_StorageSite_Gatherers(uint32_t uid, const char *rname)
 {
-    int status;
-    khiter_t k = kh_put(bound, s_gatherers, uid, &status);
-    if(status != -1) {
-        kh_value(s_gatherers, k) = count;
-    }
+    return gatherers_for(uid, rname);
 }
 
 float G_StorageSite_Rate(uint32_t uid, const char *rname)

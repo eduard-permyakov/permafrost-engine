@@ -996,6 +996,7 @@ static PyObject *PyHarvesterEntity_get_automatic_work(PyHarvesterEntityObject *s
 static int       PyHarvesterEntity_set_automatic_work(PyHarvesterEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyHarvesterEntity_get_pinned_work(PyHarvesterEntityObject *self, void *closure);
 static PyObject *PyHarvesterEntity_get_work_trace(PyHarvesterEntityObject *self, void *closure);
+static PyObject *PyHarvesterEntity_get_queued_gather(PyHarvesterEntityObject *self, void *closure);
 static PyObject *PyHarvesterEntity_get_home_district(PyHarvesterEntityObject *self, void *closure);
 static int       PyHarvesterEntity_set_home_district(PyHarvesterEntityObject *self, PyObject *value, void *closure);
 static int       PyHarvesterEntity_set_pinned_work(PyHarvesterEntityObject *self, PyObject *value, void *closure);
@@ -1110,6 +1111,10 @@ static PyGetSetDef PyHarvesterEntity_getset[] = {
     (getter)PyHarvesterEntity_get_pinned_work, (setter)PyHarvesterEntity_set_pinned_work,
     "The one resource a worker finding its own work gathers, or an empty string to let it choose.",
     NULL},
+    {"queued_gather",
+    (getter)PyHarvesterEntity_get_queued_gather, NULL,
+    "The resource the harvester is to gather once it has dropped off what it carries, or None.",
+    NULL},
     {"work_trace",
     (getter)PyHarvesterEntity_get_work_trace, NULL,
     "The worker's last decision about its work: (seconds ago, [(kind, verdict, why, resource, "
@@ -1151,15 +1156,18 @@ static PyObject *PyStorageSiteEntity_get_capacity(PyStorageSiteEntityObject *sel
 static PyObject *PyStorageSiteEntity_get_own_capacity(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_keep(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_suppliers(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_get_gatherers(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_set_gatherers(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_set_keep(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_reserve(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_record_made(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_set_note(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_made_per_minute(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_chip(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_set_chip(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_surplus(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_request_status(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_output_stocked(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_priority(PyStorageSiteEntityObject *self, void *closure);
 static int       PyStorageSiteEntity_set_priority(PyStorageSiteEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyStorageSiteEntity_set_capacity(PyStorageSiteEntityObject *self, PyObject *args);
@@ -1200,9 +1208,14 @@ static PyMethodDef PyStorageSiteEntity_methods[] = {
     "The number of units bringing goods to the site, or ordered to build it before its materials are in. "
     "Given a resource name, the number of carriers bringing that good."},
 
+    {"get_gatherers", 
+    (PyCFunction)PyStorageSiteEntity_get_gatherers, METH_VARARGS,
+    "The number of gatherers whose next load goes to the site or its pool. Given a resource name, "
+    "the number gathering that good."},
+
     {"set_gatherers", 
     (PyCFunction)PyStorageSiteEntity_set_gatherers, METH_VARARGS,
-    "Sets the number of gatherers shown on the site's overhead strip."},
+    "Does nothing: the engine counts a site's gatherers itself. Kept for the scripts of older saves."},
 
     {"set_keep", 
     (PyCFunction)PyStorageSiteEntity_set_keep, METH_VARARGS,
@@ -5216,6 +5229,14 @@ static PyObject *PyHarvesterEntity_get_pinned_work(PyHarvesterEntityObject *self
     return PyString_FromString(G_Automation_GetPinnedWork(self->super.ent));
 }
 
+static PyObject *PyHarvesterEntity_get_queued_gather(PyHarvesterEntityObject *self, void *closure)
+{
+    const char *rname = G_Harvester_QueuedGather(self->super.ent);
+    if(!rname)
+        Py_RETURN_NONE;
+    return PyString_FromString(rname);
+}
+
 static int PyHarvesterEntity_set_pinned_work(PyHarvesterEntityObject *self, PyObject *value, void *closure)
 {
     if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
@@ -5394,6 +5415,17 @@ static PyObject *PyStorageSiteEntity_get_suppliers(PyStorageSiteEntityObject *se
     return PyInt_FromLong(G_StorageSite_BoundFor(self->super.ent));
 }
 
+static PyObject *PyStorageSiteEntity_get_gatherers(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *rname = NULL;
+    if(!PyArg_ParseTuple(args, "|s", &rname)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting an optional resource name (string).");
+        return NULL;
+    }
+    return PyInt_FromLong(G_StorageSite_Gatherers(self->super.ent, rname));
+}
+
 static PyObject *PyStorageSiteEntity_set_gatherers(PyStorageSiteEntityObject *self, PyObject *args)
 {
     SS_CHECK_ALIVE(NULL);
@@ -5402,7 +5434,6 @@ static PyObject *PyStorageSiteEntity_set_gatherers(PyStorageSiteEntityObject *se
         PyErr_SetString(PyExc_TypeError, "Expecting one argument: count (integer).");
         return NULL;
     }
-    G_StorageSite_SetGatherers(self->super.ent, count);
     Py_RETURN_NONE;
 }
 

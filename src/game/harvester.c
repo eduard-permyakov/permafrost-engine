@@ -724,6 +724,9 @@ static void entity_drop_off(uint32_t uid, uint32_t ss)
     hs->state = STATE_HARVESTING_SEEK_STORAGE;
     hs->ss_uid = ss;
 
+    /* Sent on to another store on the way, it arrives only once */
+    E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_storage);
+    E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel);
     E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_at_storage, 
         (void*)((uintptr_t)uid), G_RUNNING);
     E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
@@ -1142,8 +1145,14 @@ static void on_arrive_at_storage(void *user, void *event)
         return; 
     }
 
+    /* One that brought its load in already, and found nothing to gather
+     * after, has nothing to drop off */
     const char *rname = carried_resource_name(hs);
-    assert(rname);
+    if(!rname) {
+        G_Harvester_Stop(uid);
+        hs->ss_uid = NULL_UID;
+        return;
+    }
 
     int carry = G_Harvester_GetCurrCarry(uid, rname);
     int cap = ss_capacity(hs->ss_uid, rname);
@@ -2285,6 +2294,52 @@ size_t G_Harvester_AimedTargets(size_t maxout, uint32_t out[])
     return ret;
 }
 
+static bool gather_dest_valid(uint32_t uid, uint32_t site, const char *rname)
+{
+    if(site == NULL_UID || !G_EntityExists(site) || G_EntityIsZombie(site))
+        return false;
+    if(!(G_FlagsGet(site) & ENTITY_FLAG_STORAGE_SITE))
+        return false;
+    if(G_GetFactionID(site) != G_GetFactionID(uid))
+        return false;
+    return G_StorageSite_Accepts(site, rname);
+}
+
+/* Each gatherer's good and the site it brings its next load to: the one it is
+ * on its way to, else the last it dropped a load at, else the nearest that
+ * takes the good */
+size_t G_Harvester_GatherDests(size_t maxout, uint32_t out_dests[], const char *out_rnames[])
+{
+    if(!s_entity_state_table)
+        return 0;
+    size_t ret = 0;
+    uint32_t uid;
+    struct hstate *hs;
+    kh_foreach_val_ptr(s_entity_state_table, uid, hs, {
+        if(ret == maxout)
+            break;
+        if(hs->state != STATE_HARVESTING_SEEK_RESOURCE && hs->state != STATE_HARVESTING
+        && hs->state != STATE_HARVESTING_SEEK_STORAGE)
+            continue;
+        const char *rname = (hs->state == STATE_HARVESTING_SEEK_STORAGE) ? carried_resource_name(hs) : NULL;
+        if(!rname) {
+            rname = hs->res_name;
+        }
+        if(!rname)
+            continue;
+        uint32_t dest = hs->ss_uid;
+        if(!gather_dest_valid(uid, dest, rname)) {
+            dest = nearest_storage_site_dropoff(uid, rname);
+        }
+        if(dest == NULL_UID)
+            continue;
+        out_dests[ret] = dest;
+        out_rnames[ret] = rname;
+        ret++;
+    });
+    return ret;
+}
+
 /* The site each carrier is bringing goods to: on its trip there, or on the
  * drop-off it makes first */
 size_t G_Harvester_BoundDests(size_t maxout, uint32_t out[])
@@ -2823,6 +2878,17 @@ const char *G_Harvester_Gathering(uint32_t uid)
     && hs->state != STATE_HARVESTING_SEEK_STORAGE)
         return NULL;
     return hs->res_name;
+}
+
+const char *G_Harvester_QueuedGather(uint32_t uid)
+{
+    struct hstate *hs = hstate_get(uid);
+    if(!hs || hs->queued.cmd != CMD_GATHER)
+        return NULL;
+    uint32_t resource = hs->queued.uid_arg;
+    if(!G_EntityExists(resource) || G_EntityIsZombie(resource))
+        return NULL;
+    return G_Resource_GetName(resource);
 }
 
 int G_Harvester_BoundFor(uint32_t dest, const char *rname)
