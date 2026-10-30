@@ -882,6 +882,18 @@ static enum request_status no_source_reason(const vec_entity_t *sites, const str
     return (spare > 0) ? REQUEST_PROMISED : REQUEST_KEPT;
 }
 
+/* Whether goods made at the site could be brought to the request: not to one
+ * no carrier can get to, nor to one cut off from all but its own district */
+static bool could_serve(uint32_t site, const struct job_request *req)
+{
+    struct pending *pend = pending_get(req->site, req->rname, false);
+    switch(pend ? pend->reason : REQUEST_OK) {
+    case REQUEST_UNREACHABLE:   return false;
+    case REQUEST_NOT_CONNECTED: return G_District_Of(site) == G_District_Of(req->site);
+    default:                    return true;
+    }
+}
+
 static bool carrier_can_take(uint32_t carrier, const char *rname)
 {
     if(G_Harvester_GetMaxCarry(carrier, rname) == 0)
@@ -954,6 +966,7 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
         vec_source_reset(&sources);
         collect_sources(&sources, &sites, req->rname, faction, req->site);
 
+        bool any_idle = false;
         bool any_carrier = false;
         bool any_reachable = false;
         bool any_district_bar = false;
@@ -972,6 +985,7 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
                 uint32_t carrier = vec_AT(carriers, c);
                 if(G_GetFactionID(carrier) != faction)
                     continue;
+                any_idle = true;
                 if(!carrier_can_take(carrier, req->rname))
                     continue;
                 struct automation_state *cstate = astate_get(carrier);
@@ -1061,12 +1075,11 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
         && !pool_bound_for(req->site, req->rname)) {
             if(vec_size(&sources) == 0) {
                 note_blocked(req, no_source_reason(&sites, req));
-            }else if(!any_reachable && any_district_bar) {
+            }else if(any_district_bar) {
                 note_blocked(req, REQUEST_NOT_CONNECTED);
-            }else if(!any_carrier) {
-                note_blocked(req, REQUEST_NO_CARRIER);
-            }else if(!any_reachable) {
-                note_blocked(req, REQUEST_UNREACHABLE);
+            }else if(any_idle) {
+                /* With every carrier busy it only waits its turn */
+                note_blocked(req, any_carrier ? REQUEST_UNREACHABLE : REQUEST_NO_CARRIER);
             }
         }else{
             struct pending *pend = pending_get(req->site, req->rname, false);
@@ -2419,6 +2432,36 @@ int G_Automation_Shortfall(uint32_t site, const char *rname, int own_load)
     return MAX(want - have, 0);
 }
 
+bool G_Automation_OutputStocked(uint32_t site, const char *rname, int limit)
+{
+    int faction = G_GetFactionID(site);
+    uint32_t pool = pool_representative(site);
+    struct work_snapshot *snap = snapshot_get();
+    for(int i = 0; i < vec_size(&snap->requests); i++) {
+        const struct job_request *req = &vec_AT(&snap->requests, i);
+        if(req->site == pool || G_GetFactionID(req->site) != faction || strcmp(req->rname, rname))
+            continue;
+        if(could_serve(site, req))
+            return false;
+    }
+
+    vec_entity_t sites;
+    vec_entity_init(&sites);
+    G_StorageSite_GetAll(&sites);
+    int district = G_District_Of(site);
+    int spare = 0;
+    for(int i = 0; i < vec_size(&sites); i++) {
+        uint32_t curr = vec_AT(&sites, i);
+        if(G_EntityIsZombie(curr) || !is_representative(curr) || G_GetFactionID(curr) != faction)
+            continue;
+        if(curr != pool && (district == 0 || G_District_Of(curr) != district))
+            continue;
+        spare += G_StorageSite_Surplus(curr, rname);
+    }
+    vec_entity_destroy(&sites);
+    return spare >= limit;
+}
+
 void G_Automation_TraceFollowOn(uint32_t uid, const char *kind, const char *why, 
                                 const char *rname, uint32_t target)
 {
@@ -2592,7 +2635,7 @@ bool G_Automation_LoadPriorities(struct SDL_RWops *stream)
 
     for(int i = 0; i < num_priorities; i++) {
 
-        struct good_priority prio;
+        struct good_priority prio = (struct good_priority){0};
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);

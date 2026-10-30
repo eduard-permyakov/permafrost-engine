@@ -1244,6 +1244,11 @@ static PyMethodDef PyStorageSiteEntity_methods[] = {
     "pf.REQUEST_NO_SOURCE, pf.REQUEST_NO_CARRIER, pf.REQUEST_UNREACHABLE) and how many seconds it "
     "has waited."},
 
+    {"output_stocked",
+    (PyCFunction)PyStorageSiteEntity_output_stocked, METH_VARARGS,
+    "Takes a resource name and a limit. Returns whether the site has made enough of the resource for "
+    "now: its district can spare the limit of it, and no request its goods could reach is going short."},
+
     {"get_own_capacity", 
     (PyCFunction)PyStorageSiteEntity_get_own_capacity, METH_VARARGS,
     "Gets the site's own capacity for the specified resource, as set with 'set_capacity': not that of "
@@ -5496,6 +5501,20 @@ static PyObject *PyStorageSiteEntity_request_status(PyStorageSiteEntityObject *s
     int waited_ms;
     enum request_status status = G_Automation_RequestStatus(self->super.ent, name, &waited_ms);
     return Py_BuildValue("(if)", (int)status, waited_ms / 1000.0f);
+}
+
+static PyObject *PyStorageSiteEntity_output_stocked(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *name;
+    int limit;
+    if(!PyArg_ParseTuple(args, "si", &name, &limit)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting two arguments: name (string) and limit (integer).");
+        return NULL;
+    }
+    if(G_Automation_OutputStocked(self->super.ent, name, limit))
+        Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
 }
 
 static PyObject *PyStorageSiteEntity_get_priority(PyStorageSiteEntityObject *self, void *closure)
