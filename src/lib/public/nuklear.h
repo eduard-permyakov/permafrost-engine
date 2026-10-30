@@ -9379,6 +9379,20 @@ nk_draw_nine_slice(struct nk_command_buffer *b, struct nk_rect r,
 
 #undef IMG_RGN
 }
+NK_LIB struct nk_rect
+nk_nine_slice_crop(struct nk_rect r, struct nk_rect region)
+{
+    /* A slot smaller than the art takes the middle of it at its own scale, as squeezing it smears */
+    if (r.w < region.w) {
+        region.x += (float)(int)((region.w - r.w) * 0.5f);
+        region.w = r.w;
+    }
+    if (r.h < region.h) {
+        region.y += (float)(int)((region.h - r.h) * 0.5f);
+        region.h = r.h;
+    }
+    return region;
+}
 NK_LIB void
 nk_draw_texpath_region_tiled(struct nk_command_buffer *b, struct nk_rect r, struct nk_rect region,
     const char *texpath, struct nk_vec2i image_size, struct nk_color col)
@@ -9387,6 +9401,7 @@ nk_draw_texpath_region_tiled(struct nk_command_buffer *b, struct nk_rect r, stru
     float w, h;
     if (region.w <= 0 || region.h <= 0)
         return;
+    region = nk_nine_slice_crop(r, region);
 
     /* Whole copies, slightly resized to fit, so that no copy is cut short */
     nx = NK_MAX(1, (int)(r.w / region.w + 0.5f));
@@ -9454,9 +9469,12 @@ nk_draw_nine_slice_texpath(struct nk_command_buffer *b, struct nk_rect r,
 
     /* center */
     IMG_RGN(rgnX + slc->l, rgnY + slc->t, rgnW - slc->l - slc->r, rgnH - slc->t - slc->b);
-    nk_draw_texpath_region(b,
-        nk_rect(r.x + (float)slc->l, r.y + (float)slc->t, (float)(r.w - slc->l - slc->r), (float)(r.h - slc->t - slc->b)),
-        region, slc->texpath, image_size, col);
+    {
+        struct nk_rect dst = nk_rect(r.x + (float)slc->l, r.y + (float)slc->t,
+            (float)(r.w - slc->l - slc->r), (float)(r.h - slc->t - slc->b));
+        nk_draw_texpath_region(b, dst, slc->tile ? nk_nine_slice_crop(dst, region) : region,
+            slc->texpath, image_size, col);
+    }
 
     /* center-right */
     IMG_RGN(rgnX + rgnW - slc->r, rgnY + slc->t, slc->r, rgnH - slc->t - slc->b);
