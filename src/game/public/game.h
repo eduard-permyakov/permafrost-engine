@@ -1072,6 +1072,8 @@ void G_Garrison_SetEvictOnLeftClick(void);
 /*###########################################################################*/
 
 void G_Automation_GetIdle(vec_entity_t *out);
+/* The worker the automation would send to an open post of the workshop, or NULL_UID */
+uint32_t G_Automation_PostWorker(uint32_t workshop);
 bool G_Automation_IsIdle(uint32_t uid);
 /* Sends an idle unit somewhere to wait for work without it counting as busy on the way */
 bool G_Automation_WalkIdle(uint32_t uid, vec2_t xz);
@@ -1108,6 +1110,9 @@ void  G_Automation_NoteGathered(uint32_t uid, const char *rname, int amount);
  * weight is none, and what the getter returns when the district has none */
 void  G_Automation_SetDistrictWeight(int district, const char *rname, float weight);
 float G_Automation_GetDistrictWeight(int district, const char *rname);
+/* Whether workers carry goods from the district's stores to other districts; carts always do */
+void  G_Automation_SetWorkersCarryOut(int district, bool on);
+bool  G_Automation_GetWorkersCarryOut(int district);
 /* Why the site's request for the resource is unserved, and for how long it has waited */
 enum request_status G_Automation_RequestStatus(uint32_t site, const char *rname, int *out_waited_ms);
 
@@ -1131,14 +1136,49 @@ struct work_step{
 size_t G_Automation_GetTrace(uint32_t uid, size_t maxout, struct work_step out[], int *out_age_ms);
 /* How many automated carriers are bound for the site's pool */
 int  G_Automation_AssignedTransporters(uint32_t site);
-/* Whether a worker that gathered 'rname' by its own choice should stop at a
- * drop-off: the realm holds enough of it, or a site near it wants builders */
-bool G_Automation_LeavesGathering(uint32_t uid, const char *rname);
+/* Whether a worker that gathered 'rname' at 'node' by its own choice should
+ * stop at a drop-off: the realm holds enough of it, the node lies where the
+ * good is no longer wanted, or a site near it wants builders */
+bool G_Automation_LeavesGathering(uint32_t uid, const char *rname, uint32_t node);
 /* What the faction's sites can give away of a resource, and what they ask 
  * for and are not yet getting */
 void G_Automation_Balance(int faction, const char *rname, int *out_surplus, int *out_shortfall);
 /* What the site's pool still asks for, net of what carriers bring it other than 'own_load' */
 int  G_Automation_Shortfall(uint32_t site, const char *rname, int own_load);
+/* Whether a workshop has made enough of a good for now: its district can spare 'limit' of it,
+ * and no request that its goods could reach is going short
+ */
+bool G_Automation_OutputStocked(uint32_t site, const char *rname, int limit);
+
+/*###########################################################################*/
+/* GAME POSTS                                                                */
+/*###########################################################################*/
+
+/* What a workshop's posts are wanted for */
+enum post_demand{
+    /* Nothing to make: its holders leave */
+    POSTS_IDLE = 0,
+    /* Made enough for now: its holders stay, but no more are sent */
+    POSTS_KEEP,
+    /* Work to do: its open posts are filled */
+    POSTS_FILL
+};
+
+/* Gives a workshop posts for workers to fill, or takes them away with 0 */
+bool     G_Posts_SetPosts(uint32_t uid, int nposts);
+void     G_Posts_SetDemand(uint32_t uid, enum post_demand demand);
+/* How many of the workshop's posts the player keeps empty */
+void     G_Posts_SetLocked(uint32_t uid, int locked);
+/* The workshop's posts, those kept empty, its holders inside and those on their
+ * way; false for a building with no posts */
+bool     G_Posts_Get(uint32_t uid, int *out_posts, int *out_locked, int *out_inside, int *out_coming);
+/* The workshop whose post the unit holds or is on its way to, or NULL_UID */
+uint32_t G_Posts_WorkshopOf(uint32_t unit);
+/* Sends the unit to a post of the workshop as the player's order, opening one
+ * kept empty if need be; one holding a post elsewhere leaves it */
+bool     G_Posts_Man(uint32_t workshop, uint32_t unit);
+/* Lets one holder go, the post it leaves kept empty; returns it or NULL_UID */
+uint32_t G_Posts_Evict(uint32_t workshop);
 
 /* Sends the builder to the site as the player's right click does: false when it is no site to build or mend */
 bool G_Builder_PlayerOrder(uint32_t uid, uint32_t building);

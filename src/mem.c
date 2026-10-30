@@ -481,6 +481,7 @@ const char *Mem_SubName(uint16_t sys, uint16_t sub)
         [MEM_SUB_GAME_MOVEMENT]     = "movement",
         [MEM_SUB_GAME_POPULATION]   = "population",
         [MEM_SUB_GAME_POSITION]     = "position",
+        [MEM_SUB_GAME_POSTS]        = "posts",
         [MEM_SUB_GAME_PROVISION]    = "provision",
         [MEM_SUB_GAME_REGION]       = "region",
         [MEM_SUB_GAME_RESOURCE]     = "resource",

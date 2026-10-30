@@ -368,6 +368,15 @@ static PyObject *PyPf_set_gather_rate(PyObject *self, PyObject *args);
 static PyObject *PyPf_gatherer_rate(PyObject *self, PyObject *args);
 static PyObject *PyPf_district_weight(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_district_weight(PyObject *self, PyObject *args);
+static PyObject *PyPf_workers_carry_out(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_workers_carry_out(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_workshop_posts(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_post_demand(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_locked_posts(PyObject *self, PyObject *args);
+static PyObject *PyPf_workshop_posts(PyObject *self, PyObject *args);
+static PyObject *PyPf_post_workshop(PyObject *self, PyObject *args);
+static PyObject *PyPf_man_post(PyObject *self, PyObject *args);
+static PyObject *PyPf_evict_post(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_style(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_font_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_bonus_color(PyObject *self, PyObject *args);
@@ -1446,9 +1455,52 @@ static PyMethodDef pf_module_methods[] = {
     "Takes a district ID, a resource name and the district's own weight for gathering it, "
     "or None to follow its faction's."},
 
+    {"workers_carry_out",
+    (PyCFunction)PyPf_workers_carry_out, METH_VARARGS,
+    "Takes a district ID. Returns whether workers carry goods from its stores to other districts."},
+
+    {"set_workers_carry_out",
+    (PyCFunction)PyPf_set_workers_carry_out, METH_VARARGS,
+    "Takes a district ID and whether workers carry goods from its stores to other districts. "
+    "Carts always do."},
+
+    {"set_workshop_posts",
+    (PyCFunction)PyPf_set_workshop_posts, METH_VARARGS,
+    "Takes a building and the number of posts it has for workers to fill (at most 4), or 0 "
+    "for none."},
+
+    {"set_post_demand",
+    (PyCFunction)PyPf_set_post_demand, METH_VARARGS,
+    "Takes a building with posts and what they are wanted for: pf.POSTS_FILL to have them filled, "
+    "pf.POSTS_KEEP to keep its holders but send no more, or pf.POSTS_IDLE to let them go."},
+
+    {"set_locked_posts",
+    (PyCFunction)PyPf_set_locked_posts, METH_VARARGS,
+    "Takes a building with posts and how many of them are to be kept empty."},
+
+    {"workshop_posts",
+    (PyCFunction)PyPf_workshop_posts, METH_VARARGS,
+    "Takes a building. Returns a tuple of its posts, those kept empty, its holders inside and "
+    "those on their way, or None when it has no posts."},
+
+    {"post_workshop",
+    (PyCFunction)PyPf_post_workshop, METH_VARARGS,
+    "Takes a unit. Returns the building whose post it holds or is on its way to, or None."},
+
+    {"man_post",
+    (PyCFunction)PyPf_man_post, METH_VARARGS,
+    "Takes a building with posts and optionally a worker, and sends the worker to a post of it as the "
+    "player's order, opening one kept empty if need be. With no worker, the one the automation would "
+    "pick for its district is sent. Returns the worker sent, or None."},
+
+    {"evict_post",
+    (PyCFunction)PyPf_evict_post, METH_VARARGS,
+    "Takes a building with posts and lets one of its holders go, keeping the post it leaves empty. "
+    "Returns the worker let go, or None."},
+
     {"provision_demand",
     (PyCFunction)PyPf_provision_demand, METH_VARARGS,
-    "Takes a faction ID and returns a dictionary of the meals per minute its units eat, keyed by the "
+    "Takes a faction ID and returns a dictionary of the rations per minute its units eat, keyed by the "
     "ID of the district they are in."},
 
     {"cluster_preview_join",
@@ -6315,6 +6367,175 @@ static PyObject *PyPf_set_district_weight(PyObject *self, PyObject *args)
     }
     G_Automation_SetDistrictWeight(district, name, weight);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_workers_carry_out(PyObject *self, PyObject *args)
+{
+    int district;
+    if(!PyArg_ParseTuple(args, "i", &district)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a district ID.");
+        return NULL;
+    }
+    if(G_Automation_GetWorkersCarryOut(district))
+        Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
+}
+
+static PyObject *PyPf_set_workers_carry_out(PyObject *self, PyObject *args)
+{
+    int district, on;
+    if(!PyArg_ParseTuple(args, "ii", &district, &on) || district <= 0) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a district ID and a boolean.");
+        return NULL;
+    }
+    G_Automation_SetWorkersCarryOut(district, on);
+    Py_RETURN_NONE;
+}
+
+static bool workshop_arg(PyObject *obj, uint32_t *out)
+{
+    if(!S_Entity_Check(obj)) {
+        PyErr_SetString(PyExc_TypeError, "The first argument must be a pf.Entity object.");
+        return false;
+    }
+    S_Entity_UIDForObj(obj, out);
+    uint32_t flags = G_FlagsGet(*out);
+    if(!(flags & ENTITY_FLAG_BUILDING) || (flags & ENTITY_FLAG_ZOMBIE)) {
+        PyErr_SetString(PyExc_ValueError, "The entity must be a building that is not a zombie.");
+        return false;
+    }
+    return true;
+}
+
+static PyObject *PyPf_set_workshop_posts(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    int nposts;
+    uint32_t uid;
+    if(!PyArg_ParseTuple(args, "Oi", &obj, &nposts)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a building and an integer.");
+        return NULL;
+    }
+    if(!workshop_arg(obj, &uid))
+        return NULL;
+    if(nposts < 0 || nposts > 4) {
+        PyErr_SetString(PyExc_ValueError, "A workshop has between 0 and 4 posts.");
+        return NULL;
+    }
+    if(!G_Posts_SetPosts(uid, nposts)) {
+        PyErr_SetString(PyExc_RuntimeError, "Could not set the workshop's posts.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_post_demand(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    int demand;
+    uint32_t uid;
+    if(!PyArg_ParseTuple(args, "Oi", &obj, &demand)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a building and an integer.");
+        return NULL;
+    }
+    if(!workshop_arg(obj, &uid))
+        return NULL;
+    if(demand != POSTS_IDLE && demand != POSTS_KEEP && demand != POSTS_FILL) {
+        PyErr_SetString(PyExc_ValueError, "The demand must be pf.POSTS_IDLE, pf.POSTS_KEEP or pf.POSTS_FILL.");
+        return NULL;
+    }
+    G_Posts_SetDemand(uid, demand);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_locked_posts(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    int locked;
+    uint32_t uid;
+    if(!PyArg_ParseTuple(args, "Oi", &obj, &locked)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a building and an integer.");
+        return NULL;
+    }
+    if(!workshop_arg(obj, &uid))
+        return NULL;
+    G_Posts_SetLocked(uid, locked);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_workshop_posts(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    if(!PyArg_ParseTuple(args, "O", &obj) || !S_Entity_Check(obj)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a pf.Entity object.");
+        return NULL;
+    }
+    uint32_t uid;
+    S_Entity_UIDForObj(obj, &uid);
+    int posts, locked, inside, coming;
+    if(!G_Posts_Get(uid, &posts, &locked, &inside, &coming))
+        Py_RETURN_NONE;
+    return Py_BuildValue("(iiii)", posts, locked, inside, coming);
+}
+
+static PyObject *PyPf_post_workshop(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    if(!PyArg_ParseTuple(args, "O", &obj) || !S_Entity_Check(obj)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a pf.Entity object.");
+        return NULL;
+    }
+    uint32_t uid;
+    S_Entity_UIDForObj(obj, &uid);
+    PyObject *ret = S_Entity_ObjForUID(G_Posts_WorkshopOf(uid));
+    if(!ret)
+        Py_RETURN_NONE;
+    Py_INCREF(ret);
+    return ret;
+}
+
+static PyObject *PyPf_man_post(PyObject *self, PyObject *args)
+{
+    PyObject *obj, *unit_obj = Py_None;
+    uint32_t uid, unit;
+    if(!PyArg_ParseTuple(args, "O|O", &obj, &unit_obj)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a building and optionally a pf.Entity object.");
+        return NULL;
+    }
+    if(!workshop_arg(obj, &uid))
+        return NULL;
+    if(unit_obj == Py_None) {
+        unit = G_Automation_PostWorker(uid);
+    }else if(S_Entity_Check(unit_obj)) {
+        S_Entity_UIDForObj(unit_obj, &unit);
+    }else{
+        PyErr_SetString(PyExc_TypeError, "The second argument must be a pf.Entity object or None.");
+        return NULL;
+    }
+    if(unit == NULL_UID || !G_Posts_Man(uid, unit))
+        Py_RETURN_NONE;
+    PyObject *ret = S_Entity_ObjForUID(unit);
+    if(!ret)
+        Py_RETURN_NONE;
+    Py_INCREF(ret);
+    return ret;
+}
+
+static PyObject *PyPf_evict_post(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    uint32_t uid;
+    if(!PyArg_ParseTuple(args, "O", &obj)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a building.");
+        return NULL;
+    }
+    if(!workshop_arg(obj, &uid))
+        return NULL;
+    PyObject *ret = S_Entity_ObjForUID(G_Posts_Evict(uid));
+    if(!ret)
+        Py_RETURN_NONE;
+    Py_INCREF(ret);
+    return ret;
 }
 
 static PyObject *PyPf_provision_demand(PyObject *self, PyObject *args)

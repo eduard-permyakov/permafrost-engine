@@ -890,6 +890,9 @@ static void s_expose_game_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, PROVISION_FED);
     PY_EXPOSE_ENUM(module, PROVISION_HUNGRY);
     PY_EXPOSE_ENUM(module, PROVISION_STARVING);
+    PY_EXPOSE_ENUM(module, POSTS_IDLE);
+    PY_EXPOSE_ENUM(module, POSTS_KEEP);
+    PY_EXPOSE_ENUM(module, POSTS_FILL);
     PY_EXPOSE_ENUM(module, TRANSPORT_STRATEGY_GATHERING);
 
     PY_EXPOSE_ENUM(module, REGION_RECTANGLE);

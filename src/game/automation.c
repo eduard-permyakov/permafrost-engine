@@ -44,6 +44,7 @@
 #include "position.h"
 #include "storage_site.h"
 #include "provision.h"
+#include "posts.h"
 #include "harvester.h"
 #include "command.h"
 #include "../event.h"
@@ -131,6 +132,10 @@
 /* Gatherers leave off to build a site that has fewer builders than this */
 #define SITE_BUILDERS                (3)
 #define MAX_TRACE_STEPS              (24)
+#define MAX_VACANCIES                (256)
+/* How long a workshop's own district has to fill its posts before a worker of
+ * no district at the end of its work takes one */
+#define HOMED_FIRST_TICKS            (100)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -238,6 +243,17 @@ struct work_trace{
     struct work_step steps[MAX_TRACE_STEPS];
 };
 
+/* A worker that could be sent to a post */
+struct post_worker{
+    uint32_t uid;
+    int      faction;
+    int      home_district;
+    vec2_t   pos;
+    /* Standing idle rather than gathering */
+    bool     idle;
+    bool     taken;
+};
+
 /* The realm's, or one district's, own say over the gathering of one good */
 struct good_priority{
     int   faction;
@@ -260,6 +276,9 @@ struct good_priority{
 VEC_TYPE(priority, struct good_priority)
 VEC_IMPL(static inline, priority, struct good_priority)
 
+VEC_TYPE(district, int)
+VEC_IMPL(static inline, district, int)
+
 KHASH_MAP_INIT_INT(state, struct automation_state)
 KHASH_MAP_INIT_INT(count, uint32_t);
 KHASH_MAP_INIT_INT64(pending, struct pending)
@@ -267,19 +286,28 @@ KHASH_MAP_INIT_INT(trace, struct work_trace)
 
 static void on_order_issued(void *user, void *event);
 static bool try_assign_transport_job(uint32_t uid, struct automation_state *astate);
+static bool try_take_post(uint32_t uid, struct automation_state *astate);
 static bool try_assign_work(uint32_t uid, struct automation_state *astate);
 static bool stocked(int surplus, int shortfall, int target);
 static int gatherers_wanted(int surplus, int shortfall, int target, int for_rate);
 static int gatherers_for_rate(int faction, const char *rname);
 static struct good_priority *priority_get(int faction, int district, const char *rname, bool create);
 static float good_weight(int faction, int district, const char *rname);
+static float node_weight(int faction, uint32_t node, const char *rname);
+static float top_weight(int faction, const char *rname);
+static uint32_t gather_node(uint32_t uid, const struct automation_state *astate, vec2_t origin,
+                            const char *rname, struct work_snapshot *snap);
+static bool could_serve(uint32_t site, const struct job_request *req);
 static int stock_target(int faction, const char *rname);
 static vec2_t work_origin(uint32_t uid, const struct automation_state *astate);
+static bool in_home_territory(int faction, int home, vec2_t pos);
 static void reconsider_work(uint32_t uid, struct automation_state *astate);
 static struct work_snapshot *snapshot_get(void);
 static struct good_demand *demand_get(struct work_snapshot *snap, int faction, const char *rname);
 static void trace_note(uint32_t uid, const char *kind, const char *verdict, const char *why, 
                        const char *rname, uint32_t target);
+static float distance(vec2_t a, vec2_t b);
+static bool districts_equal(const int *a, const int *b);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -297,6 +325,8 @@ static struct work_snapshot s_snapshot;
 static khash_t(trace)  *s_traces;
 /* Settings of the realms and their districts, few enough to look up in turn */
 static vec_priority_t  s_priorities;
+/* Districts whose stores only carts carry out of; not saved, the scripts set them again */
+static vec_district_t  s_kept_home;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -437,6 +467,9 @@ static bool idle_walking(uint32_t uid)
 
 static bool idle(uint32_t uid)
 {
+    /* At a workshop's post, or on its way to one */
+    if(G_Posts_Holds(uid))
+        return false;
     uint32_t flags = G_FlagsGet(uid);
     if(flags & ENTITY_FLAG_GARRISONED)
         return true;
@@ -512,6 +545,11 @@ static void settle_stopping(void)
             continue;
         }
         trace_note(uid, "meal", due ? "failed" : "skipped", due ? "no_food" : "not_due", NULL, NULL_UID);
+
+        if(try_take_post(uid, astate)) {
+            astate->state = STATE_ACTIVE;
+            continue;
+        }
 
         if(try_assign_transport_job(uid, astate) || try_assign_work(uid, astate)) {
             astate->state = STATE_ACTIVE;
@@ -695,6 +733,11 @@ static uint32_t nearest_member(uint32_t site, vec2_t pos)
         return site;
     uint32_t ret = G_Cluster_NearestMember(cid, pos);
     return (ret == NULL_UID) ? site : ret;
+}
+
+static bool districts_equal(const int *a, const int *b)
+{
+    return *a == *b;
 }
 
 static float distance(vec2_t a, vec2_t b)
@@ -954,6 +997,12 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
                         any_district_bar = true;
                         continue;
                     }
+                    int src_district = G_District_Of(src->site);
+                    if((flags & ENTITY_FLAG_BUILDER) && src_district != dest_district
+                    && !G_Automation_GetWorkersCarryOut(src_district)) {
+                        any_district_bar = true;
+                        continue;
+                    }
                     if(G_StorageSite_GetDoNotTake(flags, src->site))
                         continue;
                     if(best_carrier == -1 || travel < best_travel) {
@@ -1038,6 +1087,8 @@ static bool waiting_carrier(uint32_t uid, struct automation_state *astate)
     if(!(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER))
         return false;
     if(G_FlagsGet(uid) & ENTITY_FLAG_GARRISONED)
+        return false;
+    if(G_Posts_Holds(uid))
         return false;
     if(!astate->automatic_transport)
         return false;
@@ -1668,6 +1719,134 @@ static void assign_transport_jobs(void)
     vec_entity_destroy(&carriers);
 }
 
+/* A worker of its own choosing, empty-handed and fed: one idle, or one gathering
+ * by itself rather than carrying or building */
+static bool post_worker(uint32_t uid, const struct automation_state *astate, struct post_worker *out)
+{
+    uint32_t flags = G_FlagsGet(uid);
+    if(!astate->automatic_work || astate->pinned[0] || !(flags & ENTITY_FLAG_HARVESTER))
+        return false;
+    if(flags & (ENTITY_FLAG_GARRISONED | ENTITY_FLAG_ZOMBIE))
+        return false;
+    if((flags & ENTITY_FLAG_GARRISON) && G_Garrison_IsIngredient(uid))
+        return false;
+    if(G_Posts_Holds(uid) || G_Provision_WantsFood(uid) || G_Provision_Fetching(uid)
+    || G_Harvester_GetCurrTotalCarry(uid))
+        return false;
+    bool gathering = (astate->state == STATE_ACTIVE && astate->working[0]
+        && astate->transport_target == NULL_UID
+        && (!(flags & ENTITY_FLAG_BUILDER) || G_Builder_Idle(uid)));
+    if(astate->state != STATE_IDLE && !gathering)
+        return false;
+    *out = (struct post_worker){
+        .uid = uid,
+        .faction = G_GetFactionID(uid),
+        .home_district = astate->home_district,
+        .pos = G_Pos_GetXZ(uid),
+        .idle = (astate->state == STATE_IDLE)
+    };
+    return true;
+}
+
+/* The worker the post goes to: the one it waits for, else one homed in the
+ * workshop's district before one of no district within reach, one idle before
+ * one gathering, and the nearest of those */
+static int pick_post_worker(const struct post_vacancy *vac, const struct post_worker *workers, size_t nworkers)
+{
+    vec2_t at = G_Pos_GetXZ(vac->workshop);
+    int ret = -1, best_tier = 0;
+    float best_dist = 0.0f;
+    for(int i = 0; i < nworkers; i++) {
+        const struct post_worker *curr = &workers[i];
+        if(curr->taken || curr->faction != vac->faction || curr->uid == vac->shunned)
+            continue;
+        if(vac->awaited != NULL_UID) {
+            if(curr->uid == vac->awaited)
+                return i;
+            continue;
+        }
+        bool homed = (vac->district != 0 && curr->home_district == vac->district);
+        if(!homed && curr->home_district != 0)
+            continue;
+        float dist = distance(curr->pos, at);
+        if(!homed && dist > WORK_RADIUS)
+            continue;
+        int tier = (homed ? 0 : 2) + (curr->idle ? 0 : 1);
+        if(ret == -1 || tier < best_tier || (tier == best_tier && dist < best_dist)) {
+            ret = i;
+            best_tier = tier;
+            best_dist = dist;
+        }
+    }
+    return ret;
+}
+
+static bool take_post(uint32_t uid, struct automation_state *astate, uint32_t workshop)
+{
+    if(!G_Posts_Take(workshop, uid))
+        return false;
+    astate->working[0] = '\0';
+    if(trace_get(uid, astate->state != STATE_STOPPING)) {
+        trace_note(uid, "post", "taken", "workshop", NULL, workshop);
+    }
+    return true;
+}
+
+/* A worker at the end of its work takes an open post of its own district's
+ * workshops, or the one kept for it while it ate; one of no district takes
+ * one that the district's own workers have left open a while */
+static bool try_take_post(uint32_t uid, struct automation_state *astate)
+{
+    struct post_worker worker;
+    if(!post_worker(uid, astate, &worker))
+        return false;
+    struct post_vacancy vacs[MAX_VACANCIES];
+    size_t nvacs = G_Posts_Vacancies(ARR_SIZE(vacs), vacs);
+    for(int i = 0; i < nvacs; i++) {
+        if(vacs[i].awaited == NULL_UID && worker.home_district == 0
+        && vacs[i].waited_ticks < HOMED_FIRST_TICKS)
+            continue;
+        if(pick_post_worker(&vacs[i], &worker, 1) == -1)
+            continue;
+        if(take_post(uid, astate, vacs[i].workshop))
+            return true;
+    }
+    return false;
+}
+
+/* Fills the open posts, the most urgent workshops first, looking over the
+ * workers only when there is one */
+static void assign_posts(void)
+{
+    struct post_vacancy vacs[MAX_VACANCIES];
+    size_t nvacs = G_Posts_Vacancies(ARR_SIZE(vacs), vacs);
+    if(nvacs == 0)
+        return;
+
+    struct post_worker *workers = PF_MALLOC(kh_size(s_entity_state_table) * sizeof(struct post_worker));
+    if(!workers)
+        return;
+    size_t nworkers = 0;
+    uint32_t uid;
+    struct automation_state *astate;
+    kh_foreach_val_ptr(s_entity_state_table, uid, astate, {
+        if(post_worker(uid, astate, &workers[nworkers])) {
+            nworkers++;
+        }
+    });
+
+    for(int i = 0; i < nvacs && nworkers > 0; i++) {
+        int idx = pick_post_worker(&vacs[i], workers, nworkers);
+        if(idx == -1)
+            continue;
+        struct automation_state *astate = astate_get(workers[idx].uid);
+        if(astate && take_post(workers[idx].uid, astate, vacs[i].workshop)) {
+            workers[idx].taken = true;
+        }
+    }
+    PF_FREE(workers);
+}
+
 static void assign_work(void)
 {
     vec_entity_t workers;
@@ -1715,6 +1894,9 @@ static void on_20hz_tick(void *user, void *event)
     }
     uint64_t t2 = SDL_GetPerformanceCounter(), t3 = t2;
     if(s_tick % JOB_PASS_TICKS == 0) {
+        PERF_PUSH("automation::assign_posts");
+        assign_posts();
+        PERF_POP();
         PERF_PUSH("automation::assign_transport_jobs");
         assign_transport_jobs();
         PERF_POP();
@@ -1880,6 +2062,7 @@ bool G_Automation_Init(void)
     s_tick = 0;
     vec_request_init(&s_snapshot.requests);
     vec_priority_init(&s_priorities);
+    vec_district_init(&s_kept_home);
     s_snapshot.valid = false;
 
     E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
@@ -1956,11 +2139,38 @@ void G_Automation_Shutdown(void)
     E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
     vec_request_destroy(&s_snapshot.requests);
     vec_priority_destroy(&s_priorities);
+    vec_district_destroy(&s_kept_home);
     vec_entity_destroy(&s_stopping);
     kh_destroy(trace, s_traces);
     kh_destroy(pending, s_pending);
     kh_destroy(count, s_transport_count);
     kh_destroy(state, s_entity_state_table);
+}
+
+uint32_t G_Automation_PostWorker(uint32_t workshop)
+{
+    struct post_vacancy vac = (struct post_vacancy){
+        .workshop = workshop,
+        .faction = G_GetFactionID(workshop),
+        .district = G_District_Of(workshop),
+        .awaited = NULL_UID,
+        .shunned = NULL_UID
+    };
+    struct post_worker *workers = PF_MALLOC(kh_size(s_entity_state_table) * sizeof(struct post_worker));
+    if(!workers)
+        return NULL_UID;
+    size_t nworkers = 0;
+    uint32_t uid;
+    struct automation_state *astate;
+    kh_foreach_val_ptr(s_entity_state_table, uid, astate, {
+        if(post_worker(uid, astate, &workers[nworkers])) {
+            nworkers++;
+        }
+    });
+    int idx = pick_post_worker(&vac, workers, nworkers);
+    uint32_t ret = (idx == -1) ? NULL_UID : workers[idx].uid;
+    PF_FREE(workers);
+    return ret;
 }
 
 void G_Automation_GetIdle(vec_entity_t *out)
@@ -1984,6 +2194,9 @@ bool G_Automation_WalkIdle(uint32_t uid, vec2_t xz)
         return false;
     /* One going to eat is not idle for long, and the walk would call off its meal */
     if(!G_PointInsideMap(xz) || G_Provision_WantsFood(uid) || G_Provision_Fetching(uid))
+        return false;
+    /* Sent to a post in the same pass that saw it idle */
+    if(G_Posts_Holds(uid))
         return false;
     G_Move_SetDest(uid, xz, false);
     astate->idle_walk = true;
@@ -2245,6 +2458,23 @@ float G_Automation_GetDistrictWeight(int district, const char *rname)
     return prio ? prio->weight : -1.0f;
 }
 
+void G_Automation_SetWorkersCarryOut(int district, bool on)
+{
+    int idx = vec_district_indexof(&s_kept_home, district, districts_equal);
+    if(on && idx != -1) {
+        vec_district_del(&s_kept_home, idx);
+    }
+    if(!on && idx == -1) {
+        vec_district_push(&s_kept_home, district);
+    }
+    s_snapshot.valid = false;
+}
+
+bool G_Automation_GetWorkersCarryOut(int district)
+{
+    return vec_district_indexof(&s_kept_home, district, districts_equal) == -1;
+}
+
 bool G_Automation_SavePriorities(struct SDL_RWops *stream)
 {
     struct attr num_priorities = (struct attr){
@@ -2291,6 +2521,7 @@ bool G_Automation_LoadPriorities(struct SDL_RWops *stream)
 {
     struct attr attr;
     vec_priority_reset(&s_priorities);
+    vec_district_reset(&s_kept_home);
     s_snapshot.valid = false;
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));

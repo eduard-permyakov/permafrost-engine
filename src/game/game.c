@@ -62,6 +62,7 @@
 #include "cluster.h"
 #include "district.h"
 #include "provision.h"
+#include "posts.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../anim/public/anim.h"
@@ -229,6 +230,7 @@ static void g_init_map(void)
     G_Command_Init();
     G_Automation_Init();
     G_Provision_Init(s_gs.map);
+    G_Posts_Init(s_gs.map);
     G_Group_Init();
     G_Cluster_Init();
     G_District_Init(s_gs.map);
@@ -1274,6 +1276,7 @@ static void g_clear_map_state(void)
         G_Command_Shutdown();
         G_Automation_Shutdown();
         G_Provision_Shutdown();
+        G_Posts_Shutdown();
         G_Group_Shutdown();
         G_District_Shutdown();
         G_Cluster_Shutdown();
@@ -1335,6 +1338,7 @@ static void g_set_contextual_cursor(void)
         Cursor_SetRTSPointer(CURSOR_TRANSPORT);
         break;
     case CTX_ACTION_GARRISON:
+    case CTX_ACTION_MAN:
         Cursor_SetRTSPointer(CURSOR_GARRISON);
         break;
     default:
@@ -3293,6 +3297,7 @@ bool G_RemoveEntity(uint32_t uid)
     G_Population_RemoveLimitContributor(uid);
     G_Automation_RemoveEntity(uid);
     G_Provision_RemoveEntity(uid);
+    G_Posts_RemoveEntity(uid);
     G_Group_RemoveEntity(uid);
     G_Pos_SyncRefs(uid);
     G_Region_RemoveEnt(uid);
@@ -3972,6 +3977,7 @@ void G_Zombiefy(uint32_t uid, bool invis)
     G_Population_RemoveLimitContributor(uid);
     G_Automation_RemoveEntity(uid);
     G_Provision_RemoveEntity(uid);
+    G_Posts_RemoveEntity(uid);
     G_Group_RemoveEntity(uid);
 
     G_Pos_SyncRefs(uid);
@@ -4090,6 +4096,8 @@ enum ctx_action G_CurrContextualAction(void)
 
     int action;
     if((action = G_Builder_CurrContextualAction()) != CTX_ACTION_NONE)
+        return action;
+    if((action = G_Posts_CurrContextualAction()) != CTX_ACTION_NONE)
         return action;
     if((action = G_Harvester_CurrContextualAction()) != CTX_ACTION_NONE)
         return action;
@@ -4601,6 +4609,9 @@ bool G_SaveEntityState(SDL_RWops *stream)
     if(!G_Automation_SavePriorities(stream))
         return false;
 
+    if(!G_Posts_SaveState(stream))
+        return false;
+
     return true;
 }
 
@@ -4705,6 +4716,12 @@ bool G_LoadEntityState(SDL_RWops *stream)
     /* Saves made before the realm and its districts set their own priorities end here */
     if(Attr_NextKeyIs(stream, "num_good_priorities") && !G_Automation_LoadPriorities(stream)) {
         fprintf(stderr, "Could not load automation priorities.\n");
+        return false;
+    }
+
+    /* Saves made before workshops had posts end here */
+    if(Attr_NextKeyIs(stream, "num_posts") && !G_Posts_LoadState(stream)) {
+        fprintf(stderr, "Could not load posts state.\n");
         return false;
     }
 
