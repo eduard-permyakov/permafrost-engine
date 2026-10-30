@@ -212,6 +212,7 @@ static void on_arrive_at_transport_dest(void *user, void *event);
 static void on_harvest_anim_finished(void *user, void *event);
 static void on_harvest_anim_finished_source(void *user, void *event);
 static void on_20hz_tick(void *user, void *event);
+static int  home_bound(uint32_t uid);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -515,6 +516,12 @@ static bool same_pool(uint32_t a, uint32_t b)
     return (pool != 0) && (G_Cluster_Of(b) == pool);
 }
 
+/* The home district of a worker the automation keeps to it, else 0 */
+static int home_bound(uint32_t uid)
+{
+    return G_Automation_GetAutomaticWork(uid) ? G_Automation_GetHomeDistrict(uid) : 0;
+}
+
 static bool valid_storage_site_dropoff(uint32_t curr, void *arg)
 {
     struct searcharg *sarg = arg;
@@ -525,6 +532,10 @@ static bool valid_storage_site_dropoff(uint32_t curr, void *arg)
     if(!(curr_flags & ENTITY_FLAG_STORAGE_SITE))
         return false;
     if(G_GetFactionID(sarg->ent) != G_GetFactionID(curr))
+        return false;
+    /* Goods leave a district by cart, not on its workers' backs */
+    int home = home_bound(sarg->ent);
+    if(home && G_District_Of(curr) != home)
         return false;
     /* Not back into the pool the load was just taken from */
     if(curr == sarg->storage || same_pool(curr, sarg->storage))
@@ -620,7 +631,7 @@ static bool valid_resource(uint32_t uid, void *arg)
         return false;
     if((flags & ENTITY_FLAG_BUILDING) && !G_Building_IsCompleted(uid))
         return false;
-    if(G_Resource_IsReplenishing(uid))
+    if(G_Resource_IsReplenishing(uid) || G_Resource_GetDormant(uid))
         return false;
     if(strcmp(vrarg->rname, G_Resource_GetName(uid)))
         return false;
@@ -744,7 +755,7 @@ static void entity_try_gather_nearest(uint32_t uid, const char *rname)
 {
     /* The automation weighs the crowd at each node; by order it is the nearest */
     uint32_t newtarget = G_Automation_BestResource(uid, rname);
-    if(newtarget == NULL_UID) {
+    if(newtarget == NULL_UID && !home_bound(uid)) {
         newtarget = nearest_resource(uid, rname);
     }
     if(newtarget != NULL_UID) {
@@ -757,6 +768,10 @@ static void entity_try_gather_nearest(uint32_t uid, const char *rname)
 static void entity_try_gather_nearest_with_exclusion(uint32_t uid, const char *rname, uint32_t exclude)
 {
     uint32_t newtarget = nearest_resource_with_exclusion(uid, rname, exclude);
+    int home = home_bound(uid);
+    if(newtarget != NULL_UID && home && G_District_Of(newtarget) != home) {
+        newtarget = NULL_UID;
+    }
     if(newtarget != NULL_UID) {
         G_Harvester_Gather(uid, newtarget);
     }else{
@@ -904,9 +919,10 @@ static void on_harvest_anim_finished(void *user, void *event)
     struct hstate *hs = hstate_get(uid);
     assert(hs);
 
-    if(!G_EntityExists(hs->res_uid) || (G_FlagsGet(hs->res_uid) & ENTITY_FLAG_ZOMBIE)) {
-        /* If the resource was exhausted, switch targets to the nearest 
-         * resource of the same type */
+    if(!G_EntityExists(hs->res_uid) || (G_FlagsGet(hs->res_uid) & ENTITY_FLAG_ZOMBIE)
+    || G_Resource_GetDormant(hs->res_uid)) {
+        /* If the resource was exhausted or lies dormant, switch targets to the
+         * nearest resource of the same type */
         entity_try_retarget(uid);
         return;
     }
@@ -1059,7 +1075,7 @@ static void on_arrive_at_resource(void *user, void *event)
 
         /* harvester could not reach the resource; one the realm no longer
          * wants at the good takes other work instead of the next node */
-        if(hs->res_name && !G_Automation_LeavesGathering(uid, hs->res_name)) {
+        if(hs->res_name && !G_Automation_LeavesGathering(uid, hs->res_name, hs->res_uid)) {
             entity_try_gather_nearest_with_exclusion(uid, hs->res_name, hs->res_uid);
         }else{
             hs->state = STATE_NOT_HARVESTING;
@@ -1144,7 +1160,7 @@ static void on_arrive_at_storage(void *user, void *event)
         G_StorageSite_SetCurr(hs->ss_uid, rname, curr + carry);
 
         uint32_t resource = target_resource(uid, hs, rname);
-        if(hs->drop_off_only || G_Automation_LeavesGathering(uid, rname)) {
+        if(hs->drop_off_only || G_Automation_LeavesGathering(uid, rname, resource)) {
             hs->state = STATE_NOT_HARVESTING;
             hs->ss_uid = NULL_UID;
             hs->res_name = NULL;
@@ -1405,7 +1421,7 @@ static void selection_try_order_gather(bool targeting)
         return;
     if((G_FlagsGet(target) & ENTITY_FLAG_BUILDING) && !G_Building_IsCompleted(target))
         return;
-    if(G_Resource_IsReplenishing(target))
+    if(G_Resource_IsReplenishing(target) || G_Resource_GetDormant(target))
         return;
 
     enum selection_type sel_type;
@@ -1818,9 +1834,10 @@ static void on_harvest_anim_finished_source(void *user, void *event)
         return;
     }
 
-    if(!G_EntityExists(hs->res_uid) || (G_FlagsGet(hs->res_uid) & ENTITY_FLAG_ZOMBIE)) {
-        /* If the resource was exhausted, switch targets to the nearest 
-         * resource of the same type */
+    if(!G_EntityExists(hs->res_uid) || (G_FlagsGet(hs->res_uid) & ENTITY_FLAG_ZOMBIE)
+    || G_Resource_GetDormant(hs->res_uid)) {
+        /* If the resource was exhausted or lies dormant, switch targets to the
+         * nearest resource of the same type */
         const char *rname = hs->res_name;
         finish_harvesting(hs, uid);
         entity_try_gather_nearest_source(uid, rname, hs->transport_dest_uid);
@@ -2549,6 +2566,8 @@ bool G_Harvester_Gather(uint32_t harvester, uint32_t resource)
         return false;
     if((resource_flags & ENTITY_FLAG_BUILDING) && !G_Building_IsCompleted(resource))
         return false;
+    if(G_Resource_GetDormant(resource))
+        return false;
 
     if(G_Harvester_GetCurrTotalCarry(harvester)) {
 
@@ -3007,7 +3026,8 @@ int G_Harvester_CurrContextualAction(void)
 
     if((G_FlagsGet(hovered) & ENTITY_FLAG_RESOURCE)
     && (G_Harvester_GetGatherSpeed(first, G_Resource_GetName(hovered)) > 0)
-    && !G_Resource_IsReplenishing(hovered))
+    && !G_Resource_IsReplenishing(hovered)
+    && !G_Resource_GetDormant(hovered))
         return CTX_ACTION_GATHER;
 
     if(G_GetFactionID(hovered) != G_GetFactionID(first))

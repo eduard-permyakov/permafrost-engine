@@ -1285,6 +1285,24 @@ static float good_weight(int faction, int district, const char *rname)
     return (realm && realm->weight >= 0.0f) ? realm->weight : 1.0f;
 }
 
+static float node_weight(int faction, uint32_t node, const char *rname)
+{
+    return good_weight(faction, G_District_At(faction, false, G_Pos_GetXZ(node), NULL), rname);
+}
+
+/* The most the good is favoured anywhere in the realm */
+static float top_weight(int faction, const char *rname)
+{
+    float ret = good_weight(faction, 0, rname);
+    for(int i = 0; i < vec_size(&s_priorities); i++) {
+        const struct good_priority *curr = &vec_AT(&s_priorities, i);
+        if(curr->district != 0 && curr->weight > ret && !strcmp(curr->rname, rname)) {
+            ret = curr->weight;
+        }
+    }
+    return ret;
+}
+
 static int stock_target(int faction, const char *rname)
 {
     const struct good_priority *realm = priority_get(faction, 0, rname, false);
@@ -1401,17 +1419,35 @@ static int node_capacity(uint32_t node, float worker_radius)
     return MAX(1, (int)(rim / (2.0f * worker_radius + NODE_GAP)));
 }
 
+/* Whether the point lies within the home district's own territory */
+static bool in_home_territory(int faction, int home, vec2_t pos)
+{
+    float cost;
+    return G_District_At(faction, false, pos, &cost) == home && cost <= G_DISTRICT_TERRITORY_COST;
+}
+
 /* The node of the good to gather at: the nearest with room about it, the
- * gatherers already bound for one weighing against it */
+ * gatherers already bound for one weighing against it, for one that roams,
+ * only in a district that wants the good, and for one with a home, only
+ * within its home's territory */
 static uint32_t best_resource(uint32_t uid, vec2_t origin, const char *rname, float radius,
-                              struct work_snapshot *snap)
+                              bool roams, int home, struct work_snapshot *snap)
 {
     uint32_t nodes[512];
     float scores[512];
     size_t nnodes = G_Harvester_ResourcesNear(uid, origin, rname, radius, ARR_SIZE(nodes), nodes);
     float worker_radius = G_GetSelectionRadius(uid);
+    int faction = G_GetFactionID(uid);
 
     for(int i = 0; i < nnodes; i++) {
+        if(roams && node_weight(faction, nodes[i], rname) <= 0.0f) {
+            scores[i] = INFINITY;
+            continue;
+        }
+        if(home && !in_home_territory(faction, home, G_Pos_GetXZ(nodes[i]))) {
+            scores[i] = INFINITY;
+            continue;
+        }
         int aimed = aimed_at(snap, nodes[i]);
         if(aimed >= node_capacity(nodes[i], worker_radius)) {
             scores[i] = INFINITY;
@@ -1441,6 +1477,20 @@ static uint32_t best_resource(uint32_t uid, vec2_t origin, const char *rname, fl
         scores[best] = INFINITY;
     }
     return NULL_UID;
+}
+
+/* The node a worker would gather the good at: the best near, in a district
+ * that wants it for one that roams, else for one of no district, rather than
+ * stand idle, the nearest however far */
+static uint32_t gather_node(uint32_t uid, const struct automation_state *astate, vec2_t origin,
+                            const char *rname, struct work_snapshot *snap)
+{
+    bool roams = (astate->home_district == 0 && strcmp(astate->pinned, rname));
+    uint32_t ret = best_resource(uid, origin, rname, WORK_RADIUS, roams, astate->home_district, snap);
+    if(ret == NULL_UID && astate->home_district == 0) {
+        ret = G_Harvester_NearestResource(uid, origin, rname, 0.0f);
+    }
+    return ret;
 }
 
 static struct good_demand *demand_get(struct work_snapshot *snap, int faction, const char *rname)
@@ -1568,15 +1618,27 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
 
     /* Most wanted per worker already at it, weighted by how fast this one
      * gathers it, so that a specialist keeps to his trade, and by how much 
-     * the realm or the worker's district favours it */
+     * the realm or the worker's district favours it. One of no district goes
+     * by the district of the node it would gather at */
     int district = work_district(uid, astate);
     float scores[MAX_RESOURCES];
     struct good_demand *demands[MAX_RESOURCES];
     const char *why[MAX_RESOURCES];
+    uint32_t nodes[MAX_RESOURCES];
+    bool searched[MAX_RESOURCES];
     for(int i = 0; i < ncandidates; i++) {
         demands[i] = demand_get(snap, faction, candidates[i]);
         bool pinned = !strcmp(astate->pinned, candidates[i]);
-        float weight = good_weight(faction, district, candidates[i]);
+        bool roams = (astate->home_district == 0 && !pinned);
+        float weight = roams ? top_weight(faction, candidates[i]) : good_weight(faction, district, candidates[i]);
+        nodes[i] = NULL_UID;
+        searched[i] = false;
+        if(roams && demands[i] && demands[i]->workers < (int)ceilf(demands[i]->wanted * MAX(weight, 1.0f))) {
+            nodes[i] = gather_node(uid, astate, pos, candidates[i], snap);
+            searched[i] = true;
+            weight = (nodes[i] != NULL_UID) ? node_weight(faction, nodes[i], candidates[i])
+                                            : good_weight(faction, district, candidates[i]);
+        }
         if(!pinned && weight <= 0.0f) {
             scores[i] = -1.0f;
             why[i] = "not_wanted";
@@ -1606,16 +1668,10 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
         }
         if(best == -1)
             break;
-        uint32_t node = best_resource(uid, pos, candidates[best], WORK_RADIUS, snap);
-        /* Nothing near: go as far as it takes rather than stand idle */
-        if(node == NULL_UID && astate->home_district == 0) {
-            node = G_Harvester_NearestResource(uid, pos, candidates[best], 0.0f);
-        }
-        /* One of no district goes by the weight of the district it would gather in */
         bool pinned = !strcmp(astate->pinned, candidates[best]);
-        int at = (node != NULL_UID) ? G_District_At(faction, false, G_Pos_GetXZ(node), NULL) : 0;
-        if(node != NULL_UID && astate->home_district == 0 && !pinned
-        && good_weight(faction, at, candidates[best]) <= 0.0f) {
+        bool roams = (astate->home_district == 0 && !pinned);
+        uint32_t node = searched[best] ? nodes[best] : gather_node(uid, astate, pos, candidates[best], snap);
+        if(node != NULL_UID && roams && node_weight(faction, node, candidates[best]) <= 0.0f) {
             why[best] = "not_wanted";
             scores[best] = -1.0f;
             continue;
@@ -2289,14 +2345,16 @@ uint32_t G_Automation_BestResource(uint32_t uid, const char *rname)
     if(!astate || !astate->automatic_work)
         return NULL_UID;
     struct work_snapshot *snap = snapshot_get();
-    uint32_t node = best_resource(uid, work_origin(uid, astate), rname, WORK_RADIUS, snap);
+    bool roams = (astate->home_district == 0 && strcmp(astate->pinned, rname));
+    uint32_t node = best_resource(uid, work_origin(uid, astate), rname, WORK_RADIUS, roams,
+        astate->home_district, snap);
     if(node != NULL_UID) {
         note_aimed(snap, node);
     }
     return node;
 }
 
-bool G_Automation_LeavesGathering(uint32_t uid, const char *rname)
+bool G_Automation_LeavesGathering(uint32_t uid, const char *rname, uint32_t node)
 {
     struct automation_state *astate = astate_get(uid);
     if(!astate || !astate->automatic_work)
@@ -2312,6 +2370,10 @@ bool G_Automation_LeavesGathering(uint32_t uid, const char *rname)
         return true;
     }
     if(good_weight(faction, work_district(uid, astate), rname) <= 0.0f)
+        return true;
+    /* One that roams drops off far from where it gathers */
+    if(astate->home_district == 0 && G_EntityExists(node) && !G_EntityIsZombie(node)
+    && node_weight(faction, node, rname) <= 0.0f)
         return true;
     if(astate->pinned[0] || !(G_FlagsGet(uid) & ENTITY_FLAG_BUILDER))
         return false;

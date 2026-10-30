@@ -719,6 +719,8 @@ bool        G_Resource_GetReplenishable(uint32_t uid);
 void        G_Resource_SetReplenishable(uint32_t uid, bool set);
 bool        G_Resource_GetInstant(uint32_t uid);
 void        G_Resource_SetInstant(uint32_t uid, bool set);
+bool        G_Resource_GetDormant(uint32_t uid);
+void        G_Resource_SetDormant(uint32_t uid, bool set);
 bool        G_Resource_SetReplenishAmount(uint32_t uid, const char *rname, int amount);
 int         G_Resource_GetReplenishAmount(uint32_t uid, const char *rname);
 int         G_Resource_GetRestoredAmount(uint32_t uid);

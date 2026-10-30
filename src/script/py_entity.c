@@ -885,6 +885,8 @@ static PyObject *PyResourceEntity_get_replenishable(PyResourceEntityObject *self
 static int       PyResourceEntity_set_replenishable(PyResourceEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyResourceEntity_get_instant(PyResourceEntityObject *self, void *closure);
 static int       PyResourceEntity_set_instant(PyResourceEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyResourceEntity_get_dormant(PyResourceEntityObject *self, void *closure);
+static int       PyResourceEntity_set_dormant(PyResourceEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyResourceEntity_get_restored_amount(PyResourceEntityObject *self, void *closure);
 static int       PyResourceEntity_set_restored_amount(PyResourceEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyResourceEntity_get_replenish_amount(PyResourceEntityObject *self, PyObject *args);
@@ -929,6 +931,11 @@ static PyGetSetDef PyResourceEntity_getset[] = {
     (getter)PyResourceEntity_get_instant, (setter)PyResourceEntity_set_instant,
     "Boolean indicating whether a harvester takes as much of the resource as it can carry at once, "
     "on arriving, rather than working it a swing at a time.",
+    NULL},
+    {"dormant",
+    (getter)PyResourceEntity_get_dormant, (setter)PyResourceEntity_set_dormant,
+    "Boolean indicating whether the resource yields nothing for now: no harvester takes it as work, and "
+    "those working it leave it as if it were exhausted, though it keeps its amount.",
     NULL},
     {"restored_amount",
     (getter)PyResourceEntity_get_restored_amount, (setter)PyResourceEntity_set_restored_amount,
@@ -4721,6 +4728,28 @@ static int PyResourceEntity_set_instant(PyResourceEntityObject *self, PyObject *
         return -1;
     }
     G_Resource_SetInstant(self->super.ent, PyObject_IsTrue(value));
+    return 0;
+}
+
+static PyObject *PyResourceEntity_get_dormant(PyResourceEntityObject *self, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+    if(G_Resource_GetDormant(self->super.ent)) {
+        Py_RETURN_TRUE;
+    }
+    Py_RETURN_FALSE;
+}
+
+static int PyResourceEntity_set_dormant(PyResourceEntityObject *self, PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+    G_Resource_SetDormant(self->super.ent, PyObject_IsTrue(value));
     return 0;
 }
 

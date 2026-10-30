@@ -84,6 +84,8 @@ struct rstate{
     /* Taken in one go, as much as the harvester can carry, rather than 
      * worked a swing at a time */
     bool        instant;
+    /* Yields nothing for now (out of season): no harvester takes it as work */
+    bool        dormant;
     kh_int_t   *replenish_resources;
     bool        is_storage_site;
     bool        ss_do_not_take_land;
@@ -191,6 +193,7 @@ bool G_Resource_AddEntity(uint32_t uid)
         .blocking_radius = G_GetSelectionRadius(uid),
         .replenishable = false,
         .instant = false,
+        .dormant = false,
         .replenish_resources = kh_init(int),
         .is_storage_site = false,
         .ss_do_not_take_land = false,
@@ -295,6 +298,20 @@ void G_Resource_SetInstant(uint32_t uid, bool set)
     struct rstate *rs = rstate_get(uid);
     assert(rs);
     rs->instant = set;
+}
+
+bool G_Resource_GetDormant(uint32_t uid)
+{
+    struct rstate *rs = rstate_get(uid);
+    assert(rs);
+    return rs->dormant;
+}
+
+void G_Resource_SetDormant(uint32_t uid, bool set)
+{
+    struct rstate *rs = rstate_get(uid);
+    assert(rs);
+    rs->dormant = set;
 }
 
 bool G_Resource_SetReplenishAmount(uint32_t uid, const char *rname, int amount)
@@ -609,6 +626,12 @@ bool G_Resource_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &resource_state, "resource_state"));
 
+        struct attr dormant = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr.dormant
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &dormant, "dormant"));
+
         Sched_TryYield();
     });
 
@@ -735,6 +758,13 @@ bool G_Resource_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         rstate->state = attr.val.as_int;
+
+        /* Saves from before resources could lie dormant have no flag */
+        if(Attr_NextKeyIs(stream, "dormant")) {
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_BOOL);
+            rstate->dormant = attr.val.as_bool;
+        }
 
         Sched_TryYield();
     }
