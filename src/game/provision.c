@@ -69,10 +69,10 @@
 #define TICK_MS             (50)
 /* Each unit is looked at once a second, a twentieth of them each tick */
 #define BUCKETS             (20)
-/* A unit visiting a store eats there if its next meal is due this soon */
-#define EAT_AHEAD_MS        (60 * 1000)
-/* A worker whose next meal is due this soon eats before it takes on more work */
-#define WORK_AHEAD_MS       (90 * 1000)
+/* A unit visiting a store eats there once this share of its ration is left */
+#define EAT_AHEAD_SHARE     (0.2f)
+/* A worker with this share of its ration left eats before it takes on more work */
+#define WORK_AHEAD_SHARE    (0.3f)
 #define GOOD_LEN            (32)
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
@@ -150,6 +150,8 @@ static float dist_to(uint32_t uid, uint32_t site);
 static void on_ordered(void *user, void *event);
 static void note_upkeep_good(const char *good);
 static uint32_t first_meal_delay_ms(uint32_t uid, uint32_t interval_ms);
+static float rations_per_minute(const struct provision *p);
+static uint32_t ahead_ms(const struct provision *p, float share);
 static bool carrying(uint32_t uid);
 static bool at_store(uint32_t uid, uint32_t site, int tries);
 static void ordered_gathering(uint32_t uid, char *out, size_t maxout);
@@ -189,6 +191,20 @@ static uint32_t first_meal_delay_ms(uint32_t uid, uint32_t interval_ms)
     if(spread == 0)
         return interval_ms;
     return interval_ms - spread + (uint32_t)((uid * 2654435761u) % spread);
+}
+
+/* A ration fills a unit up to its most meals, one used up each interval, and
+ * it goes hungry only an interval after its last
+ */
+static float rations_per_minute(const struct provision *p)
+{
+    return 60000.0f / ((p->max_meals + 1) * (float)p->interval_ms);
+}
+
+/* The given share of how long a ration lasts */
+static uint32_t ahead_ms(const struct provision *p, float share)
+{
+    return (uint32_t)((p->max_meals + 1) * (float)p->interval_ms * share);
 }
 
 static void note_upkeep_good(const char *good)
@@ -694,7 +710,7 @@ void G_Provision_OnVisit(uint32_t uid, uint32_t site)
         return;
     if(p->tier == PROVISION_FED && p->meals > 0)
         return;
-    if(p->tier == PROVISION_FED && p->next_due_ms > s_now_ms + EAT_AHEAD_MS)
+    if(p->tier == PROVISION_FED && p->next_due_ms > s_now_ms + ahead_ms(p, EAT_AHEAD_SHARE))
         return;
     eat(uid, p, site);
 }
@@ -741,7 +757,7 @@ bool G_Provision_DueSoon(uint32_t uid)
         return false;
     if(p->tier != PROVISION_FED)
         return true;
-    return p->meals == 0 && p->next_due_ms <= s_now_ms + WORK_AHEAD_MS;
+    return p->meals == 0 && p->next_due_ms <= s_now_ms + ahead_ms(p, WORK_AHEAD_SHARE);
 }
 
 bool G_Provision_IsUpkeepGood(const char *good)
@@ -844,7 +860,7 @@ size_t G_Provision_Demand(int faction, size_t maxout, int out_districts[], float
             out_rates[ret] = 0.0f;
             ret++;
         }
-        out_rates[i] += 60000.0f / p->interval_ms;
+        out_rates[i] += rations_per_minute(p);
     });
     return ret;
 }
