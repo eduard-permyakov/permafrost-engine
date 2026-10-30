@@ -76,6 +76,9 @@
 #define OVERLAY_LIFT        (0.1f)
 #define MESH_DISTRICTS      (0)
 #define MESH_PREVIEW        (1)
+#define MESH_FOCUS          (3)
+#define DOTS_PER_SIDE       (8)
+#define FOCUS_BORDER_RGB    ((vec3_t){0.78f, 0.15f, 0.18f})
 #define HUB_TYPE            "hub"
 #define ARR_SIZE(a)         (sizeof(a)/sizeof((a)[0]))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
@@ -130,6 +133,8 @@ static bool              s_dirty;
 static int               s_dirty_ticks;
 static size_t            s_nroads;
 static bool              s_show;
+/* The district shown alone, or 0 */
+static int               s_focus;
 /* The cells a hub placed at the preview position would take over */
 static bool              s_preview_on;
 static int               s_preview_faction;
@@ -487,6 +492,7 @@ static void recompute(void)
     recolour();
     s_dirty = false;
     s_mesh_dirty[MESH_DISTRICTS] = true;
+    s_mesh_dirty[MESH_FOCUS] = true;
 }
 
 static void recompute_preview(void)
@@ -645,13 +651,15 @@ static void emit_cell_surface(vec_overlay_t *tris, int r, int c, vec4_t color)
 /* A side of a cell, in segments each at the height of the ground just
  * inside the cell, so that it follows the ground over steps and ramps */
 static void emit_cell_edge(vec_overlay_t *lines, vec2_t from, vec2_t to, vec2_t inward,
-                           int nsegs, vec4_t color)
+                           int nsegs, bool dotted, vec4_t color)
 {
     vec2_t along;
     PFM_Vec2_Sub(&to, &from, &along);
     PFM_Vec2_Normal(&along, &along);
 
     for(int k = 0; k < nsegs; k++) {
+        if(dotted && (k % 2))
+            continue;
         float t0 = (float)k / nsegs, t1 = (float)(k + 1) / nsegs;
         vec2_t a = (vec2_t){from.x + (to.x - from.x) * t0, from.z + (to.z - from.z) * t0};
         vec2_t b = (vec2_t){from.x + (to.x - from.x) * t1, from.z + (to.z - from.z) * t1};
@@ -688,7 +696,47 @@ static void emit_cell(vec_overlay_t *tris, vec_overlay_t *lines, int r, int c, v
         vec2_t inward;
         PFM_Vec2_Sub(&center, &mid, &inward);
         PFM_Vec2_Normal(&inward, &inward);
-        emit_cell_edge(lines, from, to, inward, nsegs, color);
+        emit_cell_edge(lines, from, to, inward, nsegs, false, color);
+    }
+}
+
+static bool focus_cell(const struct field *f, int r, int c, bool core)
+{
+    if(r < 0 || r >= s_rows || c < 0 || c >= s_cols)
+        return false;
+    int idx = r * s_cols + c;
+    return f->owner[idx] == s_focus && (!core || f->cost[idx] <= G_DISTRICT_TERRITORY_COST);
+}
+
+/* A cell of the district shown alone: a faint shade of its colour, stronger
+ * over its own territory, and its sides on the district's edge in a solid
+ * line, or on its own territory's in a dotted one */
+static void emit_focus_cell(vec_overlay_t *tris, vec_overlay_t *lines, const struct field *f, int r, int c)
+{
+    bool core = focus_cell(f, r, c, true);
+    emit_cell_surface(tris, r, c, overlay_color(cluster_color(s_focus, true), core ? 0.15f : 0.07f));
+
+    /* The neighbours across the +X, +Z, -X and -Z sides, in the corners' order */
+    static const int neighbours[4][2] = {{0, -1}, {1, 0}, {0, 1}, {-1, 0}};
+    vec2_t center = cell_center(r, c);
+    const float half = CELL_SIZE * 0.5f;
+    vec2_t corners[4] = {
+        {center.x + half, center.z - half},
+        {center.x + half, center.z + half},
+        {center.x - half, center.z + half},
+        {center.x - half, center.z - half},
+    };
+    for(int i = 0; i < 4; i++) {
+        int nr = r + neighbours[i][0], nc = c + neighbours[i][1];
+        bool edge = !focus_cell(f, nr, nc, false);
+        if(!edge && !(core && !focus_cell(f, nr, nc, true)))
+            continue;
+        vec2_t from = corners[i], to = corners[(i + 1) % 4];
+        vec2_t mid = (vec2_t){(from.x + to.x) * 0.5f, (from.z + to.z) * 0.5f};
+        vec2_t inward;
+        PFM_Vec2_Sub(&center, &mid, &inward);
+        PFM_Vec2_Normal(&inward, &inward);
+        emit_cell_edge(lines, from, to, inward, DOTS_PER_SIDE, !edge, overlay_color(FOCUS_BORDER_RGB, 0.9f));
     }
 }
 
@@ -707,7 +755,7 @@ static void build_mesh(int slot, uint16_t factions)
         if(slot == MESH_PREVIEW && fac != s_preview_faction)
             continue;
         const struct field *f = &s_fields[fac][LAYER_GROUND];
-        if(slot == MESH_DISTRICTS && !f->owner)
+        if((slot == MESH_DISTRICTS || slot == MESH_FOCUS) && !f->owner)
             continue;
 
         for(int r = 0; r < s_rows; r++) {
@@ -718,6 +766,8 @@ static void build_mesh(int slot, uint16_t factions)
             }else if(slot == MESH_DISTRICTS && f->owner[idx]) {
                 emit_cell(&tris, &lines, r, c,
                     cluster_color(f->owner[idx], f->cost[idx] <= G_DISTRICT_TERRITORY_COST));
+            }else if(slot == MESH_FOCUS && f->owner[idx] == s_focus) {
+                emit_focus_cell(&tris, &lines, f, r, c);
             }
         }}
     }
@@ -762,6 +812,9 @@ static void on_render_3d(void *user, void *event)
     }
     if(s_preview_on) {
         draw_mesh(MESH_PREVIEW);
+    }
+    if(s_focus && !s_show) {
+        draw_mesh(MESH_FOCUS);
     }
 }
 
@@ -821,6 +874,7 @@ bool G_District_Init(const struct map *map)
     s_dirty_ticks = DEBOUNCE_TICKS;
     s_nroads = 0;
     s_show = false;
+    s_focus = 0;
     s_preview_on = false;
     s_ndistricts = 0;
     for(int i = 0; i < MAP_OVERLAY_MESHES; i++) {
@@ -901,6 +955,19 @@ void G_District_SetShow(bool on)
 bool G_District_GetShow(void)
 {
     return s_show;
+}
+
+void G_District_SetFocus(int district)
+{
+    if(district == s_focus)
+        return;
+    s_focus = district;
+    s_mesh_dirty[MESH_FOCUS] = true;
+}
+
+int G_District_GetFocus(void)
+{
+    return s_focus;
 }
 
 int G_District_SetPreview(bool on, int faction, vec2_t pos)

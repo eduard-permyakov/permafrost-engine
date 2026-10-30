@@ -343,6 +343,9 @@ bool                  G_District_InTerritory(int faction, bool water, vec2_t pos
 void                  G_District_Update(void);
 void                  G_District_SetShow(bool on);
 bool                  G_District_GetShow(void);
+/* Shows one district alone, or none for 0 */
+void                  G_District_SetFocus(int district);
+int                   G_District_GetFocus(void);
 /* Shows the cells a hub placed at 'pos' would take over; returns how many */
 int                   G_District_SetPreview(bool on, int faction, vec2_t pos);
 

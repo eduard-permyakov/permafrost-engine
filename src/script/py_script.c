@@ -352,6 +352,8 @@ static PyObject *PyPf_set_cluster_icon(PyObject *self, PyObject *args);
 static PyObject *PyPf_district_at(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_show_districts(PyObject *self, PyObject *args);
 static PyObject *PyPf_districts_shown(PyObject *self);
+static PyObject *PyPf_show_district(PyObject *self, PyObject *args);
+static PyObject *PyPf_district_shown(PyObject *self);
 static PyObject *PyPf_district_gathered(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_district_preview(PyObject *self, PyObject *args);
 static PyObject *PyPf_cluster_preview_join(PyObject *self, PyObject *args);
@@ -1526,6 +1528,15 @@ static PyMethodDef pf_module_methods[] = {
     {"districts_shown",
     (PyCFunction)PyPf_districts_shown, METH_NOARGS,
     "Returns whether the district lens is on."},
+
+    {"show_district",
+    (PyCFunction)PyPf_show_district, METH_VARARGS,
+    "Takes a district ID, or 0 for none. Tints that district alone, faintly, with its own territory "
+    "inside a dotted border and all of it inside a solid one. The district lens is drawn over it."},
+
+    {"district_shown",
+    (PyCFunction)PyPf_district_shown, METH_NOARGS,
+    "Returns the ID of the district shown alone, or 0."},
 
     {"district_gathered",
     (PyCFunction)PyPf_district_gathered, METH_VARARGS,
@@ -6630,6 +6641,22 @@ static PyObject *PyPf_districts_shown(PyObject *self)
     }else{
         Py_RETURN_FALSE;
     }
+}
+
+static PyObject *PyPf_show_district(PyObject *self, PyObject *args)
+{
+    int district;
+    if(!PyArg_ParseTuple(args, "i", &district)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer (district ID).");
+        return NULL;
+    }
+    G_District_SetFocus(district);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_district_shown(PyObject *self)
+{
+    return PyInt_FromLong(G_District_GetFocus());
 }
 
 static PyObject *PyPf_district_gathered(PyObject *self, PyObject *args)
