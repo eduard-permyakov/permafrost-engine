@@ -1613,7 +1613,7 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
         return false;
     /* A load left in hand is brought in before anything else */
     if(G_Harvester_GetCurrTotalCarry(uid)) {
-        bool ret = G_Harvester_BringInLoad(uid, NULL_UID);
+        bool ret = G_Harvester_BringInLoad(uid, NULL_UID, false);
         trace_note(uid, "load", ret ? "taken" : "failed", "in_hand", NULL, NULL_UID);
         return ret;
     }
@@ -1765,7 +1765,7 @@ static void assign_transport_jobs(void)
 
     for(int i = 0; i < vec_size(&laden); i++) {
         uint32_t uid = vec_AT(&laden, i);
-        bool ret = G_Harvester_BringInLoad(uid, NULL_UID);
+        bool ret = G_Harvester_BringInLoad(uid, NULL_UID, false);
         trace_note(uid, "load", ret ? "taken" : "failed", "in_hand", NULL, NULL_UID);
     }
 

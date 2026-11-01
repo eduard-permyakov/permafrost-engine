@@ -2796,7 +2796,7 @@ bool G_Harvester_DropOff(uint32_t harvester, uint32_t storage)
     return true;
 }
 
-bool G_Harvester_BringInLoad(uint32_t harvester, uint32_t site)
+bool G_Harvester_BringInLoad(uint32_t harvester, uint32_t site, bool and_back)
 {
     struct hstate *hs = hstate_get(harvester);
     if(!hs)
@@ -2816,7 +2816,10 @@ bool G_Harvester_BringInLoad(uint32_t harvester, uint32_t site)
         return true;
     if(!G_StorageSite_Accepts(site, rname))
         return false;
-    return G_Harvester_DropOff(harvester, site);
+    if(!G_Harvester_DropOff(harvester, site))
+        return false;
+    hs->drop_off_only = !and_back;
+    return true;
 }
 
 bool G_Harvester_PickUp(uint32_t harvester, uint32_t storage)

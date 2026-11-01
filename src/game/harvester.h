@@ -60,9 +60,10 @@ bool G_Harvester_Idle(uint32_t uid);
 bool G_Harvester_ReplenishResource(uint32_t harvester, uint32_t resource);
 uint32_t G_Harvester_TransportTarget(uint32_t harvester);
 /* A gatherer brings the load in its hands to 'site', or the nearest site that
- * takes it with NULL_UID, and stops there. Fails for a carrier on a transport 
- * job or a site that does not take the load. */
-bool G_Harvester_BringInLoad(uint32_t harvester, uint32_t site);
+ * takes it with NULL_UID, and stops there unless 'and_back' sends it back to
+ * gathering. Fails for a carrier on a transport job or a site that does not
+ * take the load. */
+bool G_Harvester_BringInLoad(uint32_t harvester, uint32_t site, bool and_back);
 
 bool G_Harvester_SaveState(struct SDL_RWops *stream);
 bool G_Harvester_LoadState(struct SDL_RWops *stream);

@@ -275,9 +275,15 @@ static bool fetch(uint32_t uid, struct provision *p)
         return false;
     }
 
-    /* A load the store with food does not take goes to one that does first */
+    /* A load the store with food does not take goes to one that does first.
+     * One gathering by the player's order eats as it drops the load off, and
+     * goes back to its gathering.
+     */
     if(carrying(uid)) {
-        if(!G_Harvester_BringInLoad(uid, site) && !G_Harvester_BringInLoad(uid, NULL_UID)) {
+        char resume[GOOD_LEN];
+        ordered_gathering(uid, resume, sizeof(resume));
+        bool back = (resume[0] != '\0');
+        if(!G_Harvester_BringInLoad(uid, site, back) && !G_Harvester_BringInLoad(uid, NULL_UID, back)) {
             p->retry_ms = s_now_ms + FETCH_RETRY_MS;
             return false;
         }
