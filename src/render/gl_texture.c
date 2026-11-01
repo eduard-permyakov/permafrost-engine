@@ -171,6 +171,61 @@ static size_t texture_arr_num_mip_levels(GLuint tex)
     return MIN(max_lvl + 1, nmips);
 }
 
+/* Model slices are kept DXT5-compressed where the driver allows, which holds
+ * them at four times the resolution for the memory of plain RGBA. Copying
+ * slices between arrays then needs ARB_copy_image, as a blit cannot write a
+ * compressed texture.
+ */
+static GLenum arr_internal_format(void)
+{
+    if(GLEW_EXT_texture_compression_s3tc && GLEW_ARB_copy_image)
+        return GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
+    return GL_RGBA8;
+}
+
+static int arr_num_levels(void)
+{
+    return 1 + (int)floor(log2(CONFIG_ARR_TEX_RES));
+}
+
+static void arr_alloc_levels(size_t num_elems)
+{
+    GLenum ifmt = arr_internal_format();
+    for(int lvl = 0; lvl < arr_num_levels(); lvl++) {
+        int res = MAX(1, CONFIG_ARR_TEX_RES >> lvl);
+        glTexImage3D(GL_TEXTURE_2D_ARRAY, lvl, ifmt, res, res, num_elems, 0,
+            GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    }
+}
+
+/* Uploads a slice and its own mip chain, halved on the CPU; the driver
+ * compresses each level as it goes in
+ */
+static void arr_upload_slice(int slice, const GLubyte *rgba)
+{
+    const size_t half_sz = (size_t)(CONFIG_ARR_TEX_RES / 2) * (CONFIG_ARR_TEX_RES / 2) * 4;
+    GLubyte *bufs[2] = {PF_MALLOC(half_sz), PF_MALLOC(half_sz)};
+
+    const GLubyte *level = rgba;
+    int res = CONFIG_ARR_TEX_RES;
+    for(int lvl = 0; lvl < arr_num_levels(); lvl++) {
+
+        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, lvl, 0, 0, slice, res, res, 1,
+            GL_RGBA, GL_UNSIGNED_BYTE, level);
+        if(res == 1 || !bufs[0] || !bufs[1])
+            break;
+
+        GLubyte *dst = bufs[lvl % 2];
+        if(!stbir_resize_uint8(level, res, res, 0, dst, res / 2, res / 2, 0, 4))
+            break;
+        level = dst;
+        res /= 2;
+    }
+
+    PF_FREE(bufs[0]);
+    PF_FREE(bufs[1]);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -436,13 +491,11 @@ void R_GL_Texture_ArrayAlloc(size_t num_elems, struct texture_arr *out, GLuint t
     glGenTextures(1, &out->id);
     glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
 
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, 
-        CONFIG_ARR_TEX_RES, CONFIG_ARR_TEX_RES, num_elems, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+    arr_alloc_levels(num_elems);
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
 
-    glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -532,16 +585,16 @@ void R_GL_Texture_ArrayMake(const struct material *mats, size_t num_mats,
     glGenTextures(1, &out->id);
     glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
 
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8,
-        CONFIG_ARR_TEX_RES, CONFIG_ARR_TEX_RES, num_mats, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+    arr_alloc_levels(num_mats);
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
 
-    /* glCopyImageSubData requires a complete destination, but the mip chain is
-     * only built once every slice is in place. A non-mipmap min filter keeps the
-     * array complete with just level 0 until then. */
+    /* glCopyImageSubData requires a complete destination, but the mip chain of
+     * an uncompressed array is only built once every slice is in place. A
+     * non-mipmap min filter keeps the array complete with just level 0 until then. */
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    const bool compressed = (arr_internal_format() != GL_RGBA8);
 
     for(int i = 0; i < num_mats; i++) {
 
@@ -556,7 +609,7 @@ void R_GL_Texture_ArrayMake(const struct material *mats, size_t num_mats,
 
         /* A baked source is already array-shaped; copy it straight into the slice
          * on the GPU. Anything else is read back and downscaled on the way in. */
-        if(GLEW_ARB_copy_image && w == CONFIG_ARR_TEX_RES && h == CONFIG_ARR_TEX_RES) {
+        if(!compressed && GLEW_ARB_copy_image && w == CONFIG_ARR_TEX_RES && h == CONFIG_ARR_TEX_RES) {
             glCopyImageSubData(mats[i].texture.id, GL_TEXTURE_2D, 0, 0, 0, 0,
                                out->id, GL_TEXTURE_2D_ARRAY, 0, 0, 0, i,
                                CONFIG_ARR_TEX_RES, CONFIG_ARR_TEX_RES, 1);
@@ -581,13 +634,19 @@ void R_GL_Texture_ArrayMake(const struct material *mats, size_t num_mats,
             continue;
         }
 
-        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, CONFIG_ARR_TEX_RES,
-            CONFIG_ARR_TEX_RES, 1, GL_RGBA, GL_UNSIGNED_BYTE, resized_data);
+        if(compressed) {
+            arr_upload_slice(i, resized_data);
+        }else{
+            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, CONFIG_ARR_TEX_RES,
+                CONFIG_ARR_TEX_RES, 1, GL_RGBA, GL_UNSIGNED_BYTE, resized_data);
+        }
         PF_FREE(orig_data);
         PF_FREE(resized_data);
     }
 
-    glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+    if(!compressed) {
+        glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+    }
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
