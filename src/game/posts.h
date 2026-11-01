@@ -60,7 +60,8 @@ struct post_vacancy{
 bool   G_Posts_Init(const struct map *map);
 void   G_Posts_Shutdown(void);
 void   G_Posts_RemoveEntity(uint32_t uid);
-/* Whether the unit holds a post, inside its workshop or on its way there */
+/* Whether the unit holds a post, inside its workshop, on its way there or away
+ * at a meal with the post kept for it */
 bool   G_Posts_Holds(uint32_t unit);
 /* Sends the unit to take up a post of the workshop */
 bool   G_Posts_Take(uint32_t workshop, uint32_t unit);

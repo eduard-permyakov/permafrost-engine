@@ -78,7 +78,8 @@
 /* Stops short of the door before a holder gives up on getting in */
 #define MAX_APPROACHES      (4)
 #define WALK_TIMEOUT_TICKS  (20 * 90)
-/* How long a post waits for its holder to come back from a meal */
+/* How long a post waits for its holder to come back from a meal, or to come
+ * at all for one sent by hand that eats or brings its load in first */
 #define AWAY_TICKS          (20 * 120)
 /* How long one that could not get in is not sent to the workshop again */
 #define SHUN_TICKS          (20 * 30)
@@ -91,7 +92,9 @@
 
 enum holder_state{
     HOLDER_WALKING,
-    HOLDER_INSIDE
+    HOLDER_INSIDE,
+    /* Gone to eat or to bring its load in, its post kept for it */
+    HOLDER_AWAY
 };
 
 struct holder{
@@ -101,12 +104,10 @@ struct holder{
     uint32_t          since_tick;
     /* Where it stood when it went in, to be let out next to */
     vec2_t            entered_from;
-};
-
-/* A holder gone to eat, whose post is kept for it */
-struct away{
-    uint32_t uid;
-    int      ticks_left;
+    /* Sent by the player's hand, it stays while the workshop has no work */
+    bool              ordered;
+    /* Sent to bring its load in before it goes back */
+    bool              dropping;
 };
 
 struct workshop{
@@ -115,8 +116,6 @@ struct workshop{
     enum post_demand demand;
     int              nholders;
     uint32_t         holders[MAX_POSTS];
-    int              naway;
-    struct away      away[MAX_POSTS];
     uint32_t         shunned;
     uint32_t         shunned_tick;
     /* When it last stood with work and an open post; 0 when it does not */
@@ -176,11 +175,6 @@ static void drop_holder(struct workshop *ws, uint32_t unit)
         ws->holders[i] = ws->holders[--ws->nholders];
         return;
     }
-}
-
-static void drop_away(struct workshop *ws, int idx)
-{
-    ws->away[idx] = ws->away[--ws->naway];
 }
 
 static int count_inside(const struct workshop *ws)
@@ -264,12 +258,18 @@ static void release(uint32_t unit, const char *why, bool away)
     }
 
     uint32_t workshop = h->workshop;
+    if(away) {
+        h->state = HOLDER_AWAY;
+        h->since_tick = s_tick;
+        h->dropping = false;
+        if(why) {
+            G_Automation_TraceFollowOn(unit, "post", why, NULL, workshop);
+        }
+        return;
+    }
     struct workshop *ws = workshop_get(workshop);
     if(ws) {
         drop_holder(ws, unit);
-        if(away && ws->naway < MAX_POSTS) {
-            ws->away[ws->naway++] = (struct away){unit, AWAY_TICKS};
-        }
     }
     holder_remove(unit);
     if(why) {
@@ -283,23 +283,65 @@ static void shun(struct workshop *ws, uint32_t unit)
     ws->shunned_tick = s_tick;
 }
 
-static void update_walking(uint32_t unit, struct holder *h)
+/* Lets the holder go for good when its workshop is gone, has no work for one
+ * not sent by hand, or keeps its post empty */
+static bool let_go(uint32_t unit, struct holder *h)
 {
     struct workshop *ws = workshop_get(h->workshop);
     if(!ws || !usable_workshop(h->workshop)) {
         release(unit, "gone", false);
-        return;
+        return true;
     }
-    if(ws->demand == POSTS_IDLE) {
+    if(ws->demand == POSTS_IDLE && !h->ordered) {
         release(unit, "no_work", false);
-        return;
+        return true;
     }
     if(ws->nholders > ws->posts - ws->locked) {
         release(unit, "locked", false);
-        return;
+        return true;
     }
+    return false;
+}
+
+static bool send(uint32_t unit, struct holder *h)
+{
+    G_StopEntity(unit, false, false);
+    if(!approach(unit, h->workshop))
+        return false;
+    h->state = HOLDER_WALKING;
+    h->approaches = 0;
+    h->since_tick = s_tick;
+    return true;
+}
+
+/* Whether one away from its post is fed, empty-handed and free to go back to
+ * it; one with a load is sent to bring it in first, into the workshop if it
+ * takes it, and goes in with it if it cannot be rid of it */
+static bool ready_for_post(uint32_t unit, struct holder *h)
+{
+    uint32_t flags = G_FlagsGet(unit);
+    if(flags & ENTITY_FLAG_GARRISONED)
+        return false;
+    if(G_Provision_WantsFood(unit) || G_Provision_Fetching(unit))
+        return false;
+    if(!(flags & ENTITY_FLAG_HARVESTER) || G_Harvester_GetCurrTotalCarry(unit) == 0)
+        return true;
+    if(h->dropping)
+        return G_Harvester_Idle(unit);
+    h->dropping = true;
+    bool store = (G_FlagsGet(h->workshop) & ENTITY_FLAG_STORAGE_SITE);
+    if(store && G_Harvester_BringInLoad(unit, h->workshop, false))
+        return false;
+    return !G_Harvester_BringInLoad(unit, NULL_UID, false);
+}
+
+static void update_walking(uint32_t unit, struct holder *h)
+{
+    if(let_go(unit, h))
+        return;
+    struct workshop *ws = workshop_get(h->workshop);
     if(G_Provision_WantsFood(unit)) {
-        release(unit, "hungry", false);
+        release(unit, "hungry", true);
         return;
     }
     if(s_tick - h->since_tick > WALK_TIMEOUT_TICKS) {
@@ -322,22 +364,29 @@ static void update_walking(uint32_t unit, struct holder *h)
 
 static void update_inside(uint32_t unit, struct holder *h)
 {
-    struct workshop *ws = workshop_get(h->workshop);
-    if(!ws || !usable_workshop(h->workshop)) {
-        release(unit, "gone", false);
+    if(let_go(unit, h))
         return;
-    }
-    if(ws->demand == POSTS_IDLE) {
-        release(unit, "no_work", false);
-        return;
-    }
-    if(ws->nholders > ws->posts - ws->locked) {
-        release(unit, "locked", false);
-        return;
-    }
     if(G_Provision_WantsFood(unit)) {
         release(unit, "hungry", true);
     }
+}
+
+static void update_away(uint32_t unit, struct holder *h)
+{
+    if(let_go(unit, h))
+        return;
+    if(!G_EntityExists(unit) || G_EntityIsZombie(unit) || s_tick - h->since_tick > AWAY_TICKS) {
+        release(unit, "timeout", false);
+        return;
+    }
+    if(!ready_for_post(unit, h))
+        return;
+    if(!send(unit, h)) {
+        shun(workshop_get(h->workshop), unit);
+        release(unit, "unreachable", false);
+        return;
+    }
+    G_Automation_TraceFollowOn(unit, "post", "back", NULL, h->workshop);
 }
 
 static int open_posts(const struct workshop *ws)
@@ -347,12 +396,6 @@ static int open_posts(const struct workshop *ws)
 
 static void update_workshop(struct workshop *ws)
 {
-    for(int i = ws->naway - 1; i >= 0; i--) {
-        if(--ws->away[i].ticks_left <= 0 || !G_EntityExists(ws->away[i].uid)
-        || G_EntityIsZombie(ws->away[i].uid)) {
-            drop_away(ws, i);
-        }
-    }
     if(ws->shunned != NULL_UID && s_tick - ws->shunned_tick > SHUN_TICKS) {
         ws->shunned = NULL_UID;
     }
@@ -390,10 +433,16 @@ static void on_20hz_tick(void *user, void *event)
         struct holder *h = holder_get(units[i]);
         if(!h)
             continue;
-        if(h->state == HOLDER_WALKING) {
+        switch(h->state) {
+        case HOLDER_WALKING:
             update_walking(units[i], h);
-        }else{
+            break;
+        case HOLDER_INSIDE:
             update_inside(units[i], h);
+            break;
+        case HOLDER_AWAY:
+            update_away(units[i], h);
+            break;
         }
     }
 }
@@ -402,7 +451,7 @@ static void on_player_order(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)event;
     struct holder *h = holder_get(uid);
-    if(!h || h->state != HOLDER_WALKING)
+    if(!h || h->state == HOLDER_INSIDE)
         return;
     struct workshop *ws = workshop_get(h->workshop);
     if(ws) {
@@ -412,15 +461,16 @@ static void on_player_order(void *user, void *event)
 }
 
 /* Whether the unit can be sent by hand to the workshop, which has a post that is
- * not filled, whether or not it is kept empty */
+ * not filled, whether or not it is kept empty, and whether or not it has work */
 static bool can_man(uint32_t workshop, uint32_t unit)
 {
     const struct workshop *ws = workshop_get(workshop);
-    if(!ws || ws->demand == POSTS_IDLE || !usable_workshop(workshop))
+    if(!ws || !usable_workshop(workshop))
         return false;
     if(!G_EntityExists(unit) || G_EntityIsZombie(unit))
         return false;
-    if(!(G_FlagsGet(unit) & ENTITY_FLAG_HARVESTER) || G_Harvester_GetCurrTotalCarry(unit) > 0)
+    uint32_t flags = G_FlagsGet(unit);
+    if(!(flags & ENTITY_FLAG_HARVESTER) || !(flags & ENTITY_FLAG_GARRISON))
         return false;
     if(G_GetFactionID(unit) != G_GetFactionID(workshop))
         return false;
@@ -465,6 +515,24 @@ static void on_mousedown(void *user, void *event)
         return;
 
     man_selection(G_Sel_GetHovered());
+}
+
+static struct holder *add_holder(struct workshop *ws, uint32_t workshop, uint32_t unit,
+                                 enum holder_state state, bool ordered)
+{
+    int status;
+    khiter_t k = kh_put(holder, s_holders, unit, &status);
+    if(status == -1)
+        return NULL;
+    kh_value(s_holders, k) = (struct holder){
+        .workshop = workshop,
+        .state = state,
+        .since_tick = s_tick,
+        .ordered = ordered
+    };
+    ws->holders[ws->nholders++] = unit;
+    s_vacancies_tick = ~((uint32_t)0);
+    return &kh_value(s_holders, k);
 }
 
 static int compare_vacancies(const void *a, const void *b)
@@ -620,33 +688,18 @@ bool G_Posts_Take(uint32_t workshop, uint32_t unit)
         shun(ws, unit);
         return false;
     }
-    int status;
-    khiter_t k = kh_put(holder, s_holders, unit, &status);
-    if(status == -1)
-        return false;
-    kh_value(s_holders, k) = (struct holder){
-        .workshop = workshop,
-        .state = HOLDER_WALKING,
-        .since_tick = s_tick
-    };
-    ws->holders[ws->nholders++] = unit;
-    for(int i = 0; i < ws->naway; i++) {
-        if(ws->away[i].uid == unit) {
-            drop_away(ws, i);
-            break;
-        }
-    }
-    s_vacancies_tick = ~((uint32_t)0);
-    return true;
+    return (add_holder(ws, workshop, unit, HOLDER_WALKING, false) != NULL);
 }
 
 bool G_Posts_Man(uint32_t workshop, uint32_t unit)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    const struct holder *h = holder_get(unit);
-    if(h && h->workshop == workshop)
+    struct holder *h = holder_get(unit);
+    if(h && h->workshop == workshop) {
+        h->ordered = true;
         return true;
+    }
     if(!can_man(workshop, unit))
         return false;
     if(h) {
@@ -664,7 +717,18 @@ bool G_Posts_Man(uint32_t workshop, uint32_t unit)
     if(open_posts(ws) <= 0) {
         ws->locked = ws->posts - ws->nholders - 1;
     }
-    if(!G_Posts_Take(workshop, unit)) {
+    /* One hungry or with a load in its hands eats or brings it in first */
+    if(!(h = add_holder(ws, workshop, unit, HOLDER_AWAY, true))) {
+        ws->locked = locked;
+        return false;
+    }
+    if(G_Provision_WantsFood(unit) && !G_Provision_Fetching(unit)) {
+        G_Provision_Fetch(unit);
+    }
+    if(ready_for_post(unit, h) && !send(unit, h)) {
+        shun(ws, unit);
+        drop_holder(ws, unit);
+        holder_remove(unit);
         ws->locked = locked;
         return false;
     }
@@ -680,11 +744,11 @@ uint32_t G_Posts_Evict(uint32_t workshop)
     if(!ws || ws->nholders == 0)
         return NULL_UID;
 
-    /* One still on its way is turned back before one at work */
+    /* One still on its way or away is turned back before one at work */
     uint32_t unit = ws->holders[ws->nholders - 1];
     for(int i = 0; i < ws->nholders; i++) {
         const struct holder *h = holder_get(ws->holders[i]);
-        if(h && h->state == HOLDER_WALKING) {
+        if(h && h->state != HOLDER_INSIDE) {
             unit = ws->holders[i];
             break;
         }
@@ -692,7 +756,7 @@ uint32_t G_Posts_Evict(uint32_t workshop)
     release(unit, "evicted", false);
     if(holder_get(unit))
         return NULL_UID;
-    ws->locked = MAX(ws->locked, ws->posts - ws->nholders - ws->naway);
+    ws->locked = MAX(ws->locked, ws->posts - ws->nholders);
     return unit;
 }
 
@@ -715,13 +779,15 @@ int G_Posts_CurrContextualAction(void)
     if(vec_size(sel) == 0 || sel_type != SELECTION_TYPE_PLAYER)
         return CTX_ACTION_NONE;
 
-    /* Ahead of a look at the table, which only stands while a map is loaded */
-    if(!(G_FlagsGet(vec_AT(sel, 0)) & ENTITY_FLAG_HARVESTER))
-        return CTX_ACTION_NONE;
-
-    if(!can_man(hovered, vec_AT(sel, 0)))
-        return CTX_ACTION_NONE;
-    return CTX_ACTION_MAN;
+    for(int i = 0; i < vec_size(sel); i++) {
+        uint32_t curr = vec_AT(sel, i);
+        /* Ahead of a look at the table, which only stands while a map is loaded */
+        if(!(G_FlagsGet(curr) & ENTITY_FLAG_HARVESTER))
+            continue;
+        if(can_man(hovered, curr))
+            return CTX_ACTION_MAN;
+    }
+    return CTX_ACTION_NONE;
 }
 
 size_t G_Posts_Vacancies(size_t maxout, struct post_vacancy out[])
@@ -743,7 +809,7 @@ size_t G_Posts_Vacancies(size_t maxout, struct post_vacancy out[])
                     .faction = G_GetFactionID(uid),
                     .district = G_District_Of(uid),
                     .priority = storage ? G_StorageSite_GetPriority(uid) : SS_PRIORITY_NORMAL,
-                    .awaited = (i < ws->naway) ? ws->away[i].uid : NULL_UID,
+                    .awaited = NULL_UID,
                     .shunned = ws->shunned,
                     .waited_ticks = ws->open_tick ? s_tick - ws->open_tick : 0
                 };
@@ -773,18 +839,11 @@ bool G_Posts_SaveState(struct SDL_RWops *stream)
             {.type = TYPE_INT, .val.as_int = ws.posts},
             {.type = TYPE_INT, .val.as_int = ws.locked},
             {.type = TYPE_INT, .val.as_int = ws.demand},
-            {.type = TYPE_INT, .val.as_int = ws.naway},
+            /* Holders away are saved with the others; older saves list them here */
+            {.type = TYPE_INT, .val.as_int = 0},
         };
         for(int i = 0; i < ARR_SIZE(attrs); i++) {
             CHK_TRUE_RET(Attr_Write(stream, &attrs[i], "workshop"));
-        }
-        for(int i = 0; i < ws.naway; i++) {
-            struct attr away[] = {
-                {.type = TYPE_INT, .val.as_int = ws.away[i].uid},
-                {.type = TYPE_INT, .val.as_int = ws.away[i].ticks_left},
-            };
-            CHK_TRUE_RET(Attr_Write(stream, &away[0], "away"));
-            CHK_TRUE_RET(Attr_Write(stream, &away[1], "away"));
         }
         Sched_TryYield();
     });
@@ -808,6 +867,11 @@ bool G_Posts_SaveState(struct SDL_RWops *stream)
         for(int i = 0; i < ARR_SIZE(attrs); i++) {
             CHK_TRUE_RET(Attr_Write(stream, &attrs[i], "holder"));
         }
+        struct attr ordered = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = h.ordered
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &ordered, "holder_ordered"));
         Sched_TryYield();
     });
     return true;
@@ -841,7 +905,9 @@ bool G_Posts_LoadState(struct SDL_RWops *stream)
             uint32_t away = attr.val.as_int;
             CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
             CHK_TRUE_RET(attr.type == TYPE_INT);
-            ws->away[ws->naway++] = (struct away){away, attr.val.as_int};
+            if(G_EntityExists(away) && !holder_get(away) && ws->nholders < MAX_POSTS) {
+                CHK_TRUE_RET(add_holder(ws, uid, away, HOLDER_AWAY, false));
+            }
         }
         Sched_TryYield();
     }
@@ -864,18 +930,18 @@ bool G_Posts_LoadState(struct SDL_RWops *stream)
         uint32_t uid = vals[0];
         struct workshop *ws = workshop_get(vals[1]);
         CHK_TRUE_RET(G_EntityExists(uid) && ws && ws->nholders < MAX_POSTS);
+        CHK_TRUE_RET(vals[2] >= HOLDER_WALKING && vals[2] <= HOLDER_AWAY);
 
-        int status;
-        khiter_t k = kh_put(holder, s_holders, uid, &status);
-        CHK_TRUE_RET(status != -1);
-        kh_value(s_holders, k) = (struct holder){
-            .workshop = vals[1],
-            .state = vals[2],
-            .approaches = vals[3],
-            .since_tick = s_tick,
-            .entered_from = attr.val.as_vec2
-        };
-        ws->holders[ws->nholders++] = uid;
+        struct holder *h = add_holder(ws, vals[1], uid, vals[2], false);
+        CHK_TRUE_RET(h);
+        h->approaches = vals[3];
+        h->entered_from = attr.val.as_vec2;
+
+        if(Attr_NextKeyIs(stream, "holder_ordered")) {
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_BOOL);
+            h->ordered = attr.val.as_bool;
+        }
         Sched_TryYield();
     }
     return true;
