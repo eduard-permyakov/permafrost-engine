@@ -416,6 +416,9 @@ static bool free_to_fetch(uint32_t uid)
         return false;
     if((flags & ENTITY_FLAG_COMBATABLE) && !G_Combat_Idle(uid))
         return false;
+    /* Waiting for the player's next order, it eats once let go */
+    if(G_Automation_OrderHold(uid) > 0.0f)
+        return false;
     /* On its way into a building, to be made into something else */
     if((flags & ENTITY_FLAG_GARRISON) && G_Garrison_IsIngredient(uid))
         return false;

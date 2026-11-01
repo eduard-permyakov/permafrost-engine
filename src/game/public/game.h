@@ -1100,6 +1100,10 @@ void G_Automation_GetIdle(vec_entity_t *out);
 /* The worker the automation would send to an open post of the workshop, or NULL_UID */
 uint32_t G_Automation_PostWorker(uint32_t workshop);
 bool G_Automation_IsIdle(uint32_t uid);
+/* Seconds left of the wait after the player's order, full while selected, 0 when not held */
+float G_Automation_OrderHold(uint32_t uid);
+/* Whether the worker is on the player's order or holding after it, out of the automation's hands */
+bool G_Automation_PlayerOrdered(uint32_t uid);
 /* Sends an idle unit somewhere to wait for work without it counting as busy on the way */
 bool G_Automation_WalkIdle(uint32_t uid, vec2_t xz);
 void G_Automation_SetAutomaticTransport(uint32_t uid, bool on);

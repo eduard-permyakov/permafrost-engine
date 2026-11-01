@@ -7107,6 +7107,8 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
     case EVENT_ORDER_ISSUED:
     case EVENT_PLAYER_ORDER_ISSUED:
     case EVENT_HUNT_HIT:
+    case EVENT_ORDER_HOLD_BEGIN:
+    case EVENT_ORDER_HOLD_END:
     case EVENT_UNIT_BECAME_IDLE:
     case EVENT_UNIT_BECAME_ACTIVE:
     case EVENT_UNIT_IDLE_PENDING:

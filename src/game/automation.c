@@ -99,11 +99,11 @@
 #define MAX_WORK_SITES               (512)
 /* How far a worker will go for work it finds by itself */
 #define WORK_RADIUS                  (600.0f)
-/* Each gatherer already bound for a node makes it read this much further
- * off, as a share of its distance, so that the workers spread over the
- * nodes near at hand before any goes further afield, and a node takes no
- * more than fit about its rim */
-#define CROWD_FACTOR                 (2.0f)
+/* Each gatherer already bound for a node makes it read this many world
+ * units further from the hub, so that the workers fill the nodes nearest
+ * the hub before any goes further afield, without all crowding the nearest
+ * one, and a node takes no more than fit about its rim */
+#define CROWD_SLACK                  (40.0f)
 #define NODE_GAP                     (1.0f)
 #define PINNED_LEN                   (32)
 /* What every good counts for before anything asks for it, so that idle
@@ -136,6 +136,9 @@
 /* How long a workshop's own district has to fill its posts before a worker of
  * no district at the end of its work takes one */
 #define HOMED_FIRST_TICKS            (100)
+/* How long a worker is left standing once the player's order is carried
+ * out, or once it is let go from the selection, 15 seconds */
+#define ORDER_HOLD_TICKS             (300)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -172,6 +175,12 @@ struct automation_state{
      * loaded walking only shows as busy until it gets there */
     bool              idle_walk;
     vec2_t            idle_dest;
+    /* On the player's order, or held for a while after it, and given no job
+     * meanwhile; the hold runs out at 'hold_until', 0 while the order is
+     * carried out. 'ordered_tick' is not saved */
+    bool              ordered;
+    uint32_t          ordered_tick;
+    uint32_t          hold_until;
 };
 
 /* A site's want of one resource */
@@ -285,6 +294,7 @@ KHASH_MAP_INIT_INT64(pending, struct pending)
 KHASH_MAP_INIT_INT(trace, struct work_trace)
 
 static void on_order_issued(void *user, void *event);
+static void on_player_order_issued(void *user, void *event);
 static bool try_assign_transport_job(uint32_t uid, struct automation_state *astate);
 static bool try_take_post(uint32_t uid, struct automation_state *astate);
 static bool try_assign_work(uint32_t uid, struct automation_state *astate);
@@ -295,8 +305,8 @@ static struct good_priority *priority_get(int faction, int district, const char 
 static float good_weight(int faction, int district, const char *rname);
 static float node_weight(int faction, uint32_t node, const char *rname);
 static float top_weight(int faction, const char *rname);
-static uint32_t gather_node(uint32_t uid, const struct automation_state *astate, vec2_t origin,
-                            const char *rname, struct work_snapshot *snap);
+static uint32_t gather_node(uint32_t uid, const struct automation_state *astate, const char *rname,
+                            struct work_snapshot *snap);
 static bool could_serve(uint32_t site, const struct job_request *req);
 static int stock_target(int faction, const char *rname);
 static vec2_t work_origin(uint32_t uid, const struct automation_state *astate);
@@ -489,6 +499,54 @@ static bool idle(uint32_t uid)
     return true;
 }
 
+static void begin_hold(uint32_t uid, struct automation_state *astate)
+{
+    astate->hold_until = s_tick + ORDER_HOLD_TICKS;
+    E_Global_Notify(EVENT_ORDER_HOLD_BEGIN, (void*)((uintptr_t)uid), ES_ENGINE);
+}
+
+static void end_hold(uint32_t uid, struct automation_state *astate)
+{
+    if(astate->hold_until == 0)
+        return;
+    astate->hold_until = 0;
+    E_Global_Notify(EVENT_ORDER_HOLD_END, (void*)((uintptr_t)uid), ES_ENGINE);
+}
+
+/* A held worker stays held while it is selected, is back on an order when
+ * it is set to something, and is let go when its hold runs out */
+static void update_holds(void)
+{
+    enum selection_type type;
+    const vec_entity_t *sel = G_Sel_Get(&type);
+    for(int i = 0; i < vec_size(sel); i++) {
+        struct automation_state *astate = astate_get(vec_AT(sel, i));
+        if(astate && astate->hold_until) {
+            astate->hold_until = MAX(astate->hold_until, s_tick + ORDER_HOLD_TICKS);
+        }
+    }
+
+    uint32_t uid;
+    struct automation_state *astate;
+    kh_foreach_val_ptr(s_entity_state_table, uid, astate, {
+        if(!astate->ordered)
+            continue;
+        if(astate->hold_until == 0) {
+            /* An order it was done with before it was ever seen at work */
+            if(astate->state == STATE_IDLE && s_tick - astate->ordered_tick > TRANSIENT_STATE_TICKS) {
+                begin_hold(uid, astate);
+            }
+            continue;
+        }
+        if(astate->state == STATE_ACTIVE) {
+            end_hold(uid, astate);
+        }else if(s_tick >= astate->hold_until) {
+            end_hold(uid, astate);
+            astate->ordered = false;
+        }
+    });
+}
+
 static void increment_assigned_transporters(uint32_t site)
 {
     khiter_t k = kh_get(count, s_transport_count, site);
@@ -534,6 +592,15 @@ static void settle_stopping(void)
         if(G_Command_Next(uid)) {
             trace_note(uid, "order", "taken", "queued", NULL, NULL_UID);
             astate->state = STATE_ACTIVE;
+            continue;
+        }
+
+        /* Done with the player's order, it waits for the next, its meal too */
+        if(astate->ordered) {
+            begin_hold(uid, astate);
+            astate->state = STATE_IDLE;
+            trace_note(uid, "hold", "taken", "player", NULL, NULL_UID);
+            E_Global_Notify(EVENT_UNIT_BECAME_IDLE, (void*)((uintptr_t)uid), ES_ENGINE);
             continue;
         }
 
@@ -1344,7 +1411,7 @@ static vec2_t work_origin(uint32_t uid, const struct automation_state *astate)
 /* Drops the gathering a worker's new standing orders no longer cover */
 static void reconsider_work(uint32_t uid, struct automation_state *astate)
 {
-    if(!astate->automatic_work || !(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER))
+    if(!astate->automatic_work || astate->ordered || !(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER))
         return;
     uint32_t src, dest;
     const char *rname;
@@ -1439,10 +1506,10 @@ static bool in_home_territory(int faction, int home, uint32_t node)
     return G_District_OfNode(faction, node, &cost) == home && cost <= G_DISTRICT_TERRITORY_COST;
 }
 
-/* The node of the good to gather at: the nearest with room about it, the
- * gatherers already bound for one weighing against it, for one that roams,
- * only in a district that wants the good, and for one with a home, only
- * within its home's territory */
+/* The node of the good to gather at: the nearest to the origin with room
+ * about it, the gatherers already bound for one weighing against it, for
+ * one that roams, only in a district that wants the good, and for one with
+ * a home, only within its home's territory */
 static uint32_t best_resource(uint32_t uid, vec2_t origin, const char *rname, float radius,
                               bool roams, int home, struct work_snapshot *snap)
 {
@@ -1466,10 +1533,7 @@ static uint32_t best_resource(uint32_t uid, vec2_t origin, const char *rname, fl
             scores[i] = INFINITY;
             continue;
         }
-        vec2_t pos = G_Pos_GetXZ(nodes[i]);
-        vec2_t delta;
-        PFM_Vec2_Sub(&pos, &origin, &delta);
-        scores[i] = PFM_Vec2_Len(&delta) * (1.0f + CROWD_FACTOR * aimed);
+        scores[i] = distance(G_Pos_GetXZ(nodes[i]), origin) + CROWD_SLACK * aimed;
     }
     for(int tries = 0; tries < nnodes; tries++) {
         int best = -1;
@@ -1492,12 +1556,42 @@ static uint32_t best_resource(uint32_t uid, vec2_t origin, const char *rname, fl
     return NULL_UID;
 }
 
-/* The node a worker would gather the good at: the best near, in a district
- * that wants it for one that roams, else for one of no district, rather than
- * stand idle, the nearest however far */
-static uint32_t gather_node(uint32_t uid, const struct automation_state *astate, vec2_t origin,
-                            const char *rname, struct work_snapshot *snap)
+/* Whether one of the hub cluster's buildings takes the good into its stores */
+static bool hub_takes(int hub, const char *rname)
 {
+    uint32_t members[64];
+    size_t nmembers = G_Cluster_Members(hub, ARR_SIZE(members), members);
+    for(int i = 0; i < nmembers; i++) {
+        if(G_StorageSite_Accepts(members[i], rname) && G_StorageSite_GetCapacity(members[i], rname) > 0)
+            return true;
+    }
+    return false;
+}
+
+/* Where a worker's gathering is reckoned from, so that the nodes nearest the
+ * hub are worked first wherever the worker stands: its home's hub, else the
+ * hub of the district it is in where that takes the good, else itself */
+static vec2_t gather_origin(uint32_t uid, const struct automation_state *astate, const char *rname)
+{
+    vec2_t pos = G_Pos_GetXZ(uid);
+    int hub = astate->home_district ? astate->home_district : G_District_Of(uid);
+    if(hub == 0)
+        return pos;
+    uint32_t anchor = G_Cluster_Anchor(hub);
+    if(anchor == NULL_UID || !G_EntityExists(anchor))
+        return pos;
+    if(astate->home_district == 0 && !hub_takes(hub, rname))
+        return pos;
+    return G_Pos_GetXZ(anchor);
+}
+
+/* The node a worker would gather the good at: the best near its hub, in a
+ * district that wants it for one that roams, else for one of no district,
+ * rather than stand idle, the nearest however far */
+static uint32_t gather_node(uint32_t uid, const struct automation_state *astate, const char *rname,
+                            struct work_snapshot *snap)
+{
+    vec2_t origin = gather_origin(uid, astate, rname);
     bool roams = (astate->home_district == 0 && strcmp(astate->pinned, rname));
     uint32_t ret = best_resource(uid, origin, rname, WORK_RADIUS, roams, astate->home_district, snap);
     if(ret == NULL_UID && astate->home_district == 0) {
@@ -1647,7 +1741,7 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
         nodes[i] = NULL_UID;
         searched[i] = false;
         if(roams && demands[i] && demands[i]->workers < (int)ceilf(demands[i]->wanted * MAX(weight, 1.0f))) {
-            nodes[i] = gather_node(uid, astate, pos, candidates[i], snap);
+            nodes[i] = gather_node(uid, astate, candidates[i], snap);
             searched[i] = true;
             weight = (nodes[i] != NULL_UID) ? node_weight(faction, nodes[i], candidates[i])
                                             : good_weight(faction, district, candidates[i]);
@@ -1683,7 +1777,7 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
             break;
         bool pinned = !strcmp(astate->pinned, candidates[best]);
         bool roams = (astate->home_district == 0 && !pinned);
-        uint32_t node = searched[best] ? nodes[best] : gather_node(uid, astate, pos, candidates[best], snap);
+        uint32_t node = searched[best] ? nodes[best] : gather_node(uid, astate, candidates[best], snap);
         if(node != NULL_UID && roams && node_weight(faction, node, candidates[best]) <= 0.0f) {
             why[best] = "not_wanted";
             scores[best] = -1.0f;
@@ -1750,7 +1844,7 @@ static void assign_transport_jobs(void)
     uint32_t uid;
     struct automation_state *astate;
     kh_foreach_val_ptr(s_entity_state_table, uid, astate, {
-        if(astate->state != STATE_IDLE)
+        if(astate->state != STATE_IDLE || astate->ordered)
             continue;
         /* A carrier whose drop-off fell through brings the load in itself */
         if(astate->automatic_transport && (G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER)
@@ -1793,7 +1887,7 @@ static void assign_transport_jobs(void)
 static bool post_worker(uint32_t uid, const struct automation_state *astate, struct post_worker *out)
 {
     uint32_t flags = G_FlagsGet(uid);
-    if(!astate->automatic_work || astate->pinned[0] || !(flags & ENTITY_FLAG_HARVESTER))
+    if(!astate->automatic_work || astate->pinned[0] || astate->ordered || !(flags & ENTITY_FLAG_HARVESTER))
         return false;
     if(flags & (ENTITY_FLAG_GARRISONED | ENTITY_FLAG_ZOMBIE))
         return false;
@@ -1924,7 +2018,7 @@ static void assign_work(void)
     uint32_t uid;
     struct automation_state *astate;
     kh_foreach_val_ptr(s_entity_state_table, uid, astate, {
-        if(astate->state != STATE_IDLE || !astate->automatic_work)
+        if(astate->state != STATE_IDLE || !astate->automatic_work || astate->ordered)
             continue;
         vec_entity_push(&workers, uid);
     });
@@ -1957,6 +2051,7 @@ static void on_20hz_tick(void *user, void *event)
     PERF_PUSH("automation::settle_stopping");
     settle_stopping();
     PERF_POP();
+    update_holds();
     uint64_t t1 = SDL_GetPerformanceCounter();
     if(s_tick % RATE_SAMPLE_TICKS == 0) {
         sample_gather_rates(RATE_SAMPLE_TICKS / 20.0f);
@@ -2080,6 +2175,18 @@ static void on_order_issued(void *user, void *event)
     }
 }
 
+static void on_player_order_issued(void *user, void *event)
+{
+    uint32_t uid = (uintptr_t)event;
+
+    struct automation_state *astate = astate_get(uid);
+    if(!astate || !astate->automatic_work)
+        return;
+    end_hold(uid, astate);
+    astate->ordered = true;
+    astate->ordered_tick = s_tick;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -2137,6 +2244,7 @@ bool G_Automation_Init(void)
     E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
     E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING);
     E_Global_Register(EVENT_ORDER_ISSUED, on_order_issued, NULL, G_RUNNING);
+    E_Global_Register(EVENT_PLAYER_ORDER_ISSUED, on_player_order_issued, NULL, G_RUNNING);
     return true;
 
 fail_traces:
@@ -2204,6 +2312,7 @@ int G_Automation_AssignedTransporters(uint32_t site)
 void G_Automation_Shutdown(void)
 {
     E_Global_Unregister(EVENT_ORDER_ISSUED, on_order_issued);
+    E_Global_Unregister(EVENT_PLAYER_ORDER_ISSUED, on_player_order_issued);
     E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
     E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
     vec_request_destroy(&s_snapshot.requests);
@@ -2259,7 +2368,7 @@ void G_Automation_GetIdle(vec_entity_t *out)
 bool G_Automation_WalkIdle(uint32_t uid, vec2_t xz)
 {
     struct automation_state *astate = astate_get(uid);
-    if(!astate || astate->state != STATE_IDLE || !(G_FlagsGet(uid) & ENTITY_FLAG_MOVABLE))
+    if(!astate || astate->state != STATE_IDLE || astate->ordered || !(G_FlagsGet(uid) & ENTITY_FLAG_MOVABLE))
         return false;
     /* One going to eat is not idle for long, and the walk would call off its meal */
     if(!G_PointInsideMap(xz) || G_Provision_WantsFood(uid) || G_Provision_Fetching(uid))
@@ -2279,6 +2388,22 @@ bool G_Automation_IsIdle(uint32_t uid)
     if(!astate)
         return true;
     return (astate->state == STATE_IDLE);
+}
+
+float G_Automation_OrderHold(uint32_t uid)
+{
+    struct automation_state *astate = astate_get(uid);
+    if(!astate || astate->hold_until <= s_tick)
+        return 0.0f;
+    return (astate->hold_until - s_tick) * TICK_MS / 1000.0f;
+}
+
+bool G_Automation_PlayerOrdered(uint32_t uid)
+{
+    struct automation_state *astate = astate_get(uid);
+    if(!astate)
+        return false;
+    return astate->ordered;
 }
 
 void G_Automation_SetAutomaticTransport(uint32_t uid, bool on)
@@ -2359,8 +2484,9 @@ uint32_t G_Automation_BestResource(uint32_t uid, const char *rname)
         return NULL_UID;
     struct work_snapshot *snap = snapshot_get();
     bool roams = (astate->home_district == 0 && strcmp(astate->pinned, rname));
-    uint32_t node = best_resource(uid, work_origin(uid, astate), rname, WORK_RADIUS, roams,
-        astate->home_district, snap);
+    /* One on the player's order keeps to the patch it was sent to */
+    vec2_t origin = astate->ordered ? work_origin(uid, astate) : gather_origin(uid, astate, rname);
+    uint32_t node = best_resource(uid, origin, rname, WORK_RADIUS, roams, astate->home_district, snap);
     if(node != NULL_UID) {
         note_aimed(snap, node);
     }
@@ -2724,6 +2850,18 @@ bool G_Automation_SaveState(struct SDL_RWops *stream)
         struct attr working = (struct attr){ .type = TYPE_STRING };
         pf_strlcpy(working.val.as_string, astate.working, sizeof(working.val.as_string));
         CHK_TRUE_RET(Attr_Write(stream, &working, "working"));
+
+        struct attr ordered = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = astate.ordered
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &ordered, "ordered"));
+
+        struct attr hold_ticks = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = astate.hold_until ? MAX(1, (int)(astate.hold_until - s_tick)) : 0
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &hold_ticks, "hold_ticks"));
         Sched_TryYield();
     });
 
@@ -2807,6 +2945,17 @@ bool G_Automation_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_STRING);
         pf_strlcpy(astate->working, attr.val.as_string, sizeof(astate->working));
+
+        astate->ordered_tick = s_tick;
+        if(Attr_NextKeyIs(stream, "ordered")) {
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_BOOL);
+            astate->ordered = attr.val.as_bool;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            astate->hold_until = (attr.val.as_int > 0) ? s_tick + attr.val.as_int : 0;
+        }
         Sched_TryYield();
     }
 

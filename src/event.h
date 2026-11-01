@@ -135,6 +135,9 @@ enum eventtype{
     EVENT_PLAYER_ORDER_ISSUED,
     /* A hunter's arrow struck the game; the arg is the hunter */
     EVENT_HUNT_HIT,
+    /* A worker done with the player's order waits for the next; the arg is the worker */
+    EVENT_ORDER_HOLD_BEGIN,
+    EVENT_ORDER_HOLD_END,
 
     EVENT_ENGINE_LAST = 0x1ffff,
 };

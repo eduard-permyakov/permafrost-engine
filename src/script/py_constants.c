@@ -815,6 +815,8 @@ static void s_expose_event_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, EVENT_BUILDING_MARKED);
     PY_EXPOSE_ENUM(module, EVENT_PLAYER_ORDER_ISSUED);
     PY_EXPOSE_ENUM(module, EVENT_HUNT_HIT);
+    PY_EXPOSE_ENUM(module, EVENT_ORDER_HOLD_BEGIN);
+    PY_EXPOSE_ENUM(module, EVENT_ORDER_HOLD_END);
     PY_EXPOSE_ENUM(module, EVENT_ENGINE_LAST);
 }
 

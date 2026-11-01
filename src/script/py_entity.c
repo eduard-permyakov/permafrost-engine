@@ -981,7 +981,7 @@ typedef struct {
 }PyHarvesterEntityObject;
 
 static PyObject *PyHarvesterEntity_del(PyHarvesterEntityObject *self);
-static PyObject *PyHarvesterEntity_gather(PyHarvesterEntityObject *self, PyObject *args);
+static PyObject *PyHarvesterEntity_gather(PyHarvesterEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyHarvesterEntity_drop_off(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_transport(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_get_curr_carry(PyHarvesterEntityObject *self, PyObject *args);
@@ -1002,6 +1002,8 @@ static PyObject *PyHarvesterEntity_get_automatic_transport(PyHarvesterEntityObje
 static PyObject *PyHarvesterEntity_get_automatic_work(PyHarvesterEntityObject *self, void *closure);
 static int       PyHarvesterEntity_set_automatic_work(PyHarvesterEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyHarvesterEntity_get_pinned_work(PyHarvesterEntityObject *self, void *closure);
+static PyObject *PyHarvesterEntity_get_order_hold(PyHarvesterEntityObject *self, void *closure);
+static PyObject *PyHarvesterEntity_get_player_ordered(PyHarvesterEntityObject *self, void *closure);
 static PyObject *PyHarvesterEntity_get_work_trace(PyHarvesterEntityObject *self, void *closure);
 static PyObject *PyHarvesterEntity_get_queued_gather(PyHarvesterEntityObject *self, void *closure);
 static PyObject *PyHarvesterEntity_get_home_district(PyHarvesterEntityObject *self, void *closure);
@@ -1025,8 +1027,8 @@ static PyMethodDef PyHarvesterEntity_methods[] = {
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
 
     {"gather", 
-    (PyCFunction)PyHarvesterEntity_gather, METH_VARARGS,
-    "Instruct an entity to harvest a particular resource."},
+    (PyCFunction)PyHarvesterEntity_gather, METH_VARARGS | METH_KEYWORDS,
+    "Instruct an entity to harvest a particular resource; with 'player' set, as the player's order."},
 
     {"drop_off", 
     (PyCFunction)PyHarvesterEntity_drop_off, METH_VARARGS,
@@ -1117,6 +1119,15 @@ static PyGetSetDef PyHarvesterEntity_getset[] = {
     {"pinned_work",
     (getter)PyHarvesterEntity_get_pinned_work, (setter)PyHarvesterEntity_set_pinned_work,
     "The one resource a worker finding its own work gathers, or an empty string to let it choose.",
+    NULL},
+    {"order_hold",
+    (getter)PyHarvesterEntity_get_order_hold, NULL,
+    "Seconds left of the worker's wait for the player's next order once it has carried one out, "
+    "kept full while it is selected; 0.0 when it is not waiting.",
+    NULL},
+    {"player_ordered",
+    (getter)PyHarvesterEntity_get_player_ordered, NULL,
+    "Whether the worker is on the player's order, or waiting after one, out of the automation's hands.",
     NULL},
     {"queued_gather",
     (getter)PyHarvesterEntity_get_queued_gather, NULL,
@@ -1344,7 +1355,7 @@ typedef struct {
     PyEntityObject super; 
 }PyMovableEntityObject;
 
-static PyObject *PyMovableEntity_move(PyMovableEntityObject *self, PyObject *args);
+static PyObject *PyMovableEntity_move(PyMovableEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyMovableEntity_walk_idle(PyMovableEntityObject *self, PyObject *args);
 static PyObject *PyMovableEntity_del(PyMovableEntityObject *self);
 static PyObject *PyMovableEntity_pickle(PyMovableEntityObject *self, PyObject *args, PyObject *kwargs);
@@ -1378,8 +1389,9 @@ static PyGetSetDef PyMovableEntity_getset[] = {
 static PyMethodDef PyMovableEntity_methods[] = {
 
     {"move", 
-    (PyCFunction)PyMovableEntity_move, METH_VARARGS,
-    "Issues a 'move' order to the entity at the XZ position specified by the argument."},
+    (PyCFunction)PyMovableEntity_move, METH_VARARGS | METH_KEYWORDS,
+    "Issues a 'move' order to the entity at the XZ position specified by the argument; with "
+    "'player' set, as the player's order."},
 
     {"walk_idle", 
     (PyCFunction)PyMovableEntity_walk_idle, METH_VARARGS,
@@ -4875,17 +4887,19 @@ static PyObject *PyHarvesterEntity_del(PyHarvesterEntityObject *self)
     return s_super_del((PyObject*)self, &PyHarvesterEntity_type);
 }
 
-static PyObject *PyHarvesterEntity_gather(PyHarvesterEntityObject *self, PyObject *args)
+static PyObject *PyHarvesterEntity_gather(PyHarvesterEntityObject *self, PyObject *args, PyObject *kwargs)
 {
     if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
         PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
         return NULL;
     }
 
+    static char *kwlist[] = {"resource", "player", NULL};
     PyResourceEntityObject *resource;
-    if(!PyArg_ParseTuple(args, "O", &resource)
+    int player = 0;
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "O|i", kwlist, &resource, &player)
     || !PyObject_IsInstance((PyObject*)resource, (PyObject*)&PyResourceEntity_type)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must be a pf.ResourceEntity instance.");
+        PyErr_SetString(PyExc_TypeError, "Argument must be a pf.ResourceEntity instance and an optional 'player' flag.");
         return NULL;
     }
 
@@ -4893,6 +4907,9 @@ static PyObject *PyHarvesterEntity_gather(PyHarvesterEntityObject *self, PyObjec
     if(!G_Harvester_Gather(self->super.ent, resource->super.ent)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to gather the specified resource.");
         return NULL;
+    }
+    if(player) {
+        G_NotifyOrderIssued(self->super.ent, false, true);
     }
     Py_RETURN_NONE;
 }
@@ -5205,6 +5222,19 @@ static int PyHarvesterEntity_set_strategy(PyHarvesterEntityObject *self, PyObjec
 static PyObject *PyHarvesterEntity_get_automatic_work(PyHarvesterEntityObject *self, void *closure)
 {
     if(G_Automation_GetAutomaticWork(self->super.ent)) {
+        Py_RETURN_TRUE;
+    }
+    Py_RETURN_FALSE;
+}
+
+static PyObject *PyHarvesterEntity_get_order_hold(PyHarvesterEntityObject *self, void *closure)
+{
+    return PyFloat_FromDouble(G_Automation_OrderHold(self->super.ent));
+}
+
+static PyObject *PyHarvesterEntity_get_player_ordered(PyHarvesterEntityObject *self, void *closure)
+{
+    if(G_Automation_PlayerOrdered(self->super.ent)) {
         Py_RETURN_TRUE;
     }
     Py_RETURN_FALSE;
@@ -5838,16 +5868,18 @@ static int PyMovableEntity_set_preferred_formation(PyMovableEntityObject *self,
     return 0;
 }
 
-static PyObject *PyMovableEntity_move(PyMovableEntityObject *self, PyObject *args)
+static PyObject *PyMovableEntity_move(PyMovableEntityObject *self, PyObject *args, PyObject *kwargs)
 {
     if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
         PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
         return NULL;
     }
 
+    static char *kwlist[] = {"pos", "player", NULL};
     vec2_t xz_pos;
-    if(!PyArg_ParseTuple(args, "(ff)", &xz_pos.x, &xz_pos.z)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of 2 floats.");
+    int player = 0;
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "(ff)|i", kwlist, &xz_pos.x, &xz_pos.z, &player)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of 2 floats and an optional 'player' flag.");
         return NULL;
     }
 
@@ -5856,6 +5888,11 @@ static PyObject *PyMovableEntity_move(PyMovableEntityObject *self, PyObject *arg
         return NULL;
     }
 
+    /* As the player's right click: the unit drops what it was doing first */
+    if(player) {
+        G_StopEntity(self->super.ent, false, true);
+        G_NotifyOrderIssued(self->super.ent, true, true);
+    }
     G_Move_SetDest(self->super.ent, xz_pos, false);
     Py_RETURN_NONE;
 }
