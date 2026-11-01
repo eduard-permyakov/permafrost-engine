@@ -94,6 +94,12 @@
 #define HUNT_RANGE_SLACK    (16.0f)
 /* How far off its mark a hunter may face and still shoot (cosine of half the angle) */
 #define HUNT_AIM_COS        (0.995f)
+/* How far from the node the player sent it to a gatherer goes on to others of
+ * the good, when that one is crowded, out of reach or used up */
+#define ORDER_RADIUS        (300.0f)
+/* Each gatherer bound for a node makes it read this much further off */
+#define CROWD_FACTOR        (2.0f)
+#define NODE_GAP            (1.0f)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -171,6 +177,8 @@ struct hstate{
     /* Ticks it has made no way toward the resource it seeks, and where it last did */
     int         press_ticks;
     vec2_t      press_pos;
+    /* Where the node the gathering was last ordered at stood */
+    vec2_t      order_pos;
 };
 
 struct searcharg{
@@ -221,6 +229,7 @@ static void on_20hz_tick(void *user, void *event);
 static int  home_bound(uint32_t uid);
 static bool hunted(uint32_t res);
 static void hunt_hit(uint32_t uid, struct hstate *hs);
+static bool regather(uint32_t uid, uint32_t resource);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -777,15 +786,98 @@ static void entity_try_drop_off(uint32_t uid)
     }
 }
 
+/* Whether the gathering is the player's: ordered, not chosen by the automation */
+static bool gathering_by_order(uint32_t uid)
+{
+    return !G_Automation_ChoseWork(uid);
+}
+
+/* How many gatherers stand about a node at once: its rim in worker widths */
+static int node_capacity(uint32_t node, float worker_radius)
+{
+    float rim;
+    if(G_FlagsGet(node) & ENTITY_FLAG_BUILDING) {
+        struct obb obb;
+        Entity_CurrentOBB(node, &obb, true);
+        rim = 4.0f * (obb.half_lengths[0] + obb.half_lengths[2]);
+    }else{
+        rim = 2.0f * M_PI * (G_GetSelectionRadius(node) + worker_radius);
+    }
+    return MAX(1, (int)(rim / (2.0f * worker_radius + NODE_GAP)));
+}
+
+static int gatherers_aimed_at(uint32_t node, uint32_t exclude)
+{
+    int ret = 0;
+    uint32_t uid;
+    struct hstate *hs;
+    kh_foreach_val_ptr(s_entity_state_table, uid, hs, {
+        if(uid != exclude && hs->res_uid == node
+        && (hs->state == STATE_HARVESTING_SEEK_RESOURCE || hs->state == STATE_HARVESTING
+            || hs->state == STATE_HARVESTING_SEEK_STORAGE)) {
+            ret++;
+        }
+    });
+    return ret;
+}
+
+/* The node of the good a gatherer by order goes on to: one about the node it
+ * was sent to with room about it, the nearest, the gatherers already bound for
+ * each weighing against it */
+static uint32_t ordered_node(uint32_t uid, const char *rname, uint32_t exclude)
+{
+    struct hstate *hs = hstate_get(uid);
+    uint32_t nodes[256];
+    float scores[256];
+    size_t nnodes = G_Harvester_ResourcesNear(uid, hs->order_pos, rname, ORDER_RADIUS,
+        ARR_SIZE(nodes), nodes);
+    float worker_radius = G_GetSelectionRadius(uid);
+    vec2_t pos = G_Pos_GetXZ(uid);
+
+    for(int i = 0; i < nnodes; i++) {
+        int aimed = gatherers_aimed_at(nodes[i], uid);
+        if(nodes[i] == exclude || aimed >= node_capacity(nodes[i], worker_radius)) {
+            scores[i] = INFINITY;
+            continue;
+        }
+        vec2_t node_pos = G_Pos_GetXZ(nodes[i]);
+        vec2_t delta;
+        PFM_Vec2_Sub(&node_pos, &pos, &delta);
+        scores[i] = PFM_Vec2_Len(&delta) * (1.0f + CROWD_FACTOR * aimed);
+    }
+    for(int tries = 0; tries < nnodes; tries++) {
+        int best = -1;
+        for(int i = 0; i < nnodes; i++) {
+            if(scores[i] < INFINITY && (best == -1 || scores[i] < scores[best]))
+                best = i;
+        }
+        if(best == -1)
+            break;
+        if(G_Harvester_ResourceReachable(uid, nodes[best]))
+            return nodes[best];
+        scores[best] = INFINITY;
+    }
+    return NULL_UID;
+}
+
 static void entity_try_gather_nearest(uint32_t uid, const char *rname)
 {
+    if(gathering_by_order(uid)) {
+        uint32_t newtarget = ordered_node(uid, rname, NULL_UID);
+        if(newtarget != NULL_UID) {
+            regather(uid, newtarget);
+        }else{
+            entity_try_drop_off(uid);
+        }
+        return;
+    }
     /* The automation weighs the crowd at each node; by order it is the nearest */
     uint32_t newtarget = G_Automation_BestResource(uid, rname);
     if(newtarget == NULL_UID && !home_bound(uid)) {
         newtarget = nearest_resource(uid, rname);
     }
     if(newtarget != NULL_UID) {
-        G_Harvester_Gather(uid, newtarget);
+        regather(uid, newtarget);
     }else{
         entity_try_drop_off(uid);
     }
@@ -793,13 +885,18 @@ static void entity_try_gather_nearest(uint32_t uid, const char *rname)
 
 static void entity_try_gather_nearest_with_exclusion(uint32_t uid, const char *rname, uint32_t exclude)
 {
-    uint32_t newtarget = nearest_resource_with_exclusion(uid, rname, exclude);
+    uint32_t newtarget;
+    if(gathering_by_order(uid)) {
+        newtarget = ordered_node(uid, rname, exclude);
+    }else{
+        newtarget = nearest_resource_with_exclusion(uid, rname, exclude);
+    }
     int home = home_bound(uid);
     if(newtarget != NULL_UID && home && G_District_Of(newtarget) != home) {
         newtarget = NULL_UID;
     }
     if(newtarget != NULL_UID) {
-        G_Harvester_Gather(uid, newtarget);
+        regather(uid, newtarget);
     }else{
         entity_try_drop_off(uid);
     }
@@ -1273,7 +1370,7 @@ static void on_arrive_at_storage(void *user, void *event)
             hs->res_name = NULL;
             clear_queued_command(uid);
         }else if(G_EntityExists(resource) && !G_EntityIsZombie(resource)) {
-            G_Harvester_Gather(uid, resource);
+            regather(uid, resource);
         }else{
             entity_try_gather_nearest(uid, rname);
         }
@@ -2059,6 +2156,16 @@ static bool harvester_transport_from_resources(uint32_t harvester, uint32_t stor
     return true;
 }
 
+/* Gathers at another node under the order it gathers by */
+static bool regather(uint32_t uid, uint32_t resource)
+{
+    struct hstate *hs = hstate_get(uid);
+    vec2_t order_pos = hs->order_pos;
+    bool ret = G_Harvester_Gather(uid, resource);
+    hs->order_pos = order_pos;
+    return ret;
+}
+
 static void on_render_ui(void *user, void *event)
 {
     struct sval setting;
@@ -2745,6 +2852,7 @@ bool G_Harvester_Gather(uint32_t harvester, uint32_t resource)
     hs->state = STATE_HARVESTING_SEEK_RESOURCE;
     hs->res_uid = resource;
     hs->res_last_pos = G_Pos_GetXZ(resource);
+    hs->order_pos = hs->res_last_pos;
     hs->press_ticks = 0;
     hs->press_pos = G_Pos_GetXZ(harvester);
     hs->res_name = G_Resource_GetName(resource);
@@ -2814,7 +2922,9 @@ bool G_Harvester_BringInLoad(uint32_t harvester, uint32_t site, bool and_back)
     }
     if(hs->state == STATE_HARVESTING_SEEK_STORAGE && hs->ss_uid == site)
         return true;
-    if(!G_StorageSite_Accepts(site, rname))
+    if(!(G_FlagsGet(site) & ENTITY_FLAG_STORAGE_SITE) || !G_StorageSite_Accepts(site, rname))
+        return false;
+    if(G_StorageSite_GetCurr(site, rname) >= ss_capacity(site, rname))
         return false;
     if(!G_Harvester_DropOff(harvester, site))
         return false;
@@ -3441,6 +3551,12 @@ bool G_Harvester_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr.job_amount
         };
         CHK_TRUE_RET(Attr_Write(stream, &job_amount, "job_amount"));
+
+        struct attr order_pos = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = curr.order_pos
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &order_pos, "order_pos"));
         Sched_TryYield();
     });
     return true;
@@ -3670,6 +3786,13 @@ bool G_Harvester_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         hs->job_amount = attr.val.as_int;
+
+        hs->order_pos = hs->res_last_pos;
+        if(Attr_NextKeyIs(stream, "order_pos")) {
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_VEC2);
+            hs->order_pos = attr.val.as_vec2;
+        }
         Sched_TryYield();
     };
 
