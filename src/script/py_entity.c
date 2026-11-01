@@ -887,6 +887,8 @@ static PyObject *PyResourceEntity_get_instant(PyResourceEntityObject *self, void
 static int       PyResourceEntity_set_instant(PyResourceEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyResourceEntity_get_dormant(PyResourceEntityObject *self, void *closure);
 static int       PyResourceEntity_set_dormant(PyResourceEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyResourceEntity_get_hunt_hits(PyResourceEntityObject *self, void *closure);
+static int       PyResourceEntity_set_hunt_hits(PyResourceEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyResourceEntity_get_restored_amount(PyResourceEntityObject *self, void *closure);
 static int       PyResourceEntity_set_restored_amount(PyResourceEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyResourceEntity_get_replenish_amount(PyResourceEntityObject *self, PyObject *args);
@@ -936,6 +938,11 @@ static PyGetSetDef PyResourceEntity_getset[] = {
     (getter)PyResourceEntity_get_dormant, (setter)PyResourceEntity_set_dormant,
     "Boolean indicating whether the resource yields nothing for now: no harvester takes it as work, and "
     "those working it leave it as if it were exhausted, though it keeps its amount.",
+    NULL},
+    {"hunt_hits",
+    (getter)PyResourceEntity_get_hunt_hits, (setter)PyResourceEntity_set_hunt_hits,
+    "The number of arrows a harvester must still land, shooting from range, before it can work the "
+    "resource (game to be hunted). Each fires EVENT_HUNT_HIT on the resource, with the hunter as the arg.",
     NULL},
     {"restored_amount",
     (getter)PyResourceEntity_get_restored_amount, (setter)PyResourceEntity_set_restored_amount,
@@ -3139,7 +3146,7 @@ static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args
     if(kwds && (mode_obj = PyDict_GetItemString(kwds, "mode"))) {
     
         if(!PyInt_Check(mode_obj)
-        || (mode = PyInt_AS_LONG(mode_obj)) > ANIM_MODE_ONCE) {
+        || (mode = PyInt_AS_LONG(mode_obj)) > ANIM_MODE_ONCE_HOLD) {
         
             PyErr_SetString(PyExc_TypeError, "'mode' kwarg must be a valid animation mode (int).");
             return NULL;
@@ -4773,6 +4780,29 @@ static int PyResourceEntity_set_dormant(PyResourceEntityObject *self, PyObject *
         return -1;
     }
     G_Resource_SetDormant(self->super.ent, PyObject_IsTrue(value));
+    return 0;
+}
+
+static PyObject *PyResourceEntity_get_hunt_hits(PyResourceEntityObject *self, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+    return PyInt_FromLong(G_Resource_GetHuntHits(self->super.ent));
+}
+
+static int PyResourceEntity_set_hunt_hits(PyResourceEntityObject *self, PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer.");
+        return -1;
+    }
+    G_Resource_SetHuntHits(self->super.ent, PyInt_AS_LONG(value));
     return 0;
 }
 

@@ -89,6 +89,11 @@
  * trip, each only for at least this much (or what it has room for) */
 #define MAX_TOP_UPS         (2)
 #define MIN_TOP_UP          (5)
+/* How far off a hunter looses its arrows, and how much farther it may stand */
+#define HUNT_RANGE          (48.0f)
+#define HUNT_RANGE_SLACK    (16.0f)
+/* How far off its mark a hunter may face and still shoot (cosine of half the angle) */
+#define HUNT_AIM_COS        (0.995f)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -178,6 +183,7 @@ struct searcharg{
 struct valid_resource_arg{
     vec2_t         ent_pos;
     enum nav_layer ent_layer;
+    bool           ent_water;
     const char    *rname;
     uint32_t       exclude;
     /* The way there is judged apart, for a search that weighs many */
@@ -213,6 +219,8 @@ static void on_harvest_anim_finished(void *user, void *event);
 static void on_harvest_anim_finished_source(void *user, void *event);
 static void on_20hz_tick(void *user, void *event);
 static int  home_bound(uint32_t uid);
+static bool hunted(uint32_t res);
+static void hunt_hit(uint32_t uid, struct hstate *hs);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -618,6 +626,20 @@ static bool valid_storage_site_source(uint32_t curr, void *arg)
     return true;
 }
 
+/* A node on the water is worked from the bank by one on land, and one on
+ * the water works nothing on land */
+static bool resource_reachable(enum nav_layer layer, bool water, vec2_t pos, uint32_t res)
+{
+    bool res_water = !!(G_FlagsGet(res) & ENTITY_FLAG_WATER);
+    if(res_water == water)
+        return M_NavLocationsReachable(s_map, layer, pos, G_Pos_GetXZ(res));
+    if(water)
+        return false;
+    struct obb obb;
+    Entity_CurrentOBB(res, &obb, false);
+    return M_NavIsAdjacentToIslandOBB(s_map, layer, &obb, pos);
+}
+
 static bool valid_resource(uint32_t uid, void *arg)
 {
     struct valid_resource_arg *vrarg = arg;
@@ -635,8 +657,7 @@ static bool valid_resource(uint32_t uid, void *arg)
         return false;
     if(strcmp(vrarg->rname, G_Resource_GetName(uid)))
         return false;
-    vec2_t res_pos = G_Pos_GetXZ(uid);
-    if(!vrarg->skip_reach && !M_NavLocationsReachable(s_map, vrarg->ent_layer, vrarg->ent_pos, res_pos))
+    if(!vrarg->skip_reach && !resource_reachable(vrarg->ent_layer, vrarg->ent_water, vrarg->ent_pos, uid))
         return false;
     return true;
 }
@@ -668,6 +689,7 @@ uint32_t nearest_resource(uint32_t uid, const char *name)
     struct valid_resource_arg arg = (struct valid_resource_arg){
         .ent_pos = pos,
         .ent_layer = Entity_NavLayer(uid),
+        .ent_water = !!(G_FlagsGet(uid) & ENTITY_FLAG_WATER),
         .rname = name,
         .exclude = UID_NONE
     };
@@ -681,6 +703,7 @@ uint32_t nearest_resource_with_exclusion(uint32_t uid, const char *name, uint32_
     struct valid_resource_arg arg = (struct valid_resource_arg){
         .ent_pos = pos,
         .ent_layer = Entity_NavLayer(uid),
+        .ent_water = !!(G_FlagsGet(uid) & ENTITY_FLAG_WATER),
         .rname = name,
         .exclude = exclude
     };
@@ -806,6 +829,7 @@ uint32_t target_resource(uint32_t uid, struct hstate *hs, const char *rname)
         struct valid_resource_arg arg = (struct valid_resource_arg){
             .ent_pos = G_Pos_GetXZ(uid),
             .ent_layer = Entity_NavLayer(uid),
+            .ent_water = !!(G_FlagsGet(uid) & ENTITY_FLAG_WATER),
             .rname = rname,
             .exclude = UID_NONE,
         };
@@ -930,6 +954,11 @@ static void on_harvest_anim_finished(void *user, void *event)
         return;
     }
 
+    if(hunted(hs->res_uid)) {
+        hunt_hit(uid, hs);
+        return;
+    }
+
     const char *rname = G_Resource_GetName(hs->res_uid);
     int resource_left = G_Resource_GetAmount(hs->res_uid);
 
@@ -1024,6 +1053,66 @@ static void on_motion_begin_travel(void *user, void *event)
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_transport_dest);
 }
 
+static bool hunted(uint32_t res)
+{
+    return G_Resource_GetHuntHits(res) > 0;
+}
+
+static bool in_hunt_range(uint32_t uid, uint32_t res)
+{
+    vec2_t a = G_Pos_GetXZ(uid);
+    vec2_t b = G_Pos_GetXZ(res);
+    vec2_t delta;
+    PFM_Vec2_Sub(&b, &a, &delta);
+    return PFM_Vec2_Len(&delta) <= HUNT_RANGE + HUNT_RANGE_SLACK + G_GetSelectionRadius(res);
+}
+
+/* Where a harvester works a resource from: beside it, or for game still
+ * standing, within a bowshot */
+static bool at_resource(uint32_t uid, uint32_t res)
+{
+    if(hunted(res))
+        return in_hunt_range(uid, res);
+    return M_NavObjAdjacent(s_map, uid, res);
+}
+
+/* Turns a hunter toward its game, returning whether it already faces it */
+static bool face_game(uint32_t uid, uint32_t res)
+{
+    vec2_t a = G_Pos_GetXZ(uid);
+    vec2_t b = G_Pos_GetXZ(res);
+    vec2_t dir;
+    PFM_Vec2_Sub(&b, &a, &dir);
+    if(PFM_Vec2_Len(&dir) < 1.0f)
+        return true;
+
+    float angle = atan2(dir.z, dir.x) - M_PI/2.0f;
+    quat_t want = (quat_t){0.0f, sinf(angle / 2.0f), 0.0f, cosf(angle / 2.0f)};
+    quat_t curr = Entity_GetRot(uid);
+    float dot = want.x * curr.x + want.y * curr.y + want.z * curr.z + want.w * curr.w;
+    if(fabsf(dot) >= HUNT_AIM_COS)
+        return true;
+    G_Move_SetChangeDirection(uid, want);
+    return false;
+}
+
+/* An arrow struck: the last brings the game down, and the hunter goes to
+ * work the carcass */
+static void hunt_hit(uint32_t uid, struct hstate *hs)
+{
+    uint32_t res = hs->res_uid;
+    int hits = G_Resource_GetHuntHits(res) - 1;
+    G_Resource_SetHuntHits(res, hits);
+    E_Entity_Notify(EVENT_HUNT_HIT, res, (void*)((uintptr_t)uid), ES_ENGINE);
+    if(hits > 0)
+        return;
+
+    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished);
+    E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin_harvest);
+    E_Entity_Notify(EVENT_HARVEST_END, uid, NULL, ES_ENGINE);
+    G_Harvester_Gather(uid, res);
+}
+
 /* A pile on the ground is picked up rather than worked: as much as can be 
  * carried, at once, and then taken to be stored. */
 static void take_instant(uint32_t uid, struct hstate *hs)
@@ -1074,7 +1163,7 @@ static void on_arrive_at_resource(void *user, void *event)
 
     if(!G_EntityExists(hs->res_uid)
     || (G_FlagsGet(hs->res_uid) & ENTITY_FLAG_ZOMBIE)
-    || !M_NavObjAdjacent(s_map, uid, hs->res_uid)) {
+    || !at_resource(uid, hs->res_uid)) {
 
         /* harvester could not reach the resource; one the realm no longer
          * wants at the good takes other work instead of the next node */
@@ -1099,6 +1188,15 @@ static void on_arrive_at_resource(void *user, void *event)
 
     if(G_Resource_GetInstant(hs->res_uid)) {
         take_instant(uid, hs);
+        return;
+    }
+
+    /* It shoots once it has turned to face the game */
+    if(hunted(hs->res_uid) && !face_game(uid, hs->res_uid)) {
+        E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_at_resource, 
+            (void*)((uintptr_t)uid), G_RUNNING);
+        E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
+            (void*)((uintptr_t)uid), G_RUNNING);
         return;
     }
 
@@ -1929,6 +2027,7 @@ static bool harvester_transport_from_resources(uint32_t harvester, uint32_t stor
     struct valid_resource_arg arg = (struct valid_resource_arg){
         .ent_pos = pos,
         .ent_layer = Entity_NavLayer(harvester),
+        .ent_water = !!(G_FlagsGet(harvester) & ENTITY_FLAG_WATER),
         .rname = rname,
         .exclude = UID_NONE,
     };
@@ -2246,6 +2345,7 @@ uint32_t G_Harvester_NearestResource(uint32_t uid, vec2_t origin, const char *rn
     struct valid_resource_arg arg = (struct valid_resource_arg){
         .ent_pos = G_Pos_GetXZ(uid),
         .ent_layer = Entity_NavLayer(uid),
+        .ent_water = !!(G_FlagsGet(uid) & ENTITY_FLAG_WATER),
         .rname = rname,
         .exclude = UID_NONE
     };
@@ -2258,6 +2358,7 @@ size_t G_Harvester_ResourcesNear(uint32_t uid, vec2_t origin, const char *rname,
     struct valid_resource_arg arg = (struct valid_resource_arg){
         .ent_pos = G_Pos_GetXZ(uid),
         .ent_layer = Entity_NavLayer(uid),
+        .ent_water = !!(G_FlagsGet(uid) & ENTITY_FLAG_WATER),
         .rname = rname,
         .exclude = UID_NONE,
         .skip_reach = true
@@ -2274,8 +2375,8 @@ size_t G_Harvester_ResourcesNear(uint32_t uid, vec2_t origin, const char *rname,
 
 bool G_Harvester_ResourceReachable(uint32_t uid, uint32_t resource)
 {
-    return M_NavLocationsReachable(s_map, Entity_NavLayer(uid), G_Pos_GetXZ(uid),
-        G_Pos_GetXZ(resource));
+    return resource_reachable(Entity_NavLayer(uid), !!(G_FlagsGet(uid) & ENTITY_FLAG_WATER),
+        G_Pos_GetXZ(uid), resource);
 }
 
 size_t G_Harvester_AimedTargets(size_t maxout, uint32_t out[])
@@ -2650,7 +2751,15 @@ bool G_Harvester_Gather(uint32_t harvester, uint32_t resource)
     E_Entity_Notify(EVENT_HARVEST_TARGET_ACQUIRED, harvester, 
         (void*)(uintptr_t)resource, ES_ENGINE);
 
-    if(M_NavObjAdjacent(s_map, harvester, resource) && (resource_flags & ENTITY_FLAG_COLLISION)) {
+    if(hunted(resource) && in_hunt_range(harvester, resource)) {
+        on_arrive_at_resource((void*)((uintptr_t)harvester), NULL);
+    }else if(hunted(resource)) {
+        E_Entity_Register(EVENT_MOTION_END, harvester, on_arrive_at_resource, 
+            (void*)((uintptr_t)harvester), G_RUNNING);
+        E_Entity_Register(EVENT_ORDER_ISSUED, harvester, on_motion_begin_travel, 
+            (void*)((uintptr_t)harvester), G_RUNNING);
+        G_Move_SetEnterRange(harvester, resource, HUNT_RANGE);
+    }else if(M_NavObjAdjacent(s_map, harvester, resource) && (resource_flags & ENTITY_FLAG_COLLISION)) {
         on_arrive_at_resource((void*)((uintptr_t)harvester), NULL);
     }else{
         E_Entity_Register(EVENT_MOTION_END, harvester, on_arrive_at_resource, 

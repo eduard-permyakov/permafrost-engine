@@ -133,6 +133,8 @@ enum eventtype{
     /* New events go at the end: the handlers a save keeps are registered by number */
     EVENT_BUILDING_MARKED,
     EVENT_PLAYER_ORDER_ISSUED,
+    /* A hunter's arrow struck the game; the arg is the hunter */
+    EVENT_HUNT_HIT,
 
     EVENT_ENGINE_LAST = 0x1ffff,
 };

@@ -940,6 +940,31 @@ int G_District_Of(uint32_t uid)
         G_Pos_GetXZ(uid), NULL);
 }
 
+int G_District_OfNode(int faction, uint32_t node, float *out_cost)
+{
+    vec2_t pos = G_Pos_GetXZ(node);
+    if(!(G_FlagsGet(node) & ENTITY_FLAG_WATER))
+        return G_District_At(faction, false, pos, out_cost);
+
+    float reach = G_GetSelectionRadius(node) + X_COORDS_PER_TILE;
+    float best_cost = UNREACHED;
+    int ret = 0;
+    for(int i = 0; i < 16; i++) {
+        float angle = i * (2.0f * M_PI / 16);
+        vec2_t probe = (vec2_t){pos.x + cosf(angle) * reach, pos.z + sinf(angle) * reach};
+        float cost;
+        int owner = G_District_At(faction, false, probe, &cost);
+        if(owner && cost < best_cost) {
+            best_cost = cost;
+            ret = owner;
+        }
+    }
+    if(out_cost) {
+        *out_cost = best_cost;
+    }
+    return ret;
+}
+
 bool G_District_InTerritory(int faction, bool water, vec2_t pos)
 {
     float cost;

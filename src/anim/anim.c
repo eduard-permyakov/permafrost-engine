@@ -216,6 +216,8 @@ void A_Update(void)
             continue;
         uint32_t uid = kh_key(s_anim_ctx, it);
         struct anim_ctx *ctx = &kh_value(s_anim_ctx, it);
+        if(ctx->mode == ANIM_MODE_ONCE_HOLD && ctx->curr_frame == ctx->active->num_frames - 1)
+            continue;
         float frame_period_secs = 1.0f/ctx->key_fps;
         float elapsed_secs = (curr_ticks - ctx->curr_frame_start_ticks)/1000.0f;
 
@@ -232,7 +234,7 @@ void A_Update(void)
                 if(E_Entity_HasHandler(EVENT_ANIM_CYCLE_FINISHED, uid)) {
                     E_Entity_Notify(EVENT_ANIM_CYCLE_FINISHED, uid, NULL, ES_ENGINE);
                 }
-                if(ctx->mode == ANIM_MODE_ONCE
+                if((ctx->mode == ANIM_MODE_ONCE || ctx->mode == ANIM_MODE_ONCE_HOLD)
                 && E_Entity_HasHandler(EVENT_ANIM_FINISHED, uid)) {
                     E_Entity_Notify(EVENT_ANIM_FINISHED, uid, NULL, ES_ENGINE);
                 }

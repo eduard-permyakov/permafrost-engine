@@ -300,7 +300,7 @@ static uint32_t gather_node(uint32_t uid, const struct automation_state *astate,
 static bool could_serve(uint32_t site, const struct job_request *req);
 static int stock_target(int faction, const char *rname);
 static vec2_t work_origin(uint32_t uid, const struct automation_state *astate);
-static bool in_home_territory(int faction, int home, vec2_t pos);
+static bool in_home_territory(int faction, int home, uint32_t node);
 static void reconsider_work(uint32_t uid, struct automation_state *astate);
 static struct work_snapshot *snapshot_get(void);
 static struct good_demand *demand_get(struct work_snapshot *snap, int faction, const char *rname);
@@ -1300,7 +1300,7 @@ static float good_weight(int faction, int district, const char *rname)
 
 static float node_weight(int faction, uint32_t node, const char *rname)
 {
-    return good_weight(faction, G_District_At(faction, false, G_Pos_GetXZ(node), NULL), rname);
+    return good_weight(faction, G_District_OfNode(faction, node, NULL), rname);
 }
 
 /* The most the good is favoured anywhere in the realm */
@@ -1433,10 +1433,10 @@ static int node_capacity(uint32_t node, float worker_radius)
 }
 
 /* Whether the point lies within the home district's own territory */
-static bool in_home_territory(int faction, int home, vec2_t pos)
+static bool in_home_territory(int faction, int home, uint32_t node)
 {
     float cost;
-    return G_District_At(faction, false, pos, &cost) == home && cost <= G_DISTRICT_TERRITORY_COST;
+    return G_District_OfNode(faction, node, &cost) == home && cost <= G_DISTRICT_TERRITORY_COST;
 }
 
 /* The node of the good to gather at: the nearest with room about it, the
@@ -1457,7 +1457,7 @@ static uint32_t best_resource(uint32_t uid, vec2_t origin, const char *rname, fl
             scores[i] = INFINITY;
             continue;
         }
-        if(home && !in_home_territory(faction, home, G_Pos_GetXZ(nodes[i]))) {
+        if(home && !in_home_territory(faction, home, nodes[i])) {
             scores[i] = INFINITY;
             continue;
         }

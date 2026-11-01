@@ -86,6 +86,8 @@ struct rstate{
     bool        instant;
     /* Yields nothing for now (out of season): no harvester takes it as work */
     bool        dormant;
+    /* Hits a hunter's arrows must still land before it can be worked */
+    int         hunt_hits;
     kh_int_t   *replenish_resources;
     bool        is_storage_site;
     bool        ss_do_not_take_land;
@@ -194,6 +196,7 @@ bool G_Resource_AddEntity(uint32_t uid)
         .replenishable = false,
         .instant = false,
         .dormant = false,
+        .hunt_hits = 0,
         .replenish_resources = kh_init(int),
         .is_storage_site = false,
         .ss_do_not_take_land = false,
@@ -312,6 +315,20 @@ void G_Resource_SetDormant(uint32_t uid, bool set)
     struct rstate *rs = rstate_get(uid);
     assert(rs);
     rs->dormant = set;
+}
+
+int G_Resource_GetHuntHits(uint32_t uid)
+{
+    struct rstate *rs = rstate_get(uid);
+    assert(rs);
+    return rs->hunt_hits;
+}
+
+void G_Resource_SetHuntHits(uint32_t uid, int hits)
+{
+    struct rstate *rs = rstate_get(uid);
+    assert(rs);
+    rs->hunt_hits = (hits > 0) ? hits : 0;
 }
 
 bool G_Resource_SetReplenishAmount(uint32_t uid, const char *rname, int amount)
@@ -632,6 +649,12 @@ bool G_Resource_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &dormant, "dormant"));
 
+        struct attr hunt_hits = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.hunt_hits
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &hunt_hits, "hunt_hits"));
+
         Sched_TryYield();
     });
 
@@ -764,6 +787,12 @@ bool G_Resource_LoadState(struct SDL_RWops *stream)
             CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
             CHK_TRUE_RET(attr.type == TYPE_BOOL);
             rstate->dormant = attr.val.as_bool;
+        }
+
+        if(Attr_NextKeyIs(stream, "hunt_hits")) {
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            rstate->hunt_hits = attr.val.as_int;
         }
 
         Sched_TryYield();

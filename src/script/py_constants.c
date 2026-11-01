@@ -814,6 +814,7 @@ static void s_expose_event_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, EVENT_PROVISION_CHANGED);
     PY_EXPOSE_ENUM(module, EVENT_BUILDING_MARKED);
     PY_EXPOSE_ENUM(module, EVENT_PLAYER_ORDER_ISSUED);
+    PY_EXPOSE_ENUM(module, EVENT_HUNT_HIT);
     PY_EXPOSE_ENUM(module, EVENT_ENGINE_LAST);
 }
 
@@ -945,6 +946,7 @@ static void s_expose_anim_constants(PyObject *module)
 {
     PY_EXPOSE_ENUM(module, ANIM_MODE_LOOP);
     PY_EXPOSE_ENUM(module, ANIM_MODE_ONCE);
+    PY_EXPOSE_ENUM(module, ANIM_MODE_ONCE_HOLD);
 }
 
 static void s_expose_engine_constants(PyObject *module)

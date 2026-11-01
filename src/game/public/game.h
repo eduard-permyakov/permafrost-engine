@@ -340,6 +340,8 @@ bool                  G_Cluster_TypeOf(uint32_t uid, char *out_type, size_t len,
 int                   G_District_At(int faction, bool water, vec2_t pos, float *out_cost);
 int                   G_District_Of(uint32_t uid);
 bool                  G_District_InTerritory(int faction, bool water, vec2_t pos);
+/* A node on the water counts for the land at its edge */
+int                   G_District_OfNode(int faction, uint32_t node, float *out_cost);
 void                  G_District_Update(void);
 void                  G_District_SetShow(bool on);
 bool                  G_District_GetShow(void);
@@ -724,6 +726,8 @@ bool        G_Resource_GetInstant(uint32_t uid);
 void        G_Resource_SetInstant(uint32_t uid, bool set);
 bool        G_Resource_GetDormant(uint32_t uid);
 void        G_Resource_SetDormant(uint32_t uid, bool set);
+int         G_Resource_GetHuntHits(uint32_t uid);
+void        G_Resource_SetHuntHits(uint32_t uid, int hits);
 bool        G_Resource_SetReplenishAmount(uint32_t uid, const char *rname, int amount);
 int         G_Resource_GetReplenishAmount(uint32_t uid, const char *rname);
 int         G_Resource_GetRestoredAmount(uint32_t uid);

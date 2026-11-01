@@ -52,6 +52,8 @@ struct anim_data;
 enum anim_mode{
     ANIM_MODE_LOOP,
     ANIM_MODE_ONCE,
+    /* Played once, and the last frame held until another clip is set */
+    ANIM_MODE_ONCE_HOLD,
 };
 
 /* Data needed by the animation shader to 
