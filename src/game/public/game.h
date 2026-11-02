@@ -1113,7 +1113,10 @@ void G_Automation_SetAutomaticWork(uint32_t uid, bool on);
 void G_Automation_SetHomeDistrict(uint32_t uid, int district);
 int  G_Automation_GetHomeDistrict(uint32_t uid);
 bool G_Automation_GetAutomaticWork(uint32_t uid);
-/* Keeps a worker left to itself to gathering one resource; "" lets it choose */
+/* The pinned work of a worker that only builds, at its district's sites or about itself */
+#define BUILD_PIN "Build"
+
+/* Keeps a worker left to itself to gathering one resource, or to building with BUILD_PIN; "" lets it choose */
 void G_Automation_SetPinnedWork(uint32_t uid, const char *rname);
 const char *G_Automation_GetPinnedWork(uint32_t uid);
 /* Whether the worker's gathering is of its own choosing, not an order */
@@ -1142,6 +1145,15 @@ float G_Automation_GetDistrictWeight(int district, const char *rname);
 /* Whether workers carry goods from the district's stores to other districts; carts always do */
 void  G_Automation_SetWorkersCarryOut(int district, bool on);
 bool  G_Automation_GetWorkersCarryOut(int district);
+/* How many of a faction's workers of no district build at once */
+void G_Automation_SetCrewSize(int faction, int size);
+int  G_Automation_GetCrewSize(int faction);
+/* How many of the faction's workers of no district are building or bound for a site */
+int  G_Automation_CrewBusy(int faction);
+/* Whether a site that could be worked on has no builder because its faction's crew is
+ * all busy, with how many of the crew are and its size
+ */
+bool G_Automation_AwaitsBuilders(uint32_t site, int *out_busy, int *out_size);
 /* Why the site's request for the resource is unserved, and for how long it has waited */
 enum request_status G_Automation_RequestStatus(uint32_t site, const char *rname, int *out_waited_ms);
 

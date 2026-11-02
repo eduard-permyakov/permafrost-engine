@@ -883,6 +883,7 @@ static void s_expose_game_constants(PyObject *module)
     PyModule_AddIntConstant(module, "PRIORITY_NORMAL", SS_PRIORITY_NORMAL);
     PyModule_AddIntConstant(module, "PRIORITY_URGENT", SS_PRIORITY_URGENT);
     PyModule_AddIntConstant(module, "PRIORITY_UPKEEP", SS_PRIORITY_UPKEEP);
+    PyModule_AddStringConstant(module, "BUILD_PIN", BUILD_PIN);
     PY_EXPOSE_ENUM(module, REQUEST_OK);
     PY_EXPOSE_ENUM(module, REQUEST_NO_SOURCE);
     PY_EXPOSE_ENUM(module, REQUEST_NO_CARRIER);

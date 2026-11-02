@@ -59,6 +59,8 @@ void G_Harvester_ClearQueuedCmd(uint32_t uid);
 bool G_Harvester_Idle(uint32_t uid);
 bool G_Harvester_ReplenishResource(uint32_t harvester, uint32_t resource);
 uint32_t G_Harvester_TransportTarget(uint32_t harvester);
+/* The site a builder fetching its materials goes back to build, or NULL_UID */
+uint32_t G_Harvester_SupplyingSite(uint32_t harvester);
 /* A gatherer brings the load in its hands to 'site', or the nearest site that
  * takes it with NULL_UID, and stops there unless 'and_back' sends it back to
  * gathering. Fails for a carrier on a transport job or a site that does not

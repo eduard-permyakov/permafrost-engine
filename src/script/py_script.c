@@ -375,6 +375,10 @@ static PyObject *PyPf_district_weight(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_district_weight(PyObject *self, PyObject *args);
 static PyObject *PyPf_workers_carry_out(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_workers_carry_out(PyObject *self, PyObject *args);
+static PyObject *PyPf_crew_size(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_crew_size(PyObject *self, PyObject *args);
+static PyObject *PyPf_crew_busy(PyObject *self, PyObject *args);
+static PyObject *PyPf_awaits_builders(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_workshop_posts(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_post_demand(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_locked_posts(PyObject *self, PyObject *args);
@@ -1483,6 +1487,24 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_set_workers_carry_out, METH_VARARGS,
     "Takes a district ID and whether workers carry goods from its stores to other districts. "
     "Carts always do."},
+
+    {"crew_size",
+    (PyCFunction)PyPf_crew_size, METH_VARARGS,
+    "Takes a faction ID. Returns how many of its workers of no district build at once."},
+
+    {"set_crew_size",
+    (PyCFunction)PyPf_set_crew_size, METH_VARARGS,
+    "Takes a faction ID and how many of its workers of no district build at once."},
+
+    {"crew_busy",
+    (PyCFunction)PyPf_crew_busy, METH_VARARGS,
+    "Takes a faction ID. Returns how many of its workers of no district are building or bound "
+    "for a site."},
+
+    {"awaits_builders",
+    (PyCFunction)PyPf_awaits_builders, METH_VARARGS,
+    "Takes a site. Returns a tuple of whether it waits for builders because its faction's crew "
+    "is all busy, how many of the crew are, and the crew's size."},
 
     {"set_workshop_posts",
     (PyCFunction)PyPf_set_workshop_posts, METH_VARARGS,
@@ -6458,6 +6480,52 @@ static PyObject *PyPf_set_workers_carry_out(PyObject *self, PyObject *args)
     }
     G_Automation_SetWorkersCarryOut(district, on);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_crew_size(PyObject *self, PyObject *args)
+{
+    int faction;
+    if(!PyArg_ParseTuple(args, "i", &faction) || faction < 0 || faction >= MAX_FACTIONS) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a faction ID.");
+        return NULL;
+    }
+    return PyInt_FromLong(G_Automation_GetCrewSize(faction));
+}
+
+static PyObject *PyPf_set_crew_size(PyObject *self, PyObject *args)
+{
+    int faction, size;
+    if(!PyArg_ParseTuple(args, "ii", &faction, &size) 
+    || faction < 0 || faction >= MAX_FACTIONS || size < 0) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a faction ID and a crew size of 0 or more.");
+        return NULL;
+    }
+    G_Automation_SetCrewSize(faction, size);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_crew_busy(PyObject *self, PyObject *args)
+{
+    int faction;
+    if(!PyArg_ParseTuple(args, "i", &faction) || faction < 0 || faction >= MAX_FACTIONS) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a faction ID.");
+        return NULL;
+    }
+    return PyInt_FromLong(G_Automation_CrewBusy(faction));
+}
+
+static PyObject *PyPf_awaits_builders(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    if(!PyArg_ParseTuple(args, "O", &obj) || !S_Entity_Check(obj)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a pf.Entity object.");
+        return NULL;
+    }
+    uint32_t uid;
+    S_Entity_UIDForObj(obj, &uid);
+    int busy, size;
+    bool awaits = G_Automation_AwaitsBuilders(uid, &busy, &size);
+    return Py_BuildValue("(Oii)", awaits ? Py_True : Py_False, busy, size);
 }
 
 static bool workshop_arg(PyObject *obj, uint32_t *out)

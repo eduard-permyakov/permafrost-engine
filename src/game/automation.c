@@ -131,6 +131,10 @@
 #define ALLOWED_STEP_UP              (2)
 /* Gatherers leave off to build a site that has fewer builders than this */
 #define SITE_BUILDERS                (3)
+/* A road tile takes one builder beyond its founder */
+#define ROAD_SITE_BUILDERS           (2)
+/* How many workers of no district build at once, unless the realm sets it */
+#define CREW_SIZE                    (4)
 #define MAX_TRACE_STEPS              (24)
 #define MAX_VACANCIES                (256)
 /* How long a workshop's own district has to fill its posts before a worker of
@@ -228,6 +232,8 @@ struct work_site{
     int      builders;
     /* Waiting on materials that nothing can bring it now */
     bool     starved;
+    /* Road work, staffed only once no building in reach wants builders */
+    bool     road;
 };
 
 /* What every worker looking for a job this tick weighs, gathered once for all of them */
@@ -241,6 +247,8 @@ struct work_snapshot{
     struct good_demand demands[MAX_DEMANDS];
     size_t             nsites;
     struct work_site   sites[MAX_WORK_SITES];
+    /* Each faction's workers of no district building or bound for a site */
+    int                crew[MAX_FACTIONS];
 };
 VEC_TYPE(source, struct job_source)
 VEC_IMPL(static inline, source, struct job_source)
@@ -337,6 +345,7 @@ static khash_t(trace)  *s_traces;
 static vec_priority_t  s_priorities;
 /* Districts whose stores only carts carry out of; not saved, the scripts set them again */
 static vec_district_t  s_kept_home;
+static int             s_crew_size[MAX_FACTIONS];
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -1162,6 +1171,51 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
     PERF_RETURN_VOID();
 }
 
+static bool build_pinned(const struct automation_state *astate)
+{
+    return !strcmp(astate->pinned, BUILD_PIN);
+}
+
+/* A worker of no district that builds as the realm's construction crew: not on the
+ * player's order, nor set to building by the player
+ */
+static bool in_crew(const struct automation_state *astate)
+{
+    return astate->home_district == 0 && !build_pinned(astate) && !astate->ordered;
+}
+
+/* The site a builder works on, or fetches the materials for */
+static uint32_t crew_site(uint32_t uid)
+{
+    uint32_t ret = G_Builder_Target(uid);
+    if(ret == NULL_UID && (G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER)) {
+        ret = G_Harvester_SupplyingSite(uid);
+    }
+    return ret;
+}
+
+static void count_crews(int out[MAX_FACTIONS])
+{
+    memset(out, 0, sizeof(int) * MAX_FACTIONS);
+    uint32_t uid;
+    struct automation_state *astate;
+    kh_foreach_val_ptr(s_entity_state_table, uid, astate, {
+        if(!in_crew(astate) || !(G_FlagsGet(uid) & ENTITY_FLAG_BUILDER))
+            continue;
+        int faction = G_GetFactionID(uid);
+        if(crew_site(uid) != NULL_UID && faction >= 0 && faction < MAX_FACTIONS) {
+            out[faction]++;
+        }
+    });
+}
+
+static bool crew_full(const struct work_snapshot *snap, int faction)
+{
+    if(faction < 0 || faction >= MAX_FACTIONS)
+        return true;
+    return snap->crew[faction] >= s_crew_size[faction];
+}
+
 static bool waiting_carrier(uint32_t uid, struct automation_state *astate)
 {
     if(!(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER))
@@ -1170,7 +1224,7 @@ static bool waiting_carrier(uint32_t uid, struct automation_state *astate)
         return false;
     if(G_Posts_Holds(uid))
         return false;
-    if(!astate->automatic_transport)
+    if(!astate->automatic_transport || build_pinned(astate))
         return false;
     if(G_Harvester_GetCurrTotalCarry(uid))
         return false;
@@ -1181,10 +1235,16 @@ static bool waiting_carrier(uint32_t uid, struct automation_state *astate)
 
 struct site_search{
     int faction;
+    /* Only sites in this district, or in any with 0 */
+    int district;
     /* Only sites with fewer builders than this, or any with 0 */
     int max_builders;
     /* Only sites that have their materials and can be worked on */
     bool supplied;
+    /* Only sites not yet founded */
+    bool unfounded;
+    /* Only road work, or only the rest */
+    bool road;
 };
 
 /* Whether a site being built still lacks a good that no site of its faction can spare */
@@ -1219,6 +1279,14 @@ static bool unfinished_site(uint32_t uid)
     return G_Building_IsMarked(uid) && !G_Building_IsCompleted(uid);
 }
 
+/* Work on a road tile, the only site units walk through, unless the player marked it urgent */
+static bool road_work(uint32_t uid)
+{
+    if((G_FlagsGet(uid) & ENTITY_FLAG_COLLISION) || !G_Building_GetPathable(uid))
+        return false;
+    return !(G_FlagsGet(uid) & ENTITY_FLAG_STORAGE_SITE) || G_StorageSite_GetPriority(uid) != SS_PRIORITY_URGENT;
+}
+
 /* The nearest of this tick's unfinished sites within reach that the search admits */
 static struct work_site *nearest_site(struct work_snapshot *snap, vec2_t pos, 
                                       const struct site_search *ss)
@@ -1229,7 +1297,13 @@ static struct work_site *nearest_site(struct work_snapshot *snap, vec2_t pos,
         struct work_site *curr = &snap->sites[i];
         if(curr->faction != ss->faction)
             continue;
-        if(ss->max_builders && curr->builders >= ss->max_builders)
+        if(curr->road != ss->road)
+            continue;
+        int max_builders = ss->max_builders;
+        if(curr->road && (max_builders == 0 || max_builders > ROAD_SITE_BUILDERS)) {
+            max_builders = ROAD_SITE_BUILDERS;
+        }
+        if(max_builders && curr->builders >= max_builders)
             continue;
         vec2_t delta, site_pos = G_Pos_GetXZ(curr->uid);
         PFM_Vec2_Sub(&site_pos, &pos, &delta);
@@ -1242,10 +1316,37 @@ static struct work_site *nearest_site(struct work_snapshot *snap, vec2_t pos,
             continue;
         if(!ss->supplied && curr->starved)
             continue;
+        if(ss->unfounded && G_Building_IsFounded(curr->uid))
+            continue;
+        if(ss->district && G_District_Of(curr->uid) != ss->district)
+            continue;
         best = dist;
         ret = curr;
     }
     return ret;
+}
+
+/* The site a builder takes: a building before road work, and one of either
+ * that can be worked on before one that waits for its founder
+ */
+static struct work_site *pick_site(struct work_snapshot *snap, vec2_t pos, int faction, int district)
+{
+    for(int road = 0; road < 2; road++) {
+        struct site_search arg = (struct site_search){
+            .faction = faction,
+            .district = district,
+            .max_builders = SITE_BUILDERS,
+            .supplied = true,
+            .road = road
+        };
+        struct work_site *ret = nearest_site(snap, pos, &arg);
+        if(ret)
+            return ret;
+        arg = (struct site_search){ .faction = faction, .district = district, .max_builders = 1, .road = road };
+        if((ret = nearest_site(snap, pos, &arg)))
+            return ret;
+    }
+    return NULL;
 }
 
 /* The total of the faction's requests for a resource, met by gathering */
@@ -1458,10 +1559,13 @@ static struct work_snapshot *snapshot_get(void)
             .uid = uid,
             .faction = G_GetFactionID(uid),
             .builders = G_Builder_CountOn(uid),
-            .starved = site_starved(uid, &sites)
+            .starved = site_starved(uid, &sites),
+            .road = road_work(uid)
         };
     }
     vec_entity_destroy(&sites);
+
+    count_crews(s_snapshot.crew);
 
     if(!s_snapshot.aimed) {
         s_snapshot.aimed = kh_init(count);
@@ -1631,13 +1735,15 @@ static struct good_demand *demand_get(struct work_snapshot *snap, int faction, c
 }
 
 /* Why the nearest unfinished site, if any, took no builder */
-static void note_passed_site(uint32_t uid, struct work_snapshot *snap, vec2_t pos, int faction)
+static void note_passed_site(uint32_t uid, struct work_snapshot *snap, vec2_t pos, int faction, int district)
 {
     struct work_site *nearest = NULL;
     float best = 0.0f;
     for(int i = 0; i < snap->nsites; i++) {
         struct work_site *curr = &snap->sites[i];
         if(curr->faction != faction || !unfinished_site(curr->uid))
+            continue;
+        if(district && G_District_Of(curr->uid) != district)
             continue;
         float dist = distance(G_Pos_GetXZ(curr->uid), pos);
         if(nearest == NULL || dist < best) {
@@ -1676,30 +1782,27 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
     vec2_t pos = work_origin(uid, astate);
     struct work_snapshot *snap = snapshot_get();
 
-    if((flags & ENTITY_FLAG_BUILDER) && astate->pinned[0]) {
+    bool crew = in_crew(astate);
+    if((flags & ENTITY_FLAG_BUILDER) && astate->pinned[0] && !build_pinned(astate)) {
         trace_note(uid, "build", "skipped", "pinned", astate->pinned, NULL_UID);
+    }else if((flags & ENTITY_FLAG_BUILDER) && crew && crew_full(snap, faction)) {
+        trace_note(uid, "build", "skipped", "crew_full", NULL, NULL_UID);
     }else if(flags & ENTITY_FLAG_BUILDER) {
         /* Builders spread over the sites that can be worked on; one waiting on its 
          * materials gets one to found it, and the rest gather and carry them */
-        struct site_search arg = (struct site_search){ 
-            .faction = faction, 
-            .max_builders = SITE_BUILDERS,
-            .supplied = true
-        };
-        struct work_site *site = nearest_site(snap, pos, &arg);
-        if(!site) {
-            arg = (struct site_search){ .faction = faction, .max_builders = 1 };
-            site = nearest_site(snap, pos, &arg);
-        }
+        struct work_site *site = pick_site(snap, pos, faction, astate->home_district);
         if(site && G_Builder_Build(uid, site->uid)) {
             trace_note(uid, "build", "taken", "site", NULL, site->uid);
             site->builders++;
+            if(crew) {
+                snap->crew[faction]++;
+            }
             return true;
         }
         if(site) {
             trace_note(uid, "build", "failed", "unreachable", NULL, site->uid);
         }else{
-            note_passed_site(uid, snap, pos, faction);
+            note_passed_site(uid, snap, pos, faction, astate->home_district);
         }
     }
 
@@ -1710,6 +1813,10 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
         bool ret = G_Harvester_BringInLoad(uid, NULL_UID, false);
         trace_note(uid, "load", ret ? "taken" : "failed", "in_hand", NULL, NULL_UID);
         return ret;
+    }
+    if(build_pinned(astate)) {
+        trace_note(uid, "gather", "skipped", "build_pin", NULL, NULL_UID);
+        return false;
     }
 
     const char *candidates[MAX_RESOURCES];
@@ -1810,6 +1917,8 @@ static const char *not_waiting_why(uint32_t uid, struct automation_state *astate
         return "off";
     if(G_Harvester_GetCurrTotalCarry(uid))
         return "laden";
+    if(build_pinned(astate))
+        return "build_pin";
     return "hungry";
 }
 
@@ -2239,6 +2348,9 @@ bool G_Automation_Init(void)
     vec_request_init(&s_snapshot.requests);
     vec_priority_init(&s_priorities);
     vec_district_init(&s_kept_home);
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+        s_crew_size[i] = CREW_SIZE;
+    }
     s_snapshot.valid = false;
 
     E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
@@ -2500,6 +2612,8 @@ bool G_Automation_LeavesGathering(uint32_t uid, const char *rname, uint32_t node
         return false;
     if(strcmp(astate->working, rname) || !strcmp(astate->pinned, rname))
         return false;
+    if(build_pinned(astate))
+        return true;
     int faction = G_GetFactionID(uid);
     struct work_snapshot *snap = snapshot_get();
     struct good_demand *demand = demand_get(snap, faction, rname);
@@ -2516,13 +2630,31 @@ bool G_Automation_LeavesGathering(uint32_t uid, const char *rname, uint32_t node
         return true;
     if(astate->pinned[0] || !(G_FlagsGet(uid) & ENTITY_FLAG_BUILDER))
         return false;
-    /* Only for a site that can be worked: one waiting on its materials needs gatherers more */
-    struct site_search arg = (struct site_search){
-        .faction = faction,
-        .max_builders = SITE_BUILDERS,
-        .supplied = true
-    };
-    return nearest_site(snap, work_origin(uid, astate), &arg) != NULL;
+    if(in_crew(astate) && crew_full(snap, faction))
+        return false;
+    /* Only for a site that can be worked, or founded: one waiting on its materials needs gatherers more */
+    vec2_t pos = work_origin(uid, astate);
+    for(int road = 0; road < 2; road++) {
+        struct site_search arg = (struct site_search){
+            .faction = faction,
+            .district = astate->home_district,
+            .max_builders = SITE_BUILDERS,
+            .supplied = true,
+            .road = road
+        };
+        if(nearest_site(snap, pos, &arg))
+            return true;
+        arg = (struct site_search){
+            .faction = faction,
+            .district = astate->home_district,
+            .max_builders = 1,
+            .unfounded = true,
+            .road = road
+        };
+        if(nearest_site(snap, pos, &arg))
+            return true;
+    }
+    return false;
 }
 
 void G_Automation_Balance(int faction, const char *rname, int *out_surplus, int *out_shortfall)
@@ -2706,6 +2838,42 @@ bool G_Automation_GetWorkersCarryOut(int district)
     return vec_district_indexof(&s_kept_home, district, districts_equal) == -1;
 }
 
+void G_Automation_SetCrewSize(int faction, int size)
+{
+    if(faction < 0 || faction >= MAX_FACTIONS)
+        return;
+    s_crew_size[faction] = MAX(size, 0);
+    s_snapshot.valid = false;
+}
+
+int G_Automation_GetCrewSize(int faction)
+{
+    if(faction < 0 || faction >= MAX_FACTIONS)
+        return 0;
+    return s_crew_size[faction];
+}
+
+int G_Automation_CrewBusy(int faction)
+{
+    if(faction < 0 || faction >= MAX_FACTIONS)
+        return 0;
+    int crews[MAX_FACTIONS];
+    count_crews(crews);
+    return crews[faction];
+}
+
+bool G_Automation_AwaitsBuilders(uint32_t site, int *out_busy, int *out_size)
+{
+    int faction = G_GetFactionID(site);
+    *out_busy = G_Automation_CrewBusy(faction);
+    *out_size = G_Automation_GetCrewSize(faction);
+    if(!unfinished_site(site) || G_Builder_CountOn(site) > 0)
+        return false;
+    if(G_Building_IsFounded(site) && !G_Building_IsSupplied(site))
+        return false;
+    return (*out_busy >= *out_size);
+}
+
 bool G_Automation_SavePriorities(struct SDL_RWops *stream)
 {
     struct attr num_priorities = (struct attr){
@@ -2744,6 +2912,20 @@ bool G_Automation_SavePriorities(struct SDL_RWops *stream)
             .val.as_int = prio->stock_target
         };
         CHK_TRUE_RET(Attr_Write(stream, &target, "stock_target"));
+    }
+
+    struct attr num_crews = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = MAX_FACTIONS
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_crews, "num_crew_sizes"));
+
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+        struct attr size = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = s_crew_size[i]
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &size, "crew_size"));
     }
     return true;
 }
@@ -2784,6 +2966,23 @@ bool G_Automation_LoadPriorities(struct SDL_RWops *stream)
         prio.stock_target = attr.val.as_int;
 
         CHK_TRUE_RET(vec_priority_push(&s_priorities, prio));
+    }
+
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+        s_crew_size[i] = CREW_SIZE;
+    }
+    if(Attr_NextKeyIs(stream, "num_crew_sizes")) {
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        const size_t num_crews = attr.val.as_int;
+
+        for(int i = 0; i < num_crews; i++) {
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            if(i < MAX_FACTIONS) {
+                s_crew_size[i] = MAX(attr.val.as_int, 0);
+            }
+        }
     }
     return true;
 }

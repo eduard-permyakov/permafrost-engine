@@ -3216,6 +3216,19 @@ bool G_Harvester_ReplenishResource(uint32_t harvester, uint32_t resource)
     return G_Harvester_Transport(harvester, resource);
 }
 
+uint32_t G_Harvester_SupplyingSite(uint32_t harvester)
+{
+    struct hstate *hs = hstate_get(harvester);
+    if(!hs)
+        return NULL_UID;
+    /* A command left queued by a trip given up is not followed */
+    if(hs->queued.cmd == CMD_BUILD && G_Harvester_TransportTarget(harvester) == hs->queued.uid_arg)
+        return hs->queued.uid_arg;
+    if(hs->queued.cmd == CMD_SUPPLY && hs->state == STATE_HARVESTING_SEEK_STORAGE)
+        return hs->queued.uid_arg;
+    return NULL_UID;
+}
+
 uint32_t G_Harvester_TransportTarget(uint32_t harvester)
 {
     struct hstate *hs = hstate_get(harvester);
