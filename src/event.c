@@ -178,6 +178,7 @@ static const char *s_event_str_table[] = {
     STR(EVENT_HUNT_HIT),
     STR(EVENT_ORDER_HOLD_BEGIN),
     STR(EVENT_ORDER_HOLD_END),
+    STR(EVENT_POST_MANNED),
 };
 
 static khash_t(handler_desc) *s_event_handler_table;

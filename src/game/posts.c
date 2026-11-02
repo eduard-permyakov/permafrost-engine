@@ -194,8 +194,12 @@ static bool usable_workshop(uint32_t uid)
     return G_EntityExists(uid) && !G_EntityIsZombie(uid);
 }
 
+/* Beside the workshop, or beside the buildings it stands joined to, which
+ * the units' arrival takes as one */
 static bool at_door(uint32_t unit, uint32_t workshop)
 {
+    if(M_NavObjAdjacent(s_map, unit, workshop))
+        return true;
     struct obb obb;
     Entity_CurrentOBB(workshop, &obb, true);
     return M_NavObjAdjacentToStaticWith(s_map, G_Pos_GetXZ(unit),
@@ -460,8 +464,26 @@ static void on_player_order(void *user, void *event)
     holder_remove(uid);
 }
 
+/* A holder the automation put at the workshop, to make room for one sent by
+ * hand: one on its way or away before one at work */
+static uint32_t bumpable_holder(const struct workshop *ws, uint32_t unit)
+{
+    uint32_t ret = NULL_UID;
+    for(int i = 0; i < ws->nholders; i++) {
+        uint32_t curr = ws->holders[i];
+        const struct holder *h = holder_get(curr);
+        if(curr == unit || !h || h->ordered)
+            continue;
+        if(h->state != HOLDER_INSIDE)
+            return curr;
+        ret = curr;
+    }
+    return ret;
+}
+
 /* Whether the unit can be sent by hand to the workshop, which has a post that is
- * not filled, whether or not it is kept empty, and whether or not it has work */
+ * not filled, or held by one the automation put there, whether or not it is kept
+ * empty, and whether or not it has work; one holding a post there already can */
 static bool can_man(uint32_t workshop, uint32_t unit)
 {
     const struct workshop *ws = workshop_get(workshop);
@@ -474,7 +496,10 @@ static bool can_man(uint32_t workshop, uint32_t unit)
         return false;
     if(G_GetFactionID(unit) != G_GetFactionID(workshop))
         return false;
-    return (ws->nholders < ws->posts);
+    const struct holder *h = holder_get(unit);
+    if(h && h->workshop == workshop)
+        return true;
+    return (ws->nholders < ws->posts) || (bumpable_holder(ws, unit) != NULL_UID);
 }
 
 static void man_selection(uint32_t workshop)
@@ -698,6 +723,7 @@ bool G_Posts_Man(uint32_t workshop, uint32_t unit)
     struct holder *h = holder_get(unit);
     if(h && h->workshop == workshop) {
         h->ordered = true;
+        E_Global_NotifyImmediate(EVENT_POST_MANNED, (void*)((uintptr_t)unit), ES_ENGINE);
         return true;
     }
     if(!can_man(workshop, unit))
@@ -709,10 +735,16 @@ bool G_Posts_Man(uint32_t workshop, uint32_t unit)
     }
     if(G_FlagsGet(unit) & ENTITY_FLAG_GARRISONED)
         return false;
+    struct workshop *ws = workshop_get(workshop);
+    if(ws->nholders >= ws->posts) {
+        uint32_t bumped = bumpable_holder(ws, unit);
+        release(bumped, "bumped", false);
+        if(holder_get(bumped))
+            return false;
+    }
 
     /* Not as the player's order, whose event lands after the take and would undo it */
     G_NotifyOrderIssued(unit, true, false);
-    struct workshop *ws = workshop_get(workshop);
     int locked = ws->locked;
     if(open_posts(ws) <= 0) {
         ws->locked = ws->posts - ws->nholders - 1;
@@ -733,6 +765,7 @@ bool G_Posts_Man(uint32_t workshop, uint32_t unit)
         return false;
     }
     G_Automation_TraceFollowOn(unit, "post", "manned", NULL, workshop);
+    E_Global_NotifyImmediate(EVENT_POST_MANNED, (void*)((uintptr_t)unit), ES_ENGINE);
     return true;
 }
 

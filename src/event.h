@@ -138,6 +138,8 @@ enum eventtype{
     /* A worker done with the player's order waits for the next; the arg is the worker */
     EVENT_ORDER_HOLD_BEGIN,
     EVENT_ORDER_HOLD_END,
+    /* A worker was sent to a post by the player's hand; the arg is the worker */
+    EVENT_POST_MANNED,
 
     EVENT_ENGINE_LAST = 0x1ffff,
 };
