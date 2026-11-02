@@ -186,6 +186,8 @@ struct searcharg{
     uint32_t storage;
     const char *rname;
     enum tstrategy strat;
+    /* The room a drop-off must have left */
+    int room;
 };
 
 struct valid_resource_arg{
@@ -565,12 +567,18 @@ static bool valid_storage_site_dropoff(uint32_t curr, void *arg)
 
     if(cap == 0)
         return false;
-    if(stored == cap)
+    if(stored == cap || cap - stored < sarg->room)
         return false;
     if(!G_StorageSite_Accepts(curr, sarg->rname))
         return false;
 
     return true;
+}
+
+static bool dropoff_has_room(uint32_t uid, uint32_t site, const char *rname)
+{
+    struct searcharg arg = (struct searcharg){uid, NULL_UID, rname};
+    return valid_storage_site_dropoff(site, &arg);
 }
 
 static bool building_site(uint32_t uid)
@@ -671,11 +679,18 @@ static bool valid_resource(uint32_t uid, void *arg)
     return true;
 }
 
+/* The nearest store with room for the whole load, else the nearest with any */
 uint32_t nearest_storage_site_dropoff(uint32_t uid, const char *rname)
 {
     vec2_t pos = G_Pos_GetXZ(uid);
     struct searcharg arg = (struct searcharg){uid, NULL_UID, rname};
-    return G_Pos_NearestWithPred(pos, valid_storage_site_dropoff, (void*)&arg, 0.0f);
+    arg.room = G_Harvester_GetCurrCarry(uid, rname);
+    uint32_t ret = G_Pos_NearestWithPred(pos, valid_storage_site_dropoff, (void*)&arg, 0.0f);
+    if(ret == NULL_UID && arg.room > 1) {
+        arg.room = 0;
+        ret = G_Pos_NearestWithPred(pos, valid_storage_site_dropoff, (void*)&arg, 0.0f);
+    }
+    return ret;
 }
 
 uint32_t nearest_storage_site_source(uint32_t uid, uint32_t storage, const char *rname, enum tstrategy strat)
@@ -1860,10 +1875,32 @@ static const char *transport_resource(struct hstate *hs, uint32_t target)
     return ret;
 }
 
+/* How far a unit has to walk by 'src' to 'dest' */
+static float trip_length(uint32_t uid, uint32_t src, uint32_t dest)
+{
+    vec2_t pos = G_Pos_GetXZ(uid);
+    vec2_t src_pos = G_Pos_GetXZ(src);
+    vec2_t dest_pos = G_Pos_GetXZ(dest);
+    vec2_t a, b;
+    PFM_Vec2_Sub(&src_pos, &pos, &a);
+    PFM_Vec2_Sub(&dest_pos, &src_pos, &b);
+    return PFM_Vec2_Len(&a) + PFM_Vec2_Len(&b);
+}
+
+/* How far a transporter still has to go to bring its load to its target */
+static float distance_left(uint32_t uid, const struct hstate *hs)
+{
+    bool getting = (hs->state == STATE_TRANSPORT_GETTING && G_EntityExists(hs->transport_src_uid));
+    return trip_length(uid, getting ? hs->transport_src_uid : hs->transport_dest_uid, hs->transport_dest_uid);
+}
+
 /* How much of the resource other transporters are already bringing to the 
  * target: the loads of those on their way to it and the planned loads of 
- * those still fetching for it */
-static int amount_en_route(uint32_t target, const char *rname, uint32_t exclude)
+ * those still fetching for it; only of those with less than 'within' left
+ * to go, and of builders fetching for it, so that a builder fetches what
+ * it would bring sooner than the carrier bound for the site, or one who
+ * went off to eat on the way */
+static int amount_en_route(uint32_t target, const char *rname, uint32_t exclude, float within)
 {
     int ret = 0;
     uint32_t uid;
@@ -1874,6 +1911,10 @@ static int amount_en_route(uint32_t target, const char *rname, uint32_t exclude)
         if(uid == exclude || hs->transport_dest_uid != target)
             continue;
         if(!hs->res_name || strcmp(hs->res_name, rname))
+            continue;
+
+        bool fetching_to_build = (hs->queued.cmd == CMD_BUILD && hs->queued.uid_arg == target);
+        if(!fetching_to_build && within < INFINITY && distance_left(uid, hs) > within)
             continue;
 
         int amount = 0;
@@ -1892,7 +1933,7 @@ static int amount_en_route(uint32_t target, const char *rname, uint32_t exclude)
  * the first one being out, and the ones other transporters are already 
  * bringing enough of, so that a lower priority one gets its turn */
 static const char *transport_resource_with_source(uint32_t uid, struct hstate *hs, 
-                                                  uint32_t target, uint32_t *out_src)
+                                                  uint32_t target, bool to_build, uint32_t *out_src)
 {
     for(int i = 0; i < vec_size(&hs->priority); i++) {
 
@@ -1906,11 +1947,13 @@ static const char *transport_resource_with_source(uint32_t uid, struct hstate *h
         int stored = G_StorageSite_GetCurr(target, rname);
         if(desired <= stored)
             continue;
-        if(desired <= stored + amount_en_route(target, rname, uid))
+        if(!to_build && desired <= stored + amount_en_route(target, rname, uid, INFINITY))
             continue;
 
         uint32_t src = transport_source(uid, target, rname);
         if(src == NULL_UID)
+            continue;
+        if(to_build && desired <= stored + amount_en_route(target, rname, uid, trip_length(uid, src, target)))
             continue;
         *out_src = src;
         return rname;
@@ -2915,13 +2958,18 @@ bool G_Harvester_BringInLoad(uint32_t harvester, uint32_t site, bool and_back)
     const char *rname = carried_resource_name(hs);
     if(!rname)
         return false;
+    /* One on its way to a store with room keeps to it, else each call in
+     * turn would send it to whichever store had room that moment */
+    if(hs->state == STATE_HARVESTING_SEEK_STORAGE && G_EntityExists(hs->ss_uid)
+    && (site == NULL_UID || hs->ss_uid == site || dropoff_has_room(harvester, hs->ss_uid, rname))) {
+        hs->drop_off_only = !and_back;
+        return true;
+    }
     if(site == NULL_UID) {
         site = nearest_storage_site_dropoff(harvester, rname);
         if(site == NULL_UID)
             return false;
     }
-    if(hs->state == STATE_HARVESTING_SEEK_STORAGE && hs->ss_uid == site)
-        return true;
     if(!(G_FlagsGet(site) & ENTITY_FLAG_STORAGE_SITE) || !G_StorageSite_Accepts(site, rname))
         return false;
     if(G_StorageSite_GetCurr(site, rname) >= ss_capacity(site, rname))
@@ -2969,7 +3017,7 @@ bool G_Harvester_PickUp(uint32_t harvester, uint32_t storage)
     return true;
 }
 
-bool G_Harvester_Transport(uint32_t harvester, uint32_t storage)
+static bool transport(uint32_t harvester, uint32_t storage, bool to_build)
 {
     struct hstate *hs = hstate_get(harvester);
     assert(hs);
@@ -3023,7 +3071,7 @@ bool G_Harvester_Transport(uint32_t harvester, uint32_t storage)
     }
 
     uint32_t src = NULL_UID;
-    rname = transport_resource_with_source(harvester, hs, storage, &src);
+    rname = transport_resource_with_source(harvester, hs, storage, to_build, &src);
     if(rname == NULL)
         return false;
 
@@ -3047,6 +3095,11 @@ bool G_Harvester_Transport(uint32_t harvester, uint32_t storage)
     }
 
     return true;
+}
+
+bool G_Harvester_Transport(uint32_t harvester, uint32_t storage)
+{
+    return transport(harvester, storage, false);
 }
 
 bool G_Harvester_TransportJob(uint32_t harvester, uint32_t src, uint32_t dest, 
@@ -3088,7 +3141,7 @@ bool G_Harvester_TransportJob(uint32_t harvester, uint32_t src, uint32_t dest,
 
 int G_Harvester_EnRoute(uint32_t dest, const char *rname)
 {
-    return amount_en_route(dest, rname, NULL_UID);
+    return amount_en_route(dest, rname, NULL_UID, INFINITY);
 }
 
 const char *G_Harvester_Gathering(uint32_t uid)
@@ -3184,7 +3237,7 @@ bool G_Harvester_SupplyBuilding(uint32_t harvester, uint32_t building)
         return true;
     }
 
-    if(!G_Harvester_Transport(harvester, building)) {
+    if(!transport(harvester, building, true)) {
         return false;
     }
 
