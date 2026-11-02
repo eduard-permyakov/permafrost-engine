@@ -760,6 +760,16 @@ uint32_t G_Posts_Evict(uint32_t workshop)
     return unit;
 }
 
+bool G_Posts_Leave(uint32_t unit)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(!holder_get(unit))
+        return false;
+    release(unit, "left", false);
+    return (holder_get(unit) == NULL);
+}
+
 int G_Posts_CurrContextualAction(void)
 {
     uint32_t hovered = G_Sel_GetHovered();

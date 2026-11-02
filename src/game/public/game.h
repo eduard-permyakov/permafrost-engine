@@ -1220,6 +1220,8 @@ uint32_t G_Posts_WorkshopOf(uint32_t unit);
 bool     G_Posts_Man(uint32_t workshop, uint32_t unit);
 /* Lets one holder go, the post it leaves kept empty; returns it or NULL_UID */
 uint32_t G_Posts_Evict(uint32_t workshop);
+/* Lets the unit go from its post, the post left open; false when it holds none */
+bool     G_Posts_Leave(uint32_t unit);
 
 /* Sends the builder to the site as the player's right click does: false when it is no site to build or mend */
 bool G_Builder_PlayerOrder(uint32_t uid, uint32_t building);

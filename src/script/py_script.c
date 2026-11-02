@@ -386,6 +386,7 @@ static PyObject *PyPf_workshop_posts(PyObject *self, PyObject *args);
 static PyObject *PyPf_post_workshop(PyObject *self, PyObject *args);
 static PyObject *PyPf_man_post(PyObject *self, PyObject *args);
 static PyObject *PyPf_evict_post(PyObject *self, PyObject *args);
+static PyObject *PyPf_leave_post(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_style(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_font_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_bonus_color(PyObject *self, PyObject *args);
@@ -1539,6 +1540,10 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_evict_post, METH_VARARGS,
     "Takes a building with posts and lets one of its holders go, keeping the post it leaves empty. "
     "Returns the worker let go, or None."},
+
+    {"leave_post",
+    (PyCFunction)PyPf_leave_post, METH_VARARGS,
+    "Takes a unit and lets it go from its post, leaving the post open. Returns whether it held one."},
 
     {"provision_demand",
     (PyCFunction)PyPf_provision_demand, METH_VARARGS,
@@ -6672,6 +6677,20 @@ static PyObject *PyPf_evict_post(PyObject *self, PyObject *args)
         Py_RETURN_NONE;
     Py_INCREF(ret);
     return ret;
+}
+
+static PyObject *PyPf_leave_post(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    if(!PyArg_ParseTuple(args, "O", &obj) || !S_Entity_Check(obj)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a pf.Entity object.");
+        return NULL;
+    }
+    uint32_t uid;
+    S_Entity_UIDForObj(obj, &uid);
+    if(G_Posts_Leave(uid))
+        Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
 }
 
 static PyObject *PyPf_provision_demand(PyObject *self, PyObject *args)
