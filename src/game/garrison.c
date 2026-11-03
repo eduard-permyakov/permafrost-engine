@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_GAME_GARRISON
 
 #include "garrison.h"
+#include "duty.h"
 #include "game_private.h"
 #include "combat.h"
 #include "fog_of_war.h"
@@ -130,6 +131,9 @@ struct garrisonable_state{
     int               capacity;
     int               current;
     int               ingredients;
+    /* Has a unit queued: one sent to it goes in as its ingredient; not saved, as
+     * the scripts set it again every second */
+    bool              wants_ingredient;
     vec_entity_t      garrisoned;
 };
 
@@ -314,6 +318,12 @@ static void garrison_selection(void)
     for(int i = 0; i < vec_size(&filtered); i++) {
 
         uint32_t curr = vec_AT(&filtered, i);
+        if(G_Garrison_WantsIngredient(target)) {
+            G_StopEntity(curr, true, true);
+            G_Garrison_EnterAsIngredient(target, curr);
+            G_NotifyOrderIssued(curr, true, true);
+            continue;
+        }
         G_Garrison_Enter(target, curr);
     }
 
@@ -938,11 +948,29 @@ bool G_Garrison_EnterAsIngredient(uint32_t garrisonable, uint32_t unit)
     if(flags & ENTITY_FLAG_BUILDER) {
         G_Builder_Stop(unit);
     }
+    if(G_Duty_Kind(unit) != DUTY_INGREDIENT) {
+        G_Duty_End(unit, NULL);
+    }
     gus->approaches = 0;
     if(!garrison_enter(garrisonable, unit))
         return false;
     gus->ingredient = true;
+    G_Duty_Set(unit, DUTY_INGREDIENT, garrisonable, NULL, DUTY_BY_PLAYER);
     return true;
+}
+
+void G_Garrison_SetWantsIngredient(uint32_t garrisonable, bool wants)
+{
+    struct garrisonable_state *gbs = gb_state_get(garrisonable);
+    if(gbs) {
+        gbs->wants_ingredient = wants;
+    }
+}
+
+bool G_Garrison_WantsIngredient(uint32_t garrisonable)
+{
+    struct garrisonable_state *gbs = gb_state_get(garrisonable);
+    return gbs && gbs->wants_ingredient;
 }
 
 bool G_Garrison_Enter(uint32_t garrisonable, uint32_t unit)
@@ -1093,6 +1121,7 @@ bool G_Garrison_Evict(uint32_t garrisonable, uint32_t unit, vec2_t target)
     vec_entity_del(&gbs->garrisoned, idx);
     if(gus->ingredient) {
         gbs->ingredients--;
+        G_Duty_End(unit, "evicted");
     }else{
         gbs->current -= gus->capacity_consumed;
     }

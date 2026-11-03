@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_GAME_BUILDING
 
 #include "building.h"
+#include "duty.h"
 #include "movement.h"
 #include "game_private.h"
 #include "storage_site.h"
@@ -889,6 +890,7 @@ bool G_Building_Complete(uint32_t uid)
         flags &= ~ENTITY_FLAG_STORAGE_SITE;
         G_FlagsSet(uid, flags);
     }
+    G_Duty_OnCompleted(uid);
 
     if(G_EntityExists(bs->progress_model)) {
         G_RemoveEntity(bs->progress_model);

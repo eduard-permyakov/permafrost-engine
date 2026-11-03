@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_GAME_AUTOMATION
 
 #include "automation.h"
+#include "duty.h"
 #include "movement.h"
 #include "harvester.h"
 #include "builder.h"
@@ -109,6 +110,12 @@
 /* What every good counts for before anything asks for it, so that idle
  * workers still gather into stock */
 #define BASE_NEED                    (10)
+/* How long a good stays above its target before its gatherers are let go */
+#define STOCKED_HOLD_TICKS           (600)
+/* Nodes this close together fill up as one patch */
+#define PATCH_RADIUS                 (60.0f)
+#define MAX_CLASSES                  (4)
+#define MAX_CLASS_MEMBERS            (8)
 /* Stock of a good beyond what is asked for, past which gathering more of it waits */
 #define STOCK_TARGET                 (150)
 /* A good short by this much more takes one more gatherer */
@@ -135,14 +142,13 @@
 #define ROAD_SITE_BUILDERS           (2)
 /* How many workers of no district build at once, unless the realm sets it */
 #define CREW_SIZE                    (4)
+/* How far off a node lies, in these units, that halves a good's draw */
+#define BREADTH_SCALE                (100.0f)
 #define MAX_TRACE_STEPS              (24)
 #define MAX_VACANCIES                (256)
 /* How long a workshop's own district has to fill its posts before a worker of
  * no district at the end of its work takes one */
 #define HOMED_FIRST_TICKS            (100)
-/* How long a worker is left standing once the player's order is carried
- * out, or once it is let go from the selection, 15 seconds */
-#define ORDER_HOLD_TICKS             (300)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -179,12 +185,8 @@ struct automation_state{
      * loaded walking only shows as busy until it gets there */
     bool              idle_walk;
     vec2_t            idle_dest;
-    /* On the player's order, or held for a while after it, and given no job
-     * meanwhile; the hold runs out at 'hold_until', 0 while the order is
-     * carried out. 'ordered_tick' is not saved */
-    bool              ordered;
-    uint32_t          ordered_tick;
-    uint32_t          hold_until;
+    /* Finding its own work, it takes posts in workshops */
+    bool              automatic_posts;
 };
 
 /* A site's want of one resource */
@@ -236,6 +238,60 @@ struct work_site{
     bool     road;
 };
 
+/* The realm's say over how its automation goes about the work */
+enum sched_option{
+    /* The most of a district's own workers, or of a faction's workers of no
+     * district, set to carrying, and to building, while there is other work */
+    OPT_CARRY_SHARE,
+    OPT_BUILD_SHARE,
+    /* How far from its hub a worker goes to gather */
+    OPT_REACH,
+    /* How strongly a nearer node draws a worker over a more wanted good */
+    OPT_BREADTH,
+    /* Whether workers left to themselves take posts in workshops */
+    OPT_MAN_WORKSHOPS,
+    /* Whether gatherers leave off at a drop-off to build */
+    OPT_PULL_TO_BUILD,
+    /* Whether a worker with nothing nearer goes to the nearest node however far */
+    OPT_ROAM_FAR,
+    /* The least seconds between two workers of a pool taken off their work for
+     * something more urgent, and the least a worker keeps at a task before it is */
+    OPT_REBALANCE_S,
+    OPT_TENURE_S,
+    /* The share of a good's target its stock must stand above to count as stocked */
+    OPT_STOCK_BAND,
+    NUM_SCHED_OPTIONS
+};
+
+/* Goods the scheduler treats as one, such as every food: a class is scored
+ * once and its gatherers go to the nearest node of any of its members */
+struct good_class{
+    char name[PINNED_LEN];
+    int  n;
+    char members[MAX_CLASS_MEMBERS][PINNED_LEN];
+};
+
+struct sched_option_desc{
+    const char *name;
+    float       def;
+    float       min;
+    float       max;
+};
+
+/* One pool of workers: a district's own, or a faction's of no district */
+struct pool_census{
+    int workers;
+    int carriers;
+    int builders;
+};
+
+enum work_share{
+    SHARE_CARRY,
+    SHARE_BUILD
+};
+
+KHASH_MAP_INIT_INT(pool, struct pool_census)
+
 /* What every worker looking for a job this tick weighs, gathered once for all of them */
 struct work_snapshot{
     bool               valid;
@@ -249,6 +305,7 @@ struct work_snapshot{
     struct work_site   sites[MAX_WORK_SITES];
     /* Each faction's workers of no district building or bound for a site */
     int                crew[MAX_FACTIONS];
+    struct kh_pool_s  *pools;
 };
 VEC_TYPE(source, struct job_source)
 VEC_IMPL(static inline, source, struct job_source)
@@ -288,6 +345,8 @@ struct good_priority{
     /* The gatherer count let gather it now, and the tick it last stepped; not saved */
     int      allowed;
     uint32_t allowed_tick;
+    /* Since when its stock has stood above its target, or 0; not saved */
+    uint32_t stocked_since;
 };
 
 VEC_TYPE(priority, struct good_priority)
@@ -303,9 +362,12 @@ KHASH_MAP_INIT_INT(trace, struct work_trace)
 
 static void on_order_issued(void *user, void *event);
 static void on_player_order_issued(void *user, void *event);
-static bool try_assign_transport_job(uint32_t uid, struct automation_state *astate);
+static bool try_assign_transport_job(uint32_t uid, struct automation_state *astate, bool spare);
 static bool try_take_post(uint32_t uid, struct automation_state *astate);
-static bool try_assign_work(uint32_t uid, struct automation_state *astate);
+static enum duty_by by_of(const struct automation_state *astate);
+static bool leaves_gathering(uint32_t uid, const char *rname, uint32_t node);
+static bool wanted_elsewhere(uint32_t uid, struct automation_state *astate, struct work_snapshot *snap);
+static bool try_assign_work(uint32_t uid, struct automation_state *astate, bool spare);
 static bool stocked(int surplus, int shortfall, int target);
 static int gatherers_wanted(int surplus, int shortfall, int target, int for_rate);
 static int gatherers_for_rate(int faction, const char *rname);
@@ -322,6 +384,11 @@ static bool in_home_territory(int faction, int home, uint32_t node);
 static void reconsider_work(uint32_t uid, struct automation_state *astate);
 static struct work_snapshot *snapshot_get(void);
 static struct good_demand *demand_get(struct work_snapshot *snap, int faction, const char *rname);
+static struct good_demand *good_demand_get(struct work_snapshot *snap, int faction, const char *rname);
+static const struct good_class *class_named(const char *name);
+static const struct good_class *class_of(const char *rname);
+static uint32_t node_for(uint32_t uid, const struct automation_state *astate, const char *name,
+                         struct work_snapshot *snap, const char **out_good);
 static void trace_note(uint32_t uid, const char *kind, const char *verdict, const char *why, 
                        const char *rname, uint32_t target);
 static float distance(vec2_t a, vec2_t b);
@@ -346,6 +413,23 @@ static vec_priority_t  s_priorities;
 /* Districts whose stores only carts carry out of; not saved, the scripts set them again */
 static vec_district_t  s_kept_home;
 static int             s_crew_size[MAX_FACTIONS];
+static const struct sched_option_desc s_option_descs[NUM_SCHED_OPTIONS] = {
+    [OPT_CARRY_SHARE]   = {"carry_share",   0.25f,   0.0f,    1.0f},
+    [OPT_BUILD_SHARE]   = {"build_share",   0.25f,   0.0f,    1.0f},
+    [OPT_REACH]         = {"reach",         600.0f,  100.0f,  3000.0f},
+    [OPT_BREADTH]       = {"breadth",       1.0f,    0.0f,    4.0f},
+    [OPT_MAN_WORKSHOPS] = {"man_workshops", 1.0f,    0.0f,    1.0f},
+    [OPT_PULL_TO_BUILD] = {"pull_to_build", 1.0f,    0.0f,    1.0f},
+    [OPT_ROAM_FAR]      = {"roam_far",      0.0f,    0.0f,    1.0f},
+    [OPT_REBALANCE_S]   = {"rebalance_s",   5.0f,    1.0f,    30.0f},
+    [OPT_TENURE_S]      = {"tenure_s",      60.0f,   0.0f,    300.0f},
+    [OPT_STOCK_BAND]    = {"stock_band",    0.2f,    0.0f,    1.0f},
+};
+static float           s_options[MAX_FACTIONS][NUM_SCHED_OPTIONS];
+static struct good_class s_classes[MAX_CLASSES];
+static int             s_nclasses;
+/* When each pool last took a worker off its work for something more urgent */
+static khash_t(count)  *s_reassigned;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -484,10 +568,19 @@ static bool idle_walking(uint32_t uid)
     return true;
 }
 
+/* Who the automation gives a worker's duty for: its city, or the automation itself */
+static enum duty_by by_of(const struct automation_state *astate)
+{
+    return astate->home_district ? DUTY_BY_CITY : DUTY_BY_AUTO;
+}
+
 static bool idle(uint32_t uid)
 {
     /* At a workshop's post, or on its way to one */
     if(G_Posts_Holds(uid))
+        return false;
+    /* A supplier standing by for its charge's next request */
+    if(G_Duty_Waiting(uid))
         return false;
     uint32_t flags = G_FlagsGet(uid);
     if(flags & ENTITY_FLAG_GARRISONED)
@@ -506,54 +599,6 @@ static bool idle(uint32_t uid)
     if((flags & ENTITY_FLAG_COMBATABLE) && !G_Combat_Idle(uid))
         return false;
     return true;
-}
-
-static void begin_hold(uint32_t uid, struct automation_state *astate)
-{
-    astate->hold_until = s_tick + ORDER_HOLD_TICKS;
-    E_Global_Notify(EVENT_ORDER_HOLD_BEGIN, (void*)((uintptr_t)uid), ES_ENGINE);
-}
-
-static void end_hold(uint32_t uid, struct automation_state *astate)
-{
-    if(astate->hold_until == 0)
-        return;
-    astate->hold_until = 0;
-    E_Global_Notify(EVENT_ORDER_HOLD_END, (void*)((uintptr_t)uid), ES_ENGINE);
-}
-
-/* A held worker stays held while it is selected, is back on an order when
- * it is set to something, and is let go when its hold runs out */
-static void update_holds(void)
-{
-    enum selection_type type;
-    const vec_entity_t *sel = G_Sel_Get(&type);
-    for(int i = 0; i < vec_size(sel); i++) {
-        struct automation_state *astate = astate_get(vec_AT(sel, i));
-        if(astate && astate->hold_until) {
-            astate->hold_until = MAX(astate->hold_until, s_tick + ORDER_HOLD_TICKS);
-        }
-    }
-
-    uint32_t uid;
-    struct automation_state *astate;
-    kh_foreach_val_ptr(s_entity_state_table, uid, astate, {
-        if(!astate->ordered)
-            continue;
-        if(astate->hold_until == 0) {
-            /* An order it was done with before it was ever seen at work */
-            if(astate->state == STATE_IDLE && s_tick - astate->ordered_tick > TRANSIENT_STATE_TICKS) {
-                begin_hold(uid, astate);
-            }
-            continue;
-        }
-        if(astate->state == STATE_ACTIVE) {
-            end_hold(uid, astate);
-        }else if(s_tick >= astate->hold_until) {
-            end_hold(uid, astate);
-            astate->ordered = false;
-        }
-    });
 }
 
 static void increment_assigned_transporters(uint32_t site)
@@ -604,15 +649,6 @@ static void settle_stopping(void)
             continue;
         }
 
-        /* Done with the player's order, it waits for the next, its meal too */
-        if(astate->ordered) {
-            begin_hold(uid, astate);
-            astate->state = STATE_IDLE;
-            trace_note(uid, "hold", "taken", "player", NULL, NULL_UID);
-            E_Global_Notify(EVENT_UNIT_BECAME_IDLE, (void*)((uintptr_t)uid), ES_ENGINE);
-            continue;
-        }
-
         /* A hungry worker's next job is its meal, and so is one about to be */
         bool due = G_Provision_DueSoon(uid);
         if(due && G_Provision_Fetch(uid)) {
@@ -622,12 +658,26 @@ static void settle_stopping(void)
         }
         trace_note(uid, "meal", due ? "failed" : "skipped", due ? "no_food" : "not_due", NULL, NULL_UID);
 
+        /* The duty it was at comes before any new work, and holds it while it cannot */
+        if(G_Duty_Resume(uid)) {
+            trace_note(uid, "duty", "taken", "resumed", NULL, NULL_UID);
+            astate->state = STATE_ACTIVE;
+            continue;
+        }
+        if(G_Duty_Kind(uid) != DUTY_NONE) {
+            astate->state = STATE_IDLE;
+            continue;
+        }
+
         if(try_take_post(uid, astate)) {
             astate->state = STATE_ACTIVE;
             continue;
         }
 
-        if(try_assign_transport_job(uid, astate) || try_assign_work(uid, astate)) {
+        /* Carrying and building take their share of the workers first, and
+         * any with nothing else to do after */
+        if(try_assign_transport_job(uid, astate, false) || try_assign_work(uid, astate, false)
+        || try_assign_transport_job(uid, astate, true) || try_assign_work(uid, astate, true)) {
             astate->state = STATE_ACTIVE;
             continue;
         }
@@ -1009,7 +1059,8 @@ static int min_load_for(float travel, int max_carry, int shortfall, float waited
  * all the waiting carriers can 'judge' why a request goes unserved. */
 static void assign_jobs(vec_entity_t *carriers, bool judge)
 {
-    if(vec_size(carriers) == 0)
+    /* A judging pass says why requests wait even with every carrier at work */
+    if(vec_size(carriers) == 0 && !judge)
         return;
     PERF_ENTER();
 
@@ -1120,6 +1171,10 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
             int amount = MIN(req->shortfall, MIN(src->surplus, G_Harvester_GetMaxCarry(carrier, req->rname)));
 
             vec_entity_del(carriers, best_carrier);
+            struct automation_state *cstate = astate_get(carrier);
+            if(cstate) {
+                G_Duty_TagNext(carrier, by_of(cstate));
+            }
             if(!G_Harvester_TransportJob(carrier, srcm, dstm, req->rname, amount))
                 continue;
 
@@ -1176,12 +1231,17 @@ static bool build_pinned(const struct automation_state *astate)
     return !strcmp(astate->pinned, BUILD_PIN);
 }
 
+static bool posts_pinned(const struct automation_state *astate)
+{
+    return !strcmp(astate->pinned, POSTS_PIN);
+}
+
 /* A worker of no district that builds as the realm's construction crew: not on the
  * player's order, nor set to building by the player
  */
 static bool in_crew(const struct automation_state *astate)
 {
-    return astate->home_district == 0 && !build_pinned(astate) && !astate->ordered;
+    return astate->home_district == 0 && !build_pinned(astate);
 }
 
 /* The site a builder works on, or fetches the materials for */
@@ -1214,6 +1274,106 @@ static bool crew_full(const struct work_snapshot *snap, int faction)
     if(faction < 0 || faction >= MAX_FACTIONS)
         return true;
     return snap->crew[faction] >= s_crew_size[faction];
+}
+
+static float option(int faction, enum sched_option opt)
+{
+    if(faction < 0 || faction >= MAX_FACTIONS)
+        return s_option_descs[opt].def;
+    return s_options[faction][opt];
+}
+
+static int option_index(const char *name)
+{
+    for(int i = 0; i < NUM_SCHED_OPTIONS; i++) {
+        if(!strcmp(s_option_descs[i].name, name))
+            return i;
+    }
+    return -1;
+}
+
+static void reset_options(void)
+{
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+        for(int j = 0; j < NUM_SCHED_OPTIONS; j++) {
+            s_options[i][j] = s_option_descs[j].def;
+        }
+    }
+}
+
+static uint32_t pool_key(int faction, int district)
+{
+    return ((uint32_t)faction << 24) | ((uint32_t)district & 0xffffff);
+}
+
+static bool pool_member(uint32_t uid)
+{
+    uint32_t flags = G_FlagsGet(uid);
+    return (flags & ENTITY_FLAG_BUILDER) && (flags & ENTITY_FLAG_HARVESTER) && !(flags & ENTITY_FLAG_ZOMBIE);
+}
+
+static void count_pools(khash_t(pool) *pools)
+{
+    kh_clear(pool, pools);
+    uint32_t uid;
+    struct automation_state *astate;
+    kh_foreach_val_ptr(s_entity_state_table, uid, astate, {
+        if(!pool_member(uid))
+            continue;
+        int status;
+        khiter_t k = kh_put(pool, pools, pool_key(G_GetFactionID(uid), astate->home_district), &status);
+        if(status == -1)
+            continue;
+        if(status != 0) {
+            kh_value(pools, k) = (struct pool_census){0};
+        }
+        struct pool_census *pool = &kh_value(pools, k);
+        pool->workers++;
+        enum duty_kind kind = G_Duty_Kind(uid);
+        if(kind == DUTY_BUILD) {
+            pool->builders++;
+        }else if(kind == DUTY_SUPPLY) {
+            pool->carriers++;
+        }
+    });
+}
+
+static struct pool_census *pool_get(struct work_snapshot *snap, uint32_t uid, const struct automation_state *astate)
+{
+    if(!snap->pools)
+        return NULL;
+    khiter_t k = kh_get(pool, snap->pools, pool_key(G_GetFactionID(uid), astate->home_district));
+    if(k == kh_end(snap->pools))
+        return NULL;
+    return &kh_value(snap->pools, k);
+}
+
+/* Whether the worker's pool has its share of carriers, or of builders; one
+ * set to the work by the player is not held to it */
+static bool share_full(struct work_snapshot *snap, uint32_t uid, const struct automation_state *astate,
+                       enum work_share share)
+{
+    if(!astate->automatic_work || build_pinned(astate))
+        return false;
+    const struct pool_census *pool = pool_get(snap, uid, astate);
+    if(!pool)
+        return false;
+    float frac = option(G_GetFactionID(uid), (share == SHARE_CARRY) ? OPT_CARRY_SHARE : OPT_BUILD_SHARE);
+    int cap = MAX(1, (int)ceilf(pool->workers * frac));
+    return ((share == SHARE_CARRY) ? pool->carriers : pool->builders) >= cap;
+}
+
+static void share_taken(struct work_snapshot *snap, uint32_t uid, const struct automation_state *astate,
+                        enum work_share share)
+{
+    struct pool_census *pool = pool_get(snap, uid, astate);
+    if(!pool)
+        return;
+    if(share == SHARE_CARRY) {
+        pool->carriers++;
+    }else{
+        pool->builders++;
+    }
 }
 
 static bool waiting_carrier(uint32_t uid, struct automation_state *astate)
@@ -1512,7 +1672,7 @@ static vec2_t work_origin(uint32_t uid, const struct automation_state *astate)
 /* Drops the gathering a worker's new standing orders no longer cover */
 static void reconsider_work(uint32_t uid, struct automation_state *astate)
 {
-    if(!astate->automatic_work || astate->ordered || !(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER))
+    if(!astate->automatic_work || !(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER))
         return;
     uint32_t src, dest;
     const char *rname;
@@ -1525,8 +1685,9 @@ static void reconsider_work(uint32_t uid, struct automation_state *astate)
     bool off_home = astate->home_district && G_District_Of(uid) != astate->home_district;
     if(!off_good && !off_home)
         return;
+    G_Duty_End(uid, "reconsidered");
     G_Harvester_Stop(uid);
-    try_assign_work(uid, astate);
+    try_assign_work(uid, astate, false);
 }
 
 static void note_aimed(struct work_snapshot *snap, uint32_t node)
@@ -1566,6 +1727,10 @@ static struct work_snapshot *snapshot_get(void)
     vec_entity_destroy(&sites);
 
     count_crews(s_snapshot.crew);
+    if(!s_snapshot.pools) {
+        s_snapshot.pools = kh_init(pool);
+    }
+    count_pools(s_snapshot.pools);
 
     if(!s_snapshot.aimed) {
         s_snapshot.aimed = kh_init(count);
@@ -1587,6 +1752,23 @@ static int aimed_at(const struct work_snapshot *snap, uint32_t node)
 {
     khiter_t k = kh_get(count, snap->aimed, node);
     return (k == kh_end(snap->aimed)) ? 0 : kh_value(snap->aimed, k);
+}
+
+/* The gatherers bound for the patch of nodes about a point, so that a patch
+ * fills before the next is worked */
+static int aimed_near(const struct work_snapshot *snap, vec2_t at)
+{
+    int ret = 0;
+    uint32_t node;
+    uint32_t count;
+    kh_foreach(snap->aimed, node, count, {
+        if(!G_EntityExists(node))
+            continue;
+        if(distance(G_Pos_GetXZ(node), at) <= PATCH_RADIUS) {
+            ret += count;
+        }
+    });
+    return ret;
 }
 
 /* How many gatherers stand about a node at once: its rim in worker widths */
@@ -1637,7 +1819,8 @@ static uint32_t best_resource(uint32_t uid, vec2_t origin, const char *rname, fl
             scores[i] = INFINITY;
             continue;
         }
-        scores[i] = distance(G_Pos_GetXZ(nodes[i]), origin) + CROWD_SLACK * aimed;
+        vec2_t at = G_Pos_GetXZ(nodes[i]);
+        scores[i] = distance(at, origin) + CROWD_SLACK * aimed_near(snap, at);
     }
     for(int tries = 0; tries < nnodes; tries++) {
         int best = -1;
@@ -1689,28 +1872,58 @@ static vec2_t gather_origin(uint32_t uid, const struct automation_state *astate,
     return G_Pos_GetXZ(anchor);
 }
 
-/* The node a worker would gather the good at: the best near its hub, in a
- * district that wants it for one that roams, else for one of no district,
- * rather than stand idle, the nearest however far */
+/* The node a worker would gather the good at: the best within the realm's
+ * reach of its hub, in a district that wants it for one that roams, else for
+ * one of no district where the realm lets it roam far, the nearest however far */
 static uint32_t gather_node(uint32_t uid, const struct automation_state *astate, const char *rname,
                             struct work_snapshot *snap)
 {
+    int faction = G_GetFactionID(uid);
     vec2_t origin = gather_origin(uid, astate, rname);
     bool roams = (astate->home_district == 0 && strcmp(astate->pinned, rname));
-    uint32_t ret = best_resource(uid, origin, rname, WORK_RADIUS, roams, astate->home_district, snap);
-    if(ret == NULL_UID && astate->home_district == 0) {
+    uint32_t ret = best_resource(uid, origin, rname, option(faction, OPT_REACH), roams,
+        astate->home_district, snap);
+    if(ret == NULL_UID && astate->home_district == 0 && option(faction, OPT_ROAM_FAR) != 0.0f) {
         ret = G_Harvester_NearestResource(uid, origin, rname, 0.0f);
     }
     return ret;
 }
 
-static struct good_demand *demand_get(struct work_snapshot *snap, int faction, const char *rname)
+static struct good_demand *demand_find(struct work_snapshot *snap, int faction, const char *rname)
 {
     for(int i = 0; i < snap->ndemands; i++) {
         struct good_demand *curr = &snap->demands[i];
         if(curr->faction == faction && !strcmp(curr->rname, rname))
             return curr;
     }
+    return NULL;
+}
+
+/* A good counts as stocked only once its stock has stood a while above its
+ * target and the band over it, so that a stock at the line does not send
+ * its gatherers back and forth */
+static bool stocked_held(int faction, const char *rname, int surplus, int shortfall, int target)
+{
+    int band = (int)(target * option(faction, OPT_STOCK_BAND));
+    bool raw = stocked(surplus, shortfall, target + band);
+    struct good_priority *realm = priority_get(faction, 0, rname, true);
+    if(!realm)
+        return raw;
+    if(!raw) {
+        realm->stocked_since = 0;
+        return false;
+    }
+    if(realm->stocked_since == 0) {
+        realm->stocked_since = s_tick;
+    }
+    return s_tick - realm->stocked_since >= STOCKED_HOLD_TICKS;
+}
+
+static struct good_demand *good_demand_get(struct work_snapshot *snap, int faction, const char *rname)
+{
+    struct good_demand *found = demand_find(snap, faction, rname);
+    if(found)
+        return found;
     if(snap->ndemands == MAX_DEMANDS)
         return NULL;
 
@@ -1728,10 +1941,160 @@ static struct good_demand *demand_get(struct work_snapshot *snap, int faction, c
             gatherers_wanted(surplus, shortfall, target, gatherers_for_rate(faction, rname))),
         .surplus = surplus,
         .shortfall = shortfall,
-        .stocked = stocked(surplus, shortfall, target)
+        .stocked = stocked_held(faction, rname, surplus, shortfall, target)
     };
     pf_strlcpy(ret->rname, rname, sizeof(ret->rname));
     return ret;
+}
+
+/* The demand of a class is its members' together: one base need, and
+ * stocked only when every member is */
+static struct good_demand *class_demand_get(struct work_snapshot *snap, int faction, const struct good_class *cls)
+{
+    struct good_demand *found = demand_find(snap, faction, cls->name);
+    if(found)
+        return found;
+    struct good_demand sum = (struct good_demand){ .faction = faction, .stocked = true };
+    int nmembers = 0;
+    for(int i = 0; i < cls->n; i++) {
+        struct good_demand *curr = good_demand_get(snap, faction, cls->members[i]);
+        if(!curr)
+            continue;
+        sum.target += curr->target;
+        sum.need += curr->need;
+        sum.workers += curr->workers;
+        sum.wanted += curr->wanted;
+        sum.surplus += curr->surplus;
+        sum.shortfall += curr->shortfall;
+        sum.stocked = sum.stocked && curr->stocked;
+        nmembers++;
+    }
+    if(nmembers == 0 || snap->ndemands == MAX_DEMANDS)
+        return NULL;
+    sum.need -= (nmembers - 1) * BASE_NEED;
+    struct good_demand *ret = &snap->demands[snap->ndemands++];
+    *ret = sum;
+    pf_strlcpy(ret->rname, cls->name, sizeof(ret->rname));
+    return ret;
+}
+
+/* The demand of a good, or of the class it belongs to */
+static struct good_demand *demand_get(struct work_snapshot *snap, int faction, const char *rname)
+{
+    const struct good_class *cls = class_named(rname);
+    if(!cls) {
+        cls = class_of(rname);
+    }
+    if(cls)
+        return class_demand_get(snap, faction, cls);
+    return good_demand_get(snap, faction, rname);
+}
+
+static const struct good_class *class_named(const char *name)
+{
+    for(int i = 0; i < s_nclasses; i++) {
+        if(!strcmp(s_classes[i].name, name))
+            return &s_classes[i];
+    }
+    return NULL;
+}
+
+static const struct good_class *class_of(const char *rname)
+{
+    for(int i = 0; i < s_nclasses; i++) {
+        for(int j = 0; j < s_classes[i].n; j++) {
+            if(!strcmp(s_classes[i].members[j], rname))
+                return &s_classes[i];
+        }
+    }
+    return NULL;
+}
+
+/* The goods a worker could gather with the members of each class folded into
+ * the class, in the place of the first of them; a pinned good stays its own */
+static size_t fold_classes(const char *candidates[], size_t n)
+{
+    size_t ret = 0;
+    for(int i = 0; i < n; i++) {
+        const struct good_class *cls = class_of(candidates[i]);
+        const char *name = cls ? cls->name : candidates[i];
+        bool seen = false;
+        for(int j = 0; j < ret; j++) {
+            if(!strcmp(candidates[j], name)) {
+                seen = true;
+                break;
+            }
+        }
+        if(!seen) {
+            candidates[ret++] = name;
+        }
+    }
+    return ret;
+}
+
+static float gather_speed_for(uint32_t uid, const char *name)
+{
+    const struct good_class *cls = class_named(name);
+    if(!cls)
+        return G_Harvester_GetGatherSpeed(uid, name);
+    float ret = 0.0f;
+    for(int i = 0; i < cls->n; i++) {
+        ret = MAX(ret, G_Harvester_GetGatherSpeed(uid, cls->members[i]));
+    }
+    return ret;
+}
+
+/* The weight of a good, or the highest of a class's members' */
+static float weight_for(int faction, int district, bool roams, const char *name)
+{
+    const struct good_class *cls = class_named(name);
+    if(!cls)
+        return roams ? top_weight(faction, name) : good_weight(faction, district, name);
+    float ret = -1.0f;
+    for(int i = 0; i < cls->n; i++) {
+        float curr = roams ? top_weight(faction, cls->members[i]) : good_weight(faction, district, cls->members[i]);
+        ret = MAX(ret, curr);
+    }
+    return ret;
+}
+
+/* The nearest node of any member of the class the worker can gather and that
+ * is not stocked, the crowds about the nodes weighing against them */
+static uint32_t class_node(uint32_t uid, const struct automation_state *astate, const struct good_class *cls,
+                           struct work_snapshot *snap, const char **out_good)
+{
+    int faction = G_GetFactionID(uid);
+    uint32_t ret = NULL_UID;
+    float best = INFINITY;
+    for(int i = 0; i < cls->n; i++) {
+        const char *rname = cls->members[i];
+        if(G_Harvester_GetGatherSpeed(uid, rname) <= 0.0f)
+            continue;
+        struct good_demand *raw = good_demand_get(snap, faction, rname);
+        if(!raw || raw->stocked)
+            continue;
+        uint32_t node = gather_node(uid, astate, rname, snap);
+        if(node == NULL_UID)
+            continue;
+        vec2_t origin = gather_origin(uid, astate, rname);
+        float score = distance(G_Pos_GetXZ(node), origin) + CROWD_SLACK * aimed_at(snap, node);
+        if(score < best) {
+            best = score;
+            ret = node;
+            *out_good = rname;
+        }
+    }
+    return ret;
+}
+
+static uint32_t node_for(uint32_t uid, const struct automation_state *astate, const char *name,
+                         struct work_snapshot *snap, const char **out_good)
+{
+    const struct good_class *cls = class_named(name);
+    if(cls)
+        return class_node(uid, astate, cls, snap, out_good);
+    *out_good = name;
+    return gather_node(uid, astate, name, snap);
 }
 
 /* Why the nearest unfinished site, if any, took no builder */
@@ -1761,7 +2124,9 @@ static void note_passed_site(uint32_t uid, struct work_snapshot *snap, vec2_t po
     trace_note(uid, "build", "skipped", why, NULL, nearest->uid);
 }
 
-static bool try_assign_work(uint32_t uid, struct automation_state *astate)
+/* Gives the worker building, else gathering; a spare one, with no other work,
+ * builds past its pool's share and does not gather */
+static bool try_assign_work(uint32_t uid, struct automation_state *astate, bool spare)
 {
     /* Held in a building, as a defender or to be made into something else */
     if(G_FlagsGet(uid) & ENTITY_FLAG_GARRISONED) {
@@ -1787,16 +2152,22 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
         trace_note(uid, "build", "skipped", "pinned", astate->pinned, NULL_UID);
     }else if((flags & ENTITY_FLAG_BUILDER) && crew && crew_full(snap, faction)) {
         trace_note(uid, "build", "skipped", "crew_full", NULL, NULL_UID);
+    }else if((flags & ENTITY_FLAG_BUILDER) && !spare && share_full(snap, uid, astate, SHARE_BUILD)) {
+        trace_note(uid, "build", "skipped", "share", NULL, NULL_UID);
     }else if(flags & ENTITY_FLAG_BUILDER) {
         /* Builders spread over the sites that can be worked on; one waiting on its 
          * materials gets one to found it, and the rest gather and carry them */
         struct work_site *site = pick_site(snap, pos, faction, astate->home_district);
+        if(site) {
+            G_Duty_TagNext(uid, by_of(astate));
+        }
         if(site && G_Builder_Build(uid, site->uid)) {
             trace_note(uid, "build", "taken", "site", NULL, site->uid);
             site->builders++;
             if(crew) {
                 snap->crew[faction]++;
             }
+            share_taken(snap, uid, astate, SHARE_BUILD);
             return true;
         }
         if(site) {
@@ -1806,7 +2177,7 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
         }
     }
 
-    if(!(flags & ENTITY_FLAG_HARVESTER))
+    if(spare || !(flags & ENTITY_FLAG_HARVESTER))
         return false;
     /* A load left in hand is brought in before anything else */
     if(G_Harvester_GetCurrTotalCarry(uid)) {
@@ -1818,6 +2189,10 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
         trace_note(uid, "gather", "skipped", "build_pin", NULL, NULL_UID);
         return false;
     }
+    if(posts_pinned(astate)) {
+        trace_note(uid, "gather", "skipped", "posts_pin", NULL, NULL_UID);
+        return false;
+    }
 
     const char *candidates[MAX_RESOURCES];
     size_t ncandidates;
@@ -1826,6 +2201,7 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
         ncandidates = 1;
     }else{
         ncandidates = G_Harvester_GetGatherable(uid, ARR_SIZE(candidates), candidates);
+        ncandidates = fold_classes(candidates, ncandidates);
     }
     if(ncandidates == 0)
         return false;
@@ -1840,18 +2216,21 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
     const char *why[MAX_RESOURCES];
     uint32_t nodes[MAX_RESOURCES];
     bool searched[MAX_RESOURCES];
+    /* The good of the node found, which for a class is one of its members' */
+    const char *goods[MAX_RESOURCES];
     for(int i = 0; i < ncandidates; i++) {
         demands[i] = demand_get(snap, faction, candidates[i]);
         bool pinned = !strcmp(astate->pinned, candidates[i]);
         bool roams = (astate->home_district == 0 && !pinned);
-        float weight = roams ? top_weight(faction, candidates[i]) : good_weight(faction, district, candidates[i]);
+        float weight = weight_for(faction, district, roams, candidates[i]);
         nodes[i] = NULL_UID;
         searched[i] = false;
+        goods[i] = candidates[i];
         if(roams && demands[i] && demands[i]->workers < (int)ceilf(demands[i]->wanted * MAX(weight, 1.0f))) {
-            nodes[i] = gather_node(uid, astate, candidates[i], snap);
+            nodes[i] = node_for(uid, astate, candidates[i], snap, &goods[i]);
             searched[i] = true;
-            weight = (nodes[i] != NULL_UID) ? node_weight(faction, nodes[i], candidates[i])
-                                            : good_weight(faction, district, candidates[i]);
+            weight = (nodes[i] != NULL_UID) ? node_weight(faction, nodes[i], goods[i])
+                                            : good_weight(faction, district, goods[i]);
         }
         if(!pinned && weight <= 0.0f) {
             scores[i] = -1.0f;
@@ -1864,9 +2243,22 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
             why[i] = (demands[i] && demands[i]->stocked) ? "stocked" : "enough";
             continue;
         }
-        scores[i] = weight * demands[i]->need * G_Harvester_GetGatherSpeed(uid, candidates[i]) 
+        scores[i] = weight * demands[i]->need * gather_speed_for(uid, candidates[i]) 
                   / (1.0f + demands[i]->workers);
         why[i] = "lower";
+
+        /* The nearer work comes first, a good further out once that is taken */
+        if(!searched[i]) {
+            nodes[i] = node_for(uid, astate, candidates[i], snap, &goods[i]);
+            searched[i] = true;
+        }
+        if(nodes[i] == NULL_UID) {
+            scores[i] = -1.0f;
+            why[i] = "no_node";
+            continue;
+        }
+        float dist = distance(G_Pos_GetXZ(nodes[i]), gather_origin(uid, astate, goods[i]));
+        scores[i] /= 1.0f + option(faction, OPT_BREADTH) * dist / BREADTH_SCALE;
     }
     float ranks[MAX_RESOURCES];
     memcpy(ranks, scores, sizeof(float) * ncandidates);
@@ -1884,15 +2276,18 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate)
             break;
         bool pinned = !strcmp(astate->pinned, candidates[best]);
         bool roams = (astate->home_district == 0 && !pinned);
-        uint32_t node = searched[best] ? nodes[best] : gather_node(uid, astate, candidates[best], snap);
-        if(node != NULL_UID && roams && node_weight(faction, node, candidates[best]) <= 0.0f) {
+        uint32_t node = searched[best] ? nodes[best] : node_for(uid, astate, candidates[best], snap, &goods[best]);
+        if(node != NULL_UID && roams && node_weight(faction, node, goods[best]) <= 0.0f) {
             why[best] = "not_wanted";
             scores[best] = -1.0f;
             continue;
         }
+        if(node != NULL_UID) {
+            G_Duty_TagNext(uid, by_of(astate));
+        }
         if(node != NULL_UID && G_Harvester_Gather(uid, node)) {
             note_aimed(snap, node);
-            pf_strlcpy(astate->working, candidates[best], sizeof(astate->working));
+            pf_strlcpy(astate->working, goods[best], sizeof(astate->working));
             why[best] = "chosen";
             chosen = best;
             break;
@@ -1922,10 +2317,17 @@ static const char *not_waiting_why(uint32_t uid, struct automation_state *astate
     return "hungry";
 }
 
-static bool try_assign_transport_job(uint32_t uid, struct automation_state *astate)
+/* Gives the worker a carrying job; a spare one, with no other work, carries
+ * past its pool's share */
+static bool try_assign_transport_job(uint32_t uid, struct automation_state *astate, bool spare)
 {
     if(!waiting_carrier(uid, astate)) {
         trace_note(uid, "carry", "skipped", not_waiting_why(uid, astate), NULL, NULL_UID);
+        return false;
+    }
+    struct work_snapshot *snap = snapshot_get();
+    if(!spare && share_full(snap, uid, astate, SHARE_CARRY)) {
+        trace_note(uid, "carry", "skipped", "share", NULL, NULL_UID);
         return false;
     }
 
@@ -1937,6 +2339,7 @@ static bool try_assign_transport_job(uint32_t uid, struct automation_state *asta
     vec_entity_destroy(&carriers);
 
     if(assigned) {
+        share_taken(snap, uid, astate, SHARE_CARRY);
         trace_carry_taken(uid);
     }else{
         trace_note(uid, "carry", "skipped", "nothing", NULL, NULL_UID);
@@ -1953,7 +2356,7 @@ static void assign_transport_jobs(void)
     uint32_t uid;
     struct automation_state *astate;
     kh_foreach_val_ptr(s_entity_state_table, uid, astate, {
-        if(astate->state != STATE_IDLE || astate->ordered)
+        if(astate->state != STATE_IDLE || G_Duty_Kind(uid) != DUTY_NONE)
             continue;
         /* A carrier whose drop-off fell through brings the load in itself */
         if(astate->automatic_transport && (G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER)
@@ -1963,6 +2366,12 @@ static void assign_transport_jobs(void)
         }
         if(!waiting_carrier(uid, astate))
             continue;
+        if(pool_member(uid)) {
+            struct work_snapshot *snap = snapshot_get();
+            if(share_full(snap, uid, astate, SHARE_CARRY))
+                continue;
+            share_taken(snap, uid, astate, SHARE_CARRY);
+        }
         vec_entity_push(&carriers, uid);
     });
 
@@ -1996,7 +2405,8 @@ static void assign_transport_jobs(void)
 static bool post_worker(uint32_t uid, const struct automation_state *astate, struct post_worker *out)
 {
     uint32_t flags = G_FlagsGet(uid);
-    if(!astate->automatic_work || astate->pinned[0] || astate->ordered || !(flags & ENTITY_FLAG_HARVESTER))
+    if(!astate->automatic_work || !astate->automatic_posts || (astate->pinned[0] && !posts_pinned(astate))
+    || !(flags & ENTITY_FLAG_HARVESTER) || option(G_GetFactionID(uid), OPT_MAN_WORKSHOPS) == 0.0f)
         return false;
     if(flags & (ENTITY_FLAG_GARRISONED | ENTITY_FLAG_ZOMBIE))
         return false;
@@ -2004,6 +2414,9 @@ static bool post_worker(uint32_t uid, const struct automation_state *astate, str
         return false;
     if(G_Posts_Holds(uid) || G_Provision_WantsFood(uid) || G_Provision_Fetching(uid)
     || G_Harvester_GetCurrTotalCarry(uid))
+        return false;
+    enum duty_kind kind = G_Duty_Kind(uid);
+    if(kind != DUTY_NONE && (kind != DUTY_GATHER || G_Duty_ByPlayer(uid)))
         return false;
     bool gathering = (astate->state == STATE_ACTIVE && astate->working[0]
         && astate->transport_target == NULL_UID
@@ -2055,6 +2468,8 @@ static int pick_post_worker(const struct post_vacancy *vac, const struct post_wo
 
 static bool take_post(uint32_t uid, struct automation_state *astate, uint32_t workshop)
 {
+    G_Duty_End(uid, "post");
+    G_Duty_TagNext(uid, by_of(astate));
     if(!G_Posts_Take(workshop, uid))
         return false;
     astate->working[0] = '\0';
@@ -2126,22 +2541,59 @@ static void assign_work(void)
 
     uint32_t uid;
     struct automation_state *astate;
+    vec_entity_t held;
+    vec_entity_init(&held);
     kh_foreach_val_ptr(s_entity_state_table, uid, astate, {
-        if(astate->state != STATE_IDLE || !astate->automatic_work || astate->ordered)
+        if(astate->state != STATE_IDLE)
+            continue;
+        if(G_Duty_Kind(uid) != DUTY_NONE) {
+            vec_entity_push(&held, uid);
+            continue;
+        }
+        if(!astate->automatic_work)
             continue;
         vec_entity_push(&workers, uid);
     });
+    /* One left idle with a duty it could not take up tries again, until it is given up */
+    for(int i = 0; i < vec_size(&held); i++) {
+        G_Duty_Resume(vec_AT(&held, i));
+    }
+    vec_entity_destroy(&held);
 
+    vec_entity_t spare, unassigned;
+    vec_entity_init(&spare);
+    vec_entity_init(&unassigned);
     for(int i = 0; i < vec_size(&workers); i++) {
         uint32_t uid = vec_AT(&workers, i);
         struct automation_state *astate = astate_get(uid);
         /* A carrier handed a job in this pass is still counted idle until the next tick */
         if(!astate || astate->state != STATE_IDLE || !idle(uid))
             continue;
-        if(!try_assign_work(uid, astate)) {
+        if(try_assign_work(uid, astate, false))
+            continue;
+        vec_entity_push(&unassigned, uid);
+        if(waiting_carrier(uid, astate)) {
+            vec_entity_push(&spare, uid);
+        }
+    }
+
+    /* Those with nothing else to do carry and build past their pools' shares */
+    assign_jobs(&spare, false);
+    for(int i = 0; i < vec_size(&unassigned); i++) {
+        uint32_t uid = vec_AT(&unassigned, i);
+        struct automation_state *astate = astate_get(uid);
+        if(!astate)
+            continue;
+        if(G_Harvester_TransportTarget(uid) != NULL_UID) {
+            trace_carry_taken(uid);
+            continue;
+        }
+        if(!try_assign_work(uid, astate, true)) {
             trace_note(uid, "idle", "taken", "no_work", NULL, NULL_UID);
         }
     }
+    vec_entity_destroy(&unassigned);
+    vec_entity_destroy(&spare);
     vec_entity_destroy(&workers);
 }
 
@@ -2160,7 +2612,6 @@ static void on_20hz_tick(void *user, void *event)
     PERF_PUSH("automation::settle_stopping");
     settle_stopping();
     PERF_POP();
-    update_holds();
     uint64_t t1 = SDL_GetPerformanceCounter();
     if(s_tick % RATE_SAMPLE_TICKS == 0) {
         sample_gather_rates(RATE_SAMPLE_TICKS / 20.0f);
@@ -2284,16 +2735,11 @@ static void on_order_issued(void *user, void *event)
     }
 }
 
+/* A worker the player gives an order to is his to manage from then on: the
+ * automation and its city leave it be */
 static void on_player_order_issued(void *user, void *event)
 {
-    uint32_t uid = (uintptr_t)event;
-
-    struct automation_state *astate = astate_get(uid);
-    if(!astate || !astate->automatic_work)
-        return;
-    end_hold(uid, astate);
-    astate->ordered = true;
-    astate->ordered_tick = s_tick;
+    G_Automation_MakePlayerManaged((uintptr_t)event);
 }
 
 /*****************************************************************************/
@@ -2310,6 +2756,7 @@ bool G_Automation_AddEntity(uint32_t uid)
         .automatic_work = false,
         .pinned = {0},
         .home_district = 0,
+        .automatic_posts = true,
     };
     return astate_set(uid, state);
 }
@@ -2344,6 +2791,8 @@ bool G_Automation_Init(void)
         goto fail_pending;
     if((s_traces = kh_init(trace)) == NULL)
         goto fail_traces;
+    if((s_reassigned = kh_init(count)) == NULL)
+        goto fail_reassigned;
     s_tick = 0;
     vec_request_init(&s_snapshot.requests);
     vec_priority_init(&s_priorities);
@@ -2351,6 +2800,7 @@ bool G_Automation_Init(void)
     for(int i = 0; i < MAX_FACTIONS; i++) {
         s_crew_size[i] = CREW_SIZE;
     }
+    reset_options();
     s_snapshot.valid = false;
 
     E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
@@ -2359,6 +2809,8 @@ bool G_Automation_Init(void)
     E_Global_Register(EVENT_PLAYER_ORDER_ISSUED, on_player_order_issued, NULL, G_RUNNING);
     return true;
 
+fail_reassigned:
+    kh_destroy(trace, s_traces);
 fail_traces:
     kh_destroy(pending, s_pending);
 fail_pending:
@@ -2431,6 +2883,7 @@ void G_Automation_Shutdown(void)
     vec_priority_destroy(&s_priorities);
     vec_district_destroy(&s_kept_home);
     vec_entity_destroy(&s_stopping);
+    kh_destroy(count, s_reassigned);
     kh_destroy(trace, s_traces);
     kh_destroy(pending, s_pending);
     kh_destroy(count, s_transport_count);
@@ -2480,7 +2933,7 @@ void G_Automation_GetIdle(vec_entity_t *out)
 bool G_Automation_WalkIdle(uint32_t uid, vec2_t xz)
 {
     struct automation_state *astate = astate_get(uid);
-    if(!astate || astate->state != STATE_IDLE || astate->ordered || !(G_FlagsGet(uid) & ENTITY_FLAG_MOVABLE))
+    if(!astate || astate->state != STATE_IDLE || !(G_FlagsGet(uid) & ENTITY_FLAG_MOVABLE))
         return false;
     /* One going to eat is not idle for long, and the walk would call off its meal */
     if(!G_PointInsideMap(xz) || G_Provision_WantsFood(uid) || G_Provision_Fetching(uid))
@@ -2502,20 +2955,66 @@ bool G_Automation_IsIdle(uint32_t uid)
     return (astate->state == STATE_IDLE);
 }
 
-float G_Automation_OrderHold(uint32_t uid)
+enum duty_by G_Automation_ManagedBy(uint32_t uid)
 {
     struct automation_state *astate = astate_get(uid);
-    if(!astate || astate->hold_until <= s_tick)
-        return 0.0f;
-    return (astate->hold_until - s_tick) * TICK_MS / 1000.0f;
+    if(!astate || G_Automation_PlayerManaged(uid))
+        return DUTY_BY_PLAYER;
+    return by_of(astate);
 }
 
-bool G_Automation_PlayerOrdered(uint32_t uid)
+void G_Automation_MakePlayerManaged(uint32_t uid)
+{
+    struct automation_state *astate = astate_get(uid);
+    if(!astate || !(G_FlagsGet(uid) & ENTITY_FLAG_BUILDER))
+        return;
+    astate->automatic_work = false;
+    astate->home_district = 0;
+    if(astate->automatic_transport) {
+        G_Automation_SetAutomaticTransport(uid, false);
+    }
+    G_Duty_SetBy(uid, DUTY_BY_PLAYER);
+}
+
+void G_Automation_JoinCity(uint32_t uid, int district)
 {
     struct automation_state *astate = astate_get(uid);
     if(!astate)
+        return;
+    astate->automatic_work = true;
+    if(!astate->automatic_transport) {
+        G_Automation_SetAutomaticTransport(uid, true);
+    }
+    G_Automation_SetHomeDistrict(uid, district);
+    G_Duty_SetBy(uid, DUTY_BY_CITY);
+}
+
+bool G_Automation_SetOption(int faction, const char *name, float value)
+{
+    int opt = option_index(name);
+    if(opt < 0 || faction < 0 || faction >= MAX_FACTIONS)
         return false;
-    return astate->ordered;
+    const struct sched_option_desc *desc = &s_option_descs[opt];
+    s_options[faction][opt] = MIN(MAX(value, desc->min), desc->max);
+    s_snapshot.valid = false;
+    return true;
+}
+
+bool G_Automation_GetOption(int faction, const char *name, float *out)
+{
+    int opt = option_index(name);
+    if(opt < 0 || faction < 0 || faction >= MAX_FACTIONS)
+        return false;
+    *out = s_options[faction][opt];
+    return true;
+}
+
+bool G_Automation_PlayerManaged(uint32_t uid)
+{
+    struct automation_state *astate = astate_get(uid);
+    if(!astate || !(G_FlagsGet(uid) & ENTITY_FLAG_BUILDER))
+        return false;
+    return !astate->automatic_work && !astate->automatic_transport && astate->home_district == 0;
 }
 
 void G_Automation_SetAutomaticTransport(uint32_t uid, bool on)
@@ -2578,6 +3077,22 @@ bool G_Automation_GetAutomaticWork(uint32_t uid)
     return astate->automatic_work;
 }
 
+void G_Automation_SetAutomaticPosts(uint32_t uid, bool on)
+{
+    struct automation_state *astate = astate_get(uid);
+    if(!astate)
+        return;
+    astate->automatic_posts = on;
+}
+
+bool G_Automation_GetAutomaticPosts(uint32_t uid)
+{
+    struct automation_state *astate = astate_get(uid);
+    if(!astate)
+        return false;
+    return astate->automatic_posts;
+}
+
 void G_Automation_SetPinnedWork(uint32_t uid, const char *rname)
 {
     struct automation_state *astate = astate_get(uid);
@@ -2597,15 +3112,77 @@ uint32_t G_Automation_BestResource(uint32_t uid, const char *rname)
     struct work_snapshot *snap = snapshot_get();
     bool roams = (astate->home_district == 0 && strcmp(astate->pinned, rname));
     /* One on the player's order keeps to the patch it was sent to */
-    vec2_t origin = astate->ordered ? work_origin(uid, astate) : gather_origin(uid, astate, rname);
-    uint32_t node = best_resource(uid, origin, rname, WORK_RADIUS, roams, astate->home_district, snap);
+    vec2_t origin = gather_origin(uid, astate, rname);
+    uint32_t node = best_resource(uid, origin, rname, option(G_GetFactionID(uid), OPT_REACH), roams,
+        astate->home_district, snap);
     if(node != NULL_UID) {
         note_aimed(snap, node);
     }
     return node;
 }
 
-bool G_Automation_LeavesGathering(uint32_t uid, const char *rname, uint32_t node)
+/* Whether the pool may take another worker off its work yet, and when it has */
+static bool pool_may_reassign(uint32_t uid, const struct automation_state *astate)
+{
+    int faction = G_GetFactionID(uid);
+    uint32_t every = (uint32_t)(option(faction, OPT_REBALANCE_S) * 20.0f);
+    khiter_t k = kh_get(count, s_reassigned, pool_key(faction, astate->home_district));
+    if(k == kh_end(s_reassigned))
+        return true;
+    return s_tick - kh_value(s_reassigned, k) >= every;
+}
+
+static void note_reassigned(uint32_t uid, const struct automation_state *astate)
+{
+    int status;
+    khiter_t k = kh_put(count, s_reassigned, pool_key(G_GetFactionID(uid), astate->home_district), &status);
+    if(status != -1) {
+        kh_value(s_reassigned, k) = s_tick;
+    }
+}
+
+/* Whether the worker has kept at its duty long enough to be moved */
+static bool tenure_up(uint32_t uid)
+{
+    int faction = G_GetFactionID(uid);
+    return G_Duty_AgeTicks(uid) >= (uint32_t)(option(faction, OPT_TENURE_S) * 20.0f);
+}
+
+/* Whether anything wants the worker more than the good it is at: a request
+ * short of carriers it could serve, or a good short of gatherers it could
+ * gather; a gatherer of a stocked good with nothing else to do keeps at it */
+static bool more_urgent_work(uint32_t uid, struct automation_state *astate, struct work_snapshot *snap,
+                             const char *rname)
+{
+    int faction = G_GetFactionID(uid);
+    if(astate->automatic_transport && !share_full(snap, uid, astate, SHARE_CARRY)) {
+        for(int i = 0; i < vec_size(&snap->requests); i++) {
+            const struct job_request *req = &vec_AT(&snap->requests, i);
+            if(req->shortfall <= 0 || G_GetFactionID(req->site) != faction)
+                continue;
+            if(astate->home_district && G_District_Of(req->site) != astate->home_district)
+                continue;
+            return true;
+        }
+    }
+    const char *candidates[MAX_RESOURCES];
+    size_t ncandidates = G_Harvester_GetGatherable(uid, ARR_SIZE(candidates), candidates);
+    ncandidates = fold_classes(candidates, ncandidates);
+    const struct good_class *own = class_of(rname);
+    for(int i = 0; i < ncandidates; i++) {
+        if(!strcmp(candidates[i], rname) || (own && !strcmp(candidates[i], own->name)))
+            continue;
+        struct good_demand *demand = demand_get(snap, faction, candidates[i]);
+        if(!demand || demand->stocked || demand->workers >= demand->wanted)
+            continue;
+        const char *good;
+        if(node_for(uid, astate, candidates[i], snap, &good) != NULL_UID)
+            return true;
+    }
+    return false;
+}
+
+static bool leaves_gathering(uint32_t uid, const char *rname, uint32_t node)
 {
     struct automation_state *astate = astate_get(uid);
     if(!astate || !astate->automatic_work)
@@ -2617,8 +3194,12 @@ bool G_Automation_LeavesGathering(uint32_t uid, const char *rname, uint32_t node
     int faction = G_GetFactionID(uid);
     struct work_snapshot *snap = snapshot_get();
     struct good_demand *demand = demand_get(snap, faction, rname);
-    /* The few that keep up its rate stay on */
+    /* The few that keep up its rate stay on, and so do the rest while nothing
+     * more urgent wants them; one goes at a time, after a while at it */
     if(demand && demand->stocked && demand->workers > demand->wanted) {
+        if(!tenure_up(uid) || !pool_may_reassign(uid, astate) || !more_urgent_work(uid, astate, snap, rname))
+            return false;
+        note_reassigned(uid, astate);
         demand->workers--;
         return true;
     }
@@ -2630,7 +3211,22 @@ bool G_Automation_LeavesGathering(uint32_t uid, const char *rname, uint32_t node
         return true;
     if(astate->pinned[0] || !(G_FlagsGet(uid) & ENTITY_FLAG_BUILDER))
         return false;
+    if(wanted_elsewhere(uid, astate, snap)) {
+        note_reassigned(uid, astate);
+        if(demand) {
+            demand->workers--;
+        }
+        return true;
+    }
     if(in_crew(astate) && crew_full(snap, faction))
+        return false;
+    if(share_full(snap, uid, astate, SHARE_BUILD))
+        return false;
+    if(option(faction, OPT_PULL_TO_BUILD) == 0.0f)
+        return false;
+    /* As with carrying, the first builder of a pool that has none does not wait */
+    const struct pool_census *pool = pool_get(snap, uid, astate);
+    if((!tenure_up(uid) && !(pool && pool->builders == 0)) || !pool_may_reassign(uid, astate))
         return false;
     /* Only for a site that can be worked, or founded: one waiting on its materials needs gatherers more */
     vec2_t pos = work_origin(uid, astate);
@@ -2642,8 +3238,10 @@ bool G_Automation_LeavesGathering(uint32_t uid, const char *rname, uint32_t node
             .supplied = true,
             .road = road
         };
-        if(nearest_site(snap, pos, &arg))
+        if(nearest_site(snap, pos, &arg)) {
+            note_reassigned(uid, astate);
             return true;
+        }
         arg = (struct site_search){
             .faction = faction,
             .district = astate->home_district,
@@ -2651,10 +3249,113 @@ bool G_Automation_LeavesGathering(uint32_t uid, const char *rname, uint32_t node
             .unfounded = true,
             .road = road
         };
-        if(nearest_site(snap, pos, &arg))
+        if(nearest_site(snap, pos, &arg)) {
+            note_reassigned(uid, astate);
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Whether a request can be served and has room for another carrier */
+static bool carry_wanted(uint32_t uid, struct automation_state *astate, struct work_snapshot *snap)
+{
+    if(!astate->automatic_transport || share_full(snap, uid, astate, SHARE_CARRY))
+        return false;
+    vec_entity_t sites;
+    vec_entity_init(&sites);
+    G_StorageSite_GetAll(&sites);
+    vec_source_t sources;
+    vec_source_init(&sources);
+    bool ret = false;
+    int faction = G_GetFactionID(uid);
+    for(int i = 0; !ret && i < vec_size(&snap->requests); i++) {
+        const struct job_request *req = &vec_AT(&snap->requests, i);
+        if(req->shortfall <= 0 || G_GetFactionID(req->site) != faction)
+            continue;
+        if(astate->home_district && G_District_Of(req->site) != astate->home_district)
+            continue;
+        vec_source_reset(&sources);
+        collect_sources(&sources, &sites, req->rname, faction, req->site);
+        ret = (vec_size(&sources) > 0);
+    }
+    vec_source_destroy(&sources);
+    vec_entity_destroy(&sites);
+    return ret;
+}
+
+static bool post_open_for(uint32_t uid, const struct automation_state *astate)
+{
+    struct post_worker worker;
+    if(!post_worker(uid, astate, &worker))
+        return false;
+    struct post_vacancy vacs[MAX_VACANCIES];
+    size_t nvacs = G_Posts_Vacancies(ARR_SIZE(vacs), vacs);
+    for(int i = 0; i < nvacs; i++) {
+        if(vacs[i].awaited == NULL_UID && worker.home_district == 0
+        && vacs[i].waited_ticks < HOMED_FIRST_TICKS)
+            continue;
+        if(pick_post_worker(&vacs[i], &worker, 1) != -1)
             return true;
     }
     return false;
+}
+
+/* Whether a free gatherer goes from a good still short to carry or man a post.
+ * The first carrier of a pool that has none does not wait out its tenure */
+static bool wanted_elsewhere(uint32_t uid, struct automation_state *astate, struct work_snapshot *snap)
+{
+    if(!pool_may_reassign(uid, astate))
+        return false;
+    const struct pool_census *pool = pool_get(snap, uid, astate);
+    bool up = tenure_up(uid);
+    if((up || (pool && pool->carriers == 0)) && carry_wanted(uid, astate, snap))
+        return true;
+    return up && post_open_for(uid, astate);
+}
+
+/* Whether a gatherer of its own choosing leaves the good at its drop-off; its
+ * duty ends with it, so that it is not taken up again */
+bool G_Automation_SetGoodClass(const char *name, const char *members[], size_t n)
+{
+    if(n == 0 || n > MAX_CLASS_MEMBERS)
+        return false;
+    struct good_class *cls = NULL;
+    for(int i = 0; i < s_nclasses; i++) {
+        if(!strcmp(s_classes[i].name, name)) {
+            cls = &s_classes[i];
+        }
+    }
+    if(!cls) {
+        if(s_nclasses == MAX_CLASSES)
+            return false;
+        cls = &s_classes[s_nclasses++];
+    }
+    pf_strlcpy(cls->name, name, sizeof(cls->name));
+    cls->n = n;
+    for(int i = 0; i < n; i++) {
+        pf_strlcpy(cls->members[i], members[i], sizeof(cls->members[i]));
+    }
+    s_snapshot.valid = false;
+    return true;
+}
+
+uint32_t G_Automation_GatherNode(uint32_t uid, const char *rname)
+{
+    struct automation_state *astate = astate_get(uid);
+    if(!astate)
+        return NULL_UID;
+    return gather_node(uid, astate, rname, snapshot_get());
+}
+
+bool G_Automation_LeavesGathering(uint32_t uid, const char *rname, uint32_t node)
+{
+    if(!leaves_gathering(uid, rname, node))
+        return false;
+    if(G_Duty_Kind(uid) == DUTY_GATHER && !G_Duty_ByPlayer(uid)) {
+        G_Duty_End(uid, "leaves");
+    }
+    return true;
 }
 
 void G_Automation_Balance(int faction, const char *rname, int *out_surplus, int *out_shortfall)
@@ -2927,6 +3628,26 @@ bool G_Automation_SavePriorities(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &size, "crew_size"));
     }
+
+    struct attr num_options = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = NUM_SCHED_OPTIONS
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_options, "num_sched_options"));
+
+    for(int i = 0; i < NUM_SCHED_OPTIONS; i++) {
+        struct attr name = (struct attr){ .type = TYPE_STRING };
+        pf_strlcpy(name.val.as_string, s_option_descs[i].name, sizeof(name.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &name, "sched_option"));
+
+        for(int j = 0; j < MAX_FACTIONS; j++) {
+            struct attr value = (struct attr){
+                .type = TYPE_FLOAT,
+                .val.as_float = s_options[j][i]
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &value, "value"));
+        }
+    }
     return true;
 }
 
@@ -2981,6 +3702,27 @@ bool G_Automation_LoadPriorities(struct SDL_RWops *stream)
             CHK_TRUE_RET(attr.type == TYPE_INT);
             if(i < MAX_FACTIONS) {
                 s_crew_size[i] = MAX(attr.val.as_int, 0);
+            }
+        }
+    }
+
+    reset_options();
+    if(Attr_NextKeyIs(stream, "num_sched_options")) {
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        const size_t num_options = attr.val.as_int;
+
+        for(int i = 0; i < num_options; i++) {
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_STRING);
+            int opt = option_index(attr.val.as_string);
+
+            for(int j = 0; j < MAX_FACTIONS; j++) {
+                CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+                CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+                if(opt >= 0) {
+                    s_options[j][opt] = attr.val.as_float;
+                }
             }
         }
     }
@@ -3050,17 +3792,11 @@ bool G_Automation_SaveState(struct SDL_RWops *stream)
         pf_strlcpy(working.val.as_string, astate.working, sizeof(working.val.as_string));
         CHK_TRUE_RET(Attr_Write(stream, &working, "working"));
 
-        struct attr ordered = (struct attr){
+        struct attr automatic_posts = (struct attr){
             .type = TYPE_BOOL,
-            .val.as_bool = astate.ordered
+            .val.as_bool = astate.automatic_posts
         };
-        CHK_TRUE_RET(Attr_Write(stream, &ordered, "ordered"));
-
-        struct attr hold_ticks = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = astate.hold_until ? MAX(1, (int)(astate.hold_until - s_tick)) : 0
-        };
-        CHK_TRUE_RET(Attr_Write(stream, &hold_ticks, "hold_ticks"));
+        CHK_TRUE_RET(Attr_Write(stream, &automatic_posts, "automatic_posts"));
         Sched_TryYield();
     });
 
@@ -3145,15 +3881,23 @@ bool G_Automation_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(attr.type == TYPE_STRING);
         pf_strlcpy(astate->working, attr.val.as_string, sizeof(astate->working));
 
-        astate->ordered_tick = s_tick;
+        /* Saves from before the player's orders made a worker his own kept it
+         * on the order for a while after; it is now his */
         if(Attr_NextKeyIs(stream, "ordered")) {
             CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
             CHK_TRUE_RET(attr.type == TYPE_BOOL);
-            astate->ordered = attr.val.as_bool;
-
+            if(attr.val.as_bool) {
+                astate->automatic_work = false;
+                astate->automatic_transport = false;
+                astate->home_district = 0;
+            }
             CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
             CHK_TRUE_RET(attr.type == TYPE_INT);
-            astate->hold_until = (attr.val.as_int > 0) ? s_tick + attr.val.as_int : 0;
+        }
+        if(Attr_NextKeyIs(stream, "automatic_posts")) {
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_BOOL);
+            astate->automatic_posts = attr.val.as_bool;
         }
         Sched_TryYield();
     }

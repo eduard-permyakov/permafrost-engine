@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_GAME_BUILDER
 
 #include "builder.h"
+#include "duty.h"
 #include "building.h"
 #include "harvester.h"
 #include "command.h"
@@ -74,6 +75,8 @@
 
 #define FOUND_RETRY_TICKS (10)
 #define SUPPLY_RETRY_TICKS (20)
+/* How long a builder by order waits at its site for carriers before it fetches the rest itself */
+#define SUPPLY_WAIT_TICKS  (160)
 #define FOUND_CLEAR_TICKS (40)
 #define FOUND_WAIT_TICKS  (600) /* half a minute for a busy footprint to empty before giving up */
 #define STILL_ARRIVAL_TICKS (40)
@@ -106,6 +109,8 @@ KHASH_MAP_INIT_INT(state, struct builderstate)
 static void on_build_anim_finished(void *user, void *event);
 static void on_motion_end(void *user, void *event);
 static void proceed_at_site(uint32_t uid, struct builderstate *bs);
+static void complete(struct builderstate *bs, uint32_t uid);
+static bool impatient_now(const struct builderstate *bs);
 static void approach(uint32_t uid, struct builderstate *bs, uint32_t building);
 static void next_command(uint32_t uid);
 static bool wants_builder(uint32_t building);
@@ -194,6 +199,28 @@ static void finish_building(struct builderstate *bs, uint32_t uid)
     }
 }
 
+/* The builder's duty ends with the site; one that works the field it raised
+ * gathers for whoever had it build */
+static void complete(struct builderstate *bs, uint32_t uid)
+{
+    struct duty duty;
+    bool had = G_Duty_Get(uid, &duty);
+    G_Building_Complete(bs->target_uid);
+    if(had) {
+        G_Duty_TagNext(uid, duty.by);
+    }
+    finish_building(bs, uid);
+    /* Not the field it went on to work, whose duty it has just taken */
+    if(G_Duty_Kind(uid) != DUTY_GATHER) {
+        G_Duty_End(uid, NULL);
+    }
+    /* What it fetched beyond the site's need goes to a store */
+    if((G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER) && G_Harvester_Idle(uid) && G_Harvester_GetCurrTotalCarry(uid)) {
+        G_Harvester_BringInLoad(uid, NULL_UID, false);
+    }
+    next_command(uid);
+}
+
 static void on_build_anim_finished(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
@@ -208,9 +235,7 @@ static void on_build_anim_finished(void *user, void *event)
     }
 
     if(!(G_FlagsGet(bs->target_uid) & ENTITY_FLAG_COMBATABLE)) {
-        G_Building_Complete(bs->target_uid);
-        finish_building(bs, uid);
-        next_command(uid);
+        complete(bs, uid);
         return;
     }
 
@@ -221,10 +246,7 @@ static void on_build_anim_finished(void *user, void *event)
     G_Building_UpdateProgress(bs->target_uid, hp / (float)max_hp);
 
     if(hp == max_hp) {
-        G_Building_Complete(bs->target_uid);
-        finish_building(bs, uid);
-        next_command(uid);
-        return;
+        complete(bs, uid);
     }
 }
 
@@ -285,6 +307,12 @@ static bool unfounded_site_queued(uint32_t uid)
     return false;
 }
 
+/* Whether the builder has waited at its site long enough to fetch for it itself */
+static bool impatient_now(const struct builderstate *bs)
+{
+    return bs->state == STATE_WAIT_SUPPLY && bs->wait_ticks >= SUPPLY_WAIT_TICKS;
+}
+
 static void proceed_at_site(uint32_t uid, struct builderstate *bs)
 {
     /* The ground for every site in the queue is laid before any is raised */
@@ -303,21 +331,36 @@ static void proceed_at_site(uint32_t uid, struct builderstate *bs)
 
     if(!G_Building_IsSupplied(bs->target_uid)) {
         uint32_t flags = G_FlagsGet(uid);
-        bool supplying = false;
+        bool supplying = false, gathering = false;
+        /* One with the site for its duty sees it through like one ordered to it */
+        bool ordered = bs->ordered || (G_Duty_Kind(uid) == DUTY_BUILD);
         if(flags & ENTITY_FLAG_HARVESTER) {
+            bool impatient = impatient_now(bs);
             G_Harvester_Stop(uid);
-            supplying = G_Harvester_SupplyBuilding(uid, bs->target_uid);
+            supplying = G_Harvester_SupplyBuilding(uid, bs->target_uid, impatient);
+            /* Nothing in store can be had for it: it gathers the rest itself */
+            if(!supplying && impatient) {
+                gathering = supplying = G_Harvester_GatherForSite(uid, bs->target_uid);
+            }
         }
         if(supplying) {
             bs->state = STATE_NOT_BUILDING;
-            if(bs->ordered) {
+            if(ordered && !gathering) {
                 /* Back to it once the materials are in */
                 G_Command_PushFront(uid, (struct command){CMD_BUILD, bs->target_uid});
             }
-        }else if(bs->ordered) {
+        }else if(ordered && (bs->ordered || G_Duty_ByPlayer(uid) || !impatient_now(bs))) {
             /* The materials are on their way with others: it waits at the site for them */
+            if(bs->state != STATE_WAIT_SUPPLY) {
+                bs->wait_ticks = 0;
+            }
             bs->state = STATE_WAIT_SUPPLY;
-            bs->wait_ticks = 0;
+        }else if(ordered) {
+            /* One the automation sent to a site nothing can supply is let go of it */
+            G_Duty_End(uid, "starved");
+            G_Command_Clear(uid);
+            bs->state = STATE_NOT_BUILDING;
+            next_command(uid);
         }else{
             bs->state = STATE_NOT_BUILDING;
             next_command(uid);
@@ -483,6 +526,7 @@ static bool start_build(uint32_t uid, uint32_t building, bool ordered)
 
     if(!(G_FlagsGet(building) & ENTITY_FLAG_BUILDING))
         return false;
+    G_Duty_Set(uid, DUTY_BUILD, building, NULL, DUTY_BY_PLAYER);
 
     /* A gatherer's trip would otherwise take it off to drop its load once it is there */
     if(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER) {
@@ -723,6 +767,12 @@ void G_Builder_Stop(uint32_t uid)
     struct builderstate *bs = builderstate_get(uid);
     assert(bs);
     finish_building(bs, uid);
+}
+
+bool G_Builder_WaitingSupply(uint32_t uid)
+{
+    struct builderstate *bs = builderstate_get(uid);
+    return bs && bs->state == STATE_WAIT_SUPPLY;
 }
 
 bool G_Builder_Idle(uint32_t uid)

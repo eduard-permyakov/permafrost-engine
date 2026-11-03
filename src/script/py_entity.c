@@ -46,6 +46,7 @@
 #include "../asset_load.h"
 #include "../anim/public/anim.h"
 #include "../game/public/game.h"
+#include "../game/duty.h"
 #include "../game/population.h"
 #include "../game/command.h"
 #include "../phys/public/phys.h"
@@ -86,6 +87,7 @@ static PyObject *PyEntity_get_uid(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_name(PyEntityObject *self, void *closure);
 static int       PyEntity_set_name(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_zombie(PyEntityObject *self, void *closure);
+static PyObject *PyEntity_get_duty(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_height(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_pos(PyEntityObject *self, void *closure);
 static int       PyEntity_set_pos(PyEntityObject *self, PyObject *value, void *closure);
@@ -307,6 +309,14 @@ static PyGetSetDef PyEntity_getset[] = {
     {"zombie",
     (getter)PyEntity_get_zombie, NULL,
     "Returns True if the entity is a zombie (destroyed in the game simulation, but retained via a scripting reference).",
+    NULL},
+    {"duty",
+    (getter)PyEntity_get_duty, NULL,
+    "What the unit is at, kept through its meals and other interruptions: (kind, target, good, by, "
+    "waiting), the kind one of 'gather', 'build', 'supply', 'post' or 'ingredient', the target the "
+    "store its loads go to, the site, the store it supplies, the workshop or the building, the good "
+    "for gathering and supplying, 'by' one of 'player', 'city' or 'automation', and 'waiting' whether "
+    "a supplier stands by for its next request. None without a duty.",
     NULL},
     {"height",
     (getter)PyEntity_get_height, NULL,
@@ -1001,9 +1011,11 @@ static int       PyHarvesterEntity_set_strategy(PyHarvesterEntityObject *self, P
 static PyObject *PyHarvesterEntity_get_automatic_transport(PyHarvesterEntityObject *self, void *closure);
 static PyObject *PyHarvesterEntity_get_automatic_work(PyHarvesterEntityObject *self, void *closure);
 static int       PyHarvesterEntity_set_automatic_work(PyHarvesterEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyHarvesterEntity_get_automatic_posts(PyHarvesterEntityObject *self, void *closure);
+static int       PyHarvesterEntity_set_automatic_posts(PyHarvesterEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyHarvesterEntity_get_pinned_work(PyHarvesterEntityObject *self, void *closure);
+static PyObject *PyHarvesterEntity_get_player_managed(PyHarvesterEntityObject *self, void *closure);
 static PyObject *PyHarvesterEntity_get_order_hold(PyHarvesterEntityObject *self, void *closure);
-static PyObject *PyHarvesterEntity_get_player_ordered(PyHarvesterEntityObject *self, void *closure);
 static PyObject *PyHarvesterEntity_get_work_trace(PyHarvesterEntityObject *self, void *closure);
 static PyObject *PyHarvesterEntity_get_queued_gather(PyHarvesterEntityObject *self, void *closure);
 static PyObject *PyHarvesterEntity_get_home_district(PyHarvesterEntityObject *self, void *closure);
@@ -1112,6 +1124,11 @@ static PyGetSetDef PyHarvesterEntity_getset[] = {
     "Whether the worker, when it has no order, finds its own work: building nearby, then gathering "
     "what is most wanted.",
     NULL},
+    {"automatic_posts",
+    (getter)PyHarvesterEntity_get_automatic_posts, (setter)PyHarvesterEntity_set_automatic_posts,
+    "Whether the worker finding its own work takes posts in workshops. The player's orders send it to "
+    "one either way.",
+    NULL},
     {"home_district",
     (getter)PyHarvesterEntity_get_home_district, (setter)PyHarvesterEntity_set_home_district,
     "The hub cluster whose district a carrier on District duty serves, or 0 for Free duty.",
@@ -1122,12 +1139,17 @@ static PyGetSetDef PyHarvesterEntity_getset[] = {
     NULL},
     {"order_hold",
     (getter)PyHarvesterEntity_get_order_hold, NULL,
-    "Seconds left of the worker's wait for the player's next order once it has carried one out, "
-    "kept full while it is selected; 0.0 when it is not waiting.",
+    "Always 0.0: the player's orders no longer hold a worker for a while after. Kept for the scripts "
+    "of older saves.",
     NULL},
     {"player_ordered",
-    (getter)PyHarvesterEntity_get_player_ordered, NULL,
-    "Whether the worker is on the player's order, or waiting after one, out of the automation's hands.",
+    (getter)PyHarvesterEntity_get_player_managed, NULL,
+    "The same as 'player_managed', for the scripts of older saves.",
+    NULL},
+    {"player_managed",
+    (getter)PyHarvesterEntity_get_player_managed, NULL,
+    "Whether the worker is the player's to manage: of no city, and not left to the automation. Any "
+    "order of the player's makes it so.",
     NULL},
     {"queued_gather",
     (getter)PyHarvesterEntity_get_queued_gather, NULL,
@@ -1175,8 +1197,11 @@ static PyObject *PyStorageSiteEntity_get_own_capacity(PyStorageSiteEntityObject 
 static PyObject *PyStorageSiteEntity_get_keep(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_suppliers(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_gatherers(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_get_builders(PyStorageSiteEntityObject *self);
 static PyObject *PyStorageSiteEntity_set_gatherers(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_set_keep(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_set_held(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_get_held(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_reserve(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_record_made(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_set_note(PyStorageSiteEntityObject *self, PyObject *args);
@@ -1231,9 +1256,22 @@ static PyMethodDef PyStorageSiteEntity_methods[] = {
     "The number of gatherers whose next load goes to the site or its pool. Given a resource name, "
     "the number gathering that good."},
 
+    {"get_builders",
+    (PyCFunction)PyStorageSiteEntity_get_builders, METH_NOARGS,
+    "The number of builders of the site or its pool, at any stage of raising it."},
+
     {"set_gatherers", 
     (PyCFunction)PyStorageSiteEntity_set_gatherers, METH_VARARGS,
     "Does nothing: the engine counts a site's gatherers itself. Kept for the scripts of older saves."},
+
+    {"set_held",
+    (PyCFunction)PyStorageSiteEntity_set_held, METH_VARARGS,
+    "Sets what the site holds of a resource for a tribute, on top of its keep: carriers bring it "
+    "in and other stores leave it, but the player's building sites may take it."},
+
+    {"get_held",
+    (PyCFunction)PyStorageSiteEntity_get_held, METH_VARARGS,
+    "Gets what the site holds of a resource for a tribute."},
 
     {"set_keep", 
     (PyCFunction)PyStorageSiteEntity_set_keep, METH_VARARGS,
@@ -1593,6 +1631,7 @@ typedef struct {
 static PyObject *PyGarrisonableEntity_del(PyGarrisonableEntityObject *self);
 static PyObject *PyGarrisonableEntity_ingredients(PyGarrisonableEntityObject *self);
 static PyObject *PyGarrisonableEntity_eject_ingredient(PyGarrisonableEntityObject *self, PyObject *args);
+static PyObject *PyGarrisonableEntity_set_wants_ingredient(PyGarrisonableEntityObject *self, PyObject *args);
 static PyObject *PyGarrisonableEntity_pickle(PyGarrisonableEntityObject *self, PyObject *args, 
                                              PyObject *kwargs);
 static PyObject *PyGarrisonableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
@@ -1623,6 +1662,10 @@ static PyMethodDef PyGarrisonableEntity_methods[] = {
     {"ingredients", 
     (PyCFunction)PyGarrisonableEntity_ingredients, METH_NOARGS,
     "Returns a list of the entities held inside as ingredients."},
+
+    {"set_wants_ingredient",
+    (PyCFunction)PyGarrisonableEntity_set_wants_ingredient, METH_VARARGS,
+    "Sets whether a unit the player sends to the building goes in as its ingredient."},
 
     {"eject_ingredient", 
     (PyCFunction)PyGarrisonableEntity_eject_ingredient, METH_VARARGS,
@@ -1992,6 +2035,16 @@ static PyObject *PyEntity_get_zombie(PyEntityObject *self, void *closure)
         Py_RETURN_TRUE;
     }
     Py_RETURN_FALSE;
+}
+
+static PyObject *PyEntity_get_duty(PyEntityObject *self, void *closure)
+{
+    struct duty d;
+    if(!G_Duty_Get(self->ent, &d))
+        Py_RETURN_NONE;
+    PyObject *target = (d.target != NULL_UID) ? S_Entity_ObjForUID(d.target) : NULL;
+    return Py_BuildValue("(sOssO)", G_Duty_KindName(d.kind), target ? target : Py_None, d.good,
+        G_Duty_ByName(d.by), d.waiting ? Py_True : Py_False);
 }
 
 static PyObject *PyEntity_get_height(PyEntityObject *self, void *closure)
@@ -4341,6 +4394,9 @@ static PyObject *PyBuilderEntity_build(PyBuilderEntityObject *self, PyObject *ar
         return NULL;
     }
     G_NotifyOrderIssued(self->super.ent, true, player);
+    if(!player) {
+        G_Duty_TagNext(self->super.ent, G_Automation_ManagedBy(self->super.ent));
+    }
     G_Builder_Order(self->super.ent, target);
     Py_RETURN_NONE;
 }
@@ -5229,12 +5285,12 @@ static PyObject *PyHarvesterEntity_get_automatic_work(PyHarvesterEntityObject *s
 
 static PyObject *PyHarvesterEntity_get_order_hold(PyHarvesterEntityObject *self, void *closure)
 {
-    return PyFloat_FromDouble(G_Automation_OrderHold(self->super.ent));
+    return PyFloat_FromDouble(0.0);
 }
 
-static PyObject *PyHarvesterEntity_get_player_ordered(PyHarvesterEntityObject *self, void *closure)
+static PyObject *PyHarvesterEntity_get_player_managed(PyHarvesterEntityObject *self, void *closure)
 {
-    if(G_Automation_PlayerOrdered(self->super.ent)) {
+    if(G_Automation_PlayerManaged(self->super.ent)) {
         Py_RETURN_TRUE;
     }
     Py_RETURN_FALSE;
@@ -5247,6 +5303,24 @@ static int PyHarvesterEntity_set_automatic_work(PyHarvesterEntityObject *self, P
         return -1;
     }
     G_Automation_SetAutomaticWork(self->super.ent, PyObject_IsTrue(value));
+    return 0;
+}
+
+static PyObject *PyHarvesterEntity_get_automatic_posts(PyHarvesterEntityObject *self, void *closure)
+{
+    if(G_Automation_GetAutomaticPosts(self->super.ent)) {
+        Py_RETURN_TRUE;
+    }
+    Py_RETURN_FALSE;
+}
+
+static int PyHarvesterEntity_set_automatic_posts(PyHarvesterEntityObject *self, PyObject *value, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+    G_Automation_SetAutomaticPosts(self->super.ent, PyObject_IsTrue(value));
     return 0;
 }
 
@@ -5491,6 +5565,12 @@ static PyObject *PyStorageSiteEntity_get_gatherers(PyStorageSiteEntityObject *se
     return PyInt_FromLong(G_StorageSite_Gatherers(self->super.ent, rname));
 }
 
+static PyObject *PyStorageSiteEntity_get_builders(PyStorageSiteEntityObject *self)
+{
+    SS_CHECK_ALIVE(NULL);
+    return PyInt_FromLong(G_StorageSite_Builders(self->super.ent));
+}
+
 static PyObject *PyStorageSiteEntity_set_gatherers(PyStorageSiteEntityObject *self, PyObject *args)
 {
     SS_CHECK_ALIVE(NULL);
@@ -5500,6 +5580,30 @@ static PyObject *PyStorageSiteEntity_set_gatherers(PyStorageSiteEntityObject *se
         return NULL;
     }
     Py_RETURN_NONE;
+}
+
+static PyObject *PyStorageSiteEntity_set_held(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *name;
+    int held;
+    if(!PyArg_ParseTuple(args, "si", &name, &held)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting two arguments: name (string) and amount (int).");
+        return NULL;
+    }
+    G_StorageSite_SetHeld(self->super.ent, name, held);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyStorageSiteEntity_get_held(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
+        return NULL;
+    }
+    return PyInt_FromLong(G_StorageSite_GetHeld(self->super.ent, name));
 }
 
 static PyObject *PyStorageSiteEntity_set_keep(PyStorageSiteEntityObject *self, PyObject *args)
@@ -5890,6 +5994,7 @@ static PyObject *PyMovableEntity_move(PyMovableEntityObject *self, PyObject *arg
 
     /* As the player's right click: the unit drops what it was doing first */
     if(player) {
+        G_Duty_End(self->super.ent, NULL);
         G_StopEntity(self->super.ent, false, true);
         G_NotifyOrderIssued(self->super.ent, true, true);
     }
@@ -6039,6 +6144,19 @@ static PyObject *PyGarrisonableEntity_ingredients(PyGarrisonableEntityObject *se
 out:
     vec_entity_destroy(&ingredients);
     return ret;
+}
+
+static PyObject *PyGarrisonableEntity_set_wants_ingredient(PyGarrisonableEntityObject *self, PyObject *args)
+{
+    int wants;
+    if(!PyArg_ParseTuple(args, "i", &wants)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: whether it wants an ingredient (bool).");
+        return NULL;
+    }
+    if(!(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE)) {
+        G_Garrison_SetWantsIngredient(self->super.ent, wants);
+    }
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyGarrisonableEntity_eject_ingredient(PyGarrisonableEntityObject *self, PyObject *args)

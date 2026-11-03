@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_GAME_STORAGE_SITE
 
 #include "storage_site.h"
+#include "duty.h"
 #include "game_private.h"
 #include "selection.h"
 #include "../sched.h"
@@ -117,6 +118,9 @@ struct ss_state{
      * with the resource (enum ss_chip) */
     kh_int_t              *keep;
     kh_int_t              *chip;
+    /* Per resource: what is held for a tribute on top of the keep, which
+     * carriers bring in and other stores leave, but a building site may take */
+    kh_int_t              *held;
 };
 
 typedef char buff_t[512];
@@ -201,7 +205,6 @@ struct gathered_record{
 };
 
 KHASH_MAP_INIT_INT(gathered, struct gathered_record)
-KHASH_MAP_INIT_INT(bound, int)
 
 /* A line a script shows under a site's strip, such as an izba's growth; not
  * saved, as the scripts set it again every second
@@ -213,15 +216,6 @@ struct strip_note{
 };
 
 KHASH_MAP_INIT_INT(note, struct strip_note)
-
-/* The gatherers bringing a site their next load, by good */
-struct gathering{
-    size_t      ngoods;
-    const char *names[16];
-    int         counts[16];
-};
-
-KHASH_MAP_INIT_INT(gathering, struct gathering)
 
 /* A good as the overlay strip shows it */
 struct strip_good{
@@ -265,6 +259,7 @@ struct strip_good{
 #define STRIP_GRACE_S       (2)
 #define CARRIERS_ICON       "assets/icons/transport-icon.png"
 #define GATHERERS_ICON      "assets/icons/gather-command-normal.png"
+#define BUILDERS_ICON       "assets/icons/build-command-normal.png"
 #define TREND_UP_ICON       "assets/icons/trend-up-icon.png"
 #define TREND_DOWN_ICON     "assets/icons/trend-down-icon.png"
 #define POSTS_ICON          "assets/icons/population-icon.png"
@@ -286,6 +281,7 @@ struct window_plan{
     const char        *reason;
     int                ncarriers;
     int                ngatherers;
+    int                nbuilders;
     /* Whether any good has carriers, or gatherers, of its own beside it */
     bool               good_carriers;
     bool               good_gatherers;
@@ -320,8 +316,6 @@ static khash_t(strip)  *s_strips;
 static uint32_t         s_strip_stamp;
 /* Per site: who is bringing it goods, tallied once per UI pass, and the
  * gatherers bringing it their next load, tallied once a second */
-static khash_t(bound)  *s_bound;
-static khash_t(gathering) *s_gathering;
 
 static struct nk_style_item s_bg_style = {0};
 static struct nk_color      s_border_clr = {0};
@@ -397,6 +391,7 @@ static void ss_state_destroy(struct ss_state *hs)
 {
     kh_destroy(int, hs->keep);
     kh_destroy(int, hs->chip);
+    kh_destroy(int, hs->held);
     kh_destroy(int, hs->capacity);
     kh_destroy(int, hs->curr);
     kh_destroy(int, hs->desired);
@@ -414,10 +409,11 @@ static bool ss_state_init(struct ss_state *hs)
     hs->alt_desired = kh_init(int);
     hs->keep = kh_init(int);
     hs->chip = kh_init(int);
+    hs->held = kh_init(int);
 
     if(!hs->capacity || !hs->curr || !hs->desired
     || !hs->alt_capacity || !hs->alt_desired
-    || !hs->keep || !hs->chip) {
+    || !hs->keep || !hs->chip || !hs->held) {
 
         ss_state_destroy(hs);
         return false;
@@ -679,57 +675,29 @@ static const struct trend *trend_find(const struct strip *strip, const char *rna
     return NULL;
 }
 
-static int bound_get(khash_t(bound) *table, uint32_t uid)
-{
-    khiter_t k = kh_get(bound, table, uid);
-    return (k == kh_end(table)) ? 0 : kh_value(table, k);
-}
-
-static void bound_add(uint32_t uid)
-{
-    int status;
-    khiter_t k = kh_put(bound, s_bound, uid, &status);
-    if(status == -1)
-        return;
-    if(status != 0) {
-        kh_value(s_bound, k) = 0;
-    }
-    kh_value(s_bound, k)++;
-}
-
-/* Carriers on a trip to the site, or on the drop-off they make first, and
- * builders ordered to a site whose materials have not reached it */
-static void rebuild_bound(void)
-{
-    kh_clear(bound, s_bound);
-
-    uint32_t targets[2048];
-    size_t ntargets = G_Harvester_BoundDests(ARR_SIZE(targets), targets);
-    for(int i = 0; i < ntargets; i++) {
-        bound_add(targets[i]);
-    }
-    ntargets = G_Builder_Targets(ARR_SIZE(targets), targets);
-    for(int i = 0; i < ntargets; i++) {
-        uint32_t site = targets[i];
-        if(!G_EntityExists(site) || !(G_FlagsGet(site) & ENTITY_FLAG_BUILDING))
-            continue;
-        if(G_Building_IsSupplied(site))
-            continue;
-        bound_add(site);
-    }
-}
-
-static int bound_for(uint32_t uid)
+/* How many hold a duty of the kind on the site, or on any site of its pool */
+static int count_pool(uint32_t uid, enum duty_kind kind, const char *rname)
 {
     int cid = G_Cluster_Of(uid);
     if(cid == 0)
-        return bound_get(s_bound, uid);
+        return G_Duty_CountAt(uid, kind, rname);
 
     uint32_t members[64];
     size_t nmembers = G_Cluster_Members(cid, ARR_SIZE(members), members);
     int ret = 0;
     for(int i = 0; i < nmembers; i++) {
-        ret += bound_get(s_bound, members[i]);
+        ret += G_Duty_CountAt(members[i], kind, rname);
+    }
+    return ret;
+}
+
+/* The suppliers of the site, or its pool, and the builders of one whose
+ * materials have not reached it */
+static int bound_for(uint32_t uid)
+{
+    int ret = count_pool(uid, DUTY_SUPPLY, NULL);
+    if((G_FlagsGet(uid) & ENTITY_FLAG_BUILDING) && !G_Building_IsSupplied(uid)) {
+        ret += count_pool(uid, DUTY_BUILD, NULL);
     }
     return ret;
 }
@@ -750,68 +718,10 @@ static int bound_for_good(uint32_t uid, const char *rname)
     return ret;
 }
 
-static void rebuild_gathering(void)
-{
-    kh_clear(gathering, s_gathering);
-
-    uint32_t dests[2048];
-    const char *rnames[2048];
-    size_t ndests = G_Harvester_GatherDests(ARR_SIZE(dests), dests, rnames);
-    for(int i = 0; i < ndests; i++) {
-
-        int status;
-        khiter_t k = kh_put(gathering, s_gathering, dests[i], &status);
-        if(status == -1)
-            continue;
-        struct gathering *gathering = &kh_value(s_gathering, k);
-        if(status != 0) {
-            gathering->ngoods = 0;
-        }
-        int j = 0;
-        for(; j < gathering->ngoods; j++) {
-            if(!strcmp(gathering->names[j], rnames[i]))
-                break;
-        }
-        if(j == ARR_SIZE(gathering->names))
-            continue;
-        if(j == gathering->ngoods) {
-            gathering->names[j] = rnames[i];
-            gathering->counts[j] = 0;
-            gathering->ngoods++;
-        }
-        gathering->counts[j]++;
-    }
-}
-
-static int gathering_get(uint32_t uid, const char *rname)
-{
-    khiter_t k = kh_get(gathering, s_gathering, uid);
-    if(k == kh_end(s_gathering))
-        return 0;
-    const struct gathering *gathering = &kh_value(s_gathering, k);
-    int ret = 0;
-    for(int i = 0; i < gathering->ngoods; i++) {
-        if(!rname || !strcmp(gathering->names[i], rname)) {
-            ret += gathering->counts[i];
-        }
-    }
-    return ret;
-}
-
-/* Gatherers whose next load goes to the site, or its pool; of every good for a NULL name */
+/* Gatherers whose loads go to the site, or its pool; of every good for a NULL name */
 static int gatherers_for(uint32_t uid, const char *rname)
 {
-    int cid = G_Cluster_Of(uid);
-    if(cid == 0)
-        return gathering_get(uid, rname);
-
-    uint32_t members[64];
-    size_t nmembers = G_Cluster_Members(cid, ARR_SIZE(members), members);
-    int ret = 0;
-    for(int i = 0; i < nmembers; i++) {
-        ret += gathering_get(members[i], rname);
-    }
-    return ret;
+    return count_pool(uid, DUTY_GATHER, rname);
 }
 
 /* A request the pool's own gatherers are meeting is not stuck */
@@ -1309,6 +1219,8 @@ static void draw_strips(struct nk_context *ctx, const uint32_t *keys, size_t nke
         struct nk_command_buffer *canvas = nk_window_get_canvas(ctx);
         for(int i = 0; i < nkeys; i++) {
             vec2_t anchor = Entity_TopScreenPos(keys[i], adj_vres.x, adj_vres.y);
+            if(!G_OverlayShownAt(anchor.x))
+                continue;
             /* Under the building's garrison count, if it shows one */
             float garrison = G_Garrison_UIBottom(keys[i]);
             if(garrison > 0.0f) {
@@ -1395,6 +1307,7 @@ static void plan_window(uint32_t key, struct ss_state *ss, struct window_plan *o
     out->priority = ss->priority;
     out->reason = pool_reason(key, out->nnames, out->names);
     out->ncarriers = bound_for(key);
+    out->nbuilders = count_pool(key, DUTY_BUILD, NULL);
     out->ngatherers = gatherers_for(key, NULL);
     out->good_carriers = false;
     out->good_gatherers = false;
@@ -1535,20 +1448,27 @@ static void draw_window(struct nk_context *ctx, uint32_t key, const struct ss_st
         nk_layout_row_end(ctx);
     }
 
-    if(plan->ncarriers > 0 || plan->ngatherers > 0 || plan->posts_inside >= 0) {
+    if(plan->ncarriers > 0 || plan->ngatherers > 0 || plan->nbuilders > 0 || plan->posts_inside >= 0) {
 
-        char carriers[8], gatherers[8], posts[16];
+        char carriers[8], gatherers[8], builders[8], posts[16];
         pf_snprintf(carriers, sizeof(carriers), "%d", plan->ncarriers);
         pf_snprintf(gatherers, sizeof(gatherers), "%d", plan->ngatherers);
+        pf_snprintf(builders, sizeof(builders), "%d", plan->nbuilders);
         pf_snprintf(posts, sizeof(posts), "%d/%d", plan->posts_inside, plan->posts_open);
 
         nk_layout_row_begin(ctx, NK_STATIC, WIN_ROW_H, (plan->ncarriers > 0 ? 2 : 0) + (plan->ngatherers > 0 ? 2 : 0)
-            + (plan->posts_inside >= 0 ? 2 : 0));
+            + (plan->nbuilders > 0 ? 2 : 0) + (plan->posts_inside >= 0 ? 2 : 0));
         if(plan->ncarriers > 0) {
             nk_layout_row_push(ctx, WIN_ICON_SZ);
             nk_image_texpath(ctx, CARRIERS_ICON);
             nk_layout_row_push(ctx, cols[1]);
             nk_label_colored(ctx, carriers, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
+        }
+        if(plan->nbuilders > 0) {
+            nk_layout_row_push(ctx, WIN_ICON_SZ);
+            nk_image_texpath(ctx, BUILDERS_ICON);
+            nk_layout_row_push(ctx, cols[1]);
+            nk_label_colored(ctx, builders, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
         }
         if(plan->ngatherers > 0) {
             nk_layout_row_push(ctx, WIN_ICON_SZ);
@@ -1599,7 +1519,6 @@ static void on_update_ui(void *user, void *event)
     assert(status == SS_OKAY);
     (void)status;
 
-    rebuild_bound();
     uint32_t strips[STRIP_MAX_SITES];
     size_t nstrips = 0;
     const uint16_t player_factions = G_GetPlayerControlledFactions();
@@ -1651,6 +1570,8 @@ static void on_update_ui(void *user, void *event)
         const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
 
         vec2_t ss_pos = Entity_TopScreenPos(key, adj_vres.x, adj_vres.y);
+        if(!G_OverlayShownAt(ss_pos.x))
+            continue;
         float garrison = G_Garrison_UIBottom(key);
         if(garrison > 0.0f) {
             ss_pos.y += garrison - STRIP_DROP + STRIP_GAP_Y;
@@ -1723,7 +1644,6 @@ static void on_1hz_tick(void *user, void *event)
     (void)curr;
 
     advance_made();
-    rebuild_gathering();
     s_strip_stamp++;
     kh_foreach(s_entity_state_table, key, curr, {
         struct ss_state *ss = shown_state(key);
@@ -2183,12 +2103,6 @@ bool G_StorageSite_Init(void)
     if(!(s_gathered = kh_init(gathered)))
         goto fail_gathered;
 
-    if(!(s_bound = kh_init(bound)))
-        goto fail_bound;
-
-    if(!(s_gathering = kh_init(gathering)))
-        goto fail_gathering;
-
     if(!(s_notes = kh_init(note)))
         goto fail_notes;
 
@@ -2244,10 +2158,6 @@ bool G_StorageSite_Init(void)
     return true;
 
 fail_notes:
-    kh_destroy(gathering, s_gathering);
-fail_gathering:
-    kh_destroy(bound, s_bound);
-fail_bound:
     kh_destroy(gathered, s_gathered);
 fail_gathered:
     kh_destroy(made, s_made);
@@ -2287,8 +2197,6 @@ void G_StorageSite_Shutdown(void)
         kh_destroy(res, s_global_resource_tables[i]);
 
     kh_destroy(note, s_notes);
-    kh_destroy(gathering, s_gathering);
-    kh_destroy(bound, s_bound);
     kh_destroy(gathered, s_gathered);
     kh_destroy(made, s_made);
     kh_destroy(strip, s_strips);
@@ -2395,6 +2303,11 @@ void G_StorageSite_PoolJoin(uint32_t uid, int pool_id)
         int prev = 0;
         ss_state_get_key(pool->keep, key, &prev);
         ss_state_set_key(pool->keep, key, MAX(prev, amount));
+    });
+    kh_foreach(ss->held, key, amount, {
+        int prev = 0;
+        ss_state_get_key(pool->held, key, &prev);
+        ss_state_set_key(pool->held, key, MAX(prev, amount));
     });
     kh_foreach(ss->chip, key, amount, {
         if(!ss_state_get_key(pool->chip, key, &(int){0})) {
@@ -2512,6 +2425,22 @@ int G_StorageSite_GetKeep(uint32_t uid, const char *rname)
     return ret;
 }
 
+void G_StorageSite_SetHeld(uint32_t uid, const char *rname, int held)
+{
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+    ss_state_set_key(ss->held, rname, MAX(held, 0));
+}
+
+int G_StorageSite_GetHeld(uint32_t uid, const char *rname)
+{
+    int ret = 0;
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+    ss_state_get_key(ss->held, rname, &ret);
+    return ret;
+}
+
 void G_StorageSite_SetChip(uint32_t uid, const char *rname, enum ss_chip chip)
 {
     struct ss_state *ss = ss_view(uid);
@@ -2543,7 +2472,7 @@ int G_StorageSite_Request(uint32_t uid, const char *rname)
     switch(G_StorageSite_GetChip(uid, rname)) {
     case SS_CHIP_COLLECT:
     case SS_CHIP_RELAY:
-        return MAX(desired, G_StorageSite_GetKeep(uid, rname));
+        return MAX(desired, G_StorageSite_GetKeep(uid, rname) + G_StorageSite_GetHeld(uid, rname));
     case SS_CHIP_OFF:
         return 0;
     default:
@@ -2562,15 +2491,16 @@ int G_StorageSite_Surplus(uint32_t uid, const char *rname)
     ss_state_get_key(ss->curr, rname, &curr);
     ss_state_get_key(ss->desired, rname, &desired);
 
+    int held = G_StorageSite_GetHeld(uid, rname);
     switch(G_StorageSite_GetChip(uid, rname)) {
     case SS_CHIP_HOLD:
         return 0;
     case SS_CHIP_OFF:
         return curr;
     case SS_CHIP_RELAY:
-        return MAX(curr - desired, 0);
+        return MAX(curr - desired - held, 0);
     default:
-        return MAX(curr - MAX(desired, G_StorageSite_GetKeep(uid, rname)), 0);
+        return MAX(curr - MAX(desired, G_StorageSite_GetKeep(uid, rname) + held), 0);
     }
 }
 
@@ -2587,7 +2517,7 @@ int G_StorageSite_GetReserve(uint32_t uid, const char *rname)
     if(G_StorageSite_GetChip(uid, rname) == SS_CHIP_OFF)
         return 0;
     ss_state_get_key(ss->desired, rname, &desired);
-    return MAX(desired, G_StorageSite_GetKeep(uid, rname));
+    return MAX(desired, G_StorageSite_GetKeep(uid, rname) + G_StorageSite_GetHeld(uid, rname));
 }
 
 /* What a building being built may take: all but the player's reserve, as it
@@ -3172,7 +3102,6 @@ bool G_StorageSite_Desires(uint32_t uid, const char *rname)
 
 int G_StorageSite_BoundFor(uint32_t uid)
 {
-    rebuild_bound();
     return bound_for(uid);
 }
 
@@ -3184,6 +3113,11 @@ int G_StorageSite_BoundForGood(uint32_t uid, const char *rname)
 int G_StorageSite_Gatherers(uint32_t uid, const char *rname)
 {
     return gatherers_for(uid, rname);
+}
+
+int G_StorageSite_Builders(uint32_t uid)
+{
+    return count_pool(uid, DUTY_BUILD, NULL);
 }
 
 float G_StorageSite_Rate(uint32_t uid, const char *rname)
@@ -3359,6 +3293,7 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Write(stream, &priority, "priority"));
         CHK_TRUE_RET(save_table(curr.keep, "num_keep", stream));
         CHK_TRUE_RET(save_table(curr.chip, "num_chip", stream));
+        CHK_TRUE_RET(save_table(curr.held, "num_held", stream));
         Sched_TryYield();
     });
 
@@ -3412,6 +3347,7 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Write(stream, &priority, "priority"));
         CHK_TRUE_RET(save_table(curr.keep, "num_keep", stream));
         CHK_TRUE_RET(save_table(curr.chip, "num_chip", stream));
+        CHK_TRUE_RET(save_table(curr.held, "num_held", stream));
         Sched_TryYield();
     });
 
@@ -3617,6 +3553,9 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
         ss->priority = attr.val.as_int;
         CHK_TRUE_RET(load_table(ss->keep, stream));
         CHK_TRUE_RET(load_table(ss->chip, stream));
+        if(Attr_NextKeyIs(stream, "num_held")) {
+            CHK_TRUE_RET(load_table(ss->held, stream));
+        }
         Sched_TryYield();
     }
 
@@ -3663,6 +3602,9 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
         ps->priority = attr.val.as_int;
         CHK_TRUE_RET(load_table(ps->keep, stream));
         CHK_TRUE_RET(load_table(ps->chip, stream));
+        if(Attr_NextKeyIs(stream, "num_held")) {
+            CHK_TRUE_RET(load_table(ps->held, stream));
+        }
         Sched_TryYield();
     }
 

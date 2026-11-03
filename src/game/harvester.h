@@ -51,7 +51,10 @@ void G_Harvester_Shutdown(void);
 bool G_Harvester_AddEntity(uint32_t uid);
 void G_Harvester_RemoveEntity(uint32_t uid);
 void G_Harvester_Stop(uint32_t uid);
-bool G_Harvester_SupplyBuilding(uint32_t uid, uint32_t building_uid);
+/* Sends a builder to fetch what its site lacks; one 'impatient' does not wait on carriers */
+bool G_Harvester_SupplyBuilding(uint32_t uid, uint32_t building_uid, bool impatient);
+/* Sends a builder to gather what its site lacks and nothing in store can give, and back to build */
+bool G_Harvester_GatherForSite(uint32_t uid, uint32_t building_uid);
 bool G_Harvester_InTargetMode(void);
 int  G_Harvester_CurrContextualAction(void);
 bool G_Harvester_GetContextualCursor(char *out, size_t maxout);
@@ -66,6 +69,11 @@ uint32_t G_Harvester_SupplyingSite(uint32_t harvester);
  * gathering. Fails for a carrier on a transport job or a site that does not
  * take the load. */
 bool G_Harvester_BringInLoad(uint32_t harvester, uint32_t site, bool and_back);
+/* The node of the good a gatherer on the player's order goes on to after an
+ * interruption: about the one it was sent to, else about itself */
+uint32_t G_Harvester_ResumeNode(uint32_t uid, const char *rname);
+/* Whether the store asks for a good the carrier could fetch it from somewhere */
+bool G_Harvester_CanSupply(uint32_t uid, uint32_t storage);
 
 bool G_Harvester_SaveState(struct SDL_RWops *stream);
 bool G_Harvester_LoadState(struct SDL_RWops *stream);

@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_GAME_MOVEMENT
 
 #include "movement.h"
+#include "duty.h"
 #include "arrival.h"
 #include "game_private.h"
 #include "formation.h"
@@ -214,6 +215,8 @@ struct movestate_aux{
     /* Tick from which a unit held up short of its target may look for a
      * nearer free side again; 0 asks at once. A cooldown, not saved. */
     unsigned           surround_requery_tick;
+    /* Waits it went on from on its way round the target since it was sent */
+    int                surround_resumes;
     /* How far from its target the unit took up the surround field, and the
      * tick before which it keeps off it after the field led it away. Not saved. */
     float              surround_on_dist;
@@ -863,6 +866,8 @@ static struct result navigation_tick_task(void *arg);
 
 #define COLLISION_MAX_SEE_AHEAD         (10.0f)
 #define WAIT_S                          (3.0f)
+/* Waits on its way round a target before a unit stands where it is as arrived */
+#define SURROUND_MAX_RESUMES            (3)
 #define MAX_TURN_RATE                   (15.0f) /* degree/tick */
 #define SCALED_MAX_TURN_RATE            (MAX_TURN_RATE / hz_count(s_move_work.hz) * 20.0)
 #define MOVE_HEADING_HALT               (90.0f) /* degrees; halt a moving unit to re-aim past this */
@@ -2348,6 +2353,7 @@ static void move_order(const vec_entity_t *sel, bool attack, vec3_t mouse_coord,
         if(!(flags & ENTITY_FLAG_MOVABLE))
             continue;
 
+        G_Duty_End(curr, NULL);
         G_StopEntity(curr, false, true);
         E_Entity_Notify(EVENT_MOVE_ISSUED, curr, NULL, ES_ENGINE);
         G_NotifyOrderIssued(curr, true, true);
@@ -5343,6 +5349,7 @@ static void do_add_entity(uint32_t uid, vec3_t pos, float selection_radius, int 
         .surround_target_prev = (vec2_t){0},
         .surround_nearest_prev = (vec2_t){0},
         .surround_requery_tick = 0,
+        .surround_resumes = 0,
         .surround_on_dist = INFINITY,
         .motion_stopped = true,
     };
@@ -5640,6 +5647,7 @@ static void do_set_surround_entity(uint32_t uid, uint32_t target)
     struct movestate_aux *aux = movestate_aux_get(uid);
     if(aux) {
         aux->surround_requery_tick = 0;
+        aux->surround_resumes = 0;
         aux->surround_shun_tick = 0;
         aux->surround_on_dist = INFINITY;
     }
@@ -8415,6 +8423,19 @@ static void resume_waiting_units(void)
          * does. Pivots and scripts rotate a still unit behind the shadow's
          * back; motion resumes from the rotation the unit is showing.
          */
+        /* Held up again and again on its way round the target, the ground it
+         * was bound for has closed under it: it picks its spot afresh, and
+         * after a few tries stands where it is as arrived, which lets its
+         * errand settle from there
+         */
+        if(aux->wait_prev == STATE_SURROUND_ENTITY) {
+            aux->surround_requery_tick = 0;
+            if(++aux->surround_resumes >= SURROUND_MAX_RESUMES) {
+                aux->surround_resumes = 0;
+                entity_finish_moving(uid, STATE_ARRIVED, true);
+                continue;
+            }
+        }
         if(aux->hold_way) {
             ms->prev_rot = ms->next_rot = Entity_GetRot(uid);
         }else{

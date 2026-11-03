@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_GAME_POSTS
 
 #include "posts.h"
+#include "duty.h"
 #include "public/game.h"
 #include "game_private.h"
 #include "movement.h"
@@ -156,6 +157,7 @@ static void holder_remove(uint32_t uid)
     khiter_t k = kh_get(holder, s_holders, uid);
     if(k != kh_end(s_holders)) {
         kh_del(holder, s_holders, k);
+        G_Duty_End(uid, NULL);
     }
 }
 
@@ -511,7 +513,9 @@ static void man_selection(uint32_t workshop)
 
     int nsent = 0;
     for(int i = 0; i < vec_size(sel); i++) {
-        if(G_Posts_Man(workshop, vec_AT(sel, i))) {
+        uint32_t curr = vec_AT(sel, i);
+        if(G_Posts_Man(workshop, curr)) {
+            G_Automation_MakePlayerManaged(curr);
             nsent++;
         }
     }
@@ -557,6 +561,7 @@ static struct holder *add_holder(struct workshop *ws, uint32_t workshop, uint32_
     };
     ws->holders[ws->nholders++] = unit;
     s_vacancies_tick = ~((uint32_t)0);
+    G_Duty_Set(unit, DUTY_POST, workshop, NULL, DUTY_BY_PLAYER);
     return &kh_value(s_holders, k);
 }
 
@@ -687,6 +692,21 @@ bool G_Posts_Get(uint32_t uid, int *out_posts, int *out_locked, int *out_inside,
     return true;
 }
 
+int G_Posts_Away(uint32_t uid)
+{
+    const struct workshop *ws = workshop_get(uid);
+    if(!ws)
+        return 0;
+    int ret = 0;
+    for(int i = 0; i < ws->nholders; i++) {
+        const struct holder *h = holder_get(ws->holders[i]);
+        if(h && h->state == HOLDER_AWAY) {
+            ret++;
+        }
+    }
+    return ret;
+}
+
 uint32_t G_Posts_WorkshopOf(uint32_t unit)
 {
     const struct holder *h = holder_get(unit);
@@ -807,6 +827,10 @@ int G_Posts_CurrContextualAction(void)
 {
     uint32_t hovered = G_Sel_GetHovered();
     if(!G_EntityExists(hovered) || !(G_FlagsGet(hovered) & ENTITY_FLAG_BUILDING))
+        return CTX_ACTION_NONE;
+
+    /* Short of a unit for its queue, it takes the one sent to it for that */
+    if(G_Garrison_WantsIngredient(hovered))
         return CTX_ACTION_NONE;
 
     if(M_MouseOverMinimap(s_map))

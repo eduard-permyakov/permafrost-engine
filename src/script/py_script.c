@@ -53,6 +53,8 @@
 #include "public/script.h"
 #include "../entity.h"
 #include "../game/public/game.h"
+#include "../game/duty.h"
+#include "../game/automation.h"
 #include "../game/population.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
@@ -378,6 +380,10 @@ static PyObject *PyPf_set_workers_carry_out(PyObject *self, PyObject *args);
 static PyObject *PyPf_crew_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_crew_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_crew_busy(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_automation_option(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_good_class(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_overlay_span(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_automation_option(PyObject *self, PyObject *args);
 static PyObject *PyPf_awaits_builders(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_workshop_posts(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_post_demand(PyObject *self, PyObject *args);
@@ -387,6 +393,9 @@ static PyObject *PyPf_post_workshop(PyObject *self, PyObject *args);
 static PyObject *PyPf_man_post(PyObject *self, PyObject *args);
 static PyObject *PyPf_evict_post(PyObject *self, PyObject *args);
 static PyObject *PyPf_leave_post(PyObject *self, PyObject *args);
+static PyObject *PyPf_workshop_away(PyObject *self, PyObject *args);
+static PyObject *PyPf_end_duty(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_duty_by(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_style(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_font_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_bonus_color(PyObject *self, PyObject *args);
@@ -1497,6 +1506,25 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_set_crew_size, METH_VARARGS,
     "Takes a faction ID and how many of its workers of no district build at once."},
 
+    {"set_automation_option",
+    (PyCFunction)PyPf_set_automation_option, METH_VARARGS,
+    "Takes a faction ID, the name of a setting of how its automation goes about the work (carry_share, "
+    "build_share, reach, breadth, man_workshops, pull_to_build, roam_far) and its value, kept within bounds."},
+
+    {"set_overlay_span",
+    (PyCFunction)PyPf_set_overlay_span, METH_VARARGS,
+    "Takes the left and right screen columns, in 1920 wide virtual coordinates, between which marks over "
+    "the world show; (0, 0) shows them everywhere."},
+
+    {"set_good_class",
+    (PyCFunction)PyPf_set_good_class, METH_VARARGS,
+    "Takes a class name and a list of up to 8 resource names the automation treats as one good, "
+    "scored together and gathered at the nearest node of any of them."},
+
+    {"get_automation_option",
+    (PyCFunction)PyPf_get_automation_option, METH_VARARGS,
+    "Takes a faction ID and the name of a setting of its automation. Returns its value."},
+
     {"crew_busy",
     (PyCFunction)PyPf_crew_busy, METH_VARARGS,
     "Takes a faction ID. Returns how many of its workers of no district are building or bound "
@@ -1544,6 +1572,19 @@ static PyMethodDef pf_module_methods[] = {
     {"leave_post",
     (PyCFunction)PyPf_leave_post, METH_VARARGS,
     "Takes a unit and lets it go from its post, leaving the post open. Returns whether it held one."},
+
+    {"workshop_away",
+    (PyCFunction)PyPf_workshop_away, METH_VARARGS,
+    "Takes a building with posts. Returns how many of its holders are away at a meal, their post kept."},
+
+    {"end_duty",
+    (PyCFunction)PyPf_end_duty, METH_VARARGS,
+    "Takes a unit and ends the duty it is at, leaving it to find or be given new work."},
+
+    {"set_duty_by",
+    (PyCFunction)PyPf_set_duty_by, METH_VARARGS,
+    "Takes a unit and one of 'player', 'city' or 'automation': who gives its duty, the one it holds "
+    "or else the next it takes on."},
 
     {"provision_demand",
     (PyCFunction)PyPf_provision_demand, METH_VARARGS,
@@ -6509,6 +6550,78 @@ static PyObject *PyPf_set_crew_size(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+static PyObject *PyPf_set_overlay_span(PyObject *self, PyObject *args)
+{
+    float left, right;
+    if(!PyArg_ParseTuple(args, "ff", &left, &right)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two numbers.");
+        return NULL;
+    }
+    G_SetOverlaySpan(left, right);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_good_class(PyObject *self, PyObject *args)
+{
+    const char *name;
+    PyObject *list;
+    if(!PyArg_ParseTuple(args, "sO", &name, &list) || !PyList_Check(list)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a name (string) and a list of resource names.");
+        return NULL;
+    }
+    const char *members[8];
+    size_t n = PyList_Size(list);
+    if(n == 0 || n > 8) {
+        PyErr_SetString(PyExc_ValueError, "Expecting between 1 and 8 resource names.");
+        return NULL;
+    }
+    for(int i = 0; i < n; i++) {
+        PyObject *item = PyList_GetItem(list, i);
+        if(!PyString_Check(item)) {
+            PyErr_SetString(PyExc_TypeError, "Every member must be a resource name (string).");
+            return NULL;
+        }
+        members[i] = PyString_AS_STRING(item);
+    }
+    if(!G_Automation_SetGoodClass(name, members, n)) {
+        PyErr_SetString(PyExc_RuntimeError, "Could not set the class.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_automation_option(PyObject *self, PyObject *args)
+{
+    int faction;
+    const char *name;
+    float value;
+    if(!PyArg_ParseTuple(args, "isf", &faction, &name, &value)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a faction ID, a setting's name and its value.");
+        return NULL;
+    }
+    if(!G_Automation_SetOption(faction, name, value)) {
+        PyErr_SetString(PyExc_ValueError, "No such faction or automation setting.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_get_automation_option(PyObject *self, PyObject *args)
+{
+    int faction;
+    const char *name;
+    float value;
+    if(!PyArg_ParseTuple(args, "is", &faction, &name)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a faction ID and a setting's name.");
+        return NULL;
+    }
+    if(!G_Automation_GetOption(faction, name, &value)) {
+        PyErr_SetString(PyExc_ValueError, "No such faction or automation setting.");
+        return NULL;
+    }
+    return PyFloat_FromDouble(value);
+}
+
 static PyObject *PyPf_crew_busy(PyObject *self, PyObject *args)
 {
     int faction;
@@ -6691,6 +6804,50 @@ static PyObject *PyPf_leave_post(PyObject *self, PyObject *args)
     if(G_Posts_Leave(uid))
         Py_RETURN_TRUE;
     Py_RETURN_FALSE;
+}
+
+static PyObject *PyPf_workshop_away(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    if(!PyArg_ParseTuple(args, "O", &obj) || !S_Entity_Check(obj)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a pf.Entity object.");
+        return NULL;
+    }
+    uint32_t uid;
+    S_Entity_UIDForObj(obj, &uid);
+    return PyInt_FromLong(G_Posts_Away(uid));
+}
+
+static PyObject *PyPf_end_duty(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    if(!PyArg_ParseTuple(args, "O", &obj) || !S_Entity_Check(obj)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a pf.Entity object.");
+        return NULL;
+    }
+    uint32_t uid;
+    S_Entity_UIDForObj(obj, &uid);
+    G_Duty_End(uid, "script");
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_duty_by(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    const char *name;
+    if(!PyArg_ParseTuple(args, "Os", &obj, &name) || !S_Entity_Check(obj)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a pf.Entity object and a string.");
+        return NULL;
+    }
+    enum duty_by by;
+    if(!G_Duty_ParseBy(name, &by)) {
+        PyErr_SetString(PyExc_ValueError, "Expecting one of 'player', 'city' or 'automation'.");
+        return NULL;
+    }
+    uint32_t uid;
+    S_Entity_UIDForObj(obj, &uid);
+    G_Duty_SetBy(uid, by);
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_provision_demand(PyObject *self, PyObject *args)
@@ -7197,6 +7354,7 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
     case EVENT_ORDER_HOLD_BEGIN:
     case EVENT_ORDER_HOLD_END:
     case EVENT_POST_MANNED:
+    case EVENT_DUTY_CHANGED:
     case EVENT_UNIT_BECAME_IDLE:
     case EVENT_UNIT_BECAME_ACTIVE:
     case EVENT_UNIT_IDLE_PENDING:

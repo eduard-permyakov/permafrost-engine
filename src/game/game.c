@@ -63,6 +63,7 @@
 #include "district.h"
 #include "provision.h"
 #include "posts.h"
+#include "duty.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../anim/public/anim.h"
@@ -131,6 +132,7 @@ __KHASH_IMPL(range,   extern, khint32_t, float,    1, kh_int_hash_func, kh_int_h
 /*****************************************************************************/
 
 static struct gamestate s_gs;
+static float             s_overlay_left, s_overlay_right;
 static int              s_last_ncands;
 static int              s_last_ndraw;
 /* Per-frame stage times (us): fog, anim, cull, drawlist, map+ents, healthbars, minimap */
@@ -231,6 +233,7 @@ static void g_init_map(void)
     G_Automation_Init();
     G_Provision_Init(s_gs.map);
     G_Posts_Init(s_gs.map);
+    G_Duty_Init(s_gs.map);
     G_Group_Init();
     G_Cluster_Init();
     G_District_Init(s_gs.map);
@@ -1276,6 +1279,7 @@ static void g_clear_map_state(void)
         G_Command_Shutdown();
         G_Automation_Shutdown();
         G_Provision_Shutdown();
+        G_Duty_Shutdown();
         G_Posts_Shutdown();
         G_Group_Shutdown();
         G_District_Shutdown();
@@ -1339,6 +1343,7 @@ static void g_set_contextual_cursor(void)
         break;
     case CTX_ACTION_GARRISON:
     case CTX_ACTION_MAN:
+    case CTX_ACTION_JOIN_CITY:
         Cursor_SetRTSPointer(CURSOR_GARRISON);
         break;
     default:
@@ -2293,6 +2298,8 @@ static void on_update_ui(void *user, void *event)
         const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
 
         vec2_t ss_pos = Entity_TopScreenPos(uid, adj_vres.x, adj_vres.y);
+        if(!G_OverlayShownAt(ss_pos.x))
+            continue;
         const int width = UNIT_ICON_SIZE * nicons;
         const int height = UNIT_ICON_SIZE;
 
@@ -3299,6 +3306,7 @@ bool G_RemoveEntity(uint32_t uid)
     G_Provision_RemoveEntity(uid);
     G_Posts_RemoveEntity(uid);
     G_Group_RemoveEntity(uid);
+    G_Duty_RemoveEntity(uid);
     G_Pos_SyncRefs(uid);
     G_Region_RemoveEnt(uid);
     G_Pos_Delete(uid);
@@ -3320,10 +3328,28 @@ bool G_RemoveEntity(uint32_t uid)
     return true;
 }
 
+void G_SetOverlaySpan(float left, float right)
+{
+    s_overlay_left = left;
+    s_overlay_right = right;
+}
+
+bool G_OverlayShownAt(float x)
+{
+    if(s_overlay_right <= s_overlay_left)
+        return true;
+    return x >= s_overlay_left && x <= s_overlay_right;
+}
+
 void G_StopEntity(uint32_t uid, bool stop_move, bool stop_garrison)
 {
     ASSERT_IN_MAIN_THREAD();
     uint32_t flags = G_FlagsGet(uid);
+
+    /* A full stop is an order's, or the script's: the duty it was at is over */
+    if(stop_move && stop_garrison) {
+        G_Duty_End(uid, NULL);
+    }
 
     if(flags & ENTITY_FLAG_COMBATABLE) {
         G_Combat_StopAttack(uid);
@@ -3559,6 +3585,7 @@ void G_SetFactionID(uint32_t uid, int faction_id)
     G_Resource_UpdateFactionID(uid, old, faction_id);
     G_Building_UpdateFactionID(uid, old, faction_id);
     G_Population_UpdateFaction(uid, old, faction_id);
+    G_Duty_RemoveEntity(uid);
 }
 
 int G_GetFactionID(uint32_t uid)
@@ -3979,6 +4006,7 @@ void G_Zombiefy(uint32_t uid, bool invis)
     G_Provision_RemoveEntity(uid);
     G_Posts_RemoveEntity(uid);
     G_Group_RemoveEntity(uid);
+    G_Duty_RemoveEntity(uid);
 
     G_Pos_SyncRefs(uid);
     G_SetVisionRange(uid, 0.0f);
@@ -4612,6 +4640,9 @@ bool G_SaveEntityState(SDL_RWops *stream)
     if(!G_Posts_SaveState(stream))
         return false;
 
+    if(!G_Duty_SaveState(stream))
+        return false;
+
     return true;
 }
 
@@ -4722,6 +4753,12 @@ bool G_LoadEntityState(SDL_RWops *stream)
     /* Saves made before workshops had posts end here */
     if(Attr_NextKeyIs(stream, "num_posts") && !G_Posts_LoadState(stream)) {
         fprintf(stderr, "Could not load posts state.\n");
+        return false;
+    }
+
+    /* Saves made before workers kept duties end here */
+    if(Attr_NextKeyIs(stream, "num_duties") && !G_Duty_LoadState(stream)) {
+        fprintf(stderr, "Could not load duty state.\n");
         return false;
     }
 

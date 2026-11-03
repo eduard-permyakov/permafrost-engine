@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_GAME_PROVISION
 
 #include "provision.h"
+#include "duty.h"
 #include "public/game.h"
 #include "game_private.h"
 #include "movement.h"
@@ -115,8 +116,6 @@ struct provision{
     /* A unit with no work to go back to returns here once it has eaten */
     bool     go_back;
     vec2_t   post;
-    /* The good a gatherer sent by the player goes back to gathering about its post */
-    char     resume[GOOD_LEN];
     /* Got there this many times without reaching the store, each time from further out */
     int      tries;
 };
@@ -147,14 +146,12 @@ static void on_20hz_tick(void *user, void *event);
 static void on_arrive(void *user, void *event);
 static void arrive(uint32_t uid);
 static float dist_to(uint32_t uid, uint32_t site);
-static void on_ordered(void *user, void *event);
 static void note_upkeep_good(const char *good);
 static uint32_t first_meal_delay_ms(uint32_t uid, uint32_t interval_ms);
 static float rations_per_minute(const struct provision *p);
 static uint32_t ahead_ms(const struct provision *p, float share);
 static bool carrying(uint32_t uid);
 static bool at_store(uint32_t uid, uint32_t site, int tries);
-static void ordered_gathering(uint32_t uid, char *out, size_t maxout);
 static bool free_to_fetch(uint32_t uid);
 static void on_arrive_quiver(void *user, void *event);
 static void on_ordered_quiver(void *user, void *event);
@@ -280,9 +277,7 @@ static bool fetch(uint32_t uid, struct provision *p)
      * goes back to its gathering.
      */
     if(carrying(uid)) {
-        char resume[GOOD_LEN];
-        ordered_gathering(uid, resume, sizeof(resume));
-        bool back = (resume[0] != '\0');
+        bool back = (G_Duty_Kind(uid) == DUTY_GATHER);
         if(!G_Harvester_BringInLoad(uid, site, back) && !G_Harvester_BringInLoad(uid, NULL_UID, back)) {
             p->retry_ms = s_now_ms + FETCH_RETRY_MS;
             return false;
@@ -294,7 +289,10 @@ static bool fetch(uint32_t uid, struct provision *p)
         p->go_back = !(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER);
         p->post = G_Pos_GetXZ(uid);
         p->tries = 0;
-        ordered_gathering(uid, p->resume, sizeof(p->resume));
+        /* A builder waiting at its site would not leave it for the meal; its duty brings it back */
+        if((G_FlagsGet(uid) & ENTITY_FLAG_BUILDER) && G_Builder_WaitingSupply(uid)) {
+            G_Builder_Stop(uid);
+        }
     }
     p->fetching = site;
     p->fetch_ms = s_now_ms;
@@ -303,9 +301,7 @@ static bool fetch(uint32_t uid, struct provision *p)
         G_Harvester_Stop(uid);
     }
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive);
-    E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_ordered);
     E_Entity_Register(EVENT_MOTION_END, uid, on_arrive, (void*)(uintptr_t)uid, G_RUNNING);
-    E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_ordered, (void*)(uintptr_t)uid, G_RUNNING);
     G_Move_SetSurroundEntity(uid, site);
     return true;
 }
@@ -329,53 +325,33 @@ static void on_arrive(void *user, void *event)
 static void arrive(uint32_t uid)
 {
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive);
-    E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_ordered);
 
     struct provision *p = prov_get(uid);
     if(!p || p->fetching == NULL_UID)
         return;
     uint32_t site = p->fetching;
+    bool free = free_to_fetch(uid);
     p->fetching = NULL_UID;
     if(!G_EntityExists(site) || G_EntityIsZombie(site))
         return;
     /* Sent to build on the way, it eats once the building is done */
-    if(!free_to_fetch(uid))
+    if(!free)
         return;
     /* Others crowding the store kept it out of reach: try again */
     if(!at_store(uid, site, p->tries)) {
         bool go_back = p->go_back;
         vec2_t post = p->post;
         int tries = p->tries + 1;
-        char resume[GOOD_LEN];
-        pf_strlcpy(resume, p->resume, sizeof(resume));
         fetch(uid, p);
         p->go_back = go_back;
         p->post = post;
         p->tries = tries;
-        pf_strlcpy(p->resume, resume, sizeof(p->resume));
         return;
     }
     eat(uid, p, site);
-    if(p->resume[0]) {
-        uint32_t node = G_Harvester_NearestResource(uid, p->post, p->resume, 0.0f);
-        if(node != NULL_UID) {
-            G_Harvester_Gather(uid, node);
-        }
-        p->resume[0] = '\0';
-    }else if(p->go_back) {
+    /* One with a duty takes it up again by itself */
+    if(p->go_back && G_Duty_Kind(uid) == DUTY_NONE) {
         G_Move_SetDest(uid, p->post, true);
-    }
-}
-
-/* The good the harvester gathers by the player's order, or an empty string */
-static void ordered_gathering(uint32_t uid, char *out, size_t maxout)
-{
-    out[0] = '\0';
-    if(!(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER) || G_Automation_ChoseWork(uid))
-        return;
-    const char *rname = G_Harvester_Gathering(uid);
-    if(rname) {
-        pf_strlcpy(out, rname, maxout);
     }
 }
 
@@ -395,19 +371,6 @@ static bool carrying(uint32_t uid)
     return (G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER) && G_Harvester_GetCurrTotalCarry(uid) > 0;
 }
 
-static void on_ordered(void *user, void *event)
-{
-    uint32_t uid = (uintptr_t)user;
-    E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive);
-    E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_ordered);
-
-    struct provision *p = prov_get(uid);
-    if(p) {
-        p->fetching = NULL_UID;
-        p->resume[0] = '\0';
-    }
-}
-
 /* Whether the unit can leave what it is doing to go and eat */
 static bool free_to_fetch(uint32_t uid)
 {
@@ -416,18 +379,20 @@ static bool free_to_fetch(uint32_t uid)
         return false;
     if((flags & ENTITY_FLAG_COMBATABLE) && !G_Combat_Idle(uid))
         return false;
-    /* Waiting for the player's next order, it eats once let go */
-    if(G_Automation_OrderHold(uid) > 0.0f)
+    /* The player's order comes first while it is under way: one walking where
+     * it was sent eats once there, and one gathering by it at its drop-off */
+    const struct provision *p = prov_get(uid);
+    bool meal = (p && p->fetching != NULL_UID);
+    if(G_Automation_PlayerManaged(uid) && !G_Move_Still(uid) && !meal
+    && !(G_Duty_Kind(uid) == DUTY_GATHER && G_Duty_ByPlayer(uid)))
         return false;
     /* On its way into a building, to be made into something else */
     if((flags & ENTITY_FLAG_GARRISON) && G_Garrison_IsIngredient(uid))
         return false;
     /* A site it was sent to found or build would be left as a ghost, but not
      * one it would starve at: the site is someone else's to take up */
-    if((flags & ENTITY_FLAG_BUILDER) && !G_Builder_Idle(uid)) {
-        struct provision *p = prov_get(uid);
+    if((flags & ENTITY_FLAG_BUILDER) && !G_Builder_Idle(uid) && !G_Builder_WaitingSupply(uid))
         return p && p->tier == PROVISION_STARVING;
-    }
     return true;
 }
 
@@ -639,8 +604,7 @@ void G_Provision_RemoveEntity(uint32_t uid)
     khiter_t k = kh_get(prov, s_table, uid);
     if(k != kh_end(s_table)) {
         E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive);
-        E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_ordered);
-        kh_del(prov, s_table, k);
+            kh_del(prov, s_table, k);
     }
     k = kh_get(quiver, s_quivers, uid);
     if(k != kh_end(s_quivers)) {
@@ -975,7 +939,6 @@ bool G_Provision_LoadState(struct SDL_RWops *stream)
         p->fetching = NULL_UID;
         p->retry_ms = 0;
         p->no_food = false;
-        p->resume[0] = '\0';
         Sched_TryYield();
     }
 

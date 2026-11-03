@@ -934,6 +934,14 @@ int G_District_At(int faction, bool water, vec2_t pos, float *out_cost)
     return f->owner[idx];
 }
 
+int G_District_HubOf(uint32_t building)
+{
+    int cluster = G_Cluster_Of(building);
+    if(cluster == 0 || strcmp(G_Cluster_Type(cluster), HUB_TYPE))
+        return 0;
+    return cluster;
+}
+
 int G_District_Of(uint32_t uid)
 {
     return G_District_At(G_GetFactionID(uid), layer_for_entity(uid) == LAYER_WATER, 

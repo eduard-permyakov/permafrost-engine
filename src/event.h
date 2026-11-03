@@ -140,6 +140,8 @@ enum eventtype{
     EVENT_ORDER_HOLD_END,
     /* A worker was sent to a post by the player's hand; the arg is the worker */
     EVENT_POST_MANNED,
+    /* A unit took a duty on, had it end, or stands by for its next request; the arg is the unit */
+    EVENT_DUTY_CHANGED,
 
     EVENT_ENGINE_LAST = 0x1ffff,
 };

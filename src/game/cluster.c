@@ -507,6 +507,8 @@ static void draw_badge(struct nk_context *ctx, uint32_t uid, int colour, bool li
     const vec2_t vres = (vec2_t){1920, 1080};
     const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
     vec2_t ss_pos = Entity_TopScreenPos(uid, adj_vres.x, adj_vres.y);
+    if(!G_OverlayShownAt(ss_pos.x))
+        return;
     const int width = (linked ? ICON_SIZE : 0) + DIAMOND_GAP + DIAMOND_SIZE;
     const vec2_t pos = (vec2_t){floorf(ss_pos.x - width / 2), floorf(ss_pos.y - ICON_SIZE - 4)};
     const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;

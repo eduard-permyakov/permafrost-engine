@@ -189,6 +189,10 @@ void            G_UpdateBounds(uint32_t uid);
 void            G_UpdateReach(uint32_t uid);
 void            G_Zombiefy(uint32_t uid, bool invis);
 bool            G_EntityExists(uint32_t uid);
+/* Marks over the world show only between these screen columns, in 1920 wide
+ * virtual coordinates; side panels stand beyond them. 0, 0 shows them everywhere. */
+void            G_SetOverlaySpan(float left, float right);
+bool            G_OverlayShownAt(float x);
 bool            G_EntityIsZombie(uint32_t uid);
 bool            G_EntityIsGarrisoned(uint32_t uid);
 
@@ -339,6 +343,8 @@ bool                  G_Cluster_TypeOf(uint32_t uid, char *out_type, size_t len,
 
 int                   G_District_At(int faction, bool water, vec2_t pos, float *out_cost);
 int                   G_District_Of(uint32_t uid);
+/* The district whose hub the building is one of the buildings of, or 0 */
+int                   G_District_HubOf(uint32_t building);
 bool                  G_District_InTerritory(int faction, bool water, vec2_t pos);
 /* A node on the water counts for the land at its edge */
 int                   G_District_OfNode(int faction, uint32_t node, float *out_cost);
@@ -799,8 +805,6 @@ bool  G_Harvester_ResourceReachable(uint32_t uid, uint32_t resource);
 uint32_t G_Automation_BestResource(uint32_t uid, const char *rname);
 /* The node every gatherer on its way to one or at one is bound for, one entry each */
 size_t G_Harvester_AimedTargets(size_t maxout, uint32_t out[]);
-size_t G_Harvester_BoundDests(size_t maxout, uint32_t out[]);
-size_t G_Harvester_GatherDests(size_t maxout, uint32_t out_dests[], const char *out_rnames[]);
 int    G_Harvester_CountBound(uint32_t dest, const char *rname);
 size_t G_Harvester_DebugDesc(uint32_t uid, char *out, size_t len);
 int   G_Harvester_CountGathering(int faction, const char *rname);
@@ -883,10 +887,16 @@ void G_StorageSite_SetPriority(uint32_t uid, int priority);
 int  G_StorageSite_GetPriority(uint32_t uid);
 void G_StorageSite_SetKeep(uint32_t uid, const char *rname, int keep);
 int  G_StorageSite_GetKeep(uint32_t uid, const char *rname);
+/* What is held for a tribute on top of the keep: brought in and not given to other
+ * stores, but open to the player's building sites */
+void G_StorageSite_SetHeld(uint32_t uid, const char *rname, int held);
+int  G_StorageSite_GetHeld(uint32_t uid, const char *rname);
 int  G_StorageSite_BoundFor(uint32_t uid);
 int  G_StorageSite_BoundForGood(uint32_t uid, const char *rname);
 /* The gatherers whose next load goes to the site, or its pool; NULL for all goods */
 int  G_StorageSite_Gatherers(uint32_t uid, const char *rname);
+/* The builders of the site, or its pool, at any stage of raising it */
+int  G_StorageSite_Builders(uint32_t uid);
 float G_StorageSite_Rate(uint32_t uid, const char *rname);
 void G_StorageSite_SetChip(uint32_t uid, const char *rname, enum ss_chip chip);
 enum ss_chip G_StorageSite_GetChip(uint32_t uid, const char *rname);
@@ -1081,6 +1091,9 @@ bool G_Garrison_Enter(uint32_t garrisonable, uint32_t unit);
 bool G_Garrison_EnterAsIngredient(uint32_t garrisonable, uint32_t unit);
 void G_Garrison_GetIngredients(uint32_t uid, vec_entity_t *out);
 bool G_Garrison_IsIngredient(uint32_t uid);
+/* Whether a unit sent to the building goes in as its ingredient: it has a unit queued */
+void G_Garrison_SetWantsIngredient(uint32_t garrisonable, bool wants);
+bool G_Garrison_WantsIngredient(uint32_t garrisonable);
 bool G_Garrison_Evict(uint32_t garrisonable, uint32_t unit, vec2_t target);
 bool G_Garrison_EvictAll(uint32_t garrisonable, vec2_t target);
 void G_Garrison_SetFontColor(const struct nk_color *clr);
@@ -1100,10 +1113,16 @@ void G_Automation_GetIdle(vec_entity_t *out);
 /* The worker the automation would send to an open post of the workshop, or NULL_UID */
 uint32_t G_Automation_PostWorker(uint32_t workshop);
 bool G_Automation_IsIdle(uint32_t uid);
-/* Seconds left of the wait after the player's order, full while selected, 0 when not held */
-float G_Automation_OrderHold(uint32_t uid);
-/* Whether the worker is on the player's order or holding after it, out of the automation's hands */
-bool G_Automation_PlayerOrdered(uint32_t uid);
+/* Whether the worker is the player's to manage: of no city, and not left to the automation */
+bool G_Automation_PlayerManaged(uint32_t uid);
+/* Takes the worker out of its city and the automation's hands into the player's */
+void G_Automation_MakePlayerManaged(uint32_t uid);
+/* Makes the worker one of the district's own, managed by its city */
+void G_Automation_JoinCity(uint32_t uid, int district);
+/* The realm's settings for how its automation goes about the work, by name:
+ * carry_share, build_share, reach, breadth, man_workshops, pull_to_build, roam_far */
+bool G_Automation_SetOption(int faction, const char *name, float value);
+bool G_Automation_GetOption(int faction, const char *name, float *out);
 /* Sends an idle unit somewhere to wait for work without it counting as busy on the way */
 bool G_Automation_WalkIdle(uint32_t uid, vec2_t xz);
 void G_Automation_SetAutomaticTransport(uint32_t uid, bool on);
@@ -1113,8 +1132,13 @@ void G_Automation_SetAutomaticWork(uint32_t uid, bool on);
 void G_Automation_SetHomeDistrict(uint32_t uid, int district);
 int  G_Automation_GetHomeDistrict(uint32_t uid);
 bool G_Automation_GetAutomaticWork(uint32_t uid);
+/* Whether the worker finding its own work takes posts in workshops */
+void G_Automation_SetAutomaticPosts(uint32_t uid, bool on);
+bool G_Automation_GetAutomaticPosts(uint32_t uid);
 /* The pinned work of a worker that only builds, at its district's sites or about itself */
 #define BUILD_PIN "Build"
+/* The pin that keeps a worker left to itself to the posts of workshops */
+#define POSTS_PIN "Posts"
 
 /* Keeps a worker left to itself to gathering one resource, or to building with BUILD_PIN; "" lets it choose */
 void G_Automation_SetPinnedWork(uint32_t uid, const char *rname);
@@ -1213,6 +1237,8 @@ void     G_Posts_SetLocked(uint32_t uid, int locked);
 /* The workshop's posts, those kept empty, its holders inside and those on their
  * way; false for a building with no posts */
 bool     G_Posts_Get(uint32_t uid, int *out_posts, int *out_locked, int *out_inside, int *out_coming);
+/* How many of its holders are away at a meal, their post kept for them */
+int      G_Posts_Away(uint32_t uid);
 /* The workshop whose post the unit holds or is on its way to, or NULL_UID */
 uint32_t G_Posts_WorkshopOf(uint32_t unit);
 /* Sends the unit to a post of the workshop as the player's order, opening one
