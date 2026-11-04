@@ -50,6 +50,7 @@
 #include "../event.h"
 #include "../entity.h"
 #include "../sched.h"
+#include "../script/public/script.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/attr.h"
 #include "../map/public/map.h"
@@ -109,6 +110,8 @@ struct holder{
     bool              ordered;
     /* Sent to bring its load in before it goes back */
     bool              dropping;
+    /* On a meal break, which lasts until it is back inside */
+    bool              meal;
 };
 
 struct workshop{
@@ -227,6 +230,7 @@ static void go_in(uint32_t unit, struct holder *h)
     G_Sel_Remove(unit);
     h->entered_from = G_Pos_GetXZ(unit);
     h->state = HOLDER_INSIDE;
+    h->meal = false;
     uint32_t flags = G_FlagsGet(unit);
     G_FlagsSet(unit, flags | ENTITY_FLAG_GARRISONED);
     G_Combat_StopAttack(unit);
@@ -377,10 +381,18 @@ static void update_inside(uint32_t unit, struct holder *h)
     }
 }
 
+static bool wants_meal(uint32_t unit)
+{
+    return G_Provision_WantsFood(unit) || G_Provision_Fetching(unit);
+}
+
 static void update_away(uint32_t unit, struct holder *h)
 {
     if(let_go(unit, h))
         return;
+    if(wants_meal(unit)) {
+        h->meal = true;
+    }
     if(!G_EntityExists(unit) || G_EntityIsZombie(unit) || s_tick - h->since_tick > AWAY_TICKS) {
         release(unit, "timeout", false);
         return;
@@ -504,6 +516,25 @@ static bool can_man(uint32_t workshop, uint32_t unit)
     return (ws->nholders < ws->posts) || (bumpable_holder(ws, unit) != NULL_UID);
 }
 
+/* The workshop that takes the unit sent to this one: this one, or with no post
+ * for it here, one of its own kind that stands joined to it */
+static uint32_t man_target(uint32_t workshop, uint32_t unit)
+{
+    if(can_man(workshop, unit))
+        return workshop;
+    if(!workshop_get(workshop))
+        return NULL_UID;
+
+    uint32_t members[64];
+    int cluster = G_Cluster_Of(workshop);
+    size_t nmembers = cluster ? G_Cluster_Members(cluster, ARR_SIZE(members), members) : 0;
+    for(int i = 0; i < nmembers; i++) {
+        if(S_ScriptTypeID(members[i]) == S_ScriptTypeID(workshop) && can_man(members[i], unit))
+            return members[i];
+    }
+    return NULL_UID;
+}
+
 static void man_selection(uint32_t workshop)
 {
     enum selection_type sel_type;
@@ -514,7 +545,8 @@ static void man_selection(uint32_t workshop)
     int nsent = 0;
     for(int i = 0; i < vec_size(sel); i++) {
         uint32_t curr = vec_AT(sel, i);
-        if(G_Posts_Man(workshop, curr)) {
+        uint32_t target = man_target(workshop, curr);
+        if(target != NULL_UID && G_Posts_Man(target, curr)) {
             G_Automation_MakePlayerManaged(curr);
             nsent++;
         }
@@ -692,7 +724,7 @@ bool G_Posts_Get(uint32_t uid, int *out_posts, int *out_locked, int *out_inside,
     return true;
 }
 
-int G_Posts_Away(uint32_t uid)
+int G_Posts_Eating(uint32_t uid)
 {
     const struct workshop *ws = workshop_get(uid);
     if(!ws)
@@ -700,7 +732,7 @@ int G_Posts_Away(uint32_t uid)
     int ret = 0;
     for(int i = 0; i < ws->nholders; i++) {
         const struct holder *h = holder_get(ws->holders[i]);
-        if(h && h->state == HOLDER_AWAY) {
+        if(h && (h->meal || (h->state == HOLDER_AWAY && wants_meal(ws->holders[i])))) {
             ret++;
         }
     }
@@ -851,7 +883,7 @@ int G_Posts_CurrContextualAction(void)
         /* Ahead of a look at the table, which only stands while a map is loaded */
         if(!(G_FlagsGet(curr) & ENTITY_FLAG_HARVESTER))
             continue;
-        if(can_man(hovered, curr))
+        if(man_target(hovered, curr) != NULL_UID)
             return CTX_ACTION_MAN;
     }
     return CTX_ACTION_NONE;
@@ -939,6 +971,11 @@ bool G_Posts_SaveState(struct SDL_RWops *stream)
             .val.as_bool = h.ordered
         };
         CHK_TRUE_RET(Attr_Write(stream, &ordered, "holder_ordered"));
+        struct attr meal = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = h.meal
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &meal, "holder_meal"));
         Sched_TryYield();
     });
     return true;
@@ -1008,6 +1045,11 @@ bool G_Posts_LoadState(struct SDL_RWops *stream)
             CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
             CHK_TRUE_RET(attr.type == TYPE_BOOL);
             h->ordered = attr.val.as_bool;
+        }
+        if(Attr_NextKeyIs(stream, "holder_meal")) {
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_BOOL);
+            h->meal = attr.val.as_bool;
         }
         Sched_TryYield();
     }

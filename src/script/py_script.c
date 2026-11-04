@@ -216,6 +216,7 @@ static PyObject *PyPf_get_unit_selection(PyObject *self);
 static PyObject *PyPf_get_idle_units(PyObject *self);
 static PyObject *PyPf_set_unit_selection(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_hovered_unit(PyObject *self);
+static PyObject *PyPf_gather_blocked(PyObject *self);
 static PyObject *PyPf_entities_for_tag(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_hide_healthbars(PyObject *self);
@@ -276,6 +277,7 @@ static PyObject *PyPf_debug_desc(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_reachable_now(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_map_pos_under_cursor(PyObject *self);
 static PyObject *PyPf_draw_text(PyObject *self, PyObject *args);
+static PyObject *PyPf_draw_text_outlined(PyObject *self, PyObject *args);
 static PyObject *PyPf_dump_framebuffer(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_storage_site_ui_style(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_storage_site_ui_border_color(PyObject *self, PyObject *args);
@@ -393,7 +395,7 @@ static PyObject *PyPf_post_workshop(PyObject *self, PyObject *args);
 static PyObject *PyPf_man_post(PyObject *self, PyObject *args);
 static PyObject *PyPf_evict_post(PyObject *self, PyObject *args);
 static PyObject *PyPf_leave_post(PyObject *self, PyObject *args);
-static PyObject *PyPf_workshop_away(PyObject *self, PyObject *args);
+static PyObject *PyPf_workshop_eating(PyObject *self, PyObject *args);
 static PyObject *PyPf_end_duty(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_duty_by(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_group_ui_style(PyObject *self, PyObject *args);
@@ -868,6 +870,11 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_get_hovered_unit, METH_NOARGS,
     "Get the closest unit under the mouse cursor, or None."},
 
+    {"gather_blocked",
+    (PyCFunction)PyPf_gather_blocked, METH_NOARGS,
+    "Returns True if a right click now would be on a node the selected workers could gather, were it not "
+    "out of season."},
+
     {"entities_for_tag", 
     (PyCFunction)PyPf_entities_for_tag, METH_VARARGS,
     "Get a tuple of entities that have the specific tag."},
@@ -1164,6 +1171,11 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_draw_text, METH_VARARGS,
     "Draw a text label with the specified bounds (X, Y, W, H) )and with the specified color (R, G, B, A). "
     "The label lasts for one frame, meaning this should be called every tick to keep the label fixed."},
+
+    {"draw_text_outlined",
+    (PyCFunction)PyPf_draw_text_outlined, METH_VARARGS,
+    "Draw a text label with the specified bounds (X, Y, W, H) and color (R, G, B, A), outlined in the "
+    "specified color (R, G, B, A). The label lasts for one frame."},
 
     {"dump_framebuffer",
     (PyCFunction)PyPf_dump_framebuffer, METH_VARARGS,
@@ -1573,9 +1585,9 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_leave_post, METH_VARARGS,
     "Takes a unit and lets it go from its post, leaving the post open. Returns whether it held one."},
 
-    {"workshop_away",
-    (PyCFunction)PyPf_workshop_away, METH_VARARGS,
-    "Takes a building with posts. Returns how many of its holders are away at a meal, their post kept."},
+    {"workshop_eating",
+    (PyCFunction)PyPf_workshop_eating, METH_VARARGS,
+    "Takes a building with posts. Returns how many of its holders are out at a meal, their post kept."},
 
     {"end_duty",
     (PyCFunction)PyPf_end_duty, METH_VARARGS,
@@ -3383,6 +3395,13 @@ static PyObject *PyPf_set_unit_selection(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+static PyObject *PyPf_gather_blocked(PyObject *self)
+{
+    if(G_GatherBlockedNow())
+        Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
+}
+
 static PyObject *PyPf_get_hovered_unit(PyObject *self)
 {
     uint32_t hovered  = G_Sel_GetHovered();
@@ -4406,21 +4425,8 @@ static PyObject *PyPf_set_click_move_enabled(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
-static PyObject *PyPf_draw_text(PyObject *self, PyObject *args)
+static struct rect text_rect_for_labels(struct rect rect)
 {
-    const char *text;
-    struct rect rect;
-    int r, g, b, a;
-    int tint_r = 0, tint_g = 0, tint_b = 0, tint_a = 255;
-
-    if(!PyArg_ParseTuple(args, "s(iiii)(iiii)|(iiii)", &text, &rect.x, &rect.y, &rect.w, &rect.h, &r, &g, &b, &a,
-        &tint_r, &tint_g, &tint_b, &tint_a)) {
-        PyErr_SetString(PyExc_TypeError, 
-            "Expecting 3 arguments: A text string, a tuple of 4 ints (bounds) and a tuple of 4 ints (RGBA color). "
-            "Optionally an extra RGBA tuple can be supplied to customize the tint RGBA color.");
-        return NULL;
-    }
-
     int width, height;
     Engine_WinDrawableSize(&width, &height);
 
@@ -4440,12 +4446,30 @@ static PyObject *PyPf_draw_text(PyObject *self, PyObject *args)
         adj_vres.y - ((ndc.y + 1.0f) * adj_vres.y/2.0f),
     };
 
-    struct rect adj_rect = (struct rect){
+    return (struct rect){
         adj_center.x - rect.w/2.0f,
         adj_center.y - rect.h/2.0f,
         rect.w,
         rect.h
     };
+}
+
+static PyObject *PyPf_draw_text(PyObject *self, PyObject *args)
+{
+    const char *text;
+    struct rect rect;
+    int r, g, b, a;
+    int tint_r = 0, tint_g = 0, tint_b = 0, tint_a = 255;
+
+    if(!PyArg_ParseTuple(args, "s(iiii)(iiii)|(iiii)", &text, &rect.x, &rect.y, &rect.w, &rect.h, &r, &g, &b, &a,
+        &tint_r, &tint_g, &tint_b, &tint_a)) {
+        PyErr_SetString(PyExc_TypeError, 
+            "Expecting 3 arguments: A text string, a tuple of 4 ints (bounds) and a tuple of 4 ints (RGBA color). "
+            "Optionally an extra RGBA tuple can be supplied to customize the tint RGBA color.");
+        return NULL;
+    }
+
+    struct rect adj_rect = text_rect_for_labels(rect);
     struct rect shifted_rect = (struct rect){
         adj_rect.x - 1,
         adj_rect.y - 1,
@@ -4455,6 +4479,25 @@ static PyObject *PyPf_draw_text(PyObject *self, PyObject *args)
 
     UI_DrawText(text, shifted_rect, (struct rgba){tint_r, tint_g, tint_b, tint_a});
     UI_DrawText(text, adj_rect, (struct rgba){r, g, b, a});
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_draw_text_outlined(PyObject *self, PyObject *args)
+{
+    const char *text;
+    struct rect rect;
+    int r, g, b, a;
+    int out_r, out_g, out_b, out_a;
+
+    if(!PyArg_ParseTuple(args, "s(iiii)(iiii)(iiii)", &text, &rect.x, &rect.y, &rect.w, &rect.h, &r, &g,
+        &b, &a, &out_r, &out_g, &out_b, &out_a)) {
+        PyErr_SetString(PyExc_TypeError,
+            "Expecting 4 arguments: A text string, a tuple of 4 ints (bounds) and two tuples of 4 ints "
+            "(RGBA color and RGBA outline color).");
+        return NULL;
+    }
+    UI_DrawTextOutlined(text, text_rect_for_labels(rect), (struct rgba){r, g, b, a},
+        (struct rgba){out_r, out_g, out_b, out_a});
     Py_RETURN_NONE;
 }
 
@@ -6806,7 +6849,7 @@ static PyObject *PyPf_leave_post(PyObject *self, PyObject *args)
     Py_RETURN_FALSE;
 }
 
-static PyObject *PyPf_workshop_away(PyObject *self, PyObject *args)
+static PyObject *PyPf_workshop_eating(PyObject *self, PyObject *args)
 {
     PyObject *obj;
     if(!PyArg_ParseTuple(args, "O", &obj) || !S_Entity_Check(obj)) {
@@ -6815,7 +6858,7 @@ static PyObject *PyPf_workshop_away(PyObject *self, PyObject *args)
     }
     uint32_t uid;
     S_Entity_UIDForObj(obj, &uid);
-    return PyInt_FromLong(G_Posts_Away(uid));
+    return PyInt_FromLong(G_Posts_Eating(uid));
 }
 
 static PyObject *PyPf_end_duty(PyObject *self, PyObject *args)

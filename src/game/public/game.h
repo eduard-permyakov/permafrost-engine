@@ -297,6 +297,7 @@ void                  G_Sel_Remove(uint32_t uid);
 void                  G_Sel_RemoveMany(const uint32_t *uids, size_t nuids);
 const vec_entity_t   *G_Sel_Get(enum selection_type *out_type);
 uint32_t              G_Sel_GetHovered(void);
+bool                  G_GatherBlockedNow(void);
 void                  G_Sel_Set(uint32_t *ents, size_t nents);
 
 /*###########################################################################*/
@@ -926,8 +927,10 @@ void G_StorageSite_RecordConsumed(int faction_id, const char *rname, int amount)
 /* Something the site made: its products or the units it trained. 'icon' NULL
  * shows the resource's icon */
 void G_StorageSite_RecordMade(uint32_t uid, const char *name, const char *icon, int amount);
-/* A line shown under the site's strip; a NULL text clears it */
-void G_StorageSite_SetNote(uint32_t uid, const char *icon, const char *text, bool warn);
+/* A line shown under the site's strip, with a second icon and text after it
+ * if given; a NULL text clears it */
+void G_StorageSite_SetNote(uint32_t uid, const char *icon, const char *text, bool warn,
+                           const char *after_icon, const char *after_text);
 /* How many of 'name' the site, or the pool it is in, made in the last minute */
 int  G_StorageSite_MadePerMinute(uint32_t uid, const char *name);
 int  G_StorageSite_GetPlayerProduced(const char *rname);
@@ -1238,7 +1241,7 @@ void     G_Posts_SetLocked(uint32_t uid, int locked);
  * way; false for a building with no posts */
 bool     G_Posts_Get(uint32_t uid, int *out_posts, int *out_locked, int *out_inside, int *out_coming);
 /* How many of its holders are away at a meal, their post kept for them */
-int      G_Posts_Away(uint32_t uid);
+int      G_Posts_Eating(uint32_t uid);
 /* The workshop whose post the unit holds or is on its way to, or NULL_UID */
 uint32_t G_Posts_WorkshopOf(uint32_t unit);
 /* Sends the unit to a post of the workshop as the player's order, opening one

@@ -295,7 +295,7 @@ void      N_RenderNavigationBlockers(void *nav_private, const struct map *map,
 void      N_RenderBuildableTiles(void *nav_private, const struct map *map, 
                                  mat4x4_t *chunk_model, int chunk_r, int chunk_c, 
                                  const struct obb *obb, enum nav_layer layer,
-                                 bool blocked, bool allows_shore, int faction_id);
+                                 bool blocked, bool allows_shore, int faction_id, bool blocked_on_top);
 
 /* ------------------------------------------------------------------------
  * Debug rendering to show the 'cover' attribute of every map tile.
@@ -747,6 +747,13 @@ void      N_SoftBlockIncrefOBB(void *nav_private, int faction_id, uint32_t flags
                                vec3_t map_pos, const struct obb *obb);
 void      N_SoftBlockDecrefOBB(void *nav_private, int faction_id, uint32_t flags,
                                vec3_t map_pos, const struct obb *obb);
+
+/* Marks the tiles of a circle that already has its blockers as standing for good, as far as
+ * building on the ground goes: the blockers are what units go by, and these ground tiles are all
+ * they add to.
+ */
+void      N_StaticMarkIncref(vec2_t xz_pos, float range, vec3_t map_pos, void *nav_private);
+void      N_StaticMarkDecref(vec2_t xz_pos, float range, vec3_t map_pos, void *nav_private);
 
 void      N_BlockersIncrefOBB(void *nav_private, int faction_id, uint32_t flags,
                               vec3_t map_pos, const struct obb *obb);

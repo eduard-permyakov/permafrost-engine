@@ -1335,6 +1335,15 @@ static void g_set_contextual_cursor(void)
         Cursor_NamedSetRTSPointer(name);
         break;
     }
+    case CTX_ACTION_GATHER_BLOCKED: {
+        char name[256] = { [0] = '\0' };
+        G_Harvester_GetContextualCursor(name, sizeof(name));
+        pf_strlcat(name, "-blocked", sizeof(name));
+        if(!Cursor_NamedSetRTSPointer(name)) {
+            Cursor_SetRTSPointer(CURSOR_POINTER);
+        }
+        break;
+    }
     case CTX_ACTION_DROP_OFF:
         Cursor_SetRTSPointer(CURSOR_DROP_OFF);
         break;
@@ -4116,6 +4125,11 @@ bool G_MouseInTargetMode(void)
     if(G_Building_InTargetMode())
         return true;
     return false;
+}
+
+bool G_GatherBlockedNow(void)
+{
+    return G_CurrContextualAction() == CTX_ACTION_GATHER_BLOCKED;
 }
 
 enum ctx_action G_CurrContextualAction(void)

@@ -76,6 +76,7 @@ void               UI_InputBegin(void);
 void               UI_InputEnd(void);
 void               UI_HandleEvent(SDL_Event *evt);
 void               UI_DrawText(const char *text, struct rect rect, struct rgba rgba);
+void               UI_DrawTextOutlined(const char *text, struct rect rect, struct rgba rgba, struct rgba outline);
 vec2_t             UI_GetTextVres(void);
 void               UI_LoadingScreenTick(void);
 

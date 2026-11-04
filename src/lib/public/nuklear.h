@@ -17117,6 +17117,15 @@ nk_begin_with_vres(struct nk_context *ctx, const char *title,
     return nk_begin_titled(ctx, title, title, bounds, flags, vres);
 }
 
+/* The topmost window that takes input: one that only shows, as a tooltip, stands over it harmlessly */
+NK_INTERN struct nk_window*
+nk_top_input_window(struct nk_context *ctx)
+{
+    struct nk_window *iter = ctx->end;
+    while (iter && (iter->flags & (NK_WINDOW_HIDDEN | NK_WINDOW_NO_INPUT)))
+        iter = iter->prev;
+    return iter;
+}
 NK_API int
 nk_begin_titled(struct nk_context *ctx, const char *name, const char *title,
     struct nk_rect bounds, nk_flags flags, struct nk_vec2i vres)
@@ -17212,14 +17221,19 @@ nk_begin_titled(struct nk_context *ctx, const char *name, const char *title,
         inpanel = nk_input_has_mouse_click_down_in_rect(&ctx->input, NK_BUTTON_LEFT, win_bounds, nk_true);
         inpanel = inpanel && ctx->input.mouse.buttons[NK_BUTTON_LEFT].clicked;
         ishovered = nk_input_is_mouse_hovering_rect(&ctx->input, win_bounds);
-        if ((win != ctx->active) && ishovered && !ctx->input.mouse.buttons[NK_BUTTON_LEFT].down) {
+        if ((win != ctx->active || (win->flags & NK_WINDOW_BACKGROUND)) && ishovered
+        && !ctx->input.mouse.buttons[NK_BUTTON_LEFT].down) {
             iter = win->next;
             while (iter) {
                 struct nk_rect iter_bounds = (!(iter->flags & NK_WINDOW_MINIMIZED))?
                     iter->bounds: nk_rect(iter->bounds.x, iter->bounds.y, iter->bounds.w, h);
-                if (NK_INTERSECT(win_bounds.x, win_bounds.y, win_bounds.w, win_bounds.h,
-                    iter_bounds.x, iter_bounds.y, iter_bounds.w, iter_bounds.h) &&
-                    (!(iter->flags & NK_WINDOW_HIDDEN)))
+                /* A background window spans what stands on it: only that under the mouse covers it */
+                int covers = (win->flags & NK_WINDOW_BACKGROUND)
+                    ? NK_INBOX(ctx->input.mouse.pos.x, ctx->input.mouse.pos.y,
+                        iter_bounds.x, iter_bounds.y, iter_bounds.w, iter_bounds.h)
+                    : NK_INTERSECT(win_bounds.x, win_bounds.y, win_bounds.w, win_bounds.h,
+                        iter_bounds.x, iter_bounds.y, iter_bounds.w, iter_bounds.h);
+                if (covers && (!(iter->flags & (NK_WINDOW_HIDDEN | NK_WINDOW_NO_INPUT))))
                     break;
 
                 if (iter->popup.win && iter->popup.active && !(iter->flags & NK_WINDOW_HIDDEN) &&
@@ -17232,7 +17246,7 @@ nk_begin_titled(struct nk_context *ctx, const char *name, const char *title,
         }
 
         /* activate window if clicked */
-        if (iter && inpanel && (win != ctx->end)) {
+        if (iter && inpanel && (win != nk_top_input_window(ctx))) {
             iter = win->next;
             while (iter) {
                 /* try to find a panel with higher priority in the same position */
@@ -17240,7 +17254,7 @@ nk_begin_titled(struct nk_context *ctx, const char *name, const char *title,
                 iter->bounds: nk_rect(iter->bounds.x, iter->bounds.y, iter->bounds.w, h);
                 if (NK_INBOX(ctx->input.mouse.pos.x, ctx->input.mouse.pos.y,
                     iter_bounds.x, iter_bounds.y, iter_bounds.w, iter_bounds.h) &&
-                    !(iter->flags & NK_WINDOW_HIDDEN))
+                    !(iter->flags & (NK_WINDOW_HIDDEN | NK_WINDOW_NO_INPUT)))
                     break;
                 if (iter->popup.win && iter->popup.active && !(iter->flags & NK_WINDOW_HIDDEN) &&
                     NK_INTERSECT(win_bounds.x, win_bounds.y, win_bounds.w, win_bounds.h,
@@ -17250,7 +17264,8 @@ nk_begin_titled(struct nk_context *ctx, const char *name, const char *title,
                 iter = iter->next;
             }
         }
-        if (iter && !(win->flags & NK_WINDOW_ROM) && (win->flags & NK_WINDOW_BACKGROUND)) {
+        /* Without the mouse over it, a background window has no claim on being active */
+        if (iter && iter != win && !(win->flags & NK_WINDOW_ROM) && (win->flags & NK_WINDOW_BACKGROUND)) {
             win->flags |= (nk_flags)NK_WINDOW_ROM;
             iter->flags &= ~(nk_flags)NK_WINDOW_ROM;
             ctx->active = iter;
@@ -17261,7 +17276,7 @@ nk_begin_titled(struct nk_context *ctx, const char *name, const char *title,
                 nk_insert_window(ctx, iter, NK_INSERT_BACK);
             }
         } else {
-            if (!iter && ctx->end != win) {
+            if (!iter && nk_top_input_window(ctx) != win) {
                 if (!(win->flags & NK_WINDOW_BACKGROUND)) {
                     /* current window is active in that position so transfer to top
                      * at the highest priority in stack */
@@ -17271,7 +17286,10 @@ nk_begin_titled(struct nk_context *ctx, const char *name, const char *title,
                 win->flags &= ~(nk_flags)NK_WINDOW_ROM;
                 ctx->active = win;
             }
-            if (ctx->end != win && !(win->flags & NK_WINDOW_BACKGROUND))
+            /* Nothing is over the top window, so nothing can have made it read-only */
+            if (nk_top_input_window(ctx) == win)
+                win->flags &= ~(nk_flags)NK_WINDOW_ROM;
+            if (nk_top_input_window(ctx) != win && !(win->flags & NK_WINDOW_BACKGROUND))
                 win->flags |= NK_WINDOW_ROM;
         }
     }
@@ -26669,6 +26687,10 @@ nk_tooltip_begin(struct nk_context *ctx, float width)
     h = nk_iceilf(nk_null_rect.h);
     x = nk_ifloorf(in->mouse.pos.x + 1) - (int)win->layout->clip.x;
     y = nk_ifloorf(in->mouse.pos.y + 1) - (int)win->layout->clip.y;
+
+    /* Beside the screen's edge it opens the other way, to stay on it */
+    if (win->vres.x > 0 && in->mouse.pos.x + 1 + w > win->vres.x)
+        x = win->vres.x - w - (int)win->layout->clip.x;
 
     bounds.x = (float)x;
     bounds.y = (float)y;

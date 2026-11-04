@@ -5004,7 +5004,7 @@ void N_RenderMapCover(void *nav_private, const struct map *map,
 void N_RenderBuildableTiles(void *nav_private, const struct map *map,
                             mat4x4_t *chunk_model, int chunk_r, int chunk_c,
                             const struct obb *obb, enum nav_layer layer, 
-                            bool blocked, bool allow_shore, int faction_id)
+                            bool blocked, bool allow_shore, int faction_id, bool blocked_on_top)
 {
     assert(Sched_UsingBigStack());
 
@@ -5087,6 +5087,9 @@ void N_RenderBuildableTiles(void *nav_private, const struct map *map,
         || (kh_get(td, building_tileset, td_key(tds + i)) != kh_end(building_tileset))) 
         || blocked) {
             *colors_base++ = (vec3_t){1.0f, 0.0f, 0.0f};
+        }else if(blocked_on_top) {
+            corners_base -= 4;
+            continue;
         }else{
             *colors_base++ = (vec3_t){0.0f, 1.0f, 0.0f};
         }
@@ -5097,7 +5100,7 @@ void N_RenderBuildableTiles(void *nav_private, const struct map *map,
 
     bool on_water_surface = true;
     R_PushCmd((struct rcmd){
-        .func = R_GL_DrawMapOverlayQuads,
+        .func = blocked_on_top ? R_GL_DrawMapOverlayQuadsOnTop : R_GL_DrawMapOverlayQuads,
         .nargs = 6,
         .args = {
             R_PushArg(corners_buff, sizeof(corners_buff)),
@@ -7150,6 +7153,36 @@ void N_BlockersDecref(vec2_t xz_pos, float range, int faction_id, uint32_t flags
         n_update_blockers_circle_water(nav_private, xz_pos, range, faction_id, map_pos, -1, dilate);
         n_update_blockers_circle_ground(nav_private, xz_pos, range, faction_id, map_pos, -1, dilate);
     }
+}
+
+static void n_update_static_circle(struct nav_private *priv, vec2_t xz_pos, float range,
+                                   vec3_t map_pos, int ref_delta)
+{
+    if(!(priv->layer_mask & (1u << NAV_LAYER_GROUND_1X1)))
+        return;
+
+    struct tile_desc tds[1024];
+    int ntds = M_Tile_AllUnderCircle(n_res(priv), xz_pos, range, map_pos, tds, ARR_SIZE(tds));
+
+    for(int i = 0; i < ntds; i++) {
+        struct tile_desc curr = tds[i];
+        if(curr.chunk_r < priv->window.min_r || curr.chunk_r > priv->window.max_r
+        || curr.chunk_c < priv->window.min_c || curr.chunk_c > priv->window.max_c)
+            continue;
+        struct nav_chunk *chunk = 
+            &priv->chunks[NAV_LAYER_GROUND_1X1][IDX(curr.chunk_r, priv->width, curr.chunk_c)];
+        chunk->static_blockers[curr.tile_r][curr.tile_c] += ref_delta;
+    }
+}
+
+void N_StaticMarkIncref(vec2_t xz_pos, float range, vec3_t map_pos, void *nav_private)
+{
+    n_update_static_circle(nav_private, xz_pos, range, map_pos, +1);
+}
+
+void N_StaticMarkDecref(vec2_t xz_pos, float range, vec3_t map_pos, void *nav_private)
+{
+    n_update_static_circle(nav_private, xz_pos, range, map_pos, -1);
 }
 
 void N_ReserveIncref(vec2_t xz_pos, float range, enum nav_layer layer, vec3_t map_pos,

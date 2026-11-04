@@ -70,6 +70,8 @@ struct text_desc{
     char        text[256];
     struct rect rect;
     struct rgba rgba;
+    /* None if its alpha is 0 */
+    struct rgba outline;
 };
 
 enum ui_render_mode{
@@ -129,6 +131,23 @@ static void ui_draw_text(const struct text_desc desc)
 
     struct nk_rect  rect = nk_rect(desc.rect.x, desc.rect.y, desc.rect.w, desc.rect.h);
     struct nk_color rgba = nk_rgba(desc.rgba.r, desc.rgba.g, desc.rgba.b, desc.rgba.a);
+
+    if(desc.outline.a > 0) {
+        struct nk_color outline = nk_rgba(desc.outline.r, desc.outline.g, desc.outline.b, desc.outline.a);
+        const struct nk_color none = nk_rgba(0, 0, 0, 0);
+        /* The font's outline is a pixel wide: a pass a pixel off each way thickens it */
+        for(int dx = -1; dx <= 1; dx++) {
+        for(int dy = -1; dy <= 1; dy++) {
+            if(dx == 0 && dy == 0)
+                continue;
+            struct nk_rect off = nk_rect(rect.x + dx, rect.y + dy, rect.w, rect.h);
+            nk_draw_text_outlined(canvas, off, desc.text, strlen(desc.text), s_ctx.style.font,
+                none, outline, outline);
+        }}
+        nk_draw_text_outlined(canvas, rect, desc.text, strlen(desc.text), s_ctx.style.font,
+            none, rgba, outline);
+        return;
+    }
 
     nk_draw_text(canvas, rect, desc.text, strlen(desc.text), s_ctx.style.font,
         (struct nk_color){0,0,0,255}, rgba);
@@ -695,6 +714,16 @@ void UI_HandleEvent(SDL_Event *evt)
 void UI_DrawText(const char *text, struct rect rect, struct rgba rgba)
 {
     struct text_desc d = (struct text_desc){.rect = rect, .rgba = rgba};
+    pf_strlcpy(d.text, text, sizeof(d.text));
+
+    SDL_LockMutex(s_lock);
+    vec_td_push(&s_curr_frame_labels, d);
+    SDL_UnlockMutex(s_lock);
+}
+
+void UI_DrawTextOutlined(const char *text, struct rect rect, struct rgba rgba, struct rgba outline)
+{
+    struct text_desc d = (struct text_desc){.rect = rect, .rgba = rgba, .outline = outline};
     pf_strlcpy(d.text, text, sizeof(d.text));
 
     SDL_LockMutex(s_lock);

@@ -284,6 +284,13 @@ void   R_GL_DrawQuad(vec2_t corners[], const float *width, const vec3_t *color,
 void   R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *count, mat4x4_t *model, 
                                 bool *on_water_surface, const struct map *map);
 
+/* ------------------------------------------------------------------------
+ * The same, over whatever has been drawn already.
+ * ------------------------------------------------------------------------
+ */
+void   R_GL_DrawMapOverlayQuadsOnTop(vec2_t *xz_corners, vec3_t *colors, const size_t *count, mat4x4_t *model,
+                                     bool *on_water_surface, const struct map *map);
+
 /* ---------------------------------------------------------------------------
  * Set the triangles, then the lines, of one of the meshes laid over the map,
  * in world coordinates. It is kept on the GPU and drawn as it is until set

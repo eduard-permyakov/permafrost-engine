@@ -246,7 +246,7 @@ static void buildstate_remove(uint32_t uid)
     }
 }
 
-static void on_render_3d(void *user, void *event)
+static void render_placement_tiles(bool blocked_on_top)
 {
     const struct camera *cam = G_GetActiveCamera();
     uint32_t key;
@@ -266,12 +266,23 @@ static void on_render_3d(void *user, void *event)
         if(flags & ENTITY_FLAG_WATER) {
             M_NavRenderBuildableTiles(s_map, cam, &obb, NAV_LAYER_WATER_1X1,
                 !(M_ObjectAdjacentToLand(s_map, &obb) && M_ObjectAdjacentToWater(s_map, &obb)), 
-                true, faction_id);
+                true, faction_id, blocked_on_top);
         }else{
             M_NavRenderBuildableTiles(s_map, cam, &obb, NAV_LAYER_GROUND_1X1, false, false,
-                faction_id);
+                faction_id, blocked_on_top);
         }
     });
+}
+
+static void on_render_3d(void *user, void *event)
+{
+    render_placement_tiles(false);
+}
+
+/* What stands in the way shows through the trees and the building being placed */
+static void on_render_3d_post(void *user, void *event)
+{
+    render_placement_tiles(true);
 }
 
 static uint64_t td_key(const struct tile_desc *td)
@@ -652,6 +663,8 @@ bool G_Building_Init(const struct map *map)
 
     E_Global_Register(EVENT_RENDER_3D_PRE, on_render_3d, NULL, 
         G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
+    E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d_post, NULL, 
+        G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
     E_Global_Register(EVENT_UPDATE_START, on_update, NULL, G_RUNNING);
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     s_map = map;
@@ -673,6 +686,7 @@ void G_Building_Shutdown(void)
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     E_Global_Unregister(EVENT_UPDATE_START, on_update);
     E_Global_Unregister(EVENT_RENDER_3D_PRE, on_render_3d);
+    E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d_post);
 
     uint32_t key;
     struct buildstate curr;

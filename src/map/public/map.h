@@ -170,7 +170,7 @@ void   M_NavRenderNavigationBlockers(const struct map *map, const struct camera 
  */
 void   M_NavRenderBuildableTiles(const struct map *map, const struct camera *cam,
                                  const struct obb *obb, enum nav_layer layer,
-                                 bool blocked, bool allow_cliffs, int faction_id);
+                                 bool blocked, bool allow_cliffs, int faction_id, bool blocked_on_top);
 
 /* ------------------------------------------------------------------------
  * Render a layer over the visible map surface showing portals between chunks
@@ -646,6 +646,10 @@ void   M_NavSoftBlockIncrefOBB(const struct map *map, int faction_id,
                                uint32_t flags, const struct obb *obb);
 void   M_NavSoftBlockDecrefOBB(const struct map *map, int faction_id,
                                uint32_t flags, const struct obb *obb);
+
+/* Marks the circle, whose blockers are already in, as standing for good to anything built on it */
+void   M_NavStaticMarkIncref(vec2_t xz_pos, float range, const struct map *map);
+void   M_NavStaticMarkDecref(vec2_t xz_pos, float range, const struct map *map);
 
 void   M_NavBlockersIncrefOBB(const struct map *map, int faction_id,
                               uint32_t flags, const struct obb *obb);

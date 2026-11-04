@@ -1449,6 +1449,19 @@ void R_GL_DrawQuad(vec2_t corners[], const float *width, const vec3_t *color, co
     GL_PERF_RETURN_VOID();
 }
 
+void R_GL_DrawMapOverlayQuadsOnTop(vec2_t *xz_corners, vec3_t *colors, const size_t *count,
+                                   mat4x4_t *model, bool *on_water_surface, const struct map *map)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    GLboolean depth_test = glIsEnabled(GL_DEPTH_TEST);
+    glDisable(GL_DEPTH_TEST);
+    R_GL_DrawMapOverlayQuads(xz_corners, colors, count, model, on_water_surface, map);
+    if(depth_test) {
+        glEnable(GL_DEPTH_TEST);
+    }
+}
+
 void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *count, 
                               mat4x4_t *model, bool *on_water_surface, const struct map *map)
 {

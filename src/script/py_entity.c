@@ -1292,7 +1292,8 @@ static PyMethodDef PyStorageSiteEntity_methods[] = {
     {"set_note", 
     (PyCFunction)PyStorageSiteEntity_set_note, METH_VARARGS,
     "Shows a line of text, after an optional icon path, under the site's strip, in the warning "
-    "colour when the third argument is true. A text of None clears it."},
+    "colour when the third argument is true, then a second icon path and text if given. A text "
+    "of None clears it."},
 
     {"made_per_minute", 
     (PyCFunction)PyStorageSiteEntity_made_per_minute, METH_VARARGS,
@@ -5637,13 +5638,14 @@ static PyObject *PyStorageSiteEntity_set_note(PyStorageSiteEntityObject *self, P
 {
     SS_CHECK_ALIVE(NULL);
     const char *icon, *text;
+    const char *after_icon = NULL, *after_text = NULL;
     int warn = 0;
-    if(!PyArg_ParseTuple(args, "zz|i", &icon, &text, &warn)) {
+    if(!PyArg_ParseTuple(args, "zz|izz", &icon, &text, &warn, &after_icon, &after_text)) {
         PyErr_SetString(PyExc_TypeError, "Expecting an icon path (string or None), a text (string "
-            "or None) and optionally whether it warns (bool).");
+            "or None), optionally whether it warns (bool), and a second icon path and text after it.");
         return NULL;
     }
-    G_StorageSite_SetNote(self->super.ent, icon, text, warn);
+    G_StorageSite_SetNote(self->super.ent, icon, text, warn, after_icon, after_text);
     Py_RETURN_NONE;
 }
 

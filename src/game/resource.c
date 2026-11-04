@@ -84,6 +84,8 @@ struct rstate{
     /* Taken in one go, as much as the harvester can carry, rather than 
      * worked a swing at a time */
     bool        instant;
+    /* Whether its ground is marked against being built on */
+    bool        marked;
     /* Yields nothing for now (out of season): no harvester takes it as work */
     bool        dormant;
     /* Hits a hunter's arrows must still land before it can be worked */
@@ -146,6 +148,31 @@ static int compare_keys(const void *a, const void *b)
     char *stra = *(char**)a;
     char *strb = *(char**)b;
     return strcmp(stra, strb);
+}
+
+/* A node stands in the way of whatever would be built over it, until it is gone. A pile
+ * to be picked up at once may land anywhere, even on ground set aside for a building. */
+static bool resource_stands(const struct rstate *rs, uint32_t uid)
+{
+    uint32_t flags = G_FlagsGet(uid);
+    return !rs->instant && !(flags & (ENTITY_FLAG_BUILDING | ENTITY_FLAG_MOVABLE
+        | ENTITY_FLAG_WATER | ENTITY_FLAG_AIR));
+}
+
+static void unmark_ground(struct rstate *rs)
+{
+    if(rs->marked) {
+        M_NavStaticMarkDecref(rs->blocking_pos, rs->blocking_radius, s_map);
+        rs->marked = false;
+    }
+}
+
+static void mark_ground(struct rstate *rs, uint32_t uid)
+{
+    if(!rs->marked && resource_stands(rs, uid)) {
+        M_NavStaticMarkIncref(rs->blocking_pos, rs->blocking_radius, s_map);
+        rs->marked = true;
+    }
 }
 
 /*****************************************************************************/
@@ -211,6 +238,7 @@ bool G_Resource_AddEntity(uint32_t uid)
     if(!(flags & ENTITY_FLAG_BUILDING)) {
         M_NavBlockersIncref(rs.blocking_pos, rs.blocking_radius, G_GetFactionID(uid), flags, s_map);
     }
+    mark_ground(rstate_get(uid), uid);
     return true;
 }
 
@@ -220,6 +248,7 @@ void G_Resource_RemoveEntity(uint32_t uid)
     if(!rs)
         return;
 
+    unmark_ground(rs);
     uint32_t flags = G_FlagsGet(uid);
     if(!(flags & ENTITY_FLAG_BUILDING)) {
         M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(uid), 
@@ -236,6 +265,7 @@ void G_Resource_UpdateBounds(uint32_t uid)
     if(!rs)
         return;
 
+    unmark_ground(rs);
     uint32_t flags = G_FlagsGet(uid);
     if(!(flags & ENTITY_FLAG_BUILDING)) {
         M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(uid), 
@@ -244,6 +274,7 @@ void G_Resource_UpdateBounds(uint32_t uid)
         M_NavBlockersIncref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(uid), 
             flags, s_map);
     }
+    mark_ground(rs, uid);
 }
 
 void G_Resource_UpdateFactionID(uint32_t uid, int oldfac, int newfac)
@@ -265,6 +296,7 @@ void G_Resource_UpdateSelectionRadius(uint32_t uid, float radius)
     if(!rs)
         return;
 
+    unmark_ground(rs);
     uint32_t flags = G_FlagsGet(uid);
     if(!(flags & ENTITY_FLAG_BUILDING)) {
         M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(uid), 
@@ -273,6 +305,7 @@ void G_Resource_UpdateSelectionRadius(uint32_t uid, float radius)
         M_NavBlockersIncref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(uid), 
             flags, s_map);
     }
+    mark_ground(rs, uid);
 }
 
 bool G_Resource_GetReplenishable(uint32_t uid)
@@ -300,7 +333,9 @@ void G_Resource_SetInstant(uint32_t uid, bool set)
 {
     struct rstate *rs = rstate_get(uid);
     assert(rs);
+    unmark_ground(rs);
     rs->instant = set;
+    mark_ground(rs, uid);
 }
 
 bool G_Resource_GetDormant(uint32_t uid)

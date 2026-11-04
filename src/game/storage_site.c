@@ -213,6 +213,9 @@ struct strip_note{
     const char *icon;
     char        text[48];
     bool        warn;
+    /* A second icon and text after the first, such as the rations an izba holds */
+    const char *after_icon;
+    char        after_text[16];
 };
 
 KHASH_MAP_INIT_INT(note, struct strip_note)
@@ -288,6 +291,7 @@ struct window_plan{
     /* The pool's workshop posts filled, out of those not kept empty; -1 for none */
     int                posts_inside;
     int                posts_open;
+    int                posts_eating;
     const struct made *made[STRIP_MAX_MADE];
     size_t             nmade;
 };
@@ -871,8 +875,9 @@ static const char *pool_reason(uint32_t key, size_t nnames, const char *names[])
     return reason_code(ret);
 }
 
-/* The posts of the pool's workshops: those filled, and those not kept empty */
-static bool pool_posts(uint32_t key, int *out_inside, int *out_open)
+/* The posts of the pool's workshops: those filled, those not kept empty, and
+ * those whose holders are out at a meal */
+static bool pool_posts(uint32_t key, int *out_inside, int *out_open, int *out_eating)
 {
     int cid = G_Cluster_Of(key);
     uint32_t members[64];
@@ -883,15 +888,24 @@ static bool pool_posts(uint32_t key, int *out_inside, int *out_open)
     bool ret = false;
     *out_inside = 0;
     *out_open = 0;
+    *out_eating = 0;
     for(int i = 0; i < nmembers; i++) {
         int posts, locked, inside, coming;
         if(!G_Posts_Get(members[i], &posts, &locked, &inside, &coming))
             continue;
         *out_inside += inside;
         *out_open += posts - locked;
+        *out_eating += G_Posts_Eating(members[i]);
         ret = true;
     }
     return ret;
+}
+
+/* What shows a holder out at a meal; a world without rations has none of its own */
+static const char *meal_icon(void)
+{
+    const char *icon = G_Resource_GetIcon("Rations");
+    return icon ? icon : POSTS_ICON;
 }
 
 static float text_width(const struct nk_user_font *font, const char *text)
@@ -1071,19 +1085,30 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
 
     char posts[16] = {0};
     float posts_w = 0.0f;
-    int posts_inside, posts_open;
-    if(pool_posts(key, &posts_inside, &posts_open)) {
-        pf_snprintf(posts, sizeof(posts), "%d/%d", posts_inside, posts_open);
+    char eating[16] = {0};
+    float eating_w = 0.0f;
+    int posts_inside, posts_open, posts_eating;
+    if(pool_posts(key, &posts_inside, &posts_open, &posts_eating)) {
+        pf_snprintf(posts, sizeof(posts), posts_eating ? "%d/%d (" : "%d/%d", posts_inside, posts_open);
         posts_w = text_width(font, posts);
-        width = MAX(width, STRIP_ICON_SZ + 2 + posts_w);
+        if(posts_eating) {
+            pf_snprintf(eating, sizeof(eating), "%d)", posts_eating);
+            eating_w = STRIP_ICON_SZ + 2 + text_width(font, eating);
+        }
+        width = MAX(width, STRIP_ICON_SZ + 2 + posts_w + eating_w);
     }
 
     khiter_t kn = kh_get(note, s_notes, key);
     const struct strip_note *note = (kn != kh_end(s_notes)) ? &kh_value(s_notes, kn) : NULL;
     float note_w = 0.0f;
+    float note_after_w = 0.0f;
     if(note) {
         note_w = text_width(font, note->text);
-        width = MAX(width, (note->icon ? STRIP_ICON_SZ + 2 : 0.0f) + note_w);
+        if(note->after_icon) {
+            note_after_w = text_width(font, note->after_text);
+        }
+        width = MAX(width, (note->icon ? STRIP_ICON_SZ + 2 : 0.0f) + note_w
+            + (note->after_icon ? STRIP_GAP + STRIP_ICON_SZ + 2 + note_after_w : 0.0f));
     }
 
     /* The second row: what the pool made in the last minute, most first */
@@ -1161,6 +1186,12 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
         draw_strip_icon(canvas, left, carriers_y, POSTS_ICON);
         draw_strip_text(canvas, font, left + STRIP_ICON_SZ + 2, carriers_y + (STRIP_ICON_SZ - font->height) / 2.0f,
             posts_w, posts, STRIP_TEXT_CLR);
+        if(eating[0]) {
+            x = left + STRIP_ICON_SZ + 2 + posts_w;
+            draw_strip_icon(canvas, x, carriers_y, meal_icon());
+            draw_strip_text(canvas, font, x + STRIP_ICON_SZ + 2, carriers_y + (STRIP_ICON_SZ - font->height) / 2.0f,
+                eating_w - STRIP_ICON_SZ - 2, eating, STRIP_TEXT_CLR);
+        }
         carriers_y += row_h;
     }
 
@@ -1172,6 +1203,12 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
         }
         draw_strip_text(canvas, font, x, carriers_y + (STRIP_ICON_SZ - font->height) / 2.0f,
             note_w, note->text, note->warn ? STRIP_WARN_CLR : STRIP_TEXT_CLR);
+        if(note->after_icon) {
+            x += note_w + STRIP_GAP;
+            draw_strip_icon(canvas, x, carriers_y, note->after_icon);
+            draw_strip_text(canvas, font, x + STRIP_ICON_SZ + 2, carriers_y + (STRIP_ICON_SZ - font->height) / 2.0f,
+                note_after_w, note->after_text, note->warn ? STRIP_WARN_CLR : STRIP_TEXT_CLR);
+        }
         carriers_y += row_h;
     }
 
@@ -1267,7 +1304,7 @@ static float window_columns(const struct nk_user_font *font, const struct window
     if(plan->ngatherers > 0)
         totals_w += WIN_ICON_SZ + num_w + 2 * spacing;
     if(plan->posts_inside >= 0)
-        totals_w += WIN_ICON_SZ + cols[1] + cols[2] + cols[3] + 2 * spacing;
+        totals_w += 2 * WIN_ICON_SZ + 2 * cols[1] + cols[2] + cols[3] + 4 * spacing;
     return MAX(ret, totals_w);
 }
 
@@ -1315,7 +1352,7 @@ static void plan_window(uint32_t key, struct ss_state *ss, struct window_plan *o
         out->good_carriers |= (bound_for_good(key, out->names[i]) > 0);
         out->good_gatherers |= (gatherers_for(key, out->names[i]) > 0);
     }
-    if(!pool_posts(key, &out->posts_inside, &out->posts_open)) {
+    if(!pool_posts(key, &out->posts_inside, &out->posts_open, &out->posts_eating)) {
         out->posts_inside = -1;
     }
     out->nmade = made_sorted(key, out->made, ARR_SIZE(out->made));
@@ -1450,14 +1487,16 @@ static void draw_window(struct nk_context *ctx, uint32_t key, const struct ss_st
 
     if(plan->ncarriers > 0 || plan->ngatherers > 0 || plan->nbuilders > 0 || plan->posts_inside >= 0) {
 
-        char carriers[8], gatherers[8], builders[8], posts[16];
+        char carriers[8], gatherers[8], builders[8], posts[16], eating[16];
         pf_snprintf(carriers, sizeof(carriers), "%d", plan->ncarriers);
         pf_snprintf(gatherers, sizeof(gatherers), "%d", plan->ngatherers);
         pf_snprintf(builders, sizeof(builders), "%d", plan->nbuilders);
-        pf_snprintf(posts, sizeof(posts), "%d/%d", plan->posts_inside, plan->posts_open);
+        pf_snprintf(posts, sizeof(posts), plan->posts_eating ? "%d/%d (" : "%d/%d", plan->posts_inside, plan->posts_open);
+        pf_snprintf(eating, sizeof(eating), "%d)", plan->posts_eating);
+        const bool show_eating = plan->posts_inside >= 0 && plan->posts_eating > 0;
 
         nk_layout_row_begin(ctx, NK_STATIC, WIN_ROW_H, (plan->ncarriers > 0 ? 2 : 0) + (plan->ngatherers > 0 ? 2 : 0)
-            + (plan->nbuilders > 0 ? 2 : 0) + (plan->posts_inside >= 0 ? 2 : 0));
+            + (plan->nbuilders > 0 ? 2 : 0) + (plan->posts_inside >= 0 ? 2 : 0) + (show_eating ? 2 : 0));
         if(plan->ncarriers > 0) {
             nk_layout_row_push(ctx, WIN_ICON_SZ);
             nk_image_texpath(ctx, CARRIERS_ICON);
@@ -1481,6 +1520,12 @@ static void draw_window(struct nk_context *ctx, uint32_t key, const struct ss_st
             nk_image_texpath(ctx, POSTS_ICON);
             nk_layout_row_push(ctx, cols[1] + cols[2] + cols[3]);
             nk_label_colored(ctx, posts, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
+            if(show_eating) {
+                nk_layout_row_push(ctx, WIN_ICON_SZ);
+                nk_image_texpath(ctx, meal_icon());
+                nk_layout_row_push(ctx, cols[1]);
+                nk_label_colored(ctx, eating, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
+            }
         }
         nk_layout_row_end(ctx);
     }
@@ -2226,7 +2271,7 @@ bool G_StorageSite_AddEntity(uint32_t uid)
 
 void G_StorageSite_RemoveEntity(uint32_t uid)
 {
-    G_StorageSite_SetNote(uid, NULL, NULL, false);
+    G_StorageSite_SetNote(uid, NULL, NULL, false, NULL, NULL);
 
     struct ss_state *ss = ss_state_get(uid);
     if(!ss)
@@ -2761,7 +2806,8 @@ size_t G_StorageSite_DistrictGathered(int district, const char **out_names, int 
     return ret;
 }
 
-void G_StorageSite_SetNote(uint32_t uid, const char *icon, const char *text, bool warn)
+void G_StorageSite_SetNote(uint32_t uid, const char *icon, const char *text, bool warn,
+                           const char *after_icon, const char *after_text)
 {
     if(!text) {
         khiter_t k = kh_get(note, s_notes, uid);
@@ -2779,6 +2825,8 @@ void G_StorageSite_SetNote(uint32_t uid, const char *icon, const char *text, boo
     note->icon = icon ? si_intern(icon, &s_stringpool, s_stridx) : NULL;
     pf_strlcpy(note->text, text, sizeof(note->text));
     note->warn = warn;
+    note->after_icon = (after_icon && after_text) ? si_intern(after_icon, &s_stringpool, s_stridx) : NULL;
+    pf_strlcpy(note->after_text, after_text ? after_text : "", sizeof(note->after_text));
 }
 
 void G_StorageSite_RecordMade(uint32_t uid, const char *name, const char *icon, int amount)

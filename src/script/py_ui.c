@@ -907,6 +907,13 @@ static PyObject *PyWindow_label_colored_wrap(PyWindowObject *self, PyObject *arg
     Py_RETURN_NONE;  
 }
 
+/* Whether the window being drawn lies behind another under the mouse */
+static bool behind_window_over_mouse(void)
+{
+    nk_flags flags = s_nk_ctx->current->flags;
+    return (flags & NK_WINDOW_BACKGROUND) && (flags & NK_WINDOW_ROM);
+}
+
 static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args, PyObject *kwargs)
 {
     const char *str, *tooltip = NULL;
@@ -932,8 +939,8 @@ static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args, PyO
     }
 
     struct nk_window *win = s_nk_ctx->current;
-    bool right_clicked = nk_input_is_mouse_click_in_rect(in, NK_BUTTON_RIGHT, bounds);
-    bool hovering = nk_input_is_mouse_hovering_rect(in, bounds);
+    bool right_clicked = !behind_window_over_mouse() && nk_input_is_mouse_click_in_rect(in, NK_BUTTON_RIGHT, bounds);
+    bool hovering = !behind_window_over_mouse() && nk_input_is_mouse_hovering_rect(in, bounds);
     if(tooltip && hovering) {
         nk_tooltip(s_nk_ctx, tooltip);
     }
@@ -1024,8 +1031,8 @@ static PyObject *PyWindow_button_label_with_overlay(PyWindowObject *self, PyObje
     }
 
     struct nk_window *win = s_nk_ctx->current;
-    bool right_clicked = nk_input_is_mouse_click_in_rect(in, NK_BUTTON_RIGHT, bounds);
-    bool hovering = nk_input_is_mouse_hovering_rect(in, bounds);
+    bool right_clicked = !behind_window_over_mouse() && nk_input_is_mouse_click_in_rect(in, NK_BUTTON_RIGHT, bounds);
+    bool hovering = !behind_window_over_mouse() && nk_input_is_mouse_hovering_rect(in, bounds);
     if(tooltip && hovering) {
         nk_tooltip(s_nk_ctx, tooltip);
     }
@@ -1113,8 +1120,8 @@ static PyObject *PyWindow_animated_button_label(PyWindowObject *self, PyObject *
         nk_fill_rect(&win->buffer, ind_bounds, 3.0f, indicator_color);
     }
 
-    bool right_clicked = nk_input_is_mouse_click_in_rect(in, NK_BUTTON_RIGHT, bounds);
-    bool hovering = nk_input_is_mouse_hovering_rect(in, bounds);
+    bool right_clicked = !behind_window_over_mouse() && nk_input_is_mouse_click_in_rect(in, NK_BUTTON_RIGHT, bounds);
+    bool hovering = !behind_window_over_mouse() && nk_input_is_mouse_hovering_rect(in, bounds);
     if(tooltip && hovering) {
         nk_tooltip(s_nk_ctx, tooltip);
     }
@@ -2762,7 +2769,8 @@ static void active_windows_update(void *user, void *event)
             continue;
 
         bool interactive = !(win->flags & NK_WINDOW_NOT_INTERACTIVE);
-        if(win->suspend_on_pause && G_GetSimState() != G_RUNNING)
+        bool suspended = win->suspend_on_pause && G_GetSimState() != G_RUNNING;
+        if(suspended)
             win->flags |= NK_WINDOW_NOT_INTERACTIVE;
 
         struct nk_style_window saved_style = s_nk_ctx->style.window;
@@ -2831,6 +2839,10 @@ static void active_windows_update(void *user, void *event)
         if(interactive) {
             win->flags &= ~NK_WINDOW_NOT_INTERACTIVE;
         }
+        /* Nuklear would keep the read-only bit it was passed long after the pause */
+        if(interactive && suspended) {
+            s_nk_ctx->current->flags &= ~NK_WINDOW_ROM;
+        }
 
         nk_end(s_nk_ctx);
         if(win->header_style) {
@@ -2891,9 +2903,14 @@ bool S_UI_MouseOverObscuringWindow(int mouse_x, int mouse_y)
         struct nk_vec2 visible_size = {adj_bounds.w, adj_bounds.h};
 
         if(win->flags & NK_WINDOW_HIDDEN
-        || win->flags & NK_WINDOW_CLOSED
-        || win->flags & NK_WINDOW_BACKGROUND) {
+        || win->flags & NK_WINDOW_CLOSED) {
             continue; 
+        }
+
+        /* A panel behind the other windows is still UI, less the minimap showing through it */
+        if((win->flags & NK_WINDOW_BACKGROUND)
+        && ((win->flags & NK_WINDOW_NO_INPUT) || G_MouseOverMinimap())) {
+            continue;
         }
 
         int vmouse_x = (float)mouse_x / w * UI_ArAdjustedVRes(TO_VEC2T(win->virt_res)).x;

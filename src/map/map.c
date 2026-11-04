@@ -814,7 +814,7 @@ void M_NavRenderNavigationBlockers(const struct map *map, const struct camera *c
 
 void M_NavRenderBuildableTiles(const struct map *map, const struct camera *cam, 
                                const struct obb *obb, enum nav_layer layer, bool blocked, 
-                               bool allow_shore, int faction_id)
+                               bool allow_shore, int faction_id, bool blocked_on_top)
 {
     struct frustum frustum;
     Camera_MakeFrustum(cam, &frustum);
@@ -831,7 +831,7 @@ void M_NavRenderBuildableTiles(const struct map *map, const struct camera *cam,
         mat4x4_t chunk_model;
         M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
         N_RenderBuildableTiles(map->nav_private, map, &chunk_model, r, c, obb, layer, blocked,
-            allow_shore, faction_id);
+            allow_shore, faction_id, blocked_on_top);
     }}
 }
 
@@ -1112,6 +1112,16 @@ void M_NavBlockersDecref(vec2_t xz_pos, float range, int faction_id,
                          uint32_t flags, const struct map *map)
 {
     N_BlockersDecref(xz_pos, range, faction_id, flags, map->pos, map->nav_private);
+}
+
+void M_NavStaticMarkIncref(vec2_t xz_pos, float range, const struct map *map)
+{
+    N_StaticMarkIncref(xz_pos, range, map->pos, map->nav_private);
+}
+
+void M_NavStaticMarkDecref(vec2_t xz_pos, float range, const struct map *map)
+{
+    N_StaticMarkDecref(xz_pos, range, map->pos, map->nav_private);
 }
 
 void M_NavReserveIncref(vec2_t xz_pos, float range, enum nav_layer layer, const struct map *map)

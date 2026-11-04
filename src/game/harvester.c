@@ -3660,6 +3660,13 @@ int G_Harvester_CurrContextualAction(void)
     && !G_Resource_GetDormant(hovered))
         return CTX_ACTION_GATHER;
 
+    if((G_FlagsGet(hovered) & ENTITY_FLAG_RESOURCE)
+    && !((G_FlagsGet(hovered) & ENTITY_FLAG_BUILDING) && !G_Building_IsCompleted(hovered))
+    && (G_Harvester_GetGatherSpeed(first, G_Resource_GetName(hovered)) > 0)
+    && !G_Resource_IsReplenishing(hovered)
+    && G_Resource_GetDormant(hovered))
+        return CTX_ACTION_GATHER_BLOCKED;
+
     if(G_GetFactionID(hovered) != G_GetFactionID(first))
         return CTX_ACTION_NONE;
 

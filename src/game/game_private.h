@@ -51,6 +51,8 @@ enum ctx_action{
     CTX_ACTION_GARRISON,
     CTX_ACTION_MAN,
     CTX_ACTION_JOIN_CITY,
+    /* What the worker could gather, were it not out of season */
+    CTX_ACTION_GATHER_BLOCKED,
 };
 
 const khash_t(entity) *G_GetDynamicEntsSet(void);
