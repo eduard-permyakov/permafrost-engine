@@ -86,6 +86,7 @@
  * and stopped */
 #define PRESS_GIVE_UP_TICKS (80)
 #define PRESS_STEP          (1.0f)
+#define PRESS_FAR           (12.0f)
 /* A carrier short of a full load stops at most this many more sources on a
  * trip, each only for at least this much (or what it has room for) */
 #define MAX_TOP_UPS         (2)
@@ -917,6 +918,9 @@ static void entity_drop_off(uint32_t uid, uint32_t ss)
     if(carried && G_Duty_Get(uid, &duty) && duty.kind == DUTY_GATHER && !strcmp(duty.good, carried)) {
         G_Duty_Set(uid, DUTY_GATHER, ss, carried, duty.by);
     }
+    if(G_Duty_Kind(uid) == DUTY_GATHER) {
+        G_Duty_SetWaiting(uid, false);
+    }
 
     /* Sent on to another store on the way, it arrives only once */
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_storage);
@@ -973,6 +977,10 @@ static void entity_try_drop_off(uint32_t uid)
                 : nearest_storage_site_dropoff(uid, carried_resource_name(hs));
     if(ss == NULL_UID) {
         hs->state = STATE_NOT_HARVESTING;
+        /* A gatherer with no room for its load waits until a store has some */
+        if(G_Duty_Kind(uid) == DUTY_GATHER) {
+            G_Duty_SetWaiting(uid, true);
+        }
     }else{
         entity_drop_off(uid, ss);
     }
@@ -2660,6 +2668,31 @@ static void give_up_unreachable(uint32_t tick)
     }
 }
 
+/* Way is made by coming closer to the target or by walking well off: a unit
+ * jostled back and forth in a crowd makes none */
+static bool making_way(uint32_t uid, struct hstate *hs, uint32_t target)
+{
+    vec2_t pos = G_Pos_GetXZ(uid);
+    if(hs->press_ticks == 0) {
+        hs->press_pos = pos;
+    }
+    vec2_t delta;
+    PFM_Vec2_Sub(&pos, &hs->press_pos, &delta);
+    bool closer = false;
+    if(G_EntityExists(target)) {
+        vec2_t goal = G_Pos_GetXZ(target);
+        vec2_t now, then;
+        PFM_Vec2_Sub(&goal, &pos, &now);
+        PFM_Vec2_Sub(&goal, &hs->press_pos, &then);
+        closer = PFM_Vec2_Len(&now) + PRESS_STEP < PFM_Vec2_Len(&then);
+    }
+    if(!closer && PFM_Vec2_Len(&delta) <= PRESS_FAR)
+        return false;
+    hs->press_pos = pos;
+    hs->press_ticks = 0;
+    return true;
+}
+
 /* A gatherer kept from a resource by the others at it never comes to rest, so
  * it would never hear that it cannot get in and go on to the next one: one
  * that makes no way for a while is stopped where it is, which does */
@@ -2673,14 +2706,8 @@ static void give_up_crowded(void)
     kh_foreach_val_ptr(s_entity_state_table, uid, hs, {
         if(hs->state != STATE_HARVESTING_SEEK_RESOURCE || G_Move_Still(uid))
             continue;
-        vec2_t pos = G_Pos_GetXZ(uid);
-        vec2_t delta;
-        PFM_Vec2_Sub(&pos, &hs->press_pos, &delta);
-        if(PFM_Vec2_Len(&delta) > PRESS_STEP) {
-            hs->press_pos = pos;
-            hs->press_ticks = 0;
+        if(making_way(uid, hs, hs->res_uid))
             continue;
-        }
         if(++hs->press_ticks < PRESS_GIVE_UP_TICKS)
             continue;
         hs->press_ticks = 0;
@@ -2726,14 +2753,8 @@ static void give_up_stalled(void)
     kh_foreach_val_ptr(s_entity_state_table, uid, hs, {
         if(hs->state == STATE_HARVESTING_SEEK_RESOURCE || !awaited_arrival(hs) || G_Move_Still(uid))
             continue;
-        vec2_t pos = G_Pos_GetXZ(uid);
-        vec2_t delta;
-        PFM_Vec2_Sub(&pos, &hs->press_pos, &delta);
-        if(PFM_Vec2_Len(&delta) > PRESS_STEP) {
-            hs->press_pos = pos;
-            hs->press_ticks = 0;
+        if(making_way(uid, hs, awaited_target(hs)))
             continue;
-        }
         if(++hs->press_ticks < STALL_GIVE_UP_TICKS)
             continue;
         hs->press_ticks = 0;

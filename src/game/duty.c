@@ -328,6 +328,19 @@ static bool resume_ingredient(uint32_t uid, struct duty *d)
     return true;
 }
 
+/* Walking off, it is at its meal: the load goes in once it stands again */
+static void resume_waiting_gatherer(uint32_t uid, struct duty *d)
+{
+    if(!G_Harvester_GetCurrTotalCarry(uid)) {
+        d->waiting = false;
+        notify_changed(uid);
+        return;
+    }
+    if(G_Move_Still(uid)) {
+        G_Harvester_BringInLoad(uid, NULL_UID, true);
+    }
+}
+
 static void check_waiting(void)
 {
     uint32_t waiting[512];
@@ -338,7 +351,7 @@ static void check_waiting(void)
     kh_foreach_val_ptr(s_duties, uid, d, {
         if(nwaiting == ARR_SIZE(waiting))
             break;
-        if(d->kind == DUTY_SUPPLY && d->waiting) {
+        if(d->waiting) {
             waiting[nwaiting++] = uid;
         }
     });
@@ -348,6 +361,10 @@ static void check_waiting(void)
         d = duty_get(uid);
         if(!d || !G_EntityExists(uid) || G_EntityIsZombie(uid))
             continue;
+        if(d->kind == DUTY_GATHER) {
+            resume_waiting_gatherer(uid, d);
+            continue;
+        }
         if(target_gone(d->target)) {
             end(uid, d, "gone");
             continue;
