@@ -76,6 +76,7 @@ static void *pcalloc(size_t n, size_t size);
 static void *prealloc(void *ptr, size_t size);
 static void  pfree(void *ptr);
 static bool  within_footprint(const struct obb *obb, vec2_t xz, float margin);
+static bool  water_node_under(uint32_t uid, const struct obb *obb);
 
 #undef kmalloc
 #undef kcalloc
@@ -98,6 +99,8 @@ static bool  within_footprint(const struct obb *obb, vec2_t xz, float margin);
 /* A body this close beside a set aside footprint is sent off it too, so
  * that none is left hemmed in a gap between two */
 #define FOOTPRINT_GAP       (1.0f * X_COORDS_PER_TILE)
+/* The widest a node in the water reaches out from its centre */
+#define WATER_NODE_REACH    (16.0f)
 #define FOOTPRINT_EVICT_REACH (3.0f * X_COORDS_PER_TILE)
 #define FOOTPRINT_AREA_MAX  (32)
 #define FOOTPRINT_CAST_RINGS (12)
@@ -265,7 +268,8 @@ static void render_placement_tiles(bool blocked_on_top)
 
         if(flags & ENTITY_FLAG_WATER) {
             M_NavRenderBuildableTiles(s_map, cam, &obb, NAV_LAYER_WATER_1X1,
-                !(M_ObjectAdjacentToLand(s_map, &obb) && M_ObjectAdjacentToWater(s_map, &obb)), 
+                !(M_ObjectAdjacentToLand(s_map, &obb) && M_ObjectAdjacentToWater(s_map, &obb))
+                || water_node_under(key, &obb), 
                 true, faction_id, blocked_on_top);
         }else{
             M_NavRenderBuildableTiles(s_map, cam, &obb, NAV_LAYER_GROUND_1X1, false, false,
@@ -943,6 +947,36 @@ bool G_Building_Complete(uint32_t uid)
     return true;
 }
 
+/* A node in the water, as a fish shoal, reaching into the footprint */
+static bool water_node_in_footprint(uint32_t uid, void *arg)
+{
+    const struct footprint_ctx *ctx = arg;
+    uint32_t flags = G_FlagsGet(uid);
+    if((flags & (ENTITY_FLAG_RESOURCE | ENTITY_FLAG_WATER)) != (ENTITY_FLAG_RESOURCE | ENTITY_FLAG_WATER)
+    || (flags & (ENTITY_FLAG_ZOMBIE | ENTITY_FLAG_BUILDING)))
+        return false;
+
+    vec2_t xz = G_Pos_GetXZ(uid);
+    vec3_t delta = (vec3_t){xz.x - ctx->obb->center.x, 0.0f, xz.z - ctx->obb->center.z};
+    float radius = G_GetSelectionRadius(uid);
+    for(int i = 0; i < 3; i += 2) {
+        if(fabsf(PFM_Vec3_Dot(&delta, (vec3_t*)&ctx->obb->axes[i])) > ctx->obb->half_lengths[i] + radius)
+            return false;
+    }
+    return true;
+}
+
+static bool water_node_under(uint32_t uid, const struct obb *obb)
+{
+    vec2_t xz_min, xz_max;
+    obb_xz_bounds(obb, &xz_min, &xz_max);
+    xz_min = (vec2_t){xz_min.x - WATER_NODE_REACH, xz_min.z - WATER_NODE_REACH};
+    xz_max = (vec2_t){xz_max.x + WATER_NODE_REACH, xz_max.z + WATER_NODE_REACH};
+    struct footprint_ctx ctx = (struct footprint_ctx){ uid, obb, 0 };
+    uint32_t ents[4];
+    return G_Pos_EntsInRectWithPred(xz_min, xz_max, ents, ARR_SIZE(ents), water_node_in_footprint, &ctx) > 0;
+}
+
 static bool building_buildable(uint32_t uid, int faction_id, bool reserved)
 {
     /* Ground that stays walkable needs no clearing; a road site's tile is checked as a road's */
@@ -956,7 +990,8 @@ static bool building_buildable(uint32_t uid, int faction_id, bool reserved)
     if(flags & ENTITY_FLAG_WATER) {
         return M_NavObjectBuildable(s_map, NAV_LAYER_WATER_1X1, true, faction_id, reserved, &obb)
             && M_ObjectAdjacentToWater(s_map, &obb)
-            && M_ObjectAdjacentToLand(s_map, &obb);
+            && M_ObjectAdjacentToLand(s_map, &obb)
+            && !water_node_under(uid, &obb);
     }else{
         return M_NavObjectBuildable(s_map, NAV_LAYER_GROUND_1X1, false, faction_id, reserved, &obb);
     }
