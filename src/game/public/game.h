@@ -892,6 +892,20 @@ int  G_StorageSite_GetKeep(uint32_t uid, const char *rname);
  * stores, but open to the player's building sites */
 void G_StorageSite_SetHeld(uint32_t uid, const char *rname, int held);
 int  G_StorageSite_GetHeld(uint32_t uid, const char *rname);
+/* The rate the site eats a class of goods at, in one another's stead, set from
+ * what it makes; the stock it works from, and asks for, follows from the rate
+ * and how long a load takes to reach it */
+void   G_StorageSite_SetDraw(uint32_t uid, size_t nmembers, const char **members, float per_min,
+                             int batch, int cap);
+void   G_StorageSite_ClearDraw(uint32_t uid, const char *rname);
+float  G_StorageSite_GetDraw(uint32_t uid, const char *rname);
+int    G_StorageSite_WorkingStock(uint32_t uid, const char *rname);
+int    G_StorageSite_LowMark(uint32_t uid, const char *rname);
+float  G_StorageSite_MinutesOfStock(uint32_t uid, const char *rname);
+size_t G_StorageSite_DrawMembers(uint32_t uid, const char *rname, size_t maxout, const char **out);
+void   G_StorageSite_NoteRoute(uint32_t uid, float trip_s);
+/* Seconds of play, as the routes are timed by */
+uint32_t G_StorageSite_NowS(void);
 int  G_StorageSite_BoundFor(uint32_t uid);
 int  G_StorageSite_BoundForGood(uint32_t uid, const char *rname);
 /* The gatherers whose next load goes to the site, or its pool; NULL for all goods */
@@ -917,6 +931,7 @@ bool G_StorageSite_SetDesired(uint32_t uid, const char *rname, int des);
 int  G_StorageSite_GetStorableResources(uint32_t uid, size_t maxout, const char* out[]);
 int  G_StorageSite_GetPlayerStored(const char *rname);
 int  G_StorageSite_GetFactionStored(int faction, const char *rname);
+int  G_StorageSite_GetFactionCapacity(int faction, const char *rname);
 int  G_StorageSite_GetPlayerCapacity(const char *rname);
 void G_StorageSite_RecordProduced(int faction_id, const char *rname, int amount);
 /* Gathered by the harvester, counted for the district it gathers in */

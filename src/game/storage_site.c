@@ -55,6 +55,7 @@
 #include "../lib/public/stb_image.h"
 
 #include <assert.h>
+#include <math.h>
 
 #include "../mem.h"
 
@@ -92,6 +93,34 @@ static void  pfree(void *ptr);
 
 KHASH_MAP_INIT_STR(int, int)
 
+static bool ss_state_get_key(kh_int_t *table, const char *name, int *out);
+
+/* The goods a site eats in one another's stead, as one draw */
+#define MAX_DRAW_MEMBERS    (8)
+#define MAX_DRAWS           (8)
+/* A draw set lower than it was comes down over this long, one set higher takes at once */
+#define DRAW_SMOOTH_S       (60.0f)
+/* The stock worked from covers a load's trip and this much more */
+#define DRAW_LEAD_S         (60.0f)
+#define ROUTE_DEFAULT_S     (120.0f)
+#define ROUTE_SMOOTH        (0.3f)
+#define LOW_MARK_S          (60.0f)
+
+/* The rate a site eats a class of goods at, set by the game from what it makes */
+struct ss_draw{
+    uint32_t               site;
+    int                    nmembers;
+    const char            *members[MAX_DRAW_MEMBERS];
+    float                  rate;
+    /* What the draw stood at when the rate was last set */
+    float                  eff;
+    /* One cycle's inputs: the least stock worth working from */
+    int                    batch;
+    /* The most worth working from, for a run with an end; 0 for no end */
+    int                    cap;
+    uint32_t               set_s;
+};
+
 struct ss_state{
     kh_int_t              *capacity;
     kh_int_t              *curr;
@@ -121,6 +150,11 @@ struct ss_state{
     /* Per resource: what is held for a tribute on top of the keep, which
      * carriers bring in and other stores leave, but a building site may take */
     kh_int_t              *held;
+    /* What the site eats, and how long a load takes to reach it, which
+     * together size the stock it works from */
+    struct ss_draw         draws[MAX_DRAWS];
+    int                    ndraws;
+    float                  route_s;
 };
 
 typedef char buff_t[512];
@@ -308,6 +342,8 @@ static khash_t(state)  *s_entity_state_table;
 /* The pooled state of every cluster of storage sites */
 static khash_t(state)  *s_pools;
 static khash_t(res)    *s_global_resource_tables[MAX_FACTIONS];
+/* Seconds of play, for the draws' smoothing */
+static uint32_t         s_now_s;
 static khash_t(res)    *s_global_capacity_tables[MAX_FACTIONS];
 static khash_t(flow)   *s_flows;
 static khash_t(made)   *s_made;
@@ -430,6 +466,8 @@ static bool ss_state_init(struct ss_state *hs)
     hs->nmembers = 0;
     hs->anchor = NULL_UID;
     hs->priority = SS_PRIORITY_NORMAL;
+    hs->ndraws = 0;
+    hs->route_s = ROUTE_DEFAULT_S;
     return true;
 }
 
@@ -450,6 +488,117 @@ static struct ss_state *ss_view(uint32_t uid)
         return ss;
     struct ss_state *pool = pool_get(ss->pool);
     return pool ? pool : ss;
+}
+
+static bool draw_has(const struct ss_draw *d, const char *rname)
+{
+    for(int j = 0; j < d->nmembers; j++) {
+        if(!strcmp(d->members[j], rname))
+            return true;
+    }
+    return false;
+}
+
+/* The draw the site set that the good is a member of */
+static struct ss_draw *draw_of(struct ss_state *ss, uint32_t site, const char *rname)
+{
+    for(int i = 0; i < ss->ndraws; i++) {
+        struct ss_draw *d = &ss->draws[i];
+        if(d->site == site && draw_has(d, rname))
+            return d;
+    }
+    return NULL;
+}
+
+static void draw_remove(struct ss_state *ss, int idx)
+{
+    ss->draws[idx] = ss->draws[--ss->ndraws];
+}
+
+/* The draw as it stands: one set lower than it was comes down to the rate
+ * over a while, so that a lull does not let the stock worked from go */
+static float draw_eff(const struct ss_draw *d)
+{
+    if(d->eff <= d->rate)
+        return d->rate;
+    float dt = (s_now_s > d->set_s) ? (float)(s_now_s - d->set_s) : 0.0f;
+    return d->rate + (d->eff - d->rate) * expf(-dt / DRAW_SMOOTH_S);
+}
+
+static float draw_rate(struct ss_state *ss, const char *rname)
+{
+    float ret = 0.0f;
+    for(int i = 0; i < ss->ndraws; i++) {
+        if(draw_has(&ss->draws[i], rname)) {
+            ret += draw_eff(&ss->draws[i]);
+        }
+    }
+    return ret;
+}
+
+/* The draws the good is in, taken as one, so that a pool's sites ask for
+ * theirs between them: the stock they are worked from, what they eat over a
+ * load's trip and a minute more, and what all their goods come to now */
+static int draw_working_of(struct ss_state *ss, const char *rname, int *out_stock)
+{
+    const char *members[MAX_DRAWS * MAX_DRAW_MEMBERS];
+    int nmembers = 0;
+    float eff = 0.0f;
+    int batch = 0;
+    int cap = 0;
+    bool capped = true;
+
+    for(int i = 0; i < ss->ndraws; i++) {
+        const struct ss_draw *d = &ss->draws[i];
+        if(!draw_has(d, rname))
+            continue;
+        eff += draw_eff(d);
+        batch += d->batch;
+        cap += d->cap;
+        capped = capped && (d->cap > 0);
+        for(int j = 0; j < d->nmembers; j++) {
+            bool seen = false;
+            for(int k = 0; k < nmembers; k++) {
+                if(!strcmp(members[k], d->members[j])) {
+                    seen = true;
+                    break;
+                }
+            }
+            if(!seen) {
+                members[nmembers++] = d->members[j];
+            }
+        }
+    }
+
+    int stock = 0, room = 0;
+    for(int k = 0; k < nmembers; k++) {
+        int curr = 0, max = 0;
+        ss_state_get_key(ss->curr, members[k], &curr);
+        ss_state_get_key(ss->capacity, members[k], &max);
+        stock += curr;
+        room += max;
+    }
+    *out_stock = stock;
+    if(nmembers == 0)
+        return 0;
+    int ret = (int)ceilf(eff * (ss->route_s + DRAW_LEAD_S) / 60.0f);
+    ret = MAX(ret, batch);
+    if(capped) {
+        ret = MIN(ret, cap);
+    }
+    return MIN(ret, room);
+}
+
+/* How much of the good would fill the stock worked from, given the rest of it */
+static int draw_reserve(struct ss_state *ss, const char *rname)
+{
+    int stock;
+    int working = draw_working_of(ss, rname, &stock);
+    if(working == 0)
+        return 0;
+    int curr = 0;
+    ss_state_get_key(ss->curr, rname, &curr);
+    return MAX(working - (stock - curr), 0);
 }
 
 static int compare_keys(const void *a, const void *b)
@@ -1688,6 +1837,7 @@ static void on_1hz_tick(void *user, void *event)
     struct ss_state curr;
     (void)curr;
 
+    s_now_s++;
     advance_made();
     s_strip_stamp++;
     kh_foreach(s_entity_state_table, key, curr, {
@@ -2039,7 +2189,9 @@ static void spill(uint32_t uid, const char *rname, int amount)
         return;
 
     int faction = G_GetFactionID(uid);
-    update_res_delta(rname, -amount, faction);
+    if(!G_StorageSite_GetUseAlt(uid)) {
+        update_res_delta(rname, -amount, faction);
+    }
 
     vec2_t pos = G_Pos_GetXZ(uid);
     struct ss_spill_event *event = stalloc(&s_eventargs, sizeof(struct ss_spill_event));
@@ -2095,6 +2247,124 @@ static bool load_table(khash_t(int) *table, SDL_RWops *stream)
         CHK_TRUE_RET(attr.type == TYPE_INT);
         CHK_TRUE_RET(ss_state_set_key(table, keyattr.val.as_string, attr.val.as_int));
     }
+    return true;
+}
+
+static bool save_draws(const struct ss_state *ss, SDL_RWops *stream)
+{
+    struct attr num = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = ss->ndraws
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num, "num_draws"));
+
+    for(int i = 0; i < ss->ndraws; i++) {
+
+        const struct ss_draw *d = &ss->draws[i];
+        struct attr site = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = d->site
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &site, "draw_site"));
+
+        struct attr nmembers = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = d->nmembers
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &nmembers, "draw_members"));
+
+        for(int j = 0; j < d->nmembers; j++) {
+            struct attr member = (struct attr){ .type = TYPE_STRING, };
+            pf_strlcpy(member.val.as_string, d->members[j], sizeof(member.val.as_string));
+            CHK_TRUE_RET(Attr_Write(stream, &member, "draw_member"));
+        }
+
+        struct attr rate = (struct attr){
+            .type = TYPE_FLOAT,
+            .val.as_float = d->rate
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &rate, "draw_rate"));
+
+        struct attr eff = (struct attr){
+            .type = TYPE_FLOAT,
+            .val.as_float = d->eff
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &eff, "draw_eff"));
+
+        struct attr batch = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = d->batch
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &batch, "draw_batch"));
+
+        struct attr cap = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = d->cap
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &cap, "draw_cap"));
+    }
+
+    struct attr route = (struct attr){
+        .type = TYPE_FLOAT,
+        .val.as_float = ss->route_s
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &route, "route_s"));
+    return true;
+}
+
+static bool load_draws(struct ss_state *ss, SDL_RWops *stream)
+{
+    struct attr attr;
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const int num = attr.val.as_int;
+    ss->ndraws = 0;
+
+    for(int i = 0; i < num; i++) {
+
+        struct ss_draw d = {0};
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        d.site = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        const int nmembers = attr.val.as_int;
+
+        for(int j = 0; j < nmembers; j++) {
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_STRING);
+            const char *key = si_intern(attr.val.as_string, &s_stringpool, s_stridx);
+            CHK_TRUE_RET(key);
+            if(d.nmembers < MAX_DRAW_MEMBERS) {
+                d.members[d.nmembers++] = key;
+            }
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        d.rate = attr.val.as_float;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        d.eff = attr.val.as_float;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        d.batch = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        d.cap = attr.val.as_int;
+
+        if(ss->ndraws < MAX_DRAWS) {
+            ss->draws[ss->ndraws++] = d;
+        }
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+    ss->route_s = attr.val.as_float;
     return true;
 }
 
@@ -2285,7 +2555,9 @@ void G_StorageSite_RemoveEntity(uint32_t uid)
     int amount;
 
     kh_foreach(ss->curr, key, amount, {
-        update_res_delta(key, -amount, G_GetFactionID(uid));
+        if(!ss->use_alt) {
+            update_res_delta(key, -amount, G_GetFactionID(uid));
+        }
         record_flow(G_GetFactionID(uid), key, 0, amount);
     });
 
@@ -2323,6 +2595,12 @@ void G_StorageSite_PoolJoin(uint32_t uid, int pool_id)
         kh_value(s_pools, k) = newpool;
         pool = &kh_value(s_pools, k);
     }
+
+    /* Its draws go with it, to be asked for between the pool's sites */
+    for(int i = 0; i < ss->ndraws && pool->ndraws < MAX_DRAWS; i++) {
+        pool->draws[pool->ndraws++] = ss->draws[i];
+    }
+    ss->ndraws = 0;
 
     const char *key;
     int amount;
@@ -2373,6 +2651,14 @@ void G_StorageSite_PoolLeave(uint32_t uid, int pool_id, bool died)
     ss->pool = 0;
     if(!pool)
         return;
+
+    for(int i = 0; i < pool->ndraws;) {
+        if(pool->draws[i].site == uid) {
+            draw_remove(pool, i);
+        }else{
+            i++;
+        }
+    }
 
     const char *key;
     int amount;
@@ -2486,6 +2772,126 @@ int G_StorageSite_GetHeld(uint32_t uid, const char *rname)
     return ret;
 }
 
+void G_StorageSite_SetDraw(uint32_t uid, size_t nmembers, const char **members, float per_min,
+                           int batch, int cap)
+{
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+    nmembers = MIN(nmembers, MAX_DRAW_MEMBERS);
+
+    struct ss_draw *d = NULL;
+    for(size_t j = 0; j < nmembers && !d; j++) {
+        d = draw_of(ss, uid, members[j]);
+    }
+    if(per_min <= 0.0f || nmembers == 0) {
+        if(d) {
+            draw_remove(ss, d - ss->draws);
+        }
+        return;
+    }
+    if(!d) {
+        if(ss->ndraws == MAX_DRAWS)
+            return;
+        d = &ss->draws[ss->ndraws++];
+        *d = (struct ss_draw){ .site = uid, .eff = per_min };
+    }else{
+        /* One set higher takes at once; the rest of the way down goes on from here */
+        d->eff = MAX(draw_eff(d), per_min);
+    }
+    d->rate = per_min;
+    d->batch = MAX(batch, 0);
+    d->cap = MAX(cap, 0);
+    d->set_s = s_now_s;
+    d->nmembers = 0;
+    for(size_t j = 0; j < nmembers; j++) {
+        const char *key = si_intern(members[j], &s_stringpool, s_stridx);
+        if(key) {
+            d->members[d->nmembers++] = key;
+        }
+    }
+}
+
+void G_StorageSite_ClearDraw(uint32_t uid, const char *rname)
+{
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+    struct ss_draw *d = draw_of(ss, uid, rname);
+    if(d) {
+        draw_remove(ss, d - ss->draws);
+    }
+}
+
+float G_StorageSite_GetDraw(uint32_t uid, const char *rname)
+{
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+    return draw_rate(ss, rname);
+}
+
+int G_StorageSite_WorkingStock(uint32_t uid, const char *rname)
+{
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+    int stock;
+    return draw_working_of(ss, rname, &stock);
+}
+
+int G_StorageSite_LowMark(uint32_t uid, const char *rname)
+{
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+    return (int)ceilf(draw_rate(ss, rname) * LOW_MARK_S / 60.0f);
+}
+
+float G_StorageSite_MinutesOfStock(uint32_t uid, const char *rname)
+{
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+    float rate = draw_rate(ss, rname);
+    if(rate <= 0.0f)
+        return INFINITY;
+    int stock;
+    draw_working_of(ss, rname, &stock);
+    return stock / rate;
+}
+
+size_t G_StorageSite_DrawMembers(uint32_t uid, const char *rname, size_t maxout, const char **out)
+{
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+    size_t ret = 0;
+    for(int i = 0; i < ss->ndraws; i++) {
+        const struct ss_draw *d = &ss->draws[i];
+        if(!draw_has(d, rname))
+            continue;
+        for(int j = 0; j < d->nmembers; j++) {
+            bool seen = false;
+            for(size_t k = 0; k < ret; k++) {
+                if(!strcmp(out[k], d->members[j])) {
+                    seen = true;
+                    break;
+                }
+            }
+            if(!seen && ret < maxout) {
+                out[ret++] = d->members[j];
+            }
+        }
+    }
+    return ret;
+}
+
+uint32_t G_StorageSite_NowS(void)
+{
+    return s_now_s;
+}
+
+void G_StorageSite_NoteRoute(uint32_t uid, float trip_s)
+{
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+    ss->route_s += (trip_s - ss->route_s) * ROUTE_SMOOTH;
+}
+
 void G_StorageSite_SetChip(uint32_t uid, const char *rname, enum ss_chip chip)
 {
     struct ss_state *ss = ss_view(uid);
@@ -2513,6 +2919,7 @@ int G_StorageSite_Request(uint32_t uid, const char *rname)
         return desired;
     }
     ss_state_get_key(ss->desired, rname, &desired);
+    desired = MAX(desired, draw_reserve(ss, rname));
 
     switch(G_StorageSite_GetChip(uid, rname)) {
     case SS_CHIP_COLLECT:
@@ -2535,6 +2942,8 @@ int G_StorageSite_Surplus(uint32_t uid, const char *rname)
     int curr = 0, desired = 0;
     ss_state_get_key(ss->curr, rname, &curr);
     ss_state_get_key(ss->desired, rname, &desired);
+    /* What the site works from stays, like what it was told to keep */
+    int working = draw_reserve(ss, rname);
 
     int held = G_StorageSite_GetHeld(uid, rname);
     switch(G_StorageSite_GetChip(uid, rname)) {
@@ -2543,9 +2952,9 @@ int G_StorageSite_Surplus(uint32_t uid, const char *rname)
     case SS_CHIP_OFF:
         return curr;
     case SS_CHIP_RELAY:
-        return MAX(curr - desired - held, 0);
+        return MAX(curr - MAX(desired + held, working), 0);
     default:
-        return MAX(curr - MAX(desired, G_StorageSite_GetKeep(uid, rname) + held), 0);
+        return MAX(curr - MAX(MAX(desired, working), G_StorageSite_GetKeep(uid, rname) + held), 0);
     }
 }
 
@@ -2562,6 +2971,7 @@ int G_StorageSite_GetReserve(uint32_t uid, const char *rname)
     if(G_StorageSite_GetChip(uid, rname) == SS_CHIP_OFF)
         return 0;
     ss_state_get_key(ss->desired, rname, &desired);
+    desired = MAX(desired, draw_reserve(ss, rname));
     return MAX(desired, G_StorageSite_GetKeep(uid, rname) + G_StorageSite_GetHeld(uid, rname));
 }
 
@@ -2584,7 +2994,7 @@ int G_StorageSite_SurplusForSite(uint32_t uid, const char *rname)
     case SS_CHIP_RELAY:
         return curr;
     default:
-        return MAX(curr - G_StorageSite_GetKeep(uid, rname), 0);
+        return MAX(curr - MAX(G_StorageSite_GetKeep(uid, rname), draw_reserve(ss, rname)), 0);
     }
 }
 
@@ -2673,7 +3083,10 @@ bool G_StorageSite_SetCurr(uint32_t uid, const char *rname, int curr)
     int prev = 0;
     ss_state_get_key(ss->curr, rname, &prev);
     int delta = curr - prev;
-    update_res_delta(rname, delta, G_GetFactionID(uid));
+    /* What is brought to a building being raised is spent: the realm's count leaves it out */
+    if(!ss->use_alt) {
+        update_res_delta(rname, delta, G_GetFactionID(uid));
+    }
 
     if(delta) {
         struct ss_delta_event *event = stalloc(&s_eventargs, sizeof(struct ss_delta_event));
@@ -2740,6 +3153,16 @@ int G_StorageSite_GetFactionStored(int faction, const char *rname)
     if(k == kh_end(s_global_resource_tables[faction]))
         return 0;
     return kh_value(s_global_resource_tables[faction], k);
+}
+
+int G_StorageSite_GetFactionCapacity(int faction, const char *rname)
+{
+    if(faction < 0 || faction >= MAX_FACTIONS)
+        return 0;
+    khiter_t k = kh_get(res, s_global_capacity_tables[faction], rname);
+    if(k == kh_end(s_global_capacity_tables[faction]))
+        return 0;
+    return kh_value(s_global_capacity_tables[faction], k);
 }
 
 int G_StorageSite_GetPlayerCapacity(const char *rname)
@@ -3060,7 +3483,9 @@ void G_StorageSite_ClearCurr(uint32_t uid)
     });
 
     kh_foreach(ss->curr, key, amount, {
-        update_res_delta(key, -amount, G_GetFactionID(uid));
+        if(!ss->use_alt) {
+            update_res_delta(key, -amount, G_GetFactionID(uid));
+        }
         record_flow(G_GetFactionID(uid), key, 0, amount);
     });
     kh_clear(int, ss->curr);
@@ -3128,6 +3553,8 @@ void G_StorageSite_UpdateFaction(uint32_t uid, int oldfac, int newfac)
         update_cap_delta(key,  amount, newfac);
     });
 
+    if(ss->use_alt)
+        return;
     kh_foreach(ss->curr, key, amount, {
         update_res_delta(key, -amount, oldfac);
         update_res_delta(key,  amount, newfac);
@@ -3138,14 +3565,9 @@ bool G_StorageSite_Desires(uint32_t uid, const char *rname)
 {
     struct ss_state *ss = ss_view(uid);
     assert(ss);
-    khash_t(int) *des = ss->use_alt ? ss->alt_desired  : ss->desired;
-
-    int rdes, rcurr = 0;
-    if(!ss_state_get_key(des, rname, &rdes))
-        return false;
-
+    int rcurr = 0;
     ss_state_get_key(ss->curr, rname, &rcurr);
-    return (rdes > rcurr);
+    return G_StorageSite_Request(uid, rname) > rcurr;
 }
 
 int G_StorageSite_BoundFor(uint32_t uid)
@@ -3342,6 +3764,7 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
         CHK_TRUE_RET(save_table(curr.keep, "num_keep", stream));
         CHK_TRUE_RET(save_table(curr.chip, "num_chip", stream));
         CHK_TRUE_RET(save_table(curr.held, "num_held", stream));
+        CHK_TRUE_RET(save_draws(&curr, stream));
         Sched_TryYield();
     });
 
@@ -3396,6 +3819,7 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
         CHK_TRUE_RET(save_table(curr.keep, "num_keep", stream));
         CHK_TRUE_RET(save_table(curr.chip, "num_chip", stream));
         CHK_TRUE_RET(save_table(curr.held, "num_held", stream));
+        CHK_TRUE_RET(save_draws(&curr, stream));
         Sched_TryYield();
     });
 
@@ -3604,6 +4028,9 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
         if(Attr_NextKeyIs(stream, "num_held")) {
             CHK_TRUE_RET(load_table(ss->held, stream));
         }
+        if(Attr_NextKeyIs(stream, "num_draws")) {
+            CHK_TRUE_RET(load_draws(ss, stream));
+        }
         Sched_TryYield();
     }
 
@@ -3652,6 +4079,9 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(load_table(ps->chip, stream));
         if(Attr_NextKeyIs(stream, "num_held")) {
             CHK_TRUE_RET(load_table(ps->held, stream));
+        }
+        if(Attr_NextKeyIs(stream, "num_draws")) {
+            CHK_TRUE_RET(load_draws(ps, stream));
         }
         Sched_TryYield();
     }

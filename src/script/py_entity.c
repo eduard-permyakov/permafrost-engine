@@ -1209,6 +1209,12 @@ static PyObject *PyStorageSiteEntity_made_per_minute(PyStorageSiteEntityObject *
 static PyObject *PyStorageSiteEntity_get_chip(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_set_chip(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_surplus(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_set_draw(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_clear_draw(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_get_draw(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_get_working_stock(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_get_request(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_minutes_of_stock(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_request_status(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_output_stocked(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_priority(PyStorageSiteEntityObject *self, void *closure);
@@ -1309,9 +1315,37 @@ static PyMethodDef PyStorageSiteEntity_methods[] = {
     "Sets what the site does with the resource: one of pf.CHIP_STORE, pf.CHIP_COLLECT, pf.CHIP_HOLD "
     "or pf.CHIP_OFF."},
 
-    {"get_surplus", 
+    {"get_surplus",
     (PyCFunction)PyStorageSiteEntity_get_surplus, METH_VARARGS,
     "Gets how much of the resource the site can give away."},
+
+    {"set_draw",
+    (PyCFunction)PyStorageSiteEntity_set_draw, METH_VARARGS,
+    "Sets the rate per minute the site eats a resource at, or a sequence of resources eaten in one "
+    "another's stead, and optionally the batch it works in and a cap on the stock, for a run with an "
+    "end. The site asks for, and keeps, the stock it works from at that rate; a rate of 0 clears it."},
+
+    {"clear_draw",
+    (PyCFunction)PyStorageSiteEntity_clear_draw, METH_VARARGS,
+    "Clears the draw the resource is a member of."},
+
+    {"get_draw",
+    (PyCFunction)PyStorageSiteEntity_get_draw, METH_VARARGS,
+    "Gets the rate per minute the site eats the resource, or the resources in its stead, at."},
+
+    {"get_working_stock",
+    (PyCFunction)PyStorageSiteEntity_get_working_stock, METH_VARARGS,
+    "Gets the stock of the resource, with those in its stead, the site works from."},
+
+    {"get_request",
+    (PyCFunction)PyStorageSiteEntity_get_request, METH_VARARGS,
+    "Gets how much of the resource the site asks to be brought up to: the most of the desired amount, "
+    "the keep and the held amount, and the stock it works from."},
+
+    {"minutes_of_stock",
+    (PyCFunction)PyStorageSiteEntity_minutes_of_stock, METH_VARARGS,
+    "How many minutes the site's stock of the resource, with those in its stead, lasts at its draw; "
+    "infinite for a resource it does not draw."},
 
     {"request_status", 
     (PyCFunction)PyStorageSiteEntity_request_status, METH_VARARGS,
@@ -5669,6 +5703,100 @@ static PyObject *PyStorageSiteEntity_get_reserve(PyStorageSiteEntityObject *self
         return NULL;
     }
     return PyInt_FromLong(G_StorageSite_GetReserve(self->super.ent, name));
+}
+
+static PyObject *PyStorageSiteEntity_set_draw(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    PyObject *members;
+    float per_min;
+    int batch = 0, cap = 0;
+    if(!PyArg_ParseTuple(args, "Of|ii", &members, &per_min, &batch, &cap)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting a resource name or a sequence of them, a rate per minute "
+            "(float), an optional batch (int) and an optional cap (int).");
+        return NULL;
+    }
+
+    const char *names[8];
+    size_t nnames = 0;
+    if(PyString_Check(members)) {
+        names[nnames++] = PyString_AS_STRING(members);
+        G_StorageSite_SetDraw(self->super.ent, nnames, names, per_min, batch, cap);
+        Py_RETURN_NONE;
+    }
+
+    PyObject *seq = PySequence_Fast(members, "Expecting a resource name or a sequence of them.");
+    if(!seq)
+        return NULL;
+    Py_ssize_t n = PySequence_Fast_GET_SIZE(seq);
+    for(Py_ssize_t i = 0; i < n && nnames < sizeof(names) / sizeof(names[0]); i++) {
+        PyObject *item = PySequence_Fast_GET_ITEM(seq, i);
+        if(!PyString_Check(item)) {
+            Py_DECREF(seq);
+            PyErr_SetString(PyExc_TypeError, "Expecting resource names (strings).");
+            return NULL;
+        }
+        names[nnames++] = PyString_AS_STRING(item);
+    }
+    G_StorageSite_SetDraw(self->super.ent, nnames, names, per_min, batch, cap);
+    Py_DECREF(seq);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyStorageSiteEntity_clear_draw(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
+        return NULL;
+    }
+    G_StorageSite_ClearDraw(self->super.ent, name);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyStorageSiteEntity_get_draw(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
+        return NULL;
+    }
+    return PyFloat_FromDouble(G_StorageSite_GetDraw(self->super.ent, name));
+}
+
+static PyObject *PyStorageSiteEntity_get_working_stock(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
+        return NULL;
+    }
+    return PyInt_FromLong(G_StorageSite_WorkingStock(self->super.ent, name));
+}
+
+static PyObject *PyStorageSiteEntity_get_request(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
+        return NULL;
+    }
+    return PyInt_FromLong(G_StorageSite_Request(self->super.ent, name));
+}
+
+static PyObject *PyStorageSiteEntity_minutes_of_stock(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
+        return NULL;
+    }
+    return PyFloat_FromDouble(G_StorageSite_MinutesOfStock(self->super.ent, name));
 }
 
 static PyObject *PyStorageSiteEntity_get_chip(PyStorageSiteEntityObject *self, PyObject *args)
