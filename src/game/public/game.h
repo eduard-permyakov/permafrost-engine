@@ -735,6 +735,9 @@ void        G_Resource_SetReplenishable(uint32_t uid, bool set);
 bool        G_Resource_GetInstant(uint32_t uid);
 void        G_Resource_SetInstant(uint32_t uid, bool set);
 bool        G_Resource_GetDormant(uint32_t uid);
+/* How far a load gathered at the node goes to the faction's nearest store that
+ * takes it: a heuristic, as the crow flies with a detour, reckoned now and then */
+float       G_Resource_DropDistance(uint32_t uid, int faction);
 void        G_Resource_SetDormant(uint32_t uid, bool set);
 int         G_Resource_GetHuntHits(uint32_t uid);
 void        G_Resource_SetHuntHits(uint32_t uid, int hits);
@@ -1235,6 +1238,8 @@ int  G_Automation_Shortfall(uint32_t site, const char *rname, int own_load);
  * and no request that its goods could reach is going short
  */
 bool G_Automation_OutputStocked(uint32_t site, const char *rname, int limit);
+/* How many requests of the faction's stores wait for a load, and how many carriers it has */
+void G_Automation_OpenRequests(int faction, int *out_open, int *out_carriers);
 
 /*###########################################################################*/
 /* GAME POSTS                                                                */

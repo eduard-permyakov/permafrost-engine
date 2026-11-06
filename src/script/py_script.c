@@ -378,6 +378,7 @@ static PyObject *PyPf_gatherer_rate(PyObject *self, PyObject *args);
 static PyObject *PyPf_district_weight(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_district_weight(PyObject *self, PyObject *args);
 static PyObject *PyPf_workers_carry_out(PyObject *self, PyObject *args);
+static PyObject *PyPf_open_requests(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_workers_carry_out(PyObject *self, PyObject *args);
 static PyObject *PyPf_crew_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_crew_size(PyObject *self, PyObject *args);
@@ -1504,6 +1505,11 @@ static PyMethodDef pf_module_methods[] = {
     {"workers_carry_out",
     (PyCFunction)PyPf_workers_carry_out, METH_VARARGS,
     "Takes a district ID. Returns whether workers carry goods from its stores to other districts."},
+
+    {"open_requests",
+    (PyCFunction)PyPf_open_requests, METH_VARARGS,
+    "Takes a faction ID. Returns how many requests of its stores wait for a load, and how many "
+    "carriers it has."},
 
     {"set_workers_carry_out",
     (PyCFunction)PyPf_set_workers_carry_out, METH_VARARGS,
@@ -6546,6 +6552,18 @@ static PyObject *PyPf_set_district_weight(PyObject *self, PyObject *args)
     }
     G_Automation_SetDistrictWeight(district, name, weight);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_open_requests(PyObject *self, PyObject *args)
+{
+    int faction;
+    if(!PyArg_ParseTuple(args, "i", &faction)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: faction ID (int).");
+        return NULL;
+    }
+    int open, carriers;
+    G_Automation_OpenRequests(faction, &open, &carriers);
+    return Py_BuildValue("(ii)", open, carriers);
 }
 
 static PyObject *PyPf_workers_carry_out(PyObject *self, PyObject *args)

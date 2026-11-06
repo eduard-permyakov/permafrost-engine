@@ -84,14 +84,15 @@
 #define MAX_JOBS_PER_PASS            (32)
 /* A request goes unserved this long before it says why */
 #define BLOCKED_AFTER_MS             (20000)
-/* A request that has waited this long counts twice as much */
-#define WAIT_DOUBLING_S              (30.0f)
-/* The load a request is scored by, so that a large shortfall does not
- * drown out every other one */
-#define SCORED_LOAD                  (25)
+/* A Low request waits behind the others at most this long */
+#define LOW_PATIENCE_S               (60.0f)
 /* A carrier is not sent for less than this while more could be had, until
  * the request has waited MIN_LOAD_WAIT_S */
 #define MIN_LOAD                     (5)
+/* A top-up's walk, for a carrier of the least load; a bigger one walks as much farther */
+#define TOP_UP_WALK                  (300.0f)
+/* What a keep stands for, in minutes, against the drawers' minutes of stock */
+#define KEEP_MINUTES                 (5.0f)
 #define MIN_LOAD_WAIT_S              (30.0f)
 /* A haul this long waits for a full load */
 #define FULL_LOAD_TRAVEL             (400.0f)
@@ -105,6 +106,11 @@
  * the hub before any goes further afield, without all crowding the nearest
  * one, and a node takes no more than fit about its rim */
 #define CROWD_SLACK                  (40.0f)
+/* How much further a worker goes for a food the less of it is in store, and how
+ * much behind another his own must be for him to leave it */
+#define STOCK_MINUTE_SLACK           (60.0f)
+#define MEMBER_BAND                  (120.0f)
+#define NO_DRAW_MINUTES              (30.0f)
 #define NODE_GAP                     (1.0f)
 #define PINNED_LEN                   (32)
 /* What every good counts for before anything asks for it, so that idle
@@ -124,6 +130,14 @@
 #define RATE_WINDOW_S                (120.0f)
 /* What one gatherer is taken to bring in a minute until enough is measured */
 #define GATHERER_RATE                (8.0f)
+/* A worker's load, pace and swings per unit, for what a node yields a minute */
+#define GATHER_LOAD                  (5)
+#define WORKER_SPEED                 (20.0f)
+#define GATHER_S_PER_UNIT            (4.0f)
+#define WORKER_RADIUS                (3.0f)
+/* How far the measured pace may bend the reckoned one */
+#define RATE_FIX_MIN                 (0.5f)
+#define RATE_FIX_MAX                 (2.0f)
 #define MIN_RATE_SAMPLE_S            (30.0f)
 /* How far the movement may move an idle walk's destination to where it can be reached */
 #define IDLE_DEST_SLACK              (16.0f)
@@ -194,7 +208,18 @@ struct job_request{
     uint32_t    site;
     const char *rname;
     int         shortfall;
-    float       urgency;
+    int         tier;
+    /* Minutes of stock left, less the wait: the least first within a tier */
+    float       key;
+};
+
+/* Where a request stands on the carriers' ladder: a drawer about to stop or a
+ * site with a builder waiting, a drawer or keep under what it works from, a
+ * drawer being topped up toward its capacity */
+enum request_tier{
+    TIER_STARVING = 1,
+    TIER_BUFFERING,
+    TIER_TOPPING,
 };
 
 /* A site that can give some of a resource away */
@@ -208,6 +233,7 @@ struct pending{
     uint32_t            since_tick;
     enum request_status reason;
     bool                touched;
+    int                 tier;
 };
 
 VEC_TYPE(request, struct job_request)
@@ -225,6 +251,8 @@ struct good_demand{
     int         surplus;
     int         shortfall;
     bool        stocked;
+    /* How long its stock lasts the realm's draw of it */
+    float       stock_minutes;
 };
 
 /* A site to be built, and how many builders are on it or on their way */
@@ -783,16 +811,6 @@ static struct pending *pending_get(uint32_t site, const char *rname, bool create
     return &kh_value(s_pending, k);
 }
 
-static float priority_weight(int priority)
-{
-    switch(priority) {
-    case SS_PRIORITY_LOW:    return 0.5f;
-    case SS_PRIORITY_URGENT: return 3.0f;
-    case SS_PRIORITY_UPKEEP: return 4.0f;
-    default:                 return 1.0f;
-    }
-}
-
 /* The site that stands for its cluster's pool, or itself */
 static bool is_representative(uint32_t site)
 {
@@ -873,17 +891,33 @@ static float distance(vec2_t a, vec2_t b)
     return PFM_Vec2_Len(&delta);
 }
 
-/* A larder asks for a load, not a unit */
+/* A larder, or a drawer still above its low mark, asks for a load, not a unit */
 static bool worth_asking(uint32_t site, const char *rname, int want, int shortfall)
 {
     enum ss_chip chip = G_StorageSite_GetChip(site, rname);
-    if(chip != SS_CHIP_COLLECT && chip != SS_CHIP_RELAY)
-        return true;
-    if(G_StorageSite_GetKeep(site, rname) <= 0)
+    int curr = G_StorageSite_GetCurr(site, rname);
+    bool larder = (chip == SS_CHIP_COLLECT || chip == SS_CHIP_RELAY) && G_StorageSite_GetKeep(site, rname) > 0;
+    bool buffering = G_StorageSite_GetDraw(site, rname) > 0.0f && curr >= G_StorageSite_LowMark(site, rname);
+    if(!larder && !buffering)
         return true;
     if(shortfall >= MIN(MIN_LOAD, MAX(1, want / 2)))
         return true;
-    return G_StorageSite_GetCurr(site, rname) == 0;
+    return curr == 0;
+}
+
+/* What the faction's stores could give of the good between them */
+static int faction_spare(const vec_entity_t *sites, int faction, const char *rname)
+{
+    int ret = 0;
+    for(int i = 0; i < vec_size(sites); i++) {
+        uint32_t site = vec_AT(sites, i);
+        if(G_EntityIsZombie(site) || !is_representative(site) || G_GetFactionID(site) != faction)
+            continue;
+        if(G_StorageSite_GetUseAlt(site))
+            continue;
+        ret += G_StorageSite_Surplus(site, rname);
+    }
+    return ret;
 }
 
 static void collect_requests(vec_request_t *out, const vec_entity_t *sites)
@@ -902,36 +936,92 @@ static void collect_requests(vec_request_t *out, const vec_entity_t *sites)
 
         const char *names[MAX_RESOURCES];
         size_t nnames = G_StorageSite_GetStorableResources(site, ARR_SIZE(names), names);
-        float weight = priority_weight(G_StorageSite_GetPriority(site));
+        int priority = G_StorageSite_GetPriority(site);
 
+        bool done[MAX_RESOURCES] = {0};
         for(int j = 0; j < nnames; j++) {
 
-            int want = G_StorageSite_Request(site, names[j]);
-            if(want <= 0)
+            if(done[j])
                 continue;
-            int have = G_StorageSite_GetCurr(site, names[j]) + pool_en_route(site, names[j]);
-            int shortfall = want - have;
-            if(shortfall <= 0)
-                continue;
-            if(!worth_asking(site, names[j], want, shortfall))
-                continue;
+            /* Goods eaten in one another's stead are asked for as one, by the
+             * first member, the richest, of which the realm can spare a load */
+            const char *rname = names[j];
+            const char *members[MAX_RESOURCES];
+            size_t nmembers = G_StorageSite_DrawMembers(site, rname, ARR_SIZE(members), members);
+            int en_route = pool_en_route(site, rname);
+            if(nmembers > 1) {
+                int best = -1;
+                bool chosen = false;
+                en_route = 0;
+                for(size_t m = 0; m < nmembers; m++) {
+                    for(int n = j + 1; n < nnames; n++) {
+                        if(!strcmp(names[n], members[m])) {
+                            done[n] = true;
+                        }
+                    }
+                    en_route += pool_en_route(site, members[m]);
+                    if(chosen)
+                        continue;
+                    int spare = faction_spare(sites, G_GetFactionID(site), members[m]);
+                    if(spare >= MIN_LOAD) {
+                        rname = members[m];
+                        chosen = true;
+                    }else if(spare > best) {
+                        best = spare;
+                        rname = members[m];
+                    }
+                }
+            }
 
-            struct pending *pend = pending_get(site, names[j], true);
+            int want = G_StorageSite_Request(site, rname);
+            int curr = G_StorageSite_GetCurr(site, rname);
+            int have = curr + en_route;
+            int shortfall = want - have;
+            bool drawing = G_StorageSite_GetDraw(site, rname) > 0.0f;
+            int tier;
+            float key;
+            if(shortfall > 0) {
+                if(!worth_asking(site, rname, want, shortfall))
+                    continue;
+                if(G_StorageSite_GetUseAlt(site)) {
+                    tier = (G_StorageSite_Builders(site) > 0) ? TIER_STARVING : TIER_BUFFERING;
+                    key = 0.0f;
+                }else if(drawing) {
+                    tier = (curr < G_StorageSite_LowMark(site, rname)) ? TIER_STARVING : TIER_BUFFERING;
+                    key = G_StorageSite_MinutesOfStock(site, rname);
+                }else{
+                    tier = TIER_BUFFERING;
+                    key = KEEP_MINUTES * curr / (float)want;
+                }
+            }else if(drawing && G_StorageSite_GetCapacity(site, rname) - have >= MIN_LOAD) {
+                /* Fed, a drawer is topped up toward its capacity, the emptiest
+                 * first, by the load: a unit or two is not worth a trip */
+                tier = TIER_TOPPING;
+                shortfall = G_StorageSite_GetCapacity(site, rname) - have;
+                key = G_StorageSite_MinutesOfStock(site, rname);
+            }else{
+                continue;
+            }
+            struct pending *pend = pending_get(site, rname, true);
             if(!pend)
                 continue;
             pend->touched = true;
             float waited_s = (s_tick - pend->since_tick) * TICK_MS / 1000.0f;
-            float good_weight = weight;
-            if(G_StorageSite_GetChip(site, names[j]) == SS_CHIP_COLLECT
-            && G_Provision_IsUpkeepGood(names[j])) {
-                good_weight = MAX(weight, priority_weight(SS_PRIORITY_UPKEEP));
+
+            /* A Low request lets the others go first, but not for ever */
+            if(priority >= SS_PRIORITY_URGENT) {
+                tier = MAX(tier - 1, TIER_STARVING);
+            }else if(priority == SS_PRIORITY_LOW && waited_s < LOW_PATIENCE_S) {
+                tier++;
             }
+            pend->tier = tier;
 
             vec_request_push(out, (struct job_request){
                 .site = site,
-                .rname = names[j],
+                .rname = rname,
                 .shortfall = shortfall,
-                .urgency = good_weight * (1.0f + waited_s / WAIT_DOUBLING_S) * MIN(shortfall, SCORED_LOAD)
+                .tier = tier,
+                .key = key - waited_s / 60.0f
             });
         }
     }
@@ -947,8 +1037,9 @@ static void collect_requests(vec_request_t *out, const vec_entity_t *sites)
 static int compare_requests(const void *a, const void *b)
 {
     const struct job_request *ra = a, *rb = b;
-    if(ra->urgency > rb->urgency) return -1;
-    if(ra->urgency < rb->urgency) return 1;
+    if(ra->tier != rb->tier) return ra->tier - rb->tier;
+    if(ra->key < rb->key) return -1;
+    if(ra->key > rb->key) return 1;
     return 0;
 }
 
@@ -1130,7 +1221,13 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
                     struct job_source *src = &vec_AT(&sources, s);
                     vec2_t spos = G_Pos_GetXZ(src->site);
                     float travel = distance(cpos, spos) + distance(spos, dest_pos);
-                    if(src->surplus < min_load_for(travel, max_carry, req->shortfall, waited_s)) {
+                    /* A top-up is a full load's walk, and no long one for a small carrier */
+                    bool topping = (req->tier >= TIER_TOPPING);
+                    if(topping && travel > TOP_UP_WALK * max_carry / MIN_LOAD) {
+                        any_small = true;
+                        continue;
+                    }
+                    if(src->surplus < min_load_for(travel, max_carry, req->shortfall, topping ? 0.0f : waited_s)) {
                         any_small = any_small || src->surplus > 0;
                         continue;
                     }
@@ -1198,7 +1295,7 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
             }
         }
 
-        if(!judge)
+        if(!judge || req->tier >= TIER_TOPPING)
             continue;
 
         /* Waiting for a load worth the trip, or for one on its way, is not being blocked */
@@ -1405,6 +1502,8 @@ struct site_search{
     bool unfounded;
     /* Only road work, or only the rest */
     bool road;
+    /* At any distance */
+    bool far;
 };
 
 /* Whether a site being built still lacks a good that no site of its faction can spare */
@@ -1452,7 +1551,7 @@ static struct work_site *nearest_site(struct work_snapshot *snap, vec2_t pos,
                                       const struct site_search *ss)
 {
     struct work_site *ret = NULL;
-    float best = WORK_RADIUS;
+    float best = ss->far ? INFINITY : WORK_RADIUS;
     for(int i = 0; i < snap->nsites; i++) {
         struct work_site *curr = &snap->sites[i];
         if(curr->faction != ss->faction)
@@ -1486,6 +1585,30 @@ static struct work_site *nearest_site(struct work_snapshot *snap, vec2_t pos,
     return ret;
 }
 
+/* A building out of everybody's reach, whether waiting to be worked on or for
+ * its founder, with no builder at all: one has to walk out to it */
+static struct work_site *far_site(struct work_snapshot *snap, vec2_t pos, int faction, int district)
+{
+    struct site_search arg = (struct site_search){
+        .faction = faction,
+        .district = district,
+        .max_builders = 1,
+        .supplied = true,
+        .far = true
+    };
+    struct work_site *ret = nearest_site(snap, pos, &arg);
+    if(ret)
+        return ret;
+    arg = (struct site_search){
+        .faction = faction,
+        .district = district,
+        .max_builders = 1,
+        .unfounded = true,
+        .far = true
+    };
+    return nearest_site(snap, pos, &arg);
+}
+
 /* The site a builder takes: a building before road work, and one of either
  * that can be worked on before one that waits for its founder
  */
@@ -1506,7 +1629,7 @@ static struct work_site *pick_site(struct work_snapshot *snap, vec2_t pos, int f
         if((ret = nearest_site(snap, pos, &arg)))
             return ret;
     }
-    return NULL;
+    return far_site(snap, pos, faction, district);
 }
 
 /* The total of the faction's requests for a resource, met by gathering */
@@ -1682,7 +1805,10 @@ static void reconsider_work(uint32_t uid, struct automation_state *astate)
     if(src != NULL_UID || dest != NULL_UID || !rname)
         return;
     bool off_good = astate->pinned[0] && strcmp(astate->pinned, rname);
-    bool off_home = astate->home_district && G_District_Of(uid) != astate->home_district;
+    uint32_t node = G_Harvester_GatherNode(uid);
+    bool node_out = astate->home_district && G_EntityExists(node) && !G_EntityIsZombie(node)
+                 && !in_home_territory(G_GetFactionID(uid), astate->home_district, node);
+    bool off_home = node_out || (astate->home_district && G_District_Of(uid) != astate->home_district);
     if(!off_good && !off_home)
         return;
     G_Duty_End(uid, "reconsidered");
@@ -1899,6 +2025,184 @@ static struct good_demand *demand_find(struct work_snapshot *snap, int faction, 
     return NULL;
 }
 
+/* What the faction's stores could still take of the good */
+static int stores_room(int faction, const char *rname)
+{
+    /* A class has room while any of its goods has */
+    const struct good_class *cls = class_named(rname);
+    if(cls) {
+        int ret = 0;
+        for(int i = 0; i < cls->n; i++) {
+            ret = MAX(ret, stores_room(faction, cls->members[i]));
+        }
+        return ret;
+    }
+    return G_StorageSite_GetFactionCapacity(faction, rname) - G_StorageSite_GetFactionStored(faction, rname);
+}
+
+static bool node_of_good(uint32_t uid, void *arg)
+{
+    const char *rname = arg;
+    uint32_t flags = G_FlagsGet(uid);
+    if(!(flags & ENTITY_FLAG_RESOURCE) || (flags & ENTITY_FLAG_ZOMBIE))
+        return false;
+    if(G_Resource_GetDormant(uid) || G_Resource_GetAmount(uid) <= 0)
+        return false;
+    return !strcmp(G_Resource_GetName(uid), rname);
+}
+
+/* What one gatherer brings in of the good a minute from the node: the walk
+ * to the store and back with a load, and the swings for it */
+static float node_rate(uint32_t node, int faction)
+{
+    float dist = G_Resource_DropDistance(node, faction);
+    if(dist >= INFINITY)
+        return 0.0f;
+    float trip_s = 2.0f * dist / WORKER_SPEED + GATHER_LOAD * GATHER_S_PER_UNIT;
+    return GATHER_LOAD * 60.0f / trip_s;
+}
+
+/* Of goods a site eats in one another's stead, the one its draw is gathered
+ * as: the one the realm's stores have most to spare of, else the one with a
+ * node nearest the site */
+static const char *gathered_member(int faction, uint32_t site, size_t nmembers, const char **members,
+                                   const vec_entity_t *sites)
+{
+    const char *ret = members[0];
+    int best = -1;
+    for(size_t m = 0; m < nmembers; m++) {
+        int spare = faction_spare(sites, faction, members[m]);
+        if(spare > best) {
+            best = spare;
+            ret = members[m];
+        }
+    }
+    if(best > 0)
+        return ret;
+    float nearest = INFINITY;
+    vec2_t at = G_Pos_GetXZ(site);
+    for(size_t m = 0; m < nmembers; m++) {
+        uint32_t node = G_Pos_NearestWithPred(at, node_of_good, (void*)members[m], option(faction, OPT_REACH));
+        if(node == NULL_UID)
+            continue;
+        float dist = distance(G_Pos_GetXZ(node), at);
+        if(dist < nearest) {
+            nearest = dist;
+            ret = members[m];
+        }
+    }
+    return ret;
+}
+
+/* What the faction's buildings eat of the good between them, a minute */
+static float realm_draw(int faction, const char *rname, const vec_entity_t *sites)
+{
+    float ret = 0.0f;
+    for(int i = 0; i < vec_size(sites); i++) {
+        uint32_t site = vec_AT(sites, i);
+        if(G_EntityIsZombie(site) || !is_representative(site) || G_GetFactionID(site) != faction)
+            continue;
+        float rate = G_StorageSite_GetDraw(site, rname);
+        if(rate <= 0.0f)
+            continue;
+        const char *members[MAX_RESOURCES];
+        size_t nmembers = G_StorageSite_DrawMembers(site, rname, ARR_SIZE(members), members);
+        if(nmembers > 1 && strcmp(gathered_member(faction, site, nmembers, members, sites), rname))
+            continue;
+        ret += rate;
+    }
+    return ret;
+}
+
+/* What the gatherers bring in against what their nodes were reckoned to
+ * yield, so that the reckoning learns from the realm's own pace */
+static float rate_fix(int faction, const char *rname, const struct work_snapshot *snap)
+{
+    const struct good_priority *realm = priority_get(faction, 0, rname, false);
+    if(!realm || realm->gatherer_s < MIN_RATE_SAMPLE_S || realm->gathered <= 0.0f)
+        return 1.0f;
+    float predicted = 0.0f;
+    int aimed = 0;
+    uint32_t node;
+    uint32_t count;
+    kh_foreach(snap->aimed, node, count, {
+        if(!G_EntityExists(node) || G_EntityIsZombie(node) || strcmp(G_Resource_GetName(node), rname))
+            continue;
+        predicted += count * node_rate(node, faction);
+        aimed += count;
+    });
+    if(aimed == 0 || predicted <= 0.0f)
+        return 1.0f;
+    float fix = gatherer_rate(realm) / (predicted / aimed);
+    return MAX(RATE_FIX_MIN, MIN(fix, RATE_FIX_MAX));
+}
+
+/* How many gatherers the realm's draw of the good takes: the nodes nearest
+ * its stores first, each up to its rim, a far patch asking more of them */
+static int gatherers_for_draw(int faction, const char *rname, const struct work_snapshot *snap)
+{
+    vec_entity_t sites;
+    vec_entity_init(&sites);
+    G_StorageSite_GetAll(&sites);
+    float draw = realm_draw(faction, rname, &sites);
+    if(draw <= 0.0f) {
+        vec_entity_destroy(&sites);
+        return 0;
+    }
+    float fix = rate_fix(faction, rname, snap);
+
+    uint32_t nodes[512];
+    float rates[512];
+    size_t nnodes = 0;
+    float reach = option(faction, OPT_REACH);
+    for(int i = 0; i < vec_size(&sites) && nnodes < ARR_SIZE(nodes); i++) {
+        uint32_t site = vec_AT(&sites, i);
+        if(G_EntityIsZombie(site) || G_GetFactionID(site) != faction || G_StorageSite_GetUseAlt(site))
+            continue;
+        if(!G_StorageSite_Accepts(site, rname) || G_StorageSite_GetCapacity(site, rname) <= 0)
+            continue;
+        uint32_t found[512];
+        size_t nfound = G_Pos_EntsInCircleWithPred(G_Pos_GetXZ(site), reach, found, ARR_SIZE(found),
+            node_of_good, (void*)rname);
+        for(size_t j = 0; j < nfound && nnodes < ARR_SIZE(nodes); j++) {
+            bool seen = false;
+            for(size_t k = 0; k < nnodes; k++) {
+                if(nodes[k] == found[j]) {
+                    seen = true;
+                    break;
+                }
+            }
+            if(seen)
+                continue;
+            nodes[nnodes] = found[j];
+            rates[nnodes] = node_rate(found[j], faction) * fix;
+            nnodes++;
+        }
+    }
+    vec_entity_destroy(&sites);
+
+    int workers = 0;
+    float left = draw;
+    for(size_t tries = 0; tries < nnodes && left > 0.0f; tries++) {
+        int best = -1;
+        for(size_t i = 0; i < nnodes; i++) {
+            if(rates[i] > 0.0f && (best == -1 || rates[i] > rates[best]))
+                best = i;
+        }
+        if(best == -1)
+            break;
+        int rim = node_capacity(nodes[best], WORKER_RADIUS);
+        int n = MIN(rim, (int)ceilf(left / rates[best]));
+        workers += n;
+        left -= n * rates[best];
+        rates[best] = 0.0f;
+    }
+    if(left > 0.0f) {
+        workers += (int)ceilf(left / GATHERER_RATE);
+    }
+    return workers;
+}
+
 /* A good counts as stocked only once its stock has stood a while above its
  * target and the band over it, so that a stock at the line does not send
  * its gatherers back and forth */
@@ -1917,6 +2221,46 @@ static bool stocked_held(int faction, const char *rname, int surplus, int shortf
         realm->stocked_since = s_tick;
     }
     return s_tick - realm->stocked_since >= STOCKED_HOLD_TICKS;
+}
+
+/* How long the good in store, with those eaten in its stead, lasts the realm's
+ * draw of them: bushes and game feed the one tavern, and only wheat the mill */
+static float stock_minutes(int faction, const char *rname)
+{
+    vec_entity_t sites;
+    vec_entity_init(&sites);
+    G_StorageSite_GetAll(&sites);
+    const char *seen[MAX_RESOURCES] = {rname};
+    size_t nseen = 1;
+    float draw = 0.0f;
+    for(int i = 0; i < vec_size(&sites); i++) {
+        uint32_t site = vec_AT(&sites, i);
+        if(G_EntityIsZombie(site) || !is_representative(site) || G_GetFactionID(site) != faction)
+            continue;
+        float rate = G_StorageSite_GetDraw(site, rname);
+        if(rate <= 0.0f)
+            continue;
+        draw += rate;
+        const char *members[MAX_RESOURCES];
+        size_t nmembers = G_StorageSite_DrawMembers(site, rname, ARR_SIZE(members), members);
+        for(size_t m = 0; m < nmembers; m++) {
+            bool known = false;
+            for(size_t k = 0; k < nseen; k++) {
+                known = known || !strcmp(seen[k], members[m]);
+            }
+            if(!known && nseen < ARR_SIZE(seen)) {
+                seen[nseen++] = members[m];
+            }
+        }
+    }
+    vec_entity_destroy(&sites);
+    if(draw <= 0.0f)
+        return NO_DRAW_MINUTES;
+    int stored = 0;
+    for(size_t k = 0; k < nseen; k++) {
+        stored += MAX(G_StorageSite_GetFactionStored(faction, seen[k]), 0);
+    }
+    return stored / MAX(draw, 1.0f);
 }
 
 static struct good_demand *good_demand_get(struct work_snapshot *snap, int faction, const char *rname)
@@ -1938,10 +2282,12 @@ static struct good_demand *good_demand_get(struct work_snapshot *snap, int facti
         .need = resource_need(faction, rname, &snap->requests),
         .workers = G_Harvester_CountGathering(faction, rname),
         .wanted = gatherers_allowed(faction, rname,
-            gatherers_wanted(surplus, shortfall, target, gatherers_for_rate(faction, rname))),
+            gatherers_wanted(surplus, shortfall, target,
+                MAX(gatherers_for_rate(faction, rname), gatherers_for_draw(faction, rname, snap)))),
         .surplus = surplus,
         .shortfall = shortfall,
-        .stocked = stocked_held(faction, rname, surplus, shortfall, target)
+        .stocked = stocked_held(faction, rname, surplus, shortfall, target),
+        .stock_minutes = stock_minutes(faction, rname)
     };
     pf_strlcpy(ret->rname, rname, sizeof(ret->rname));
     return ret;
@@ -2058,33 +2404,64 @@ static float weight_for(int faction, int district, bool roams, const char *name)
     return ret;
 }
 
+/* How far the worker would go for a member of a class, the crowd about its node
+ * and the minutes of it in store weighing against it; INFINITY for none to gather */
+static float member_cost(uint32_t uid, const struct automation_state *astate, const char *rname,
+                         struct work_snapshot *snap, uint32_t *out_node)
+{
+    int faction = G_GetFactionID(uid);
+    if(G_Harvester_GetGatherSpeed(uid, rname) <= 0.0f)
+        return INFINITY;
+    struct good_demand *raw = good_demand_get(snap, faction, rname);
+    if(!raw || raw->stocked)
+        return INFINITY;
+    uint32_t node = gather_node(uid, astate, rname, snap);
+    if(node == NULL_UID)
+        return INFINITY;
+    *out_node = node;
+    vec2_t origin = gather_origin(uid, astate, rname);
+    return distance(G_Pos_GetXZ(node), origin) + CROWD_SLACK * aimed_at(snap, node)
+         + STOCK_MINUTE_SLACK * raw->stock_minutes;
+}
+
 /* The nearest node of any member of the class the worker can gather and that
- * is not stocked, the crowds about the nodes weighing against them */
+ * is not stocked, the crowds about the nodes and the stock of the good weighing
+ * against them */
 static uint32_t class_node(uint32_t uid, const struct automation_state *astate, const struct good_class *cls,
                            struct work_snapshot *snap, const char **out_good)
 {
-    int faction = G_GetFactionID(uid);
     uint32_t ret = NULL_UID;
     float best = INFINITY;
     for(int i = 0; i < cls->n; i++) {
-        const char *rname = cls->members[i];
-        if(G_Harvester_GetGatherSpeed(uid, rname) <= 0.0f)
-            continue;
-        struct good_demand *raw = good_demand_get(snap, faction, rname);
-        if(!raw || raw->stocked)
-            continue;
-        uint32_t node = gather_node(uid, astate, rname, snap);
-        if(node == NULL_UID)
-            continue;
-        vec2_t origin = gather_origin(uid, astate, rname);
-        float score = distance(G_Pos_GetXZ(node), origin) + CROWD_SLACK * aimed_at(snap, node);
-        if(score < best) {
-            best = score;
+        uint32_t node = NULL_UID;
+        float cost = member_cost(uid, astate, cls->members[i], snap, &node);
+        if(cost < best) {
+            best = cost;
             ret = node;
-            *out_good = rname;
+            *out_good = cls->members[i];
         }
     }
     return ret;
+}
+
+/* Whether another member of the worker's class is well behind his own: fruit
+ * piling up at the nearest bushes does nothing for a mill out of wheat */
+static bool member_wanted_more(uint32_t uid, const struct automation_state *astate, struct work_snapshot *snap,
+                               const char *rname)
+{
+    const struct good_class *cls = class_of(rname);
+    if(!cls)
+        return false;
+    uint32_t node = NULL_UID;
+    float own = member_cost(uid, astate, rname, snap, &node);
+    for(int i = 0; i < cls->n; i++) {
+        if(!strcmp(cls->members[i], rname))
+            continue;
+        float cost = member_cost(uid, astate, cls->members[i], snap, &node);
+        if(cost < INFINITY && cost + MEMBER_BAND < own)
+            return true;
+    }
+    return false;
 }
 
 static uint32_t node_for(uint32_t uid, const struct automation_state *astate, const char *name,
@@ -2177,7 +2554,7 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate, bool 
         }
     }
 
-    if(spare || !(flags & ENTITY_FLAG_HARVESTER))
+    if(!(flags & ENTITY_FLAG_HARVESTER))
         return false;
     /* A load left in hand is brought in before anything else */
     if(G_Harvester_GetCurrTotalCarry(uid)) {
@@ -2238,9 +2615,18 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate, bool 
             continue;
         }
         int wanted = demands[i] ? (int)ceilf(demands[i]->wanted * MAX(weight, 1.0f)) : 0;
-        if(!demands[i] || (!pinned && demands[i]->workers >= wanted)) {
+        /* With no store left to take a load, nobody goes for one; a spare
+         * worker, with nothing else to do, goes on past the count wanted
+         * while the stores have room for more */
+        bool room = demands[i] && stores_room(faction, candidates[i]) >= GATHER_LOAD;
+        if(!demands[i] || !room) {
             scores[i] = -1.0f;
-            why[i] = (demands[i] && demands[i]->stocked) ? "stocked" : "enough";
+            why[i] = demands[i] ? "full" : "enough";
+            continue;
+        }
+        if(!pinned && !spare && demands[i]->workers >= wanted) {
+            scores[i] = -1.0f;
+            why[i] = demands[i]->stocked ? "stocked" : "enough";
             continue;
         }
         scores[i] = weight * demands[i]->need * gather_speed_for(uid, candidates[i]) 
@@ -2349,9 +2735,10 @@ static bool try_assign_transport_job(uint32_t uid, struct automation_state *asta
 
 static void assign_transport_jobs(void)
 {
-    vec_entity_t carriers, laden;
+    vec_entity_t carriers, laden, over;
     vec_entity_init(&carriers);
     vec_entity_init(&laden);
+    vec_entity_init(&over);
 
     uint32_t uid;
     struct automation_state *astate;
@@ -2368,8 +2755,11 @@ static void assign_transport_jobs(void)
             continue;
         if(pool_member(uid)) {
             struct work_snapshot *snap = snapshot_get();
-            if(share_full(snap, uid, astate, SHARE_CARRY))
+            /* The share is a floor: those over it carry what is left waiting */
+            if(share_full(snap, uid, astate, SHARE_CARRY)) {
+                vec_entity_push(&over, uid);
                 continue;
+            }
             share_taken(snap, uid, astate, SHARE_CARRY);
         }
         vec_entity_push(&carriers, uid);
@@ -2384,7 +2774,11 @@ static void assign_transport_jobs(void)
     vec_entity_t waiting;
     vec_entity_init(&waiting);
     vec_entity_copy(&waiting, &carriers);
+    for(int i = 0; i < vec_size(&over); i++) {
+        vec_entity_push(&waiting, vec_AT(&over, i));
+    }
     assign_jobs(&carriers, true);
+    assign_jobs(&over, false);
 
     for(int i = 0; i < vec_size(&waiting); i++) {
         uint32_t uid = vec_AT(&waiting, i);
@@ -2397,6 +2791,7 @@ static void assign_transport_jobs(void)
     }
     vec_entity_destroy(&waiting);
     vec_entity_destroy(&laden);
+    vec_entity_destroy(&over);
     vec_entity_destroy(&carriers);
 }
 
@@ -2421,14 +2816,16 @@ static bool post_worker(uint32_t uid, const struct automation_state *astate, str
     bool gathering = (astate->state == STATE_ACTIVE && astate->working[0]
         && astate->transport_target == NULL_UID
         && (!(flags & ENTITY_FLAG_BUILDER) || G_Builder_Idle(uid)));
-    if(astate->state != STATE_IDLE && !gathering)
+    /* One at the end of its work is as free as one idle: its post comes before any job */
+    bool free = (astate->state == STATE_IDLE || astate->state == STATE_STOPPING);
+    if(!free && !gathering)
         return false;
     *out = (struct post_worker){
         .uid = uid,
         .faction = G_GetFactionID(uid),
         .home_district = astate->home_district,
         .pos = G_Pos_GetXZ(uid),
-        .idle = (astate->state == STATE_IDLE)
+        .idle = free
     };
     return true;
 }
@@ -3182,6 +3579,41 @@ static bool more_urgent_work(uint32_t uid, struct automation_state *astate, stru
     return false;
 }
 
+/* Whether a good the worker could gather is shorter of hands for its count
+ * than its own would be without him, or has none while his has others. No
+ * good stands unserved while another keeps every gatherer; equal shares leave
+ * him where he is */
+static bool hands_wanted_more(uint32_t uid, struct automation_state *astate, struct work_snapshot *snap,
+                              const char *rname, const struct good_demand *own)
+{
+    int faction = G_GetFactionID(uid);
+    int district = work_district(uid, astate);
+    bool roams = (astate->home_district == 0);
+    const char *candidates[MAX_RESOURCES];
+    size_t ncandidates = G_Harvester_GetGatherable(uid, ARR_SIZE(candidates), candidates);
+    ncandidates = fold_classes(candidates, ncandidates);
+    const struct good_class *own_class = class_of(rname);
+    int own_wanted = MAX(own->wanted, 1);
+    for(int i = 0; i < ncandidates; i++) {
+        if(!strcmp(candidates[i], rname) || (own_class && !strcmp(candidates[i], own_class->name)))
+            continue;
+        struct good_demand *demand = demand_get(snap, faction, candidates[i]);
+        if(!demand || demand->stocked || demand->wanted <= demand->workers)
+            continue;
+        bool unserved = (demand->workers == 0 && own->workers >= 2);
+        if(!unserved && (demand->workers + 1) * own_wanted >= own->workers * demand->wanted)
+            continue;
+        if(weight_for(faction, district, roams, candidates[i]) <= 0.0f)
+            continue;
+        if(stores_room(faction, candidates[i]) < GATHER_LOAD)
+            continue;
+        const char *good;
+        if(node_for(uid, astate, candidates[i], snap, &good) != NULL_UID)
+            return true;
+    }
+    return false;
+}
+
 static bool leaves_gathering(uint32_t uid, const char *rname, uint32_t node)
 {
     struct automation_state *astate = astate_get(uid);
@@ -3216,6 +3648,12 @@ static bool leaves_gathering(uint32_t uid, const char *rname, uint32_t node)
         if(demand) {
             demand->workers--;
         }
+        return true;
+    }
+    if(demand && tenure_up(uid) && pool_may_reassign(uid, astate)
+    && (hands_wanted_more(uid, astate, snap, rname, demand) || member_wanted_more(uid, astate, snap, rname))) {
+        note_reassigned(uid, astate);
+        demand->workers--;
         return true;
     }
     if(in_crew(astate) && crew_full(snap, faction))
@@ -3253,6 +3691,10 @@ static bool leaves_gathering(uint32_t uid, const char *rname, uint32_t node)
             note_reassigned(uid, astate);
             return true;
         }
+    }
+    if(far_site(snap, pos, faction, astate->home_district)) {
+        note_reassigned(uid, astate);
+        return true;
     }
     return false;
 }
@@ -3389,6 +3831,33 @@ int G_Automation_Shortfall(uint32_t site, const char *rname, int own_load)
     int want = G_StorageSite_Request(rep, rname);
     int have = G_StorageSite_GetCurr(rep, rname) + pool_en_route(rep, rname) - own_load;
     return MAX(want - have, 0);
+}
+
+void G_Automation_OpenRequests(int faction, int *out_open, int *out_carriers)
+{
+    int open = 0, carriers = 0;
+    for(khint_t k = kh_begin(s_pending); k != kh_end(s_pending); k++) {
+        /* A fed drawer being topped up is not waiting on anyone */
+        if(!kh_exist(s_pending, k) || !kh_value(s_pending, k).touched
+        || kh_value(s_pending, k).tier > TIER_BUFFERING)
+            continue;
+        uint32_t site = (uint32_t)(kh_key(s_pending, k) >> 32);
+        if(G_EntityExists(site) && !G_EntityIsZombie(site) && G_GetFactionID(site) == faction) {
+            open++;
+        }
+    }
+    uint32_t uid;
+    struct automation_state *astate;
+    kh_foreach_val_ptr(s_entity_state_table, uid, astate, {
+        if(!astate->automatic_transport || G_GetFactionID(uid) != faction)
+            continue;
+        uint32_t flags = G_FlagsGet(uid);
+        if(!(flags & ENTITY_FLAG_HARVESTER) || (flags & (ENTITY_FLAG_GARRISONED | ENTITY_FLAG_ZOMBIE)))
+            continue;
+        carriers++;
+    });
+    *out_open = open;
+    *out_carriers = carriers;
 }
 
 bool G_Automation_OutputStocked(uint32_t site, const char *rname, int limit)

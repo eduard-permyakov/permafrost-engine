@@ -38,6 +38,7 @@
 
 #include "resource.h"
 #include "game_private.h"
+#include <math.h>
 #include "public/game.h"
 #include "storage_site.h"
 #include "../sched.h"
@@ -58,6 +59,16 @@
 #define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_GAME, MEM_SUB_GAME_RESOURCE)
 #define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_GAME, MEM_SUB_GAME_RESOURCE)
 #define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_RESOURCE)
+
+/* A node's way to its drop-off store holds this long before it is reckoned again */
+#define DROP_CACHE_S        (60)
+#define DROP_DETOUR         (1.2f)
+#ifndef MIN
+#define MIN(a, b)           ((a) < (b) ? (a) : (b))
+#endif
+#ifndef MAX
+#define MAX(a, b)           ((a) > (b) ? (a) : (b))
+#endif
 
 
 #define CHK_TRUE_RET(_pred)             \
@@ -95,6 +106,10 @@ struct rstate{
     bool        ss_do_not_take_land;
     bool        ss_do_not_take_water;
     enum resource_state state;
+    /* How far a load goes from here to each faction's nearest store that
+     * takes it, and when that was last reckoned */
+    float       drop_dist[MAX_FACTIONS];
+    uint32_t    drop_s[MAX_FACTIONS];
 };
 
 KHASH_MAP_INIT_INT(state, struct rstate)
@@ -498,6 +513,37 @@ void G_Resource_SetAmount(uint32_t uid, int amount)
         E_Entity_Notify(EVENT_RESOURCE_AMOUNT_CHANGED, uid, NULL, ES_ENGINE);
     }
     rs->amount = amount;
+}
+
+float G_Resource_DropDistance(uint32_t uid, int faction)
+{
+    struct rstate *rs = rstate_get(uid);
+    if(!rs || faction < 0 || faction >= MAX_FACTIONS)
+        return INFINITY;
+    uint32_t now = G_StorageSite_NowS();
+    if(rs->drop_s[faction] && now >= rs->drop_s[faction] && now - rs->drop_s[faction] < DROP_CACHE_S)
+        return rs->drop_dist[faction];
+
+    vec2_t pos = G_Pos_GetXZ(uid);
+    float best = INFINITY;
+    vec_entity_t sites;
+    vec_entity_init(&sites);
+    G_StorageSite_GetAll(&sites);
+    for(int i = 0; i < vec_size(&sites); i++) {
+        uint32_t site = vec_AT(&sites, i);
+        if(G_GetFactionID(site) != faction || G_EntityIsZombie(site) || G_StorageSite_GetUseAlt(site))
+            continue;
+        if(!G_StorageSite_Accepts(site, rs->name) || G_StorageSite_GetCapacity(site, rs->name) <= 0)
+            continue;
+        vec2_t at = G_Pos_GetXZ(site);
+        vec2_t delta;
+        PFM_Vec2_Sub(&at, &pos, &delta);
+        best = MIN(best, PFM_Vec2_Len(&delta));
+    }
+    vec_entity_destroy(&sites);
+    rs->drop_dist[faction] = (best < INFINITY) ? best * DROP_DETOUR : INFINITY;
+    rs->drop_s[faction] = MAX(now, 1);
+    return rs->drop_dist[faction];
 }
 
 const char *G_Resource_GetName(uint32_t uid)

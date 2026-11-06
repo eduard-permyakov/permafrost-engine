@@ -72,6 +72,7 @@ bool G_Harvester_BringInLoad(uint32_t harvester, uint32_t site, bool and_back);
 /* The node of the good a gatherer on the player's order goes on to after an
  * interruption: about the one it was sent to, else about itself */
 uint32_t G_Harvester_ResumeNode(uint32_t uid, const char *rname);
+uint32_t G_Harvester_GatherNode(uint32_t harvester);
 /* Whether the store asks for a good the carrier could fetch it from somewhere */
 bool G_Harvester_CanSupply(uint32_t uid, uint32_t storage);
 
