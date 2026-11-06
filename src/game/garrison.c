@@ -1285,6 +1285,18 @@ void G_Garrison_GetIngredients(uint32_t uid, vec_entity_t *out)
     get_units(uid, true, out);
 }
 
+size_t G_Garrison_DebugDesc(uint32_t uid, char *out, size_t len)
+{
+    struct garrison_state *gus = gu_state_get(uid);
+    if(!gus)
+        return pf_snprintf(out, len, "none");
+    bool near = G_EntityExists(gus->target) && gb_state_get(gus->target) && adjacent(uid, gus->target);
+    struct garrisonable_state *gbs = gb_state_get(gus->target);
+    return pf_snprintf(out, len, "state=%d target=%u wait=%d approaches=%d ingredient=%d adjacent=%d holder=%d",
+        (int)gus->state, gus->target, gus->wait_ticks, gus->approaches, (int)gus->ingredient, (int)near,
+        gbs ? (int)gbs->state : -1);
+}
+
 bool G_Garrison_IsIngredient(uint32_t uid)
 {
     struct garrison_state *gus = gu_state_get(uid);

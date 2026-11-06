@@ -50,6 +50,7 @@
 #include "lib/public/khash.h"
 #include "lib/public/pf_string.h"
 #include "mem.h"
+#include "settings.h"
 #include "lib/public/block_allocator.h"
 
 #include <SDL.h>
@@ -184,6 +185,7 @@ __pragma(pack(pop));
 #define MAX_TASKS               (8192)
 #define MAX_WORKER_THREADS      (64)
 #define STACK_SZ                (16 * 1024)
+#define SLOW_SLICE_US           (3000.0)
 #define BIG_STACK_SZ            (8 * 1024 * 1024)
 #define SCHED_TICK_MS           (1.0f / CONFIG_SCHED_TARGET_FPS * 1000.0f)
 /* The least of the frame budget the task loop keeps when the frame's tail
@@ -1608,6 +1610,18 @@ void Sched_StartBackgroundTasks(void)
     }
 }
 
+/* With the perf log on, a task slice that held the frame up says so, by name */
+static void log_slow_slice(const char *name, uint64_t ticks)
+{
+    double us = ticks * 1e6 / SDL_GetPerformanceFrequency();
+    if(us < SLOW_SLICE_US)
+        return;
+    struct sval setting;
+    if(Settings_Get("pf.debug.log_perf_csv", &setting) != SS_OKAY || !setting.as_bool)
+        return;
+    fprintf(stdout, "[slow-task] %lu,%.0f,%s\n", g_frame_idx, us, name);
+}
+
 void Sched_Tick(void)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -1667,9 +1681,13 @@ void Sched_Tick(void)
             continue;
 
         uint64_t t0 = SDL_GetPerformanceCounter();
+        char name[64];
+        pf_strlcpy(name, curr->name ? curr->name : "?", sizeof(name));
         sched_task_run(curr);
         sched_task_service_request(curr);
-        s_tick_task_ticks += SDL_GetPerformanceCounter() - t0;
+        uint64_t slice = SDL_GetPerformanceCounter() - t0;
+        s_tick_task_ticks += slice;
+        log_slow_slice(name, slice);
 
     }while(SDL_GetPerformanceCounter() < deadline);
 

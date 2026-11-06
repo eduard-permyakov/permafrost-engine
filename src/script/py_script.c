@@ -104,6 +104,7 @@
 
 
 #define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
+#define SLOW_HANDLER_US (3000.0)
 
 struct script_arg{
     const char *path;
@@ -162,6 +163,7 @@ static PyObject *PyPf_register_ui_event_handler(PyObject *self, PyObject *args);
 static PyObject *PyPf_unregister_event_handler(PyObject *self, PyObject *args);
 static PyObject *PyPf_global_event(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_ticks(PyObject *self);
+static PyObject *PyPf_perf_us(PyObject *self);
 static PyObject *PyPf_ticks_delta(PyObject *self, PyObject *args);
 static PyObject *PyPf_flush_tasks(PyObject *self);
 
@@ -651,6 +653,10 @@ static PyMethodDef pf_module_methods[] = {
     "Get the current number of game ticks (milliseconsd) - only useful in finding elapsed "
     "times in relation to other ticks."},
 
+    {"perf_us",
+    (PyCFunction)PyPf_perf_us, METH_NOARGS,
+    "The wall clock in microseconds, as a float, for timing code in probes."},
+
     {"ticks_delta", 
     (PyCFunction)PyPf_ticks_delta, METH_VARARGS,
     "Compute the MS delta between two tick values retried by 'get_ticks'. This handles unsigned overflow "
@@ -1105,7 +1111,7 @@ static PyMethodDef pf_module_methods[] = {
 
     {"debug_desc",
     (PyCFunction)PyPf_debug_desc, METH_VARARGS,
-    "Takes 'move', 'build' or 'harvest' and an entity. Returns a line on the entity's state in that "
+    "Takes 'move', 'build', 'harvest' or 'garrison' and an entity. Returns a line on the entity's state in that "
     "part of the engine, for probes."},
 
     {"map_ground_open",
@@ -2750,6 +2756,11 @@ static PyObject *PyPf_global_event(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+static PyObject *PyPf_perf_us(PyObject *self)
+{
+    return PyFloat_FromDouble(SDL_GetPerformanceCounter() * 1e6 / SDL_GetPerformanceFrequency());
+}
+
 static PyObject *PyPf_get_ticks(PyObject *self)
 {
     return PyInt_FromLong(SDL_GetTicks());
@@ -4310,7 +4321,7 @@ static PyObject *PyPf_debug_desc(PyObject *self, PyObject *args)
     PyObject *obj;
     const char *which;
     if(!PyArg_ParseTuple(args, "sO", &which, &obj) || !S_Entity_Check(obj)) {
-        PyErr_SetString(PyExc_TypeError, "Arguments must be a string ('move', 'build' or 'harvest') "
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string ('move', 'build', 'harvest' or 'garrison') "
             "and a pf.Entity object.");
         return NULL;
     }
@@ -4324,8 +4335,10 @@ static PyObject *PyPf_debug_desc(PyObject *self, PyObject *args)
         G_Builder_DebugDesc(uid, buff, sizeof(buff));
     }else if(!strcmp(which, "harvest")) {
         G_Harvester_DebugDesc(uid, buff, sizeof(buff));
+    }else if(!strcmp(which, "garrison")) {
+        G_Garrison_DebugDesc(uid, buff, sizeof(buff));
     }else{
-        PyErr_SetString(PyExc_ValueError, "The first argument must be 'move', 'build' or 'harvest'.");
+        PyErr_SetString(PyExc_ValueError, "The first argument must be 'move', 'build', 'harvest' or 'garrison'.");
         return NULL;
     }
     return PyString_FromString(buff);
@@ -7315,6 +7328,28 @@ bool S_GetFilePath(char *out, size_t maxout)
     return true;
 }
 
+/* With the perf log on, a handler that held the frame up says so, by name */
+static void log_slow_handler(PyObject *callable, uint64_t ticks)
+{
+    double us = ticks * 1e6 / SDL_GetPerformanceFrequency();
+    if(us < SLOW_HANDLER_US)
+        return;
+    struct sval setting;
+    if(Settings_Get("pf.debug.log_perf_csv", &setting) != SS_OKAY || !setting.as_bool)
+        return;
+    PyObject *err_type, *err_val, *err_tb;
+    PyErr_Fetch(&err_type, &err_val, &err_tb);
+    PyObject *module = PyObject_GetAttrString(callable, "__module__");
+    PyObject *name = PyObject_GetAttrString(callable, "__name__");
+    PyErr_Clear();
+    fprintf(stdout, "[slow-handler] %lu,%.0f,%s.%s\n", g_frame_idx, us,
+        (module && PyString_Check(module)) ? PyString_AS_STRING(module) : "?",
+        (name && PyString_Check(name)) ? PyString_AS_STRING(name) : "?");
+    Py_XDECREF(module);
+    Py_XDECREF(name);
+    PyErr_Restore(err_type, err_val, err_tb);
+}
+
 void S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, script_opaque_t event_arg)
 {
     PyObject *args, *ret;
@@ -7336,7 +7371,9 @@ void S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, scrip
      * living reference to it. */
     Py_INCREF(callable);
     clear_stale_error("handler", callable);
+    uint64_t t0 = SDL_GetPerformanceCounter();
     ret = PyObject_CallObject(callable, args);
+    log_slow_handler(callable, SDL_GetPerformanceCounter() - t0);
     Py_DECREF(callable);
     Py_DECREF(args);
 

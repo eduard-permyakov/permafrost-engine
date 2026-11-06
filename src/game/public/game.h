@@ -1115,6 +1115,7 @@ bool G_Garrison_Enter(uint32_t garrisonable, uint32_t unit);
 bool G_Garrison_EnterAsIngredient(uint32_t garrisonable, uint32_t unit);
 void G_Garrison_GetIngredients(uint32_t uid, vec_entity_t *out);
 bool G_Garrison_IsIngredient(uint32_t uid);
+size_t G_Garrison_DebugDesc(uint32_t uid, char *out, size_t len);
 /* Whether a unit sent to the building goes in as its ingredient: it has a unit queued */
 void G_Garrison_SetWantsIngredient(uint32_t garrisonable, bool wants);
 bool G_Garrison_WantsIngredient(uint32_t garrisonable);
