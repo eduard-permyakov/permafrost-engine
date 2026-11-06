@@ -349,6 +349,9 @@ static khash_t(flow)   *s_flows;
 static khash_t(made)   *s_made;
 static khash_t(note)   *s_notes;
 static khash_t(gathered) *s_gathered;
+/* The goods carried into and out of each district from and to the others, totalled the same way */
+static khash_t(gathered) *s_imported;
+static khash_t(gathered) *s_exported;
 /* The second of the window that the records are filling now */
 static int              s_made_slot;
 /* Keyed by strip_key */
@@ -2417,6 +2420,10 @@ bool G_StorageSite_Init(void)
 
     if(!(s_gathered = kh_init(gathered)))
         goto fail_gathered;
+    if(!(s_imported = kh_init(gathered)))
+        goto fail_imported;
+    if(!(s_exported = kh_init(gathered)))
+        goto fail_exported;
 
     if(!(s_notes = kh_init(note)))
         goto fail_notes;
@@ -2473,6 +2480,10 @@ bool G_StorageSite_Init(void)
     return true;
 
 fail_notes:
+    kh_destroy(gathered, s_exported);
+fail_exported:
+    kh_destroy(gathered, s_imported);
+fail_imported:
     kh_destroy(gathered, s_gathered);
 fail_gathered:
     kh_destroy(made, s_made);
@@ -2512,6 +2523,8 @@ void G_StorageSite_Shutdown(void)
         kh_destroy(res, s_global_resource_tables[i]);
 
     kh_destroy(note, s_notes);
+    kh_destroy(gathered, s_exported);
+    kh_destroy(gathered, s_imported);
     kh_destroy(gathered, s_gathered);
     kh_destroy(made, s_made);
     kh_destroy(strip, s_strips);
@@ -3186,17 +3199,16 @@ void G_StorageSite_RecordProduced(int faction_id, const char *rname, int amount)
     record_flow(faction_id, rname, amount, 0);
 }
 
-void G_StorageSite_RecordGathered(uint32_t uid, const char *rname, int amount)
+static void add_total(khash_t(gathered) *table, int district, const char *rname, int amount)
 {
-    int district = G_District_Of(uid);
     if(amount <= 0 || !district)
         return;
 
     int status;
-    khiter_t k = kh_put(gathered, s_gathered, district, &status);
+    khiter_t k = kh_put(gathered, table, district, &status);
     if(status == -1)
         return;
-    struct gathered_record *rec = &kh_value(s_gathered, k);
+    struct gathered_record *rec = &kh_value(table, k);
     if(status != 0) {
         rec->ngoods = 0;
     }
@@ -3215,18 +3227,51 @@ void G_StorageSite_RecordGathered(uint32_t uid, const char *rname, int amount)
     rec->goods[rec->ngoods++] = (struct gathered){key, amount};
 }
 
-size_t G_StorageSite_DistrictGathered(int district, const char **out_names, int *out_totals, size_t maxout)
+static size_t totals_of(khash_t(gathered) *table, int district, const char **out_names, int *out_totals,
+                        size_t maxout)
 {
-    khiter_t k = kh_get(gathered, s_gathered, district);
-    if(k == kh_end(s_gathered))
+    khiter_t k = kh_get(gathered, table, district);
+    if(k == kh_end(table))
         return 0;
-    const struct gathered_record *rec = &kh_value(s_gathered, k);
+    const struct gathered_record *rec = &kh_value(table, k);
     size_t ret = MIN(rec->ngoods, maxout);
     for(int i = 0; i < ret; i++) {
         out_names[i] = rec->goods[i].name;
         out_totals[i] = rec->goods[i].total;
     }
     return ret;
+}
+
+void G_StorageSite_RecordGathered(uint32_t uid, const char *rname, int amount)
+{
+    add_total(s_gathered, G_District_Of(uid), rname, amount);
+}
+
+void G_StorageSite_RecordCarried(uint32_t src, uint32_t dest, const char *rname, int amount)
+{
+    if(!G_EntityExists(src) || !G_EntityExists(dest))
+        return;
+    int from = G_District_Of(src);
+    int to = G_District_Of(dest);
+    if(from == to)
+        return;
+    add_total(s_exported, from, rname, amount);
+    add_total(s_imported, to, rname, amount);
+}
+
+size_t G_StorageSite_DistrictGathered(int district, const char **out_names, int *out_totals, size_t maxout)
+{
+    return totals_of(s_gathered, district, out_names, out_totals, maxout);
+}
+
+size_t G_StorageSite_DistrictImported(int district, const char **out_names, int *out_totals, size_t maxout)
+{
+    return totals_of(s_imported, district, out_names, out_totals, maxout);
+}
+
+size_t G_StorageSite_DistrictExported(int district, const char **out_names, int *out_totals, size_t maxout)
+{
+    return totals_of(s_exported, district, out_names, out_totals, maxout);
 }
 
 void G_StorageSite_SetNote(uint32_t uid, const char *icon, const char *text, bool warn,

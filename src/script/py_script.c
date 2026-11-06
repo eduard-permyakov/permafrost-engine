@@ -364,6 +364,7 @@ static PyObject *PyPf_districts_shown(PyObject *self);
 static PyObject *PyPf_show_district(PyObject *self, PyObject *args);
 static PyObject *PyPf_district_shown(PyObject *self);
 static PyObject *PyPf_district_gathered(PyObject *self, PyObject *args);
+static PyObject *PyPf_district_trade(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_district_preview(PyObject *self, PyObject *args);
 static PyObject *PyPf_cluster_preview_join(PyObject *self, PyObject *args);
 static PyObject *PyPf_provision_counts(PyObject *self, PyObject *args);
@@ -1660,6 +1661,11 @@ static PyMethodDef pf_module_methods[] = {
     {"district_shown",
     (PyCFunction)PyPf_district_shown, METH_NOARGS,
     "Returns the ID of the district shown alone, or 0."},
+
+    {"district_trade",
+    (PyCFunction)PyPf_district_trade, METH_VARARGS,
+    "Takes a district ID. Returns a dict of the goods carried into it from other districts and out "
+    "of it to them since the session began: {name: (in, out)}."},
 
     {"district_gathered",
     (PyCFunction)PyPf_district_gathered, METH_VARARGS,
@@ -7068,6 +7074,47 @@ static PyObject *PyPf_show_district(PyObject *self, PyObject *args)
 static PyObject *PyPf_district_shown(PyObject *self)
 {
     return PyInt_FromLong(G_District_GetFocus());
+}
+
+static PyObject *PyPf_district_trade(PyObject *self, PyObject *args)
+{
+    int district;
+    if(!PyArg_ParseTuple(args, "i", &district)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer (district ID).");
+        return NULL;
+    }
+
+    const char *in_names[16], *out_names[16];
+    int in_totals[16], out_totals[16];
+    size_t nin = G_StorageSite_DistrictImported(district, in_names, in_totals, ARR_SIZE(in_names));
+    size_t nout = G_StorageSite_DistrictExported(district, out_names, out_totals, ARR_SIZE(out_names));
+
+    PyObject *ret = PyDict_New();
+    if(!ret)
+        return NULL;
+    for(int pass = 0; pass < 2; pass++) {
+        const char **names = pass ? out_names : in_names;
+        size_t n = pass ? nout : nin;
+        for(int i = 0; i < n; i++) {
+            int in = 0, out = 0;
+            for(int j = 0; j < nin; j++) {
+                if(!strcmp(in_names[j], names[i]))
+                    in = in_totals[j];
+            }
+            for(int j = 0; j < nout; j++) {
+                if(!strcmp(out_names[j], names[i]))
+                    out = out_totals[j];
+            }
+            PyObject *pair = Py_BuildValue("(ii)", in, out);
+            if(!pair || PyDict_SetItemString(ret, names[i], pair) < 0) {
+                Py_XDECREF(pair);
+                Py_DECREF(ret);
+                return NULL;
+            }
+            Py_DECREF(pair);
+        }
+    }
+    return ret;
 }
 
 static PyObject *PyPf_district_gathered(PyObject *self, PyObject *args)

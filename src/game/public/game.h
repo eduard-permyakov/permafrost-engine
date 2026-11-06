@@ -944,6 +944,11 @@ void G_StorageSite_RecordProduced(int faction_id, const char *rname, int amount)
 void G_StorageSite_RecordGathered(uint32_t uid, const char *rname, int amount);
 /* The goods gathered in the district since the session began and how many of each */
 size_t G_StorageSite_DistrictGathered(int district, const char **out_names, int *out_totals, size_t maxout);
+/* A load carried from one store to another: counted out of and into their districts if they differ */
+void G_StorageSite_RecordCarried(uint32_t src, uint32_t dest, const char *rname, int amount);
+/* The goods carried into, and out of, the district from and to the others since the session began */
+size_t G_StorageSite_DistrictImported(int district, const char **out_names, int *out_totals, size_t maxout);
+size_t G_StorageSite_DistrictExported(int district, const char **out_names, int *out_totals, size_t maxout);
 void G_StorageSite_RecordConsumed(int faction_id, const char *rname, int amount);
 /* Something the site made: its products or the units it trained. 'icon' NULL
  * shows the resource's icon */

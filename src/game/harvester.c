@@ -1880,6 +1880,7 @@ static void on_arrive_at_transport_dest(void *user, void *event)
         hs->trip_start_s = 0;
     }
 
+    G_StorageSite_RecordCarried(hs->transport_src_uid, hs->transport_dest_uid, rname, MIN(left, carry));
     if(left >= carry) {
         G_Harvester_SetCurrCarry(uid, rname, 0);
         G_StorageSite_SetCurr(hs->transport_dest_uid, rname, curr + carry);
