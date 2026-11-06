@@ -94,6 +94,8 @@
 /* What a keep stands for, in minutes, against the drawers' minutes of stock */
 #define KEEP_MINUTES                 (5.0f)
 #define MIN_LOAD_WAIT_S              (30.0f)
+/* How long a flow between districts waits for a cart before a worker takes it */
+#define CART_FIRST_S                 (30.0f)
 /* A haul this long waits for a full load */
 #define FULL_LOAD_TRAVEL             (400.0f)
 #define MAX_RESOURCES                (64)
@@ -454,6 +456,8 @@ static khash_t(events) *s_events;
 static vec_priority_t  s_priorities;
 /* Districts whose stores only carts carry out of; not saved, the scripts set them again */
 static vec_district_t  s_kept_home;
+/* Districts whose workers carry their goods out whether or not there are carts */
+static vec_district_t  s_carried_out;
 static int             s_crew_size[MAX_FACTIONS];
 static const struct sched_option_desc s_option_descs[NUM_SCHED_OPTIONS] = {
     [OPT_CARRY_SHARE]   = {"carry_share",   0.25f,   0.0f,    1.0f},
@@ -1219,6 +1223,25 @@ static int min_load_for(float travel, int max_carry, int shortfall, float waited
     return MIN(want, shortfall);
 }
 
+/* Which factions have carriers of their own, carts and the like, at work or not */
+static void factions_with_carts(bool out[MAX_FACTIONS])
+{
+    memset(out, 0, sizeof(bool) * MAX_FACTIONS);
+    uint32_t uid;
+    struct automation_state *astate;
+    kh_foreach_val_ptr(s_entity_state_table, uid, astate, {
+        if(!astate->automatic_transport)
+            continue;
+        uint32_t flags = G_FlagsGet(uid);
+        if(!(flags & ENTITY_FLAG_HARVESTER) || (flags & (ENTITY_FLAG_BUILDER | ENTITY_FLAG_ZOMBIE)))
+            continue;
+        int faction = G_GetFactionID(uid);
+        if(faction >= 0 && faction < MAX_FACTIONS) {
+            out[faction] = true;
+        }
+    });
+}
+
 /* Gives the waiting carriers the most pressing requests: each request takes 
  * the carrier and source that get its goods to it soonest. Only a pass over 
  * all the waiting carriers can 'judge' why a request goes unserved. */
@@ -1228,6 +1251,9 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
     if(vec_size(carriers) == 0 && !judge)
         return;
     PERF_ENTER();
+
+    bool carts[MAX_FACTIONS];
+    factions_with_carts(carts);
 
     vec_entity_t sites;
     vec_entity_init(&sites);
@@ -1310,10 +1336,17 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
                         continue;
                     }
                     int src_district = G_District_Of(src->site);
-                    if((flags & ENTITY_FLAG_BUILDER) && src_district != dest_district
-                    && !G_Automation_GetWorkersCarryOut(src_district)) {
-                        any_district_bar = true;
-                        continue;
+                    if((flags & ENTITY_FLAG_BUILDER) && src_district != dest_district) {
+                        enum carry_out_mode mode = G_Automation_GetCarryOutMode(src_district);
+                        if(mode == CARRY_OUT_OFF) {
+                            any_district_bar = true;
+                            continue;
+                        }
+                        /* The carts have the first claim on a flow between districts */
+                        if(mode == CARRY_OUT_AUTO && carts[faction] && waited_s < CART_FIRST_S) {
+                            any_small = true;
+                            continue;
+                        }
                     }
                     if(G_StorageSite_GetDoNotTake(flags, src->site))
                         continue;
@@ -3285,6 +3318,7 @@ bool G_Automation_Init(void)
     vec_request_init(&s_snapshot.requests);
     vec_priority_init(&s_priorities);
     vec_district_init(&s_kept_home);
+    vec_district_init(&s_carried_out);
     for(int i = 0; i < MAX_FACTIONS; i++) {
         s_crew_size[i] = CREW_SIZE;
     }
@@ -3387,6 +3421,7 @@ void G_Automation_Shutdown(void)
     vec_request_destroy(&s_snapshot.requests);
     vec_priority_destroy(&s_priorities);
     vec_district_destroy(&s_kept_home);
+    vec_district_destroy(&s_carried_out);
     vec_entity_destroy(&s_stopping);
     kh_destroy(count, s_reassigned);
     kh_destroy(events, s_events);
@@ -4105,21 +4140,41 @@ float G_Automation_GetDistrictWeight(int district, const char *rname)
     return prio ? prio->weight : -1.0f;
 }
 
+static void district_set_member(vec_district_t *set, int district, bool member)
+{
+    int idx = vec_district_indexof(set, district, districts_equal);
+    if(!member && idx != -1) {
+        vec_district_del(set, idx);
+    }
+    if(member && idx == -1) {
+        vec_district_push(set, district);
+    }
+}
+
+void G_Automation_SetCarryOutMode(int district, enum carry_out_mode mode)
+{
+    district_set_member(&s_kept_home, district, mode == CARRY_OUT_OFF);
+    district_set_member(&s_carried_out, district, mode == CARRY_OUT_ON);
+    s_snapshot.valid = false;
+}
+
+enum carry_out_mode G_Automation_GetCarryOutMode(int district)
+{
+    if(vec_district_indexof(&s_kept_home, district, districts_equal) != -1)
+        return CARRY_OUT_OFF;
+    if(vec_district_indexof(&s_carried_out, district, districts_equal) != -1)
+        return CARRY_OUT_ON;
+    return CARRY_OUT_AUTO;
+}
+
 void G_Automation_SetWorkersCarryOut(int district, bool on)
 {
-    int idx = vec_district_indexof(&s_kept_home, district, districts_equal);
-    if(on && idx != -1) {
-        vec_district_del(&s_kept_home, idx);
-    }
-    if(!on && idx == -1) {
-        vec_district_push(&s_kept_home, district);
-    }
-    s_snapshot.valid = false;
+    G_Automation_SetCarryOutMode(district, on ? CARRY_OUT_AUTO : CARRY_OUT_OFF);
 }
 
 bool G_Automation_GetWorkersCarryOut(int district)
 {
-    return vec_district_indexof(&s_kept_home, district, districts_equal) == -1;
+    return G_Automation_GetCarryOutMode(district) != CARRY_OUT_OFF;
 }
 
 void G_Automation_SetCrewSize(int faction, int size)
@@ -4239,6 +4294,7 @@ bool G_Automation_LoadPriorities(struct SDL_RWops *stream)
     struct attr attr;
     vec_priority_reset(&s_priorities);
     vec_district_reset(&s_kept_home);
+    vec_district_reset(&s_carried_out);
     s_snapshot.valid = false;
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));

@@ -892,6 +892,9 @@ static void s_expose_game_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, REQUEST_NO_CARRIER);
     PY_EXPOSE_ENUM(module, REQUEST_UNREACHABLE);
     PY_EXPOSE_ENUM(module, REQUEST_NOT_CONNECTED);
+    PY_EXPOSE_ENUM(module, CARRY_OUT_AUTO);
+    PY_EXPOSE_ENUM(module, CARRY_OUT_ON);
+    PY_EXPOSE_ENUM(module, CARRY_OUT_OFF);
     PY_EXPOSE_ENUM(module, REQUEST_KEPT);
     PY_EXPOSE_ENUM(module, REQUEST_PROMISED);
     PY_EXPOSE_ENUM(module, PROVISION_FED);

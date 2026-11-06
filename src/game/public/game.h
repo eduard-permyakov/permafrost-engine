@@ -1192,8 +1192,19 @@ void  G_Automation_NoteGathered(uint32_t uid, const char *rname, int amount);
 void  G_Automation_SetDistrictWeight(int district, const char *rname, float weight);
 float G_Automation_GetDistrictWeight(int district, const char *rname);
 /* Whether workers carry goods from the district's stores to other districts; carts always do */
+/* Whether a district's workers carry its goods to other districts: left to
+ * the automation, the carts serve those flows first and workers fill the
+ * gaps; or always; or never */
+enum carry_out_mode{
+    CARRY_OUT_AUTO,
+    CARRY_OUT_ON,
+    CARRY_OUT_OFF,
+};
+
 void  G_Automation_SetWorkersCarryOut(int district, bool on);
 bool  G_Automation_GetWorkersCarryOut(int district);
+void  G_Automation_SetCarryOutMode(int district, enum carry_out_mode mode);
+enum carry_out_mode G_Automation_GetCarryOutMode(int district);
 /* How many of a faction's workers of no district build at once */
 void G_Automation_SetCrewSize(int faction, int size);
 int  G_Automation_GetCrewSize(int faction);

@@ -382,6 +382,8 @@ static PyObject *PyPf_set_district_weight(PyObject *self, PyObject *args);
 static PyObject *PyPf_workers_carry_out(PyObject *self, PyObject *args);
 static PyObject *PyPf_open_requests(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_workers_carry_out(PyObject *self, PyObject *args);
+static PyObject *PyPf_carry_out_mode(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_carry_out_mode(PyObject *self, PyObject *args);
 static PyObject *PyPf_crew_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_crew_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_crew_busy(PyObject *self, PyObject *args);
@@ -1522,6 +1524,16 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_set_workers_carry_out, METH_VARARGS,
     "Takes a district ID and whether workers carry goods from its stores to other districts. "
     "Carts always do."},
+
+    {"carry_out_mode",
+    (PyCFunction)PyPf_carry_out_mode, METH_VARARGS,
+    "Takes a district ID. Returns whether its workers carry its goods to other districts: "
+    "pf.CARRY_OUT_AUTO (once the carts leave a flow waiting), pf.CARRY_OUT_ON or pf.CARRY_OUT_OFF."},
+
+    {"set_carry_out_mode",
+    (PyCFunction)PyPf_set_carry_out_mode, METH_VARARGS,
+    "Takes a district ID and one of pf.CARRY_OUT_AUTO, pf.CARRY_OUT_ON and pf.CARRY_OUT_OFF: "
+    "whether its workers carry its goods to other districts. Carts always do."},
 
     {"crew_size",
     (PyCFunction)PyPf_crew_size, METH_VARARGS,
@@ -6601,6 +6613,28 @@ static PyObject *PyPf_set_workers_carry_out(PyObject *self, PyObject *args)
         return NULL;
     }
     G_Automation_SetWorkersCarryOut(district, on);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_carry_out_mode(PyObject *self, PyObject *args)
+{
+    int district;
+    if(!PyArg_ParseTuple(args, "i", &district)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a district ID.");
+        return NULL;
+    }
+    return PyInt_FromLong(G_Automation_GetCarryOutMode(district));
+}
+
+static PyObject *PyPf_set_carry_out_mode(PyObject *self, PyObject *args)
+{
+    int district, mode;
+    if(!PyArg_ParseTuple(args, "ii", &district, &mode) || district <= 0
+    || mode < CARRY_OUT_AUTO || mode > CARRY_OUT_OFF) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a district ID and a pf.CARRY_OUT_* mode.");
+        return NULL;
+    }
+    G_Automation_SetCarryOutMode(district, mode);
     Py_RETURN_NONE;
 }
 
