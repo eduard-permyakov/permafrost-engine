@@ -59,6 +59,7 @@
 
 #include <stdint.h>
 #include <limits.h>
+#include <math.h>
 #include <assert.h>
 
 #include "../mem.h"
@@ -72,6 +73,7 @@
 
 #define UID_NONE  (~((uint32_t)0))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
 
 #define FOUND_RETRY_TICKS (10)
 #define SUPPLY_RETRY_TICKS (20)
@@ -80,6 +82,10 @@
 #define FOUND_CLEAR_TICKS (40)
 #define FOUND_WAIT_TICKS  (600) /* half a minute for a busy footprint to empty before giving up */
 #define STILL_ARRIVAL_TICKS (40)
+/* How much farther a builder walks to a tile site nobody works on than to one another builder has */
+#define ROAD_TILE_LINK      (64.0f)
+/* The most road tiles looked over for the next site to lay */
+#define MAX_TILE_SITES      (512)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -115,6 +121,7 @@ static void approach(uint32_t uid, struct builderstate *bs, uint32_t building);
 static void next_command(uint32_t uid);
 static bool wants_builder(uint32_t building);
 static bool start_build(uint32_t uid, uint32_t building, bool ordered);
+static uint32_t next_tile_site(uint32_t uid, uint32_t done);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -206,11 +213,31 @@ static void complete(struct builderstate *bs, uint32_t uid)
 {
     struct duty duty;
     bool had = G_Duty_Get(uid, &duty);
-    G_Building_Complete(bs->target_uid);
+    uint32_t done = bs->target_uid;
+    uint32_t next = next_tile_site(uid, done);
+    G_Building_Complete(done);
     if(had) {
         G_Duty_TagNext(uid, duty.by);
     }
     finish_building(bs, uid, true);
+
+    /* A road is laid on to its last joined tile, with no stop between them */
+    size_t ncmds;
+    const struct command *cmds = G_Command_Get(uid, &ncmds);
+    /* The return to the site it fetched for is moot once the site stands */
+    if(ncmds == 1 && cmds[0].kind == CMD_BUILD && cmds[0].target == done) {
+        G_Command_Clear(uid);
+        ncmds = 0;
+    }
+    if(next != NULL_UID && ncmds == 0 && G_Duty_Kind(uid) != DUTY_GATHER && G_EntityExists(next)) {
+        G_Duty_End(uid, NULL);
+        if(had) {
+            G_Duty_TagNext(uid, duty.by);
+        }
+        bool ordered = had && duty.by == DUTY_BY_PLAYER;
+        if(ordered ? G_Builder_Order(uid, next) : G_Builder_Build(uid, next))
+            return;
+    }
     /* Not the field it went on to work, whose duty it has just taken */
     if(G_Duty_Kind(uid) != DUTY_GATHER) {
         G_Duty_End(uid, NULL);
@@ -220,6 +247,79 @@ static void complete(struct builderstate *bs, uint32_t uid)
         G_Harvester_BringInLoad(uid, NULL_UID, false);
     }
     next_command(uid);
+}
+
+static bool open_tile_site(uint32_t uid, void *arg)
+{
+    int faction = *(const int*)arg;
+    uint32_t flags = G_FlagsGet(uid);
+    return (flags & ENTITY_FLAG_BUILDING) && !(flags & ENTITY_FLAG_ZOMBIE)
+        && G_GetFactionID(uid) == faction && G_Building_GetPathable(uid)
+        && !G_Building_IsCompleted(uid);
+}
+
+/* The open tile site over a road tile, if there is one */
+static uint32_t tile_site_at(struct road_desc rd, int faction)
+{
+    vec2_t lo, hi;
+    if(!G_Roads_Bounds(rd, &lo, &hi))
+        return NULL_UID;
+    vec2_t centre = (vec2_t){(lo.x + hi.x) / 2.0f, (lo.z + hi.z) / 2.0f};
+    /* The query fills its buffer before the filter, and the ground about a road is crowded */
+    uint32_t found[256];
+    size_t nfound = G_Pos_EntsInCircleWithPred(centre, (hi.x - lo.x) / 2.0f - 1.0f, found,
+        ARR_SIZE(found), open_tile_site, &faction);
+    return nfound ? found[0] : NULL_UID;
+}
+
+/* The unfinished tile site joined to a finished one along the road and the
+ * sites still to be laid, nearest the builder and fewest at it; none for a
+ * building that is no tile site */
+static uint32_t next_tile_site(uint32_t uid, uint32_t done)
+{
+    struct road_desc start;
+    if(!G_EntityExists(done) || !G_Building_GetPathable(done)
+    || !G_Roads_DescForPoint(G_Pos_GetXZ(done), &start))
+        return NULL_UID;
+
+    int faction = G_GetFactionID(done);
+    vec2_t from = G_Pos_GetXZ(uid);
+    struct road_desc tiles[MAX_TILE_SITES];
+    size_t ntiles = 0, head = 0;
+    tiles[ntiles++] = start;
+
+    uint32_t best = NULL_UID;
+    float best_cost = INFINITY;
+    while(head < ntiles) {
+        struct road_desc curr = tiles[head++];
+        for(int dr = -1; dr <= 1; dr++) {
+        for(int dc = -1; dc <= 1; dc++) {
+            struct road_desc next = (struct road_desc){curr.r + dr, curr.c + dc};
+            bool seen = false;
+            for(int j = 0; j < ntiles && !seen; j++) {
+                seen = (tiles[j].r == next.r && tiles[j].c == next.c);
+            }
+            if(seen || ntiles == MAX_TILE_SITES)
+                continue;
+            uint8_t links;
+            uint32_t site = tile_site_at(next, faction);
+            if(site == NULL_UID && !G_Roads_Get(next, &links))
+                continue;
+            tiles[ntiles++] = next;
+            if(site == NULL_UID || site == done)
+                continue;
+
+            vec2_t pos = G_Pos_GetXZ(site);
+            vec2_t delta;
+            PFM_Vec2_Sub(&pos, &from, &delta);
+            float cost = PFM_Vec2_Len(&delta) + G_Duty_CountAt(site, DUTY_BUILD, NULL) * 2 * ROAD_TILE_LINK;
+            if(cost < best_cost) {
+                best = site;
+                best_cost = cost;
+            }
+        }}
+    }
+    return best;
 }
 
 static void on_build_anim_finished(void *user, void *event)
