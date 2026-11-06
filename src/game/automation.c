@@ -159,6 +159,9 @@
 /* How far off a node lies, in these units, that halves a good's draw */
 #define BREADTH_SCALE                (100.0f)
 #define MAX_TRACE_STEPS              (24)
+#define MAX_WORK_EVENTS              (6)
+/* How soon a work event told again is taken as the same one, 10 s */
+#define EVENT_REPEAT_TICKS           (200)
 #define MAX_VACANCIES                (256)
 /* How long a workshop's own district has to fill its posts before a worker of
  * no district at the end of its work takes one */
@@ -345,6 +348,15 @@ struct work_trace{
     struct work_step steps[MAX_TRACE_STEPS];
 };
 
+/* What befell a worker at its work since: a meal, a hold-up, a post left;
+ * kept apart from the decision, which they do not change */
+struct work_events{
+    size_t           head;
+    size_t           count;
+    uint32_t         ticks[MAX_WORK_EVENTS];
+    struct work_step steps[MAX_WORK_EVENTS];
+};
+
 /* A worker that could be sent to a post */
 struct post_worker{
     uint32_t uid;
@@ -387,6 +399,7 @@ KHASH_MAP_INIT_INT(state, struct automation_state)
 KHASH_MAP_INIT_INT(count, uint32_t);
 KHASH_MAP_INIT_INT64(pending, struct pending)
 KHASH_MAP_INIT_INT(trace, struct work_trace)
+KHASH_MAP_INIT_INT(events, struct work_events)
 
 static void on_order_issued(void *user, void *event);
 static void on_player_order_issued(void *user, void *event);
@@ -436,6 +449,7 @@ static khash_t(pending)*s_pending;
 static uint32_t        s_tick;
 static struct work_snapshot s_snapshot;
 static khash_t(trace)  *s_traces;
+static khash_t(events) *s_events;
 /* Settings of the realms and their districts, few enough to look up in turn */
 static vec_priority_t  s_priorities;
 /* Districts whose stores only carts carry out of; not saved, the scripts set them again */
@@ -514,9 +528,66 @@ static void trace_push(uint32_t uid, struct work_step step)
     trace->steps[trace->nsteps++] = step;
 }
 
+/* What happens to a worker at its work, rather than the choice of it */
+static bool trace_is_event(const char *kind, const char *why)
+{
+    static const char *events[] = {"meal", "duty", "walled", "crowded", "stalled"};
+    for(int i = 0; i < ARR_SIZE(events); i++) {
+        if(!strcmp(kind, events[i]))
+            return true;
+    }
+    return !strcmp(kind, "post") && strcmp(why, "workshop") && strcmp(why, "manned");
+}
+
+/* Notes of nothing happening, which would only crowd out what did */
+static bool trace_is_noise(const char *kind, const char *verdict, const char *why)
+{
+    return (!strcmp(kind, "meal") && !strcmp(verdict, "skipped"))
+        || (!strcmp(kind, "duty") && !strcmp(why, "resumed"));
+}
+
+static bool same_str(const char *a, const char *b)
+{
+    if(!a || !b)
+        return a == b;
+    return !strcmp(a, b);
+}
+
+static void event_push(uint32_t uid, struct work_step step)
+{
+    if(!(G_FlagsGet(uid) & (ENTITY_FLAG_HARVESTER | ENTITY_FLAG_BUILDER)))
+        return;
+    int status;
+    khiter_t k = kh_put(events, s_events, uid, &status);
+    if(status == -1)
+        return;
+    struct work_events *ev = &kh_value(s_events, k);
+    if(status != 0) {
+        ev->head = 0;
+        ev->count = 0;
+    }
+    /* The same thing told again soon after is the one event */
+    if(ev->count > 0) {
+        int last = (ev->head + MAX_WORK_EVENTS - 1) % MAX_WORK_EVENTS;
+        const struct work_step *prev = &ev->steps[last];
+        if(s_tick - ev->ticks[last] < EVENT_REPEAT_TICKS
+        && same_str(prev->kind, step.kind) && same_str(prev->why, step.why) && prev->target == step.target
+        && !strcmp(prev->rname, step.rname)) {
+            ev->ticks[last] = s_tick;
+            return;
+        }
+    }
+    ev->ticks[ev->head] = s_tick;
+    ev->steps[ev->head] = step;
+    ev->head = (ev->head + 1) % MAX_WORK_EVENTS;
+    ev->count = MIN(ev->count + 1, MAX_WORK_EVENTS);
+}
+
 static void trace_note(uint32_t uid, const char *kind, const char *verdict, const char *why, 
                        const char *rname, uint32_t target)
 {
+    if(trace_is_noise(kind, verdict, why))
+        return;
     struct work_step step = (struct work_step){
         .kind = kind,
         .verdict = verdict,
@@ -524,6 +595,10 @@ static void trace_note(uint32_t uid, const char *kind, const char *verdict, cons
         .target = target
     };
     pf_strlcpy(step.rname, rname ? rname : "", sizeof(step.rname));
+    if(trace_is_event(kind, why)) {
+        event_push(uid, step);
+        return;
+    }
     trace_push(uid, step);
 }
 
@@ -680,7 +755,6 @@ static void settle_stopping(void)
         /* A hungry worker's next job is its meal, and so is one about to be */
         bool due = G_Provision_DueSoon(uid);
         if(due && G_Provision_Fetch(uid)) {
-            trace_note(uid, "meal", "taken", "due", NULL, NULL_UID);
             astate->state = STATE_ACTIVE;
             continue;
         }
@@ -3175,6 +3249,10 @@ void G_Automation_RemoveEntity(uint32_t uid)
     if(k != kh_end(s_traces)) {
         kh_del(trace, s_traces, k);
     }
+    k = kh_get(events, s_events, uid);
+    if(k != kh_end(s_events)) {
+        kh_del(events, s_events, k);
+    }
 }
 
 bool G_Automation_Init(void)
@@ -3188,6 +3266,8 @@ bool G_Automation_Init(void)
         goto fail_pending;
     if((s_traces = kh_init(trace)) == NULL)
         goto fail_traces;
+    if((s_events = kh_init(events)) == NULL)
+        goto fail_events;
     if((s_reassigned = kh_init(count)) == NULL)
         goto fail_reassigned;
     s_tick = 0;
@@ -3207,6 +3287,8 @@ bool G_Automation_Init(void)
     return true;
 
 fail_reassigned:
+    kh_destroy(events, s_events);
+fail_events:
     kh_destroy(trace, s_traces);
 fail_traces:
     kh_destroy(pending, s_pending);
@@ -3255,6 +3337,21 @@ size_t G_Automation_GetTrace(uint32_t uid, size_t maxout, struct work_step out[]
     return ret;
 }
 
+size_t G_Automation_GetEvents(uint32_t uid, size_t maxout, struct work_step out[], int out_age_ms[])
+{
+    khiter_t k = kh_get(events, s_events, uid);
+    if(k == kh_end(s_events))
+        return 0;
+    const struct work_events *ev = &kh_value(s_events, k);
+    size_t ret = MIN(ev->count, maxout);
+    for(int i = 0; i < ret; i++) {
+        size_t idx = (ev->head + MAX_WORK_EVENTS - 1 - i) % MAX_WORK_EVENTS;
+        out[i] = ev->steps[idx];
+        out_age_ms[i] = (s_tick - ev->ticks[idx]) * TICK_MS;
+    }
+    return ret;
+}
+
 int G_Automation_AssignedTransporters(uint32_t site)
 {
     int cid = G_Cluster_Of(site);
@@ -3281,6 +3378,7 @@ void G_Automation_Shutdown(void)
     vec_district_destroy(&s_kept_home);
     vec_entity_destroy(&s_stopping);
     kh_destroy(count, s_reassigned);
+    kh_destroy(events, s_events);
     kh_destroy(trace, s_traces);
     kh_destroy(pending, s_pending);
     kh_destroy(count, s_transport_count);
@@ -3893,7 +3991,7 @@ bool G_Automation_OutputStocked(uint32_t site, const char *rname, int limit)
 void G_Automation_TraceFollowOn(uint32_t uid, const char *kind, const char *why, 
                                 const char *rname, uint32_t target)
 {
-    if(!trace_get(uid, true))
+    if(!trace_is_event(kind, why) && !trace_get(uid, true))
         return;
     trace_note(uid, kind, "taken", why, rname, target);
 }

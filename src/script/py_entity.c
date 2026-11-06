@@ -88,6 +88,7 @@ static PyObject *PyEntity_get_name(PyEntityObject *self, void *closure);
 static int       PyEntity_set_name(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_zombie(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_duty(PyEntityObject *self, void *closure);
+static PyObject *PyEntity_get_duty_age(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_height(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_pos(PyEntityObject *self, void *closure);
 static int       PyEntity_set_pos(PyEntityObject *self, PyObject *value, void *closure);
@@ -317,6 +318,10 @@ static PyGetSetDef PyEntity_getset[] = {
     "store its loads go to, the site, the store it supplies, the workshop or the building, the good "
     "for gathering and supplying, 'by' one of 'player', 'city' or 'automation', and 'waiting' whether "
     "a supplier stands by for its next request. None without a duty.",
+    NULL},
+    {"duty_age",
+    (getter)PyEntity_get_duty_age, NULL,
+    "How many seconds the unit has been at its duty, or 0 without one.",
     NULL},
     {"height",
     (getter)PyEntity_get_height, NULL,
@@ -1017,6 +1022,7 @@ static PyObject *PyHarvesterEntity_get_pinned_work(PyHarvesterEntityObject *self
 static PyObject *PyHarvesterEntity_get_player_managed(PyHarvesterEntityObject *self, void *closure);
 static PyObject *PyHarvesterEntity_get_order_hold(PyHarvesterEntityObject *self, void *closure);
 static PyObject *PyHarvesterEntity_get_work_trace(PyHarvesterEntityObject *self, void *closure);
+static PyObject *PyHarvesterEntity_get_work_events(PyHarvesterEntityObject *self, void *closure);
 static PyObject *PyHarvesterEntity_get_queued_gather(PyHarvesterEntityObject *self, void *closure);
 static PyObject *PyHarvesterEntity_get_home_district(PyHarvesterEntityObject *self, void *closure);
 static int       PyHarvesterEntity_set_home_district(PyHarvesterEntityObject *self, PyObject *value, void *closure);
@@ -1160,6 +1166,11 @@ static PyGetSetDef PyHarvesterEntity_getset[] = {
     "The worker's last decision about its work: (seconds ago, [(kind, verdict, why, resource, "
     "target, need, workers, wanted, stock, stock target, score), ...]), the steps in the order "
     "they were weighed.",
+    NULL},
+    {"work_events",
+    (getter)PyHarvesterEntity_get_work_events, NULL,
+    "What befell the worker at its work since its decision, the latest first: [(seconds ago, kind, "
+    "why, resource, target), ...], such as a meal, a hold-up or a post left.",
     NULL},
     {"automatic_transport",
     (getter)PyHarvesterEntity_get_automatic_transport, (setter)PyHarvesterEntity_set_automatic_transport,
@@ -2080,6 +2091,11 @@ static PyObject *PyEntity_get_duty(PyEntityObject *self, void *closure)
     PyObject *target = (d.target != NULL_UID) ? S_Entity_ObjForUID(d.target) : NULL;
     return Py_BuildValue("(sOssO)", G_Duty_KindName(d.kind), target ? target : Py_None, d.good,
         G_Duty_ByName(d.by), d.waiting ? Py_True : Py_False);
+}
+
+static PyObject *PyEntity_get_duty_age(PyEntityObject *self, void *closure)
+{
+    return PyFloat_FromDouble(G_Duty_AgeTicks(self->ent) / 20.0f);
 }
 
 static PyObject *PyEntity_get_height(PyEntityObject *self, void *closure)
@@ -5396,6 +5412,29 @@ static PyObject *PyHarvesterEntity_get_work_trace(PyHarvesterEntityObject *self,
         PyList_SET_ITEM(list, i, tuple);
     }
     return Py_BuildValue("(fN)", age_ms / 1000.0f, list);
+}
+
+static PyObject *PyHarvesterEntity_get_work_events(PyHarvesterEntityObject *self, void *closure)
+{
+    struct work_step steps[16];
+    int ages_ms[16];
+    size_t nsteps = G_Automation_GetEvents(self->super.ent, ARR_SIZE(steps), steps, ages_ms);
+
+    PyObject *list = PyList_New(nsteps);
+    if(!list)
+        return NULL;
+    for(int i = 0; i < nsteps; i++) {
+        const struct work_step *step = &steps[i];
+        PyObject *target = (step->target != NULL_UID) ? S_Entity_ObjForUID(step->target) : NULL;
+        PyObject *tuple = Py_BuildValue("(fsssO)", ages_ms[i] / 1000.0f, step->kind, step->why,
+            step->rname, target ? target : Py_None);
+        if(!tuple) {
+            Py_DECREF(list);
+            return NULL;
+        }
+        PyList_SET_ITEM(list, i, tuple);
+    }
+    return list;
 }
 
 static PyObject *PyHarvesterEntity_get_pinned_work(PyHarvesterEntityObject *self, void *closure)

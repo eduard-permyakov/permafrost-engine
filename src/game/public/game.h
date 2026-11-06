@@ -1224,6 +1224,8 @@ struct work_step{
 
 /* The steps of the worker's last decision, in the order they were weighed, and how long ago it was made */
 size_t G_Automation_GetTrace(uint32_t uid, size_t maxout, struct work_step out[], int *out_age_ms);
+/* What befell the worker at its work since, the latest first, and how long ago each */
+size_t G_Automation_GetEvents(uint32_t uid, size_t maxout, struct work_step out[], int out_age_ms[]);
 /* How many automated carriers are bound for the site's pool */
 int  G_Automation_AssignedTransporters(uint32_t site);
 /* Whether a worker that gathered 'rname' at 'node' by its own choice should

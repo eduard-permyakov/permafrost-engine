@@ -279,11 +279,14 @@ static bool fetch(uint32_t uid, struct provision *p)
      */
     if(carrying(uid)) {
         bool back = (G_Duty_Kind(uid) == DUTY_GATHER);
-        if(G_Harvester_BringInLoad(uid, site, back) || G_Harvester_BringInLoad(uid, NULL_UID, back))
+        if(G_Harvester_BringInLoad(uid, site, back) || G_Harvester_BringInLoad(uid, NULL_UID, back)) {
+            G_Automation_TraceFollowOn(uid, "meal", "due", NULL, site);
             return true;
+        }
     }
 
     if(p->fetching == NULL_UID) {
+        G_Automation_TraceFollowOn(uid, "meal", "due", NULL, site);
         p->go_back = !(G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER);
         p->post = G_Pos_GetXZ(uid);
         p->tries = 0;
