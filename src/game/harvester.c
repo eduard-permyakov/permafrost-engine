@@ -99,6 +99,8 @@
 #define HUNT_RANGE_SLACK    (16.0f)
 /* How far off its mark a hunter may face and still shoot (cosine of half the angle) */
 #define HUNT_AIM_COS        (0.995f)
+/* How far past touching a carcass may lie and still be butchered */
+#define BUTCHER_SLACK       (16.0f)
 /* How far from the node the player sent it to a gatherer goes on to others of
  * the good, when that one is crowded, out of reach or used up */
 #define ORDER_RADIUS        (300.0f)
@@ -273,6 +275,8 @@ static int  home_bound(uint32_t uid);
 static bool hunted(uint32_t res);
 static bool failed_node(const struct hstate *hs, uint32_t node);
 static void hunt_hit(uint32_t uid, struct hstate *hs);
+static void walk_up(uint32_t uid, uint32_t res);
+static bool beyond_reach(uint32_t uid, uint32_t res);
 static bool regather(uint32_t uid, uint32_t resource);
 static int  amount_en_route(uint32_t target, const char *rname, uint32_t exclude, float within);
 static int  dest_room(uint32_t uid, const struct hstate *hs);
@@ -1290,6 +1294,11 @@ static void on_harvest_anim_finished(void *user, void *event)
         hunt_hit(uid, hs);
         return;
     }
+    /* Game another brought down is butchered from beside it, not a bowshot off */
+    if(beyond_reach(uid, hs->res_uid)) {
+        walk_up(uid, hs->res_uid);
+        return;
+    }
 
     const char *rname = G_Resource_GetName(hs->res_uid);
     int resource_left = G_Resource_GetAmount(hs->res_uid);
@@ -1399,6 +1408,17 @@ static bool in_hunt_range(uint32_t uid, uint32_t res)
     return PFM_Vec2_Len(&delta) <= HUNT_RANGE + HUNT_RANGE_SLACK + G_GetSelectionRadius(res);
 }
 
+/* Well clear of the resource, as a hunter whose game another brought down stands */
+static bool beyond_reach(uint32_t uid, uint32_t res)
+{
+    vec2_t a = G_Pos_GetXZ(uid);
+    vec2_t b = G_Pos_GetXZ(res);
+    vec2_t delta;
+    PFM_Vec2_Sub(&b, &a, &delta);
+    float reach = G_GetSelectionRadius(uid) + G_GetSelectionRadius(res) + BUTCHER_SLACK;
+    return PFM_Vec2_Len(&delta) > reach && !M_NavObjAdjacent(s_map, uid, res);
+}
+
 /* Where a harvester works a resource from: beside it, or for game still
  * standing, within a bowshot */
 static bool at_resource(uint32_t uid, uint32_t res)
@@ -1438,7 +1458,12 @@ static void hunt_hit(uint32_t uid, struct hstate *hs)
     E_Entity_Notify(EVENT_HUNT_HIT, res, (void*)((uintptr_t)uid), ES_ENGINE);
     if(hits > 0)
         return;
+    walk_up(uid, res);
+}
 
+/* Stops working the resource from where it stands and goes beside it */
+static void walk_up(uint32_t uid, uint32_t res)
+{
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished);
     E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin_harvest);
     E_Entity_Notify(EVENT_HARVEST_END, uid, NULL, ES_ENGINE);
