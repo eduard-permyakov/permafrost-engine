@@ -166,7 +166,7 @@ static void on_motion_begin(void *user, void *event)
     E_Entity_Notify(EVENT_BUILD_END, uid, NULL, ES_ENGINE);
 }
 
-static void finish_building(struct builderstate *bs, uint32_t uid)
+static void finish_building(struct builderstate *bs, uint32_t uid, bool work_field)
 {
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_build_anim_finished);
     E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin);
@@ -190,7 +190,8 @@ static void finish_building(struct builderstate *bs, uint32_t uid)
     size_t ncmds;
     G_Command_Get(uid, &ncmds);
 
-    if(G_Building_IsCompleted(building)
+    if(work_field
+    && G_Building_IsCompleted(building)
     && (G_FlagsGet(building) & ENTITY_FLAG_RESOURCE)
     && (G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER)
     && ncmds == 0
@@ -209,7 +210,7 @@ static void complete(struct builderstate *bs, uint32_t uid)
     if(had) {
         G_Duty_TagNext(uid, duty.by);
     }
-    finish_building(bs, uid);
+    finish_building(bs, uid, true);
     /* Not the field it went on to work, whose duty it has just taken */
     if(G_Duty_Kind(uid) != DUTY_GATHER) {
         G_Duty_End(uid, NULL);
@@ -229,7 +230,7 @@ static void on_build_anim_finished(void *user, void *event)
 
     if(!G_EntityExists(bs->target_uid)|| (G_FlagsGet(bs->target_uid) & ENTITY_FLAG_ZOMBIE)
     || G_Combat_IsDying(bs->target_uid)) {
-        finish_building(bs, uid);
+        finish_building(bs, uid, false);
         next_command(uid);
         return;
     }
@@ -372,7 +373,7 @@ static void proceed_at_site(uint32_t uid, struct builderstate *bs)
     if(G_Building_IsCompleted(bs->target_uid)
     && (G_FlagsGet(bs->target_uid) & ENTITY_FLAG_RESOURCE)
     && (G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER)) {
-        finish_building(bs, uid);
+        finish_building(bs, uid, true);
         next_command(uid);
         return;
     }
@@ -667,7 +668,7 @@ bool G_Builder_PlayerOrder(uint32_t uid, uint32_t building)
     if(!bs || !G_EntityExists(building) || !wants_builder(building))
         return false;
 
-    finish_building(bs, uid);
+    finish_building(bs, uid, false);
     G_StopEntity(uid, true, true);
     /* Before the order, which may already queue the return to the site it is to supply */
     G_NotifyOrderIssued(uid, true, true);
@@ -786,7 +787,7 @@ void G_Builder_Stop(uint32_t uid)
 {
     struct builderstate *bs = builderstate_get(uid);
     assert(bs);
-    finish_building(bs, uid);
+    finish_building(bs, uid, false);
 }
 
 bool G_Builder_WaitingSupply(uint32_t uid)

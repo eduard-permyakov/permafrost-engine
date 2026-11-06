@@ -73,6 +73,10 @@
 #define WAIT_CHECK_TICKS    (20)
 /* How close to its target a supplier stands by */
 #define WAIT_REACH          (30.0f)
+/* How many looks a gatherer the automation keeps waits for room, about 30 s */
+#define GATHER_WAIT_CHECKS  (30)
+/* How long a tag waits for the duty it was set for */
+#define TAG_TICKS           (1)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -97,7 +101,13 @@ struct target_counts{
 
 KHASH_MAP_INIT_INT(duty, struct duty)
 KHASH_MAP_INIT_INT(counts, struct target_counts)
-KHASH_MAP_INIT_INT(tag, int)
+/* Who gives a unit's next duty, and when it was said */
+struct tag {
+    enum duty_by by;
+    uint32_t     tick;
+};
+
+KHASH_MAP_INIT_INT(tag, struct tag)
 
 static void on_20hz_tick(void *user, void *event);
 
@@ -200,8 +210,12 @@ static bool take_tag(uint32_t uid, enum duty_by *out)
     khiter_t k = kh_get(tag, s_tags, uid);
     if(k == kh_end(s_tags))
         return false;
-    *out = kh_value(s_tags, k);
+    struct tag t = kh_value(s_tags, k);
     kh_del(tag, s_tags, k);
+    /* One left over from an order that came to nothing is not this duty's */
+    if(s_tick - t.tick > TAG_TICKS)
+        return false;
+    *out = t.by;
     return true;
 }
 
@@ -323,8 +337,17 @@ static bool resume_ingredient(uint32_t uid, struct duty *d)
 {
     if(G_Garrison_IsIngredient(uid))
         return true;
+    int tries = d->fails + 1;
+    if(tries >= MAX_FAILS) {
+        end(uid, d, "no_door");
+        return false;
+    }
     if(!G_Garrison_EnterAsIngredient(d->target, uid))
         return fail(uid, d, "no_door");
+    /* Taking the duty over again zeroes the tries that came to nothing */
+    if((d = duty_get(uid)) != NULL) {
+        d->fails = tries;
+    }
     return true;
 }
 
@@ -338,6 +361,11 @@ static void resume_waiting_gatherer(uint32_t uid, struct duty *d)
     }
     if(G_Move_Still(uid)) {
         G_Harvester_BringInLoad(uid, NULL_UID, true);
+    }
+    /* One the automation keeps is free for other work while the stores are full */
+    d = duty_get(uid);
+    if(d && d->waiting && d->by != DUTY_BY_PLAYER && ++d->fails >= GATHER_WAIT_CHECKS) {
+        end(uid, d, "no_room");
     }
 }
 
@@ -437,9 +465,15 @@ void G_Duty_RemoveEntity(uint32_t uid)
     });
     for(int i = 0; i < nholders; i++) {
         d = duty_get(holders[i]);
-        if(d) {
-            end(holders[i], d, "gone");
+        if(!d)
+            continue;
+        /* A gatherer keeps its good: its next load finds it a store */
+        if(d->kind == DUTY_GATHER) {
+            count_add(d->target, d->kind, d->good, -1);
+            d->target = NULL_UID;
+            continue;
         }
+        end(holders[i], d, "gone");
     }
     khiter_t k = kh_get(counts, s_counts, uid);
     if(k != kh_end(s_counts)) {
@@ -514,7 +548,7 @@ void G_Duty_TagNext(uint32_t uid, enum duty_by by)
     khiter_t k = kh_put(tag, s_tags, uid, &status);
     if(status == -1)
         return;
-    kh_value(s_tags, k) = by;
+    kh_value(s_tags, k) = (struct tag){by, s_tick};
 }
 
 void G_Duty_End(uint32_t uid, const char *why)
@@ -703,7 +737,7 @@ bool G_Duty_SaveState(struct SDL_RWops *stream)
             {.type = TYPE_INT,  .val.as_int = d.kind},
             {.type = TYPE_INT,  .val.as_int = d.by},
             {.type = TYPE_INT,  .val.as_int = d.target},
-            {.type = TYPE_INT,  .val.as_int = d.since_tick},
+            {.type = TYPE_INT,  .val.as_int = s_tick - d.since_tick},
             {.type = TYPE_BOOL, .val.as_bool = d.waiting},
         };
         for(int i = 0; i < ARR_SIZE(attrs); i++) {
@@ -756,7 +790,7 @@ bool G_Duty_LoadState(struct SDL_RWops *stream)
             .kind = vals[1],
             .by = vals[2],
             .target = vals[3],
-            .since_tick = vals[4],
+            .since_tick = s_tick - (uint32_t)vals[4],
             .waiting = waiting,
         };
         pf_strlcpy(d->good, attr.val.as_string, sizeof(d->good));

@@ -5011,7 +5011,11 @@ static PyObject *PyHarvesterEntity_gather(PyHarvesterEntityObject *self, PyObjec
     }
 
     G_StopEntity(self->super.ent, true, true);
+    if(!player) {
+        G_Duty_TagNext(self->super.ent, G_Automation_ManagedBy(self->super.ent));
+    }
     if(!G_Harvester_Gather(self->super.ent, resource->super.ent)) {
+        G_Duty_End(self->super.ent, NULL);
         PyErr_SetString(PyExc_RuntimeError, "Unable to gather the specified resource.");
         return NULL;
     }

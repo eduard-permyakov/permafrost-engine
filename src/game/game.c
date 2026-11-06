@@ -4007,13 +4007,14 @@ void G_Zombiefy(uint32_t uid, bool invis)
     G_Resource_RemoveEntity(uid);
     G_Cluster_RemoveEntity(uid);
     G_StorageSite_RemoveEntity(uid);
+    /* Its post holders are let out while it can still let them out */
+    G_Posts_RemoveEntity(uid);
     G_Garrison_RemoveGarrison(uid);
     G_Garrison_RemoveGarrisonable(uid);
     G_Population_RemoveContributor(uid);
     G_Population_RemoveLimitContributor(uid);
     G_Automation_RemoveEntity(uid);
     G_Provision_RemoveEntity(uid);
-    G_Posts_RemoveEntity(uid);
     G_Group_RemoveEntity(uid);
     G_Duty_RemoveEntity(uid);
 
@@ -4164,6 +4165,8 @@ void G_NotifyOrderIssued(uint32_t uid, bool clear_harvester, bool player)
     G_Command_Clear(uid);
     E_Global_Notify(EVENT_ORDER_ISSUED, (void*)(uintptr_t)uid, ES_ENGINE);
     if(player) {
+        /* At once, so that the automation cannot hand it work before the event lands */
+        G_Automation_MakePlayerManaged(uid);
         E_Global_Notify(EVENT_PLAYER_ORDER_ISSUED, (void*)(uintptr_t)uid, ES_ENGINE);
     }
 }

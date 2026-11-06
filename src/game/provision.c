@@ -387,6 +387,10 @@ static bool free_to_fetch(uint32_t uid)
     if(G_Automation_PlayerManaged(uid) && !G_Move_Still(uid) && !meal
     && !(G_Duty_Kind(uid) == DUTY_GATHER && G_Duty_ByPlayer(uid)))
         return false;
+    /* A load on its way to the store that asked for it is delivered first */
+    if((flags & ENTITY_FLAG_HARVESTER) && G_Harvester_GetCurrTotalCarry(uid)
+    && G_Harvester_TransportTarget(uid) != NULL_UID && !(p && p->tier == PROVISION_STARVING))
+        return false;
     /* On its way into a building, to be made into something else */
     if((flags & ENTITY_FLAG_GARRISON) && G_Garrison_IsIngredient(uid))
         return false;

@@ -194,6 +194,7 @@ struct hstate{
     /* Ticks it has made no way toward the resource it seeks, and where it last did */
     int         press_ticks;
     vec2_t      press_pos;
+    uint32_t    press_target;
     /* Where the node the gathering was last ordered at stood */
     vec2_t      order_pos;
     /* The nodes it could not get beside since it last got to one, passed
@@ -418,6 +419,7 @@ static bool hstate_init(struct hstate *hs)
     hs->still_ticks = 0;
     hs->press_ticks = 0;
     hs->press_pos = (vec2_t){0.0f, 0.0f};
+    hs->press_target = NULL_UID;
     hs->nfailed = 0;
     hs->gather_for = NULL_UID;
     return true;
@@ -1607,7 +1609,9 @@ static void on_arrive_at_storage(void *user, void *event)
         }
 
         uint32_t resource = target_resource(uid, hs, rname);
-        if(hs->drop_off_only || G_Automation_LeavesGathering(uid, rname, resource)) {
+        /* Its duty ended on the way: the load was the last of it */
+        bool done = hs->drop_off_only || (G_Duty_Kind(uid) != DUTY_GATHER);
+        if(done || G_Automation_LeavesGathering(uid, rname, resource)) {
             hs->state = STATE_NOT_HARVESTING;
             hs->ss_uid = NULL_UID;
             hs->res_name = NULL;
@@ -1806,6 +1810,12 @@ static void on_arrive_at_transport_dest(void *user, void *event)
         finish_transporing(hs);
         return;
     }
+    /* Taken over on the way, it is no longer ours to supply */
+    if(G_GetFactionID(dest_uid) != G_GetFactionID(uid)) {
+        cart_leg_log(uid, "dest-lost", hs->transport_src_uid, dest_uid);
+        finish_transporing(hs);
+        return;
+    }
 
     if((G_FlagsGet(dest_uid) & ENTITY_FLAG_RESOURCE)
     && !G_Resource_IsReplenishing(dest_uid)
@@ -1885,6 +1895,15 @@ static void on_arrive_at_transport_dest(void *user, void *event)
         }
         return;
     }
+    /* A builder that fetched for its site goes back to it */
+    if(hs->queued.cmd != CMD_NONE) {
+        clear_queued_command(uid);
+        return;
+    }
+    /* A standing supplier goes on while its duty holds */
+    struct duty duty;
+    if(!G_Duty_Get(uid, &duty) || duty.kind != DUTY_SUPPLY || duty.target != dest)
+        return;
     if(!G_Harvester_Transport(uid, dest)) {
         cart_leg_log(uid, "idle", NULL_UID, dest);
     }
@@ -2673,8 +2692,11 @@ static void give_up_unreachable(uint32_t tick)
 static bool making_way(uint32_t uid, struct hstate *hs, uint32_t target)
 {
     vec2_t pos = G_Pos_GetXZ(uid);
-    if(hs->press_ticks == 0) {
+    /* A new leg is measured from where it starts */
+    if(hs->press_ticks == 0 || hs->press_target != target) {
         hs->press_pos = pos;
+        hs->press_ticks = 0;
+        hs->press_target = target;
     }
     vec2_t delta;
     PFM_Vec2_Sub(&pos, &hs->press_pos, &delta);

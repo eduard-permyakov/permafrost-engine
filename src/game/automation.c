@@ -719,7 +719,7 @@ static void increment_assigned_transporters(uint32_t site)
 static void try_decrement_assigned_transporters(uint32_t site)
 {
     khiter_t k = kh_get(count, s_transport_count, site);
-    if(k != kh_end(s_transport_count)) {
+    if(k != kh_end(s_transport_count) && kh_val(s_transport_count, k) > 0) {
         kh_val(s_transport_count, k)--;
     }
 }
@@ -3027,7 +3027,15 @@ static void assign_work(void)
     });
     /* One left idle with a duty it could not take up tries again, until it is given up */
     for(int i = 0; i < vec_size(&held); i++) {
-        G_Duty_Resume(vec_AT(&held, i));
+        uint32_t curr = vec_AT(&held, i);
+        if(G_Duty_Resume(curr) || G_Duty_Kind(curr) != DUTY_NONE)
+            continue;
+        /* Given up, it settles like any other: the idle events tell of it */
+        struct automation_state *cstate = astate_get(curr);
+        if(cstate && cstate->state == STATE_IDLE) {
+            cstate->transient_ticks = 0;
+            cstate->state = STATE_STOPPING;
+        }
     }
     vec_entity_destroy(&held);
 
@@ -3242,6 +3250,9 @@ void G_Automation_RemoveEntity(uint32_t uid)
     struct automation_state *astate = astate_get(uid);
     if(!astate)
         return;
+    if(astate->transport_target != NULL_UID) {
+        try_decrement_assigned_transporters(astate->transport_target);
+    }
     E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_order_issued);
     astate_remove(uid);
 
@@ -3717,7 +3728,12 @@ static bool leaves_gathering(uint32_t uid, const char *rname, uint32_t node)
     struct automation_state *astate = astate_get(uid);
     if(!astate || !astate->automatic_work)
         return false;
-    if(strcmp(astate->working, rname) || !strcmp(astate->pinned, rname))
+    /* A field worker or one resumed on its duty did not choose the good here,
+     * but it is the automation's to move all the same */
+    struct duty duty;
+    bool kept = G_Duty_Get(uid, &duty) && duty.kind == DUTY_GATHER
+             && duty.by != DUTY_BY_PLAYER && !strcmp(duty.good, rname);
+    if((strcmp(astate->working, rname) && !kept) || !strcmp(astate->pinned, rname))
         return false;
     if(build_pinned(astate))
         return true;
