@@ -1182,7 +1182,8 @@ static PyMethodDef pf_module_methods[] = {
     {"draw_text_outlined",
     (PyCFunction)PyPf_draw_text_outlined, METH_VARARGS,
     "Draw a text label with the specified bounds (X, Y, W, H) and color (R, G, B, A), outlined in the "
-    "specified color (R, G, B, A). The label lasts for one frame."},
+    "specified color (R, G, B, A), and centred across the bounds if the last argument is true. The label "
+    "lasts for one frame."},
 
     {"dump_framebuffer",
     (PyCFunction)PyPf_dump_framebuffer, METH_VARARGS,
@@ -4507,16 +4508,17 @@ static PyObject *PyPf_draw_text_outlined(PyObject *self, PyObject *args)
     struct rect rect;
     int r, g, b, a;
     int out_r, out_g, out_b, out_a;
+    int centred = 0;
 
-    if(!PyArg_ParseTuple(args, "s(iiii)(iiii)(iiii)", &text, &rect.x, &rect.y, &rect.w, &rect.h, &r, &g,
-        &b, &a, &out_r, &out_g, &out_b, &out_a)) {
+    if(!PyArg_ParseTuple(args, "s(iiii)(iiii)(iiii)|i", &text, &rect.x, &rect.y, &rect.w, &rect.h, &r, &g,
+        &b, &a, &out_r, &out_g, &out_b, &out_a, &centred)) {
         PyErr_SetString(PyExc_TypeError,
-            "Expecting 4 arguments: A text string, a tuple of 4 ints (bounds) and two tuples of 4 ints "
-            "(RGBA color and RGBA outline color).");
+            "Expecting 4 or 5 arguments: A text string, a tuple of 4 ints (bounds), two tuples of 4 ints "
+            "(RGBA color and RGBA outline color) and optionally whether the text is centred.");
         return NULL;
     }
     UI_DrawTextOutlined(text, text_rect_for_labels(rect), (struct rgba){r, g, b, a},
-        (struct rgba){out_r, out_g, out_b, out_a});
+        (struct rgba){out_r, out_g, out_b, out_a}, centred);
     Py_RETURN_NONE;
 }
 

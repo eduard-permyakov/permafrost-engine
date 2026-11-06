@@ -72,6 +72,8 @@ struct text_desc{
     struct rgba rgba;
     /* None if its alpha is 0 */
     struct rgba outline;
+    /* Centred across its rect rather than set at its left */
+    bool        centred;
 };
 
 enum ui_render_mode{
@@ -130,6 +132,12 @@ static void ui_draw_text(const struct text_desc desc)
     assert(canvas);
 
     struct nk_rect  rect = nk_rect(desc.rect.x, desc.rect.y, desc.rect.w, desc.rect.h);
+    if(desc.centred) {
+        const struct nk_user_font *font = s_ctx.style.font;
+        float width = font->width(font->userdata, font->height, desc.text, strlen(desc.text));
+        rect.x += (rect.w - width) / 2.0f;
+        rect.w = width + 1.0f;
+    }
     struct nk_color rgba = nk_rgba(desc.rgba.r, desc.rgba.g, desc.rgba.b, desc.rgba.a);
 
     if(desc.outline.a > 0) {
@@ -721,9 +729,10 @@ void UI_DrawText(const char *text, struct rect rect, struct rgba rgba)
     SDL_UnlockMutex(s_lock);
 }
 
-void UI_DrawTextOutlined(const char *text, struct rect rect, struct rgba rgba, struct rgba outline)
+void UI_DrawTextOutlined(const char *text, struct rect rect, struct rgba rgba, struct rgba outline,
+                         bool centred)
 {
-    struct text_desc d = (struct text_desc){.rect = rect, .rgba = rgba, .outline = outline};
+    struct text_desc d = (struct text_desc){.rect = rect, .rgba = rgba, .outline = outline, .centred = centred};
     pf_strlcpy(d.text, text, sizeof(d.text));
 
     SDL_LockMutex(s_lock);
