@@ -526,6 +526,10 @@ static bool start_build(uint32_t uid, uint32_t building, bool ordered)
 
     if(!(G_FlagsGet(building) & ENTITY_FLAG_BUILDING))
         return false;
+    /* The order given again after each load is no new order */
+    struct duty prior;
+    bool resumed = G_Duty_Get(uid, &prior) && prior.target == building
+                && (prior.kind == DUTY_BUILD || prior.kind == DUTY_SUPPLY);
     G_Duty_Set(uid, DUTY_BUILD, building, NULL, DUTY_BY_PLAYER);
 
     /* A gatherer's trip would otherwise take it off to drop its load once it is there */
@@ -538,7 +542,23 @@ static bool start_build(uint32_t uid, uint32_t building, bool ordered)
     bs->clear_left = INT_MAX;
     /* Set before the approach, which finds a site at hand and goes on at once */
     bs->ordered = ordered;
-    approach(uid, bs, building);
+    /* A founded site short of its materials is fetched for first: the walk
+     * to it is for raising it */
+    if((G_FlagsGet(uid) & ENTITY_FLAG_HARVESTER) && G_Building_IsFounded(building)
+    && !G_Building_IsSupplied(building) && !G_StorageSite_IsSaturated(building)
+    && !unfounded_site_queued(uid) && G_Harvester_SupplyBuilding(uid, building, false)) {
+        bs->state = STATE_NOT_BUILDING;
+        bs->target_uid = building;
+        G_Command_PushFront(uid, (struct command){CMD_BUILD, building});
+    }else{
+        approach(uid, bs, building);
+    }
+    /* One that would go hungry on the way eats first; its duty brings it on.
+     * The ground comes before the meal: a site is nothing until it is founded
+     */
+    if(!resumed && G_Building_IsFounded(building)) {
+        G_Provision_EatFirst(uid, building);
+    }
     return true;
 }
 

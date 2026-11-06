@@ -274,15 +274,13 @@ static bool fetch(uint32_t uid, struct provision *p)
 
     /* A load the store with food does not take goes to one that does first.
      * One gathering by the player's order eats as it drops the load off, and
-     * goes back to its gathering.
+     * goes back to its gathering. A load no store has room for stays in hand:
+     * full stores are no reason to go hungry beside them.
      */
     if(carrying(uid)) {
         bool back = (G_Duty_Kind(uid) == DUTY_GATHER);
-        if(!G_Harvester_BringInLoad(uid, site, back) && !G_Harvester_BringInLoad(uid, NULL_UID, back)) {
-            p->retry_ms = s_now_ms + FETCH_RETRY_MS;
-            return false;
-        }
-        return true;
+        if(G_Harvester_BringInLoad(uid, site, back) || G_Harvester_BringInLoad(uid, NULL_UID, back))
+            return true;
     }
 
     if(p->fetching == NULL_UID) {
@@ -795,6 +793,29 @@ bool G_Provision_Fetch(uint32_t uid)
     struct provision *p = prov_get(uid);
     if(!p)
         return false;
+    return fetch(uid, p);
+}
+
+bool G_Provision_EatFirst(uint32_t uid, uint32_t target)
+{
+    struct provision *p = prov_get(uid);
+    if(!p || !p->automatic || !p->interval_ms || p->no_food || eating(uid))
+        return false;
+    if(p->tier == PROVISION_FED) {
+        if(p->meals > 0)
+            return false;
+        float speed = 1.0f;
+        G_Move_GetMaxSpeed(uid, &speed);
+        uint32_t walk_ms = 0;
+        if(G_EntityExists(target) && !G_EntityIsZombie(target)) {
+            walk_ms = dist_to(uid, target) / MAX(speed, 1.0f) * 1000.0f;
+        }
+        if(p->next_due_ms > s_now_ms + walk_ms + ahead_ms(p, WORK_AHEAD_SHARE))
+            return false;
+    }
+    if(G_FlagsGet(uid) & ENTITY_FLAG_BUILDER) {
+        G_Builder_Stop(uid);
+    }
     return fetch(uid, p);
 }
 

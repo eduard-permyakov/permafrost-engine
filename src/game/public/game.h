@@ -385,6 +385,9 @@ void G_Provision_SetAutomatic(uint32_t uid, bool on);
 bool G_Provision_GetAutomatic(uint32_t uid);
 /* Sends the unit to eat at the nearest store of its food; false if there is none */
 bool G_Provision_Fetch(uint32_t uid);
+/* Sent on an order it would be hungry before the end of, a unit eats first and
+ * its duty takes it on afterwards; whether it went to eat */
+bool G_Provision_EatFirst(uint32_t uid, uint32_t target);
 /* Makes a ranged unit shoot 'good': each unit of it holds 'shots_per_unit' 
  * shots and it carries 'max_units'; with 'automatic', it goes for more by 
  * itself when running low. The unit starts with a full quiver. */
