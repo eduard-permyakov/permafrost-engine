@@ -1627,7 +1627,7 @@ static PyMethodDef pf_module_methods[] = {
     {"provision_demand",
     (PyCFunction)PyPf_provision_demand, METH_VARARGS,
     "Takes a faction ID and returns a dictionary of the rations per minute its units eat, keyed by the "
-    "ID of the district they are in."},
+    "ID of the district they are in, 0 for those out of every district."},
 
     {"cluster_preview_join",
     (PyCFunction)PyPf_cluster_preview_join, METH_VARARGS,

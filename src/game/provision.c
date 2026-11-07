@@ -848,9 +848,8 @@ size_t G_Provision_Demand(int faction, size_t maxout, int out_districts[], float
     kh_foreach_val_ptr(s_table, uid, p, {
         if(G_GetFactionID(uid) != faction || p->interval_ms == 0)
             continue;
+        /* Those out of every district eat all the same, counted under none */
         int district = G_District_Of(uid);
-        if(district == 0)
-            continue;
         int i = 0;
         while(i < ret && out_districts[i] != district)
             i++;
