@@ -112,9 +112,9 @@ vec4 sample_material(int mat_idx, vec2 uv)
 float shadow_factor(vec4 light_space_pos)
 {
     vec3 proj_coords = (light_space_pos.xyz / light_space_pos.w) * 0.5 + 0.5;
-    if(proj_coords.x < 0 || proj_coords.x >= textureSize(shadow_map, 0).x)
+    if(proj_coords.x < 0.0 || proj_coords.x > 1.0)
         return 0.0;
-    if(proj_coords.y < 0 || proj_coords.y >= textureSize(shadow_map, 0).y)
+    if(proj_coords.y < 0.0 || proj_coords.y > 1.0)
         return 0.0;
     if(proj_coords.z > 0.95)
         return 0.0;
