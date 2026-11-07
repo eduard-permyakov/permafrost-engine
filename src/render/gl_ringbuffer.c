@@ -63,6 +63,8 @@
 /* How many discrete sets of data (guarded by fences) the buffer can hold */
 #define NMAXMARKERS     (256)
 #define TIMEOUT_NSEC    (((uint64_t)1) * 1000 * 1000 * 1000)
+/* Where every section begins: a multiple of the largest cache line the GPU reads in */
+#define SECTION_ALIGN   (256)
 
 /* On some hardware persistent mapped buffers are faster. However, they
  * are not part of OpenGL 3.3 core which we are targeting. So, fallback 
@@ -110,13 +112,17 @@ struct gl_ring{
 static bool ring_wait_one(struct gl_ring *ring)
 {
     GL_PERF_ENTER();
-    assert(ring->fences[ring->imark_tail] > 0);
 
-    if(ring->nmarkers == 0)
+    /* The section being written has no fence yet: it is not the GPU's to give back */
+    if(ring->nmarkers == 0 || ring->fences[ring->imark_tail] == 0)
         GL_PERF_RETURN(false);
 
     Uint64 wait_start = SDL_GetPerformanceCounter();
     GLenum result = glClientWaitSync(ring->fences[ring->imark_tail], GL_SYNC_FLUSH_COMMANDS_BIT, TIMEOUT_NSEC);
+    /* A section given up on while the GPU still reads it would be written over by the next push */
+    while(result == GL_TIMEOUT_EXPIRED) {
+        result = glClientWaitSync(ring->fences[ring->imark_tail], 0, TIMEOUT_NSEC);
+    }
     R_GL_PerfStallRecordWait(GL_STALL_RING, result, SDL_GetPerformanceCounter() - wait_start);
 
     glDeleteSync(ring->fences[ring->imark_tail]);
@@ -124,7 +130,7 @@ static bool ring_wait_one(struct gl_ring *ring)
     ring->imark_tail = (ring->imark_tail + 1) % NMAXMARKERS;
     ring->nmarkers--;
 
-    if(result == GL_TIMEOUT_EXPIRED || result == GL_WAIT_FAILED)
+    if(result == GL_WAIT_FAILED)
         GL_PERF_RETURN(false);
 
     GL_PERF_RETURN(true);
@@ -212,6 +218,10 @@ static void flush_last_range(struct gl_ring *ring)
         glFlushMappedBufferRange(GL_TEXTURE_BUFFER, 0, end);
     }
     glBindBuffer(GL_TEXTURE_BUFFER, 0);
+    /* The mapping is not coherent: the GPU sees the writes only past a barrier */
+    if(ring->mode == MODE_PERSISTENT_MAPPED_BUFFER) {
+        glMemoryBarrier(GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
+    }
 }
 
 /*****************************************************************************/
@@ -280,9 +290,20 @@ bool R_GL_RingbufferPush(struct gl_ring *ring, const void *data, size_t size)
         return false;
     }
 
-    while(!ring_section_free(ring, size)) {
+    /* A section shares no cache line with the one before it, which the GPU
+     * may still hold from reading that one: it would then read this one stale */
+    size_t pad = (SECTION_ALIGN - ring->pos % SECTION_ALIGN) % SECTION_ALIGN;
+    if(ring->pos + pad >= ring->size)
+        pad = ring->size - ring->pos;
+    while(!ring_section_free(ring, size + pad)) {
         if(!ring_wait_one(ring))
             return false;
+    }
+    if(pad) {
+        ring->pos = (ring->pos + pad) % ring->size;
+        if(ring->nmarkers) {
+            ring->markers[ring->imark_head].end = ring->pos;
+        }
     }
 
     size_t left = ring->size - ring->pos;
@@ -423,6 +444,13 @@ void R_GL_RingbufferBindLast(struct gl_ring *ring, GLuint tunit, GLuint shader_p
         .val.as_int = bpos
     });
     R_GL_StateInstall(uname_offset, shader_prog);
+    flush_last_range(ring);
+}
+
+void R_GL_RingbufferFlushLast(struct gl_ring *ring)
+{
+    assert(ring->nmarkers);
+    assert(ring->fences[ring->imark_head] == 0);
     flush_last_range(ring);
 }
 

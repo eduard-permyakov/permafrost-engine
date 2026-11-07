@@ -78,6 +78,8 @@ bool            R_GL_RingbufferAppendLast(struct gl_ring *ring, const void *data
 bool            R_GL_RingbufferExtendLast(struct gl_ring *ring, size_t size);
 bool            R_GL_RingbufferGetLastRange(struct gl_ring *ring, size_t *out_begin, size_t *out_end);
 void            R_GL_RingbufferBindLast(struct gl_ring *ring, GLuint tunit, GLuint shader_prog, const char *uname);
+/* Makes the last section's writes visible to the GPU where it is read other than through BindLast */
+void            R_GL_RingbufferFlushLast(struct gl_ring *ring);
 void            R_GL_RingbufferSyncLast(struct gl_ring *ring);
 GLuint          R_GL_RingbufferGetVBO(struct gl_ring *ring);
 

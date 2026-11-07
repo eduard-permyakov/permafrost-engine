@@ -1066,6 +1066,8 @@ static void batch_multidraw(struct gl_batch *batch, struct draw_call_desc dcall,
     R_GL_StateInstall(GL_U_ATTR_OFFSET, R_GL_Shader_GetCurrActive());
 
     batch_push_cmds(batch, dcall, descs);
+    /* The buffer is mapped without coherence: unflushed, the GPU may read a command half written */
+    R_GL_RingbufferFlushLast(batch->cmd_ring);
 
     GLuint cmd_vbo = R_GL_RingbufferGetVBO(batch->cmd_ring);
     glBindBuffer(GL_DRAW_INDIRECT_BUFFER, cmd_vbo);
