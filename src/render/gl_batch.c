@@ -978,7 +978,7 @@ static void batch_push_anim_attrs(struct gl_batch *batch, const struct ent_anim_
             GLfloat inv_idx = ents[offset + j].desc.inv_bind_pose_offset;
             GLfloat curr_idx = ents[offset + j].desc.curr_pose_offset;
 
-            R_GL_RingbufferAppendLast(batch->attr_ring, &ents[offset + j].model, sizeof(mat4x4_t));
+            R_GL_RingbufferAppendLast(batch->attr_ring, &normal, sizeof(mat4x4_t));
             R_GL_RingbufferAppendLast(batch->attr_ring, &inv_idx, sizeof(GLfloat));
             R_GL_RingbufferAppendLast(batch->attr_ring, &curr_idx, sizeof(GLfloat));
         }
