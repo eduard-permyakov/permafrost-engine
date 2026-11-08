@@ -384,6 +384,7 @@ static PyObject *PyPf_workers_carry_out(PyObject *self, PyObject *args);
 static PyObject *PyPf_open_requests(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_workers_carry_out(PyObject *self, PyObject *args);
 static PyObject *PyPf_carry_out_mode(PyObject *self, PyObject *args);
+static PyObject *PyPf_carry_lanes(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_carry_out_mode(PyObject *self, PyObject *args);
 static PyObject *PyPf_crew_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_crew_size(PyObject *self, PyObject *args);
@@ -1529,7 +1530,14 @@ static PyMethodDef pf_module_methods[] = {
     {"carry_out_mode",
     (PyCFunction)PyPf_carry_out_mode, METH_VARARGS,
     "Takes a district ID. Returns whether its workers carry its goods to other districts: "
-    "pf.CARRY_OUT_AUTO (once the carts leave a flow waiting), pf.CARRY_OUT_ON or pf.CARRY_OUT_OFF."},
+    "pf.CARRY_OUT_AUTO (for loads they would deliver before the carts could), pf.CARRY_OUT_ON or "
+    "pf.CARRY_OUT_OFF."},
+
+    {"carry_lanes",
+    (PyCFunction)PyPf_carry_lanes, METH_VARARGS,
+    "Takes a faction ID. Returns what is wanted carried between its districts as of the last planning "
+    "pass: [(from district, to district, good, planned for the carts, seconds to the carts' last "
+    "delivery, sent with workers, wanted with nobody to bring it), ...]."},
 
     {"set_carry_out_mode",
     (PyCFunction)PyPf_set_carry_out_mode, METH_VARARGS,
@@ -6620,6 +6628,30 @@ static PyObject *PyPf_set_workers_carry_out(PyObject *self, PyObject *args)
     }
     G_Automation_SetWorkersCarryOut(district, on);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_carry_lanes(PyObject *self, PyObject *args)
+{
+    int faction;
+    if(!PyArg_ParseTuple(args, "i", &faction) || faction < 0 || faction >= MAX_FACTIONS) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a faction ID.");
+        return NULL;
+    }
+    struct carry_lane lanes[MAX_CARRY_LANES];
+    size_t nlanes = G_Automation_CarryLanes(faction, ARR_SIZE(lanes), lanes);
+    PyObject *ret = PyList_New(nlanes);
+    if(!ret)
+        return NULL;
+    for(size_t i = 0; i < nlanes; i++) {
+        PyObject *item = Py_BuildValue("(iisifii)", lanes[i].src_district, lanes[i].dest_district, lanes[i].rname,
+            lanes[i].by_carts, lanes[i].last_eta_s, lanes[i].by_workers, lanes[i].uncovered);
+        if(!item) {
+            Py_DECREF(ret);
+            return NULL;
+        }
+        PyList_SET_ITEM(ret, i, item);
+    }
+    return ret;
 }
 
 static PyObject *PyPf_carry_out_mode(PyObject *self, PyObject *args)

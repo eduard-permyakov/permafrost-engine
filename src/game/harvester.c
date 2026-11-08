@@ -3693,6 +3693,12 @@ bool G_Harvester_JobInfo(uint32_t harvester, uint32_t *out_src, uint32_t *out_de
     return true;
 }
 
+int G_Harvester_JobAmount(uint32_t uid)
+{
+    struct hstate *hs = hstate_get(uid);
+    return hs ? hs->job_amount : 0;
+}
+
 uint32_t G_Harvester_GatherNode(uint32_t harvester)
 {
     struct hstate *hs = hstate_get(harvester);

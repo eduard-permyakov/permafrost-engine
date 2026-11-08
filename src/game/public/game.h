@@ -818,6 +818,7 @@ int   G_Harvester_CountGathering(int faction, const char *rname);
 bool  G_Harvester_CanReachSite(uint32_t uid, uint32_t site);
 bool  G_Harvester_JobInfo(uint32_t uid, uint32_t *out_src, uint32_t *out_dest, const char **out_rname, int *out_state);
 int   G_Harvester_GetCurrTotalCarry(uint32_t uid);
+int   G_Harvester_JobAmount(uint32_t uid);
 bool  G_Harvester_SetDoNotTransport(uint32_t uid, const char *rname, bool set);
 bool  G_Harvester_GetDoNotTransport(uint32_t uid, const char *rname);
 
@@ -1209,6 +1210,22 @@ enum carry_out_mode{
 void  G_Automation_SetWorkersCarryOut(int district, bool on);
 bool  G_Automation_GetWorkersCarryOut(int district);
 void  G_Automation_SetCarryOutMode(int district, enum carry_out_mode mode);
+/* What is wanted carried from one district to another, and how it is being met */
+#define MAX_CARRY_LANES (64)
+struct carry_lane{
+    int   faction;
+    int   src_district;
+    int   dest_district;
+    char  rname[32];
+    /* What the carts are planned to bring, and when the last of it arrives */
+    int   by_carts;
+    float last_eta_s;
+    /* What workers were sent with instead, for delivering it sooner */
+    int   by_workers;
+    /* Wanted and to be had, with no cart able to bring it */
+    int   uncovered;
+};
+size_t G_Automation_CarryLanes(int faction, size_t maxout, struct carry_lane out[]);
 enum carry_out_mode G_Automation_GetCarryOutMode(int district);
 /* How many of a faction's workers of no district build at once */
 void G_Automation_SetCrewSize(int faction, int size);

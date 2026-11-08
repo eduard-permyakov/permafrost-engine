@@ -94,8 +94,11 @@
 /* What a keep stands for, in minutes, against the drawers' minutes of stock */
 #define KEEP_MINUTES                 (5.0f)
 #define MIN_LOAD_WAIT_S              (30.0f)
-/* How long a flow between districts waits for a cart before a worker takes it */
-#define CART_FIRST_S                 (30.0f)
+/* The most carts one faction's carrying between districts is planned over,
+ * the loads of one request and the lanes kept for the scripts to read */
+#define MAX_FLEET_CARTS              (64)
+#define MAX_PLAN_LOADS               (32)
+#define MAX_PLAN_SOURCES             (32)
 /* A haul this long waits for a full load */
 #define FULL_LOAD_TRAVEL             (400.0f)
 #define MAX_RESOURCES                (64)
@@ -359,6 +362,43 @@ struct work_events{
     struct work_step steps[MAX_WORK_EVENTS];
 };
 
+/* A faction's cart as the plan sees it: when it is next free, and where */
+struct fleet_cart{
+    uint32_t uid;
+    float    speed;
+    float    free_s;
+    vec2_t   pos;
+    bool     waiting;
+};
+
+struct cart_fleet{
+    int               ncarts;
+    struct fleet_cart carts[MAX_FLEET_CARTS];
+};
+
+/* A load of a request laid on a cart, and what the cart was before it */
+struct plan_load{
+    int    cart;
+    int    src_district;
+    int    amount;
+    float  eta;
+    float  prev_free_s;
+    vec2_t prev_pos;
+    bool   now;
+    /* Whether the cart would bring it after the request needs it */
+    bool   late;
+};
+
+/* How the carts would bring what a request wants from other districts */
+struct carry_plan{
+    bool             valid;
+    int              nloads;
+    /* Wanted and to be had, with no cart able to bring it */
+    int              unplanned;
+    int              unplanned_district;
+    struct plan_load loads[MAX_PLAN_LOADS];
+};
+
 /* A worker that could be sent to a post */
 struct post_worker{
     uint32_t uid;
@@ -404,6 +444,7 @@ KHASH_MAP_INIT_INT(trace, struct work_trace)
 KHASH_MAP_INIT_INT(events, struct work_events)
 
 static void on_order_issued(void *user, void *event);
+static bool waiting_carrier(uint32_t uid, struct automation_state *astate);
 static float option(int faction, enum sched_option opt);
 static bool node_of_good(uint32_t uid, void *arg);
 static void on_player_order_issued(void *user, void *event);
@@ -474,6 +515,12 @@ static const struct sched_option_desc s_option_descs[NUM_SCHED_OPTIONS] = {
     [OPT_STOCK_BAND]    = {"stock_band",    0.2f,    0.0f,    1.0f},
 };
 static float           s_options[MAX_FACTIONS][NUM_SCHED_OPTIONS];
+static struct cart_fleet s_fleets[MAX_FACTIONS];
+/* The lanes of the last judging pass and of the one being made */
+static struct carry_lane s_lanes[MAX_CARRY_LANES];
+static size_t            s_nlanes;
+static struct carry_lane s_lanes_next[MAX_CARRY_LANES];
+static size_t            s_nlanes_next;
 static struct good_class s_classes[MAX_CLASSES];
 static int             s_nclasses;
 /* When each pool last took a worker off its work for something more urgent */
@@ -1240,10 +1287,10 @@ static bool gatherable_near(uint32_t site, const char *rname)
     return false;
 }
 
-/* Which factions have carriers of their own, carts and the like, at work or not */
-static void factions_with_carts(bool out[MAX_FACTIONS])
+/* Each faction's carts, with when and where each comes free of what it is doing */
+static void fleets_build(void)
 {
-    memset(out, 0, sizeof(bool) * MAX_FACTIONS);
+    memset(s_fleets, 0, sizeof(s_fleets));
     uint32_t uid;
     struct automation_state *astate;
     kh_foreach_val_ptr(s_entity_state_table, uid, astate, {
@@ -1253,8 +1300,267 @@ static void factions_with_carts(bool out[MAX_FACTIONS])
         if(!(flags & ENTITY_FLAG_HARVESTER) || (flags & (ENTITY_FLAG_BUILDER | ENTITY_FLAG_ZOMBIE)))
             continue;
         int faction = G_GetFactionID(uid);
-        if(faction >= 0 && faction < MAX_FACTIONS) {
-            out[faction] = true;
+        if(faction < 0 || faction >= MAX_FACTIONS || s_fleets[faction].ncarts == MAX_FLEET_CARTS)
+            continue;
+        float speed = 0.0f;
+        if(!G_Move_GetEffectiveSpeed(uid, &speed) || speed <= 0.0f)
+            continue;
+
+        vec2_t pos = G_Pos_GetXZ(uid);
+        float walk = 0.0f;
+        uint32_t src = NULL_UID, dest = NULL_UID;
+        const char *rname = NULL;
+        int state = 0;
+        bool job = G_Harvester_JobInfo(uid, &src, &dest, &rname, &state) && G_EntityExists(dest)
+                && (G_FlagsGet(dest) & ENTITY_FLAG_STORAGE_SITE);
+        if(job) {
+            vec2_t end = G_Pos_GetXZ(dest);
+            if(!G_Harvester_GetCurrTotalCarry(uid) && G_EntityExists(src)) {
+                vec2_t via = G_Pos_GetXZ(src);
+                walk = distance(pos, via) + distance(via, end);
+            }else{
+                walk = distance(pos, end);
+            }
+            pos = end;
+        }
+        s_fleets[faction].carts[s_fleets[faction].ncarts++] = (struct fleet_cart){
+            .uid = uid,
+            .speed = speed,
+            .free_s = walk / speed,
+            .pos = pos,
+            .waiting = !job && waiting_carrier(uid, astate),
+        };
+    });
+}
+
+static bool cart_can_serve(const struct fleet_cart *cart, const struct job_request *req, uint32_t src,
+                           int src_district, int dest_district)
+{
+    if(!carrier_can_take(cart->uid, req->rname))
+        return false;
+    struct automation_state *astate = astate_get(cart->uid);
+    int home = astate ? astate->home_district : 0;
+    if(home && (home != dest_district || home != src_district))
+        return false;
+    if(G_StorageSite_GetDoNotTake(G_FlagsGet(cart->uid), src))
+        return false;
+    return G_Harvester_CanReachSite(cart->uid, nearest_member(src, cart->pos))
+        && G_Harvester_CanReachSite(cart->uid, nearest_member(req->site, G_Pos_GetXZ(src)));
+}
+
+/* How many seconds from now the request needs the goods beyond 'held': at
+ * once with builders waiting on them, when what it holds runs out for a store
+ * being drawn from, and never for one only laying up stock */
+static float need_by_s(const struct job_request *req, int held)
+{
+    if(G_StorageSite_GetUseAlt(req->site))
+        return (G_StorageSite_Builders(req->site) > 0) ? 0.0f : INFINITY;
+    float per_min = G_StorageSite_GetDraw(req->site, req->rname);
+    if(per_min <= 0.0f)
+        return INFINITY;
+    return held * 60.0f / per_min;
+}
+
+/* Lays what the request wants from other districts, as far as they can spare
+ * it, on the carts: each load, nearest source first, goes to the cart that
+ * can deliver it soonest, and that cart is then taken up until it has */
+static void plan_carts(struct cart_fleet *fleet, const struct job_request *req, const vec_source_t *sources,
+                       int dest_district, struct carry_plan *out)
+{
+    out->valid = true;
+    out->nloads = 0;
+    out->unplanned = 0;
+    out->unplanned_district = 0;
+
+    vec2_t dest_pos = G_Pos_GetXZ(req->site);
+    int left = req->shortfall;
+    uint32_t sites[MAX_PLAN_SOURCES];
+    int spare[MAX_PLAN_SOURCES];
+    int nsites = 0;
+    for(int i = 0; i < vec_size(sources); i++) {
+        const struct job_source *src = &vec_AT((vec_source_t*)sources, i);
+        if(G_District_Of(src->site) == dest_district) {
+            left -= src->surplus;
+        }else if(nsites < MAX_PLAN_SOURCES) {
+            sites[nsites] = src->site;
+            spare[nsites++] = src->surplus;
+        }
+    }
+
+    int held = MAX(0, G_StorageSite_Request(req->site, req->rname) - req->shortfall) + (req->shortfall - MAX(left, 0));
+    bool refused[MAX_FLEET_CARTS];
+    int last_source = -1;
+    while(left > 0 && out->nloads < MAX_PLAN_LOADS) {
+
+        int source = -1;
+        float nearest = INFINITY;
+        for(int i = 0; i < nsites; i++) {
+            float d = distance(G_Pos_GetXZ(sites[i]), dest_pos);
+            if(spare[i] > 0 && d < nearest) {
+                nearest = d;
+                source = i;
+            }
+        }
+        if(source == -1)
+            break;
+        vec2_t spos = G_Pos_GetXZ(sites[source]);
+        int src_district = G_District_Of(sites[source]);
+        if(source != last_source) {
+            memset(refused, 0, sizeof(refused));
+            last_source = source;
+        }
+
+        int best = -1;
+        float best_eta = INFINITY;
+        for(int c = 0; c < fleet->ncarts; c++) {
+            const struct fleet_cart *cart = &fleet->carts[c];
+            if(refused[c] || G_Harvester_GetMaxCarry(cart->uid, req->rname) <= 0)
+                continue;
+            float eta = cart->free_s + (distance(cart->pos, spos) + distance(spos, dest_pos)) / cart->speed;
+            if(eta >= best_eta)
+                continue;
+            if(!cart_can_serve(cart, req, sites[source], src_district, dest_district)) {
+                refused[c] = true;
+                continue;
+            }
+            best = c;
+            best_eta = eta;
+        }
+        if(best == -1) {
+            out->unplanned_district = src_district;
+            break;
+        }
+
+        struct fleet_cart *cart = &fleet->carts[best];
+        int amount = MIN(left, MIN(spare[source], G_Harvester_GetMaxCarry(cart->uid, req->rname)));
+        out->loads[out->nloads++] = (struct plan_load){
+            .cart = best,
+            .src_district = src_district,
+            .amount = amount,
+            .eta = best_eta,
+            .prev_free_s = cart->free_s,
+            .prev_pos = cart->pos,
+            .now = cart->waiting && cart->free_s == 0.0f,
+            .late = best_eta > need_by_s(req, held),
+        };
+        cart->free_s = best_eta;
+        cart->pos = dest_pos;
+        held += amount;
+        left -= amount;
+        spare[source] -= amount;
+    }
+
+    int to_be_had = 0;
+    for(int i = 0; i < nsites; i++) {
+        to_be_had += spare[i];
+        if(spare[i] > 0 && !out->unplanned_district) {
+            out->unplanned_district = G_District_Of(sites[i]);
+        }
+    }
+    out->unplanned = MAX(0, MIN(left, to_be_had));
+}
+
+/* The latest load the carts would bring too late that a worker delivering at 'eta' beats, or -1 */
+static int plan_late_load(const struct carry_plan *plan, float eta)
+{
+    for(int i = plan->nloads - 1; i >= 0; i--) {
+        const struct plan_load *load = &plan->loads[i];
+        if(load->late && !load->now && eta < load->eta)
+            return i;
+    }
+    return -1;
+}
+
+/* Whether a worker delivering at 'eta' brings what the carts cannot, or cannot in time */
+static bool plan_leaves_load(const struct cart_fleet *fleet, const struct carry_plan *plan, float eta)
+{
+    if(fleet->ncarts == 0)
+        return true;
+    if(!plan->valid)
+        return false;
+    return plan->unplanned > 0 || plan_late_load(plan, eta) != -1;
+}
+
+/* A worker delivering at 'eta' has taken 'amount' on: the carts are let off those loads */
+static void plan_take(struct cart_fleet *fleet, struct carry_plan *plan, float eta, int amount)
+{
+    int from_open = MIN(plan->unplanned, amount);
+    plan->unplanned -= from_open;
+    amount -= from_open;
+    int idx;
+    while(amount > 0 && (idx = plan_late_load(plan, eta)) != -1) {
+        struct plan_load *load = &plan->loads[idx];
+        int taken = MIN(load->amount, amount);
+        load->amount -= taken;
+        amount -= taken;
+        if(load->amount > 0)
+            break;
+        if(idx == plan->nloads - 1) {
+            fleet->carts[load->cart].free_s = load->prev_free_s;
+            fleet->carts[load->cart].pos = load->prev_pos;
+        }
+        memmove(load, load + 1, (plan->nloads - idx - 1) * sizeof(struct plan_load));
+        plan->nloads--;
+    }
+}
+
+static struct carry_lane *lane_get(int faction, int src, int dest, const char *rname)
+{
+    for(size_t i = 0; i < s_nlanes_next; i++) {
+        struct carry_lane *lane = &s_lanes_next[i];
+        if(lane->faction == faction && lane->src_district == src && lane->dest_district == dest
+        && !strcmp(lane->rname, rname))
+            return lane;
+    }
+    if(s_nlanes_next == MAX_CARRY_LANES)
+        return NULL;
+    struct carry_lane *lane = &s_lanes_next[s_nlanes_next++];
+    *lane = (struct carry_lane){ .faction = faction, .src_district = src, .dest_district = dest };
+    pf_strlcpy(lane->rname, rname, sizeof(lane->rname));
+    return lane;
+}
+
+/* Adds what the plan left of a request to its lanes */
+static void lanes_note(int faction, int dest, const char *rname, const struct carry_plan *plan)
+{
+    for(int i = 0; i < plan->nloads; i++) {
+        const struct plan_load *load = &plan->loads[i];
+        struct carry_lane *lane = lane_get(faction, load->src_district, dest, rname);
+        if(lane) {
+            lane->by_carts += load->amount;
+            lane->last_eta_s = MAX(lane->last_eta_s, load->eta);
+        }
+    }
+    if(plan->unplanned > 0) {
+        struct carry_lane *lane = lane_get(faction, plan->unplanned_district, dest, rname);
+        if(lane) {
+            lane->uncovered += plan->unplanned;
+        }
+    }
+}
+
+/* Adds the loads workers are on their way with, between districts, to their lanes */
+static void lanes_note_workers(void)
+{
+    uint32_t uid;
+    kh_foreach_key(s_entity_state_table, uid, {
+        uint32_t flags = G_FlagsGet(uid);
+        if(!(flags & ENTITY_FLAG_BUILDER) || !(flags & ENTITY_FLAG_HARVESTER) || (flags & ENTITY_FLAG_ZOMBIE))
+            continue;
+        int amount = G_Harvester_JobAmount(uid);
+        if(amount <= 0)
+            continue;
+        uint32_t src = NULL_UID, dest = NULL_UID;
+        const char *rname = NULL;
+        int state = 0;
+        if(!G_Harvester_JobInfo(uid, &src, &dest, &rname, &state) || !G_EntityExists(src) || !G_EntityExists(dest))
+            continue;
+        int from = G_District_Of(src), to = G_District_Of(dest);
+        if(from == to)
+            continue;
+        struct carry_lane *lane = lane_get(G_GetFactionID(uid), from, to, rname);
+        if(lane) {
+            lane->by_workers += amount;
         }
     });
 }
@@ -1269,8 +1575,7 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
         return;
     PERF_ENTER();
 
-    bool carts[MAX_FACTIONS];
-    factions_with_carts(carts);
+    fleets_build();
 
     vec_entity_t sites;
     vec_entity_init(&sites);
@@ -1301,6 +1606,12 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
         vec_source_reset(&sources);
         collect_sources(&sources, &sites, req->rname, faction, req->site);
 
+        struct cart_fleet *fleet = &s_fleets[faction];
+        struct carry_plan plan = {0};
+        if(req->tier < TIER_TOPPING) {
+            plan_carts(fleet, req, &sources, G_District_Of(req->site), &plan);
+        }
+
         bool any_idle = false;
         bool any_carrier = false;
         bool any_reachable = false;
@@ -1314,6 +1625,8 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
 
             int best_carrier = -1, best_source = -1;
             float best_travel = 0.0f;
+            bool best_planned = false;
+            float best_eta = INFINITY;
 
             for(int c = 0; c < vec_size(carriers); c++) {
 
@@ -1353,17 +1666,22 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
                         continue;
                     }
                     int src_district = G_District_Of(src->site);
+                    bool planned = false;
+                    float worker_eta = INFINITY;
                     if((flags & ENTITY_FLAG_BUILDER) && src_district != dest_district) {
                         enum carry_out_mode mode = G_Automation_GetCarryOutMode(src_district);
                         if(mode == CARRY_OUT_OFF) {
                             any_district_bar = true;
                             continue;
                         }
-                        /* The carts have the first claim on a flow between districts */
-                        if(mode == CARRY_OUT_AUTO && carts[faction] && waited_s < CART_FIRST_S) {
+                        float speed = 0.0f;
+                        G_Move_GetEffectiveSpeed(carrier, &speed);
+                        worker_eta = (speed > 0.0f) ? travel / speed : INFINITY;
+                        if(mode == CARRY_OUT_AUTO && !plan_leaves_load(fleet, &plan, worker_eta)) {
                             any_small = true;
                             continue;
                         }
+                        planned = (mode == CARRY_OUT_AUTO);
                     }
                     if(G_StorageSite_GetDoNotTake(flags, src->site))
                         continue;
@@ -1376,6 +1694,8 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
                         best_carrier = c;
                         best_source = s;
                         best_travel = travel;
+                        best_planned = planned;
+                        best_eta = worker_eta;
                     }
                 }
             }
@@ -1410,6 +1730,9 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
             req->shortfall -= amount;
             src->surplus -= amount;
             njobs++;
+            if(best_planned) {
+                plan_take(fleet, &plan, best_eta, amount);
+            }
 
             /* A request waits from its last load, so that one left unserved 
              * comes to outweigh the ones being served */
@@ -1419,6 +1742,9 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
             }
         }
 
+        if(judge && plan.valid) {
+            lanes_note(faction, dest_district, req->rname, &plan);
+        }
         if(!judge || req->tier >= TIER_TOPPING)
             continue;
 
@@ -1446,6 +1772,13 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
                 pend->reason = REQUEST_OK;
             }
         }
+    }
+
+    if(judge) {
+        lanes_note_workers();
+        memcpy(s_lanes, s_lanes_next, s_nlanes_next * sizeof(struct carry_lane));
+        s_nlanes = s_nlanes_next;
+        s_nlanes_next = 0;
     }
 
     vec_source_destroy(&sources);
@@ -3417,6 +3750,17 @@ size_t G_Automation_GetEvents(uint32_t uid, size_t maxout, struct work_step out[
         size_t idx = (ev->head + MAX_WORK_EVENTS - 1 - i) % MAX_WORK_EVENTS;
         out[i] = ev->steps[idx];
         out_age_ms[i] = (s_tick - ev->ticks[idx]) * TICK_MS;
+    }
+    return ret;
+}
+
+size_t G_Automation_CarryLanes(int faction, size_t maxout, struct carry_lane out[])
+{
+    size_t ret = 0;
+    for(size_t i = 0; i < s_nlanes && ret < maxout; i++) {
+        if(s_lanes[i].faction == faction) {
+            out[ret++] = s_lanes[i];
+        }
     }
     return ret;
 }
