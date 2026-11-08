@@ -275,7 +275,7 @@ void R_GL_DrawSkybox(const struct camera *cam)
     glBindVertexArray(s_skybox.VAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
 
-    glDepthMask(old_depth_func_mode);
+    glDepthFunc(old_depth_func_mode);
     glCullFace(old_cull_face_mode);
 
     R_GL_StateSet(GL_U_PROJECTION, saved_proj);
@@ -318,7 +318,7 @@ void R_GL_DrawSkyboxScaled(const struct camera *cam, float *map_width, float *ma
     glBindVertexArray(s_skybox.VAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
 
-    glDepthMask(old_depth_func_mode);
+    glDepthFunc(old_depth_func_mode);
     glCullFace(old_cull_face_mode);
 
     GL_PERF_POP_GROUP();
