@@ -404,6 +404,8 @@ KHASH_MAP_INIT_INT(trace, struct work_trace)
 KHASH_MAP_INIT_INT(events, struct work_events)
 
 static void on_order_issued(void *user, void *event);
+static float option(int faction, enum sched_option opt);
+static bool node_of_good(uint32_t uid, void *arg);
 static void on_player_order_issued(void *user, void *event);
 static bool try_assign_transport_job(uint32_t uid, struct automation_state *astate, bool spare);
 static bool try_take_post(uint32_t uid, struct automation_state *astate);
@@ -1223,6 +1225,21 @@ static int min_load_for(float travel, int max_carry, int shortfall, float waited
     return MIN(want, shortfall);
 }
 
+/* Whether a node of the good lies within the gatherers' reach of the site, on its island */
+static bool gatherable_near(uint32_t site, const char *rname)
+{
+    uint32_t nodes[256];
+    vec2_t pos = G_Pos_GetXZ(site);
+    size_t nnodes = G_Pos_EntsInCircleWithPred(pos, option(G_GetFactionID(site), OPT_REACH), nodes,
+        ARR_SIZE(nodes), node_of_good, (void*)rname);
+    const struct map *map = G_GetPrevTickMap();
+    for(int i = 0; i < nnodes; i++) {
+        if(M_NavLocationsReachable(map, NAV_LAYER_GROUND_1X1, pos, G_Pos_GetXZ(nodes[i])))
+            return true;
+    }
+    return false;
+}
+
 /* Which factions have carriers of their own, carts and the like, at work or not */
 static void factions_with_carts(bool out[MAX_FACTIONS])
 {
@@ -1408,7 +1425,14 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
         /* Waiting for a load worth the trip, or for one on its way, is not being blocked */
         if(req->shortfall > 0 && !any_reachable && !any_small 
         && !pool_bound_for(req->site, req->rname)) {
-            if(vec_size(&sources) == 0) {
+            bool none = (vec_size(&sources) == 0);
+            /* A good gathered on the site's own island comes from its nodes */
+            if((none || any_district_bar) && gatherable_near(req->site, req->rname)) {
+                struct pending *pend = pending_get(req->site, req->rname, false);
+                if(pend) {
+                    pend->reason = REQUEST_OK;
+                }
+            }else if(none) {
                 note_blocked(req, no_source_reason(&sites, req));
             }else if(any_district_bar) {
                 note_blocked(req, REQUEST_NOT_CONNECTED);
