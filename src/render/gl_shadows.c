@@ -93,6 +93,11 @@ struct shadow_gl_state{
 
 static GLuint         s_depth_map_FBO;
 static GLuint         s_depth_map_tex;
+/* A bake's own target, so that it leaves the frame's shadows alone, made on the first bake */
+static GLuint         s_bake_map_FBO;
+static GLuint         s_bake_map_tex;
+/* The map that lit passes sample */
+static GLuint         s_sampled_tex;
 static bool           s_depth_pass_active = false;
 static struct shadow_gl_state s_saved;
 
@@ -211,17 +216,10 @@ static struct light_frustum_fit make_light_fit(vec3_t light_pos, const struct ca
     };
 }
 
-/*****************************************************************************/
-/* EXTERN FUNCTIONS                                                          */
-/*****************************************************************************/
-
-void R_GL_InitShadows(void)
+static void make_depth_target(GLuint *out_fbo, GLuint *out_tex)
 {
-    GL_PERF_ENTER();
-    ASSERT_IN_RENDER_THREAD();
-
-    glGenTextures(1, &s_depth_map_tex);
-    glBindTexture(GL_TEXTURE_2D, s_depth_map_tex);
+    glGenTextures(1, out_tex);
+    glBindTexture(GL_TEXTURE_2D, *out_tex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32, 
                  CONFIG_SHADOW_MAP_RES, CONFIG_SHADOW_MAP_RES, 
                  0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
@@ -236,15 +234,29 @@ void R_GL_InitShadows(void)
     GLint old;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &old);
 
-    glGenFramebuffers(1, &s_depth_map_FBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, s_depth_map_FBO);
+    glGenFramebuffers(1, out_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, *out_fbo);
 
-    glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, s_depth_map_tex, 0);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, *out_tex, 0);
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, old);  
+    glBindFramebuffer(GL_FRAMEBUFFER, old);
+}
+
+/*****************************************************************************/
+/* EXTERN FUNCTIONS                                                          */
+/*****************************************************************************/
+
+void R_GL_InitShadows(void)
+{
+    GL_PERF_ENTER();
+    ASSERT_IN_RENDER_THREAD();
+
+    make_depth_target(&s_depth_map_FBO, &s_depth_map_tex);
+    s_sampled_tex = s_depth_map_tex;
+
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }
@@ -298,8 +310,13 @@ void R_GL_DepthPassBeginCustom(const mat4x4_t *light_space_trans)
 
     R_GL_SetLightSpaceTrans(light_space_trans);
 
+    if(!s_bake_map_FBO) {
+        make_depth_target(&s_bake_map_FBO, &s_bake_map_tex);
+    }
+    s_sampled_tex = s_bake_map_tex;
+
     glViewport(0, 0, CONFIG_SHADOW_MAP_RES, CONFIG_SHADOW_MAP_RES);
-    glBindFramebuffer(GL_FRAMEBUFFER, s_depth_map_FBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, s_bake_map_FBO);
     glClear(GL_DEPTH_BUFFER_BIT);
     glCullFace(GL_FRONT);
 
@@ -359,8 +376,13 @@ void R_GL_ShadowMapBind(void)
     });
     R_GL_StateInstall(GL_U_SHADOW_MAP, R_GL_Shader_GetCurrActive());
     glActiveTexture(SHADOW_MAP_TUNIT);
-    glBindTexture(GL_TEXTURE_2D, s_depth_map_tex);
+    glBindTexture(GL_TEXTURE_2D, s_sampled_tex);
     GL_ASSERT_OK();
+}
+
+void R_GL_ShadowMapUseScene(void)
+{
+    s_sampled_tex = s_depth_map_tex;
 }
 
 void R_GL_SetShadowsEnabled(const bool *on)

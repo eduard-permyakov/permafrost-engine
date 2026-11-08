@@ -75,6 +75,7 @@ void   R_GL_InitShadows(void);
 vec3_t R_GL_GetLightPos(void);
 void   R_GL_SetLightSpaceTrans(const mat4x4_t *trans);
 void   R_GL_ShadowMapBind(void);
+void   R_GL_ShadowMapUseScene(void);
 
 /* Water */
 

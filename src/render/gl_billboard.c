@@ -38,6 +38,7 @@
 
 #include "gl_billboard.h"
 #include "gl_assert.h"
+#include "gl_render.h"
 
 #define GPU_MEM_FILE_SYS GPU_MEM_SYS_GL_BILLBOARD
 #include "gl_mem.h"
@@ -610,6 +611,7 @@ static bool bb_bake_atlas(struct bb_model_desc *desc, const void *render_private
     PF_FREE(cell_depth);
     PF_FREE(depth);
 
+    R_GL_ShadowMapUseScene();
     glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
     glViewport(saved_viewport[0], saved_viewport[1], saved_viewport[2], saved_viewport[3]);
     glBindFramebuffer(GL_FRAMEBUFFER, saved_fb);
