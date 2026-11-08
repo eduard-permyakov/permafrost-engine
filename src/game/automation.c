@@ -785,6 +785,27 @@ static int get_assigned_transporters(uint32_t site)
     return kh_val(s_transport_count, k);
 }
 
+/* Job finders may add entities and so move the state table: it is looked up again after each */
+static void settled_as(uint32_t uid, enum worker_state state)
+{
+    struct automation_state *astate = astate_get(uid);
+    if(astate) {
+        astate->state = state;
+    }
+}
+
+/* A post first; then carrying and building take their share of the workers,
+ * and any with nothing else to do after */
+static bool try_find_job(uint32_t uid)
+{
+    struct automation_state *astate;
+    return ((astate = astate_get(uid)) && try_take_post(uid, astate))
+        || ((astate = astate_get(uid)) && try_assign_transport_job(uid, astate, false))
+        || ((astate = astate_get(uid)) && try_assign_work(uid, astate, false))
+        || ((astate = astate_get(uid)) && try_assign_transport_job(uid, astate, true))
+        || ((astate = astate_get(uid)) && try_assign_work(uid, astate, true));
+}
+
 /* A unit at the end of its work is given its next job before it is let go
  * idle, so that one with more work to do never shows as idle in between.
  * The job finders may add entities, so this runs outside the table walk.
@@ -801,14 +822,14 @@ static void settle_stopping(void)
         /* Orders queued by the player come before any job, its meal too */
         if(G_Command_Next(uid)) {
             trace_note(uid, "order", "taken", "queued", NULL, NULL_UID);
-            astate->state = STATE_ACTIVE;
+            settled_as(uid, STATE_ACTIVE);
             continue;
         }
 
         /* A hungry worker's next job is its meal, and so is one about to be */
         bool due = G_Provision_DueSoon(uid);
         if(due && G_Provision_Fetch(uid)) {
-            astate->state = STATE_ACTIVE;
+            settled_as(uid, STATE_ACTIVE);
             continue;
         }
         trace_note(uid, "meal", due ? "failed" : "skipped", due ? "no_food" : "not_due", NULL, NULL_UID);
@@ -816,24 +837,16 @@ static void settle_stopping(void)
         /* The duty it was at comes before any new work, and holds it while it cannot */
         if(G_Duty_Resume(uid)) {
             trace_note(uid, "duty", "taken", "resumed", NULL, NULL_UID);
-            astate->state = STATE_ACTIVE;
+            settled_as(uid, STATE_ACTIVE);
             continue;
         }
         if(G_Duty_Kind(uid) != DUTY_NONE) {
-            astate->state = STATE_IDLE;
+            settled_as(uid, STATE_IDLE);
             continue;
         }
 
-        if(try_take_post(uid, astate)) {
-            astate->state = STATE_ACTIVE;
-            continue;
-        }
-
-        /* Carrying and building take their share of the workers first, and
-         * any with nothing else to do after */
-        if(try_assign_transport_job(uid, astate, false) || try_assign_work(uid, astate, false)
-        || try_assign_transport_job(uid, astate, true) || try_assign_work(uid, astate, true)) {
-            astate->state = STATE_ACTIVE;
+        if(try_find_job(uid)) {
+            settled_as(uid, STATE_ACTIVE);
             continue;
         }
 
