@@ -4755,7 +4755,8 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         PFM_Vec2_Sub(&xz_target, &aux->target_prev_pos, &target_delta);
 
         if(PFM_Vec2_Len(&target_delta) > 5.0f) {
-            out->flags |= UPDATE_SET_DEST | UPDATE_SET_TARGET_PREV;
+            out->flags |= UPDATE_SET_DEST | UPDATE_SET_TARGET_PREV | UPDATE_SET_STATE;
+            out->next_state = STATE_ENTER_ENTITY_RANGE;
             out->next_dest = xz_target;
             out->next_attack = false;
             out->next_target_prev = xz_target;

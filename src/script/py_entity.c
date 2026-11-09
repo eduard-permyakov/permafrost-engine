@@ -47,6 +47,7 @@
 #include "../anim/public/anim.h"
 #include "../game/public/game.h"
 #include "../game/duty.h"
+#include "../game/wander.h"
 #include "../game/population.h"
 #include "../game/command.h"
 #include "../phys/public/phys.h"
@@ -1441,6 +1442,10 @@ typedef struct {
 
 static PyObject *PyMovableEntity_move(PyMovableEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyMovableEntity_walk_idle(PyMovableEntityObject *self, PyObject *args);
+static PyObject *PyMovableEntity_wander(PyMovableEntityObject *self, PyObject *args);
+static PyObject *PyMovableEntity_stop_wander(PyMovableEntityObject *self);
+static PyObject *PyMovableEntity_wander_flee(PyMovableEntityObject *self, PyObject *args);
+static PyObject *PyMovableEntity_get_wandering(PyMovableEntityObject *self, void *closure);
 static PyObject *PyMovableEntity_del(PyMovableEntityObject *self);
 static PyObject *PyMovableEntity_pickle(PyMovableEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyMovableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
@@ -1454,6 +1459,10 @@ static int       PyMovableEntity_set_preferred_formation(PyMovableEntityObject *
 static PyObject *PyMovableEntity_get_effective_speed(PyMovableEntityObject *self, void *closure);
 
 static PyGetSetDef PyMovableEntity_getset[] = {
+    {"wandering",
+    (getter)PyMovableEntity_get_wandering, NULL,
+    "Whether the entity roams about an anchor point by itself.",
+    NULL},
     {"speed",
     (getter)PyMovableEntity_get_speed, (setter)PyMovableEntity_set_speed,
     "Entity's base movement speed (in OpenGL coordinates per second).",
@@ -1471,6 +1480,20 @@ static PyGetSetDef PyMovableEntity_getset[] = {
 };
 
 static PyMethodDef PyMovableEntity_methods[] = {
+    {"wander",
+    (PyCFunction)PyMovableEntity_wander, METH_VARARGS,
+    "Roams the entity about an (x, z) anchor within a radius: a few short walks with pauses, then a long "
+    "rest, and so on. It goes by its current speed. Returns whether it started."},
+
+    {"stop_wander",
+    (PyCFunction)PyMovableEntity_stop_wander, METH_NOARGS,
+    "Ends the entity's wandering; if it was walking, it stops where it is."},
+
+    {"wander_flee",
+    (PyCFunction)PyMovableEntity_wander_flee, METH_VARARGS,
+    "Sends a wandering entity away from an (x, z) threat for a number of seconds at a speed. It then "
+    "settles and makes its way back. Returns whether it could flee."},
+
 
     {"move", 
     (PyCFunction)PyMovableEntity_move, METH_VARARGS | METH_KEYWORDS,
@@ -6188,6 +6211,57 @@ static PyObject *PyMovableEntity_walk_idle(PyMovableEntityObject *self, PyObject
         return NULL;
     }
     return PyBool_FromLong(G_Automation_WalkIdle(self->super.ent, xz_pos));
+}
+
+static PyObject *PyMovableEntity_wander(PyMovableEntityObject *self, PyObject *args)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+
+    vec2_t anchor;
+    float radius;
+    if(!PyArg_ParseTuple(args, "(ff)f", &anchor.x, &anchor.z, &radius)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an (x, z) tuple and a radius.");
+        return NULL;
+    }
+    return PyBool_FromLong(G_Wander_Start(self->super.ent, anchor, radius));
+}
+
+static PyObject *PyMovableEntity_stop_wander(PyMovableEntityObject *self)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+    G_Wander_Stop(self->super.ent);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyMovableEntity_wander_flee(PyMovableEntityObject *self, PyObject *args)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+
+    vec2_t threat;
+    float seconds, speed;
+    if(!PyArg_ParseTuple(args, "(ff)ff", &threat.x, &threat.z, &seconds, &speed)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an (x, z) tuple, seconds and a speed.");
+        return NULL;
+    }
+    return PyBool_FromLong(G_Wander_Flee(self->super.ent, threat, seconds, speed));
+}
+
+static PyObject *PyMovableEntity_get_wandering(PyMovableEntityObject *self, void *closure)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+    return PyBool_FromLong(G_Wander_Active(self->super.ent));
 }
 
 static PyObject *PyMovableEntity_del(PyMovableEntityObject *self)

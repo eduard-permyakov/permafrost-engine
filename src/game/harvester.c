@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_GAME_HARVESTER
 
 #include "harvester.h"
+#include "wander.h"
 #include "duty.h"
 #include "movement.h"
 #include "resource.h"
@@ -99,6 +100,8 @@
 #define HUNT_RANGE_SLACK    (16.0f)
 /* How far off its mark a hunter may face and still shoot (cosine of half the angle) */
 #define HUNT_AIM_COS        (0.995f)
+/* And how far its game may have strayed while it drew the bow */
+#define HUNT_SHOT_COS       (0.96f)
 /* How far past touching a carcass may lie and still be butchered */
 #define BUTCHER_SLACK       (16.0f)
 /* How far from the node the player sent it to a gatherer goes on to others of
@@ -273,6 +276,8 @@ static void on_harvest_anim_finished_source(void *user, void *event);
 static void on_20hz_tick(void *user, void *event);
 static int  home_bound(uint32_t uid);
 static bool hunted(uint32_t res);
+static bool in_hunt_range(uint32_t uid, uint32_t res);
+static bool aimed_at_game(uint32_t uid, uint32_t res, float min_cos);
 static bool failed_node(const struct hstate *hs, uint32_t node);
 static void hunt_hit(uint32_t uid, struct hstate *hs);
 static void walk_up(uint32_t uid, uint32_t res);
@@ -1291,7 +1296,15 @@ static void on_harvest_anim_finished(void *user, void *event)
     }
 
     if(hunted(hs->res_uid)) {
-        hunt_hit(uid, hs);
+        /* No arrow is wasted on game in full flight */
+        if(G_Wander_Fleeing(hs->res_uid))
+            return;
+        /* Game on the move may have left the bowshot or the line of the arrow */
+        if(in_hunt_range(uid, hs->res_uid) && aimed_at_game(uid, hs->res_uid, HUNT_SHOT_COS)) {
+            hunt_hit(uid, hs);
+        }else{
+            walk_up(uid, hs->res_uid);
+        }
         return;
     }
     /* Game another brought down is butchered from beside it, not a bowshot off */
@@ -1399,6 +1412,15 @@ static bool hunted(uint32_t res)
     return G_Resource_GetHuntHits(res) > 0;
 }
 
+static vec2_t game_direction(uint32_t uid, uint32_t res)
+{
+    vec2_t a = G_Pos_GetXZ(uid);
+    vec2_t b = G_Pos_GetXZ(res);
+    vec2_t dir;
+    PFM_Vec2_Sub(&b, &a, &dir);
+    return dir;
+}
+
 static bool in_hunt_range(uint32_t uid, uint32_t res)
 {
     vec2_t a = G_Pos_GetXZ(uid);
@@ -1428,23 +1450,30 @@ static bool at_resource(uint32_t uid, uint32_t res)
     return M_NavObjAdjacent(s_map, uid, res);
 }
 
-/* Turns a hunter toward its game, returning whether it already faces it */
-static bool face_game(uint32_t uid, uint32_t res)
+static quat_t rot_toward(vec2_t dir)
 {
-    vec2_t a = G_Pos_GetXZ(uid);
-    vec2_t b = G_Pos_GetXZ(res);
-    vec2_t dir;
-    PFM_Vec2_Sub(&b, &a, &dir);
+    float angle = atan2(dir.z, dir.x) - M_PI/2.0f;
+    return (quat_t){0.0f, sinf(angle / 2.0f), 0.0f, cosf(angle / 2.0f)};
+}
+
+static bool aimed_at_game(uint32_t uid, uint32_t res, float min_cos)
+{
+    vec2_t dir = game_direction(uid, res);
     if(PFM_Vec2_Len(&dir) < 1.0f)
         return true;
 
-    float angle = atan2(dir.z, dir.x) - M_PI/2.0f;
-    quat_t want = (quat_t){0.0f, sinf(angle / 2.0f), 0.0f, cosf(angle / 2.0f)};
+    quat_t want = rot_toward(dir);
     quat_t curr = Entity_GetRot(uid);
     float dot = want.x * curr.x + want.y * curr.y + want.z * curr.z + want.w * curr.w;
-    if(fabsf(dot) >= HUNT_AIM_COS)
+    return fabsf(dot) >= min_cos;
+}
+
+/* Turns a hunter toward its game, returning whether it already faces it */
+static bool face_game(uint32_t uid, uint32_t res)
+{
+    if(aimed_at_game(uid, res, HUNT_AIM_COS))
         return true;
-    G_Move_SetChangeDirection(uid, want);
+    G_Move_SetChangeDirection(uid, rot_toward(game_direction(uid, res)));
     return false;
 }
 
@@ -1458,6 +1487,7 @@ static void hunt_hit(uint32_t uid, struct hstate *hs)
     E_Entity_Notify(EVENT_HUNT_HIT, res, (void*)((uintptr_t)uid), ES_ENGINE);
     if(hits > 0)
         return;
+    G_Wander_Stop(res);
     walk_up(uid, res);
 }
 

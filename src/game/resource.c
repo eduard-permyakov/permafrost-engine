@@ -174,6 +174,12 @@ static bool resource_stands(const struct rstate *rs, uint32_t uid)
         | ENTITY_FLAG_WATER | ENTITY_FLAG_AIR));
 }
 
+/* The ground under buildings and things that move is reckoned elsewhere */
+static bool blocks_by_itself(uint32_t flags)
+{
+    return !(flags & (ENTITY_FLAG_BUILDING | ENTITY_FLAG_MOVABLE));
+}
+
 static void unmark_ground(struct rstate *rs)
 {
     if(rs->marked) {
@@ -250,7 +256,7 @@ bool G_Resource_AddEntity(uint32_t uid)
         return false;
 
     uint32_t flags = G_FlagsGet(uid);
-    if(!(flags & ENTITY_FLAG_BUILDING)) {
+    if(blocks_by_itself(flags)) {
         M_NavBlockersIncref(rs.blocking_pos, rs.blocking_radius, G_GetFactionID(uid), flags, s_map);
     }
     mark_ground(rstate_get(uid), uid);
@@ -265,7 +271,7 @@ void G_Resource_RemoveEntity(uint32_t uid)
 
     unmark_ground(rs);
     uint32_t flags = G_FlagsGet(uid);
-    if(!(flags & ENTITY_FLAG_BUILDING)) {
+    if(blocks_by_itself(flags)) {
         M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(uid), 
             flags, s_map);
     }
@@ -282,7 +288,7 @@ void G_Resource_UpdateBounds(uint32_t uid)
 
     unmark_ground(rs);
     uint32_t flags = G_FlagsGet(uid);
-    if(!(flags & ENTITY_FLAG_BUILDING)) {
+    if(blocks_by_itself(flags)) {
         M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(uid), 
             flags, s_map);
         rs->blocking_pos = G_Pos_GetXZ(uid);
@@ -299,7 +305,7 @@ void G_Resource_UpdateFactionID(uint32_t uid, int oldfac, int newfac)
         return;
 
     uint32_t flags = G_FlagsGet(uid);
-    if(!(flags & ENTITY_FLAG_BUILDING)) {
+    if(blocks_by_itself(flags)) {
         M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, oldfac, flags, s_map);
         M_NavBlockersIncref(rs->blocking_pos, rs->blocking_radius, newfac, flags, s_map);
     }
@@ -313,7 +319,7 @@ void G_Resource_UpdateSelectionRadius(uint32_t uid, float radius)
 
     unmark_ground(rs);
     uint32_t flags = G_FlagsGet(uid);
-    if(!(flags & ENTITY_FLAG_BUILDING)) {
+    if(blocks_by_itself(flags)) {
         M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(uid), 
             flags, s_map);
         rs->blocking_radius = radius;
