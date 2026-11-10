@@ -223,8 +223,15 @@ void A_Update(void)
 
         if(elapsed_secs > frame_period_secs) {
 
+            /* The time over counts toward the next frame, so that a clip plays,
+             * and what is timed by its cycles goes on, at the same pace whatever
+             * the frame rate. A stall longer than a frame is not played back.
+             */
+            float over_secs = elapsed_secs - frame_period_secs;
+            uint32_t over_ticks = (over_secs < frame_period_secs) ? (uint32_t)(over_secs * 1000.0f) : 0;
+
             ctx->curr_frame = (ctx->curr_frame + 1) % ctx->active->num_frames;
-            ctx->curr_frame_start_ticks = curr_ticks;
+            ctx->curr_frame_start_ticks = curr_ticks - over_ticks;
 
             if(ctx->curr_frame == ctx->active->num_frames - 1) {
 
