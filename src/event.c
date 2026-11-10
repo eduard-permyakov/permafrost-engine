@@ -547,7 +547,7 @@ static enum e_time_bucket e_bucket(const struct event *event)
 void E_ServiceQueue(void)
 {
     PERF_ENTER();
-    uint32_t ticks = SDL_GetTicks();
+    uint32_t ticks = G_ClockTicks();
 
     queue_event_t *queue = &s_event_queues[s_front_queue_idx];
     s_front_queue_idx = (s_front_queue_idx + 1) % 2;
@@ -736,7 +736,7 @@ size_t E_GetScriptHandlers(size_t max_out, struct script_handler *out)
 
 void E_Global_Notify(enum eventtype event, void *event_arg, enum event_source source)
 {
-    struct event e = (struct event){event, event_arg, source, GLOBAL_ID, SDL_GetTicks()};
+    struct event e = (struct event){event, event_arg, source, GLOBAL_ID, G_ClockTicks()};
     queue_event_push(&s_event_queues[s_front_queue_idx], &e);
 }
 
@@ -748,7 +748,7 @@ bool E_Global_RegisterNamed(enum eventtype event, handler_t handler, void *user_
     hd.handler.as_function = handler;
     hd.user_arg = user_arg;
     hd.simmask = simmask;
-    hd.register_tick = SDL_GetTicks();
+    hd.register_tick = G_ClockTicks();
     hd.fname = fname;
 
     return e_register_handler(e_key(GLOBAL_ID, event), &hd);
@@ -771,7 +771,7 @@ bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler,
     hd.handler.as_script_callable = handler;
     hd.user_arg = user_arg;
     hd.simmask = simmask;
-    hd.register_tick = SDL_GetTicks();
+    hd.register_tick = G_ClockTicks();
     hd.fname = NULL;
 
     return e_register_handler(e_key(GLOBAL_ID, event), &hd);
@@ -788,7 +788,7 @@ bool E_Global_ScriptUnregister(enum eventtype event, script_opaque_t handler)
 
 void E_Global_NotifyImmediate(enum eventtype event, void *event_arg, enum event_source source)
 {
-    struct event e = (struct event){event, event_arg, source, GLOBAL_ID, SDL_GetTicks()};
+    struct event e = (struct event){event, event_arg, source, GLOBAL_ID, G_ClockTicks()};
     e_handle_event(e, true);
 }
 
@@ -804,7 +804,7 @@ bool E_Entity_RegisterNamed(enum eventtype event, uint32_t ent_uid, handler_t ha
     hd.handler.as_function = handler;
     hd.user_arg = user_arg;
     hd.simmask = simmask;
-    hd.register_tick = SDL_GetTicks();
+    hd.register_tick = G_ClockTicks();
     hd.fname = fname;
 
     return e_register_handler(e_key(ent_uid, event), &hd);
@@ -827,7 +827,7 @@ bool E_Entity_ScriptRegister(enum eventtype event, uint32_t ent_uid,
     hd.handler.as_script_callable = handler;
     hd.user_arg = user_arg;
     hd.simmask = simmask;
-    hd.register_tick = SDL_GetTicks();
+    hd.register_tick = G_ClockTicks();
     hd.fname = NULL;
 
     return e_register_handler(e_key(ent_uid, event), &hd);
@@ -846,14 +846,14 @@ bool E_Entity_ScriptUnregister(enum eventtype event, uint32_t ent_uid,
 void E_Entity_Notify(enum eventtype event, uint32_t ent_uid, void *event_arg, 
                      enum event_source source)
 {
-    struct event e = (struct event){event, event_arg, source, ent_uid, SDL_GetTicks()};
+    struct event e = (struct event){event, event_arg, source, ent_uid, G_ClockTicks()};
     queue_event_push(&s_event_queues[s_front_queue_idx], &e);
 }
 
 void E_Entity_NotifyImmediate(enum eventtype event, uint32_t ent_uid, void *event_arg, 
                               enum event_source source)
 {
-    struct event e = (struct event){event, event_arg, source, ent_uid, SDL_GetTicks()};
+    struct event e = (struct event){event, event_arg, source, ent_uid, G_ClockTicks()};
     e_handle_event(e, true);
 }
 

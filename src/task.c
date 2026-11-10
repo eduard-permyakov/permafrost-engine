@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB 0
 
 #include "task.h"
+#include "game/public/game.h"
 #include "sched.h"
 #include "event.h"
 #include "main.h"
@@ -139,7 +140,7 @@ static struct result timeserver_task(void *arg)
         int reply = 0;
 
         Task_Receive(&tid, &request, sizeof(request));
-        uint32_t curr_tick = SDL_GetTicks();
+        uint32_t curr_tick = G_ClockTicks();
 
         switch(request.type) {
         case TS_REQ_NOTIFY:

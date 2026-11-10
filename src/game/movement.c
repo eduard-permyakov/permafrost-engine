@@ -1133,6 +1133,8 @@ static float                   s_max_sel_radius;
 static unsigned long           s_last_tick = 0;
 
 static enum movement_hz        s_move_hz = MOVE_HZ_20;
+/* Every tick run so far, by which the game clock is paced to the frames */
+static unsigned long           s_ticks_done;
 static struct refcounted_map  *s_nav_snapshot;
 static uint32_t                s_nav_snapshot_gen;
 static bool                    s_move_hz_dirty = false;
@@ -8482,6 +8484,7 @@ static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
     ASSERT_IN_MAIN_THREAD();
     PERF_PUSH("movement::tick");
     uint64_t tick_start = SDL_GetPerformanceCounter();
+    s_ticks_done++;
 
     struct sval cap_setting;
     s_log_cp_captures = (Settings_Get("pf.debug.log_cp_captures", &cap_setting) == SS_OKAY)
@@ -9607,6 +9610,16 @@ void G_Move_SetTickHz(enum movement_hz hz)
 {
     s_move_hz_dirty = (s_move_hz != hz);
     s_move_hz = hz;
+}
+
+int G_Move_TickRate(void)
+{
+    return hz_count(s_move_hz);
+}
+
+unsigned long G_Move_TicksDone(void)
+{
+    return s_ticks_done;
 }
 
 int G_Move_GetTickHz(void)

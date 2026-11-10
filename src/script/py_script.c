@@ -2837,7 +2837,7 @@ static PyObject *PyPf_perf_us(PyObject *self)
 
 static PyObject *PyPf_get_ticks(PyObject *self)
 {
-    return PyInt_FromLong(SDL_GetTicks());
+    return PyInt_FromLong(G_ClockTicks());
 }
 
 static PyObject *PyPf_ticks_delta(PyObject *self, PyObject *args)

@@ -106,7 +106,7 @@ static void on_update(void *user, void *event)
 {
     vec_id_t to_delete;
     vec_id_init(&to_delete);
-    uint32_t curr_time = SDL_GetTicks();
+    uint32_t curr_time = G_ClockTicks();
 
     uint32_t id;
     struct sprite_ctx *curr;
@@ -279,7 +279,7 @@ void Sprite_PlayAnim(size_t count, int fps, vec2_t ws_size,
         .ws_pos = ws_pos,
         .count_left = count,
         .curr_frame = 0,
-        .begin_tick_ms = SDL_GetTicks()
+        .begin_tick_ms = G_ClockTicks()
     });
 }
 
@@ -292,7 +292,7 @@ void Sprite_ShowStatic(struct sprite_sheet_desc desc, vec2_t ws_size, float dura
         .ws_size = ws_size,
         .ws_pos = ws_pos,
         .duration_ms = duration,
-        .begin_tick_ms = SDL_GetTicks(),
+        .begin_tick_ms = G_ClockTicks(),
     });
 }
 

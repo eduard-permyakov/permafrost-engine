@@ -945,6 +945,20 @@ static void move_hz_commit(const struct sval *new_val)
     G_Move_SetTickHz(mapping[raw]);
 }
 
+/* The game's speeds, as the pf.game.speed setting indexes them */
+static const float s_game_speeds[] = {0.5f, 1.0f, 2.0f, 4.0f};
+
+static bool game_speed_validate(const struct sval *new_val)
+{
+    return new_val->type == ST_TYPE_INT
+        && new_val->as_int >= 0 && new_val->as_int < ARR_SIZE(s_game_speeds);
+}
+
+static void game_speed_commit(const struct sval *new_val)
+{
+    G_ClockSetSpeed(s_game_speeds[new_val->as_int]);
+}
+
 static bool combat_hz_validate(const struct sval *new_val)
 {
     if(new_val->type != ST_TYPE_FLOAT)
@@ -1369,7 +1383,7 @@ static void g_change_simstate(void)
     if(s_gs.ss == s_gs.requested_ss)
         return;
 
-    uint32_t curr_tick = SDL_GetTicks();
+    uint32_t curr_tick = G_ClockTicks();
     switch(s_gs.requested_ss) {
     case G_RUNNING: {
 
@@ -1479,6 +1493,18 @@ static void g_create_settings(void)
         .prio = 0,
         .validate = move_hz_validate,
         .commit = move_hz_commit,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.game.speed",
+        .val = (struct sval) {
+            .type = ST_TYPE_INT,
+            .as_int = 1
+        },
+        .prio = 0,
+        .validate = game_speed_validate,
+        .commit = game_speed_commit,
     });
     assert(status == SS_OKAY);
 
@@ -2852,11 +2878,117 @@ void G_Shutdown(void)
     stalloc_destroy(&s_gs.render_data_stack);
 }
 
+#define CLOCK_UNPACED (64.0f)
+
+/* The simulation's millisecond clock: the real one run at the game's speed.
+ * Integrated, so that a change of speed never makes it jump. The frames, the
+ * camera, the sound and the profiler keep the real clock. */
+static SDL_SpinLock s_clock_lock;
+static bool         s_clock_init;
+static uint64_t     s_clock_last_pc;
+static double       s_clock_freq;
+static double       s_clock_ms;
+static float        s_clock_speed = 1.0f;
+static float        s_clock_allowed = CLOCK_UNPACED;
+
+static float clock_factor(void)
+{
+    return MIN(s_clock_speed, MAX(s_clock_allowed, 1.0f));
+}
+
+static void clock_advance(void)
+{
+    if(!s_clock_init) {
+        s_clock_freq = (double)SDL_GetPerformanceFrequency();
+        s_clock_last_pc = SDL_GetPerformanceCounter();
+        s_clock_ms = SDL_GetTicks();
+        s_clock_init = true;
+    }
+    uint64_t now = SDL_GetPerformanceCounter();
+    s_clock_ms += (now - s_clock_last_pc) * 1000.0 * clock_factor() / s_clock_freq;
+    s_clock_last_pc = now;
+}
+
+uint32_t G_ClockTicks(void)
+{
+    SDL_AtomicLock(&s_clock_lock);
+    clock_advance();
+    uint32_t ret = (uint32_t)s_clock_ms;
+    SDL_AtomicUnlock(&s_clock_lock);
+    return ret;
+}
+
+void G_ClockSetSpeed(float speed)
+{
+    SDL_AtomicLock(&s_clock_lock);
+    clock_advance();
+    s_clock_speed = MAX(speed, 0.0f);
+    s_clock_allowed = CLOCK_UNPACED;
+    SDL_AtomicUnlock(&s_clock_lock);
+}
+
+void G_ClockPace(float allowed)
+{
+    SDL_AtomicLock(&s_clock_lock);
+    clock_advance();
+    s_clock_allowed = allowed;
+    SDL_AtomicUnlock(&s_clock_lock);
+}
+
+float G_ClockSpeed(void)
+{
+    SDL_AtomicLock(&s_clock_lock);
+    float ret = clock_factor();
+    SDL_AtomicUnlock(&s_clock_lock);
+    return ret;
+}
+
+/* Keeps the game clock no faster than the frames tick the movement through:
+ * every second the ticks run are set against those the clock called for and
+ * the speed cut to the share kept up with when ticks were lost. It feels its
+ * way back up from there, and goes free once a while has passed without loss. */
+#define PACE_KEPT_UP   (0.95f)
+#define PACE_STEP      (1.15f)
+#define PACE_FREE_AFTER (8)
+
+static void g_pace_clock(void)
+{
+    static uint64_t      s_window_start;
+    static uint32_t      s_window_ticks;
+    static unsigned long s_window_done;
+    static int           s_clean_windows;
+
+    uint64_t now = SDL_GetPerformanceCounter();
+    uint64_t freq = SDL_GetPerformanceFrequency();
+    if(s_window_start == 0 || s_gs.ss != G_RUNNING) {
+        s_window_start = now;
+        s_window_ticks = G_ClockTicks();
+        s_window_done = G_Move_TicksDone();
+        return;
+    }
+    if(now - s_window_start < freq)
+        return;
+    float due = (G_ClockTicks() - s_window_ticks) / 1000.0f * G_Move_TickRate();
+    float done = G_Move_TicksDone() - s_window_done;
+    float speed = G_ClockSpeed();
+    if(due > 0.0f && done < due * PACE_KEPT_UP) {
+        G_ClockPace(speed * done / due);
+        s_clean_windows = 0;
+    }else{
+        s_clean_windows++;
+        G_ClockPace(s_clean_windows > PACE_FREE_AFTER ? CLOCK_UNPACED : speed * PACE_STEP);
+    }
+    s_window_start = now;
+    s_window_ticks = G_ClockTicks();
+    s_window_done = G_Move_TicksDone();
+}
+
 void G_Update(void)
 {
     PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
 
+    g_pace_clock();
     uint64_t st0 = SDL_GetPerformanceCounter();
     if(s_gs.map) {
         G_Fog_UpdateVisionState();
@@ -3894,7 +4026,7 @@ void G_SetSimState(enum simstate ss)
 void G_UpdateSimStateChangeTick(void)
 {
     ASSERT_IN_MAIN_THREAD();
-    s_gs.ss_change_tick = SDL_GetTicks();
+    s_gs.ss_change_tick = G_ClockTicks();
 }
 
 void G_SetLightPos(vec3_t pos)

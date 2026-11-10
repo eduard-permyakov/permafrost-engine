@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_ANIM_DISPATCH
 
 #include "public/anim.h"
+#include "../game/public/game.h"
 #include "anim_private.h"
 #include "anim_data.h"
 #include "anim_ctx.h"
@@ -198,14 +199,14 @@ void A_SetActiveClip(uint32_t uid, const char *name,
     ctx->mode = mode;
     ctx->key_fps = key_fps;
     ctx->curr_frame = 0;
-    ctx->curr_frame_start_ticks = SDL_GetTicks();
+    ctx->curr_frame_start_ticks = G_ClockTicks();
 }
 
 void A_Update(void)
 {
     PERF_ENTER();
 
-    uint32_t curr_ticks = SDL_GetTicks();
+    uint32_t curr_ticks = G_ClockTicks();
 
     /* Direct bucket iteration: the kh_foreach value copy plus the second
      * lookup for a writable pointer doubled the per-entity cost.
@@ -496,7 +497,7 @@ bool A_SaveState(struct SDL_RWops *stream, uint32_t uid)
 
     struct attr curr_frame_ticks_elapsed = (struct attr){
         .type = TYPE_INT,
-        .val.as_int = SDL_GetTicks() - ctx->curr_frame_start_ticks
+        .val.as_int = G_ClockTicks() - ctx->curr_frame_start_ticks
     };
     CHK_TRUE_RET(Attr_Write(stream, &curr_frame_ticks_elapsed, "curr_frame_ticks_elapsed"));
 
@@ -535,7 +536,7 @@ bool A_LoadState(struct SDL_RWops *stream, uint32_t uid)
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
-    ctx->curr_frame_start_ticks = SDL_GetTicks() - attr.val.as_int;
+    ctx->curr_frame_start_ticks = G_ClockTicks() - attr.val.as_int;
 
     return true;
 }

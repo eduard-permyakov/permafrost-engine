@@ -1318,12 +1318,12 @@ static struct result corpse_disappear_task(void *arg)
 
     const float duration = 1000.0f;
     uint32_t elapsed = 0;
-    uint32_t start = SDL_GetTicks();
+    uint32_t start = G_ClockTicks();
 
     while(elapsed < duration) {
     
         Task_AwaitEvent(EVENT_UPDATE_START, &(int){0});
-        uint32_t curr = SDL_GetTicks();
+        uint32_t curr = G_ClockTicks();
 
         /* The entity can theoretically be forecefully removed during the 
          * disappearing animation. Make sure we don't crap out if this happens
@@ -2488,7 +2488,7 @@ static void entity_compute_update(uint32_t uid, struct combat_work_out *out)
             };
         }else{
             curr->state = STATE_ATTACKING;
-            curr->attack_start_tick = SDL_GetTicks();
+            curr->attack_start_tick = G_ClockTicks();
         }
 
         break;
@@ -2520,7 +2520,7 @@ static void entity_compute_update(uint32_t uid, struct combat_work_out *out)
     }
     case STATE_ATTACKING: {
 
-        uint32_t ticks = SDL_GetTicks();
+        uint32_t ticks = G_ClockTicks();
         uint32_t period = DEFAULT_ATTACK_PERIOD * 1000.0f;
         if(!SDL_TICKS_PASSED(ticks, curr->attack_start_tick + period))
             break;
@@ -4598,7 +4598,7 @@ bool G_Combat_SaveState(struct SDL_RWops *stream)
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_ents, "num_ents"));
 
-    uint32_t curr_ticks = SDL_GetTicks();
+    uint32_t curr_ticks = G_ClockTicks();
     uint32_t key;
     struct combatstate curr;
 
@@ -5000,7 +5000,7 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
     Sched_TryYield();
 
     const size_t num_ents = attr.val.as_int;
-    uint32_t curr_ticks = SDL_GetTicks();
+    uint32_t curr_ticks = G_ClockTicks();
 
     for(int i = 0; i < num_ents; i++) {
     

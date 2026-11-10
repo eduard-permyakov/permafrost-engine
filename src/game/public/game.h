@@ -242,6 +242,12 @@ void            G_MoveActiveCamera(vec2_t xz_ground_pos);
 bool            G_UpdateTile(const struct tile_desc *desc, const struct tile *tile);
 bool            G_GetTile(const struct tile_desc *desc, struct tile *out);
 
+/* The simulation's clock, in milliseconds: the real one at the game's speed */
+uint32_t        G_ClockTicks(void);
+void            G_ClockSetSpeed(float speed);
+/* The speed the frames allow, which never slows the game below its normal pace */
+void            G_ClockPace(float allowed);
+float           G_ClockSpeed(void);
 void            G_SetSimState(enum simstate ss);
 enum simstate   G_GetSimState(void);
 void            G_UpdateSimStateChangeTick(void);

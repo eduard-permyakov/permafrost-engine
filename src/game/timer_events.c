@@ -73,14 +73,19 @@ static SDL_TimerID        s_60hz_timer;
 static uint32_t timer_callback(uint32_t interval, void *param)
 {
     static double s_error = 0.0f;
-    s_error += (TIMER_INTERVAL - interval);
+    /* The ticks come a sixtieth of a game second apart, however fast the game runs */
+    double wanted = TIMER_INTERVAL / G_ClockSpeed();
+    s_error += (wanted - interval);
 
     double intpart, fracpart;
     fracpart = modf(s_error, &intpart);
     (void)fracpart;
 
     s_error -= intpart;
-    interval = ((int)TIMER_INTERVAL) + intpart;
+    interval = ((int)wanted) + intpart;
+    if(interval < 1)
+        interval = 1;
+
 
     SDL_Event event = (SDL_Event) {
         .type = SDL_USEREVENT,

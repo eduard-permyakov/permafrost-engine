@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_GAME_FORMATION
 
 #include "formation.h"
+#include "public/game.h"
 #include "position.h"
 #include "movement.h"
 #include "../main.h"
@@ -3453,7 +3454,7 @@ static bool event_triggered_recalculate(struct formation *formation, struct bloc
 
 static void on_entity_unblock(void *user, void *event)
 {
-    uint32_t tick = SDL_GetTicks();
+    uint32_t tick = G_ClockTicks();
     struct block_event block_event = (struct block_event){
         .type = EVENT_MOVABLE_ENTITY_UNBLOCK,
         .desc = *(struct entity_block_desc*)event,
@@ -3464,7 +3465,7 @@ static void on_entity_unblock(void *user, void *event)
 
 static void on_entity_block(void *user, void *event)
 {
-    uint32_t tick = SDL_GetTicks();
+    uint32_t tick = G_ClockTicks();
     struct block_event block_event = (struct block_event){
         .type = EVENT_MOVABLE_ENTITY_BLOCK,
         .desc = *(struct entity_block_desc*)event,
@@ -3475,7 +3476,7 @@ static void on_entity_block(void *user, void *event)
 
 static void on_building_found(void *user, void *event)
 {
-    uint32_t tick = SDL_GetTicks();
+    uint32_t tick = G_ClockTicks();
     struct block_event block_event = (struct block_event){
         .type = EVENT_MOVABLE_ENTITY_BLOCK,
         .desc = *(struct entity_block_desc*)event,
@@ -3486,7 +3487,7 @@ static void on_building_found(void *user, void *event)
 
 static void on_building_remove(void *user, void *event)
 {
-    uint32_t tick = SDL_GetTicks();
+    uint32_t tick = G_ClockTicks();
     struct block_event block_event = (struct block_event){
         .type = EVENT_MOVABLE_ENTITY_UNBLOCK,
         .desc = *(struct entity_block_desc*)event,
@@ -3544,7 +3545,7 @@ static void on_1hz_tick(void *user, void *event)
     }
 
     khash_t(entity) *need_recompute = kh_init(entity);
-    uint32_t ticks = SDL_GetTicks();
+    uint32_t ticks = G_ClockTicks();
     struct block_event block_event;
     while(queue_event_pop(&s_events, &block_event)) {
 
@@ -3767,7 +3768,7 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
     work->overlay = (struct nav_cell_overlay){formation->blocked_tiles.array,
         vec_size(&formation->blocked_tiles)};
     work->uid = uid;
-    work->last_update_ticks = SDL_GetTicks();
+    work->last_update_ticks = G_ClockTicks();
 
     work->input.layer = formation->layer;
     work->input.enemy_faction_mask = G_GetEnemyFactions(formation->faction_id);
@@ -5186,7 +5187,7 @@ void G_Formation_Create(vec2_t target, vec2_t orientation,
         .center = field_center(target, orientation, field_res),
         .ents = copy_vector(ents),
         .speed = formation_speed(ents),
-        .created_tick = SDL_GetTicks(),
+        .created_tick = G_ClockTicks(),
         .sub_assignment = kh_init(assignment),
         .field_res = field_res,
         .snapshot_gen = G_Move_NavSnapshotGeneration()
@@ -5656,7 +5657,7 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
     if(!work)
         PERF_RETURN_VOID();
 
-    uint32_t curr = SDL_GetTicks();
+    uint32_t curr = G_ClockTicks();
     float elapsed = (curr - work->last_update_ticks) / 1000.0f;
     if(elapsed < FIELD_RECOMPUTE_INTERVAL) {
         PERF_RETURN_VOID();
@@ -5947,7 +5948,7 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
         .center = field_center(target, orientation, field_res),
         .ents = copy_vector(ents),
         .speed = formation_speed(ents),
-        .created_tick = SDL_GetTicks(),
+        .created_tick = G_ClockTicks(),
         .sub_assignment = kh_init(assignment),
         .field_res = field_res,
         .snapshot_gen = G_Move_NavSnapshotGeneration()
@@ -6189,7 +6190,7 @@ bool G_Formation_SaveState(struct SDL_RWops *stream)
 
 bool G_Formation_LoadState(struct SDL_RWops *stream)
 {
-    uint32_t curr_tick = SDL_GetTicks();
+    uint32_t curr_tick = G_ClockTicks();
     struct attr attr;
 
     /* Load next formation ID */

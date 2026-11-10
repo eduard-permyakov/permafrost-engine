@@ -79,6 +79,8 @@ bool G_Move_HasWork(void);
 void G_Move_FlushWork(void);
 
 void G_Move_SetTickHz(enum movement_hz hz);
+int  G_Move_TickRate(void);
+unsigned long G_Move_TicksDone(void);
 int  G_Move_GetTickHz(void);
 void G_Move_SetUseGPU(bool use);
 
