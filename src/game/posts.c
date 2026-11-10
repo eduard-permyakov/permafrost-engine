@@ -142,6 +142,8 @@ static uint32_t             s_tick;
 static uint32_t             s_vacancies_tick;
 static size_t               s_nvacancies;
 static struct post_vacancy  s_vacancies[MAX_VACANCIES];
+/* The holders a tick looks at */
+static vec_entity_t         s_due;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -436,30 +438,28 @@ static void on_20hz_tick(void *user, void *event)
     });
 
     /* A release takes the holder out of the table, so they are gathered first */
-    uint32_t units[256];
-    size_t nunits = 0;
     struct holder *h;
+    vec_entity_reset(&s_due);
     kh_foreach_val_ptr(s_holders, uid, h, {
-        if(nunits == ARR_SIZE(units))
-            break;
         if(h->state == HOLDER_INSIDE && uid % BUCKETS != bucket)
             continue;
-        units[nunits++] = uid;
+        vec_entity_push(&s_due, uid);
     });
 
-    for(int i = 0; i < nunits; i++) {
-        struct holder *h = holder_get(units[i]);
+    for(int i = 0; i < vec_size(&s_due); i++) {
+        uint32_t unit = vec_AT(&s_due, i);
+        struct holder *h = holder_get(unit);
         if(!h)
             continue;
         switch(h->state) {
         case HOLDER_WALKING:
-            update_walking(units[i], h);
+            update_walking(unit, h);
             break;
         case HOLDER_INSIDE:
-            update_inside(units[i], h);
+            update_inside(unit, h);
             break;
         case HOLDER_AWAY:
-            update_away(units[i], h);
+            update_away(unit, h);
             break;
         }
     }
@@ -621,6 +621,7 @@ bool G_Posts_Init(const struct map *map)
         kh_destroy(holder, s_holders);
         return false;
     }
+    vec_entity_init(&s_due);
     s_map = map;
     s_tick = 0;
     s_vacancies_tick = ~((uint32_t)0);
@@ -638,6 +639,7 @@ void G_Posts_Shutdown(void)
     E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
     kh_destroy(workshop, s_workshops);
     kh_destroy(holder, s_holders);
+    vec_entity_destroy(&s_due);
 }
 
 void G_Posts_RemoveEntity(uint32_t uid)
