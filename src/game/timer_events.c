@@ -54,6 +54,7 @@
 #define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_TIMER_EVENTS)
 
 #define TIMER_INTERVAL  (1000.0f/60.0f)
+#define MAX_TICK_BACKLOG (15)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -86,6 +87,11 @@ static uint32_t timer_callback(uint32_t interval, void *param)
     if(interval < 1)
         interval = 1;
 
+    /* A long frame leaves no more ticks behind it than the next can take in
+     * stride: the game slows for it, rather than each frame being longer for
+     * the ticks the last one left */
+    if(SDL_PeepEvents(NULL, 0, SDL_PEEKEVENT, SDL_USEREVENT, SDL_USEREVENT) >= MAX_TICK_BACKLOG)
+        return interval;
 
     SDL_Event event = (SDL_Event) {
         .type = SDL_USEREVENT,
