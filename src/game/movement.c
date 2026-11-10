@@ -5193,13 +5193,17 @@ static void find_neighbours(uint32_t uid, vec2_t ahead,
         if((ent_flags & ENTITY_FLAG_AIR) != (flags & ENTITY_FLAG_AIR))
             continue;
 
-        if(phasing
-        && G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, curr) == ent_faction
-        && ent_still(movestate_get(curr)))
+        /* One made since the snapshot was taken is in it, but has no movestate 
+         * until the next tick: a ghost nobody avoids for one tick
+         */
+        struct movestate *ms = movestate_get(curr);
+        if(!ms)
             continue;
 
-        struct movestate *ms = movestate_get(curr);
-        assert(ms);
+        if(phasing
+        && G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, curr) == ent_faction
+        && ent_still(ms))
+            continue;
 
         vec2_t curr_xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr);
         vec2_t to_curr;
