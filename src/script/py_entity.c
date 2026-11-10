@@ -48,6 +48,7 @@
 #include "../game/public/game.h"
 #include "../game/duty.h"
 #include "../game/wander.h"
+#include "../game/provision.h"
 #include "../game/population.h"
 #include "../game/command.h"
 #include "../phys/public/phys.h"
@@ -130,6 +131,7 @@ static PyObject *PyEntity_set_provision(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_replenish(PyEntityObject *self);
 static PyObject *PyEntity_get_provision_tier(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_provision_timer_ms(PyEntityObject *self, void *closure);
+static PyObject *PyEntity_get_provision_fetching(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_auto_replenish(PyEntityObject *self, void *closure);
 static int       PyEntity_set_auto_replenish(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_set_quiver(PyEntityObject *self, PyObject *args);
@@ -275,6 +277,10 @@ static PyGetSetDef PyEntity_getset[] = {
     (getter)PyEntity_get_provision_timer_ms, NULL,
     "The milliseconds until the unit's next meal when fed, until it starves when hungry, and for "
     "which it has starved when starving.",
+    NULL},
+    {"provision_fetching",
+    (getter)PyEntity_get_provision_fetching, NULL,
+    "Whether the unit is on its way to a store to eat.",
     NULL},
     {"auto_replenish",
     (getter)PyEntity_get_auto_replenish, (setter)PyEntity_set_auto_replenish,
@@ -2584,6 +2590,13 @@ static PyObject *PyEntity_get_provision_tier(PyEntityObject *self, void *closure
 static PyObject *PyEntity_get_provision_timer_ms(PyEntityObject *self, void *closure)
 {
     return PyInt_FromLong(G_Provision_TimerMs(self->ent));
+}
+
+static PyObject *PyEntity_get_provision_fetching(PyEntityObject *self, void *closure)
+{
+    if(G_Provision_Fetching(self->ent))
+        Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
 }
 
 static PyObject *PyEntity_get_auto_replenish(PyEntityObject *self, void *closure)

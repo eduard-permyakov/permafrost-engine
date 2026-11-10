@@ -153,6 +153,7 @@ static uint32_t ahead_ms(const struct provision *p, float share);
 static bool carrying(uint32_t uid);
 static bool at_store(uint32_t uid, uint32_t site, int tries);
 static bool free_to_fetch(uint32_t uid);
+static uint32_t nearest_food(uint32_t uid, const struct provision *p);
 static void on_arrive_quiver(void *user, void *event);
 static void on_ordered_quiver(void *user, void *event);
 
@@ -258,14 +259,19 @@ static bool has_food(uint32_t site, void *arg)
     return true;
 }
 
-static bool fetch(uint32_t uid, struct provision *p)
+static uint32_t nearest_food(uint32_t uid, const struct provision *p)
 {
     struct food_search arg = (struct food_search){
         .faction = G_GetFactionID(uid),
         .good = p->good,
         .eater = uid
     };
-    uint32_t site = G_Pos_NearestWithPred(G_Pos_GetXZ(uid), has_food, &arg, 0.0f);
+    return G_Pos_NearestWithPred(G_Pos_GetXZ(uid), has_food, &arg, 0.0f);
+}
+
+static bool fetch(uint32_t uid, struct provision *p)
+{
+    uint32_t site = nearest_food(uid, p);
     p->no_food = (site == NULL_UID);
     if(site == NULL_UID) {
         p->retry_ms = s_now_ms + FETCH_RETRY_MS;
@@ -435,8 +441,16 @@ static void update(uint32_t uid, struct provision *p)
         }
     }
     if(p->tier != PROVISION_FED && p->automatic && p->fetching == NULL_UID 
-    && s_now_ms >= p->retry_ms && free_to_fetch(uid)) {
-        fetch(uid, p);
+    && s_now_ms >= p->retry_ms) {
+        if(free_to_fetch(uid)) {
+            fetch(uid, p);
+        }else if(p->no_food) {
+            /* One kept where it is looks again all the same: whoever holds it
+             * lets it go once there is food to go for
+             */
+            p->no_food = (nearest_food(uid, p) == NULL_UID);
+            p->retry_ms = s_now_ms + FETCH_RETRY_MS;
+        }
     }
 }
 
