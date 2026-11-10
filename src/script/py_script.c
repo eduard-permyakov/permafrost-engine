@@ -362,6 +362,12 @@ static PyObject *PyPf_set_cluster_icon(PyObject *self, PyObject *args);
 static PyObject *PyPf_district_at(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_show_districts(PyObject *self, PyObject *args);
 static PyObject *PyPf_districts_shown(PyObject *self);
+static PyObject *PyPf_lens_grid(PyObject *self);
+static PyObject *PyPf_lens_cell_center(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_lens(PyObject *self, PyObject *args);
+static PyObject *PyPf_show_lens(PyObject *self, PyObject *args);
+static PyObject *PyPf_lens_ready(PyObject *self);
+static PyObject *PyPf_lens_shown(PyObject *self);
 static PyObject *PyPf_show_district(PyObject *self, PyObject *args);
 static PyObject *PyPf_district_shown(PyObject *self);
 static PyObject *PyPf_district_gathered(PyObject *self, PyObject *args);
@@ -1665,6 +1671,31 @@ static PyMethodDef pf_module_methods[] = {
     {"districts_shown",
     (PyCFunction)PyPf_districts_shown, METH_NOARGS,
     "Returns whether the district lens is on."},
+
+    {"lens_grid",
+    (PyCFunction)PyPf_lens_grid, METH_NOARGS,
+    "Returns the (rows, columns) of the cells the lens shades, or None without a map."},
+
+    {"lens_cell_center",
+    (PyCFunction)PyPf_lens_cell_center, METH_VARARGS,
+    "Takes a (row, column) cell of the lens. Returns the (X, Z) of its centre."},
+
+    {"set_lens",
+    (PyCFunction)PyPf_set_lens, METH_VARARGS,
+    "Takes a list of rows * columns (R, G, B, A) tuples, one per cell in row order: the shade "
+    "the lens lays over each cell while it is shown. A cell with no alpha is left as it is."},
+
+    {"lens_ready",
+    (PyCFunction)PyPf_lens_ready, METH_NOARGS,
+    "Returns whether the cells' shades have been set since this map was loaded; saves do not keep them."},
+
+    {"show_lens",
+    (PyCFunction)PyPf_show_lens, METH_VARARGS,
+    "Turns the lens of the cells' shades on or off."},
+
+    {"lens_shown",
+    (PyCFunction)PyPf_lens_shown, METH_NOARGS,
+    "Returns whether the lens of the cells' shades is on."},
 
     {"show_district",
     (PyCFunction)PyPf_show_district, METH_VARARGS,
@@ -7102,6 +7133,94 @@ static PyObject *PyPf_show_districts(PyObject *self, PyObject *args)
 static PyObject *PyPf_districts_shown(PyObject *self)
 {
     if(G_District_GetShow()) {
+        Py_RETURN_TRUE;
+    }else{
+        Py_RETURN_FALSE;
+    }
+}
+
+static PyObject *PyPf_lens_grid(PyObject *self)
+{
+    int rows, cols;
+    if(!G_District_LensGrid(&rows, &cols))
+        Py_RETURN_NONE;
+    return Py_BuildValue("(ii)", rows, cols);
+}
+
+static PyObject *PyPf_lens_cell_center(PyObject *self, PyObject *args)
+{
+    int r, c;
+    if(!PyArg_ParseTuple(args, "(ii)", &r, &c)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of two integers.");
+        return NULL;
+    }
+    vec2_t center = G_District_CellCenter(r, c);
+    return Py_BuildValue("(ff)", center.x, center.z);
+}
+
+static PyObject *PyPf_set_lens(PyObject *self, PyObject *args)
+{
+    PyObject *cells;
+    if(!PyArg_ParseTuple(args, "O", &cells) || !PySequence_Check(cells)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a sequence of (R, G, B, A) tuples.");
+        return NULL;
+    }
+    int rows, cols;
+    if(!G_District_LensGrid(&rows, &cols)) {
+        PyErr_SetString(PyExc_RuntimeError, "No map is loaded.");
+        return NULL;
+    }
+    Py_ssize_t n = PySequence_Size(cells);
+    if(n != (Py_ssize_t)rows * cols) {
+        PyErr_Format(PyExc_ValueError, "Expected %d cells.", rows * cols);
+        return NULL;
+    }
+    uint8_t *rgba = PF_MALLOC(n * 4);
+    if(!rgba)
+        return PyErr_NoMemory();
+    for(Py_ssize_t i = 0; i < n; i++) {
+        PyObject *item = PySequence_GetItem(cells, i);
+        int r, g, b, a;
+        bool ok = item && PyArg_ParseTuple(item, "iiii", &r, &g, &b, &a);
+        Py_XDECREF(item);
+        if(!ok) {
+            PF_FREE(rgba);
+            PyErr_SetString(PyExc_TypeError, "Every cell must be an (R, G, B, A) tuple of integers.");
+            return NULL;
+        }
+        rgba[i * 4 + 0] = r;
+        rgba[i * 4 + 1] = g;
+        rgba[i * 4 + 2] = b;
+        rgba[i * 4 + 3] = a;
+    }
+    G_District_SetLens(rgba, n);
+    PF_FREE(rgba);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_show_lens(PyObject *self, PyObject *args)
+{
+    PyObject *on;
+    if(!PyArg_ParseTuple(args, "O", &on)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a boolean.");
+        return NULL;
+    }
+    G_District_ShowLens(PyObject_IsTrue(on));
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_lens_ready(PyObject *self)
+{
+    if(G_District_LensReady()) {
+        Py_RETURN_TRUE;
+    }else{
+        Py_RETURN_FALSE;
+    }
+}
+
+static PyObject *PyPf_lens_shown(PyObject *self)
+{
+    if(G_District_LensShown()) {
         Py_RETURN_TRUE;
     }else{
         Py_RETURN_FALSE;

@@ -76,6 +76,8 @@
 #define OVERLAY_LIFT        (0.1f)
 #define MESH_DISTRICTS      (0)
 #define MESH_PREVIEW        (1)
+/* A shade of each cell the scripts set, such as the land's fertility */
+#define MESH_LENS           (2)
 #define MESH_FOCUS          (3)
 #define DOTS_PER_SIDE       (8)
 #define FOCUS_BORDER_RGB    ((vec3_t){0.78f, 0.15f, 0.18f})
@@ -135,6 +137,10 @@ static size_t            s_nroads;
 static bool              s_show;
 /* The district shown alone, or 0 */
 static int               s_focus;
+/* RGBA per cell, as the scripts set it; a cell with no alpha is not shaded */
+static uint8_t          *s_lens;
+static bool              s_show_lens;
+static bool              s_lens_ready;
 /* The cells a hub placed at the preview position would take over */
 static bool              s_preview_on;
 static int               s_preview_faction;
@@ -748,7 +754,18 @@ static void build_mesh(int slot, uint16_t factions)
     vec_overlay_init(&tris);
     vec_overlay_init(&lines);
 
-    for(int fac = 0; fac < MAX_FACTIONS; fac++) {
+    if(slot == MESH_LENS) {
+        for(int r = 0; s_lens && r < s_rows; r++) {
+        for(int c = 0; c < s_cols; c++) {
+            const uint8_t *p = &s_lens[(r * s_cols + c) * 4];
+            if(p[3] == 0)
+                continue;
+            emit_cell_surface(&tris, r, c,
+                (vec4_t){p[0] / 255.0f, p[1] / 255.0f, p[2] / 255.0f, p[3] / 255.0f});
+        }}
+    }
+
+    for(int fac = 0; slot != MESH_LENS && fac < MAX_FACTIONS; fac++) {
 
         if(!(factions & (0x1 << fac)))
             continue;
@@ -810,6 +827,9 @@ static void on_render_3d(void *user, void *event)
     if(s_show) {
         draw_mesh(MESH_DISTRICTS);
     }
+    if(s_show_lens && s_lens) {
+        draw_mesh(MESH_LENS);
+    }
     if(s_preview_on) {
         draw_mesh(MESH_PREVIEW);
     }
@@ -864,8 +884,11 @@ bool G_District_Init(const struct map *map)
     s_road = PF_CALLOC(ncells, sizeof(bool));
     s_preview_cells = PF_CALLOC(ncells, sizeof(bool));
     s_preview_prev = PF_CALLOC(ncells, sizeof(bool));
+    s_lens = PF_CALLOC(ncells, 4);
+    s_show_lens = false;
+    s_lens_ready = false;
     if(!s_passable[LAYER_GROUND] || !s_passable[LAYER_WATER] || !s_road || !s_preview_cells
-    || !s_preview_prev) {
+    || !s_preview_prev || !s_lens) {
         G_District_Shutdown();
         return false;
     }
@@ -903,10 +926,12 @@ void G_District_Shutdown(void)
     PF_FREE(s_road);
     PF_FREE(s_preview_cells);
     PF_FREE(s_preview_prev);
+    PF_FREE(s_lens);
     s_passable[LAYER_GROUND] = s_passable[LAYER_WATER] = NULL;
     s_road = NULL;
     s_preview_cells = NULL;
     s_preview_prev = NULL;
+    s_lens = NULL;
 }
 
 void G_District_Update(void)
@@ -988,6 +1013,45 @@ void G_District_SetShow(bool on)
 bool G_District_GetShow(void)
 {
     return s_show;
+}
+
+bool G_District_LensGrid(int *out_rows, int *out_cols)
+{
+    if(!s_lens)
+        return false;
+    *out_rows = s_rows;
+    *out_cols = s_cols;
+    return true;
+}
+
+vec2_t G_District_CellCenter(int r, int c)
+{
+    return cell_center(r, c);
+}
+
+bool G_District_SetLens(const uint8_t *rgba, size_t ncells)
+{
+    if(!s_lens || ncells != (size_t)(s_rows * s_cols))
+        return false;
+    memcpy(s_lens, rgba, ncells * 4);
+    s_lens_ready = true;
+    s_mesh_dirty[MESH_LENS] = true;
+    return true;
+}
+
+bool G_District_LensReady(void)
+{
+    return s_lens_ready;
+}
+
+void G_District_ShowLens(bool on)
+{
+    s_show_lens = on;
+}
+
+bool G_District_LensShown(void)
+{
+    return s_show_lens;
 }
 
 void G_District_SetFocus(int district)

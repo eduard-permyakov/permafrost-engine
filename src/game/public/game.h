@@ -352,6 +352,14 @@ int                   G_District_OfNode(int faction, uint32_t node, float *out_c
 void                  G_District_Update(void);
 void                  G_District_SetShow(bool on);
 bool                  G_District_GetShow(void);
+/* A shade of each of the map's cells the scripts set, drawn over the ground
+ * while shown; rows * cols RGBA bytes, a cell with no alpha left as it is */
+bool                  G_District_LensGrid(int *out_rows, int *out_cols);
+vec2_t                G_District_CellCenter(int r, int c);
+bool                  G_District_SetLens(const uint8_t *rgba, size_t ncells);
+bool                  G_District_LensReady(void);
+void                  G_District_ShowLens(bool on);
+bool                  G_District_LensShown(void);
 /* Shows one district alone, or none for 0 */
 void                  G_District_SetFocus(int district);
 int                   G_District_GetFocus(void);
