@@ -662,6 +662,9 @@ int            G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, uint32_t
 int            G_Pos_EntsNearSegment(vec2_t a, vec2_t b, vec_entity_t *out);
 
 uint32_t       G_Pos_Nearest(vec2_t xz_point);
+/* The nearest store the predicate takes, of the stores alone; a max_range of 0 is no limit */
+uint32_t       G_StorageSite_NearestWithPred(vec2_t xz_point, bool (*predicate)(uint32_t ent, void *arg),
+                                             void *arg, float max_range);
 uint32_t       G_Pos_NearestWithPred(vec2_t xz_point, 
                                      bool (*predicate)(uint32_t ent, void *arg), 
                                      void *arg, float max_range);

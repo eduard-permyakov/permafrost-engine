@@ -753,7 +753,7 @@ static bool valid_resource(uint32_t uid, void *arg)
 static uint32_t drop_site_for(uint32_t uid, uint32_t node, const char *rname)
 {
     struct searcharg arg = (struct searcharg){uid, NULL_UID, rname};
-    return G_Pos_NearestWithPred(G_Pos_GetXZ(node), valid_storage_site_dropoff, (void*)&arg, 0.0f);
+    return G_StorageSite_NearestWithPred(G_Pos_GetXZ(node), valid_storage_site_dropoff, (void*)&arg, 0.0f);
 }
 
 /* Beside the store, or as near as a crowd about it lets one get */
@@ -791,16 +791,16 @@ uint32_t nearest_storage_site_dropoff(uint32_t uid, const char *rname)
     vec2_t pos = G_Pos_GetXZ(uid);
     struct searcharg arg = (struct searcharg){uid, NULL_UID, rname};
     arg.room = G_Harvester_GetCurrCarry(uid, rname);
-    uint32_t ret = G_Pos_NearestWithPred(pos, valid_storage_site_dropoff, (void*)&arg, 0.0f);
+    uint32_t ret = G_StorageSite_NearestWithPred(pos, valid_storage_site_dropoff, (void*)&arg, 0.0f);
     if(ret == NULL_UID && arg.room > 1) {
         arg.room = 0;
-        ret = G_Pos_NearestWithPred(pos, valid_storage_site_dropoff, (void*)&arg, 0.0f);
+        ret = G_StorageSite_NearestWithPred(pos, valid_storage_site_dropoff, (void*)&arg, 0.0f);
     }
     if(ret != NULL_UID && !asks_for(ret, rname)) {
         vec2_t at = G_Pos_GetXZ(ret), delta;
         PFM_Vec2_Sub(&at, &pos, &delta);
         float within = PFM_Vec2_Len(&delta) * DROP_ASK_DETOUR + DROP_ASK_SLACK;
-        uint32_t asking = G_Pos_NearestWithPred(pos, valid_asking_dropoff, (void*)&arg, within);
+        uint32_t asking = G_StorageSite_NearestWithPred(pos, valid_asking_dropoff, (void*)&arg, within);
         if(asking != NULL_UID) {
             ret = asking;
         }
@@ -812,11 +812,11 @@ uint32_t nearest_storage_site_source(uint32_t uid, uint32_t storage, const char 
 {
     vec2_t pos = G_Pos_GetXZ(storage);
     struct searcharg arg = (struct searcharg){uid, storage, rname, strat};
-    uint32_t ret = G_Pos_NearestWithPred(pos, valid_storage_site_source, (void*)&arg, 0.0f);
+    uint32_t ret = G_StorageSite_NearestWithPred(pos, valid_storage_site_source, (void*)&arg, 0.0f);
 
     if((ret == NULL_UID) && (strat == TRANSPORT_STRATEGY_EXCESS)) {
         arg = (struct searcharg){uid, storage, rname, TRANSPORT_STRATEGY_NEAREST};
-        ret = G_Pos_NearestWithPred(pos, valid_storage_site_source, (void*)&arg, 0.0f);
+        ret = G_StorageSite_NearestWithPred(pos, valid_storage_site_source, (void*)&arg, 0.0f);
     }
     return ret;
 }

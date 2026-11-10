@@ -38,6 +38,7 @@
 
 #include "storage_site.h"
 #include "duty.h"
+#include "position.h"
 #include "game_private.h"
 #include "selection.h"
 #include "../sched.h"
@@ -55,6 +56,7 @@
 #include "../lib/public/stb_image.h"
 
 #include <assert.h>
+#include <stdlib.h>
 #include <math.h>
 
 #include "../mem.h"
@@ -97,6 +99,7 @@ static bool ss_state_get_key(kh_int_t *table, const char *name, int *out);
 
 /* The goods a site eats in one another's stead, as one draw */
 #define MAX_DRAW_MEMBERS    (8)
+#define MAX_STORE_CANDS     (2048)
 #define MAX_DRAWS           (8)
 /* A draw set lower than it was comes down over this long, one set higher takes at once */
 #define DRAW_SMOOTH_S       (60.0f)
@@ -351,6 +354,11 @@ static mpa_buff_t       s_mpool;
 static khash_t(stridx) *s_stridx;
 static mp_strbuff_t     s_stringpool;
 static struct memstack  s_eventargs;
+struct store_cand{
+    float    dist2;
+    uint32_t uid;
+};
+
 static khash_t(state)  *s_entity_state_table;
 /* The pooled state of every cluster of storage sites */
 static khash_t(state)  *s_pools;
@@ -3090,6 +3098,45 @@ int G_StorageSite_SurplusForSite(uint32_t uid, const char *rname)
 bool G_StorageSite_Accepts(uint32_t uid, const char *rname)
 {
     return G_StorageSite_GetChip(uid, rname) != SS_CHIP_OFF;
+}
+
+static int compare_cands(const void *a, const void *b)
+{
+    const struct store_cand *ca = a, *cb = b;
+    return (ca->dist2 > cb->dist2) - (ca->dist2 < cb->dist2);
+}
+
+uint32_t G_StorageSite_NearestWithPred(vec2_t xz_point, bool (*predicate)(uint32_t ent, void *arg),
+                                       void *arg, float max_range)
+{
+    ASSERT_IN_MAIN_THREAD();
+    assert(Sched_UsingBigStack());
+
+    struct store_cand cands[MAX_STORE_CANDS];
+    size_t ncands = 0;
+    const float limit2 = (max_range == 0.0f) ? INFINITY : max_range * max_range;
+
+    uint32_t uid;
+    struct ss_state curr;
+    (void)curr;
+    kh_foreach(s_entity_state_table, uid, curr, {
+        if(ncands == MAX_STORE_CANDS)
+            break;
+        vec2_t pos = G_Pos_GetXZ(uid);
+        float dx = pos.x - xz_point.x, dz = pos.z - xz_point.z;
+        float dist2 = dx * dx + dz * dz;
+        if(dist2 <= limit2) {
+            cands[ncands++] = (struct store_cand){dist2, uid};
+        }
+    });
+
+    /* Nearest first, so that the costly predicates run on as few as may be */
+    qsort(cands, ncands, sizeof(cands[0]), compare_cands);
+    for(size_t i = 0; i < ncands; i++) {
+        if(predicate(cands[i].uid, arg))
+            return cands[i].uid;
+    }
+    return NULL_UID;
 }
 
 bool G_StorageSite_IsSaturated(uint32_t uid)

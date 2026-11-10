@@ -266,7 +266,7 @@ static uint32_t nearest_food(uint32_t uid, const struct provision *p)
         .good = p->good,
         .eater = uid
     };
-    return G_Pos_NearestWithPred(G_Pos_GetXZ(uid), has_food, &arg, 0.0f);
+    return G_StorageSite_NearestWithPred(G_Pos_GetXZ(uid), has_food, &arg, 0.0f);
 }
 
 static bool fetch(uint32_t uid, struct provision *p)
@@ -486,7 +486,7 @@ static bool fetch_quiver(uint32_t uid, struct quiver *q)
         .good = q->good,
         .eater = uid
     };
-    uint32_t site = G_Pos_NearestWithPred(G_Pos_GetXZ(uid), has_food, &arg, 0.0f);
+    uint32_t site = G_StorageSite_NearestWithPred(G_Pos_GetXZ(uid), has_food, &arg, 0.0f);
     if(site == NULL_UID) {
         q->retry_ms = s_now_ms + FETCH_RETRY_MS;
         return false;
