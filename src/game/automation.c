@@ -47,6 +47,7 @@
 #include "provision.h"
 #include "posts.h"
 #include "harvester.h"
+#include "resource.h"
 #include "command.h"
 #include "../event.h"
 #include "../entity.h"
@@ -1183,6 +1184,16 @@ static int compare_requests(const void *a, const void *b)
     return 0;
 }
 
+/* A building being built takes all but the player's reserve, and so does a
+ * field being sown again
+ */
+static bool takes_as_site(uint32_t site)
+{
+    if(G_StorageSite_GetUseAlt(site))
+        return true;
+    return (G_FlagsGet(site) & ENTITY_FLAG_RESOURCE) && G_Resource_IsReplenishing(site);
+}
+
 static int source_surplus(uint32_t site, const char *rname, bool for_site)
 {
     return for_site ? G_StorageSite_SurplusForSite(site, rname) : G_StorageSite_Surplus(site, rname);
@@ -1193,7 +1204,7 @@ static void collect_sources(vec_source_t *out, const vec_entity_t *sites, const 
 {
     /* Relays pass goods on to the sites that want them, never to each other */
     bool relaying = G_StorageSite_GetChip(exclude, rname) == SS_CHIP_RELAY;
-    bool for_site = G_StorageSite_GetUseAlt(exclude);
+    bool for_site = takes_as_site(exclude);
     for(int i = 0; i < vec_size(sites); i++) {
         uint32_t site = vec_AT(sites, i);
         if(G_EntityIsZombie(site) || !is_representative(site))
@@ -1223,7 +1234,7 @@ static void collect_sources(vec_source_t *out, const vec_entity_t *sites, const 
 static enum request_status no_source_reason(const vec_entity_t *sites, const struct job_request *req)
 {
     int faction = G_GetFactionID(req->site);
-    bool for_site = G_StorageSite_GetUseAlt(req->site);
+    bool for_site = takes_as_site(req->site);
     int held = 0, spare = 0;
     for(int i = 0; i < vec_size(sites); i++) {
         uint32_t site = vec_AT(sites, i);

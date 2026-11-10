@@ -645,7 +645,12 @@ static bool building_site(uint32_t uid)
 {
     if(uid == NULL_UID || !G_EntityExists(uid) || G_EntityIsZombie(uid))
         return false;
-    return (G_FlagsGet(uid) & ENTITY_FLAG_STORAGE_SITE) && G_StorageSite_GetUseAlt(uid);
+    if(!(G_FlagsGet(uid) & ENTITY_FLAG_STORAGE_SITE))
+        return false;
+    /* A field being sown again is supplied as a building being built is */
+    if((G_FlagsGet(uid) & ENTITY_FLAG_RESOURCE) && G_Resource_IsReplenishing(uid))
+        return true;
+    return G_StorageSite_GetUseAlt(uid);
 }
 
 /* What a source can give the destination: a building being built takes all
@@ -3813,7 +3818,11 @@ bool G_Harvester_ReplenishResource(uint32_t harvester, uint32_t resource)
         G_Harvester_DropOff(harvester, nearest);
         return true;
     }
-    return G_Harvester_Transport(harvester, resource);
+    /* With nothing to sow it with, the harvester does not stand by: it goes on to another node */
+    s_for_site = true;
+    bool ret = G_Harvester_Transport(harvester, resource);
+    s_for_site = false;
+    return ret;
 }
 
 uint32_t G_Harvester_SupplyingSite(uint32_t harvester)
