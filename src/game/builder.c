@@ -478,7 +478,10 @@ static void proceed_at_site(uint32_t uid, struct builderstate *bs)
         return;
     }
 
-    bs->state = STATE_BUILDING; 
+    /* Already at work on it: an arrival handled twice begins nothing anew */
+    if(bs->state == STATE_BUILDING)
+        return;
+    bs->state = STATE_BUILDING;
     E_Entity_Notify(EVENT_BUILD_BEGIN, uid, NULL, ES_ENGINE);
     E_Entity_Register(EVENT_MOTION_START, uid, on_motion_begin, (void*)((uintptr_t)uid), G_RUNNING);
     E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, uid, on_build_anim_finished, 
