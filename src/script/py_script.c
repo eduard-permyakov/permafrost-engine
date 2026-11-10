@@ -1583,7 +1583,7 @@ static PyMethodDef pf_module_methods[] = {
 
     {"set_workshop_posts",
     (PyCFunction)PyPf_set_workshop_posts, METH_VARARGS,
-    "Takes a building and the number of posts it has for workers to fill (at most 4), or 0 "
+    "Takes a building and the number of posts it has for workers to fill (at most 12), or 0 "
     "for none."},
 
     {"set_post_demand",
@@ -6820,8 +6820,8 @@ static PyObject *PyPf_set_workshop_posts(PyObject *self, PyObject *args)
     }
     if(!workshop_arg(obj, &uid))
         return NULL;
-    if(nposts < 0 || nposts > 4) {
-        PyErr_SetString(PyExc_ValueError, "A workshop has between 0 and 4 posts.");
+    if(nposts < 0 || nposts > G_Posts_MaxPosts()) {
+        PyErr_Format(PyExc_ValueError, "A workshop has between 0 and %d posts.", G_Posts_MaxPosts());
         return NULL;
     }
     if(!G_Posts_SetPosts(uid, nposts)) {

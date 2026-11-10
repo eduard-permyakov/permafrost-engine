@@ -1293,6 +1293,7 @@ enum post_demand{
 
 /* Gives a workshop posts for workers to fill, or takes them away with 0 */
 bool     G_Posts_SetPosts(uint32_t uid, int nposts);
+int      G_Posts_MaxPosts(void);
 void     G_Posts_SetDemand(uint32_t uid, enum post_demand demand);
 /* How many of the workshop's posts the player keeps empty */
 void     G_Posts_SetLocked(uint32_t uid, int locked);

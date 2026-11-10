@@ -72,7 +72,7 @@
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
 
-#define MAX_POSTS           (4)
+#define MAX_POSTS           (12)
 #define MAX_VACANCIES       (256)
 /* Each holder inside is looked at once a second, a twentieth of them each tick */
 #define BUCKETS             (20)
@@ -670,6 +670,11 @@ void G_Posts_RemoveEntity(uint32_t uid)
     if(k != kh_end(s_workshops)) {
         kh_del(workshop, s_workshops, k);
     }
+}
+
+int G_Posts_MaxPosts(void)
+{
+    return MAX_POSTS;
 }
 
 bool G_Posts_SetPosts(uint32_t uid, int nposts)
