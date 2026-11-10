@@ -219,7 +219,7 @@ static float step_cost(int layer, int from, int to, bool diagonal)
 {
     float base = diagonal ? DIAGONAL : 1.0f;
     if(layer == LAYER_GROUND && s_road[from] && s_road[to]) {
-        base /= ROAD_SPEED_BONUS;
+        base /= G_Roads_SpeedBonus(false);
     }
     return base * CELL_SIZE;
 }

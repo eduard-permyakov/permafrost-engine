@@ -142,6 +142,7 @@ static PyObject *PyPf_get_road(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_road_kind(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_road_kind(PyObject *self, PyObject *args);
 static PyObject *PyPf_road_speed_factor(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_road_speed_bonus(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_all_roads(PyObject *self);
 static PyObject *PyPf_clear_roads(PyObject *self);
 static PyObject *PyPf_set_road_hover(PyObject *self, PyObject *args);
@@ -564,6 +565,10 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_road_speed_factor, METH_VARARGS,
     "Returns how much faster a unit going its way along the roads moves at the specified XZ "
     "position: 1.0 off the roads."},
+
+    {"set_road_speed_bonus",
+    (PyCFunction)PyPf_set_road_speed_bonus, METH_VARARGS,
+    "Takes the speed bonuses of dirt and plank roads, each 1.0 or more. They are kept in saves."},
 
     {"get_all_roads", 
     (PyCFunction)PyPf_get_all_roads, METH_NOARGS,
@@ -2438,6 +2443,17 @@ static PyObject *PyPf_road_speed_factor(PyObject *self, PyObject *args)
         return NULL;
     }
     return PyFloat_FromDouble(G_Roads_SpeedFactor(pos));
+}
+
+static PyObject *PyPf_set_road_speed_bonus(PyObject *self, PyObject *args)
+{
+    float dirt, plank;
+    if(!PyArg_ParseTuple(args, "ff", &dirt, &plank)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two floats.");
+        return NULL;
+    }
+    G_Roads_SetSpeedBonus(dirt, plank);
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_get_all_roads(PyObject *self)

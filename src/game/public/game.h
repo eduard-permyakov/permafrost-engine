@@ -1077,6 +1077,8 @@ bool   G_Roads_SetKind(struct road_desc rd, enum road_kind kind);
 bool   G_Roads_GetKind(struct road_desc rd, enum road_kind *out);
 /* The speed bonus of the road under the point, or 1 off the roads */
 float  G_Roads_SpeedFactor(vec2_t xz);
+float  G_Roads_SpeedBonus(bool plank);
+void   G_Roads_SetSpeedBonus(float dirt, float plank);
 size_t G_Roads_Count(void);
 size_t G_Roads_GetAll(size_t maxout, struct road_desc out[], uint8_t out_links[]);
 void   G_Roads_SetHover(const struct road_desc *rd);

@@ -107,6 +107,9 @@ static struct map_resolution s_res;
 static vec3_t               s_map_pos;
 static int                  s_rows, s_cols;
 static size_t               s_count;
+/* The speed bonuses of dirt and plank roads, which the scripts may raise */
+static float                s_dirt_bonus = ROAD_SPEED_BONUS;
+static float                s_plank_bonus = ROAD_PLANK_SPEED_BONUS;
 
 /* One byte per road tile: ROAD_PRESENT, ROAD_DECAL_STALE, ROAD_PLANK and the
  * road_link bits. A link is always set on both of the tiles it joins.
@@ -731,6 +734,8 @@ void G_Roads_Shutdown(void)
 
 void G_Roads_Clear(void)
 {
+    s_dirt_bonus = ROAD_SPEED_BONUS;
+    s_plank_bonus = ROAD_PLANK_SPEED_BONUS;
     if(!s_map)
         return;
 
@@ -889,7 +894,18 @@ float G_Roads_SpeedFactor(vec2_t xz)
     struct road_desc rd = (struct road_desc){r, c};
     if(!present(rd))
         return 1.0f;
-    return (*tile_at(rd) & ROAD_PLANK) ? ROAD_PLANK_SPEED_BONUS : ROAD_SPEED_BONUS;
+    return (*tile_at(rd) & ROAD_PLANK) ? s_plank_bonus : s_dirt_bonus;
+}
+
+float G_Roads_SpeedBonus(bool plank)
+{
+    return plank ? s_plank_bonus : s_dirt_bonus;
+}
+
+void G_Roads_SetSpeedBonus(float dirt, float plank)
+{
+    s_dirt_bonus = MAX(dirt, 1.0f);
+    s_plank_bonus = MAX(plank, 1.0f);
 }
 
 size_t G_Roads_Count(void)
@@ -1090,6 +1106,18 @@ bool G_Roads_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &links, "links"));
     }}
+
+    struct attr dirt_bonus = (struct attr){
+        .type = TYPE_FLOAT,
+        .val.as_float = s_dirt_bonus
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &dirt_bonus, "dirt_bonus"));
+
+    struct attr plank_bonus = (struct attr){
+        .type = TYPE_FLOAT,
+        .val.as_float = s_plank_bonus
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &plank_bonus, "plank_bonus"));
     return true;
 }
 
@@ -1148,6 +1176,16 @@ bool G_Roads_LoadState(struct SDL_RWops *stream)
 
         G_Roads_Add(rd);
         *tile_at(rd) |= links;
+    }
+
+    if(Attr_NextKeyIs(stream, "dirt_bonus")) {
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        s_dirt_bonus = attr.val.as_float;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        s_plank_bonus = attr.val.as_float;
     }
 
     drop_one_sided_links();
