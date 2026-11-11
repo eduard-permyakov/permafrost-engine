@@ -984,6 +984,8 @@ int  G_StorageSite_GetAllNames(size_t maxout, const char *out[]);
 void G_StorageSite_SetFontColor(const struct nk_color *clr);
 void G_StorageSite_SetBorderColor(const struct nk_color *clr);
 void G_StorageSite_SetBackgroundStyle(const struct nk_style_item *style);
+void G_StorageSite_SetStripFrame(const char *const paths[5], float width);
+const char *G_StorageSite_StripLine(uint32_t uid, const char *rname);
 void G_StorageSite_SetShowUI(bool show);
 bool G_StorageSite_GetDoNotTakeLand(uint32_t uid);
 void G_StorageSite_SetDoNotTakeLand(uint32_t uid, bool on);

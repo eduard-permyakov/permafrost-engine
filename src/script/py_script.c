@@ -285,6 +285,7 @@ static PyObject *PyPf_dump_framebuffer(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_storage_site_ui_style(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_storage_site_ui_border_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_storage_site_ui_font_color(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_storage_site_strip_frame(PyObject *self, PyObject *args);
 static PyObject *PyPf_storage_site_show_ui(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_garrison_ui_font_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_garrison_ui_icon(PyObject *self, PyObject *args);
@@ -1215,6 +1216,13 @@ static PyMethodDef pf_module_methods[] = {
     {"set_storage_site_ui_font_color",
     (PyCFunction)PyPf_set_storage_site_ui_font_color, METH_VARARGS,
     "Set the storage site UI text color to the specified color (R, G, B, A)."},
+
+    {"set_storage_site_strip_frame",
+    (PyCFunction)PyPf_set_storage_site_strip_frame, METH_VARARGS,
+    "Frame the strips over the stores along their top and left with a tileset of images (paths): the "
+    "corner, the top edge's repeat and its end, the left edge's repeat and its end. The pieces keep "
+    "their proportions, scaled so that the top repeat is the specified width (virtual pixels) thick. "
+    "A width of 0 turns the frame off."},
 
     {"storage_site_show_ui",
     (PyCFunction)PyPf_storage_site_show_ui, METH_VARARGS,
@@ -4657,6 +4665,22 @@ static PyObject *PyPf_set_storage_site_ui_style(PyObject *self, PyObject *args)
     }
 
     G_StorageSite_SetBackgroundStyle(&style);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_storage_site_strip_frame(PyObject *self, PyObject *args)
+{
+    const char *paths[5];
+    float width;
+    if(!PyArg_ParseTuple(args, "sssssf", &paths[0], &paths[1], &paths[2], &paths[3], &paths[4], &width)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be five image paths (strings) and a width (float).");
+        return NULL;
+    }
+    if(width < 0.0f) {
+        PyErr_SetString(PyExc_ValueError, "The width must not be negative.");
+        return NULL;
+    }
+    G_StorageSite_SetStripFrame(paths, width);
     Py_RETURN_NONE;
 }
 

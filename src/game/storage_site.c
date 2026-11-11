@@ -196,8 +196,10 @@ struct trend{
     float       rate;
     int         arrow;
     uint32_t    unchanged_s;
-    /* The strip stamp at which the good last qualified for a row, 0 if never */
-    uint32_t    listed_stamp;
+    /* Why its request is stuck, as the strip says it, and the stamp it last held at; the line is
+     * kept HINT_HOLD_S after, so that it does not come and go */
+    const char *hint;
+    uint32_t    hint_stamp;
 };
 
 /* The goods trends of one pool, or of a site in none */
@@ -264,9 +266,16 @@ struct strip_good{
     char        count[8];
     float       count_w;
     int         arrow;
-    /* Why its request is stuck, or none; and the colour that ties its count to the line saying so */
-    const char *hint;
+    /* The colour that ties its count to the line saying why its request is stuck, or -1 */
     int         hint_clr;
+};
+
+/* A good whose request is stuck, held or not, and why */
+struct strip_hint{
+    const char *name;
+    const char *icon;
+    const char *text;
+    float       text_w;
 };
 
 #define GREEN_CLR (struct nk_color){22, 84, 5, 255}
@@ -278,7 +287,6 @@ struct strip_good{
 #define TREND_UP_CLR        (struct nk_color){110, 205, 80, 255}
 #define TREND_DOWN_CLR      (struct nk_color){225, 70, 55, 255}
 #define TREND_FLAT_CLR      (struct nk_color){185, 180, 170, 255}
-#define STRIP_BOX_CLR       (struct nk_color){235, 228, 210, 170}
 #define WARN_CLR            (struct nk_color){250, 200, 40, 255}
 
 #define STRIP_MAX_SITES     (64)
@@ -286,8 +294,10 @@ struct strip_good{
 #define STRIP_ROW_GOODS     (4)
 #define STRIP_SHOWN_GOODS   (8)
 #define STRIP_MAX_HINTS     (4)
-#define STRIP_BOX_PAD       (3.0f)
 #define HINT_INDENT         (10.0f)
+/* How long a request is stuck before its line shows, and how long the line stays after */
+#define HINT_DELAY_MS       (5000)
+#define HINT_HOLD_S         (5)
 #define WARN_W              (12.0f)
 #define STRIP_MAX_MADE      (4)
 #define STRIP_ICON_SZ       (22.0f)
@@ -296,6 +306,8 @@ struct strip_good{
 #define STRIP_DROP          (20.0f)
 #define STRIP_GAP_Y         (2.0f)
 #define STRIP_GAP           (8.0f)
+/* The gap between a strip's rows and the frame along its top and left */
+#define FRAME_GAP           (1.0f)
 #define TREND_W             (7.0f)
 #define PENNANT_W           (11.0f)
 /* Weight of each one-second sample in the moving average of a stock's change */
@@ -306,9 +318,8 @@ struct strip_good{
 #define RECENT_CHANGE_S     (30)
 /* How long a row stays on the strip after it stops qualifying, so that one
  * flickering in and out does not reshape it */
-#define STRIP_GRACE_S       (2)
 #define CARRIERS_ICON       "assets/icons/transport-icon.png"
-#define GATHERERS_ICON      "assets/icons/gather-command-normal.png"
+#define GATHERERS_ICON      "assets/icons/harvesting-icon.png"
 #define BUILDERS_ICON       "assets/icons/build-command-normal.png"
 #define TREND_UP_ICON       "assets/icons/trend-up-icon.png"
 #define TREND_DOWN_ICON     "assets/icons/trend-down-icon.png"
@@ -385,6 +396,20 @@ static struct nk_style_item s_bg_style = {0};
 static struct nk_color      s_border_clr = {0};
 static struct nk_color      s_font_clr = {0};
 static bool                 s_show_ui = true;
+/* The tileset framing the strips' top and left edges, and the top repeat's thickness; none at 0 */
+enum frame_piece{
+    FRAME_CORNER,
+    FRAME_TOP,
+    FRAME_TOP_END,
+    FRAME_LEFT,
+    FRAME_LEFT_END,
+    FRAME_NUM_PIECES
+};
+static const char *const    s_frame_keys[FRAME_NUM_PIECES] = {
+    "strip_frame_corner", "strip_frame_top", "strip_frame_top_end", "strip_frame_left", "strip_frame_left_end"
+};
+static char                 s_frame[FRAME_NUM_PIECES][256] = {{0}};
+static float                s_frame_width = 0.0f;
 /* Where the outline passes of the strip's text and icons are drawn */
 static const float          s_outline_offsets[][2] = {
     {-1.0f, 0.0f}, {1.0f, 0.0f}, {0.0f, -1.0f}, {0.0f, 1.0f},
@@ -901,16 +926,6 @@ static int gatherers_for(uint32_t uid, const char *rname)
     return count_pool(uid, DUTY_GATHER, rname);
 }
 
-/* A request the pool's own gatherers are meeting is not stuck */
-static enum request_status good_status(uint32_t uid, const char *rname)
-{
-    int waited_ms;
-    enum request_status ret = G_Automation_RequestStatus(uid, rname, &waited_ms);
-    if(ret != REQUEST_OK && gatherers_for(uid, rname) > 0)
-        return REQUEST_OK;
-    return ret;
-}
-
 static float good_rate(uint32_t uid, const char *rname)
 {
     khiter_t k = kh_get(strip, s_strips, strip_key(uid));
@@ -937,10 +952,56 @@ static int trend_arrow(int arrow, float rate)
     return arrow;
 }
 
-/* A good the pool holds, or asks to be brought */
-static bool strip_shows(uint32_t uid, const char *rname, const struct trend *trend)
+/* A couple of words on why a request is stuck; none for one only waiting its turn */
+static const char *reason_code(enum request_status status)
 {
-    return G_StorageSite_GetCurr(uid, rname) > 0 || G_StorageSite_Request(uid, rname) > 0;
+    switch(status) {
+    case REQUEST_NO_SOURCE:     return "None in stock";
+    case REQUEST_NO_CARRIER:    return "No carrier";
+    case REQUEST_UNREACHABLE:   return "Can't reach";
+    case REQUEST_NOT_CONNECTED: return "Needs a cart";
+    case REQUEST_KEPT:          return "Held back";
+    default:                    return NULL;
+    }
+}
+
+/* Whether another good the site eats in this one's stead can be had: in stock there, on its way,
+ * or held anywhere else in the realm. A good asked for only as one of several is not stuck while
+ * another can be had. The other goods' request statuses do not tell: the automation follows the
+ * group's request through one of its goods alone */
+static bool group_covered(uint32_t uid, const struct ss_state *ss, const char *rname)
+{
+    const int faction = G_GetFactionID(uid);
+    for(int i = 0; i < ss->ndraws; i++) {
+        const struct ss_draw *d = &ss->draws[i];
+        if(d->nmembers < 2 || !draw_has(d, rname))
+            continue;
+        for(int j = 0; j < d->nmembers; j++) {
+            const char *other = d->members[j];
+            if(!strcmp(other, rname))
+                continue;
+            int curr = 0;
+            ss_state_get_key(ss->curr, other, &curr);
+            if(curr > 0 || bound_for_good(uid, other) > 0 || gatherers_for(uid, other) > 0)
+                return true;
+            if(G_StorageSite_GetFactionStored(faction, other) > curr)
+                return true;
+        }
+    }
+    return false;
+}
+
+/* Why the good's request is stuck, once it has been for HINT_DELAY_MS, or NULL; a request the
+ * pool's own gatherers are meeting is not stuck */
+static const char *stuck_reason(uint32_t uid, const struct ss_state *ss, const char *rname)
+{
+    int waited_ms;
+    enum request_status status = G_Automation_RequestStatus(uid, rname, &waited_ms);
+    if(status == REQUEST_OK || gatherers_for(uid, rname) > 0)
+        return NULL;
+    if(waited_ms < HINT_DELAY_MS || group_covered(uid, ss, rname))
+        return NULL;
+    return reason_code(status);
 }
 
 static void update_trends(uint32_t uid, struct ss_state *ss)
@@ -972,48 +1033,33 @@ static void update_trends(uint32_t uid, struct ss_state *ss)
                 .rate = 0.0f,
                 .arrow = 0,
                 .unchanged_s = RECENT_CHANGE_S,
-                .listed_stamp = 0
+                .hint = NULL,
+                .hint_stamp = 0
             };
-            trends[i].listed_stamp = strip_shows(uid, names[i], &trends[i]) ? s_strip_stamp : 0;
-            continue;
+        }else{
+            int delta = amount - old->last;
+            float rate = old->rate + (delta - old->rate) * TREND_ALPHA;
+            trends[i] = (struct trend){
+                .rname = names[i],
+                .last = amount,
+                .rate = rate,
+                .arrow = trend_arrow(old->arrow, rate),
+                .unchanged_s = delta ? 0 : MIN(old->unchanged_s + 1, RECENT_CHANGE_S),
+                .hint = old->hint,
+                .hint_stamp = old->hint_stamp
+            };
         }
 
-        int delta = amount - old->last;
-        float rate = old->rate + (delta - old->rate) * TREND_ALPHA;
-        trends[i] = (struct trend){
-            .rname = names[i],
-            .last = amount,
-            .rate = rate,
-            .arrow = trend_arrow(old->arrow, rate),
-            .unchanged_s = delta ? 0 : MIN(old->unchanged_s + 1, RECENT_CHANGE_S),
-            .listed_stamp = old->listed_stamp
-        };
-        if(strip_shows(uid, names[i], &trends[i])) {
-            trends[i].listed_stamp = s_strip_stamp;
+        const char *hint = stuck_reason(uid, ss, names[i]);
+        if(hint) {
+            trends[i].hint = hint;
+            trends[i].hint_stamp = s_strip_stamp;
+        }else if(trends[i].hint && (s_strip_stamp - trends[i].hint_stamp) > HINT_HOLD_S) {
+            trends[i].hint = NULL;
         }
     }
     memcpy(strip->trends, trends, nnames * sizeof(struct trend));
     strip->ntrends = nnames;
-}
-
-static bool strip_lists(uint32_t uid, const char *rname, const struct trend *trend)
-{
-    if(strip_shows(uid, rname, trend))
-        return true;
-    return trend && trend->listed_stamp && (s_strip_stamp - trend->listed_stamp) <= STRIP_GRACE_S;
-}
-
-/* A couple of words on why a request is stuck; none for one only waiting its turn */
-static const char *reason_code(enum request_status status)
-{
-    switch(status) {
-    case REQUEST_NO_SOURCE:     return "None in stock";
-    case REQUEST_NO_CARRIER:    return "No carrier";
-    case REQUEST_UNREACHABLE:   return "Can't reach";
-    case REQUEST_NOT_CONNECTED: return "Needs a cart";
-    case REQUEST_KEPT:          return "Held back";
-    default:                    return NULL;
-    }
 }
 
 /* The colours that tell the stuck goods of a site apart, bright over the
@@ -1095,6 +1141,58 @@ static void draw_strip_icon(struct nk_command_buffer *canvas, float x, float y, 
     nk_draw_texpath(canvas, nk_rect(x, y, STRIP_ICON_SZ, STRIP_ICON_SZ), icon, nk_rgba(255, 255, 255, 255));
 }
 
+/* A piece's size on screen, its image scaled as the top repeat is to the frame's width */
+static bool frame_piece_size(enum frame_piece piece, float *out_w, float *out_h)
+{
+    int top_w, top_h, w, h;
+    if(!UI_ImageSize(s_frame[FRAME_TOP], &top_w, &top_h) || top_h <= 0)
+        return false;
+    if(!s_frame[piece][0] || !UI_ImageSize(s_frame[piece], &w, &h))
+        return false;
+    const float scale = s_frame_width / top_h;
+    *out_w = w * scale;
+    *out_h = h * scale;
+    return true;
+}
+
+/* The piece drawn whole from (x, y) */
+static void draw_frame_piece(struct nk_command_buffer *canvas, enum frame_piece piece, float x, float y)
+{
+    float w, h;
+    if(!frame_piece_size(piece, &w, &h))
+        return;
+    nk_draw_texpath(canvas, nk_rect(x, y, w, h), s_frame[piece], nk_rgba(255, 255, 255, 255));
+}
+
+/* One edge from (x, y) for 'length': whole copies of its repeat, the last running past the
+ * length rather than be cut, then its end piece, which ends the edge however short it is */
+static void draw_frame_edge(struct nk_command_buffer *canvas, enum frame_piece repeat, enum frame_piece end,
+                            float x, float y, float length, bool down)
+{
+    float rep_w, rep_h, end_w, end_h;
+    if(!frame_piece_size(repeat, &rep_w, &rep_h) || !frame_piece_size(end, &end_w, &end_h))
+        return;
+    const float step = down ? rep_h : rep_w;
+    const float run = length - (down ? end_h : end_w);
+    float done = 0.0f;
+    for(; done < run; done += step) {
+        draw_frame_piece(canvas, repeat, down ? x : x + done, down ? y + done : y);
+    }
+    draw_frame_piece(canvas, end, down ? x : x + done, down ? y + done : y);
+}
+
+/* The frame round a strip's top and left: the corner at (x, y), then the top edge to 'right' and
+ * the left edge to 'bottom' */
+static void draw_frame(struct nk_command_buffer *canvas, float x, float y, float right, float bottom)
+{
+    float corner_w, corner_h;
+    if(!frame_piece_size(FRAME_CORNER, &corner_w, &corner_h))
+        return;
+    draw_frame_piece(canvas, FRAME_CORNER, x, y);
+    draw_frame_edge(canvas, FRAME_TOP, FRAME_TOP_END, x + corner_w, y, right - x - corner_w, false);
+    draw_frame_edge(canvas, FRAME_LEFT, FRAME_LEFT_END, x, y + corner_h, bottom - y - corner_h, true);
+}
+
 static void draw_trend(struct nk_command_buffer *canvas, float x, float cy, int arrow)
 {
     if(arrow == 0) {
@@ -1171,7 +1269,8 @@ static void draw_warn(struct nk_command_buffer *canvas, float x, float y, float 
  * why each stuck one is stuck. Returns how many there are in all, which may
  * be more than are kept */
 static size_t strip_goods(uint32_t key, const struct ss_state *ss, const struct nk_user_font *font,
-                          struct strip_good out[], size_t maxout)
+                          struct strip_good out[], size_t maxout,
+                          struct strip_hint hints[], size_t *out_nhints)
 {
     khiter_t k = kh_get(strip, s_strips, strip_key(key));
     const struct strip *strip = (k != kh_end(s_strips)) ? &kh_value(s_strips, k) : NULL;
@@ -1179,35 +1278,55 @@ static size_t strip_goods(uint32_t key, const struct ss_state *ss, const struct 
     const char *names[STRIP_MAX_GOODS];
     size_t nnames = ss_get_keys((struct ss_state*)ss, names, ARR_SIZE(names));
 
-    /* The stuck ones first, so that each is in sight beside the line saying why */
-    size_t ret = 0, nhints = 0;
+    /* A line for each stuck good, held or not */
+    size_t nhints = 0;
+    for(int i = 0; i < nnames && nhints < STRIP_MAX_HINTS; i++) {
+        const struct trend *trend = strip ? trend_find(strip, names[i]) : NULL;
+        if(!trend || !trend->hint)
+            continue;
+        hints[nhints++] = (struct strip_hint){
+            .name = names[i],
+            .icon = G_Resource_GetIcon(names[i]),
+            .text = trend->hint,
+            .text_w = text_width(font, trend->hint)
+        };
+    }
+    *out_nhints = nhints;
+
+    /* A cell for each good held, the stuck ones first, so that each is in sight beside its line */
+    size_t ret = 0;
     for(int pass = 0; pass < 2; pass++) {
         for(int i = 0; i < nnames; i++) {
-            const struct trend *trend = strip ? trend_find(strip, names[i]) : NULL;
-            if(!strip_lists(key, names[i], trend))
+            const int curr = G_StorageSite_GetCurr(key, names[i]);
+            if(curr <= 0)
                 continue;
-            const char *hint = reason_code(good_status(key, names[i]));
-            if((pass == 0) != (hint != NULL))
+            const struct trend *trend = strip ? trend_find(strip, names[i]) : NULL;
+            int hint_clr = -1;
+            for(int j = 0; j < nhints; j++) {
+                if(hints[j].name == names[i]) {
+                    hint_clr = j;
+                }
+            }
+            if((pass == 0) != (hint_clr >= 0))
                 continue;
             if(ret++ >= maxout)
                 continue;
             struct strip_good *good = &out[ret - 1];
             good->name = names[i];
             good->icon = G_Resource_GetIcon(names[i]);
-            pf_snprintf(good->count, sizeof(good->count), "%d", G_StorageSite_GetCurr(key, names[i]));
+            pf_snprintf(good->count, sizeof(good->count), "%d", curr);
             good->count_w = text_width(font, good->count);
             good->arrow = trend ? trend->arrow : 0;
-            good->hint = (nhints < STRIP_MAX_HINTS) ? hint : NULL;
-            good->hint_clr = good->hint ? (int)nhints++ : -1;
+            good->hint_clr = hint_clr;
         }
     }
     return ret;
 }
 
-/* Over a pool's anchor: the goods it holds or wants in a box, four a row
- * and eight at most, with the pool's priority beside it; under it, a line
- * for each stuck good saying why; then the carriers and gatherers bound for
- * it, its posts, its note, and what it made in the last minute */
+/* Over a pool's anchor, every row starting at one left edge: the goods it
+ * holds, four a row and eight at most; a line for each stuck good saying why;
+ * then the carriers and gatherers bound for it, its posts, its note, and what
+ * it made in the last minute */
 static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_font *font,
                        uint32_t key, vec2_t anchor)
 {
@@ -1216,7 +1335,9 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
         return;
 
     struct strip_good goods[STRIP_SHOWN_GOODS];
-    size_t nlisted = strip_goods(key, ss, font, goods, ARR_SIZE(goods));
+    struct strip_hint hints[STRIP_MAX_HINTS];
+    size_t nhints;
+    size_t nlisted = strip_goods(key, ss, font, goods, ARR_SIZE(goods), hints, &nhints);
     size_t ngoods = MIN(nlisted, STRIP_SHOWN_GOODS);
     const bool more = (nlisted > ngoods);
 
@@ -1235,20 +1356,10 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
         rows_w = MAX(rows_w, last_n * (cell_w + STRIP_GAP) + more_w);
     }
     const float row_h = STRIP_ICON_SZ + 2;
-    const float box_w = ngoods ? rows_w + 2 * STRIP_BOX_PAD : 0.0f;
-    const float box_h = ngoods ? nrows * row_h - 2 + 2 * STRIP_BOX_PAD : 0.0f;
 
-    int priority = ss->priority;
-    float width = box_w + ((priority != SS_PRIORITY_NORMAL) ? STRIP_GAP + PENNANT_W : 0.0f);
-
-    float hints_w[STRIP_SHOWN_GOODS] = {0};
-    size_t nhints = 0;
-    for(int i = 0; i < ngoods; i++) {
-        if(!goods[i].hint)
-            continue;
-        hints_w[i] = text_width(font, goods[i].hint);
-        width = MAX(width, HINT_INDENT + WARN_W + 2 + STRIP_ICON_SZ + 2 + hints_w[i]);
-        nhints++;
+    float width = rows_w;
+    for(int i = 0; i < nhints; i++) {
+        width = MAX(width, STRIP_ICON_SZ + 2 + WARN_W + 2 + hints[i].text_w);
     }
 
     /* The carriers and the gatherers share a row */
@@ -1323,51 +1434,34 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
     const float text_dy = (STRIP_ICON_SZ - font->height) / 2.0f;
     float row_y = y;
 
-    if(ngoods > 0) {
-        /* A thin line round the goods, dark outside and light within, to read over any ground */
-        struct nk_rect box = nk_rect(left, y, box_w, box_h);
-        nk_stroke_rect(canvas, nk_rect(box.x - 1, box.y - 1, box.w + 2, box.h + 2), 0, 1.0f, STRIP_OUTLINE_CLR);
-        nk_stroke_rect(canvas, box, 0, 1.0f, STRIP_BOX_CLR);
-
-        for(int i = 0; i < ngoods; i++) {
-            const float cx = left + STRIP_BOX_PAD + (i % STRIP_ROW_GOODS) * (cell_w + STRIP_GAP);
-            const float cy = y + STRIP_BOX_PAD + (i / STRIP_ROW_GOODS) * row_h;
-            const struct strip_good *good = &goods[i];
-            if(good->icon) {
-                draw_strip_icon(canvas, cx, cy, good->icon);
-            }
-            /* Counts sit right in their cells, so their last digits line up */
-            const float tx = cx + STRIP_ICON_SZ + 2 + (count_w - good->count_w);
-            draw_strip_text(canvas, font, tx, cy + text_dy, good->count_w, good->count,
-                good->hint ? s_hint_clrs[good->hint_clr] : STRIP_TEXT_CLR);
-            draw_trend(canvas, cx + STRIP_ICON_SZ + 2 + count_w + 2, cy + STRIP_ICON_SZ / 2.0f, good->arrow);
-        }
-        if(more) {
-            const float cx = left + STRIP_BOX_PAD + last_n * (cell_w + STRIP_GAP);
-            const float cy = y + STRIP_BOX_PAD + (nrows - 1) * row_h;
-            draw_strip_text(canvas, font, cx, cy + text_dy, more_w, "...", STRIP_TEXT_CLR);
-        }
-        if(priority != SS_PRIORITY_NORMAL) {
-            draw_pennant(canvas, left + box_w + STRIP_GAP, y + STRIP_BOX_PAD, priority);
-        }
-        row_y = y + box_h + STRIP_GAP_Y + 2;
-    }else if(priority != SS_PRIORITY_NORMAL) {
-        draw_pennant(canvas, left, y, priority);
-        row_y = y + row_h;
-    }
-
     for(int i = 0; i < ngoods; i++) {
-        if(!goods[i].hint)
-            continue;
-        float x = left + HINT_INDENT;
+        const float cx = left + (i % STRIP_ROW_GOODS) * (cell_w + STRIP_GAP);
+        const float cy = y + (i / STRIP_ROW_GOODS) * row_h;
+        const struct strip_good *good = &goods[i];
+        if(good->icon) {
+            draw_strip_icon(canvas, cx, cy, good->icon);
+        }
+        /* Counts sit right in their cells, so their last digits line up */
+        const float tx = cx + STRIP_ICON_SZ + 2 + (count_w - good->count_w);
+        draw_strip_text(canvas, font, tx, cy + text_dy, good->count_w, good->count,
+            good->hint_clr >= 0 ? s_hint_clrs[good->hint_clr] : STRIP_TEXT_CLR);
+        draw_trend(canvas, cx + STRIP_ICON_SZ + 2 + count_w + 2, cy + STRIP_ICON_SZ / 2.0f, good->arrow);
+    }
+    if(more) {
+        const float cx = left + last_n * (cell_w + STRIP_GAP);
+        draw_strip_text(canvas, font, cx, y + (nrows - 1) * row_h + text_dy, more_w, "...", STRIP_TEXT_CLR);
+    }
+    row_y += nrows * row_h;
+
+    /* The good's icon where every row has its icon, the warning and the reason where the text goes */
+    for(int i = 0; i < nhints; i++) {
+        if(hints[i].icon) {
+            draw_strip_icon(canvas, left, row_y, hints[i].icon);
+        }
+        float x = left + STRIP_ICON_SZ + 2;
         draw_warn(canvas, x, row_y + (STRIP_ICON_SZ - WARN_W) / 2.0f, WARN_W);
         x += WARN_W + 2;
-        if(goods[i].icon) {
-            draw_strip_icon(canvas, x, row_y, goods[i].icon);
-        }
-        x += STRIP_ICON_SZ + 2;
-        draw_strip_text(canvas, font, x, row_y + text_dy, hints_w[i], goods[i].hint,
-            s_hint_clrs[goods[i].hint_clr]);
+        draw_strip_text(canvas, font, x, row_y + text_dy, hints[i].text_w, hints[i].text, s_hint_clrs[i]);
         row_y += row_h;
     }
 
@@ -1421,6 +1515,14 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
         x += STRIP_ICON_SZ + 2;
         draw_strip_text(canvas, font, x, row_y + text_dy, rates_w[i], rates[i], STRIP_TEXT_CLR);
         x += rates_w[i] + STRIP_GAP;
+    }
+    if(nmade > 0) {
+        row_y += row_h;
+    }
+
+    if(s_frame_width > 0.0f) {
+        draw_frame(canvas, left - FRAME_GAP - s_frame_width, y - FRAME_GAP - s_frame_width,
+            left + MAX(width, made_width) + FRAME_GAP, row_y);
     }
 }
 
@@ -1530,7 +1632,7 @@ static bool window_lists(uint32_t key, const char *rname)
 {
     khiter_t k = kh_get(strip, s_strips, strip_key(key));
     const struct trend *trend = (k != kh_end(s_strips)) ? trend_find(&kh_value(s_strips, k), rname) : NULL;
-    if(strip_lists(key, rname, trend))
+    if(G_StorageSite_GetCurr(key, rname) > 0 || G_StorageSite_Request(key, rname) > 0 || (trend && trend->hint))
         return true;
     return bound_for_good(key, rname) > 0 || gatherers_for(key, rname) > 0;
 }
@@ -1552,8 +1654,11 @@ static void plan_window(uint32_t key, struct ss_state *ss, struct window_plan *o
     }
     out->priority = ss->priority;
     out->nhints = 0;
+    khiter_t sk = kh_get(strip, s_strips, strip_key(key));
+    const struct strip *strip = (sk != kh_end(s_strips)) ? &kh_value(s_strips, sk) : NULL;
     for(int i = 0; i < out->nnames && out->nhints < STRIP_MAX_HINTS; i++) {
-        const char *hint = reason_code(good_status(key, out->names[i]));
+        const struct trend *trend = strip ? trend_find(strip, out->names[i]) : NULL;
+        const char *hint = trend ? trend->hint : NULL;
         if(hint) {
             out->hint_names[out->nhints] = out->names[i];
             out->hints[out->nhints++] = hint;
@@ -3524,6 +3629,25 @@ void G_StorageSite_SetBorderColor(const struct nk_color *clr)
     s_border_clr = *clr;
 }
 
+const char *G_StorageSite_StripLine(uint32_t uid, const char *rname)
+{
+    khiter_t k = kh_get(strip, s_strips, strip_key(uid));
+    if(k == kh_end(s_strips))
+        return NULL;
+    /* The trends are keyed by the interned name */
+    const char *key = si_intern(rname, &s_stringpool, s_stridx);
+    const struct trend *trend = key ? trend_find(&kh_value(s_strips, k), key) : NULL;
+    return trend ? trend->hint : NULL;
+}
+
+void G_StorageSite_SetStripFrame(const char *const paths[FRAME_NUM_PIECES], float width)
+{
+    for(int i = 0; i < FRAME_NUM_PIECES; i++) {
+        pf_strlcpy(s_frame[i], paths[i], sizeof(s_frame[i]));
+    }
+    s_frame_width = width;
+}
+
 void G_StorageSite_SetBackgroundStyle(const struct nk_style_item *style)
 {
     s_bg_style = *style;
@@ -4044,6 +4168,20 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
     CHK_TRUE_RET(save_flows(stream));
     Sched_TryYield();
 
+    for(int i = 0; i < FRAME_NUM_PIECES; i++) {
+        struct attr piece = (struct attr){
+            .type = TYPE_STRING
+        };
+        pf_strlcpy(piece.val.as_string, s_frame[i], sizeof(piece.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &piece, s_frame_keys[i]));
+    }
+
+    struct attr frame_width = (struct attr){
+        .type = TYPE_FLOAT,
+        .val.as_float = s_frame_width
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &frame_width, "strip_frame_width"));
+
     return true;
 }
 
@@ -4302,6 +4440,24 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
     if(Attr_NextKeyIs(stream, "num_flows")) {
         CHK_TRUE_RET(load_flows(stream));
         Sched_TryYield();
+    }
+
+    /* Saved with the plain band that came before the frame: the band is not shown */
+    if(Attr_NextKeyIs(stream, "strip_band_top")) {
+        for(int i = 0; i < 3; i++) {
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        }
+    }
+
+    if(Attr_NextKeyIs(stream, s_frame_keys[0])) {
+        for(int i = 0; i < FRAME_NUM_PIECES; i++) {
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_STRING);
+            pf_strlcpy(s_frame[i], attr.val.as_string, sizeof(s_frame[i]));
+        }
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        s_frame_width = attr.val.as_float;
     }
 
     return true;

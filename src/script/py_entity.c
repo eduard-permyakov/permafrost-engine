@@ -1234,6 +1234,7 @@ static PyObject *PyStorageSiteEntity_get_working_stock(PyStorageSiteEntityObject
 static PyObject *PyStorageSiteEntity_get_request(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_minutes_of_stock(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_request_status(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_strip_line(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_output_stocked(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_priority(PyStorageSiteEntityObject *self, void *closure);
 static int       PyStorageSiteEntity_set_priority(PyStorageSiteEntityObject *self, PyObject *value, void *closure);
@@ -1370,6 +1371,11 @@ static PyMethodDef PyStorageSiteEntity_methods[] = {
     "Returns a tuple of why the site's request for the resource is unserved (one of pf.REQUEST_OK, "
     "pf.REQUEST_NO_SOURCE, pf.REQUEST_NO_CARRIER, pf.REQUEST_UNREACHABLE) and how many seconds it "
     "has waited."},
+
+    {"strip_line",
+    (PyCFunction)PyStorageSiteEntity_strip_line, METH_VARARGS,
+    "Returns the line the strip over the site shows for the resource, saying why its request is "
+    "stuck, or None when it shows none."},
 
     {"output_stocked",
     (PyCFunction)PyStorageSiteEntity_output_stocked, METH_VARARGS,
@@ -5911,6 +5917,20 @@ static PyObject *PyStorageSiteEntity_get_surplus(PyStorageSiteEntityObject *self
         return NULL;
     }
     return PyInt_FromLong(G_StorageSite_Surplus(self->super.ent, name));
+}
+
+static PyObject *PyStorageSiteEntity_strip_line(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
+        return NULL;
+    }
+    const char *line = G_StorageSite_StripLine(self->super.ent, name);
+    if(!line)
+        Py_RETURN_NONE;
+    return PyString_FromString(line);
 }
 
 static PyObject *PyStorageSiteEntity_request_status(PyStorageSiteEntityObject *self, PyObject *args)
