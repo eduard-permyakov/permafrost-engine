@@ -143,6 +143,12 @@ static PyObject *PyWindow_text_lines_width(PyWindowObject *self, PyObject *args)
 static PyObject *PyWindow_content_width(PyWindowObject *self);
 static PyObject *PyWindow_text_width(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_font_height(PyWindowObject *self);
+static PyObject *PyWindow_layout_space_begin(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_layout_space_push(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_layout_space_end(PyWindowObject *self);
+static PyObject *PyWindow_stroke_line(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_fill_rect(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_stroke_rect(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
 static PyObject *PyWindow_update(PyWindowObject *self);
@@ -415,6 +421,32 @@ static PyMethodDef PyWindow_methods[] = {
     {"font_height", 
     (PyCFunction)PyWindow_font_height, METH_NOARGS,
     "Returns the height, in virtual pixels, of a single line of text in the active font."},
+
+    {"layout_space_begin", 
+    (PyCFunction)PyWindow_layout_space_begin, METH_VARARGS,
+    "Begin a space of the specified height and widget count, in which each widget is placed by "
+    "'layout_space_push' at static coordinates relative to the space."},
+
+    {"layout_space_push", 
+    (PyCFunction)PyWindow_layout_space_push, METH_VARARGS,
+    "Place the next widget of the layout space at an (X, Y, W, H) rectangle relative to the space."},
+
+    {"layout_space_end", 
+    (PyCFunction)PyWindow_layout_space_end, METH_NOARGS,
+    "End the layout space."},
+
+    {"stroke_line", 
+    (PyCFunction)PyWindow_stroke_line, METH_VARARGS,
+    "Draw a line between two points of the layout space, of the specified thickness and (RGBA) colour."},
+
+    {"fill_rect", 
+    (PyCFunction)PyWindow_fill_rect, METH_VARARGS,
+    "Fill an (X, Y, W, H) rectangle of the layout space with the specified rounding and (RGBA) colour."},
+
+    {"stroke_rect", 
+    (PyCFunction)PyWindow_stroke_rect, METH_VARARGS,
+    "Outline an (X, Y, W, H) rectangle of the layout space with the specified rounding, thickness "
+    "and (RGBA) colour."},
 
     {"show", 
     (PyCFunction)PyWindow_show, METH_NOARGS,
@@ -1840,6 +1872,142 @@ static PyObject *PyWindow_font_height(PyWindowObject *self)
 {
     const struct nk_user_font *font = s_nk_ctx->style.font;
     return PyFloat_FromDouble(font->height + 2 * s_nk_ctx->style.text.padding.y);
+}
+
+/* Whether the widgets being laid out are placed in a layout space of static coordinates */
+static bool in_static_space(void)
+{
+    return s_nk_ctx->current && s_nk_ctx->current->layout
+        && s_nk_ctx->current->layout->row.type == NK_LAYOUT_STATIC_FREE;
+}
+
+static struct nk_rect space_to_screen(struct nk_rect rect)
+{
+    struct nk_vec2 at = nk_layout_space_to_screen(s_nk_ctx, nk_vec2(rect.x, rect.y));
+    return nk_rect(at.x, at.y, rect.w, rect.h);
+}
+
+static PyObject *PyWindow_layout_space_begin(PyWindowObject *self, PyObject *args)
+{
+    float height;
+    int count;
+
+    if(!PyArg_ParseTuple(args, "fi", &height, &count)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a float (height) and an integer (widget count).");
+        return NULL;
+    }
+
+    if(!s_nk_ctx->current) {
+        PyErr_SetString(PyExc_RuntimeError, "A layout space can only be begun while a window is updating.");
+        return NULL;
+    }
+
+    if(height <= 0.0f || count <= 0) {
+        PyErr_SetString(PyExc_ValueError, "The height and the widget count must be positive.");
+        return NULL;
+    }
+
+    nk_layout_space_begin(s_nk_ctx, NK_STATIC, height, count);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyWindow_layout_space_push(PyWindowObject *self, PyObject *args)
+{
+    struct nk_rect rect;
+
+    if(!PyArg_ParseTuple(args, "(ffff)", &rect.x, &rect.y, &rect.w, &rect.h)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of 4 floats (X, Y, W, H).");
+        return NULL;
+    }
+
+    if(!in_static_space()) {
+        PyErr_SetString(PyExc_RuntimeError, "A widget can be placed between matching 'layout_space_begin/layout_space_end' calls.");
+        return NULL;
+    }
+
+    nk_layout_space_push(s_nk_ctx, rect);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyWindow_layout_space_end(PyWindowObject *self)
+{
+    if(!in_static_space()) {
+        PyErr_SetString(PyExc_RuntimeError, "There is no layout space to end.");
+        return NULL;
+    }
+
+    nk_layout_space_end(s_nk_ctx);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyWindow_stroke_line(PyWindowObject *self, PyObject *args)
+{
+    float x0, y0, x1, y1, thickness;
+    int rgba[4];
+
+    if(!PyArg_ParseTuple(args, "fffff(iiii)", &x0, &y0, &x1, &y1, &thickness,
+        &rgba[0], &rgba[1], &rgba[2], &rgba[3])) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be 5 floats (X0, Y0, X1, Y1, thickness) "
+            "and an RGBA tuple.");
+        return NULL;
+    }
+
+    if(!in_static_space()) {
+        PyErr_SetString(PyExc_RuntimeError, "Lines can only be drawn in a layout space.");
+        return NULL;
+    }
+
+    struct nk_vec2 from = nk_layout_space_to_screen(s_nk_ctx, nk_vec2(x0, y0));
+    struct nk_vec2 to = nk_layout_space_to_screen(s_nk_ctx, nk_vec2(x1, y1));
+    nk_stroke_line(nk_window_get_canvas(s_nk_ctx), from.x, from.y, to.x, to.y, thickness,
+        nk_rgba(rgba[0], rgba[1], rgba[2], rgba[3]));
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyWindow_fill_rect(PyWindowObject *self, PyObject *args)
+{
+    struct nk_rect rect;
+    float rounding;
+    int rgba[4];
+
+    if(!PyArg_ParseTuple(args, "(ffff)f(iiii)", &rect.x, &rect.y, &rect.w, &rect.h, &rounding,
+        &rgba[0], &rgba[1], &rgba[2], &rgba[3])) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a tuple of 4 floats (X, Y, W, H), "
+            "a float (rounding) and an RGBA tuple.");
+        return NULL;
+    }
+
+    if(!in_static_space()) {
+        PyErr_SetString(PyExc_RuntimeError, "Rectangles can only be drawn in a layout space.");
+        return NULL;
+    }
+
+    nk_fill_rect(nk_window_get_canvas(s_nk_ctx), space_to_screen(rect), rounding,
+        nk_rgba(rgba[0], rgba[1], rgba[2], rgba[3]));
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyWindow_stroke_rect(PyWindowObject *self, PyObject *args)
+{
+    struct nk_rect rect;
+    float rounding, thickness;
+    int rgba[4];
+
+    if(!PyArg_ParseTuple(args, "(ffff)ff(iiii)", &rect.x, &rect.y, &rect.w, &rect.h, &rounding,
+        &thickness, &rgba[0], &rgba[1], &rgba[2], &rgba[3])) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a tuple of 4 floats (X, Y, W, H), "
+            "2 floats (rounding, thickness) and an RGBA tuple.");
+        return NULL;
+    }
+
+    if(!in_static_space()) {
+        PyErr_SetString(PyExc_RuntimeError, "Rectangles can only be drawn in a layout space.");
+        return NULL;
+    }
+
+    nk_stroke_rect(nk_window_get_canvas(s_nk_ctx), space_to_screen(rect), rounding, thickness,
+        nk_rgba(rgba[0], rgba[1], rgba[2], rgba[3]));
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyWindow_text_lines_width(PyWindowObject *self, PyObject *args)
