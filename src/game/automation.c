@@ -531,6 +531,8 @@ static struct good_class s_classes[MAX_CLASSES];
 static int             s_nclasses;
 /* When each pool last took a worker off its work for something more urgent */
 static khash_t(count)  *s_reassigned;
+/* Why the last search for a node to gather at came back empty */
+static const char      *s_node_why = "no_node";
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -703,7 +705,9 @@ static void trace_goods(uint32_t uid, size_t ncandidates, const char *candidates
         }
         done[next] = true;
         const char *verdict = !strcmp(why[next], "chosen") ? "taken"
-                            : (!strcmp(why[next], "no_node") || !strcmp(why[next], "unreachable")) ? "failed"
+                            : (!strcmp(why[next], "no_node") || !strcmp(why[next], "unreachable")
+                            || !strcmp(why[next], "crowded") || !strcmp(why[next], "cut_off")
+                            || !strcmp(why[next], "none_left")) ? "failed"
                             : "skipped";
         trace_good(uid, verdict, why[next], candidates[next], demands[next], MAX(ranks[next], 0.0f));
     }
@@ -2488,6 +2492,7 @@ static uint32_t best_resource(uint32_t uid, vec2_t origin, const char *rname, fl
     size_t nnodes = G_Harvester_ResourcesNear(uid, origin, rname, radius, ARR_SIZE(nodes), nodes);
     float worker_radius = G_GetSelectionRadius(uid);
     int faction = G_GetFactionID(uid);
+    bool crowded = false, cut_off = false;
 
     for(int i = 0; i < nnodes; i++) {
         if(roams && node_weight(faction, nodes[i], rname) <= 0.0f) {
@@ -2501,6 +2506,7 @@ static uint32_t best_resource(uint32_t uid, vec2_t origin, const char *rname, fl
         int aimed = aimed_at(snap, nodes[i]);
         if(aimed >= node_capacity(nodes[i], worker_radius)) {
             scores[i] = INFINITY;
+            crowded = true;
             continue;
         }
         vec2_t at = G_Pos_GetXZ(nodes[i]);
@@ -2523,7 +2529,9 @@ static uint32_t best_resource(uint32_t uid, vec2_t origin, const char *rname, fl
             return nodes[best];
         }
         scores[best] = INFINITY;
+        cut_off = true;
     }
+    s_node_why = cut_off ? "cut_off" : crowded ? "crowded" : "no_node";
     return NULL_UID;
 }
 
@@ -2558,17 +2566,22 @@ static vec2_t gather_origin(uint32_t uid, const struct automation_state *astate,
 
 /* The node a worker would gather the good at: the best within the realm's
  * reach of its hub, in a district that wants it for one that roams, else for
- * one of no district where the realm lets it roam far, the nearest however far */
+ * one of no district pinned to the good or where the realm lets it roam far,
+ * the nearest however far */
 static uint32_t gather_node(uint32_t uid, const struct automation_state *astate, const char *rname,
                             struct work_snapshot *snap)
 {
     int faction = G_GetFactionID(uid);
     vec2_t origin = gather_origin(uid, astate, rname);
-    bool roams = (astate->home_district == 0 && strcmp(astate->pinned, rname));
+    bool pinned = !strcmp(astate->pinned, rname);
+    bool roams = (astate->home_district == 0 && !pinned);
     uint32_t ret = best_resource(uid, origin, rname, option(faction, OPT_REACH), roams,
         astate->home_district, snap);
-    if(ret == NULL_UID && astate->home_district == 0 && option(faction, OPT_ROAM_FAR) != 0.0f) {
+    if(ret == NULL_UID && astate->home_district == 0
+    && (pinned || option(faction, OPT_ROAM_FAR) != 0.0f)) {
         ret = G_Harvester_NearestResource(uid, origin, rname, 0.0f);
+        if(ret == NULL_UID)
+            s_node_why = "none_left";
     }
     return ret;
 }
@@ -3026,6 +3039,7 @@ static uint32_t node_for(uint32_t uid, const struct automation_state *astate, co
                          struct work_snapshot *snap, const char **out_good)
 {
     const struct good_class *cls = class_named(name);
+    s_node_why = "no_node";
     if(cls)
         return class_node(uid, astate, cls, snap, out_good);
     *out_good = name;
@@ -3198,7 +3212,7 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate, bool 
         }
         if(nodes[i] == NULL_UID) {
             scores[i] = -1.0f;
-            why[i] = "no_node";
+            why[i] = s_node_why;
             continue;
         }
         float dist = distance(G_Pos_GetXZ(nodes[i]), gather_origin(uid, astate, goods[i]));

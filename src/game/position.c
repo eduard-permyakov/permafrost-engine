@@ -116,6 +116,12 @@ static uint32_t        s_flow_nmoved;
 static double          s_flow_disp;
 static size_t          s_wide_count[NREACH_BANDS];
 static float           s_wide_max[NREACH_BANDS];
+/* The main thread's buffer for a query that fills its own: room for every
+ * entity of the grid, held by one query at a time.
+ */
+static uint32_t       *s_query_all;
+static size_t          s_query_all_cap;
+static bool            s_query_all_busy;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -152,6 +158,66 @@ static int filter_garrisoned(khash_t(id) *flags, uint32_t *candidates, int count
         }
     }
     return ret;
+}
+
+/* Room for 'size' entities: the shared buffer, or a fresh one off the main
+ * thread or while a predicate queries the grid again from inside a query.
+ */
+static uint32_t *query_buff_take(size_t size)
+{
+    if(SDL_ThreadID() != g_main_thread_id || s_query_all_busy)
+        return PF_MALLOC(sizeof(uint32_t) * size);
+    if(size > s_query_all_cap) {
+        size_t cap = MAX(size, s_query_all_cap * 2);
+        uint32_t *grown = PF_REALLOC(s_query_all, sizeof(uint32_t) * cap);
+        if(!grown)
+            return NULL;
+        s_query_all = grown;
+        s_query_all_cap = cap;
+    }
+    s_query_all_busy = true;
+    return s_query_all;
+}
+
+static void query_buff_give(uint32_t *buff)
+{
+    if(buff == s_query_all) {
+        s_query_all_busy = false;
+        return;
+    }
+    PF_FREE(buff);
+}
+
+/* Every entity within the circle, so that a predicate is not left only the
+ * part a full 'buff' took: the grid can only report a full buffer by filling
+ * it, so a full one is queried again with room for every entity the grid
+ * holds. Returns the buffer holding them, to be given back if not 'buff'.
+ */
+static uint32_t *circle_all(bg_ent_t *tree, vec2_t xz_point, float range,
+                            uint32_t *buff, size_t maxbuff, int *out_count)
+{
+    *out_count = bg_ent_inrange_circle(tree, xz_point.x, xz_point.z, range, buff, maxbuff);
+    if(*out_count < (int)maxbuff || tree->nrecs <= maxbuff)
+        return buff;
+    uint32_t *all = query_buff_take(tree->nrecs);
+    if(!all)
+        return buff;
+    *out_count = bg_ent_inrange_circle(tree, xz_point.x, xz_point.z, range, all, tree->nrecs);
+    return all;
+}
+
+/* Every entity within the rectangle, as circle_all */
+static uint32_t *rect_all(bg_ent_t *tree, vec2_t xz_min, vec2_t xz_max,
+                          uint32_t *buff, size_t maxbuff, int *out_count)
+{
+    *out_count = bg_ent_inrange_rect(tree, xz_min.x, xz_max.x, xz_min.z, xz_max.z, buff, maxbuff);
+    if(*out_count < (int)maxbuff || tree->nrecs <= maxbuff)
+        return buff;
+    uint32_t *all = query_buff_take(tree->nrecs);
+    if(!all)
+        return buff;
+    *out_count = bg_ent_inrange_rect(tree, xz_min.x, xz_max.x, xz_min.z, xz_max.z, all, tree->nrecs);
+    return all;
 }
 
 /*****************************************************************************/
@@ -578,6 +644,9 @@ void G_Pos_Shutdown(void)
     PF_FREE(s_cand_frame);
     s_cand_frame = NULL;
     s_cand_cap = 0;
+    PF_FREE(s_query_all);
+    s_query_all = NULL;
+    s_query_all_cap = 0;
     kh_destroy(pos, s_postable);
     bg_ent_destroy(&s_postree);
     kh_destroy(reach, s_wide);
@@ -608,19 +677,21 @@ int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t
 
     STALLOC(uint32_t, ent_ids, maxout);
 
-    int ntotal = bg_ent_inrange_rect(&s_postree, 
-        xz_min.x, xz_max.x, xz_min.z, xz_max.z, ent_ids, maxout);
-    ntotal = filter_garrisoned(NULL, ent_ids, ntotal);
+    int ntotal;
+    uint32_t *cands = rect_all(&s_postree, xz_min, xz_max, ent_ids, maxout, &ntotal);
+    ntotal = filter_garrisoned(NULL, cands, ntotal);
     int ret = 0;
 
-    for(int i = 0; i < ntotal; i++) {
+    for(int i = 0; i < ntotal && ret < (int)maxout; i++) {
 
-        uint32_t curr = ent_ids[i];
+        uint32_t curr = cands[i];
         if(!predicate(curr, arg))
             continue;
 
         out[ret++] = curr;
     }
+    if(cands != ent_ids)
+        query_buff_give(cands);
     STFREE(ent_ids);
     PERF_RETURN(ret);
 }
@@ -754,20 +825,22 @@ int G_Pos_EntsInCircleWithPredFrom(bg_ent_t *tree, khash_t(id) *flags, vec2_t xz
 
     STALLOC(uint32_t, ent_ids, maxout);
 
-    int ntotal = bg_ent_inrange_circle(tree, 
-        xz_point.x, xz_point.z, range, ent_ids, maxout);
-    ntotal = filter_garrisoned(flags, ent_ids, ntotal);
+    int ntotal;
+    uint32_t *cands = circle_all(tree, xz_point, range, ent_ids, maxout, &ntotal);
+    ntotal = filter_garrisoned(flags, cands, ntotal);
     int ret = 0;
 
-    for(int i = 0; i < ntotal; i++) {
+    for(int i = 0; i < ntotal && ret < (int)maxout; i++) {
 
-        uint32_t curr = ent_ids[i];
+        uint32_t curr = cands[i];
         if(!predicate(curr, arg))
             continue;
 
         out[ret++] = curr;
     }
 
+    if(cands != ent_ids)
+        query_buff_give(cands);
     STFREE(ent_ids);
     PERF_RETURN(ret);
 }
@@ -794,13 +867,13 @@ uint32_t G_Pos_NearestWithPred(vec2_t xz_point,
         float min_dist = FLT_MAX;
         uint32_t ret = NULL_UID;
 
-        int num_cands = bg_ent_inrange_circle(&s_postree, xz_point.x, xz_point.z,
-            len, ent_ids, ARR_SIZE(ent_ids));
-        num_cands = filter_garrisoned(NULL, ent_ids, num_cands);
+        int num_cands;
+        uint32_t *cands = circle_all(&s_postree, xz_point, len, ent_ids, ARR_SIZE(ent_ids), &num_cands);
+        num_cands = filter_garrisoned(NULL, cands, num_cands);
 
         for(int i = 0; i < num_cands; i++) {
         
-            uint32_t curr = ent_ids[i];
+            uint32_t curr = cands[i];
             vec2_t delta, can_pos_xz = G_Pos_GetXZ(curr);
             PFM_Vec2_Sub(&xz_point, &can_pos_xz, &delta);
 
@@ -809,6 +882,8 @@ uint32_t G_Pos_NearestWithPred(vec2_t xz_point,
                 ret = curr;
             }
         }
+        if(cands != ent_ids)
+            query_buff_give(cands);
 
         if(ret != NULL_UID)
             PERF_RETURN(ret);
@@ -844,13 +919,13 @@ uint32_t G_Pos_NearestWithPredFrom(bg_ent_t *tree, khash_t(pos) *positions,
         float min_dist = FLT_MAX;
         uint32_t ret = NULL_UID;
 
-        int num_cands = bg_ent_inrange_circle(tree, xz_point.x, xz_point.z,
-            len, ent_ids, ARR_SIZE(ent_ids));
-        num_cands = filter_garrisoned(flags, ent_ids, num_cands);
+        int num_cands;
+        uint32_t *cands = circle_all(tree, xz_point, len, ent_ids, ARR_SIZE(ent_ids), &num_cands);
+        num_cands = filter_garrisoned(flags, cands, num_cands);
 
         for(int i = 0; i < num_cands; i++) {
 
-            uint32_t curr = ent_ids[i];
+            uint32_t curr = cands[i];
             vec2_t delta, can_pos_xz = G_Pos_GetXZFrom(positions, curr);
             PFM_Vec2_Sub(&xz_point, &can_pos_xz, &delta);
 
@@ -859,6 +934,8 @@ uint32_t G_Pos_NearestWithPredFrom(bg_ent_t *tree, khash_t(pos) *positions,
                 ret = curr;
             }
         }
+        if(cands != ent_ids)
+            query_buff_give(cands);
 
         if(ret != NULL_UID)
             PERF_RETURN(ret);
