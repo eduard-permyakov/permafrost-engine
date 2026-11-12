@@ -5867,7 +5867,7 @@ static PyObject *PyPf_spawn_projectile(PyObject *self, PyObject *args)
     int faction_id;
     uint32_t cookie;
     int flags;
-    struct proj_desc pd;
+    struct proj_desc pd = {0};
     uint32_t dmg_type = 0;
 
     if(!PyArg_ParseTuple(args, "(fff)(fff)IIII(ss(fff)f)|I", &origin.x, &origin.y, &origin.z,
