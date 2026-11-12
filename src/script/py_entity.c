@@ -129,6 +129,7 @@ static PyObject *PyEntity_set_icons(PyEntityObject *self, PyObject *value);
 static PyObject *PyEntity_set_cluster_type(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_set_provision(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_replenish(PyEntityObject *self);
+static PyObject *PyEntity_feed(PyEntityObject *self);
 static PyObject *PyEntity_get_provision_tier(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_provision_timer_ms(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_provision_fetching(PyEntityObject *self, void *closure);
@@ -219,6 +220,11 @@ static PyMethodDef PyEntity_methods[] = {
     "itself, and optionally how many seconds of hunger it takes to starve. The unit then eats a meal "
     "every interval, and when it has none left goes hungry, and after a while starves, until it eats "
     "at a store of the resource."},
+
+    {"feed",
+    (PyCFunction)PyEntity_feed, METH_NOARGS,
+    "Feeds the unit a meal where it stands, if it is hungry or its ration is nearly used up; one on "
+    "its way to a store to eat turns back. Returns False if it took none."},
 
     {"replenish", 
     (PyCFunction)PyEntity_replenish, METH_NOARGS,
@@ -1008,6 +1014,7 @@ static PyObject *PyHarvesterEntity_drop_off(PyHarvesterEntityObject *self, PyObj
 static PyObject *PyHarvesterEntity_transport(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_get_curr_carry(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_clear_curr_carry(PyHarvesterEntityObject *self);
+static PyObject *PyHarvesterEntity_set_curr_carry(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_get_max_carry(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_set_max_carry(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_get_gather_speed(PyHarvesterEntityObject *self, PyObject *args);
@@ -1071,6 +1078,11 @@ static PyMethodDef PyHarvesterEntity_methods[] = {
     {"clear_curr_carry", 
     (PyCFunction)PyHarvesterEntity_clear_curr_carry, METH_NOARGS,
     "Clear any resources that the unit is currently carrying."},
+
+    {"set_curr_carry",
+    (PyCFunction)PyHarvesterEntity_set_curr_carry, METH_VARARGS,
+    "Set the amount of a particular resource that this entity is currently carrying, within what it "
+    "is able to carry."},
 
     {"get_max_carry", 
     (PyCFunction)PyHarvesterEntity_get_max_carry, METH_VARARGS,
@@ -2577,6 +2589,15 @@ static PyObject *PyEntity_set_provision(PyEntityObject *self, PyObject *args)
         Py_RETURN_NONE;
     G_Provision_Set(self->ent, good, meals, interval, starve_after, PyObject_IsTrue(automatic));
     Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_feed(PyEntityObject *self)
+{
+    if(G_FlagsGet(self->ent) & ENTITY_FLAG_ZOMBIE)
+        Py_RETURN_FALSE;
+    if(G_Provision_Feed(self->ent))
+        Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
 }
 
 static PyObject *PyEntity_replenish(PyEntityObject *self)
@@ -5108,6 +5129,29 @@ static PyObject *PyHarvesterEntity_transport(PyHarvesterEntityObject *self, PyOb
         PyErr_SetString(PyExc_RuntimeError, "Unable to transport resources to the specified storage site.");
         return NULL;
     }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyHarvesterEntity_set_curr_carry(PyHarvesterEntityObject *self, PyObject *args)
+{
+    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return NULL;
+    }
+
+    const char *rname;
+    int amount;
+    if(!PyArg_ParseTuple(args, "si", &rname, &amount)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting two arguments: resource name (string) and amount (int).");
+        return NULL;
+    }
+    int max = G_Harvester_GetMaxCarry(self->super.ent, rname);
+    if(amount < 0 || amount > max) {
+        PyErr_SetString(PyExc_ValueError, "The amount must be between 0 and what the entity is able to carry.");
+        return NULL;
+    }
+
+    G_Harvester_SetCurrCarry(self->super.ent, rname, amount);
     Py_RETURN_NONE;
 }
 
