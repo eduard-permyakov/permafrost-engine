@@ -378,6 +378,9 @@ static void update_inside(uint32_t unit, struct holder *h)
 {
     if(let_go(unit, h))
         return;
+    /* A workshop that holds its hands' food feeds them at their posts */
+    if(G_Provision_EatAt(unit, h->workshop))
+        return;
     if(G_Provision_WantsFood(unit)) {
         release(unit, "hungry", true);
     }

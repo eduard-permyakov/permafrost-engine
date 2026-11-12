@@ -77,6 +77,8 @@
 #define GOOD_LEN            (32)
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
+/* The rations a store keeps back from being carried away as meals for later */
+#define CARRY_AWAY_RESERVE  (30)
 #define FETCH_RETRY_MS      (5 * 1000)
 /* Standing still this long on the way to a store, or jostled in a crowd at it
  * for this long without getting any nearer, counts as having got there */
@@ -191,18 +193,18 @@ static uint32_t first_meal_delay_ms(uint32_t uid, uint32_t interval_ms)
     return interval_ms - spread + (uint32_t)((uid * 2654435761u) % spread);
 }
 
-/* A ration fills a unit up to its most meals, one used up each interval, and
- * it goes hungry only an interval after its last
+/* A ration is a meal and lasts an interval, whether eaten at the store or
+ * carried away from it
  */
 static float rations_per_minute(const struct provision *p)
 {
-    return 60000.0f / ((p->max_meals + 1) * (float)p->interval_ms);
+    return 60000.0f / (float)p->interval_ms;
 }
 
 /* The given share of how long a ration lasts */
 static uint32_t ahead_ms(const struct provision *p, float share)
 {
-    return (uint32_t)((p->max_meals + 1) * (float)p->interval_ms * share);
+    return (uint32_t)((float)p->interval_ms * share);
 }
 
 static void note_upkeep_good(const char *good)
@@ -230,9 +232,13 @@ static void eat(uint32_t uid, struct provision *p, uint32_t site)
     int stock = G_StorageSite_GetCurr(site, p->good);
     if(stock <= 0)
         return;
-    G_StorageSite_SetCurr(site, p->good, stock - 1);
-    G_StorageSite_RecordConsumed(G_GetFactionID(site), p->good, 1);
-    p->meals = p->max_meals;
+    /* The meal eaten there, and one for each it carries away out of what the store holds
+     * over its reserve: a store running low feeds everyone a meal before anyone a second
+     */
+    int taken = 1 + MAX(0, MIN(p->max_meals, stock - 1 - CARRY_AWAY_RESERVE));
+    G_StorageSite_SetCurr(site, p->good, stock - taken);
+    G_StorageSite_RecordConsumed(G_GetFactionID(site), p->good, taken);
+    p->meals = taken - 1;
     p->next_due_ms = s_now_ms + p->interval_ms;
     set_tier(uid, p, PROVISION_FED);
 }
@@ -278,16 +284,22 @@ static bool fetch(uint32_t uid, struct provision *p)
         return false;
     }
 
-    /* A load the store with food does not take goes to one that does first.
-     * One gathering by the player's order eats as it drops the load off, and
-     * goes back to its gathering. A load no store has room for stays in hand:
-     * full stores are no reason to go hungry beside them.
+    /* A load the store with food does not take goes to one that does first,
+     * if that one is no farther than the food. One gathering by the player's
+     * order eats as it drops the load off, and goes back to its gathering. A
+     * load no store has room for stays in hand, and so does one whose store is
+     * past the food: neither is a reason to go hungry beside a full larder.
+     * One starving eats first whatever it holds, as nothing watches over a
+     * drop-off that never ends.
      */
-    if(carrying(uid)) {
+    if(carrying(uid) && p->tier != PROVISION_STARVING) {
         bool back = (G_Duty_Kind(uid) == DUTY_GATHER);
         if(G_Harvester_BringInLoad(uid, site, back) || G_Harvester_BringInLoad(uid, NULL_UID, back)) {
-            G_Automation_TraceFollowOn(uid, "meal", "due", NULL, site);
-            return true;
+            uint32_t drop = G_Harvester_DropOffSite(uid);
+            if(drop == NULL_UID || drop == site || dist_to(uid, drop) <= dist_to(uid, site)) {
+                G_Automation_TraceFollowOn(uid, "meal", "due", NULL, site);
+                return true;
+            }
         }
     }
 
@@ -724,6 +736,7 @@ bool G_Provision_Set(uint32_t uid, const char *good, int max_meals, float interv
     pf_strlcpy(p->good, good, sizeof(p->good));
     note_upkeep_good(good);
     p->max_meals = max_meals;
+    p->meals = MIN(p->meals, max_meals);
     p->interval_ms = (uint32_t)(interval_s * 1000.0f);
     p->starve_after_ms = (uint32_t)(starve_after_s * 1000.0f);
     p->next_due_ms = s_now_ms + first_meal_delay_ms(uid, p->interval_ms);
@@ -815,6 +828,54 @@ bool G_Provision_Fetch(uint32_t uid)
     if(!p)
         return false;
     return fetch(uid, p);
+}
+
+bool G_Provision_EatAt(uint32_t uid, uint32_t site)
+{
+    struct provision *p = prov_get(uid);
+    if(!p || !p->interval_ms)
+        return false;
+    if(p->tier == PROVISION_FED && p->meals > 0)
+        return false;
+    if(p->tier == PROVISION_FED && p->next_due_ms > s_now_ms + ahead_ms(p, WORK_AHEAD_SHARE))
+        return false;
+    if(!(G_FlagsGet(site) & ENTITY_FLAG_STORAGE_SITE) || G_StorageSite_GetUseAlt(site))
+        return false;
+    if(G_StorageSite_GetCurr(site, p->good) <= 0)
+        return false;
+    eat(uid, p, site);
+    return true;
+}
+
+bool G_Provision_Feed(uint32_t uid)
+{
+    struct provision *p = prov_get(uid);
+    if(!p || !p->interval_ms)
+        return false;
+    if(G_FlagsGet(uid) & (ENTITY_FLAG_GARRISONED | ENTITY_FLAG_ZOMBIE))
+        return false;
+    if(p->tier == PROVISION_FED && p->meals > 0)
+        return false;
+    if(p->tier == PROVISION_FED && p->next_due_ms > s_now_ms + ahead_ms(p, WORK_AHEAD_SHARE))
+        return false;
+
+    /* The one meal it is handed; whoever hands it out has taken it from a store already */
+    p->meals = 0;
+    p->next_due_ms = s_now_ms + p->interval_ms;
+    p->no_food = false;
+    set_tier(uid, p, PROVISION_FED);
+
+    if(p->fetching != NULL_UID) {
+        E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive);
+        p->fetching = NULL_UID;
+        /* One with a duty takes it up again by itself once it stands */
+        if(p->go_back && G_Duty_Kind(uid) == DUTY_NONE) {
+            G_Move_SetDest(uid, p->post, true);
+        }else{
+            G_Move_Stop(uid);
+        }
+    }
+    return true;
 }
 
 bool G_Provision_EatFirst(uint32_t uid, uint32_t target)

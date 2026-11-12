@@ -69,6 +69,8 @@ uint32_t G_Harvester_SupplyingSite(uint32_t harvester);
  * gathering. Fails for a carrier on a transport job or a site that does not
  * take the load. */
 bool G_Harvester_BringInLoad(uint32_t harvester, uint32_t site, bool and_back);
+/* The store a gatherer is taking its load to, or NULL_UID */
+uint32_t G_Harvester_DropOffSite(uint32_t harvester);
 /* The node of the good a gatherer on the player's order goes on to after an
  * interruption: about the one it was sent to, else about itself */
 uint32_t G_Harvester_ResumeNode(uint32_t uid, const char *rname);

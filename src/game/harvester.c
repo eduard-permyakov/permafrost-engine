@@ -3852,6 +3852,14 @@ uint32_t G_Harvester_TransportTarget(uint32_t harvester)
     return NULL_UID;
 }
 
+uint32_t G_Harvester_DropOffSite(uint32_t harvester)
+{
+    struct hstate *hs = hstate_get(harvester);
+    if(!hs || hs->state != STATE_HARVESTING_SEEK_STORAGE || !G_EntityExists(hs->ss_uid))
+        return NULL_UID;
+    return hs->ss_uid;
+}
+
 void G_Harvester_Stop(uint32_t uid)
 {
     struct hstate *hs = hstate_get(uid);
