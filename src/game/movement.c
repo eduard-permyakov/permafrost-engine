@@ -6289,7 +6289,14 @@ static vec2_t keep_right_vpref(const struct move_work_in *in, const struct moves
     if(PFM_Vec2_Len(&to_goal) < KEEP_RIGHT_GOAL_DIST)
         return vpref;
 
+    /* Along the way, not the unit's own heading: steering off a heading that
+     * the last tick's drift already turned builds into a weave at speed
+     */
     vec2_t dir = (vec2_t){vpref.x / speed, vpref.z / speed};
+    float des_len = PFM_Vec2_Len((vec2_t*)&in->ent_des_v);
+    if(des_len > EPSILON) {
+        dir = (vec2_t){in->ent_des_v.x / des_len, in->ent_des_v.z / des_len};
+    }
     /* Right as seen on screen, which mirrors the world */
     vec2_t right = (vec2_t){dir.z, -dir.x};
     float to_left, to_right;

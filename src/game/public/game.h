@@ -1058,8 +1058,8 @@ bool   G_Region_Explored(const char *name, uint16_t player_mask, bool *out);
 #define ROAD_TILE_SPAN (4)
 
 /* A unit going its way along the roads is this much faster on them */
-#define ROAD_SPEED_BONUS (1.25f)
-#define ROAD_PLANK_SPEED_BONUS (1.5f)
+#define ROAD_SPEED_BONUS (1.5f)
+#define ROAD_PLANK_SPEED_BONUS (2.0f)
 
 enum road_kind{
     ROAD_KIND_DIRT,
