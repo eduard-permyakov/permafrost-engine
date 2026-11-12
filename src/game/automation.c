@@ -92,6 +92,8 @@
 #define MIN_LOAD                     (5)
 /* A top-up's walk, for a carrier of the least load; a bigger one walks as much farther */
 #define TOP_UP_WALK                  (300.0f)
+/* The minutes a request ranks behind for each minute the nearest carrier is from it */
+#define NEAR_REQUEST_WEIGHT          (3.0f)
 /* What a keep stands for, in minutes, against the drawers' minutes of stock */
 #define KEEP_MINUTES                 (5.0f)
 #define MIN_LOAD_WAIT_S              (30.0f)
@@ -479,6 +481,7 @@ static uint32_t node_for(uint32_t uid, const struct automation_state *astate, co
 static void trace_note(uint32_t uid, const char *kind, const char *verdict, const char *why, 
                        const char *rname, uint32_t target);
 static float distance(vec2_t a, vec2_t b);
+static void favour_near_requests(vec_request_t *requests, const vec_entity_t *carriers);
 static bool districts_equal(const int *a, const int *b);
 
 /*****************************************************************************/
@@ -1175,6 +1178,33 @@ static void collect_requests(vec_request_t *out, const vec_entity_t *sites)
     }
 }
 
+/* A request far from every waiting carrier ranks as one that has waited less:
+ * a carrier freed beside a store in want serves it before crossing the realm
+ * to one that has waited only a little longer.
+ */
+static void favour_near_requests(vec_request_t *requests, const vec_entity_t *carriers)
+{
+    for(int i = 0; i < vec_size(requests); i++) {
+        struct job_request *req = &vec_AT(requests, i);
+        int faction = G_GetFactionID(req->site);
+        vec2_t dest = G_Pos_GetXZ(req->site);
+        float nearest_s = INFINITY;
+        for(int c = 0; c < vec_size(carriers); c++) {
+            uint32_t carrier = vec_AT(carriers, c);
+            if(G_GetFactionID(carrier) != faction)
+                continue;
+            float speed = 0.0f;
+            G_Move_GetEffectiveSpeed(carrier, &speed);
+            if(speed <= 0.0f)
+                continue;
+            nearest_s = MIN(nearest_s, distance(G_Pos_GetXZ(carrier), dest) / speed);
+        }
+        if(nearest_s < INFINITY) {
+            req->key += NEAR_REQUEST_WEIGHT * nearest_s / 60.0f;
+        }
+    }
+}
+
 static int compare_requests(const void *a, const void *b)
 {
     const struct job_request *ra = a, *rb = b;
@@ -1610,6 +1640,7 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
     PERF_PUSH("automation::collect_requests");
     collect_requests(&requests, &sites);
     PERF_POP();
+    favour_near_requests(&requests, carriers);
     qsort(requests.array, vec_size(&requests), sizeof(struct job_request), compare_requests);
 
     vec_source_t sources;
