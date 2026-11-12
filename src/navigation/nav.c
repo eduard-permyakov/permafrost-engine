@@ -1321,6 +1321,8 @@ static void n_update_blockers(struct nav_private *priv, enum nav_layer layer, in
 {
     if(!(priv->layer_mask & (1u << layer)))
         return;
+    if(faction_id < 0 || faction_id >= MAX_FACTIONS)
+        return;
 
     for(int i = 0; i < ntds; i++) {
     

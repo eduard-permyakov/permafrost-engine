@@ -5382,10 +5382,11 @@ static void do_remove_entity(uint32_t uid)
     if(k == kh_end(s_entity_state_table))
         return;
 
-    uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
-
+    /* The snapshot may no longer hold a unit removed since it was taken, and
+     * a garrisoned one has given up its tiles already
+     */
     do_stop(uid);
-    if(!(flags & ENTITY_FLAG_GARRISONED)) {
+    if(kh_val(s_entity_state_table, k).blocking) {
         entity_unblock(uid);
     }
 
