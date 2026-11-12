@@ -115,6 +115,8 @@
  * or sent off again; how close to the store counts as there */
 #define STALL_GIVE_UP_TICKS (200)
 #define ARRIVAL_REACH       (30.0f)
+/* How many times a carrier kept off a store by a crowd reaches a step farther */
+#define MAX_REACH_TRIES     (2)
 /* A trip longer than this says nothing about the route */
 #define MAX_ROUTE_S         (600)
 /* Goods a target is this near as short of are as short */
@@ -194,6 +196,10 @@ struct hstate{
     /* Sources stopped at on this trip after the first; not saved, a trip
      * under way when the session loads starts its count over */
     int         top_ups;
+    /* The store it last came to rest short of, and how many times running;
+     * not saved, a load under way when the session loads starts its count over */
+    uint32_t    reach_site;
+    int         reach_fails;
     /* Ticks it has stood still on its way somewhere, to catch an arrival it never heard */
     int         still_ticks;
     /* Ticks it has made no way toward the resource it seeks, and where it last did */
@@ -285,6 +291,9 @@ static bool beyond_reach(uint32_t uid, uint32_t res);
 static bool regather(uint32_t uid, uint32_t resource);
 static int  amount_en_route(uint32_t target, const char *rname, uint32_t exclude, float within);
 static int  dest_room(uint32_t uid, const struct hstate *hs);
+static float reach_after(uint32_t uid, uint32_t site, int fails);
+static float distance_to(uint32_t uid, uint32_t site);
+static void note_short_arrival(uint32_t uid, struct hstate *hs, uint32_t site);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -425,6 +434,8 @@ static bool hstate_init(struct hstate *hs)
     hs->transport_dest_uid = NULL_UID;
     hs->job_amount = 0;
     hs->top_ups = 0;
+    hs->reach_site = NULL_UID;
+    hs->reach_fails = 0;
     hs->still_ticks = 0;
     hs->press_ticks = 0;
     hs->press_pos = (vec2_t){0.0f, 0.0f};
@@ -756,16 +767,45 @@ static uint32_t drop_site_for(uint32_t uid, uint32_t node, const char *rname)
     return G_StorageSite_NearestWithPred(G_Pos_GetXZ(node), valid_storage_site_dropoff, (void*)&arg, 0.0f);
 }
 
+/* How far from the store's centre a carrier that came to rest short of it so
+ * many times running may stand and still reach it */
+static float reach_after(uint32_t uid, uint32_t site, int fails)
+{
+    return G_GetSelectionRadius(uid) + G_GetSelectionRadius(site)
+         + ARRIVAL_REACH * (1 + MIN(fails, MAX_REACH_TRIES));
+}
+
+static float distance_to(uint32_t uid, uint32_t site)
+{
+    vec2_t a = G_Pos_GetXZ(uid), b = G_Pos_GetXZ(site);
+    vec2_t delta;
+    PFM_Vec2_Sub(&a, &b, &delta);
+    return PFM_Vec2_Len(&delta);
+}
+
 /* Beside the store, or as near as a crowd about it lets one get */
 static bool within_reach(uint32_t uid, uint32_t site)
 {
     if(M_NavObjAdjacent(s_map, uid, site))
         return true;
-    vec2_t a = G_Pos_GetXZ(uid), b = G_Pos_GetXZ(site);
-    vec2_t delta;
-    PFM_Vec2_Sub(&a, &b, &delta);
-    float reach = G_GetSelectionRadius(uid) + G_GetSelectionRadius(site) + ARRIVAL_REACH;
-    return PFM_Vec2_Len(&delta) <= reach;
+    struct hstate *hs = hstate_get(uid);
+    int fails = (hs && hs->reach_site == site) ? hs->reach_fails : 0;
+    return distance_to(uid, site) <= reach_after(uid, site, fails);
+}
+
+/* A carrier come to rest short of the store, but no farther than the
+ * farthest reach, reaches it a step farther at its next arrival there */
+static void note_short_arrival(uint32_t uid, struct hstate *hs, uint32_t site)
+{
+    if(!G_EntityExists(site))
+        return;
+    if(hs->reach_site != site) {
+        hs->reach_site = site;
+        hs->reach_fails = 0;
+    }
+    if(distance_to(uid, site) <= reach_after(uid, site, MAX_REACH_TRIES)) {
+        hs->reach_fails = MIN(hs->reach_fails + 1, MAX_REACH_TRIES);
+    }
 }
 
 /* The nearest store with room for the whole load, else the nearest with any */
@@ -1635,9 +1675,11 @@ static void on_arrive_at_storage(void *user, void *event)
     || !(G_FlagsGet(hs->ss_uid) & ENTITY_FLAG_STORAGE_SITE)
     || !within_reach(uid, hs->ss_uid)) {
         /* harvester could not reach the storage site */
+        note_short_arrival(uid, hs, hs->ss_uid);
         entity_try_drop_off(uid);
         return; 
     }
+    hs->reach_fails = 0;
 
     /* One that brought its load in already, and found nothing to gather
      * after, has nothing to drop off */
@@ -1891,9 +1933,11 @@ static void on_arrive_at_transport_dest(void *user, void *event)
     || !within_reach(uid, dest_uid)) {
         /* harvester could not reach the destination storage site */
         cart_leg_log(uid, "dest-fail", hs->transport_src_uid, dest_uid);
+        note_short_arrival(uid, hs, dest_uid);
         finish_transporing(hs);
         return;
     }
+    hs->reach_fails = 0;
 
     const char *rname = carried_resource_name(hs);
     assert(rname);
