@@ -485,6 +485,8 @@ static void trace_note(uint32_t uid, const char *kind, const char *verdict, cons
 static float distance(vec2_t a, vec2_t b);
 static void favour_near_requests(vec_request_t *requests, const vec_entity_t *carriers);
 static bool districts_equal(const int *a, const int *b);
+static bool pool_may_reassign(uint32_t uid, const struct automation_state *astate);
+static void note_reassigned(uint32_t uid, const struct automation_state *astate);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -1656,6 +1658,69 @@ static void lanes_note_workers(void)
     });
 }
 
+/* Sends a worker to gather the good at the node nearest the site, and bring
+ * it there, for a request no store can serve: one idle first, else, as often
+ * as its pool may lose one, the automation's gatherer of the least wanted
+ * good with nothing else in hand; never one on the player's order or pinned.
+ * Says why when nobody can be sent.
+ */
+static enum request_status send_feeder(const struct job_request *req)
+{
+    int faction = G_GetFactionID(req->site);
+    int district = G_District_Of(req->site);
+    vec2_t dest = G_Pos_GetXZ(req->site);
+    struct work_snapshot *snap = snapshot_get();
+    uint32_t best = NULL_UID;
+    bool best_idle = false;
+    float best_need = 0.0f, best_dist = 0.0f;
+
+    uint32_t uid;
+    struct automation_state *astate;
+    kh_foreach_val_ptr(s_entity_state_table, uid, astate, {
+        if(G_GetFactionID(uid) != faction || !astate->automatic_work || astate->pinned[0])
+            continue;
+        if(astate->home_district && astate->home_district != district)
+            continue;
+        uint32_t flags = G_FlagsGet(uid);
+        if(!(flags & ENTITY_FLAG_HARVESTER) || (flags & (ENTITY_FLAG_GARRISONED | ENTITY_FLAG_ZOMBIE)))
+            continue;
+        if(G_Posts_Holds(uid) || G_Provision_WantsFood(uid)
+        || G_Harvester_GetCurrTotalCarry(uid) > G_Harvester_GetCurrCarry(uid, req->rname))
+            continue;
+        if(G_Harvester_GetGatherSpeed(uid, req->rname) <= 0.0f || G_Harvester_GatheringFor(uid) != NULL_UID)
+            continue;
+        bool is_idle = (astate->state == STATE_IDLE && G_Duty_Kind(uid) == DUTY_NONE && idle(uid));
+        const char *good = G_Harvester_Gathering(uid);
+        if(!is_idle && (!good || G_Duty_Kind(uid) != DUTY_GATHER || G_Duty_ByPlayer(uid)
+        || !pool_may_reassign(uid, astate)))
+            continue;
+        struct good_demand *demand = is_idle ? NULL : demand_get(snap, faction, good);
+        float need = demand ? demand->need / (1.0f + demand->workers) : 0.0f;
+        float dist = distance(G_Pos_GetXZ(uid), dest);
+        bool better = (best == NULL_UID) || (is_idle != best_idle ? is_idle
+                    : (need != best_need) ? need < best_need : dist < best_dist);
+        if(better) {
+            best = uid;
+            best_idle = is_idle;
+            best_need = need;
+            best_dist = dist;
+        }
+    });
+
+    if(best == NULL_UID)
+        return REQUEST_NO_CARRIER;
+    astate = astate_get(best);
+    G_Duty_TagNext(best, by_of(astate));
+    if(!G_Harvester_GatherGoodFor(best, req->site, req->rname))
+        return REQUEST_UNREACHABLE;
+    if(!best_idle) {
+        note_reassigned(best, astate);
+    }
+    pf_strlcpy(astate->working, req->rname, sizeof(astate->working));
+    trace_note(best, "carry", "taken", "request", req->rname, req->site);
+    return REQUEST_OK;
+}
+
 /* Gives the waiting carriers the most pressing requests: each request takes 
  * the carrier and source that get its goods to it soonest. Only a pass over 
  * all the waiting carriers can 'judge' why a request goes unserved. */
@@ -1850,10 +1915,18 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
         if(req->shortfall > 0 && !any_reachable && !any_small 
         && !pool_bound_for(req->site, req->rname)) {
             bool none = (vec_size(&sources) == 0);
-            /* A good gathered on the site's own island comes from its nodes */
+            /* A good gathered on the site's own island comes from its nodes,
+             * by a worker sent to gather for it once it has waited
+             */
             if((none || any_district_bar) && gatherable_near(req->site, req->rname)) {
                 struct pending *pend = pending_get(req->site, req->rname, false);
-                if(pend) {
+                enum request_status why = REQUEST_OK;
+                if(waited_s * 1000.0f >= BLOCKED_AFTER_MS) {
+                    why = send_feeder(req);
+                }
+                if(why != REQUEST_OK) {
+                    note_blocked(req, why);
+                }else if(pend) {
                     pend->reason = REQUEST_OK;
                 }
             }else if(none) {

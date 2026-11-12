@@ -990,12 +990,22 @@ static void entity_drop_off(uint32_t uid, uint32_t ss)
     G_Move_SetSurroundEntity(uid, ss);
 }
 
-/* Whether the builder gathering for its site still has one to bring the load to */
+/* Whether the site gathered for is one the worker builds, not a store it feeds */
+static bool under_construction(uint32_t site)
+{
+    return (G_FlagsGet(site) & ENTITY_FLAG_BUILDING) && !G_Building_IsCompleted(site);
+}
+
+/* Whether the worker gathering for a site still has one to bring the load to:
+ * a builder's while it is not supplied, a store while it asks for the good */
 static bool gathering_for_site(const struct hstate *hs)
 {
     uint32_t site = hs->gather_for;
-    return site != NULL_UID && G_EntityExists(site) && !G_EntityIsZombie(site)
-        && (G_FlagsGet(site) & ENTITY_FLAG_BUILDING) && !G_Building_IsSupplied(site);
+    if(site == NULL_UID || !G_EntityExists(site) || G_EntityIsZombie(site))
+        return false;
+    if(under_construction(site))
+        return !G_Building_IsSupplied(site);
+    return (G_FlagsGet(site) & ENTITY_FLAG_STORAGE_SITE) && hs->res_name && asks_for(site, hs->res_name);
 }
 
 /* A builder done gathering for its site leaves off gathering for good and builds it */
@@ -1023,7 +1033,7 @@ static void entity_try_drop_off(uint32_t uid)
     uint32_t site = hs->gather_for;
     if(site != NULL_UID && !gathering_for_site(hs)) {
         hs->gather_for = NULL_UID;
-        if(G_EntityExists(site) && !G_EntityIsZombie(site) && !G_Building_IsCompleted(site)) {
+        if(G_EntityExists(site) && !G_EntityIsZombie(site) && under_construction(site)) {
             back_to_building(uid, hs, site);
             return;
         }
@@ -1705,15 +1715,24 @@ static void on_arrive_at_storage(void *user, void *event)
         G_StorageSite_SetCurr(hs->ss_uid, rname, curr + carry);
 
         /* A builder that gathered for its site goes back to building it */
-        if(hs->gather_for != NULL_UID && hs->gather_for == hs->ss_uid) {
+        if(hs->gather_for != NULL_UID && hs->gather_for == hs->ss_uid && under_construction(hs->gather_for)) {
             back_to_building(uid, hs, hs->gather_for);
             return;
+        }
+        /* One that fed a store goes on while it asks, and is done once it does not */
+        bool fed = (hs->gather_for != NULL_UID && hs->gather_for == hs->ss_uid);
+        bool feeding = fed && gathering_for_site(hs);
+        if(fed && !feeding) {
+            hs->gather_for = NULL_UID;
+            if(G_Duty_Kind(uid) == DUTY_GATHER && !G_Duty_ByPlayer(uid)) {
+                G_Duty_End(uid, "leaves");
+            }
         }
 
         uint32_t resource = target_resource(uid, hs, rname);
         /* Its duty ended on the way: the load was the last of it */
         bool done = hs->drop_off_only || (G_Duty_Kind(uid) != DUTY_GATHER);
-        if(done || G_Automation_LeavesGathering(uid, rname, resource)) {
+        if(done || (!feeding && G_Automation_LeavesGathering(uid, rname, resource))) {
             hs->state = STATE_NOT_HARVESTING;
             hs->ss_uid = NULL_UID;
             hs->res_name = NULL;
@@ -1730,7 +1749,7 @@ static void on_arrive_at_storage(void *user, void *event)
         G_StorageSite_SetCurr(hs->ss_uid, rname, cap);
 
         /* Its site full of the good, the builder goes back to it with the rest in hand */
-        if(hs->gather_for != NULL_UID && hs->gather_for == hs->ss_uid) {
+        if(hs->gather_for != NULL_UID && hs->gather_for == hs->ss_uid && under_construction(hs->gather_for)) {
             back_to_building(uid, hs, hs->gather_for);
             return;
         }
@@ -3729,7 +3748,8 @@ int G_Harvester_BoundFor(uint32_t dest, const char *rname)
         if(!kh_exist(s_entity_state_table, k))
             continue;
         const struct hstate *hs = &kh_value(s_entity_state_table, k);
-        if(hs->transport_dest_uid != dest || hs->state < STATE_TRANSPORT_GETTING)
+        bool feeding = (hs->gather_for == dest && hs->state != STATE_NOT_HARVESTING);
+        if(!feeding && (hs->transport_dest_uid != dest || hs->state < STATE_TRANSPORT_GETTING))
             continue;
         if(!hs->res_name || strcmp(hs->res_name, rname))
             continue;
@@ -3776,6 +3796,12 @@ int G_Harvester_JobAmount(uint32_t uid)
 {
     struct hstate *hs = hstate_get(uid);
     return hs ? hs->job_amount : 0;
+}
+
+uint32_t G_Harvester_GatheringFor(uint32_t harvester)
+{
+    struct hstate *hs = hstate_get(harvester);
+    return (hs && gathering_for_site(hs)) ? hs->gather_for : NULL_UID;
 }
 
 uint32_t G_Harvester_GatherNode(uint32_t harvester)
@@ -3828,17 +3854,31 @@ bool G_Harvester_GatherForSite(uint32_t harvester, uint32_t building)
     if(!hs || G_Harvester_GetCurrTotalCarry(harvester))
         return false;
     const char *rname = transport_resource(hs, building);
-    if(!rname || G_Harvester_GetGatherSpeed(harvester, rname) <= 0)
+    if(!rname)
         return false;
-    uint32_t node = G_Harvester_NearestResource(harvester, G_Pos_GetXZ(building), rname, 0.0f);
+    return G_Harvester_GatherGoodFor(harvester, building, rname);
+}
+
+bool G_Harvester_GatherGoodFor(uint32_t harvester, uint32_t site, const char *rname)
+{
+    struct hstate *hs = hstate_get(harvester);
+    if(!hs || G_Harvester_GetCurrTotalCarry(harvester) > G_Harvester_GetCurrCarry(harvester, rname))
+        return false;
+    if(G_Harvester_GetGatherSpeed(harvester, rname) <= 0)
+        return false;
+    uint32_t node = G_Harvester_NearestResource(harvester, G_Pos_GetXZ(site), rname, 0.0f);
     if(node == NULL_UID)
         return false;
+    /* One taken off its gathering leaves it first, its load kept */
+    if(hs->state != STATE_NOT_HARVESTING) {
+        G_Harvester_Stop(harvester);
+    }
     s_for_site = true;
     bool ret = G_Harvester_Gather(harvester, node);
     s_for_site = false;
     if(!ret)
         return false;
-    hs->gather_for = building;
+    hs->gather_for = site;
     return true;
 }
 

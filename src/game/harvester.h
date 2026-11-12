@@ -55,6 +55,10 @@ void G_Harvester_Stop(uint32_t uid);
 bool G_Harvester_SupplyBuilding(uint32_t uid, uint32_t building_uid, bool impatient);
 /* Sends a builder to gather what its site lacks and nothing in store can give, and back to build */
 bool G_Harvester_GatherForSite(uint32_t uid, uint32_t building_uid);
+/* Sends a worker to gather the good at the node nearest the site and bring its loads there while it asks */
+bool G_Harvester_GatherGoodFor(uint32_t uid, uint32_t site, const char *rname);
+/* The site the worker gathers for, or NULL_UID */
+uint32_t G_Harvester_GatheringFor(uint32_t uid);
 bool G_Harvester_InTargetMode(void);
 int  G_Harvester_CurrContextualAction(void);
 bool G_Harvester_GetContextualCursor(char *out, size_t maxout);
