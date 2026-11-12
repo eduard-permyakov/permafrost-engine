@@ -467,6 +467,8 @@ static float top_weight(int faction, const char *rname);
 static uint32_t gather_node(uint32_t uid, const struct automation_state *astate, const char *rname,
                             struct work_snapshot *snap);
 static bool could_serve(uint32_t site, const struct job_request *req);
+static int long_haul_room(const struct job_request *req, float travel);
+static int asked_after(const vec_request_t *requests, int idx);
 static int stock_target(int faction, const char *rname);
 static vec2_t work_origin(uint32_t uid, const struct automation_state *astate);
 static bool in_home_territory(int faction, int home, uint32_t node);
@@ -1326,6 +1328,37 @@ static int min_load_for(float travel, int max_carry, int shortfall, float waited
     return MIN(want, shortfall);
 }
 
+/* On a haul this long, the room a drawer has for the good once the loads on
+ * their way to it are in, which a carrier fills rather than bringing the few
+ * units it is short of; 0 for a near haul or a site that does not draw it */
+static int long_haul_room(const struct job_request *req, float travel)
+{
+    if(req->tier >= TIER_TOPPING || travel < FULL_LOAD_TRAVEL)
+        return 0;
+    if(G_StorageSite_GetUseAlt(req->site) || G_StorageSite_GetDraw(req->site, req->rname) <= 0.0f)
+        return 0;
+    int have = G_StorageSite_GetCurr(req->site, req->rname) + pool_en_route(req->site, req->rname);
+    return MAX(G_StorageSite_GetCapacity(req->site, req->rname) - have, 0);
+}
+
+/* What the faction's requests for the good after this one are still short
+ * of, which a load beyond this one's shortfall leaves to them */
+static int asked_after(const vec_request_t *requests, int idx)
+{
+    const struct job_request *req = &vec_AT(requests, idx);
+    int faction = G_GetFactionID(req->site);
+    int ret = 0;
+    for(int i = idx + 1; i < vec_size(requests); i++) {
+        const struct job_request *other = &vec_AT(requests, i);
+        if(other->tier >= TIER_TOPPING || other->shortfall <= 0)
+            continue;
+        if(strcmp(other->rname, req->rname) || G_GetFactionID(other->site) != faction)
+            continue;
+        ret += other->shortfall;
+    }
+    return ret;
+}
+
 /* Whether a node of the good lies within the gatherers' reach of the site, on its island */
 static bool gatherable_near(uint32_t site, const char *rname)
 {
@@ -1764,7 +1797,13 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
             vec2_t cpos = G_Pos_GetXZ(carrier);
             uint32_t srcm = nearest_member(src->site, cpos);
             uint32_t dstm = nearest_member(req->site, G_Pos_GetXZ(srcm));
-            int amount = MIN(req->shortfall, MIN(src->surplus, G_Harvester_GetMaxCarry(carrier, req->rname)));
+            int max_carry = G_Harvester_GetMaxCarry(carrier, req->rname);
+            int amount = MIN(req->shortfall, MIN(src->surplus, max_carry));
+            int room = long_haul_room(req, best_travel);
+            if(room > amount) {
+                int spare = src->surplus - asked_after(&requests, i);
+                amount = MAX(amount, MIN(room, MIN(spare, max_carry)));
+            }
 
             vec_entity_del(carriers, best_carrier);
             struct automation_state *cstate = astate_get(carrier);
