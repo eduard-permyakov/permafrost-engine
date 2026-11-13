@@ -215,6 +215,9 @@ struct hstate{
     /* The site a builder gathers for when nothing in store can be had for it:
      * its load goes there, and it goes back to building it; not saved */
     uint32_t    gather_for;
+    /* The replenishable resource it gathered out, which it fetches for and
+     * waits by until the resource is replenished */
+    uint32_t    sowing;
 };
 
 struct searcharg{
@@ -294,6 +297,7 @@ static int  dest_room(uint32_t uid, const struct hstate *hs);
 static float reach_after(uint32_t uid, uint32_t site, int fails);
 static float distance_to(uint32_t uid, uint32_t site);
 static void note_short_arrival(uint32_t uid, struct hstate *hs, uint32_t site);
+static void wait_to_sow(uint32_t uid, struct hstate *hs);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -442,6 +446,7 @@ static bool hstate_init(struct hstate *hs)
     hs->press_target = NULL_UID;
     hs->nfailed = 0;
     hs->gather_for = NULL_UID;
+    hs->sowing = NULL_UID;
     return true;
 }
 
@@ -1214,6 +1219,26 @@ static void entity_try_retarget(uint32_t uid)
     entity_try_gather_nearest(uid, rname);
 }
 
+/* With nothing to replenish its resource with yet, the gatherer waits by it
+ * for its duty's next check
+ */
+static void wait_to_sow(uint32_t uid, struct hstate *hs)
+{
+    uint32_t resource = G_Harvester_Sowing(uid);
+    if(resource == NULL_UID) {
+        hs->sowing = NULL_UID;
+        entity_try_retarget(uid);
+        return;
+    }
+    if(hs->state != STATE_NOT_HARVESTING) {
+        finish_harvesting(hs, uid);
+    }
+    G_Duty_SetWaiting(uid, true);
+    if(!M_NavObjAdjacent(s_map, uid, resource) && G_Move_Still(uid)) {
+        G_Move_SetSurroundEntity(uid, resource);
+    }
+}
+
 uint32_t target_resource(uint32_t uid, struct hstate *hs, const char *rname)
 {
     bool resource = false;
@@ -1278,7 +1303,9 @@ static void clear_queued_command(uint32_t uid)
             /* The drop-off leg already cleared the harvest state; retarget by
              * the resource the plot replenishes.
              */
-            if(G_FlagsGet(arg) & ENTITY_FLAG_RESOURCE) {
+            if(arg == G_Harvester_Sowing(uid)) {
+                wait_to_sow(uid, hs);
+            }else if(G_FlagsGet(arg) & ENTITY_FLAG_RESOURCE) {
                 entity_try_gather_nearest(uid, G_Resource_GetName(arg));
             }else{
                 entity_try_drop_off(uid);
@@ -1406,14 +1433,12 @@ static void on_harvest_anim_finished(void *user, void *event)
 
         if(G_Resource_GetReplenishable(hs->res_uid)) {
 
-            /* Nothing can fetch the replenish resources right now; move on to
-             * a productive resource rather than retry every anim cycle.
-             */
             if(!G_Resource_IsReplenishing(hs->res_uid)) {
                 G_Resource_SetReplenishing(hs->res_uid);
             }
+            hs->sowing = hs->res_uid;
             if(!G_Harvester_ReplenishResource(uid, hs->res_uid)) {
-                entity_try_retarget(uid);
+                wait_to_sow(uid, hs);
                 return;
             }
         }else{
@@ -1678,6 +1703,17 @@ static void cart_leg_log(uint32_t uid, const char *event, uint32_t src, uint32_t
         G_Harvester_GetCurrTotalCarry(uid), pos.x, pos.z);
 }
 
+/* Replenishes a resource once it holds all it is replenished with, whoever brought the last of it */
+static bool sow_if_stocked(uint32_t site)
+{
+    if(!(G_FlagsGet(site) & ENTITY_FLAG_RESOURCE)
+    || !G_Resource_IsReplenishing(site)
+    || !G_StorageSite_IsSaturated(site))
+        return false;
+    G_Resource_SetReplenished(site);
+    return true;
+}
+
 static void on_arrive_at_storage(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
@@ -1724,6 +1760,7 @@ static void on_arrive_at_storage(void *user, void *event)
     if(left >= carry) {
         G_Harvester_SetCurrCarry(uid, rname, 0);
         G_StorageSite_SetCurr(hs->ss_uid, rname, curr + carry);
+        sow_if_stocked(hs->ss_uid);
 
         /* A builder that gathered for its site goes back to building it */
         if(hs->gather_for != NULL_UID && hs->gather_for == hs->ss_uid && under_construction(hs->gather_for)) {
@@ -1758,6 +1795,7 @@ static void on_arrive_at_storage(void *user, void *event)
 
         G_Harvester_SetCurrCarry(uid, rname, carry - left);
         G_StorageSite_SetCurr(hs->ss_uid, rname, cap);
+        sow_if_stocked(hs->ss_uid);
 
         /* Its site full of the good, the builder goes back to it with the rest in hand */
         if(hs->gather_for != NULL_UID && hs->gather_for == hs->ss_uid && under_construction(hs->gather_for)) {
@@ -2001,13 +2039,9 @@ static void on_arrive_at_transport_dest(void *user, void *event)
     }
 
     uint32_t ss_uid = hs->transport_dest_uid;
-    uint32_t ss_flags = G_FlagsGet(ss_uid);
 
-    if((ss_flags & ENTITY_FLAG_RESOURCE)
-    && G_Resource_IsReplenishing(ss_uid)
-    && G_StorageSite_IsSaturated(ss_uid)) {
+    if(sow_if_stocked(ss_uid)) {
 
-        G_Resource_SetReplenished(ss_uid);
         finish_transporing(hs);
         if(G_Harvester_GetGatherSpeed(uid, rname) > 0) {
             G_Harvester_Gather(uid, ss_uid);
@@ -2028,6 +2062,10 @@ static void on_arrive_at_transport_dest(void *user, void *event)
                 G_Harvester_DropOff(uid, store);
             }
         }
+        return;
+    }
+    if(dest == G_Harvester_Sowing(uid)) {
+        G_Harvester_ResumeSowing(uid);
         return;
     }
     /* A builder that fetched for its site goes back to it */
@@ -3390,6 +3428,7 @@ static bool gather_order(uint32_t harvester, uint32_t resource)
         return false;
 
     const char *rname = G_Resource_GetName(resource);
+    hs->sowing = NULL_UID;
     if(!(s_for_site && G_Duty_Kind(harvester) == DUTY_BUILD)) {
         G_Duty_Set(harvester, DUTY_GATHER, drop_site_for(harvester, resource, rname), rname, DUTY_BY_PLAYER);
     }
@@ -3556,7 +3595,8 @@ static bool transport(uint32_t harvester, uint32_t storage, enum en_route_rule r
         return false;
     }
 
-    if(!(s_for_site && G_Duty_Kind(harvester) == DUTY_BUILD)) {
+    /* One fetching for the resource it gathered out stays its gatherer */
+    if(!(s_for_site && (G_Duty_Kind(harvester) == DUTY_BUILD || G_Harvester_Sowing(harvester) == storage))) {
         G_Duty_Set(harvester, DUTY_SUPPLY, storage, NULL, DUTY_BY_PLAYER);
     }
 
@@ -3918,6 +3958,39 @@ bool G_Harvester_ReplenishResource(uint32_t harvester, uint32_t resource)
     bool ret = G_Harvester_Transport(harvester, resource);
     s_for_site = false;
     return ret;
+}
+
+uint32_t G_Harvester_Sowing(uint32_t harvester)
+{
+    struct hstate *hs = hstate_get(harvester);
+    if(!hs || hs->sowing == NULL_UID || G_Duty_Kind(harvester) != DUTY_GATHER)
+        return NULL_UID;
+    if(!G_EntityExists(hs->sowing) || G_EntityIsZombie(hs->sowing)
+    || !(G_FlagsGet(hs->sowing) & ENTITY_FLAG_RESOURCE))
+        return NULL_UID;
+    return hs->sowing;
+}
+
+bool G_Harvester_ResumeSowing(uint32_t harvester)
+{
+    struct hstate *hs = hstate_get(harvester);
+    uint32_t resource = G_Harvester_Sowing(harvester);
+    if(resource == NULL_UID)
+        return false;
+    /* Replenished by whoever brought the last of it, it is gathered again */
+    if(!G_Resource_IsReplenishing(resource)) {
+        hs->sowing = NULL_UID;
+        G_Duty_SetWaiting(harvester, false);
+        return G_Harvester_Gather(harvester, resource);
+    }
+    if(hs->state != STATE_NOT_HARVESTING)
+        return true;
+    if(G_Harvester_ReplenishResource(harvester, resource)) {
+        G_Duty_SetWaiting(harvester, false);
+        return true;
+    }
+    wait_to_sow(harvester, hs);
+    return true;
 }
 
 uint32_t G_Harvester_SupplyingSite(uint32_t harvester)
@@ -4299,6 +4372,12 @@ bool G_Harvester_SaveState(struct SDL_RWops *stream)
             .val.as_vec2 = curr.order_pos
         };
         CHK_TRUE_RET(Attr_Write(stream, &order_pos, "order_pos"));
+
+        struct attr sowing = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.sowing
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &sowing, "sowing"));
         Sched_TryYield();
     });
     return true;
@@ -4534,6 +4613,12 @@ bool G_Harvester_LoadState(struct SDL_RWops *stream)
             CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
             CHK_TRUE_RET(attr.type == TYPE_VEC2);
             hs->order_pos = attr.val.as_vec2;
+        }
+        hs->sowing = NULL_UID;
+        if(Attr_NextKeyIs(stream, "sowing")) {
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            hs->sowing = attr.val.as_int;
         }
         Sched_TryYield();
     };

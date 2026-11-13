@@ -65,6 +65,12 @@ bool G_Harvester_GetContextualCursor(char *out, size_t maxout);
 void G_Harvester_ClearQueuedCmd(uint32_t uid);
 bool G_Harvester_Idle(uint32_t uid);
 bool G_Harvester_ReplenishResource(uint32_t harvester, uint32_t resource);
+/* The replenishable resource a gatherer gathered out and stays with until it
+ * is replenished, or NULL_UID */
+uint32_t G_Harvester_Sowing(uint32_t harvester);
+/* Fetches for the resource the gatherer stays with, waits by it, or gathers
+ * it again once replenished; false when it stays with none */
+bool G_Harvester_ResumeSowing(uint32_t harvester);
 uint32_t G_Harvester_TransportTarget(uint32_t harvester);
 /* The site a builder fetching its materials goes back to build, or NULL_UID */
 uint32_t G_Harvester_SupplyingSite(uint32_t harvester);

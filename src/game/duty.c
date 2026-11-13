@@ -280,6 +280,10 @@ static bool stand_by(uint32_t uid, struct duty *d)
 
 static bool resume_gather(uint32_t uid, struct duty *d)
 {
+    if(G_Harvester_ResumeSowing(uid)) {
+        d->fails = 0;
+        return true;
+    }
     uint32_t node = (d->by == DUTY_BY_PLAYER) ? G_Harvester_ResumeNode(uid, d->good)
                                               : G_Automation_GatherNode(uid, d->good);
     if(node == NULL_UID)
@@ -354,6 +358,11 @@ static bool resume_ingredient(uint32_t uid, struct duty *d)
 /* Walking off, it is at its meal: the load goes in once it stands again */
 static void resume_waiting_gatherer(uint32_t uid, struct duty *d)
 {
+    /* One staying with the resource it gathered out tries again for its goods */
+    if(G_Harvester_Sowing(uid) != NULL_UID) {
+        G_Harvester_ResumeSowing(uid);
+        return;
+    }
     if(!G_Harvester_GetCurrTotalCarry(uid)) {
         d->waiting = false;
         notify_changed(uid);

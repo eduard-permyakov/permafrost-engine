@@ -3573,7 +3573,7 @@ static bool post_worker(uint32_t uid, const struct automation_state *astate, str
     if((flags & ENTITY_FLAG_GARRISON) && G_Garrison_IsIngredient(uid))
         return false;
     if(G_Posts_Holds(uid) || G_Provision_WantsFood(uid) || G_Provision_Fetching(uid)
-    || G_Harvester_GetCurrTotalCarry(uid))
+    || G_Harvester_GetCurrTotalCarry(uid) || G_Harvester_Sowing(uid) != NULL_UID)
         return false;
     enum duty_kind kind = G_Duty_Kind(uid);
     if(kind != DUTY_NONE && (kind != DUTY_GATHER || G_Duty_ByPlayer(uid)))
@@ -4335,6 +4335,9 @@ uint32_t G_Automation_BestResource(uint32_t uid, const char *rname)
 /* Whether the pool may take another worker off its work yet, and when it has */
 static bool pool_may_reassign(uint32_t uid, const struct automation_state *astate)
 {
+    /* A gatherer stays with the resource it gathered out until it is replenished */
+    if(G_Harvester_Sowing(uid) != NULL_UID)
+        return false;
     int faction = G_GetFactionID(uid);
     uint32_t every = (uint32_t)(option(faction, OPT_REBALANCE_S) * 20.0f);
     khiter_t k = kh_get(count, s_reassigned, pool_key(faction, astate->home_district));
