@@ -483,6 +483,7 @@ static struct good_demand *demand_get(struct work_snapshot *snap, int faction, c
 static struct good_demand *good_demand_get(struct work_snapshot *snap, int faction, const char *rname);
 static const struct good_class *class_named(const char *name);
 static const struct good_class *class_of(const char *rname);
+static bool pinned_to(const struct automation_state *astate, const char *rname);
 static uint32_t node_for(uint32_t uid, const struct automation_state *astate, const char *name,
                          struct work_snapshot *snap, const char **out_good);
 static void trace_note(uint32_t uid, const char *kind, const char *verdict, const char *why, 
@@ -1727,7 +1728,9 @@ static enum request_status send_feeder(const struct job_request *req, const char
     uint32_t uid;
     struct automation_state *astate;
     kh_foreach_val_ptr(s_entity_state_table, uid, astate, {
-        if(G_GetFactionID(uid) != faction || !astate->automatic_work || astate->pinned[0])
+        if(G_GetFactionID(uid) != faction || !astate->automatic_work)
+            continue;
+        if(astate->pinned[0] && !pinned_to(astate, rname))
             continue;
         if(astate->home_district && astate->home_district != district)
             continue;
@@ -3038,6 +3041,15 @@ static const struct good_class *class_named(const char *name)
             return &s_classes[i];
     }
     return NULL;
+}
+
+/* Whether the worker is pinned to the good or to the class it belongs to */
+static bool pinned_to(const struct automation_state *astate, const char *rname)
+{
+    if(!strcmp(astate->pinned, rname))
+        return true;
+    const struct good_class *cls = class_named(astate->pinned);
+    return cls && cls == class_of(rname);
 }
 
 static const struct good_class *class_of(const char *rname)
