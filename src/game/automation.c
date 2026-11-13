@@ -461,6 +461,8 @@ static bool leaves_gathering(uint32_t uid, const char *rname, uint32_t node);
 static bool wanted_elsewhere(uint32_t uid, struct automation_state *astate, struct work_snapshot *snap);
 static bool try_assign_work(uint32_t uid, struct automation_state *astate, bool spare);
 static bool stocked(int surplus, int shortfall, int target);
+static const char *gathered_member(int faction, uint32_t site, size_t nmembers, const char **members,
+                                   const vec_entity_t *sites);
 static int gatherers_wanted(int surplus, int shortfall, int target, int for_rate);
 static int gatherers_for_rate(int faction, const char *rname);
 static struct good_priority *priority_get(int faction, int district, const char *rname, bool create);
@@ -1700,7 +1702,19 @@ static void lanes_note_workers(void)
  * good with nothing else in hand; never one on the player's order or pinned.
  * Says why when nobody can be sent.
  */
-static enum request_status send_feeder(const struct job_request *req)
+/* The good a request is gathered as: of goods eaten in one another's stead,
+ * not the one asked for but the one the draw is gathered as
+ */
+static const char *fed_as(const struct job_request *req, const vec_entity_t *sites)
+{
+    const char *members[MAX_RESOURCES];
+    size_t nmembers = G_StorageSite_DrawMembers(req->site, req->rname, ARR_SIZE(members), members);
+    if(nmembers <= 1)
+        return req->rname;
+    return gathered_member(G_GetFactionID(req->site), req->site, nmembers, members, sites);
+}
+
+static enum request_status send_feeder(const struct job_request *req, const char *rname)
 {
     int faction = G_GetFactionID(req->site);
     int district = G_District_Of(req->site);
@@ -1721,9 +1735,9 @@ static enum request_status send_feeder(const struct job_request *req)
         if(!(flags & ENTITY_FLAG_HARVESTER) || (flags & (ENTITY_FLAG_GARRISONED | ENTITY_FLAG_ZOMBIE)))
             continue;
         if(G_Posts_Holds(uid) || G_Provision_WantsFood(uid)
-        || G_Harvester_GetCurrTotalCarry(uid) > G_Harvester_GetCurrCarry(uid, req->rname))
+        || G_Harvester_GetCurrTotalCarry(uid) > G_Harvester_GetCurrCarry(uid, rname))
             continue;
-        if(G_Harvester_GetGatherSpeed(uid, req->rname) <= 0.0f || G_Harvester_GatheringFor(uid) != NULL_UID)
+        if(G_Harvester_GetGatherSpeed(uid, rname) <= 0.0f || G_Harvester_GatheringFor(uid) != NULL_UID)
             continue;
         bool is_idle = (astate->state == STATE_IDLE && G_Duty_Kind(uid) == DUTY_NONE && idle(uid));
         const char *good = G_Harvester_Gathering(uid);
@@ -1747,13 +1761,13 @@ static enum request_status send_feeder(const struct job_request *req)
         return REQUEST_NO_CARRIER;
     astate = astate_get(best);
     G_Duty_TagNext(best, by_of(astate));
-    if(!G_Harvester_GatherGoodFor(best, req->site, req->rname))
+    if(!G_Harvester_GatherGoodFor(best, req->site, rname))
         return REQUEST_UNREACHABLE;
     if(!best_idle) {
         note_reassigned(best, astate);
     }
-    pf_strlcpy(astate->working, req->rname, sizeof(astate->working));
-    trace_note(best, "carry", "taken", "request", req->rname, req->site);
+    pf_strlcpy(astate->working, rname, sizeof(astate->working));
+    trace_note(best, "carry", "taken", "request", rname, req->site);
     return REQUEST_OK;
 }
 
@@ -1948,17 +1962,18 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
             continue;
 
         /* Waiting for a load worth the trip, or for one on its way, is not being blocked */
+        const char *feed = fed_as(req, &sites);
         if(req->shortfall > 0 && !any_reachable && !any_small 
-        && !pool_bound_for(req->site, req->rname)) {
+        && !pool_bound_for(req->site, req->rname) && !pool_bound_for(req->site, feed)) {
             bool none = (vec_size(&sources) == 0);
             /* A good gathered on the site's own island comes from its nodes,
              * by a worker sent to gather for it once it has waited
              */
-            if((none || any_district_bar) && gatherable_near(req->site, req->rname)) {
+            if((none || any_district_bar) && gatherable_near(req->site, feed)) {
                 struct pending *pend = pending_get(req->site, req->rname, false);
                 enum request_status why = REQUEST_OK;
                 if(waited_s * 1000.0f >= BLOCKED_AFTER_MS) {
-                    why = send_feeder(req);
+                    why = send_feeder(req, feed);
                 }
                 if(why != REQUEST_OK) {
                     note_blocked(req, why);
