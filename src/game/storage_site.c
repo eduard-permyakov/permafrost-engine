@@ -3200,6 +3200,30 @@ int G_StorageSite_SurplusForSite(uint32_t uid, const char *rname)
     }
 }
 
+/* What a field being sown again may take: the stock a workshop works from
+ * too, as a bare field idles its farmers and food comes first
+ */
+int G_StorageSite_SurplusForSowing(uint32_t uid, const char *rname)
+{
+    struct ss_state *ss = ss_view(uid);
+    assert(ss);
+    if(ss->use_alt)
+        return 0;
+
+    int curr = 0;
+    ss_state_get_key(ss->curr, rname, &curr);
+
+    switch(G_StorageSite_GetChip(uid, rname)) {
+    case SS_CHIP_HOLD:
+        return 0;
+    case SS_CHIP_OFF:
+    case SS_CHIP_RELAY:
+        return curr;
+    default:
+        return MAX(curr - G_StorageSite_GetKeep(uid, rname), 0);
+    }
+}
+
 bool G_StorageSite_Accepts(uint32_t uid, const char *rname)
 {
     return G_StorageSite_GetChip(uid, rname) != SS_CHIP_OFF;

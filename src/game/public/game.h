@@ -955,6 +955,7 @@ int  G_StorageSite_Request(uint32_t uid, const char *rname);
 /* How much of a resource the site can give away */
 int  G_StorageSite_Surplus(uint32_t uid, const char *rname);
 int  G_StorageSite_SurplusForSite(uint32_t uid, const char *rname);
+int  G_StorageSite_SurplusForSowing(uint32_t uid, const char *rname);
 /* The reserve the site holds back: its keep, or more for what its recipes need */
 int  G_StorageSite_GetReserve(uint32_t uid, const char *rname);
 bool G_StorageSite_Accepts(uint32_t uid, const char *rname);
