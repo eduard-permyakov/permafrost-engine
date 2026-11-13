@@ -1302,6 +1302,8 @@ bool G_Automation_LeavesGathering(uint32_t uid, const char *rname, uint32_t node
 void G_Automation_Balance(int faction, const char *rname, int *out_surplus, int *out_shortfall);
 /* What the site's pool still asks for, net of what carriers bring it other than 'own_load' */
 int  G_Automation_Shortfall(uint32_t site, const char *rname, int own_load);
+/* What the faction's Upkeep requests being served are still short of: not for building with */
+int  G_Automation_UpkeepShort(int faction, const char *rname);
 /* Whether a workshop has made enough of a good for now: its district can spare 'limit' of it,
  * and no request that its goods could reach is going short
  */

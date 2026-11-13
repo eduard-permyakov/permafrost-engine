@@ -224,11 +224,14 @@ struct job_request{
     float       key;
 };
 
-/* Where a request stands on the carriers' ladder: a drawer about to stop or a
- * site with a builder waiting, a drawer or keep under what it works from, a
- * drawer being topped up toward its capacity */
+/* Where a request stands on the carriers' ladder: a store set to Upkeep short
+ * of what keeps people alive, a drawer about to stop or a site with a builder
+ * waiting, a drawer or keep under what it works from, a drawer being topped
+ * up toward its capacity
+ */
 enum request_tier{
-    TIER_STARVING = 1,
+    TIER_UPKEEP = 0,
+    TIER_STARVING,
     TIER_BUFFERING,
     TIER_TOPPING,
 };
@@ -535,6 +538,12 @@ static int             s_nclasses;
 static khash_t(count)  *s_reassigned;
 /* Why the last search for a node to gather at came back empty */
 static const char      *s_node_why = "no_node";
+/* What each faction's Upkeep requests being served are still short of, by
+ * good, as of the last time the requests were collected
+ */
+static int             s_upkeep_short[MAX_FACTIONS][MAX_RESOURCES];
+static const char     *s_upkeep_names[MAX_FACTIONS][MAX_RESOURCES];
+static size_t          s_nupkeep[MAX_FACTIONS];
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -1072,6 +1081,23 @@ static int faction_spare(const vec_entity_t *sites, int faction, const char *rna
     return ret;
 }
 
+static void note_upkeep_short(int faction, const char *rname, int shortfall)
+{
+    if(faction < 0 || faction >= MAX_FACTIONS)
+        return;
+    for(size_t i = 0; i < s_nupkeep[faction]; i++) {
+        if(!strcmp(s_upkeep_names[faction][i], rname)) {
+            s_upkeep_short[faction][i] += shortfall;
+            return;
+        }
+    }
+    if(s_nupkeep[faction] == MAX_RESOURCES)
+        return;
+    s_upkeep_names[faction][s_nupkeep[faction]] = rname;
+    s_upkeep_short[faction][s_nupkeep[faction]] = shortfall;
+    s_nupkeep[faction]++;
+}
+
 static void collect_requests(vec_request_t *out, const vec_entity_t *sites)
 {
     for(khint_t k = kh_begin(s_pending); k != kh_end(s_pending); k++) {
@@ -1079,6 +1105,7 @@ static void collect_requests(vec_request_t *out, const vec_entity_t *sites)
             kh_value(s_pending, k).touched = false;
         }
     }
+    memset(s_nupkeep, 0, sizeof(s_nupkeep));
 
     for(int i = 0; i < vec_size(sites); i++) {
 
@@ -1160,8 +1187,15 @@ static void collect_requests(vec_request_t *out, const vec_entity_t *sites)
             pend->touched = true;
             float waited_s = (s_tick - pend->since_tick) * TICK_MS / 1000.0f;
 
-            /* A Low request lets the others go first, but not for ever */
-            if(priority >= SS_PRIORITY_URGENT) {
+            /* What keeps people alive comes before all else, a Low request
+             * lets the others go first, but not for ever
+             */
+            if(priority == SS_PRIORITY_UPKEEP && tier < TIER_TOPPING) {
+                tier = TIER_UPKEEP;
+                if(pend->reason == REQUEST_OK) {
+                    note_upkeep_short(G_GetFactionID(site), rname, shortfall);
+                }
+            }else if(priority >= SS_PRIORITY_URGENT) {
                 tier = MAX(tier - 1, TIER_STARVING);
             }else if(priority == SS_PRIORITY_LOW && waited_s < LOW_PATIENCE_S) {
                 tier++;
@@ -1234,7 +1268,9 @@ static bool takes_as_site(uint32_t site)
 
 static int source_surplus(uint32_t site, const char *rname, bool for_site)
 {
-    return for_site ? G_StorageSite_SurplusForSite(site, rname) : G_StorageSite_Surplus(site, rname);
+    if(for_site)
+        return G_StorageSite_SurplusForSite(site, rname) - G_Automation_UpkeepShort(G_GetFactionID(site), rname);
+    return G_StorageSite_Surplus(site, rname);
 }
 
 static void collect_sources(vec_source_t *out, const vec_entity_t *sites, const char *rname, 
@@ -3967,6 +4003,7 @@ void G_Automation_Shutdown(void)
     E_Global_Unregister(EVENT_PLAYER_ORDER_ISSUED, on_player_order_issued);
     E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
     E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
+    memset(s_nupkeep, 0, sizeof(s_nupkeep));
     vec_request_destroy(&s_snapshot.requests);
     vec_priority_destroy(&s_priorities);
     vec_district_destroy(&s_kept_home);
@@ -4517,6 +4554,17 @@ void G_Automation_Balance(int faction, const char *rname, int *out_surplus, int 
         *out_shortfall += MAX(want - have, 0);
     }
     vec_entity_destroy(&sites);
+}
+
+int G_Automation_UpkeepShort(int faction, const char *rname)
+{
+    if(faction < 0 || faction >= MAX_FACTIONS)
+        return 0;
+    for(size_t i = 0; i < s_nupkeep[faction]; i++) {
+        if(!strcmp(s_upkeep_names[faction][i], rname))
+            return s_upkeep_short[faction][i];
+    }
+    return 0;
 }
 
 int G_Automation_Shortfall(uint32_t site, const char *rname, int own_load)

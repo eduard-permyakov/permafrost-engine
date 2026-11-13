@@ -664,12 +664,19 @@ static bool building_site(uint32_t uid)
     return G_StorageSite_GetUseAlt(uid);
 }
 
-/* What a source can give the destination: a building being built takes all
- * but the player's reserve */
+/* What a building being built may take of a store: all but the player's
+ * reserve and what keeps the realm's people alive
+ */
+static int site_spare(uint32_t src, const char *rname)
+{
+    return G_StorageSite_SurplusForSite(src, rname) - G_Automation_UpkeepShort(G_GetFactionID(src), rname);
+}
+
+/* What a source can give the destination */
 static int source_spare(uint32_t src, uint32_t dest, const char *rname)
 {
     if(building_site(dest))
-        return G_StorageSite_SurplusForSite(src, rname);
+        return site_spare(src, rname);
     return G_StorageSite_Surplus(src, rname);
 }
 
@@ -713,7 +720,7 @@ static bool valid_storage_site_source(uint32_t curr, void *arg)
     if(stored == 0)
         return false;
     /* What is kept back is not for building with */
-    if(building_site(sarg->storage) && G_StorageSite_SurplusForSite(curr, sarg->rname) <= 0)
+    if(building_site(sarg->storage) && site_spare(curr, sarg->rname) <= 0)
         return false;
     /* Nor is what is kept, held or worked from for carrying off, whoever asks */
     if(!building_site(sarg->storage) && G_StorageSite_Surplus(curr, sarg->rname) <= 0)
