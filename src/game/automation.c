@@ -463,6 +463,8 @@ static bool try_assign_work(uint32_t uid, struct automation_state *astate, bool 
 static bool stocked(int surplus, int shortfall, int target);
 static const char *gathered_member(int faction, uint32_t site, size_t nmembers, const char **members,
                                    const vec_entity_t *sites);
+static bool eaten_first(const char *rname);
+static const char *asked_member(int faction, size_t nmembers, const char **members, const vec_entity_t *sites);
 static int gatherers_wanted(int surplus, int shortfall, int target, int for_rate);
 static int gatherers_for_rate(int faction, const char *rname);
 static struct good_priority *priority_get(int faction, int district, const char *rname, bool create);
@@ -1101,6 +1103,39 @@ static void note_upkeep_short(int faction, const char *rname, int shortfall)
     s_nupkeep[faction]++;
 }
 
+/* Of goods eaten in one another's stead, whether the good is eaten first:
+ * what is gathered from the land, wild food that runs out or spoils, goes
+ * before what a workshop made of it, which keeps
+ */
+static bool eaten_first(const char *rname)
+{
+    return class_of(rname) != NULL;
+}
+
+/* Of goods eaten in one another's stead, the one asked for: the first member,
+ * the richest, of which the realm can spare a load, those eaten first before
+ * the rest; else the one it has most to spare of
+ */
+static const char *asked_member(int faction, size_t nmembers, const char **members, const vec_entity_t *sites)
+{
+    const char *ret = members[0];
+    int best = -1;
+    for(int pass = 0; pass < 2; pass++) {
+        for(size_t m = 0; m < nmembers; m++) {
+            if(eaten_first(members[m]) != (pass == 0))
+                continue;
+            int spare = faction_spare(sites, faction, members[m]);
+            if(spare >= MIN_LOAD)
+                return members[m];
+            if(spare > best) {
+                best = spare;
+                ret = members[m];
+            }
+        }
+    }
+    return ret;
+}
+
 static void collect_requests(vec_request_t *out, const vec_entity_t *sites)
 {
     for(khint_t k = kh_begin(s_pending); k != kh_end(s_pending); k++) {
@@ -1125,15 +1160,12 @@ static void collect_requests(vec_request_t *out, const vec_entity_t *sites)
 
             if(done[j])
                 continue;
-            /* Goods eaten in one another's stead are asked for as one, by the
-             * first member, the richest, of which the realm can spare a load */
+            /* Goods eaten in one another's stead are asked for as one */
             const char *rname = names[j];
             const char *members[MAX_RESOURCES];
             size_t nmembers = G_StorageSite_DrawMembers(site, rname, ARR_SIZE(members), members);
             int en_route = pool_en_route(site, rname);
             if(nmembers > 1) {
-                int best = -1;
-                bool chosen = false;
                 en_route = 0;
                 for(size_t m = 0; m < nmembers; m++) {
                     for(int n = j + 1; n < nnames; n++) {
@@ -1142,17 +1174,8 @@ static void collect_requests(vec_request_t *out, const vec_entity_t *sites)
                         }
                     }
                     en_route += pool_en_route(site, members[m]);
-                    if(chosen)
-                        continue;
-                    int spare = faction_spare(sites, G_GetFactionID(site), members[m]);
-                    if(spare >= MIN_LOAD) {
-                        rname = members[m];
-                        chosen = true;
-                    }else if(spare > best) {
-                        best = spare;
-                        rname = members[m];
-                    }
                 }
+                rname = asked_member(G_GetFactionID(site), nmembers, members, sites);
             }
 
             int want = G_StorageSite_Request(site, rname);
@@ -2761,16 +2784,22 @@ static float node_rate(uint32_t node, int faction)
 }
 
 /* Of goods a site eats in one another's stead, the one its draw is gathered
- * as: the one the realm's stores have most to spare of, else the one with a
- * node nearest the site */
+ * as: the one the realm's stores have most to spare of, those eaten first
+ * before the rest, else the one with a node nearest the site
+ */
 static const char *gathered_member(int faction, uint32_t site, size_t nmembers, const char **members,
                                    const vec_entity_t *sites)
 {
     const char *ret = members[0];
     int best = -1;
+    bool best_first = false;
     for(size_t m = 0; m < nmembers; m++) {
         int spare = faction_spare(sites, faction, members[m]);
-        if(spare > best) {
+        bool first = eaten_first(members[m]) && spare > 0;
+        if(best_first && !first)
+            continue;
+        if(spare > best || (first && !best_first)) {
+            best_first = first;
             best = spare;
             ret = members[m];
         }
