@@ -2377,6 +2377,23 @@ static float trip_length(uint32_t uid, uint32_t src, uint32_t dest)
     return PFM_Vec2_Len(&a) + PFM_Vec2_Len(&b);
 }
 
+static bool draws_on(uint32_t target, const char *rname)
+{
+    return !G_StorageSite_GetUseAlt(target) && G_StorageSite_GetDraw(target, rname) > 0.0f;
+}
+
+/* What the target eats of the good while the unit fetches it a load by 'src':
+ * the stock it would come to, not the stock it has, is what the load is for
+ */
+static int drawn_over_trip(uint32_t uid, uint32_t src, uint32_t target, const char *rname)
+{
+    float speed = 0.0f;
+    if(!G_Move_GetEffectiveSpeed(uid, &speed) || speed <= 0.0f)
+        return 0;
+    float trip_s = trip_length(uid, src, target) / speed;
+    return (int)(G_StorageSite_GetDraw(target, rname) * trip_s / 60.0f);
+}
+
 /* How far a transporter still has to go to bring its load to its target */
 static float distance_left(uint32_t uid, const struct hstate *hs)
 {
@@ -2463,9 +2480,10 @@ static const char *transport_resource_with_source(uint32_t uid, struct hstate *h
 
         int wanted = ss_wants(target, rname);
         int stored = G_StorageSite_GetCurr(target, rname);
-        if(wanted <= stored)
+        bool draws = (rule == EN_ROUTE_ALL) && wanted > 0 && draws_on(target, rname);
+        if(!draws && wanted <= stored)
             continue;
-        if(rule == EN_ROUTE_ALL && wanted <= stored + amount_en_route(target, rname, uid, INFINITY))
+        if(!draws && rule == EN_ROUTE_ALL && wanted <= stored + amount_en_route(target, rname, uid, INFINITY))
             continue;
         /* The good the target is shortest of comes first; of goods it is as
          * short of, the one the better load is to be had of for the walk */
@@ -2478,6 +2496,9 @@ static const char *transport_resource_with_source(uint32_t uid, struct hstate *h
         if(src == NULL_UID)
             continue;
         if(best && lack <= best_lack + LACK_SLACK && worth <= best_worth)
+            continue;
+        if(draws && wanted <= stored + amount_en_route(target, rname, uid, INFINITY)
+                              - drawn_over_trip(uid, src, target, rname))
             continue;
         float within = trip_length(uid, src, target);
         int coming = (rule == EN_ROUTE_BUILDERS) ? amount_arriving_within(target, rname, uid, within)
@@ -3625,11 +3646,9 @@ static bool transport(uint32_t harvester, uint32_t storage, enum en_route_rule r
         return true;
     }
 
+    /* A site drawing on a good may want its next load before its stock is below its request */
     const char *rname = transport_resource(hs, storage);
-    if(!rname)
-        return false;
-
-    if(hs->strategy == TRANSPORT_STRATEGY_GATHERING
+    if(rname && hs->strategy == TRANSPORT_STRATEGY_GATHERING
     && harvester_transport_from_resources(harvester, storage)) {
         return true;
     }
