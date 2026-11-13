@@ -403,8 +403,13 @@ bool G_Provision_Fetch(uint32_t uid);
  * its food. False if it took none. */
 bool G_Provision_EatAt(uint32_t uid, uint32_t site);
 /* Feeds the unit a meal where it stands, if it has room for one: hungry, or its ration nearly
- * used up. One on its way to a store to eat turns back. False if it took none. */
-bool G_Provision_Feed(uint32_t uid);
+ * used up, or with 'early' over half used up. One on its way to a store to eat turns back. False
+ * if it took none. */
+bool G_Provision_Feed(uint32_t uid, bool early);
+/* The store on wheels the unit waits for when hungry rather than walk off to eat, until it
+ * starves; NULL_UID for none */
+void G_Provision_SetProvider(uint32_t uid, uint32_t provider);
+uint32_t G_Provision_GetProvider(uint32_t uid);
 /* Sent on an order it would be hungry before the end of, a unit eats first and
  * its duty takes it on afterwards; whether it went to eat */
 bool G_Provision_EatFirst(uint32_t uid, uint32_t target);

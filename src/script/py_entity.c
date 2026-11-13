@@ -129,7 +129,9 @@ static PyObject *PyEntity_set_icons(PyEntityObject *self, PyObject *value);
 static PyObject *PyEntity_set_cluster_type(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_set_provision(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_replenish(PyEntityObject *self);
-static PyObject *PyEntity_feed(PyEntityObject *self);
+static PyObject *PyEntity_feed(PyEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyEntity_set_provider(PyEntityObject *self, PyObject *args);
+static PyObject *PyEntity_get_provider(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_provision_tier(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_provision_timer_ms(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_provision_fetching(PyEntityObject *self, void *closure);
@@ -222,9 +224,15 @@ static PyMethodDef PyEntity_methods[] = {
     "at a store of the resource."},
 
     {"feed",
-    (PyCFunction)PyEntity_feed, METH_NOARGS,
-    "Feeds the unit a meal where it stands, if it is hungry or its ration is nearly used up; one on "
-    "its way to a store to eat turns back. Returns False if it took none."},
+    (PyCFunction)PyEntity_feed, METH_VARARGS | METH_KEYWORDS,
+    "Feeds the unit a meal where it stands, if it is hungry or its ration is nearly used up, or with "
+    "'early' over half used up; one on its way to a store to eat turns back. Returns False if it took "
+    "none."},
+
+    {"set_provider",
+    (PyCFunction)PyEntity_set_provider, METH_VARARGS,
+    "Takes the entity that brings the unit its food, such as an oboz, or None. Hungry but not yet "
+    "starving, the unit waits for it rather than walk off to a store to eat."},
 
     {"replenish", 
     (PyCFunction)PyEntity_replenish, METH_NOARGS,
@@ -287,6 +295,10 @@ static PyGetSetDef PyEntity_getset[] = {
     {"provision_fetching",
     (getter)PyEntity_get_provision_fetching, NULL,
     "Whether the unit is on its way to a store to eat.",
+    NULL},
+    {"provider",
+    (getter)PyEntity_get_provider, NULL,
+    "The entity that brings the unit its food, or None.",
     NULL},
     {"auto_replenish",
     (getter)PyEntity_get_auto_replenish, (setter)PyEntity_set_auto_replenish,
@@ -2591,13 +2603,45 @@ static PyObject *PyEntity_set_provision(PyEntityObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
-static PyObject *PyEntity_feed(PyEntityObject *self)
+static PyObject *PyEntity_feed(PyEntityObject *self, PyObject *args, PyObject *kwargs)
 {
+    static char *kwlist[] = {"early", NULL};
+    int early = 0;
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "|i", kwlist, &early)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an optional 'early' flag.");
+        return NULL;
+    }
     if(G_FlagsGet(self->ent) & ENTITY_FLAG_ZOMBIE)
         Py_RETURN_FALSE;
-    if(G_Provision_Feed(self->ent))
+    if(G_Provision_Feed(self->ent, early))
         Py_RETURN_TRUE;
     Py_RETURN_FALSE;
+}
+
+static PyObject *PyEntity_set_provider(PyEntityObject *self, PyObject *args)
+{
+    PyObject *provider;
+    if(!PyArg_ParseTuple(args, "O", &provider)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an entity or None.");
+        return NULL;
+    }
+    uint32_t uid = NULL_UID;
+    if(provider != Py_None && !S_Entity_UIDForObj(provider, &uid)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an entity or None.");
+        return NULL;
+    }
+    G_Provision_SetProvider(self->ent, uid);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_get_provider(PyEntityObject *self, void *closure)
+{
+    uint32_t provider = G_Provision_GetProvider(self->ent);
+    PyObject *ret = (provider != NULL_UID) ? S_Entity_ObjForUID(provider) : NULL;
+    if(!ret)
+        Py_RETURN_NONE;
+    Py_INCREF(ret);
+    return ret;
 }
 
 static PyObject *PyEntity_replenish(PyEntityObject *self)

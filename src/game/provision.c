@@ -74,6 +74,8 @@
 #define EAT_AHEAD_SHARE     (0.2f)
 /* A worker with this share of its ration left eats before it takes on more work */
 #define WORK_AHEAD_SHARE    (0.3f)
+/* Fed ahead by one about to leave it for a while, a unit takes a meal with this share of its ration left */
+#define EARLY_AHEAD_SHARE   (0.7f)
 #define GOOD_LEN            (32)
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
@@ -120,6 +122,10 @@ struct provision{
     vec2_t   post;
     /* Got there this many times without reaching the store, each time from further out */
     int      tries;
+    /* A store on wheels that comes to it, such as an oboz: hungry but not yet
+     * starving, it waits for it rather than walk off to eat
+     */
+    uint32_t provider;
 };
 
 KHASH_MAP_INIT_INT(prov, struct provision)
@@ -155,6 +161,7 @@ static uint32_t ahead_ms(const struct provision *p, float share);
 static bool carrying(uint32_t uid);
 static bool at_store(uint32_t uid, uint32_t site, int tries);
 static bool free_to_fetch(uint32_t uid);
+static bool awaits_provider(const struct provision *p);
 static uint32_t nearest_food(uint32_t uid, const struct provision *p);
 static void on_arrive_quiver(void *user, void *event);
 static void on_ordered_quiver(void *user, void *event);
@@ -419,6 +426,13 @@ static bool free_to_fetch(uint32_t uid)
     return true;
 }
 
+static bool awaits_provider(const struct provision *p)
+{
+    if(p->tier != PROVISION_HUNGRY || p->provider == NULL_UID)
+        return false;
+    return G_EntityExists(p->provider) && !G_EntityIsZombie(p->provider);
+}
+
 static void update(uint32_t uid, struct provision *p)
 {
     if(p->interval_ms == 0)
@@ -453,7 +467,7 @@ static void update(uint32_t uid, struct provision *p)
         }
     }
     if(p->tier != PROVISION_FED && p->automatic && p->fetching == NULL_UID 
-    && s_now_ms >= p->retry_ms) {
+    && s_now_ms >= p->retry_ms && !awaits_provider(p)) {
         if(free_to_fetch(uid)) {
             fetch(uid, p);
         }else if(p->no_food) {
@@ -731,6 +745,7 @@ bool G_Provision_Set(uint32_t uid, const char *good, int max_meals, float interv
         *p = (struct provision){0};
         p->tier = PROVISION_FED;
         p->fetching = NULL_UID;
+        p->provider = NULL_UID;
         p->meals = max_meals;
     }
     pf_strlcpy(p->good, good, sizeof(p->good));
@@ -810,6 +825,7 @@ void G_Provision_SetAutomatic(uint32_t uid, bool on)
         *p = (struct provision){0};
         p->tier = PROVISION_FED;
         p->fetching = NULL_UID;
+        p->provider = NULL_UID;
     }
     if(p) {
         p->automatic = on;
@@ -847,7 +863,7 @@ bool G_Provision_EatAt(uint32_t uid, uint32_t site)
     return true;
 }
 
-bool G_Provision_Feed(uint32_t uid)
+bool G_Provision_Feed(uint32_t uid, bool early)
 {
     struct provision *p = prov_get(uid);
     if(!p || !p->interval_ms)
@@ -856,7 +872,8 @@ bool G_Provision_Feed(uint32_t uid)
         return false;
     if(p->tier == PROVISION_FED && p->meals > 0)
         return false;
-    if(p->tier == PROVISION_FED && p->next_due_ms > s_now_ms + ahead_ms(p, WORK_AHEAD_SHARE))
+    float share = early ? EARLY_AHEAD_SHARE : WORK_AHEAD_SHARE;
+    if(p->tier == PROVISION_FED && p->next_due_ms > s_now_ms + ahead_ms(p, share))
         return false;
 
     /* The one meal it is handed; whoever hands it out has taken it from a store already */
@@ -876,6 +893,20 @@ bool G_Provision_Feed(uint32_t uid)
         }
     }
     return true;
+}
+
+void G_Provision_SetProvider(uint32_t uid, uint32_t provider)
+{
+    struct provision *p = prov_get(uid);
+    if(p) {
+        p->provider = provider;
+    }
+}
+
+uint32_t G_Provision_GetProvider(uint32_t uid)
+{
+    struct provision *p = prov_get(uid);
+    return p ? p->provider : NULL_UID;
 }
 
 bool G_Provision_EatFirst(uint32_t uid, uint32_t target)
@@ -999,6 +1030,29 @@ bool G_Provision_SaveState(struct SDL_RWops *stream)
         }
         Sched_TryYield();
     });
+
+    int nproviders = 0;
+    kh_foreach(s_table, uid, p, {
+        nproviders += (p.provider != NULL_UID);
+    });
+    struct attr num_providers = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = nproviders
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_providers, "num_providers"));
+
+    kh_foreach(s_table, uid, p, {
+
+        if(p.provider == NULL_UID)
+            continue;
+        struct attr attrs[] = {
+            {.type = TYPE_INT,  .val.as_int = uid},
+            {.type = TYPE_INT,  .val.as_int = p.provider},
+        };
+        for(int i = 0; i < sizeof(attrs) / sizeof(attrs[0]); i++) {
+            CHK_TRUE_RET(Attr_Write(stream, &attrs[i], "provider"));
+        }
+    });
     return true;
 }
 
@@ -1039,6 +1093,7 @@ bool G_Provision_LoadState(struct SDL_RWops *stream)
         p->tier_since_ms = a[8].val.as_int;
         p->automatic = a[9].val.as_bool;
         p->fetching = NULL_UID;
+        p->provider = NULL_UID;
         p->retry_ms = 0;
         p->no_food = false;
         Sched_TryYield();
@@ -1069,6 +1124,26 @@ bool G_Provision_LoadState(struct SDL_RWops *stream)
         q->fetching = NULL_UID;
         q->empty = (G_Combat_GetAmmo(a[0].val.as_int) == 0);
         Sched_TryYield();
+    }
+
+    /* Saves from before units waited for a provider have none */
+    if(!Attr_NextKeyIs(stream, "num_providers"))
+        return true;
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_providers = attr.val.as_int;
+
+    for(int i = 0; i < num_providers; i++) {
+
+        struct attr a[2];
+        for(int j = 0; j < 2; j++) {
+            CHK_TRUE_RET(Attr_Parse(stream, &a[j], true));
+            CHK_TRUE_RET(a[j].type == TYPE_INT);
+        }
+        struct provision *p = prov_get(a[0].val.as_int);
+        if(p) {
+            p->provider = a[1].val.as_int;
+        }
     }
     return true;
 }
