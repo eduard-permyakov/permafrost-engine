@@ -464,6 +464,7 @@ static bool stocked(int surplus, int shortfall, int target);
 static const char *gathered_member(int faction, uint32_t site, size_t nmembers, const char **members,
                                    const vec_entity_t *sites);
 static bool eaten_first(const char *rname);
+static bool backing_up(int faction, const char *rname, const vec_entity_t *sites);
 static const char *asked_member(int faction, size_t nmembers, const char **members, const vec_entity_t *sites);
 static int gatherers_wanted(int surplus, int shortfall, int target, int for_rate);
 static int gatherers_for_rate(int faction, const char *rname);
@@ -1112,17 +1113,43 @@ static bool eaten_first(const char *rname)
     return class_of(rname) != NULL;
 }
 
+/* Whether a workshop of the faction has filled half its room for the good with
+ * a load or more of what it made: kept there, it would stop the workshop
+ */
+static bool backing_up(int faction, const char *rname, const vec_entity_t *sites)
+{
+    for(int i = 0; i < vec_size(sites); i++) {
+        uint32_t site = vec_AT(sites, i);
+        if(G_EntityIsZombie(site) || G_GetFactionID(site) != faction)
+            continue;
+        int posts, locked, inside, coming;
+        if(!G_Posts_Get(site, &posts, &locked, &inside, &coming) || posts == 0)
+            continue;
+        if(G_StorageSite_GetDraw(site, rname) > 0.0f)
+            continue;
+        int cap = G_StorageSite_GetCapacity(site, rname);
+        if(cap > 0 && G_StorageSite_GetCurr(site, rname) * 2 >= cap
+        && G_StorageSite_Surplus(site, rname) >= MIN_LOAD)
+            return true;
+    }
+    return false;
+}
+
 /* Of goods eaten in one another's stead, the one asked for: the first member,
- * the richest, of which the realm can spare a load, those eaten first before
- * the rest; else the one it has most to spare of
+ * the richest, of which the realm can spare a load, those eaten first or
+ * backing up at a workshop before the rest; else the one it has most to spare of
  */
 static const char *asked_member(int faction, size_t nmembers, const char **members, const vec_entity_t *sites)
 {
     const char *ret = members[0];
     int best = -1;
+    bool first[MAX_RESOURCES];
+    for(size_t m = 0; m < nmembers; m++) {
+        first[m] = eaten_first(members[m]) || backing_up(faction, members[m], sites);
+    }
     for(int pass = 0; pass < 2; pass++) {
         for(size_t m = 0; m < nmembers; m++) {
-            if(eaten_first(members[m]) != (pass == 0))
+            if(first[m] != (pass == 0))
                 continue;
             int spare = faction_spare(sites, faction, members[m]);
             if(spare >= MIN_LOAD)
