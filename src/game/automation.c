@@ -1532,12 +1532,12 @@ static bool cart_can_serve(const struct fleet_cart *cart, const struct job_reque
 }
 
 /* How many seconds from now the request needs the goods beyond 'held': at
- * once with builders waiting on them, when what it holds runs out for a store
+ * once for a building going up, when what it holds runs out for a store
  * being drawn from, and never for one only laying up stock */
 static float need_by_s(const struct job_request *req, int held)
 {
     if(G_StorageSite_GetUseAlt(req->site))
-        return (G_StorageSite_Builders(req->site) > 0) ? 0.0f : INFINITY;
+        return 0.0f;
     float per_min = G_StorageSite_GetDraw(req->site, req->rname);
     if(per_min <= 0.0f)
         return INFINITY;
