@@ -248,7 +248,7 @@ endif
 		--without-signal-module \
 		$(PY_ASAN_CONFIG) \
 	&& cp ./pyconfig.h ../Include/. \
-	&& make $(PYTHON_TARGET) CFLAGS="$(PYTHON_DEFS) $(ASAN_CFLAGS)" LDFLAGS="$(PYTHON_LDFLAGS) $(ASAN_LDFLAGS)" INSTSONAME=libpython2.7$(PY_ASAN_INFIX).so.1.0
+	&& make $(PYTHON_TARGET) CFLAGS="-g $(PYTHON_DEFS) $(ASAN_CFLAGS)" LDFLAGS="$(PYTHON_LDFLAGS) $(ASAN_LDFLAGS)" INSTSONAME=libpython2.7$(PY_ASAN_INFIX).so.1.0
 	cp $(PYTHON_BUILD)/$(PYTHON_TARGET) $@
 
 ./lib/$(OPENAL_LIB):
