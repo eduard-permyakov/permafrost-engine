@@ -2030,7 +2030,8 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
                     why = send_feeder(req, feed);
                 }
                 if(why != REQUEST_OK) {
-                    note_blocked(req, why);
+                    /* With goods to spare in other districts, those districts' rule is what bars them */
+                    note_blocked(req, none ? why : REQUEST_NOT_CONNECTED);
                 }else if(pend) {
                     pend->reason = REQUEST_OK;
                 }
