@@ -7893,6 +7893,10 @@ bool S_LoadState(SDL_RWops *stream)
     if(!PyTuple_Check(state) || (PyTuple_GET_SIZE(state) != 9))
         goto fail;
 
+    /* The fresh module's bindings are the ones indexed for pickling */
+    PyObject *fresh_pf = PyDict_GetItemString(interp->modules, "pf");
+    Py_XINCREF(fresh_pf);
+
     PyInterpreterState_Clear(interp);
 
     interp->modules = PyTuple_GET_ITEM(state, 0);
@@ -7911,14 +7915,17 @@ bool S_LoadState(SDL_RWops *stream)
     Py_INCREF(interp->codec_search_cache);
     Py_INCREF(interp->codec_error_registry);
 
-    /* The module comes back as it was saved: the bindings and constants the
-     * engine has gained since are set in it afresh, so that newer scripts
-     * and probes find them in an older save */
+    /* The module comes back as it was saved: the bindings the engine has
+     * gained since are taken from the fresh module and its constants set
+     * afresh, so that newer scripts and probes find them in an older save.
+     * New function objects would be missing from the pickling index.
+     */
     PyObject *pfmod = PyDict_GetItemString(interp->modules, "pf");
-    if(pfmod) {
-        Py_InitModule("pf", pf_module_methods);
+    if(pfmod && fresh_pf && pfmod != fresh_pf) {
+        PyDict_Merge(PyModule_GetDict(pfmod), PyModule_GetDict(fresh_pf), 0);
         S_Constants_Expose(pfmod);
     }
+    Py_XDECREF(fresh_pf);
 
     PyObject *handlers = PyTuple_GET_ITEM(state, 7);
     if(!PyTuple_Check(handlers))
