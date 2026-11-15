@@ -160,7 +160,7 @@ WARNING_FLAGS = \
 	-Werror
 
 EXTRA_DEBUG_FLAGS = -g
-EXTRA_RELEASE_FLAGS = -DNDEBUG
+EXTRA_RELEASE_FLAGS = -g -DNDEBUG
 EXTRA_FLAGS = $(EXTRA_$(TYPE)_FLAGS)
 
 ifneq ($(ASAN),0)
@@ -202,6 +202,7 @@ LDFLAGS = \
 	-L./lib/ \
 	-lm \
 	-lpthread \
+	-g \
 	$(ASAN_LDFLAGS) \
 	$(TSAN_LDFLAGS) \
 	$(LTO_LDFLAGS) \
