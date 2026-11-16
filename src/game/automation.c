@@ -4010,9 +4010,9 @@ fail_entity_state_table:
     return false;
 }
 
-enum request_status G_Automation_RequestStatus(uint32_t site, const char *rname, int *out_waited_ms)
+/* The site's open request for the good, kept over its pool's anchor */
+static struct pending *open_request(uint32_t site, const char *rname)
 {
-    *out_waited_ms = 0;
     int cid = G_Cluster_Of(site);
     if(cid) {
         site = G_Cluster_Anchor(cid);
@@ -4022,15 +4022,33 @@ enum request_status G_Automation_RequestStatus(uint32_t site, const char *rname,
     const char *names[MAX_RESOURCES];
     size_t nnames = G_StorageSite_GetStorableResources(site, ARR_SIZE(names), names);
     for(int i = 0; i < nnames; i++) {
-        if(strcmp(names[i], rname))
-            continue;
-        struct pending *pend = pending_get(site, names[i], false);
-        if(!pend)
-            return REQUEST_OK;
-        *out_waited_ms = (s_tick - pend->since_tick) * TICK_MS;
-        return pend->reason;
+        if(!strcmp(names[i], rname))
+            return pending_get(site, names[i], false);
     }
-    return REQUEST_OK;
+    return NULL;
+}
+
+enum request_status G_Automation_RequestStatus(uint32_t site, const char *rname, int *out_waited_ms)
+{
+    *out_waited_ms = 0;
+    struct pending *pend = open_request(site, rname);
+    if(!pend)
+        return REQUEST_OK;
+    *out_waited_ms = (s_tick - pend->since_tick) * TICK_MS;
+    return pend->reason;
+}
+
+const char *G_Automation_RequestTier(uint32_t site, const char *rname)
+{
+    struct pending *pend = open_request(site, rname);
+    if(!pend)
+        return NULL;
+    switch(pend->tier) {
+    case TIER_UPKEEP:    return "upkeep";
+    case TIER_STARVING:  return "starving";
+    case TIER_BUFFERING: return "buffering";
+    default:             return "topping";
+    }
 }
 
 size_t G_Automation_GetTrace(uint32_t uid, size_t maxout, struct work_step out[], int *out_age_ms)

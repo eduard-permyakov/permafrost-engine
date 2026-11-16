@@ -1258,6 +1258,7 @@ static PyObject *PyStorageSiteEntity_get_working_stock(PyStorageSiteEntityObject
 static PyObject *PyStorageSiteEntity_get_request(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_minutes_of_stock(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_request_status(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_request_tier(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_strip_line(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_output_stocked(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_priority(PyStorageSiteEntityObject *self, void *closure);
@@ -1395,6 +1396,11 @@ static PyMethodDef PyStorageSiteEntity_methods[] = {
     "Returns a tuple of why the site's request for the resource is unserved (one of pf.REQUEST_OK, "
     "pf.REQUEST_NO_SOURCE, pf.REQUEST_NO_CARRIER, pf.REQUEST_UNREACHABLE) and how many seconds it "
     "has waited."},
+
+    {"request_tier",
+    (PyCFunction)PyStorageSiteEntity_request_tier, METH_VARARGS,
+    "Returns the tier the carriers rank the site's open request for the resource at ('upkeep', 'starving', "
+    "'buffering' or 'topping'), or None while it asks for none."},
 
     {"strip_line",
     (PyCFunction)PyStorageSiteEntity_strip_line, METH_VARARGS,
@@ -6032,6 +6038,20 @@ static PyObject *PyStorageSiteEntity_request_status(PyStorageSiteEntityObject *s
     int waited_ms;
     enum request_status status = G_Automation_RequestStatus(self->super.ent, name, &waited_ms);
     return Py_BuildValue("(if)", (int)status, waited_ms / 1000.0f);
+}
+
+static PyObject *PyStorageSiteEntity_request_tier(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    SS_CHECK_ALIVE(NULL);
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
+        return NULL;
+    }
+    const char *tier = G_Automation_RequestTier(self->super.ent, name);
+    if(!tier)
+        Py_RETURN_NONE;
+    return PyString_FromString(tier);
 }
 
 static PyObject *PyStorageSiteEntity_output_stocked(PyStorageSiteEntityObject *self, PyObject *args)

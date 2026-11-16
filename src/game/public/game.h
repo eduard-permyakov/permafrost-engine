@@ -1267,6 +1267,8 @@ int  G_Automation_CrewBusy(int faction);
 bool G_Automation_AwaitsBuilders(uint32_t site, int *out_busy, int *out_size);
 /* Why the site's request for the resource is unserved, and for how long it has waited */
 enum request_status G_Automation_RequestStatus(uint32_t site, const char *rname, int *out_waited_ms);
+/* The tier of the site's open request for the good, as a name, or NULL with none open */
+const char *G_Automation_RequestTier(uint32_t site, const char *rname);
 
 /* One step of a worker's last decision about its work: what was weighed, and what came of it */
 struct work_step{
