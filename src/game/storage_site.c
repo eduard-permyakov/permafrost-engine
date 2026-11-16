@@ -266,8 +266,6 @@ struct strip_good{
     char        count[8];
     float       count_w;
     int         arrow;
-    /* The colour that ties its count to the line saying why its request is stuck, or -1 */
-    int         hint_clr;
 };
 
 /* A good whose request is stuck, held or not, and why */
@@ -997,15 +995,6 @@ static void update_trends(uint32_t uid, struct ss_state *ss)
     strip->ntrends = nnames;
 }
 
-/* The colours that tell the stuck goods of a site apart, bright over the
- * ground and dark on the window's parchment */
-static const struct nk_color s_hint_clrs[STRIP_MAX_HINTS] = {
-    {255, 150,  40, 255},
-    {250, 215,  70, 255},
-    {255, 120, 170, 255},
-    {110, 210, 240, 255},
-};
-
 /* The posts of the pool's workshops: those filled, those not kept empty, and
  * those whose holders are out at a meal */
 static bool pool_posts(uint32_t key, int *out_inside, int *out_open, int *out_eating)
@@ -1178,13 +1167,11 @@ static size_t strip_goods(uint32_t key, const struct ss_state *ss, const struct 
             if(curr <= 0)
                 continue;
             const struct trend *trend = strip ? trend_find(strip, names[i]) : NULL;
-            int hint_clr = -1;
+            bool stuck = false;
             for(int j = 0; j < nhints; j++) {
-                if(hints[j].name == names[i]) {
-                    hint_clr = j;
-                }
+                stuck = stuck || (hints[j].name == names[i]);
             }
-            if((pass == 0) != (hint_clr >= 0))
+            if((pass == 0) != stuck)
                 continue;
             if(ret++ >= maxout)
                 continue;
@@ -1194,7 +1181,6 @@ static size_t strip_goods(uint32_t key, const struct ss_state *ss, const struct 
             pf_snprintf(good->count, sizeof(good->count), "%d", curr);
             good->count_w = text_width(font, good->count);
             good->arrow = trend ? trend->arrow : 0;
-            good->hint_clr = hint_clr;
         }
     }
     return ret;
@@ -1318,8 +1304,7 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
         }
         /* Counts sit right in their cells, so their last digits line up */
         const float tx = cx + STRIP_ICON_SZ + 2 + (count_w - good->count_w);
-        draw_strip_text(canvas, font, tx, cy + text_dy, good->count_w, good->count,
-            good->hint_clr >= 0 ? s_hint_clrs[good->hint_clr] : STRIP_TEXT_CLR);
+        draw_strip_text(canvas, font, tx, cy + text_dy, good->count_w, good->count, STRIP_TEXT_CLR);
         draw_trend(canvas, cx + STRIP_ICON_SZ + 2 + count_w + 2, cy + STRIP_ICON_SZ / 2.0f, good->arrow);
     }
     if(more) {
@@ -1328,15 +1313,15 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
     }
     row_y += nrows * row_h;
 
-    /* The good's icon where every row has its icon, the warning and the reason where the text goes */
+    /* The warning first, then the good's icon and the reason */
     for(int i = 0; i < nhints; i++) {
+        draw_warn(canvas, left, row_y + (STRIP_ICON_SZ - WARN_W) / 2.0f, WARN_W);
+        float x = left + WARN_W + 2;
         if(hints[i].icon) {
-            draw_strip_icon(canvas, left, row_y, hints[i].icon);
+            draw_strip_icon(canvas, x, row_y, hints[i].icon);
         }
-        float x = left + STRIP_ICON_SZ + 2;
-        draw_warn(canvas, x, row_y + (STRIP_ICON_SZ - WARN_W) / 2.0f, WARN_W);
-        x += WARN_W + 2;
-        draw_strip_text(canvas, font, x, row_y + text_dy, hints[i].text_w, hints[i].text, s_hint_clrs[i]);
+        x += STRIP_ICON_SZ + 2;
+        draw_strip_text(canvas, font, x, row_y + text_dy, hints[i].text_w, hints[i].text, STRIP_WARN_CLR);
         row_y += row_h;
     }
 
