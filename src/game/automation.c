@@ -87,6 +87,8 @@
 #define BLOCKED_AFTER_MS             (20000)
 /* A Low request waits behind the others at most this long */
 #define LOW_PATIENCE_S               (60.0f)
+/* Each this long without a load, a request ranks a tier higher, up to the upkeep's */
+#define REQUEST_PATIENCE_S           (120.0f)
 /* A carrier is not sent for less than this while more could be had, until
  * the request has waited MIN_LOAD_WAIT_S */
 #define MIN_LOAD                     (5)
@@ -1252,6 +1254,9 @@ static void collect_requests(vec_request_t *out, const vec_entity_t *sites)
                 tier = MAX(tier - 1, TIER_STARVING);
             }else if(priority == SS_PRIORITY_LOW && waited_s < LOW_PATIENCE_S) {
                 tier++;
+            }
+            if(tier < TIER_TOPPING) {
+                tier = MAX(tier - (int)(waited_s / REQUEST_PATIENCE_S), TIER_UPKEEP);
             }
             pend->tier = tier;
 
