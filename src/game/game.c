@@ -437,9 +437,6 @@ static void g_render_healthbars(void)
             continue;
 
         int yoffset = -20;
-        if((flags & ENTITY_FLAG_STORAGE_SITE) && G_StorageSite_GetShowUI()) {
-            yoffset += G_StorageSite_GetWindowHeight(curr) / 8.0f;
-        }
 
         ent_top_pos_ws[num_combat_visible] = Entity_TopCenterPointWS(curr);
         ent_health_pc[num_combat_visible] = ((GLfloat)curr_health)/max_health;
@@ -2341,12 +2338,7 @@ static void on_update_ui(void *user, void *event)
         const int width = UNIT_ICON_SIZE * nicons;
         const int height = UNIT_ICON_SIZE;
 
-        float yoffset = 0;
-        if((G_FlagsGet(uid) & ENTITY_FLAG_STORAGE_SITE) && G_StorageSite_GetShowUI()) {
-            yoffset = G_StorageSite_GetWindowHeight(uid) / 8.0f;
-        }
-
-        const vec2_t pos = (vec2_t){ss_pos.x - width/2, ss_pos.y - 9 + yoffset};
+        const vec2_t pos = (vec2_t){ss_pos.x - width/2, ss_pos.y - 9};
         const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
 
         struct rect adj_bounds = UI_BoundsForAspectRatio(

@@ -282,10 +282,6 @@ static PyObject *PyPf_map_pos_under_cursor(PyObject *self);
 static PyObject *PyPf_draw_text(PyObject *self, PyObject *args);
 static PyObject *PyPf_draw_text_outlined(PyObject *self, PyObject *args);
 static PyObject *PyPf_dump_framebuffer(PyObject *self, PyObject *args);
-static PyObject *PyPf_set_storage_site_ui_style(PyObject *self, PyObject *args);
-static PyObject *PyPf_set_storage_site_ui_border_color(PyObject *self, PyObject *args);
-static PyObject *PyPf_set_storage_site_ui_font_color(PyObject *self, PyObject *args);
-static PyObject *PyPf_set_storage_site_strip_frame(PyObject *self, PyObject *args);
 static PyObject *PyPf_storage_site_show_ui(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_garrison_ui_font_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_garrison_ui_icon(PyObject *self, PyObject *args);
@@ -1204,25 +1200,6 @@ static PyMethodDef pf_module_methods[] = {
     {"dump_framebuffer",
     (PyCFunction)PyPf_dump_framebuffer, METH_VARARGS,
     "Dump the current color framebuffer to a PPM (P6) file at the specified path. For debugging/automation."},
-
-    {"set_storage_site_ui_style",
-    (PyCFunction)PyPf_set_storage_site_ui_style, METH_VARARGS,
-    "Set the storage site UI background to the specified color (R, G, B, A) or image (string)."},
-
-    {"set_storage_site_ui_border_color",
-    (PyCFunction)PyPf_set_storage_site_ui_border_color, METH_VARARGS,
-    "Set the storage site UI border color to the specified color (R, G, B, A)."},
-
-    {"set_storage_site_ui_font_color",
-    (PyCFunction)PyPf_set_storage_site_ui_font_color, METH_VARARGS,
-    "Set the storage site UI text color to the specified color (R, G, B, A)."},
-
-    {"set_storage_site_strip_frame",
-    (PyCFunction)PyPf_set_storage_site_strip_frame, METH_VARARGS,
-    "Frame the strips over the stores along their top and left with a tileset of images (paths): the "
-    "corner, the top edge's repeat and its end, the left edge's repeat and its end. The pieces keep "
-    "their proportions, scaled so that the top repeat is the specified width (virtual pixels) thick. "
-    "A width of 0 turns the frame off."},
 
     {"storage_site_show_ui",
     (PyCFunction)PyPf_storage_site_show_ui, METH_VARARGS,
@@ -4623,90 +4600,6 @@ static PyObject *PyPf_dump_framebuffer(PyObject *self, PyObject *args)
             R_PushArg(&height, sizeof(height)),
         },
     });
-    Py_RETURN_NONE;
-}
-
-static PyObject *PyPf_set_storage_site_ui_style(PyObject *self, PyObject *args)
-{
-    struct nk_style_item style;
-    PyObject *val;
-
-    if(!PyArg_ParseTuple(args, "O", &val)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must be an (R, G, B, A) tuple or an image path.");
-        return NULL;
-    }
-
-    if(S_UI_ParseNinePatch(val, &style.data.slice_texpath) == 0) {
-
-        style.type = NK_STYLE_ITEM_NINE_SLICE_TEXPATH;
-
-    }else if(PyTuple_Check(val) 
-    && PyTuple_GET_SIZE(val) == 4
-    && PyInt_Check(PyTuple_GET_ITEM(val, 0))
-    && PyInt_Check(PyTuple_GET_ITEM(val, 1))
-    && PyInt_Check(PyTuple_GET_ITEM(val, 2))
-    && PyInt_Check(PyTuple_GET_ITEM(val, 3))) {
-
-        style.type = NK_STYLE_ITEM_COLOR;
-        style.data.color.r = PyInt_AS_LONG(PyTuple_GET_ITEM(val, 0));
-        style.data.color.g = PyInt_AS_LONG(PyTuple_GET_ITEM(val, 1));
-        style.data.color.b = PyInt_AS_LONG(PyTuple_GET_ITEM(val, 2));
-        style.data.color.a = PyInt_AS_LONG(PyTuple_GET_ITEM(val, 3));
-
-    }else if(PyString_Check(val)) {
-
-        style.type = NK_STYLE_ITEM_TEXPATH;
-        pf_strlcpy(style.data.texpath, PyString_AS_STRING(val),
-            ARR_SIZE(style.data.texpath));
-
-    }else{
-        PyErr_SetString(PyExc_TypeError, "Argument must be an (R, G, B, A) tuple or an image path.");
-        return NULL; 
-    }
-
-    G_StorageSite_SetBackgroundStyle(&style);
-    Py_RETURN_NONE;
-}
-
-static PyObject *PyPf_set_storage_site_strip_frame(PyObject *self, PyObject *args)
-{
-    const char *paths[5];
-    float width;
-    if(!PyArg_ParseTuple(args, "sssssf", &paths[0], &paths[1], &paths[2], &paths[3], &paths[4], &width)) {
-        PyErr_SetString(PyExc_TypeError, "Arguments must be five image paths (strings) and a width (float).");
-        return NULL;
-    }
-    if(width < 0.0f) {
-        PyErr_SetString(PyExc_ValueError, "The width must not be negative.");
-        return NULL;
-    }
-    G_StorageSite_SetStripFrame(paths, width);
-    Py_RETURN_NONE;
-}
-
-static PyObject *PyPf_set_storage_site_ui_border_color(PyObject *self, PyObject *args)
-{
-    int r, g, b, a;
-    if(!PyArg_ParseTuple(args, "iiii", &r, &g, &b, &a)) {
-        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple or an image path.");
-        return NULL;
-    }
-
-    struct nk_color clr = (struct nk_color){r, g, b, a};
-    G_StorageSite_SetBorderColor(&clr);
-    Py_RETURN_NONE;
-}
-
-static PyObject *PyPf_set_storage_site_ui_font_color(PyObject *self, PyObject *args)
-{
-    int r, g, b, a;
-    if(!PyArg_ParseTuple(args, "iiii", &r, &g, &b, &a)) {
-        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A).");
-        return NULL;
-    }
-
-    struct nk_color clr = (struct nk_color){r, g, b, a};
-    G_StorageSite_SetFontColor(&clr);
     Py_RETURN_NONE;
 }
 

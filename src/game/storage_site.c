@@ -278,8 +278,6 @@ struct strip_hint{
     float       text_w;
 };
 
-#define GREEN_CLR (struct nk_color){22, 84, 5, 255}
-#define RED_CLR   (struct nk_color){150, 30, 20, 255}
 
 #define STRIP_TEXT_CLR      (struct nk_color){235, 228, 210, 255}
 #define STRIP_OUTLINE_CLR   (struct nk_color){20, 16, 12, 230}
@@ -291,8 +289,8 @@ struct strip_hint{
 
 #define STRIP_MAX_SITES     (64)
 #define STRIP_MAX_GOODS     (32)
-#define STRIP_ROW_GOODS     (4)
-#define STRIP_SHOWN_GOODS   (8)
+#define STRIP_ROW_GOODS     (3)
+#define STRIP_SHOWN_GOODS   (9)
 #define STRIP_MAX_HINTS     (4)
 #define HINT_INDENT         (10.0f)
 /* How long a request is stuck before its line shows, and how long the line stays after */
@@ -306,8 +304,6 @@ struct strip_hint{
 #define STRIP_DROP          (20.0f)
 #define STRIP_GAP_Y         (2.0f)
 #define STRIP_GAP           (8.0f)
-/* The gap between a strip's rows and the frame along its top and left */
-#define FRAME_GAP           (1.0f)
 #define TREND_W             (7.0f)
 #define PENNANT_W           (11.0f)
 /* Weight of each one-second sample in the moving average of a stock's change */
@@ -320,43 +316,9 @@ struct strip_hint{
  * flickering in and out does not reshape it */
 #define CARRIERS_ICON       "assets/icons/transport-icon.png"
 #define GATHERERS_ICON      "assets/icons/harvesting-icon.png"
-#define BUILDERS_ICON       "assets/icons/build-command-normal.png"
 #define TREND_UP_ICON       "assets/icons/trend-up-icon.png"
 #define TREND_DOWN_ICON     "assets/icons/trend-down-icon.png"
 #define POSTS_ICON          "assets/icons/population-icon.png"
-/* The window over a picked out site: its padding, row height, icon size and
- * the cells of a good's row, which are as wide as the widest text each may hold */
-#define WIN_PAD_X           (8.0f)
-#define WIN_PAD_Y           (16.0f)
-#define WIN_ROW_H           (16.0f)
-#define WIN_ICON_SZ         (16.0f)
-#define WIN_ARROW_W         (14.0f)
-#define WIN_COLS            (12)
-#define WIN_MADE_PER_ROW    (2)
-
-/* The rows of a site's window: its goods, then the marks, crew and output the strip shows */
-struct window_plan{
-    const char        *names[16];
-    size_t             nnames;
-    int                priority;
-    /* The goods whose requests are stuck, with why, a line each */
-    const char        *hint_names[STRIP_MAX_HINTS];
-    const char        *hints[STRIP_MAX_HINTS];
-    size_t             nhints;
-    int                ncarriers;
-    int                ngatherers;
-    int                nbuilders;
-    /* Whether any good has carriers, or gatherers, of its own beside it */
-    bool               good_carriers;
-    bool               good_gatherers;
-    /* The pool's workshop posts filled, out of those not kept empty; -1 for none */
-    int                posts_inside;
-    int                posts_open;
-    int                posts_eating;
-    const struct made *made[STRIP_MAX_MADE];
-    size_t             nmade;
-};
-
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -392,24 +354,7 @@ static uint32_t         s_strip_stamp;
 /* Per site: who is bringing it goods, tallied once per UI pass, and the
  * gatherers bringing it their next load, tallied once a second */
 
-static struct nk_style_item s_bg_style = {0};
-static struct nk_color      s_border_clr = {0};
-static struct nk_color      s_font_clr = {0};
 static bool                 s_show_ui = true;
-/* The tileset framing the strips' top and left edges, and the top repeat's thickness; none at 0 */
-enum frame_piece{
-    FRAME_CORNER,
-    FRAME_TOP,
-    FRAME_TOP_END,
-    FRAME_LEFT,
-    FRAME_LEFT_END,
-    FRAME_NUM_PIECES
-};
-static const char *const    s_frame_keys[FRAME_NUM_PIECES] = {
-    "strip_frame_corner", "strip_frame_top", "strip_frame_top_end", "strip_frame_left", "strip_frame_left_end"
-};
-static char                 s_frame[FRAME_NUM_PIECES][256] = {{0}};
-static float                s_frame_width = 0.0f;
 /* Where the outline passes of the strip's text and icons are drawn */
 static const float          s_outline_offsets[][2] = {
     {-1.0f, 0.0f}, {1.0f, 0.0f}, {0.0f, -1.0f}, {0.0f, 1.0f},
@@ -837,16 +782,6 @@ static bool pool_selected(uint32_t key, int pool)
     return false;
 }
 
-static bool pool_hovered(uint32_t key, int pool)
-{
-    uint32_t hovered = G_Sel_GetHovered();
-    if(hovered == NULL_UID)
-        return false;
-    if(hovered == key)
-        return true;
-    return (pool && G_Cluster_Of(hovered) == pool);
-}
-
 /* The state shown over a site: its pool's over the pool's anchor, none over
  * the pool's other members */
 static struct ss_state *shown_state(uint32_t uid)
@@ -1070,12 +1005,6 @@ static const struct nk_color s_hint_clrs[STRIP_MAX_HINTS] = {
     {255, 120, 170, 255},
     {110, 210, 240, 255},
 };
-static const struct nk_color s_hint_dark_clrs[STRIP_MAX_HINTS] = {
-    {180,  80,   0, 255},
-    {130, 105,   0, 255},
-    {160,  30, 100, 255},
-    { 20, 110, 140, 255},
-};
 
 /* The posts of the pool's workshops: those filled, those not kept empty, and
  * those whose holders are out at a meal */
@@ -1139,58 +1068,6 @@ static void draw_strip_icon(struct nk_command_buffer *canvas, float x, float y, 
             STRIP_OUTLINE_CLR);
     }
     nk_draw_texpath(canvas, nk_rect(x, y, STRIP_ICON_SZ, STRIP_ICON_SZ), icon, nk_rgba(255, 255, 255, 255));
-}
-
-/* A piece's size on screen, its image scaled as the top repeat is to the frame's width */
-static bool frame_piece_size(enum frame_piece piece, float *out_w, float *out_h)
-{
-    int top_w, top_h, w, h;
-    if(!UI_ImageSize(s_frame[FRAME_TOP], &top_w, &top_h) || top_h <= 0)
-        return false;
-    if(!s_frame[piece][0] || !UI_ImageSize(s_frame[piece], &w, &h))
-        return false;
-    const float scale = s_frame_width / top_h;
-    *out_w = w * scale;
-    *out_h = h * scale;
-    return true;
-}
-
-/* The piece drawn whole from (x, y) */
-static void draw_frame_piece(struct nk_command_buffer *canvas, enum frame_piece piece, float x, float y)
-{
-    float w, h;
-    if(!frame_piece_size(piece, &w, &h))
-        return;
-    nk_draw_texpath(canvas, nk_rect(x, y, w, h), s_frame[piece], nk_rgba(255, 255, 255, 255));
-}
-
-/* One edge from (x, y) for 'length': whole copies of its repeat, the last running past the
- * length rather than be cut, then its end piece, which ends the edge however short it is */
-static void draw_frame_edge(struct nk_command_buffer *canvas, enum frame_piece repeat, enum frame_piece end,
-                            float x, float y, float length, bool down)
-{
-    float rep_w, rep_h, end_w, end_h;
-    if(!frame_piece_size(repeat, &rep_w, &rep_h) || !frame_piece_size(end, &end_w, &end_h))
-        return;
-    const float step = down ? rep_h : rep_w;
-    const float run = length - (down ? end_h : end_w);
-    float done = 0.0f;
-    for(; done < run; done += step) {
-        draw_frame_piece(canvas, repeat, down ? x : x + done, down ? y + done : y);
-    }
-    draw_frame_piece(canvas, end, down ? x : x + done, down ? y + done : y);
-}
-
-/* The frame round a strip's top and left: the corner at (x, y), then the top edge to 'right' and
- * the left edge to 'bottom' */
-static void draw_frame(struct nk_command_buffer *canvas, float x, float y, float right, float bottom)
-{
-    float corner_w, corner_h;
-    if(!frame_piece_size(FRAME_CORNER, &corner_w, &corner_h))
-        return;
-    draw_frame_piece(canvas, FRAME_CORNER, x, y);
-    draw_frame_edge(canvas, FRAME_TOP, FRAME_TOP_END, x + corner_w, y, right - x - corner_w, false);
-    draw_frame_edge(canvas, FRAME_LEFT, FRAME_LEFT_END, x, y + corner_h, bottom - y - corner_h, true);
 }
 
 static void draw_trend(struct nk_command_buffer *canvas, float x, float cy, int arrow)
@@ -1324,7 +1201,7 @@ static size_t strip_goods(uint32_t key, const struct ss_state *ss, const struct 
 }
 
 /* Over a pool's anchor, every row starting at one left edge: the goods it
- * holds, four a row and eight at most; a line for each stuck good saying why;
+ * holds, three a row and nine at most; a line for each stuck good saying why;
  * then the carriers and gatherers bound for it, its posts, its note, and what
  * it made in the last minute */
 static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_font *font,
@@ -1341,8 +1218,9 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
     size_t ngoods = MIN(nlisted, STRIP_SHOWN_GOODS);
     const bool more = (nlisted > ngoods);
 
-    /* Every good takes a cell as wide as the widest count, so the counts line up */
-    float count_w = 0.0f;
+    /* Every good takes a cell as wide as the widest count, and at least three
+     * digits wide, so the counts line up and the cells keep their width */
+    float count_w = text_width(font, "888");
     for(int i = 0; i < ngoods; i++) {
         count_w = MAX(count_w, goods[i].count_w);
     }
@@ -1416,20 +1294,17 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
 
     char rates[STRIP_MAX_MADE][16];
     float rates_w[STRIP_MAX_MADE];
-    float made_width = 0.0f;
     for(int i = 0; i < nmade; i++) {
         pf_snprintf(rates[i], sizeof(rates[i]), "%d/min", made[i]->total);
         rates_w[i] = text_width(font, rates[i]);
-        made_width += STRIP_ICON_SZ + 2 + rates_w[i] + STRIP_GAP;
     }
-    if(nmade > 0)
-        made_width -= STRIP_GAP;
 
-    if(width == 0.0f && made_width == 0.0f)
+    if(width == 0.0f && nmade == 0)
         return;
 
-    /* The rows start together, centred as a block over the anchor */
-    const float left = anchor.x - MAX(width, made_width) / 2.0f;
+    /* The rows start together at an edge that full rows of goods are centred
+     * from, wherever they end, so that the strip keeps its place over the anchor */
+    const float left = anchor.x - (STRIP_ROW_GOODS * cell_w + (STRIP_ROW_GOODS - 1) * STRIP_GAP) / 2.0f;
     const float y = anchor.y + STRIP_DROP;
     const float text_dy = (STRIP_ICON_SZ - font->height) / 2.0f;
     float row_y = y;
@@ -1516,14 +1391,6 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
         draw_strip_text(canvas, font, x, row_y + text_dy, rates_w[i], rates[i], STRIP_TEXT_CLR);
         x += rates_w[i] + STRIP_GAP;
     }
-    if(nmade > 0) {
-        row_y += row_h;
-    }
-
-    if(s_frame_width > 0.0f) {
-        draw_frame(canvas, left - FRAME_GAP - s_frame_width, y - FRAME_GAP - s_frame_width,
-            left + MAX(width, made_width) + FRAME_GAP, row_y);
-    }
 }
 
 static void draw_strips(struct nk_context *ctx, const uint32_t *keys, size_t nkeys)
@@ -1574,336 +1441,18 @@ static void draw_strips(struct nk_context *ctx, const uint32_t *keys, size_t nke
     nk_style_pop_style_item(ctx);
 }
 
-/* The cells of a good's row, a carriers' or gatherers' pair left out at
- * width 0 when no good has any; the content is at least as wide as the row
- * of totals */
-static float window_columns(const struct nk_user_font *font, const struct window_plan *plan,
-                            float out[WIN_COLS])
-{
-    const float spacing = UI_GetContext()->style.window.spacing.x;
-    const float num_w = text_width(font, "8888");
-    const float brace_w = text_width(font, "(") + 2;
-    const float count_w = text_width(font, "88");
-    const float carriers_w = plan->good_carriers ? count_w : 0.0f;
-    const float gatherers_w = plan->good_gatherers ? count_w : 0.0f;
-    const float cols[WIN_COLS] = {
-        WIN_ICON_SZ, num_w, text_width(font, "/") + 2, num_w, brace_w, text_width(font, "888"),
-        brace_w, WIN_ARROW_W, carriers_w ? WIN_ICON_SZ : 0.0f, carriers_w,
-        gatherers_w ? WIN_ICON_SZ : 0.0f, gatherers_w
-    };
-    float ret = -spacing;
-    for(int i = 0; i < WIN_COLS; i++) {
-        out[i] = cols[i];
-        if(cols[i] > 0.0f) {
-            ret += cols[i] + spacing;
-        }
-    }
-
-    /* The row of totals: a pair for each of the carriers, builders and gatherers, the posts, and those at a meal */
-    float totals_w = -spacing;
-    if(plan->ncarriers > 0)
-        totals_w += WIN_ICON_SZ + num_w + 2 * spacing;
-    if(plan->nbuilders > 0)
-        totals_w += WIN_ICON_SZ + num_w + 2 * spacing;
-    if(plan->ngatherers > 0)
-        totals_w += WIN_ICON_SZ + num_w + 2 * spacing;
-    if(plan->posts_inside >= 0)
-        totals_w += WIN_ICON_SZ + cols[1] + cols[2] + cols[3] + 2 * spacing;
-    if(plan->posts_inside >= 0 && plan->posts_eating > 0)
-        totals_w += WIN_ICON_SZ + num_w + 2 * spacing;
-    ret = MAX(ret, totals_w);
-
-    for(int i = 0; i < plan->nhints; i++) {
-        ret = MAX(ret, HINT_INDENT + 2 * WIN_ICON_SZ + 2 * spacing + text_width(font, plan->hints[i]) + 2);
-    }
-    return ret;
-}
-
-static int good_arrow(uint32_t uid, const char *rname)
-{
-    khiter_t k = kh_get(strip, s_strips, strip_key(uid));
-    if(k == kh_end(s_strips))
-        return 0;
-    const struct trend *trend = trend_find(&kh_value(s_strips, k), rname);
-    return trend ? trend->arrow : 0;
-}
-
-static bool window_lists(uint32_t key, const char *rname)
-{
-    khiter_t k = kh_get(strip, s_strips, strip_key(key));
-    const struct trend *trend = (k != kh_end(s_strips)) ? trend_find(&kh_value(s_strips, k), rname) : NULL;
-    if(G_StorageSite_GetCurr(key, rname) > 0 || G_StorageSite_Request(key, rname) > 0 || (trend && trend->hint))
-        return true;
-    return bound_for_good(key, rname) > 0 || gatherers_for(key, rname) > 0;
-}
-
-/* The goods the site holds, wants or is brought; all of its goods when it has none of those */
-static void plan_window(uint32_t key, struct ss_state *ss, struct window_plan *out)
-{
-    const char *names[ARR_SIZE(out->names)];
-    size_t nnames = ss_get_keys(ss, names, ARR_SIZE(names));
-    out->nnames = 0;
-    for(int i = 0; i < nnames; i++) {
-        if(window_lists(key, names[i])) {
-            out->names[out->nnames++] = names[i];
-        }
-    }
-    if(out->nnames == 0) {
-        memcpy(out->names, names, nnames * sizeof(names[0]));
-        out->nnames = nnames;
-    }
-    out->priority = ss->priority;
-    out->nhints = 0;
-    khiter_t sk = kh_get(strip, s_strips, strip_key(key));
-    const struct strip *strip = (sk != kh_end(s_strips)) ? &kh_value(s_strips, sk) : NULL;
-    for(int i = 0; i < out->nnames && out->nhints < STRIP_MAX_HINTS; i++) {
-        const struct trend *trend = strip ? trend_find(strip, out->names[i]) : NULL;
-        const char *hint = trend ? trend->hint : NULL;
-        if(hint) {
-            out->hint_names[out->nhints] = out->names[i];
-            out->hints[out->nhints++] = hint;
-        }
-    }
-    out->ncarriers = bound_for(key);
-    out->nbuilders = count_pool(key, DUTY_BUILD, NULL);
-    out->ngatherers = gatherers_for(key, NULL);
-    out->good_carriers = false;
-    out->good_gatherers = false;
-    for(int i = 0; i < out->nnames; i++) {
-        out->good_carriers |= (bound_for_good(key, out->names[i]) > 0);
-        out->good_gatherers |= (gatherers_for(key, out->names[i]) > 0);
-    }
-    if(!pool_posts(key, &out->posts_inside, &out->posts_open, &out->posts_eating)) {
-        out->posts_inside = -1;
-    }
-    out->nmade = made_sorted(key, out->made, ARR_SIZE(out->made));
-}
-
-static float window_height(const struct window_plan *plan)
-{
-    const float spacing = UI_GetContext()->style.window.spacing.y;
-    float ret = 2 * WIN_PAD_Y + plan->nnames * (WIN_ROW_H + spacing);
-    if(plan->priority != SS_PRIORITY_NORMAL) {
-        ret += STRIP_ICON_SZ + spacing;
-    }
-    ret += plan->nhints * (WIN_ROW_H + spacing);
-    if(plan->ncarriers > 0 || plan->ngatherers > 0 || plan->nbuilders > 0 || plan->posts_inside >= 0) {
-        ret += WIN_ROW_H + spacing;
-    }
-    ret += ((plan->nmade + WIN_MADE_PER_ROW - 1) / WIN_MADE_PER_ROW) * (WIN_ROW_H + spacing);
-    return ret;
-}
-
-static void window_icon(struct nk_context *ctx, const char *icon)
-{
-    if(icon) {
-        nk_image_texpath(ctx, icon);
-    }else{
-        nk_label_colored(ctx, "?", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
-    }
-}
-
-/* A row of the window for each good: its stock out of its room, the keep in
- * braces, which way it is going and the carriers and gatherers bringing it;
- * then the rows the strip has: the priority and a stuck request, the carriers
- * and gatherers bound for it, and what it made in the last minute */
-static void draw_window(struct nk_context *ctx, uint32_t key, const struct ss_state *ss,
-                        const struct window_plan *plan, const float cols[WIN_COLS], float content_w)
-{
-    const float spacing = ctx->style.window.spacing.x;
-    int ncols = 0;
-    for(int i = 0; i < WIN_COLS; i++) {
-        ncols += (cols[i] > 0.0f);
-    }
-
-    for(int i = 0; i < plan->nnames; i++) {
-
-        const char *rname = plan->names[i];
-        int capacity = ss->use_alt ? G_StorageSite_GetAltCapacity(key, rname)
-                                   : G_StorageSite_GetCapacity(key, rname);
-        int reserve = G_StorageSite_GetReserve(key, rname);
-        int curr_amount = G_StorageSite_GetCurr(key, rname);
-        int ncarts = bound_for_good(key, rname);
-        int ngather = gatherers_for(key, rname);
-        int arrow = good_arrow(key, rname);
-        int hint = -1;
-        for(int h = 0; h < plan->nhints; h++) {
-            if(plan->hint_names[h] == rname) {
-                hint = h;
-            }
-        }
-
-        char amount[8], cap[8], keep[8], carts[8] = {0}, gather[8] = {0};
-        pf_snprintf(amount, sizeof(amount), "%d", curr_amount);
-        pf_snprintf(cap, sizeof(cap), "%d", capacity);
-        pf_snprintf(keep, sizeof(keep), "%d", reserve);
-        if(ncarts > 0) {
-            pf_snprintf(carts, sizeof(carts), "%d", ncarts);
-        }
-        if(ngather > 0) {
-            pf_snprintf(gather, sizeof(gather), "%d", ngather);
-        }
-
-        nk_layout_row_begin(ctx, NK_STATIC, WIN_ROW_H, ncols);
-        nk_layout_row_push(ctx, cols[0]);
-        window_icon(ctx, G_Resource_GetIcon(rname));
-
-        nk_layout_row_push(ctx, cols[1]);
-        nk_label_colored(ctx, amount, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE,
-            (hint >= 0) ? s_hint_dark_clrs[hint] : (curr_amount > 0) ? GREEN_CLR : s_font_clr);
-
-        nk_layout_row_push(ctx, cols[2]);
-        nk_label_colored(ctx, "/", NK_TEXT_CENTERED, s_font_clr);
-
-        nk_layout_row_push(ctx, cols[3]);
-        nk_label_colored(ctx, cap, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
-
-        /* The braces keep their columns whatever the width of the number between */
-        nk_layout_row_push(ctx, cols[4]);
-        nk_label_colored(ctx, "(", NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
-
-        nk_layout_row_push(ctx, cols[5]);
-        nk_label_colored(ctx, keep, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
-
-        nk_layout_row_push(ctx, cols[6]);
-        nk_label_colored(ctx, ")", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
-
-        nk_layout_row_push(ctx, cols[7]);
-        if(arrow != 0) {
-            nk_image_texpath(ctx, (arrow > 0) ? TREND_UP_ICON : TREND_DOWN_ICON);
-        }else{
-            nk_label_colored(ctx, "", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
-        }
-
-        if(plan->good_carriers) {
-            nk_layout_row_push(ctx, cols[8]);
-            if(ncarts > 0) {
-                nk_image_texpath(ctx, CARRIERS_ICON);
-            }else{
-                nk_label_colored(ctx, "", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
-            }
-            nk_layout_row_push(ctx, cols[9]);
-            nk_label_colored(ctx, carts, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
-        }
-
-        if(plan->good_gatherers) {
-            nk_layout_row_push(ctx, cols[10]);
-            if(ngather > 0) {
-                nk_image_texpath(ctx, GATHERERS_ICON);
-            }else{
-                nk_label_colored(ctx, "", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
-            }
-            nk_layout_row_push(ctx, cols[11]);
-            nk_label_colored(ctx, gather, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
-        }
-        nk_layout_row_end(ctx);
-    }
-
-    if(plan->priority != SS_PRIORITY_NORMAL) {
-        nk_layout_row_begin(ctx, NK_STATIC, STRIP_ICON_SZ, 1);
-        nk_layout_row_push(ctx, PENNANT_W + 4);
-        struct nk_rect bounds;
-        if(nk_widget(&bounds, ctx)) {
-            draw_pennant(nk_window_get_canvas(ctx), bounds.x + 2, bounds.y, plan->priority);
-        }
-        nk_layout_row_end(ctx);
-    }
-
-    /* A line under the goods for each stuck one, saying why, in the colour of its count */
-    for(int i = 0; i < plan->nhints; i++) {
-        nk_layout_row_begin(ctx, NK_STATIC, WIN_ROW_H, 4);
-        nk_layout_row_push(ctx, HINT_INDENT - spacing);
-        nk_label(ctx, "", NK_TEXT_ALIGN_LEFT);
-        nk_layout_row_push(ctx, WIN_ICON_SZ);
-        struct nk_rect bounds;
-        if(nk_widget(&bounds, ctx)) {
-            draw_warn(nk_window_get_canvas(ctx), bounds.x + 1, bounds.y + 2, WIN_ICON_SZ - 3);
-        }
-        nk_layout_row_push(ctx, WIN_ICON_SZ);
-        window_icon(ctx, G_Resource_GetIcon(plan->hint_names[i]));
-        nk_layout_row_push(ctx, content_w - HINT_INDENT - 2 * WIN_ICON_SZ - 2 * spacing);
-        nk_label_colored(ctx, plan->hints[i], NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_hint_dark_clrs[i]);
-        nk_layout_row_end(ctx);
-    }
-
-    if(plan->ncarriers > 0 || plan->ngatherers > 0 || plan->nbuilders > 0 || plan->posts_inside >= 0) {
-
-        char carriers[8], gatherers[8], builders[8], posts[16], eating[16];
-        pf_snprintf(carriers, sizeof(carriers), "%d", plan->ncarriers);
-        pf_snprintf(gatherers, sizeof(gatherers), "%d", plan->ngatherers);
-        pf_snprintf(builders, sizeof(builders), "%d", plan->nbuilders);
-        pf_snprintf(posts, sizeof(posts), plan->posts_eating ? "%d/%d (" : "%d/%d", plan->posts_inside, plan->posts_open);
-        pf_snprintf(eating, sizeof(eating), "%d)", plan->posts_eating);
-        const bool show_eating = plan->posts_inside >= 0 && plan->posts_eating > 0;
-
-        nk_layout_row_begin(ctx, NK_STATIC, WIN_ROW_H, (plan->ncarriers > 0 ? 2 : 0) + (plan->ngatherers > 0 ? 2 : 0)
-            + (plan->nbuilders > 0 ? 2 : 0) + (plan->posts_inside >= 0 ? 2 : 0) + (show_eating ? 2 : 0));
-        if(plan->ncarriers > 0) {
-            nk_layout_row_push(ctx, WIN_ICON_SZ);
-            nk_image_texpath(ctx, CARRIERS_ICON);
-            nk_layout_row_push(ctx, cols[1]);
-            nk_label_colored(ctx, carriers, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
-        }
-        if(plan->nbuilders > 0) {
-            nk_layout_row_push(ctx, WIN_ICON_SZ);
-            nk_image_texpath(ctx, BUILDERS_ICON);
-            nk_layout_row_push(ctx, cols[1]);
-            nk_label_colored(ctx, builders, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
-        }
-        if(plan->ngatherers > 0) {
-            nk_layout_row_push(ctx, WIN_ICON_SZ);
-            nk_image_texpath(ctx, GATHERERS_ICON);
-            nk_layout_row_push(ctx, cols[1]);
-            nk_label_colored(ctx, gatherers, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
-        }
-        if(plan->posts_inside >= 0) {
-            nk_layout_row_push(ctx, WIN_ICON_SZ);
-            nk_image_texpath(ctx, POSTS_ICON);
-            nk_layout_row_push(ctx, cols[1] + cols[2] + cols[3]);
-            nk_label_colored(ctx, posts, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
-            if(show_eating) {
-                nk_layout_row_push(ctx, WIN_ICON_SZ);
-                nk_image_texpath(ctx, meal_icon());
-                nk_layout_row_push(ctx, cols[1]);
-                nk_label_colored(ctx, eating, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
-            }
-        }
-        nk_layout_row_end(ctx);
-    }
-
-    for(int i = 0; i < plan->nmade; i += WIN_MADE_PER_ROW) {
-
-        size_t n = MIN(plan->nmade - i, WIN_MADE_PER_ROW);
-        nk_layout_row_begin(ctx, NK_STATIC, WIN_ROW_H, 2 * n);
-        for(int j = i; j < i + n; j++) {
-            char made[16];
-            pf_snprintf(made, sizeof(made), "%d/min", plan->made[j]->total);
-            nk_layout_row_push(ctx, WIN_ICON_SZ);
-            window_icon(ctx, plan->made[j]->icon);
-            nk_layout_row_push(ctx, (content_w - WIN_MADE_PER_ROW * (WIN_ICON_SZ + spacing)) / WIN_MADE_PER_ROW - spacing);
-            nk_label_colored(ctx, made, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
-        }
-        nk_layout_row_end(ctx);
-    }
-}
-
 static void on_update_ui(void *user, void *event)
 {
     if(!s_show_ui)
         return;
 
     struct sval ui_setting;
-    ss_e status = Settings_Get("pf.game.storage_site_ui_mode", &ui_setting);
-    assert(status == SS_OKAY);
-
-    struct sval strip_setting;
-    status = Settings_Get("pf.game.storage_site_strip", &strip_setting);
-    assert(status == SS_OKAY);
-
-    struct sval hover_setting;
-    status = Settings_Get("pf.game.storage_site_ui_on_hover", &hover_setting);
+    ss_e status = Settings_Get("pf.game.storage_site_ui", &ui_setting);
     assert(status == SS_OKAY);
     (void)status;
+
+    if(ui_setting.as_int == SS_UI_SHOW_NEVER)
+        return;
 
     uint32_t strips[STRIP_MAX_SITES];
     size_t nstrips = 0;
@@ -1911,90 +1460,33 @@ static void on_update_ui(void *user, void *event)
 
     uint32_t key;
     struct ss_state curr;
-    struct nk_context *ctx = UI_GetContext();
-
-    nk_style_push_style_item(ctx, &ctx->style.window.fixed_background, s_bg_style);
-    nk_style_push_color(ctx, &ctx->style.window.border_color, s_border_clr);
-    nk_style_push_vec2(ctx, &ctx->style.window.padding, nk_vec2(WIN_PAD_X, WIN_PAD_Y));
 
     kh_foreach(s_entity_state_table, key, curr, {
 
+        if(nstrips == ARR_SIZE(strips))
+            break;
+        if(!(player_factions & (1 << G_GetFactionID(key))))
+            continue;
+
         /* A pool is shown once, over its anchor */
-        int pool_id = curr.pool;
         if(curr.pool) {
             struct ss_state *pool = pool_get(curr.pool);
             if(pool && pool->anchor != key)
                 continue;
-            if(pool)
-                curr = *pool;
         }
-
-        bool full = (ui_setting.as_int == SS_UI_SHOW_SELECTED)
-                 && (pool_selected(key, pool_id)
-                     || (hover_setting.as_bool && pool_hovered(key, pool_id)));
-        bool strip = !full && strip_setting.as_bool
-                  && (player_factions & (1 << G_GetFactionID(key)));
-        if(!full && !strip)
+        if(ui_setting.as_int == SS_UI_SHOW_SELECTED && !pool_selected(key, curr.pool))
             continue;
 
         struct obb obb;
         Entity_CurrentOBB(key, &obb, true);
-        if(!G_Fog_ObjExplored(G_GetPlayerControlledFactions(), key, &obb))
+        if(!G_Fog_ObjExplored(player_factions, key, &obb))
             continue;
 
-        if(strip) {
-            if(nstrips < ARR_SIZE(strips)) {
-                strips[nstrips++] = key;
-            }
-            continue;
-        }
-
-        char name[256];
-        pf_snprintf(name, sizeof(name), "__storage_site__.%x", key);
-
-        const vec2_t vres = (vec2_t){1920, 1080};
-        const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
-
-        vec2_t ss_pos = Entity_TopScreenPos(key, adj_vres.x, adj_vres.y);
-        if(!G_OverlayShownAt(ss_pos.x))
-            continue;
-        float garrison = G_Garrison_UIBottom(key);
-        if(garrison > 0.0f) {
-            ss_pos.y += garrison - STRIP_DROP + STRIP_GAP_Y;
-        }
-        struct window_plan plan;
-        plan_window(key, &curr, &plan);
-        if(plan.nnames == 0)
-            continue;
-
-        float cols[WIN_COLS];
-        const float content_w = window_columns(ctx->style.font, &plan, cols);
-        /* The border is drawn inside the window and takes its width off the rows */
-        const int width = ceilf(content_w + 2 * (WIN_PAD_X + ctx->style.window.border) + 2);
-        const int height = ceilf(window_height(&plan));
-        const vec2_t pos = (vec2_t){ss_pos.x - width/2, ss_pos.y + STRIP_DROP};
-        const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BORDER | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
-
-        struct rect adj_bounds = UI_BoundsForAspectRatio(
-            (struct rect){pos.x, pos.y, width, height},
-            vres, adj_vres, ANCHOR_DEFAULT
-        );
-
-        if(nk_begin_with_vres(ctx, name,
-            (struct nk_rect){adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h},
-            flags, (struct nk_vec2i){adj_vres.x, adj_vres.y})) {
-
-            draw_window(ctx, key, &curr, &plan, cols, content_w);
-        }
-        nk_end(ctx);
+        strips[nstrips++] = key;
     });
 
-    nk_style_pop_vec2(ctx);
-    nk_style_pop_style_item(ctx);
-    nk_style_pop_color(ctx);
-
     if(nstrips > 0) {
-        draw_strips(ctx, strips, nstrips);
+        draw_strips(UI_GetContext(), strips, nstrips);
     }
 }
 
@@ -2051,35 +1543,6 @@ static void on_update(void *user, void *event)
     stalloc_clear(&s_eventargs);
 }
 
-static bool save_color(struct nk_color clr, SDL_RWops *stream)
-{
-    struct attr clr_r = (struct attr){
-        .type = TYPE_INT,
-        .val.as_int = clr.r
-    };
-    CHK_TRUE_RET(Attr_Write(stream, &clr_r, "clr_r"));
-
-    struct attr clr_g = (struct attr){
-        .type = TYPE_INT,
-        .val.as_int = clr.g
-    };
-    CHK_TRUE_RET(Attr_Write(stream, &clr_g, "clr_g"));
-
-    struct attr clr_b = (struct attr){
-        .type = TYPE_INT,
-        .val.as_int = clr.b
-    };
-    CHK_TRUE_RET(Attr_Write(stream, &clr_b, "clr_b"));
-
-    struct attr clr_a = (struct attr){
-        .type = TYPE_INT,
-        .val.as_int = clr.a
-    };
-    CHK_TRUE_RET(Attr_Write(stream, &clr_a, "clr_a"));
-
-    return true;
-}
-
 static bool load_color(struct nk_color *out, SDL_RWops *stream)
 {
     struct attr attr;
@@ -2099,40 +1562,6 @@ static bool load_color(struct nk_color *out, SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
     out->a = attr.val.as_int;
-
-    return true;
-}
-
-static bool save_nine_patch(struct nk_nine_slice_texpath *slice, SDL_RWops *stream)
-{
-    struct attr bg_texpath = (struct attr){ .type = TYPE_STRING };
-    pf_strlcpy(bg_texpath.val.as_string, slice->texpath, 
-        sizeof(bg_texpath.val.as_string));
-    CHK_TRUE_RET(Attr_Write(stream, &bg_texpath, "bg_texpath"));
-
-    struct attr bg_left = (struct attr){
-        .type = TYPE_INT,
-        .val.as_int = slice->l
-    };
-    CHK_TRUE_RET(Attr_Write(stream, &bg_left, "bg_left"));
-
-    struct attr bg_right = (struct attr){
-        .type = TYPE_INT,
-        .val.as_int = slice->r
-    };
-    CHK_TRUE_RET(Attr_Write(stream, &bg_right, "bg_right"));
-
-    struct attr bg_top = (struct attr){
-        .type = TYPE_INT,
-        .val.as_int = slice->t
-    };
-    CHK_TRUE_RET(Attr_Write(stream, &bg_top, "bg_top"));
-
-    struct attr bg_bot = (struct attr){
-        .type = TYPE_INT,
-        .val.as_int = slice->b
-    };
-    CHK_TRUE_RET(Attr_Write(stream, &bg_bot, "bg_bot"));
 
     return true;
 }
@@ -2176,6 +1605,33 @@ static bool load_nine_patch(struct nk_nine_slice_texpath *out, SDL_RWops *stream
     out->region[2] = x;
     out->region[3] = y;
 
+    return true;
+}
+
+static bool skip_window_style(SDL_RWops *stream)
+{
+    struct attr attr;
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+
+    struct nk_color clr;
+    struct nk_nine_slice_texpath slice;
+    switch(attr.val.as_int) {
+    case NK_STYLE_ITEM_COLOR:
+        CHK_TRUE_RET(load_color(&clr, stream));
+        break;
+    case NK_STYLE_ITEM_TEXPATH:
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        break;
+    case NK_STYLE_ITEM_NINE_SLICE_TEXPATH:
+        CHK_TRUE_RET(load_nine_patch(&slice, stream));
+        break;
+    default:
+        return false;
+    }
+    /* The border and font colours */
+    CHK_TRUE_RET(load_color(&clr, stream));
+    CHK_TRUE_RET(load_color(&clr, stream));
     return true;
 }
 
@@ -2362,14 +1818,9 @@ static bool storage_site_ui_mode_validate(const struct sval *val)
 {
     if(val->type != ST_TYPE_INT)
         return false;
-    if(val->as_int < SS_UI_SHOW_SELECTED || val->as_int > SS_UI_SHOW_NEVER)
+    if(val->as_int < SS_UI_SHOW_ALWAYS || val->as_int > SS_UI_SHOW_NEVER)
         return false;
     return true;
-}
-
-static bool bool_setting_validate(const struct sval *val)
-{
-    return (val->type == ST_TYPE_BOOL);
 }
 
 /* Throws 'amount' of a resource out of storage onto the ground by the 
@@ -2617,47 +2068,16 @@ bool G_StorageSite_Init(void)
     if(!(s_notes = kh_init(note)))
         goto fail_notes;
 
-    struct nk_context ctx;
-    nk_style_default(&ctx);
-
-    s_bg_style = ctx.style.window.fixed_background;
-    s_border_clr = ctx.style.window.border_color;
-    s_font_clr = ctx.style.text.color;
-
     ss_e status;
     (void)status;
     status = Settings_Create((struct setting){
-        .name = "pf.game.storage_site_ui_mode",
+        .name = "pf.game.storage_site_ui",
         .val = (struct sval) {
             .type = ST_TYPE_INT,
-            .as_int = SS_UI_SHOW_SELECTED
+            .as_int = SS_UI_SHOW_ALWAYS
         },
         .prio = 0,
         .validate = storage_site_ui_mode_validate,
-        .commit = NULL,
-    });
-    assert(status == SS_OKAY);
-
-    status = Settings_Create((struct setting){
-        .name = "pf.game.storage_site_strip",
-        .val = (struct sval) {
-            .type = ST_TYPE_BOOL,
-            .as_bool = true
-        },
-        .prio = 0,
-        .validate = bool_setting_validate,
-        .commit = NULL,
-    });
-    assert(status == SS_OKAY);
-
-    status = Settings_Create((struct setting){
-        .name = "pf.game.storage_site_ui_on_hover",
-        .val = (struct sval) {
-            .type = ST_TYPE_BOOL,
-            .as_bool = false
-        },
-        .prio = 0,
-        .validate = bool_setting_validate,
         .commit = NULL,
     });
     assert(status == SS_OKAY);
@@ -3644,16 +3064,6 @@ int G_StorageSite_GetStorableResources(uint32_t uid, size_t maxout, const char *
     return ss_get_keys(ss, out, maxout);
 }
 
-void G_StorageSite_SetFontColor(const struct nk_color *clr)
-{
-    s_font_clr = *clr;
-}
-
-void G_StorageSite_SetBorderColor(const struct nk_color *clr)
-{
-    s_border_clr = *clr;
-}
-
 const char *G_StorageSite_StripLine(uint32_t uid, const char *rname)
 {
     khiter_t k = kh_get(strip, s_strips, strip_key(uid));
@@ -3663,19 +3073,6 @@ const char *G_StorageSite_StripLine(uint32_t uid, const char *rname)
     const char *key = si_intern(rname, &s_stringpool, s_stridx);
     const struct trend *trend = key ? trend_find(&kh_value(s_strips, k), key) : NULL;
     return trend ? trend->hint : NULL;
-}
-
-void G_StorageSite_SetStripFrame(const char *const paths[FRAME_NUM_PIECES], float width)
-{
-    for(int i = 0; i < FRAME_NUM_PIECES; i++) {
-        pf_strlcpy(s_frame[i], paths[i], sizeof(s_frame[i]));
-    }
-    s_frame_width = width;
-}
-
-void G_StorageSite_SetBackgroundStyle(const struct nk_style_item *style)
-{
-    s_bg_style = *style;
 }
 
 void G_StorageSite_SetShowUI(bool show)
@@ -3912,18 +3309,6 @@ float G_StorageSite_Rate(uint32_t uid, const char *rname)
     return good_rate(uid, rname);
 }
 
-float G_StorageSite_GetWindowHeight(uint32_t uid)
-{
-    struct ss_state *own = ss_state_get(uid);
-    assert(own);
-    struct ss_state *ss = ss_view(uid);
-    if(own->pool && ss->anchor != uid)
-        return 0.0f;
-    struct window_plan plan;
-    plan_window(uid, ss, &plan);
-    return window_height(&plan);
-}
-
 bool G_StorageSite_SaveState(struct SDL_RWops *stream)
 {
     struct attr num_ents = (struct attr){
@@ -4149,40 +3534,6 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
         Sched_TryYield();
     }
 
-    /* save UI style 
-     */
-    struct attr bg_style_type = (struct attr){
-        .type = TYPE_INT,
-        .val.as_int = s_bg_style.type
-    };
-    CHK_TRUE_RET(Attr_Write(stream, &bg_style_type, "bg_style_type"));
-    Sched_TryYield();
-
-    switch(s_bg_style.type) {
-    case NK_STYLE_ITEM_COLOR: {
-
-        CHK_TRUE_RET(save_color(s_bg_style.data.color, stream));
-        break;
-    }
-    case NK_STYLE_ITEM_TEXPATH: {
-
-        struct attr bg_texpath = (struct attr){ .type = TYPE_STRING };
-        pf_strlcpy(bg_texpath.val.as_string, s_bg_style.data.texpath, sizeof(bg_texpath.val.as_string));
-        CHK_TRUE_RET(Attr_Write(stream, &bg_texpath, "bg_texpath"));
-        break;
-    }
-    case NK_STYLE_ITEM_NINE_SLICE_TEXPATH: {
-
-        CHK_TRUE_RET(save_nine_patch(&s_bg_style.data.slice_texpath, stream));
-        break;
-    }
-    default: assert(0);
-    }
-
-    CHK_TRUE_RET(save_color(s_border_clr, stream));
-    CHK_TRUE_RET(save_color(s_font_clr, stream));
-    Sched_TryYield();
-
     struct attr ui_shown = (struct attr){
         .type = TYPE_BOOL,
         .val.as_bool = s_show_ui
@@ -4192,20 +3543,6 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
 
     CHK_TRUE_RET(save_flows(stream));
     Sched_TryYield();
-
-    for(int i = 0; i < FRAME_NUM_PIECES; i++) {
-        struct attr piece = (struct attr){
-            .type = TYPE_STRING
-        };
-        pf_strlcpy(piece.val.as_string, s_frame[i], sizeof(piece.val.as_string));
-        CHK_TRUE_RET(Attr_Write(stream, &piece, s_frame_keys[i]));
-    }
-
-    struct attr frame_width = (struct attr){
-        .type = TYPE_FLOAT,
-        .val.as_float = s_frame_width
-    };
-    CHK_TRUE_RET(Attr_Write(stream, &frame_width, "strip_frame_width"));
 
     return true;
 }
@@ -4426,36 +3763,10 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
         Sched_TryYield();
     }
 
-    /* load UI style 
-     */
-    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-    CHK_TRUE_RET(attr.type == TYPE_INT);
-    s_bg_style.type = attr.val.as_int;
-
-    switch(s_bg_style.type) {
-    case NK_STYLE_ITEM_COLOR: {
-
-        CHK_TRUE_RET(load_color(&s_bg_style.data.color, stream));
-        break;
+    /* Saved with the window over a picked out site: its style is not used */
+    if(Attr_NextKeyIs(stream, "bg_style_type")) {
+        CHK_TRUE_RET(skip_window_style(stream));
     }
-    case NK_STYLE_ITEM_TEXPATH: {
-
-        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-        CHK_TRUE_RET(attr.type == TYPE_STRING);
-        pf_strlcpy(s_bg_style.data.texpath, attr.val.as_string, sizeof(s_bg_style.data.texpath));
-        break;
-    }
-    case NK_STYLE_ITEM_NINE_SLICE_TEXPATH: {
-
-        CHK_TRUE_RET(load_nine_patch(&s_bg_style.data.slice_texpath, stream));
-        break;
-    }
-    default: 
-        return false;
-    }
-
-    CHK_TRUE_RET(load_color(&s_border_clr, stream));
-    CHK_TRUE_RET(load_color(&s_font_clr, stream));
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_BOOL);
@@ -4474,15 +3785,11 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
         }
     }
 
-    if(Attr_NextKeyIs(stream, s_frame_keys[0])) {
-        for(int i = 0; i < FRAME_NUM_PIECES; i++) {
+    /* Saved with the frame the strips once had: five pieces and a width */
+    if(Attr_NextKeyIs(stream, "strip_frame_corner")) {
+        for(int i = 0; i < 6; i++) {
             CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-            CHK_TRUE_RET(attr.type == TYPE_STRING);
-            pf_strlcpy(s_frame[i], attr.val.as_string, sizeof(s_frame[i]));
         }
-        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
-        s_frame_width = attr.val.as_float;
     }
 
     return true;

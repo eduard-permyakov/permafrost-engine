@@ -908,11 +908,11 @@ struct ss_spill_event{
     int         amount;
 };
 
-/* Whether a site's window opens over it when it is picked out, or never; the
- * strip over it shows either way. Numbered from one, as settings from before
- * there was a strip kept a mode of windows over every site at zero */
+/* Whether the strip over each of the player's storage sites shows always, only
+ * over the one picked out, or never */
 enum ss_ui_mode{
-    SS_UI_SHOW_SELECTED = 1,
+    SS_UI_SHOW_ALWAYS = 0,
+    SS_UI_SHOW_SELECTED,
     SS_UI_SHOW_NEVER,
 };
 
@@ -993,10 +993,6 @@ int  G_StorageSite_GetPlayerProduced(const char *rname);
 int  G_StorageSite_GetPlayerConsumed(const char *rname);
 /* Every resource stored, made or used up in the session */
 int  G_StorageSite_GetAllNames(size_t maxout, const char *out[]);
-void G_StorageSite_SetFontColor(const struct nk_color *clr);
-void G_StorageSite_SetBorderColor(const struct nk_color *clr);
-void G_StorageSite_SetBackgroundStyle(const struct nk_style_item *style);
-void G_StorageSite_SetStripFrame(const char *const paths[5], float width);
 const char *G_StorageSite_StripLine(uint32_t uid, const char *rname);
 void G_StorageSite_SetShowUI(bool show);
 bool G_StorageSite_GetDoNotTakeLand(uint32_t uid);
