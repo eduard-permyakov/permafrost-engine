@@ -44,7 +44,6 @@
 #include "lib/public/pf_string.h"
 #include "render/public/render.h"
 #include "render/public/render_ctrl.h"
-#include "render/gl_mem.h"
 #include "settings.h"
 
 #include <mimalloc-stats.h>

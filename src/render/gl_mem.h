@@ -44,51 +44,10 @@
  * R_GL_GetMemoryAccounting.
  */
 
+#include "public/render.h"
+
 #include <stdint.h>
 #include <GL/glew.h>
-
-enum gpu_mem_sys{
-    GPU_MEM_SYS_UNKNOWN = 0,
-    GPU_MEM_SYS_GL_ANIM,
-    GPU_MEM_SYS_GL_BATCH,
-    GPU_MEM_SYS_GL_BILLBOARD,
-    GPU_MEM_SYS_GL_DECAL,
-    GPU_MEM_SYS_GL_FOLIAGE,
-    GPU_MEM_SYS_GL_IMAGE_QUILT,
-    GPU_MEM_SYS_GL_MINIMAP,
-    GPU_MEM_SYS_GL_MOVEMENT,
-    GPU_MEM_SYS_GL_POSITION,
-    GPU_MEM_SYS_GL_RENDER,
-    GPU_MEM_SYS_GL_RINGBUFFER,
-    GPU_MEM_SYS_GL_SHADOWS,
-    GPU_MEM_SYS_GL_SKYBOX,
-    GPU_MEM_SYS_GL_SPRITE,
-    GPU_MEM_SYS_GL_STATUSBAR,
-    GPU_MEM_SYS_GL_SWAPCHAIN,
-    GPU_MEM_SYS_GL_TERRAIN,
-    GPU_MEM_SYS_GL_TEXTURE,
-    GPU_MEM_SYS_GL_TILE,
-    GPU_MEM_SYS_GL_UI,
-    GPU_MEM_SYS_GL_WATER,
-    GPU_MEM_SYS_COUNT
-};
-
-enum gpu_mem_sub{
-    GPU_MEM_SUB_TEXTURE = 0,
-    GPU_MEM_SUB_RENDERBUFFER,
-    GPU_MEM_SUB_BUFFEROBJECT,
-    GPU_MEM_SUB_COUNT
-};
-
-struct gpu_mem_accounting{
-    int64_t sys_bytes[GPU_MEM_SYS_COUNT];
-    int64_t sys_count[GPU_MEM_SYS_COUNT];
-    int64_t sub_bytes[GPU_MEM_SYS_COUNT][GPU_MEM_SUB_COUNT];
-    int64_t sub_count[GPU_MEM_SYS_COUNT][GPU_MEM_SUB_COUNT];
-};
-
-const char *gpu_mem_sys_name(int sys);
-const char *gpu_mem_sub_name(int sub);
 
 #ifndef NDEBUG
 

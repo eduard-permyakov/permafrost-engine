@@ -225,7 +225,7 @@ static void complete(struct builderstate *bs, uint32_t uid)
     size_t ncmds;
     const struct command *cmds = G_Command_Get(uid, &ncmds);
     /* The return to the site it fetched for is moot once the site stands */
-    if(ncmds == 1 && cmds[0].kind == CMD_BUILD && cmds[0].target == done) {
+    if(ncmds == 1 && cmds[0].kind == COMMAND_BUILD && cmds[0].target == done) {
         G_Command_Clear(uid);
         ncmds = 0;
     }
@@ -400,7 +400,7 @@ static bool unfounded_site_queued(uint32_t uid)
     const struct command *cmds = G_Command_Get(uid, &ncmds);
     for(int i = 0; i < ncmds; i++) {
         uint32_t site = cmds[i].target;
-        if(cmds[i].kind != CMD_BUILD || !G_EntityExists(site) || G_EntityIsZombie(site))
+        if(cmds[i].kind != COMMAND_BUILD || !G_EntityExists(site) || G_EntityIsZombie(site))
             continue;
         if((G_FlagsGet(site) & ENTITY_FLAG_BUILDING) && !G_Building_IsFounded(site))
             return true;
@@ -421,7 +421,7 @@ static void proceed_at_site(uint32_t uid, struct builderstate *bs)
         uint32_t site = bs->target_uid;
         bs->state = STATE_NOT_BUILDING;
         bs->target_uid = UID_NONE;
-        G_Command_Push(uid, (struct command){CMD_BUILD, site});
+        G_Command_Push(uid, (struct command){COMMAND_BUILD, site});
         return;
     }
 
@@ -448,7 +448,7 @@ static void proceed_at_site(uint32_t uid, struct builderstate *bs)
             bs->state = STATE_NOT_BUILDING;
             if(ordered && !gathering) {
                 /* Back to it once the materials are in */
-                G_Command_PushFront(uid, (struct command){CMD_BUILD, bs->target_uid});
+                G_Command_PushFront(uid, (struct command){COMMAND_BUILD, bs->target_uid});
             }
         }else if(ordered && (bs->ordered || G_Duty_ByPlayer(uid) || !impatient_now(bs))) {
             /* The materials are on their way with others: it waits at the site for them */
@@ -653,7 +653,7 @@ static bool start_build(uint32_t uid, uint32_t building, bool ordered)
     && !unfounded_site_queued(uid) && G_Harvester_SupplyBuilding(uid, building, false)) {
         bs->state = STATE_NOT_BUILDING;
         bs->target_uid = building;
-        G_Command_PushFront(uid, (struct command){CMD_BUILD, building});
+        G_Command_PushFront(uid, (struct command){COMMAND_BUILD, building});
     }else{
         approach(uid, bs, building);
     }

@@ -59,21 +59,6 @@ void G_Population_RemoveLimitContributor(uint32_t uid);
  */
 void G_Population_UpdateFaction(uint32_t uid, int oldfac, int newfac);
 
-/* Per-entity limit amount setter/getter. The amount only contributes to the
- * faction-wide limit once the building has been completed (the activation is
- * tracked internally via EVENT_BUILDING_CONSTRUCTED). 
- */
-void G_Population_SetEntityLimit(uint32_t uid, int amount);
-int  G_Population_GetEntityLimit(uint32_t uid);
-
-/* Faction-level queries. */
-int  G_Population_Get(int faction_id);
-int  G_Population_GetLimit(int faction_id);
-int  G_Population_GetAllied(int faction_id);
-int  G_Population_GetEnemy(int faction_id);
-int  G_Population_GetPlayer(void);
-int  G_Population_GetPlayerLimit(void);
-
 bool G_Population_SaveState(struct SDL_RWops *stream);
 bool G_Population_LoadState(struct SDL_RWops *stream);
 

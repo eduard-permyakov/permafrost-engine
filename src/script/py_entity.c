@@ -46,11 +46,6 @@
 #include "../asset_load.h"
 #include "../anim/public/anim.h"
 #include "../game/public/game.h"
-#include "../game/duty.h"
-#include "../game/wander.h"
-#include "../game/provision.h"
-#include "../game/population.h"
-#include "../game/command.h"
 #include "../phys/public/phys.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/SDL_vec_rwops.h"
@@ -4598,7 +4593,7 @@ static PyObject *PyBuilderEntity_queue_build(PyBuilderEntityObject *self, PyObje
         return NULL;
     }
 
-    if(G_Command_Push(self->super.ent, (struct command){CMD_BUILD, target})) {
+    if(G_Command_Push(self->super.ent, (struct command){COMMAND_BUILD, target})) {
         Py_RETURN_TRUE;
     }else{
         Py_RETURN_FALSE;

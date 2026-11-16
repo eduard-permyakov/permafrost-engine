@@ -63,7 +63,6 @@ struct ent_stat_rstate;
 struct ent_anim_rstate;
 struct anim_pose_data_desc;
 struct splatmap;
-struct gpu_mem_accounting;
 
 enum render_pass{
     RENDER_PASS_DEPTH,
@@ -101,6 +100,46 @@ struct overlay_vert{
 /*###########################################################################*/
 /* RENDER OPENGL                                                             */
 /*###########################################################################*/
+
+enum gpu_mem_sys{
+    GPU_MEM_SYS_UNKNOWN = 0,
+    GPU_MEM_SYS_GL_ANIM,
+    GPU_MEM_SYS_GL_BATCH,
+    GPU_MEM_SYS_GL_BILLBOARD,
+    GPU_MEM_SYS_GL_DECAL,
+    GPU_MEM_SYS_GL_FOLIAGE,
+    GPU_MEM_SYS_GL_IMAGE_QUILT,
+    GPU_MEM_SYS_GL_MINIMAP,
+    GPU_MEM_SYS_GL_MOVEMENT,
+    GPU_MEM_SYS_GL_POSITION,
+    GPU_MEM_SYS_GL_RENDER,
+    GPU_MEM_SYS_GL_RINGBUFFER,
+    GPU_MEM_SYS_GL_SHADOWS,
+    GPU_MEM_SYS_GL_SKYBOX,
+    GPU_MEM_SYS_GL_SPRITE,
+    GPU_MEM_SYS_GL_STATUSBAR,
+    GPU_MEM_SYS_GL_SWAPCHAIN,
+    GPU_MEM_SYS_GL_TERRAIN,
+    GPU_MEM_SYS_GL_TEXTURE,
+    GPU_MEM_SYS_GL_TILE,
+    GPU_MEM_SYS_GL_UI,
+    GPU_MEM_SYS_GL_WATER,
+    GPU_MEM_SYS_COUNT
+};
+
+enum gpu_mem_sub{
+    GPU_MEM_SUB_TEXTURE = 0,
+    GPU_MEM_SUB_RENDERBUFFER,
+    GPU_MEM_SUB_BUFFEROBJECT,
+    GPU_MEM_SUB_COUNT
+};
+
+struct gpu_mem_accounting{
+    int64_t sys_bytes[GPU_MEM_SYS_COUNT];
+    int64_t sys_count[GPU_MEM_SYS_COUNT];
+    int64_t sub_bytes[GPU_MEM_SYS_COUNT][GPU_MEM_SUB_COUNT];
+    int64_t sub_count[GPU_MEM_SYS_COUNT][GPU_MEM_SUB_COUNT];
+};
 
 /* ---------------------------------------------------------------------------
  * Performs the OpenGL draw calls in order to render the object based on the 
@@ -384,6 +423,8 @@ void   R_GL_ResolvePipelineStats(uint32_t *cookies, struct gpu_frame_stats *out)
  * ---------------------------------------------------------------------------
  */
 void   R_GL_GetMemoryAccounting(struct gpu_mem_accounting *out);
+const char *gpu_mem_sys_name(int sys);
+const char *gpu_mem_sub_name(int sub);
 
 /*###########################################################################*/
 /* RENDER TILES                                                              */

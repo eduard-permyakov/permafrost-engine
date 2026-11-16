@@ -36,6 +36,8 @@
 #ifndef AUTOMATION_H
 #define AUTOMATION_H
 
+#include "public/game.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -54,8 +56,6 @@ bool G_Automation_SavePriorities(struct SDL_RWops *stream);
 bool G_Automation_LoadPriorities(struct SDL_RWops *stream);
 /* The node the worker's own search would send it to for the good, or NULL_UID */
 uint32_t G_Automation_GatherNode(uint32_t uid, const char *rname);
-/* Goods the scheduler treats as one, such as every food; at most 8 members */
-bool G_Automation_SetGoodClass(const char *name, const char *members[], size_t n);
 
 #endif
 

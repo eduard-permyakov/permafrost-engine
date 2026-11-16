@@ -124,7 +124,7 @@ static void queue_erase(vec_cmd_t *queue, int idx)
 static bool command_valid(uint32_t uid, const struct command *cmd)
 {
     switch(cmd->kind) {
-    case CMD_BUILD:
+    case COMMAND_BUILD:
         if(!(G_FlagsGet(uid) & ENTITY_FLAG_BUILDER))
             return false;
         if(!G_EntityExists(cmd->target) || G_EntityIsZombie(cmd->target))
@@ -141,7 +141,7 @@ static bool command_valid(uint32_t uid, const struct command *cmd)
 static bool command_start(uint32_t uid, const struct command *cmd)
 {
     switch(cmd->kind) {
-    case CMD_BUILD:
+    case COMMAND_BUILD:
         return G_Builder_Order(uid, cmd->target);
     default:
         return false;
@@ -154,7 +154,7 @@ static int next_index(uint32_t uid, const vec_cmd_t *queue)
 {
     for(int i = 0; i < vec_size(queue); i++) {
         const struct command *curr = &vec_AT(queue, i);
-        if(curr->kind != CMD_BUILD || !command_valid(uid, curr))
+        if(curr->kind != COMMAND_BUILD || !command_valid(uid, curr))
             continue;
         if(!G_Building_IsFounded(curr->target))
             return i;
@@ -349,7 +349,7 @@ bool G_Command_LoadState(struct SDL_RWops *stream)
             CHK_TRUE_RET(attr.type == TYPE_INT);
             uint32_t target = attr.val.as_int;
 
-            CHK_TRUE_RET(kind == CMD_BUILD);
+            CHK_TRUE_RET(kind == COMMAND_BUILD);
             CHK_TRUE_RET(vec_cmd_push(queue, (struct command){kind, target}));
         }
         Sched_TryYield();

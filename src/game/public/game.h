@@ -438,6 +438,10 @@ bool G_Provision_GetAutomatic(uint32_t uid);
  */
 bool G_Provision_Fetch(uint32_t uid);
 
+/* Whether the unit is on its way to a meal 
+ */
+bool G_Provision_Fetching(uint32_t uid);
+
 /* Has the unit eat from the store it is in or at, if it has room for a meal and the store holds
  * its food. False if it took none. 
  */
@@ -1314,6 +1318,89 @@ float G_Garrison_UIBottom(uint32_t uid);
 void G_Garrison_SetEvictOnLeftClick(void);
 
 /*###########################################################################*/
+/* GAME DUTIES                                                               */
+/*###########################################################################*/
+
+#define DUTY_GOOD_LEN (32)
+
+/* What a worker is at, kept through every interruption of it: a meal, a
+ * flight, a trip to drop a load off, a wait for materials 
+ */
+enum duty_kind{
+    DUTY_NONE,
+    /* Gathering a good; the target is the store its loads go to */
+    DUTY_GATHER,
+    /* Raising a site, supplying it and fetching for it included */
+    DUTY_BUILD,
+    /* Keeping a store or site supplied with what it asks for */
+    DUTY_SUPPLY,
+    /* Holding a post of a workshop */
+    DUTY_POST,
+    /* Going into a building to be made into something else */
+    DUTY_INGREDIENT
+};
+
+enum duty_by{
+    DUTY_BY_PLAYER,
+    DUTY_BY_CITY,
+    DUTY_BY_AUTO
+};
+
+struct duty{
+    enum duty_kind kind;
+    enum duty_by   by;
+    uint32_t       target;
+    char           good[DUTY_GOOD_LEN];
+    uint32_t       since_tick;
+    /* A supplier with nothing to carry, standing by its target for the next request */
+    bool           waiting;
+    int            fails;
+};
+
+/* Who gives the unit's next duty; a unit with a duty has that one's giver changed 
+ */
+void G_Duty_SetBy(uint32_t uid, enum duty_by by);
+
+/* Who gives the unit's next duty, whatever it holds now 
+ */
+void G_Duty_TagNext(uint32_t uid, enum duty_by by);
+void G_Duty_End(uint32_t uid, const char *why);
+bool G_Duty_Get(uint32_t uid, struct duty *out);
+
+/* Ticks since the duty was taken on; 0 without one 
+ */
+uint32_t G_Duty_AgeTicks(uint32_t uid);
+const char *G_Duty_KindName(enum duty_kind kind);
+const char *G_Duty_ByName(enum duty_by by);
+bool G_Duty_ParseBy(const char *name, enum duty_by *out);
+
+/*###########################################################################*/
+/* GAME COMMANDS                                                             */
+/*###########################################################################*/
+
+/* The orders a unit is given to carry out one after another, once the work
+ * it is at comes to an end. 
+ */
+enum command_kind{
+    COMMAND_BUILD,
+};
+
+struct command{
+    enum command_kind kind;
+    uint32_t          target;
+};
+
+/* Queue an order behind the unit's others. One with no work to do takes it up
+ * at once. 
+ */
+bool G_Command_Push(uint32_t uid, struct command cmd);
+void G_Command_Clear(uint32_t uid);
+
+/* The unit's orders, in turn, until the queue next changes 
+ */
+const struct command *G_Command_Get(uint32_t uid, size_t *out_count);
+
+/*###########################################################################*/
 /* GAME AUTOMATION                                                           */
 /*###########################################################################*/
 
@@ -1394,6 +1481,10 @@ void G_Automation_MakePlayerManaged(uint32_t uid);
  */
 void G_Automation_JoinCity(uint32_t uid, int district);
 
+/* Who a script order given not as the player's is on behalf of 
+ */
+enum duty_by G_Automation_ManagedBy(uint32_t uid);
+
 /* The realm's settings for how its automation goes about the work, by name:
  * carry_share, build_share, reach, breadth, man_workshops, pull_to_build, roam_far 
  */
@@ -1437,6 +1528,10 @@ void G_Automation_TraceFollowOn(uint32_t uid, const char *kind, const char *why,
  */
 void  G_Automation_SetGoodWeight(int faction, const char *rname, float weight);
 float G_Automation_GetGoodWeight(int faction, const char *rname);
+
+/* Goods the scheduler treats as one, such as every food; at most 8 members 
+ */
+bool  G_Automation_SetGoodClass(const char *name, const char *members[], size_t n);
 
 /* The spare stock of the good a faction's gatherers keep up beyond what is asked for 
  */
@@ -1580,6 +1675,42 @@ uint32_t G_Posts_Evict(uint32_t workshop);
 /* Lets the unit go from its post, the post left open; false when it holds none 
  */
 bool     G_Posts_Leave(uint32_t unit);
+
+/*###########################################################################*/
+/* GAME POPULATION                                                           */
+/*###########################################################################*/
+
+/* Per-entity limit amount setter/getter. The amount only contributes to the
+ * faction-wide limit once the building has been completed (the activation is
+ * tracked internally via EVENT_BUILDING_CONSTRUCTED). 
+ */
+void G_Population_SetEntityLimit(uint32_t uid, int amount);
+int  G_Population_GetEntityLimit(uint32_t uid);
+
+/* Faction-level queries. 
+ */
+int  G_Population_Get(int faction_id);
+int  G_Population_GetLimit(int faction_id);
+int  G_Population_GetAllied(int faction_id);
+int  G_Population_GetEnemy(int faction_id);
+int  G_Population_GetPlayer(void);
+int  G_Population_GetPlayerLimit(void);
+
+/*###########################################################################*/
+/* GAME WANDER                                                               */
+/*###########################################################################*/
+
+/* Roams the entity about 'anchor', within 'radius': a few short walks with a
+ * pause between them, then a long rest, and so on 
+ */
+bool G_Wander_Start(uint32_t uid, vec2_t anchor, float radius);
+void G_Wander_Stop(uint32_t uid);
+bool G_Wander_Active(uint32_t uid);
+
+/* The wanderer runs from 'threat' for 'seconds' at 'speed', then settles and
+ * makes its way back 
+ */
+bool G_Wander_Flee(uint32_t uid, vec2_t threat, float seconds, float speed);
 
 #endif
 
