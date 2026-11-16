@@ -3154,7 +3154,8 @@ int G_StorageSite_Surplus(uint32_t uid, const char *rname)
     case SS_CHIP_OFF:
         return curr;
     case SS_CHIP_RELAY:
-        return MAX(curr - MAX(desired + held, working), 0);
+        /* A relay passes on even what it would work from */
+        return MAX(curr - (desired + held), 0);
     default:
         return MAX(curr - MAX(MAX(desired, working), G_StorageSite_GetKeep(uid, rname) + held), 0);
     }
