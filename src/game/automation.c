@@ -823,6 +823,18 @@ static void settled_as(uint32_t uid, enum worker_state state)
     }
 }
 
+/* An idle unit given work wakes at once: left idle with its new duty, it
+ * would be taken for one that could not take its duty up, and lose it */
+static void wake_for_work(uint32_t uid)
+{
+    struct automation_state *astate = astate_get(uid);
+    if(astate && astate->state == STATE_IDLE) {
+        astate->state = STATE_WAKING;
+        astate->transient_ticks = 0;
+        astate->idle_walk = false;
+    }
+}
+
 /* A post first; then carrying and building take their share of the workers,
  * and any with nothing else to do after */
 static bool try_find_job(uint32_t uid)
@@ -1822,6 +1834,7 @@ static enum request_status send_feeder(const struct job_request *req, const char
     G_Duty_TagNext(best, by_of(astate));
     if(!G_Harvester_GatherGoodFor(best, req->site, rname))
         return REQUEST_UNREACHABLE;
+    wake_for_work(best);
     if(!best_idle) {
         note_reassigned(best, astate);
     }
@@ -1990,6 +2003,7 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
             }
             if(!G_Harvester_TransportJob(carrier, srcm, dstm, req->rname, amount))
                 continue;
+            wake_for_work(carrier);
 
             struct automation_state *astate = astate_get(carrier);
             if(astate) {
