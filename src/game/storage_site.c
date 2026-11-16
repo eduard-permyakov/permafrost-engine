@@ -1288,9 +1288,11 @@ static void draw_strip(struct nk_command_buffer *canvas, const struct nk_user_fo
     if(width == 0.0f && nmade == 0)
         return;
 
-    /* The rows start together at an edge that full rows of goods are centred
-     * from, wherever they end, so that the strip keeps its place over the anchor */
-    const float left = anchor.x - (STRIP_ROW_GOODS * cell_w + (STRIP_ROW_GOODS - 1) * STRIP_GAP) / 2.0f;
+    /* The rows start together at an edge that centres the columns of goods
+     * shown over the anchor, the other rows running on to the right, so that
+     * the strip moves only when a column comes or goes */
+    const size_t centred = MAX(ncols, 1);
+    const float left = anchor.x - (centred * cell_w + (centred - 1) * STRIP_GAP) / 2.0f;
     const float y = anchor.y + STRIP_DROP;
     const float text_dy = (STRIP_ICON_SZ - font->height) / 2.0f;
     float row_y = y;
