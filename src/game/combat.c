@@ -2825,9 +2825,9 @@ static struct combat_cmd *snoop_most_recent_command(enum combat_cmd_type type, v
     return NULL;
 }
 
-static enum movement_hz event_to_hz(enum eventtype event)
+static enum combat_hz event_to_hz(enum eventtype event)
 {
-    static const enum movement_hz mapping[] = {
+    static const enum combat_hz mapping[] = {
         [EVENT_10HZ_TICK] = COMBAT_HZ_10,
         [EVENT_5HZ_TICK] = COMBAT_HZ_5,
         [EVENT_1HZ_TICK] = COMBAT_HZ_1,
