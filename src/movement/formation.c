@@ -3855,6 +3855,10 @@ static void complete_cell_field_work(struct subformation *formation, bool yield)
         struct cell_field_work *curr = &vec_AT(&formation->futures, j);
         if(curr->tid == NULL_TID)
             continue;
+        if(yield) {
+            Sched_AwaitAll(&curr->tid, &curr->future, 1);
+            continue;
+        }
         while(!Sched_FutureIsReady(&curr->future)) {
             Sched_RunSync(curr->tid);
             if(yield) {
@@ -4949,6 +4953,10 @@ static void complete_cell_assignment_work(struct cell_assignment_work *work, boo
 {
     if(work->tid == NULL_TID)
         return;
+    if(yield) {
+        Sched_AwaitAll(&work->tid, &work->future, 1);
+        return;
+    }
 
     while(!Sched_FutureIsReady(&work->future)) {
         Sched_RunSync(work->tid);

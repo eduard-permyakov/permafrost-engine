@@ -239,11 +239,7 @@ static void phys_filter_out_of_bounds(void)
 
 static void phys_proj_join_work(void)
 {
-    for(int i = 0; i < s_work.ntasks; i++) {
-        while(!Sched_FutureIsReady(&s_work.futures[i])) {
-            Sched_RunSync(s_work.tids[i]);
-        }
-    }
+    Sched_AwaitAll(s_work.tids, s_work.futures, s_work.ntasks);
 }
 
 static void phys_proj_finish_work(void)

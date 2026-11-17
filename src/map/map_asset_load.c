@@ -46,6 +46,7 @@
 #include "../navigation/public/nav.h"
 #include "../game/public/game.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/lockfree.h"
 #include "../mem.h"
 #include "../ui.h"
 #include "../perf.h"
@@ -895,9 +896,20 @@ void M_AL_FreeCopyWithFields(struct map *map)
     PF_FREE(map);
 }
 
+/* The last freed snapshot buffer, taken by the next snapshot: a fresh
+ * allocation of this size comes from new pages, each faulted in and zeroed. A
+ * snapshot may be freed on any thread. */
+static struct map *s_spare_snapshot;
+
 struct map *M_AL_SnapshotShared(const struct map *src)
 {
-    struct map *ret = PF_MALLOC(M_AL_ShallowCopySize(src->width, src->height));
+    struct map *ret = LF_XCHG(&s_spare_snapshot, NULL, LF_ACQ);
+    if(ret && (ret->width != src->width || ret->height != src->height)) {
+        PF_FREE(ret);
+        ret = NULL;
+    }
+    if(!ret)
+        ret = PF_MALLOC(M_AL_ShallowCopySize(src->width, src->height));
     if(!ret)
         return NULL;
 
@@ -913,7 +925,8 @@ struct map *M_AL_SnapshotShared(const struct map *src)
 void M_AL_FreeSnapshotShared(struct map *map)
 {
     N_FreeReaderCtx(map->nav_private);
-    PF_FREE(map);
+    struct map *old = LF_XCHG(&s_spare_snapshot, map, LF_AR);
+    PF_FREE(old);
 }
 
 bool M_AL_WritePFMap(const struct map *map, SDL_RWops *stream)

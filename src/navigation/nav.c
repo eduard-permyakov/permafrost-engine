@@ -3608,10 +3608,7 @@ static struct result field_task(void *arg)
 
     if(in->merge && in->base_slot) {
         size_t base = in->base_slot - 1;
-        while(!Sched_FutureIsReady(&s_field_work.futures[base])) {
-            if(!Sched_RunSync(s_field_work.tids[base]))
-                Sched_TryYield();
-        }
+        Sched_AwaitAll(&s_field_work.tids[base], &s_field_work.futures[base], 1);
         out->field = vec_AT(&s_field_work.out, base).field;
         out->field.patched = 0;
     }else if(!in->merge) {
