@@ -84,7 +84,10 @@ enum{
     TASK_DETACHED           = (1 << 1),
     TASK_BIG_STACK          = (1 << 2),
     TASK_RUN_DURING_PAUSE   = (1 << 3),
-    TASK_SCRIPT             = (1 << 4)
+    TASK_SCRIPT             = (1 << 4),
+    /* Runs on the main thread at least once in every scheduler tick, even
+     * past the frame's deadline: for light, latency-sensitive work only */
+    TASK_REALTIME           = (1 << 5)
 };
 
 typedef struct result (*task_func_t)(void *);
@@ -104,10 +107,12 @@ void     Sched_Tick(void);
 /* Park the workers at their next yield point; the frame's buffers may be
  * swapped once this returns. */
 void     Sched_QuiesceWorkers(void);
-/* Where the last Sched_Tick spent its time: running main-thread tasks, and
- * waiting for the workers to finish their slices at the end of the frame.
+/* Where the last Sched_Tick spent its time: running main-thread tasks, waiting
+ * for the workers to finish their slices at the end of the frame, and running
+ * the realtime tasks.
  */
-void     Sched_LastTickTimes(uint64_t *out_task_us, uint64_t *out_quiesce_us);
+void     Sched_LastTickTimes(uint64_t *out_task_us, uint64_t *out_quiesce_us,
+                             uint64_t *out_rt_us);
 uint32_t Sched_Create(int prio, task_func_t code, void *arg, const char *name,
                      struct future *result, int flags);
 uint32_t Sched_CreateBlocking(int prio, task_func_t code, void *arg, const char *name,

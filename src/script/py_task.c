@@ -126,6 +126,7 @@ typedef struct {
     const char *regname;
     uint32_t sleep_elapsed;
     bool small_stack;
+    bool realtime;
 }PyTaskObject;
 
 KHASH_MAP_INIT_INT(task, PyTaskObject*)
@@ -785,8 +786,11 @@ static PyObject *PyTask_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     if(kwds) {
         PyObject *smallstack = PyDict_GetItemString(kwds, "small_stack");
         self->small_stack = (smallstack && PyObject_IsTrue(smallstack));
+        PyObject *realtime = PyDict_GetItemString(kwds, "realtime");
+        self->realtime = (realtime && PyObject_IsTrue(realtime));
     }else{
         self->small_stack = false;
+        self->realtime = false;
     }
 
     Py_INCREF(func);
@@ -916,7 +920,8 @@ static PyObject *PyTask_pickle(PyTaskObject *self, PyObject *args, PyObject *kwa
     ctx->deferred_free(ctx->private_ctx, sleep_elapsed);
     CHK_TRUE(status, fail_pickle);
 
-    PyObject *small_stack = PyInt_FromLong(self->small_stack);
+    /* The realtime flag rides in the stack word's second bit */
+    PyObject *small_stack = PyInt_FromLong(self->small_stack | (self->realtime << 1));
     status = ctx->pickle_obj(ctx->private_ctx, small_stack, ctx->stream);
     ctx->deferred_free(ctx->private_ctx, small_stack);
     CHK_TRUE(status, fail_pickle);
@@ -1042,7 +1047,8 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
     ret->state = PyInt_AS_LONG(state);
     ret->runfunc = func == Py_None ? NULL : (Py_INCREF(func), func);
     ret->sleep_elapsed = PyInt_AS_LONG(sleep_elapsed);
-    ret->small_stack = PyInt_AS_LONG(small_stack);
+    ret->small_stack = PyInt_AS_LONG(small_stack) & 0x1;
+    ret->realtime = (PyInt_AS_LONG(small_stack) >> 1) & 0x1;
     ret->stack_depth = PyInt_AS_LONG(stack_depth);
 
     if(ret->state == PYTASK_STATE_RUNNING) {
@@ -1050,6 +1056,8 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
         int flags = TASK_MAIN_THREAD_PINNED | TASK_SCRIPT;
         if(!ret->small_stack)
             flags |= TASK_BIG_STACK;
+        if(ret->realtime)
+            flags |= TASK_REALTIME;
 
         assert(ret->ts->frame->f_stacktop);
         if(!pytask_depths_rebuild(ret)) {
@@ -1114,6 +1122,8 @@ static PyObject *PyTask_run(PyTaskObject *self)
     int flags = TASK_MAIN_THREAD_PINNED | TASK_SCRIPT;
     if(!self->small_stack)
         flags |= TASK_BIG_STACK;
+    if(self->realtime)
+        flags |= TASK_REALTIME;
 
     self->tid = pytask_schedule(self, 16, py_task, self, NULL, flags);
 

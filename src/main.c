@@ -418,8 +418,8 @@ static double span_us(enum frame_stamp from, enum frame_stamp to)
  */
 static void frame_prof_report(bool enabled)
 {
-    uint64_t task_us, quiesce_us;
-    Sched_LastTickTimes(&task_us, &quiesce_us);
+    uint64_t task_us, quiesce_us, rt_us;
+    Sched_LastTickTimes(&task_us, &quiesce_us, &rt_us);
     uint64_t ev_us[E_TIME_NBUCKETS];
     E_LastServiceTimes(ev_us);
     if(!enabled)
@@ -446,7 +446,7 @@ static void frame_prof_report(bool enabled)
         stage[1], stage[2], stage[3], stage[4], stage[5], stage[6]);
 
     fprintf(stdout, "[frame-prof] %lu,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%lu,%lu,%.0f,%.0f,"
-        "%lu,%lu,%lu,%lu,%d,%d,%u,%u\n",
+        "%lu,%lu,%lu,%lu,%d,%d,%u,%u,%lu\n",
         g_frame_idx, frame_us,
         span_us(FT_BEGIN, FT_EVENTS),
         span_us(FT_EVENTS, FT_EVENTS_DONE),
@@ -458,7 +458,7 @@ static void frame_prof_report(bool enabled)
         span_us(FT_RENDER_WAIT_DONE, FT_SWAP_DONE),
         (unsigned long)s_rstate.t_cmds_us, (unsigned long)s_rstate.t_present_us,
         (unsigned long)s_rstate.t_swap_us, (unsigned long)s_rstate.t_gpu_us,
-        ncands, nvis, ninterp, interp_us);
+        ncands, nvis, ninterp, interp_us, (unsigned long)rt_us);
 }
 
 static bool engine_init(void)

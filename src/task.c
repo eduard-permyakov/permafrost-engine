@@ -132,7 +132,7 @@ static struct result timeserver_task(void *arg)
     Task_SetDestructor(timeserver_exit, &descs);
 
     struct future res;
-    uint32_t notifier = Task_Create(0, tick_notifier, NULL, "tick_notifier", &res, 0);
+    uint32_t notifier = Task_Create(0, tick_notifier, NULL, "tick_notifier", &res, TASK_REALTIME);
 
     while(1) {
         struct ts_req request;
@@ -438,6 +438,6 @@ void Task_CreateServices(void)
 {
     ASSERT_IN_MAIN_THREAD();
     s_ns_tid = Sched_Create(0, nameserver_task, NULL, "nameserver", NULL, 0);
-    s_ts_tid = Sched_Create(0, timeserver_task, NULL, "timeserver", NULL, 0);
+    s_ts_tid = Sched_Create(0, timeserver_task, NULL, "timeserver", NULL, TASK_REALTIME);
 }
 

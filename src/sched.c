@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB 0
 
 #include "sched.h"
+#include "sched_stats.h"
 #include "config.h"
 #include "perf.h"
 #include "main.h"
@@ -171,6 +172,10 @@ struct task{
     struct task   *prev, *next;
     void          *earg;
     void         (*erelease)(void*);
+    void          *code;
+    uint64_t       ready_ts;
+    int            last_thread;
+    uint64_t       rt_pass;
 #if defined(__SANITIZE_ADDRESS__)
     void          *fake_stack;   /* ASan fiber fake-stack save slot */
     void          *entry_code;   /* real task fn, invoked via the ASan entry shim */
@@ -186,6 +191,7 @@ __pragma(pack(pop));
 #define MAX_WORKER_THREADS      (64)
 #define STACK_SZ                (16 * 1024)
 #define SLOW_SLICE_US           (3000.0)
+#define SLOW_RT_SLICE_US        (1000.0)
 #define BIG_STACK_SZ            (8 * 1024 * 1024)
 #define SCHED_TICK_MS           (1.0f / CONFIG_SCHED_TARGET_FPS * 1000.0f)
 /* The least of the frame budget the task loop keeps when the frame's tail
@@ -238,6 +244,11 @@ static khash_t(tqueue)        *s_event_queues;
 /* Lock used to serialzie the scheduler requests */
 static SDL_mutex              *s_request_lock;
 
+#define REQ_LOCK()      SchedStats_Lock(s_request_lock, SLK_REQ)
+#define REQ_UNLOCK()    SchedStats_Unlock(s_request_lock, SLK_REQ)
+#define READY_LOCK()    SchedStats_Lock(s_ready_lock, SLK_READY)
+#define READY_UNLOCK()  SchedStats_Unlock(s_ready_lock, SLK_READY)
+
 /* The active worker threads wait on the ready cond to be 
  * notified when the ready queue(s) becomes non-empty, so that
  * they can pop a task to execute. At the end of a frame, the 
@@ -253,6 +264,10 @@ static SDL_mutex              *s_request_lock;
  */
 static pq_task_t        s_ready_queue;
 static pq_task_t        s_ready_queue_main;
+/* Realtime tasks: served by the main thread, each at least once a tick */
+static pq_task_t        s_ready_queue_rt;
+static uint64_t         s_rt_pass;
+static uint64_t         s_tick_rt_ticks;
 
 static SDL_mutex       *s_ready_lock;
 static SDL_cond        *s_ready_cond;
@@ -274,6 +289,9 @@ static struct{
     SDL_atomic_t  next;
     SDL_atomic_t  done;
     SDL_atomic_t  active;
+    uint64_t      work_self;
+    uint64_t      work_others;
+    uint64_t      thread_mask;
 }s_parallel_batch;
 static SDL_mutex       *s_parallel_lock;
 static SDL_cond        *s_parallel_cond;
@@ -578,26 +596,37 @@ static void sched_task_free(struct task *task)
 
 static void sched_reactivate(struct task *task)
 {
-    SDL_LockMutex(s_ready_lock); 
+    READY_LOCK(); 
     task->state = TASK_STATE_READY;
+    task->ready_ts = SchedStats_Now();
 
-    if(task->flags & TASK_MAIN_THREAD_PINNED) {
+    if(task->flags & TASK_REALTIME) {
+        pq_task_push(&s_ready_queue_rt, task->prio, task);
+    }else if(task->flags & TASK_MAIN_THREAD_PINNED) {
         pq_task_push(&s_ready_queue_main, task->prio, task);
     }else{
         pq_task_push(&s_ready_queue, task->prio, task);
+        SchedStats_ReadyIntegrate(pq_size(&s_ready_queue), s_nwaiters);
     }
 
     SDL_CondSignal(s_ready_cond);
-    SDL_UnlockMutex(s_ready_lock);
+    SchedStats_Count(SC_SIGNALS, 1);
+    READY_UNLOCK();
 }
 
 static void sched_reactivate_on_main(struct task *task)
 {
-    SDL_LockMutex(s_ready_lock); 
+    READY_LOCK(); 
     task->state = TASK_STATE_READY;
-    pq_task_push(&s_ready_queue_main, task->prio, task);
+    task->ready_ts = SchedStats_Now();
+    if(task->flags & TASK_REALTIME) {
+        pq_task_push(&s_ready_queue_rt, task->prio, task);
+    }else{
+        pq_task_push(&s_ready_queue_main, task->prio, task);
+    }
     SDL_CondSignal(s_ready_cond);
-    SDL_UnlockMutex(s_ready_lock);
+    SchedStats_Count(SC_SIGNALS, 1);
+    READY_UNLOCK();
 }
 
 #ifndef _MSC_VER
@@ -646,6 +675,9 @@ static void sched_task_init(struct task *task, int prio, uint32_t flags,
                             void *code, void *arg, const char *name,
                             struct future *future, uint32_t parent)
 {
+    if(flags & TASK_REALTIME)
+        flags |= TASK_MAIN_THREAD_PINNED;
+
     task->prio = prio;
     task->parent_tid = parent;
     task->flags = flags;
@@ -657,6 +689,9 @@ static void sched_task_init(struct task *task, int prio, uint32_t flags,
     task->future = future;
     task->earg = NULL;
     task->erelease = NULL;
+    task->code = code;
+    task->last_thread = -1;
+    task->rt_pass = 0;
 
     if(task->future) {
         SDL_AtomicSet(&task->future->status, FUTURE_INCOMPLETE);    
@@ -883,6 +918,17 @@ static bool sched_wait(struct task *task, uint32_t child_tid)
     return true;
 }
 
+static int sched_lat_class(const struct task *task)
+{
+    if(task->flags & TASK_REALTIME)
+        return SL_REALTIME;
+    if(task->flags & TASK_SCRIPT)
+        return SL_SCRIPT;
+    if(task->flags & TASK_MAIN_THREAD_PINNED)
+        return SL_MAIN;
+    return SL_GENERAL;
+}
+
 static void sched_task_run(struct task *task)
 {
     assert(sched_curr_thread_tid() == NULL_TID);
@@ -895,6 +941,17 @@ static void sched_task_run(struct task *task)
     pf_snprintf(name, sizeof(name), "Task %03u [%s]", task->tid, task->name);
     PERF_PUSH(name);
 
+    int self = SchedStats_Self();
+    SchedStats_Latency(sched_lat_class(task), SchedStats_Now() - task->ready_ts);
+    SchedStats_Count(SC_SLICES, 1);
+    if(task->last_thread >= 0 && task->last_thread != self)
+        SchedStats_Count(SC_SLICES_MIGRATED, 1);
+    task->last_thread = self;
+    bool under_req = SchedStats_HoldsLock(SLK_REQ);
+    SchedStats_SetRunning(task->code);
+    SchedStats_Set(SS_TASK);
+    uint64_t t0 = SchedStats_Now();
+
     if(SDL_ThreadID() == g_main_thread_id) {
         SCHED_SWITCH(&s_main_ctx, &task->ctx, task->retval, task->arg,
             &s_main_fake_stack, task->stackmem, SCHED_TASK_STACK_SZ(task));
@@ -902,6 +959,15 @@ static void sched_task_run(struct task *task)
         int id = sched_curr_thread_worker_id();
         SCHED_SWITCH(&s_worker_contexts[id], &task->ctx, task->retval, task->arg,
             &s_worker_fake_stack[id], task->stackmem, SCHED_TASK_STACK_SZ(task));
+    }
+
+    uint64_t slice = SchedStats_Now() - t0;
+    SchedStats_Set(SS_SCHED);
+    SchedStats_SetRunning(NULL);
+    SchedStats_Slice(task->code, task->name, slice);
+    if(under_req) {
+        SchedStats_Count(SC_SLICES_UNDER_REQ, 1);
+        SchedStats_Time(ST_SLICE_UNDER_REQ, slice);
     }
 
     PERF_POP();
@@ -932,7 +998,8 @@ static void sched_task_shutdown(struct task *task)
 static void sched_task_service_request(struct task *task)
 {
     assert(sched_curr_thread_tid() == NULL_TID);
-    SDL_LockMutex(s_request_lock);
+    SchedStats_Count(SC_REQ_FIRST + (int)task->req.type, 1);
+    REQ_LOCK();
 
     switch((int)task->req.type) {
     case SCHED_REQ_CREATE:
@@ -1009,10 +1076,10 @@ static void sched_task_service_request(struct task *task)
          * claimed; run its slice off the lock, the way the workers do.
          */
         struct task *requested = &s_tasks[((uint32_t)task->req.argv[0]) - 1];
-        SDL_UnlockMutex(s_request_lock);
+        REQ_UNLOCK();
         sched_task_run(requested);
         sched_task_service_request(requested);
-        SDL_LockMutex(s_request_lock);
+        REQ_LOCK();
         sched_reactivate(task);
         break;
     }
@@ -1025,7 +1092,7 @@ static void sched_task_service_request(struct task *task)
         task->earg = NULL;
     }
 
-    SDL_UnlockMutex(s_request_lock);
+    REQ_UNLOCK();
 }
 
 static void sched_signal_worker_quit(int id)
@@ -1071,10 +1138,10 @@ static void sched_init_thread_worker_id_map(void)
 
 static void sched_wait_workers_done(void)
 {
-    SDL_LockMutex(s_ready_lock);
+    READY_LOCK();
     while(s_idle_workers < s_nworkers)
-        SDL_CondWait(s_ready_cond, s_ready_lock);
-    SDL_UnlockMutex(s_ready_lock);
+        SchedStats_CondWait(s_ready_cond, s_ready_lock, SLK_READY, SS_BARRIER, -1);
+    READY_UNLOCK();
 
     assert(s_idle_workers == s_nworkers);
     assert(s_nwaiters == 0);
@@ -1082,10 +1149,10 @@ static void sched_wait_workers_done(void)
 
 static void sched_wait_workers_idle(int count)
 {
-    SDL_LockMutex(s_ready_lock);
+    READY_LOCK();
     while(s_idle_workers < count)
-        SDL_CondWait(s_ready_cond, s_ready_lock);
-    SDL_UnlockMutex(s_ready_lock);
+        SchedStats_CondWait(s_ready_cond, s_ready_lock, SLK_READY, SS_IDLE, -1);
+    READY_UNLOCK();
 }
 
 static void sched_quiesce_workers(void)
@@ -1093,10 +1160,10 @@ static void sched_quiesce_workers(void)
     ASSERT_IN_MAIN_THREAD();
     PERF_ENTER();
 
-    SDL_LockMutex(s_ready_lock);
+    READY_LOCK();
     s_quiesce = true;
     SDL_CondBroadcast(s_ready_cond);
-    SDL_UnlockMutex(s_ready_lock);
+    READY_UNLOCK();
 
     sched_wait_workers_done();
 
@@ -1106,19 +1173,21 @@ static void sched_quiesce_workers(void)
 
 static void worker_wait_on_cmd(int id)
 {
+    SchedStats_Set(SS_OUTSIDE);
     SDL_LockMutex(s_worker_locks[id]);
     while(!s_worker_start[id] && !s_worker_quit[id])
         SDL_CondWait(s_worker_conds[id], s_worker_locks[id]);
     s_worker_start[id] = false;
     SDL_UnlockMutex(s_worker_locks[id]);
+    SchedStats_Set(SS_SCHED);
 }
 
 static void worker_notify_done(int id)
 {
-    SDL_LockMutex(s_ready_lock);
+    READY_LOCK();
     s_idle_workers++;
     SDL_CondSignal(s_ready_cond);
-    SDL_UnlockMutex(s_ready_lock);
+    READY_UNLOCK();
 }
 
 static bool sched_parallel_claimable(void)
@@ -1127,7 +1196,7 @@ static bool sched_parallel_claimable(void)
         && SDL_AtomicGet(&s_parallel_batch.next) < s_parallel_batch.nitems;
 }
 
-static bool sched_parallel_claim_one(void)
+static bool sched_parallel_claim_one(bool submitter)
 {
     int chunk = s_parallel_batch.chunk;
     int begin = SDL_AtomicAdd(&s_parallel_batch.next, chunk);
@@ -1136,7 +1205,19 @@ static bool sched_parallel_claim_one(void)
         return false;
 
     int end = (begin + chunk > nitems) ? (nitems - 1) : (begin + chunk - 1);
+    int prev = SchedStats_Set(SS_RANGE);
+    uint64_t t0 = SchedStats_Now();
     s_parallel_batch.func(begin, end, s_parallel_batch.arg);
+    uint64_t work = SchedStats_Now() - t0;
+    SchedStats_Set(prev);
+    SchedStats_Count(SC_RANGES, 1);
+    if(g_sched_stats_on) {
+        int self = SchedStats_Self();
+        __atomic_fetch_add(submitter ? &s_parallel_batch.work_self : &s_parallel_batch.work_others,
+            work, __ATOMIC_RELAXED);
+        if(self >= 0)
+            __atomic_fetch_or(&s_parallel_batch.thread_mask, 1ull << (self & 63), __ATOMIC_RELAXED);
+    }
 
     int ndone = SDL_AtomicAdd(&s_parallel_batch.done, end - begin + 1) + (end - begin + 1);
     if(ndone == nitems) {
@@ -1149,38 +1230,51 @@ static bool sched_parallel_claim_one(void)
 
 static void sched_parallel_drain(void)
 {
-    while(sched_parallel_claim_one()) {}
+    while(sched_parallel_claim_one(false)) {}
 }
 
 static struct task *worker_wait_task_or_quiesce(void)
 {
     struct task *task = NULL;
 
-    SDL_LockMutex(s_ready_lock);
+    READY_LOCK();
     s_nwaiters++;
+    SchedStats_ReadyIntegrate(pq_size(&s_ready_queue), s_nwaiters);
 
     if(s_nwaiters == s_nworkers) {
         SDL_CondBroadcast(s_ready_cond);
+        SchedStats_Count(SC_SIGNALS, 1);
     }
 
+    bool woken = false;
     while(!s_quiesce && !pq_task_pop(&s_ready_queue, &task)) {
+
+        if(woken)
+            SchedStats_Count(SC_FUTILE_WAKES, 1);
+        woken = false;
 
         if(sched_parallel_claimable()) {
             s_nwaiters--;
-            SDL_UnlockMutex(s_ready_lock);
+            SchedStats_ReadyIntegrate(pq_size(&s_ready_queue), s_nwaiters);
+            READY_UNLOCK();
             sched_parallel_drain();
-            SDL_LockMutex(s_ready_lock);
+            READY_LOCK();
             s_nwaiters++;
+            SchedStats_ReadyIntegrate(pq_size(&s_ready_queue), s_nwaiters);
             if(s_nwaiters == s_nworkers) {
                 SDL_CondBroadcast(s_ready_cond);
+                SchedStats_Count(SC_SIGNALS, 1);
             }
             continue;
         }
-        SDL_CondWait(s_ready_cond, s_ready_lock);
+        SchedStats_CondWait(s_ready_cond, s_ready_lock, SLK_READY, SS_IDLE, -1);
+        SchedStats_Count(SC_WAKEUPS, 1);
+        woken = true;
     }
 
     s_nwaiters--;
-    SDL_UnlockMutex(s_ready_lock);
+    SchedStats_ReadyIntegrate(pq_size(&s_ready_queue), s_nwaiters);
+    READY_UNLOCK();
     return task;
 }
 
@@ -1193,14 +1287,21 @@ static void worker_do_work(int id)
             return;
 
         assert(task);
+        bool lowprio = sched_parallel_claimable();
+        uint64_t t0 = SchedStats_Now();
         sched_task_run(task);
         sched_task_service_request(task);
+        if(lowprio) {
+            SchedStats_Count(SC_LOWPRIO_IN_BATCH, 1);
+            SchedStats_Time(ST_LOWPRIO_IN_BATCH, SchedStats_Now() - t0);
+        }
     }
 }
 
 static int worker_threadfn(void *arg)
 {
     int id = (uintptr_t)arg;
+    SchedStats_RegisterThread(id + 1);
 #if defined(__SANITIZE_ADDRESS__)
     sched_asan_capture_self_stack(&s_worker_stack_lo[id], &s_worker_stack_sz[id]);
 #endif
@@ -1227,22 +1328,28 @@ static int tasks_compare(void *a, void *b)
 
 static bool do_run_sync(uint32_t tid, bool dequeue)
 {
-    SDL_LockMutex(s_request_lock);
+    int prev_state = SchedStats_Set(SS_SCHED);
+    REQ_LOCK();
     bool ret = false;
 
     struct task *task = &s_tasks[tid - 1];
     if(dequeue) {
-        if(task->state != TASK_STATE_READY)
+        if(task->state != TASK_STATE_READY) {
+            SchedStats_Count(SC_RUNSYNC_MISS, 1);
             goto out;
+        }
         if(!(task->flags & TASK_DETACHED))
             goto out;
 
         bool found = false;
-        SDL_LockMutex(s_ready_lock);
+        READY_LOCK();
         found = pq_task_remove(&s_ready_queue, tasks_compare, task) 
-             || pq_task_remove(&s_ready_queue_main, tasks_compare, task);
-        SDL_UnlockMutex(s_ready_lock);
+             || pq_task_remove(&s_ready_queue_main, tasks_compare, task)
+             || pq_task_remove(&s_ready_queue_rt, tasks_compare, task);
+        SchedStats_ReadyIntegrate(pq_size(&s_ready_queue), s_nwaiters);
+        READY_UNLOCK();
 
+        SchedStats_Count(found ? SC_RUNSYNC_HIT : SC_RUNSYNC_MISS, 1);
         if(!found)
             goto out;
     }
@@ -1258,13 +1365,13 @@ static bool do_run_sync(uint32_t tid, bool dequeue)
          * task would otherwise pin the request lock for its whole slice, and
          * the owner could never get in to service that task's request.
          */
-        SDL_UnlockMutex(s_request_lock);
+        REQ_UNLOCK();
         sched_task_run(task);
         sched_task_service_request(task);
-        SDL_LockMutex(s_request_lock);
+        REQ_LOCK();
 
     }else if(!idle && !pinned_off_main) {
-        SDL_UnlockMutex(s_request_lock);
+        REQ_UNLOCK();
         S_Task_MaybeExit();
 
         Sched_Request((struct request){
@@ -1273,7 +1380,7 @@ static bool do_run_sync(uint32_t tid, bool dequeue)
         });
 
         S_Task_MaybeEnter();
-        SDL_LockMutex(s_request_lock);
+        REQ_LOCK();
     }else{
         /* Idle worker holding a main-pinned task: hand it to the main ready queue
          * instead of running it off the main thread. */
@@ -1282,16 +1389,17 @@ static bool do_run_sync(uint32_t tid, bool dequeue)
     ret = true;
 
 out:
-    SDL_UnlockMutex(s_request_lock);
+    REQ_UNLOCK();
+    SchedStats_Set(prev_state);
     return ret;
 }
 
 static bool work_exists(void)
 {
     bool ret;
-    SDL_LockMutex(s_ready_lock);
-    ret = pq_size(&s_ready_queue_main) || pq_size(&s_ready_queue);
-    SDL_UnlockMutex(s_ready_lock);
+    READY_LOCK();
+    ret = pq_size(&s_ready_queue_rt) || pq_size(&s_ready_queue_main) || pq_size(&s_ready_queue);
+    READY_UNLOCK();
     return ret;
 }
 
@@ -1301,46 +1409,96 @@ static bool can_run_during_pause(void *arg)
     return (task->flags & TASK_RUN_DURING_PAUSE);
 }
 
+static bool can_run_any(void *arg)
+{
+    return true;
+}
+
+static bool can_run_in_rt_pass(void *arg)
+{
+    struct task *task = *(struct task**)arg;
+    return (task->rt_pass != s_rt_pass)
+        && (G_GetSimState() == G_RUNNING || (task->flags & TASK_RUN_DURING_PAUSE));
+}
+
+/* Pops the most urgent task of the queue that the predicate accepts */
+static bool pop_runnable(pq_task_t *queue, struct task **out, bool pred(void*))
+{
+    if(pred == can_run_any)
+        return pq_task_pop(queue, out);
+
+    int best = -1;
+    for(int i = 1; i <= queue->size; i++) {
+        if(!pred(&queue->nodes[i].data))
+            continue;
+        if(best < 0 || queue->nodes[i].priority < queue->nodes[best].priority)
+            best = i;
+    }
+    if(best < 0)
+        return false;
+    *out = queue->nodes[best].data;
+    return pq_task_remove(queue, tasks_compare, *out);
+}
+
+/* Realtime tasks come first, then the ones only the main thread can run, and
+ * the general ones last: the workers serve those too. */
 static struct task *next_main_thread_task(void)
 {
     struct task *ret = NULL;
-    if(G_GetSimState() == G_RUNNING) {
+    bool (*pred)(void*) = (G_GetSimState() == G_RUNNING) ? can_run_any : can_run_during_pause;
 
-        SDL_LockMutex(s_ready_lock);
-        if(pq_size(&s_ready_queue_main) || pq_size(&s_ready_queue)) {
+    READY_LOCK();
+    if(pop_runnable(&s_ready_queue_rt, &ret, pred)) {
+        /* nothing */
+    }else if(pop_runnable(&s_ready_queue_main, &ret, pred)) {
+        /* nothing */
+    }else if(pop_runnable(&s_ready_queue, &ret, pred)) {
+        SchedStats_ReadyIntegrate(pq_size(&s_ready_queue), s_nwaiters);
+    }
+    READY_UNLOCK();
+    return ret;
+}
 
-            float prio_main = -1.0, prio_gen = -1.0;
-            pq_task_top_prio(&s_ready_queue_main, &prio_main);
-            pq_task_top_prio(&s_ready_queue, &prio_gen);
+static struct task *next_rt_pass_task(void)
+{
+    struct task *ret = NULL;
+    READY_LOCK();
+    pop_runnable(&s_ready_queue_rt, &ret, can_run_in_rt_pass);
+    READY_UNLOCK();
+    return ret;
+}
 
-            if(prio_gen > prio_main) {
-                pq_task_pop(&s_ready_queue, &ret);
-            }else {
-                pq_task_pop(&s_ready_queue_main, &ret);
-            }
-        }
-        SDL_UnlockMutex(s_ready_lock);
-        return ret;
+/* With the perf log on, a realtime slice that is not light says so, by name */
+static void log_slow_rt_slice(const char *name, uint64_t ticks)
+{
+    double us = ticks * 1e6 / SDL_GetPerformanceFrequency();
+    if(us < SLOW_RT_SLICE_US)
+        return;
+    struct sval setting;
+    if(Settings_Get("pf.debug.log_perf_csv", &setting) != SS_OKAY || !setting.as_bool)
+        return;
+    fprintf(stdout, "[slow-rt] %lu,%.0f,%s\n", g_frame_idx, us, name);
+}
 
-    }else{
-        /* During a pause, only the tasks with the TASK_RUN_DURING_PAUSE
-         * flag can run. */
-        SDL_LockMutex(s_ready_lock);
+/* Every ready realtime task runs once, whatever the deadline. A task made
+ * ready again by its own slice waits for the deadline loop, so the pass ends;
+ * one woken by another's slice still runs in it.
+ */
+static void sched_run_realtime(void)
+{
+    s_rt_pass++;
+    struct task *curr;
+    while((curr = next_rt_pass_task())) {
 
-        if(pq_size(&s_ready_queue_main) || pq_size(&s_ready_queue)) {
-
-            float prio_main = -1.0, prio_gen = -1.0;
-            pq_task_top_prio_of(&s_ready_queue_main, &prio_main, can_run_during_pause);
-            pq_task_top_prio_of(&s_ready_queue, &prio_gen, can_run_during_pause);
-
-            if(prio_gen > prio_main) {
-                pq_task_pop_matching(&s_ready_queue, &ret, can_run_during_pause);
-            }else {
-                pq_task_pop_matching(&s_ready_queue_main, &ret, can_run_during_pause);
-            }
-        }
-        SDL_UnlockMutex(s_ready_lock);
-        return ret;
+        curr->rt_pass = s_rt_pass;
+        uint64_t t0 = SDL_GetPerformanceCounter();
+        char name[64];
+        pf_strlcpy(name, curr->name ? curr->name : "?", sizeof(name));
+        sched_task_run(curr);
+        sched_task_service_request(curr);
+        uint64_t slice = SDL_GetPerformanceCounter() - t0;
+        s_tick_rt_ticks += slice;
+        log_slow_rt_slice(name, slice);
     }
 }
 
@@ -1388,6 +1546,10 @@ bool Sched_Init(void)
     if(!pq_task_reserve(&s_ready_queue_main, MAX_TASKS))
         goto fail_ready_queue_main;
 
+    pq_task_init(&s_ready_queue_rt);
+    if(!pq_task_reserve(&s_ready_queue_rt, MAX_TASKS))
+        goto fail_ready_queue_rt;
+
     s_parallel_lock = SDL_CreateMutex();
     if(!s_parallel_lock)
         goto fail_parallel_lock;
@@ -1419,6 +1581,11 @@ bool Sched_Init(void)
 
     /* On a single-core system, all the tasks will just be run on the main thread */
     s_nworkers = SDL_GetCPUCount() - 1;
+    const char *nworkers_env = getenv("PF_SCHED_WORKERS");
+    if(nworkers_env && atoi(nworkers_env) >= 0 && atoi(nworkers_env) < MAX_WORKER_THREADS)
+        s_nworkers = atoi(nworkers_env);
+    SchedStats_Init(s_nworkers + 1);
+    SchedStats_RegisterThread(0);
 
     for(int i = 0; i < s_nworkers; i++) {
 
@@ -1474,6 +1641,8 @@ fail_msg_queue:
 fail_parallel_cond:
     SDL_DestroyMutex(s_parallel_lock);
 fail_parallel_lock:
+    pq_task_destroy(&s_ready_queue_rt);
+fail_ready_queue_rt:
     pq_task_destroy(&s_ready_queue_main);
 fail_ready_queue_main:
     pq_task_destroy(&s_ready_queue);
@@ -1496,6 +1665,7 @@ fail_thread_tid_map:
 void Sched_Shutdown(void)
 {
     ASSERT_IN_MAIN_THREAD();
+    SchedStats_Shutdown();
 
     uint32_t key;
     queue_tid_t curr;
@@ -1516,6 +1686,7 @@ void Sched_Shutdown(void)
     SDL_DestroyMutex(s_request_lock);
     pq_task_destroy(&s_ready_queue);
     pq_task_destroy(&s_ready_queue_main);
+    pq_task_destroy(&s_ready_queue_rt);
 
     for(int i = 0; i < s_nworkers; i++) {
         sched_signal_worker_quit(i);
@@ -1533,7 +1704,8 @@ void Sched_Shutdown(void)
 void Sched_HandleEvent(int event, void *arg, int event_source, bool immediate)
 {
     ASSERT_IN_MAIN_THREAD();
-    SDL_LockMutex(s_request_lock);
+    int prev_state = SchedStats_Set(SS_SCHED);
+    REQ_LOCK();
 
     queue_tid_t torun = {0};
     if(immediate)
@@ -1566,6 +1738,7 @@ void Sched_HandleEvent(int event, void *arg, int event_source, bool immediate)
         task->retval = sched_retain_arg(task, event, event_source, arg);
 
         if(immediate) {
+            task->ready_ts = SchedStats_Now();
             queue_tid_push(&torun, &tid);
         }else{
             sched_reactivate(task);
@@ -1584,12 +1757,14 @@ void Sched_HandleEvent(int event, void *arg, int event_source, bool immediate)
 out:
     if(immediate)
         queue_tid_destroy(&torun);
-    SDL_UnlockMutex(s_request_lock);
+    REQ_UNLOCK();
+    SchedStats_Set(prev_state);
 }    
 
 void Sched_StartBackgroundTasks(void)
 {
     ASSERT_IN_MAIN_THREAD();
+    SchedStats_FrameReport();
 
     if(s_loop_end_pc) {
         double tail_us = (SDL_GetPerformanceCounter() - s_loop_end_pc)
@@ -1597,9 +1772,9 @@ void Sched_StartBackgroundTasks(void)
         s_frame_tail_ema_us = 0.8 * s_frame_tail_ema_us + 0.2 * tail_us;
     }
 
-    SDL_LockMutex(s_ready_lock);
+    READY_LOCK();
     s_idle_workers = 0;
-    SDL_UnlockMutex(s_ready_lock);
+    READY_UNLOCK();
 
     for(int i = 0; i < s_nworkers; i++) {
     
@@ -1636,6 +1811,8 @@ void Sched_Tick(void)
     const uint64_t min_deadline = SDL_GetPerformanceCounter() + (uint64_t)(SCHED_MIN_SLICE_US * freq / 1e6);
     if(deadline < min_deadline)
         deadline = min_deadline;
+    SchedStats_Set(SS_SCHED);
+    sched_run_realtime();
 
     /* Use a do-while to ensure we're always making at least _some_ forward progress */
     do{
@@ -1646,8 +1823,9 @@ void Sched_Tick(void)
         /* The predicate, the cond-wait, and the s_quiesce update all share
          * s_ready_lock. Holding it across the loop prevents a sched_reactivate
          * signal from racing the wait's enqueue and being lost. */
-        SDL_LockMutex(s_ready_lock);
-        while(pq_size(&s_ready_queue_main) == 0
+        READY_LOCK();
+        while(pq_size(&s_ready_queue_rt) == 0
+           && pq_size(&s_ready_queue_main) == 0
            && pq_size(&s_ready_queue) == 0
            && ((nwaiters = s_nwaiters) < s_nworkers)
            && ((idle = s_idle_workers) < s_nworkers)
@@ -1660,14 +1838,16 @@ void Sched_Tick(void)
             /* The cond-wait is millisecond-granular; the last stretch is
              * spun so the frame lands on the budget, not a tick past it. */
             if(left_us >= 2000) {
-                SDL_CondWaitTimeout(s_ready_cond, s_ready_lock, left_us / 1000 - 1);
+                SchedStats_CondWait(s_ready_cond, s_ready_lock, SLK_READY, SS_IDLE, left_us / 1000 - 1);
             }else{
-                SDL_UnlockMutex(s_ready_lock);
+                READY_UNLOCK();
+                SchedStats_Set(SS_IDLE);
                 SDL_Delay(0);
-                SDL_LockMutex(s_ready_lock);
+                SchedStats_Set(SS_SCHED);
+                READY_LOCK();
             }
         }
-        SDL_UnlockMutex(s_ready_lock);
+        READY_UNLOCK();
 
         /* When the ready queue is empty and all the workers are in a state of waiting, 
          * there is no more work to be done. In that case, let's not waste any more time. 
@@ -1691,6 +1871,7 @@ void Sched_Tick(void)
 
     }while(SDL_GetPerformanceCounter() < deadline);
 
+    SchedStats_Set(SS_OUTSIDE);
     s_loop_end_pc = SDL_GetPerformanceCounter();
     PERF_RETURN_VOID();
 }
@@ -1703,21 +1884,23 @@ void Sched_QuiesceWorkers(void)
     s_tick_quiesce_ticks += SDL_GetPerformanceCounter() - q0;
 }
 
-void Sched_LastTickTimes(uint64_t *out_task_us, uint64_t *out_quiesce_us)
+void Sched_LastTickTimes(uint64_t *out_task_us, uint64_t *out_quiesce_us, uint64_t *out_rt_us)
 {
     double us = 1e6 / SDL_GetPerformanceFrequency();
     *out_task_us = s_tick_task_ticks * us;
     *out_quiesce_us = s_tick_quiesce_ticks * us;
+    *out_rt_us = s_tick_rt_ticks * us;
     s_tick_task_ticks = 0;
     s_tick_quiesce_ticks = 0;
+    s_tick_rt_ticks = 0;
 }
 
 uint32_t Sched_Create(int prio, task_func_t code, void *arg, const char *name, 
                       struct future *result, int flags)
 {
-    SDL_LockMutex(s_request_lock);
+    REQ_LOCK();
     uint32_t ret = sched_create(prio, code, arg, name, result, flags | TASK_DETACHED, NULL_TID);
-    SDL_UnlockMutex(s_request_lock);
+    REQ_UNLOCK();
     return ret;
 }
 
@@ -1737,8 +1920,12 @@ void Sched_AwaitAll(const uint32_t *tids, const struct future *futures, size_t n
         return;
 
     if(n == 1) {
-        while(!Sched_FutureIsReady(&futures[0]))
-            Sched_RunSync(tids[0]);
+        int prev = SchedStats_Set(SS_SPIN);
+        while(!Sched_FutureIsReady(&futures[0])) {
+            if(!Sched_RunSync(tids[0]))
+                SchedStats_Count(SC_AWAIT_POLLS, 1);
+        }
+        SchedStats_Set(prev);
         return;
     }
 
@@ -1760,8 +1947,10 @@ void Sched_AwaitAll(const uint32_t *tids, const struct future *futures, size_t n
             if(helped)
                 Sched_TryYield();
         }
-        if(pending)
+        if(pending) {
+            SchedStats_Count(SC_AWAIT_POLLS, 1);
             Sched_TryYield();
+        }
     }while(pending);
 }
 
@@ -1778,6 +1967,10 @@ void Sched_ParallelFor(void (*fn)(int begin, int end, void *arg), void *arg,
     s_parallel_batch.arg = arg;
     s_parallel_batch.nitems = nitems;
     s_parallel_batch.chunk = chunk;
+    s_parallel_batch.work_self = 0;
+    s_parallel_batch.work_others = 0;
+    s_parallel_batch.thread_mask = 0;
+    uint64_t t0 = SchedStats_Now();
     SDL_AtomicSet(&s_parallel_batch.done, 0);
     SDL_AtomicSet(&s_parallel_batch.next, 0);
     SDL_AtomicSet(&s_parallel_batch.active, 1);
@@ -1785,24 +1978,30 @@ void Sched_ParallelFor(void (*fn)(int begin, int end, void *arg), void *arg,
     /* Broadcast under the ready lock so a worker between its predicate check
      * and the cond wait cannot miss the wake.
      */
-    SDL_LockMutex(s_ready_lock);
+    READY_LOCK();
     SDL_CondBroadcast(s_ready_cond);
-    SDL_UnlockMutex(s_ready_lock);
+    READY_UNLOCK();
 
     /* A submitting fiber must stay preemptible between ranges: the per-frame
      * worker quiesce blocks the main thread until the fiber's host yields.
      * On a native thread the try-yield is a no-op.
      */
-    while(sched_parallel_claim_one()) {
+    while(sched_parallel_claim_one(true)) {
         Sched_TryYield();
     }
 
+    int prev = SchedStats_Set(SS_JOIN);
     SDL_LockMutex(s_parallel_lock);
     while(SDL_AtomicGet(&s_parallel_batch.done) < (int)nitems) {
         SDL_CondWait(s_parallel_cond, s_parallel_lock);
     }
     SDL_UnlockMutex(s_parallel_lock);
+    SchedStats_Set(prev);
 
+    SchedStats_Batch((void*)fn, nitems, SchedStats_Now() - t0,
+        __atomic_load_n(&s_parallel_batch.work_self, __ATOMIC_RELAXED),
+        __atomic_load_n(&s_parallel_batch.work_others, __ATOMIC_RELAXED),
+        __builtin_popcountll(__atomic_load_n(&s_parallel_batch.thread_mask, __ATOMIC_RELAXED)));
     SDL_AtomicSet(&s_parallel_batch.active, 0);
 }
 
@@ -1811,7 +2010,7 @@ void Sched_ClearState(void)
     ASSERT_IN_MAIN_THREAD();
 
     sched_quiesce_workers();
-    SDL_LockMutex(s_ready_lock);
+    READY_LOCK();
 
     while(pq_size(&s_ready_queue)) {
         struct task *curr = NULL;
@@ -1825,7 +2024,13 @@ void Sched_ClearState(void)
         sched_task_cleanup(curr);
     }
 
-    SDL_UnlockMutex(s_ready_lock);
+    while(pq_size(&s_ready_queue_rt)) {
+        struct task *curr = NULL;
+        pq_task_pop(&s_ready_queue_rt, &curr);
+        sched_task_cleanup(curr);
+    }
+
+    READY_UNLOCK();
 
     for(khiter_t k = kh_begin(s_event_queues); k != kh_end(s_event_queues); k++) {
         if(!kh_exist(s_event_queues, k))
@@ -1945,9 +2150,11 @@ uint32_t Sched_CreateBlocking(int prio, task_func_t code, void *arg, const char 
 
         if(ret == NULL_TID) {
 
-            SDL_LockMutex(s_ready_lock); 
-            status = pq_task_pop(&s_ready_queue_main, &task) || pq_task_pop(&s_ready_queue, &task);
-            SDL_UnlockMutex(s_ready_lock);
+            READY_LOCK(); 
+            status = pq_task_pop(&s_ready_queue_rt, &task)
+                  || pq_task_pop(&s_ready_queue_main, &task)
+                  || pq_task_pop(&s_ready_queue, &task);
+            READY_UNLOCK();
 
             if(status) {
                 sched_task_run(task);
@@ -1985,6 +2192,9 @@ void Sched_Flush(void)
     while(pq_task_pop(&s_ready_queue_main, &curr)) {
         do_run_sync(curr->tid, false);
     }
+    while(pq_task_pop(&s_ready_queue_rt, &curr)) {
+        do_run_sync(curr->tid, false);
+    }
     s_flushing = false;
 }
 
@@ -1992,35 +2202,36 @@ bool Sched_HasBlocked(void)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    SDL_LockMutex(s_ready_lock); 
+    READY_LOCK(); 
     bool ret = (pq_size(&s_ready_queue) > 0)
-            || (pq_size(&s_ready_queue_main) > 0);
-    SDL_UnlockMutex(s_ready_lock);
+            || (pq_size(&s_ready_queue_main) > 0)
+            || (pq_size(&s_ready_queue_rt) > 0);
+    READY_UNLOCK();
     return ret;
 }
 
 bool Sched_IsReady(uint32_t tid)
 {
     bool ret = false;
-    SDL_LockMutex(s_request_lock);
+    REQ_LOCK();
     ret = s_tasks[tid - 1].state == TASK_STATE_READY;
-    SDL_UnlockMutex(s_request_lock);
+    REQ_UNLOCK();
     return ret;
 }
 
 bool Sched_IsEventBlocked(uint32_t tid)
 {
     bool ret = false;
-    SDL_LockMutex(s_request_lock);
+    REQ_LOCK();
     ret = s_tasks[tid - 1].state == TASK_STATE_EVENT_BLOCKED;
-    SDL_UnlockMutex(s_request_lock);
+    REQ_UNLOCK();
     return ret;
 }
 
 bool Sched_TryCancel(uint32_t tid)
 {
     bool ret = false;
-    SDL_LockMutex(s_request_lock);
+    REQ_LOCK();
 
     struct task *task = &s_tasks[tid - 1];
     if(task->state == TASK_STATE_EVENT_BLOCKED) {
@@ -2058,7 +2269,7 @@ bool Sched_TryCancel(uint32_t tid)
         }
         sched_task_shutdown(task);
     }
-    SDL_UnlockMutex(s_request_lock);
+    REQ_UNLOCK();
     return ret;
 }
 
@@ -2071,7 +2282,7 @@ bool Sched_AbortScriptBlocked(uint32_t tid)
 {
     ASSERT_IN_MAIN_THREAD();
     bool ret = false;
-    SDL_LockMutex(s_request_lock);
+    REQ_LOCK();
 
     struct task *task = &s_tasks[tid - 1];
     assert(task->flags & TASK_SCRIPT);
@@ -2116,7 +2327,7 @@ bool Sched_AbortScriptBlocked(uint32_t tid)
         break;
     }
 
-    SDL_UnlockMutex(s_request_lock);
+    REQ_UNLOCK();
     return ret;
 }
 
