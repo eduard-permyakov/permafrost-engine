@@ -5437,15 +5437,6 @@ void Move_Formation_ConcedeCell(uint32_t uid)
     cell->member = MEMBER_CONCEDED;
 }
 
-bool Move_Formation_ArrivedAtCell(uint32_t uid)
-{
-    ASSERT_MAIN_OR_GATHER();
-
-    struct formation *formation = formation_for_ent(uid);
-    assert(formation);
-    return arrived_at_cell(uid, cell_for_ent(formation, uid));
-}
-
 /* A cell is done holding others up once its member stands on it for good or
  * has given it up.
  */
@@ -5589,15 +5580,6 @@ void Move_Formation_Arrange(enum formation_type type, vec_entity_t *ents)
     vec2_t orientation = Move_Formation_AutoOrientation(target, &filtered);
     Move_ArrangeInFormation(&filtered, target, orientation, type);
     vec_entity_destroy(&filtered);
-}
-
-quat_t Move_Formation_TargetOrientation(uint32_t uid)
-{
-    ASSERT_IN_MAIN_THREAD();
-
-    struct formation *formation = formation_for_ent(uid);
-    assert(formation);
-    return quat_from_vec(formation->orientation);
 }
 
 void Move_Formation_SetPreferred(uint32_t uid, enum formation_type type)
@@ -5777,14 +5759,6 @@ static vec2_t alignment_force(uint32_t uid, struct subformation *sub, vec2_t ori
     return ret;
 }
 
-vec2_t Move_Formation_AlignmentForce(uint32_t uid)
-{
-    ASSERT_MAIN_OR_GATHER();
-
-    struct formation *formation = formation_for_ent(uid);
-    return alignment_force(uid, subformation_for_ent(formation, uid), formation->orientation);
-}
-
 static vec2_t cohesion_force(uint32_t uid, struct subformation *sub, vec2_t orientation)
 {
     if(sub->state == SUBFORMATION_COMPUTING_ASSIGNMENT)
@@ -5812,14 +5786,6 @@ static vec2_t cohesion_force(uint32_t uid, struct subformation *sub, vec2_t orie
     }
 
     return follow_force(uid, sub);
-}
-
-vec2_t Move_Formation_CohesionForce(uint32_t uid)
-{
-    ASSERT_MAIN_OR_GATHER();
-
-    struct formation *formation = formation_for_ent(uid);
-    return cohesion_force(uid, subformation_for_ent(formation, uid), formation->orientation);
 }
 
 static vec2_t drag_force(uint32_t uid, struct subformation *sub, vec2_t orientation)
@@ -5907,12 +5873,6 @@ static bool submit_state(uint32_t uid, struct formation_submit_state *out)
     out->target_orientation = quat_from_vec(formation->orientation);
     out->speed = formation->speed;
     return true;
-}
-
-bool Move_Formation_SubmitState(uint32_t uid, struct formation_submit_state *out)
-{
-    ASSERT_IN_MAIN_THREAD();
-    return submit_state(uid, out);
 }
 
 /* The same reads from the movement submit's parallel gather: the main thread

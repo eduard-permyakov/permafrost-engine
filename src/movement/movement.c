@@ -7888,24 +7888,6 @@ bool Move_GetDest(uint32_t uid, vec2_t *out_xz, bool *out_attack)
     return true;
 }
 
-bool Move_GetSurrounding(uint32_t uid, uint32_t *out_uid)
-{
-    struct move_cmd *cmd = snoop_most_recent_command(MOVE_CMD_SET_SURROUND_ENTITY,
-        (void*)(uintptr_t)uid, uids_match, false);
-
-    if(cmd) {
-        *out_uid = cmd->u.surround.target;
-        return true;
-    }
-
-    struct movestate *ms = movestate_get(uid);
-    assert(ms);
-    if(ms->state != STATE_SURROUND_ENTITY)
-        return false;
-    *out_uid = ms->surround_target_uid;
-    return true;
-}
-
 bool Move_SeekingFiringPosition(uint32_t uid)
 {
     /* Also read by the submit gather's workers while the main thread is

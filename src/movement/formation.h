@@ -72,17 +72,13 @@ bool           Move_Formation_CanUseArrivalField(uint32_t uid);
 vec2_t         Move_Formation_DesiredArrivalVelocity(uint32_t uid);
 vec2_t         Move_Formation_ApproximateDesiredArrivalVelocity(uint32_t uid);
 bool           Move_Formation_AssignmentReady(uint32_t uid);
-bool           Move_Formation_ArrivedAtCell(uint32_t uid);
 void           Move_Formation_ConcedeCell(uint32_t uid);
 bool           Move_Formation_AssignedToCell(uint32_t uid);
 vec2_t         Move_Formation_CellPosition(uint32_t uid);
-quat_t         Move_Formation_TargetOrientation(uint32_t uid);
 void           Move_Formation_UpdateFieldIfNeeded(uint32_t uid);
 float          Move_Formation_Speed(uint32_t uid);
 enum formation_type Move_Formation_Type(formation_id_t fid);
 
-vec2_t         Move_Formation_CohesionForce(uint32_t uid);
-vec2_t         Move_Formation_AlignmentForce(uint32_t uid);
 vec2_t         Move_Formation_DragForce(uint32_t uid);
 
 /* All the per-entity formation state read by the movement submit loop,
@@ -107,7 +103,6 @@ struct formation_submit_state{
     float          speed;
 };
 
-bool           Move_Formation_SubmitState(uint32_t uid, struct formation_submit_state *out);
 bool           Move_Formation_SubmitStateGather(uint32_t uid, struct formation_submit_state *out);
 void           Move_Formation_SetGatherActive(bool active);
 

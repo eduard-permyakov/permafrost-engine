@@ -234,7 +234,6 @@ void Move_FilterPathable(const vec_entity_t *ents, vec_entity_t *out);
 
 bool Move_Still(uint32_t uid);
 bool Move_GetDest(uint32_t uid, vec2_t *out_xz, bool *out_attack);
-bool Move_GetSurrounding(uint32_t uid, uint32_t *out_uid);
 bool Move_IsFleeing(uint32_t uid);
 
 /*###########################################################################*/
