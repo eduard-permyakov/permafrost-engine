@@ -40,6 +40,7 @@ Download the free demo on [Steam](https://store.steampowered.com/app/1309720/EVE
 * Directional light shadow mapping
 * Bump mapping, normal mapping, parallax mapping
 * Terrain texture splatting
+* BC3 Texture Compression
 * Skybox
 * Distance-based mesh level-of-detal (LOD) rendering
 * Billboarding for efficient rendering of huge numbers of distant entities
