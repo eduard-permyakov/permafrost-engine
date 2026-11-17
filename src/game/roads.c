@@ -164,6 +164,14 @@ static uint8_t *tile_at(struct road_desc rd)
     return &s_tiles[rd.r * s_cols + rd.c];
 }
 
+static void tile_bounds(struct road_desc rd, vec2_t *out_min, vec2_t *out_max)
+{
+    out_max->x = s_map_pos.x - rd.c * ROAD_TILE_X_DIM;
+    out_min->x = out_max->x - ROAD_TILE_X_DIM;
+    out_min->z = s_map_pos.z + rd.r * ROAD_TILE_Z_DIM;
+    out_max->z = out_min->z + ROAD_TILE_Z_DIM;
+}
+
 static bool present(struct road_desc rd)
 {
     return in_bounds(rd) && (*tile_at(rd) & ROAD_PRESENT);
@@ -231,7 +239,7 @@ static void refresh_decal(int idx)
     }
 
     vec2_t min, max;
-    G_Roads_Bounds(rd, &min, &max);
+    tile_bounds(rd, &min, &max);
 
     struct decal_desc desc = (struct decal_desc){
         .pos = (vec2_t){(min.x + max.x) / 2.0f, (min.z + max.z) / 2.0f},
@@ -345,7 +353,7 @@ static void render_chunk(int chunk_r, int chunk_c)
             continue;
 
         vec2_t min, max;
-        G_Roads_Bounds(rd, &min, &max);
+        tile_bounds(rd, &min, &max);
 
         vec2_t inner_min = (vec2_t){min.x + inset, min.z + inset};
         vec2_t inner_max = (vec2_t){max.x - inset, max.z - inset};
@@ -430,7 +438,7 @@ static void render_refused(int first, int ntiles)
     for(int i = first; i < first + ntiles; i++) {
         int idx = vec_AT(&s_refused, i);
         vec2_t min, max;
-        G_Roads_Bounds((struct road_desc){idx / s_cols, idx % s_cols}, &min, &max);
+        tile_bounds((struct road_desc){idx / s_cols, idx % s_cols}, &min, &max);
 
         for(int r = 0; r < ROAD_TILE_SPAN; r++) {
         for(int c = 0; c < ROAD_TILE_SPAN; c++) {
@@ -475,7 +483,7 @@ static struct overlay_vert grid_vert(float x, float z, vec2_t centre)
 static size_t build_grid(struct road_desc centre)
 {
     vec2_t min, max;
-    G_Roads_Bounds(centre, &min, &max);
+    tile_bounds(centre, &min, &max);
     vec2_t middle = (vec2_t){(min.x + max.x) / 2.0f, (min.z + max.z) / 2.0f};
 
     struct overlay_vert *out = s_grid_verts;
@@ -605,7 +613,7 @@ static void retain_tileset(bool retain)
 static void set_nav_road(struct road_desc rd, bool on)
 {
     vec2_t min, max;
-    G_Roads_Bounds(rd, &min, &max);
+    tile_bounds(rd, &min, &max);
     M_NavSetRoad(s_map, min, max, on);
 }
 
@@ -617,7 +625,7 @@ static void site_obb(struct road_desc rd, struct obb *out)
     const float inset = 0.05f;
 
     vec2_t min, max;
-    G_Roads_Bounds(rd, &min, &max);
+    tile_bounds(rd, &min, &max);
     vec2_t center = (vec2_t){(min.x + max.x) / 2.0f, (min.z + max.z) / 2.0f};
     vec3_t pos = (vec3_t){center.x, M_HeightAtPoint(s_map, center), center.z};
 
@@ -792,10 +800,7 @@ bool G_Roads_Bounds(struct road_desc rd, vec2_t *out_min, vec2_t *out_max)
     if(!s_map || !in_bounds(rd))
         return false;
 
-    out_max->x = s_map_pos.x - rd.c * ROAD_TILE_X_DIM;
-    out_min->x = out_max->x - ROAD_TILE_X_DIM;
-    out_min->z = s_map_pos.z + rd.r * ROAD_TILE_Z_DIM;
-    out_max->z = out_min->z + ROAD_TILE_Z_DIM;
+    tile_bounds(rd, out_min, out_max);
     return true;
 }
 
