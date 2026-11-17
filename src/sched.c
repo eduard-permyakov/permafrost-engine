@@ -278,6 +278,7 @@ struct ev_waiters{
 #define MAX_WORKER_THREADS      (63)
 #define MAX_MNODES              (2 * MAX_TASKS)
 #define NLEVELS                 (8)
+#define MAX_BATCHES             (4)
 #define RING_CAP                (2 * MAX_TASKS)
 #define STACK_SZ                (16 * 1024)
 #define SLOW_SLICE_US           (3000.0)
@@ -357,7 +358,7 @@ static uint64_t                s_rt_pass;
 static bool                    s_flushing = false;
 static bool                    s_clearing = false;
 
-/* The single in-flight parallel-for batch. The claim word packs the batch's
+/* The parallel-for batches in flight, one a slot. The claim word packs the batch's
  * generation with the next unclaimed index, so a straggler holding an old
  * generation cannot claim from a newer batch. A new batch first closes the
  * word, then release-stores its fields, then opens the word: a claimer that
@@ -366,7 +367,7 @@ static bool                    s_clearing = false;
  * published its join, so only the finisher that takes it to zero touches the
  * batch after its own items, and the submitter does not return before that.
  */
-static struct{
+struct batch{
     uint64_t      claim LF_ALIGNED;
     int           pending LF_ALIGNED;   /* items not done, plus the submitter's token */
     struct join  *join;
@@ -376,10 +377,12 @@ static struct{
     int           chunk;
     int           level;
     uint32_t      gen;
+    int           busy;                 /* atomic: a submitter holds the slot */
     uint64_t      work_self;
     uint64_t      work_others;
     uint64_t      thread_mask;
-}s_batch;
+};
+static struct batch            s_batches[MAX_BATCHES];
 
 static uint64_t                s_tick_task_ticks;
 static uint64_t                s_tick_quiesce_ticks;
@@ -658,7 +661,7 @@ static int lat_class(const struct task *task)
 /* Waking and parking                                                        */
 /*****************************************************************************/
 
-static bool batch_claimable(int *out_level);
+static bool batch_claimable(int *out_level, int *out_slot);
 
 static bool general_work_visible(void)
 {
@@ -666,7 +669,7 @@ static bool general_work_visible(void)
         if(lf_ring_maybe_nonempty(&s_rings[i]))
             return true;
     }
-    return batch_claimable(NULL);
+    return batch_claimable(NULL, NULL);
 }
 
 /* Clears a parked worker's idle bit, which earns the right to wake it, and
@@ -955,32 +958,46 @@ static void join_wait(struct sched_thread *self, struct join *join,
 /* Parallel-for batch                                                        */
 /*****************************************************************************/
 
-static bool batch_claimable(int *out_level)
+/* The most urgent batch with ranges left to claim */
+static bool batch_claimable(int *out_level, int *out_slot)
 {
-    uint64_t claim = LF_LOAD(&s_batch.claim, LF_ACQ);
-    if((int)(uint32_t)claim >= LF_LOAD(&s_batch.nitems, LF_RLX))
+    int best = -1, best_level = NLEVELS;
+    for(int i = 0; i < MAX_BATCHES; i++) {
+        struct batch *b = &s_batches[i];
+        uint64_t claim = LF_LOAD(&b->claim, LF_ACQ);
+        if((int)(uint32_t)claim >= LF_LOAD(&b->nitems, LF_RLX))
+            continue;
+        int level = LF_LOAD(&b->level, LF_RLX);
+        if(level < best_level) {
+            best = i;
+            best_level = level;
+        }
+    }
+    if(best < 0)
         return false;
     if(out_level)
-        *out_level = LF_LOAD(&s_batch.level, LF_RLX);
+        *out_level = best_level;
+    if(out_slot)
+        *out_slot = best;
     return true;
 }
 
-static bool batch_claim_one(bool submitter)
+static bool batch_claim_one(struct batch *b, bool submitter)
 {
-    uint64_t claim = LF_LOAD(&s_batch.claim, LF_ACQ);
+    uint64_t claim = LF_LOAD(&b->claim, LF_ACQ);
     int begin, nitems, chunk;
     void (*func)(int, int, void*);
     void *arg;
     for(;;) {
         begin = (int)(uint32_t)claim;
-        nitems = LF_LOAD(&s_batch.nitems, LF_ACQ);
-        chunk = LF_LOAD(&s_batch.chunk, LF_ACQ);
-        func = LF_LOAD(&s_batch.func, LF_ACQ);
-        arg = LF_LOAD(&s_batch.arg, LF_ACQ);
+        nitems = LF_LOAD(&b->nitems, LF_ACQ);
+        chunk = LF_LOAD(&b->chunk, LF_ACQ);
+        func = LF_LOAD(&b->func, LF_ACQ);
+        arg = LF_LOAD(&b->arg, LF_ACQ);
         if(begin >= nitems)
             return false;
         /* A failed claim re-reads all of it: the fields may be a newer batch's */
-        if(LF_CASW(&s_batch.claim, &claim, claim + (uint64_t)chunk, LF_ACQ, LF_ACQ))
+        if(LF_CASW(&b->claim, &claim, claim + (uint64_t)chunk, LF_ACQ, LF_ACQ))
             break;
     }
 
@@ -993,21 +1010,21 @@ static bool batch_claim_one(bool submitter)
     SchedStats_Count(SC_RANGES, 1);
     if(g_sched_stats_on) {
         int self = SchedStats_Self();
-        LF_FADD(submitter ? &s_batch.work_self : &s_batch.work_others, work, LF_RLX);
+        LF_FADD(submitter ? &b->work_self : &b->work_others, work, LF_RLX);
         if(self >= 0)
-            LF_FOR(&s_batch.thread_mask, 1ull << (self & 63), LF_RLX);
+            LF_FOR(&b->thread_mask, 1ull << (self & 63), LF_RLX);
     }
 
     int count = end - begin + 1;
-    if(LF_FSUB(&s_batch.pending, count, LF_AR) == count)
-        join_arrive(LF_LOAD(&s_batch.join, LF_ACQ));
+    if(LF_FSUB(&b->pending, count, LF_AR) == count)
+        join_arrive(LF_LOAD(&b->join, LF_ACQ));
     return true;
 }
 
 /* Claims ranges until the batch has none left */
-static void batch_drain(void)
+static void batch_drain(struct batch *b)
 {
-    while(!LF_LOAD(&s_sync.quiesce, LF_RLX) && batch_claim_one(false)) {}
+    while(!LF_LOAD(&s_sync.quiesce, LF_RLX) && batch_claim_one(b, false)) {}
 }
 
 /*****************************************************************************/
@@ -1558,7 +1575,7 @@ static bool should_yield(struct sched_thread *self, struct task *task)
     if(LF_LOAD(&s_sync.quiesce, LF_RLX))
         return true;
     int level;
-    if(batch_claimable(&level) && level <= task->level)
+    if(batch_claimable(&level, NULL) && level <= task->level)
         return true;
     for(int i = 0; i <= task->level; i++) {
         if(lf_ring_maybe_nonempty(&s_rings[i]))
@@ -1630,12 +1647,12 @@ static bool worker_spin(void)
  * before that ring's tasks */
 static bool worker_find_work(struct task **out)
 {
-    int blevel = -1;
-    if(!batch_claimable(&blevel))
+    int blevel, slot = 0;
+    if(!batch_claimable(&blevel, &slot))
         blevel = NLEVELS;
     for(int i = 0; i < NLEVELS; i++) {
         if(blevel <= i) {
-            batch_drain();
+            batch_drain(&s_batches[slot]);
             return true;
         }
         if((*out = ring_take(i)))
@@ -2132,7 +2149,7 @@ void Sched_StartBackgroundTasks(void)
 
     LF_STORE(&s_sync.quiesce, 0, LF_SC);
 
-    uint64_t queued = batch_claimable(NULL) ? s_nworkers : 0;
+    uint64_t queued = batch_claimable(NULL, NULL) ? s_nworkers : 0;
     for(int i = 0; i < NLEVELS; i++) {
         queued += lf_ring_size_hint(&s_rings[i]);
     }
@@ -2176,8 +2193,9 @@ void Sched_Tick(void)
             continue;
         }
 
-        if(batch_claimable(NULL)) {
-            batch_drain();
+        int slot;
+        if(batch_claimable(NULL, &slot)) {
+            batch_drain(&s_batches[slot]);
             continue;
         }
 
@@ -2304,25 +2322,37 @@ void Sched_ParallelFor(void (*fn)(int begin, int end, void *arg), void *arg,
         return;
 
     assert(chunk > 0);
-    assert(!batch_claimable(NULL));
+
+    /* With every slot taken, the caller runs the ranges itself */
+    struct batch *b = NULL;
+    for(int i = 0; i < MAX_BATCHES && !b; i++) {
+        int expect = 0;
+        if(LF_CAS(&s_batches[i].busy, &expect, 1, LF_ACQ, LF_RLX))
+            b = &s_batches[i];
+    }
+    if(!b) {
+        for(size_t begin = 0; begin < nitems; begin += chunk)
+            fn((int)begin, (int)((begin + chunk < nitems) ? begin + chunk : nitems) - 1, arg);
+        return;
+    }
 
     struct sched_thread *self = sched_self();
     int level = self->curr ? self->curr->level : 0;
-    uint32_t gen = ++s_batch.gen;
+    uint32_t gen = ++b->gen;
 
-    LF_STORE(&s_batch.claim, (((uint64_t)gen) << 32) | BATCH_CLOSED, LF_SC);
-    LF_STORE(&s_batch.func, fn, LF_REL);
-    LF_STORE(&s_batch.arg, arg, LF_REL);
-    LF_STORE(&s_batch.nitems, (int)nitems, LF_REL);
-    LF_STORE(&s_batch.chunk, (int)chunk, LF_REL);
-    LF_STORE(&s_batch.level, level, LF_REL);
-    LF_STORE(&s_batch.pending, (int)nitems + 1, LF_RLX);
-    LF_STORE(&s_batch.join, NULL, LF_RLX);
-    s_batch.work_self = 0;
-    s_batch.work_others = 0;
-    s_batch.thread_mask = 0;
+    LF_STORE(&b->claim, (((uint64_t)gen) << 32) | BATCH_CLOSED, LF_SC);
+    LF_STORE(&b->func, fn, LF_REL);
+    LF_STORE(&b->arg, arg, LF_REL);
+    LF_STORE(&b->nitems, (int)nitems, LF_REL);
+    LF_STORE(&b->chunk, (int)chunk, LF_REL);
+    LF_STORE(&b->level, level, LF_REL);
+    LF_STORE(&b->pending, (int)nitems + 1, LF_RLX);
+    LF_STORE(&b->join, NULL, LF_RLX);
+    b->work_self = 0;
+    b->work_others = 0;
+    b->thread_mask = 0;
     uint64_t t0 = SchedStats_Now();
-    LF_STORE(&s_batch.claim, ((uint64_t)gen) << 32, LF_REL);
+    LF_STORE(&b->claim, ((uint64_t)gen) << 32, LF_REL);
 
     size_t nchunks = (nitems + chunk - 1) / chunk;
     wake_for_work(nchunks > 1 ? nchunks - 1 : 0);
@@ -2338,13 +2368,13 @@ void Sched_ParallelFor(void (*fn)(int begin, int end, void *arg), void *arg,
      * worker quiesce blocks the main thread until the fiber's host yields.
      * On a native thread the try-yield is a no-op.
      */
-    while(batch_claim_one(true)) {
+    while(batch_claim_one(b, true)) {
         Sched_TryYield();
     }
 
     int prev = SchedStats_Set(SS_JOIN);
     uint64_t spin_end = SDL_GetPerformanceCounter() + s_batch_spin_ticks;
-    while(LF_LOAD(&s_batch.pending, LF_ACQ) > 1
+    while(LF_LOAD(&b->pending, LF_ACQ) > 1
        && SDL_GetPerformanceCounter() < spin_end) {
         lf_relax();
     }
@@ -2352,15 +2382,17 @@ void Sched_ParallelFor(void (*fn)(int begin, int end, void *arg), void *arg,
     struct join join;
     join_init(&join, self);
     join.remaining = 2;
-    LF_STORE(&s_batch.join, &join, LF_RLX);
-    if(LF_FSUB(&s_batch.pending, 1, LF_AR) != 1)
+    LF_STORE(&b->join, &join, LF_RLX);
+    if(LF_FSUB(&b->pending, 1, LF_AR) != 1)
         join_wait(self, &join, NULL, NULL, 0);
     SchedStats_Set(prev);
 
     SchedStats_Batch((void*)fn, nitems, SchedStats_Now() - t0,
-        LF_LOAD(&s_batch.work_self, LF_RLX),
-        LF_LOAD(&s_batch.work_others, LF_RLX),
-        __builtin_popcountll(LF_LOAD(&s_batch.thread_mask, LF_RLX)));
+        LF_LOAD(&b->work_self, LF_RLX),
+        LF_LOAD(&b->work_others, LF_RLX),
+        __builtin_popcountll(LF_LOAD(&b->thread_mask, LF_RLX)));
+    /* Nothing touches the slot once its pending count is spent */
+    LF_STORE(&b->busy, 0, LF_REL);
 }
 
 void Sched_ClearState(void)
