@@ -77,6 +77,7 @@ enum comp_status{
 struct future{
     struct result res;
     SDL_atomic_t  status;
+    uintptr_t     waiter;   /* the joins blocked on it */
 };
 
 enum{
