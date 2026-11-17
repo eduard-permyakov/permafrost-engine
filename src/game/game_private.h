@@ -76,7 +76,6 @@ uint32_t               G_EntForGPUIDFrom(khash_t(id) *table, uint32_t gpuid);
 
 enum diplomacy_state (*G_CopyDiplomacyTable(void))[MAX_FACTIONS];
 
-void                   G_UpdateMap(void);
 const struct map      *G_GetMap(void);
 
 #endif

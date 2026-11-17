@@ -224,7 +224,7 @@ static uint32_t *rect_all(bg_ent_t *tree, vec2_t xz_min, vec2_t xz_max,
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static bool pos_set(uint32_t uid, vec3_t pos, bool notify_move)
+static bool pos_set(uint32_t uid, vec3_t pos)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -286,8 +286,7 @@ static bool pos_set(uint32_t uid, vec3_t pos, bool notify_move)
             bg_ent_insert(grid, pos.x, pos.z, uid);
     }
 
-    if(notify_move)
-        Move_UpdatePos(uid, (vec2_t){pos.x, pos.z});
+    Move_UpdatePos(uid, (vec2_t){pos.x, pos.z});
     if(flags & ENTITY_FLAG_BUILDING)
         G_Building_UpdateBounds(uid);
     if(flags & ENTITY_FLAG_RESOURCE)
@@ -414,12 +413,7 @@ void G_Pos_FlowStats(uint32_t *out_nmoved, float *out_disp)
 
 bool G_Pos_Set(uint32_t uid, vec3_t pos)
 {
-    return pos_set(uid, pos, true);
-}
-
-bool G_Pos_SetFromMovement(uint32_t uid, vec3_t pos)
-{
-    return pos_set(uid, pos, false);
+    return pos_set(uid, pos);
 }
 
 vec3_t G_Pos_Get(uint32_t uid)

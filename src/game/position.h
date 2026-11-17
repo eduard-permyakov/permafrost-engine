@@ -46,10 +46,6 @@ struct map;
 bool      G_Pos_Init(const struct map *map);
 void      G_Pos_Shutdown(void);
 void      G_Pos_Delete(uint32_t uid);
-/* Sets a position the movement system computed itself. It keeps its own
- * copies current, so, unlike G_Pos_Set, the change is not queued back to it.
- */
-bool      G_Pos_SetFromMovement(uint32_t uid, vec3_t pos);
 /* The per-frame interpolation write: position, grid and rotation only; the
  * position-dependent refs follow on G_Pos_SyncRefs. */
 bool      G_Pos_SetInterpolated(uint32_t uid, vec3_t pos, quat_t rot, bool drawn);

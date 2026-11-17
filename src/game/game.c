@@ -3100,14 +3100,6 @@ void G_CullStats(int *out_ncands, int *out_nvis)
     *out_nvis = vec_size(&s_gs.visible);
 }
 
-void G_UpdateMap(void)
-{
-    ASSERT_IN_MAIN_THREAD();
-    if(s_gs.map) {
-        M_Update(s_gs.map);
-    }
-}
-
 const struct map *G_GetMap(void)
 {
     ASSERT_IN_MAIN_THREAD();
