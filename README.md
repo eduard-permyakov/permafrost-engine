@@ -135,7 +135,7 @@ The compliation can either be done on a Linux host, or natively on Windows using
 4. `make pf PLAT=WINDOWS`
 5. `make launchers PLAT=WINDOWS`
 
-Alternatively, a Visual Studio 2022 solution file is provided in the root directory of the project.
+Alternatively, a Visual Studio 2022 solution file is provided in the `build` directory of the project.
 
 ## Devlog ##
 

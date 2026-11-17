@@ -12,20 +12,20 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "permafrost-engine", "permaf
 		{ABB5EAE7-B3E6-432E-B636-333449892EA7} = {ABB5EAE7-B3E6-432E-B636-333449892EA7}
 	EndProjectSection
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Python", "deps\Python\PCbuild\pythoncore.vcxproj", "{CF7AC3D1-E2DF-41D2-BEA6-1E2556CDEA26}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Python", "..\deps\Python\PCbuild\pythoncore.vcxproj", "{CF7AC3D1-E2DF-41D2-BEA6-1E2556CDEA26}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SDL2", "deps\SDL2\VisualC\SDL\SDL.vcxproj", "{81CE8DAF-EBB2-4761-8E45-B71ABCCA8C68}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SDL2", "..\deps\SDL2\VisualC\SDL\SDL.vcxproj", "{81CE8DAF-EBB2-4761-8E45-B71ABCCA8C68}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OpenAL", "deps\openal-soft\OpenAL.vcxproj", "{4071E373-2639-34A7-9F76-767719C909AF}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OpenAL", "..\deps\openal-soft\OpenAL.vcxproj", "{4071E373-2639-34A7-9F76-767719C909AF}"
 	ProjectSection(ProjectDependencies) = postProject
 		{178D52E7-47F4-35B0-9934-F49AB1BE32FF} = {178D52E7-47F4-35B0-9934-F49AB1BE32FF}
 	EndProjectSection
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OpenAL-common", "deps\openal-soft\common.vcxproj", "{178D52E7-47F4-35B0-9934-F49AB1BE32FF}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OpenAL-common", "..\deps\openal-soft\common.vcxproj", "{178D52E7-47F4-35B0-9934-F49AB1BE32FF}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GLEW", "deps\GLEW\build\vc17\glew_shared.vcxproj", "{55AE3D72-7DE6-F19F-AEF2-9AE8CA26CF3D}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GLEW", "..\deps\GLEW\build\vc17\glew_shared.vcxproj", "{55AE3D72-7DE6-F19F-AEF2-9AE8CA26CF3D}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mimalloc-override-dll", "deps\mimalloc\ide\vs2022\mimalloc-override-dll.vcxproj", "{ABB5EAE7-B3E6-432E-B636-333449892EA7}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mimalloc-override-dll", "..\deps\mimalloc\ide\vs2022\mimalloc-override-dll.vcxproj", "{ABB5EAE7-B3E6-432E-B636-333449892EA7}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
