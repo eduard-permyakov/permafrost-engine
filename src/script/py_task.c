@@ -68,6 +68,12 @@
 #define CALL_FLAG_VAR   1
 #define CALL_FLAG_KW    2
 
+struct frame_depth{
+    PyFrameObject *frame;
+    size_t         depth;
+    bool           exposed;
+};
+
 #define CHK_TRUE(_pred, _label)         \
     do{                                 \
         if(!(_pred))                    \
@@ -105,6 +111,17 @@ typedef struct {
     }state;
     struct pyrequest req;
     size_t stack_depth;
+    /* Each frame of the call chain, outermost first, with the depth of its
+     * evaluation stack when it last ran an opcode: a caller's own stack top
+     * is out of reach while it waits on a call
+     */
+    struct frame_depth *depths;
+    size_t ndepths;
+    size_t depths_cap;
+    /* The task's frames refer to it, so it is pickled again from within its
+     * own pickle: only the outermost exposes and hides the callers
+     */
+    int pickle_nesting;
     PyThreadState *ts;
     const char *regname;
     uint32_t sleep_elapsed;
@@ -369,12 +386,82 @@ static PyObject *pytask_resume_request(PyTaskObject *self)
     return ret;
 }
 
+static bool pytask_depths_reserve(PyTaskObject *self, size_t n)
+{
+    if(n <= self->depths_cap)
+        return true;
+    size_t cap = self->depths_cap ? self->depths_cap * 2 : 16;
+    while(cap < n)
+        cap *= 2;
+    struct frame_depth *depths = PF_REALLOC(self->depths, cap * sizeof(struct frame_depth));
+    if(!depths)
+        return false;
+    self->depths = depths;
+    self->depths_cap = cap;
+    return true;
+}
+
+/* A frame already in the chain drops the frames above it, which have
+ * returned; any other is a new call.
+ */
+static void pytask_note_depth(PyTaskObject *self, PyFrameObject *frame, size_t depth)
+{
+    for(size_t i = self->ndepths; i-- > 0;) {
+        if(self->depths[i].frame == frame) {
+            self->ndepths = i + 1;
+            self->depths[i].depth = depth;
+            return;
+        }
+    }
+    if(!pytask_depths_reserve(self, self->ndepths + 1))
+        return;
+    self->depths[self->ndepths++] = (struct frame_depth){frame, depth, false};
+}
+
+/* The chain of a restored task, from the frames' saved stacks */
+static bool pytask_depths_rebuild(PyTaskObject *self)
+{
+    size_t n = 0;
+    for(PyFrameObject *f = self->ts->frame; f; f = f->f_back)
+        n++;
+    if(!pytask_depths_reserve(self, n))
+        return false;
+    size_t i = n;
+    for(PyFrameObject *f = self->ts->frame; f; f = f->f_back) {
+        size_t depth = f->f_stacktop ? (size_t)(f->f_stacktop - f->f_valuestack) : 0;
+        self->depths[--i] = (struct frame_depth){f, depth, false};
+    }
+    self->ndepths = n;
+    return true;
+}
+
+/* While the task is pickled, its callers show the pickler their stacks */
+static void pytask_expose_callers(PyTaskObject *self, bool expose)
+{
+    for(PyFrameObject *f = self->ts->frame->f_back; f; f = f->f_back) {
+        for(size_t i = self->ndepths; i-- > 0;) {
+            struct frame_depth *fd = &self->depths[i];
+            if(fd->frame != f)
+                continue;
+            if(expose && !f->f_stacktop) {
+                f->f_stacktop = f->f_valuestack + fd->depth;
+                fd->exposed = true;
+            }else if(!expose && fd->exposed) {
+                f->f_stacktop = NULL;
+                fd->exposed = false;
+            }
+            break;
+        }
+    }
+}
+
 static int pytask_tracefunc(PyTaskObject *self, PyFrameObject *frame, int what, PyObject *arg)
 {
     if(what == PyTrace_OPCODE) {
         assert(frame->f_stacktop);
         size_t stack_depth = (size_t)(frame->f_stacktop - frame->f_valuestack);
         self->stack_depth = stack_depth;
+        pytask_note_depth(self, frame, stack_depth);
     }
     return 0;
 }
@@ -403,6 +490,96 @@ static void pytask_pop_ctx(PyTaskObject *self)
     assert(ts == self->ts);
 }
 
+/* Completes the call 'frame' is waiting on, at its CALL_FUNCTION: the callable
+ * and its arguments come off the evaluation stack and 'result' goes on, unless
+ * it is NULL for a call that raised. Implementation details from Python/ceval.c
+ */
+static bool pytask_frame_return(PyFrameObject *frame, PyObject *result)
+{
+    const unsigned char *bytecode = (unsigned char *)PyString_AS_STRING(frame->f_code->co_code);
+    const int lasti = frame->f_lasti;
+
+    int opcode = bytecode[lasti];
+    if(opcode != CALL_FUNCTION
+    && opcode != CALL_FUNCTION_VAR
+    && opcode != CALL_FUNCTION_KW
+    && opcode != CALL_FUNCTION_VAR_KW)
+        return false;
+
+    PyObject_GC_UnTrack(frame);
+    int oparg = (bytecode[lasti + 2] << 8) + bytecode[lasti + 1];
+    frame->f_lasti += 2;
+
+    int na = oparg & 0xff;
+    int nk = (oparg >> 8) & 0xff;
+    int n = na + 2 * nk;
+
+    if(opcode != CALL_FUNCTION) {
+        int flags = (opcode - CALL_FUNCTION) & 3;
+        if (flags & CALL_FLAG_VAR)
+            n++;
+        if (flags & CALL_FLAG_KW)
+            n++;
+    }
+
+    PyObject **pfunc = (frame->f_stacktop) - n - 1;
+
+    /* Clear the stack of the function object. Also removes
+     * the arguments in case they weren't consumed already.
+     */
+    while((frame->f_stacktop) > pfunc) {
+        PyObject *w = *(--frame->f_stacktop);
+        Py_DECREF(w);
+    }
+    assert(frame->f_stacktop >= frame->f_valuestack);
+
+    if(result) {
+        Py_INCREF(result);
+        *(frame->f_stacktop++) = result;
+    }
+
+    if(!_PyObject_GC_IS_TRACKED((PyObject*)frame))
+        PyObject_GC_Track((PyObject*)frame);
+    return true;
+}
+
+/* EvalFrameEx leaves the thread state on the finished frame's caller, and only
+ * runs the one frame. A restored task's callers are frames waiting on their
+ * calls: each takes the result, or the exception, of the one it called and
+ * runs on, out to __run__. 'done' is the reference held on the frame that
+ * finished.
+ */
+static PyObject *pytask_resume_callers(PyTaskObject *self, PyFrameObject *done, PyObject *ret)
+{
+    while(true) {
+        PyFrameObject *caller = self->ts->frame;
+        Py_XINCREF(caller);
+        Py_DECREF(done);
+        if(!caller)
+            return ret;
+
+        if(!caller->f_stacktop
+        || (caller->f_code->co_flags & CO_GENERATOR)
+        || !pytask_frame_return(caller, ret)) {
+            /* Saved without its stack, by an older build, or not waiting on
+             * a plain call: the task ends here
+             */
+            fprintf(stderr, "[py-task] %s (line %d) cannot be resumed; the task ends\n",
+                PyString_AS_STRING(caller->f_code->co_name), PyFrame_GetLineNumber(caller));
+            self->ts->frame = NULL;
+            Py_DECREF(caller);
+            return ret;
+        }
+
+        bool raised = (ret == NULL);
+        Py_XDECREF(ret);
+        if(!raised)
+            clear_stale_error("task-resume", (PyObject*)caller->f_code);
+        ret = PyEval_EvalFrameEx(caller, raised);
+        done = caller;
+    }
+}
+
 static bool pytask_handle_abort(PyTaskObject *self, PyObject *req_result, PyObject **out_ret)
 {
     bool aborted = !req_result && PyErr_Occurred() && PyErr_ExceptionMatches(PyExc_SystemExit);
@@ -414,8 +591,7 @@ static bool pytask_handle_abort(PyTaskObject *self, PyObject *req_result, PyObje
     PyFrameObject *fr = self->ts->frame;
     if(!_PyObject_GC_IS_TRACKED((PyObject*)fr))
         PyObject_GC_Track((PyObject*)fr);
-    *out_ret = PyEval_EvalFrameEx(fr, 1);
-    Py_DECREF(fr);
+    *out_ret = pytask_resume_callers(self, fr, PyEval_EvalFrameEx(fr, 1));
     return true;
 }
 
@@ -434,57 +610,18 @@ static PyObject *pytask_resume(PyTaskObject *self)
 
     if(req_result) {
 
-        /* Implementation details from Python/ceval.c
-         */
-        const unsigned char *bytecode = (unsigned char *)PyString_AS_STRING(self->ts->frame->f_code->co_code);
-        const int lasti = self->ts->frame->f_lasti;
-        PyObject_GC_UnTrack(self->ts->frame);
-
-        int opcode = bytecode[lasti];
-        int oparg = (bytecode[lasti + 2] << 8) + bytecode[lasti + 1];
-        self->ts->frame->f_lasti += 2;
-
-        assert(opcode == CALL_FUNCTION
-            || opcode == CALL_FUNCTION_VAR
-            || opcode == CALL_FUNCTION_KW
-            || opcode == CALL_FUNCTION_VAR_KW);
-
-        int na = oparg & 0xff;
-        int nk = (oparg >> 8) & 0xff;
-        int n = na + 2 * nk;
-
-        if(opcode != CALL_FUNCTION) {
-            int flags = (opcode - CALL_FUNCTION) & 3;
-            if (flags & CALL_FLAG_VAR)
-                n++;
-            if (flags & CALL_FLAG_KW)
-                n++;
-        }
-
-        PyObject **pfunc = (self->ts->frame->f_stacktop) - n - 1;
-
-        /* Clear the stack of the function object. Also removes
-         * the arguments in case they weren't consumed already.
-         */
-        while((self->ts->frame->f_stacktop) > pfunc) {
-            PyObject *w = *(--self->ts->frame->f_stacktop);
-            Py_DECREF(w);
-        }
-        assert(self->ts->frame->f_stacktop >= self->ts->frame->f_valuestack);
-
-        /* Push the result of the function call onto the evaluation stack.
-         */
-        Py_INCREF(req_result);
-        *(self->ts->frame->f_stacktop++) = req_result;
-
         PyFrameObject *fr = self->ts->frame;
-        if(!_PyObject_GC_IS_TRACKED((PyObject*)fr))
-            PyObject_GC_Track((PyObject*)fr);
+        bool returned = pytask_frame_return(fr, req_result);
+        assert(returned);
+        (void)returned;
+
         clear_stale_error("task-resume", (PyObject*)fr->f_code);
         ret = PyEval_EvalFrameEx(fr, 0);
-        /* EvalFrameEx nulls tstate->frame on exit without DECREF; release
-         * the owned reference unpickle (or our task setup) put on it. */
-        Py_DECREF(fr);
+        /* EvalFrameEx nulls tstate->frame on exit without DECREF; the owned
+         * reference unpickle (or our task setup) put on it is released once
+         * the callers have taken it.
+         */
+        ret = pytask_resume_callers(self, fr, ret);
     }else{
         /* We've failed to resume the request. There are a couple of legitimate
          * cases when this can occur: when the task was send-blocked or reply-blocked
@@ -679,6 +816,7 @@ static void PyTask_dealloc(PyTaskObject *self)
     Py_CLEAR(self->ts->curexc_traceback);
 
     PF_FREE(self->regname);
+    PF_FREE(self->depths);
     pytask_ts_delete(self->ts);
     self->ts = NULL;
     Py_TYPE(self)->tp_free((PyObject*)self);
@@ -718,6 +856,8 @@ static PyObject *PyTask_pickle(PyTaskObject *self, PyObject *args, PyObject *kwa
         assert(self->ts->frame);
         old = self->ts->frame->f_stacktop;
         self->ts->frame->f_stacktop = self->ts->frame->f_valuestack + self->stack_depth;
+        if(self->pickle_nesting++ == 0)
+            pytask_expose_callers(self, true);
     }
 
     PyObject *ts = Py_BuildValue("OiOOOOOOO",
@@ -737,6 +877,8 @@ static PyObject *PyTask_pickle(PyTaskObject *self, PyObject *args, PyObject *kwa
 
     if(self->state == PYTASK_STATE_RUNNING) {
         self->ts->frame->f_stacktop = old;
+        if(--self->pickle_nesting == 0)
+            pytask_expose_callers(self, false);
     }
     CHK_TRUE(status, fail_pickle);
 
@@ -910,6 +1052,10 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
             flags |= TASK_BIG_STACK;
 
         assert(ret->ts->frame->f_stacktop);
+        if(!pytask_depths_rebuild(ret)) {
+            Py_CLEAR(ret);
+            goto fail_unpickle;
+        }
         ret->tid = pytask_schedule(ret, 16, py_task, ret, NULL, flags);
 
         if(ret->tid == NULL_TID) {
