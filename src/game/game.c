@@ -40,11 +40,10 @@
 #include "gamestate.h"
 #include "selection.h"
 #include "timer_events.h"
-#include "movement.h"
-#include "formation.h"
+#include "move_harness.h"
+#include "../movement/public/movement.h"
 #include "game_private.h"
 #include "combat.h" 
-#include "clearpath.h"
 #include "position.h"
 #include "fog_of_war.h"
 #include "building.h"
@@ -224,7 +223,7 @@ static void g_init_map(void)
     G_Fog_Init(s_gs.map);
     G_Combat_Init(s_gs.map);
     G_Move_Init(s_gs.map);
-    G_Formation_Init(s_gs.map);
+    Move_Formation_Init(s_gs.map);
     G_Builder_Init(s_gs.map);
     G_Resource_Init(s_gs.map);
     G_Region_Init(s_gs.map);
@@ -239,7 +238,7 @@ static void g_init_map(void)
     G_Group_Init();
     G_Cluster_Init();
     G_District_Init(s_gs.map);
-    G_ClearPath_Init(s_gs.map);
+    Move_ClearPath_Init(s_gs.map);
     N_ClearState();
 }
 
@@ -997,7 +996,7 @@ static void move_gpu_commit(const struct sval *new_val)
     if(!R_ComputeShaderSupported()) {
         next = false;
     }
-    G_Move_SetUseGPU(next);
+    Move_SetUseGPU(next);
 }
 
 static void perf_hw_counters_commit(const struct sval *new_val)
@@ -1275,14 +1274,14 @@ static void g_clear_map_state(void)
 {
     if(s_gs.map) {
 
-        G_Move_FinishTick();
+        Move_FinishTick();
         M_Raycast_Uninstall();
         M_FreeMinimap(s_gs.map);
         G_Garrison_Shutdown();
         G_Building_Shutdown();
         G_Fog_Shutdown();
         G_Combat_Shutdown();
-        G_Formation_Shutdown();
+        Move_Formation_Shutdown();
         G_Move_Shutdown();
         G_Builder_Shutdown();
         G_Resource_Shutdown();
@@ -1298,7 +1297,7 @@ static void g_clear_map_state(void)
         G_Group_Shutdown();
         G_District_Shutdown();
         G_Cluster_Shutdown();
-        G_ClearPath_Shutdown();
+        Move_ClearPath_Shutdown();
         G_Pos_Shutdown();
         M_FoliageShutdown();
         M_Decal_Shutdown();
@@ -2568,7 +2567,7 @@ void G_FlushWork(void)
 
 bool G_HasWork(void)
 {
-    return G_Combat_HasWork() || G_Move_HasWork();
+    return G_Combat_HasWork() || Move_HasWork();
 }
 
 void G_ClearRenderWork(void)
@@ -2955,13 +2954,13 @@ static void g_pace_clock(void)
     if(s_window_start == 0 || s_gs.ss != G_RUNNING) {
         s_window_start = now;
         s_window_ticks = G_ClockTicks();
-        s_window_done = G_Move_TicksDone();
+        s_window_done = Move_TicksDone();
         return;
     }
     if(now - s_window_start < freq)
         return;
     float due = (G_ClockTicks() - s_window_ticks) / 1000.0f * G_Move_TickRate();
-    float done = G_Move_TicksDone() - s_window_done;
+    float done = Move_TicksDone() - s_window_done;
     float speed = G_ClockSpeed();
     if(due > 0.0f && done < due * PACE_KEPT_UP) {
         G_ClockPace(speed * done / due);
@@ -2972,7 +2971,7 @@ static void g_pace_clock(void)
     }
     s_window_start = now;
     s_window_ticks = G_ClockTicks();
-    s_window_done = G_Move_TicksDone();
+    s_window_done = Move_TicksDone();
 }
 
 void G_Update(void)
@@ -3370,7 +3369,7 @@ bool G_AddEntity(uint32_t uid, uint32_t flags, vec3_t pos)
         k = kh_put(entity, s_gs.dynamic, uid, &ret);
         assert(ret != -1 && ret != 0);
 
-        G_Move_AddEntity(uid, pos, 0.0f, 0);
+        Move_AddEntity(uid, pos, 0.0f, 0);
 
         uint32_t gpu_id = kh_size(s_gs.ent_gpu_id_map) + 1;
         k = kh_put(id, s_gs.ent_gpu_id_map, uid, &ret);
@@ -3384,7 +3383,7 @@ bool G_AddEntity(uint32_t uid, uint32_t flags, vec3_t pos)
         assert(kh_size(s_gs.dynamic) == kh_size(s_gs.ent_gpu_id_map));
         assert(kh_size(s_gs.ent_gpu_id_map) == kh_size(s_gs.gpu_id_ent_map));
 
-        G_Formation_SetPreferred(uid, FORMATION_NONE);
+        Move_Formation_SetPreferred(uid, FORMATION_NONE);
     }
 
     if((flags & ENTITY_FLAG_MOVABLE)
@@ -3424,8 +3423,8 @@ bool G_RemoveEntity(uint32_t uid)
 
     A_RemoveEntity(uid);
     G_Sel_Remove(uid);
-    G_Move_RemoveEntity(uid);
-    G_Formation_RemoveEntity(uid);
+    Move_RemoveEntity(uid);
+    Move_Formation_RemoveEntity(uid);
     G_Combat_RemoveEntity(uid);
     G_Building_RemoveEntity(uid);
     G_Builder_RemoveEntity(uid);
@@ -3497,7 +3496,7 @@ void G_StopEntity(uint32_t uid, bool stop_move, bool stop_garrison)
         G_Harvester_ClearQueuedCmd(uid);
     }
     if(stop_move && (flags & ENTITY_FLAG_MOVABLE)) {
-        G_Move_Stop(uid);
+        Move_Stop(uid);
     }
     if(flags & ENTITY_FLAG_BUILDER) {
         G_Builder_Stop(uid);
@@ -3717,7 +3716,7 @@ void G_SetFactionID(uint32_t uid, int faction_id)
     G_Fog_AddVision(xz_pos, faction_id, vrange);
 
     G_Combat_UpdateRef(old, faction_id, xz_pos);
-    G_Move_UpdateFactionID(uid, old, faction_id);
+    Move_UpdateFactionID(uid, old, faction_id);
     G_StorageSite_UpdateFaction(uid, old, faction_id);
     G_Resource_UpdateFactionID(uid, old, faction_id);
     G_Building_UpdateFactionID(uid, old, faction_id);
@@ -3821,7 +3820,7 @@ void G_SetSelectionRadius(uint32_t uid, float range)
     khiter_t k = kh_get(range, s_gs.selection_radiuses, uid);
     assert(k != kh_end(s_gs.selection_radiuses));
 
-    G_Move_UpdateSelectionRadius(uid, range);
+    Move_UpdateSelectionRadius(uid, range);
     G_Resource_UpdateSelectionRadius(uid, range);
     kh_value(s_gs.selection_radiuses, k) = range;
 }
@@ -4125,8 +4124,8 @@ void G_Zombiefy(uint32_t uid, bool invis)
     if(flags & ENTITY_FLAG_MOVABLE)
         g_delete_gpuid(uid);
 
-    G_Move_RemoveEntity(uid);
-    G_Formation_RemoveEntity(uid);
+    Move_RemoveEntity(uid);
+    Move_Formation_RemoveEntity(uid);
     G_Combat_RemoveEntity(uid);
     G_Building_RemoveEntity(uid);
     G_Builder_RemoveEntity(uid);
@@ -4738,7 +4737,7 @@ bool G_SaveEntityState(SDL_RWops *stream)
     if(!G_Move_SaveState(stream))
         return false;
 
-    if(!G_Formation_SaveState(stream))
+    if(!Move_Formation_SaveState(stream))
         return false;
 
     if(!G_Combat_SaveState(stream))
@@ -4821,7 +4820,7 @@ bool G_LoadEntityState(SDL_RWops *stream)
         return false;
     }
 
-    if(!G_Formation_LoadState(stream)) {
+    if(!Move_Formation_LoadState(stream)) {
         fprintf(stderr, "Could not load formation state.\n");
         return false;
     }

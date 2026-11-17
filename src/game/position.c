@@ -38,7 +38,7 @@
 
 #include "position.h"
 #include "game_private.h"
-#include "movement.h"
+#include "../movement/public/movement.h"
 #include "building.h"
 #include "resource.h"
 #include "fog_of_war.h"
@@ -287,7 +287,7 @@ static bool pos_set(uint32_t uid, vec3_t pos, bool notify_move)
     }
 
     if(notify_move)
-        G_Move_UpdatePos(uid, (vec2_t){pos.x, pos.z});
+        Move_UpdatePos(uid, (vec2_t){pos.x, pos.z});
     if(flags & ENTITY_FLAG_BUILDING)
         G_Building_UpdateBounds(uid);
     if(flags & ENTITY_FLAG_RESOURCE)

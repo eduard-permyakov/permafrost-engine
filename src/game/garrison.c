@@ -42,7 +42,7 @@
 #include "combat.h"
 #include "fog_of_war.h"
 #include "selection.h"
-#include "movement.h"
+#include "../movement/public/movement.h"
 #include "harvester.h"
 #include "builder.h"
 #include "position.h"
@@ -427,7 +427,7 @@ static void do_garrison(uint32_t uid, uint32_t target)
     flags |= ENTITY_FLAG_GARRISONED;
     G_FlagsSet(uid, flags);
     G_Combat_StopAttack(uid);
-    G_Move_Unblock(uid);
+    Move_Unblock(uid);
     G_Pos_Garrison(uid);
 }
 
@@ -464,7 +464,7 @@ static void on_20hz_tick(void *user, void *event)
             assert(!gu_state->target_rendevouz_issued);
             break;
         case STATE_MOVING_TO_GARRISONABLE: {
-            if(G_Move_Still(uid)) {
+            if(Move_Still(uid)) {
                 if(!G_EntityExists(gu_state->target) || G_EntityIsZombie(gu_state->target)) {
                     gu_state->target_rendevouz_issued = false;
                     gu_state->state = STATE_NOT_GARRISONED;
@@ -570,7 +570,7 @@ static void on_20hz_tick(void *user, void *event)
             PFM_Vec2_Sub(&gb_state->rendevouz_point_transport, &garrisonable_pos, &delta);
             const float tolerance = garrisonable_radius * 1.5f;
 
-            if(G_Move_Still(uid)) {
+            if(Move_Still(uid)) {
 
                 if(M_NavIsMaximallyClose(s_map, garrisonable_layer, garrisonable_pos, 
                     gb_state->rendevouz_point_transport, tolerance)
@@ -581,7 +581,7 @@ static void on_20hz_tick(void *user, void *event)
                 }
                 gb_state->wait_ticks++;
                 if(gb_state->wait_ticks == GARRISONABLE_WAIT_TICKS) {
-                    G_Move_SetDest(uid, gb_state->rendevouz_point_transport, false);
+                    Move_SetDest(uid, gb_state->rendevouz_point_transport, false);
                 }
             }
             break;
@@ -600,7 +600,7 @@ static void on_20hz_tick(void *user, void *event)
             PFM_Vec2_Sub(&gb_state->rendevouz_point_transport, &garrisonable_pos, &delta);
             const float tolerance = garrisonable_radius * 1.5f;
 
-            if(G_Move_Still(uid)) {
+            if(Move_Still(uid)) {
 
                 if((garrisonable_flags & ENTITY_FLAG_AIR)
                 && (M_NavIsMaximallyClose(s_map, garrisonable_layer, garrisonable_pos,
@@ -626,7 +626,7 @@ static void on_20hz_tick(void *user, void *event)
                 if(gb_state->wait_ticks == GARRISONABLE_WAIT_TICKS) {
                     /* Retry */
                     gb_state->wait_ticks = 0;
-                    G_Move_SetDest(uid, gb_state->evict_target, false);
+                    Move_SetDest(uid, gb_state->evict_target, false);
                 }
             }
             break;
@@ -727,7 +727,7 @@ static bool transport_move(uint32_t garrisonable, vec2_t target)
         gbs->evict_target = target;
 
         G_StopEntity(garrisonable, true, false);
-        G_Move_SetDest(garrisonable, target, false);
+        Move_SetDest(garrisonable, target, false);
         return true;
     }
     return false;
@@ -1046,7 +1046,7 @@ static bool garrison_enter(uint32_t garrisonable, uint32_t unit)
 
     if(has_rendevouz_point && !gus->target_rendevouz_issued) {
         G_StopEntity(garrisonable, true, false);
-        G_Move_SetDest(garrisonable, rendevouz_point, false);
+        Move_SetDest(garrisonable, rendevouz_point, false);
 
         gbs->state = STATE_MOVING_TO_PICKUP_POINT;
         gbs->rendevouz_point_unit = rendevouz_point;
@@ -1064,9 +1064,9 @@ static bool garrison_enter(uint32_t garrisonable, uint32_t unit)
 
     G_StopEntity(unit, false, false);
     if(M_NavLocationsReachable(s_map, unit_layer, unit_pos, garrisonable_pos)) {
-        G_Move_SetSurroundEntity(unit, garrisonable);
+        Move_SetSurroundEntity(unit, garrisonable);
     }else{
-        G_Move_SetDest(unit, unit_target_pos, false);
+        Move_SetDest(unit, unit_target_pos, false);
     }
     return true;
 }
@@ -1140,8 +1140,8 @@ bool G_Garrison_Evict(uint32_t garrisonable, uint32_t unit, vec2_t target)
     };
 
     G_Pos_Ungarrison(unit, pos);
-    G_Move_BlockAt(unit, pos);
-    G_Move_SetDest(unit, target, false);
+    Move_BlockAt(unit, pos);
+    Move_SetDest(unit, target, false);
 
     return true;
 }

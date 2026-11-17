@@ -39,7 +39,7 @@
 #include "selection.h"
 #include "game_private.h"
 #include "public/game.h"
-#include "movement.h"
+#include "move_harness.h"
 #include "../pf_math.h"
 #include "../event.h"
 #include "../render/public/render.h"

@@ -33,13 +33,12 @@
  *
  */
 
-#define MEM_FILE_SYS MEM_SYS_GAME
-#define MEM_FILE_SUB MEM_SUB_GAME_FORMATION
+#define MEM_FILE_SYS MEM_SYS_MOVEMENT
+#define MEM_FILE_SUB MEM_SUB_MOVEMENT_FORMATION
 
 #include "formation.h"
-#include "public/game.h"
-#include "position.h"
-#include "movement.h"
+#include "../game/public/game.h"
+#include "move_private.h"
 #include "../main.h"
 #include "../event.h"
 #include "../settings.h"
@@ -69,9 +68,9 @@
 #undef PF_MALLOC
 #undef PF_CALLOC
 #undef PF_REALLOC
-#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_GAME, MEM_SUB_GAME_FORMATION)
-#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_GAME, MEM_SUB_GAME_FORMATION)
-#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_FORMATION)
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_MOVEMENT, MEM_SUB_MOVEMENT_FORMATION)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_MOVEMENT, MEM_SUB_MOVEMENT_FORMATION)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_MOVEMENT, MEM_SUB_MOVEMENT_FORMATION)
 
 #define COLUMN_WIDTH_RATIO       (4.0f)
 #define RANK_WIDTH_RATIO         (0.25f)
@@ -527,7 +526,7 @@ static float formation_speed(const vec_entity_t *ents)
     for(int i = 0; i < vec_size(ents); i++) {
         uint32_t uid = vec_AT(ents, i);
         float speed = 0.0f;
-        G_Move_GetMaxSpeed(uid, &speed);
+        Move_GetMaxSpeed(uid, &speed);
         min = MIN(min, speed);
     }
     return min;
@@ -2158,7 +2157,7 @@ static uint8_t *box_cell_mask(struct box_shell shell, size_t nunits)
     uint8_t *ret = PF_MALLOC((size_t)shell.side * shell.side);
     if(!ret)
         return NULL;
-    G_FormationBox_Mask(shell, nunits, ret);
+    Move_FormationBox_Mask(shell, nunits, ret);
     return ret;
 }
 
@@ -2193,7 +2192,7 @@ static void init_subformations(struct formation *formation)
      * group's size is needed before the first one can be shaped.
      */
     bool box = (formation->type == FORMATION_BOX)
-            && G_FormationBox_Shells(counts, ntypes, shells);
+            && Move_FormationBox_Shells(counts, ntypes, shells);
 
     for(int i = 0; i < ntypes; i++) {
 
@@ -3323,7 +3322,7 @@ static void render_formation_forces(void)
 
                 /* Entities currently experiencing a drag force 
                  * will have a red circle around them */
-                vec2_t drag_force = G_Formation_DragForce(uid);
+                vec2_t drag_force = Move_Formation_DragForce(uid);
                 if(PFM_Vec2_Len(&drag_force) > EPSILON) {
                     
                     vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
@@ -3398,7 +3397,7 @@ static void on_render_3d(void *user, void *event)
         formation_id_t fid;
         enum selection_type type;
         const vec_entity_t *sel = G_Sel_Get(&type);
-        if(vec_size(sel) > 0 && ((fid = G_Formation_GetForEnt(vec_AT(sel, 0))) != NULL_FID)) {
+        if(vec_size(sel) > 0 && ((fid = Move_Formation_GetForEnt(vec_AT(sel, 0))) != NULL_FID)) {
             khiter_t k = kh_get(formation, s_formations, fid);
             if(k != kh_end(s_formations)) {
                 struct formation *formation = &kh_val(s_formations, k);
@@ -3507,7 +3506,7 @@ static void on_1hz_tick(void *user, void *event)
         /* The entity may have died or been re-ordered into a different
          * formation since the request was queued.
          */
-        if(G_Formation_GetForEnt(desc.uid) != desc.fid)
+        if(Move_Formation_GetForEnt(desc.uid) != desc.fid)
             continue;
         struct formation *formation = &kh_val(s_formations, k);
         struct cell_field_work *work = cell_get_work(desc.uid);
@@ -3727,7 +3726,7 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
 {
     ASSERT_IN_MAIN_THREAD();
 
-    struct refcounted_map *rmap = G_Move_NavSnapshotAcquire();
+    struct refcounted_map *rmap = Move_NavSnapshotAcquire();
     if(!rmap) {
         work->tid = NULL_TID;
         return;
@@ -3874,7 +3873,7 @@ static void on_update_start(void *user, void *event)
     struct formation *formation;
     kh_foreach_ptr(s_formations, formation, {
 
-        if(G_Move_NavSnapshotGeneration() <= formation->snapshot_gen)
+        if(Move_NavSnapshotGeneration() <= formation->snapshot_gen)
             continue;
         for(int i = 0; i < vec_size(&formation->work); i++) {
             struct cell_assignment_work *work = &vec_AT(&formation->work, i);
@@ -4026,7 +4025,7 @@ static void layout_formation_on_arrival(formation_id_t fid, struct formation *fo
     }
     reserve_cells(formation, +1);
     formation->reserved = true;
-    formation->snapshot_gen = G_Move_NavSnapshotGeneration();
+    formation->snapshot_gen = Move_NavSnapshotGeneration();
     dispatch_cell_assignment_work(formation);
 
     struct sval log_setting;
@@ -4048,7 +4047,7 @@ static void layout_arriving_formations(void)
 
 static uint8_t *cell_get_field(uint32_t uid)
 {
-    formation_id_t fid = G_Formation_GetForEnt(uid);
+    formation_id_t fid = Move_Formation_GetForEnt(uid);
     if(fid == NULL_FID)
         return NULL;
 
@@ -4069,7 +4068,7 @@ static uint8_t *cell_get_field(uint32_t uid)
 
 static struct cell_field_work *cell_get_work(uint32_t uid)
 {
-    formation_id_t fid = G_Formation_GetForEnt(uid);
+    formation_id_t fid = Move_Formation_GetForEnt(uid);
     if(fid == NULL_FID)
         return NULL;
 
@@ -4138,7 +4137,7 @@ static bool inside_arrival_field_bounds(struct formation *formation, vec2_t pos)
 
 static struct formation *formation_for_ent(uint32_t uid)
 {
-    formation_id_t fid = G_Formation_GetForEnt(uid);
+    formation_id_t fid = Move_Formation_GetForEnt(uid);
     if(fid == NULL_FID)
         return NULL;
 
@@ -4165,7 +4164,7 @@ static struct cell *cell_for_ent(struct formation *formation, uint32_t uid)
 
 /* Blocker churn invalidates the fields, but does not rebuild them: an
  * arriving unit refreshes its own field through the rate-limited
- * G_Formation_UpdateFieldIfNeeded, and nothing else reads them. The
+ * Move_Formation_UpdateFieldIfNeeded, and nothing else reads them. The
  * eager per-event rebuild kept every intersecting formation's fields
  * flooding continuously through a melee (~60% of all engine CPU) with
  * almost no readers.
@@ -4214,11 +4213,11 @@ static bool all_same_preferred(const vec_entity_t *ents)
 {
     assert(vec_size(ents) > 0);
     uint32_t first_uid = vec_AT(ents, 0);
-    enum formation_type first = G_Formation_GetPreferred(first_uid);
+    enum formation_type first = Move_Formation_GetPreferred(first_uid);
     for(int i = 1; i < vec_size(ents); i++) {
         uint32_t uid = vec_AT(ents, i);
         uint32_t flags = G_FlagsGet(uid);
-        enum formation_type curr = G_Formation_GetPreferred(uid);
+        enum formation_type curr = Move_Formation_GetPreferred(uid);
         if(curr != first)
             return false;
     }
@@ -4264,8 +4263,8 @@ static bool will_collide(const uint8_t *field, int arrival_res, enum nav_layer l
  */
 static bool member_away(uint32_t uid)
 {
-    return G_Move_SeekingFiringPosition(uid)
-        || G_Move_Seeking(uid)
+    return Move_SeekingFiringPosition(uid)
+        || Move_Seeking(uid)
         || (G_FlagsGet(uid) & ENTITY_FLAG_COMBAT_HELD);
 }
 
@@ -4985,7 +4984,7 @@ static void dispatch_cell_assignment_work(struct formation *parent)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool G_Formation_Init(const struct map *map)
+bool Move_Formation_Init(const struct map *map)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -5026,7 +5025,7 @@ fail_formations:
     return false;
 }
 
-void G_Formation_Shutdown(void)
+void Move_Formation_Shutdown(void)
 {
     ASSERT_IN_MAIN_THREAD();
     s_map = NULL;
@@ -5080,7 +5079,7 @@ static vec2_t rotate_toward(vec2_t from, vec2_t to, float fraction)
  * to spin the block; the facing only fully commits to the target direction
  * once it lies beyond the group's radius.
  */
-vec2_t G_Formation_AutoOrientation(vec2_t target, const vec_entity_t *ents)
+vec2_t Move_Formation_AutoOrientation(vec2_t target, const vec_entity_t *ents)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -5154,8 +5153,8 @@ static void release_cell(struct formation *formation, struct subformation *sub, 
     cell->state = CELL_NOT_USED;
 }
 
-void G_Formation_Create(vec2_t target, vec2_t orientation, 
-                        const vec_entity_t *ents, enum formation_type type)
+void Move_Formation_Create(vec2_t target, vec2_t orientation, 
+                           const vec_entity_t *ents, enum formation_type type)
 {
     ASSERT_IN_MAIN_THREAD();
     if(type == FORMATION_NONE)
@@ -5165,8 +5164,8 @@ void G_Formation_Create(vec2_t target, vec2_t orientation,
     /* Add a mapping from entities to the formation */
     for(int i = 0; i < vec_size(ents); i++) {
         uint32_t uid = vec_AT(ents, i);
-        if(G_Formation_GetForEnt(uid) != NULL_FID)
-            G_Formation_RemoveUnit(uid);
+        if(Move_Formation_GetForEnt(uid) != NULL_FID)
+            Move_Formation_RemoveUnit(uid);
         int ret;
         khiter_t k = kh_put(mapping, s_ent_formation_map, uid, &ret);
         assert(ret != -1);
@@ -5190,7 +5189,7 @@ void G_Formation_Create(vec2_t target, vec2_t orientation,
         .created_tick = G_ClockTicks(),
         .sub_assignment = kh_init(assignment),
         .field_res = field_res,
-        .snapshot_gen = G_Move_NavSnapshotGeneration()
+        .snapshot_gen = Move_NavSnapshotGeneration()
     };
     init_subformations(new);
     bool fields = alloc_formation_fields(new);
@@ -5234,7 +5233,7 @@ static bool s_gather_active;
 #define ASSERT_MAIN_OR_GATHER() \
     assert(SDL_ThreadID() == g_main_thread_id || s_gather_active)
 
-void G_Formation_SetGatherActive(bool active)
+void Move_Formation_SetGatherActive(bool active)
 {
     s_gather_active = active;
 }
@@ -5247,17 +5246,17 @@ static formation_id_t formation_id_for_ent(uint32_t uid)
     return kh_val(s_ent_formation_map, k);
 }
 
-formation_id_t G_Formation_GetForEnt(uint32_t uid)
+formation_id_t Move_Formation_GetForEnt(uint32_t uid)
 {
     ASSERT_MAIN_OR_GATHER();
     return formation_id_for_ent(uid);
 }
 
-void G_Formation_RemoveUnit(uint32_t uid)
+void Move_Formation_RemoveUnit(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    formation_id_t fid = G_Formation_GetForEnt(uid);
+    formation_id_t fid = Move_Formation_GetForEnt(uid);
     if(fid == NULL_FID)
         return;
 
@@ -5298,11 +5297,11 @@ void G_Formation_RemoveUnit(uint32_t uid)
     }
 }
 
-void G_Formation_RemoveEntity(uint32_t uid)
+void Move_Formation_RemoveEntity(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    G_Formation_RemoveUnit(uid);
+    Move_Formation_RemoveUnit(uid);
 
     khiter_t m = kh_get(type, s_preferred, uid);
     if(m != kh_end(s_preferred)) {
@@ -5310,7 +5309,7 @@ void G_Formation_RemoveEntity(uint32_t uid)
     }
 }
 
-bool G_Formation_CanUseArrivalField(uint32_t uid)
+bool Move_Formation_CanUseArrivalField(uint32_t uid)
 {
     ASSERT_MAIN_OR_GATHER();
 
@@ -5323,7 +5322,7 @@ bool G_Formation_CanUseArrivalField(uint32_t uid)
     return inside_arrival_field_bounds(formation, pos);
 }
 
-bool G_Formation_InRangeOfCell(uint32_t uid)
+bool Move_Formation_InRangeOfCell(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -5349,7 +5348,7 @@ static vec2_t cell_field_dir(const struct formation *formation, const uint8_t *f
     return N_FlowDir(cell_get_dir(field, arrival_res, coord.r, coord.c));
 }
 
-vec2_t G_Formation_DesiredArrivalVelocity(uint32_t uid)
+vec2_t Move_Formation_DesiredArrivalVelocity(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
     
@@ -5379,7 +5378,7 @@ vec2_t G_Formation_DesiredArrivalVelocity(uint32_t uid)
     return sum;
 }
 
-vec2_t G_Formation_ApproximateDesiredArrivalVelocity(uint32_t uid)
+vec2_t Move_Formation_ApproximateDesiredArrivalVelocity(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -5424,7 +5423,7 @@ static bool arrived_at_cell(uint32_t uid, struct cell *cell)
 /* The bounded pass is spent: the member takes the ground it stands on and its
  * cell no longer holds anyone up.
  */
-void G_Formation_ConcedeCell(uint32_t uid)
+void Move_Formation_ConcedeCell(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -5438,7 +5437,7 @@ void G_Formation_ConcedeCell(uint32_t uid)
     cell->member = MEMBER_CONCEDED;
 }
 
-bool G_Formation_ArrivedAtCell(uint32_t uid)
+bool Move_Formation_ArrivedAtCell(uint32_t uid)
 {
     ASSERT_MAIN_OR_GATHER();
 
@@ -5464,9 +5463,9 @@ static bool cell_done(struct subformation *sub, int idx)
     /* A member off fighting holds its cell for its return but nobody up, and
      * one that has stopped for good elsewhere is not coming back to it.
      */
-    if(G_Move_Seeking(uid) || G_Move_Arrived(uid))
+    if(Move_Seeking(uid) || Move_Arrived(uid))
         return true;
-    return G_Move_Still(uid) && arrived_at_cell(uid, cell);
+    return Move_Still(uid) && arrived_at_cell(uid, cell);
 }
 
 static bool subformation_done(struct subformation *sub)
@@ -5535,7 +5534,7 @@ static bool assignment_ready(struct formation *formation, struct subformation *s
     return false;
 }
 
-bool G_Formation_AssignmentReady(uint32_t uid)
+bool Move_Formation_AssignmentReady(uint32_t uid)
 {
     ASSERT_MAIN_OR_GATHER();
 
@@ -5544,7 +5543,7 @@ bool G_Formation_AssignmentReady(uint32_t uid)
     return assignment_ready(formation, subformation_for_ent(formation, uid));
 }
 
-bool G_Formation_AssignedToCell(uint32_t uid)
+bool Move_Formation_AssignedToCell(uint32_t uid)
 {
     ASSERT_MAIN_OR_GATHER();
 
@@ -5556,7 +5555,7 @@ bool G_Formation_AssignedToCell(uint32_t uid)
     return (cell->state == CELL_OCCUPIED);
 }
 
-vec2_t G_Formation_CellPosition(uint32_t uid)
+vec2_t Move_Formation_CellPosition(uint32_t uid)
 {
     ASSERT_MAIN_OR_GATHER();
 
@@ -5569,7 +5568,7 @@ vec2_t G_Formation_CellPosition(uint32_t uid)
     return cell->pos;
 }
 
-void G_Formation_Arrange(enum formation_type type, vec_entity_t *ents)
+void Move_Formation_Arrange(enum formation_type type, vec_entity_t *ents)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -5578,7 +5577,7 @@ void G_Formation_Arrange(enum formation_type type, vec_entity_t *ents)
 
     for(int i = 0; i < vec_size(&filtered); i++) {
         uint32_t curr = vec_AT(&filtered, i);
-        G_Formation_SetPreferred(curr, type);
+        Move_Formation_SetPreferred(curr, type);
     }
 
     if(type == FORMATION_NONE) {
@@ -5587,12 +5586,12 @@ void G_Formation_Arrange(enum formation_type type, vec_entity_t *ents)
     }
 
     vec2_t target = target_position(&filtered);
-    vec2_t orientation = G_Formation_AutoOrientation(target, &filtered);
-    G_Move_ArrangeInFormation(&filtered, target, orientation, type);
+    vec2_t orientation = Move_Formation_AutoOrientation(target, &filtered);
+    Move_ArrangeInFormation(&filtered, target, orientation, type);
     vec_entity_destroy(&filtered);
 }
 
-quat_t G_Formation_TargetOrientation(uint32_t uid)
+quat_t Move_Formation_TargetOrientation(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -5601,7 +5600,7 @@ quat_t G_Formation_TargetOrientation(uint32_t uid)
     return quat_from_vec(formation->orientation);
 }
 
-void G_Formation_SetPreferred(uint32_t uid, enum formation_type type)
+void Move_Formation_SetPreferred(uint32_t uid, enum formation_type type)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -5614,11 +5613,11 @@ void G_Formation_SetPreferred(uint32_t uid, enum formation_type type)
     kh_val(s_preferred, k) = type;
 
     if(type == FORMATION_NONE) {
-        G_Formation_RemoveUnit(uid);
+        Move_Formation_RemoveUnit(uid);
     }
 }
 
-enum formation_type G_Formation_GetPreferred(uint32_t uid)
+enum formation_type Move_Formation_GetPreferred(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -5627,14 +5626,14 @@ enum formation_type G_Formation_GetPreferred(uint32_t uid)
     return kh_val(s_preferred, k);
 }
 
-enum formation_type G_Formation_PreferredForSet(const vec_entity_t *ents)
+enum formation_type Move_Formation_PreferredForSet(const vec_entity_t *ents)
 {
     ASSERT_IN_MAIN_THREAD();
 
     vec_entity_t filtered;
     filter_selection_movable(ents, &filtered);
     if(vec_size(&filtered) > 0 && all_same_preferred(&filtered)) {
-        uint32_t first = G_Formation_GetPreferred(vec_AT(&filtered, 0));
+        uint32_t first = Move_Formation_GetPreferred(vec_AT(&filtered, 0));
         vec_entity_destroy(&filtered);
         return first;
     }
@@ -5642,7 +5641,7 @@ enum formation_type G_Formation_PreferredForSet(const vec_entity_t *ents)
     return FORMATION_NONE;
 }
 
-void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
+void Move_Formation_UpdateFieldIfNeeded(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
     PERF_ENTER();
@@ -5667,11 +5666,11 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
     if(!field)
         PERF_RETURN_VOID();
 
-    formation_id_t fid = G_Formation_GetForEnt(uid);
+    formation_id_t fid = Move_Formation_GetForEnt(uid);
     struct formation *formation = formation_for_ent(uid);
     struct subformation *sub = subformation_for_ent(formation, uid);
 
-    const struct map *map = G_GetMap();
+    const struct map *map = s_map;
     struct map_resolution res;
     M_NavGetResolution(map, &res);
     vec3_t map_pos = M_GetPos(map);
@@ -5737,7 +5736,7 @@ void G_Formation_UpdateFieldIfNeeded(uint32_t uid)
     PERF_RETURN_VOID();
 }
 
-float G_Formation_Speed(uint32_t uid)
+float Move_Formation_Speed(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -5746,7 +5745,7 @@ float G_Formation_Speed(uint32_t uid)
     return formation->speed;
 }
 
-enum formation_type G_Formation_Type(formation_id_t fid)
+enum formation_type Move_Formation_Type(formation_id_t fid)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -5778,7 +5777,7 @@ static vec2_t alignment_force(uint32_t uid, struct subformation *sub, vec2_t ori
     return ret;
 }
 
-vec2_t G_Formation_AlignmentForce(uint32_t uid)
+vec2_t Move_Formation_AlignmentForce(uint32_t uid)
 {
     ASSERT_MAIN_OR_GATHER();
 
@@ -5815,7 +5814,7 @@ static vec2_t cohesion_force(uint32_t uid, struct subformation *sub, vec2_t orie
     return follow_force(uid, sub);
 }
 
-vec2_t G_Formation_CohesionForce(uint32_t uid)
+vec2_t Move_Formation_CohesionForce(uint32_t uid)
 {
     ASSERT_MAIN_OR_GATHER();
 
@@ -5867,13 +5866,13 @@ static vec2_t drag_force(uint32_t uid, struct subformation *sub, vec2_t orientat
         vec2_t front_pos = G_Pos_GetXZ(front);
         PFM_Vec2_Sub(&pos, &front_pos, &delta);
         if(PFM_Vec2_Len(&delta) < (2 * radius + 5.0f)) {
-            return G_Formation_DragForce(front);
+            return Move_Formation_DragForce(front);
         }
     }
     return (vec2_t){0.0f, 0.0f};
 }
 
-vec2_t G_Formation_DragForce(uint32_t uid)
+vec2_t Move_Formation_DragForce(uint32_t uid)
 {
     ASSERT_MAIN_OR_GATHER();
 
@@ -5910,7 +5909,7 @@ static bool submit_state(uint32_t uid, struct formation_submit_state *out)
     return true;
 }
 
-bool G_Formation_SubmitState(uint32_t uid, struct formation_submit_state *out)
+bool Move_Formation_SubmitState(uint32_t uid, struct formation_submit_state *out)
 {
     ASSERT_IN_MAIN_THREAD();
     return submit_state(uid, out);
@@ -5918,12 +5917,12 @@ bool G_Formation_SubmitState(uint32_t uid, struct formation_submit_state *out)
 
 /* The same reads from the movement submit's parallel gather: the main thread
  * is blocked in that parallel-for, so nothing writes formation state meanwhile. */
-bool G_Formation_SubmitStateGather(uint32_t uid, struct formation_submit_state *out)
+bool Move_Formation_SubmitStateGather(uint32_t uid, struct formation_submit_state *out)
 {
     return submit_state(uid, out);
 }
 
-void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t orientation)
+void Move_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t orientation)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -5935,10 +5934,10 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
     ents = &capped;
 
     if(PFM_Vec2_Len(&orientation) < EPSILON) {
-        orientation = G_Formation_AutoOrientation(target, ents);
+        orientation = Move_Formation_AutoOrientation(target, ents);
     }
 
-    enum formation_type type = G_Formation_PreferredForSet(ents);
+    enum formation_type type = Move_Formation_PreferredForSet(ents);
     int field_res = field_res_for_unit_count(vec_size(ents));
     struct formation formation = (struct formation){
         .refcount = vec_size(ents),
@@ -5951,7 +5950,7 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
         .created_tick = G_ClockTicks(),
         .sub_assignment = kh_init(assignment),
         .field_res = field_res,
-        .snapshot_gen = G_Move_NavSnapshotGeneration()
+        .snapshot_gen = Move_NavSnapshotGeneration()
     };
     init_subformations(&formation);
     vec_assignment_work_init(&formation.work);
@@ -5972,7 +5971,7 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
         vec2_t pos = G_Pos_GetXZ(uid);
         int faction_id = G_GetFactionID(uid);
         uint32_t flags = G_FlagsGet(uid);
-        if(G_Move_Still(uid)) {
+        if(Move_Still(uid)) {
             M_NavBlockersDecref(pos, radius, faction_id, flags, map);
         }
     }
@@ -5998,7 +5997,7 @@ void G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t target, vec2_t
     M_AL_FreeCopyWithFields(map);
 }
 
-bool G_Formation_SaveState(struct SDL_RWops *stream)
+bool Move_Formation_SaveState(struct SDL_RWops *stream)
 {
     /* Save next formation ID */
     struct attr next_fid = (struct attr){
@@ -6188,7 +6187,7 @@ bool G_Formation_SaveState(struct SDL_RWops *stream)
     return true;
 }
 
-bool G_Formation_LoadState(struct SDL_RWops *stream)
+bool Move_Formation_LoadState(struct SDL_RWops *stream)
 {
     uint32_t curr_tick = G_ClockTicks();
     struct attr attr;
@@ -6412,7 +6411,7 @@ bool G_Formation_LoadState(struct SDL_RWops *stream)
     return true;
 }
 
-bool G_FormationBox_Shells(const size_t *counts, size_t ngroups, struct box_shell *out)
+bool Move_FormationBox_Shells(const size_t *counts, size_t ngroups, struct box_shell *out)
 {
     if(ngroups == 0)
         return false;
@@ -6441,7 +6440,7 @@ bool G_FormationBox_Shells(const size_t *counts, size_t ngroups, struct box_shel
     return true;
 }
 
-void G_FormationBox_Mask(struct box_shell shell, size_t nunits, uint8_t *out)
+void Move_FormationBox_Mask(struct box_shell shell, size_t nunits, uint8_t *out)
 {
     memset(out, 0, (size_t)shell.side * shell.side);
 

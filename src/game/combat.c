@@ -38,8 +38,8 @@
 
 #include "combat.h"
 #include "game_private.h"
-#include "movement.h"
-#include "formation.h"
+#include "move_harness.h"
+#include "../movement/public/movement.h"
 #include "building.h"
 #include "fog_of_war.h"
 #include "position.h"
@@ -658,7 +658,7 @@ static float combat_base_stat(uint32_t uid, const struct combatstate *cs,
         return cs->stats.attack_range;
     case COMBAT_MOD_SPEED: {
         float speed = 0.0f;
-        G_Move_GetMaxSpeed(uid, &speed);
+        Move_GetMaxSpeed(uid, &speed);
         return speed;
     }
     default:
@@ -718,7 +718,7 @@ static void combat_mods_resum(uint32_t uid)
     cs->mods = mods;
 
     if(mods.bonus[COMBAT_MOD_SPEED] != old_speed) {
-        G_Move_SetSpeedBonus(uid, mods.bonus[COMBAT_MOD_SPEED]);
+        Move_SetSpeedBonus(uid, mods.bonus[COMBAT_MOD_SPEED]);
     }
 }
 
@@ -870,14 +870,14 @@ static void entity_move_in_range(uint32_t uid, uint32_t target)
     assert(cs->stance != COMBAT_STANCE_HOLD_POSITION);
 
     if(cs->stats.attack_range == 0.0f) {
-        G_Move_SetSurroundEntity(uid, target);
+        Move_SetSurroundEntity(uid, target);
     }else{
         if(M_NavLocationsReachable(s_map, Entity_NavLayer(uid),
             G_Pos_GetXZ(uid), G_Pos_GetXZ(target))) {
 
-            G_Move_SetSurroundEntity(uid, target);
+            Move_SetSurroundEntity(uid, target);
         }else{
-            G_Move_SetEnterRange(uid, target, combat_effective_range(cs));
+            Move_SetEnterRange(uid, target, combat_effective_range(cs));
         }
     }
 }
@@ -1078,7 +1078,7 @@ static vec3_t entity_facing_dir(uint32_t uid)
 static bool fires_from_formation(uint32_t uid)
 {
     return (G_FlagsGet(uid) & ENTITY_FLAG_MOVABLE)
-        && (G_Formation_GetForEnt(uid) != NULL_FID);
+        && (Move_Formation_GetForEnt(uid) != NULL_FID);
 }
 
 static bool faces_target(uint32_t uid, uint32_t target)
@@ -1112,23 +1112,23 @@ static void entity_turn_to_target(uint32_t uid, uint32_t target)
 
     /* Formation members hold their ground and fire without leaving the formation. */
     if(fires_from_formation(uid)) {
-        G_Move_SetCombatFacing(uid, entity_turn_dir(uid, target));
+        Move_SetCombatFacing(uid, entity_turn_dir(uid, target));
         cs->state = STATE_TURNING_TO_TARGET;
         return;
     }
 
     if(!cs->move_cmd_interrupted
-    && G_Move_GetDest(uid, &cs->move_cmd_xz, &cs->move_cmd_attacking)) {
+    && Move_GetDest(uid, &cs->move_cmd_xz, &cs->move_cmd_attacking)) {
         cs->move_cmd_interrupted = true;
     }
-    G_Move_StopForCombat(uid);
+    Move_StopForCombat(uid);
 
     if(!(flags & ENTITY_FLAG_MOVABLE)) {
         cs->state = STATE_CAN_ATTACK;
         combat_notify_attack_start(uid, cs);
     }else{
         quat_t rot = entity_turn_dir(uid, target);
-        G_Move_SetChangeDirection(uid, rot);
+        Move_SetChangeDirection(uid, rot);
         cs->state = STATE_TURNING_TO_TARGET;
     }
 }
@@ -1156,7 +1156,7 @@ static void entity_die(uint32_t uid)
         cs->state = STATE_NOT_IN_COMBAT;
     }
 
-    G_Move_Stop(uid);
+    Move_Stop(uid);
 
     uint32_t flags = G_FlagsGet(uid);
     if(flags & ENTITY_FLAG_SELECTABLE) {
@@ -1566,7 +1566,7 @@ static void do_set_stance(uint32_t uid, enum combat_stance stance)
     if(stance == COMBAT_STANCE_HOLD_POSITION 
     && (cs->state == STATE_MOVING_TO_TARGET || cs->state == STATE_MOVING_TO_TARGET_LOCKED)) {
 
-        G_Move_Stop(uid);
+        Move_Stop(uid);
         cs->state = STATE_NOT_IN_COMBAT;
         cs->move_cmd_interrupted = false;
     }
@@ -1652,8 +1652,8 @@ static void do_stop_attack(uint32_t uid)
 
     if(!cmd && cs->move_cmd_interrupted) {
         assert(cs->stance != COMBAT_STANCE_HOLD_POSITION);
-        if(!G_Move_ResumeOrder(uid))
-            G_Move_SetDest(uid, cs->move_cmd_xz, cs->move_cmd_attacking);
+        if(!Move_ResumeOrder(uid))
+            Move_SetDest(uid, cs->move_cmd_xz, cs->move_cmd_attacking);
         cs->move_cmd_interrupted = false;
     }
 }
@@ -2105,10 +2105,10 @@ static void entity_target_enemy(uint32_t uid, uint32_t enemy)
         cs->state = STATE_MOVING_TO_TARGET;
 
         if(!cs->move_cmd_interrupted 
-        && G_Move_GetDest(uid, &cs->move_cmd_xz, &cs->move_cmd_attacking)) {
+        && Move_GetDest(uid, &cs->move_cmd_xz, &cs->move_cmd_attacking)) {
             cs->move_cmd_interrupted = true; 
         }
-        G_Move_SetSeekEnemies(uid);
+        Move_SetSeekEnemies(uid);
     }else{
         /* Can neither attack nor chase the target (e.g. a stationary unit whose enemy
          * is out of range); leave combat so the state matches the cleared notification. */
@@ -2132,24 +2132,24 @@ static void entity_stop_combat(uint32_t uid)
     struct combat_cmd *cmd = snoop_most_recent_command(COMBAT_CMD_SET_RANGE,
         (void*)(uintptr_t)uid, uids_match);
     if(!cmd && cs->move_cmd_interrupted) {
-        if(!G_Move_ResumeOrder(uid))
-            G_Move_SetDest(uid, cs->move_cmd_xz, cs->move_cmd_attacking);
+        if(!Move_ResumeOrder(uid))
+            Move_SetDest(uid, cs->move_cmd_xz, cs->move_cmd_attacking);
         cs->move_cmd_interrupted = false;
         return;
     }
 
     /* Formation members keep their move state so they rejoin the advance once the hold lifts. */
-    if(G_Formation_GetForEnt(uid) != NULL_FID)
+    if(Move_Formation_GetForEnt(uid) != NULL_FID)
         return;
 
-    G_Move_Stop(uid);
+    Move_Stop(uid);
 }
 
 static bool under_attack_order(uint32_t uid)
 {
     vec2_t dest;
     bool attacking;
-    if(!G_Move_GetDest(uid, &dest, &attacking))
+    if(!Move_GetDest(uid, &dest, &attacking))
         return false;
     return attacking;
 }
@@ -2159,10 +2159,10 @@ static void entity_hold_ground(uint32_t uid, uint32_t threat)
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
 
-    G_Move_StopFlee(uid);
+    Move_StopFlee(uid);
 
     /* Only commit to holding while advancing under an attack-move order. */
-    if(!under_attack_order(uid) || G_Move_Still(uid)) {
+    if(!under_attack_order(uid) || Move_Still(uid)) {
         cs->state = STATE_NOT_IN_COMBAT;
         return;
     }
@@ -2170,7 +2170,7 @@ static void entity_hold_ground(uint32_t uid, uint32_t threat)
     cs->state = STATE_STANDING_GROUND;
     cs->target_uid = threat;
     if(!entity_dead(threat)) {
-        G_Move_SetCombatFacing(uid, entity_turn_dir(uid, threat));
+        Move_SetCombatFacing(uid, entity_turn_dir(uid, threat));
     }
 }
 
@@ -2698,7 +2698,7 @@ static void entity_apply_update(struct combat_work_out *out)
     }
     case COMBAT_ACTION_STOP_MOVEMENT: {
         uint32_t uid = out->action_args[0].val.as_int;
-        G_Move_Stop(uid);
+        Move_Stop(uid);
         break;
     }
     case COMBAT_ACTION_MOVE_IN_RANGE: {
@@ -2710,7 +2710,7 @@ static void entity_apply_update(struct combat_work_out *out)
     case COMBAT_ACTION_MOVE_IN_RANGE_IF_STILL: {
         uint32_t uid = out->action_args[0].val.as_int;
         uint32_t target = out->action_args[1].val.as_int;
-        if(G_Move_Still(uid)) {
+        if(Move_Still(uid)) {
             entity_move_in_range(uid, target);
         }
         break;
@@ -2726,7 +2726,7 @@ static void entity_apply_update(struct combat_work_out *out)
         assert(old_uid == uid);
 
         uint32_t target = out->action_args[1].val.as_int;
-        bool ready = fires_from_formation(uid) ? faces_target(uid, target) : G_Move_Still(uid);
+        bool ready = fires_from_formation(uid) ? faces_target(uid, target) : Move_Still(uid);
         if(ready) {
             cs->state = STATE_CAN_ATTACK;
             combat_notify_attack_start(uid, cs);
@@ -2748,12 +2748,12 @@ static void entity_apply_update(struct combat_work_out *out)
     case COMBAT_ACTION_FLEE: {
         uint32_t uid = out->action_args[0].val.as_int;
         vec2_t threat_xz = out->action_args[1].val.as_vec2;
-        G_Move_SetFlee(uid, threat_xz);
+        Move_SetFlee(uid, threat_xz);
         break;
     }
     case COMBAT_ACTION_RESUME_MOVE: {
         uint32_t uid = out->action_args[0].val.as_int;
-        G_Move_StopFlee(uid);
+        Move_StopFlee(uid);
         break;
     }
     default:
@@ -2768,22 +2768,22 @@ static void entity_apply_update(struct combat_work_out *out)
     bool hold = (engaged && fires_from_formation(uid))
              || (cs->state == STATE_STANDING_GROUND);
     if(hold && !(eflags & ENTITY_FLAG_COMBAT_HELD)) {
-        G_Move_SetCombatHeld(uid, true);
+        Move_SetCombatHeld(uid, true);
     }else if(!hold && (eflags & ENTITY_FLAG_COMBAT_HELD)) {
-        G_Move_SetCombatHeld(uid, false);
+        Move_SetCombatHeld(uid, false);
     }
 
     /* A player order can race the snapshot; reconcile in combat's favour. */
     if(harmless(cs) && cs->state != STATE_NON_COMBATANT_FLEEING
-    && G_Move_IsFleeing(uid)) {
-        G_Move_StopFlee(uid);
+    && Move_IsFleeing(uid)) {
+        Move_StopFlee(uid);
     }
 
     /* The pin only means something while chasing. */
     if(cs->state != STATE_MOVING_TO_TARGET)
         cs->seek_pin_uid = NULL_UID;
     if(cs->seek_pin_uid != old_pin)
-        G_Move_SetSeekPin(uid, cs->seek_pin_uid);
+        Move_SetSeekPin(uid, cs->seek_pin_uid);
 }
 
 static void combat_push_cmd(struct combat_cmd cmd)
@@ -3330,8 +3330,8 @@ static void log_hot_targets(void)
         const struct entity *ent = G_EntityExists(uid) ? AL_EntityGet(uid) : NULL;
         fprintf(stdout, "[cb-att] %lu,%u,%u,%d,%.1f,%.1f,%d,%d,%d,%s\n", g_frame_idx,
             cs->target_uid, uid, (int)cs->state, dist, combat_effective_range(cs),
-            G_EntityExists(uid) ? (int)G_Move_Still(uid) : -1,
-            (int)(G_Formation_GetForEnt(uid) != NULL_FID), (int)cs->attack_notified,
+            G_EntityExists(uid) ? (int)Move_Still(uid) : -1,
+            (int)(Move_Formation_GetForEnt(uid) != NULL_FID), (int)cs->attack_notified,
             (ent && ent->name) ? ent->name : "");
     }
 }
@@ -4212,7 +4212,7 @@ static float combat_base_stat_queued(uint32_t uid, enum combat_mod_kind kind)
         return G_Combat_GetRange(uid);
     case COMBAT_MOD_SPEED: {
         float speed = 0.0f;
-        G_Move_GetMaxSpeed(uid, &speed);
+        Move_GetMaxSpeed(uid, &speed);
         return speed;
     }
     default:

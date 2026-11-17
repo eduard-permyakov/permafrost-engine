@@ -39,7 +39,7 @@
 #include "harvester.h"
 #include "wander.h"
 #include "duty.h"
-#include "movement.h"
+#include "../movement/public/movement.h"
 #include "resource.h"
 #include "storage_site.h"
 #include "provision.h"
@@ -1003,7 +1003,7 @@ static void entity_drop_off(uint32_t uid, uint32_t ss)
         (void*)((uintptr_t)uid), G_RUNNING);
 
     E_Entity_Notify(EVENT_STORAGE_TARGET_ACQUIRED, uid, (void*)(uintptr_t)ss, ES_ENGINE);
-    G_Move_SetSurroundEntity(uid, ss);
+    Move_SetSurroundEntity(uid, ss);
 }
 
 /* Whether the site gathered for is one the worker builds, not a store it feeds */
@@ -1234,8 +1234,8 @@ static void wait_to_sow(uint32_t uid, struct hstate *hs)
         finish_harvesting(hs, uid);
     }
     G_Duty_SetWaiting(uid, true);
-    if(!M_NavObjAdjacent(s_map, uid, resource) && G_Move_Still(uid)) {
-        G_Move_SetSurroundEntity(uid, resource);
+    if(!M_NavObjAdjacent(s_map, uid, resource) && Move_Still(uid)) {
+        Move_SetSurroundEntity(uid, resource);
     }
 }
 
@@ -1564,7 +1564,7 @@ static bool face_game(uint32_t uid, uint32_t res)
 {
     if(aimed_at_game(uid, res, HUNT_AIM_COS))
         return true;
-    G_Move_SetChangeDirection(uid, rot_toward(game_direction(uid, res)));
+    Move_SetChangeDirection(uid, rot_toward(game_direction(uid, res)));
     return false;
 }
 
@@ -1621,7 +1621,7 @@ static bool held_up_on_field(uint32_t uid)
     || (G_FlagsGet(hs->res_uid) & (ENTITY_FLAG_COLLISION | ENTITY_FLAG_ZOMBIE))
     || !M_NavObjAdjacent(s_map, uid, hs->res_uid))
         return false;
-    G_Move_Stop(uid);
+    Move_Stop(uid);
     return true;
 }
 
@@ -1629,7 +1629,7 @@ static void on_arrive_at_resource(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
 
-    if(!G_Move_Still(uid) && !held_up_on_field(uid))
+    if(!Move_Still(uid) && !held_up_on_field(uid))
         return; 
 
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_resource);
@@ -1696,7 +1696,7 @@ static void cart_leg_log(uint32_t uid, const char *event, uint32_t src, uint32_t
         return;
     struct hstate *hs = hstate_get(uid);
     vec2_t pos = G_Pos_GetXZ(uid);
-    fprintf(stdout, "[cart-leg] %u,%u,%s,%d,%u,%u,%d,%d,%d,%.2f,%.2f\n", G_Move_TraceTick(), uid,
+    fprintf(stdout, "[cart-leg] %u,%u,%s,%d,%u,%u,%d,%d,%d,%.2f,%.2f\n", Move_TraceTick(), uid,
         event, hs ? (int)hs->state : -1, src, dest,
         src != NULL_UID && G_EntityExists(src) ? (int)M_NavObjAdjacent(s_map, uid, src) : -1,
         dest != NULL_UID && G_EntityExists(dest) ? (int)M_NavObjAdjacent(s_map, uid, dest) : -1,
@@ -1718,7 +1718,7 @@ static void on_arrive_at_storage(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
 
-    if(!G_Move_Still(uid))
+    if(!Move_Still(uid))
         return; 
 
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_storage);
@@ -1827,7 +1827,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
 
-    if(!G_Move_Still(uid))
+    if(!Move_Still(uid))
         return;
 
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_transport_source);
@@ -1930,7 +1930,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
                 (void*)((uintptr_t)uid), G_RUNNING);
 
             cart_leg_log(uid, "next-src", newsrc, hs->transport_dest_uid);
-            G_Move_SetSurroundEntity(uid, newsrc);
+            Move_SetSurroundEntity(uid, newsrc);
             hs->transport_src_uid = newsrc;
             return;
         }
@@ -1951,7 +1951,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
         (void*)((uintptr_t)uid), G_RUNNING);
 
     cart_leg_log(uid, "to-dest", hs->transport_src_uid, hs->transport_dest_uid);
-    G_Move_SetSurroundEntity(uid, hs->transport_dest_uid);
+    Move_SetSurroundEntity(uid, hs->transport_dest_uid);
     hs->state = STATE_TRANSPORT_PUTTING;
     E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, uid, 
         (void*)(uintptr_t)hs->transport_dest_uid, ES_ENGINE);
@@ -1961,7 +1961,7 @@ static void on_arrive_at_transport_dest(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
 
-    if(!G_Move_Still(uid))
+    if(!Move_Still(uid))
         return; 
 
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_transport_dest);
@@ -2388,7 +2388,7 @@ static bool draws_on(uint32_t target, const char *rname)
 static int drawn_over_trip(uint32_t uid, uint32_t src, uint32_t target, const char *rname)
 {
     float speed = 0.0f;
-    if(!G_Move_GetEffectiveSpeed(uid, &speed) || speed <= 0.0f)
+    if(!Move_GetEffectiveSpeed(uid, &speed) || speed <= 0.0f)
         return 0;
     float trip_s = trip_length(uid, src, target) / speed;
     return (int)(G_StorageSite_GetDraw(target, rname) * trip_s / 60.0f);
@@ -2559,7 +2559,7 @@ static void entity_try_gather_nearest_source(uint32_t harvester,
             (void*)((uintptr_t)harvester), G_RUNNING);
         E_Entity_Register(EVENT_ORDER_ISSUED, harvester, on_motion_begin_travel, 
             (void*)((uintptr_t)harvester), G_RUNNING);
-        G_Move_SetSurroundEntity(harvester, newtarget);
+        Move_SetSurroundEntity(harvester, newtarget);
     }
 }
 
@@ -2569,7 +2569,7 @@ static void on_arrive_at_resource_source(void *user, void *event)
     struct hstate *hs = hstate_get(uid);
     assert(hs);
 
-    if(!G_Move_Still(uid))
+    if(!Move_Still(uid))
         return; 
 
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_resource_source);
@@ -2604,7 +2604,7 @@ static void on_arrive_at_resource_source(void *user, void *event)
         E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
             (void*)((uintptr_t)uid), G_RUNNING);
 
-        G_Move_SetSurroundEntity(uid, hs->res_uid);
+        Move_SetSurroundEntity(uid, hs->res_uid);
         hs->state = STATE_TRANSPORT_PUTTING;
         E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, uid, 
             (void*)(uintptr_t)hs->transport_dest_uid, ES_ENGINE);
@@ -2699,7 +2699,7 @@ static void on_harvest_anim_finished_source(void *user, void *event)
         E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
             (void*)((uintptr_t)uid), G_RUNNING);
 
-        G_Move_SetSurroundEntity(uid, hs->transport_dest_uid);
+        Move_SetSurroundEntity(uid, hs->transport_dest_uid);
         hs->state = STATE_TRANSPORT_PUTTING;
         E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, uid, 
             (void*)(uintptr_t)hs->transport_dest_uid, ES_ENGINE);
@@ -2744,7 +2744,7 @@ static bool harvester_transport_from_resources(uint32_t harvester, uint32_t stor
             (void*)((uintptr_t)harvester), G_RUNNING);
         E_Entity_Register(EVENT_ORDER_ISSUED, harvester, on_motion_begin_travel, 
             (void*)((uintptr_t)harvester), G_RUNNING);
-        G_Move_SetSurroundEntity(harvester, resource);
+        Move_SetSurroundEntity(harvester, resource);
     }
 
     return true;
@@ -2856,7 +2856,7 @@ static void give_up_unreachable(uint32_t tick)
         if(uid % REACH_CHECK_TICKS != tick % REACH_CHECK_TICKS)
             continue;
         uint32_t target = making_for(hs);
-        if(target == NULL_UID || G_Move_Still(uid))
+        if(target == NULL_UID || Move_Still(uid))
             continue;
         /* Gone from under it, such as a road site laid since */
         bool gone = !G_EntityExists(target) || G_EntityIsZombie(target);
@@ -2877,7 +2877,7 @@ static void give_up_unreachable(uint32_t tick)
         G_Automation_TraceFollowOn(stranded[i], "walled", gone ? "gone" : "unreachable", "",
             gone ? NULL_UID : target);
         G_Harvester_Stop(stranded[i]);
-        G_Move_Stop(stranded[i]);
+        Move_Stop(stranded[i]);
     }
 }
 
@@ -2920,7 +2920,7 @@ static void give_up_crowded(void)
     uint32_t uid;
     struct hstate *hs;
     kh_foreach_val_ptr(s_entity_state_table, uid, hs, {
-        if(hs->state != STATE_HARVESTING_SEEK_RESOURCE || G_Move_Still(uid))
+        if(hs->state != STATE_HARVESTING_SEEK_RESOURCE || Move_Still(uid))
             continue;
         if(making_way(uid, hs, hs->res_uid))
             continue;
@@ -2939,7 +2939,7 @@ static void give_up_crowded(void)
         if(M_NavObjAdjacent(s_map, crowded[i], curr->res_uid))
             continue;
         G_Automation_TraceFollowOn(crowded[i], "crowded", "next", curr->res_name, curr->res_uid);
-        G_Move_Stop(crowded[i]);
+        Move_Stop(crowded[i]);
         on_arrive_at_resource((void*)((uintptr_t)crowded[i]), NULL);
     }
 }
@@ -2967,7 +2967,7 @@ static void give_up_stalled(void)
     uint32_t uid;
     struct hstate *hs;
     kh_foreach_val_ptr(s_entity_state_table, uid, hs, {
-        if(hs->state == STATE_HARVESTING_SEEK_RESOURCE || !awaited_arrival(hs) || G_Move_Still(uid))
+        if(hs->state == STATE_HARVESTING_SEEK_RESOURCE || !awaited_arrival(hs) || Move_Still(uid))
             continue;
         if(making_way(uid, hs, awaited_target(hs)))
             continue;
@@ -2987,7 +2987,7 @@ static void give_up_stalled(void)
         if(!handler)
             continue;
         G_Automation_TraceFollowOn(stalled[i], "stalled", "arrive", curr->res_name, awaited_target(curr));
-        G_Move_Stop(stalled[i]);
+        Move_Stop(stalled[i]);
         handler((void*)((uintptr_t)stalled[i]), NULL);
     }
 }
@@ -3007,7 +3007,7 @@ static void on_20hz_tick(void *user, void *event)
     uint32_t uid;
     struct hstate *hs;
     kh_foreach_val_ptr(s_entity_state_table, uid, hs, {
-        if(!awaited_arrival(hs) || !G_Move_Still(uid)) {
+        if(!awaited_arrival(hs) || !Move_Still(uid)) {
             hs->still_ticks = 0;
             continue;
         }
@@ -3489,7 +3489,7 @@ static bool gather_order(uint32_t harvester, uint32_t resource)
             (void*)((uintptr_t)harvester), G_RUNNING);
         E_Entity_Register(EVENT_ORDER_ISSUED, harvester, on_motion_begin_travel, 
             (void*)((uintptr_t)harvester), G_RUNNING);
-        G_Move_SetEnterRange(harvester, resource, HUNT_RANGE);
+        Move_SetEnterRange(harvester, resource, HUNT_RANGE);
     }else if(M_NavObjAdjacent(s_map, harvester, resource) && (resource_flags & ENTITY_FLAG_COLLISION)) {
         on_arrive_at_resource((void*)((uintptr_t)harvester), NULL);
     }else{
@@ -3500,9 +3500,9 @@ static bool gather_order(uint32_t harvester, uint32_t resource)
 
         if(!(resource_flags & ENTITY_FLAG_COLLISION)) {
             vec2_t center = G_Pos_GetXZ(resource);
-            G_Move_SetDest(harvester, center, false);
+            Move_SetDest(harvester, center, false);
         }else{
-            G_Move_SetSurroundEntity(harvester, resource);
+            Move_SetSurroundEntity(harvester, resource);
         }
     }
 
@@ -3591,7 +3591,7 @@ static bool pick_up_order(uint32_t harvester, uint32_t storage)
             (void*)((uintptr_t)harvester), G_RUNNING);
         E_Entity_Register(EVENT_ORDER_ISSUED, harvester, on_motion_begin_travel, 
             (void*)((uintptr_t)harvester), G_RUNNING);
-        G_Move_SetSurroundEntity(harvester, storage);
+        Move_SetSurroundEntity(harvester, storage);
     }
 
     return true;
@@ -3678,7 +3678,7 @@ static bool transport(uint32_t harvester, uint32_t storage, enum en_route_rule r
             (void*)((uintptr_t)harvester), G_RUNNING);
         E_Entity_Register(EVENT_ORDER_ISSUED, harvester, on_motion_begin_travel, 
             (void*)((uintptr_t)harvester), G_RUNNING);
-        G_Move_SetSurroundEntity(harvester, src);
+        Move_SetSurroundEntity(harvester, src);
     }
 
     return true;
@@ -3749,7 +3749,7 @@ bool G_Harvester_TransportJob(uint32_t harvester, uint32_t src, uint32_t dest,
             (void*)((uintptr_t)harvester), G_RUNNING);
         E_Entity_Register(EVENT_ORDER_ISSUED, harvester, on_motion_begin_travel, 
             (void*)((uintptr_t)harvester), G_RUNNING);
-        G_Move_SetSurroundEntity(harvester, src);
+        Move_SetSurroundEntity(harvester, src);
     }
     return true;
 }

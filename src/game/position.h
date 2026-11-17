@@ -43,11 +43,6 @@
 
 struct map;
 
-BITMAP_GRID_TYPE(ent, uint32_t)
-BITMAP_GRID_PROTOTYPES(extern, ent, uint32_t)
-
-KHASH_DECLARE(pos, khint32_t, vec3_t)
-
 bool      G_Pos_Init(const struct map *map);
 void      G_Pos_Shutdown(void);
 void      G_Pos_Delete(uint32_t uid);
@@ -67,8 +62,6 @@ void      G_Pos_SetReach(uint32_t uid, float reach);
 bg_ent_t *G_Pos_CopyBitmapGrid(void);
 bg_ent_t *G_Pos_CopyBitmapGridInto(bg_ent_t *dst);
 void      G_Pos_DestroyBitmapGrid(bg_ent_t *tree);
-int       G_Pos_EntsInCircleFrom(bg_ent_t *tree, khash_t(id) *flags, vec2_t xz_point, float range, 
-                                 uint32_t *out, size_t maxout);
 int       G_Pos_EntsInCircleWithPredFrom(bg_ent_t *tree, khash_t(id) *flags, 
                                          vec2_t xz_point, float range, 
                                          uint32_t *out, size_t maxout,

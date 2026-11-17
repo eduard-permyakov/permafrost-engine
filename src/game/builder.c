@@ -43,7 +43,7 @@
 #include "command.h"
 #include "storage_site.h"
 #include "game_private.h"
-#include "movement.h"
+#include "../movement/public/movement.h"
 #include "position.h"
 #include "public/game.h"
 #include "../sched.h"
@@ -366,7 +366,7 @@ static void on_motion_end(void *user, void *event)
     struct builderstate *bs = builderstate_get(uid);
     assert(bs);
 
-    if(!G_Move_Still(uid))
+    if(!Move_Still(uid))
         return;
 
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_motion_end);
@@ -515,7 +515,7 @@ static void on_20hz_tick(void *user, void *event)
 
         /* An arrival whose motion end it never heard is taken as one */
         if(bs->state == STATE_MOVING_TO_TARGET) {
-            if(!G_Move_Still(uid)) {
+            if(!Move_Still(uid)) {
                 bs->wait_ticks = 0;
             }else if(++bs->wait_ticks >= STILL_ARRIVAL_TICKS) {
                 bs->wait_ticks = 0;
@@ -531,7 +531,7 @@ static void on_20hz_tick(void *user, void *event)
                 next_command(uid);
                 continue;
             }
-            if(++bs->wait_ticks % SUPPLY_RETRY_TICKS != 0 || !G_Move_Still(uid))
+            if(++bs->wait_ticks % SUPPLY_RETRY_TICKS != 0 || !Move_Still(uid))
                 continue;
             if(!M_NavObjAdjacent(s_map, uid, bs->target_uid)) {
                 approach(uid, bs, bs->target_uid);
@@ -554,7 +554,7 @@ static void on_20hz_tick(void *user, void *event)
         bs->wait_ticks++;
         if(bs->wait_ticks % FOUND_RETRY_TICKS == 0) {
             /* One pushed off the footprint itself walks back before trying again */
-            if(!G_Move_Still(uid))
+            if(!Move_Still(uid))
                 continue;
             if(!M_NavObjAdjacent(s_map, uid, bs->target_uid)) {
                 approach(uid, bs, bs->target_uid);
@@ -607,7 +607,7 @@ static void approach(uint32_t uid, struct builderstate *bs, uint32_t building)
     if(M_NavObjAdjacent(s_map, uid, building)) {
         on_motion_end((void*)((uintptr_t)uid), NULL);
     }else{
-        G_Move_SetSurroundEntity(uid, building);
+        Move_SetSurroundEntity(uid, building);
         E_Entity_Register(EVENT_MOTION_END, uid, on_motion_end, (void*)((uintptr_t)uid), G_RUNNING);
     }
 }

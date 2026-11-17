@@ -43,6 +43,7 @@
 #include "fieldcache.h"
 #include "../map/public/tile.h"
 #include "../game/public/game.h"
+#include "../movement/public/movement.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../mem.h"
@@ -2289,7 +2290,7 @@ static bool n_moving_entity(uint32_t ent, void *arg)
     const uint16_t *factions = arg;
     if(factions && !(*factions & (0x1 << G_GetFactionID(ent))))
         return false;
-    return !G_Move_Still(ent);
+    return !Move_Still(ent);
 }
 
 /* A site laying a road is marked over its tile from the start, and nothing

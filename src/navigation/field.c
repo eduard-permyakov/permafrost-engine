@@ -81,8 +81,6 @@ PQUEUE_IMPL(static, td, struct tile_desc)
 KHASH_MAP_INIT_INT(aabb, struct aabb)
 KHASH_MAP_INIT_INT(footprint, struct cluster_footprint)
 
-KHASH_DECLARE(id, khint32_t, int)
-
 struct box_xz{
     float x_min, x_max;
     float z_min, z_max;

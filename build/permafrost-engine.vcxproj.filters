@@ -94,6 +94,15 @@
     <Filter Include="Source Files\phys">
       <UniqueIdentifier>{16491370-e219-4415-92c9-a19f5d60fea4}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\movement">
+      <UniqueIdentifier>{5f26b292-5f77-4ed2-8f3e-58346902bcd5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\movement">
+      <UniqueIdentifier>{a578ac1a-27eb-4849-a7ea-9c713053c48c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\movement\public">
+      <UniqueIdentifier>{3a0f193e-596f-4872-8ca6-99c6107d3034}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\asset_load.c">
@@ -201,8 +210,8 @@
     <ClCompile Include="..\src\game\building.c">
       <Filter>Source Files\game</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\game\clearpath.c">
-      <Filter>Source Files\game</Filter>
+    <ClCompile Include="..\src\movement\clearpath.c">
+      <Filter>Source Files\movement</Filter>
     </ClCompile>
     <ClCompile Include="..\src\game\combat.c">
       <Filter>Source Files\game</Filter>
@@ -216,8 +225,8 @@
     <ClCompile Include="..\src\game\harvester.c">
       <Filter>Source Files\game</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\game\movement.c">
-      <Filter>Source Files\game</Filter>
+    <ClCompile Include="..\src\movement\movement.c">
+      <Filter>Source Files\movement</Filter>
     </ClCompile>
     <ClCompile Include="..\src\game\position.c">
       <Filter>Source Files\game</Filter>
@@ -345,8 +354,8 @@
     <ClCompile Include="..\src\game\automation.c">
       <Filter>Source Files\game</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\game\formation.c">
-      <Filter>Source Files\game</Filter>
+    <ClCompile Include="..\src\movement\formation.c">
+      <Filter>Source Files\movement</Filter>
     </ClCompile>
     <ClCompile Include="..\src\game\garrison.c">
       <Filter>Source Files\game</Filter>
@@ -375,8 +384,8 @@
     <ClCompile Include="..\src\asset_cache.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\game\arrival.c">
-      <Filter>Source Files\game</Filter>
+    <ClCompile Include="..\src\movement\arrival.c">
+      <Filter>Source Files\movement</Filter>
     </ClCompile>
     <ClCompile Include="..\src\game\cluster.c">
       <Filter>Source Files\game</Filter>
@@ -458,6 +467,12 @@
     </ClCompile>
     <ClCompile Include="..\src\sprite.c">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\move_harness.c">
+      <Filter>Source Files\game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\movement\flocking.c">
+      <Filter>Source Files\movement</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -584,8 +599,8 @@
     <ClInclude Include="..\src\game\building.h">
       <Filter>Header Files\game</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\game\clearpath.h">
-      <Filter>Header Files\game</Filter>
+    <ClInclude Include="..\src\movement\clearpath.h">
+      <Filter>Header Files\movement</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\combat.h">
       <Filter>Header Files\game</Filter>
@@ -603,9 +618,6 @@
       <Filter>Header Files\game</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\harvester.h">
-      <Filter>Header Files\game</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\game\movement.h">
       <Filter>Header Files\game</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\position.h">
@@ -764,8 +776,8 @@
     <ClInclude Include="..\src\game\garrison.h">
       <Filter>Header Files\game</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\game\formation.h">
-      <Filter>Header Files\game</Filter>
+    <ClInclude Include="..\src\movement\formation.h">
+      <Filter>Header Files\movement</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\automation.h">
       <Filter>Header Files\game</Filter>
@@ -788,8 +800,8 @@
     <ClInclude Include="..\src\asset_cache.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\game\arrival.h">
-      <Filter>Header Files\game</Filter>
+    <ClInclude Include="..\src\movement\arrival.h">
+      <Filter>Header Files\movement</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\cluster.h">
       <Filter>Header Files\game</Filter>
@@ -862,6 +874,18 @@
     </ClInclude>
     <ClInclude Include="..\src\sprite.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\move_harness.h">
+      <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\movement\public\movement.h">
+      <Filter>Header Files\movement\public</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\movement\move_private.h">
+      <Filter>Header Files\movement</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\movement\flocking.h">
+      <Filter>Header Files\movement</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

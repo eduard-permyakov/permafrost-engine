@@ -40,7 +40,7 @@
 #include "duty.h"
 #include "public/game.h"
 #include "game_private.h"
-#include "movement.h"
+#include "../movement/public/movement.h"
 #include "combat.h"
 #include "position.h"
 #include "harvester.h"
@@ -220,10 +220,10 @@ static bool approach(uint32_t unit, uint32_t workshop)
         vec2_t door;
         if(!M_NavClosestReachableAdjacentPos(s_map, Entity_NavLayer(unit), pos, workshop, true, &door))
             return false;
-        G_Move_SetDest(unit, door, false);
+        Move_SetDest(unit, door, false);
         return true;
     }
-    G_Move_SetSurroundEntity(unit, workshop);
+    Move_SetSurroundEntity(unit, workshop);
     return true;
 }
 
@@ -236,7 +236,7 @@ static void go_in(uint32_t unit, struct holder *h)
     uint32_t flags = G_FlagsGet(unit);
     G_FlagsSet(unit, flags | ENTITY_FLAG_GARRISONED);
     G_Combat_StopAttack(unit);
-    G_Move_Unblock(unit);
+    Move_Unblock(unit);
     G_Pos_Garrison(unit);
 }
 
@@ -252,7 +252,7 @@ static bool go_out(uint32_t unit, const struct holder *h)
     G_FlagsSet(unit, flags & ~ENTITY_FLAG_GARRISONED);
     vec3_t pos = (vec3_t){out.x, M_HeightAtPoint(s_map, out), out.z};
     G_Pos_Ungarrison(unit, pos);
-    G_Move_BlockAt(unit, pos);
+    Move_BlockAt(unit, pos);
     return true;
 }
 
@@ -361,7 +361,7 @@ static void update_walking(uint32_t unit, struct holder *h)
         release(unit, "unreachable", false);
         return;
     }
-    if(!G_Move_Still(unit))
+    if(!Move_Still(unit))
         return;
     if(at_door(unit, h->workshop)) {
         go_in(unit, h);

@@ -9,6 +9,7 @@
     * Implement district and cluster systems
     * Implement post and provision mechanics
     * Improve and extend the worker automation mechanics
+    * Factor the movement simulation out into a system of its own
 
 ================================================================================
 [Version 1.18.0] - 07.10.2026

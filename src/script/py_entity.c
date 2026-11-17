@@ -46,6 +46,7 @@
 #include "../asset_load.h"
 #include "../anim/public/anim.h"
 #include "../game/public/game.h"
+#include "../movement/public/movement.h"
 #include "../phys/public/phys.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/SDL_vec_rwops.h"
@@ -3138,7 +3139,7 @@ static PyObject *PyCombatableEntity_attack(PyCombatableEntityObject *self, PyObj
     G_Combat_SetStance(self->super.ent, COMBAT_STANCE_AGGRESSIVE);
 
     if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_MOVABLE) {
-        G_Move_SetDest(self->super.ent, xz_pos, true);
+        Move_SetDest(self->super.ent, xz_pos, true);
     }
 
     Py_RETURN_NONE;
@@ -6238,7 +6239,7 @@ static PyObject *PyMovableEntity_get_speed(PyMovableEntityObject *self, void *cl
     }
 
     float speed = 0.0f;
-    G_Move_GetMaxSpeed(self->super.ent, &speed);
+    Move_GetMaxSpeed(self->super.ent, &speed);
     return PyFloat_FromDouble(speed);
 }
 
@@ -6250,7 +6251,7 @@ static PyObject *PyMovableEntity_get_effective_speed(PyMovableEntityObject *self
     }
 
     float speed = 0.0f;
-    G_Move_GetEffectiveSpeed(self->super.ent, &speed);
+    Move_GetEffectiveSpeed(self->super.ent, &speed);
     return PyFloat_FromDouble(speed);
 }
 
@@ -6266,7 +6267,7 @@ static int PyMovableEntity_set_speed(PyMovableEntityObject *self, PyObject *valu
         return -1;
     }
 
-    G_Move_SetMaxSpeed(self->super.ent, PyFloat_AS_DOUBLE(value));
+    Move_SetMaxSpeed(self->super.ent, PyFloat_AS_DOUBLE(value));
     return 0;
 }
 
@@ -6278,7 +6279,7 @@ static PyObject *PyMovableEntity_get_preferred_formation(PyMovableEntityObject *
         return NULL;
     }
 
-    enum formation_type type = G_Formation_GetPreferred(self->super.ent);
+    enum formation_type type = Move_Formation_GetPreferred(self->super.ent);
     return PyInt_FromLong(type);
 }
 
@@ -6300,7 +6301,7 @@ static int PyMovableEntity_set_preferred_formation(PyMovableEntityObject *self,
 
     enum formation_type type = PyInt_AS_LONG(value);
     uint32_t uid = self->super.ent;
-    G_Formation_SetPreferred(uid, type);
+    Move_Formation_SetPreferred(uid, type);
     return 0;
 }
 
@@ -6330,7 +6331,7 @@ static PyObject *PyMovableEntity_move(PyMovableEntityObject *self, PyObject *arg
         G_StopEntity(self->super.ent, false, true);
         G_NotifyOrderIssued(self->super.ent, true, true);
     }
-    G_Move_SetDest(self->super.ent, xz_pos, false);
+    Move_SetDest(self->super.ent, xz_pos, false);
     Py_RETURN_NONE;
 }
 

@@ -38,7 +38,7 @@
 
 #include "building.h"
 #include "duty.h"
-#include "movement.h"
+#include "../movement/public/movement.h"
 #include "game_private.h"
 #include "storage_site.h"
 #include "fog_of_war.h"
@@ -598,8 +598,8 @@ static bool standing_in_footprint(uint32_t uid, void *arg)
     const float margin = founder ? 0.0f : G_GetSelectionRadius(uid) + FOOTPRINT_GAP;
     vec2_t dest;
     bool attack;
-    if(!G_Move_Still(uid))
-        return G_Move_GetDest(uid, &dest, &attack) && within_footprint(ctx->obb, dest, margin);
+    if(!Move_Still(uid))
+        return Move_GetDest(uid, &dest, &attack) && within_footprint(ctx->obb, dest, margin);
     return within_footprint(ctx->obb, G_Pos_GetXZ(uid), margin);
 }
 
@@ -1238,7 +1238,7 @@ int G_Building_ClearFootprint(uint32_t uid)
         vec2_t dest;
         if(!escape_from_area(area, narea, G_Pos_GetXZ(unit), clearance, Entity_NavLayer(unit), &dest))
             continue;
-        G_Move_SetDest(unit, dest, false);
+        Move_SetDest(unit, dest, false);
     }
     return nents;
 }

@@ -53,6 +53,7 @@
 #include "public/script.h"
 #include "../entity.h"
 #include "../game/public/game.h"
+#include "../movement/public/movement.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../navigation/public/nav.h"
@@ -4385,7 +4386,7 @@ static PyObject *PyPf_debug_desc(PyObject *self, PyObject *args)
 
     char buff[256];
     if(!strcmp(which, "move")) {
-        G_Move_DebugDesc(uid, buff, sizeof(buff));
+        Move_DebugDesc(uid, buff, sizeof(buff));
     }else if(!strcmp(which, "build")) {
         G_Builder_DebugDesc(uid, buff, sizeof(buff));
     }else if(!strcmp(which, "harvest")) {
@@ -5936,7 +5937,7 @@ static PyObject *PyPf_formation_arrange(PyObject *self, PyObject *args)
         vec_entity_push(&ents, uid);
     }
 
-    G_Formation_Arrange(type, &ents);
+    Move_Formation_Arrange(type, &ents);
     vec_entity_destroy(&ents);
     Py_RETURN_NONE;
 }
@@ -5970,7 +5971,7 @@ static PyObject *PyPf_move_in_formation(PyObject *self, PyObject *args)
         vec_entity_push(&ents, uid);
     }
 
-    G_Move_ArrangeInFormation(&ents, target, orientation, type);
+    Move_ArrangeInFormation(&ents, target, orientation, type);
     vec_entity_destroy(&ents);
     Py_RETURN_NONE;
 }
@@ -6035,7 +6036,7 @@ static PyObject *PyPf_formation_preferred_for_set(PyObject *self, PyObject *args
         vec_entity_push(&ents, uid);
     }
 
-    enum formation_type type = G_Formation_PreferredForSet(&ents);
+    enum formation_type type = Move_Formation_PreferredForSet(&ents);
     vec_entity_destroy(&ents);
     return PyInt_FromLong(type);
 }

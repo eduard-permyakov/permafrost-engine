@@ -40,6 +40,7 @@
 #include "../../map/public/map.h"
 #include "../../lib/public/vec.h"
 #include "../../lib/public/khash.h"
+#include "../../lib/public/bitmap_grid.h"
 
 #include <stdbool.h>
 #include <SDL.h>
@@ -59,9 +60,6 @@ struct nk_context;
 struct nk_style_item;
 struct nk_color;
 struct proj_desc;
-struct kh_id_s;
-struct kh_pos_s;
-struct kh_range_s;
 
 struct entity_block_desc{
     uint32_t uid;
@@ -73,6 +71,12 @@ VEC_TYPE(entity, uint32_t)
 VEC_IMPL(static inline, entity, uint32_t)
 
 KHASH_DECLARE(entity, khint32_t, uint32_t)
+KHASH_DECLARE(id, khint32_t, int)
+KHASH_DECLARE(range, khint32_t, float)
+KHASH_DECLARE(pos, khint32_t, vec3_t)
+
+BITMAP_GRID_TYPE(ent, uint32_t)
+BITMAP_GRID_PROTOTYPES(extern, ent, uint32_t)
 
 
 enum cam_mode{
@@ -504,23 +508,9 @@ bool                  G_Group_MouseOverUI(int mouse_x, int mouse_y);
 
 void G_Move_SetMoveOnLeftClick(void);
 void G_Move_SetAttackOnLeftClick(void);
-void G_Move_SetDest(uint32_t uid, vec2_t dest_xz, bool attack);
-void G_Move_UpdateSelectionRadius(uint32_t uid, float sel_radius);
-bool G_Move_Still(uint32_t uid);
-size_t G_Move_DebugDesc(uint32_t uid, char *out, size_t len);
 void G_Move_SetClickEnabled(bool on);
 bool G_Move_GetClickEnabled(void);
-bool G_Move_GetMaxSpeed(uint32_t uid, float *out);
-bool G_Move_SetMaxSpeed(uint32_t uid, float speed);
 
-/* The speed the entity actually moves at is the base speed plus the bonus the
- * combat modifiers hand down, floored at zero.
- */
-bool G_Move_SetSpeedBonus(uint32_t uid, float bonus);
-bool G_Move_GetEffectiveSpeed(uint32_t uid, float *out);
-
-void G_Move_ArrangeInFormation(vec_entity_t *ents, vec2_t target, 
-                               vec2_t orientation, enum formation_type type);
 void G_Move_AttackInFormation(vec_entity_t *ents, vec2_t target,
                               vec2_t orientation, enum formation_type type);
 
@@ -716,9 +706,6 @@ void  G_Combat_GetDamageTable(float *out_mult);
 /* GAME POSITION                                                             */
 /*###########################################################################*/
 
-struct kh_id_s;
-struct bg_ent_s;
-
 bool           G_Pos_Set(uint32_t uid, vec3_t pos);
 vec3_t         G_Pos_Get(uint32_t uid);
 vec2_t         G_Pos_GetXZ(uint32_t uid);
@@ -737,6 +724,8 @@ int            G_Pos_EntsInRectFrom(struct bg_ent_s *tree, struct kh_id_s *flags
 int            G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout,
                                         bool (*predicate)(uint32_t ent, void *arg), void *arg);
 int            G_Pos_EntsInCircle(vec2_t xz_point, float range, uint32_t *out, size_t maxout);
+int            G_Pos_EntsInCircleFrom(struct bg_ent_s *tree, struct kh_id_s *flags,
+                                      vec2_t xz_point, float range, uint32_t *out, size_t maxout);
 int            G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, uint32_t *out, size_t maxout,
                                   bool (*predicate)(uint32_t ent, void *arg), void *arg);
 int            G_Pos_EntsNearSegment(vec2_t a, vec2_t b, vec_entity_t *out);
@@ -1275,15 +1264,6 @@ void   G_Roads_SetPlacementGrid(bool on, const vec2_t *centre);
  * building units walk over leaves alone
  */
 size_t G_Roads_TilesUnder(uint32_t uid, size_t maxout, struct road_desc out[]);
-
-/*###########################################################################*/
-/* GAME FORMATION                                                            */
-/*###########################################################################*/
-
-void G_Formation_Arrange(enum formation_type type, vec_entity_t *ents);
-void G_Formation_SetPreferred(uint32_t uid, enum formation_type type);
-enum formation_type G_Formation_GetPreferred(uint32_t uid);
-enum formation_type G_Formation_PreferredForSet(const vec_entity_t *ents);
 
 /*###########################################################################*/
 /* GAME GARRISON                                                             */

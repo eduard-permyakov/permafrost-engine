@@ -33,22 +33,18 @@
  *
  */
 
-#define MEM_FILE_SYS MEM_SYS_GAME
-#define MEM_FILE_SUB MEM_SUB_GAME_MOVEMENT
+#define MEM_FILE_SYS MEM_SYS_MOVEMENT
+#define MEM_FILE_SUB MEM_SUB_MOVEMENT_MOVEMENT
 
-#include "movement.h"
-#include "duty.h"
+#include "public/movement.h"
+#include "move_private.h"
 #include "arrival.h"
-#include "game_private.h"
 #include "formation.h"
-#include "combat.h"
 #include "clearpath.h"
-#include "position.h"
-#include "fog_of_war.h"
-#include "public/game.h"
+#include "flocking.h"
+#include "../game/public/game.h"
 #include "../config.h"
 #include "../camera.h"
-#include "../asset_load.h"
 #include "../event.h"
 #include "../entity.h"
 #include "../cursor.h"
@@ -62,15 +58,14 @@
 #include "../navigation/public/nav.h"
 #include "../lib/public/queue.h"
 #include "../phys/public/collision.h"
-#include "../script/public/script.h"
 #include "../render/public/render.h"
+#include "../render/public/render_ctrl.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/attr.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/stalloc.h"
-#include "../anim/public/anim.h"
 #include "../lib/public/stalloc.h"
 
 #include <assert.h>
@@ -81,18 +76,16 @@
 #undef PF_MALLOC
 #undef PF_CALLOC
 #undef PF_REALLOC
-#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_GAME, MEM_SUB_GAME_MOVEMENT)
-#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_GAME, MEM_SUB_GAME_MOVEMENT)
-#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_MOVEMENT)
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_MOVEMENT, MEM_SUB_MOVEMENT_MOVEMENT)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_MOVEMENT, MEM_SUB_MOVEMENT_MOVEMENT)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_MOVEMENT, MEM_SUB_MOVEMENT_MOVEMENT)
 
 static int hz_count(enum movement_hz hz);
 
 /* For the purpose of movement simulation, all entities have the same mass,
  * meaning they are accelerate the same amount when applied equal forces. */
 #define ENTITY_MASS           (1.0f)
-#define EPSILON               (1.0f/1024)
-#define MAX_FORCE             (0.75f)
-#define SCALED_MAX_FORCE      (MAX_FORCE / hz_count(s_move_work.hz) * 20.0)
+#define SCALED_MAX_FORCE      MOVE_FLOCK_MAX_FORCE(hz_count(s_move_work.hz))
 #define VEL_HIST_LEN          (14)
 #define MAX_MOVE_TASKS        (64)
 #define MAX_REBUILDS_PER_TICK (64)
@@ -100,7 +93,6 @@ static int hz_count(enum movement_hz hz);
  * melee's mark conveyor cannot fire dozens of chain floods on one tick. */
 #define MAX_LOS_STALE_REBUILDS_PER_TICK (16)
 
-#define SIGNUM(x)    (((x) > 0) - ((x) < 0))
 #define MAX(a, b)    ((a) > (b) ? (a) : (b))
 #define MIN(a, b)    ((a) < (b) ? (a) : (b))
 #define CLAMP(a, min, max) (MIN(MAX((a), (min)), (max)))
@@ -176,7 +168,6 @@ struct movestate{
     float              step;        /* The fraction of the distance covered in a single step 
                                      * (nsteps = 1.0/step) */
     int                left;        /* The number of interpolation steps left (0 means the entity is at next_pos) */
-    int                interp_idx;  /* The unit's pending display segment, -1 for none */
     /* Flag to track whether the entiy is currently acting as a 
      * navigation blocker, and the last position where it became a blocker. 
      */
@@ -378,17 +369,12 @@ struct formation_state{
 enum movestate_flags{
     UPDATE_SET_STATE        = (1 << 0),
     UPDATE_SET_VELOCITY     = (1 << 1),
-    UPDATE_SET_POSITION     = (1 << 2),
-    UPDATE_SET_ROTATION     = (1 << 3),
     UPDATE_SET_NEXT_POS     = (1 << 4),
     UPDATE_SET_PREV_POS     = (1 << 5),
-    UPDATE_SET_STEP         = (1 << 6),
-    UPDATE_SET_LEFT         = (1 << 7),
     UPDATE_SET_NEXT_ROT     = (1 << 8),
     UPDATE_SET_PREV_ROT     = (1 << 9),
     UPDATE_SET_DEST         = (1 << 10),
     UPDATE_SET_TARGET_PREV  = (1 << 11),
-    UPDATE_SET_MOVING       = (1 << 12),
     UPDATE_SET_TARGET_DIR   = (1 << 13),
     UPDATE_TURNING_IN_PLACE = (1 << 14),
     /* Diagnostic only: translation was zeroed by the heading gate this tick */
@@ -412,29 +398,15 @@ struct movestate_patch{
     enum movestate_flags flags;
     enum move_state   next_state;
     vec2_t               next_velocity;
-    vec3_t               next_pos;
-    quat_t               next_rot;
     bool                 next_block;
     vec3_t               next_ppos;
     vec3_t               next_npos;
-    float                next_step;
-    float                next_left;
     quat_t               next_nrot;
     quat_t               next_prot;
     vec2_t               next_dest;
     bool                 next_attack;
     vec2_t               next_target_prev;
     quat_t               next_target_dir;
-};
-
-/* Dense per-flock snapshot of member uids and positions, in flock iteration
- * order, so the O(flock) cohesion scan reads packed arrays instead of probing
- * two hash tables per member. */
-struct flock_snap{
-    const uint32_t *uids;
-    const float    *pos_x;
-    const float    *pos_z;
-    size_t          nents;
 };
 
 struct move_work_in{
@@ -526,30 +498,6 @@ struct move_task_arg{
     size_t end_idx;
 };
 
-/* The subset of the gamestate that is necessary 
- * to derive the new entity velocities and positions. 
- * We make a copy of this state so that movement 
- * computations can safely be done asynchronously,
- * or even be spread over multiple frames. 
- */
-struct move_gamestate{
-    khash_t(id)           *flags;
-    khash_t(pos)          *positions;
-    bg_ent_t              *postree;
-    khash_t(range)        *sel_radiuses;
-    khash_t(id)           *faction_ids;
-    struct map            *map;
-    /* Additional state needed for nav_unit_query_ctx */
-    struct kh_aabb_s      *aabbs;
-    struct kh_footprint_s *footprints;
-    void                  *transforms;
-    bool                  fog_enabled;
-    uint32_t              *fog_state;
-    struct kh_id_s        *dying_set;
-    enum diplomacy_state (*diptable)[MAX_FACTIONS];
-    uint16_t               player_controllable;
-};
-
 enum move_work_type{
     WORK_TYPE_CPU,
     WORK_TYPE_GPU
@@ -578,7 +526,7 @@ struct step_end{
 
 struct move_work{
     struct memstack           mem;
-    struct move_gamestate     gamestate;
+    struct move_world         gamestate;
     enum move_work_type       type;
     struct nav_unit_query_ctx unit_query_ctx;
     enum movement_hz          hz;
@@ -775,8 +723,6 @@ struct block_ref{
 KHASH_MAP_INIT_INT(state, struct movestate)
 KHASH_MAP_INIT_INT(auxstate, struct movestate_aux)
 KHASH_MAP_INIT_INT64(blockref, struct block_ref)
-KHASH_MAP_INIT_INT(aabb, struct aabb)
-KHASH_MAP_INIT_INT(footprint, struct cluster_footprint)
 KHASH_MAP_INIT_INT(findex, int)
 
 QUEUE_TYPE(cmd, struct move_cmd)
@@ -785,20 +731,17 @@ QUEUE_IMPL(static, cmd, struct move_cmd)
 VEC_TYPE(flock, struct flock)
 VEC_IMPL(static inline, flock, struct flock)
 
-/* A display segment: the unit is drawn sliding from where it stood at the
- * last consume to the step the tick computed, over the measured tick period.
- */
-struct interp_seg{
-    uint32_t uid;
-    bool     done;
-    vec3_t   from_pos;
-    vec3_t   to_pos;
-    quat_t   from_rot;
-    quat_t   to_rot;
-};
+VEC_TYPE(step, struct move_step)
+VEC_IMPL(static inline, step, struct move_step)
 
-VEC_TYPE(seg, struct interp_seg)
-VEC_IMPL(static inline, seg, struct interp_seg)
+VEC_TYPE(facing, struct move_facing)
+VEC_IMPL(static inline, facing, struct move_facing)
+
+VEC_TYPE(reset, struct move_reset)
+VEC_IMPL(static inline, reset, struct move_reset)
+
+VEC_TYPE(msptr, struct movestate*)
+VEC_IMPL(static inline, msptr, struct movestate*)
 
 SHARED_PTR_ASSERT_LAYOUT(struct refcounted_map, sp);
 
@@ -820,14 +763,6 @@ static void settle_own_moves(void);
 static void settle_own_move(uint32_t uid, struct movestate *ms);
 static void snapshot_step_ends(void);
 static void snapshot_step_ends_grid(void);
-static void interp_begin_segment(uint32_t uid, struct movestate *ms,
-                                 const vec3_t *to_pos, const quat_t *to_rot);
-static void interp_consume_end(void);
-static void interp_drop_segment(uint32_t uid, struct movestate *ms);
-static void interp_finish_segment(uint32_t uid, struct movestate *ms);
-static void interp_reset(void);
-static void move_interpolate_frame(void);
-static void handle_split_submit(void);
 static void resume_waiting_units(void);
 static void settle_reset(struct movestate_aux *aux);
 static float cell_closing_radius(float radius);
@@ -837,7 +772,6 @@ static bool way_body_final(uint32_t uid, uint32_t body);
 static vec2_t keep_right_vpref(const struct move_work_in *in, const struct movestate *ms,
                                const struct flock *flock, vec2_t vpref, int *inout_side);
 static void hold_begin(uint32_t uid, const struct movestate *ms, struct movestate_aux *aux);
-static void move_tick(void *user, void *event);
 static struct result navigation_tick_task(void *arg);
 
 /* Parameters controlling steering/flocking behaviours */
@@ -847,21 +781,11 @@ static struct result navigation_tick_task(void *arg);
 #define ALIGNMENT_FORCE_SCALE           (0.15f)
 
 #define SEPARATION_BUFFER_DIST          (0.0f)
-#define COHESION_NEIGHBOUR_RADIUS       (50.0f)
-#define ARRIVE_SLOWING_RADIUS           (10.0f)
 #define ADJACENCY_SEP_DIST              (5.0f)
-/* A gap to a still crowd within this fraction of the unit's radius is contact */
-#define SEPARATION_NEIGHB_RADIUS        (30.0f)
-/* Beyond this multiple of the radius sum the separation term is e^-10 of its
- * contact value; the floor keeps the soldier query as it was. */
-#define SEPARATION_NEIGHB_SCALE         (1.3f)
-/* Deeper interpenetration than this keeps the pure radial push-out */
-#define SEP_REDIRECT_MIN_GAP            (-2.0f)
 /* A unit in contact whose wish has collapsed under the forces cancelling
  * wishes a step aside instead: this far off the way, this much of its pace
  */
 #define MOVE_ESCAPE_GAP                 (0.5f)
-#define MOVE_ESCAPE_FLOOR               (0.25f)
 #define CELL_ARRIVAL_RADIUS             (30.0f)
 
 #define COLLISION_MAX_SEE_AHEAD         (10.0f)
@@ -872,8 +796,6 @@ static struct result navigation_tick_task(void *arg);
 #define SCALED_MAX_TURN_RATE            (MAX_TURN_RATE / hz_count(s_move_work.hz) * 20.0)
 #define MOVE_HEADING_HALT               (90.0f) /* degrees; halt a moving unit to re-aim past this */
 #define MOVE_HEADING_RESUME             (10.0f) /* degrees; resume/start a halted unit within this */
-#define MOVE_STEP_BAND                  (30.0f) /* degrees; a shove keeps this close to the facing */
-#define MOVE_WALK_BAND                  (45.0f) /* degrees; a walking step keeps this close to the facing */
 #define MOVE_BAND_YIELD_S               (0.5f)  /* held behind the band this long, a unit turns to the step */
 #define MOVE_BAND_YIELD_HOLD_S          (1.0f)  /* and keeps to the step's heading this long */
 #define CELL_DRESS_TIME_S               (1.5f)  /* a cell this many seconds of shuffling away is side-stepped into */
@@ -938,13 +860,6 @@ static struct result navigation_tick_task(void *arg);
  * a unit shuffling on the spot gains nothing.
  */
 #define GROUP_PROGRESS_MIN              (3.0f)
-/* The facing follows the travel direction once the unit moves at this
- * fraction of its commanded speed, and stops following below the lower one,
- * so a unit crawling in a crowd holds its heading instead of sweeping after
- * every displacement.
- */
-#define FACING_FOLLOW_ENGAGE            (0.35f)
-#define FACING_FOLLOW_RELEASE           (0.2f)
 /* How long the reach field has to be absent before a unit it was steering gives
  * up on it and goes back to the ordered point. */
 #define RANGE_FIELD_MISS_TICKS          (30)
@@ -1067,34 +982,14 @@ struct move_trace{
 /*****************************************************************************/
 
 static const struct map       *s_map;
-static bool                    s_attack_on_lclick = false;
-static bool                    s_move_on_lclick = false;
-static bool                    s_click_move_enabled = true;
 /* pf.game.road_keep_right, read once per tick for the velocity workers */
 static bool                    s_keep_right = true;
 
-static bool                    s_mouse_dragged = false;
-static vec3_t                  s_drag_begin_pos;
-static vec3_t                  s_drag_end_pos;
-static bool                    s_drag_attacking;
-
-static vec_entity_t            s_move_markers;
 /* Units the last apply moved, for the stamp follow-up after the drain. */
 static vec_entity_t            s_own_moves;
 static vec_flock_t             s_flocks;
 /* Per-tick uid -> flock index, rebuilt alongside the flock snapshots */
 static khash_t(findex)        *s_flock_index;
-/* uid -> identity aabb, persistent across ticks (the aabb never changes for a
- * model); referenced directly by the gamestate snapshot. Entries for removed
- * entities linger harmlessly until the periodic clear.
- */
-static khash_t(aabb)          *s_aabb_cache;
-static size_t                  s_fog_snap_ntiles;
-/* The previous tick's copies, kept whole while its carried field floods may
- * still read them; each copy swaps them in and refills the older set. */
-static struct move_gamestate   s_gs_spare;
-static khash_t(aabb)          *s_aabb_cache_spare;
-static size_t                  s_fog_snap_ntiles_spare;
 static struct nav_unit_query_ctx s_unit_query_ctx_ring[2];
 static int                     s_gs_slot;
 static struct refcounted_map  *s_parked_snapshot;
@@ -1130,14 +1025,11 @@ static int                     s_soft_block_budget;
 /* Monotone: a departed unit leaves the queries slightly wide, never narrow */
 static float                   s_max_sel_radius;
 
-static unsigned long           s_last_tick = 0;
-
-static enum movement_hz        s_move_hz = MOVE_HZ_20;
 /* Every tick run so far, by which the game clock is paced to the frames */
 static unsigned long           s_ticks_done;
+static enum movement_hz        s_move_hz = MOVE_HZ_20;
 static struct refcounted_map  *s_nav_snapshot;
 static uint32_t                s_nav_snapshot_gen;
-static bool                    s_move_hz_dirty = false;
 static bool                    s_use_gpu = true;
 /* The GPU solve's persistently mapped buffers, the flag the render thread
  * sets once it has (re)created them, and the number of the last solve whose
@@ -1154,21 +1046,8 @@ static SDL_atomic_t            s_gpu_nvel_diff;
 static SDL_atomic_t            s_gpu_ndiag_diff;
 /* The times of the last solve, when logging perf */
 static struct gpu_move_times   s_gpu_times;
-static bool                    s_move_tick_queued = false;
-/* A tick's main-thread work is split across two frames: the consume half runs
- * on the tick event's frame, the snapshot + submit half on the next frame, so
- * no single frame carries the whole stall. */
-static bool                    s_move_split_pending = false;
-/* The first part of a split submit ran and released the snapshot */
-static bool                    s_submit_prepared = false;
 static uint64_t                s_prepare_copy_ticks;
-/* Smoothed cost of the two submit halves, for fitting them into the frame
- * that consumed the last tick. */
 static bool                    s_submit_gather_active;
-static double                  s_prepare_ema_us = 8000.0;
-static double                  s_submit_ema_us = 8000.0;
-static unsigned long           s_split_frame;
-static enum movement_hz        s_split_hz;
 
 /* Per-tick budget on full field rebuilds (n_request_path), consumed by the
  * serial LOS-build and path-request loops. Invalidation storms (war start,
@@ -1187,20 +1066,20 @@ static uint32_t                s_nav_task_active_tid = NULL_TID;
 static struct future           s_tick_task_future;
 
 /* Per-tick nav stats. The fiber phases are published by the nav fiber, the
- * main-thread fields by move_do_tick; read by the main thread at the join
+ * main-thread fields by the tick's passes; read by the main thread at the join
  * (valid once s_tick_task_future is ready).
  */
 static struct nav_tick_sample  s_last_nav_tick_stats;
 static uint64_t                s_submit_pc;
 static unsigned long           s_submit_frame;
-static uint32_t                s_interp_nunits;
-static uint32_t                s_interp_us;
-static vec_seg_t               s_interp;
-static vec_seg_t               s_interp_next;
-static uint64_t                s_interp_t0;
-static double                  s_interp_period_us = 50000.0;
-static float                   s_interp_alpha;
-static uint64_t                s_last_consume_pc;
+
+/* What the last pass left for the game to change */
+static vec_step_t              s_out_steps;
+static vec_msptr_t             s_out_step_states;
+static vec_entity_t            s_out_stopped;
+static vec_entity_t            s_out_held_still;
+static vec_facing_t            s_out_facings;
+static vec_reset_t             s_out_resets;
 
 static const char *s_state_str[] = {
     [STATE_MOVING]              = STR(STATE_MOVING),
@@ -1249,7 +1128,7 @@ static bool flock_try_remove(struct flock *flock, uint32_t uid)
     khiter_t k;
     if((k = kh_get(entity, flock->ents, uid)) != kh_end(flock->ents)) {
         kh_del(entity, flock->ents, k);
-        G_Formation_RemoveUnit(uid);
+        Move_Formation_RemoveUnit(uid);
         return true;
     }
     return false;
@@ -1296,7 +1175,7 @@ static struct arrival_state *flock_arrival_for_ent(const struct flock *flock, ui
 {
     float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
     uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
-    return G_ArrivalGroup_ForLayer(&flock->arrival, Entity_NavLayerWithRadius(flags, radius));
+    return Move_ArrivalGroup_ForLayer(&flock->arrival, Entity_NavLayerWithRadius(flags, radius));
 }
 
 static void block_ref_save(uint32_t uid, int soft, int faction_id, uint32_t flags)
@@ -1467,20 +1346,6 @@ static bool stationary(uint32_t uid)
     return false;
 }
 
-static bool entities_equal(uint32_t *a, uint32_t *b)
-{
-    return (*a == *b);
-}
-
-static void vec2_truncate(vec2_t *inout, float max_len)
-{
-    if(PFM_Vec2_Len(inout) > max_len) {
-
-        PFM_Vec2_Normal(inout, inout);
-        PFM_Vec2_Scale(inout, max_len, inout);
-    }
-}
-
 static bool ent_still(const struct movestate *ms)
 {
     return (ms->state == STATE_ARRIVED || ms->state == STATE_WAITING);
@@ -1490,8 +1355,8 @@ static float entity_speed(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    if(G_Formation_GetForEnt(uid) != NULL_FID) {
-        return G_Formation_Speed(uid);
+    if(Move_Formation_GetForEnt(uid) != NULL_FID) {
+        return Move_Formation_Speed(uid);
     }
 
     struct movestate *ms = movestate_get(uid);
@@ -1548,9 +1413,8 @@ static void entity_finish_moving(uint32_t uid, enum move_state newstate, bool bl
 
     if(!(flags & ENTITY_FLAG_COMBAT_HELD))
         move_notify_motion_finished(uid);
-    if(flags & ENTITY_FLAG_COMBATABLE
-    && (newstate != STATE_TURNING)) {
-        G_Combat_SetStance(uid, COMBAT_STANCE_AGGRESSIVE);
+    if(newstate != STATE_TURNING) {
+        vec_entity_push(&s_out_stopped, uid);
     }
 
     if(newstate == STATE_WAITING) {
@@ -1569,20 +1433,6 @@ static void entity_finish_moving(uint32_t uid, enum move_state newstate, bool bl
     assert(ent_still(ms));
 }
 
-static void on_marker_anim_finish(void *user, void *event)
-{
-    ASSERT_IN_MAIN_THREAD();
-    uint32_t ent = (uintptr_t)user;
-
-    int idx = vec_entity_indexof(&s_move_markers, ent, entities_equal);
-    assert(idx != -1);
-    vec_entity_del(&s_move_markers, idx);
-
-    E_Entity_Unregister(EVENT_ANIM_FINISHED, ent, on_marker_anim_finish);
-    G_RemoveEntity(ent);
-    G_FreeEntity(ent);
-}
-
 static void remove_from_flocks(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -1598,7 +1448,7 @@ static void remove_from_flocks(uint32_t uid)
 
         if(kh_size(curr_flock->ents) == 0) {
             kh_destroy(entity, curr_flock->ents);
-            G_ArrivalGroup_Destroy(&curr_flock->arrival);
+            Move_ArrivalGroup_Destroy(&curr_flock->arrival);
             vec_flock_del(&s_flocks, i);
         }else if(removed) {
             curr_flock->plan_pending = true;
@@ -1700,7 +1550,7 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
             G_FlagsGetFrom(s_move_work.gamestate.flags, curr_ent)) : 0.0f;
         caux->range_latched = false;
         caux->range_miss_ticks = 0;
-        G_Arrival_InitUnit(&caux->arrival,
+        Move_Arrival_InitUnit(&caux->arrival,
             G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr_ent));
         settle_reset(caux);
     }
@@ -1730,7 +1580,7 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
         kh_foreach_key(new_flock.ents, curr, { flock_add(merge_flock, curr); });
         kh_destroy(entity, new_flock.ents);
         merge_flock->target_xz = target_xz;
-        G_ArrivalGroup_Reset(&merge_flock->arrival);
+        Move_ArrivalGroup_Reset(&merge_flock->arrival);
         merge_flock->plan_pending = true;
 
     }else{
@@ -1778,8 +1628,8 @@ static void update_flock_arrival_fields(void)
          * formation arrive via the formation's own cell fields. */
         uint32_t first = NULL_UID;
         kh_foreach_key(flock->ents, first, { break; });
-        if(first == NULL_UID || G_Formation_GetForEnt(first) != NULL_FID) {
-            G_ArrivalGroup_Deactivate(&flock->arrival);
+        if(first == NULL_UID || Move_Formation_GetForEnt(first) != NULL_FID) {
+            Move_ArrivalGroup_Deactivate(&flock->arrival);
             flock->plan_pending = false;
             continue;
         }
@@ -1792,11 +1642,11 @@ static void update_flock_arrival_fields(void)
          */
         if(flock->plan_pending) {
             flock->plan_pending = false;
-            G_ArrivalGroup_Reset(&flock->arrival);
-            G_ArrivalGroup_Plan(&flock->arrival, s_map, flock->target_xz, members, n,
+            Move_ArrivalGroup_Reset(&flock->arrival);
+            Move_ArrivalGroup_Plan(&flock->arrival, s_map, flock->target_xz, members, n,
                 N_DestUsesRoads(flock->dest_id));
         }
-        G_ArrivalGroup_Update(&flock->arrival, s_map, flock->target_xz, members, n,
+        Move_ArrivalGroup_Update(&flock->arrival, s_map, flock->target_xz, members, n,
             N_DestUsesRoads(flock->dest_id));
         STFREE(members);
     }
@@ -1805,8 +1655,8 @@ static void update_flock_arrival_fields(void)
 /* The point a member's order has it heading for right now */
 static vec2_t member_goal(const struct flock *flock, uint32_t uid)
 {
-    if(G_Formation_GetForEnt(uid) != NULL_FID && G_Formation_AssignedToCell(uid))
-        return G_Formation_CellPosition(uid);
+    if(Move_Formation_GetForEnt(uid) != NULL_FID && Move_Formation_AssignedToCell(uid))
+        return Move_Formation_CellPosition(uid);
 
     const struct arrival_unit_state *us = &movestate_aux_get(uid)->arrival;
     if(us->sink_valid)
@@ -1842,8 +1692,8 @@ static bool member_on_the_way(uint32_t uid, const struct movestate *ms)
 static void root_member_in_place(struct flock *flock, uint32_t uid, struct movestate *ms,
                                  const char *why)
 {
-    if(G_Formation_GetForEnt(uid) != NULL_FID)
-        G_Formation_ConcedeCell(uid);
+    if(Move_Formation_GetForEnt(uid) != NULL_FID)
+        Move_Formation_ConcedeCell(uid);
     if(s_log_perf_csv) {
         vec2_t goal = member_goal(flock, uid);
         vec2_t pos = G_Pos_GetXZ(uid);
@@ -2143,15 +1993,15 @@ static void move_log_census(enum movement_hz hz)
             PFM_Vec2_Sub((vec2_t*)&flock->target_xz, &pos, &to_goal);
             goal_dist = PFM_Vec2_Len(&to_goal);
         }
-        bool in_form = G_Formation_GetForEnt(uid) != NULL_FID;
+        bool in_form = Move_Formation_GetForEnt(uid) != NULL_FID;
         int fbits = 0;
         float cell_dist = -1.0f;
         if(in_form) {
-            fbits = (G_Formation_AssignmentReady(uid) ? 1 : 0)
-                  | ((G_Formation_AssignmentReady(uid) && G_Formation_AssignedToCell(uid)) ? 2 : 0)
-                  | (G_Formation_InRangeOfCell(uid) ? 4 : 0);
+            fbits = (Move_Formation_AssignmentReady(uid) ? 1 : 0)
+                  | ((Move_Formation_AssignmentReady(uid) && Move_Formation_AssignedToCell(uid)) ? 2 : 0)
+                  | (Move_Formation_InRangeOfCell(uid) ? 4 : 0);
             if(fbits & 2) {
-                vec2_t cell = G_Formation_CellPosition(uid);
+                vec2_t cell = Move_Formation_CellPosition(uid);
                 vec2_t to_cell;
                 PFM_Vec2_Sub(&cell, &pos, &to_cell);
                 cell_dist = PFM_Vec2_Len(&to_cell);
@@ -2169,7 +2019,7 @@ static void request_flock_arrival_fields(void)
 {
     for(int i = 0; i < vec_size(&s_flocks); i++) {
         const struct flock *flock = &vec_AT(&s_flocks, i);
-        G_ArrivalGroup_RequestFields(&flock->arrival, s_move_work.gamestate.map);
+        Move_ArrivalGroup_RequestFields(&flock->arrival, s_move_work.gamestate.map);
     }
 }
 
@@ -2216,7 +2066,7 @@ static void make_flocks(const vec_entity_t *sel, vec2_t target_xz, vec2_t target
         vec_entity_destroy(layer_flocks + i);
     }
 
-    G_Formation_Create(target_xz, target_orientation, &fsel, type);
+    Move_Formation_Create(target_xz, target_orientation, &fsel, type);
     vec_entity_destroy(&fsel);
 }
 
@@ -2303,270 +2153,6 @@ static int adjacent_settled_count(uint32_t uid)
     return count;
 }
 
-static void move_marker_add(vec3_t pos, bool attack)
-{
-    uint32_t flags;
-    const uint32_t uid = Entity_NewUID();
-    bool loaded = attack 
-                ? AL_EntityFromPFObj("assets/models/arrow", "arrow-red.pfobj", 
-                                     "__move_marker__", uid, &flags) 
-                : AL_EntityFromPFObj("assets/models/arrow", "arrow-green.pfobj", 
-                                     "__move_marker__", uid, &flags);
-    if(!loaded)
-        return;
-
-    flags |= ENTITY_FLAG_MARKER;
-    G_AddEntity(uid, flags, pos);
-
-    Entity_SetScale(uid, (vec3_t){2.0f, 2.0f, 2.0f});
-    E_Entity_Register(EVENT_ANIM_FINISHED, uid, on_marker_anim_finish, 
-        (void*)(uintptr_t)uid, G_RUNNING);
-    A_SetActiveClip(uid, "Converge", ANIM_MODE_ONCE, 48);
-
-    vec_entity_push(&s_move_markers, uid);
-}
-
-static void move_order(const vec_entity_t *sel, bool attack, vec3_t mouse_coord,
-                       vec2_t orientation)
-{
-    enum formation_type type = G_Formation_PreferredForSet(sel);
-
-    /* Cap formation orders before any per-unit processing: the excess
-     * units are deselected and must not be stopped or notified. The
-     * capped copy also keeps the iteration safe from the deselection
-     * mutating the live selection vector. The deselection is batched,
-     * as G_Sel_Remove fires a selection-changed event for every
-     * removed unit.
-     */
-    vec_entity_t capped;
-    vec_entity_init(&capped);
-    vec_entity_copy(&capped, (vec_entity_t*)sel);
-    if(type != FORMATION_NONE && vec_size(&capped) > MAX_FORMATION_UNITS) {
-        G_Sel_RemoveMany(&vec_AT(&capped, MAX_FORMATION_UNITS),
-            vec_size(&capped) - MAX_FORMATION_UNITS);
-        capped.size = MAX_FORMATION_UNITS;
-    }
-
-    size_t nmoved = 0;
-    for(int i = 0; i < vec_size(&capped); i++) {
-
-        uint32_t curr = vec_AT(&capped, i);
-        uint32_t flags = G_FlagsGet(curr);
-        if(!(flags & ENTITY_FLAG_MOVABLE))
-            continue;
-
-        G_Duty_End(curr, NULL);
-        G_StopEntity(curr, false, true);
-        E_Entity_Notify(EVENT_MOVE_ISSUED, curr, NULL, ES_ENGINE);
-        G_NotifyOrderIssued(curr, true, true);
-        nmoved++;
-
-        if(flags & ENTITY_FLAG_COMBATABLE) {
-            G_Combat_SetStance(curr, 
-                attack ? COMBAT_STANCE_AGGRESSIVE : COMBAT_STANCE_NO_ENGAGEMENT);
-        }
-    }
-
-    if(nmoved) {
-        move_marker_add(mouse_coord, attack);
-        vec_entity_t *copy = PF_MALLOC(sizeof(vec_entity_t));
-        vec_entity_init(copy);
-        vec_entity_copy(copy, &capped);
-        move_push_cmd((struct move_cmd){
-            .type = MOVE_CMD_MAKE_FLOCKS,
-            .u.make_flocks = {
-                .sel = copy,
-                .target_xz = (vec2_t){mouse_coord.x, mouse_coord.z},
-                .type = type,
-                .attack = attack,
-                .target_orientation = orientation
-            }
-        });
-    }
-    vec_entity_destroy(&capped);
-}
-
-/* The units that may not target a unit attack-move to the clicked enemy's
- * position instead; the combat click handler orders the rest.
- */
-static void ground_attack_order(const vec_entity_t *sel, uint32_t target)
-{
-    vec_entity_t ground;
-    vec_entity_init(&ground);
-
-    for(int i = 0; i < vec_size(sel); i++) {
-        uint32_t curr = vec_AT(sel, i);
-        if(!(G_FlagsGet(curr) & ENTITY_FLAG_COMBATABLE))
-            continue;
-        if(!G_Combat_GroundAttackOnly(curr))
-            continue;
-        vec_entity_push(&ground, curr);
-    }
-
-    if(vec_size(&ground) > 0) {
-        vec3_t pos = G_Pos_Get(target);
-        vec2_t orientation = (vec2_t){0.0f, 0.0f};
-        if(G_Formation_PreferredForSet(&ground) != FORMATION_NONE) {
-            orientation = G_Formation_AutoOrientation((vec2_t){pos.x, pos.z}, &ground);
-        }
-        move_order(&ground, true, pos, orientation);
-    }
-    vec_entity_destroy(&ground);
-}
-
-static void on_mousedown(void *user, void *event)
-{
-    SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
-
-    bool targeting = G_Move_InTargetMode();
-    bool attack = s_attack_on_lclick && (mouse_event->button == SDL_BUTTON_LEFT);
-    bool move = s_move_on_lclick ? mouse_event->button == SDL_BUTTON_LEFT
-                                 : mouse_event->button == SDL_BUTTON_RIGHT;
-
-    if(move && !s_move_on_lclick && G_GetAttackOnRightClick()) {
-        attack = true;
-        move = false;
-    }
-
-    assert(!s_move_on_lclick || !s_attack_on_lclick);
-    assert(!attack || !move);
-
-    s_attack_on_lclick = false;
-    s_move_on_lclick = false;
-
-    if(!s_click_move_enabled)
-        return;
-
-    if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
-        return;
-
-    if((mouse_event->button == SDL_BUTTON_RIGHT) && targeting)
-        return;
-
-    if(!attack && !move)
-        return;
-
-    int ctx_action = G_CurrContextualAction();
-    if(ctx_action != CTX_ACTION_NONE && ctx_action != CTX_ACTION_ATTACK)
-        return;
-
-    if(G_MouseInTargetMode() && !targeting)
-        return;
-
-    if(ctx_action == CTX_ACTION_ATTACK) {
-
-        enum selection_type sel_type;
-        const vec_entity_t *sel = G_Sel_Get(&sel_type);
-
-        vec_entity_t fsel;
-        filter_selection_pathable(sel, &fsel);
-
-        if(vec_size(&fsel) > 0 && sel_type == SELECTION_TYPE_PLAYER) {
-            ground_attack_order(&fsel, G_Sel_GetHovered());
-        }
-        vec_entity_destroy(&fsel);
-        return;
-    }
-
-    vec3_t mouse_coord;
-    if(!M_MinimapMouseMapCoords(s_map, &mouse_coord)
-    && !M_Raycast_MouseIntersecCoord(&mouse_coord))
-        return;
-
-    enum selection_type sel_type;
-    const vec_entity_t *sel = G_Sel_Get(&sel_type);
-
-    vec_entity_t fsel;
-    filter_selection_pathable(sel, &fsel);
-
-    if(vec_size(&fsel) == 0 || sel_type != SELECTION_TYPE_PLAYER)
-        return;
-
-    /* Allow dragging the mouse to orient the formation around 
-     * the clicked location. The move orders will be issued when
-     * the mouse is released. 
-     */
-    if(G_Formation_PreferredForSet(&fsel) != FORMATION_NONE) {
-        s_mouse_dragged = true;
-        s_drag_begin_pos = mouse_coord;
-        s_drag_end_pos = mouse_coord;
-        s_drag_attacking = attack;
-        return;
-    }
-
-    move_order(&fsel, attack, mouse_coord, (vec2_t){0.0f, 0.0f});
-    vec_entity_destroy(&fsel);
-}
-
-static void on_mouseup(void *user, void *event)
-{
-    if(!s_mouse_dragged)
-        return;
-    s_mouse_dragged = false;
-
-    enum selection_type seltype;
-    const vec_entity_t *sel = G_Sel_Get(&seltype);
-
-    vec2_t endpoints[] = {
-        (vec2_t){s_drag_begin_pos.x, s_drag_begin_pos.z},
-        (vec2_t){s_drag_end_pos.x, s_drag_end_pos.z}
-    };
-
-    vec2_t orientation;
-    PFM_Vec2_Sub(&endpoints[1], &endpoints[0], &orientation);
-    if(PFM_Vec2_Len(&orientation) < 0.1f) {
-        orientation = G_Formation_AutoOrientation(endpoints[0], sel);
-    }else{
-        PFM_Vec2_Normal(&orientation, &orientation);
-    }
-    move_order(sel, s_drag_attacking, s_drag_begin_pos, orientation);
-}
-
-static void on_mousemotion(void *user, void *event)
-{
-    if(!s_mouse_dragged)
-        return;
-
-    vec3_t mouse_coord = (vec3_t){0.0f, 0.0f, 0.0f};
-    if(!M_Raycast_MouseIntersecCoord(&mouse_coord))
-        return;
-
-    s_drag_end_pos = mouse_coord;
-}
-
-static void render_formation_orientation(void)
-{
-    vec2_t endpoints[] = {
-        (vec2_t){s_drag_begin_pos.x, s_drag_begin_pos.z},
-        (vec2_t){s_drag_end_pos.x, s_drag_end_pos.z}
-    };
-
-    vec2_t delta;
-    PFM_Vec2_Sub(&endpoints[1], &endpoints[0], &delta);
-    if(PFM_Vec2_Len(&delta) > EPSILON) {
-        PFM_Vec2_Normal(&delta, &delta);
-    }
-
-    float width = 1.0f;
-    vec3_t green = (vec3_t){140.0f / 255.0f, 240.0f / 255.0f, 140.0f / 255.0f};
-    vec3_t red = (vec3_t){230.0f / 255.0f, 64.0f / 255.0f, 85.0f / 255.0f};
-
-    R_PushCmd((struct rcmd){
-        .func = R_GL_DrawLine,
-        .nargs = 4,
-        .args = {
-            R_PushArg(endpoints, sizeof(endpoints)),
-            R_PushArg(&width, sizeof(width)),
-            R_PushArg(s_drag_attacking ? &red : &green, sizeof(vec3_t)),
-            (void*)G_GetPrevTickMap()
-        }
-    });
-    enum selection_type seltype;
-    const vec_entity_t *sel = G_Sel_Get(&seltype);
-    
-    G_Formation_RenderPlacement(sel, endpoints[0], delta);
-}
-
 static bool move_nav_field_overlay_enabled(void)
 {
     static const char *const keys[] = {
@@ -2585,15 +2171,11 @@ static bool move_nav_field_overlay_enabled(void)
 
 static void on_render_3d(void *user, void *event)
 {
-    if(s_mouse_dragged) {
-        render_formation_orientation();
-    }
-
     /* The field-visualisation overlays below read the task-owned field cache on
      * the main thread; drain the nav task so it is quiescent. Skip those
      * overlays if it cannot be drained this frame (GPU work in flight).
      */
-    bool cache_ok = !move_nav_field_overlay_enabled() || G_Move_NavQuiesce();
+    bool cache_ok = !move_nav_field_overlay_enabled() || Move_NavQuiesce();
 
     const struct camera *cam = G_GetActiveCamera();
     enum nav_layer layer;
@@ -2750,28 +2332,15 @@ static void on_render_3d(void *user, void *event)
         };
         for(int i = 0; i < vec_size(&s_flocks); i++) {
             const struct flock *flock = &vec_AT(&s_flocks, i);
-            if(!G_ArrivalGroup_IsActive(&flock->arrival))
+            if(!Move_ArrivalGroup_IsActive(&flock->arrival))
                 continue;
             STALLOC(struct arrival_member, members, kh_size(flock->ents));
             int n = build_arrival_members(flock, members, kh_size(flock->ents));
-            G_ArrivalGroup_RenderDebug(&flock->arrival, cam, s_map, flock->dest_id,
+            Move_ArrivalGroup_RenderDebug(&flock->arrival, cam, s_map, flock->dest_id,
                 dbg_flock_pal[i % ARR_SIZE(dbg_flock_pal)], members, n);
             STFREE(members);
         }
     }
-}
-
-static quat_t dir_quat_from_velocity(vec2_t velocity)
-{
-    assert(PFM_Vec2_Len(&velocity) > EPSILON);
-
-    float angle_rad = atan2(velocity.raw[1], velocity.raw[0]) - M_PI/2.0f;
-    return (quat_t) {
-        0.0f, 
-        1.0f * sin(angle_rad / 2.0f),
-        0.0f,
-        cos(angle_rad / 2.0f)
-    };
 }
 
 static bool entity_exists(uint32_t uid)
@@ -3096,7 +2665,7 @@ static vec2_t ent_desired_velocity(struct move_work_in *in)
         struct arrival_state *as = flock_arrival_for_ent(fl, uid);
         vec2_t arrival_vel;
         if(!in->range_field && as
-        && G_Arrival_DesiredVelocity(as, &movestate_aux_get(uid)->arrival, s_map,
+        && Move_Arrival_DesiredVelocity(as, &movestate_aux_get(uid)->arrival, s_map,
             map, pos_xz, mms->velocity, has_dest_los, &arrival_vel)) {
             in->arrival_vdes = true;
             return arrival_vel;
@@ -3107,7 +2676,7 @@ static vec2_t ent_desired_velocity(struct move_work_in *in)
          * other way, and the two cancel out on the border.
          */
         if(has_dest_los && target.kind == TARGET_KIND_POINT_SEEK) {
-            vec2_t seek = as ? G_Arrival_SeekTarget(as, &movestate_aux_get(uid)->arrival,
+            vec2_t seek = as ? Move_Arrival_SeekTarget(as, &movestate_aux_get(uid)->arrival,
                 fl->target_xz) : fl->target_xz;
             vec2_t to_seek;
             PFM_Vec2_Sub(&seek, &pos_xz, &to_seek);
@@ -3145,253 +2714,40 @@ static vec2_t ent_desired_velocity(struct move_work_in *in)
     }
 }
 
-/* Seek behaviour makes the entity target and approach a particular destination point.
- */
 static vec2_t seek_force(uint32_t uid, vec2_t target_xz)
 {
     struct movestate *ms = movestate_get(uid);
     assert(ms);
 
-    vec2_t ret, desired_velocity;
     vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
-
-    PFM_Vec2_Sub(&target_xz, &pos_xz, &desired_velocity);
-    if(PFM_Vec2_Len(&desired_velocity) >= EPSILON) {
-        PFM_Vec2_Normal(&desired_velocity, &desired_velocity);
-    }
-    PFM_Vec2_Scale(&desired_velocity, ms->max_speed / hz_count(s_move_work.hz), &desired_velocity);
-
-    PFM_Vec2_Sub(&desired_velocity, &ms->velocity, &ret);
-    return ret;
+    return Move_Flock_Seek(pos_xz, ms->velocity, ms->max_speed, hz_count(s_move_work.hz), target_xz);
 }
 
-/* Arrival behaviour is like 'seek' but the entity decelerates and comes to a halt when it is 
- * within a threshold radius of the destination point.
- * 
- * When not within line of sight of the destination, this will steer the entity along the 
- * flow field.
- */
 static vec2_t arrive_force_point(uint32_t uid, vec2_t target_xz, vec2_t vdes, bool has_dest_los,
                                  float speed)
 {
-    vec2_t ret, desired_velocity;
     vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
-    float distance;
 
     struct movestate *ms = movestate_get(uid);
     assert(ms);
 
-    if(has_dest_los) {
-
-        PFM_Vec2_Sub(&target_xz, &pos_xz, &desired_velocity);
-        distance = PFM_Vec2_Len(&desired_velocity);
-        /* Standing on the goal point; normalising the zero offset would NaN. */
-        if(distance >= EPSILON) {
-            PFM_Vec2_Normal(&desired_velocity, &desired_velocity);
-        }
-        PFM_Vec2_Scale(&desired_velocity, speed / hz_count(s_move_work.hz), 
-            &desired_velocity);
-
-        if(distance < ARRIVE_SLOWING_RADIUS) {
-            PFM_Vec2_Scale(&desired_velocity, distance / ARRIVE_SLOWING_RADIUS, &desired_velocity);
-        }
-    }else{
-        PFM_Vec2_Scale(&vdes, speed / hz_count(s_move_work.hz), &desired_velocity);
-    }
-
-    PFM_Vec2_Sub(&desired_velocity, &ms->velocity, &ret);
-    vec2_truncate(&ret, SCALED_MAX_FORCE);
-    return ret;
+    return Move_Flock_ArrivePoint(pos_xz, ms->velocity, hz_count(s_move_work.hz), target_xz,
+        vdes, has_dest_los, speed);
 }
 
 static vec2_t arrive_force_cell(uint32_t uid, vec2_t cell_xz, vec2_t vdes)
 {
     struct movestate *ms = movestate_get(uid);
     vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
-    float distance;
-
-    vec2_t desired_velocity;
-    PFM_Vec2_Sub(&cell_xz, &pos_xz, &desired_velocity);
-    distance = PFM_Vec2_Len(&desired_velocity);
-
-    if(distance < ARRIVE_SLOWING_RADIUS) {
-        PFM_Vec2_Scale(&desired_velocity, distance / ARRIVE_SLOWING_RADIUS, &desired_velocity);
-    }else{
-        PFM_Vec2_Scale(&vdes, ms->max_speed / hz_count(s_move_work.hz), &desired_velocity);
-    }
-    return desired_velocity;
+    return Move_Flock_ArriveCell(pos_xz, ms->max_speed, hz_count(s_move_work.hz), cell_xz, vdes);
 }
 
 static vec2_t arrive_force_enemies(uint32_t uid, vec2_t vdes)
 {
-    vec2_t ret, desired_velocity;
-    vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
-    float distance;
-
     const struct movestate *ms = movestate_get(uid);
     assert(ms);
 
-    PFM_Vec2_Scale(&vdes, ms->max_speed / hz_count(s_move_work.hz), &desired_velocity);
-    PFM_Vec2_Sub(&desired_velocity, (vec2_t*)&ms->velocity, &ret);
-    vec2_truncate(&ret, SCALED_MAX_FORCE);
-    return ret;
-}
-
-/* Cohesion is a behaviour that causes agents to steer towards the center of mass of nearby agents.
- */
-static vec2_t cohesion_force(uint32_t uid, const struct flock_snap *snap)
-{
-    vec2_t COM = (vec2_t){0.0f};
-    size_t neighbour_count = 0;
-    vec2_t ent_xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
-
-    for(size_t i = 0; i < snap->nents; i++) {
-
-        if(snap->uids[i] == uid)
-            continue;
-
-        vec2_t diff;
-        vec2_t curr_xz_pos = (vec2_t){snap->pos_x[i], snap->pos_z[i]};
-        PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
-
-        float t = (PFM_Vec2_Len(&diff) - COHESION_NEIGHBOUR_RADIUS*0.75)
-                / COHESION_NEIGHBOUR_RADIUS;
-        float scale = exp(-6.0f * t);
-
-        PFM_Vec2_Scale(&curr_xz_pos, scale, &curr_xz_pos);
-        PFM_Vec2_Add(&COM, &curr_xz_pos, &COM);
-        neighbour_count++;
-    }
-
-    if(0 == neighbour_count)
-        return (vec2_t){0.0f};
-
-    vec2_t ret;
-    PFM_Vec2_Scale(&COM, 1.0f / neighbour_count, &COM);
-    PFM_Vec2_Sub(&COM, &ent_xz_pos, &ret);
-    vec2_truncate(&ret, SCALED_MAX_FORCE);
-    return ret;
-}
-
-/* Cephes-derived polynomial exp over 8 lanes (relative error ~1e-7; the
- * result only weighs flock members in a steering heuristic). */
-SIMD_TARGET_AVX2
-static inline __m256 exp256_ps(__m256 x)
-{
-    const __m256 exp_hi = _mm256_set1_ps( 88.3762626647949f);
-    const __m256 exp_lo = _mm256_set1_ps(-88.3762626647949f);
-    const __m256 log2e  = _mm256_set1_ps(1.44269504088896341f);
-    const __m256 c1     = _mm256_set1_ps(0.693359375f);
-    const __m256 c2     = _mm256_set1_ps(-2.12194440e-4f);
-    const __m256 one    = _mm256_set1_ps(1.0f);
-
-    x = _mm256_min_ps(x, exp_hi);
-    x = _mm256_max_ps(x, exp_lo);
-
-    __m256 fx = _mm256_floor_ps(_mm256_add_ps(_mm256_mul_ps(x, log2e),
-        _mm256_set1_ps(0.5f)));
-    x = _mm256_sub_ps(x, _mm256_mul_ps(fx, c1));
-    x = _mm256_sub_ps(x, _mm256_mul_ps(fx, c2));
-
-    __m256 z = _mm256_mul_ps(x, x);
-    __m256 y = _mm256_set1_ps(1.9875691500e-4f);
-    y = _mm256_add_ps(_mm256_mul_ps(y, x), _mm256_set1_ps(1.3981999507e-3f));
-    y = _mm256_add_ps(_mm256_mul_ps(y, x), _mm256_set1_ps(8.3334519073e-3f));
-    y = _mm256_add_ps(_mm256_mul_ps(y, x), _mm256_set1_ps(4.1665795894e-2f));
-    y = _mm256_add_ps(_mm256_mul_ps(y, x), _mm256_set1_ps(1.6666665459e-1f));
-    y = _mm256_add_ps(_mm256_mul_ps(y, x), _mm256_set1_ps(5.0000001201e-1f));
-    y = _mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(y, z), x), one);
-
-    __m256i emm0 = _mm256_cvttps_epi32(fx);
-    emm0 = _mm256_slli_epi32(_mm256_add_epi32(emm0, _mm256_set1_epi32(0x7f)), 23);
-    return _mm256_mul_ps(y, _mm256_castsi256_ps(emm0));
-}
-
-SIMD_TARGET_AVX2
-static vec2_t cohesion_force_avx2(uint32_t uid, const struct flock_snap *snap)
-{
-    vec2_t ent_xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
-
-    const __m256 ex = _mm256_set1_ps(ent_xz_pos.x);
-    const __m256 ez = _mm256_set1_ps(ent_xz_pos.z);
-    const __m256 k_off = _mm256_set1_ps(COHESION_NEIGHBOUR_RADIUS * 0.75f);
-    const __m256 k_scale = _mm256_set1_ps(-6.0f / COHESION_NEIGHBOUR_RADIUS);
-    const __m256i vuid = _mm256_set1_epi32((int)uid);
-
-    __m256 sum_x = _mm256_setzero_ps();
-    __m256 sum_z = _mm256_setzero_ps();
-
-    size_t nblock = snap->nents & ~7ull;
-    for(size_t i = 0; i < nblock; i += 8) {
-
-        __m256 px = _mm256_loadu_ps(&snap->pos_x[i]);
-        __m256 pz = _mm256_loadu_ps(&snap->pos_z[i]);
-        __m256i ids = _mm256_loadu_si256((const __m256i*)&snap->uids[i]);
-
-        __m256 dx = _mm256_sub_ps(px, ex);
-        __m256 dz = _mm256_sub_ps(pz, ez);
-        __m256 dist = _mm256_sqrt_ps(_mm256_add_ps(_mm256_mul_ps(dx, dx),
-            _mm256_mul_ps(dz, dz)));
-
-        __m256 scale = exp256_ps(_mm256_mul_ps(_mm256_sub_ps(dist, k_off), k_scale));
-
-        __m256 self = _mm256_castsi256_ps(_mm256_cmpeq_epi32(ids, vuid));
-        scale = _mm256_andnot_ps(self, scale);
-
-        sum_x = _mm256_add_ps(sum_x, _mm256_mul_ps(px, scale));
-        sum_z = _mm256_add_ps(sum_z, _mm256_mul_ps(pz, scale));
-    }
-
-    float lanes_x[8], lanes_z[8];
-    _mm256_storeu_ps(lanes_x, sum_x);
-    _mm256_storeu_ps(lanes_z, sum_z);
-
-    vec2_t COM = (vec2_t){0.0f};
-    for(int i = 0; i < 8; i++) {
-        COM.x += lanes_x[i];
-        COM.z += lanes_z[i];
-    }
-
-    size_t neighbour_count = 0;
-    for(size_t i = 0; i < nblock; i++) {
-        neighbour_count += (snap->uids[i] != uid);
-    }
-    for(size_t i = nblock; i < snap->nents; i++) {
-
-        if(snap->uids[i] == uid)
-            continue;
-
-        vec2_t diff;
-        vec2_t curr_xz_pos = (vec2_t){snap->pos_x[i], snap->pos_z[i]};
-        PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
-
-        float t = (PFM_Vec2_Len(&diff) - COHESION_NEIGHBOUR_RADIUS*0.75)
-                / COHESION_NEIGHBOUR_RADIUS;
-        float scale = exp(-6.0f * t);
-
-        COM.x += curr_xz_pos.x * scale;
-        COM.z += curr_xz_pos.z * scale;
-        neighbour_count++;
-    }
-
-    if(0 == neighbour_count)
-        return (vec2_t){0.0f};
-
-    vec2_t ret;
-    PFM_Vec2_Scale(&COM, 1.0f / neighbour_count, &COM);
-    PFM_Vec2_Sub(&COM, &ent_xz_pos, &ret);
-    vec2_truncate(&ret, SCALED_MAX_FORCE);
-    return ret;
-}
-
-/* Set at init to the widest supported cohesion kernel. */
-static vec2_t (*s_cohesion_force)(uint32_t uid, const struct flock_snap *snap) = cohesion_force;
-
-/* Separation is a behaviour that causes agents to steer away from nearby agents.
- */
-static float separation_reach(float radius_sum)
-{
-    return MAX(SEPARATION_NEIGHB_RADIUS, SEPARATION_NEIGHB_SCALE * radius_sum);
+    return Move_Flock_ArriveEnemies(ms->velocity, ms->max_speed, hz_count(s_move_work.hz), vdes);
 }
 
 static float clearpath_reach(float radius_sum)
@@ -3465,7 +2821,7 @@ static vec2_t separation_force_gap(uint32_t uid, float buffer_dist, float *out_m
     vec2_t ent_xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
     uint32_t near_ents[256];
     int num_near = gather_movable_neighbours(uid, ent_xz_pos, ent_radius, ent_flags,
-        separation_reach, 0.0f, near_ents, ARR_SIZE(near_ents));
+        Move_Flock_SeparationReach, 0.0f, near_ents, ARR_SIZE(near_ents));
 
     for(int i = 0; i < num_near; i++) {
 
@@ -3488,36 +2844,16 @@ static vec2_t separation_force_gap(uint32_t uid, float buffer_dist, float *out_m
 
         float radius_sum = ent_radius
                          + G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr);
-        float radius = radius_sum + buffer_dist;
         PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
 
-        if(PFM_Vec2_Len(&diff) < EPSILON)
-            continue;
-        if(PFM_Vec2_Len(&diff) > separation_reach(radius_sum))
-            continue;
-
-        float gap = PFM_Vec2_Len(&diff) - radius_sum;
-        if(gap < *out_min_gap)
-            *out_min_gap = gap;
-
-        /* Exponential decay with y=1 when diff = radius*0.85 
-         * Use smooth decay curves in order to curb the 'toggling' or oscillating 
-         * behaviour that may arise when there are discontinuities in the forces. 
-         */
-        float eq = 0.85f;
-        float steep = 20.0f;
-        float t = (PFM_Vec2_Len(&diff) - radius*eq) / PFM_Vec2_Len(&diff);
-        float scale = exp(MIN(-steep * t, 40.0f));
-        PFM_Vec2_Scale(&diff, scale, &diff);
-
-        PFM_Vec2_Add(&ret, &diff, &ret);
+        Move_Flock_Separate(diff, radius_sum, buffer_dist, &ret, out_min_gap);
     }
 
     if(0 == num_near)
         return (vec2_t){0.0f};
 
     PFM_Vec2_Scale(&ret, -1.0f, &ret);
-    vec2_truncate(&ret, SCALED_MAX_FORCE);
+    Move_Flock_Truncate(&ret, SCALED_MAX_FORCE);
     return ret;
 }
 
@@ -3525,35 +2861,6 @@ static vec2_t separation_force(uint32_t uid, float buffer_dist)
 {
     float min_gap = INFINITY;
     return separation_force_gap(uid, buffer_dist, &min_gap);
-}
-
-/* A separation push against a live desired direction backs the unit out of
- * the way it wants to go; redirect that component sideways (the remembered
- * passing side) so nose-to-nose units step around each other instead of
- * bouncing along the line of centres. The redirected share blends smoothly
- * to zero as interpenetration deepens (a hard cut oscillates at the
- * boundary), so a wedged pair keeps the radial push-out.
- */
-static vec2_t redirect_backward(vec2_t force, vec2_t vdes, int side, float min_gap)
-{
-    if(PFM_Vec2_Len(&vdes) < EPSILON || min_gap <= SEP_REDIRECT_MIN_GAP)
-        return force;
-
-    float frac = MIN(1.0f, (min_gap - SEP_REDIRECT_MIN_GAP) / -SEP_REDIRECT_MIN_GAP);
-
-    vec2_t vhat;
-    PFM_Vec2_Normal(&vdes, &vhat);
-    float back = PFM_Vec2_Dot(&force, &vhat);
-    if(back >= 0.0f)
-        return force;
-
-    vec2_t lat = (vec2_t){-vhat.z * side, vhat.x * side};
-    vec2_t backward, lateral;
-    PFM_Vec2_Scale(&vhat, back * frac, &backward);
-    PFM_Vec2_Sub(&force, &backward, &force);
-    PFM_Vec2_Scale(&lat, -back * frac, &lateral);
-    PFM_Vec2_Add(&force, &lateral, &force);
-    return force;
 }
 
 static vec2_t point_seek_total_force(uint32_t uid, const struct flock *flock,
@@ -3564,13 +2871,14 @@ static vec2_t point_seek_total_force(uint32_t uid, const struct flock *flock,
     assert(ms);
 
     struct arrival_state *as = flock_arrival_for_ent(flock, uid);
-    vec2_t seek = as ? G_Arrival_SeekTarget(as, &movestate_aux_get(uid)->arrival,
+    vec2_t seek = as ? Move_Arrival_SeekTarget(as, &movestate_aux_get(uid)->arrival,
         flock->target_xz) : flock->target_xz;
     vec2_t arrive = arrive_force_point(uid, seek, vdes, has_dest_los, speed);
-    vec2_t cohesion = s_cohesion_force(uid, fsnap);
+    vec2_t cohesion = Move_Flock_Cohesion(uid,
+        G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid), hz_count(s_move_work.hz), fsnap);
     float min_gap = INFINITY;
     vec2_t separation = separation_force_gap(uid, SEPARATION_BUFFER_DIST, &min_gap);
-    separation = redirect_backward(separation, vdes, side, min_gap);
+    separation = Move_Flock_RedirectBackward(separation, vdes, side, min_gap);
 
     PFM_Vec2_Scale(&arrive,     MOVE_ARRIVE_FORCE_SCALE,   &arrive);
     PFM_Vec2_Scale(&cohesion,   MOVE_COHESION_FORCE_SCALE, &cohesion);
@@ -3581,7 +2889,7 @@ static vec2_t point_seek_total_force(uint32_t uid, const struct flock *flock,
     PFM_Vec2_Add(&ret, &separation, &ret);
     PFM_Vec2_Add(&ret, &cohesion, &ret);
 
-    vec2_truncate(&ret, SCALED_MAX_FORCE);
+    Move_Flock_Truncate(&ret, SCALED_MAX_FORCE);
     return ret;
 }
 
@@ -3612,7 +2920,7 @@ static vec2_t cell_seek_total_force(uint32_t uid, vec2_t cell_pos, vec2_t vdes,
         PFM_Vec2_Add(&ret, &alignment, &ret);
     }
 
-    vec2_truncate(&ret, SCALED_MAX_FORCE);
+    Move_Flock_Truncate(&ret, SCALED_MAX_FORCE);
     return ret;
 }
 
@@ -3631,7 +2939,7 @@ static vec2_t enemy_seek_total_force(uint32_t uid, vec2_t vdes)
     PFM_Vec2_Add(&ret, &arrive, &ret);
     PFM_Vec2_Add(&ret, &separation, &ret);
 
-    vec2_truncate(&ret, SCALED_MAX_FORCE);
+    Move_Flock_Truncate(&ret, SCALED_MAX_FORCE);
     return ret;
 }
 
@@ -3664,48 +2972,23 @@ static bool surround_switch_ok(enum nav_layer layer, vec2_t pos, vec2_t curr, ve
 
 static bool landing_ok(enum nav_layer layer, bool on_blocked, vec2_t pos)
 {
-    const struct map *map = s_move_work.gamestate.map;
-    return M_NavPositionPathable(map, layer, pos)
-        && (on_blocked || !M_NavPositionBlocked(map, layer, pos));
+    return Move_Flock_LandingOk(s_move_work.gamestate.map, layer, on_blocked, pos);
 }
 
-/* The part of a step that keeps to ground the unit may land on. The solver's
- * obstacles are discs, on the tile centres for walls and on the bodies for
- * neighbours, while the ground is refused by the tile, so its answer can aim
- * a little into a wall the field runs beside or onto the stamp beside a body
- * it clears; a step dropped whole there leaves the unit frozen for as long as
- * what it avoids stays put.
- */
 static vec2_t slide_along_obstacle(uint32_t uid, enum nav_layer layer, bool on_blocked,
                                    vec2_t vel)
 {
-    vec2_t along_x = (vec2_t){vel.x, 0.0f};
-    vec2_t along_z = (vec2_t){0.0f, vel.z};
-    bool x_ok = (vel.x != 0.0f) && landing_ok(layer, on_blocked, new_pos_for_vel(uid, along_x));
-    bool z_ok = (vel.z != 0.0f) && landing_ok(layer, on_blocked, new_pos_for_vel(uid, along_z));
-    if(x_ok && z_ok)
-        return (fabsf(vel.x) >= fabsf(vel.z)) ? along_x : along_z;
-    if(x_ok)
-        return along_x;
-    if(z_ok)
-        return along_z;
-    return (vec2_t){0.0f, 0.0f};
+    return Move_Flock_Slide(s_move_work.gamestate.map,
+        G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid), layer, on_blocked, vel);
 }
 
-/* Nullify the components of the force which would guide
- * the entity towards an impassable tile. */
 static void nullify_impass_components(uint32_t uid, vec2_t *inout_force)
 {
-    vec2_t nt_dims = N_TileDims();
     float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
     uint32_t flags = G_FlagsGetFrom(s_move_work.gamestate.flags, uid);
     enum nav_layer layer = Entity_NavLayerWithRadius(flags, radius);
 
     vec2_t pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
-    vec2_t left =  (vec2_t){pos.x + nt_dims.x, pos.z};
-    vec2_t right = (vec2_t){pos.x - nt_dims.x, pos.z};
-    vec2_t top =   (vec2_t){pos.x, pos.z + nt_dims.z};
-    vec2_t bot =   (vec2_t){pos.x, pos.z - nt_dims.z};
 
     /* A unit already sitting on a blocked tile must be allowed to steer toward
      * blocked neighbours so it can slide off the blocked region, and one phasing
@@ -3715,25 +2998,7 @@ static void nullify_impass_components(uint32_t uid, vec2_t *inout_force)
     bool on_blocked = movestate_aux_get(uid)->phasing
                    || M_NavPositionBlocked(s_move_work.gamestate.map, layer, pos);
 
-    if(inout_force->x > 0 
-    && (!M_NavPositionPathable(s_move_work.gamestate.map, layer, left)  
-      || (!on_blocked && M_NavPositionBlocked(s_move_work.gamestate.map, layer, left))))
-        inout_force->x = 0.0f;
-
-    if(inout_force->x < 0 
-    && (!M_NavPositionPathable(s_move_work.gamestate.map, layer, right) 
-     || (!on_blocked && M_NavPositionBlocked(s_move_work.gamestate.map, layer, right))))
-        inout_force->x = 0.0f;
-
-    if(inout_force->z > 0 
-    && (!M_NavPositionPathable(s_move_work.gamestate.map, layer, top) 
-      || (!on_blocked && M_NavPositionBlocked(s_move_work.gamestate.map, layer, top))))
-        inout_force->z = 0.0f;
-
-    if(inout_force->z < 0 
-    && (!M_NavPositionPathable(s_move_work.gamestate.map, layer, bot) 
-      || (!on_blocked && M_NavPositionBlocked(s_move_work.gamestate.map, layer, bot))))
-        inout_force->z = 0.0f;
+    Move_Flock_NullifyImpass(s_move_work.gamestate.map, layer, pos, on_blocked, inout_force);
 }
 
 /* Where a unit is arriving, for the deceleration fallback. A unit steered by the
@@ -3770,13 +3035,7 @@ static vec2_t escape_wish(uint32_t uid, vec2_t vpref, vec2_t vdes, int side, flo
     if(min_gap >= MOVE_ESCAPE_GAP)
         return vpref;
 
-    vec2_t vhat, lat, ret;
-    PFM_Vec2_Normal(&vdes, &vhat);
-    lat = (vec2_t){-vhat.z * side, vhat.x * side};
-    PFM_Vec2_Add(&vhat, &lat, &ret);
-    PFM_Vec2_Normal(&ret, &ret);
-    PFM_Vec2_Scale(&ret, MOVE_ESCAPE_FLOOR * max_step, &ret);
-    return ret;
+    return Move_Flock_EscapeStep(vdes, side, max_step);
 }
 
 static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock,
@@ -3797,12 +3056,12 @@ static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock,
         case 1: {
             float min_gap = INFINITY;
             steer_force = separation_force_gap(uid, SEPARATION_BUFFER_DIST, &min_gap);
-            steer_force = redirect_backward(steer_force, vdes, side, min_gap);
+            steer_force = Move_Flock_RedirectBackward(steer_force, vdes, side, min_gap);
             break;
         }
         case 2: {
             struct arrival_state *as = flock_arrival_for_ent(flock, uid);
-            vec2_t seek = as ? G_Arrival_SeekTarget(as, &movestate_aux_get(uid)->arrival,
+            vec2_t seek = as ? Move_Arrival_SeekTarget(as, &movestate_aux_get(uid)->arrival,
                 flock->target_xz) : flock->target_xz;
             steer_force = arrive_force_seek(uid, seek, vdes, has_dest_los, range_field, max_speed);
             break;
@@ -3819,7 +3078,7 @@ static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock,
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
-    vec2_truncate(&new_vel, speed / hz_count(s_move_work.hz));
+    Move_Flock_Truncate(&new_vel, speed / hz_count(s_move_work.hz));
 
     return escape_wish(uid, new_vel, vdes, side, speed / hz_count(s_move_work.hz));
 }
@@ -3854,9 +3113,9 @@ static vec2_t cell_arrival_seek_vpref(uint32_t uid, vec2_t cell_pos, float speed
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
-    vec2_truncate(&new_vel, speed / hz_count(s_move_work.hz));
+    Move_Flock_Truncate(&new_vel, speed / hz_count(s_move_work.hz));
     if(PFM_Vec2_Len(&drag) > EPSILON) {
-        vec2_truncate(&new_vel, (speed * 0.75) / hz_count(s_move_work.hz));
+        Move_Flock_Truncate(&new_vel, (speed * 0.75) / hz_count(s_move_work.hz));
     }
 
     return new_vel;
@@ -3878,7 +3137,7 @@ static vec2_t enemy_seek_vpref(uint32_t uid, float speed, vec2_t vdes, bool pinn
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
-    vec2_truncate(&new_vel, speed / hz_count(s_move_work.hz));
+    Move_Flock_Truncate(&new_vel, speed / hz_count(s_move_work.hz));
 
     return new_vel;
 }
@@ -3900,7 +3159,7 @@ static vec2_t flee_total_force(uint32_t uid, vec2_t vdes)
     PFM_Vec2_Add(&ret, &arrive, &ret);
     PFM_Vec2_Add(&ret, &separation, &ret);
 
-    vec2_truncate(&ret, SCALED_MAX_FORCE);
+    Move_Flock_Truncate(&ret, SCALED_MAX_FORCE);
     return ret;
 }
 
@@ -3918,7 +3177,7 @@ static vec2_t flee_vpref(uint32_t uid, float speed, vec2_t vdes)
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
-    vec2_truncate(&new_vel, speed / hz_count(s_move_work.hz));
+    Move_Flock_Truncate(&new_vel, speed / hz_count(s_move_work.hz));
 
     return new_vel;
 }
@@ -3942,7 +3201,7 @@ static vec2_t formation_point_seek_total_force(uint32_t uid, const struct flock 
     PFM_Vec2_Add(&ret, &separation, &ret);
     PFM_Vec2_Add(&ret, &cohesion, &ret);
 
-    vec2_truncate(&ret, SCALED_MAX_FORCE);
+    Move_Flock_Truncate(&ret, SCALED_MAX_FORCE);
     return ret;
 }
 
@@ -3979,9 +3238,9 @@ static vec2_t formation_seek_vpref(uint32_t uid, const struct flock *flock, floa
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
-    vec2_truncate(&new_vel, speed / hz_count(s_move_work.hz));
+    Move_Flock_Truncate(&new_vel, speed / hz_count(s_move_work.hz));
     if(PFM_Vec2_Len(&drag) > EPSILON) {
-        vec2_truncate(&new_vel, (speed * 0.75) / hz_count(s_move_work.hz));
+        Move_Flock_Truncate(&new_vel, (speed * 0.75) / hz_count(s_move_work.hz));
     }
 
     return new_vel;
@@ -4014,15 +3273,9 @@ static bool vel_hist_empty(const struct movestate_aux *aux)
     return true;
 }
 
-static vec2_t facing_dir(quat_t rot)
-{
-    float theta = 2.0 * atan2(rot.y, rot.w);
-    return (vec2_t){-sin(theta), cos(theta)};
-}
-
 static void seed_vel_hist_facing(struct movestate *ms, struct movestate_aux *aux)
 {
-    vec2_t dir = facing_dir(ms->next_rot);
+    vec2_t dir = Move_Flock_FacingDir(ms->next_rot);
     PFM_Vec2_Scale(&dir, PFM_Vec2_Len(&ms->velocity), &dir);
     for(int i = 0; i < VEL_HIST_LEN; i++)
         aux->vel_hist[i] = dir;
@@ -4182,57 +3435,6 @@ static int hz_count(enum movement_hz hz)
     return 0;
 }
 
-static vec3_t interpolate_positions(vec3_t from, vec3_t to, float fraction)
-{
-    assert(fraction >= 0.0f && fraction <= 1.0f);
-
-    if(fabs(1.0 - fraction) < EPSILON)
-        return to;
-
-    vec3_t delta;
-    PFM_Vec3_Sub(&to, &from, &delta);
-    PFM_Vec3_Scale(&delta, fraction, &delta);
-
-    vec3_t ret;
-    PFM_Vec3_Add(&from, &delta, &ret);
-    return ret;
-}
-
-static quat_t interpolate_rotations(quat_t from, quat_t to, float fraction)
-{
-    assert(fraction >= 0.0f && fraction <= 1.0f);
-
-    if(fabs(1.0 - fraction) < EPSILON)
-        return to;
-
-    return PFM_Quat_Slerp(&from, &to, fraction);
-}
-
-/* Rotate 'cur' towards 'target' by at most 'max_deg' degrees about the Y axis,
- * picking a stable direction even when the orientations are antipodal.
- */
-static quat_t turn_toward(quat_t cur, quat_t target, float max_deg)
-{
-    float angle_deg = RAD_TO_DEG(PFM_Quat_PitchDiff(&cur, &target));
-
-    /* Near 180 degrees the shortest-arc direction is undefined: the cross-product
-     * term collapses to zero and its sign is pure noise. Force a fixed sweep so the
-     * unit never flips.
-     */
-    if(180.0f - fabs(angle_deg) < 1.0f)
-        angle_deg = 180.0f;
-
-    float turn_deg = MIN(max_deg, fabs(angle_deg)) * -SIGNUM(angle_deg);
-    mat4x4_t rotmat;
-    PFM_Mat4x4_MakeRotY(DEG_TO_RAD(turn_deg), &rotmat);
-
-    quat_t rot, final;
-    PFM_Quat_FromRotMat(&rotmat, &rot);
-    PFM_Quat_MultQuat(&rot, &cur, &final);
-    PFM_Quat_Normal(&final, &final);
-    return final;
-}
-
 static bool move_gated_by_heading(enum move_state state)
 {
     switch(state) {
@@ -4264,64 +3466,6 @@ static bool yields_behind_band(enum move_state state)
     }
 }
 
-/* The part of a step a unit can take facing the way it does. Within the
- * band of the facing the step is kept whole; beyond it, only its share along
- * the nearer edge of the band. A slow step is a shove, and keeps within
- * MOVE_STEP_BAND; a unit walking in earnest turns after its travel and keeps
- * within MOVE_WALK_BAND. Neither moves the unit sideways or backward.
- */
-static vec2_t step_within_heading(vec2_t step, vec2_t facing, float max_step)
-{
-    if(PFM_Vec2_Len(&step) < EPSILON)
-        return step;
-
-    float cross = facing.x * step.z - facing.z * step.x;
-    float dot = PFM_Vec2_Dot(&facing, &step);
-    float angle = atan2f(cross, dot);
-    bool shove = PFM_Vec2_Len(&step) < FACING_FOLLOW_ENGAGE * max_step;
-    float band = DEG_TO_RAD(shove ? MOVE_STEP_BAND : MOVE_WALK_BAND);
-    if(fabsf(angle) <= band)
-        return step;
-
-    float edge_angle = (angle > 0.0f) ? band : -band;
-    vec2_t edge = (vec2_t){
-        facing.x * cosf(edge_angle) - facing.z * sinf(edge_angle),
-        facing.x * sinf(edge_angle) + facing.z * cosf(edge_angle)
-    };
-    float along = PFM_Vec2_Dot(&step, &edge);
-    if(along <= 0.0f)
-        return (vec2_t){0.0f, 0.0f};
-    PFM_Vec2_Scale(&edge, along, &edge);
-    return edge;
-}
-
-/* A unit dressing its rank faces the way the rank does and steps into its
- * cell from there: ahead at its pace, any other way at a shuffle.
- */
-static vec2_t dress_step(vec2_t step, vec2_t facing, float max_step)
-{
-    float len = PFM_Vec2_Len(&step);
-    float shuffle = FACING_FOLLOW_ENGAGE * max_step;
-    if(len <= shuffle)
-        return step;
-
-    float cross = facing.x * step.z - facing.z * step.x;
-    float dot = PFM_Vec2_Dot(&facing, &step);
-    if(fabsf(atan2f(cross, dot)) <= DEG_TO_RAD(MOVE_STEP_BAND))
-        return step;
-
-    PFM_Vec2_Scale(&step, shuffle / len, &step);
-    return step;
-}
-
-static float cell_bearing_from_rank(vec2_t to_cell, quat_t rank_orientation)
-{
-    vec2_t rank_dir = facing_dir(rank_orientation);
-    float cross = rank_dir.x * to_cell.z - rank_dir.z * to_cell.x;
-    float dot = PFM_Vec2_Dot(&rank_dir, &to_cell);
-    return RAD_TO_DEG(fabsf(atan2f(cross, dot)));
-}
-
 static vec2_t intended_heading(vec2_t vdes, vec2_t new_vel)
 {
     return (PFM_Vec2_Len(&vdes) > EPSILON) ? vdes : new_vel;
@@ -4341,7 +3485,7 @@ static quat_t orient_to_velocity_history(const struct movestate *ms,
     *out_follows = PFM_Vec2_Len(&wma) > EPSILON && PFM_Vec2_Len(&wma) >= band * step;
     if(!*out_follows) {
         if(PFM_Vec2_Len(&vdes) > EPSILON)
-            return turn_toward(ms->next_rot, dir_quat_from_velocity(vdes), SCALED_MAX_TURN_RATE);
+            return Move_Flock_TurnToward(ms->next_rot, Move_Flock_DirQuat(vdes), SCALED_MAX_TURN_RATE);
         return ms->next_rot;
     }
 
@@ -4353,7 +3497,7 @@ static quat_t orient_to_velocity_history(const struct movestate *ms,
     if(PFM_Vec2_Len(&vdes) > EPSILON && PFM_Vec2_Dot(&wma, &vdes) < 0.0f)
         return ms->next_rot;
 
-    return turn_toward(ms->next_rot, dir_quat_from_velocity(wma), SCALED_MAX_TURN_RATE);
+    return Move_Flock_TurnToward(ms->next_rot, Move_Flock_DirQuat(wma), SCALED_MAX_TURN_RATE);
 }
 
 enum settle_verdict{
@@ -4375,10 +3519,10 @@ static enum settle_verdict mover_settle_verdict(uint32_t uid, vec2_t new_pos_xz,
     struct flock *flock = flock_for_ent(uid);
     assert(flock);
 
-    struct arrival_state *as = G_ArrivalGroup_ForLayer(&flock->arrival, layer);
-    if(as && G_Arrival_IsActive(as)) {
+    struct arrival_state *as = Move_ArrivalGroup_ForLayer(&flock->arrival, layer);
+    if(as && Move_Arrival_IsActive(as)) {
         int n_settled = adjacent_settled_count(uid);
-        bool at_slot = G_Arrival_ShouldSettle(as, &aux->arrival, s_map,
+        bool at_slot = Move_Arrival_ShouldSettle(as, &aux->arrival, s_map,
             s_move_work.gamestate.map, new_pos_xz, ms->velocity, radius, n_settled);
         return at_slot ? SETTLE_AT_SLOT : SETTLE_NONE;
     }
@@ -4431,7 +3575,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         PFM_Vec2_Sub((vec2_t*)&in->cell_pos, &curr_xz, &to_cell);
         float dist = PFM_Vec2_Len(&to_cell);
         float shuffle_reach = FACING_FOLLOW_ENGAGE * in->speed * CELL_DRESS_TIME_S;
-        float bearing = cell_bearing_from_rank(to_cell, in->fstate.target_orientation);
+        float bearing = Move_Flock_CellBearing(to_cell, in->fstate.target_orientation);
         if((dist < shuffle_reach && (bearing <= 90.0f || dist <= radius))
         || (dist < cell_closing_radius(radius) && bearing <= MOVE_STEP_BAND))
             aux->dressing = true;
@@ -4454,7 +3598,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
     quat_t travel_dir = ms->next_rot;
     bool yielding = aux->band_yield_ticks > 0 && yields_behind_band(ms->state);
     if(PFM_Vec2_Len(&new_vel) > EPSILON && move_gated_by_heading(ms->state) && !dressing) {
-        travel_dir = dir_quat_from_velocity(yielding ? new_vel : intended_heading(vdes, new_vel));
+        travel_dir = Move_Flock_DirQuat(yielding ? new_vel : intended_heading(vdes, new_vel));
         float heading_err = fabs(RAD_TO_DEG(PFM_Quat_PitchDiff(&ms->next_rot, &travel_dir)));
         float tolerance = (PFM_Vec2_Len(&ms->velocity) > EPSILON) ? MOVE_HEADING_HALT
                                                                   : MOVE_HEADING_RESUME;
@@ -4466,8 +3610,8 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
     }
 
     vec2_t solved = new_vel;
-    new_vel = dressing ? dress_step(new_vel, facing_dir(ms->next_rot), in->speed / hz_count(hz))
-                       : step_within_heading(new_vel, facing_dir(ms->next_rot), in->speed / hz_count(hz));
+    new_vel = dressing ? Move_Flock_DressStep(new_vel, Move_Flock_FacingDir(ms->next_rot), in->speed / hz_count(hz))
+                       : Move_Flock_StepWithinHeading(new_vel, Move_Flock_FacingDir(ms->next_rot), in->speed / hz_count(hz));
     if(!dressing && yields_behind_band(ms->state)
     && !(out->flags & UPDATE_HEADING_GATED)
     && PFM_Vec2_Len(&solved) >= CLEARPATH_STALL_SPEED
@@ -4506,7 +3650,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         /* Being shoved off the cell to let a neighbour by is not a heading. */
         bool follows = false;
         out->next_nrot = (aux->parked || dressing)
-            ? turn_toward(ms->next_rot, in->fstate.target_orientation, SCALED_MAX_TURN_RATE)
+            ? Move_Flock_TurnToward(ms->next_rot, in->fstate.target_orientation, SCALED_MAX_TURN_RATE)
             : orient_to_velocity_history(ms, aux, vdes, in->speed / hz_count(hz), &follows);
         out->flags |= follows ? UPDATE_FACING_FOLLOWS : 0;
 
@@ -4528,12 +3672,12 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
             out->flags |= UPDATE_SET_PREV_ROT | UPDATE_SET_NEXT_ROT;
             out->flags |= UPDATE_TURNING_IN_PLACE;
             out->next_prot = ms->next_rot;
-            out->next_nrot = turn_toward(ms->next_rot, facing, SCALED_MAX_TURN_RATE);
+            out->next_nrot = Move_Flock_TurnToward(ms->next_rot, facing, SCALED_MAX_TURN_RATE);
         }else if(turn_to_move) {
             out->flags |= UPDATE_SET_PREV_ROT | UPDATE_SET_NEXT_ROT;
             out->flags |= UPDATE_TURNING_IN_PLACE;
             out->next_prot = ms->next_rot;
-            out->next_nrot = turn_toward(ms->next_rot, travel_dir, SCALED_MAX_TURN_RATE);
+            out->next_nrot = Move_Flock_TurnToward(ms->next_rot, travel_dir, SCALED_MAX_TURN_RATE);
         }
     }
 
@@ -4781,7 +3925,7 @@ static void entity_compute_update(enum movement_hz hz, uint32_t uid, vec2_t new_
         }
 
         /* If not, turn towards the target by at most the turn rate */
-        quat_t final = turn_toward(ms->next_rot, aux->target_dir, SCALED_MAX_TURN_RATE);
+        quat_t final = Move_Flock_TurnToward(ms->next_rot, aux->target_dir, SCALED_MAX_TURN_RATE);
 
         out->flags |= UPDATE_SET_PREV_ROT | UPDATE_SET_NEXT_ROT;
         out->next_prot = final;
@@ -4957,16 +4101,15 @@ static void entity_apply_update(uint32_t uid, struct movestate *ms,
         }
     }
 
-    if(patch->flags & UPDATE_SET_POSITION)
-        G_Pos_SetFromMovement(uid, patch->next_pos);
-
-    if(patch->flags & UPDATE_SET_ROTATION)
-        Entity_SetRot(uid, patch->next_rot);
-
     if(patch->flags & (UPDATE_SET_NEXT_POS | UPDATE_SET_NEXT_ROT)) {
-        interp_begin_segment(uid, ms,
-            (patch->flags & UPDATE_SET_NEXT_POS) ? &patch->next_npos : NULL,
-            (patch->flags & UPDATE_SET_NEXT_ROT) ? &patch->next_nrot : NULL);
+        vec_step_push(&s_out_steps, (struct move_step){
+            .uid = uid,
+            .has_pos = !!(patch->flags & UPDATE_SET_NEXT_POS),
+            .has_rot = !!(patch->flags & UPDATE_SET_NEXT_ROT),
+            .pos = patch->next_npos,
+            .rot = patch->next_nrot,
+        });
+        vec_msptr_push(&s_out_step_states, ms);
     }
 
     if(patch->flags & UPDATE_SET_PREV_POS)
@@ -4974,12 +4117,6 @@ static void entity_apply_update(uint32_t uid, struct movestate *ms,
 
     if(patch->flags & UPDATE_SET_NEXT_POS)
         ms->next_pos = patch->next_npos;
-
-    if(patch->flags & UPDATE_SET_STEP)
-        ms->step = patch->next_step;
-
-    if(patch->flags & UPDATE_SET_LEFT)
-        ms->left = patch->next_left;
 
     if(patch->flags & UPDATE_SET_PREV_ROT)
         ms->prev_rot = patch->next_prot;
@@ -4992,13 +4129,6 @@ static void entity_apply_update(uint32_t uid, struct movestate *ms,
 
     if(patch->flags & UPDATE_SET_TARGET_DIR)
         aux->target_dir = patch->next_target_dir;
-
-    if(patch->flags & UPDATE_SET_MOVING) {
-        if(ms->blocking)
-            entity_unblock(uid);
-        move_notify_motion_start(uid, ms);
-        ms->state = patch->next_state;
-    }
 
     if(ms->state == STATE_SURROUND_ENTITY) {
         ent_update_using_surround_field(uid, ms);
@@ -5247,7 +4377,7 @@ static void find_neighbours(uint32_t uid, vec2_t ahead,
         /* A neighbour right at its arrival slot is about to settle and will not yield,
          * so avoid it fully (static) even while it is still moving at speed. */
         struct movestate_aux *curr_aux = movestate_aux_get(curr);
-        bool at_slot = G_Arrival_NeighbourSettling(&curr_aux->arrival,
+        bool at_slot = Move_Arrival_NeighbourSettling(&curr_aux->arrival,
             curr_xz_pos, newdesc.radius);
 
         /* A contact in this unit's way, stopped or not, is what the settle
@@ -5298,10 +4428,10 @@ static void disband_empty_flocks(void)
             struct flock *flock = &vec_AT(&s_flocks, i);
             uint32_t uid;
             kh_foreach_key(flock->ents, uid, {
-                G_Formation_RemoveUnit(uid);
+                Move_Formation_RemoveUnit(uid);
             });
             kh_destroy(entity, flock->ents);
-            G_ArrivalGroup_Destroy(&flock->arrival);
+            Move_ArrivalGroup_Destroy(&flock->arrival);
             vec_flock_del(&s_flocks, i);
         }
     }
@@ -5362,7 +4492,7 @@ static void do_add_entity(uint32_t uid, vec3_t pos, float selection_radius, int 
     };
     memset(new_aux.vel_hist, 0, sizeof(new_aux.vel_hist));
 
-    new_ms.interp_idx = -1;
+    vec_reset_push(&s_out_resets, (struct move_reset){uid, false});
     k = kh_put(state, s_entity_state_table, uid, &ret);
     assert(ret != -1 && ret != 0);
     kh_value(s_entity_state_table, k) = new_ms;
@@ -5508,9 +4638,9 @@ static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack)
     vec_entity_push(&flock, uid);
 
     enum formation_type type = FORMATION_NONE;
-    formation_id_t fid = G_Formation_GetForEnt(uid);
+    formation_id_t fid = Move_Formation_GetForEnt(uid);
     if(fid != NULL_FID) {
-        type = G_Formation_Type(fid);
+        type = Move_Formation_Type(fid);
     }
 
     make_flock(&flock, dest_xz, layer, attack, !attack, type);
@@ -5671,7 +4801,7 @@ static void do_set_seek_enemies(uint32_t uid)
     clear_seek_pin(uid);
 
     /* The unit keeps its flock and its formation cell while it fights, so
-     * it can go back to them once the fight is over (G_Move_ResumeOrder).
+     * it can go back to them once the fight is over (Move_ResumeOrder).
      */
     if(ent_still(ms)) {
         entity_unblock(uid);
@@ -5722,7 +4852,7 @@ static void do_resume_order(uint32_t uid)
         move_notify_motion_start(uid, ms);
     }
     settle_reset(movestate_aux_get(uid));
-    ms->state = (G_Formation_GetForEnt(uid) != NULL_FID) ? STATE_MOVING_IN_FORMATION
+    ms->state = (Move_Formation_GetForEnt(uid) != NULL_FID) ? STATE_MOVING_IN_FORMATION
                                                          : STATE_MOVING;
 }
 
@@ -5845,7 +4975,8 @@ static void do_update_pos(uint32_t uid, vec2_t pos)
     ms->last_stop_pos = pos;
     ms->prev_pos = newpos;
     ms->next_pos = newpos;
-    interp_drop_segment(uid, ms);
+    ms->left = 0;
+    vec_reset_push(&s_out_resets, (struct move_reset){uid, true});
 }
 
 static void do_update_faction_id(uint32_t uid, int oldfac, int newfac)
@@ -6093,7 +5224,7 @@ static void move_trace_velocity(const struct move_work_in *in, struct move_trace
         PFM_Vec2_Sub(&cpos, &pos, &diff);
         float dist = PFM_Vec2_Len(&diff);
 
-        if(dist <= separation_reach(in->cp_ent.radius
+        if(dist <= Move_Flock_SeparationReach(in->cp_ent.radius
                                   + G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, curr)))
             tr->sep_n++;
         if(dist < tr->nn_dist) {
@@ -6146,17 +5277,6 @@ static void move_trace_velocity(const struct move_work_in *in, struct move_trace
     }
 }
 
-static float wall_distance(const vec2_t *tiles, size_t ntiles, vec2_t pos)
-{
-    float ret = INFINITY;
-    for(size_t i = 0; i < ntiles; i++) {
-        vec2_t diff;
-        PFM_Vec2_Sub((vec2_t*)&tiles[i], &pos, &diff);
-        ret = MIN(ret, PFM_Vec2_Len(&diff));
-    }
-    return ret;
-}
-
 /* Beside a wall a wedged pair cannot both take the open lane. Both evaluate the
  * same test, so exactly one gives way: the one with less room to the wall, and
  * on a tie the lower uid. A pair that is moving needs no arbitration.
@@ -6193,27 +5313,11 @@ static bool ent_hugs_wall(const struct move_work_in *in)
     if(!wedged)
         return false;
 
-    float mine = wall_distance(in->tile_obs, in->ntiles, in->cp_ent.xz_pos);
-    float theirs = wall_distance(in->tile_obs, in->ntiles, nn_pos);
+    float mine = Move_Flock_WallDistance(in->tile_obs, in->ntiles, in->cp_ent.xz_pos);
+    float theirs = Move_Flock_WallDistance(in->tile_obs, in->ntiles, nn_pos);
     if(fabsf(mine - theirs) > HUG_WALL_MARGIN)
         return mine < theirs;
     return in->ent_uid < in->nn_uid;
-}
-
-/* Keep what runs along the wall, drop the sideways detour. */
-static vec2_t hug_wall_vpref(vec2_t vpref, vec2_t vdes, int side)
-{
-    vec2_t vhat;
-    PFM_Vec2_Normal(&vdes, &vhat);
-
-    vec2_t lat = (vec2_t){-vhat.z * side, vhat.x * side};
-    float along = PFM_Vec2_Dot(&vpref, &lat);
-    if(along <= 0.0f)
-        return vpref;
-
-    PFM_Vec2_Scale(&lat, along, &lat);
-    PFM_Vec2_Sub(&vpref, &lat, &vpref);
-    return vpref;
 }
 
 /* Standing is a real answer in a crowd and a wedge in a wall pocket, so the
@@ -6483,7 +5587,7 @@ static bool velocity_gather(int i)
      */
     in->hug = ent_hugs_wall(in);
     if(in->hug) {
-        vpref = hug_wall_vpref(vpref, in->ent_des_v, side);
+        vpref = Move_Flock_HugWall(vpref, in->ent_des_v, side);
     }
 
     if(traced) {
@@ -6541,7 +5645,7 @@ static void velocity_finish(int i, vec2_t new_vel, struct cp_solve_diag diag)
     if(traced) {
         tr->retries = diag.retries;
     }
-    vec2_truncate(&out->ent_vel, in->max_speed / hz_count(s_move_work.hz));
+    Move_Flock_Truncate(&out->ent_vel, in->max_speed / hz_count(s_move_work.hz));
 }
 
 static vec2_t velocity_solve(int i, struct cp_solve_diag *diag)
@@ -6549,7 +5653,7 @@ static vec2_t velocity_solve(int i, struct cp_solve_diag *diag)
     struct move_work_in *in = &s_move_work.in[i];
 
     /* Compute the velocity constrainted by potential collisions */
-    return G_ClearPath_NewVelocity(in->cp_ent, in->ent_uid,
+    return Move_ClearPath_NewVelocity(in->cp_ent, in->ent_uid,
         in->vpref, in->dyn_neighbs, in->ndyn, in->stat_neighbs, in->nstat,
         in->tile_obs, in->ntiles,
         in->terrain, in->solve_side, in->relax, in->save_debug, diag);
@@ -6676,27 +5780,6 @@ static void move_complete_cpu_work(void)
     s_move_work.ntasks = 0;
 }
 
-static khash_t(aabb) *move_update_aabb_cache(void)
-{
-    PERF_ENTER();
-    const khash_t(entity) *ents = G_GetAllEntsSet();
-
-    if(kh_size(s_aabb_cache) > 2 * kh_size(ents) + 1024)
-        kh_clear(aabb, s_aabb_cache);
-
-    uint32_t uid;
-    kh_foreach_key(ents, uid, {
-        khiter_t k = kh_get(aabb, s_aabb_cache, uid);
-        if(k == kh_end(s_aabb_cache)) {
-            int ret;
-            k = kh_put(aabb, s_aabb_cache, uid, &ret);
-            assert(ret != -1);
-            kh_value(s_aabb_cache, k) = AL_EntityGet(uid)->identity_aabb;
-        }
-    });
-    PERF_RETURN(s_aabb_cache);
-}
-
 static void move_init_nav_unit_query_ctx(void)
 {
     s_move_work.unit_query_ctx.flags = s_move_work.gamestate.flags;
@@ -6722,13 +5805,13 @@ static void refcounted_map_destroy(void *owner)
     PF_FREE(rmap);
 }
 
-uint32_t G_Move_NavSnapshotGeneration(void)
+uint32_t Move_NavSnapshotGeneration(void)
 {
     ASSERT_IN_MAIN_THREAD();
     return s_nav_snapshot_gen;
 }
 
-struct refcounted_map *G_Move_NavSnapshotAcquire(void)
+struct refcounted_map *Move_NavSnapshotAcquire(void)
 {
     ASSERT_IN_MAIN_THREAD();
     if(!s_nav_snapshot)
@@ -6740,61 +5823,18 @@ struct refcounted_map *G_Move_NavSnapshotAcquire(void)
     return s_nav_snapshot;
 }
 
-static void swap_in_spare_gamestate(void)
-{
-    struct move_gamestate gs = s_move_work.gamestate;
-    s_move_work.gamestate = s_gs_spare;
-    s_gs_spare = gs;
-
-    size_t ntiles = s_fog_snap_ntiles;
-    s_fog_snap_ntiles = s_fog_snap_ntiles_spare;
-    s_fog_snap_ntiles_spare = ntiles;
-
-    if(!s_aabb_cache_spare)
-        s_aabb_cache_spare = kh_init(aabb);
-    khash_t(aabb) *aabbs = s_aabb_cache;
-    s_aabb_cache = s_aabb_cache_spare;
-    s_aabb_cache_spare = aabbs;
-    s_gs_slot ^= 1;
-
-    if(s_move_work.gamestate.dying_set) {
-        kh_destroy(id, s_move_work.gamestate.dying_set);
-        s_move_work.gamestate.dying_set = NULL;
-    }
-    if(s_move_work.gamestate.diptable) {
-        PF_FREE(s_move_work.gamestate.diptable);
-        s_move_work.gamestate.diptable = NULL;
-    }
-}
-
-static void move_copy_gamestate(void)
+/* The world is the game's to fill; the navigation state is snapshotted here. */
+static void move_take_world(const struct move_world *world)
 {
     PERF_ENTER();
-    swap_in_spare_gamestate();
-    s_move_work.gamestate.flags = G_FlagsCopyTableInto(s_move_work.gamestate.flags);
-    s_move_work.gamestate.positions = G_Pos_CopyTableInto(s_move_work.gamestate.positions);
-    s_move_work.gamestate.postree = G_Pos_CopyBitmapGridInto(s_move_work.gamestate.postree);
-    s_move_work.gamestate.sel_radiuses =
-        G_SelectionRadiusCopyTableInto(s_move_work.gamestate.sel_radiuses);
-    s_move_work.gamestate.faction_ids =
-        G_FactionIDCopyTableInto(s_move_work.gamestate.faction_ids);
+    s_gs_slot ^= 1;
+    s_move_work.gamestate = *world;
     struct refcounted_map *snap = PF_MALLOC(sizeof(struct refcounted_map));
     snap->snapshot = M_AL_SnapshotShared(s_map);
     sp_init(snap, refcounted_map_destroy);
     s_nav_snapshot = snap;
     s_nav_snapshot_gen++;
     s_move_work.gamestate.map = snap->snapshot;
-    s_move_work.gamestate.transforms =
-        Entity_CopyTransformsInto(s_move_work.gamestate.transforms);
-    s_move_work.gamestate.aabbs = move_update_aabb_cache();
-    s_move_work.gamestate.footprints =
-        G_Cluster_CopyFootprintsInto(s_move_work.gamestate.footprints);
-    s_move_work.gamestate.fog_enabled = G_Fog_Enabled();
-    s_move_work.gamestate.fog_state =
-        G_Fog_CopyStateInto(s_move_work.gamestate.fog_state, &s_fog_snap_ntiles);
-    s_move_work.gamestate.dying_set = G_Combat_GetDyingSetCopy();
-    s_move_work.gamestate.diptable = G_CopyDiplomacyTable();
-    s_move_work.gamestate.player_controllable = G_GetPlayerControlledFactions();
 
     move_init_nav_unit_query_ctx();
     s_unit_query_ctx_ring[s_gs_slot] = s_move_work.unit_query_ctx;
@@ -6849,59 +5889,11 @@ static void snapshot_step_ends_grid(void)
         bg_ent_cleanup(s_move_work.gamestate.postree);
 }
 
-static void destroy_gamestate_tables(struct move_gamestate *gs)
-{
-    if(gs->flags) {
-        kh_destroy(id, gs->flags);
-        gs->flags = NULL;
-    }
-    if(gs->positions) {
-        kh_destroy(pos, gs->positions);
-        gs->positions = NULL;
-    }
-    if(gs->postree) {
-        G_Pos_DestroyBitmapGrid(gs->postree);
-        gs->postree = NULL;
-    }
-    if(gs->sel_radiuses) {
-        kh_destroy(range, gs->sel_radiuses);
-        gs->sel_radiuses = NULL;
-    }
-    if(gs->faction_ids) {
-        kh_destroy(id, gs->faction_ids);
-        gs->faction_ids = NULL;
-    }
-    gs->map = NULL;
-    if(gs->transforms) {
-        kh_destroy(trans, gs->transforms);
-        gs->transforms = NULL;
-    }
-    /* Aliases the persistent cache, which is destroyed separately */
-    gs->aabbs = NULL;
-    if(gs->footprints) {
-        kh_destroy(footprint, gs->footprints);
-        gs->footprints = NULL;
-    }
-    if(gs->fog_state) {
-        PF_FREE(gs->fog_state);
-        gs->fog_state = NULL;
-    }
-    if(gs->dying_set) {
-        kh_destroy(id, gs->dying_set);
-        gs->dying_set = NULL;
-    }
-    if(gs->diptable) {
-        PF_FREE(gs->diptable);
-        gs->diptable = NULL;
-    }
-}
-
 static void move_destroy_gamestate(void)
 {
     PERF_ENTER();
     N_JoinCarriedAsyncFields();
-    destroy_gamestate_tables(&s_move_work.gamestate);
-    destroy_gamestate_tables(&s_gs_spare);
+    s_move_work.gamestate = (struct move_world){0};
     /* Release before the next tick allocates so the freed block is recycled. */
     if(s_nav_snapshot) {
         sp_release(s_nav_snapshot);
@@ -6911,8 +5903,6 @@ static void move_destroy_gamestate(void)
         sp_release(s_parked_snapshot);
         s_parked_snapshot = NULL;
     }
-    s_fog_snap_ntiles = 0;
-    s_fog_snap_ntiles_spare = 0;
     PERF_RETURN_VOID();
 }
 
@@ -6931,23 +5921,16 @@ static void move_release_gamestate(void)
     PERF_RETURN_VOID();
 }
 
-static void move_update_gamestate(void)
-{
-    move_release_gamestate();
-    move_copy_gamestate();
-}
-
-static void move_consume_work_results(void)
+static bool move_consume_work_results(void)
 {
     PERF_ENTER();
 
     if(s_move_work.nwork == 0)
-        PERF_RETURN_VOID();
+        PERF_RETURN(false);
 
     PERF_PUSH("apply movement updates");
 
     s_soft_block_budget = SEEK_BLOCK_BUDGET_PER_TICK;
-    vec_seg_reset(&s_interp_next);
     for(int i = 0; i < s_move_work.nwork; i++) {
         struct move_work_out *out = &s_move_work.out[i];
         struct movestate *ms = movestate_get(out->ent_uid);
@@ -6961,12 +5944,6 @@ static void move_consume_work_results(void)
         entity_apply_cp_side(aux, out->cp_side);
     }
 
-    interp_consume_end();
-
-    /* All this tick's position changes are enqueued; apply the batched fog
-     * vision updates in one pipelined pass before any reader runs. */
-    G_Fog_FlushUpdates();
-
     PERF_POP();
 
     stalloc_clear(&s_move_work.mem);
@@ -6975,7 +5952,7 @@ static void move_consume_work_results(void)
     s_move_work.nwork = 0;
     s_move_work.ntasks = 0;
 
-    PERF_RETURN_VOID();
+    PERF_RETURN(true);
 }
 
 static void move_prepare_work(enum movement_hz hz)
@@ -7118,7 +6095,6 @@ static void nav_tick_submit_work(void)
     s_tick_task_tid = Sched_Create(0, navigation_tick_task, NULL, 
             "navigation_tick_task", &s_tick_task_future, TASK_BIG_STACK);
     assert(s_tick_task_tid != NULL_TID);
-    s_last_tick = g_frame_idx;
 
     uint64_t now = SDL_GetPerformanceCounter();
     s_last_nav_tick_stats.period_us = s_submit_pc ? perf_ticks_to_us(now - s_submit_pc) : 0;
@@ -7182,7 +6158,7 @@ static void move_trace_emit(void)
         int layer = Entity_NavLayerWithRadius(flags, radius);
         vec2_t app = (out->patch.flags & UPDATE_SET_VELOCITY) ? out->patch.next_velocity
                                                               : (vec2_t){0.0f, 0.0f};
-        vec2_t face = facing_dir(ms->next_rot);
+        vec2_t face = Move_Flock_FacingDir(ms->next_rot);
         float goal_dist = NAN;
         if(in->flock) {
             vec2_t goal = member_goal(in->flock, uid);
@@ -7356,252 +6332,6 @@ static enum move_work_status nav_tick_finish_work(void)
     s_last_nav_tick_stats.nlate = 0;
 
     return WORK_COMPLETE;
-}
-
-void G_Move_InterpStats(uint32_t *out_nunits, uint32_t *out_us)
-{
-    *out_nunits = s_interp_nunits;
-    *out_us = s_interp_us;
-    s_interp_nunits = 0;
-    s_interp_us = 0;
-}
-
-static enum movement_hz event_to_hz(enum eventtype event)
-{
-    static const enum movement_hz mapping[] = {
-        [EVENT_20HZ_TICK] = MOVE_HZ_20,
-        [EVENT_10HZ_TICK] = MOVE_HZ_10,
-        [EVENT_5HZ_TICK] = MOVE_HZ_5,
-        [EVENT_1HZ_TICK] = MOVE_HZ_1,
-    };
-    return mapping[event];
-}
-
-static enum eventtype event_for_hz(enum movement_hz hz)
-{
-    assert(hz >= 0 && hz <= MOVE_HZ_1);
-    static const enum eventtype mapping[] = {
-        [MOVE_HZ_20] = EVENT_20HZ_TICK,
-        [MOVE_HZ_10] = EVENT_10HZ_TICK,
-        [MOVE_HZ_5 ] = EVENT_5HZ_TICK,
-        [MOVE_HZ_1 ] = EVENT_1HZ_TICK,
-    };
-    return mapping[hz];
-}
-
-static void register_callback_for_hz(enum movement_hz hz)
-{
-    enum eventtype event = event_for_hz(hz);
-    E_Global_Register(event, move_tick, (void*)(uintptr_t)event, G_RUNNING);
-}
-
-static void unregister_callback_for_hz(enum movement_hz hz)
-{
-    assert(hz >= 0 && hz <= MOVE_HZ_1);
-    enum eventtype event = event_for_hz(hz);
-    E_Global_Unregister(event, move_tick);
-}
-
-static void move_handle_hz_update(enum eventtype curr)
-{
-    if(!s_move_hz_dirty)
-        return;
-
-    s_move_hz_dirty = false;
-
-    enum eventtype next = event_for_hz(s_move_hz);
-
-    if(curr == next)
-        return;
-
-    enum movement_hz curr_hz = event_to_hz(curr);
-    enum movement_hz next_hz = s_move_hz;
-
-    unregister_callback_for_hz(curr_hz);
-    register_callback_for_hz(next_hz);
-    s_interp_period_us = 1e6 / hz_count(next_hz);
-    s_last_consume_pc = 0;
-}
-
-static void interp_begin_segment(uint32_t uid, struct movestate *ms,
-                                 const vec3_t *to_pos, const quat_t *to_rot)
-{
-    ASSERT_IN_MAIN_THREAD();
-
-    /* The refs catch up to where the unit is drawn once per tick. */
-    G_Pos_SyncRefs(uid);
-
-    bool pending = false;
-    vec3_t old_to = {0};
-    quat_t old_rot = {0};
-    if(ms->interp_idx >= 0 && ms->interp_idx < vec_size(&s_interp)) {
-        struct interp_seg *old = &vec_AT(&s_interp, ms->interp_idx);
-        if(old->uid == uid) {
-            pending = !old->done;
-            old_to = old->to_pos;
-            old_rot = old->to_rot;
-            old->done = true;
-        }
-    }
-
-    /* A unit not drawn may not have had its turn to snap before the tick
-     * ended; it takes the step it is owed now, else it falls behind where
-     * it is simulated a tick at a time
-     */
-    if(pending && !G_Pos_IsInterpCandidate(uid)
-    && G_Pos_SetInterpolated(uid, old_to, old_rot, false)) {
-        G_Pos_SyncRefs(uid);
-        pending = false;
-    }
-
-    vec3_t pos = G_Pos_Get(uid);
-    quat_t rot = Entity_GetRot(uid);
-    struct interp_seg seg = (struct interp_seg){
-        .uid = uid,
-        .done = false,
-        .from_pos = pos,
-        .to_pos = to_pos ? *to_pos : (pending ? old_to : pos),
-        .from_rot = rot,
-        .to_rot = to_rot ? *to_rot : rot,
-    };
-    ms->interp_idx = vec_size(&s_interp_next);
-    ms->left = (to_pos || pending) ? 1 : 0;
-    vec_seg_push(&s_interp_next, seg);
-}
-
-/* Segments the tick did not replace keep sliding from where they are drawn;
- * then the new set becomes current and the clock restarts. */
-static void interp_consume_end(void)
-{
-    ASSERT_IN_MAIN_THREAD();
-
-    for(int i = 0; i < vec_size(&s_interp); i++) {
-        struct interp_seg *seg = &vec_AT(&s_interp, i);
-        if(seg->done)
-            continue;
-        struct movestate *ms = movestate_get(seg->uid);
-        if(!ms || ms->interp_idx != i)
-            continue;
-        if(!G_EntityExists(seg->uid)) {
-            ms->interp_idx = -1;
-            ms->left = 0;
-            continue;
-        }
-        seg->from_pos = G_Pos_Get(seg->uid);
-        seg->from_rot = Entity_GetRot(seg->uid);
-        ms->interp_idx = vec_size(&s_interp_next);
-        vec_seg_push(&s_interp_next, *seg);
-    }
-    vec_seg_t tmp = s_interp;
-    s_interp = s_interp_next;
-    s_interp_next = tmp;
-
-    uint64_t now = SDL_GetPerformanceCounter();
-    double nominal = 1e6 / hz_count(s_move_work.hz);
-    if(s_last_consume_pc) {
-        double interval = (now - s_last_consume_pc) * 1e6 / SDL_GetPerformanceFrequency();
-        interval = MIN(MAX(interval, nominal), 3.0 * nominal);
-        s_interp_period_us = 0.75 * s_interp_period_us + 0.25 * interval;
-    }else{
-        s_interp_period_us = nominal;
-    }
-    s_last_consume_pc = now;
-    s_interp_t0 = now;
-    s_interp_alpha = 0.0f;
-}
-
-static void interp_drop_segment(uint32_t uid, struct movestate *ms)
-{
-    if(ms->interp_idx >= 0 && ms->interp_idx < vec_size(&s_interp)) {
-        struct interp_seg *seg = &vec_AT(&s_interp, ms->interp_idx);
-        if(seg->uid == uid)
-            seg->done = true;
-    }
-    ms->interp_idx = -1;
-    ms->left = 0;
-}
-
-static void interp_finish_segment(uint32_t uid, struct movestate *ms)
-{
-    if(ms->interp_idx < 0 || ms->interp_idx >= vec_size(&s_interp))
-        return;
-    struct interp_seg *seg = &vec_AT(&s_interp, ms->interp_idx);
-    if(!seg->done && seg->uid == uid && G_Pos_SetInterpolated(uid, seg->to_pos, seg->to_rot, false))
-        G_Pos_SyncRefs(uid);
-    interp_drop_segment(uid, ms);
-}
-
-static void interp_reset(void)
-{
-    vec_seg_reset(&s_interp);
-    vec_seg_reset(&s_interp_next);
-    s_last_consume_pc = 0;
-    s_interp_alpha = 1.0f;
-
-    for(khiter_t k = kh_begin(s_entity_state_table); k != kh_end(s_entity_state_table); k++) {
-        if(!kh_exist(s_entity_state_table, k))
-            continue;
-        struct movestate *ms = &kh_value(s_entity_state_table, k);
-        ms->interp_idx = -1;
-        ms->left = 0;
-    }
-}
-
-static void move_interpolate_frame(void)
-{
-    ASSERT_IN_MAIN_THREAD();
-
-    size_t nsegs = vec_size(&s_interp);
-    if(nsegs == 0 || s_interp_alpha >= 1.0f)
-        return;
-
-    uint64_t t0 = SDL_GetPerformanceCounter();
-    double elapsed_us = (t0 - s_interp_t0) * 1e6 / SDL_GetPerformanceFrequency();
-    float alpha = MIN(1.0f, (float)(elapsed_us / s_interp_period_us));
-    if(alpha <= s_interp_alpha)
-        return;
-    bool final = (alpha >= 1.0f);
-    /* Units not drawn lately take their step in one write; those writes are
-     * spread over the period in segment order so no frame carries them all. */
-    size_t snap_upto = final ? nsegs : (size_t)(nsegs * alpha);
-
-    PERF_ENTER();
-    uint32_t nwritten = 0;
-    for(size_t i = 0; i < nsegs; i++) {
-
-        struct interp_seg *seg = &vec_AT(&s_interp, i);
-        if(seg->done)
-            continue;
-        bool drawn = G_Pos_IsInterpCandidate(seg->uid);
-        bool snap = !drawn && (i < snap_upto);
-        if(!final && !drawn && !snap)
-            continue;
-
-        bool at_end = final || snap;
-        vec3_t pos = at_end ? seg->to_pos
-                            : interpolate_positions(seg->from_pos, seg->to_pos, alpha);
-        quat_t rot = at_end ? seg->to_rot
-                            : interpolate_rotations(seg->from_rot, seg->to_rot, alpha);
-        if(!G_Pos_SetInterpolated(seg->uid, pos, rot, drawn)) {
-            seg->done = true;
-            continue;
-        }
-        nwritten++;
-
-        if(at_end) {
-            G_Pos_SyncRefs(seg->uid);
-            seg->done = true;
-            struct movestate *ms = movestate_get(seg->uid);
-            if(ms) {
-                ms->left = 0;
-                ms->interp_idx = -1;
-            }
-        }
-    }
-    s_interp_alpha = alpha;
-    s_interp_nunits += nwritten;
-    s_interp_us += (SDL_GetPerformanceCounter() - t0) * 1000000 / SDL_GetPerformanceFrequency();
-    PERF_RETURN_VOID();
 }
 
 static bool los_held_off(uint32_t uid)
@@ -8046,7 +6776,7 @@ static void gpu_parity_solve(int i)
     memcpy(tiles, in->tile_obs, in->ntiles * sizeof(vec2_t));
 
     struct gpu_parity_ref *ref = &s_move_work.gpu_parity[i];
-    ref->vel = G_ClearPath_NewVelocity(in->cp_ent, in->ent_uid, in->vpref,
+    ref->vel = Move_ClearPath_NewVelocity(in->cp_ent, in->ent_uid, in->vpref,
         dyn, in->ndyn, stat, in->nstat, tiles, in->ntiles,
         in->terrain, in->solve_side, in->relax, false, &ref->diag);
 }
@@ -8460,8 +7190,18 @@ static void resume_waiting_units(void)
     }
 }
 
-/* Stopped held units aren't in the per-tick work; pivot them toward their combat facing here. */
-static void pivot_held_still_units(void)
+static void output_reset(void)
+{
+    vec_step_reset(&s_out_steps);
+    vec_msptr_reset(&s_out_step_states);
+    vec_entity_reset(&s_out_stopped);
+    vec_entity_reset(&s_out_held_still);
+    vec_facing_reset(&s_out_facings);
+    vec_reset_reset(&s_out_resets);
+}
+
+/* Stopped held units aren't in the per-tick work; they are turned toward their combat facing. */
+static void collect_held_still_units(void)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -8477,89 +7217,34 @@ static void pivot_held_still_units(void)
             continue;
         if(!G_EntityExists(uid))
             continue;
-
-        interp_finish_segment(uid, ms);
-        quat_t next = turn_toward(Entity_GetRot(uid), movestate_aux_get(uid)->combat_facing,
-            SCALED_MAX_TURN_RATE);
-        Entity_SetRot(uid, next);
-        ms->prev_rot = next;
-        ms->next_rot = next;
+        vec_entity_push(&s_out_held_still, uid);
     }
 }
 
-static void move_do_tick(enum eventtype curr_event, enum movement_hz hz)
+static void pivot_held_still_units(void)
 {
     ASSERT_IN_MAIN_THREAD();
-    PERF_PUSH("movement::tick");
-    uint64_t tick_start = SDL_GetPerformanceCounter();
-    s_ticks_done++;
 
-    struct sval cap_setting;
-    s_log_cp_captures = (Settings_Get("pf.debug.log_cp_captures", &cap_setting) == SS_OKAY)
-                     && cap_setting.as_bool;
-    struct sval csv_setting;
-    s_log_perf_csv = (Settings_Get("pf.debug.log_perf_csv", &csv_setting) == SS_OKAY)
-                  && csv_setting.as_bool;
-    SDL_AtomicSet(&s_cp_ncaptures, 0);
+    for(int i = 0; i < vec_size(&s_out_held_still); i++) {
 
-    struct sval trace_setting;
-    s_move_trace_min_radius =
-        (Settings_Get("pf.debug.log_move_trace_min_radius", &trace_setting) == SS_OKAY)
-        ? trace_setting.as_float : -1.0f;
-    s_move_trace_uid =
-        (Settings_Get("pf.debug.log_move_trace_uid", &trace_setting) == SS_OKAY)
-        ? trace_setting.as_int : -1;
-
-    struct sval exec_setting;
-    s_move_parallel_executor =
-        (Settings_Get("pf.debug.move_parallel_executor", &exec_setting) == SS_OKAY)
-        && exec_setting.as_bool;
-
-    struct sval parity_setting;
-    s_gpu_parity = (Settings_Get("pf.debug.gpu_move_parity", &parity_setting) == SS_OKAY)
-                && parity_setting.as_bool;
-
-    struct sval carry_setting;
-    N_SetAsyncFieldCarry((Settings_Get("pf.debug.nav_field_carry", &carry_setting) == SS_OKAY)
-                      && carry_setting.as_bool);
-    enum selection_type seltype;
-    s_move_trace_sel = G_Sel_Get(&seltype);
-
-    move_consume_work_results();
-
-    s_last_nav_tick_stats.consume_us =
-        perf_ticks_to_us(SDL_GetPerformanceCounter() - tick_start);
-
-    uint64_t phase_start = SDL_GetPerformanceCounter();
-    resume_waiting_units();
-    pivot_held_still_units();
-    s_last_nav_tick_stats.pivot_us =
-        perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
-
-    move_handle_hz_update(curr_event);
-
-    phase_start = SDL_GetPerformanceCounter();
-    move_process_cmds();
-    settle_own_moves();
-    s_last_nav_tick_stats.cmds_us =
-        perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
-
-    s_last_nav_tick_stats.main_us =
-        perf_ticks_to_us(SDL_GetPerformanceCounter() - tick_start);
-
-    s_move_split_pending = true;
-    s_split_frame = g_frame_idx;
-    s_split_hz = hz;
-    PERF_POP();
+        uint32_t uid = vec_AT(&s_out_held_still, i);
+        struct movestate *ms = movestate_get(uid);
+        quat_t next = Move_Flock_TurnToward(Entity_GetRot(uid), movestate_aux_get(uid)->combat_facing,
+            SCALED_MAX_TURN_RATE);
+        vec_facing_push(&s_out_facings, (struct move_facing){uid, next});
+        ms->prev_rot = next;
+        ms->next_rot = next;
+    }
 }
 
 /* The first part of the submit: the flocks and the navigation map are brought
  * up to date. The snapshot taken by the second part reads the map as this
  * part published it.
  */
-static void move_do_tick_prepare(void)
+void Move_TickPrepare(void)
 {
     ASSERT_IN_MAIN_THREAD();
+    output_reset();
     struct sval keep_right;
     s_keep_right = (Settings_Get("pf.game.road_keep_right", &keep_right) == SS_OKAY)
                 && keep_right.as_bool;
@@ -8583,13 +7268,12 @@ static void move_do_tick_prepare(void)
 
     /* Run the navigation updates synchronous to the movement tick */
     phase_start = SDL_GetPerformanceCounter();
-    G_UpdateMap();
+    M_Update(s_map);
     s_last_nav_tick_stats.map_update_us =
         perf_ticks_to_us(SDL_GetPerformanceCounter() - phase_start);
 
     s_last_nav_tick_stats.main_us +=
         perf_ticks_to_us(SDL_GetPerformanceCounter() - tick_start);
-    s_submit_prepared = true;
     PERF_POP();
 }
 
@@ -8631,24 +7315,22 @@ static void submit_gather_range(int begin, int end, void *arg)
         khiter_t fit = kh_get(findex, s_flock_index, curr);
         if(fit != kh_end(s_flock_index))
             sg->flock_idx = kh_val(s_flock_index, fit);
-        sg->in_formation = G_Formation_SubmitStateGather(curr, &sg->fss);
+        sg->in_formation = Move_Formation_SubmitStateGather(curr, &sg->fss);
     }
 }
 
-static void move_do_tick_submit(enum movement_hz hz)
+void Move_TickSubmit(const struct move_world *world, enum movement_hz hz)
 {
     ASSERT_IN_MAIN_THREAD();
     PERF_PUSH("movement::tick submit");
+    output_reset();
 
-    if(!s_submit_prepared)
-        move_do_tick_prepare();
-    s_submit_prepared = false;
     uint64_t tick_start = SDL_GetPerformanceCounter();
     uint64_t copy_ticks = s_prepare_copy_ticks;
 
     uint64_t phase_start = SDL_GetPerformanceCounter();
     move_prepare_work(hz);
-    move_copy_gamestate();
+    move_take_world(world);
     snapshot_step_ends();
     copy_ticks += SDL_GetPerformanceCounter() - phase_start;
     s_last_nav_tick_stats.copy_gs_us = perf_ticks_to_us(copy_ticks);
@@ -8664,7 +7346,7 @@ static void move_do_tick_submit(enum movement_hz hz)
 
     PERF_PUSH("submit move work");
     phase_start = SDL_GetPerformanceCounter();
-    uint32_t debug_uid = G_ClearPath_DebugUid();
+    uint32_t debug_uid = Move_ClearPath_DebugUid();
     s_last_nav_tick_stats.nstate_moving = 0;
     s_last_nav_tick_stats.nstate_arrived = 0;
     s_last_nav_tick_stats.nstate_seek = 0;
@@ -8685,19 +7367,19 @@ static void move_do_tick_submit(enum movement_hz hz)
         const struct movestate *ms = movestate_get(sg->uid);
         if(ms->state != STATE_ARRIVING_TO_CELL || ent_still(ms))
             continue;
-        sg->cell_pos = G_Formation_CellPosition(sg->uid);
-        if(!G_Formation_CanUseArrivalField(sg->uid)) {
-            sg->cell_arrival_vdes = G_Formation_ApproximateDesiredArrivalVelocity(sg->uid);
+        sg->cell_pos = Move_Formation_CellPosition(sg->uid);
+        if(!Move_Formation_CanUseArrivalField(sg->uid)) {
+            sg->cell_arrival_vdes = Move_Formation_ApproximateDesiredArrivalVelocity(sg->uid);
         }else{
-            G_Formation_UpdateFieldIfNeeded(sg->uid);
-            sg->cell_arrival_vdes = G_Formation_DesiredArrivalVelocity(sg->uid);
+            Move_Formation_UpdateFieldIfNeeded(sg->uid);
+            sg->cell_arrival_vdes = Move_Formation_DesiredArrivalVelocity(sg->uid);
         }
     }
 
     s_submit_gather_active = true;
-    G_Formation_SetGatherActive(true);
+    Move_Formation_SetGatherActive(true);
     Sched_ParallelFor(submit_gather_range, gather, nunits, 128);
-    G_Formation_SetGatherActive(false);
+    Move_Formation_SetGatherActive(false);
     s_submit_gather_active = false;
 
     for(size_t i = 0; i < nunits; i++) {
@@ -8850,105 +7532,6 @@ static void move_do_tick_submit(enum movement_hz hz)
     PERF_POP();
 }
 
-static void move_tick(void *user, void *event)
-{
-    /* A tick that cannot start this frame runs on the first frame that
-     * allows it; at most one is kept, so a backlog never builds. */
-    if(g_frame_idx == s_last_tick || s_move_split_pending) {
-        s_move_tick_queued = true;
-        return;
-    }
-
-    enum eventtype curr_event = (uintptr_t)user;
-    enum movement_hz hz = event_to_hz(curr_event);
-
-    enum move_work_status status = nav_tick_finish_work();
-    if(status == WORK_INCOMPLETE) {
-        s_move_tick_queued = true;
-        s_last_nav_tick_stats.nlate++;
-        return;
-    }
-
-    s_move_tick_queued = false;
-    move_do_tick(curr_event, hz);
-    handle_split_submit();
-}
-
-static void handle_queued_tick(void)
-{
-    if(!s_move_tick_queued)
-        return;
-    if(g_frame_idx == s_last_tick || s_move_split_pending)
-        return;
-
-    enum move_work_status status = nav_tick_finish_work();
-    if(status == WORK_INCOMPLETE) {
-        s_last_nav_tick_stats.nlate++;
-        return;
-    }
-
-    enum movement_hz hz = s_move_work.hz;
-    enum eventtype curr_event = event_for_hz(hz);
-
-    s_move_tick_queued = false;
-    move_do_tick(curr_event, hz);
-    handle_split_submit();
-}
-
-/* Below 20 Hz the tick's period leaves room to put the map update and the
- * snapshot with the submit on frames of their own, so no one frame carries
- * both.
- */
-#define SPLIT_FRAME_BUDGET_US   (0.85 * 1e6 / CONFIG_SCHED_TARGET_FPS)
-
-static bool frame_has_room_for(double cost_us)
-{
-    double elapsed_us = (SDL_GetPerformanceCounter() - Perf_FrameStartTicks())
-                      * 1e6 / SDL_GetPerformanceFrequency();
-    return elapsed_us + cost_us < SPLIT_FRAME_BUDGET_US;
-}
-
-static void ema_note(double *ema, uint64_t t0)
-{
-    double us = (SDL_GetPerformanceCounter() - t0) * 1e6 / SDL_GetPerformanceFrequency();
-    *ema = 0.8 * *ema + 0.2 * us;
-}
-
-/* Each submit half runs on the frame that consumed the tick when it fits
- * the frame's budget, and on the next frame regardless. */
-static void handle_split_submit(void)
-{
-    if(!s_move_split_pending)
-        return;
-    bool same_frame = (g_frame_idx == s_split_frame);
-
-    if(!s_submit_prepared) {
-        if(same_frame && !frame_has_room_for(s_prepare_ema_us))
-            return;
-        uint64_t t0 = SDL_GetPerformanceCounter();
-        move_do_tick_prepare();
-        ema_note(&s_prepare_ema_us, t0);
-        s_split_frame = g_frame_idx;
-        if(!frame_has_room_for(s_submit_ema_us))
-            return;
-    }else if(same_frame && !frame_has_room_for(s_submit_ema_us)) {
-        return;
-    }
-
-    s_move_split_pending = false;
-    uint64_t t0 = SDL_GetPerformanceCounter();
-    move_do_tick_submit(s_split_hz);
-    ema_note(&s_submit_ema_us, t0);
-}
-
-static void on_update(void *user, void *event)
-{
-    stalloc_clear(&s_eventargs);
-    move_interpolate_frame();
-    handle_queued_tick();
-    handle_split_submit();
-}
-
 static void nav_cancel_gpu_work(void)
 {
     /* Handle the case where the work task is blocked on an event. We 
@@ -8967,22 +7550,144 @@ static void nav_cancel_gpu_work(void)
 /* May only be called from within the navigation task context (it is invoked by the
  * fieldcache's nav-task assertion). Outside that context it reads as NULL_TID.
  */
-uint32_t G_Move_GetNavTID(void)
+uint32_t Move_GetNavTID(void)
 {
     return s_nav_task_active_tid;
 }
 
-bool G_Move_NavQuiesce(void)
+bool Move_NavQuiesce(void)
 {
     return nav_tick_finish_work() == WORK_COMPLETE;
 }
 
-bool G_Move_Init(const struct map *map)
+bool Move_TickFinished(void)
+{
+    return nav_tick_finish_work() == WORK_COMPLETE;
+}
+
+bool Move_TickConsume(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    s_ticks_done++;
+
+    struct sval cap_setting;
+    s_log_cp_captures = (Settings_Get("pf.debug.log_cp_captures", &cap_setting) == SS_OKAY)
+                     && cap_setting.as_bool;
+    struct sval csv_setting;
+    s_log_perf_csv = (Settings_Get("pf.debug.log_perf_csv", &csv_setting) == SS_OKAY)
+                  && csv_setting.as_bool;
+    SDL_AtomicSet(&s_cp_ncaptures, 0);
+
+    struct sval trace_setting;
+    s_move_trace_min_radius =
+        (Settings_Get("pf.debug.log_move_trace_min_radius", &trace_setting) == SS_OKAY)
+        ? trace_setting.as_float : -1.0f;
+    s_move_trace_uid =
+        (Settings_Get("pf.debug.log_move_trace_uid", &trace_setting) == SS_OKAY)
+        ? trace_setting.as_int : -1;
+
+    struct sval exec_setting;
+    s_move_parallel_executor =
+        (Settings_Get("pf.debug.move_parallel_executor", &exec_setting) == SS_OKAY)
+        && exec_setting.as_bool;
+
+    struct sval parity_setting;
+    s_gpu_parity = (Settings_Get("pf.debug.gpu_move_parity", &parity_setting) == SS_OKAY)
+                && parity_setting.as_bool;
+
+    struct sval carry_setting;
+    N_SetAsyncFieldCarry((Settings_Get("pf.debug.nav_field_carry", &carry_setting) == SS_OKAY)
+                      && carry_setting.as_bool);
+    enum selection_type seltype;
+    s_move_trace_sel = G_Sel_Get(&seltype);
+
+    output_reset();
+    return move_consume_work_results();
+}
+
+void Move_TickResume(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    output_reset();
+    resume_waiting_units();
+    collect_held_still_units();
+}
+
+void Move_TickPivot(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    vec_entity_reset(&s_out_stopped);
+    pivot_held_still_units();
+}
+
+void Move_TickCommands(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    output_reset();
+    move_process_cmds();
+    settle_own_moves();
+}
+
+void Move_Output(struct move_output *out)
+{
+    ASSERT_IN_MAIN_THREAD();
+    *out = (struct move_output){
+        .steps = s_out_steps.array,
+        .nsteps = vec_size(&s_out_steps),
+        .stopped = s_out_stopped.array,
+        .nstopped = vec_size(&s_out_stopped),
+        .held_still = s_out_held_still.array,
+        .nheld_still = vec_size(&s_out_held_still),
+        .facings = s_out_facings.array,
+        .nfacings = vec_size(&s_out_facings),
+        .resets = s_out_resets.array,
+        .nresets = vec_size(&s_out_resets),
+    };
+}
+
+void Move_StepsBegun(const struct move_step *steps, size_t nsteps)
+{
+    ASSERT_IN_MAIN_THREAD();
+    assert(steps == s_out_steps.array && nsteps == vec_size(&s_out_steps));
+
+    for(size_t i = 0; i < nsteps; i++) {
+        vec_AT(&s_out_step_states, i)->left = steps[i].owed ? 1 : 0;
+    }
+}
+
+bool Move_StepDone(uint32_t uid)
+{
+    struct movestate *ms = movestate_get(uid);
+    if(!ms)
+        return false;
+    ms->left = 0;
+    return true;
+}
+
+bool Move_Tracks(uint32_t uid)
+{
+    return (movestate_get(uid) != NULL);
+}
+
+void Move_FrameStart(void)
+{
+    stalloc_clear(&s_eventargs);
+}
+
+struct nav_tick_sample *Move_TickStats(void)
+{
+    return &s_last_nav_tick_stats;
+}
+
+int Move_HzCount(enum movement_hz hz)
+{
+    return hz_count(hz);
+}
+
+bool Move_Init(const struct map *map, const struct move_world *world)
 {
     assert(map);
-    if(simd_avx2_supported()) {
-        s_cohesion_force = cohesion_force_avx2;
-    }
+    Move_Flock_Init();
     if(NULL == (s_entity_state_table = kh_init(state))) {
         return false;
     }
@@ -8998,16 +7703,8 @@ bool G_Move_Init(const struct map *map)
         return false;
     }
 
-    if(NULL == (s_aabb_cache = kh_init(aabb))) {
-        kh_destroy(findex, s_flock_index);
-        kh_destroy(auxstate, s_entity_aux_table);
-        kh_destroy(state, s_entity_state_table);
-        return false;
-    }
-
     memset(&s_move_work, 0, sizeof(s_move_work));
     if(!stalloc_init(&s_move_work.mem)) {
-        kh_destroy(aabb, s_aabb_cache);
         kh_destroy(findex, s_flock_index);
         kh_destroy(auxstate, s_entity_aux_table);
         kh_destroy(state, s_entity_state_table);
@@ -9016,7 +7713,6 @@ bool G_Move_Init(const struct map *map)
 
     if(!queue_cmd_init(&s_move_commands, 256)) {
         stalloc_destroy(&s_move_work.mem);
-        kh_destroy(aabb, s_aabb_cache);
         kh_destroy(findex, s_flock_index);
         kh_destroy(auxstate, s_entity_aux_table);
         kh_destroy(state, s_entity_state_table);
@@ -9025,7 +7721,6 @@ bool G_Move_Init(const struct map *map)
 
     if(!stalloc_init(&s_eventargs)) {
         stalloc_destroy(&s_move_work.mem);
-        kh_destroy(aabb, s_aabb_cache);
         kh_destroy(findex, s_flock_index);
         kh_destroy(auxstate, s_entity_aux_table);
         kh_destroy(state, s_entity_state_table);
@@ -9036,7 +7731,6 @@ bool G_Move_Init(const struct map *map)
     if(NULL == (s_block_refs = kh_init(blockref))) {
         stalloc_destroy(&s_eventargs);
         stalloc_destroy(&s_move_work.mem);
-        kh_destroy(aabb, s_aabb_cache);
         kh_destroy(findex, s_flock_index);
         kh_destroy(auxstate, s_entity_aux_table);
         kh_destroy(state, s_entity_state_table);
@@ -9044,111 +7738,83 @@ bool G_Move_Init(const struct map *map)
         return NULL;
     }
 
-    vec_entity_init(&s_move_markers);
     vec_entity_init(&s_own_moves);
     vec_flock_init(&s_flocks);
-    vec_seg_init(&s_interp);
-    vec_seg_init(&s_interp_next);
+    vec_step_init(&s_out_steps);
+    vec_msptr_init(&s_out_step_states);
+    vec_entity_init(&s_out_stopped);
+    vec_entity_init(&s_out_held_still);
+    vec_facing_init(&s_out_facings);
+    vec_reset_init(&s_out_resets);
 
-    N_FC_SetNavTaskTIDProvider(G_Move_GetNavTID);
+    N_FC_SetNavTaskTIDProvider(Move_GetNavTID);
 
-    E_Global_Register(EVENT_UPDATE_START, on_update, NULL, G_RUNNING);
-    E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
-    E_Global_Register(SDL_MOUSEBUTTONUP, on_mouseup, NULL, G_RUNNING);
-    E_Global_Register(SDL_MOUSEMOTION, on_mousemotion, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, 
         G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
-    register_callback_for_hz(s_move_hz);
 
     s_map = map;
-    s_attack_on_lclick = false;
-    s_move_on_lclick = false;
-    s_mouse_dragged = false;
-    s_drag_attacking = false;
     s_nav_snapshot = NULL;
-    move_copy_gamestate();
+    move_take_world(world);
     return true;
 }
 
-unsigned G_Move_TraceTick(void)
+unsigned Move_TraceTick(void)
 {
     return s_move_trace_tick;
 }
 
-void G_Move_FinishTick(void)
+void Move_FinishTick(void)
 {
     if(nav_tick_finish_work() == WORK_INCOMPLETE) {
         nav_cancel_gpu_work();
     }
 }
 
-void G_Move_Shutdown(void)
+void Move_Shutdown(void)
 {
-    G_Move_FinishTick();
-    s_move_tick_queued = false;
-    s_move_split_pending = false;
-    s_submit_prepared = false;
+    Move_FinishTick();
     /* The render thread frees the GPU solve's buffers with the map */
     s_gpu_bufs = (struct gpu_move_bufs){0};
     s_map = NULL;
 
-    unregister_callback_for_hz(s_move_hz);
-    interp_reset();
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
-    E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
-    E_Global_Unregister(SDL_MOUSEBUTTONUP, on_mouseup);
-    E_Global_Unregister(SDL_MOUSEMOTION, on_mousemotion);
-    E_Global_Unregister(EVENT_UPDATE_START, on_update);
-
-    for(int i = 0; i < vec_size(&s_move_markers); i++) {
-        E_Entity_Unregister(EVENT_ANIM_FINISHED, vec_AT(&s_move_markers, i), on_marker_anim_finish);
-        G_RemoveEntity(vec_AT(&s_move_markers, i));
-        G_FreeEntity(vec_AT(&s_move_markers, i));
-    }
 
     move_destroy_gamestate();
     vec_flock_destroy(&s_flocks);
-    vec_seg_destroy(&s_interp);
-    vec_seg_destroy(&s_interp_next);
-    vec_entity_destroy(&s_move_markers);
+    vec_step_destroy(&s_out_steps);
+    vec_msptr_destroy(&s_out_step_states);
+    vec_entity_destroy(&s_out_stopped);
+    vec_entity_destroy(&s_out_held_still);
+    vec_facing_destroy(&s_out_facings);
+    vec_reset_destroy(&s_out_resets);
     vec_entity_destroy(&s_own_moves);
     stalloc_destroy(&s_eventargs);
     queue_cmd_destroy(&s_move_commands);
     stalloc_destroy(&s_move_work.mem);
-    kh_destroy(aabb, s_aabb_cache);
-    if(s_aabb_cache_spare) {
-        kh_destroy(aabb, s_aabb_cache_spare);
-        s_aabb_cache_spare = NULL;
-    }
     kh_destroy(findex, s_flock_index);
     kh_destroy(auxstate, s_entity_aux_table);
     kh_destroy(state, s_entity_state_table);
     kh_destroy(blockref, s_block_refs);
 }
 
-bool G_Move_HasWork(void)
+bool Move_HasWork(void)
 {
     return (queue_size(s_move_commands) > 0);
 }
 
-void G_Move_FlushWork(void)
+void Move_FlushWork(const struct move_world *world)
 {
-    if(!s_map)
-        return;
-
     /* Discard the results of the last
      * movement tick.
      */
     if(nav_tick_finish_work() == WORK_INCOMPLETE) {
         nav_cancel_gpu_work();
     }
-    s_move_split_pending = false;
     /* The first part of a split submit released the snapshot the drain below
      * reads.
      */
-    if(s_submit_prepared) {
-        move_copy_gamestate();
-        s_submit_prepared = false;
+    if(world) {
+        move_take_world(world);
     }
 
     stalloc_clear(&s_move_work.mem);
@@ -9157,10 +7823,11 @@ void G_Move_FlushWork(void)
     s_move_work.nwork = 0;
     s_move_work.ntasks = 0;
 
+    output_reset();
     move_process_cmds();
 }
 
-void G_Move_AddEntity(uint32_t uid, vec3_t pos, float sel_radius, int faction_id)
+void Move_AddEntity(uint32_t uid, vec3_t pos, float sel_radius, int faction_id)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9174,7 +7841,7 @@ void G_Move_AddEntity(uint32_t uid, vec3_t pos, float sel_radius, int faction_id
     });
 }
 
-void G_Move_RemoveEntity(uint32_t uid)
+void Move_RemoveEntity(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9183,7 +7850,7 @@ void G_Move_RemoveEntity(uint32_t uid)
     });
 }
 
-void G_Move_Stop(uint32_t uid)
+void Move_Stop(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9192,7 +7859,7 @@ void G_Move_Stop(uint32_t uid)
     });
 }
 
-void G_Move_StopForCombat(uint32_t uid)
+void Move_StopForCombat(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9202,7 +7869,7 @@ void G_Move_StopForCombat(uint32_t uid)
     });
 }
 
-bool G_Move_GetDest(uint32_t uid, vec2_t *out_xz, bool *out_attack)
+bool Move_GetDest(uint32_t uid, vec2_t *out_xz, bool *out_attack)
 {
     struct move_cmd *cmd = snoop_most_recent_command(MOVE_CMD_SET_DEST,
         (void*)(uintptr_t)uid, uids_match, false);
@@ -9221,7 +7888,7 @@ bool G_Move_GetDest(uint32_t uid, vec2_t *out_xz, bool *out_attack)
     return true;
 }
 
-bool G_Move_GetSurrounding(uint32_t uid, uint32_t *out_uid)
+bool Move_GetSurrounding(uint32_t uid, uint32_t *out_uid)
 {
     struct move_cmd *cmd = snoop_most_recent_command(MOVE_CMD_SET_SURROUND_ENTITY,
         (void*)(uintptr_t)uid, uids_match, false);
@@ -9239,7 +7906,7 @@ bool G_Move_GetSurrounding(uint32_t uid, uint32_t *out_uid)
     return true;
 }
 
-bool G_Move_SeekingFiringPosition(uint32_t uid)
+bool Move_SeekingFiringPosition(uint32_t uid)
 {
     /* Also read by the submit gather's workers while the main thread is
      * blocked in that parallel-for. */
@@ -9255,7 +7922,7 @@ bool G_Move_SeekingFiringPosition(uint32_t uid)
         || state == STATE_ARRIVING_TO_CELL;
 }
 
-bool G_Move_Still(uint32_t uid)
+bool Move_Still(uint32_t uid)
 {
     struct movestate *ms = movestate_get(uid);
     if(!ms)
@@ -9263,7 +7930,7 @@ bool G_Move_Still(uint32_t uid)
     return snoop_still(uid);
 }
 
-size_t G_Move_DebugDesc(uint32_t uid, char *out, size_t len)
+size_t Move_DebugDesc(uint32_t uid, char *out, size_t len)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -9289,7 +7956,7 @@ size_t G_Move_DebugDesc(uint32_t uid, char *out, size_t len)
 }
 
 /* Pause/resume the unit's move animation while it holds position to attack. */
-void G_Move_SetCombatHeld(uint32_t uid, bool held)
+void Move_SetCombatHeld(uint32_t uid, bool held)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9299,7 +7966,7 @@ void G_Move_SetCombatHeld(uint32_t uid, bool held)
     });
 }
 
-void G_Move_SetCombatFacing(uint32_t uid, quat_t dir)
+void Move_SetCombatFacing(uint32_t uid, quat_t dir)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9309,7 +7976,7 @@ void G_Move_SetCombatFacing(uint32_t uid, quat_t dir)
     });
 }
 
-void G_Move_SetDest(uint32_t uid, vec2_t dest_xz, bool attack)
+void Move_SetDest(uint32_t uid, vec2_t dest_xz, bool attack)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9322,7 +7989,7 @@ void G_Move_SetDest(uint32_t uid, vec2_t dest_xz, bool attack)
     });
 }
 
-void G_Move_SetChangeDirection(uint32_t uid, quat_t target)
+void Move_SetChangeDirection(uint32_t uid, quat_t target)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9332,7 +7999,7 @@ void G_Move_SetChangeDirection(uint32_t uid, quat_t target)
     });
 }
 
-void G_Move_SetEnterRange(uint32_t uid, uint32_t target, float range)
+void Move_SetEnterRange(uint32_t uid, uint32_t target, float range)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9345,19 +8012,7 @@ void G_Move_SetEnterRange(uint32_t uid, uint32_t target, float range)
     });
 }
 
-void G_Move_SetMoveOnLeftClick(void)
-{
-    s_attack_on_lclick = false;
-    s_move_on_lclick = true;
-}
-
-void G_Move_SetAttackOnLeftClick(void)
-{
-    s_attack_on_lclick = true;
-    s_move_on_lclick = false;
-}
-
-void G_Move_SetSeekEnemies(uint32_t uid)
+void Move_SetSeekEnemies(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9366,14 +8021,14 @@ void G_Move_SetSeekEnemies(uint32_t uid)
     });
 }
 
-bool G_Move_Arrived(uint32_t uid)
+bool Move_Arrived(uint32_t uid)
 {
     assert(SDL_ThreadID() == g_main_thread_id || s_submit_gather_active);
     const struct movestate *ms = movestate_get(uid);
     return ms && ms->state == STATE_ARRIVED;
 }
 
-bool G_Move_ResumeOrder(uint32_t uid)
+bool Move_ResumeOrder(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
     if(!flock_for_ent(uid))
@@ -9385,7 +8040,7 @@ bool G_Move_ResumeOrder(uint32_t uid)
     return true;
 }
 
-bool G_Move_Seeking(uint32_t uid)
+bool Move_Seeking(uint32_t uid)
 {
     assert(SDL_ThreadID() == g_main_thread_id || s_submit_gather_active);
 
@@ -9398,7 +8053,7 @@ bool G_Move_Seeking(uint32_t uid)
         && movestate_aux_get(uid)->wait_prev == STATE_SEEK_ENEMIES;
 }
 
-void G_Move_SetSeekPin(uint32_t uid, uint32_t target)
+void Move_SetSeekPin(uint32_t uid, uint32_t target)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9408,7 +8063,7 @@ void G_Move_SetSeekPin(uint32_t uid, uint32_t target)
     });
 }
 
-void G_Move_SetSurroundEntity(uint32_t uid, uint32_t target)
+void Move_SetSurroundEntity(uint32_t uid, uint32_t target)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9418,7 +8073,7 @@ void G_Move_SetSurroundEntity(uint32_t uid, uint32_t target)
     });
 }
 
-void G_Move_SetFlee(uint32_t uid, vec2_t threat_xz)
+void Move_SetFlee(uint32_t uid, vec2_t threat_xz)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9428,7 +8083,7 @@ void G_Move_SetFlee(uint32_t uid, vec2_t threat_xz)
     });
 }
 
-void G_Move_StopFlee(uint32_t uid)
+void Move_StopFlee(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9437,14 +8092,14 @@ void G_Move_StopFlee(uint32_t uid)
     });
 }
 
-bool G_Move_IsFleeing(uint32_t uid)
+bool Move_IsFleeing(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
     struct movestate *ms = movestate_get(uid);
     return (ms && ms->state == STATE_FLEEING);
 }
 
-void G_Move_UpdatePos(uint32_t uid, vec2_t pos)
+void Move_UpdatePos(uint32_t uid, vec2_t pos)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9454,7 +8109,7 @@ void G_Move_UpdatePos(uint32_t uid, vec2_t pos)
     });
 }
 
-void G_Move_Unblock(uint32_t uid)
+void Move_Unblock(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9463,7 +8118,7 @@ void G_Move_Unblock(uint32_t uid)
     });
 }
 
-void G_Move_BlockAt(uint32_t uid, vec3_t pos)
+void Move_BlockAt(uint32_t uid, vec3_t pos)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9473,7 +8128,7 @@ void G_Move_BlockAt(uint32_t uid, vec3_t pos)
     });
 }
 
-void G_Move_UpdateFactionID(uint32_t uid, int oldfac, int newfac)
+void Move_UpdateFactionID(uint32_t uid, int oldfac, int newfac)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9486,7 +8141,7 @@ void G_Move_UpdateFactionID(uint32_t uid, int oldfac, int newfac)
     });
 }
 
-void G_Move_UpdateSelectionRadius(uint32_t uid, float sel_radius)
+void Move_UpdateSelectionRadius(uint32_t uid, float sel_radius)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9496,28 +8151,7 @@ void G_Move_UpdateSelectionRadius(uint32_t uid, float sel_radius)
     });
 }
 
-bool G_Move_InTargetMode(void)
-{
-    return (s_move_on_lclick || s_attack_on_lclick);
-}
-
-/* True while the user drags to orient a formation, before the order is issued on mouse-up. */
-bool G_Move_InOrderDrag(void)
-{
-    return s_mouse_dragged;
-}
-
-void G_Move_SetClickEnabled(bool on)
-{
-    s_click_move_enabled = on;
-}
-
-bool G_Move_GetClickEnabled(void)
-{
-    return s_click_move_enabled;
-}
-
-bool G_Move_GetMaxSpeed(uint32_t uid, float *out)
+bool Move_GetMaxSpeed(uint32_t uid, float *out)
 {
     struct move_cmd *cmd = snoop_most_recent_command(MOVE_CMD_SET_MAX_SPEED,
         (void*)(uintptr_t)uid, uids_match, false);
@@ -9535,7 +8169,7 @@ bool G_Move_GetMaxSpeed(uint32_t uid, float *out)
     return true;
 }
 
-bool G_Move_SetMaxSpeed(uint32_t uid, float speed)
+bool Move_SetMaxSpeed(uint32_t uid, float speed)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9546,7 +8180,7 @@ bool G_Move_SetMaxSpeed(uint32_t uid, float speed)
     return true;
 }
 
-bool G_Move_SetSpeedBonus(uint32_t uid, float bonus)
+bool Move_SetSpeedBonus(uint32_t uid, float bonus)
 {
     ASSERT_IN_MAIN_THREAD();
     move_push_cmd((struct move_cmd){
@@ -9557,7 +8191,7 @@ bool G_Move_SetSpeedBonus(uint32_t uid, float bonus)
     return true;
 }
 
-bool G_Move_GetEffectiveSpeed(uint32_t uid, float *out)
+bool Move_GetEffectiveSpeed(uint32_t uid, float *out)
 {
     khiter_t k = kh_get(state, s_entity_state_table, uid);
     if(k == kh_end(s_entity_state_table))
@@ -9567,8 +8201,8 @@ bool G_Move_GetEffectiveSpeed(uint32_t uid, float *out)
     return true;
 }
 
-void G_Move_ArrangeInFormation(vec_entity_t *ents, vec2_t target, 
-                               vec2_t orientation, enum formation_type type)
+void Move_ArrangeInFormation(vec_entity_t *ents, vec2_t target, 
+                             vec2_t orientation, enum formation_type type)
 {
     ASSERT_IN_MAIN_THREAD();
     vec_entity_t *copy = PF_MALLOC(sizeof(vec_entity_t));
@@ -9587,20 +8221,13 @@ void G_Move_ArrangeInFormation(vec_entity_t *ents, vec2_t target,
     });
 }
 
-void G_Move_AttackInFormation(vec_entity_t *ents, vec2_t target, 
-                              vec2_t orientation, enum formation_type type)
+void Move_AttackInFormation(vec_entity_t *ents, vec2_t target, 
+                            vec2_t orientation, enum formation_type type)
 {
     ASSERT_IN_MAIN_THREAD();
     vec_entity_t *copy = PF_MALLOC(sizeof(vec_entity_t));
     vec_entity_init(copy);
     vec_entity_copy(copy, ents);
-
-    /* An attack-move engages on contact, as the mouse order does. */
-    for(int i = 0; i < vec_size(ents); i++) {
-        uint32_t curr = vec_AT(ents, i);
-        if(G_FlagsGet(curr) & ENTITY_FLAG_COMBATABLE)
-            G_Combat_SetStance(curr, COMBAT_STANCE_AGGRESSIVE);
-    }
 
     move_push_cmd((struct move_cmd){
         .type = MOVE_CMD_MAKE_FLOCKS,
@@ -9614,40 +8241,33 @@ void G_Move_AttackInFormation(vec_entity_t *ents, vec2_t target,
     });
 }
 
-void G_Move_SetTickHz(enum movement_hz hz)
+void Move_FilterPathable(const vec_entity_t *ents, vec_entity_t *out)
 {
-    s_move_hz_dirty = (s_move_hz != hz);
-    s_move_hz = hz;
+    filter_selection_pathable(ents, out);
 }
 
-int G_Move_TickRate(void)
-{
-    return hz_count(s_move_hz);
-}
-
-unsigned long G_Move_TicksDone(void)
+unsigned long Move_TicksDone(void)
 {
     return s_ticks_done;
 }
 
-int G_Move_GetTickHz(void)
+void Move_SetTickHz(enum movement_hz hz)
+{
+    s_move_hz = hz;
+}
+
+int Move_GetTickHz(void)
 {
     return hz_count(s_move_hz);
 }
 
-void G_Move_SetUseGPU(bool use)
+void Move_SetUseGPU(bool use)
 {
     s_use_gpu = use;
 }
 
-bool G_Move_SaveState(struct SDL_RWops *stream)
+bool Move_SaveState(struct SDL_RWops *stream)
 {
-    struct attr click_move_enabled = (struct attr){
-        .type = TYPE_BOOL,
-        .val.as_bool = s_click_move_enabled
-    };
-    CHK_TRUE_RET(Attr_Write(stream, &click_move_enabled, "click_move_enabled"));
-
     /* save flock info */
     struct attr num_flocks = (struct attr){
         .type = TYPE_INT,
@@ -9690,7 +8310,7 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &flock_dest, "flock_dest"));
 
-        CHK_TRUE_RET(G_Arrival_SaveState(stream, &curr_flock->arrival));
+        CHK_TRUE_RET(Move_Arrival_SaveState(stream, &curr_flock->arrival));
         Sched_TryYield();
     }
 
@@ -9873,24 +8493,22 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &flee_prev, "flee_prev"));
 
-        CHK_TRUE_RET(G_Arrival_SaveUnitState(stream, &aux->arrival));
+        CHK_TRUE_RET(Move_Arrival_SaveUnitState(stream, &aux->arrival));
         Sched_TryYield();
     });
 
     return true;
 }
 
-bool G_Move_LoadState(struct SDL_RWops *stream)
+bool Move_LoadState(struct SDL_RWops *stream, const struct move_world *world)
 {
     /* Flush the commands submitted during loading */
-    move_update_gamestate();
+    move_release_gamestate();
+    move_take_world(world);
+    output_reset();
     move_process_cmds();
 
     struct attr attr;
-
-    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-    CHK_TRUE_RET(attr.type == TYPE_BOOL);
-    s_click_move_enabled = attr.val.as_bool;
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
@@ -9903,7 +8521,7 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
         struct flock new_flock = {0};
         new_flock.ents = kh_init(entity);
         CHK_TRUE_RET(new_flock.ents);
-        G_ArrivalGroup_Init(&new_flock.arrival);
+        Move_ArrivalGroup_Init(&new_flock.arrival);
 
         CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_flock);
         CHK_TRUE_JMP(attr.type == TYPE_INT, fail_flock);
@@ -9926,14 +8544,14 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_JMP(attr.type == TYPE_INT, fail_flock);
         new_flock.dest_id = attr.val.as_int;
 
-        CHK_TRUE_JMP(G_Arrival_LoadState(stream, &new_flock.arrival, s_map), fail_flock);
+        CHK_TRUE_JMP(Move_Arrival_LoadState(stream, &new_flock.arrival, s_map), fail_flock);
 
         vec_flock_push(&s_flocks, new_flock);
         Sched_TryYield();
         continue;
 
     fail_flock:
-        G_ArrivalGroup_Destroy(&new_flock.arrival);
+        Move_ArrivalGroup_Destroy(&new_flock.arrival);
         kh_destroy(entity, new_flock.ents);
         return false;
     }
@@ -9942,7 +8560,11 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
     CHK_TRUE_RET(attr.type == TYPE_INT);
     const int num_ents = attr.val.as_int;
     Sched_TryYield();
-    interp_reset();
+    for(khiter_t k = kh_begin(s_entity_state_table); k != kh_end(s_entity_state_table); k++) {
+        if(!kh_exist(s_entity_state_table, k))
+            continue;
+        kh_value(s_entity_state_table, k).left = 0;
+    }
 
     for(int i = 0; i < num_ents; i++) {
 
@@ -10070,7 +8692,7 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(attr.type == TYPE_INT);
         aux->flee_prev = attr.val.as_int;
 
-        CHK_TRUE_RET(G_Arrival_LoadUnitState(stream, &aux->arrival));
+        CHK_TRUE_RET(Move_Arrival_LoadUnitState(stream, &aux->arrival));
 
         /* Re-emit the start for an entity reloaded mid-move so client scripts resume
          * the movement animation. */

@@ -141,58 +141,58 @@ struct arrival_member{
     struct arrival_unit_state *us;
 };
 
-void G_Arrival_InitFlock(struct arrival_state *as);
-void G_Arrival_Deactivate(struct arrival_state *as);
-void G_Arrival_InitUnit(struct arrival_unit_state *us, vec2_t order_pos);
-bool G_Arrival_IsActive(const struct arrival_state *as);
+void Move_Arrival_InitFlock(struct arrival_state *as);
+void Move_Arrival_Deactivate(struct arrival_state *as);
+void Move_Arrival_InitUnit(struct arrival_unit_state *us, vec2_t order_pos);
+bool Move_Arrival_IsActive(const struct arrival_state *as);
 
 /* Build the footprint once the members near the goal, or right away when
  * 'plan' is set, and keep the slot allocation current thereafter. A flock
  * going its way along the 'roads' falls back on a field along them.
  */
-void G_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2_t target_xz,
-                           enum nav_layer layer, float unit_radius, int total_members,
-                           const struct arrival_member *members, int nmembers, bool plan,
-                           bool roads);
-void G_Arrival_RequestField(const struct arrival_state *as, const struct map *map);
+void Move_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2_t target_xz,
+                              enum nav_layer layer, float unit_radius, int total_members,
+                              const struct arrival_member *members, int nmembers, bool plan,
+                              bool roads);
+void Move_Arrival_RequestField(const struct arrival_state *as, const struct map *map);
 
-bool G_Arrival_DesiredVelocity(const struct arrival_state *as, struct arrival_unit_state *us,
+bool Move_Arrival_DesiredVelocity(const struct arrival_state *as, struct arrival_unit_state *us,
+                                  const struct map *region_map, const struct map *nav_map,
+                                  vec2_t pos, vec2_t velocity, bool has_dest_los, vec2_t *out_vel);
+bool Move_Arrival_ShouldSettle(const struct arrival_state *as, struct arrival_unit_state *us,
                                const struct map *region_map, const struct map *nav_map,
-                               vec2_t pos, vec2_t velocity, bool has_dest_los, vec2_t *out_vel);
-bool G_Arrival_ShouldSettle(const struct arrival_state *as, struct arrival_unit_state *us,
-                            const struct map *region_map, const struct map *nav_map,
-                            vec2_t new_pos, vec2_t velocity, float radius, int nsettled);
-vec2_t G_Arrival_SeekTarget(const struct arrival_state *as, const struct arrival_unit_state *us,
-                            vec2_t target_xz);
-bool G_Arrival_NeighbourSettling(const struct arrival_unit_state *us, vec2_t neighb_pos,
-                                 float radius);
+                               vec2_t new_pos, vec2_t velocity, float radius, int nsettled);
+vec2_t Move_Arrival_SeekTarget(const struct arrival_state *as, const struct arrival_unit_state *us,
+                               vec2_t target_xz);
+bool Move_Arrival_NeighbourSettling(const struct arrival_unit_state *us, vec2_t neighb_pos,
+                                    float radius);
 
-void G_Arrival_RenderDebug(const struct arrival_state *as, const struct camera *cam,
-                           const struct map *map, dest_id_t dest_id, vec3_t color,
-                           const struct arrival_member *members, int nmembers);
+void Move_Arrival_RenderDebug(const struct arrival_state *as, const struct camera *cam,
+                              const struct map *map, dest_id_t dest_id, vec3_t color,
+                              const struct arrival_member *members, int nmembers);
 
-void G_ArrivalGroup_Init(struct arrival_group *grp);
-void G_ArrivalGroup_Destroy(struct arrival_group *grp);
-void G_ArrivalGroup_Reset(struct arrival_group *grp);
-void G_ArrivalGroup_Deactivate(struct arrival_group *grp);
-void G_ArrivalGroup_Update(struct arrival_group *grp, const struct map *map, vec2_t target_xz,
-                           const struct arrival_member *members, int nmembers, bool roads);
+void Move_ArrivalGroup_Init(struct arrival_group *grp);
+void Move_ArrivalGroup_Destroy(struct arrival_group *grp);
+void Move_ArrivalGroup_Reset(struct arrival_group *grp);
+void Move_ArrivalGroup_Deactivate(struct arrival_group *grp);
+void Move_ArrivalGroup_Update(struct arrival_group *grp, const struct map *map, vec2_t target_xz,
+                              const struct arrival_member *members, int nmembers, bool roads);
 /* Choose and reserve the landing ground at the order, ahead of the approach. */
-void G_ArrivalGroup_Plan(struct arrival_group *grp, const struct map *map, vec2_t target_xz,
-                         const struct arrival_member *members, int nmembers, bool roads);
-void G_ArrivalGroup_RequestFields(const struct arrival_group *grp, const struct map *map);
-bool G_ArrivalGroup_IsActive(const struct arrival_group *grp);
-struct arrival_state *G_ArrivalGroup_ForLayer(const struct arrival_group *grp, enum nav_layer layer);
-void G_ArrivalGroup_RenderDebug(const struct arrival_group *grp, const struct camera *cam,
-                                const struct map *map, dest_id_t dest_id, vec3_t color,
-                                const struct arrival_member *members, int nmembers);
+void Move_ArrivalGroup_Plan(struct arrival_group *grp, const struct map *map, vec2_t target_xz,
+                            const struct arrival_member *members, int nmembers, bool roads);
+void Move_ArrivalGroup_RequestFields(const struct arrival_group *grp, const struct map *map);
+bool Move_ArrivalGroup_IsActive(const struct arrival_group *grp);
+struct arrival_state *Move_ArrivalGroup_ForLayer(const struct arrival_group *grp, enum nav_layer layer);
+void Move_ArrivalGroup_RenderDebug(const struct arrival_group *grp, const struct camera *cam,
+                                   const struct map *map, dest_id_t dest_id, vec3_t color,
+                                   const struct arrival_member *members, int nmembers);
 
 struct SDL_RWops;
-bool G_Arrival_SaveState(struct SDL_RWops *stream, const struct arrival_group *grp);
-bool G_Arrival_LoadState(struct SDL_RWops *stream, struct arrival_group *grp,
-                         const struct map *map);
-bool G_Arrival_SaveUnitState(struct SDL_RWops *stream, const struct arrival_unit_state *us);
-bool G_Arrival_LoadUnitState(struct SDL_RWops *stream, struct arrival_unit_state *us);
+bool Move_Arrival_SaveState(struct SDL_RWops *stream, const struct arrival_group *grp);
+bool Move_Arrival_LoadState(struct SDL_RWops *stream, struct arrival_group *grp,
+                            const struct map *map);
+bool Move_Arrival_SaveUnitState(struct SDL_RWops *stream, const struct arrival_unit_state *us);
+bool Move_Arrival_LoadUnitState(struct SDL_RWops *stream, struct arrival_unit_state *us);
 
 #endif
 

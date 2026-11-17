@@ -35,7 +35,7 @@
 
 #include "wander.h"
 #include "public/game.h"
-#include "movement.h"
+#include "../movement/public/movement.h"
 #include "position.h"
 #include "../main.h"
 #include "../event.h"
@@ -205,7 +205,7 @@ static bool take_step(uint32_t uid, struct wanderer *w)
         w->heading = angle;
         w->state = WANDER_WALK;
         w->order_tick = s_tick;
-        G_Move_SetDest(uid, dest, false);
+        Move_SetDest(uid, dest, false);
         return true;
     }
     return false;
@@ -213,9 +213,9 @@ static bool take_step(uint32_t uid, struct wanderer *w)
 
 static void end_flight(uint32_t uid, struct wanderer *w)
 {
-    G_Move_SetMaxSpeed(uid, w->walk_speed);
-    if(!G_Move_Still(uid)) {
-        G_Move_Stop(uid);
+    Move_SetMaxSpeed(uid, w->walk_speed);
+    if(!Move_Still(uid)) {
+        Move_Stop(uid);
     }
     w->steps_left = 1;
     rest(w, SHAKEN_REST_MIN_S, SHAKEN_REST_MAX_S);
@@ -227,7 +227,7 @@ static void update_wanderer(uint32_t uid, struct wanderer *w)
 
     switch(w->state) {
     case WANDER_REST:
-        if((int32_t)(s_tick - w->until_tick) < 0 || !G_Move_Still(uid))
+        if((int32_t)(s_tick - w->until_tick) < 0 || !Move_Still(uid))
             break;
         if(w->steps_left <= 0) {
             w->steps_left = 1 + (int)(rand_unit() * MAX_STEPS_IN_BOUT);
@@ -241,18 +241,18 @@ static void update_wanderer(uint32_t uid, struct wanderer *w)
     case WANDER_WALK:
         if(!settled)
             break;
-        if(G_Move_Still(uid)) {
+        if(Move_Still(uid)) {
             if(w->steps_left > 0) {
                 rest(w, PAUSE_MIN_S, PAUSE_MAX_S);
             }else{
                 rest(w, GRAZE_MIN_S, GRAZE_MAX_S);
             }
         }else if(s_tick - w->order_tick >= WALK_MAX_TICKS) {
-            G_Move_Stop(uid);
+            Move_Stop(uid);
         }
         break;
     case WANDER_FLEE:
-        if((int32_t)(s_tick - w->until_tick) >= 0 || (settled && G_Move_Still(uid))) {
+        if((int32_t)(s_tick - w->until_tick) >= 0 || (settled && Move_Still(uid))) {
             end_flight(uid, w);
         }
         break;
@@ -313,9 +313,9 @@ bool G_Wander_Start(uint32_t uid, vec2_t anchor, float radius)
     if(status == 0 && kh_value(s_wanderers, k).state == WANDER_FLEE) {
         walk_speed = kh_value(s_wanderers, k).walk_speed;
     }else{
-        G_Move_GetMaxSpeed(uid, &walk_speed);
+        Move_GetMaxSpeed(uid, &walk_speed);
     }
-    G_Move_SetMaxSpeed(uid, walk_speed);
+    Move_SetMaxSpeed(uid, walk_speed);
 
     kh_value(s_wanderers, k) = (struct wanderer){
         .anchor = anchor,
@@ -340,10 +340,10 @@ void G_Wander_Stop(uint32_t uid)
 
     struct wanderer *w = &kh_value(s_wanderers, k);
     if(w->state == WANDER_FLEE) {
-        G_Move_SetMaxSpeed(uid, w->walk_speed);
+        Move_SetMaxSpeed(uid, w->walk_speed);
     }
     if(w->state != WANDER_REST) {
-        G_Move_Stop(uid);
+        Move_Stop(uid);
     }
     kh_del(wanderer, s_wanderers, k);
 }
@@ -386,10 +386,10 @@ bool G_Wander_Flee(uint32_t uid, vec2_t threat, float seconds, float speed)
             continue;
 
         if(w->state != WANDER_FLEE) {
-            G_Move_GetMaxSpeed(uid, &w->walk_speed);
+            Move_GetMaxSpeed(uid, &w->walk_speed);
         }
-        G_Move_SetMaxSpeed(uid, speed);
-        G_Move_SetDest(uid, dest, false);
+        Move_SetMaxSpeed(uid, speed);
+        Move_SetDest(uid, dest, false);
 
         w->state = WANDER_FLEE;
         w->heading = away + s_fan[i];

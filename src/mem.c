@@ -423,6 +423,7 @@ const char *Mem_SysName(uint16_t sys)
         [MEM_SYS_GAME]           = "game",
         [MEM_SYS_LIB]            = "lib",
         [MEM_SYS_MAP]            = "map",
+        [MEM_SYS_MOVEMENT]       = "movement",
         [MEM_SYS_NAV]            = "nav",
         [MEM_SYS_PHYS]           = "phys",
         [MEM_SYS_RENDER]         = "render",
@@ -467,7 +468,6 @@ const char *Mem_SubName(uint16_t sys, uint16_t sub)
         [MEM_SUB_GAME_AUTOMATION]   = "automation",
         [MEM_SUB_GAME_BUILDER]      = "builder",
         [MEM_SUB_GAME_BUILDING]     = "building",
-        [MEM_SUB_GAME_CLEARPATH]    = "clearpath",
         [MEM_SUB_GAME_CLUSTER]      = "cluster",
         [MEM_SUB_GAME_COMBAT]       = "combat",
         [MEM_SUB_GAME_COMMAND]      = "command",
@@ -475,7 +475,6 @@ const char *Mem_SubName(uint16_t sys, uint16_t sub)
         [MEM_SUB_GAME_DISTRICT]     = "district",
         [MEM_SUB_GAME_DUTY]         = "duty",
         [MEM_SUB_GAME_FOG_OF_WAR]   = "fog_of_war",
-        [MEM_SUB_GAME_FORMATION]    = "formation",
         [MEM_SUB_GAME_GARRISON]     = "garrison",
         [MEM_SUB_GAME_GROUP]        = "group",
         [MEM_SUB_GAME_HARVESTER]    = "harvester",
@@ -511,6 +510,11 @@ const char *Mem_SubName(uint16_t sys, uint16_t sub)
         [MEM_SUB_MAP_TILE]       = "tile",
         [MEM_SUB_MAP_TERRAIN_BAKE] = "terrain_bake",
         [MEM_SUB_MAP_DECAL]      = "decal",
+    };
+    static const char *movement_subs[] = {
+        [MEM_SUB_MOVEMENT_CLEARPATH] = "clearpath",
+        [MEM_SUB_MOVEMENT_FORMATION] = "formation",
+        [MEM_SUB_MOVEMENT_MOVEMENT]  = "movement",
     };
     static const char *nav_subs[] = {
         [MEM_SUB_NAV_A_STAR]     = "a_star",
@@ -580,6 +584,7 @@ const char *Mem_SubName(uint16_t sys, uint16_t sub)
     case MEM_SYS_GAME:   table = game_subs;   n = ARR_SIZE(game_subs);   break;
     case MEM_SYS_LIB:    table = lib_subs;    n = ARR_SIZE(lib_subs);    break;
     case MEM_SYS_MAP:    table = map_subs;    n = ARR_SIZE(map_subs);    break;
+    case MEM_SYS_MOVEMENT: table = movement_subs; n = ARR_SIZE(movement_subs); break;
     case MEM_SYS_NAV:    table = nav_subs;    n = ARR_SIZE(nav_subs);    break;
     case MEM_SYS_PHYS:   table = phys_subs;   n = ARR_SIZE(phys_subs);   break;
     case MEM_SYS_RENDER: table = render_subs; n = ARR_SIZE(render_subs); break;

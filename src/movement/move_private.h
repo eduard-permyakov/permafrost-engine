@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2018-2023 Eduard Permyakov 
+ *  Copyright (C) 2026 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,24 +33,11 @@
  *
  */
 
-#ifndef MOVEMENT_H
-#define MOVEMENT_H
+#ifndef MOVE_PRIVATE_H
+#define MOVE_PRIVATE_H
 
-#include "public/game.h"
-#include "../pf_math.h"
-#include <stdbool.h>
-#include <stdint.h>
+#include "public/movement.h"
 #include "../lib/public/shared_ptr.h"
-
-enum movement_hz{
-    MOVE_HZ_20,
-    MOVE_HZ_10,
-    MOVE_HZ_5,
-    MOVE_HZ_1
-};
-
-struct map;
-struct SDL_RWops;
 
 /* Reference-counted nav snapshot; borrowers must treat the grid as read-only. */
 struct refcounted_map{
@@ -59,73 +46,24 @@ struct refcounted_map{
 };
 
 /* Borrow movement's current nav snapshot (NULL if not running); release with sp_release. */
-struct refcounted_map *G_Move_NavSnapshotAcquire(void);
+struct refcounted_map *Move_NavSnapshotAcquire(void);
 /* Advances every time the snapshot is retaken from the live map. */
-uint32_t G_Move_NavSnapshotGeneration(void);
-
-bool G_Move_Init(const struct map *map);
-void G_Move_Shutdown(void);
-/* Join the tick in flight, which reads the other subsystems' state */
-void G_Move_FinishTick(void);
+uint32_t Move_NavSnapshotGeneration(void);
 
 /* The tid of the navigation tick task, or NULL_TID when none is in flight. */
-uint32_t G_Move_GetNavTID(void);
+uint32_t Move_GetNavTID(void);
 
 /* Drain the navigation tick task to a quiescent state so the main thread may
  * safely read the task-owned field cache (e.g. for debug rendering). Returns
  * false if the task is GPU-blocked and could not be completed this call. */
-bool G_Move_NavQuiesce(void);
-bool G_Move_HasWork(void);
-void G_Move_FlushWork(void);
+bool Move_NavQuiesce(void);
 
-void G_Move_SetTickHz(enum movement_hz hz);
-int  G_Move_TickRate(void);
-unsigned long G_Move_TicksDone(void);
-int  G_Move_GetTickHz(void);
-void G_Move_SetUseGPU(bool use);
+int  Move_GetTickHz(void);
 
-void G_Move_AddEntity(uint32_t uid, vec3_t pos, float sel_radius, int faction_id);
-void G_Move_RemoveEntity(uint32_t uid);
-
-bool G_Move_GetDest(uint32_t uid, vec2_t *out_xz, bool *out_attack);
-bool G_Move_GetSurrounding(uint32_t uid, uint32_t *out_uid);
-bool G_Move_SeekingFiringPosition(uint32_t uid);
+bool Move_SeekingFiringPosition(uint32_t uid);
 /* Whether the unit is chasing enemies, away from the order it keeps */
-bool G_Move_Seeking(uint32_t uid);
+bool Move_Seeking(uint32_t uid);
 /* Whether the unit has stopped for good (not merely waiting) */
-bool G_Move_Arrived(uint32_t uid);
-/* Send the unit back to the order it kept while it fought; false when it
- * has no order left to go back to.
- */
-bool G_Move_ResumeOrder(uint32_t uid);
-void G_Move_SetCombatHeld(uint32_t uid, bool held);
-void G_Move_SetCombatFacing(uint32_t uid, quat_t dir);
-
-void G_Move_Stop(uint32_t uid);
-/* Stop to fight: the order is paused, not finished (G_Move_ResumeOrder) */
-void G_Move_StopForCombat(uint32_t uid);
-void G_Move_SetSeekEnemies(uint32_t uid);
-void G_Move_SetSeekPin(uint32_t uid, uint32_t target);
-void G_Move_SetSurroundEntity(uint32_t uid, uint32_t target);
-void G_Move_SetChangeDirection(uint32_t uid, quat_t target);
-void G_Move_SetEnterRange(uint32_t uid, uint32_t target, float range);
-void G_Move_SetFlee(uint32_t uid, vec2_t threat_xz);
-void G_Move_StopFlee(uint32_t uid);
-bool G_Move_IsFleeing(uint32_t uid);
-
-void G_Move_UpdatePos(uint32_t uid, vec2_t pos);
-void G_Move_UpdateFactionID(uint32_t uid, int oldfac, int newfac);
-bool G_Move_InTargetMode(void);
-bool G_Move_InOrderDrag(void);
-
-void G_Move_Unblock(uint32_t uid);
-void G_Move_BlockAt(uint32_t uid, vec3_t pos);
-
-/* Diagnostic: the movement tick counter of the [mv-trace] lines */
-unsigned G_Move_TraceTick(void);
-
-bool G_Move_SaveState(struct SDL_RWops *stream);
-bool G_Move_LoadState(struct SDL_RWops *stream);
+bool Move_Arrived(uint32_t uid);
 
 #endif
-

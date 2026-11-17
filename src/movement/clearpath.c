@@ -41,15 +41,14 @@
  *         (http://gamma.cs.unc.edu/HRVO/HRVO-T-RO.pdf)
  */
 
-#define MEM_FILE_SYS MEM_SYS_GAME
-#define MEM_FILE_SUB MEM_SUB_GAME_CLEARPATH
+#define MEM_FILE_SYS MEM_SYS_MOVEMENT
+#define MEM_FILE_SUB MEM_SUB_MOVEMENT_CLEARPATH
 
 #include "clearpath.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/simd.h"
-#include "public/game.h"
-#include "movement.h"
-#include "game_private.h"
+#include "../game/public/game.h"
+#include "move_private.h"
 #include "../main.h"
 #include "../event.h"
 #include "../entity.h"
@@ -70,9 +69,9 @@
 #undef PF_MALLOC
 #undef PF_CALLOC
 #undef PF_REALLOC
-#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_GAME, MEM_SUB_GAME_CLEARPATH)
-#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_GAME, MEM_SUB_GAME_CLEARPATH)
-#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_GAME, MEM_SUB_GAME_CLEARPATH)
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_MOVEMENT, MEM_SUB_MOVEMENT_CLEARPATH)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_MOVEMENT, MEM_SUB_MOVEMENT_CLEARPATH)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_MOVEMENT, MEM_SUB_MOVEMENT_CLEARPATH)
 
 
 #define EPSILON         (1.0/1024)
@@ -660,7 +659,7 @@ static void on_render_3d(void *user, void *event)
     vec3_t des_vel_dir = (vec3_t){des_v.x, 0.0f, des_v.z};
     PFM_Vec3_Normal(&des_vel_dir, &des_vel_dir);
 
-    float t = PFM_Vec2_Len(&des_v) * G_Move_GetTickHz();
+    float t = PFM_Vec2_Len(&des_v) * Move_GetTickHz();
     R_PushCmd((struct rcmd){
         .func = R_GL_DrawRay,
         .nargs = 5,
@@ -677,7 +676,7 @@ static void on_render_3d(void *user, void *event)
     vec3_t vel_dir = (vec3_t){v_new.x, 0.0f, v_new.z};
     PFM_Vec3_Normal(&vel_dir, &vel_dir);
 
-    t = PFM_Vec2_Len(&v_new) * G_Move_GetTickHz();
+    t = PFM_Vec2_Len(&v_new) * Move_GetTickHz();
     R_PushCmd((struct rcmd){
         .func = R_GL_DrawRay,
         .nargs = 5,
@@ -853,7 +852,7 @@ out:
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-uint32_t G_ClearPath_DebugUid(void)
+uint32_t Move_ClearPath_DebugUid(void)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -873,7 +872,7 @@ uint32_t G_ClearPath_DebugUid(void)
     return vec_AT(sel, 0);
 }
 
-void G_ClearPath_Init(const struct map *map)
+void Move_ClearPath_Init(const struct map *map)
 {
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, (struct map*)map,
         G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
@@ -883,26 +882,26 @@ void G_ClearPath_Init(const struct map *map)
     }
 }
 
-void G_ClearPath_Shutdown(void)
+void Move_ClearPath_Shutdown(void)
 {
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     vec_vec2_destroy(&s_debug_saved.xpoints);
 }
 
-vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
-                               uint32_t ent_uid,
-                               vec2_t ent_des_v,
-                               struct cp_ent *dyn_neighbs,
-                               size_t ndyn,
-                               struct cp_ent *stat_neighbs,
-                               size_t nstat,
-                               vec2_t *tile_obs,
-                               size_t ntiles,
-                               struct cp_terrain terrain,
-                               int side,
-                               bool relax,
-                               bool save_debug,
-                               struct cp_solve_diag *out_diag)
+vec2_t Move_ClearPath_NewVelocity(struct cp_ent cpent,
+                                  uint32_t ent_uid,
+                                  vec2_t ent_des_v,
+                                  struct cp_ent *dyn_neighbs,
+                                  size_t ndyn,
+                                  struct cp_ent *stat_neighbs,
+                                  size_t nstat,
+                                  vec2_t *tile_obs,
+                                  size_t ntiles,
+                                  struct cp_terrain terrain,
+                                  int side,
+                                  bool relax,
+                                  bool save_debug,
+                                  struct cp_solve_diag *out_diag)
 {
     PERF_ENTER();
 

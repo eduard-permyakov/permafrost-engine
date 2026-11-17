@@ -45,9 +45,6 @@
 
 #include <stdint.h>
 
-KHASH_DECLARE(id, khint32_t, int)
-KHASH_DECLARE(range, khint32_t, float)
-
 #define DRAW_PASS_CAM   (1 << 0)
 #define DRAW_PASS_LIGHT (1 << 1)
 

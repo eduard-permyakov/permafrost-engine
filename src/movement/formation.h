@@ -36,15 +36,9 @@
 #ifndef FORMATION_H
 #define FORMATION_H
 
-#include "public/game.h"
+#include "public/movement.h"
 #include "../pf_math.h"
 #include "../navigation/public/nav.h"
-
-#define NULL_FID (~((uint32_t)0))
-/* Formation orders for more units than this get truncated to the first
- * MAX_FORMATION_UNITS entities, with the excess deselected.
- */
-#define MAX_FORMATION_UNITS (512)
 
 /* The layout of a box formation: a set of concentric square shells, one per
  * unit group, with the highest-priority group forming the outer wall and the
@@ -69,38 +63,27 @@ struct box_shell{
     int hole;
 };
 
-typedef uint32_t formation_id_t;
+void           Move_Formation_Create(vec2_t target, vec2_t orientation,
+                                     const vec_entity_t *ents, enum formation_type type);
+void           Move_Formation_RemoveUnit(uint32_t uid);
 
-struct map;
+bool           Move_Formation_InRangeOfCell(uint32_t uid);
+bool           Move_Formation_CanUseArrivalField(uint32_t uid);
+vec2_t         Move_Formation_DesiredArrivalVelocity(uint32_t uid);
+vec2_t         Move_Formation_ApproximateDesiredArrivalVelocity(uint32_t uid);
+bool           Move_Formation_AssignmentReady(uint32_t uid);
+bool           Move_Formation_ArrivedAtCell(uint32_t uid);
+void           Move_Formation_ConcedeCell(uint32_t uid);
+bool           Move_Formation_AssignedToCell(uint32_t uid);
+vec2_t         Move_Formation_CellPosition(uint32_t uid);
+quat_t         Move_Formation_TargetOrientation(uint32_t uid);
+void           Move_Formation_UpdateFieldIfNeeded(uint32_t uid);
+float          Move_Formation_Speed(uint32_t uid);
+enum formation_type Move_Formation_Type(formation_id_t fid);
 
-bool           G_Formation_Init(const struct map *map);
-void           G_Formation_Shutdown(void);
-
-vec2_t         G_Formation_AutoOrientation(vec2_t target, const vec_entity_t *ents);
-void           G_Formation_Create(vec2_t target, vec2_t orientation,
-                                  const vec_entity_t *ents, enum formation_type type);
-formation_id_t G_Formation_GetForEnt(uint32_t uid);
-void           G_Formation_RemoveUnit(uint32_t uid);
-void           G_Formation_RemoveEntity(uint32_t uid);
-
-bool           G_Formation_InRangeOfCell(uint32_t uid);
-bool           G_Formation_CanUseArrivalField(uint32_t uid);
-vec2_t         G_Formation_DesiredArrivalVelocity(uint32_t uid);
-vec2_t         G_Formation_ApproximateDesiredArrivalVelocity(uint32_t uid);
-bool           G_Formation_AssignmentReady(uint32_t uid);
-bool           G_Formation_ArrivedAtCell(uint32_t uid);
-void           G_Formation_ConcedeCell(uint32_t uid);
-bool           G_Formation_AssignedToCell(uint32_t uid);
-vec2_t         G_Formation_CellPosition(uint32_t uid);
-quat_t         G_Formation_TargetOrientation(uint32_t uid);
-void           G_Formation_UpdateFieldIfNeeded(uint32_t uid);
-float          G_Formation_Speed(uint32_t uid);
-enum formation_type G_Formation_Type(formation_id_t fid);
-void           G_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t pos, vec2_t orientation);
-
-vec2_t         G_Formation_CohesionForce(uint32_t uid);
-vec2_t         G_Formation_AlignmentForce(uint32_t uid);
-vec2_t         G_Formation_DragForce(uint32_t uid);
+vec2_t         Move_Formation_CohesionForce(uint32_t uid);
+vec2_t         Move_Formation_AlignmentForce(uint32_t uid);
+vec2_t         Move_Formation_DragForce(uint32_t uid);
 
 /* All the per-entity formation state read by the movement submit loop,
  * resolved with a single set of lookups. Returns false (and sets fid to
@@ -124,25 +107,22 @@ struct formation_submit_state{
     float          speed;
 };
 
-bool           G_Formation_SubmitState(uint32_t uid, struct formation_submit_state *out);
-bool           G_Formation_SubmitStateGather(uint32_t uid, struct formation_submit_state *out);
-void           G_Formation_SetGatherActive(bool active);
+bool           Move_Formation_SubmitState(uint32_t uid, struct formation_submit_state *out);
+bool           Move_Formation_SubmitStateGather(uint32_t uid, struct formation_submit_state *out);
+void           Move_Formation_SetGatherActive(bool active);
 
 /* Size one shell per group, from the innermost group outwards. 'counts' is
  * ordered from the outermost group to the innermost and must hold no zeroes.
  * Returns false if the box would grow past MAX_BOX_SIDE.
  */
-bool           G_FormationBox_Shells(const size_t *counts, size_t ngroups, struct box_shell *out);
+bool           Move_FormationBox_Shells(const size_t *counts, size_t ngroups, struct box_shell *out);
 
 /* Mark the 'nunits' cells of 'shell' which the group occupies in the
  * (side * side) row-major grid 'out'. Cells are taken ring by ring from the
  * outside in, and front-first within a ring, so a group too small to fill its
  * shell screens the front and leaves its gap at the back centre.
  */
-void           G_FormationBox_Mask(struct box_shell shell, size_t nunits, uint8_t *out);
-
-bool           G_Formation_SaveState(struct SDL_RWops *stream);
-bool           G_Formation_LoadState(struct SDL_RWops *stream);
+void           Move_FormationBox_Mask(struct box_shell shell, size_t nunits, uint8_t *out);
 
 #endif
 

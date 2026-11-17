@@ -38,7 +38,7 @@
 
 #include "automation.h"
 #include "duty.h"
-#include "movement.h"
+#include "../movement/public/movement.h"
 #include "harvester.h"
 #include "builder.h"
 #include "combat.h"
@@ -740,7 +740,7 @@ static bool idle_walking(uint32_t uid)
         return false;
     vec2_t dest;
     bool attack;
-    if(!G_Move_GetDest(uid, &dest, &attack) || attack) {
+    if(!Move_GetDest(uid, &dest, &attack) || attack) {
         astate->idle_walk = false;
         return false;
     }
@@ -774,7 +774,7 @@ static bool idle(uint32_t uid)
     if((flags & ENTITY_FLAG_GARRISON) && G_Garrison_IsIngredient(uid))
         return false;
     /* A combat-held unit is stationary even though its move state is not a still one. */
-    if((flags & ENTITY_FLAG_MOVABLE) && !(flags & ENTITY_FLAG_COMBAT_HELD) && !G_Move_Still(uid)
+    if((flags & ENTITY_FLAG_MOVABLE) && !(flags & ENTITY_FLAG_COMBAT_HELD) && !Move_Still(uid)
     && !idle_walking(uid))
         return false;
     if((flags & ENTITY_FLAG_HARVESTER) && !G_Harvester_Idle(uid))
@@ -920,7 +920,7 @@ static void recompute_idle(void)
             if(!idle(uid)) {
                 astate->state = STATE_WAKING;
                 astate->idle_walk = false;
-            }else if(astate->idle_walk && G_Move_Still(uid)) {
+            }else if(astate->idle_walk && Move_Still(uid)) {
                 astate->idle_walk = false;
             }
             break;
@@ -1306,7 +1306,7 @@ static void favour_near_requests(vec_request_t *requests, const vec_entity_t *ca
             if(G_GetFactionID(carrier) != faction)
                 continue;
             float speed = 0.0f;
-            G_Move_GetEffectiveSpeed(carrier, &speed);
+            Move_GetEffectiveSpeed(carrier, &speed);
             if(speed <= 0.0f)
                 continue;
             nearest_s = MIN(nearest_s, distance(G_Pos_GetXZ(carrier), dest) / speed);
@@ -1503,7 +1503,7 @@ static void fleets_build(void)
         if(faction < 0 || faction >= MAX_FACTIONS || s_fleets[faction].ncarts == MAX_FLEET_CARTS)
             continue;
         float speed = 0.0f;
-        if(!G_Move_GetEffectiveSpeed(uid, &speed) || speed <= 0.0f)
+        if(!Move_GetEffectiveSpeed(uid, &speed) || speed <= 0.0f)
             continue;
 
         vec2_t pos = G_Pos_GetXZ(uid);
@@ -1954,7 +1954,7 @@ static void assign_jobs(vec_entity_t *carriers, bool judge)
                             continue;
                         }
                         float speed = 0.0f;
-                        G_Move_GetEffectiveSpeed(carrier, &speed);
+                        Move_GetEffectiveSpeed(carrier, &speed);
                         worker_eta = (speed > 0.0f) ? travel / speed : INFINITY;
                         if(mode == CARRY_OUT_AUTO && !plan_leaves_load(fleet, &plan, worker_eta)) {
                             any_small = true;
@@ -4190,7 +4190,7 @@ bool G_Automation_WalkIdle(uint32_t uid, vec2_t xz)
     /* Sent to a post in the same pass that saw it idle */
     if(G_Posts_Holds(uid))
         return false;
-    G_Move_SetDest(uid, xz, false);
+    Move_SetDest(uid, xz, false);
     astate->idle_walk = true;
     astate->idle_dest = xz;
     return true;

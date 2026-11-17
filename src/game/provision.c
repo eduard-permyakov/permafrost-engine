@@ -40,7 +40,7 @@
 #include "duty.h"
 #include "public/game.h"
 #include "game_private.h"
-#include "movement.h"
+#include "../movement/public/movement.h"
 #include "combat.h"
 #include "position.h"
 #include "storage_site.h"
@@ -328,7 +328,7 @@ static bool fetch(uint32_t uid, struct provision *p)
     }
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive);
     E_Entity_Register(EVENT_MOTION_END, uid, on_arrive, (void*)(uintptr_t)uid, G_RUNNING);
-    G_Move_SetSurroundEntity(uid, site);
+    Move_SetSurroundEntity(uid, site);
     return true;
 }
 
@@ -343,7 +343,7 @@ static float dist_to(uint32_t uid, uint32_t site)
 static void on_arrive(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
-    if(!G_Move_Still(uid))
+    if(!Move_Still(uid))
         return;
     arrive(uid);
 }
@@ -377,7 +377,7 @@ static void arrive(uint32_t uid)
     eat(uid, p, site);
     /* One with a duty takes it up again by itself */
     if(p->go_back && G_Duty_Kind(uid) == DUTY_NONE) {
-        G_Move_SetDest(uid, p->post, true);
+        Move_SetDest(uid, p->post, true);
     }
 }
 
@@ -409,7 +409,7 @@ static bool free_to_fetch(uint32_t uid)
      * it was sent eats once there, and one gathering by it at its drop-off */
     const struct provision *p = prov_get(uid);
     bool meal = (p && p->fetching != NULL_UID);
-    if(G_Automation_PlayerManaged(uid) && !G_Move_Still(uid) && !meal
+    if(G_Automation_PlayerManaged(uid) && !Move_Still(uid) && !meal
     && !(G_Duty_Kind(uid) == DUTY_GATHER && G_Duty_ByPlayer(uid)))
         return false;
     /* A load on its way to the store that asked for it is delivered first */
@@ -459,7 +459,7 @@ static void update(uint32_t uid, struct provision *p)
      * the crowd about it none at all */
     if(p->fetching != NULL_UID && s_now_ms - p->fetch_ms >= FETCH_STALL_MS) {
         float dist = dist_to(uid, p->fetching);
-        if(G_Move_Still(uid) || dist > p->fetch_dist - FETCH_MIN_PROGRESS) {
+        if(Move_Still(uid) || dist > p->fetch_dist - FETCH_MIN_PROGRESS) {
             arrive(uid);
         }else{
             p->fetch_ms = s_now_ms;
@@ -525,14 +525,14 @@ static bool fetch_quiver(uint32_t uid, struct quiver *q)
     E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_ordered_quiver);
     E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_quiver, (void*)(uintptr_t)uid, G_RUNNING);
     E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_ordered_quiver, (void*)(uintptr_t)uid, G_RUNNING);
-    G_Move_SetSurroundEntity(uid, site);
+    Move_SetSurroundEntity(uid, site);
     return true;
 }
 
 static void on_arrive_quiver(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
-    if(!G_Move_Still(uid))
+    if(!Move_Still(uid))
         return;
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_quiver);
     E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_ordered_quiver);
@@ -554,7 +554,7 @@ static void on_arrive_quiver(void *user, void *event)
         return;
     }
     refill(uid, q, site);
-    G_Move_SetDest(uid, q->post, true);
+    Move_SetDest(uid, q->post, true);
 }
 
 static void on_ordered_quiver(void *user, void *event)
@@ -586,7 +586,7 @@ static void update_quiver(uint32_t uid, struct quiver *q)
         E_Global_Notify(EVENT_PROVISION_CHANGED, (void*)(uintptr_t)uid, ES_ENGINE);
     }
     bool low = (shots >= 0) && (shots * 4 <= quiver_max_shots(q));
-    if(q->fetching != NULL_UID && s_now_ms - q->fetch_ms >= FETCH_STALL_MS && G_Move_Still(uid)) {
+    if(q->fetching != NULL_UID && s_now_ms - q->fetch_ms >= FETCH_STALL_MS && Move_Still(uid)) {
         on_arrive_quiver((void*)(uintptr_t)uid, NULL);
     }
     if(low && q->automatic && q->fetching == NULL_UID && s_now_ms >= q->retry_ms 
@@ -887,9 +887,9 @@ bool G_Provision_Feed(uint32_t uid, bool early)
         p->fetching = NULL_UID;
         /* One with a duty takes it up again by itself once it stands */
         if(p->go_back && G_Duty_Kind(uid) == DUTY_NONE) {
-            G_Move_SetDest(uid, p->post, true);
+            Move_SetDest(uid, p->post, true);
         }else{
-            G_Move_Stop(uid);
+            Move_Stop(uid);
         }
     }
     return true;
@@ -918,7 +918,7 @@ bool G_Provision_EatFirst(uint32_t uid, uint32_t target)
         if(p->meals > 0)
             return false;
         float speed = 1.0f;
-        G_Move_GetMaxSpeed(uid, &speed);
+        Move_GetMaxSpeed(uid, &speed);
         uint32_t walk_ms = 0;
         if(G_EntityExists(target) && !G_EntityIsZombie(target)) {
             walk_ms = dist_to(uid, target) / MAX(speed, 1.0f) * 1000.0f;

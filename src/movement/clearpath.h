@@ -100,29 +100,26 @@ struct cp_solve_diag{
     int8_t  side;
 };
 
-void G_ClearPath_Init(const struct map *map);
-void G_ClearPath_Shutdown(void);
-
 /* The single entity whose ClearPath state should be saved for the debug
  * overlay this tick, or NULL_UID. */
-uint32_t G_ClearPath_DebugUid(void);
+uint32_t Move_ClearPath_DebugUid(void);
 
 /* The neighbour arrays are scratch: the retry loop compacts them in place.
  * 'out_diag' may be NULL. */
-vec2_t G_ClearPath_NewVelocity(struct cp_ent ent,
-                               uint32_t ent_uid,
-                               vec2_t ent_des_v,
-                               struct cp_ent *dyn_neighbs,
-                               size_t ndyn,
-                               struct cp_ent *stat_neighbs,
-                               size_t nstat,
-                               vec2_t *tile_obs,
-                               size_t ntiles,
-                               struct cp_terrain terrain,
-                               int side,
-                               bool relax,
-                               bool save_debug,
-                               struct cp_solve_diag *out_diag);
+vec2_t Move_ClearPath_NewVelocity(struct cp_ent ent,
+                                  uint32_t ent_uid,
+                                  vec2_t ent_des_v,
+                                  struct cp_ent *dyn_neighbs,
+                                  size_t ndyn,
+                                  struct cp_ent *stat_neighbs,
+                                  size_t nstat,
+                                  vec2_t *tile_obs,
+                                  size_t ntiles,
+                                  struct cp_terrain terrain,
+                                  int side,
+                                  bool relax,
+                                  bool save_debug,
+                                  struct cp_solve_diag *out_diag);
 
 #endif
 

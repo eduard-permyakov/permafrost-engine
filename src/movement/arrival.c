@@ -34,7 +34,7 @@
  */
 
 #include "arrival.h"
-#include "public/game.h"
+#include "../game/public/game.h"
 #include "../camera.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
@@ -662,7 +662,7 @@ static bool arrival_save_one(struct SDL_RWops *stream, const struct arrival_stat
 {
     CHK_TRUE_RET(save_int(stream, as->phase, "as_phase"));
     /* An INACTIVE layer has no built region; only 'phase' is initialized (by
-     * G_Arrival_InitFlock) and the rest is uninitialized scratch - don't serialize it. */
+     * Move_Arrival_InitFlock) and the rest is uninitialized scratch - don't serialize it. */
     if(as->phase == ARRIVAL_PHASE_INACTIVE)
         return true;
     CHK_TRUE_RET(save_int(stream, as->layer, "as_layer"));
@@ -775,25 +775,25 @@ static void arrival_release_slots(struct arrival_state *as)
     }
 }
 
-void G_Arrival_InitFlock(struct arrival_state *as)
+void Move_Arrival_InitFlock(struct arrival_state *as)
 {
     arrival_release_slots(as);
     as->phase = ARRIVAL_PHASE_INACTIVE;
 }
 
-void G_Arrival_Deactivate(struct arrival_state *as)
+void Move_Arrival_Deactivate(struct arrival_state *as)
 {
     /* Stop filling but keep the built region. */
     if(as->phase == ARRIVAL_PHASE_FILLING)
         as->phase = ARRIVAL_PHASE_DONE;
 }
 
-bool G_Arrival_IsActive(const struct arrival_state *as)
+bool Move_Arrival_IsActive(const struct arrival_state *as)
 {
     return as->phase == ARRIVAL_PHASE_FILLING;
 }
 
-void G_Arrival_InitUnit(struct arrival_unit_state *us, vec2_t order_pos)
+void Move_Arrival_InitUnit(struct arrival_unit_state *us, vec2_t order_pos)
 {
     us->substate = ARRIVAL_SUBSTATE_APPROACH;
     us->los_latched = false;
@@ -804,10 +804,10 @@ void G_Arrival_InitUnit(struct arrival_unit_state *us, vec2_t order_pos)
     us->order_pos = order_pos;
 }
 
-void G_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2_t target_xz,
-                           enum nav_layer layer, float unit_radius, int total_members,
-                           const struct arrival_member *members, int nmembers, bool plan,
-                           bool roads)
+void Move_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2_t target_xz,
+                              enum nav_layer layer, float unit_radius, int total_members,
+                              const struct arrival_member *members, int nmembers, bool plan,
+                              bool roads)
 {
     bool built = (as->phase != ARRIVAL_PHASE_INACTIVE);
     if(built) {
@@ -914,16 +914,16 @@ void G_Arrival_UpdateFlock(struct arrival_state *as, const struct map *map, vec2
     }
 }
 
-void G_Arrival_RequestField(const struct arrival_state *as, const struct map *map)
+void Move_Arrival_RequestField(const struct arrival_state *as, const struct map *map)
 {
     if(as->phase != ARRIVAL_PHASE_FILLING)
         return;
     M_NavRequestAsyncGroupArrivalField(map, as->layer, as->centre, as->radius);
 }
 
-bool G_Arrival_DesiredVelocity(const struct arrival_state *as, struct arrival_unit_state *us,
-                               const struct map *region_map, const struct map *nav_map,
-                               vec2_t pos, vec2_t velocity, bool has_dest_los, vec2_t *out_vel)
+bool Move_Arrival_DesiredVelocity(const struct arrival_state *as, struct arrival_unit_state *us,
+                                  const struct map *region_map, const struct map *nav_map,
+                                  vec2_t pos, vec2_t velocity, bool has_dest_los, vec2_t *out_vel)
 {
     if(as->phase != ARRIVAL_PHASE_FILLING)
         return false;
@@ -1012,9 +1012,9 @@ bool G_Arrival_DesiredVelocity(const struct arrival_state *as, struct arrival_un
     return false;
 }
 
-bool G_Arrival_ShouldSettle(const struct arrival_state *as, struct arrival_unit_state *us,
-                            const struct map *region_map, const struct map *nav_map,
-                            vec2_t new_pos, vec2_t velocity, float radius, int nsettled)
+bool Move_Arrival_ShouldSettle(const struct arrival_state *as, struct arrival_unit_state *us,
+                               const struct map *region_map, const struct map *nav_map,
+                               vec2_t new_pos, vec2_t velocity, float radius, int nsettled)
 {
     /* Settle on reaching an open slot (at_sink), being surrounded by enough 
      * settled neighbours (by_prop), or as a last resort - being boxed in too 
@@ -1100,16 +1100,16 @@ bool G_Arrival_ShouldSettle(const struct arrival_state *as, struct arrival_unit_
     return (at_sink || by_prop || by_stuck || by_contact);
 }
 
-vec2_t G_Arrival_SeekTarget(const struct arrival_state *as, const struct arrival_unit_state *us,
-                            vec2_t target_xz)
+vec2_t Move_Arrival_SeekTarget(const struct arrival_state *as, const struct arrival_unit_state *us,
+                               vec2_t target_xz)
 {
     if(as->phase == ARRIVAL_PHASE_FILLING && unit_committed(us) && us->sink_valid)
         return us->sink;
     return target_xz;
 }
 
-bool G_Arrival_NeighbourSettling(const struct arrival_unit_state *us, vec2_t neighb_pos,
-                                 float radius)
+bool Move_Arrival_NeighbourSettling(const struct arrival_unit_state *us, vec2_t neighb_pos,
+                                    float radius)
 {
     bool at_slot = unit_committed(us) && us->sink_valid;
     if(at_slot) {
@@ -1120,21 +1120,21 @@ bool G_Arrival_NeighbourSettling(const struct arrival_unit_state *us, vec2_t nei
     return at_slot;
 }
 
-void G_Arrival_RenderDebug(const struct arrival_state *as, const struct camera *cam,
-                           const struct map *map, dest_id_t dest_id, vec3_t color,
-                           const struct arrival_member *members, int nmembers)
+void Move_Arrival_RenderDebug(const struct arrival_state *as, const struct camera *cam,
+                              const struct map *map, dest_id_t dest_id, vec3_t color,
+                              const struct arrival_member *members, int nmembers)
 {
     arrival_render_field(as, map, color);
     arrival_render_assignment(as, members, nmembers);
     M_NavRenderVisibleGroupArrivalField(map, cam, as->layer, as->centre, as->radius, dest_id);
 }
 
-void G_ArrivalGroup_Init(struct arrival_group *grp)
+void Move_ArrivalGroup_Init(struct arrival_group *grp)
 {
     memset(grp->layers, 0, sizeof(grp->layers));
 }
 
-void G_ArrivalGroup_Destroy(struct arrival_group *grp)
+void Move_ArrivalGroup_Destroy(struct arrival_group *grp)
 {
     for(int l = 0; l < NAV_LAYER_MAX; l++) {
         if(grp->layers[l]) {
@@ -1145,31 +1145,31 @@ void G_ArrivalGroup_Destroy(struct arrival_group *grp)
     }
 }
 
-void G_ArrivalGroup_Reset(struct arrival_group *grp)
+void Move_ArrivalGroup_Reset(struct arrival_group *grp)
 {
     for(int l = 0; l < NAV_LAYER_MAX; l++) {
         if(grp->layers[l])
-            G_Arrival_InitFlock(grp->layers[l]);
+            Move_Arrival_InitFlock(grp->layers[l]);
     }
 }
 
-void G_ArrivalGroup_Deactivate(struct arrival_group *grp)
+void Move_ArrivalGroup_Deactivate(struct arrival_group *grp)
 {
     for(int l = 0; l < NAV_LAYER_MAX; l++) {
         if(grp->layers[l])
-            G_Arrival_Deactivate(grp->layers[l]);
+            Move_Arrival_Deactivate(grp->layers[l]);
     }
 }
 
-struct arrival_state *G_ArrivalGroup_ForLayer(const struct arrival_group *grp, enum nav_layer layer)
+struct arrival_state *Move_ArrivalGroup_ForLayer(const struct arrival_group *grp, enum nav_layer layer)
 {
     return grp->layers[layer];
 }
 
-bool G_ArrivalGroup_IsActive(const struct arrival_group *grp)
+bool Move_ArrivalGroup_IsActive(const struct arrival_group *grp)
 {
     for(int l = 0; l < NAV_LAYER_MAX; l++) {
-        if(grp->layers[l] && G_Arrival_IsActive(grp->layers[l]))
+        if(grp->layers[l] && Move_Arrival_IsActive(grp->layers[l]))
             return true;
     }
     return false;
@@ -1207,45 +1207,45 @@ static void arrival_group_update(struct arrival_group *grp, const struct map *ma
             if(!grp->layers[l])
                 continue;
             memset(grp->layers[l], 0, sizeof(struct arrival_state));
-            G_Arrival_InitFlock(grp->layers[l]);
+            Move_Arrival_InitFlock(grp->layers[l]);
         }
-        G_Arrival_UpdateFlock(grp->layers[l], map, target_xz, (enum nav_layer)l, maxr, sn, sub, sn,
+        Move_Arrival_UpdateFlock(grp->layers[l], map, target_xz, (enum nav_layer)l, maxr, sn, sub, sn,
             plan, roads);
     }
     STFREE(sub);
 }
 
-void G_ArrivalGroup_Update(struct arrival_group *grp, const struct map *map, vec2_t target_xz,
-                           const struct arrival_member *members, int nmembers, bool roads)
+void Move_ArrivalGroup_Update(struct arrival_group *grp, const struct map *map, vec2_t target_xz,
+                              const struct arrival_member *members, int nmembers, bool roads)
 {
     arrival_group_update(grp, map, target_xz, members, nmembers, false, roads);
 }
 
-void G_ArrivalGroup_Plan(struct arrival_group *grp, const struct map *map, vec2_t target_xz,
-                         const struct arrival_member *members, int nmembers, bool roads)
+void Move_ArrivalGroup_Plan(struct arrival_group *grp, const struct map *map, vec2_t target_xz,
+                            const struct arrival_member *members, int nmembers, bool roads)
 {
     arrival_group_update(grp, map, target_xz, members, nmembers, true, roads);
 }
 
-void G_ArrivalGroup_RequestFields(const struct arrival_group *grp, const struct map *map)
+void Move_ArrivalGroup_RequestFields(const struct arrival_group *grp, const struct map *map)
 {
     for(int l = 0; l < NAV_LAYER_MAX; l++) {
         if(grp->layers[l])
-            G_Arrival_RequestField(grp->layers[l], map);
+            Move_Arrival_RequestField(grp->layers[l], map);
     }
 }
 
-void G_ArrivalGroup_RenderDebug(const struct arrival_group *grp, const struct camera *cam,
-                                const struct map *map, dest_id_t dest_id, vec3_t color,
-                                const struct arrival_member *members, int nmembers)
+void Move_ArrivalGroup_RenderDebug(const struct arrival_group *grp, const struct camera *cam,
+                                   const struct map *map, dest_id_t dest_id, vec3_t color,
+                                   const struct arrival_member *members, int nmembers)
 {
     for(int l = 0; l < NAV_LAYER_MAX; l++) {
-        if(grp->layers[l] && G_Arrival_IsActive(grp->layers[l]))
-            G_Arrival_RenderDebug(grp->layers[l], cam, map, dest_id, color, members, nmembers);
+        if(grp->layers[l] && Move_Arrival_IsActive(grp->layers[l]))
+            Move_Arrival_RenderDebug(grp->layers[l], cam, map, dest_id, color, members, nmembers);
     }
 }
 
-bool G_Arrival_SaveState(struct SDL_RWops *stream, const struct arrival_group *grp)
+bool Move_Arrival_SaveState(struct SDL_RWops *stream, const struct arrival_group *grp)
 {
     for(int l = 0; l < NAV_LAYER_MAX; l++) {
         bool present = (grp->layers[l] != NULL);
@@ -1256,8 +1256,8 @@ bool G_Arrival_SaveState(struct SDL_RWops *stream, const struct arrival_group *g
     return true;
 }
 
-bool G_Arrival_LoadState(struct SDL_RWops *stream, struct arrival_group *grp,
-                         const struct map *map)
+bool Move_Arrival_LoadState(struct SDL_RWops *stream, struct arrival_group *grp,
+                            const struct map *map)
 {
     for(int l = 0; l < NAV_LAYER_MAX; l++) {
 
@@ -1280,7 +1280,7 @@ bool G_Arrival_LoadState(struct SDL_RWops *stream, struct arrival_group *grp,
     return true;
 }
 
-bool G_Arrival_SaveUnitState(struct SDL_RWops *stream, const struct arrival_unit_state *us)
+bool Move_Arrival_SaveUnitState(struct SDL_RWops *stream, const struct arrival_unit_state *us)
 {
     CHK_TRUE_RET(save_int(stream, us->substate, "us_substate"));
     CHK_TRUE_RET(save_bool(stream, us->sink_valid, "us_sink_valid"));
@@ -1294,7 +1294,7 @@ bool G_Arrival_SaveUnitState(struct SDL_RWops *stream, const struct arrival_unit
     return true;
 }
 
-bool G_Arrival_LoadUnitState(struct SDL_RWops *stream, struct arrival_unit_state *us)
+bool Move_Arrival_LoadUnitState(struct SDL_RWops *stream, struct arrival_unit_state *us)
 {
     int tmp;
     CHK_TRUE_RET(load_int(stream, &tmp));  us->substate = tmp;

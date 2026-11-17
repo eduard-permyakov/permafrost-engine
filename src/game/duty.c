@@ -38,7 +38,7 @@
 #include "duty.h"
 #include "public/game.h"
 #include "game_private.h"
-#include "movement.h"
+#include "../movement/public/movement.h"
 #include "harvester.h"
 #include "builder.h"
 #include "posts.h"
@@ -272,8 +272,8 @@ static bool stand_by(uint32_t uid, struct duty *d)
         d->waiting = true;
         notify_changed(uid);
     }
-    if(!near_target(uid, d->target) && G_Move_Still(uid)) {
-        G_Move_SetSurroundEntity(uid, d->target);
+    if(!near_target(uid, d->target) && Move_Still(uid)) {
+        Move_SetSurroundEntity(uid, d->target);
     }
     return true;
 }
@@ -368,7 +368,7 @@ static void resume_waiting_gatherer(uint32_t uid, struct duty *d)
         notify_changed(uid);
         return;
     }
-    if(G_Move_Still(uid)) {
+    if(Move_Still(uid)) {
         G_Harvester_BringInLoad(uid, NULL_UID, true);
     }
     /* One the automation keeps is free for other work while the stores are full */
