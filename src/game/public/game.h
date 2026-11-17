@@ -740,6 +740,10 @@ uint32_t       G_Pos_NearestWithPred(vec2_t xz_point,
 /*###########################################################################*/
 
 bool  G_Fog_ObjExplored(uint16_t fac_mask, uint32_t uid, const struct obb *obb);
+/* G_Fog_ObjExplored without memoizing a newly explored object: '*out_mark'
+ * says that G_Fog_MarkExplored should, on the main thread */
+bool  G_Fog_ObjExploredPeek(uint16_t fac_mask, uint32_t uid, const struct obb *obb, bool *out_mark);
+void  G_Fog_MarkExplored(uint32_t uid);
 bool  G_Fog_ObjVisible(uint16_t fac_mask, const struct obb *obb);
 bool  G_Fog_Visible(int faction_id, vec2_t xz_pos);
 bool  G_Fog_ObjVisibleFrom(uint32_t *state, bool enabled, 

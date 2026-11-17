@@ -422,6 +422,47 @@ void Entity_CurrentOBB(uint32_t uid, struct obb *out, bool identity)
     }
 }
 
+bool Entity_PeekOBB(uint32_t uid, struct obb *out, mat4x4_t *out_model)
+{
+    khiter_t k = kh_get(obb, s_ent_obb_cache, uid);
+    if(k != kh_end(s_ent_obb_cache)) {
+        *out = kh_value(s_ent_obb_cache, k);
+        return false;
+    }
+
+    const struct aabb *aabb;
+    if(G_FlagsGet(uid) & ENTITY_FLAG_ANIMATED) {
+        aabb = A_GetCurrPoseAABB(uid);
+    }else {
+        aabb = &AL_EntityGet(uid)->identity_aabb;
+    }
+
+    k = kh_get(matrix, s_ent_matrix_cache, uid);
+    if(k != kh_end(s_ent_matrix_cache) && kh_value(s_ent_matrix_cache, k).valid) {
+        *out_model = kh_value(s_ent_matrix_cache, k).m;
+    }else{
+        Entity_ModelMatrixFrom(G_Pos_Get(uid), Entity_GetRot(uid), Entity_GetScale(uid), out_model);
+    }
+    Entity_CurrentOBBFrom(aabb, *out_model, Entity_GetScale(uid), out);
+    return true;
+}
+
+void Entity_StoreOBB(uint32_t uid, const struct obb *obb, const mat4x4_t *model)
+{
+    ASSERT_IN_MAIN_THREAD();
+    int status;
+    khiter_t k = kh_get(matrix, s_ent_matrix_cache, uid);
+    if(k == kh_end(s_ent_matrix_cache)) {
+        k = kh_put(matrix, s_ent_matrix_cache, uid, &status);
+        assert(status != -1);
+    }
+    kh_value(s_ent_matrix_cache, k) = (struct matrix_memo){*model, true};
+
+    k = kh_put(obb, s_ent_obb_cache, uid, &status);
+    assert(status != -1);
+    kh_value(s_ent_obb_cache, k) = *obb;
+}
+
 void Entity_InsetOBB(uint32_t uid, float inset, struct obb *out)
 {
     struct entity *ent = AL_EntityGet(uid);

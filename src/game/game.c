@@ -126,6 +126,14 @@ __KHASH_IMPL(entity,  extern, khint32_t, uint32_t, 0, kh_int_hash_func, kh_int_h
 __KHASH_IMPL(id,      extern, khint32_t, int,      1, kh_int_hash_func, kh_int_hash_equal)
 __KHASH_IMPL(range,   extern, khint32_t, float,    1, kh_int_hash_func, kh_int_hash_equal)
 
+struct cull_result{
+    struct obb obb;
+    mat4x4_t   model;
+    uint32_t   passes;
+    bool       fresh;
+    bool       mark_explored;
+};
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -134,6 +142,9 @@ static struct gamestate s_gs;
 static float             s_overlay_left, s_overlay_right;
 static int              s_last_ncands;
 static int              s_last_ndraw;
+/* Each culling candidate's result, decided in parallel */
+static struct cull_result *s_cull_results;
+static size_t              s_cull_cap;
 /* Per-frame stage times (us): fog, anim, cull, drawlist, map+ents, healthbars, minimap */
 static uint32_t         s_stage_us[7];
 
@@ -1241,8 +1252,13 @@ static void g_frustum_xz_bounds(const struct frustum *f, vec2_t *out_min, vec2_t
     }
 }
 
-static bool g_ent_visible(uint16_t playermask, uint32_t uid, const struct obb *obb)
+/* Whether the players see the entity, without memoizing a newly explored
+ * one, so that it may run beside other readers: '*out_mark' asks the main
+ * thread to */
+static bool g_ent_visible_peek(uint16_t playermask, uint32_t uid, const struct obb *obb,
+                               bool *out_mark)
 {
+    *out_mark = false;
     if(!s_gs.map)
         return true;
 
@@ -1253,9 +1269,8 @@ static bool g_ent_visible(uint16_t playermask, uint32_t uid, const struct obb *o
     if(!(flags & ENTITY_FLAG_MOVABLE)
     ||  (flags & ENTITY_FLAG_RESOURCE)
     ||  (flags & ENTITY_FLAG_BUILDING)) {
-        return G_Fog_ObjExplored(playermask, uid, obb);
+        return G_Fog_ObjExploredPeek(playermask, uid, obb, out_mark);
     }
-
     return G_Fog_ObjVisible(playermask, obb);
 }
 
@@ -2839,6 +2854,8 @@ void G_Shutdown(void)
 
     E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
     G_ClearState();
+    PF_FREE(s_cull_results);
+    s_cull_cap = 0;
 
     R_DestroyWS(&s_gs.ws[0]);
     R_DestroyWS(&s_gs.ws[1]);
@@ -2973,6 +2990,50 @@ static void g_pace_clock(void)
     s_window_done = Move_TicksDone();
 }
 
+struct cull_ctx{
+    const uint32_t     *cands;
+    struct cull_result *out;
+    struct frustum      cam;
+    struct frustum      light;
+    uint16_t            pm;
+};
+
+/* One candidate's bounds and passes, decided without writing shared state;
+ * the memos are filled and the lists pushed afterwards, in candidate order */
+static void g_cull_range(int begin, int end, void *arg)
+{
+    const struct cull_ctx *cc = arg;
+    for(int i = begin; i <= end; i++) {
+
+        uint32_t curr = cc->cands[i];
+        struct cull_result *res = &cc->out[i];
+        res->fresh = Entity_PeekOBB(curr, &res->obb, &res->model);
+        res->mark_explored = false;
+        res->passes = 0;
+        bool vis_checked = false;
+        bool vis = false;
+
+        /* Note that there may be some false positives due to using the fast frustum cull. */
+        if(C_FrustumOBBIntersectionFast(&cc->cam, &res->obb) != VOLUME_INTERSEC_OUTSIDE) {
+            vis = g_ent_visible_peek(cc->pm, curr, &res->obb, &res->mark_explored);
+            vis_checked = true;
+            if(vis) {
+                res->passes |= DRAW_PASS_CAM;
+            }
+        }
+
+        if(C_FrustumOBBIntersectionFast(&cc->light, &res->obb) != VOLUME_INTERSEC_OUTSIDE) {
+            if(!vis_checked) {
+                vis = g_ent_visible_peek(cc->pm, curr, &res->obb, &res->mark_explored);
+            }
+            uint32_t flags = G_FlagsGet(curr);
+            if(vis || !(flags & ENTITY_FLAG_MOVABLE)) {
+                res->passes |= DRAW_PASS_LIGHT;
+            }
+        }
+    }
+}
+
 void G_Update(void)
 {
     PERF_ENTER();
@@ -3029,38 +3090,41 @@ void G_Update(void)
     int ncands = G_Pos_EntsInRect(qmin, qmax, s_gs.cull_cands.array, nactive);
     s_last_ncands = ncands;
 
+    if((size_t)ncands > s_cull_cap) {
+        struct cull_result *res = PF_REALLOC(s_cull_results, ncands * sizeof(struct cull_result));
+        if(res) {
+            s_cull_results = res;
+            s_cull_cap = ncands;
+        }
+    }
+    if((size_t)ncands > s_cull_cap)
+        ncands = s_cull_cap;
+
+    struct cull_ctx cull = {
+        .cands = s_gs.cull_cands.array,
+        .out = s_cull_results,
+        .cam = cam_frust,
+        .light = light_frust,
+        .pm = pm
+    };
+    Sched_ParallelFor(g_cull_range, &cull, ncands, 32);
+
     for(int ci = 0; ci < ncands; ci++) {
 
         curr = s_gs.cull_cands.array[ci];
-        struct obb obb;
-        Entity_CurrentOBB(curr, &obb, false);
-        bool vis_checked = false;
-        bool vis = false;
-        uint32_t passes = 0;
-
-        /* Note that there may be some false positives due to using the fast frustum cull. */
-        if(C_FrustumOBBIntersectionFast(&cam_frust, &obb) != VOLUME_INTERSEC_OUTSIDE) {
-            vis = g_ent_visible(pm, curr, &obb);
-            vis_checked = true;
-            if(vis) {
-                vec_entity_push(&s_gs.visible, curr);
-                vec_obb_push(&s_gs.visible_obbs, obb);
-                passes |= DRAW_PASS_CAM;
-            }
+        const struct cull_result *res = &s_cull_results[ci];
+        if(res->fresh) {
+            Entity_StoreOBB(curr, &res->obb, &res->model);
         }
-
-        if(C_FrustumOBBIntersectionFast(&light_frust, &obb) != VOLUME_INTERSEC_OUTSIDE) {
-            if(!vis_checked) {
-                vis = g_ent_visible(pm, curr, &obb);
-            }
-            uint32_t flags = G_FlagsGet(curr);
-            if(vis || !(flags & ENTITY_FLAG_MOVABLE)) {
-                passes |= DRAW_PASS_LIGHT;
-            }
+        if(res->mark_explored) {
+            G_Fog_MarkExplored(curr);
         }
-
-        if(passes) {
-            vec_drawcand_push(&s_gs.draw_cands, (struct draw_cand){curr, passes});
+        if(res->passes & DRAW_PASS_CAM) {
+            vec_entity_push(&s_gs.visible, curr);
+            vec_obb_push(&s_gs.visible_obbs, res->obb);
+        }
+        if(res->passes) {
+            vec_drawcand_push(&s_gs.draw_cands, (struct draw_cand){curr, res->passes});
         }
     }
     PERF_POP();

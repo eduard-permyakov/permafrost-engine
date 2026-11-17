@@ -1052,6 +1052,26 @@ bool G_Fog_ObjExplored(uint16_t fac_mask, uint32_t uid, const struct obb *obb)
     return result;
 }
 
+bool G_Fog_ObjExploredPeek(uint16_t fac_mask, uint32_t uid, const struct obb *obb, bool *out_mark)
+{
+    *out_mark = false;
+    if(!s_enabled)
+        return true;
+    if(kh_get(uid, s_explored_cache, uid) != kh_end(s_explored_cache))
+        return true;
+
+    enum fog_state states[] = {STATE_IN_FOG, STATE_VISIBLE};
+    *out_mark = fog_obj_matches(s_fog_state, fac_mask, obb, states, ARR_SIZE(states));
+    return *out_mark;
+}
+
+void G_Fog_MarkExplored(uint32_t uid)
+{
+    int status;
+    kh_put(uid, s_explored_cache, uid, &status);
+    assert(status != -1);
+}
+
 bool G_Fog_ObjVisible(uint16_t fac_mask, const struct obb *obb)
 {
     if(!s_enabled)

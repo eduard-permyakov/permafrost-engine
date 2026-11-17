@@ -150,6 +150,11 @@ void     Entity_ModelMatrix(uint32_t uid, mat4x4_t *out);
 uint32_t Entity_NewUID(void);
 void     Entity_SetNextUID(uint32_t uid);
 void     Entity_CurrentOBB(uint32_t uid, struct obb *out, bool identity);
+/* The current OBB and model matrix read from the memos without filling them,
+ * so that it may run beside other readers; true when they had to be computed,
+ * and Entity_StoreOBB should memoize them on the main thread */
+bool     Entity_PeekOBB(uint32_t uid, struct obb *out, mat4x4_t *out_model);
+void     Entity_StoreOBB(uint32_t uid, const struct obb *obb, const mat4x4_t *model);
 /* The identity OBB drawn in by 'inset' world units on each side across the
  * ground, so that a box edge on a cell boundary covers no cell past it */
 void     Entity_InsetOBB(uint32_t uid, float inset, struct obb *out);
