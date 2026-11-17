@@ -33,10 +33,8 @@
  *
  */
 
-#include "wander.h"
-#include "public/game.h"
-#include "../movement/public/movement.h"
-#include "position.h"
+#include "public/movement.h"
+#include "../game/public/game.h"
 #include "../main.h"
 #include "../event.h"
 #include "../entity.h"
@@ -281,7 +279,7 @@ static void on_20hz_tick(void *user, void *event)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool G_Wander_Init(const struct map *map)
+bool Move_Wander_Init(const struct map *map)
 {
     s_map = map;
     if(!(s_wanderers = kh_init(wanderer)))
@@ -291,13 +289,13 @@ bool G_Wander_Init(const struct map *map)
     return true;
 }
 
-void G_Wander_Shutdown(void)
+void Move_Wander_Shutdown(void)
 {
     E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
     kh_destroy(wanderer, s_wanderers);
 }
 
-bool G_Wander_Start(uint32_t uid, vec2_t anchor, float radius)
+bool Move_Wander_Start(uint32_t uid, vec2_t anchor, float radius)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -330,7 +328,7 @@ bool G_Wander_Start(uint32_t uid, vec2_t anchor, float radius)
     return true;
 }
 
-void G_Wander_Stop(uint32_t uid)
+void Move_Wander_Stop(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -348,7 +346,7 @@ void G_Wander_Stop(uint32_t uid)
     kh_del(wanderer, s_wanderers, k);
 }
 
-void G_Wander_RemoveEntity(uint32_t uid)
+void Move_Wander_RemoveEntity(uint32_t uid)
 {
     khiter_t k = kh_get(wanderer, s_wanderers, uid);
     if(k != kh_end(s_wanderers)) {
@@ -356,12 +354,12 @@ void G_Wander_RemoveEntity(uint32_t uid)
     }
 }
 
-bool G_Wander_Active(uint32_t uid)
+bool Move_Wander_Active(uint32_t uid)
 {
     return (wanderer_get(uid) != NULL);
 }
 
-bool G_Wander_Flee(uint32_t uid, vec2_t threat, float seconds, float speed)
+bool Move_Wander_Flee(uint32_t uid, vec2_t threat, float seconds, float speed)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -400,13 +398,13 @@ bool G_Wander_Flee(uint32_t uid, vec2_t threat, float seconds, float speed)
     return false;
 }
 
-bool G_Wander_Fleeing(uint32_t uid)
+bool Move_Wander_Fleeing(uint32_t uid)
 {
     struct wanderer *w = wanderer_get(uid);
     return (w && w->state == WANDER_FLEE);
 }
 
-bool G_Wander_SaveState(struct SDL_RWops *stream)
+bool Move_Wander_SaveState(struct SDL_RWops *stream)
 {
     struct attr num_wanderers = (struct attr){
         .type = TYPE_INT,
@@ -437,7 +435,7 @@ bool G_Wander_SaveState(struct SDL_RWops *stream)
     return true;
 }
 
-bool G_Wander_LoadState(struct SDL_RWops *stream)
+bool Move_Wander_LoadState(struct SDL_RWops *stream)
 {
     struct attr attr;
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));

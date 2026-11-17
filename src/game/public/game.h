@@ -1676,21 +1676,5 @@ int  G_Population_GetEnemy(int faction_id);
 int  G_Population_GetPlayer(void);
 int  G_Population_GetPlayerLimit(void);
 
-/*###########################################################################*/
-/* GAME WANDER                                                               */
-/*###########################################################################*/
-
-/* Roams the entity about 'anchor', within 'radius': a few short walks with a
- * pause between them, then a long rest, and so on 
- */
-bool G_Wander_Start(uint32_t uid, vec2_t anchor, float radius);
-void G_Wander_Stop(uint32_t uid);
-bool G_Wander_Active(uint32_t uid);
-
-/* The wanderer runs from 'threat' for 'seconds' at 'speed', then settles and
- * makes its way back 
- */
-bool G_Wander_Flee(uint32_t uid, vec2_t threat, float seconds, float speed);
-
 #endif
 

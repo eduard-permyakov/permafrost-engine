@@ -37,7 +37,6 @@
 #define MEM_FILE_SUB MEM_SUB_GAME_HARVESTER
 
 #include "harvester.h"
-#include "wander.h"
 #include "duty.h"
 #include "../movement/public/movement.h"
 #include "resource.h"
@@ -1390,7 +1389,7 @@ static void on_harvest_anim_finished(void *user, void *event)
 
     if(hunted(hs->res_uid)) {
         /* No arrow is wasted on game in full flight */
-        if(G_Wander_Fleeing(hs->res_uid))
+        if(Move_Wander_Fleeing(hs->res_uid))
             return;
         /* Game on the move may have left the bowshot or the line of the arrow */
         if(in_hunt_range(uid, hs->res_uid) && aimed_at_game(uid, hs->res_uid, HUNT_SHOT_COS)) {
@@ -1578,7 +1577,7 @@ static void hunt_hit(uint32_t uid, struct hstate *hs)
     E_Entity_Notify(EVENT_HUNT_HIT, res, (void*)((uintptr_t)uid), ES_ENGINE);
     if(hits > 0)
         return;
-    G_Wander_Stop(res);
+    Move_Wander_Stop(res);
     walk_up(uid, res);
 }
 

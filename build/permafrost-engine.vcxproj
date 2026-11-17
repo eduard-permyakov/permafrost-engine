@@ -55,7 +55,7 @@
     <ClCompile Include="..\src\game\selection.c" />
     <ClCompile Include="..\src\game\storage_site.c" />
     <ClCompile Include="..\src\game\timer_events.c" />
-    <ClCompile Include="..\src\game\wander.c" />
+    <ClCompile Include="..\src\movement\wander.c" />
     <ClCompile Include="..\src\lib\attr.c" />
     <ClCompile Include="..\src\lib\bitgrid.c" />
     <ClCompile Include="..\src\lib\nk_file_browser.c" />
@@ -189,7 +189,6 @@
     <ClInclude Include="..\src\game\selection.h" />
     <ClInclude Include="..\src\game\storage_site.h" />
     <ClInclude Include="..\src\game\timer_events.h" />
-    <ClInclude Include="..\src\game\wander.h" />
     <ClInclude Include="..\src\lib\public\attr.h" />
     <ClInclude Include="..\src\lib\public\bitgrid.h" />
     <ClInclude Include="..\src\lib\public\bitmap_grid.h" />

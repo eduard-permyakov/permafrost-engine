@@ -6363,7 +6363,7 @@ static PyObject *PyMovableEntity_wander(PyMovableEntityObject *self, PyObject *a
         PyErr_SetString(PyExc_TypeError, "Arguments must be an (x, z) tuple and a radius.");
         return NULL;
     }
-    return PyBool_FromLong(G_Wander_Start(self->super.ent, anchor, radius));
+    return PyBool_FromLong(Move_Wander_Start(self->super.ent, anchor, radius));
 }
 
 static PyObject *PyMovableEntity_stop_wander(PyMovableEntityObject *self)
@@ -6372,7 +6372,7 @@ static PyObject *PyMovableEntity_stop_wander(PyMovableEntityObject *self)
         PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
         return NULL;
     }
-    G_Wander_Stop(self->super.ent);
+    Move_Wander_Stop(self->super.ent);
     Py_RETURN_NONE;
 }
 
@@ -6389,7 +6389,7 @@ static PyObject *PyMovableEntity_wander_flee(PyMovableEntityObject *self, PyObje
         PyErr_SetString(PyExc_TypeError, "Arguments must be an (x, z) tuple, seconds and a speed.");
         return NULL;
     }
-    return PyBool_FromLong(G_Wander_Flee(self->super.ent, threat, seconds, speed));
+    return PyBool_FromLong(Move_Wander_Flee(self->super.ent, threat, seconds, speed));
 }
 
 static PyObject *PyMovableEntity_get_wandering(PyMovableEntityObject *self, void *closure)
@@ -6398,7 +6398,7 @@ static PyObject *PyMovableEntity_get_wandering(PyMovableEntityObject *self, void
         PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
         return NULL;
     }
-    return PyBool_FromLong(G_Wander_Active(self->super.ent));
+    return PyBool_FromLong(Move_Wander_Active(self->super.ent));
 }
 
 static PyObject *PyMovableEntity_del(PyMovableEntityObject *self)

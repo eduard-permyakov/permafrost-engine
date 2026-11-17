@@ -414,8 +414,8 @@
     <ClCompile Include="..\src\game\roads.c">
       <Filter>Source Files\game</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\game\wander.c">
-      <Filter>Source Files\game</Filter>
+    <ClCompile Include="..\src\movement\wander.c">
+      <Filter>Source Files\movement</Filter>
     </ClCompile>
     <ClCompile Include="..\src\lib\bitgrid.c">
       <Filter>Source Files\lib</Filter>
@@ -828,9 +828,6 @@
       <Filter>Header Files\game</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\roads.h">
-      <Filter>Header Files\game</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\game\wander.h">
       <Filter>Header Files\game</Filter>
     </ClInclude>
     <ClInclude Include="..\src\lib\public\bitgrid.h">

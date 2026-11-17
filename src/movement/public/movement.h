@@ -265,5 +265,29 @@ void           Move_Formation_RenderPlacement(const vec_entity_t *ents, vec2_t p
 bool           Move_Formation_SaveState(struct SDL_RWops *stream);
 bool           Move_Formation_LoadState(struct SDL_RWops *stream);
 
+/*###########################################################################*/
+/* MOVEMENT WANDERING                                                        */
+/*###########################################################################*/
+
+bool Move_Wander_Init(const struct map *map);
+void Move_Wander_Shutdown(void);
+void Move_Wander_RemoveEntity(uint32_t uid);
+
+/* Roams the entity about 'anchor', within 'radius': a few short walks with a
+ * pause between them, then a long rest, and so on 
+ */
+bool Move_Wander_Start(uint32_t uid, vec2_t anchor, float radius);
+void Move_Wander_Stop(uint32_t uid);
+bool Move_Wander_Active(uint32_t uid);
+
+/* The wanderer runs from 'threat' for 'seconds' at 'speed', then settles and
+ * makes its way back 
+ */
+bool Move_Wander_Flee(uint32_t uid, vec2_t threat, float seconds, float speed);
+bool Move_Wander_Fleeing(uint32_t uid);
+
+bool Move_Wander_SaveState(struct SDL_RWops *stream);
+bool Move_Wander_LoadState(struct SDL_RWops *stream);
+
 #endif
 

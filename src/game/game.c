@@ -63,7 +63,6 @@
 #include "provision.h"
 #include "posts.h"
 #include "duty.h"
-#include "wander.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../anim/public/anim.h"
@@ -234,7 +233,7 @@ static void g_init_map(void)
     G_Provision_Init(s_gs.map);
     G_Posts_Init(s_gs.map);
     G_Duty_Init(s_gs.map);
-    G_Wander_Init(s_gs.map);
+    Move_Wander_Init(s_gs.map);
     G_Group_Init();
     G_Cluster_Init();
     G_District_Init(s_gs.map);
@@ -1292,7 +1291,7 @@ static void g_clear_map_state(void)
         G_Automation_Shutdown();
         G_Provision_Shutdown();
         G_Duty_Shutdown();
-        G_Wander_Shutdown();
+        Move_Wander_Shutdown();
         G_Posts_Shutdown();
         G_Group_Shutdown();
         G_District_Shutdown();
@@ -3434,7 +3433,7 @@ bool G_RemoveEntity(uint32_t uid)
     G_Posts_RemoveEntity(uid);
     G_Group_RemoveEntity(uid);
     G_Duty_RemoveEntity(uid);
-    G_Wander_RemoveEntity(uid);
+    Move_Wander_RemoveEntity(uid);
     G_Pos_SyncRefs(uid);
     G_Region_RemoveEnt(uid);
     G_Pos_Delete(uid);
@@ -4136,7 +4135,7 @@ void G_Zombiefy(uint32_t uid, bool invis)
     G_Provision_RemoveEntity(uid);
     G_Group_RemoveEntity(uid);
     G_Duty_RemoveEntity(uid);
-    G_Wander_RemoveEntity(uid);
+    Move_Wander_RemoveEntity(uid);
 
     G_Pos_SyncRefs(uid);
     G_SetVisionRange(uid, 0.0f);
@@ -4780,7 +4779,7 @@ bool G_SaveEntityState(SDL_RWops *stream)
     if(!G_Duty_SaveState(stream))
         return false;
 
-    if(!G_Wander_SaveState(stream))
+    if(!Move_Wander_SaveState(stream))
         return false;
 
     return true;
@@ -4903,7 +4902,7 @@ bool G_LoadEntityState(SDL_RWops *stream)
     }
 
     /* Saves made before anything wandered end here */
-    if(Attr_NextKeyIs(stream, "num_wanderers") && !G_Wander_LoadState(stream)) {
+    if(Attr_NextKeyIs(stream, "num_wanderers") && !Move_Wander_LoadState(stream)) {
         fprintf(stderr, "Could not load wander state.\n");
         return false;
     }
