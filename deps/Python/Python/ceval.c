@@ -122,6 +122,10 @@ static PyObject * load_args(PyObject ***, int);
 #define CALL_FLAG_VAR 1
 #define CALL_FLAG_KW 2
 
+/* See PyEval_SetPreemptHook */
+static int (*preempt_hook)(void);
+static volatile int *preempt_flag;
+
 #ifdef LLTRACE
 static int lltrace;
 static int prtrace(PyObject *, char *);
@@ -1117,6 +1121,12 @@ PyEval_EvalFrameEx(PyFrameObject *f, int throwflag)
                        "periodic" code, possibly after
                        a thread switch */
                     _Py_Ticker = 0;
+            }
+            if (preempt_flag && *preempt_flag && preempt_hook) {
+                if (preempt_hook() < 0) {
+                    why = WHY_EXCEPTION;
+                    goto on_error;
+                }
             }
 #ifdef WITH_THREAD
             if (interpreter_lock) {
@@ -4104,6 +4114,13 @@ maybe_call_line_trace(Py_tracefunc func, PyObject *obj,
 
     *instr_prev = frame->f_lasti;
     return result;
+}
+
+void
+PyEval_SetPreemptHook(int (*hook)(void), volatile int *flag)
+{
+    preempt_hook = hook;
+    preempt_flag = flag;
 }
 
 void

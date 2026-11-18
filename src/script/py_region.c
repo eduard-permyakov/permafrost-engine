@@ -314,6 +314,7 @@ static PyObject *PyRegion_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
 static void PyRegion_dealloc(PyRegionObject *self)
 {
+    S_View_RequireWorld();
     khiter_t k = kh_get(PyObject, s_name_pyobj_table, self->name);
     assert(k != kh_end(s_name_pyobj_table));
     kh_del(PyObject, s_name_pyobj_table, k);

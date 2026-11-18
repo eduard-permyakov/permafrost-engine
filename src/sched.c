@@ -195,6 +195,7 @@ struct task{
     uint32_t       parent_tid;  /* atomic where a non-owner reads it */
     uint32_t       flags;       /* atomic where a non-owner reads it */
     bool           on_main;
+    bool           needs_world; /* a view task's next slice runs in a world window */
     struct request req;
     uint64_t       retval;
     void          *stackmem;
@@ -304,6 +305,7 @@ struct ev_waiters{
 #define MAIN_PARKER             (&s_threads[0].parker)
 #define MAIN_HOME               (&s_homes[HOME_MAIN])
 #define SCRIPT_HOME             (&s_homes[HOME_SCRIPT])
+#define VIEW_HOME               (&s_homes[HOME_VIEW])
 #define SCRIPT_IDX              (MAX_WORKER_THREADS + 1)
 
 PQUEUE_TYPE(task, struct task*)
@@ -367,6 +369,7 @@ struct home{
 enum{
     HOME_MAIN,
     HOME_SCRIPT,
+    HOME_VIEW,      /* the script thread's tasks it runs alongside the main thread */
     NHOMES
 };
 
@@ -771,11 +774,27 @@ static float heap_prio(const struct task *task)
     return (float)task->prio + (float)(s_heap_seq++ & 0xffff) / 65536.0f;
 }
 
-/* A pinned task's home: the script thread's for a script task */
+/* Where a ready pinned task waits to be picked: the script thread's home for a
+ * script task, and its view home for a view task that needs no world */
 static struct home *task_home(const struct task *task)
+{
+    uint32_t flags = LF_LOAD(&task->flags, LF_RLX);
+    if((flags & TASK_VIEW) && !task->needs_world)
+        return VIEW_HOME;
+    return (flags & TASK_SCRIPT) ? SCRIPT_HOME : MAIN_HOME;
+}
+
+/* Where its event waits are kept: a view task's with the other script tasks' */
+static struct home *task_wait_home(const struct task *task)
 {
     return (LF_LOAD(&task->flags, LF_RLX) & TASK_SCRIPT) ? SCRIPT_HOME : MAIN_HOME;
 }
+
+/* Set while the script thread runs a view slice, alongside the main thread */
+static int s_view_slice;
+/* Whether the simulation runs, as the main thread last saw: the script
+ * thread picks its view tasks by it, without reading the world */
+static int s_sim_running;
 
 /* The home a thread serves, if any */
 static struct home *thread_home(const struct sched_thread *self)
@@ -1125,7 +1144,7 @@ static void await_event(struct task *task)
     task->reg_event = (int)task->req.argv[0];
     task->reg_seq = ST_SEQ(st) + 1;
 
-    struct home *home = task_home(task);
+    struct home *home = task_wait_home(task);
     if(home == SCRIPT_HOME)
         E_NoteScriptAwait(task->reg_event);
     uint32_t head = LF_LOAD(&home->reg_inbox, LF_RLX);
@@ -1417,6 +1436,7 @@ static uint32_t sched_create(int prio, task_func_t code, void *arg, const char *
     LF_STORE(&task->flags, (uint32_t)flags, LF_RLX);
     LF_STORE(&task->exit_word, 0, LF_RLX);
     task->on_main = false;
+    task->needs_world = false;
     task->retval = 0;
     task->name = pf_strdup(name);
     task->arg = arg;
@@ -1475,7 +1495,7 @@ static void task_switch_in(struct sched_thread *self, struct task *task)
         return;
     }
     assert(task_kind(task) == TK_ACTIVE);
-    assert(!(task->flags & TASK_MAIN_THREAD_PINNED) || thread_home(self) == task_home(task));
+    assert(!(task->flags & TASK_MAIN_THREAD_PINNED) || thread_home(self) == task_wait_home(task));
     assert(stack_pointer_valid(task));
 
     self->curr = task;
@@ -2241,6 +2261,38 @@ static void handle_event(struct home *home, int event, void *arg, int event_sour
     SchedStats_Set(prev_state);
 }
 
+bool Sched_RunViewSlice(void)
+{
+    struct sched_thread *self = sched_self();
+    assert(thread_home(self) == SCRIPT_HOME);
+
+    struct home *home = VIEW_HOME;
+    drain_inbox(home);
+    bool (*pred)(void*) = LF_LOAD(&s_sim_running, LF_ACQ) ? can_run_any : can_run_during_pause;
+    struct task *curr = NULL;
+    if(!pop_runnable(&home->rt_heap, &curr, pred) && !pop_runnable(&home->heap, &curr, pred))
+        return false;
+    task_publish(curr, TK_ACTIVE);
+
+    LF_STORE(&s_view_slice, 1, LF_SC);
+    run_slice(self, curr);
+    LF_STORE(&s_view_slice, 0, LF_REL);
+    return true;
+}
+
+bool Sched_InViewSlice(void)
+{
+    return LF_LOAD(&s_view_slice, LF_ACQ);
+}
+
+void Sched_ViewYield(bool needs_world)
+{
+    struct task *task = sched_self()->curr;
+    assert(task && (task->flags & TASK_VIEW));
+    task->needs_world = needs_world;
+    Sched_Request((struct request){ .type = SCHED_REQ_YIELD });
+}
+
 void Sched_HandleEvent(int event, void *arg, int event_source, bool immediate)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -2298,6 +2350,8 @@ static void script_tick(void *arg)
 
     struct task *curr;
     while(SDL_GetPerformanceCounter() < tick->deadline && (curr = home_pick(SCRIPT_HOME))) {
+        /* A parked view task's slice runs on here; its next one is a view slice */
+        curr->needs_world = false;
         uint64_t t0 = SDL_GetPerformanceCounter();
         char name[64];
         pf_strlcpy(name, curr->name ? curr->name : "?", sizeof(name));
@@ -2327,6 +2381,7 @@ void Sched_Tick(void)
         deadline = min_deadline;
 
     MAIN_HOME->deadline = deadline;
+    LF_STORE(&s_sim_running, G_GetSimState() == G_RUNNING, LF_REL);
     SchedStats_Set(SS_SCHED);
     sched_run_realtime(self);
 
@@ -2416,7 +2471,8 @@ static bool claim_for_run_sync(struct sched_thread *self, struct task *task)
         return task_claim(task, st);
     case TK_READY_MAIN: {
         struct home *home = task_home(task);
-        if(thread_home(self) != home)
+        struct home *serves = thread_home(self);
+        if(serves != home && !(home == VIEW_HOME && serves == SCRIPT_HOME))
             return false;
         drain_inbox(home);
         if(!pq_task_remove(&home->rt_heap, tasks_compare, task)
@@ -2761,7 +2817,8 @@ bool Sched_UsingBigStack(void)
 static void flush_home(void *arg)
 {
     struct home *home = arg;
-    assert(thread_home(sched_self()) == home);
+    assert(thread_home(sched_self()) == home 
+        || (home == VIEW_HOME && thread_home(sched_self()) == SCRIPT_HOME));
     struct task *curr;
 
     for(;;) {
@@ -2793,6 +2850,7 @@ void Sched_Flush(void)
     }
     S_Thread_CallMain(flush_home, MAIN_HOME);
     S_Thread_Call(flush_home, SCRIPT_HOME);
+    S_Thread_Call(flush_home, VIEW_HOME);
     s_flushing = false;
 }
 
@@ -2803,7 +2861,7 @@ bool Sched_HasBlocked(void)
         if(lf_ring_maybe_nonempty(&s_rings[i]))
             return true;
     }
-    return home_has_work(MAIN_HOME) || home_has_work(SCRIPT_HOME);
+    return home_has_work(MAIN_HOME) || home_has_work(SCRIPT_HOME) || home_has_work(VIEW_HOME);
 }
 
 bool Sched_IsReady(uint32_t tid)

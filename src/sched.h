@@ -88,7 +88,12 @@ enum{
     TASK_SCRIPT             = (1 << 4),
     /* Runs on the main thread at least once in every scheduler tick, even
      * past the frame's deadline: for light, latency-sensitive work only */
-    TASK_REALTIME           = (1 << 5)
+    TASK_REALTIME           = (1 << 5),
+    /* A script task the script thread runs alongside the main thread, on the
+     * state the main thread published. It is interleaved with other script
+     * work at any point, and runs a slice that needs the live world in the
+     * main thread's next window instead */
+    TASK_VIEW               = (1 << 6)
 };
 
 typedef struct result (*task_func_t)(void *);
@@ -109,6 +114,13 @@ void     Sched_HandleEvent(int event, void *arg, int event_source, bool immediat
 /* The script thread's part: the script tasks waiting on the event. 'arg' is
  * the event's argument as a script sees it: encoded, or the script object */
 void     Sched_HandleScriptEvent(int event, void *arg, int event_source, bool immediate);
+/* Called on the script thread between its calls: runs one slice of a view
+ * task, alongside the main thread. Returns false when none is ready. */
+bool     Sched_RunViewSlice(void);
+bool     Sched_InViewSlice(void);
+/* From a view task: gives the script thread up, either to let it take a call
+ * (and come back as a view task) or to run on in the next world window */
+void     Sched_ViewYield(bool needs_world);
 void     Sched_StartBackgroundTasks(void);
 void     Sched_Tick(void);
 /* Park the workers at their next yield point; the frame's buffers may be

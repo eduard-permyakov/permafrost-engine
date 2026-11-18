@@ -22,6 +22,10 @@ PyAPI_FUNC(PyObject *) PyEval_CallMethod(PyObject *obj,
 
 PyAPI_FUNC(void) PyEval_SetProfile(Py_tracefunc, PyObject *);
 PyAPI_FUNC(void) PyEval_SetTrace(Py_tracefunc, PyObject *);
+/* The embedding engine's preemption point: when '*flag' is set, the eval loop
+   calls 'hook' at its next periodic check, between two instructions. A hook
+   returning -1 raises the exception it set. */
+PyAPI_FUNC(void) PyEval_SetPreemptHook(int (*hook)(void), volatile int *flag);
 
 struct _frame; /* Avoid including frameobject.h */
 

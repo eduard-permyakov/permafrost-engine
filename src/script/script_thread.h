@@ -38,10 +38,29 @@
 
 #include "public/script.h"
 
+struct _object;
+
 /* True where Python must not run: on the main thread once the script thread is up */
 #define ST_OFF_SCRIPT() (S_Thread_Running() && !S_Thread_OnScript())
 
 /* An event handler that runs Python, moved onto the script thread */
 void S_Thread_CallHandler(void (*handler)(void *user, void *event), void *user, void *event);
+
+/* The flag the interpreter checks to let a view slice give the thread up */
+volatile int *S_Thread_PreemptFlag(void);
+
+/* View mode: what a view task may do without the world, run on the script
+ * thread alongside the main thread */
+void S_View_Init(struct _object *module);
+/* From a binding or constructor a view task reached: the rest of the slice
+ * runs in the main thread's next world window */
+int  S_View_RequireWorld(void);
+bool S_View_Active(void);
+/* A script task's thread state comes in: a view task in a view slice is
+ * watched for what it reaches */
+void S_View_EnterTask(bool view);
+/* Queues a write a view task made for the next world window */
+void S_View_DeferRemove(uint32_t uid);
+void S_View_ApplyDeferred(void);
 
 #endif

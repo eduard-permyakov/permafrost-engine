@@ -7407,6 +7407,7 @@ bool S_Init(const char *progname, const char *base_path, struct nk_context *ctx)
         return false;
 
     s_create_settings();
+    S_View_Init(module);
 
     E_Global_Register(EVENT_UPDATE_START, s_on_update, NULL, G_ALL);
     return true;

@@ -79,6 +79,9 @@ static int             s_ready;         /* atomic */
 static struct st_side  s_main;
 static struct st_side  s_script;
 static uint64_t        s_idle_spin_ticks;
+/* Set by a caller that finds the script thread in a view slice: the slice
+ * gives the thread up at the interpreter's next periodic check */
+static volatile int    s_preempt;
 static uint64_t        s_caller_spin_ticks;
 
 /*****************************************************************************/
@@ -106,6 +109,11 @@ static struct st_side *side_other(struct st_side *self)
 
 static void run_call(struct st_side *self, struct st_call *call)
 {
+    if(self == &s_script) {
+        LF_STORE(&s_preempt, 0, LF_RLX);
+        /* The main thread waits on the call, so the world is the script's */
+        S_View_ApplyDeferred();
+    }
     call->fn(call->arg);
     /* The caller takes the world back: it resumes only after this store. It
      * is sequentially consistent, as the unpark's load of the caller's
@@ -128,6 +136,13 @@ static void wait_serving(struct st_side *self, int *flag, uint64_t spin_ticks)
         struct st_call *call = LF_XCHG(&self->inbox, NULL, LF_ACQ);
         if(call) {
             run_call(self, call);
+            spin_end = SDL_GetPerformanceCounter() + spin_ticks;
+            continue;
+        }
+
+        /* Between calls, the script thread runs its view tasks */
+        if(!flag && Sched_RunViewSlice()) {
+            LF_STORE(&s_preempt, 0, LF_RLX);
             spin_end = SDL_GetPerformanceCounter() + spin_ticks;
             continue;
         }
@@ -164,6 +179,8 @@ static void call_on(struct st_side *target, void (*fn)(void*), void *arg)
     struct st_call *was = LF_XCHG(&target->inbox, &call, LF_SC);
     assert(was == NULL);
     (void)was;
+    if(target == &s_script && Sched_InViewSlice())
+        LF_STORE(&s_preempt, 1, LF_RLX);
     lf_parker_unpark(&target->parker);
 
     wait_serving(self, &call.done, s_caller_spin_ticks);
@@ -238,6 +255,11 @@ void S_Thread_Stop(void)
     s_running = false;
     SDL_DestroySemaphore(s_main.parker.sem);
     SDL_DestroySemaphore(s_script.parker.sem);
+}
+
+volatile int *S_Thread_PreemptFlag(void)
+{
+    return &s_preempt;
 }
 
 bool S_Thread_Running(void)

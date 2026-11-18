@@ -2008,6 +2008,9 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
     PyEntityObject *self;
     const char *dirpath, *filename, *name;
 
+    if(S_View_RequireWorld() < 0)
+        return NULL;
+
     /* First, extract the first 3 args to handle the cases where subclasses get 
      * intialized with more arguments */
     PyObject *first_args = PyTuple_GetSlice(args, 0, 3);
@@ -2145,17 +2148,13 @@ static void PyEntity_dealloc(PyEntityObject *self)
     assert(k != kh_end(s_uid_pyobj_table));
     kh_del(PyObject, s_uid_pyobj_table, k);
 
-    k = kh_get(sinfo, s_script_info, self->ent);
-    if(k != kh_end(s_script_info))
-        kh_del(sinfo, s_script_info, k);
-
-    /* Fully remove the entity from the simulation at the end of the frame 
-     * instead of immediately. This approach guarantees that an entity will 
-     * never disappear from the simulation until the whole session loading 
-     * process is completed, This is a nice property which allows us to 
-     * skip handling this edge case elsewhere. 
-     */
-    G_DeferredRemove(self->ent);
+    /* The main thread reads the script info and the world: a view task's
+     * release waits for the next world window */
+    if(S_View_Active()) {
+        S_View_DeferRemove(self->ent);
+    }else{
+        S_Entity_ReleaseUID(self->ent);
+    }
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
@@ -7143,6 +7142,21 @@ void S_Entity_Shutdown(void)
     kh_destroy(PyObject, s_uid_pyobj_table);
     kh_destroy(sinfo, s_script_info);
     s_script_info = NULL;
+}
+
+void S_Entity_ReleaseUID(uint32_t uid)
+{
+    khiter_t k = kh_get(sinfo, s_script_info, uid);
+    if(k != kh_end(s_script_info))
+        kh_del(sinfo, s_script_info, k);
+
+    /* Fully remove the entity from the simulation at the end of the frame 
+     * instead of immediately. This approach guarantees that an entity will 
+     * never disappear from the simulation until the whole session loading 
+     * process is completed, This is a nice property which allows us to 
+     * skip handling this edge case elsewhere. 
+     */
+    G_DeferredRemove(uid);
 }
 
 bool S_Entity_ScriptInfo(uint32_t uid, uint64_t *out_type_id, int *out_formation_priority)

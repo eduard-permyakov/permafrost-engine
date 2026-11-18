@@ -51,5 +51,8 @@ PyObject *S_Entity_GetLoaded(void);
 /* The class an entity's object had when created, without calling into Python */
 bool      S_Entity_ScriptInfo(uint32_t uid, uint64_t *out_type_id, int *out_formation_priority);
 
+/* Lets the engine remove an entity whose script object is gone */
+void      S_Entity_ReleaseUID(uint32_t uid);
+
 #endif
 

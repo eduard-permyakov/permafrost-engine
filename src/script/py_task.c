@@ -120,6 +120,7 @@ typedef struct {
     uint32_t sleep_elapsed;
     bool small_stack;
     bool realtime;
+    bool view;
 }PyTaskObject;
 
 KHASH_MAP_INIT_INT(task, PyTaskObject*)
@@ -430,6 +431,7 @@ static void pytask_push_ctx(PyTaskObject *self)
 {
     assert(!ST_OFF_SCRIPT());
     s_main_thread_state = PyThreadState_Swap(self->ts);
+    S_View_EnterTask(self->view);
 }
 
 static void pytask_pop_ctx(PyTaskObject *self)
@@ -609,7 +611,7 @@ static struct result py_task(void *arg)
 {
     PyTaskObject *self = (PyTaskObject*)arg;
 
-    ASSERT_IN_MAIN_THREAD();
+    assert(!ST_OFF_SCRIPT());
     ASSERT_IN_CTX(self->tid);
 
     pytask_push_ctx(self);
@@ -733,9 +735,12 @@ static PyObject *PyTask_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
         self->small_stack = (smallstack && PyObject_IsTrue(smallstack));
         PyObject *realtime = PyDict_GetItemString(kwds, "realtime");
         self->realtime = (realtime && PyObject_IsTrue(realtime));
+        PyObject *view = PyDict_GetItemString(kwds, "view");
+        self->view = (view && PyObject_IsTrue(view));
     }else{
         self->small_stack = false;
         self->realtime = false;
+        self->view = false;
     }
 
     Py_INCREF(func);
@@ -866,8 +871,8 @@ static PyObject *PyTask_pickle(PyTaskObject *self, PyObject *args, PyObject *kwa
     ctx->deferred_free(ctx->private_ctx, sleep_elapsed);
     CHK_TRUE(status, fail_pickle);
 
-    /* The realtime flag rides in the stack word's second bit */
-    PyObject *small_stack = PyInt_FromLong(self->small_stack | (self->realtime << 1));
+    /* The realtime and view flags ride in the stack word's second and third bits */
+    PyObject *small_stack = PyInt_FromLong(self->small_stack | (self->realtime << 1) | (self->view << 2));
     status = ctx->pickle_obj(ctx->private_ctx, small_stack, ctx->stream);
     ctx->deferred_free(ctx->private_ctx, small_stack);
     CHK_TRUE(status, fail_pickle);
@@ -995,6 +1000,7 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
     ret->sleep_elapsed = PyInt_AS_LONG(sleep_elapsed);
     ret->small_stack = PyInt_AS_LONG(small_stack) & 0x1;
     ret->realtime = (PyInt_AS_LONG(small_stack) >> 1) & 0x1;
+    ret->view = (PyInt_AS_LONG(small_stack) >> 2) & 0x1;
     ret->stack_depth = PyInt_AS_LONG(stack_depth);
 
     if(ret->state == PYTASK_STATE_RUNNING) {
@@ -1004,6 +1010,8 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
             flags |= TASK_BIG_STACK;
         if(ret->realtime)
             flags |= TASK_REALTIME;
+        if(ret->view)
+            flags |= TASK_VIEW;
 
         assert(ret->ts->frame->f_stacktop);
         ret->tid = pytask_schedule(ret, 16, py_task, ret, NULL, flags);
@@ -1059,13 +1067,15 @@ fail_args:
 
 static PyObject *PyTask_run(PyTaskObject *self)
 {
-    ASSERT_IN_MAIN_THREAD();
+    assert(!ST_OFF_SCRIPT());
 
     int flags = TASK_MAIN_THREAD_PINNED | TASK_SCRIPT;
     if(!self->small_stack)
         flags |= TASK_BIG_STACK;
     if(self->realtime)
         flags |= TASK_REALTIME;
+    if(self->view)
+        flags |= TASK_VIEW;
 
     self->tid = pytask_schedule(self, 16, py_task, self, NULL, flags);
 
@@ -1087,7 +1097,7 @@ static PyObject *PyTask_run(PyTaskObject *self)
 
 static PyObject *PyTask_wait(PyTaskObject *self, PyObject *args)
 {
-    ASSERT_IN_MAIN_THREAD();
+    assert(!ST_OFF_SCRIPT());
 
     if(self->state != PYTASK_STATE_RUNNING || Sched_ActiveTID() != self->tid) {
         PyErr_SetString(PyExc_RuntimeError, 
@@ -1136,7 +1146,7 @@ static PyObject *PyTask_wait(PyTaskObject *self, PyObject *args)
 
 static PyObject *PyTask_yield(PyTaskObject *self)
 {
-    ASSERT_IN_MAIN_THREAD();
+    assert(!ST_OFF_SCRIPT());
 
     if(self->state != PYTASK_STATE_RUNNING || Sched_ActiveTID() != self->tid) {
         PyErr_SetString(PyExc_RuntimeError, 
@@ -1157,7 +1167,7 @@ static PyObject *PyTask_yield(PyTaskObject *self)
 
 static PyObject *PyTask_send(PyTaskObject *self, PyObject *args)
 {
-    ASSERT_IN_MAIN_THREAD();
+    assert(!ST_OFF_SCRIPT());
 
     if(self->state != PYTASK_STATE_RUNNING || Sched_ActiveTID() != self->tid) {
         PyErr_SetString(PyExc_RuntimeError, 
@@ -1198,7 +1208,7 @@ static PyObject *PyTask_send(PyTaskObject *self, PyObject *args)
 
 static PyObject *PyTask_receive(PyTaskObject *self)
 {
-    ASSERT_IN_MAIN_THREAD();
+    assert(!ST_OFF_SCRIPT());
 
     if(self->state != PYTASK_STATE_RUNNING || Sched_ActiveTID() != self->tid) {
         PyErr_SetString(PyExc_RuntimeError, 
@@ -1238,7 +1248,7 @@ static PyObject *PyTask_receive(PyTaskObject *self)
 
 static PyObject *PyTask_reply(PyTaskObject *self, PyObject *args)
 {
-    ASSERT_IN_MAIN_THREAD();
+    assert(!ST_OFF_SCRIPT());
 
     if(self->state != PYTASK_STATE_RUNNING || Sched_ActiveTID() != self->tid) {
         PyErr_SetString(PyExc_RuntimeError, 
@@ -1278,7 +1288,7 @@ static PyObject *PyTask_reply(PyTaskObject *self, PyObject *args)
 
 static PyObject *PyTask_await_event(PyTaskObject *self, PyObject *args)
 {
-    ASSERT_IN_MAIN_THREAD();
+    assert(!ST_OFF_SCRIPT());
 
     if(self->state != PYTASK_STATE_RUNNING || Sched_ActiveTID() != self->tid) {
         PyErr_SetString(PyExc_RuntimeError, 
@@ -1315,7 +1325,7 @@ static PyObject *PyTask_await_event(PyTaskObject *self, PyObject *args)
 
 static PyObject *PyTask_sleep(PyTaskObject *self, PyObject *args)
 {
-    ASSERT_IN_MAIN_THREAD();
+    assert(!ST_OFF_SCRIPT());
 
     if(self->state != PYTASK_STATE_RUNNING || Sched_ActiveTID() != self->tid) {
         PyErr_SetString(PyExc_RuntimeError, 
@@ -1346,7 +1356,7 @@ static PyObject *PyTask_sleep(PyTaskObject *self, PyObject *args)
 
 static PyObject *PyTask_register(PyTaskObject *self, PyObject *args)
 {
-    ASSERT_IN_MAIN_THREAD();
+    assert(!ST_OFF_SCRIPT());
 
     if(self->state != PYTASK_STATE_RUNNING || Sched_ActiveTID() != self->tid) {
         PyErr_SetString(PyExc_RuntimeError, 
@@ -1378,7 +1388,7 @@ static PyObject *PyTask_register(PyTaskObject *self, PyObject *args)
 
 static PyObject *PyTask_who_is(PyTaskObject *self, PyObject *args, PyObject *kwargs)
 {
-    ASSERT_IN_MAIN_THREAD();
+    assert(!ST_OFF_SCRIPT());
 
     if(self->state != PYTASK_STATE_RUNNING || Sched_ActiveTID() != self->tid) {
         PyErr_SetString(PyExc_RuntimeError, 
@@ -1495,7 +1505,7 @@ void S_Task_KillAll(void)
         S_Thread_Call(fwd_S_Task_KillAll_thunk, &call);
         return;
     }
-    ASSERT_IN_MAIN_THREAD();
+    assert(!ST_OFF_SCRIPT());
     if(!s_tid_task_map)
         return;
 
@@ -1566,6 +1576,17 @@ PyObject *S_Task_GetAll(void)
 
     assert(nset == PyTuple_GET_SIZE(ret));
     return ret;
+}
+
+void S_Task_ViewYield(bool needs_world)
+{
+    khiter_t k = kh_get(task, s_tid_task_map, Sched_ActiveTID());
+    assert(k != kh_end(s_tid_task_map));
+    PyTaskObject *self = kh_value(s_tid_task_map, k);
+
+    pytask_pop_ctx(self);
+    Sched_ViewYield(needs_world);
+    pytask_push_ctx(self);
 }
 
 void S_Task_MaybeExit(void)

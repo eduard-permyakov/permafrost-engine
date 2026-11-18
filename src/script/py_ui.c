@@ -2273,6 +2273,9 @@ fail_args:
 
 static PyObject *PyWindow_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
+    /* The main thread uses the UI context meanwhile */
+    if(S_View_RequireWorld() < 0)
+        return NULL;
     PyObject *self = type->tp_alloc(type, 0);
     ((PyWindowObject*)self)->header_style = NULL;
     ((PyWindowObject*)self)->resize_mask = ANCHOR_DEFAULT;
@@ -2285,6 +2288,7 @@ static PyObject *PyWindow_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
 static void PyWindow_dealloc(PyWindowObject *self)
 {
+    S_View_RequireWorld();
     Py_XDECREF(self->header_style);
 
     int idx = vec_win_indexof(&s_active_windows, self, equal);

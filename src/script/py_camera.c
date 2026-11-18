@@ -259,6 +259,7 @@ static PyObject *PyCamera_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
 static void PyCamera_dealloc(PyCameraObject *self)
 {
+    S_View_RequireWorld();
     /* The active camera is owned and freed by the core gamestate */
     if(self->cam != G_GetActiveCamera()) {
         Camera_Free(self->cam);
