@@ -46,6 +46,12 @@ typedef struct _frame {
     int f_lineno;		/* Current line number */
     int f_iblock;		/* index in f_blockstack */
     PyTryBlock f_blockstack[CO_MAXBLOCKS]; /* for try and loop blocks */
+    /* Where the frame last made a call: the depth of its evaluation stack and
+       the offset of the call instruction. The stack top of a frame waiting on
+       its call is otherwise out of reach, and the engine needs it to save the
+       frames of a suspended fiber task. */
+    int f_calldepth;
+    int f_calllasti;
     PyObject *f_localsplus[1];	/* locals+stack, dynamically sized */
 } PyFrameObject;
 

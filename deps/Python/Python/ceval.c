@@ -3005,6 +3005,8 @@ PyEval_EvalFrameEx(PyFrameObject *f, int throwflag)
         TARGET(CALL_FUNCTION)
         {
             PyObject **sp;
+            f->f_calldepth = (int)(stack_pointer - f->f_valuestack);
+            f->f_calllasti = f->f_lasti;
             PCALL(PCALL_ALL);
             sp = stack_pointer;
 #ifdef WITH_TSC
@@ -3028,6 +3030,8 @@ PyEval_EvalFrameEx(PyFrameObject *f, int throwflag)
             int flags = (opcode - CALL_FUNCTION) & 3;
             int n = na + 2 * nk;
             PyObject **pfunc, *func, **sp;
+            f->f_calldepth = (int)(stack_pointer - f->f_valuestack);
+            f->f_calllasti = f->f_lasti;
             PCALL(PCALL_ALL);
             if (flags & CALL_FLAG_VAR)
                 n++;

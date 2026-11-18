@@ -776,6 +776,8 @@ PyFrame_New(PyThreadState *tstate, PyCodeObject *code, PyObject *globals,
     f->f_tstate = tstate;
 
     f->f_lasti = -1;
+    f->f_calldepth = 0;
+    f->f_calllasti = -1;
     f->f_lineno = code->co_firstlineno;
     f->f_iblock = 0;
 

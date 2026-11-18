@@ -69,11 +69,6 @@
 #define CALL_FLAG_VAR   1
 #define CALL_FLAG_KW    2
 
-struct frame_depth{
-    PyFrameObject *frame;
-    size_t         depth;
-    bool           exposed;
-};
 
 #define CHK_TRUE(_pred, _label)         \
     do{                                 \
@@ -112,13 +107,10 @@ typedef struct {
     }state;
     struct pyrequest req;
     size_t stack_depth;
-    /* Each frame of the call chain, outermost first, with the depth of its
-     * evaluation stack when it last ran an opcode: a caller's own stack top
-     * is out of reach while it waits on a call
-     */
-    struct frame_depth *depths;
-    size_t ndepths;
-    size_t depths_cap;
+    /* The callers whose stacks are shown to the pickler while it runs */
+    PyFrameObject **exposed;
+    size_t nexposed;
+    size_t exposed_cap;
     /* The task's frames refer to it, so it is pickled again from within its
      * own pickle: only the outermost exposes and hides the callers
      */
@@ -388,106 +380,60 @@ static PyObject *pytask_resume_request(PyTaskObject *self)
     return ret;
 }
 
-static bool pytask_depths_reserve(PyTaskObject *self, size_t n)
+static bool pytask_exposed_reserve(PyTaskObject *self, size_t n)
 {
-    if(n <= self->depths_cap)
+    if(n <= self->exposed_cap)
         return true;
-    size_t cap = self->depths_cap ? self->depths_cap * 2 : 16;
+    size_t cap = self->exposed_cap ? self->exposed_cap * 2 : 16;
     while(cap < n)
         cap *= 2;
-    struct frame_depth *depths = PF_REALLOC(self->depths, cap * sizeof(struct frame_depth));
-    if(!depths)
+    PyFrameObject **exposed = PF_REALLOC(self->exposed, cap * sizeof(PyFrameObject*));
+    if(!exposed)
         return false;
-    self->depths = depths;
-    self->depths_cap = cap;
+    self->exposed = exposed;
+    self->exposed_cap = cap;
     return true;
 }
 
-/* A frame already in the chain drops the frames above it, which have
- * returned; any other is a new call.
+/* The depth of the evaluation stack of a frame waiting on a call. CPython
+ * records it at each call, so it holds for the call the frame waits on when
+ * its current instruction is that call. A restored frame keeps its stack top
+ * until it runs again.
  */
-static void pytask_note_depth(PyTaskObject *self, PyFrameObject *frame, size_t depth)
+static size_t pytask_frame_depth(PyFrameObject *frame)
 {
-    for(size_t i = self->ndepths; i-- > 0;) {
-        if(self->depths[i].frame == frame) {
-            self->ndepths = i + 1;
-            self->depths[i].depth = depth;
-            return;
-        }
-    }
-    if(!pytask_depths_reserve(self, self->ndepths + 1))
-        return;
-    self->depths[self->ndepths++] = (struct frame_depth){frame, depth, false};
-}
-
-/* The chain of a restored task, from the frames' saved stacks */
-static bool pytask_depths_rebuild(PyTaskObject *self)
-{
-    size_t n = 0;
-    for(PyFrameObject *f = self->ts->frame; f; f = f->f_back)
-        n++;
-    if(!pytask_depths_reserve(self, n))
-        return false;
-    size_t i = n;
-    for(PyFrameObject *f = self->ts->frame; f; f = f->f_back) {
-        size_t depth = f->f_stacktop ? (size_t)(f->f_stacktop - f->f_valuestack) : 0;
-        self->depths[--i] = (struct frame_depth){f, depth, false};
-    }
-    self->ndepths = n;
-    return true;
+    if(frame->f_stacktop)
+        return (size_t)(frame->f_stacktop - frame->f_valuestack);
+    if(frame->f_lasti == frame->f_calllasti)
+        return (size_t)frame->f_calldepth;
+    return 0;
 }
 
 /* While the task is pickled, its callers show the pickler their stacks */
 static void pytask_expose_callers(PyTaskObject *self, bool expose)
 {
+    if(!expose) {
+        for(size_t i = 0; i < self->nexposed; i++)
+            self->exposed[i]->f_stacktop = NULL;
+        self->nexposed = 0;
+        return;
+    }
     for(PyFrameObject *f = self->ts->frame->f_back; f; f = f->f_back) {
-        for(size_t i = self->ndepths; i-- > 0;) {
-            struct frame_depth *fd = &self->depths[i];
-            if(fd->frame != f)
-                continue;
-            if(expose && !f->f_stacktop) {
-                f->f_stacktop = f->f_valuestack + fd->depth;
-                fd->exposed = true;
-            }else if(!expose && fd->exposed) {
-                f->f_stacktop = NULL;
-                fd->exposed = false;
-            }
-            break;
-        }
+        if(f->f_stacktop || !pytask_exposed_reserve(self, self->nexposed + 1))
+            continue;
+        f->f_stacktop = f->f_valuestack + pytask_frame_depth(f);
+        self->exposed[self->nexposed++] = f;
     }
-}
-
-static int pytask_tracefunc(PyTaskObject *self, PyFrameObject *frame, int what, PyObject *arg)
-{
-    if(what == PyTrace_OPCODE) {
-        assert(frame->f_stacktop);
-        size_t stack_depth = (size_t)(frame->f_stacktop - frame->f_valuestack);
-        self->stack_depth = stack_depth;
-        pytask_note_depth(self, frame, stack_depth);
-    }
-    return 0;
 }
 
 static void pytask_push_ctx(PyTaskObject *self)
 {
     assert(!ST_OFF_SCRIPT());
     s_main_thread_state = PyThreadState_Swap(self->ts);
-
-    /* During frame evaluation, CPython NULLs out the current frame's
-     * f_stacktop member. As such, there is no reliable way to get the 
-     * size of the current evaluation stack of a frame. One exception
-     * is that CPython sets f_stacktop to the correct value for trace
-     * calls. We use this hook to capture the evaluation stack size
-     * before every opcode execution. The evaluation stack size is 
-     * normally a hidden implementation detail, but we use to save and 
-     * restore running tasks.
-     */
-    PyEval_SetTrace((Py_tracefunc)pytask_tracefunc, (PyObject*)self);
 }
 
 static void pytask_pop_ctx(PyTaskObject *self)
 {
-    PyEval_SetTrace(NULL, NULL);
     assert(s_main_thread_state);
     PyThreadState *ts = PyThreadState_Swap(s_main_thread_state);
     assert(ts == self->ts);
@@ -745,10 +691,7 @@ static PyObject *PyTask_getattro(PyTaskObject *self, PyObject *name)
 
 static PyObject *PyTask_call(PyTaskObject *self, PyObject *args, PyObject *kwargs)
 {
-    PyEval_SetTrace((Py_tracefunc)pytask_tracefunc, (PyObject*)self);
-    PyObject *ret = PyObject_Call((PyObject*)self, args, kwargs);
-    PyEval_SetTrace(NULL, NULL);
-    return ret;
+    return PyObject_Call((PyObject*)self, args, kwargs);
 }
 
 static PyObject *PyTask_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
@@ -822,7 +765,7 @@ static void PyTask_dealloc(PyTaskObject *self)
     Py_CLEAR(self->ts->curexc_traceback);
 
     PF_FREE(self->regname);
-    PF_FREE(self->depths);
+    PF_FREE(self->exposed);
     pytask_ts_delete(self->ts);
     self->ts = NULL;
     Py_TYPE(self)->tp_free((PyObject*)self);
@@ -861,6 +804,7 @@ static PyObject *PyTask_pickle(PyTaskObject *self, PyObject *args, PyObject *kwa
     if(self->state == PYTASK_STATE_RUNNING) {
         assert(self->ts->frame);
         old = self->ts->frame->f_stacktop;
+        self->stack_depth = pytask_frame_depth(self->ts->frame);
         self->ts->frame->f_stacktop = self->ts->frame->f_valuestack + self->stack_depth;
         if(self->pickle_nesting++ == 0)
             pytask_expose_callers(self, true);
@@ -1062,10 +1006,6 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
             flags |= TASK_REALTIME;
 
         assert(ret->ts->frame->f_stacktop);
-        if(!pytask_depths_rebuild(ret)) {
-            Py_CLEAR(ret);
-            goto fail_unpickle;
-        }
         ret->tid = pytask_schedule(ret, 16, py_task, ret, NULL, flags);
 
         if(ret->tid == NULL_TID) {
