@@ -41,6 +41,8 @@
 #include "../lib/public/lockfree.h"
 
 #include <SDL.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 /* The script thread is the only thread that runs Python. The main thread
  * hands it each piece of Python work as a call and waits for it, so the two
@@ -84,7 +86,16 @@ static uint64_t        s_caller_spin_ticks;
 
 static struct st_side *side_self(void)
 {
-    return (SDL_ThreadID() == s_script.tid) ? &s_script : &s_main;
+    SDL_threadID tid = SDL_ThreadID();
+    if(tid == s_script.tid)
+        return &s_script;
+    /* Only the two of them may hand work to each other: a third thread
+     * would share the main thread's parker and lose its wakes */
+    if(tid != s_main.tid) {
+        fprintf(stderr, "[script-thread] call from a thread that is neither main nor script\n");
+        abort();
+    }
+    return &s_main;
 }
 
 static struct st_side *side_other(struct st_side *self)
@@ -95,8 +106,11 @@ static struct st_side *side_other(struct st_side *self)
 static void run_call(struct st_side *self, struct st_call *call)
 {
     call->fn(call->arg);
-    /* The caller takes the world back: it resumes only after this store */
-    LF_STORE(&call->done, 1, LF_REL);
+    /* The caller takes the world back: it resumes only after this store. It
+     * is sequentially consistent, as the unpark's load of the caller's
+     * parker must not pass it: a caller that prepared to sleep and then
+     * missed the store would never be woken. */
+    LF_STORE(&call->done, 1, LF_SC);
     lf_parker_unpark(&side_other(self)->parker);
 }
 
