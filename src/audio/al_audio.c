@@ -903,7 +903,7 @@ bool Audio_LoadState(struct SDL_RWops *stream)
                         alSourceStop(s_foreground_sources[i]);
                         break;
                     }
-                    glGetError(); /* clear error state */
+                    alGetError(); /* clear error state */
                 }
             }
         }
