@@ -98,6 +98,11 @@ static bool              *s_copy_dirty    = NULL;  /* changed since the last fra
 static struct tile_desc  *s_flush_scratch = NULL;  /* holds one chunk of descs */
 static bool               s_dirty_pending = false;
 
+/* The last freed snapshot buffer, taken by the next snapshot: a fresh
+ * allocation of this size comes from new pages, each faulted in and zeroed. A
+ * snapshot may be freed on any thread. */
+static struct map       *s_spare_snapshot = NULL;
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -821,6 +826,8 @@ void M_AL_DestroyTileUpdateBuffer(void)
 
 void M_AL_FreePrivate(struct map *map)
 {
+    struct map *spare = LF_XCHG(&s_spare_snapshot, NULL, LF_ACQ);
+    PF_FREE(spare);
     R_PushCmd((struct rcmd){ .func = R_GL_MapShutdown });
     assert(map->nav_private);
     N_FreeCtx(map->nav_private);
@@ -895,11 +902,6 @@ void M_AL_FreeCopyWithFields(struct map *map)
     bitgrid_destroy(&map->near_water);
     PF_FREE(map);
 }
-
-/* The last freed snapshot buffer, taken by the next snapshot: a fresh
- * allocation of this size comes from new pages, each faulted in and zeroed. A
- * snapshot may be freed on any thread. */
-static struct map *s_spare_snapshot;
 
 struct map *M_AL_SnapshotShared(const struct map *src)
 {
