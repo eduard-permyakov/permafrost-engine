@@ -302,6 +302,8 @@ struct ev_waiters{
 #define BATCH_CLOSED            ((uint64_t)0x7fffffff)
 #define EXIT_DONE               ((uint64_t)1)
 #define MAIN_PARKER             (&s_threads[0].parker)
+#define MAIN_HOME               (&s_homes[HOME_MAIN])
+#define SCRIPT_HOME             (&s_homes[HOME_SCRIPT])
 #define SCRIPT_IDX              (MAX_WORKER_THREADS + 1)
 
 PQUEUE_TYPE(task, struct task*)
@@ -339,8 +341,6 @@ static struct lf_ring          s_rings[NLEVELS];
 static struct lf_cell          s_ring_cells[NLEVELS][RING_CAP];
 
 static struct{
-    uint32_t main_inbox LF_ALIGNED;     /* tasks made ready for the main thread */
-    uint32_t reg_inbox LF_ALIGNED;      /* tasks registering for an event */
     uint64_t idle_mask LF_ALIGNED;      /* parked workers */
     int      nspinning LF_ALIGNED;      /* workers looking for work, or woken to */
     int      nactive LF_ALIGNED;        /* workers not parked */
@@ -349,13 +349,29 @@ static struct{
     int      main_idle LF_ALIGNED;      /* the main thread sleeps in its tick, waiting for work */
 }s_sync;
 
-/* The main thread's own: the tasks only it runs, and the event waiters */
-static pq_task_t               s_main_heap;
-static pq_task_t               s_rt_heap;
+/* A home is the tasks only one thread runs, with their event waiters: the
+ * main thread's (engine tasks pinned to it) and the script thread's (the
+ * script tasks). Only the home's thread touches its heaps and waiters; the
+ * inboxes take tasks from any thread.
+ */
+struct home{
+    uint32_t      inbox LF_ALIGNED;     /* tasks made ready for the home's thread */
+    uint32_t      reg_inbox LF_ALIGNED; /* tasks registering for an event */
+    pq_task_t     heap;
+    pq_task_t     rt_heap;
+    khash_t(evw) *waiters;
+    uint64_t      deadline;
+    uint64_t      rt_pass;
+};
+
+enum{
+    HOME_MAIN,
+    HOME_SCRIPT,
+    NHOMES
+};
+
+static struct home             s_homes[NHOMES];
 static uint32_t                s_heap_seq;
-static khash_t(evw)           *s_event_waiters;
-static uint64_t                s_main_deadline;
-static uint64_t                s_rt_pass;
 static bool                    s_flushing = false;
 static bool                    s_clearing = false;
 
@@ -437,13 +453,6 @@ static struct sched_thread *sched_self(void)
 }
 
 #define SCHED_TASK_STACK_SZ(_t) (((_t)->flags & TASK_BIG_STACK) ? BIG_STACK_SZ : STACK_SZ)
-
-/* The main thread, or the script thread serving the main thread's tasks while
- * the main thread waits on it: the two never run at once */
-static bool is_main_home(const struct sched_thread *self)
-{
-    return (self->idx == 0) || (self->idx == SCRIPT_IDX);
-}
 
 static void task_switch_in(struct sched_thread *self, struct task *task);
 
@@ -762,16 +771,32 @@ static float heap_prio(const struct task *task)
     return (float)task->prio + (float)(s_heap_seq++ & 0xffff) / 65536.0f;
 }
 
-static void heap_push(struct task *task)
+/* A pinned task's home: the script thread's for a script task */
+static struct home *task_home(const struct task *task)
 {
-    pq_task_push((task->flags & TASK_REALTIME) ? &s_rt_heap : &s_main_heap, heap_prio(task), task);
+    return (LF_LOAD(&task->flags, LF_RLX) & TASK_SCRIPT) ? SCRIPT_HOME : MAIN_HOME;
 }
 
-/* Moves the tasks made ready for the main thread into its heaps, in the order
- * they arrived */
-static void drain_main_inbox(void)
+/* The home a thread serves, if any */
+static struct home *thread_home(const struct sched_thread *self)
 {
-    uint32_t tid = LF_XCHG(&s_sync.main_inbox, 0, LF_ACQ);
+    if(self->idx == 0)
+        return MAIN_HOME;
+    if(self->idx == SCRIPT_IDX)
+        return SCRIPT_HOME;
+    return NULL;
+}
+
+static void heap_push(struct home *home, struct task *task)
+{
+    pq_task_push((task->flags & TASK_REALTIME) ? &home->rt_heap : &home->heap, heap_prio(task), task);
+}
+
+/* Moves the tasks made ready for the home's thread into its heaps, in the
+ * order they arrived */
+static void drain_inbox(struct home *home)
+{
+    uint32_t tid = LF_XCHG(&home->inbox, 0, LF_ACQ);
     uint32_t prev = 0;
     while(tid) {
         struct task *task = &s_tasks[tid - 1];
@@ -784,22 +809,24 @@ static void drain_main_inbox(void)
         struct task *task = &s_tasks[tid - 1];
         tid = task->inbox_next;
         assert(task_kind(task) == TK_READY_MAIN);
-        heap_push(task);
+        heap_push(home, task);
     }
 }
 
-static void make_ready_main(struct task *task)
+static void make_ready_pinned(struct task *task)
 {
+    struct home *home = task_home(task);
     task->on_main = false;
     task_publish(task, TK_READY_MAIN);
 
     /* Nothing takes a task in this state before it is out of the inbox, so
      * the pusher still has it to itself */
-    uint32_t head = LF_LOAD(&s_sync.main_inbox, LF_RLX);
+    uint32_t head = LF_LOAD(&home->inbox, LF_RLX);
     do{
         task->inbox_next = head;
-    }while(!LF_CASW(&s_sync.main_inbox, &head, task->tid, LF_SC, LF_RLX));
+    }while(!LF_CASW(&home->inbox, &head, task->tid, LF_SC, LF_RLX));
 
+    /* The main thread hands the script thread its share of the task loop */
     lf_parker_unpark(MAIN_PARKER);
 }
 
@@ -807,7 +834,7 @@ static void make_ready(struct task *task)
 {
     task->ready_ts = SchedStats_Now();
     if((task->flags & TASK_MAIN_THREAD_PINNED) || task->on_main) {
-        make_ready_main(task);
+        make_ready_pinned(task);
         return;
     }
 
@@ -1046,16 +1073,16 @@ static void batch_drain(struct batch *b)
 /* Event waiters                                                             */
 /*****************************************************************************/
 
-static void ev_waiters_append(int event, uint32_t tid, uint64_t seq)
+static void ev_waiters_append(struct home *home, int event, uint32_t tid, uint64_t seq)
 {
     int status;
-    khiter_t k = kh_get(evw, s_event_waiters, event);
-    if(k == kh_end(s_event_waiters)) {
-        k = kh_put(evw, s_event_waiters, event, &status);
+    khiter_t k = kh_get(evw, home->waiters, event);
+    if(k == kh_end(home->waiters)) {
+        k = kh_put(evw, home->waiters, event, &status);
         assert(status != -1 && status != 0);
-        kh_val(s_event_waiters, k) = (struct ev_waiters){0};
+        kh_val(home->waiters, k) = (struct ev_waiters){0};
     }
-    struct ev_waiters *waiters = &kh_val(s_event_waiters, k);
+    struct ev_waiters *waiters = &kh_val(home->waiters, k);
     if(waiters->size == waiters->cap) {
         int cap = waiters->cap ? waiters->cap * 2 : 32;
         struct ev_waiter *ents = PF_REALLOC(waiters->ents, cap * sizeof(struct ev_waiter));
@@ -1069,9 +1096,9 @@ static void ev_waiters_append(int event, uint32_t tid, uint64_t seq)
 
 /* Files the registrations made since the last drain under their events, in
  * the order they were made */
-static void drain_reg_inbox(void)
+static void drain_reg_inbox(struct home *home)
 {
-    uint32_t tid = LF_XCHG(&s_sync.reg_inbox, 0, LF_ACQ);
+    uint32_t tid = LF_XCHG(&home->reg_inbox, 0, LF_ACQ);
     uint32_t prev = 0;
     while(tid) {
         struct task *task = &s_tasks[tid - 1];
@@ -1083,7 +1110,7 @@ static void drain_reg_inbox(void)
     for(tid = prev; tid; ) {
         struct task *task = &s_tasks[tid - 1];
         uint32_t next = LF_LOAD(&task->reg_next, LF_RLX);
-        ev_waiters_append(task->reg_event, tid, task->reg_seq);
+        ev_waiters_append(home, task->reg_event, tid, task->reg_seq);
         tid = next;
     }
 }
@@ -1098,10 +1125,11 @@ static void await_event(struct task *task)
     task->reg_event = (int)task->req.argv[0];
     task->reg_seq = ST_SEQ(st) + 1;
 
-    uint32_t head = LF_LOAD(&s_sync.reg_inbox, LF_RLX);
+    struct home *home = task_home(task);
+    uint32_t head = LF_LOAD(&home->reg_inbox, LF_RLX);
     do{
         LF_STORE(&task->reg_next, head, LF_RLX);
-    }while(!LF_CASW(&s_sync.reg_inbox, &head, task->tid, LF_REL, LF_RLX));
+    }while(!LF_CASW(&home->reg_inbox, &head, task->tid, LF_REL, LF_RLX));
 
     LF_STORE(&task->state, ST(TK_EVENT_BLOCKED, ST_SEQ(st) + 1), LF_SC);
 }
@@ -1110,11 +1138,9 @@ static uint64_t sched_retain_arg(struct task *task, int event, int event_source,
 {
     void *ret = NULL;
     if(event_source != ES_SCRIPT && (task->flags & TASK_SCRIPT)) {
-        /* A script task reads it on the script thread, as plain data */
-        struct script_event_arg *sarg = PF_MALLOC(sizeof(struct script_event_arg));
-        S_EventArgEncode(event, event_source, arg, sarg);
+        /* A script task's event comes already encoded as plain data */
+        ret = S_EventArgCopy(arg);
         task->erelease = S_EventArgFree;
-        ret = sarg;
     }else if(event_source == ES_SCRIPT) {
         /* Scripting references will be released by the event consumer */
         S_Retain(arg);
@@ -1447,7 +1473,7 @@ static void task_switch_in(struct sched_thread *self, struct task *task)
         return;
     }
     assert(task_kind(task) == TK_ACTIVE);
-    assert(!(task->flags & TASK_MAIN_THREAD_PINNED) || is_main_home(self));
+    assert(!(task->flags & TASK_MAIN_THREAD_PINNED) || thread_home(self) == task_home(task));
     assert(stack_pointer_valid(task));
 
     self->curr = task;
@@ -1482,8 +1508,9 @@ static void task_switch_in(struct sched_thread *self, struct task *task)
 
 static bool may_continue(struct sched_thread *self)
 {
-    if(is_main_home(self))
-        return SDL_GetPerformanceCounter() < s_main_deadline;
+    struct home *home = thread_home(self);
+    if(home)
+        return SDL_GetPerformanceCounter() < home->deadline;
     return !LF_LOAD(&s_sync.quiesce, LF_RLX);
 }
 
@@ -1585,15 +1612,16 @@ static void run_claimed(struct task *task)
  * thread could run instead, or the frame wants it back. */
 static bool should_yield(struct sched_thread *self, struct task *task)
 {
-    if(is_main_home(self)) {
-        if(SDL_GetPerformanceCounter() >= s_main_deadline)
+    struct home *home = thread_home(self);
+    if(home) {
+        if(SDL_GetPerformanceCounter() >= home->deadline)
             return true;
-        if(LF_LOAD(&s_sync.main_inbox, LF_RLX))
+        if(LF_LOAD(&home->inbox, LF_RLX))
             return true;
-        if(pq_size(&s_rt_heap) > 0)
+        if(pq_size(&home->rt_heap) > 0)
             return true;
         float top;
-        if(pq_task_top_prio(&s_main_heap, &top) && top < task->prio + 1)
+        if(pq_task_top_prio(&home->heap, &top) && top < task->prio + 1)
             return true;
         return false;
     }
@@ -1799,7 +1827,7 @@ static bool can_run_any(void *arg)
 static bool can_run_in_rt_pass(void *arg)
 {
     struct task *task = *(struct task**)arg;
-    return (task->rt_pass != s_rt_pass)
+    return (task->rt_pass != task_home(task)->rt_pass)
         && (G_GetSimState() == G_RUNNING || (task->flags & TASK_RUN_DURING_PAUSE));
 }
 
@@ -1824,30 +1852,37 @@ static bool pop_runnable(pq_task_t *heap, struct task **out, bool pred(void*))
 
 /* Realtime tasks come first, then the ones only the main thread can run, and
  * the general ones last: the workers serve those too. */
-static struct task *main_pick(void)
+static struct task *home_pick(struct home *home)
 {
-    drain_main_inbox();
+    drain_inbox(home);
     bool running = (G_GetSimState() == G_RUNNING);
     bool (*pred)(void*) = running ? can_run_any : can_run_during_pause;
 
     struct task *ret = NULL;
-    if(pop_runnable(&s_rt_heap, &ret, pred) || pop_runnable(&s_main_heap, &ret, pred)) {
+    if(pop_runnable(&home->rt_heap, &ret, pred) || pop_runnable(&home->heap, &ret, pred)) {
         task_publish(ret, TK_ACTIVE);
         return ret;
     }
-    if(running || s_nworkers == 0)
+    if(home == MAIN_HOME && (running || s_nworkers == 0))
         return take_general();
     return NULL;
 }
 
-static struct task *next_rt_pass_task(void)
+static struct task *next_rt_pass_task(struct home *home)
 {
-    drain_main_inbox();
+    drain_inbox(home);
     struct task *ret = NULL;
-    if(!pop_runnable(&s_rt_heap, &ret, can_run_in_rt_pass))
+    if(!pop_runnable(&home->rt_heap, &ret, can_run_in_rt_pass))
         return NULL;
     task_publish(ret, TK_ACTIVE);
     return ret;
+}
+
+static bool home_has_work(struct home *home)
+{
+    return LF_LOAD(&home->inbox, LF_SC)
+        || pq_size(&home->heap) > 0
+        || pq_size(&home->rt_heap) > 0;
 }
 
 /* With the perf log on, a realtime slice that is not light says so, by name */
@@ -1880,11 +1915,12 @@ static void log_slow_slice(const char *name, uint64_t ticks)
  */
 static void sched_run_realtime(struct sched_thread *self)
 {
-    s_rt_pass++;
+    struct home *home = thread_home(self);
+    home->rt_pass++;
     struct task *curr;
-    while((curr = next_rt_pass_task())) {
+    while((curr = next_rt_pass_task(home))) {
 
-        curr->rt_pass = s_rt_pass;
+        curr->rt_pass = home->rt_pass;
         uint64_t t0 = SDL_GetPerformanceCounter();
         char name[64];
         pf_strlcpy(name, curr->name ? curr->name : "?", sizeof(name));
@@ -1909,7 +1945,8 @@ static void main_idle_wait(uint64_t deadline)
     uint64_t now = SDL_GetPerformanceCounter();
     uint64_t left_us = (now < deadline) ? (deadline - now) * 1000000 / SDL_GetPerformanceFrequency() : 0;
     bool takes_general = (G_GetSimState() == G_RUNNING) || s_nworkers == 0;
-    bool wake = LF_LOAD(&s_sync.main_inbox, LF_SC)
+    bool wake = LF_LOAD(&MAIN_HOME->inbox, LF_SC)
+             || LF_LOAD(&SCRIPT_HOME->inbox, LF_SC)
              || (takes_general && general_work_visible())
              || LF_LOAD(&s_sync.nactive, LF_SC) == 0
              || left_us < 2000;
@@ -1966,6 +2003,34 @@ void sched_task_exit(struct result ret)
     assert(0);
 }
 
+static bool home_init(struct home *home)
+{
+    *home = (struct home){0};
+    home->waiters = kh_init(evw);
+    if(!home->waiters)
+        return false;
+    pq_task_init(&home->heap);
+    pq_task_init(&home->rt_heap);
+    if(!pq_task_reserve(&home->heap, MAX_TASKS) || !pq_task_reserve(&home->rt_heap, MAX_TASKS)) {
+        pq_task_destroy(&home->heap);
+        pq_task_destroy(&home->rt_heap);
+        kh_destroy(evw, home->waiters);
+        return false;
+    }
+    return true;
+}
+
+static void home_destroy(struct home *home)
+{
+    struct ev_waiters waiters;
+    kh_foreach_value(home->waiters, waiters, {
+        PF_FREE(waiters.ents);
+    });
+    kh_destroy(evw, home->waiters);
+    pq_task_destroy(&home->heap);
+    pq_task_destroy(&home->rt_heap);
+}
+
 bool Sched_Init(void)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -1980,17 +2045,11 @@ bool Sched_Init(void)
     main_thr->tsan_fiber = __tsan_get_current_fiber();
 #endif
 
-    s_event_waiters = kh_init(evw);
-    if(!s_event_waiters)
-        goto fail_event_waiters;
-
-    pq_task_init(&s_main_heap);
-    if(!pq_task_reserve(&s_main_heap, MAX_TASKS))
-        goto fail_main_heap;
-
-    pq_task_init(&s_rt_heap);
-    if(!pq_task_reserve(&s_rt_heap, MAX_TASKS))
-        goto fail_rt_heap;
+    int nhomes = 0;
+    for(; nhomes < NHOMES; nhomes++) {
+        if(!home_init(&s_homes[nhomes]))
+            goto fail_homes;
+    }
 
     for(int i = 0; i < NLEVELS; i++) {
         lf_ring_init(&s_rings[i], s_ring_cells[i], RING_CAP);
@@ -2067,12 +2126,9 @@ fail_sems:
         if(s_threads[i].parker.sem)
             SDL_DestroySemaphore(s_threads[i].parker.sem);
     }
-    pq_task_destroy(&s_rt_heap);
-fail_rt_heap:
-    pq_task_destroy(&s_main_heap);
-fail_main_heap:
-    kh_destroy(evw, s_event_waiters);
-fail_event_waiters:
+fail_homes:
+    while(nhomes-- > 0)
+        home_destroy(&s_homes[nhomes]);
     return false;
 }
 
@@ -2110,32 +2166,29 @@ void Sched_Shutdown(void)
         s_threads[SCRIPT_IDX].parker.sem = NULL;
     }
 
-    struct ev_waiters waiters;
-    kh_foreach_value(s_event_waiters, waiters, {
-        PF_FREE(waiters.ents);
-    });
-    kh_destroy(evw, s_event_waiters);
+    for(int h = 0; h < NHOMES; h++) {
+        home_destroy(&s_homes[h]);
+    }
 
     for(int i = 0; i < MAX_TASKS; i++) {
         PF_FREE(s_tasks[i].bigstack);
     }
-    pq_task_destroy(&s_main_heap);
-    pq_task_destroy(&s_rt_heap);
 }
 
-void Sched_HandleEvent(int event, void *arg, int event_source, bool immediate)
+/* Wakes the home's tasks waiting on the event, or runs them at once for an
+ * immediate one */
+static void handle_event(struct home *home, int event, void *arg, int event_source, bool immediate)
 {
-    ASSERT_IN_MAIN_THREAD();
     int prev_state = SchedStats_Set(SS_SCHED);
-    drain_reg_inbox();
+    drain_reg_inbox(home);
 
-    khiter_t k = kh_get(evw, s_event_waiters, event);
-    if(k == kh_end(s_event_waiters)) {
+    khiter_t k = kh_get(evw, home->waiters, event);
+    if(k == kh_end(home->waiters)) {
         SchedStats_Set(prev_state);
         return;
     }
 
-    struct ev_waiters *waiters = &kh_val(s_event_waiters, k);
+    struct ev_waiters *waiters = &kh_val(home->waiters, k);
     struct task **torun = NULL;
     int nrun = 0, nkept = 0;
     if(immediate && waiters->size > 0)
@@ -2182,6 +2235,26 @@ void Sched_HandleEvent(int event, void *arg, int event_source, bool immediate)
     SchedStats_Set(prev_state);
 }
 
+void Sched_HandleEvent(int event, void *arg, int event_source, bool immediate)
+{
+    ASSERT_IN_MAIN_THREAD();
+    handle_event(MAIN_HOME, event, arg, event_source, immediate);
+}
+
+void Sched_HandleScriptEvent(int event, void *arg, int event_source, bool immediate)
+{
+    assert(thread_home(sched_self()) == SCRIPT_HOME);
+    handle_event(SCRIPT_HOME, event, arg, event_source, immediate);
+}
+
+bool Sched_HasScriptWaiters(int event)
+{
+    if(LF_LOAD(&SCRIPT_HOME->reg_inbox, LF_ACQ))
+        return true;
+    khiter_t k = kh_get(evw, SCRIPT_HOME->waiters, event);
+    return (k != kh_end(SCRIPT_HOME->waiters)) && kh_val(SCRIPT_HOME->waiters, k).size > 0;
+}
+
 void Sched_StartBackgroundTasks(void)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -2205,6 +2278,39 @@ void Sched_StartBackgroundTasks(void)
     }
 }
 
+struct script_tick{
+    uint64_t deadline;
+    bool     realtime;
+    bool     ran;
+};
+
+/* The script thread's share of the frame's task loop, run while the main
+ * thread waits on it: its realtime tasks once each first, then the others by
+ * priority until none is ready or the deadline comes */
+static void script_tick(void *arg)
+{
+    struct script_tick *tick = arg;
+    struct sched_thread *self = sched_self();
+    assert(thread_home(self) == SCRIPT_HOME);
+
+    SCRIPT_HOME->deadline = tick->deadline;
+    if(tick->realtime)
+        sched_run_realtime(self);
+
+    struct task *curr;
+    while(SDL_GetPerformanceCounter() < tick->deadline && (curr = home_pick(SCRIPT_HOME))) {
+        uint64_t t0 = SDL_GetPerformanceCounter();
+        char name[64];
+        pf_strlcpy(name, curr->name ? curr->name : "?", sizeof(name));
+        run_task(self, curr);
+        uint64_t slice = SDL_GetPerformanceCounter() - t0;
+        s_tick_task_ticks += slice;
+        log_slow_slice(name, slice);
+        tick->ran = true;
+    }
+    SCRIPT_HOME->deadline = 0;
+}
+
 void Sched_Tick(void)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -2221,13 +2327,17 @@ void Sched_Tick(void)
     if(deadline < min_deadline)
         deadline = min_deadline;
 
-    s_main_deadline = deadline;
+    MAIN_HOME->deadline = deadline;
     SchedStats_Set(SS_SCHED);
     sched_run_realtime(self);
 
+    struct script_tick tick = {deadline, true, false};
+    S_Thread_Call(script_tick, &tick);
+    tick.realtime = false;
+
     /* Use a do-while to ensure we're always making at least _some_ forward progress */
     do{
-        struct task *curr = main_pick();
+        struct task *curr = home_pick(MAIN_HOME);
         if(curr) {
             uint64_t t0 = SDL_GetPerformanceCounter();
             char name[64];
@@ -2239,6 +2349,14 @@ void Sched_Tick(void)
             continue;
         }
 
+        /* Script tasks made ready since the script thread's last turn */
+        if(LF_LOAD(&SCRIPT_HOME->inbox, LF_SC)) {
+            tick.ran = false;
+            S_Thread_Call(script_tick, &tick);
+            if(tick.ran)
+                continue;
+        }
+
         int slot;
         if(batch_claimable(NULL, &slot)) {
             batch_drain(&s_batches[slot]);
@@ -2248,7 +2366,8 @@ void Sched_Tick(void)
         /* With every worker parked and nothing queued, nothing more can
          * happen in this frame: let's not waste any more time. */
         if(LF_LOAD(&s_sync.nactive, LF_SC) == 0
-        && !LF_LOAD(&s_sync.main_inbox, LF_SC)
+        && !LF_LOAD(&MAIN_HOME->inbox, LF_SC)
+        && !LF_LOAD(&SCRIPT_HOME->inbox, LF_SC)
         && !general_work_visible())
             break;
 
@@ -2256,7 +2375,7 @@ void Sched_Tick(void)
 
     }while(SDL_GetPerformanceCounter() < deadline);
 
-    s_main_deadline = 0;
+    MAIN_HOME->deadline = 0;
     SchedStats_Set(SS_OUTSIDE);
     s_loop_end_pc = SDL_GetPerformanceCounter();
     PERF_RETURN_VOID();
@@ -2296,15 +2415,17 @@ static bool claim_for_run_sync(struct sched_thread *self, struct task *task)
     switch(ST_KIND(st)) {
     case TK_READY:
         return task_claim(task, st);
-    case TK_READY_MAIN:
-        if(!is_main_home(self))
+    case TK_READY_MAIN: {
+        struct home *home = task_home(task);
+        if(thread_home(self) != home)
             return false;
-        drain_main_inbox();
-        if(!pq_task_remove(&s_rt_heap, tasks_compare, task)
-        && !pq_task_remove(&s_main_heap, tasks_compare, task))
+        drain_inbox(home);
+        if(!pq_task_remove(&home->rt_heap, tasks_compare, task)
+        && !pq_task_remove(&home->heap, tasks_compare, task))
             return false;
         task_publish(task, TK_ACTIVE);
         return true;
+    }
     default:
         return false;
     }
@@ -2451,17 +2572,20 @@ void Sched_ClearState(void)
     for(int i = 0; i < NLEVELS; i++) {
         lf_ring_init(&s_rings[i], s_ring_cells[i], RING_CAP);
     }
-    pq_task_clear(&s_main_heap);
-    pq_task_clear(&s_rt_heap);
-    LF_STORE(&s_sync.main_inbox, 0, LF_RLX);
-    LF_STORE(&s_sync.reg_inbox, 0, LF_RLX);
+    for(int h = 0; h < NHOMES; h++) {
+        struct home *home = &s_homes[h];
+        pq_task_clear(&home->heap);
+        pq_task_clear(&home->rt_heap);
+        LF_STORE(&home->inbox, 0, LF_RLX);
+        LF_STORE(&home->reg_inbox, 0, LF_RLX);
 
-    int event;
-    struct ev_waiters *waiters;
-    (void)event;
-    kh_foreach_val_ptr(s_event_waiters, event, waiters, {
-        waiters->size = 0;
-    });
+        int event;
+        struct ev_waiters *waiters;
+        (void)event;
+        kh_foreach_val_ptr(home->waiters, event, waiters, {
+            waiters->size = 0;
+        });
+    }
 
     s_clearing = true;
 
@@ -2608,9 +2732,10 @@ uint32_t Sched_CreateBlocking(int prio, task_func_t code, void *arg, const char 
         if(ret != NULL_TID)
             break;
 
-        drain_main_inbox();
+        struct home *home = thread_home(sched_self());
+        drain_inbox(home);
         struct task *task = NULL;
-        if(pq_task_pop(&s_rt_heap, &task) || pq_task_pop(&s_main_heap, &task)) {
+        if(pq_task_pop(&home->rt_heap, &task) || pq_task_pop(&home->heap, &task)) {
             task_publish(task, TK_ACTIVE);
         }else{
             task = take_general();
@@ -2633,6 +2758,29 @@ bool Sched_UsingBigStack(void)
     return (task->flags & TASK_BIG_STACK);
 }
 
+/* Runs the home's ready tasks once each, on the home's own thread */
+static void flush_home(void *arg)
+{
+    struct home *home = arg;
+    assert(thread_home(sched_self()) == home);
+    struct task *curr;
+
+    for(;;) {
+        drain_inbox(home);
+        if(!pq_task_pop(&home->heap, &curr))
+            break;
+        task_publish(curr, TK_ACTIVE);
+        run_claimed(curr);
+    }
+    for(;;) {
+        drain_inbox(home);
+        if(!pq_task_pop(&home->rt_heap, &curr))
+            break;
+        task_publish(curr, TK_ACTIVE);
+        run_claimed(curr);
+    }
+}
+
 void Sched_Flush(void)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -2644,32 +2792,19 @@ void Sched_Flush(void)
     while((curr = take_general())) {
         run_claimed(curr);
     }
-    for(;;) {
-        drain_main_inbox();
-        if(!pq_task_pop(&s_main_heap, &curr))
-            break;
-        task_publish(curr, TK_ACTIVE);
-        run_claimed(curr);
-    }
-    for(;;) {
-        drain_main_inbox();
-        if(!pq_task_pop(&s_rt_heap, &curr))
-            break;
-        task_publish(curr, TK_ACTIVE);
-        run_claimed(curr);
-    }
+    S_Thread_CallMain(flush_home, MAIN_HOME);
+    S_Thread_Call(flush_home, SCRIPT_HOME);
     s_flushing = false;
 }
 
 bool Sched_HasBlocked(void)
 {
     ASSERT_IN_MAIN_THREAD();
-    drain_main_inbox();
     for(int i = 0; i < NLEVELS; i++) {
         if(lf_ring_maybe_nonempty(&s_rings[i]))
             return true;
     }
-    return (pq_size(&s_main_heap) > 0) || (pq_size(&s_rt_heap) > 0);
+    return home_has_work(MAIN_HOME) || home_has_work(SCRIPT_HOME);
 }
 
 bool Sched_IsReady(uint32_t tid)
@@ -2692,7 +2827,7 @@ bool Sched_TryCancel(uint32_t tid)
         return false;
 
     /* Its registration reached the inbox before its state did */
-    drain_reg_inbox();
+    drain_reg_inbox(MAIN_HOME);
 
     if(task->destructor) {
         task->destructor(task->darg);
@@ -2723,7 +2858,7 @@ bool Sched_AbortScriptBlocked(uint32_t tid)
     case TK_EVENT_BLOCKED: {
         if(!task_claim(task, st))
             return false;
-        drain_reg_inbox();
+        drain_reg_inbox(SCRIPT_HOME);
         int *source = (void*)task->req.argv[1];
         if(source)
             *source = ES_ENGINE;

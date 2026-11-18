@@ -452,13 +452,19 @@ static void e_run_handlers(khash_t(handler_desc) *table, struct event event, boo
 struct script_dispatch{
     struct event            event;
     bool                    immediate;
+    bool                    to_zombie;  /* the receiver takes no handlers */
     struct script_event_arg sarg;
 };
 
+/* The script tasks waiting on the event wake first, then the handlers run,
+ * as on the engine's side */
 static void e_dispatch_script(void *arg)
 {
     struct script_dispatch *sd = arg;
-    e_run_handlers(s_script_handler_table, sd->event, sd->immediate, &sd->sarg);
+    void *task_arg = (sd->event.source == ES_SCRIPT) ? sd->event.arg : (void*)&sd->sarg;
+    Sched_HandleScriptEvent(sd->event.type, task_arg, sd->event.source, sd->immediate);
+    if(!sd->to_zombie)
+        e_run_handlers(s_script_handler_table, sd->event, sd->immediate, &sd->sarg);
 }
 
 static bool e_has_script_handlers(struct event event)
@@ -475,23 +481,21 @@ static void e_handle_event(struct event event, bool immediate)
 
     Sched_HandleEvent(event.type, event.arg, event.source, immediate);
 
-    if(event.receiver_id != GLOBAL_ID 
-    && G_EntityIsZombie(event.receiver_id) 
-    && !e_zombie_can_receive(event.type))
-        goto out;
+    bool to_zombie = (event.receiver_id != GLOBAL_ID)
+                  && G_EntityIsZombie(event.receiver_id) 
+                  && !e_zombie_can_receive(event.type);
+    if(!to_zombie)
+        e_run_handlers(s_event_handler_table, event, immediate, NULL);
 
-    e_run_handlers(s_event_handler_table, event, immediate, NULL);
-
-    /* The script handlers run after the engine's, on the script thread, with
-     * the argument copied out of whatever the engine pointed it at */
-    if(e_has_script_handlers(event)) {
-        struct script_dispatch sd = {event, immediate};
+    /* The script side runs after the engine's, on the script thread, with the
+     * argument copied out of whatever the engine pointed it at */
+    if((!to_zombie && e_has_script_handlers(event)) || Sched_HasScriptWaiters(event.type)) {
+        struct script_dispatch sd = {event, immediate, to_zombie};
         S_EventArgEncode(event.type, event.source, event.arg, &sd.sarg);
         S_Thread_Call(e_dispatch_script, &sd);
         S_EventArgRelease(&sd.sarg);
     }
 
-out:
     if(event.source == ES_SCRIPT)
         S_Release(event.arg);
 }

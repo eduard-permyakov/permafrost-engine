@@ -7821,6 +7821,21 @@ void S_EventArgEncode(int event, int source, void *arg, struct script_event_arg 
     }
 }
 
+struct script_event_arg *S_EventArgCopy(const struct script_event_arg *arg)
+{
+    struct script_event_arg *ret = PF_MALLOC(sizeof(struct script_event_arg));
+    if(!ret)
+        return NULL;
+    *ret = *arg;
+    ret->str = arg->str ? pf_strdup(arg->str) : NULL;
+    if(arg->argv) {
+        ret->argv = PF_CALLOC(arg->argc + 1, sizeof(char*));
+        for(int i = 0; ret->argv && i < arg->argc; i++)
+            ret->argv[i] = pf_strdup(arg->argv[i]);
+    }
+    return ret;
+}
+
 void S_EventArgRelease(struct script_event_arg *arg)
 {
     PF_FREE(arg->str);

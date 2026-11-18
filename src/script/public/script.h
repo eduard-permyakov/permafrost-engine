@@ -81,6 +81,8 @@ struct script_event_arg{
 
 void            S_EventArgEncode(int event, int source, void *arg, struct script_event_arg *out);
 void            S_EventArgRelease(struct script_event_arg *arg);
+/* A copy on the heap that owns its own strings, for a waiting task */
+struct script_event_arg *S_EventArgCopy(const struct script_event_arg *arg);
 /* Releases and frees one made on the heap, for a waiting task */
 void            S_EventArgFree(void *arg);
 

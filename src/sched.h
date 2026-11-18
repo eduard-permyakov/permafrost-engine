@@ -106,6 +106,10 @@ void     Sched_Shutdown(void);
  * main thread's tasks while the main thread waits on it */
 void     Sched_RegisterScriptThread(void);
 void     Sched_HandleEvent(int event, void *arg, int event_source, bool immediate);
+/* The script thread's part: the script tasks waiting on the event. 'arg' is
+ * the event's argument as a script sees it: encoded, or the script object */
+void     Sched_HandleScriptEvent(int event, void *arg, int event_source, bool immediate);
+bool     Sched_HasScriptWaiters(int event);
 void     Sched_StartBackgroundTasks(void);
 void     Sched_Tick(void);
 /* Park the workers at their next yield point; the frame's buffers may be
