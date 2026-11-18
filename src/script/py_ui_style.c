@@ -3277,7 +3277,7 @@ static PyObject *PyUIButtonStyle_unpickle(PyObject *cls, PyObject *args, PyObjec
     CHK_TRUE(styleobj, fail_unpickle);
 
     CHK_TRUE(load_int(stream, (int*)&((PyUIButtonStyleObject*)styleobj)->type), fail_unpickle);
-    struct nk_context *ctx = UI_GetContext();
+    struct nk_context *ctx = UI_GetScriptContext();
 
     switch(((PyUIButtonStyleObject*)styleobj)->type) {
         case BUTTON_REGULAR:
@@ -3854,7 +3854,7 @@ static PyObject *PyUISelectableStyle_unpickle(PyObject *cls, PyObject *args, PyO
     assert(styleobj || PyErr_Occurred());
     CHK_TRUE(styleobj, fail_unpickle);
 
-    struct nk_context *ctx = UI_GetContext();
+    struct nk_context *ctx = UI_GetScriptContext();
     ((PyUISelectableStyleObject*)styleobj)->style = &ctx->style.selectable;
 
     CHK_TRUE(load_selectable(stream, ((PyUISelectableStyleObject*)styleobj)->style), fail_unpickle);
@@ -3883,7 +3883,7 @@ static PyObject *PyUIComboStyle_new(PyTypeObject *type, PyObject *args, PyObject
         goto fail_button;
     }
 
-    struct nk_context *ctx = UI_GetContext();
+    struct nk_context *ctx = UI_GetScriptContext();
     self->style = &ctx->style.combo;
     self->button->style = &ctx->style.combo.button;
 
@@ -4572,7 +4572,7 @@ static PyObject *PyUIToggleStyle_unpickle(PyObject *cls, PyObject *args, PyObjec
     CHK_TRUE(styleobj, fail_unpickle);
 
     CHK_TRUE(load_int(stream, (int*)&((PyUIToggleStyleObject*)styleobj)->type), fail_unpickle);
-    struct nk_context *ctx = UI_GetContext();
+    struct nk_context *ctx = UI_GetScriptContext();
 
     switch(((PyUIToggleStyleObject*)styleobj)->type) {
         case TOGGLE_OPTION:
@@ -4829,7 +4829,7 @@ static PyObject *PyUIScrollbarStyle_unpickle(PyObject *cls, PyObject *args, PyOb
     CHK_TRUE(styleobj, fail_unpickle);
 
     CHK_TRUE(load_int(stream, (int*)&((PyUIScrollbarStyleObject*)styleobj)->type), fail_unpickle);
-    struct nk_context *ctx = UI_GetContext();
+    struct nk_context *ctx = UI_GetScriptContext();
 
     switch(((PyUIScrollbarStyleObject*)styleobj)->type) {
         case SCROLLBAR_HORIZONTAL:
@@ -4881,7 +4881,7 @@ static PyObject *PyUIEditStyle_new(PyTypeObject *type, PyObject *args, PyObject 
         goto fail_scrollbar;
     }
 
-    struct nk_context *ctx = UI_GetContext();
+    struct nk_context *ctx = UI_GetScriptContext();
     self->type = kind;
 
     switch(self->type) {
@@ -5386,7 +5386,7 @@ static PyObject *PyUIPropertyStyle_new(PyTypeObject *type, PyObject *args, PyObj
     if(!self->edit)
         goto fail_edit;
 
-    struct nk_context *ctx = UI_GetContext();
+    struct nk_context *ctx = UI_GetScriptContext();
     self->style = &ctx->style.property;
 
     self->inc_button = PyObject_New(PyUIButtonStyleObject, &PyUIButtonStyle_type);
@@ -5707,7 +5707,7 @@ static PyObject *PyUISliderStyle_new(PyTypeObject *type, PyObject *args, PyObjec
     if(!self->dec_button)
         goto fail_dec_button;
 
-    struct nk_context *ctx = UI_GetContext();
+    struct nk_context *ctx = UI_GetScriptContext();
     self->style = &ctx->style.slider;
     self->inc_button->style = &ctx->style.slider.inc_button;
     self->dec_button->style = &ctx->style.slider.dec_button;
@@ -6345,7 +6345,7 @@ static PyObject *PyUIProgressStyle_unpickle(PyObject *cls, PyObject *args, PyObj
     assert(styleobj || PyErr_Occurred());
     CHK_TRUE(styleobj, fail_unpickle);
 
-    struct nk_context *ctx = UI_GetContext();
+    struct nk_context *ctx = UI_GetScriptContext();
     ((PyUIProgressStyleObject*)styleobj)->style = &ctx->style.progress;
 
     CHK_TRUE(load_progress(stream, ((PyUIProgressStyleObject*)styleobj)->style), fail_unpickle);

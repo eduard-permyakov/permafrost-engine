@@ -634,7 +634,7 @@ static bool engine_init(void)
         goto fail_script_thread;
     }
 
-    if(!S_Init(s_argv[0], g_basepath, UI_GetContext())) {
+    if(!S_Init(s_argv[0], g_basepath, UI_GetScriptContext())) {
         fprintf(stderr, "Failed to initialize scripting subsystem\n");
         goto fail_script;
     }

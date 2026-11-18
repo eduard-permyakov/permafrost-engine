@@ -3313,7 +3313,7 @@ static PyObject *PyPf_set_active_font(PyObject *self, PyObject *args)
 
 static PyObject *PyPf_get_text_outline(PyObject *self)
 {
-    const struct nk_style_text *text = &UI_GetContext()->style.text;
+    const struct nk_style_text *text = &UI_GetScriptContext()->style.text;
     return Py_BuildValue("(iiii)f", 
         text->outline_color.r, 
         text->outline_color.g, 
@@ -3332,7 +3332,7 @@ static PyObject *PyPf_set_text_outline(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    struct nk_style_text *text = &UI_GetContext()->style.text;
+    struct nk_style_text *text = &UI_GetScriptContext()->style.text;
     text->outline_color = nk_rgba(r, g, b, a);
     text->outline_width = width;
     Py_RETURN_NONE;
@@ -8065,7 +8065,7 @@ void S_ClearState(void)
         return;
     }
     S_Shutdown();
-    S_Init(s_progname, g_basepath, UI_GetContext());
+    S_Init(s_progname, g_basepath, UI_GetScriptContext());
     PyGC_Collect(); /* quick sanity check */
 }
 

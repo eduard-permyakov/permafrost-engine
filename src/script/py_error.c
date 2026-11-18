@@ -330,7 +330,7 @@ void S_Error_Update(struct py_err_ctx *err_ctx)
     const char *font = UI_GetActiveFont();
     UI_SetActiveFont("__default__");
 
-    struct nk_context *ctx = UI_GetContext();
+    struct nk_context *ctx = UI_GetScriptContext();
     const vec2_t vres = (vec2_t){1920, 1080};
     const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
     const struct rect bounds = (struct rect){

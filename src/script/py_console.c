@@ -403,7 +403,7 @@ static void on_update(void *user, void *event)
     const char *font = UI_GetActiveFont();
     UI_SetActiveFont("__default__");
 
-    struct nk_context *ctx = UI_GetContext();
+    struct nk_context *ctx = UI_GetScriptContext();
     const vec2_t vres = (vec2_t){1920, 1080};
     const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
     const struct rect bounds = (struct rect){
@@ -585,7 +585,7 @@ bool S_Console_Bounds(struct nk_rect *out)
     if(!s_shown)
         return false;
 
-    struct nk_context *ctx = UI_GetContext();
+    struct nk_context *ctx = UI_GetScriptContext();
     struct nk_window *win = nk_window_find(ctx, "Console");
     if(!win || (win->flags & (NK_WINDOW_CLOSED | NK_WINDOW_HIDDEN)))
         return false;

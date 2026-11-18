@@ -66,6 +66,7 @@
 
 #define MAX_VERTEX_MEMORY   (2 * 1024* 1024)
 #define MAX_ELEMENT_MEMORY      (512 * 1024)
+#define ARR_SIZE(a)             (sizeof(a)/sizeof(a[0]))
 
 struct text_desc{
     char        text[256];
@@ -112,7 +113,12 @@ static struct nk_allocator s_nk_alloc = {
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
+/* The engine's own windows are drawn into one context and the scripts' into
+ * another, so that the scripts' can be drawn off the main thread. The scripts'
+ * windows are always above the engine's.
+ */
 static struct nk_context            s_ctx;
+static struct nk_context            s_script_ctx;
 static struct nk_font_atlas         s_atlas;
 static struct nk_draw_null_texture  s_null;
 static vec_td_t                     s_curr_frame_labels;
@@ -300,16 +306,21 @@ static void *push_draw_list(const struct nk_draw_list *dl)
 {
     struct nk_draw_list *st_dl = R_PushArg(dl, sizeof(struct nk_draw_list));
 
+    /* Only what was written of the vertices and elements goes to the render
+     * thread. The commands are kept whole: they are laid out from the end.
+     */
     void *st_cmdbuff = R_PushArg(dl->buffer->memory.ptr, dl->buffer->memory.size);
-    void *st_vbuff = R_PushArg(dl->vertices->memory.ptr, dl->vertices->memory.size);
-    void *st_ebuff = R_PushArg(dl->elements->memory.ptr, dl->elements->memory.size);
+    void *st_vbuff = R_PushArg(dl->vertices->memory.ptr, dl->vertices->allocated);
+    void *st_ebuff = R_PushArg(dl->elements->memory.ptr, dl->elements->allocated);
 
     st_dl->buffer = R_PushArg(dl->buffer, sizeof(struct nk_buffer));
     st_dl->buffer->memory.ptr = st_cmdbuff;
     st_dl->vertices = R_PushArg(dl->vertices, sizeof(struct nk_buffer));
     st_dl->vertices->memory.ptr = st_vbuff;
+    st_dl->vertices->memory.size = dl->vertices->allocated;
     st_dl->elements = R_PushArg(dl->elements, sizeof(struct nk_buffer));
     st_dl->elements->memory.ptr = st_ebuff;
+    st_dl->elements->memory.size = dl->elements->allocated;
 
     return st_dl;
 }
@@ -494,11 +505,115 @@ static struct nk_vec2i ui_get_screen_size(void)
     return (struct nk_vec2i){dm.w, dm.h};
 }
 
-static void ui_render(void *user, void *event)
+/* A click or a scroll over a script window does not reach what is under it */
+static void ui_handle_event(struct nk_context *ctx, SDL_Event *evt, bool covered)
+{
+    if(evt->type == SDL_KEYUP || evt->type == SDL_KEYDOWN) {
+
+        /* key events */
+        int down = evt->type == SDL_KEYDOWN;
+        const Uint8* state = SDL_GetKeyboardState(0);
+        SDL_Keycode sym = evt->key.keysym.sym;
+
+        if(sym == SDLK_RSHIFT || sym == SDLK_LSHIFT)
+            nk_input_key(ctx, NK_KEY_SHIFT, down);
+        else if(sym == SDLK_DELETE)
+            nk_input_key(ctx, NK_KEY_DEL, down);
+        else if(sym == SDLK_RETURN)
+            nk_input_key(ctx, NK_KEY_ENTER, down);
+        else if(sym == SDLK_TAB)
+            nk_input_key(ctx, NK_KEY_TAB, down);
+        else if(sym == SDLK_BACKSPACE)
+            nk_input_key(ctx, NK_KEY_BACKSPACE, down);
+        else if(sym == SDLK_HOME) {
+            nk_input_key(ctx, NK_KEY_TEXT_START, down);
+            nk_input_key(ctx, NK_KEY_SCROLL_START, down);
+        } else if(sym == SDLK_END) {
+            nk_input_key(ctx, NK_KEY_TEXT_END, down);
+            nk_input_key(ctx, NK_KEY_SCROLL_END, down);
+        } else if(sym == SDLK_PAGEDOWN) {
+            nk_input_key(ctx, NK_KEY_SCROLL_DOWN, down);
+        } else if(sym == SDLK_PAGEUP) {
+            nk_input_key(ctx, NK_KEY_SCROLL_UP, down);
+        } else if(sym == SDLK_z)
+            nk_input_key(ctx, NK_KEY_TEXT_UNDO, down && state[SDL_SCANCODE_LCTRL]);
+        else if(sym == SDLK_r)
+            nk_input_key(ctx, NK_KEY_TEXT_REDO, down && state[SDL_SCANCODE_LCTRL]);
+        else if(sym == SDLK_c)
+            nk_input_key(ctx, NK_KEY_COPY, down && state[SDL_SCANCODE_LCTRL]);
+        else if(sym == SDLK_v)
+            nk_input_key(ctx, NK_KEY_PASTE, down && state[SDL_SCANCODE_LCTRL]);
+        else if(sym == SDLK_x)
+            nk_input_key(ctx, NK_KEY_CUT, down && state[SDL_SCANCODE_LCTRL]);
+        else if(sym == SDLK_b)
+            nk_input_key(ctx, NK_KEY_TEXT_LINE_START, down && state[SDL_SCANCODE_LCTRL]);
+        else if(sym == SDLK_e)
+            nk_input_key(ctx, NK_KEY_TEXT_LINE_END, down && state[SDL_SCANCODE_LCTRL]);
+        else if(sym == SDLK_UP)
+            nk_input_key(ctx, NK_KEY_UP, down);
+        else if(sym == SDLK_DOWN)
+            nk_input_key(ctx, NK_KEY_DOWN, down);
+        else if(sym == SDLK_LEFT) {
+            if(state[SDL_SCANCODE_LCTRL])
+                nk_input_key(ctx, NK_KEY_TEXT_WORD_LEFT, down);
+            else 
+                nk_input_key(ctx, NK_KEY_LEFT, down);
+        } else if (sym == SDLK_RIGHT) {
+            if(state[SDL_SCANCODE_LCTRL])
+                nk_input_key(ctx, NK_KEY_TEXT_WORD_RIGHT, down);
+            else 
+                nk_input_key(ctx, NK_KEY_RIGHT, down);
+        }
+
+    }else if(evt->type == SDL_MOUSEBUTTONDOWN || evt->type == SDL_MOUSEBUTTONUP) {
+
+        /* mouse button */
+        int down = evt->type == SDL_MOUSEBUTTONDOWN;
+        if(covered && down)
+            return;
+        const int x = evt->button.x, y = evt->button.y;
+
+        if(evt->button.button == SDL_BUTTON_LEFT) {
+            if (evt->button.clicks > 1)
+                nk_input_button(ctx, NK_BUTTON_DOUBLE, x, y, down);
+            nk_input_button(ctx, NK_BUTTON_LEFT, x, y, down);
+        }else if(evt->button.button == SDL_BUTTON_MIDDLE)
+            nk_input_button(ctx, NK_BUTTON_MIDDLE, x, y, down);
+        else if(evt->button.button == SDL_BUTTON_RIGHT)
+            nk_input_button(ctx, NK_BUTTON_RIGHT, x, y, down);
+
+    } else if(evt->type == SDL_MOUSEMOTION) {
+
+        /* mouse motion */
+        if(ctx->input.mouse.grabbed) {
+            int x = (int)ctx->input.mouse.prev.x, y = (int)ctx->input.mouse.prev.y;
+            nk_input_motion(ctx, x + evt->motion.xrel, y + evt->motion.yrel);
+        }else 
+            nk_input_motion(ctx, evt->motion.x, evt->motion.y);
+
+    }else if(evt->type == SDL_TEXTINPUT) {
+
+        /* text input */
+        nk_glyph glyph;
+        memcpy(glyph, evt->text.text, NK_UTF_SIZE);
+        nk_input_glyph(ctx, glyph);
+
+    }else if(evt->type == SDL_MOUSEWHEEL) {
+
+        /* mouse wheel */
+        if(covered)
+            return;
+        nk_input_scroll(ctx,nk_vec2((float)evt->wheel.x,(float)evt->wheel.y));
+    }
+}
+
+/* Turns what was drawn into a context this frame into a draw list for the
+ * render thread, or returns NULL if nothing was
+ */
+static void *ui_convert(struct nk_context *ctx)
 {
     struct nk_buffer cmds, vbuf, ebuf;
     const enum nk_anti_aliasing aa = NK_ANTI_ALIASING_ON;
-    enum ui_render_mode mode = (enum ui_render_mode)((uintptr_t)user);
 
     void *vbuff = stalloc(&G_GetSimWS()->args, MAX_VERTEX_MEMORY);
     void *ebuff = stalloc(&G_GetSimWS()->args, MAX_ELEMENT_MEMORY);
@@ -529,32 +644,50 @@ static void ui_render(void *user, void *event)
     nk_buffer_init_fixed(&ebuf, ebuff, MAX_ELEMENT_MEMORY);
     nk_buffer_init(&cmds, &s_nk_alloc, 4096);
 
-    nk_convert(&s_ctx, &cmds, &vbuf, &ebuf, &config);
+    nk_convert(ctx, &cmds, &vbuf, &ebuf, &config);
+
+    void *ret = (ctx->draw_list.element_count > 0) ? push_draw_list(&ctx->draw_list) : NULL;
+    nk_buffer_free(&cmds);
+    nk_clear(ctx);
+    return ret;
+}
+
+static void ui_render(void *user, void *event)
+{
+    enum ui_render_mode mode = (enum ui_render_mode)((uintptr_t)user);
+    void *engine = ui_convert(&s_ctx);
+    void *script = ui_convert(&s_script_ctx);
 
     switch(mode) {
-    case UI_RENDER_MODE_NORMAL:
-        R_PushCmd((struct rcmd){
-            .func = R_GL_UI_Render,
-            .nargs = 1,
-            .args = {
-                push_draw_list(&s_ctx.draw_list),
-            },
-        });
+    case UI_RENDER_MODE_NORMAL: {
+        void *lists[] = {engine, script};
+        for(int i = 0; i < ARR_SIZE(lists); i++) {
+            if(!lists[i])
+                continue;
+            R_PushCmd((struct rcmd){
+                .func = R_GL_UI_Render,
+                .nargs = 1,
+                .args = { lists[i] },
+            });
+        }
         break;
-    case UI_RENDER_MODE_LOADING_SCREEN:
-        R_PushCmdImmediateFront((struct rcmd){
-            .func = R_GL_UI_Render,
-            .nargs = 1,
-            .args = {
-                push_draw_list(&s_ctx.draw_list),
-            },
-        });
+    }
+    case UI_RENDER_MODE_LOADING_SCREEN: {
+        /* Each goes ahead of what is queued: the last one pushed is drawn first */
+        void *lists[] = {script, engine};
+        for(int i = 0; i < ARR_SIZE(lists); i++) {
+            if(!lists[i])
+                continue;
+            R_PushCmdImmediateFront((struct rcmd){
+                .func = R_GL_UI_Render,
+                .nargs = 1,
+                .args = { lists[i] },
+            });
+        }
         break;
+    }
     default: assert(0);
     }
-
-    nk_buffer_free(&cmds);
-    nk_clear(&s_ctx);
 }
 
 /*****************************************************************************/
@@ -580,16 +713,20 @@ bool UI_Init(const char *basedir, SDL_Window *win)
         return false;
     }
 
-    nk_init(&s_ctx, &s_nk_alloc, 0);
-    s_ctx.clip.copy = ui_clipboard_copy;
-    s_ctx.clip.paste = ui_clipboard_paste;
-    s_ctx.clip.userdata = nk_handle_ptr(0);
-    s_ctx.screen.get_drawable_size = ui_get_drawable_size;
-    s_ctx.screen.get_screen_size = ui_get_screen_size;
+    struct nk_context *ctxs[] = {&s_ctx, &s_script_ctx};
+    for(int i = 0; i < ARR_SIZE(ctxs); i++) {
+        nk_init(ctxs[i], &s_nk_alloc, 0);
+        ctxs[i]->clip.copy = ui_clipboard_copy;
+        ctxs[i]->clip.paste = ui_clipboard_paste;
+        ctxs[i]->clip.userdata = nk_handle_ptr(0);
+        ctxs[i]->screen.get_drawable_size = ui_get_drawable_size;
+        ctxs[i]->screen.get_screen_size = ui_get_screen_size;
+    }
 
     R_PushCmd((struct rcmd) { R_GL_UI_Init, 0 });
 
     ui_init_font_stash(&s_ctx);
+    nk_style_set_font(&s_script_ctx, s_ctx.style.font);
 
     vec_td_init(&s_curr_frame_labels);
     E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING | G_PAUSED_UI_RUNNING);
@@ -608,6 +745,8 @@ void UI_Shutdown(void)
     nk_font_atlas_clear(&s_atlas);
     nk_free(&s_ctx);
     memset(&s_ctx, 0, sizeof(s_ctx));
+    nk_free(&s_script_ctx);
+    memset(&s_script_ctx, 0, sizeof(s_script_ctx));
     SDL_DestroyMutex(s_lock);
 
     const char *key;
@@ -628,108 +767,31 @@ void UI_Shutdown(void)
 void UI_InputBegin(void)
 {
     nk_input_begin(&s_ctx);
+    nk_input_begin(&s_script_ctx);
 }
 
 void UI_InputEnd(void)
 {
     nk_input_end(&s_ctx);
+    nk_input_end(&s_script_ctx);
+    /* The engine's windows are drawn in the style the scripts set, as it
+     * stood when their last frame ended
+     */
+    s_ctx.style = s_script_ctx.style;
 }
 
 void UI_HandleEvent(SDL_Event *evt)
 {
-    if(evt->type == SDL_KEYUP || evt->type == SDL_KEYDOWN) {
-
-        /* key events */
-        int down = evt->type == SDL_KEYDOWN;
-        const Uint8* state = SDL_GetKeyboardState(0);
-        SDL_Keycode sym = evt->key.keysym.sym;
-
-        if(sym == SDLK_RSHIFT || sym == SDLK_LSHIFT)
-            nk_input_key(&s_ctx, NK_KEY_SHIFT, down);
-        else if(sym == SDLK_DELETE)
-            nk_input_key(&s_ctx, NK_KEY_DEL, down);
-        else if(sym == SDLK_RETURN)
-            nk_input_key(&s_ctx, NK_KEY_ENTER, down);
-        else if(sym == SDLK_TAB)
-            nk_input_key(&s_ctx, NK_KEY_TAB, down);
-        else if(sym == SDLK_BACKSPACE)
-            nk_input_key(&s_ctx, NK_KEY_BACKSPACE, down);
-        else if(sym == SDLK_HOME) {
-            nk_input_key(&s_ctx, NK_KEY_TEXT_START, down);
-            nk_input_key(&s_ctx, NK_KEY_SCROLL_START, down);
-        } else if(sym == SDLK_END) {
-            nk_input_key(&s_ctx, NK_KEY_TEXT_END, down);
-            nk_input_key(&s_ctx, NK_KEY_SCROLL_END, down);
-        } else if(sym == SDLK_PAGEDOWN) {
-            nk_input_key(&s_ctx, NK_KEY_SCROLL_DOWN, down);
-        } else if(sym == SDLK_PAGEUP) {
-            nk_input_key(&s_ctx, NK_KEY_SCROLL_UP, down);
-        } else if(sym == SDLK_z)
-            nk_input_key(&s_ctx, NK_KEY_TEXT_UNDO, down && state[SDL_SCANCODE_LCTRL]);
-        else if(sym == SDLK_r)
-            nk_input_key(&s_ctx, NK_KEY_TEXT_REDO, down && state[SDL_SCANCODE_LCTRL]);
-        else if(sym == SDLK_c)
-            nk_input_key(&s_ctx, NK_KEY_COPY, down && state[SDL_SCANCODE_LCTRL]);
-        else if(sym == SDLK_v)
-            nk_input_key(&s_ctx, NK_KEY_PASTE, down && state[SDL_SCANCODE_LCTRL]);
-        else if(sym == SDLK_x)
-            nk_input_key(&s_ctx, NK_KEY_CUT, down && state[SDL_SCANCODE_LCTRL]);
-        else if(sym == SDLK_b)
-            nk_input_key(&s_ctx, NK_KEY_TEXT_LINE_START, down && state[SDL_SCANCODE_LCTRL]);
-        else if(sym == SDLK_e)
-            nk_input_key(&s_ctx, NK_KEY_TEXT_LINE_END, down && state[SDL_SCANCODE_LCTRL]);
-        else if(sym == SDLK_UP)
-            nk_input_key(&s_ctx, NK_KEY_UP, down);
-        else if(sym == SDLK_DOWN)
-            nk_input_key(&s_ctx, NK_KEY_DOWN, down);
-        else if(sym == SDLK_LEFT) {
-            if(state[SDL_SCANCODE_LCTRL])
-                nk_input_key(&s_ctx, NK_KEY_TEXT_WORD_LEFT, down);
-            else 
-                nk_input_key(&s_ctx, NK_KEY_LEFT, down);
-        } else if (sym == SDLK_RIGHT) {
-            if(state[SDL_SCANCODE_LCTRL])
-                nk_input_key(&s_ctx, NK_KEY_TEXT_WORD_RIGHT, down);
-            else 
-                nk_input_key(&s_ctx, NK_KEY_RIGHT, down);
-        }
-
-    }else if(evt->type == SDL_MOUSEBUTTONDOWN || evt->type == SDL_MOUSEBUTTONUP) {
-
-        /* mouse button */
-        int down = evt->type == SDL_MOUSEBUTTONDOWN;
-        const int x = evt->button.x, y = evt->button.y;
-
-        if(evt->button.button == SDL_BUTTON_LEFT) {
-            if (evt->button.clicks > 1)
-                nk_input_button(&s_ctx, NK_BUTTON_DOUBLE, x, y, down);
-            nk_input_button(&s_ctx, NK_BUTTON_LEFT, x, y, down);
-        }else if(evt->button.button == SDL_BUTTON_MIDDLE)
-            nk_input_button(&s_ctx, NK_BUTTON_MIDDLE, x, y, down);
-        else if(evt->button.button == SDL_BUTTON_RIGHT)
-            nk_input_button(&s_ctx, NK_BUTTON_RIGHT, x, y, down);
-
-    } else if(evt->type == SDL_MOUSEMOTION) {
-
-        /* mouse motion */
-        if(s_ctx.input.mouse.grabbed) {
-            int x = (int)s_ctx.input.mouse.prev.x, y = (int)s_ctx.input.mouse.prev.y;
-            nk_input_motion(&s_ctx, x + evt->motion.xrel, y + evt->motion.yrel);
-        }else 
-            nk_input_motion(&s_ctx, evt->motion.x, evt->motion.y);
-
-    }else if(evt->type == SDL_TEXTINPUT) {
-
-        /* text input */
-        nk_glyph glyph;
-        memcpy(glyph, evt->text.text, NK_UTF_SIZE);
-        nk_input_glyph(&s_ctx, glyph);
-
+    bool covered = false;
+    if(evt->type == SDL_MOUSEBUTTONDOWN) {
+        covered = S_UI_MouseOverObscuringWindow(evt->button.x, evt->button.y);
     }else if(evt->type == SDL_MOUSEWHEEL) {
-
-        /* mouse wheel */
-        nk_input_scroll(&s_ctx,nk_vec2((float)evt->wheel.x,(float)evt->wheel.y));
+        int x, y;
+        SDL_GetMouseState(&x, &y);
+        covered = S_UI_MouseOverObscuringWindow(x, y);
     }
+    ui_handle_event(&s_ctx, evt, covered);
+    ui_handle_event(&s_script_ctx, evt, false);
 }
 
 void UI_DrawText(const char *text, struct rect rect, struct rgba rgba)
@@ -803,6 +865,11 @@ struct nk_context *UI_GetContext(void)
     return &s_ctx;
 }
 
+struct nk_context *UI_GetScriptContext(void)
+{
+    return &s_script_ctx;
+}
+
 const char *UI_GetActiveFont(void)
 {
     assert(s_active_font);
@@ -817,6 +884,7 @@ bool UI_SetActiveFont(const char *name)
 
     struct nk_user_font *uf = &kh_value(s_fontmap, k)->handle;
     nk_style_set_font(&s_ctx, uf);
+    nk_style_set_font(&s_script_ctx, uf);
 
     s_active_font = kh_key(s_fontmap, k);
     return true;
