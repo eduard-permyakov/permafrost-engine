@@ -86,6 +86,25 @@ enum ui_render_mode{
 VEC_TYPE(td, struct text_desc)
 VEC_IMPL(static inline, td, struct text_desc)
 
+VEC_TYPE(sdlev, SDL_Event)
+VEC_IMPL(static inline, sdlev, SDL_Event)
+
+/* A frame of the scripts' windows as the script thread drew it: the draw
+ * list it was converted into, and the style it was drawn in. The script
+ * thread fills the one that is not shown and then shows it; the main thread
+ * copies the shown one to the render thread, for as many frames as it stays.
+ */
+struct script_frame{
+    struct nk_draw_list list;
+    struct nk_buffer    cmds;
+    struct nk_buffer    verts;
+    struct nk_buffer    elems;
+    void               *vmem;
+    void               *emem;
+    struct nk_style     style;
+    bool                filled;
+};
+
 KHASH_MAP_INIT_STR(font, struct nk_font*)
 KHASH_MAP_INIT_STR(imgsize, uint64_t)
 
@@ -127,20 +146,33 @@ static khash_t(font)               *s_fontmap;
 static khash_t(imgsize)            *s_image_sizes;
 static const char                  *s_active_font = NULL;
 static SDL_mutex                   *s_lock;
+/* The script thread's side of the UI. The lock guards the input it is yet to
+ * take and which frame is shown; the rest is its own.
+ */
+static SDL_mutex                   *s_script_lock;
+static vec_sdlev_t                  s_script_input;
+static vec_sdlev_t                  s_script_events;
+static struct script_frame          s_script_frames[2];
+static int                          s_script_shown = -1;
+static vec_td_t                     s_script_labels;
+static vec_td_t                     s_script_labels_prev;
+static const char                  *s_script_active_font = NULL;
+/* The frame the scripts' windows were last asked to be drawn for */
+static uint64_t                     s_script_asked_frame;
 static vec2_t                       s_vres = {1920, 1080};
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static void ui_draw_text(const struct text_desc desc)
+static void ui_draw_text(struct nk_context *ctx, const struct text_desc desc)
 {
-    struct nk_command_buffer *canvas = nk_window_get_canvas(&s_ctx);
+    struct nk_command_buffer *canvas = nk_window_get_canvas(ctx);
     assert(canvas);
 
     struct nk_rect  rect = nk_rect(desc.rect.x, desc.rect.y, desc.rect.w, desc.rect.h);
     if(desc.centred) {
-        const struct nk_user_font *font = s_ctx.style.font;
+        const struct nk_user_font *font = ctx->style.font;
         float width = font->width(font->userdata, font->height, desc.text, strlen(desc.text));
         rect.x += (rect.w - width) / 2.0f;
         rect.w = width + 1.0f;
@@ -156,23 +188,24 @@ static void ui_draw_text(const struct text_desc desc)
             if(dx == 0 && dy == 0)
                 continue;
             struct nk_rect off = nk_rect(rect.x + dx, rect.y + dy, rect.w, rect.h);
-            nk_draw_text_outlined(canvas, off, desc.text, strlen(desc.text), s_ctx.style.font,
+            nk_draw_text_outlined(canvas, off, desc.text, strlen(desc.text), ctx->style.font,
                 none, outline, outline);
         }}
-        nk_draw_text_outlined(canvas, rect, desc.text, strlen(desc.text), s_ctx.style.font,
+        nk_draw_text_outlined(canvas, rect, desc.text, strlen(desc.text), ctx->style.font,
             none, rgba, outline);
         return;
     }
 
-    nk_draw_text(canvas, rect, desc.text, strlen(desc.text), s_ctx.style.font,
+    nk_draw_text(canvas, rect, desc.text, strlen(desc.text), ctx->style.font,
         (struct nk_color){0,0,0,255}, rgba);
 }
 
-static void on_update_ui(void *user, void *event)
+/* The labels asked for since the last frame, drawn behind every window */
+static void ui_draw_labels(struct nk_context *ctx, const vec_td_t *labels)
 {
-    struct nk_style *s = &s_ctx.style;
-    nk_style_push_color(&s_ctx, &s->window.background, nk_rgba(0,0,0,0));
-    nk_style_push_style_item(&s_ctx, &s->window.fixed_background, nk_style_item_color(nk_rgba(0,0,0,0)));
+    struct nk_style *s = &ctx->style;
+    nk_style_push_color(ctx, &s->window.background, nk_rgba(0,0,0,0));
+    nk_style_push_style_item(ctx, &s->window.fixed_background, nk_style_item_color(nk_rgba(0,0,0,0)));
 
     const vec2_t adj_vres = UI_ArAdjustedVRes(s_vres);
     struct rect adj_bounds = UI_BoundsForAspectRatio(
@@ -182,19 +215,23 @@ static void on_update_ui(void *user, void *event)
         ANCHOR_DEFAULT
     );
 
-    if(nk_begin_with_vres(&s_ctx,"__labels__", 
+    if(nk_begin_with_vres(ctx,"__labels__", 
         nk_rect(adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h), 
         NK_WINDOW_NO_INPUT | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR, 
         (struct nk_vec2i){adj_vres.x, adj_vres.y})) {
     
-        for(int i = 0; i < vec_size(&s_curr_frame_labels); i++)
-             ui_draw_text(vec_AT(&s_curr_frame_labels, i)); 
+        for(int i = 0; i < vec_size(labels); i++)
+             ui_draw_text(ctx, vec_AT(labels, i)); 
     }
-    nk_end(&s_ctx);
+    nk_end(ctx);
 
-    nk_style_pop_color(&s_ctx);
-    nk_style_pop_style_item(&s_ctx);
+    nk_style_pop_color(ctx);
+    nk_style_pop_style_item(ctx);
+}
 
+static void on_update_ui(void *user, void *event)
+{
+    ui_draw_labels(&s_ctx, &s_curr_frame_labels);
     vec_td_reset(&s_curr_frame_labels);
 }
 
@@ -607,19 +644,9 @@ static void ui_handle_event(struct nk_context *ctx, SDL_Event *evt, bool covered
     }
 }
 
-/* Turns what was drawn into a context this frame into a draw list for the
- * render thread, or returns NULL if nothing was
- */
-static void *ui_convert(struct nk_context *ctx)
+static struct nk_convert_config ui_convert_config(void)
 {
-    struct nk_buffer cmds, vbuf, ebuf;
     const enum nk_anti_aliasing aa = NK_ANTI_ALIASING_ON;
-
-    void *vbuff = stalloc(&G_GetSimWS()->args, MAX_VERTEX_MEMORY);
-    void *ebuff = stalloc(&G_GetSimWS()->args, MAX_ELEMENT_MEMORY);
-    assert(vbuff && ebuff);
-
-    /* fill convert configuration */
     struct nk_convert_config config;
     static const struct nk_draw_vertex_layout_element vertex_layout[] = {
         {NK_VERTEX_POSITION, NK_FORMAT_FLOAT, NK_OFFSETOF(struct ui_vert, screen_pos)},
@@ -638,6 +665,19 @@ static void *ui_convert(struct nk_context *ctx)
     config.global_alpha = 1.0f;
     config.shape_AA = aa;
     config.line_AA = aa;
+    return config;
+}
+
+/* Turns what was drawn into a context this frame into a draw list for the
+ * render thread, or returns NULL if nothing was
+ */
+static void *ui_convert(struct nk_context *ctx)
+{
+    struct nk_buffer cmds, vbuf, ebuf;
+    void *vbuff = stalloc(&G_GetSimWS()->args, MAX_VERTEX_MEMORY);
+    void *ebuff = stalloc(&G_GetSimWS()->args, MAX_ELEMENT_MEMORY);
+    assert(vbuff && ebuff);
+    struct nk_convert_config config = ui_convert_config();
 
     /* setup buffers to load vertices and elements */
     nk_buffer_init_fixed(&vbuf, vbuff, MAX_VERTEX_MEMORY);
@@ -652,11 +692,66 @@ static void *ui_convert(struct nk_context *ctx)
     return ret;
 }
 
+/* A label a script asks for is drawn with the scripts' windows, the engine's
+ * with the engine's
+ */
+static void ui_label_push(const struct text_desc *desc)
+{
+    if(S_Thread_OnScript()) {
+        vec_td_push(&s_script_labels, *desc);
+        return;
+    }
+    SDL_LockMutex(s_lock);
+    vec_td_push(&s_curr_frame_labels, *desc);
+    SDL_UnlockMutex(s_lock);
+}
+
+/* The image and resolution commands of a draw list carry a block each that the
+ * render thread frees once it has drawn them
+ */
+static void script_frame_free_userdata(struct script_frame *sf)
+{
+    const struct nk_draw_command *cmd;
+    nk_draw_list_foreach(cmd, &sf->list, &sf->cmds) {
+        free(cmd->userdata.ptr);
+    }
+}
+
+/* The shown frame of the scripts' windows, copied for the render thread: it
+ * may be shown for many frames, so its blocks are copied each time
+ */
+static void *script_frame_push(void)
+{
+    void *ret = NULL;
+    SDL_LockMutex(s_script_lock);
+    /* A frame nobody asked to renew, such as one from before a full pause, is
+     * not shown again
+     */
+    bool stale = (g_frame_idx - s_script_asked_frame > 1);
+    if(s_script_shown >= 0 && !stale && s_script_frames[s_script_shown].list.element_count > 0) {
+        struct script_frame *sf = &s_script_frames[s_script_shown];
+        struct nk_draw_list *dl = push_draw_list(&sf->list);
+        const struct nk_draw_command *cmd;
+        nk_draw_list_foreach(cmd, dl, dl->buffer) {
+            if(!cmd->userdata.ptr)
+                continue;
+            void *copy = malloc(sizeof(struct nk_command_userdata));
+            if(copy)
+                memcpy(copy, cmd->userdata.ptr, sizeof(struct nk_command_userdata));
+            ((struct nk_draw_command*)cmd)->userdata.ptr = copy;
+        }
+        ret = dl;
+    }
+    SDL_UnlockMutex(s_script_lock);
+    return ret;
+}
+
 static void ui_render(void *user, void *event)
 {
     enum ui_render_mode mode = (enum ui_render_mode)((uintptr_t)user);
     void *engine = ui_convert(&s_ctx);
-    void *script = ui_convert(&s_script_ctx);
+    /* Nothing draws the scripts' windows while a session loads */
+    void *script = (mode == UI_RENDER_MODE_NORMAL) ? script_frame_push() : NULL;
 
     switch(mode) {
     case UI_RENDER_MODE_NORMAL: {
@@ -712,6 +807,17 @@ bool UI_Init(const char *basedir, SDL_Window *win)
         kh_destroy(font, s_fontmap);
         return false;
     }
+    s_script_lock = SDL_CreateMutex();
+    vec_sdlev_init(&s_script_input);
+    vec_sdlev_init(&s_script_events);
+    vec_td_init(&s_script_labels);
+    vec_td_init(&s_script_labels_prev);
+    s_script_shown = -1;
+    for(int i = 0; i < ARR_SIZE(s_script_frames); i++) {
+        memset(&s_script_frames[i], 0, sizeof(s_script_frames[i]));
+        s_script_frames[i].vmem = PF_MALLOC(MAX_VERTEX_MEMORY);
+        s_script_frames[i].emem = PF_MALLOC(MAX_ELEMENT_MEMORY);
+    }
 
     struct nk_context *ctxs[] = {&s_ctx, &s_script_ctx};
     for(int i = 0; i < ARR_SIZE(ctxs); i++) {
@@ -747,6 +853,20 @@ void UI_Shutdown(void)
     memset(&s_ctx, 0, sizeof(s_ctx));
     nk_free(&s_script_ctx);
     memset(&s_script_ctx, 0, sizeof(s_script_ctx));
+    for(int i = 0; i < ARR_SIZE(s_script_frames); i++) {
+        struct script_frame *sf = &s_script_frames[i];
+        if(sf->filled) {
+            script_frame_free_userdata(sf);
+            nk_buffer_free(&sf->cmds);
+        }
+        PF_FREE(sf->vmem);
+        PF_FREE(sf->emem);
+    }
+    vec_sdlev_destroy(&s_script_input);
+    vec_sdlev_destroy(&s_script_events);
+    vec_td_destroy(&s_script_labels);
+    vec_td_destroy(&s_script_labels_prev);
+    SDL_DestroyMutex(s_script_lock);
     SDL_DestroyMutex(s_lock);
 
     const char *key;
@@ -767,17 +887,93 @@ void UI_Shutdown(void)
 void UI_InputBegin(void)
 {
     nk_input_begin(&s_ctx);
-    nk_input_begin(&s_script_ctx);
 }
 
 void UI_InputEnd(void)
 {
     nk_input_end(&s_ctx);
-    nk_input_end(&s_script_ctx);
     /* The engine's windows are drawn in the style the scripts set, as it
      * stood when their last frame ended
      */
-    s_ctx.style = s_script_ctx.style;
+    SDL_LockMutex(s_script_lock);
+    if(s_script_shown >= 0)
+        s_ctx.style = s_script_frames[s_script_shown].style;
+    SDL_UnlockMutex(s_script_lock);
+}
+
+void UI_ScriptFrameAsk(void)
+{
+    s_script_asked_frame = g_frame_idx;
+}
+
+void UI_ScriptFrameBegin(void)
+{
+    SDL_LockMutex(s_script_lock);
+    vec_sdlev_t taken = s_script_input;
+    s_script_input = s_script_events;
+    s_script_events = taken;
+    SDL_UnlockMutex(s_script_lock);
+
+    nk_input_begin(&s_script_ctx);
+    for(int i = 0; i < vec_size(&s_script_events); i++) {
+        ui_handle_event(&s_script_ctx, &vec_AT(&s_script_events, i), false);
+    }
+    nk_input_end(&s_script_ctx);
+    vec_sdlev_reset(&s_script_events);
+
+    /* The scripts that draw labels and the frames of their windows keep their
+     * own time: a frame that no label came in for draws the last one's again,
+     * once, so that the labels do not blink when the two fall out of step
+     */
+    if(vec_size(&s_script_labels) > 0) {
+        ui_draw_labels(&s_script_ctx, &s_script_labels);
+        vec_td_t drawn = s_script_labels;
+        s_script_labels = s_script_labels_prev;
+        s_script_labels_prev = drawn;
+        vec_td_reset(&s_script_labels);
+    }else{
+        ui_draw_labels(&s_script_ctx, &s_script_labels_prev);
+        vec_td_reset(&s_script_labels_prev);
+    }
+}
+
+void UI_ScriptFrameEnd(void)
+{
+    SDL_LockMutex(s_script_lock);
+    int back = (s_script_shown < 0) ? 0 : 1 - s_script_shown;
+    SDL_UnlockMutex(s_script_lock);
+
+    struct script_frame *sf = &s_script_frames[back];
+    if(sf->filled) {
+        script_frame_free_userdata(sf);
+        nk_buffer_free(&sf->cmds);
+        sf->filled = false;
+    }
+
+    struct nk_buffer cmds, vbuf, ebuf;
+    struct nk_convert_config config = ui_convert_config();
+    nk_buffer_init_fixed(&vbuf, sf->vmem, MAX_VERTEX_MEMORY);
+    nk_buffer_init_fixed(&ebuf, sf->emem, MAX_ELEMENT_MEMORY);
+    nk_buffer_init(&cmds, &s_nk_alloc, 4096);
+    nk_convert(&s_script_ctx, &cmds, &vbuf, &ebuf, &config);
+
+    /* The context forgets the list when it is cleared: the frame keeps its
+     * own copy of it, and the memory it was laid out in
+     */
+    sf->list = s_script_ctx.draw_list;
+    sf->cmds = cmds;
+    sf->verts = vbuf;
+    sf->elems = ebuf;
+    sf->list.buffer = &sf->cmds;
+    sf->list.vertices = &sf->verts;
+    sf->list.elements = &sf->elems;
+    sf->style = s_script_ctx.style;
+    sf->filled = true;
+    nk_clear(&s_script_ctx);
+
+    SDL_LockMutex(s_script_lock);
+    s_script_shown = back;
+    SDL_UnlockMutex(s_script_lock);
 }
 
 void UI_HandleEvent(SDL_Event *evt)
@@ -791,17 +987,17 @@ void UI_HandleEvent(SDL_Event *evt)
         covered = S_UI_MouseOverObscuringWindow(x, y);
     }
     ui_handle_event(&s_ctx, evt, covered);
-    ui_handle_event(&s_script_ctx, evt, false);
+
+    SDL_LockMutex(s_script_lock);
+    vec_sdlev_push(&s_script_input, *evt);
+    SDL_UnlockMutex(s_script_lock);
 }
 
 void UI_DrawText(const char *text, struct rect rect, struct rgba rgba)
 {
     struct text_desc d = (struct text_desc){.rect = rect, .rgba = rgba};
     pf_strlcpy(d.text, text, sizeof(d.text));
-
-    SDL_LockMutex(s_lock);
-    vec_td_push(&s_curr_frame_labels, d);
-    SDL_UnlockMutex(s_lock);
+    ui_label_push(&d);
 }
 
 void UI_DrawTextOutlined(const char *text, struct rect rect, struct rgba rgba, struct rgba outline,
@@ -809,10 +1005,7 @@ void UI_DrawTextOutlined(const char *text, struct rect rect, struct rgba rgba, s
 {
     struct text_desc d = (struct text_desc){.rect = rect, .rgba = rgba, .outline = outline, .centred = centred};
     pf_strlcpy(d.text, text, sizeof(d.text));
-
-    SDL_LockMutex(s_lock);
-    vec_td_push(&s_curr_frame_labels, d);
-    SDL_UnlockMutex(s_lock);
+    ui_label_push(&d);
 }
 
 vec2_t UI_ArAdjustedVRes(vec2_t vres)
@@ -872,6 +1065,8 @@ struct nk_context *UI_GetScriptContext(void)
 
 const char *UI_GetActiveFont(void)
 {
+    if(S_Thread_OnScript() && s_script_active_font)
+        return s_script_active_font;
     assert(s_active_font);
     return s_active_font;
 }
@@ -883,9 +1078,15 @@ bool UI_SetActiveFont(const char *name)
         return false;
 
     struct nk_user_font *uf = &kh_value(s_fontmap, k)->handle;
+    /* The scripts' font reaches the engine's windows with the style of their
+     * next frame
+     */
+    if(S_Thread_OnScript()) {
+        nk_style_set_font(&s_script_ctx, uf);
+        s_script_active_font = kh_key(s_fontmap, k);
+        return true;
+    }
     nk_style_set_font(&s_ctx, uf);
-    nk_style_set_font(&s_script_ctx, uf);
-
     s_active_font = kh_key(s_fontmap, k);
     return true;
 }

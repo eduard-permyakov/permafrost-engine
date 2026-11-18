@@ -3147,7 +3147,8 @@ void G_Update(void)
     g_set_contextual_cursor();
 
     PERF_PUSH("UI updates");
-    E_Global_NotifyImmediateOnScript(EVENT_UPDATE_UI, NULL, ES_ENGINE);
+    E_Global_NotifyImmediate(EVENT_UPDATE_UI, NULL, ES_ENGINE);
+    S_UI_Frame();
     PERF_POP();
 
     PERF_RETURN_VOID();

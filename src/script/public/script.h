@@ -113,6 +113,9 @@ void            S_Task_MaybeEnter(void);
 
 bool            S_UI_MouseOverWindow(int mouse_x, int mouse_y);
 bool            S_UI_MouseOverObscuringWindow(int mouse_x, int mouse_y);
+/* Called once a frame by the main thread: the scripts' windows are drawn */
+void            S_UI_Frame(void);
+void            S_UpdateErrorWindow(void);
 bool            S_UI_TextEditHasFocus(void);
 
 /*###########################################################################*/

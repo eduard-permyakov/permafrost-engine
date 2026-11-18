@@ -3033,15 +3033,9 @@ static void hit_state_read(struct hit_state *out)
     }
 }
 
-static void active_windows_update(void *user, void *event)
+static void active_windows_update(void)
 {
-    /* Runs Python: on the script thread */
-    if(ST_OFF_SCRIPT()) {
-        S_Thread_CallHandler(active_windows_update, user, event);
-        return;
-    }
-    (void)user;
-    (void)event;
+    assert(!ST_OFF_SCRIPT());
 
     for(int i = 0; i < vec_size(&s_active_windows); i++) {
     
@@ -3150,15 +3144,35 @@ bool S_UI_Init(struct nk_context *ctx)
     s_nk_ctx = ctx;
     vec_win_init(&s_active_windows);
 
-    if(!E_Global_Register(EVENT_UPDATE_UI, active_windows_update, NULL, G_RUNNING | G_PAUSED_UI_RUNNING))
-        return false;
     return true;
 }
 
 void S_UI_Shutdown(void)
 {
-    E_Global_Unregister(EVENT_UPDATE_UI, active_windows_update);
     vec_win_destroy(&s_active_windows);
+}
+
+/* A frame of the scripts' windows, drawn on the script thread: the error
+ * window and the console whatever the simulation does, the scripts' own
+ * windows and UI handlers while it lets the UI run
+ */
+static void ui_frame(void *arg)
+{
+    (void)arg;
+    UI_ScriptFrameBegin();
+    S_UpdateErrorWindow();
+    S_Console_Update();
+    if(G_GetSimState() & (G_RUNNING | G_PAUSED_UI_RUNNING)) {
+        active_windows_update();
+        E_Global_NotifyScriptNow(EVENT_UPDATE_UI);
+    }
+    UI_ScriptFrameEnd();
+}
+
+void S_UI_Frame(void)
+{
+    UI_ScriptFrameAsk();
+    S_Thread_Call(ui_frame, NULL);
 }
 
 void S_UI_PyRegister(PyObject *module)

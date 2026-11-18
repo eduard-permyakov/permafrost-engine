@@ -1809,6 +1809,12 @@ static void s_err_clear(void)
     s_err_ctx.occurred = false;
 }
 
+void S_UpdateErrorWindow(void)
+{
+    assert(!ST_OFF_SCRIPT());
+    S_Error_Update(&s_err_ctx);
+}
+
 static void s_on_update(void *user, void *event)
 {
     /* Runs Python: on the script thread */
@@ -1819,7 +1825,6 @@ static void s_on_update(void *user, void *event)
     /* The frame's one call for the script thread's own upkeep */
     if(G_GetSimState() == G_RUNNING)
         S_Task_FrameStart();
-    S_Error_Update(&s_err_ctx);
 
     Py_ssize_t arena_b = 0, arena_c = 0, raw_b = 0, raw_c = 0;
     _PyObject_MemStats(&arena_b, &arena_c, &raw_b, &raw_c);

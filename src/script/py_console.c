@@ -388,18 +388,11 @@ static void do_interactive_one(const char *str)
     }
 }
 
-static void on_update(void *user, void *event)
+void S_Console_Update(void)
 {
-    /* It is shown and hidden only while the main thread waits on the script
-     * thread, so the main thread may read the flag between its calls
-     */
+    assert(!ST_OFF_SCRIPT());
     if(!s_shown)
         return;
-    /* Runs Python: on the script thread */
-    if(ST_OFF_SCRIPT()) {
-        S_Thread_CallHandler(on_update, user, event);
-        return;
-    }
 
     static nk_uint x_offset = 0;
     static nk_uint y_offset = 0;
@@ -535,7 +528,6 @@ bool S_Console_Init(void)
     s_next_lineid = 0;
     s_shown = false;
     memset(s_inputbuff, 0, sizeof(s_inputbuff));
-    E_Global_Register(EVENT_UPDATE_START, on_update, NULL, G_ALL);
     E_Global_Register(SDL_KEYDOWN, on_keydown, NULL, G_ALL);
 
     vec_str_init(&s_multilines);
@@ -567,7 +559,6 @@ void S_Console_Shutdown(void)
 {
     vec_str_destroy(&s_multilines);
     lru_hist_destroy(&s_history);
-    E_Global_Unregister(EVENT_UPDATE_START, on_update);
     E_Global_Unregister(SDL_KEYDOWN, on_keydown);
 }
 

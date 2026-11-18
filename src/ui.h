@@ -91,6 +91,14 @@ struct rect        UI_BoundsForAspectRatio(struct rect from_bounds, vec2_t from_
 struct nk_context *UI_GetContext(void);
 /* The context the scripts' windows are drawn into */
 struct nk_context *UI_GetScriptContext(void);
+/* A frame of the scripts' windows. The main thread asks for one each frame
+ * it wants them shown; the script thread draws it between Begin, which takes
+ * the input that came in since the last one, and End, which turns what was
+ * drawn into the list the main thread shows from then on.
+ */
+void               UI_ScriptFrameAsk(void);
+void               UI_ScriptFrameBegin(void);
+void               UI_ScriptFrameEnd(void);
 void               UI_ClearState(void);
 
 const char        *UI_GetActiveFont(void);

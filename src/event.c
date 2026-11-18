@@ -596,7 +596,11 @@ static void e_handle_event(struct event event, bool immediate)
      * script thread's next turn, unless the engine needs the result now.
      */
     bool handed = false;
-    if(e_script_interested(event, to_zombie)) {
+    /* The scripts' part of the UI update is their windows' frame, which the
+     * script thread draws by itself
+     */
+    bool script_frame = (event.type == EVENT_UPDATE_UI) && S_Thread_Running() && !S_Thread_OnScript();
+    if(!script_frame && e_script_interested(event, to_zombie)) {
         if(S_Thread_OnScript() || !S_Thread_Running()) {
             struct script_dispatch sd = {event, immediate, to_zombie};
             S_EventArgEncode(event.type, event.source, event.arg, &sd.sarg);
@@ -974,15 +978,17 @@ void E_Global_NotifyImmediate(enum eventtype event, void *event_arg, enum event_
     e_handle_event(e, true);
 }
 
-static void e_notify_on_script(void *arg)
+void E_Global_NotifyScriptNow(enum eventtype event)
 {
-    e_handle_event(*(struct event*)arg, true);
-}
-
-void E_Global_NotifyImmediateOnScript(enum eventtype event, void *event_arg, enum event_source source)
-{
-    struct event e = (struct event){event, event_arg, source, GLOBAL_ID, G_ClockTicks()};
-    S_Thread_Call(e_notify_on_script, &e);
+    assert(S_Thread_OnScript() || !S_Thread_Running());
+    struct script_dispatch sd = {
+        .event = (struct event){event, NULL, ES_ENGINE, GLOBAL_ID, G_ClockTicks()},
+        .immediate = true,
+        .to_zombie = false,
+    };
+    S_EventArgEncode(event, ES_ENGINE, NULL, &sd.sarg);
+    e_dispatch_script(&sd);
+    S_EventArgRelease(&sd.sarg);
 }
 
 /*
