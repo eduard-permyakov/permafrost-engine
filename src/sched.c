@@ -2401,6 +2401,8 @@ static void script_tick(void *arg)
     assert(thread_home(self) == SCRIPT_HOME);
 
     E_ServiceScriptEvents();
+    if(tick->realtime)
+        S_View_PollRefresh();
     /* The tasks keep their least share of the frame, whatever the handlers
      * and a parked slice took before them
      */

@@ -169,6 +169,10 @@ void            S_Thread_Call(void (*fn)(void *arg), void *arg);
  * resumed around it
  */
 void            S_Thread_Query(void (*fn)(void *arg), void *arg);
+/* Once a frame, on the script thread with the world: what the view tasks
+ * polled and still ask for is read again
+ */
+void            S_View_PollRefresh(void);
 /* Runs 'fn' on the main thread and waits for it: for what only the main
  * thread may do, such as changes to the window or the cursor */
 void            S_Thread_CallMain(void (*fn)(void *arg), void *arg);

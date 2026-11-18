@@ -3142,6 +3142,7 @@ static PyObject *PyPf_prev_frame_allocd_bytes(PyObject *self)
 
 static PyObject *PyPf_get_resolution(PyObject *self)
 {
+    S_VIEW_POLLED(PyPf_get_resolution, self, NULL);
     struct sval res;
     ss_e status = Settings_Get("pf.video.resolution", &res);
     assert(status == SS_OKAY);
@@ -3284,6 +3285,7 @@ static PyObject *PyPf_ctrl_pressed(PyObject *self)
 
 static PyObject *PyPf_get_key_name(PyObject *self, PyObject *args)
 {
+    S_VIEW_POLLED(PyPf_get_key_name, self, args);
     int keysym;
     if(!PyArg_ParseTuple(args, "i", &keysym)) {
         PyErr_SetString(PyExc_TypeError, "Argument must an integer value (SDL_Keysym).");
@@ -3604,6 +3606,7 @@ static PyObject *PyPf_get_resource_list(PyObject *self)
 
 static PyObject *PyPf_get_resource_stored(PyObject *self, PyObject *args)
 {
+    S_VIEW_POLLED(PyPf_get_resource_stored, self, args);
     const char *name;
     int faction = -1;
     if(!PyArg_ParseTuple(args, "s|i", &name, &faction)) {
@@ -3618,6 +3621,7 @@ static PyObject *PyPf_get_resource_stored(PyObject *self, PyObject *args)
 
 static PyObject *PyPf_get_resource_capacity(PyObject *self, PyObject *args)
 {
+    S_VIEW_POLLED(PyPf_get_resource_capacity, self, args);
     const char *name;
     if(!PyArg_ParseTuple(args, "s", &name)) {
         PyErr_SetString(PyExc_TypeError, "Expecting one arguments: resource name (string).");
@@ -3909,6 +3913,7 @@ static PyObject *PyPf_get_diplomacy_state(PyObject *self, PyObject *args)
 
 static PyObject *PyPf_get_population(PyObject *self, PyObject *args)
 {
+    S_VIEW_POLLED(PyPf_get_population, self, args);
     int faction_id;
     if(!PyArg_ParseTuple(args, "i", &faction_id)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be an integer faction ID.");
@@ -3919,6 +3924,7 @@ static PyObject *PyPf_get_population(PyObject *self, PyObject *args)
 
 static PyObject *PyPf_get_population_limit(PyObject *self, PyObject *args)
 {
+    S_VIEW_POLLED(PyPf_get_population_limit, self, args);
     int faction_id;
     if(!PyArg_ParseTuple(args, "i", &faction_id)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be an integer faction ID.");
@@ -3949,11 +3955,13 @@ static PyObject *PyPf_get_enemy_population(PyObject *self, PyObject *args)
 
 static PyObject *PyPf_get_player_population(PyObject *self)
 {
+    S_VIEW_POLLED(PyPf_get_player_population, self, NULL);
     return PyInt_FromLong(G_Population_GetPlayer());
 }
 
 static PyObject *PyPf_get_player_population_limit(PyObject *self)
 {
+    S_VIEW_POLLED(PyPf_get_player_population_limit, self, NULL);
     return PyInt_FromLong(G_Population_GetPlayerLimit());
 }
 
@@ -4703,6 +4711,7 @@ static PyObject *PyPf_garrison_show_ui(PyObject *self, PyObject *args)
 
 static PyObject *PyPf_settings_get(PyObject *self, PyObject *args)
 {
+    S_VIEW_POLLED(PyPf_settings_get, self, args);
     const char *sname;
 
     if(!PyArg_ParseTuple(args, "s", &sname)) {
@@ -4873,6 +4882,7 @@ static PyObject *PyPf_settings_flush(PyObject *self)
 
 static PyObject *PyPf_get_simstate(PyObject *self)
 {
+    S_VIEW_POLLED(PyPf_get_simstate, self, NULL);
     return Py_BuildValue("i", G_GetSimState());
 }
 
@@ -7090,6 +7100,7 @@ static PyObject *PyPf_show_districts(PyObject *self, PyObject *args)
 
 static PyObject *PyPf_districts_shown(PyObject *self)
 {
+    S_VIEW_POLLED(PyPf_districts_shown, self, NULL);
     if(G_District_GetShow()) {
         Py_RETURN_TRUE;
     }else{
@@ -7472,6 +7483,7 @@ void S_Shutdown(void)
     S_Camera_Clear();
     S_Region_Clear();
     S_Task_Clear();
+    S_View_Shutdown();
     S_Entity_Clear();
 
     Py_Finalize();

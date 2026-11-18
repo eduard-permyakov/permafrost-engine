@@ -439,6 +439,7 @@ static void pytask_pop_ctx(PyTaskObject *self)
     assert(s_main_thread_state);
     PyThreadState *ts = PyThreadState_Swap(s_main_thread_state);
     assert(ts == self->ts);
+    S_View_LeaveTask();
 }
 
 /* Completes the call 'frame' is waiting on, at its CALL_FUNCTION: the callable

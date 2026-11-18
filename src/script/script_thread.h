@@ -62,6 +62,28 @@ bool S_View_RunSlice(void);
  * Returns -1 if the task was ended while it waited for the world. */
 struct script_view;
 int  S_View_Read(const struct script_view **out);
+/* For a binding that only reads: in a view slice, answers from what was polled,
+ * waiting for the world the first time. Returns true when '*out' is the
+ * binding's result (NULL with an exception set), false when it is to go on and
+ * read the world itself.
+ */
+enum{
+    VIEW_POLL_GETSET,
+    VIEW_POLL_NOARGS,
+    VIEW_POLL_VARARGS,
+};
+bool S_View_Poll(int kind, void *fn, struct _object *self, struct _object *args, 
+                 const char *what, struct _object **out);
+#define S_VIEW_POLLED(_fn, _self, _args)                                                        \
+    do{                                                                                         \
+        struct _object *_polled;                                                                \
+        if(S_View_Poll(((_args) ? VIEW_POLL_VARARGS : VIEW_POLL_NOARGS), (void*)(_fn),          \
+            (struct _object*)(_self), (struct _object*)(_args), #_fn, &_polled))                \
+            return (void*)_polled;                                                              \
+    }while(0)
+/* A script task's thread state goes out */
+void S_View_LeaveTask(void);
+void S_View_Shutdown(void);
 /* Queues a write a view task made for the next world window */
 void S_View_DeferRemove(uint32_t uid);
 void S_View_ApplyDeferred(void);

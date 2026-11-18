@@ -56,7 +56,35 @@
 enum view_class{
     VIEW_PARK,
     VIEW_ALLOW,
+    VIEW_POLL,
 };
+
+/* What a view slice read that the view does not hold: worked out once with
+ * the world, kept, and worked out again each frame in a world window for as
+ * long as it goes on being asked for. A window that shows a count every frame
+ * then shows the last frame's, without waiting for the world.
+ */
+struct poll_entry{
+    int       kind;
+    void     *fn;
+    PyObject *self;
+    PyObject *args;
+    PyObject *key;
+    PyObject *value;
+    uint32_t  asked;      /* the frame it was last asked for */
+    bool      renewed;    /* asked for by a view slice: worth working out again */
+    bool      used;
+};
+
+VEC_TYPE(poll, struct poll_entry)
+VEC_IMPL(static inline, poll, struct poll_entry)
+
+/* Entries a slice may add while it has the world: a task that reads a
+ * thousand things once is not a window that reads the same few every frame
+ */
+#define POLL_LEARN_MAX  (1024)
+/* Frames an entry is kept for after it was last asked for */
+#define POLL_KEEP       (3)
 
 struct view_getset{
     getter      get;
@@ -106,10 +134,39 @@ static const char *s_allowed[] = {
     NULL
 };
 
+/* Functions and methods that answer from what was polled: each begins with
+ * S_VIEW_POLLED. Getters need no listing: one the view does not hold is polled.
+ */
+static const char *s_polled[] = {
+    "pf.settings_get",
+    "pf.get_resource_stored",
+    "pf.get_resource_capacity",
+    "pf.get_player_population",
+    "pf.get_player_population_limit",
+    "pf.get_population",
+    "pf.get_population_limit",
+    "pf.get_simstate",
+    "pf.get_key_name",
+    "pf.get_resolution",
+    "pf.districts_shown",
+    NULL
+};
+
 static khash_t(vclass) *s_method_class;
 /* The view the running view slice reads, if one was published */
 static const struct script_view *s_current;
 static vec_vuid_t       s_deferred_removes;
+static PyObject        *s_poll_index;      /* key -> index into s_polls */
+static vec_poll_t       s_polls;
+static vec_vuid_t       s_poll_free;
+static uint32_t         s_poll_frame;
+/* Set from a view slice's park to its end: what it reads next is noted */
+static bool             s_poll_learning;
+static int              s_poll_learned;
+/* Set while an entry is worked out, so that the call it makes is not itself looked up */
+static bool             s_poll_working;
+/* Counted for PF_VIEW_STATS */
+static uint64_t         s_nparks, s_npoll_hits, s_npoll_learned, s_npoll_renewed;
 /* The places a view slice has parked from, each logged once */
 static khash_t(vsite)  *s_park_sites;
 static bool             s_init = false;
@@ -123,6 +180,10 @@ static int classify(const char *qualname)
     for(const char **curr = s_allowed; *curr; curr++) {
         if(0 == strncmp(qualname, *curr, strlen(*curr)))
             return VIEW_ALLOW;
+    }
+    for(const char **curr = s_polled; *curr; curr++) {
+        if(0 == strcmp(qualname, *curr))
+            return VIEW_POLL;
     }
     return VIEW_PARK;
 }
@@ -143,8 +204,60 @@ static int park(const char *what)
                 PyString_AsString(frame->f_code->co_filename), line, what);
         }
     }
+    s_nparks++;
     S_Task_ViewPark();
+    s_poll_learning = true;
+    s_poll_learned = 0;
     return PyErr_Occurred() ? -1 : 0;
+}
+
+static PyObject *poll_call(int kind, void *fn, PyObject *self, PyObject *args)
+{
+    switch(kind) {
+    case VIEW_POLL_GETSET: {
+        struct view_getset *vg = fn;
+        return vg->get(self, vg->closure);
+    }
+    case VIEW_POLL_NOARGS:
+        return ((PyCFunction)fn)(self, NULL);
+    case VIEW_POLL_VARARGS:
+        return ((PyCFunction)fn)(self, args);
+    default: assert(0); return NULL;
+    }
+}
+
+/* A caller that changed a list it was handed must not change what is kept */
+static PyObject *poll_result(PyObject *value)
+{
+    if(PyList_CheckExact(value))
+        return PyList_GetSlice(value, 0, PyList_GET_SIZE(value));
+    if(PyDict_CheckExact(value))
+        return PyDict_Copy(value);
+    Py_INCREF(value);
+    return value;
+}
+
+static void poll_drop(int idx)
+{
+    struct poll_entry *pe = &vec_AT(&s_polls, idx);
+    assert(pe->used);
+    PyDict_DelItem(s_poll_index, pe->key);
+    PyErr_Clear();
+    Py_CLEAR(pe->key);
+    Py_CLEAR(pe->self);
+    Py_CLEAR(pe->args);
+    Py_CLEAR(pe->value);
+    pe->used = false;
+    vec_vuid_push(&s_poll_free, idx);
+}
+
+static PyObject *poll_key(void *fn, PyObject *self, PyObject *args)
+{
+    /* The object by where it is, as its class may have its own notion of
+     * equality: the entry holds it, so the place is not reused meanwhile
+     */
+    return Py_BuildValue("(KKO)", (unsigned PY_LONG_LONG)(uintptr_t)fn,
+        (unsigned PY_LONG_LONG)(uintptr_t)self, args ? args : Py_None);
 }
 
 static bool is_ours(PyTypeObject *type)
@@ -169,8 +282,11 @@ static int view_profile(PyObject *obj, PyFrameObject *frame, int what, PyObject 
 static PyObject *view_get(PyObject *self, void *closure)
 {
     struct view_getset *vg = closure;
-    if(vg->get_class == VIEW_PARK && Sched_InViewSlice() && park(vg->name) < 0)
-        return NULL;
+    if(vg->get_class == VIEW_PARK) {
+        PyObject *ret;
+        if(S_View_Poll(VIEW_POLL_GETSET, vg, self, NULL, vg->name, &ret))
+            return ret;
+    }
     return vg->get(self, vg->closure);
 }
 
@@ -255,8 +371,11 @@ void S_View_Init(struct _object *module)
         s_method_class = kh_init(vclass);
         s_park_sites = kh_init(vsite);
         vec_vuid_init(&s_deferred_removes);
+        vec_poll_init(&s_polls);
+        vec_vuid_init(&s_poll_free);
         s_init = true;
     }
+    s_poll_index = PyDict_New();
     note_module(module, 0);
 }
 
@@ -308,6 +427,157 @@ int S_View_Read(const struct script_view **out)
     }
     /* No view was published: the read waits for the live world */
     return S_View_RequireWorld();
+}
+
+bool S_View_Poll(int kind, void *fn, struct _object *self, struct _object *args, 
+                 const char *what, struct _object **out)
+{
+    bool view = Sched_InViewSlice();
+    if(s_poll_working || !s_init || (!view && !s_poll_learning))
+        return false;
+
+    *out = NULL;
+    PyObject *key = poll_key(fn, self, args);
+    if(!key || PyObject_Hash(key) == -1) {
+        /* Not to be looked up, such as a list among the arguments */
+        PyErr_Clear();
+        Py_XDECREF(key);
+        if(view && park(what) < 0)
+            return true;
+        return false;
+    }
+
+    PyObject *slot = PyDict_GetItem(s_poll_index, key);
+    if(slot) {
+        struct poll_entry *pe = &vec_AT(&s_polls, PyInt_AS_LONG(slot));
+        pe->asked = s_poll_frame;
+        if(view) {
+            pe->renewed = true;
+            s_npoll_hits++;
+            Py_DECREF(key);
+            *out = poll_result(pe->value);
+            return true;
+        }
+        /* With the world, the answer is the live one, and it is kept */
+        Py_DECREF(key);
+        s_poll_working = true;
+        PyObject *value = poll_call(kind, fn, self, args);
+        s_poll_working = false;
+        if(!value)
+            return true;
+        Py_DECREF(pe->value);
+        pe->value = value;
+        *out = poll_result(value);
+        return true;
+    }
+
+    if(view && park(what) < 0) {
+        Py_DECREF(key);
+        return true;
+    }
+    if(s_poll_learned >= POLL_LEARN_MAX) {
+        Py_DECREF(key);
+        return false;
+    }
+
+    s_poll_working = true;
+    PyObject *value = poll_call(kind, fn, self, args);
+    s_poll_working = false;
+    if(!value) {
+        Py_DECREF(key);
+        return true;
+    }
+
+    int idx;
+    if(vec_size(&s_poll_free) > 0) {
+        idx = vec_vuid_pop(&s_poll_free);
+    }else{
+        idx = vec_size(&s_polls);
+        vec_poll_push(&s_polls, (struct poll_entry){0});
+    }
+    slot = PyInt_FromLong(idx);
+    if(!slot || 0 != PyDict_SetItem(s_poll_index, key, slot)) {
+        PyErr_Clear();
+        Py_XDECREF(slot);
+        Py_DECREF(key);
+        vec_vuid_push(&s_poll_free, idx);
+        *out = value;
+        return true;
+    }
+    Py_DECREF(slot);
+    Py_XINCREF(self);
+    Py_XINCREF(args);
+    vec_AT(&s_polls, idx) = (struct poll_entry){
+        .kind = kind,
+        .fn = fn,
+        .self = self,
+        .args = args,
+        .key = key,
+        .value = value,
+        .asked = s_poll_frame,
+        .renewed = false,
+        .used = true,
+    };
+    s_poll_learned++;
+    s_npoll_learned++;
+    *out = poll_result(value);
+    return true;
+}
+
+void S_View_PollRefresh(void)
+{
+    if(!s_init || !s_poll_index)
+        return;
+    assert(!Sched_InViewSlice());
+
+    s_poll_working = true;
+    for(int i = 0; i < vec_size(&s_polls); i++) {
+        struct poll_entry *pe = &vec_AT(&s_polls, i);
+        if(!pe->used)
+            continue;
+        if(s_poll_frame - pe->asked >= POLL_KEEP) {
+            poll_drop(i);
+            continue;
+        }
+        if(!pe->renewed)
+            continue;
+        PyObject *value = poll_call(pe->kind, pe->fn, pe->self, pe->args);
+        if(!value) {
+            /* Such as a unit that died: whoever asks again finds out with the world */
+            PyErr_Clear();
+            poll_drop(i);
+            continue;
+        }
+        Py_DECREF(pe->value);
+        pe->value = value;
+        s_npoll_renewed++;
+    }
+    s_poll_working = false;
+    s_poll_frame++;
+}
+
+void S_View_LeaveTask(void)
+{
+    s_poll_learning = false;
+}
+
+void S_View_Shutdown(void)
+{
+    if(!s_init || !s_poll_index)
+        return;
+    if(getenv("PF_VIEW_STATS")) {
+        fprintf(stderr, "[view-stats] parks %llu, polled: answered %llu, learned %llu, renewed %llu over %u frames\n",
+            (unsigned long long)s_nparks, (unsigned long long)s_npoll_hits,
+            (unsigned long long)s_npoll_learned, (unsigned long long)s_npoll_renewed, s_poll_frame);
+    }
+    for(int i = 0; i < vec_size(&s_polls); i++) {
+        if(vec_AT(&s_polls, i).used)
+            poll_drop(i);
+    }
+    vec_poll_reset(&s_polls);
+    vec_vuid_reset(&s_poll_free);
+    Py_CLEAR(s_poll_index);
+    s_poll_learning = false;
 }
 
 void S_View_DeferRemove(uint32_t uid)
