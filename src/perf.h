@@ -254,6 +254,10 @@ void     Perf_PushGPU(const char *name, uint32_t cookie);
 void     Perf_PopGPU(uint32_t cookie);
 
 bool     Perf_IsRoot(void);
+/* From a thread set to move on itself, at a point where the main thread waits
+ * on it: its next frame's tree begins
+ */
+void     Perf_OwnTick(void);
 
 /* Attribute hardware counter deltas (IPC, miss rates) to every probe scope.
  * Costs two read() syscalls per push/pop on every instrumented thread.
@@ -313,6 +317,10 @@ size_t   Perf_GetFrameTimes(size_t maxout, struct frame_time_sample *out);
 bool     Perf_Init(void);
 void     Perf_Shutdown(void);
 bool     Perf_RegisterThread(SDL_threadID tid, const char *name);
+/* For a thread that runs alongside the main thread's frame end: it moves on to
+ * the next frame's tree itself, in Perf_OwnTick
+ */
+void     Perf_SetOwnTicks(SDL_threadID tid);
 void     Perf_BeginTick(void);
 void     Perf_FinishTick(void);
 

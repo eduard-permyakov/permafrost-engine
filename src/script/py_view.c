@@ -59,14 +59,16 @@ enum view_class{
 };
 
 struct view_getset{
-    getter get;
-    setter set;
-    void  *closure;
-    int    get_class;
-    int    set_class;
+    getter      get;
+    setter      set;
+    void       *closure;
+    int         get_class;
+    int         set_class;
+    const char *name;
 };
 
 KHASH_MAP_INIT_INT64(vclass, int)
+KHASH_SET_INIT_INT64(vsite)
 VEC_TYPE(vuid, uint32_t)
 VEC_IMPL(static inline, vuid, uint32_t)
 
@@ -85,6 +87,15 @@ static const char *s_allowed[] = {
     "pf.clusters",
     "pf.cluster_anchor",
     "pf.district_at",
+    "pf.Entity.is_garrisoned",
+    "pf.GarrisonEntity.is_ingredient.get",
+    "pf.BuildableEntity.completed.get",
+    "pf.HarvesterEntity.automatic_work.get",
+    "pf.HarvesterEntity.automatic_transport.get",
+    "pf.HarvesterEntity.pinned_work.get",
+    "pf.HarvesterEntity.player_managed.get",
+    "pf.workshop_posts",
+    "pf.post_workshop",
     NULL
 };
 
@@ -92,6 +103,8 @@ static khash_t(vclass) *s_method_class;
 /* The view the running view slice reads, if one was published */
 static const struct script_view *s_current;
 static vec_vuid_t       s_deferred_removes;
+/* The places a view slice has parked from, each logged once */
+static khash_t(vsite)  *s_park_sites;
 static bool             s_init = false;
 
 /*****************************************************************************/
@@ -105,6 +118,26 @@ static int classify(const char *qualname)
             return VIEW_ALLOW;
     }
     return VIEW_PARK;
+}
+
+/* Leaves the view slice for the next world window, saying the first time where
+ * from, so that a read the view could serve is seen
+ */
+static int park(const char *what)
+{
+    PyFrameObject *frame = PyEval_GetFrame();
+    if(frame) {
+        int line = PyFrame_GetLineNumber(frame);
+        uint64_t site = ((uint64_t)(uintptr_t)frame->f_code << 20) ^ (uint64_t)line;
+        int ret;
+        kh_put(vsite, s_park_sites, site, &ret);
+        if(ret > 0) {
+            fprintf(stderr, "[view] a view task waits for the world at %s:%d (%s)\n",
+                PyString_AsString(frame->f_code->co_filename), line, what);
+        }
+    }
+    S_Task_ViewPark();
+    return PyErr_Occurred() ? -1 : 0;
 }
 
 static bool is_ours(PyTypeObject *type)
@@ -122,14 +155,14 @@ static int view_profile(PyObject *obj, PyFrameObject *frame, int what, PyObject 
     PyMethodDef *def = ((PyCFunctionObject*)arg)->m_ml;
     khiter_t k = kh_get(vclass, s_method_class, (uint64_t)(uintptr_t)def);
     if(k != kh_end(s_method_class) && kh_value(s_method_class, k) == VIEW_PARK)
-        return S_View_RequireWorld();
+        return park(def->ml_name);
     return 0;
 }
 
 static PyObject *view_get(PyObject *self, void *closure)
 {
     struct view_getset *vg = closure;
-    if(vg->get_class == VIEW_PARK && S_View_RequireWorld() < 0)
+    if(vg->get_class == VIEW_PARK && Sched_InViewSlice() && park(vg->name) < 0)
         return NULL;
     return vg->get(self, vg->closure);
 }
@@ -137,7 +170,7 @@ static PyObject *view_get(PyObject *self, void *closure)
 static int view_set(PyObject *self, PyObject *value, void *closure)
 {
     struct view_getset *vg = closure;
-    if(vg->set_class == VIEW_PARK && S_View_RequireWorld() < 0)
+    if(vg->set_class == VIEW_PARK && Sched_InViewSlice() && park(vg->name) < 0)
         return -1;
     return vg->set(self, value, vg->closure);
 }
@@ -161,7 +194,7 @@ static void wrap_getsets(PyTypeObject *type)
         if(def->get == view_get)
             continue;
         struct view_getset *vg = PF_MALLOC(sizeof(struct view_getset));
-        *vg = (struct view_getset){def->get, def->set, def->closure, VIEW_PARK, VIEW_PARK};
+        *vg = (struct view_getset){def->get, def->set, def->closure, VIEW_PARK, VIEW_PARK, def->name};
         pf_snprintf(name, sizeof(name), "%s.%s.get", type->tp_name, def->name);
         vg->get_class = classify(name);
         pf_snprintf(name, sizeof(name), "%s.%s.set", type->tp_name, def->name);
@@ -198,16 +231,11 @@ static void note_module(PyObject *module, int depth)
     }
 }
 
-/* Gives the thread up between two instructions, for a call the main thread
- * made: the slice goes on as a view slice once the call is done */
-static int view_preempt(void)
+static void view_unpin(void)
 {
-    if(!S_View_Active()) {
-        *S_Thread_PreemptFlag() = 0;
-        return 0;
-    }
-    S_Task_ViewYield(false);
-    return PyErr_Occurred() ? -1 : 0;
+    if(s_current)
+        G_ScriptView_Unpin();
+    s_current = NULL;
 }
 
 /*****************************************************************************/
@@ -218,11 +246,11 @@ void S_View_Init(struct _object *module)
 {
     if(!s_init) {
         s_method_class = kh_init(vclass);
+        s_park_sites = kh_init(vsite);
         vec_vuid_init(&s_deferred_removes);
         s_init = true;
     }
     note_module(module, 0);
-    PyEval_SetPreemptHook(view_preempt, S_Thread_PreemptFlag());
 }
 
 bool S_View_Active(void)
@@ -234,8 +262,7 @@ int S_View_RequireWorld(void)
 {
     if(!S_View_Active())
         return 0;
-    S_Task_ViewYield(true);
-    return PyErr_Occurred() ? -1 : 0;
+    return park("a constructor or the view not yet published");
 }
 
 void S_View_EnterTask(bool view)
@@ -251,10 +278,12 @@ void S_View_EnterTask(bool view)
 
 bool S_View_RunSlice(void)
 {
+    /* With no view to read, the view tasks run in the world windows */
     s_current = G_ScriptView_Pin();
+    if(!s_current)
+        return false;
     bool ret = Sched_RunViewSlice();
-    G_ScriptView_Unpin();
-    s_current = NULL;
+    view_unpin();
     return ret;
 }
 

@@ -145,6 +145,9 @@ struct perf_state{
      */
     int               perf_tree_idx;
     vec_perf_t        perf_trees[NFRAMES_LOGGED];
+    /* The thread moves on to the next tree itself; the frame it last did so */
+    bool              own_ticks;
+    uint64_t          own_tick_seen;
     /* GPU-only: size of each tree slot when its cookies were last
      * scheduled for read. Prevents double-consume on wraparound. */
     size_t            last_read_size[NFRAMES_LOGGED];
@@ -194,6 +197,9 @@ static SDL_atomic_t           s_nav_parallel_us;
  * per scope; keep it opt-in so instrumented builds stay representative.
  */
 static bool                   s_hw_counters;
+
+/* Frames finished, for the threads that move on to the next tree themselves */
+static uint64_t s_finished_ticks;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -574,6 +580,30 @@ bool Perf_RegisterThread(SDL_threadID tid, const char *name)
     return true;
 }
 
+void Perf_SetOwnTicks(SDL_threadID tid)
+{
+    ASSERT_IN_MAIN_THREAD();
+    khiter_t k = kh_get(pstate, s_thread_state_table, tid_to_key(tid));
+    if(k == kh_end(s_thread_state_table))
+        return;
+    kh_val(s_thread_state_table, k).own_ticks = true;
+}
+
+void Perf_OwnTick(void)
+{
+    khiter_t k = kh_get(pstate, s_thread_state_table, tid_to_key(SDL_ThreadID()));
+    if(k == kh_end(s_thread_state_table))
+        return;
+    struct perf_state *ps = &kh_val(s_thread_state_table, k);
+    uint64_t ticks = __atomic_load_n(&s_finished_ticks, __ATOMIC_ACQUIRE);
+    if(!ps->own_ticks || ps->own_tick_seen == ticks || vec_size(&ps->perf_stack) > 0)
+        return;
+    ps->own_tick_seen = ticks;
+    ps->perf_tree_idx = (ps->perf_tree_idx + 1) % NFRAMES_LOGGED;
+    vec_perf_reset(&ps->perf_trees[ps->perf_tree_idx]);
+    ps->last_read_size[ps->perf_tree_idx] = 0;
+}
+
 void Perf_SetHWCountersEnabled(bool enabled)
 {
     s_hw_counters = enabled;
@@ -806,13 +836,14 @@ void Perf_FinishTick(void)
         /* A non-empty stack means the owning thread is mid-function;
          * advancing perf_tree_idx would invalidate the stack's indices. */
         struct perf_state *curr = &kh_val(s_thread_state_table, k);
-        if(vec_size(&curr->perf_stack) > 0)
+        if(curr->own_ticks || vec_size(&curr->perf_stack) > 0)
             continue;
 
         curr->perf_tree_idx = (curr->perf_tree_idx + 1) % NFRAMES_LOGGED;
         vec_perf_reset(&curr->perf_trees[curr->perf_tree_idx]);
         curr->last_read_size[curr->perf_tree_idx] = 0;
     }
+    __atomic_add_fetch(&s_finished_ticks, 1, __ATOMIC_RELEASE);
 
     gather_mem_stats(&s_last_frames_memstats[s_last_idx]);
     Mem_GetAccounting(&s_last_frames_accounting[s_last_idx]);

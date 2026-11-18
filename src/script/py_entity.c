@@ -2620,8 +2620,11 @@ static PyObject *PyEntity_remove_tag(PyEntityObject *self, PyObject *args)
 
 static PyObject *PyEntity_is_garrisoned(PyEntityObject *self)
 {
-    uint32_t flags = G_FlagsGet(self->ent);
-    if(G_FlagsGet(self->ent) & ENTITY_FLAG_ZOMBIE) {
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    uint32_t flags = view ? G_ScriptView_Flags(view, self->ent) : G_FlagsGet(self->ent);
+    if(flags & ENTITY_FLAG_ZOMBIE) {
         PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
         return NULL;
     }
@@ -4429,11 +4432,15 @@ static PyObject *PyBuildableEntity_get_supplied(PyBuildableEntityObject *self, v
 
 static PyObject *PyBuildableEntity_get_completed(PyBuildableEntityObject *self, void *closure)
 {
-    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    uint32_t flags = view ? G_ScriptView_Flags(view, self->super.ent) : G_FlagsGet(self->super.ent);
+    if(flags & ENTITY_FLAG_ZOMBIE) {
         PyErr_SetString(PyExc_RuntimeError, "Cannot access attribute of zombie entity.");
         return NULL;
     }
-    if(G_Building_IsCompleted(self->super.ent)) {
+    if(view ? G_ScriptView_Completed(view, self->super.ent) : G_Building_IsCompleted(self->super.ent)) {
         Py_RETURN_TRUE;
     }
     Py_RETURN_FALSE;
@@ -5508,7 +5515,11 @@ static int PyHarvesterEntity_set_strategy(PyHarvesterEntityObject *self, PyObjec
 
 static PyObject *PyHarvesterEntity_get_automatic_work(PyHarvesterEntityObject *self, void *closure)
 {
-    if(G_Automation_GetAutomaticWork(self->super.ent)) {
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    if(view ? G_ScriptView_AutomaticWork(view, self->super.ent) 
+            : G_Automation_GetAutomaticWork(self->super.ent)) {
         Py_RETURN_TRUE;
     }
     Py_RETURN_FALSE;
@@ -5521,7 +5532,11 @@ static PyObject *PyHarvesterEntity_get_order_hold(PyHarvesterEntityObject *self,
 
 static PyObject *PyHarvesterEntity_get_player_managed(PyHarvesterEntityObject *self, void *closure)
 {
-    if(G_Automation_PlayerManaged(self->super.ent)) {
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    if(view ? G_ScriptView_PlayerManaged(view, self->super.ent) 
+            : G_Automation_PlayerManaged(self->super.ent)) {
         Py_RETURN_TRUE;
     }
     Py_RETURN_FALSE;
@@ -5623,7 +5638,11 @@ static PyObject *PyHarvesterEntity_get_work_events(PyHarvesterEntityObject *self
 
 static PyObject *PyHarvesterEntity_get_pinned_work(PyHarvesterEntityObject *self, void *closure)
 {
-    return PyString_FromString(G_Automation_GetPinnedWork(self->super.ent));
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    return PyString_FromString(view ? G_ScriptView_PinnedWork(view, self->super.ent) 
+                                    : G_Automation_GetPinnedWork(self->super.ent));
 }
 
 static PyObject *PyHarvesterEntity_get_queued_gather(PyHarvesterEntityObject *self, void *closure)
@@ -5650,12 +5669,17 @@ static int PyHarvesterEntity_set_pinned_work(PyHarvesterEntityObject *self, PyOb
 
 static PyObject *PyHarvesterEntity_get_automatic_transport(PyHarvesterEntityObject *self, void *closure)
 {
-    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    uint32_t flags = view ? G_ScriptView_Flags(view, self->super.ent) : G_FlagsGet(self->super.ent);
+    if(flags & ENTITY_FLAG_ZOMBIE) {
         PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
         return NULL;
     }
 
-    bool on = G_Automation_GetAutomaticTransport(self->super.ent);
+    bool on = view ? G_ScriptView_AutomaticTransport(view, self->super.ent)
+                   : G_Automation_GetAutomaticTransport(self->super.ent);
     if(on) {
         Py_RETURN_TRUE;
     }else{
@@ -6542,6 +6566,12 @@ static PyObject *PyGarrisonEntity_enter_as_ingredient(PyGarrisonEntityObject *se
 
 static PyObject *PyGarrisonEntity_get_is_ingredient(PyGarrisonEntityObject *self, void *closure)
 {
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    if(view) {
+        return PyBool_FromLong(G_ScriptView_IsIngredient(view, self->super.ent));
+    }
     if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE)
         Py_RETURN_FALSE;
     if(G_Garrison_IsIngredient(self->super.ent))
@@ -7206,7 +7236,7 @@ bool S_Entity_UIDForObj(script_opaque_t obj, uint32_t *out)
 {
     if(ST_OFF_SCRIPT()) {
         struct fwd_S_Entity_UIDForObj call = {obj, out};
-        S_Thread_Call(fwd_S_Entity_UIDForObj_thunk, &call);
+        S_Thread_Query(fwd_S_Entity_UIDForObj_thunk, &call);
         return call.ret;
     }
     if(!PyObject_IsInstance(obj, (PyObject*)&PyEntity_type))
@@ -7231,7 +7261,7 @@ uint64_t S_Entity_TypeID(script_opaque_t obj)
 {
     if(ST_OFF_SCRIPT()) {
         struct fwd_S_Entity_TypeID call = {obj};
-        S_Thread_Call(fwd_S_Entity_TypeID_thunk, &call);
+        S_Thread_Query(fwd_S_Entity_TypeID_thunk, &call);
         return call.ret;
     }
     return (uintptr_t)((PyObject*)obj)->ob_type;
@@ -7252,7 +7282,7 @@ script_opaque_t S_Entity_ObjForUID(uint32_t uid)
 {
     if(ST_OFF_SCRIPT()) {
         struct fwd_S_Entity_ObjForUID call = {uid};
-        S_Thread_Call(fwd_S_Entity_ObjForUID_thunk, &call);
+        S_Thread_Query(fwd_S_Entity_ObjForUID_thunk, &call);
         return call.ret;
     }
     khiter_t k = kh_get(PyObject, s_uid_pyobj_table, uid);

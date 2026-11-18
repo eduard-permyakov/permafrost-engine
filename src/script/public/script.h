@@ -164,6 +164,10 @@ bool            S_Thread_OnScript(void);
 /* Runs 'fn' on the script thread and waits for it. Called on the script
  * thread, it runs 'fn' directly. */
 void            S_Thread_Call(void (*fn)(void *arg), void *arg);
+/* The same, for a lookup made from inside engine code: no script task is
+ * resumed around it
+ */
+void            S_Thread_Query(void (*fn)(void *arg), void *arg);
 /* Runs 'fn' on the main thread and waits for it: for what only the main
  * thread may do, such as changes to the window or the cursor */
 void            S_Thread_CallMain(void (*fn)(void *arg), void *arg);

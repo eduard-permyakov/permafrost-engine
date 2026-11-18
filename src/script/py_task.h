@@ -49,7 +49,7 @@ void      S_Task_Flush(void);
 
 /* From inside a view task's slice: gives the script thread up, to take a call
  * or to run on in the next world window */
-void S_Task_ViewYield(bool needs_world);
+void S_Task_ViewPark(void);
 
 #endif
 

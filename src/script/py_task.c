@@ -1578,14 +1578,14 @@ PyObject *S_Task_GetAll(void)
     return ret;
 }
 
-void S_Task_ViewYield(bool needs_world)
+void S_Task_ViewPark(void)
 {
     khiter_t k = kh_get(task, s_tid_task_map, Sched_ActiveTID());
     assert(k != kh_end(s_tid_task_map));
     PyTaskObject *self = kh_value(s_tid_task_map, k);
 
     pytask_pop_ctx(self);
-    Sched_ViewYield(needs_world);
+    Sched_ViewPark();
     pytask_push_ctx(self);
 }
 

@@ -6860,8 +6860,12 @@ static PyObject *PyPf_workshop_posts(PyObject *self, PyObject *args)
     }
     uint32_t uid;
     S_Entity_UIDForObj(obj, &uid);
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
     int posts, locked, inside, coming;
-    if(!G_Posts_Get(uid, &posts, &locked, &inside, &coming))
+    if(!(view ? G_ScriptView_Posts(view, uid, &posts, &locked, &inside, &coming)
+              : G_Posts_Get(uid, &posts, &locked, &inside, &coming)))
         Py_RETURN_NONE;
     return Py_BuildValue("(iiii)", posts, locked, inside, coming);
 }
@@ -6875,7 +6879,11 @@ static PyObject *PyPf_post_workshop(PyObject *self, PyObject *args)
     }
     uint32_t uid;
     S_Entity_UIDForObj(obj, &uid);
-    PyObject *ret = S_Entity_ObjForUID(G_Posts_WorkshopOf(uid));
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    PyObject *ret = S_Entity_ObjForUID(view ? G_ScriptView_PostWorkshop(view, uid) 
+                                            : G_Posts_WorkshopOf(uid));
     if(!ret)
         Py_RETURN_NONE;
     Py_INCREF(ret);
@@ -7593,7 +7601,7 @@ bool S_GetFilePath(char *out, size_t maxout)
 {
     if(ST_OFF_SCRIPT()) {
         struct fwd_S_GetFilePath call = {out, maxout};
-        S_Thread_Call(fwd_S_GetFilePath_thunk, &call);
+        S_Thread_Query(fwd_S_GetFilePath_thunk, &call);
         return call.ret;
     }
     PyObject *main_module = PyImport_AddModule("__main__"); /* borrowed */
@@ -7699,7 +7707,7 @@ void S_Retain(script_opaque_t obj)
 {
     if(ST_OFF_SCRIPT()) {
         struct fwd_S_Retain call = {obj};
-        S_Thread_Call(fwd_S_Retain_thunk, &call);
+        S_Thread_Query(fwd_S_Retain_thunk, &call);
         return;
     }
     Py_XINCREF(obj);
@@ -7719,7 +7727,7 @@ void S_Release(script_opaque_t obj)
 {
     if(ST_OFF_SCRIPT()) {
         struct fwd_S_Release call = {obj};
-        S_Thread_Call(fwd_S_Release_thunk, &call);
+        S_Thread_Query(fwd_S_Release_thunk, &call);
         return;
     }
     Py_XDECREF(obj);
@@ -7983,7 +7991,7 @@ script_opaque_t S_UnwrapIfWeakref(script_opaque_t arg)
 {
     if(ST_OFF_SCRIPT()) {
         struct fwd_S_UnwrapIfWeakref call = {arg};
-        S_Thread_Call(fwd_S_UnwrapIfWeakref_thunk, &call);
+        S_Thread_Query(fwd_S_UnwrapIfWeakref_thunk, &call);
         return call.ret;
     }
     assert(arg);
@@ -8011,7 +8019,7 @@ bool S_WeakrefDied(script_opaque_t arg)
 {
     if(ST_OFF_SCRIPT()) {
         struct fwd_S_WeakrefDied call = {arg};
-        S_Thread_Call(fwd_S_WeakrefDied_thunk, &call);
+        S_Thread_Query(fwd_S_WeakrefDied_thunk, &call);
         return call.ret;
     }
     return (PyWeakref_Check(arg) && (PyWeakref_GetObject(arg) == Py_None));
@@ -8033,7 +8041,7 @@ bool S_ObjectsEqual(script_opaque_t a, script_opaque_t b)
 {
     if(ST_OFF_SCRIPT()) {
         struct fwd_S_ObjectsEqual call = {a, b};
-        S_Thread_Call(fwd_S_ObjectsEqual_thunk, &call);
+        S_Thread_Query(fwd_S_ObjectsEqual_thunk, &call);
         return call.ret;
     }
     return (1 == PyObject_RichCompareBool(a, b, Py_EQ));

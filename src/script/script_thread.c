@@ -64,6 +64,8 @@ struct st_call{
     void (*fn)(void *arg);
     void  *arg;
     int    done;    /* atomic */
+    /* A lookup made from inside engine code, where no task may run */
+    bool   query;
 };
 
 struct st_side{
@@ -79,9 +81,6 @@ static int             s_ready;         /* atomic */
 static struct st_side  s_main;
 static struct st_side  s_script;
 static uint64_t        s_idle_spin_ticks;
-/* Set by a caller that finds the script thread in a view slice: the slice
- * gives the thread up at the interpreter's next periodic check */
-static volatile int    s_preempt;
 static uint64_t        s_caller_spin_ticks;
 
 /*****************************************************************************/
@@ -107,12 +106,20 @@ static struct st_side *side_other(struct st_side *self)
     return (self == &s_script) ? &s_main : &s_script;
 }
 
-static void run_call(struct st_side *self, struct st_call *call)
+static void run_call(struct st_side *self, struct st_call *call, bool outer)
 {
     if(self == &s_script) {
-        LF_STORE(&s_preempt, 0, LF_RLX);
         /* The main thread waits on the call, so the world is the script's */
         S_View_ApplyDeferred();
+        /* A parked slice goes on before any other script code runs, as if it
+         * had never stopped. A nested call comes from inside other script
+         * code, which the slice must not interleave with, and a query from
+         * inside engine code, where a task has no place.
+         */
+        if(outer && !call->query) {
+            Perf_OwnTick();
+            Sched_RunParked();
+        }
     }
     call->fn(call->arg);
     /* The caller takes the world back: it resumes only after this store. It
@@ -135,14 +142,16 @@ static void wait_serving(struct st_side *self, int *flag, uint64_t spin_ticks)
 
         struct st_call *call = LF_XCHG(&self->inbox, NULL, LF_ACQ);
         if(call) {
-            run_call(self, call);
+            run_call(self, call, !flag);
             spin_end = SDL_GetPerformanceCounter() + spin_ticks;
             continue;
         }
 
-        /* Between calls, the script thread runs its view tasks */
+        /* Between calls, the script thread runs its view tasks. A slice runs
+         * to its yield, as script code is atomic between yields: a call made
+         * meanwhile waits for it.
+         */
         if(!flag && S_View_RunSlice()) {
-            LF_STORE(&s_preempt, 0, LF_RLX);
             spin_end = SDL_GetPerformanceCounter() + spin_ticks;
             continue;
         }
@@ -166,10 +175,10 @@ static void wait_serving(struct st_side *self, int *flag, uint64_t spin_ticks)
     }
 }
 
-static void call_on(struct st_side *target, void (*fn)(void*), void *arg)
+static void call_on(struct st_side *target, void (*fn)(void*), void *arg, bool query)
 {
     struct st_side *self = side_self();
-    struct st_call call = {fn, arg, 0};
+    struct st_call call = {.fn = fn, .arg = arg, .done = 0, .query = query};
 
     SDL_threadID prev = __atomic_load_n(&g_world_owner_id, __ATOMIC_RELAXED);
     __atomic_store_n(&g_world_owner_id, target->tid, __ATOMIC_RELAXED);
@@ -179,8 +188,6 @@ static void call_on(struct st_side *target, void (*fn)(void*), void *arg)
     struct st_call *was = LF_XCHG(&target->inbox, &call, LF_SC);
     assert(was == NULL);
     (void)was;
-    if(target == &s_script && Sched_InViewSlice())
-        LF_STORE(&s_preempt, 1, LF_RLX);
     lf_parker_unpark(&target->parker);
 
     wait_serving(self, &call.done, s_caller_spin_ticks);
@@ -231,6 +238,8 @@ bool S_Thread_Start(void)
         lf_parker_wait(&s_main.parker, -1);
     }
     Perf_RegisterThread(s_script.tid, "script");
+    /* Its view slices run on through the main thread's frame end */
+    Perf_SetOwnTicks(s_script.tid);
     s_running = true;
     return true;
 
@@ -257,11 +266,6 @@ void S_Thread_Stop(void)
     SDL_DestroySemaphore(s_script.parker.sem);
 }
 
-volatile int *S_Thread_PreemptFlag(void)
-{
-    return &s_preempt;
-}
-
 bool S_Thread_Running(void)
 {
     return s_running;
@@ -279,7 +283,17 @@ void S_Thread_Call(void (*fn)(void *arg), void *arg)
         return;
     }
     assert(Engine_OwnsWorld());
-    call_on(&s_script, fn, arg);
+    call_on(&s_script, fn, arg, false);
+}
+
+void S_Thread_Query(void (*fn)(void *arg), void *arg)
+{
+    if(!s_running || SDL_ThreadID() == s_script.tid) {
+        fn(arg);
+        return;
+    }
+    assert(Engine_OwnsWorld());
+    call_on(&s_script, fn, arg, true);
 }
 
 void S_Thread_CallMain(void (*fn)(void *arg), void *arg)
@@ -289,7 +303,7 @@ void S_Thread_CallMain(void (*fn)(void *arg), void *arg)
         return;
     }
     assert(Engine_OwnsWorld());
-    call_on(&s_main, fn, arg);
+    call_on(&s_main, fn, arg, false);
 }
 
 struct handler_call{

@@ -749,6 +749,20 @@ int G_Posts_Eating(uint32_t uid)
     return ret;
 }
 
+size_t G_Posts_GetAll(size_t maxout, uint32_t out[])
+{
+    size_t ret = 0;
+    uint32_t uid;
+    struct workshop ws;
+    kh_foreach(s_workshops, uid, ws, {
+        if(ret == maxout)
+            break;
+        out[ret++] = uid;
+    });
+    (void)ws;
+    return ret;
+}
+
 uint32_t G_Posts_WorkshopOf(uint32_t unit)
 {
     const struct holder *h = holder_get(unit);

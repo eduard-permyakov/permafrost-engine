@@ -51,8 +51,35 @@
  * newest nor the one a view slice holds.
  */
 
-#define NVIEWS          (3)
+#define NVIEWS            (3)
 #define MAX_VIEW_CLUSTERS (1024)
+#define MAX_VIEW_WORKSHOPS (4096)
+#define PINNED_LEN        (32)
+
+enum{
+    VU_AUTO_WORK       = (1 << 0),
+    VU_AUTO_TRANSPORT  = (1 << 1),
+    VU_PLAYER_MANAGED  = (1 << 2),
+    VU_INGREDIENT      = (1 << 3),
+    VU_COMPLETED       = (1 << 4),
+};
+
+/* What a unit's or building's script attributes read, beyond its flags,
+ * faction and position
+ */
+struct view_unit{
+    int      home_district;
+    uint32_t post_workshop;
+    uint32_t bits;
+    char     pinned[PINNED_LEN];
+};
+
+struct view_posts{
+    int posts, locked, inside, coming;
+};
+
+KHASH_MAP_INIT_INT(vunit, struct view_unit)
+KHASH_MAP_INIT_INT(vposts, struct view_posts)
 
 struct view_cluster{
     int      id;
@@ -65,7 +92,8 @@ struct script_view{
     khash_t(id)              *flags;
     khash_t(id)              *factions;
     khash_t(pos)             *positions;
-    khash_t(id)              *home_districts;
+    khash_t(vunit)           *units;
+    khash_t(vposts)          *posts;
     uint16_t                  faction_mask;
     char                      faction_names[MAX_FACTIONS][MAX_FAC_NAME_LEN];
     vec3_t                    faction_colors[MAX_FACTIONS];
@@ -84,23 +112,68 @@ static bool                s_init = false;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
+static struct view_unit unit_fill(uint32_t uid, int flags)
+{
+    struct view_unit ret = {.post_workshop = NULL_UID};
+    if(flags & ENTITY_FLAG_HARVESTER) {
+        ret.home_district = G_Automation_GetHomeDistrict(uid);
+        ret.post_workshop = G_Posts_WorkshopOf(uid);
+        pf_strlcpy(ret.pinned, G_Automation_GetPinnedWork(uid), sizeof(ret.pinned));
+        if(G_Automation_GetAutomaticWork(uid))
+            ret.bits |= VU_AUTO_WORK;
+        if(!(flags & ENTITY_FLAG_ZOMBIE) && G_Automation_GetAutomaticTransport(uid))
+            ret.bits |= VU_AUTO_TRANSPORT;
+        if(G_Automation_PlayerManaged(uid))
+            ret.bits |= VU_PLAYER_MANAGED;
+    }
+    if((flags & ENTITY_FLAG_GARRISONABLE) && !(flags & ENTITY_FLAG_ZOMBIE)
+    && G_Garrison_IsIngredient(uid))
+        ret.bits |= VU_INGREDIENT;
+    if((flags & ENTITY_FLAG_BUILDING) && !(flags & ENTITY_FLAG_ZOMBIE)
+    && G_Building_IsCompleted(uid))
+        ret.bits |= VU_COMPLETED;
+    return ret;
+}
+
+static const struct view_unit *view_unit(const struct script_view *view, uint32_t uid)
+{
+    khiter_t k = kh_get(vunit, view->units, uid);
+    if(k == kh_end(view->units))
+        return NULL;
+    return &kh_value(view->units, k);
+}
+
 static void view_fill(struct script_view *view)
 {
     G_FlagsCopyTableInto(view->flags);
     G_FactionIDCopyTableInto(view->factions);
     G_Pos_CopyTableInto(view->positions);
 
-    kh_clear(id, view->home_districts);
+    kh_clear(vunit, view->units);
     uint32_t uid;
     int flags;
     kh_foreach(view->flags, uid, flags, {
-        if(!(flags & ENTITY_FLAG_HARVESTER))
+        if(!(flags & (ENTITY_FLAG_HARVESTER | ENTITY_FLAG_GARRISONABLE | ENTITY_FLAG_BUILDING)))
             continue;
         int ret;
-        khiter_t k = kh_put(id, view->home_districts, uid, &ret);
-        if(ret != -1)
-            kh_value(view->home_districts, k) = G_Automation_GetHomeDistrict(uid);
+        khiter_t k = kh_put(vunit, view->units, uid, &ret);
+        if(ret == -1)
+            continue;
+        kh_value(view->units, k) = unit_fill(uid, flags);
     });
+
+    kh_clear(vposts, view->posts);
+    uint32_t workshops[MAX_VIEW_WORKSHOPS];
+    size_t nworkshops = G_Posts_GetAll(MAX_VIEW_WORKSHOPS, workshops);
+    for(size_t i = 0; i < nworkshops; i++) {
+        struct view_posts vp;
+        if(!G_Posts_Get(workshops[i], &vp.posts, &vp.locked, &vp.inside, &vp.coming))
+            continue;
+        int ret;
+        khiter_t k = kh_put(vposts, view->posts, workshops[i], &ret);
+        if(ret != -1)
+            kh_value(view->posts, k) = vp;
+    }
 
     view->faction_mask = G_GetFactions(view->faction_names, view->faction_colors, view->faction_ctrl);
 
@@ -137,10 +210,11 @@ static bool view_init(void)
         view->flags = kh_init(id);
         view->factions = kh_init(id);
         view->positions = kh_init(pos);
-        view->home_districts = kh_init(id);
+        view->units = kh_init(vunit);
+        view->posts = kh_init(vposts);
         view->districts = G_District_SnapshotNew();
         if(!view->flags || !view->factions || !view->positions
-        || !view->home_districts || !view->districts)
+        || !view->units || !view->posts || !view->districts)
             return false;
     }
     s_init = true;
@@ -156,7 +230,8 @@ void G_ScriptView_Shutdown(void)
         if(view->flags)          kh_destroy(id, view->flags);
         if(view->factions)       kh_destroy(id, view->factions);
         if(view->positions)      kh_destroy(pos, view->positions);
-        if(view->home_districts) kh_destroy(id, view->home_districts);
+        if(view->units)          kh_destroy(vunit, view->units);
+        if(view->posts)          kh_destroy(vposts, view->posts);
         G_District_SnapshotFree(view->districts);
         memset(view, 0, sizeof(*view));
     }
@@ -186,6 +261,11 @@ void G_ScriptView_Invalidate(void)
 {
     ASSERT_IN_MAIN_THREAD();
     LF_STORE(&s_published, -1, LF_SC);
+}
+
+bool G_ScriptView_Published(void)
+{
+    return LF_LOAD(&s_published, LF_SC) >= 0;
 }
 
 const struct script_view *G_ScriptView_Pin(void)
@@ -224,10 +304,64 @@ vec3_t G_ScriptView_Pos(const struct script_view *view, uint32_t uid)
 
 int G_ScriptView_HomeDistrict(const struct script_view *view, uint32_t uid)
 {
-    khiter_t k = kh_get(id, view->home_districts, uid);
-    if(k == kh_end(view->home_districts))
-        return 0;
-    return kh_value(view->home_districts, k);
+    const struct view_unit *vu = view_unit(view, uid);
+    return vu ? vu->home_district : 0;
+}
+
+bool G_ScriptView_AutomaticWork(const struct script_view *view, uint32_t uid)
+{
+    const struct view_unit *vu = view_unit(view, uid);
+    return vu && (vu->bits & VU_AUTO_WORK);
+}
+
+bool G_ScriptView_AutomaticTransport(const struct script_view *view, uint32_t uid)
+{
+    const struct view_unit *vu = view_unit(view, uid);
+    return vu && (vu->bits & VU_AUTO_TRANSPORT);
+}
+
+bool G_ScriptView_PlayerManaged(const struct script_view *view, uint32_t uid)
+{
+    const struct view_unit *vu = view_unit(view, uid);
+    return vu && (vu->bits & VU_PLAYER_MANAGED);
+}
+
+const char *G_ScriptView_PinnedWork(const struct script_view *view, uint32_t uid)
+{
+    const struct view_unit *vu = view_unit(view, uid);
+    return vu ? vu->pinned : "";
+}
+
+uint32_t G_ScriptView_PostWorkshop(const struct script_view *view, uint32_t uid)
+{
+    const struct view_unit *vu = view_unit(view, uid);
+    return vu ? vu->post_workshop : NULL_UID;
+}
+
+bool G_ScriptView_IsIngredient(const struct script_view *view, uint32_t uid)
+{
+    const struct view_unit *vu = view_unit(view, uid);
+    return vu && (vu->bits & VU_INGREDIENT);
+}
+
+bool G_ScriptView_Completed(const struct script_view *view, uint32_t uid)
+{
+    const struct view_unit *vu = view_unit(view, uid);
+    return vu && (vu->bits & VU_COMPLETED);
+}
+
+bool G_ScriptView_Posts(const struct script_view *view, uint32_t uid, int *out_posts, 
+                        int *out_locked, int *out_inside, int *out_coming)
+{
+    khiter_t k = kh_get(vposts, view->posts, uid);
+    if(k == kh_end(view->posts))
+        return false;
+    const struct view_posts *vp = &kh_value(view->posts, k);
+    *out_posts = vp->posts;
+    *out_locked = vp->locked;
+    *out_inside = vp->inside;
+    *out_coming = vp->coming;
+    return true;
 }
 
 uint16_t G_ScriptView_Factions(const struct script_view *view,

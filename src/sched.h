@@ -118,9 +118,14 @@ void     Sched_HandleScriptEvent(int event, void *arg, int event_source, bool im
  * task, alongside the main thread. Returns false when none is ready. */
 bool     Sched_RunViewSlice(void);
 bool     Sched_InViewSlice(void);
-/* From a view task: gives the script thread up, either to let it take a call
- * (and come back as a view task) or to run on in the next world window */
-void     Sched_ViewYield(bool needs_world);
+/* From a view task that reached the world: the rest of its slice runs in the
+ * next world window, before any other script code
+ */
+void     Sched_ViewPark(void);
+/* Called on the script thread as a world window opens: runs the parked view
+ * task's slice to its end
+ */
+void     Sched_RunParked(void);
 void     Sched_StartBackgroundTasks(void);
 void     Sched_Tick(void);
 /* Park the workers at their next yield point; the frame's buffers may be

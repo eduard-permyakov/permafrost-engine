@@ -1654,6 +1654,7 @@ int      G_Posts_Eating(uint32_t uid);
 /* The workshop whose post the unit holds or is on its way to, or NULL_UID 
  */
 uint32_t G_Posts_WorkshopOf(uint32_t unit);
+size_t   G_Posts_GetAll(size_t maxout, uint32_t out[]);
 
 /* Sends the unit to a post of the workshop as the player's order, opening one
  * kept empty if need be; one holding a post elsewhere leaves it 
@@ -1699,6 +1700,7 @@ struct script_view;
 
 void        G_ScriptView_Publish(void);
 void        G_ScriptView_Invalidate(void);
+bool        G_ScriptView_Published(void);
 void        G_ScriptView_Shutdown(void);
 const struct script_view *G_ScriptView_Pin(void);
 void        G_ScriptView_Unpin(void);
@@ -1707,6 +1709,15 @@ uint32_t    G_ScriptView_Flags(const struct script_view *view, uint32_t uid);
 int         G_ScriptView_FactionID(const struct script_view *view, uint32_t uid);
 vec3_t      G_ScriptView_Pos(const struct script_view *view, uint32_t uid);
 int         G_ScriptView_HomeDistrict(const struct script_view *view, uint32_t uid);
+bool        G_ScriptView_AutomaticWork(const struct script_view *view, uint32_t uid);
+bool        G_ScriptView_AutomaticTransport(const struct script_view *view, uint32_t uid);
+bool        G_ScriptView_PlayerManaged(const struct script_view *view, uint32_t uid);
+const char *G_ScriptView_PinnedWork(const struct script_view *view, uint32_t uid);
+uint32_t    G_ScriptView_PostWorkshop(const struct script_view *view, uint32_t uid);
+bool        G_ScriptView_IsIngredient(const struct script_view *view, uint32_t uid);
+bool        G_ScriptView_Completed(const struct script_view *view, uint32_t uid);
+bool        G_ScriptView_Posts(const struct script_view *view, uint32_t uid, int *out_posts, 
+                               int *out_locked, int *out_inside, int *out_coming);
 uint16_t    G_ScriptView_Factions(const struct script_view *view, 
                                   char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors, bool *out_ctrl);
 size_t      G_ScriptView_Clusters(const struct script_view *view, size_t maxout, int out[]);

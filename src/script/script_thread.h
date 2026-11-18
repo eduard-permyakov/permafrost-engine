@@ -46,9 +46,6 @@ struct _object;
 /* An event handler that runs Python, moved onto the script thread */
 void S_Thread_CallHandler(void (*handler)(void *user, void *event), void *user, void *event);
 
-/* The flag the interpreter checks to let a view slice give the thread up */
-volatile int *S_Thread_PreemptFlag(void);
-
 /* View mode: what a view task may do without the world, run on the script
  * thread alongside the main thread */
 void S_View_Init(struct _object *module);
