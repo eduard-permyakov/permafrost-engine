@@ -375,6 +375,14 @@ bool                  G_Cluster_TypeOf(uint32_t uid, char *out_type, size_t len,
 #define G_DISTRICT_TERRITORY_COST (480.0f)
 
 int                   G_District_At(int faction, bool water, vec2_t pos, float *out_cost);
+/* A copy of the districts for the script thread, refreshed on the main thread
+ * when they changed */
+struct district_snapshot;
+struct district_snapshot *G_District_SnapshotNew(void);
+void G_District_SnapshotFree(struct district_snapshot *snap);
+void G_District_SnapshotUpdate(struct district_snapshot *snap);
+int  G_District_AtFrom(const struct district_snapshot *snap, int faction, bool water, 
+                       vec2_t pos, float *out_cost);
 int                   G_District_Of(uint32_t uid);
 
 /* The district whose hub the building is one of the buildings of, or 0 
@@ -1679,6 +1687,34 @@ int  G_Population_GetAllied(int faction_id);
 int  G_Population_GetEnemy(int faction_id);
 int  G_Population_GetPlayer(void);
 int  G_Population_GetPlayerLimit(void);
+
+/*###########################################################################*/
+/* SCRIPT VIEW                                                               */
+/*###########################################################################*/
+
+/* What the script thread reads while it runs alongside the main thread: a copy
+ * of the world made once a frame, where the world is still. The script thread
+ * pins the newest for a view slice; the main thread never fills a pinned one. */
+struct script_view;
+
+void        G_ScriptView_Publish(void);
+void        G_ScriptView_Invalidate(void);
+void        G_ScriptView_Shutdown(void);
+const struct script_view *G_ScriptView_Pin(void);
+void        G_ScriptView_Unpin(void);
+
+uint32_t    G_ScriptView_Flags(const struct script_view *view, uint32_t uid);
+int         G_ScriptView_FactionID(const struct script_view *view, uint32_t uid);
+vec3_t      G_ScriptView_Pos(const struct script_view *view, uint32_t uid);
+int         G_ScriptView_HomeDistrict(const struct script_view *view, uint32_t uid);
+uint16_t    G_ScriptView_Factions(const struct script_view *view, 
+                                  char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors, bool *out_ctrl);
+size_t      G_ScriptView_Clusters(const struct script_view *view, size_t maxout, int out[]);
+const char *G_ScriptView_ClusterType(const struct script_view *view, int id);
+int         G_ScriptView_ClusterFaction(const struct script_view *view, int id);
+uint32_t    G_ScriptView_ClusterAnchor(const struct script_view *view, int id);
+int         G_ScriptView_DistrictAt(const struct script_view *view, int faction, bool water, 
+                                    vec2_t pos, float *out_cost);
 
 #endif
 

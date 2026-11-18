@@ -2172,7 +2172,11 @@ static PyObject *PyEntity_get_name(PyEntityObject *self, void *closure)
 
 static PyObject *PyEntity_get_zombie(PyEntityObject *self, void *closure)
 {
-    if(G_FlagsGet(self->ent) & ENTITY_FLAG_ZOMBIE) {
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    uint32_t flags = view ? G_ScriptView_Flags(view, self->ent) : G_FlagsGet(self->ent);
+    if(flags & ENTITY_FLAG_ZOMBIE) {
         Py_RETURN_TRUE;
     }
     Py_RETURN_FALSE;
@@ -2225,7 +2229,10 @@ static int PyEntity_set_name(PyEntityObject *self, PyObject *value, void *closur
 
 static PyObject *PyEntity_get_pos(PyEntityObject *self, void *closure)
 {
-    vec3_t pos = G_Pos_Get(self->ent);
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    vec3_t pos = view ? G_ScriptView_Pos(view, self->ent) : G_Pos_Get(self->ent);
     return Py_BuildValue("(f,f,f)", pos.x, pos.y, pos.z);
 }
 
@@ -2372,7 +2379,10 @@ static PyObject *PyEntity_get_top_screen_pos(PyEntityObject *self, void *closure
 
 static PyObject *PyEntity_get_faction_id(PyEntityObject *self, void *closure)
 {
-    return Py_BuildValue("i", G_GetFactionID(self->ent));
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    return Py_BuildValue("i", view ? G_ScriptView_FactionID(view, self->ent) : G_GetFactionID(self->ent));
 }
 
 static int PyEntity_set_faction_id(PyEntityObject *self, PyObject *value, void *closure)
@@ -5547,7 +5557,11 @@ static int PyHarvesterEntity_set_automatic_posts(PyHarvesterEntityObject *self, 
 
 static PyObject *PyHarvesterEntity_get_home_district(PyHarvesterEntityObject *self, void *closure)
 {
-    return PyInt_FromLong(G_Automation_GetHomeDistrict(self->super.ent));
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    return PyInt_FromLong(view ? G_ScriptView_HomeDistrict(view, self->super.ent)
+                               : G_Automation_GetHomeDistrict(self->super.ent));
 }
 
 static int PyHarvesterEntity_set_home_district(PyHarvesterEntityObject *self, PyObject *value, void *closure)

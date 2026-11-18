@@ -141,7 +141,7 @@ static void wait_serving(struct st_side *self, int *flag, uint64_t spin_ticks)
         }
 
         /* Between calls, the script thread runs its view tasks */
-        if(!flag && Sched_RunViewSlice()) {
+        if(!flag && S_View_RunSlice()) {
             LF_STORE(&s_preempt, 0, LF_RLX);
             spin_end = SDL_GetPerformanceCounter() + spin_ticks;
             continue;

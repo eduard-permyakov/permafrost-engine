@@ -41,6 +41,7 @@
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/pf_string.h"
+#include "../game/public/game.h"
 
 #include <frameobject.h>
 #include <string.h>
@@ -70,15 +71,26 @@ VEC_TYPE(vuid, uint32_t)
 VEC_IMPL(static inline, vuid, uint32_t)
 
 /* What a view task may reach without the world: the task API, whose requests
- * go to the scheduler, and the frame clock */
+ * go to the scheduler, the frame clock, and what the script view holds. An
+ * attribute's reading and writing are named apart. */
 static const char *s_allowed[] = {
     "pf.Task.",
     "pf.get_ticks",
     "pf.prev_frame_ms",
+    "pf.Entity.zombie.get",
+    "pf.Entity.pos.get",
+    "pf.Entity.faction_id.get",
+    "pf.HarvesterEntity.home_district.get",
+    "pf.get_factions_list",
+    "pf.clusters",
+    "pf.cluster_anchor",
+    "pf.district_at",
     NULL
 };
 
 static khash_t(vclass) *s_method_class;
+/* The view the running view slice reads, if one was published */
+static const struct script_view *s_current;
 static vec_vuid_t       s_deferred_removes;
 static bool             s_init = false;
 
@@ -149,8 +161,11 @@ static void wrap_getsets(PyTypeObject *type)
         if(def->get == view_get)
             continue;
         struct view_getset *vg = PF_MALLOC(sizeof(struct view_getset));
-        pf_snprintf(name, sizeof(name), "%s.%s", type->tp_name, def->name);
-        *vg = (struct view_getset){def->get, def->set, def->closure, classify(name), classify(name)};
+        *vg = (struct view_getset){def->get, def->set, def->closure, VIEW_PARK, VIEW_PARK};
+        pf_snprintf(name, sizeof(name), "%s.%s.get", type->tp_name, def->name);
+        vg->get_class = classify(name);
+        pf_snprintf(name, sizeof(name), "%s.%s.set", type->tp_name, def->name);
+        vg->set_class = classify(name);
         def->get = def->get ? view_get : NULL;
         def->set = def->set ? view_set : NULL;
         def->closure = vg;
@@ -232,6 +247,28 @@ void S_View_EnterTask(bool view)
     }else if(ts->c_profilefunc == view_profile) {
         PyEval_SetProfile(NULL, NULL);
     }
+}
+
+bool S_View_RunSlice(void)
+{
+    s_current = G_ScriptView_Pin();
+    bool ret = Sched_RunViewSlice();
+    G_ScriptView_Unpin();
+    s_current = NULL;
+    return ret;
+}
+
+int S_View_Read(const struct script_view **out)
+{
+    *out = NULL;
+    if(!S_View_Active())
+        return 0;
+    if(s_current) {
+        *out = s_current;
+        return 0;
+    }
+    /* No view was published: the read waits for the live world */
+    return S_View_RequireWorld();
 }
 
 void S_View_DeferRemove(uint32_t uid)

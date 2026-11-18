@@ -59,6 +59,12 @@ bool S_View_Active(void);
 /* A script task's thread state comes in: a view task in a view slice is
  * watched for what it reaches */
 void S_View_EnterTask(bool view);
+/* Runs a view task's slice, alongside the main thread, on the newest view */
+bool S_View_RunSlice(void);
+/* For a binding: the view to read in a view slice, or NULL for the live world.
+ * Returns -1 if the task was ended while it waited for the world. */
+struct script_view;
+int  S_View_Read(const struct script_view **out);
 /* Queues a write a view task made for the next world window */
 void S_View_DeferRemove(uint32_t uid);
 void S_View_ApplyDeferred(void);

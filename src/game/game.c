@@ -2516,6 +2516,7 @@ bool G_LoadMap(SDL_RWops *stream, bool update_navgrid)
 void G_ClearState(void)
 {
     PERF_ENTER();
+    G_ScriptView_Invalidate();
     G_Sel_Clear();
     g_remove_queued();
 
@@ -2854,6 +2855,7 @@ void G_Shutdown(void)
 
     E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
     G_ClearState();
+    G_ScriptView_Shutdown();
     PF_FREE(s_cull_results);
     s_cull_cap = 0;
 

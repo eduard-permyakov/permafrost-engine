@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_GAME_DISTRICT
 
 #include "district.h"
+#include "../main.h"
 #include "public/game.h"
 #include "game_private.h"
 #include "position.h"
@@ -131,6 +132,8 @@ static int               s_rows, s_cols;
 static bool             *s_passable[NUM_LAYERS];
 static bool             *s_road;
 static struct field      s_fields[MAX_FACTIONS][NUM_LAYERS];
+/* Bumped whenever the fields change, so that a copy knows to refresh */
+static uint64_t          s_fields_gen;
 static bool              s_dirty;
 static int               s_dirty_ticks;
 static size_t            s_nroads;
@@ -499,6 +502,7 @@ static void recompute(void)
     s_dirty = false;
     s_mesh_dirty[MESH_DISTRICTS] = true;
     s_mesh_dirty[MESH_FOCUS] = true;
+    s_fields_gen++;
 }
 
 static void recompute_preview(void)
@@ -939,6 +943,92 @@ void G_District_Update(void)
     if(s_dirty) {
         recompute();
     }
+}
+
+/* A copy of the fields for the script thread, which reads them while the
+ * main thread may recompute them */
+struct district_snapshot{
+    uint64_t     gen;
+    vec3_t       map_pos;
+    int          rows, cols;
+    struct field fields[MAX_FACTIONS][NUM_LAYERS];
+};
+
+struct district_snapshot *G_District_SnapshotNew(void)
+{
+    struct district_snapshot *ret = PF_CALLOC(1, sizeof(struct district_snapshot));
+    if(ret)
+        ret->gen = ~(uint64_t)0;
+    return ret;
+}
+
+void G_District_SnapshotFree(struct district_snapshot *snap)
+{
+    if(!snap)
+        return;
+    for(int fac = 0; fac < MAX_FACTIONS; fac++) {
+    for(int layer = 0; layer < NUM_LAYERS; layer++) {
+        PF_FREE(snap->fields[fac][layer].owner);
+        PF_FREE(snap->fields[fac][layer].cost);
+    }}
+    PF_FREE(snap);
+}
+
+void G_District_SnapshotUpdate(struct district_snapshot *snap)
+{
+    ASSERT_IN_MAIN_THREAD();
+    G_District_Update();
+    if(snap->gen == s_fields_gen && snap->rows == s_rows && snap->cols == s_cols)
+        return;
+
+    size_t ncells = (size_t)s_rows * s_cols;
+    bool resized = (snap->rows != s_rows || snap->cols != s_cols);
+    snap->map_pos = s_map_pos;
+    snap->rows = s_rows;
+    snap->cols = s_cols;
+
+    for(int fac = 0; fac < MAX_FACTIONS; fac++) {
+    for(int layer = 0; layer < NUM_LAYERS; layer++) {
+        const struct field *src = &s_fields[fac][layer];
+        struct field *dst = &snap->fields[fac][layer];
+        if(!src->owner || resized) {
+            PF_FREE(dst->owner);
+            PF_FREE(dst->cost);
+            dst->owner = NULL;
+            dst->cost = NULL;
+        }
+        if(!src->owner)
+            continue;
+        if(!dst->owner) {
+            dst->owner = PF_MALLOC(ncells * sizeof(int));
+            dst->cost = PF_MALLOC(ncells * sizeof(float));
+            if(!dst->owner || !dst->cost)
+                continue;
+        }
+        memcpy(dst->owner, src->owner, ncells * sizeof(int));
+        memcpy(dst->cost, src->cost, ncells * sizeof(float));
+    }}
+    snap->gen = s_fields_gen;
+}
+
+int G_District_AtFrom(const struct district_snapshot *snap, int faction, bool water, 
+                      vec2_t pos, float *out_cost)
+{
+    if(out_cost) {
+        *out_cost = UNREACHED;
+    }
+    if(faction < 0 || faction >= MAX_FACTIONS)
+        return 0;
+    const struct field *f = &snap->fields[faction][water ? LAYER_WATER : LAYER_GROUND];
+    int c = (int)floorf((snap->map_pos.x - pos.x) / CELL_SIZE);
+    int r = (int)floorf((pos.z - snap->map_pos.z) / CELL_SIZE);
+    if(!f->owner || r < 0 || r >= snap->rows || c < 0 || c >= snap->cols)
+        return 0;
+    int idx = r * snap->cols + c;
+    if(out_cost) {
+        *out_cost = f->cost[idx];
+    }
+    return f->owner[idx];
 }
 
 int G_District_At(int faction, bool water, vec2_t pos, float *out_cost)

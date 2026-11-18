@@ -989,6 +989,7 @@ int main(int argc, char **argv)
             frame_stamp(FT_UPDATE_DONE);
             G_Render();
             frame_stamp(FT_RENDER_DONE);
+            G_ScriptView_Publish();
             Sched_Tick();
             frame_stamp(FT_SCHED_DONE);
 

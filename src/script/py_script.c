@@ -3727,7 +3727,11 @@ static PyObject *PyPf_get_factions_list(PyObject *self)
     vec3_t colors[MAX_FACTIONS];
     bool controllable[MAX_FACTIONS];
 
-    uint16_t facs = G_GetFactions(names, colors, controllable);
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    uint16_t facs = view ? G_ScriptView_Factions(view, names, colors, controllable)
+                         : G_GetFactions(names, colors, controllable);
     size_t num_facs = 0;
     for(uint16_t fcopy = facs; fcopy; fcopy >>= 1) {
         if(fcopy & 0x1)
@@ -6349,7 +6353,11 @@ static PyObject *PyPf_cluster_anchor(PyObject *self, PyObject *args)
         PyErr_SetString(PyExc_TypeError, "Argument must be an integer cluster ID.");
         return NULL;
     }
-    PyObject *obj = S_Entity_ObjForUID(G_Cluster_Anchor(cluster_id));
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    PyObject *obj = S_Entity_ObjForUID(view ? G_ScriptView_ClusterAnchor(view, cluster_id)
+                                            : G_Cluster_Anchor(cluster_id));
     if(!obj)
         Py_RETURN_NONE;
     Py_INCREF(obj);
@@ -6419,17 +6427,23 @@ static PyObject *PyPf_clusters(PyObject *self, PyObject *args, PyObject *kwargs)
         PyErr_SetString(PyExc_TypeError, "Optional keywords: 'type' (string) and 'faction' (integer).");
         return NULL;
     }
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
     int ids[1024];
-    size_t nids = G_Cluster_GetAll(ARR_SIZE(ids), ids);
+    size_t nids = view ? G_ScriptView_Clusters(view, ARR_SIZE(ids), ids)
+                       : G_Cluster_GetAll(ARR_SIZE(ids), ids);
     qsort(ids, nids, sizeof(ids[0]), compare_ints);
 
     PyObject *ret = PyList_New(0);
     if(!ret)
         return NULL;
     for(int i = 0; i < nids; i++) {
-        if(type && strcmp(G_Cluster_Type(ids[i]), type))
+        const char *ctype = view ? G_ScriptView_ClusterType(view, ids[i]) : G_Cluster_Type(ids[i]);
+        int cfaction = view ? G_ScriptView_ClusterFaction(view, ids[i]) : G_Cluster_Faction(ids[i]);
+        if(type && strcmp(ctype, type))
             continue;
-        if(faction >= 0 && G_Cluster_Faction(ids[i]) != faction)
+        if(faction >= 0 && cfaction != faction)
             continue;
         PyObject *id = PyInt_FromLong(ids[i]);
         if(!id || 0 != PyList_Append(ret, id)) {
@@ -7038,9 +7052,17 @@ static PyObject *PyPf_district_at(PyObject *self, PyObject *args, PyObject *kwar
         PyErr_SetString(PyExc_TypeError, "Arguments must be an (X, Z) tuple and a faction ID.");
         return NULL;
     }
-    G_District_Update();
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
     float cost;
-    int id = G_District_At(faction, water, pos, &cost);
+    int id;
+    if(view) {
+        id = G_ScriptView_DistrictAt(view, faction, water, pos, &cost);
+    }else{
+        G_District_Update();
+        id = G_District_At(faction, water, pos, &cost);
+    }
     return Py_BuildValue("(ifO)", id, cost, cost <= G_DISTRICT_TERRITORY_COST && id ? Py_True : Py_False);
 }
 
