@@ -206,6 +206,9 @@ bool        E_QueuedThisFrame(enum eventtype event);
 
 void E_Global_Notify(enum eventtype event, void *event_arg, enum event_source);
 void E_Global_NotifyImmediate(enum eventtype event, void *event_arg, enum event_source);
+/* Dispatches the event on the script thread, engine handlers and all: for an
+ * event most of whose handlers are the script's, such as the UI update */
+void E_Global_NotifyImmediateOnScript(enum eventtype event, void *event_arg, enum event_source);
 
 bool E_Global_RegisterNamed(enum eventtype event, handler_t handler, void *user_arg,
                             int simmask, const char *fname);

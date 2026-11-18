@@ -2221,7 +2221,11 @@ static void handle_event(struct home *home, int event, void *arg, int event_sour
          */
         task->retval = sched_retain_arg(task, event, event_source, arg);
 
-        if(torun) {
+        /* An immediate event raised on another home's thread queues a task
+         * pinned to this home: it only runs on its own */
+        bool here = !(task->flags & TASK_MAIN_THREAD_PINNED) 
+                 || thread_home(sched_self()) == home;
+        if(torun && here) {
             task->ready_ts = SchedStats_Now();
             torun[nrun++] = task;
         }else{

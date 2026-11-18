@@ -974,6 +974,17 @@ void E_Global_NotifyImmediate(enum eventtype event, void *event_arg, enum event_
     e_handle_event(e, true);
 }
 
+static void e_notify_on_script(void *arg)
+{
+    e_handle_event(*(struct event*)arg, true);
+}
+
+void E_Global_NotifyImmediateOnScript(enum eventtype event, void *event_arg, enum event_source source)
+{
+    struct event e = (struct event){event, event_arg, source, GLOBAL_ID, G_ClockTicks()};
+    S_Thread_Call(e_notify_on_script, &e);
+}
+
 /*
  * Entity Events
  */
