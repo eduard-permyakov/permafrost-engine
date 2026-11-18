@@ -191,6 +191,10 @@ void        E_Shutdown(void);
 void        E_DeleteScriptHandlers(void);
 size_t      E_GetScriptHandlers(size_t max_out, struct script_handler *out);
 void        E_ClearPendingEvents(void);
+/* Gives the script thread its turn at the events waiting for it */
+void        E_ServiceScriptEvents(void);
+/* A script task waits on the event: it is sent to the script side from now on */
+void        E_NoteScriptAwait(int event);
 void        E_FlushEventQueue(void);
 const char *E_EngineEventString(enum eventtype event);
 bool        E_EventsQueued(void);

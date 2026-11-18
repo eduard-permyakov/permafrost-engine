@@ -44,6 +44,7 @@
 #include "lib/public/khash.h"
 #include "lib/public/vec.h"
 #include "lib/public/queue.h"
+#include "lib/public/lockfree.h"
 #include "game/public/game.h"
 
 #include <assert.h>
@@ -193,6 +194,14 @@ static khash_t(handler_desc) *s_script_handler_table;
 static khash_t(usub)         *s_update_start_subs;
 static queue(event)           s_event_queues[2];
 static int                    s_front_queue_idx = 0;
+/* What the script side has ever listened to, by event: sticky bits, so that
+ * the dispatching thread decides what to send it without reading its tables */
+#define SCRIPT_EVENT_SPACE  (0x30000)
+static uint8_t                s_script_global_subs[SCRIPT_EVENT_SPACE / 8];
+static uint8_t                s_script_entity_subs[SCRIPT_EVENT_SPACE / 8];
+static uint8_t                s_script_task_subs[SCRIPT_EVENT_SPACE / 8];
+/* Events for the script side waiting for its next turn, newest first */
+static struct script_record  *s_script_inbox;
 /* Scratch values for e_handle_event, to avoid allocation churn */
 static vec_hd_t               s_dispatch_execd;
 static vec_hd_t               s_dispatch_curr;
@@ -456,6 +465,11 @@ struct script_dispatch{
     struct script_event_arg sarg;
 };
 
+struct script_record{
+    struct script_dispatch  sd;
+    struct script_record   *next;
+};
+
 /* The script tasks waiting on the event wake first, then the handlers run,
  * as on the engine's side */
 static void e_dispatch_script(void *arg)
@@ -467,11 +481,100 @@ static void e_dispatch_script(void *arg)
         e_run_handlers(s_script_handler_table, sd->event, sd->immediate, &sd->sarg);
 }
 
-static bool e_has_script_handlers(struct event event)
+static void e_sub_set(uint8_t *bits, int event)
 {
-    khiter_t k = kh_get(handler_desc, s_script_handler_table, e_key(event.receiver_id, event.type));
-    return (k != kh_end(s_script_handler_table)) 
-        && vec_size(&kh_value(s_script_handler_table, k)) > 0;
+    if(event < 0 || event >= SCRIPT_EVENT_SPACE)
+        return;
+    LF_FOR(&bits[event / 8], (uint8_t)(1u << (event % 8)), LF_RLX);
+}
+
+static bool e_sub_get(const uint8_t *bits, int event)
+{
+    if(event < 0 || event >= SCRIPT_EVENT_SPACE)
+        return true;
+    return LF_LOAD(&bits[event / 8], LF_RLX) & (1u << (event % 8));
+}
+
+/* Whether the script side may want the event: it has listened to the event
+ * before, and for an entity's, the entity has a script object */
+static bool e_script_interested(struct event event, bool to_zombie)
+{
+    if(e_sub_get(s_script_task_subs, event.type))
+        return true;
+    if(to_zombie)
+        return false;
+    if(event.receiver_id == GLOBAL_ID)
+        return e_sub_get(s_script_global_subs, event.type);
+    return e_sub_get(s_script_entity_subs, event.type) 
+        && S_ScriptTypeID(event.receiver_id) != 0;
+}
+
+/* Events whose engine code goes on to read what the script handlers did;
+ * input, as a script's key handler may set what the engine's next click does;
+ * and the UI and render events, whose handlers draw into this frame's UI */
+static bool e_script_needs_now(enum eventtype type)
+{
+    return ((int)type < (int)SDL_LASTEVENT)
+        || (type == EVENT_RESOURCE_EXHAUSTED)
+        || (type == EVENT_UNIT_IDLE_PENDING)
+        || (type == EVENT_POST_MANNED)
+        || (type == EVENT_UPDATE_UI)
+        || (type == EVENT_RENDER_3D_PRE)
+        || (type == EVENT_RENDER_3D_POST)
+        || (type == EVENT_RENDER_UI)
+        || (type == EVENT_RENDER_FINISH);
+}
+
+static void e_script_record_free(struct script_record *rec)
+{
+    S_EventArgRelease(&rec->sd.sarg);
+    if(rec->sd.event.source == ES_SCRIPT)
+        S_Release(rec->sd.event.arg);
+    PF_FREE(rec);
+}
+
+/* Takes the waiting events in the order they were sent */
+static struct script_record *e_script_take(void)
+{
+    struct script_record *head = LF_XCHG(&s_script_inbox, NULL, LF_ACQ);
+    struct script_record *prev = NULL;
+    while(head) {
+        struct script_record *next = head->next;
+        head->next = prev;
+        prev = head;
+        head = next;
+    }
+    return prev;
+}
+
+static void e_script_drain(void *unused)
+{
+    (void)unused;
+    struct script_record *rec;
+    while((rec = e_script_take())) {
+        while(rec) {
+            struct script_record *next = rec->next;
+            e_dispatch_script(&rec->sd);
+            e_script_record_free(rec);
+            rec = next;
+        }
+    }
+}
+
+static bool e_script_send(struct event event, bool immediate, bool to_zombie)
+{
+    struct script_record *rec = PF_MALLOC(sizeof(struct script_record));
+    if(!rec)
+        return false;
+    rec->sd = (struct script_dispatch){event, immediate, to_zombie};
+    /* A script argument's reference passes to the record */
+    S_EventArgEncode(event.type, event.source, event.arg, &rec->sd.sarg);
+
+    struct script_record *head = LF_LOAD(&s_script_inbox, LF_RLX);
+    do{
+        rec->next = head;
+    }while(!LF_CASW(&s_script_inbox, &head, rec, LF_REL, LF_RLX));
+    return true;
 }
 
 static void e_handle_event(struct event event, bool immediate)
@@ -488,15 +591,25 @@ static void e_handle_event(struct event event, bool immediate)
         e_run_handlers(s_event_handler_table, event, immediate, NULL);
 
     /* The script side runs after the engine's, on the script thread, with the
-     * argument copied out of whatever the engine pointed it at */
-    if((!to_zombie && e_has_script_handlers(event)) || Sched_HasScriptWaiters(event.type)) {
-        struct script_dispatch sd = {event, immediate, to_zombie};
-        S_EventArgEncode(event.type, event.source, event.arg, &sd.sarg);
-        S_Thread_Call(e_dispatch_script, &sd);
-        S_EventArgRelease(&sd.sarg);
+     * argument copied out of whatever the engine pointed it at. Raised on the
+     * script thread, the event reaches it at once; otherwise it waits for the
+     * script thread's next turn, unless the engine needs the result now.
+     */
+    bool handed = false;
+    if(e_script_interested(event, to_zombie)) {
+        if(S_Thread_OnScript() || !S_Thread_Running()) {
+            struct script_dispatch sd = {event, immediate, to_zombie};
+            S_EventArgEncode(event.type, event.source, event.arg, &sd.sarg);
+            e_dispatch_script(&sd);
+            S_EventArgRelease(&sd.sarg);
+        }else{
+            handed = e_script_send(event, immediate, to_zombie);
+            if(e_script_needs_now(event.type))
+                S_Thread_Call(e_script_drain, NULL);
+        }
     }
 
-    if(event.source == ES_SCRIPT)
+    if(event.source == ES_SCRIPT && !handed)
         S_Release(event.arg);
 }
 
@@ -645,6 +758,11 @@ void E_ServiceQueue(void)
     e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID, ticks}, false);
     s_service_ticks[E_TIME_UPDATE_END] += SDL_GetPerformanceCounter() - t3;
 
+    /* The script thread's turn at the frame's events */
+    uint64_t t4 = SDL_GetPerformanceCounter();
+    E_ServiceScriptEvents();
+    s_service_ticks[E_TIME_SCRIPT] += SDL_GetPerformanceCounter() - t4;
+
     PERF_RETURN_VOID();
 }
 
@@ -657,8 +775,26 @@ void E_LastServiceTimes(uint64_t out_us[E_TIME_NBUCKETS])
     }
 }
 
+void E_ServiceScriptEvents(void)
+{
+    if(LF_LOAD(&s_script_inbox, LF_ACQ))
+        S_Thread_Call(e_script_drain, NULL);
+}
+
+void E_NoteScriptAwait(int event)
+{
+    e_sub_set(s_script_task_subs, event);
+}
+
 void E_ClearPendingEvents(void)
 {
+    struct script_record *rec = e_script_take();
+    while(rec) {
+        struct script_record *next = rec->next;
+        e_script_record_free(rec);
+        rec = next;
+    }
+
     for(int q = 0; q < 2; q++) {
         queue_event_t *queue = &s_event_queues[q];
         struct event event;
@@ -672,6 +808,8 @@ void E_ClearPendingEvents(void)
 void E_FlushEventQueue(void)
 {
     while(E_EventsQueued()) {
+
+        E_ServiceScriptEvents();
 
         queue_event_t *queue = &s_event_queues[s_front_queue_idx];
         s_front_queue_idx = (s_front_queue_idx + 1) % 2;
@@ -722,7 +860,8 @@ bool E_QueuedThisFrame(enum eventtype event)
 bool E_EventsQueued(void)
 {
     return (queue_size(s_event_queues[0]) > 0) 
-        || (queue_size(s_event_queues[1]) > 0);
+        || (queue_size(s_event_queues[1]) > 0)
+        || (LF_LOAD(&s_script_inbox, LF_ACQ) != NULL);
 }
 
 void E_DeleteScriptHandlers(void)
@@ -808,6 +947,7 @@ bool E_Global_Unregister(enum eventtype event, handler_t handler)
 bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler, 
                              script_opaque_t user_arg, int simmask)
 {
+    e_sub_set(s_script_global_subs, event);
     struct handler_desc hd;
     hd.type = HANDLER_TYPE_SCRIPT;
     hd.handler.as_script_callable = handler;
@@ -864,6 +1004,7 @@ bool E_Entity_Unregister(enum eventtype event, uint32_t ent_uid, handler_t handl
 bool E_Entity_ScriptRegister(enum eventtype event, uint32_t ent_uid, 
                              script_opaque_t handler, script_opaque_t user_arg, int simmask)
 {
+    e_sub_set(s_script_entity_subs, event);
     struct handler_desc hd;
     hd.type = HANDLER_TYPE_SCRIPT;
     hd.handler.as_script_callable = handler;

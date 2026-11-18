@@ -1126,6 +1126,8 @@ static void await_event(struct task *task)
     task->reg_seq = ST_SEQ(st) + 1;
 
     struct home *home = task_home(task);
+    if(home == SCRIPT_HOME)
+        E_NoteScriptAwait(task->reg_event);
     uint32_t head = LF_LOAD(&home->reg_inbox, LF_RLX);
     do{
         LF_STORE(&task->reg_next, head, LF_RLX);
@@ -2247,14 +2249,6 @@ void Sched_HandleScriptEvent(int event, void *arg, int event_source, bool immedi
     handle_event(SCRIPT_HOME, event, arg, event_source, immediate);
 }
 
-bool Sched_HasScriptWaiters(int event)
-{
-    if(LF_LOAD(&SCRIPT_HOME->reg_inbox, LF_ACQ))
-        return true;
-    khiter_t k = kh_get(evw, SCRIPT_HOME->waiters, event);
-    return (k != kh_end(SCRIPT_HOME->waiters)) && kh_val(SCRIPT_HOME->waiters, k).size > 0;
-}
-
 void Sched_StartBackgroundTasks(void)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -2293,6 +2287,7 @@ static void script_tick(void *arg)
     struct sched_thread *self = sched_self();
     assert(thread_home(self) == SCRIPT_HOME);
 
+    E_ServiceScriptEvents();
     SCRIPT_HOME->deadline = tick->deadline;
     if(tick->realtime)
         sched_run_realtime(self);
