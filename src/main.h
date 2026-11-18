@@ -45,6 +45,9 @@ extern unsigned       g_last_frame_ms; /* readonly */
 extern unsigned long  g_frame_idx;     /* readonly */
 extern SDL_threadID   g_main_thread_id;   /* readonly */
 extern SDL_threadID   g_render_thread_id; /* readonly */
+/* The thread that owns the game world and the main thread's state: the main
+ * thread, or the script thread while the main thread waits on its call */
+extern SDL_threadID   g_world_owner_id;
 extern const char     g_version[]; /* readonly */
 
 
@@ -52,7 +55,12 @@ extern const char     g_version[]; /* readonly */
     assert(SDL_ThreadID() == g_render_thread_id)
 
 #define ASSERT_IN_MAIN_THREAD() \
-    assert(SDL_ThreadID() == g_main_thread_id)
+    assert(Engine_OwnsWorld())
+
+static inline bool Engine_OwnsWorld(void)
+{
+    return SDL_ThreadID() == __atomic_load_n(&g_world_owner_id, __ATOMIC_RELAXED);
+}
 
 
 enum pf_window_flags {

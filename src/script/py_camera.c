@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_SCRIPT_CAMERA
 
 #include "py_camera.h"
+#include "script_thread.h"
 #include "py_pickle.h"
 #include "public/script.h"
 #include "../camera.h"
@@ -771,8 +772,27 @@ bool S_Camera_SetActive(PyObject *cam)
     return true;
 }
 
+struct fwd_S_Camera_ObjFromAtts{
+    const char *name;
+    vec3_t pos;
+    float pitch;
+    float yaw;
+    script_opaque_t ret;
+};
+
+static void fwd_S_Camera_ObjFromAtts_thunk(void *arg)
+{
+    struct fwd_S_Camera_ObjFromAtts *a = arg;
+    a->ret = S_Camera_ObjFromAtts(a->name, a->pos, a->pitch, a->yaw);
+}
+
 script_opaque_t S_Camera_ObjFromAtts(const char *name, vec3_t pos, float pitch, float yaw)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_Camera_ObjFromAtts call = {name, pos, pitch, yaw};
+        S_Thread_Call(fwd_S_Camera_ObjFromAtts_thunk, &call);
+        return call.ret;
+    }
     PyObject *kwargs = Py_BuildValue("{s:s, s:(fff), s:f, s:f}",
         "name", name,
         "position", pos.x, pos.y, pos.z,

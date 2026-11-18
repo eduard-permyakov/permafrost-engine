@@ -165,7 +165,7 @@ static int filter_garrisoned(khash_t(id) *flags, uint32_t *candidates, int count
  */
 static uint32_t *query_buff_take(size_t size)
 {
-    if(SDL_ThreadID() != g_main_thread_id || s_query_all_busy)
+    if(!Engine_OwnsWorld() || s_query_all_busy)
         return PF_MALLOC(sizeof(uint32_t) * size);
     if(size > s_query_all_cap) {
         size_t cap = MAX(size, s_query_all_cap * 2);

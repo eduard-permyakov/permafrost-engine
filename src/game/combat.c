@@ -903,7 +903,7 @@ static void current_obb_from_gamestate(uint32_t uid, struct obb *out)
 /* Workers read the gamestate snapshot; the main thread reads live state. */
 static bool on_main_thread(void)
 {
-    return (SDL_ThreadID() == g_main_thread_id);
+    return (Engine_OwnsWorld());
 }
 
 static vec2_t entity_xz(uint32_t uid)

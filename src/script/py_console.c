@@ -43,6 +43,7 @@
 #include <errcode.h>
 
 #include "py_console.h"
+#include "script_thread.h"
 #include "../ui.h"
 #include "../main.h"
 #include "../event.h"
@@ -388,6 +389,11 @@ static void do_interactive_one(const char *str)
 
 static void on_update(void *user, void *event)
 {
+    /* Runs Python: on the script thread */
+    if(ST_OFF_SCRIPT()) {
+        S_Thread_CallHandler(on_update, user, event);
+        return;
+    }
     if(!s_shown)
         return;
 
@@ -482,6 +488,11 @@ static void on_update(void *user, void *event)
 
 static void on_keydown(void *user, void *event)
 {
+    /* Runs Python: on the script thread */
+    if(ST_OFF_SCRIPT()) {
+        S_Thread_CallHandler(on_keydown, user, event);
+        return;
+    }
     SDL_Event *e = (SDL_Event*)event;
     if(e->key.keysym.scancode == CONSOLE_HOTKEY) {
         S_Console_ToggleShown();

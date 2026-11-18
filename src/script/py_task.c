@@ -41,6 +41,7 @@
 #include <opcode.h>
 
 #include "py_task.h"
+#include "script_thread.h"
 #include "py_pickle.h"
 #include "public/script.h"
 #include "../task.h"
@@ -469,6 +470,7 @@ static int pytask_tracefunc(PyTaskObject *self, PyFrameObject *frame, int what, 
 
 static void pytask_push_ctx(PyTaskObject *self)
 {
+    assert(!ST_OFF_SCRIPT());
     s_main_thread_state = PyThreadState_Swap(self->ts);
 
     /* During frame evaluation, CPython NULLs out the current frame's
@@ -1489,6 +1491,11 @@ static PyObject *PyTask_get_completed(PyTaskObject *self, void *closure)
 
 static void on_update_start(void *user, void *event)
 {
+    /* Runs Python: on the script thread */
+    if(ST_OFF_SCRIPT()) {
+        S_Thread_CallHandler(on_update_start, user, event);
+        return;
+    }
     uint32_t elapsed = Perf_LastFrameMS();
     PyTaskObject *curr;
     uint32_t key;
@@ -1531,8 +1538,23 @@ void S_Task_Shutdown(void)
 /* Unwind every blocked task by injecting SystemExit into its thread state and
  * reactivating it via the scheduler. The Python frame propagates the exception,
  * __run__ exits, and the task removes itself from s_tid_task_map. */
+struct fwd_S_Task_KillAll{
+    int unused;
+};
+
+static void fwd_S_Task_KillAll_thunk(void *arg)
+{
+    struct fwd_S_Task_KillAll *a = arg;
+    S_Task_KillAll();
+}
+
 void S_Task_KillAll(void)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_Task_KillAll call = {0};
+        S_Thread_Call(fwd_S_Task_KillAll_thunk, &call);
+        return;
+    }
     ASSERT_IN_MAIN_THREAD();
     if(!s_tid_task_map)
         return;

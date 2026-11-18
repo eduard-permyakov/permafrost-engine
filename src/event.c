@@ -326,6 +326,49 @@ static bool e_unregister_handler(uint64_t key, const struct handler_desc *desc)
     return true;
 }
 
+struct script_invoke{
+    struct handler_desc hd;
+    struct event        event;
+};
+
+static void e_invoke_script(void *arg)
+{
+    struct script_invoke *si = arg;
+    const struct handler_desc hd = si->hd;
+    struct event event = si->event;
+
+    /* Remove the handler if the user arg goes out of scope. Since Python
+     * doesn't actually guarantee destructors getting called, it's possible
+     * that we miss an 'unregister'. Take care of that here.
+     */
+    if(S_WeakrefDied(hd.user_arg)) {
+        uint64_t key = e_key(event.receiver_id, event.type);
+        e_unregister_handler(key, &hd);
+        return;
+    }
+
+    /* Marker names must come from a bounded set; event names qualify,
+     * script callable names do not.
+     */
+    const char *evtname = E_EngineEventString(event.type);
+    PERF_PUSH("script handler");
+    PERF_PUSH(evtname ? evtname : "sdl event");
+
+    script_opaque_t script_arg = (event.source == ES_SCRIPT)
+        ? S_UnwrapIfWeakref(event.arg)
+        : S_WrapEngineEventArg(event.type, event.arg);
+    assert(script_arg);
+    script_opaque_t user_arg = S_UnwrapIfWeakref(hd.user_arg);
+
+    S_RunEventHandler(hd.handler.as_script_callable, user_arg, script_arg);
+
+    S_Release(script_arg);
+    S_Release(user_arg);
+
+    PERF_POP();
+    PERF_POP();
+}
+
 static void e_invoke(const struct handler_desc hd, struct event event)
 {
     if(hd.type == HANDLER_TYPE_ENGINE) {
@@ -336,36 +379,9 @@ static void e_invoke(const struct handler_desc hd, struct event event)
 
     }else if(hd.type == HANDLER_TYPE_SCRIPT) {
 
-        /* Remove the handler if the user arg goes out of scope. Since Python
-         * doesn't actually guarantee destructors getting called, it's possible
-         * that we miss an 'unregister'. Take care of that here.
-         */
-        if(S_WeakrefDied(hd.user_arg)) {
-            uint64_t key = e_key(event.receiver_id, event.type);
-            e_unregister_handler(key, &hd);
-            return;
-        }
-
-        /* Marker names must come from a bounded set; event names qualify,
-         * script callable names do not.
-         */
-        const char *evtname = E_EngineEventString(event.type);
-        PERF_PUSH("script handler");
-        PERF_PUSH(evtname ? evtname : "sdl event");
-
-        script_opaque_t script_arg = (event.source == ES_SCRIPT)
-            ? S_UnwrapIfWeakref(event.arg)
-            : S_WrapEngineEventArg(event.type, event.arg);
-        assert(script_arg);
-        script_opaque_t user_arg = S_UnwrapIfWeakref(hd.user_arg);
-
-        S_RunEventHandler(hd.handler.as_script_callable, user_arg, script_arg);
-
-        S_Release(script_arg);
-        S_Release(user_arg);
-
-        PERF_POP();
-        PERF_POP();
+        /* Python runs on the script thread: the handler's whole call goes there */
+        struct script_invoke si = {hd, event};
+        S_Thread_Call(e_invoke_script, &si);
     }
 }
 

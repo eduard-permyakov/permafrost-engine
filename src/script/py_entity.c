@@ -38,6 +38,7 @@
 
 #include <Python.h> /* must be first */
 #include "py_entity.h"
+#include "script_thread.h"
 #include "py_pickle.h"
 #include "public/script.h"
 #include "../main.h"
@@ -7107,8 +7108,25 @@ bool S_Entity_Check(PyObject *obj)
     return PyObject_IsInstance(obj, (PyObject*)&PyEntity_type);
 }
 
+struct fwd_S_Entity_UIDForObj{
+    script_opaque_t obj;
+    uint32_t *out;
+    bool ret;
+};
+
+static void fwd_S_Entity_UIDForObj_thunk(void *arg)
+{
+    struct fwd_S_Entity_UIDForObj *a = arg;
+    a->ret = S_Entity_UIDForObj(a->obj, a->out);
+}
+
 bool S_Entity_UIDForObj(script_opaque_t obj, uint32_t *out)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_Entity_UIDForObj call = {obj, out};
+        S_Thread_Call(fwd_S_Entity_UIDForObj_thunk, &call);
+        return call.ret;
+    }
     if(!PyObject_IsInstance(obj, (PyObject*)&PyEntity_type))
         return false;
 
@@ -7116,13 +7134,45 @@ bool S_Entity_UIDForObj(script_opaque_t obj, uint32_t *out)
     return true;
 }
 
+struct fwd_S_Entity_TypeID{
+    script_opaque_t obj;
+    uint64_t ret;
+};
+
+static void fwd_S_Entity_TypeID_thunk(void *arg)
+{
+    struct fwd_S_Entity_TypeID *a = arg;
+    a->ret = S_Entity_TypeID(a->obj);
+}
+
 uint64_t S_Entity_TypeID(script_opaque_t obj)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_Entity_TypeID call = {obj};
+        S_Thread_Call(fwd_S_Entity_TypeID_thunk, &call);
+        return call.ret;
+    }
     return (uintptr_t)((PyObject*)obj)->ob_type;
+}
+
+struct fwd_S_Entity_ObjForUID{
+    uint32_t uid;
+    script_opaque_t ret;
+};
+
+static void fwd_S_Entity_ObjForUID_thunk(void *arg)
+{
+    struct fwd_S_Entity_ObjForUID *a = arg;
+    a->ret = S_Entity_ObjForUID(a->uid);
 }
 
 script_opaque_t S_Entity_ObjForUID(uint32_t uid)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_Entity_ObjForUID call = {uid};
+        S_Thread_Call(fwd_S_Entity_ObjForUID_thunk, &call);
+        return call.ret;
+    }
     khiter_t k = kh_get(PyObject, s_uid_pyobj_table, uid);
     if(k == kh_end(s_uid_pyobj_table))
         return NULL;
@@ -7130,10 +7180,29 @@ script_opaque_t S_Entity_ObjForUID(uint32_t uid)
     return kh_value(s_uid_pyobj_table, k);
 }
 
+struct fwd_S_Entity_ObjFromAtts{
+    const char *path;
+    const char *name;
+    const khash_t(attr) *attr_table;
+    const vec_attr_t *construct_args;
+    script_opaque_t ret;
+};
+
+static void fwd_S_Entity_ObjFromAtts_thunk(void *arg)
+{
+    struct fwd_S_Entity_ObjFromAtts *a = arg;
+    a->ret = S_Entity_ObjFromAtts(a->path, a->name, a->attr_table, a->construct_args);
+}
+
 script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
                                      const khash_t(attr) *attr_table, 
                                      const vec_attr_t *construct_args)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_Entity_ObjFromAtts call = {path, name, attr_table, construct_args};
+        S_Thread_Call(fwd_S_Entity_ObjFromAtts_thunk, &call);
+        return call.ret;
+    }
     khiter_t k;
     PyObject *ret = NULL;
     uint32_t extra_flags = 0;

@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB 0
 
 #include "cursor.h"
+#include "script/public/script.h"
 #include "config.h"
 #include "event.h"
 #include "main.h"
@@ -163,6 +164,48 @@ static struct cursor_resource  s_cursors[_CURSOR_MAX];
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
+/* The cursor belongs to the window, which only the main thread may touch */
+struct sdl_cursor_call{
+    SDL_Cursor  *cursor;
+    SDL_Surface *surface;
+    int          hotx, hoty;
+};
+
+static void sdl_set_cursor_main(void *arg)
+{
+    SDL_SetCursor(((struct sdl_cursor_call*)arg)->cursor);
+}
+
+static void sdl_free_cursor_main(void *arg)
+{
+    SDL_FreeCursor(((struct sdl_cursor_call*)arg)->cursor);
+}
+
+static void sdl_create_color_cursor_main(void *arg)
+{
+    struct sdl_cursor_call *call = arg;
+    call->cursor = SDL_CreateColorCursor(call->surface, call->hotx, call->hoty);
+}
+
+static void sdl_set_cursor(SDL_Cursor *cursor)
+{
+    struct sdl_cursor_call call = {.cursor = cursor};
+    S_Thread_CallMain(sdl_set_cursor_main, &call);
+}
+
+static void sdl_free_cursor(SDL_Cursor *cursor)
+{
+    struct sdl_cursor_call call = {.cursor = cursor};
+    S_Thread_CallMain(sdl_free_cursor_main, &call);
+}
+
+static SDL_Cursor *sdl_create_color_cursor(SDL_Surface *surface, int hotx, int hoty)
+{
+    struct sdl_cursor_call call = {.surface = surface, .hotx = hotx, .hoty = hoty};
+    S_Thread_CallMain(sdl_create_color_cursor_main, &call);
+    return call.cursor;
+}
+
 static void cursor_rts_set_active(int mouse_x, int mouse_y)
 {
     if(!s_rts_mode) {
@@ -170,7 +213,7 @@ static void cursor_rts_set_active(int mouse_x, int mouse_y)
     }
 
     if(!s_moved) {
-        SDL_SetCursor(s_rts_pointer);
+        sdl_set_cursor(s_rts_pointer);
         return;
     }
 
@@ -200,7 +243,7 @@ static void cursor_rts_set_active(int mouse_x, int mouse_y)
     }else if(right) {
         Cursor_SetActive(CURSOR_SCROLL_RIGHT); 
     }else {
-        SDL_SetCursor(s_rts_pointer);
+        sdl_set_cursor(s_rts_pointer);
     }
 }
 
@@ -270,7 +313,7 @@ void Cursor_FreeAll(void)
     kh_foreach(s_named_cursors, key, curr, {
         PF_FREE(key);
         SDL_FreeSurface(curr.surface);
-        SDL_FreeCursor(curr.cursor);
+        sdl_free_cursor(curr.cursor);
     });
     kh_destroy(cursor, s_named_cursors);
 
@@ -278,7 +321,7 @@ void Cursor_FreeAll(void)
     
         struct cursor_resource *curr = &s_cursors[i];
         SDL_FreeSurface(curr->surface);
-        SDL_FreeCursor(curr->cursor);
+        sdl_free_cursor(curr->cursor);
         curr->surface = NULL;
         curr->cursor = NULL;
     }
@@ -287,7 +330,7 @@ void Cursor_FreeAll(void)
 void Cursor_SetActive(enum cursortype type)
 {
     assert(type >= 0 && type < ARR_SIZE(s_cursors));
-    SDL_SetCursor(s_cursors[type].cursor);
+    sdl_set_cursor(s_cursors[type].cursor);
 }
 
 bool Cursor_LoadBMP(enum cursortype type, const char *path, int hotx, int hoty)
@@ -303,13 +346,13 @@ bool Cursor_LoadBMP(enum cursortype type, const char *path, int hotx, int hoty)
     if(!surface)
         goto fail;
 
-    cursor = SDL_CreateColorCursor(surface, hotx, hoty);
+    cursor = sdl_create_color_cursor(surface, hotx, hoty);
     if(!cursor)
         goto fail;
 
     struct cursor_resource *curr = &s_cursors[type];
     SDL_FreeSurface(curr->surface);
-    SDL_FreeCursor(curr->cursor);
+    sdl_free_cursor(curr->cursor);
 
     curr->cursor = cursor;
     curr->surface = surface;
@@ -321,7 +364,7 @@ bool Cursor_LoadBMP(enum cursortype type, const char *path, int hotx, int hoty)
 
 fail:
     SDL_FreeSurface(surface);
-    SDL_FreeCursor(cursor);
+    sdl_free_cursor(cursor);
     return false;
 }
 
@@ -335,7 +378,7 @@ bool Cursor_NamedLoadBMP(const char *name, const char *path, int hotx, int hoty)
     if(!surface)
         goto fail;
 
-    cursor = SDL_CreateColorCursor(surface, hotx, hoty);
+    cursor = sdl_create_color_cursor(surface, hotx, hoty);
     if(!cursor)
         goto fail;
 
@@ -357,7 +400,7 @@ bool Cursor_NamedLoadBMP(const char *name, const char *path, int hotx, int hoty)
 
 fail:
     SDL_FreeSurface(surface);
-    SDL_FreeCursor(cursor);
+    sdl_free_cursor(cursor);
     return false;
 }
 
@@ -368,7 +411,7 @@ bool Cursor_NamedSetActive(const char *name)
         return false;
 
     struct cursor_resource *entry = &kh_value(s_named_cursors, k);
-    SDL_SetCursor(entry->cursor);
+    sdl_set_cursor(entry->cursor);
     return true;
 }
 

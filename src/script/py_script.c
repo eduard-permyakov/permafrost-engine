@@ -40,6 +40,7 @@
 #include <frameobject.h>
 
 #include "py_entity.h"
+#include "script_thread.h"
 #include "py_ui.h"
 #include "py_tile.h"
 #include "py_constants.h"
@@ -1810,6 +1811,11 @@ static void s_err_clear(void)
 
 static void s_on_update(void *user, void *event)
 {
+    /* Runs Python: on the script thread */
+    if(ST_OFF_SCRIPT()) {
+        S_Thread_CallHandler(s_on_update, user, event);
+        return;
+    }
     S_Error_Update(&s_err_ctx);
 
     Py_ssize_t arena_b = 0, arena_c = 0, raw_b = 0, raw_c = 0;
@@ -5304,6 +5310,11 @@ static bool bool_val_validate(const struct sval *new_val)
 
 static void on_event_start(void *user, void *event)
 {
+    /* Runs Python: on the script thread */
+    if(ST_OFF_SCRIPT()) {
+        S_Thread_CallHandler(on_event_start, user, event);
+        return;
+    }
     bool new_val = (uintptr_t)user;
     if(new_val) {
         PyEval_SetProfile(s_tracefunc, Py_None);
@@ -7334,8 +7345,26 @@ PyMODINIT_FUNC initpf(void)
     S_Constants_Expose(module);
 }
 
+struct fwd_S_Init{
+    const char *progname;
+    const char *base_path;
+    struct nk_context *ctx;
+    bool ret;
+};
+
+static void fwd_S_Init_thunk(void *arg)
+{
+    struct fwd_S_Init *a = arg;
+    a->ret = S_Init(a->progname, a->base_path, a->ctx);
+}
+
 bool S_Init(const char *progname, const char *base_path, struct nk_context *ctx)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_Init call = {progname, base_path, ctx};
+        S_Thread_Call(fwd_S_Init_thunk, &call);
+        return call.ret;
+    }
     Py_NoSiteFlag = 1;
     Py_SetProgramName((char*)progname);
     s_progname = progname;
@@ -7383,8 +7412,23 @@ bool S_Init(const char *progname, const char *base_path, struct nk_context *ctx)
     return true;
 }
 
+struct fwd_S_Shutdown{
+    int unused;
+};
+
+static void fwd_S_Shutdown_thunk(void *arg)
+{
+    struct fwd_S_Shutdown *a = arg;
+    S_Shutdown();
+}
+
 void S_Shutdown(void)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_Shutdown call = {0};
+        S_Thread_Call(fwd_S_Shutdown_thunk, &call);
+        return;
+    }
     E_Global_Unregister(EVENT_UPDATE_START, s_on_update);
 
     /* Free any globaly retained Python objects before finalizing
@@ -7409,8 +7453,26 @@ void S_Shutdown(void)
     S_UI_Shutdown();
 }
 
+struct fwd_S_RunFile{
+    const char *path;
+    int argc;
+    char **argv;
+    bool ret;
+};
+
+static void fwd_S_RunFile_thunk(void *arg)
+{
+    struct fwd_S_RunFile *a = arg;
+    a->ret = S_RunFile(a->path, a->argc, a->argv);
+}
+
 bool S_RunFile(const char *path, int argc, char **argv)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_RunFile call = {path, argc, argv};
+        S_Thread_Call(fwd_S_RunFile_thunk, &call);
+        return call.ret;
+    }
     bool ret = false;
     FILE *script = fopen(path, "r");
     if(!script)
@@ -7460,8 +7522,26 @@ done:
     return ret;
 }
 
+struct fwd_S_RunFileAsync{
+    const char *path;
+    int argc;
+    char **argv;
+    struct future *result;
+};
+
+static void fwd_S_RunFileAsync_thunk(void *arg)
+{
+    struct fwd_S_RunFileAsync *a = arg;
+    S_RunFileAsync(a->path, a->argc, a->argv, a->result);
+}
+
 void S_RunFileAsync(const char *path, int argc, char **argv, struct future *result)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_RunFileAsync call = {path, argc, argv, result};
+        S_Thread_Call(fwd_S_RunFileAsync_thunk, &call);
+        return;
+    }
     struct script_arg *arg = PF_MALLOC(sizeof(struct script_arg));
     if(!arg)
         return;
@@ -7471,11 +7551,28 @@ void S_RunFileAsync(const char *path, int argc, char **argv, struct future *resu
     arg->argv = (const char**)argv;
 
     uint32_t tid = Sched_Create(31, script_task, arg, "script_task",
-        result, TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
+        result, TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK | TASK_SCRIPT);
+}
+
+struct fwd_S_GetFilePath{
+    char *out;
+    size_t maxout;
+    bool ret;
+};
+
+static void fwd_S_GetFilePath_thunk(void *arg)
+{
+    struct fwd_S_GetFilePath *a = arg;
+    a->ret = S_GetFilePath(a->out, a->maxout);
 }
 
 bool S_GetFilePath(char *out, size_t maxout)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_GetFilePath call = {out, maxout};
+        S_Thread_Call(fwd_S_GetFilePath_thunk, &call);
+        return call.ret;
+    }
     PyObject *main_module = PyImport_AddModule("__main__"); /* borrowed */
     if(!main_module)
         return false;
@@ -7514,10 +7611,28 @@ static void log_slow_handler(PyObject *callable, uint64_t ticks)
     PyErr_Restore(err_type, err_val, err_tb);
 }
 
+struct fwd_S_RunEventHandler{
+    script_opaque_t callable;
+    script_opaque_t user_arg;
+    script_opaque_t event_arg;
+};
+
+static void fwd_S_RunEventHandler_thunk(void *arg)
+{
+    struct fwd_S_RunEventHandler *a = arg;
+    S_RunEventHandler(a->callable, a->user_arg, a->event_arg);
+}
+
 void S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, script_opaque_t event_arg)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_RunEventHandler call = {callable, user_arg, event_arg};
+        S_Thread_Call(fwd_S_RunEventHandler_thunk, &call);
+        return;
+    }
     PyObject *args, *ret;
 
+    assert(!ST_OFF_SCRIPT());
     assert(PyCallable_Check(callable));
     assert(user_arg);
     assert(event_arg);
@@ -7547,18 +7662,65 @@ void S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, scrip
     Py_XDECREF(ret);
 }
 
+struct fwd_S_Retain{
+    script_opaque_t obj;
+};
+
+static void fwd_S_Retain_thunk(void *arg)
+{
+    struct fwd_S_Retain *a = arg;
+    S_Retain(a->obj);
+}
+
 void S_Retain(script_opaque_t obj)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_Retain call = {obj};
+        S_Thread_Call(fwd_S_Retain_thunk, &call);
+        return;
+    }
     Py_XINCREF(obj);
+}
+
+struct fwd_S_Release{
+    script_opaque_t obj;
+};
+
+static void fwd_S_Release_thunk(void *arg)
+{
+    struct fwd_S_Release *a = arg;
+    S_Release(a->obj);
 }
 
 void S_Release(script_opaque_t obj)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_Release call = {obj};
+        S_Thread_Call(fwd_S_Release_thunk, &call);
+        return;
+    }
     Py_XDECREF(obj);
+}
+
+struct fwd_S_WrapEngineEventArg{
+    int eventnum;
+    void *arg;
+    script_opaque_t ret;
+};
+
+static void fwd_S_WrapEngineEventArg_thunk(void *arg)
+{
+    struct fwd_S_WrapEngineEventArg *a = arg;
+    a->ret = S_WrapEngineEventArg(a->eventnum, a->arg);
 }
 
 script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_WrapEngineEventArg call = {eventnum, arg};
+        S_Thread_Call(fwd_S_WrapEngineEventArg_thunk, &call);
+        return call.ret;
+    }
     switch(eventnum) {
     case SDL_KEYDOWN:
     case SDL_KEYUP:
@@ -7674,8 +7836,24 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
     }
 }
 
+struct fwd_S_UnwrapIfWeakref{
+    script_opaque_t arg;
+    script_opaque_t ret;
+};
+
+static void fwd_S_UnwrapIfWeakref_thunk(void *arg)
+{
+    struct fwd_S_UnwrapIfWeakref *a = arg;
+    a->ret = S_UnwrapIfWeakref(a->arg);
+}
+
 script_opaque_t S_UnwrapIfWeakref(script_opaque_t arg)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_UnwrapIfWeakref call = {arg};
+        S_Thread_Call(fwd_S_UnwrapIfWeakref_thunk, &call);
+        return call.ret;
+    }
     assert(arg);
     if(PyWeakref_Check(arg)) {
         PyObject *ret = PyWeakref_GetObject(arg);
@@ -7686,25 +7864,89 @@ script_opaque_t S_UnwrapIfWeakref(script_opaque_t arg)
     return arg;
 }
 
+struct fwd_S_WeakrefDied{
+    script_opaque_t arg;
+    bool ret;
+};
+
+static void fwd_S_WeakrefDied_thunk(void *arg)
+{
+    struct fwd_S_WeakrefDied *a = arg;
+    a->ret = S_WeakrefDied(a->arg);
+}
+
 bool S_WeakrefDied(script_opaque_t arg)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_WeakrefDied call = {arg};
+        S_Thread_Call(fwd_S_WeakrefDied_thunk, &call);
+        return call.ret;
+    }
     return (PyWeakref_Check(arg) && (PyWeakref_GetObject(arg) == Py_None));
+}
+
+struct fwd_S_ObjectsEqual{
+    script_opaque_t a;
+    script_opaque_t b;
+    bool ret;
+};
+
+static void fwd_S_ObjectsEqual_thunk(void *arg)
+{
+    struct fwd_S_ObjectsEqual *a = arg;
+    a->ret = S_ObjectsEqual(a->a, a->b);
 }
 
 bool S_ObjectsEqual(script_opaque_t a, script_opaque_t b)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_ObjectsEqual call = {a, b};
+        S_Thread_Call(fwd_S_ObjectsEqual_thunk, &call);
+        return call.ret;
+    }
     return (1 == PyObject_RichCompareBool(a, b, Py_EQ));
+}
+
+struct fwd_S_ClearState{
+    int unused;
+};
+
+static void fwd_S_ClearState_thunk(void *arg)
+{
+    struct fwd_S_ClearState *a = arg;
+    S_ClearState();
 }
 
 void S_ClearState(void)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_ClearState call = {0};
+        S_Thread_Call(fwd_S_ClearState_thunk, &call);
+        return;
+    }
     S_Shutdown();
     S_Init(s_progname, g_basepath, UI_GetContext());
     PyGC_Collect(); /* quick sanity check */
 }
 
+struct fwd_S_SaveState{
+    SDL_RWops * stream;
+    bool ret;
+};
+
+static void fwd_S_SaveState_thunk(void *arg)
+{
+    struct fwd_S_SaveState *a = arg;
+    a->ret = S_SaveState(a->stream);
+}
+
 bool S_SaveState(SDL_RWops *stream)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_SaveState call = {stream};
+        S_Thread_Call(fwd_S_SaveState_thunk, &call);
+        return call.ret;
+    }
     PyGC_Collect();
 
     PyObject *modules_dict = PySys_GetObject("modules"); /* borrowed */
@@ -7768,8 +8010,24 @@ fail_tuple:
     return ret;
 }
 
+struct fwd_S_LoadState{
+    SDL_RWops * stream;
+    bool ret;
+};
+
+static void fwd_S_LoadState_thunk(void *arg)
+{
+    struct fwd_S_LoadState *a = arg;
+    a->ret = S_LoadState(a->stream);
+}
+
 bool S_LoadState(SDL_RWops *stream)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_LoadState call = {stream};
+        S_Thread_Call(fwd_S_LoadState_thunk, &call);
+        return call.ret;
+    }
     PyInterpreterState *interp = PyThreadState_Get()->interp;
     assert(interp);
     bool ret = false;
@@ -7868,8 +8126,23 @@ fail:
     return ret;
 } 
 
+struct fwd_S_ShowLastError{
+    int unused;
+};
+
+static void fwd_S_ShowLastError_thunk(void *arg)
+{
+    struct fwd_S_ShowLastError *a = arg;
+    S_ShowLastError();
+}
+
 void S_ShowLastError(void)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_ShowLastError call = {0};
+        S_Thread_Call(fwd_S_ShowLastError_thunk, &call);
+        return;
+    }
     /* A second error over one still shown must not lose the state to go back to */
     bool showing = s_err_ctx.occurred;
     Py_CLEAR(s_err_ctx.type);
@@ -7893,8 +8166,24 @@ void S_ShowLastError(void)
     }
 }
 
+struct fwd_S_ScriptTypeID{
+    uint32_t uid;
+    uint64_t ret;
+};
+
+static void fwd_S_ScriptTypeID_thunk(void *arg)
+{
+    struct fwd_S_ScriptTypeID *a = arg;
+    a->ret = S_ScriptTypeID(a->uid);
+}
+
 uint64_t S_ScriptTypeID(uint32_t uid)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_ScriptTypeID call = {uid};
+        S_Thread_Call(fwd_S_ScriptTypeID_thunk, &call);
+        return call.ret;
+    }
     PyObject *ent = S_Entity_ObjForUID(uid);
     if(!ent)
         return 0;
@@ -7903,8 +8192,24 @@ uint64_t S_ScriptTypeID(uint32_t uid)
     return ret;
 }
 
+struct fwd_S_FormationPriority{
+    uint32_t uid;
+    int ret;
+};
+
+static void fwd_S_FormationPriority_thunk(void *arg)
+{
+    struct fwd_S_FormationPriority *a = arg;
+    a->ret = S_FormationPriority(a->uid);
+}
+
 int S_FormationPriority(uint32_t uid)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_FormationPriority call = {uid};
+        S_Thread_Call(fwd_S_FormationPriority_thunk, &call);
+        return call.ret;
+    }
     PyObject *ent = S_Entity_ObjForUID(uid);
     if(!ent)
         return 0;

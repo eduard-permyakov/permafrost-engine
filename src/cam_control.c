@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB 0
 
 #include "cam_control.h"
+#include "script/public/script.h"
 #include "config.h"
 #include "settings.h"
 #include "event.h"
@@ -147,6 +148,17 @@ static bool s_rts_zoom_enabled = true;
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+/* Mouse modes belong to the window, which only the main thread may touch */
+static void sdl_relative_mouse_main(void *arg)
+{
+    SDL_SetRelativeMouseMode(*(bool*)arg);
+}
+
+static void set_relative_mouse_mode(bool on)
+{
+    S_Thread_CallMain(sdl_relative_mouse_main, &on);
+}
 
 static void fps_cam_on_keydown(void *unused, void *event_arg)
 {
@@ -520,7 +532,7 @@ void CamControl_FPS_Install(struct camera *cam)
     s_cam_ctx.active_ctx.fps.back_state = KEY_RELEASED;
     s_cam_ctx.active_ctx.fps.right_state = KEY_RELEASED;
 
-    SDL_SetRelativeMouseMode(true);
+    set_relative_mouse_mode(true);
 }
 
 void CamControl_RTS_Install(struct camera *cam)
@@ -584,7 +596,7 @@ void CamControl_UninstallActive(void)
     memset(&s_cam_ctx, 0, sizeof(s_cam_ctx));
 
     Cursor_SetRTSMode(false);
-    SDL_SetRelativeMouseMode(false);
+    set_relative_mouse_mode(false);
 }
 
 void CamControl_RTS_SetZoomEnabled(bool enabled)

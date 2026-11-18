@@ -7892,7 +7892,7 @@ bool Move_SeekingFiringPosition(uint32_t uid)
 {
     /* Also read by the submit gather's workers while the main thread is
      * blocked in that parallel-for. */
-    assert(SDL_ThreadID() == g_main_thread_id || s_submit_gather_active);
+    assert(Engine_OwnsWorld() || s_submit_gather_active);
 
     const struct movestate *ms = movestate_get(uid);
     const struct movestate_aux *aux = movestate_aux_get(uid);
@@ -8005,7 +8005,7 @@ void Move_SetSeekEnemies(uint32_t uid)
 
 bool Move_Arrived(uint32_t uid)
 {
-    assert(SDL_ThreadID() == g_main_thread_id || s_submit_gather_active);
+    assert(Engine_OwnsWorld() || s_submit_gather_active);
     const struct movestate *ms = movestate_get(uid);
     return ms && ms->state == STATE_ARRIVED;
 }
@@ -8024,7 +8024,7 @@ bool Move_ResumeOrder(uint32_t uid)
 
 bool Move_Seeking(uint32_t uid)
 {
-    assert(SDL_ThreadID() == g_main_thread_id || s_submit_gather_active);
+    assert(Engine_OwnsWorld() || s_submit_gather_active);
 
     const struct movestate *ms = movestate_get(uid);
     if(!ms)

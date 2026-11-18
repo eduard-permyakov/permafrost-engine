@@ -5239,7 +5239,7 @@ void Move_Formation_Create(vec2_t target, vec2_t orientation,
 static bool s_gather_active;
 
 #define ASSERT_MAIN_OR_GATHER() \
-    assert(SDL_ThreadID() == g_main_thread_id || s_gather_active)
+    assert(Engine_OwnsWorld() || s_gather_active)
 
 void Move_Formation_SetGatherActive(bool active)
 {

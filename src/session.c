@@ -655,10 +655,11 @@ bool Session_ServiceRequests(struct future *result)
 
     /* Put all the session saving or loading logic into an async 
      * task, so that the main thread can handle window events and 
-     * re-draw things when the session task yields.
+     * re-draw things when the session task yields. It runs on the script
+     * thread, as it saves and loads the interpreter's state.
      */
     uint32_t tid = Sched_Create(1, session_task, NULL, "session_task", result, 
-        TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK | TASK_RUN_DURING_PAUSE);
+        TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK | TASK_RUN_DURING_PAUSE | TASK_SCRIPT);
     return true;
 }
 

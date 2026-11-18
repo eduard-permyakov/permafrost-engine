@@ -122,6 +122,7 @@ unsigned long                    g_frame_idx = 0;
 
 SDL_threadID                     g_main_thread_id;   /* write-once */
 SDL_threadID                     g_render_thread_id; /* write-once */
+SDL_threadID                     g_world_owner_id;
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -469,6 +470,7 @@ static bool engine_init(void)
     }
 
     g_main_thread_id = SDL_ThreadID();
+    g_world_owner_id = g_main_thread_id;
     Noise_Init();
 
     if(!Perf_Init()) {
@@ -627,6 +629,11 @@ static bool engine_init(void)
         goto fail_nuklear;
     }
 
+    if(!S_Thread_Start()) {
+        fprintf(stderr, "Failed to start the script thread\n");
+        goto fail_script_thread;
+    }
+
     if(!S_Init(s_argv[0], g_basepath, UI_GetContext())) {
         fprintf(stderr, "Failed to initialize scripting subsystem\n");
         goto fail_script;
@@ -664,6 +671,8 @@ fail_audio:
 fail_nav:
     S_Shutdown();
 fail_script:
+    S_Thread_Stop();
+fail_script_thread:
     UI_Shutdown();
 fail_nuklear:
     G_Shutdown();
@@ -714,6 +723,7 @@ static void engine_shutdown(void)
     P_Projectile_Shutdown();
     Audio_Shutdown();
     S_Shutdown();
+    S_Thread_Stop();
     UI_Shutdown();
 
     /* Execute the last batch of commands that may have been queued by the 
@@ -757,8 +767,31 @@ static void engine_shutdown(void)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
+struct set_res_call{
+    int w, h;
+    int ret;
+};
+
+static void set_res_main(void *arg)
+{
+    struct set_res_call *call = arg;
+    call->ret = Engine_SetRes(call->w, call->h);
+}
+
+static void set_disp_mode_main(void *arg)
+{
+    Engine_SetDispMode(*(enum pf_window_flags*)arg);
+}
+
 int Engine_SetRes(int w, int h)
 {
+    /* The window is the main thread's */
+    if(SDL_ThreadID() != g_main_thread_id) {
+        struct set_res_call call = {w, h, 0};
+        S_Thread_CallMain(set_res_main, &call);
+        return call.ret;
+    }
+
     SDL_DisplayMode dm = (SDL_DisplayMode) {
         .format = SDL_PIXELFORMAT_UNKNOWN,
         .w = w,
@@ -774,6 +807,10 @@ int Engine_SetRes(int w, int h)
 
 void Engine_SetDispMode(enum pf_window_flags wf)
 {
+    if(SDL_ThreadID() != g_main_thread_id) {
+        S_Thread_CallMain(set_disp_mode_main, &wf);
+        return;
+    }
     SDL_SetWindowFullscreen(s_window, wf & SDL_WINDOW_FULLSCREEN);
     SDL_SetWindowBordered(s_window, !(wf & (SDL_WINDOW_BORDERLESS | SDL_WINDOW_FULLSCREEN)));
     SDL_SetWindowPosition(s_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);

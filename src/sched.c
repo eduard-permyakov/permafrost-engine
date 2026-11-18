@@ -224,7 +224,7 @@ struct task{
 
 struct sched_thread{
     struct context   ctx;
-    int              idx;       /* 0 for the main thread, workers from 1 */
+    int              idx;       /* 0 for the main thread, workers from 1, SCRIPT_IDX */
     struct task     *curr;
     struct lf_parker parker;
     SDL_Thread      *thread;
@@ -302,6 +302,7 @@ struct ev_waiters{
 #define BATCH_CLOSED            ((uint64_t)0x7fffffff)
 #define EXIT_DONE               ((uint64_t)1)
 #define MAIN_PARKER             (&s_threads[0].parker)
+#define SCRIPT_IDX              (MAX_WORKER_THREADS + 1)
 
 PQUEUE_TYPE(task, struct task*)
 PQUEUE_IMPL(static, task, struct task*)
@@ -329,7 +330,7 @@ static struct mnode            s_mnodes[MAX_MNODES];
 static struct lf_istack        s_free_mnodes;
 static uint32_t                s_free_mnode_links[MAX_MNODES];
 
-static struct sched_thread     s_threads[MAX_WORKER_THREADS + 1];
+static struct sched_thread     s_threads[MAX_WORKER_THREADS + 2];
 static __thread struct sched_thread *t_self;
 static size_t                  s_nworkers;
 
@@ -436,6 +437,20 @@ static struct sched_thread *sched_self(void)
 }
 
 #define SCHED_TASK_STACK_SZ(_t) (((_t)->flags & TASK_BIG_STACK) ? BIG_STACK_SZ : STACK_SZ)
+
+/* The main thread, or the script thread serving the main thread's tasks while
+ * the main thread waits on it: the two never run at once */
+static bool is_main_home(const struct sched_thread *self)
+{
+    return (self->idx == 0) || (self->idx == SCRIPT_IDX);
+}
+
+static void task_switch_in(struct sched_thread *self, struct task *task);
+
+static void script_switch_in(void *arg)
+{
+    task_switch_in(sched_self(), arg);
+}
 
 static uint64_t sched_switch(struct context *save, struct context *restore, uint64_t retval,
                              void *arg, void **cur_fake, const void *dst_lo, size_t dst_sz,
@@ -1420,8 +1435,13 @@ static uint32_t sched_create(int prio, task_func_t code, void *arg, const char *
 
 static void task_switch_in(struct sched_thread *self, struct task *task)
 {
+    /* Python runs on the script thread only */
+    if((task->flags & TASK_SCRIPT) && self->idx != SCRIPT_IDX && S_Thread_Running()) {
+        S_Thread_Call(script_switch_in, task);
+        return;
+    }
     assert(task_kind(task) == TK_ACTIVE);
-    assert(!(task->flags & TASK_MAIN_THREAD_PINNED) || self->idx == 0);
+    assert(!(task->flags & TASK_MAIN_THREAD_PINNED) || is_main_home(self));
     assert(stack_pointer_valid(task));
 
     self->curr = task;
@@ -1456,7 +1476,7 @@ static void task_switch_in(struct sched_thread *self, struct task *task)
 
 static bool may_continue(struct sched_thread *self)
 {
-    if(self->idx == 0)
+    if(is_main_home(self))
         return SDL_GetPerformanceCounter() < s_main_deadline;
     return !LF_LOAD(&s_sync.quiesce, LF_RLX);
 }
@@ -1559,7 +1579,7 @@ static void run_claimed(struct task *task)
  * thread could run instead, or the frame wants it back. */
 static bool should_yield(struct sched_thread *self, struct task *task)
 {
-    if(self->idx == 0) {
+    if(is_main_home(self)) {
         if(SDL_GetPerformanceCounter() >= s_main_deadline)
             return true;
         if(LF_LOAD(&s_sync.main_inbox, LF_RLX))
@@ -2050,6 +2070,22 @@ fail_event_waiters:
     return false;
 }
 
+void Sched_RegisterScriptThread(void)
+{
+    struct sched_thread *thr = &s_threads[SCRIPT_IDX];
+    thr->idx = SCRIPT_IDX;
+    thr->parker.state = 0;
+    thr->parker.sem = SDL_CreateSemaphore(0);
+    assert(thr->parker.sem);
+    t_self = thr;
+#if defined(__SANITIZE_ADDRESS__)
+    sched_asan_capture_self_stack(&thr->stack_lo, &thr->stack_sz);
+#endif
+#if defined(__SANITIZE_THREAD__)
+    thr->tsan_fiber = __tsan_get_current_fiber();
+#endif
+}
+
 void Sched_Shutdown(void)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -2062,6 +2098,10 @@ void Sched_Shutdown(void)
     }
     for(int i = 0; i <= s_nworkers; i++) {
         SDL_DestroySemaphore(s_threads[i].parker.sem);
+    }
+    if(s_threads[SCRIPT_IDX].parker.sem) {
+        SDL_DestroySemaphore(s_threads[SCRIPT_IDX].parker.sem);
+        s_threads[SCRIPT_IDX].parker.sem = NULL;
     }
 
     struct ev_waiters waiters;
@@ -2251,7 +2291,7 @@ static bool claim_for_run_sync(struct sched_thread *self, struct task *task)
     case TK_READY:
         return task_claim(task, st);
     case TK_READY_MAIN:
-        if(self->idx != 0)
+        if(!is_main_home(self))
             return false;
         drain_main_inbox();
         if(!pq_task_remove(&s_rt_heap, tasks_compare, task)
@@ -2525,7 +2565,12 @@ uint64_t Sched_Request(struct request req)
 
 uint32_t Sched_ActiveTID(void)
 {
-    struct task *curr = sched_self()->curr;
+    struct sched_thread *self = sched_self();
+    struct task *curr = self->curr;
+    /* Outside its own tasks, the script thread runs what the main thread's
+     * current task called it for, while the main thread waits on it */
+    if(!curr && self->idx == SCRIPT_IDX)
+        curr = s_threads[0].curr;
     return curr ? curr->tid : NULL_TID;
 }
 

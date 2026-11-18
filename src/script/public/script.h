@@ -126,5 +126,23 @@ script_opaque_t S_Camera_ObjFromAtts(const char *name, vec3_t pos,
 
 void            S_Task_KillAll(void);
 
+/*###########################################################################*/
+/* SCRIPT THREAD                                                             */
+/*###########################################################################*/
+
+/* Python runs on its own thread only. The main thread hands it work as
+ * synchronous calls; whichever of the two runs owns the game world.
+ */
+bool            S_Thread_Start(void);
+void            S_Thread_Stop(void);
+bool            S_Thread_Running(void);
+bool            S_Thread_OnScript(void);
+/* Runs 'fn' on the script thread and waits for it. Called on the script
+ * thread, it runs 'fn' directly. */
+void            S_Thread_Call(void (*fn)(void *arg), void *arg);
+/* Runs 'fn' on the main thread and waits for it: for what only the main
+ * thread may do, such as changes to the window or the cursor */
+void            S_Thread_CallMain(void (*fn)(void *arg), void *arg);
+
 #endif
 

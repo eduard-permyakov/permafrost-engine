@@ -102,6 +102,9 @@ void     Sched_TryYield(void);
 
 bool     Sched_Init(void);
 void     Sched_Shutdown(void);
+/* Called on the script thread: it runs the TASK_SCRIPT tasks, and serves the
+ * main thread's tasks while the main thread waits on it */
+void     Sched_RegisterScriptThread(void);
 void     Sched_HandleEvent(int event, void *arg, int event_source, bool immediate);
 void     Sched_StartBackgroundTasks(void);
 void     Sched_Tick(void);

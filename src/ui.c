@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB 0
 
 #include "ui.h"
+#include "script/public/script.h"
 #include "config.h"
 #include "event.h"
 #include "main.h"
@@ -446,9 +447,21 @@ static void ui_init_font_stash(struct nk_context *ctx)
     nk_style_set_font(ctx, &s_atlas.default_font->handle);
 }
 
+/* The clipboard goes through the window, which only the main thread may touch */
+static void clipboard_get_main(void *arg)
+{
+    *(const char**)arg = SDL_GetClipboardText();
+}
+
+static void clipboard_set_main(void *arg)
+{
+    SDL_SetClipboardText(arg);
+}
+
 static void ui_clipboard_paste(nk_handle usr, struct nk_text_edit *edit)
 {
-    const char *text = SDL_GetClipboardText();
+    const char *text = NULL;
+    S_Thread_CallMain(clipboard_get_main, &text);
     if(text) 
         nk_textedit_paste(edit, text, nk_strlen(text));
 }
@@ -463,7 +476,7 @@ static void ui_clipboard_copy(nk_handle usr, const char *text, int len)
         return;
     memcpy(str, text, (size_t)len);
     str[len] = '\0';
-    SDL_SetClipboardText(str);
+    S_Thread_CallMain(clipboard_set_main, str);
     PF_FREE(str);
 }
 

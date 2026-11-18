@@ -40,6 +40,7 @@
 
 #include "public/script.h"
 #include "py_ui_style.h"
+#include "script_thread.h"
 #include "py_pickle.h"
 #include "py_console.h"
 #include "../lib/public/pf_nuklear.h"
@@ -2908,6 +2909,7 @@ static int PyWindow_set_fixed_background(PyWindowObject *self, PyObject *value, 
 
 static bool call_registered(PyObject *obj, char *method_name)
 {
+    assert(!ST_OFF_SCRIPT());
     PyObject *ret = PyObject_CallMethod(obj, method_name, NULL);
     if(!ret) {
         S_ShowLastError();
@@ -2927,6 +2929,11 @@ static void call_registered_arg(PyObject *obj, char *method_name, PyObject *arg)
 
 static void active_windows_update(void *user, void *event)
 {
+    /* Runs Python: on the script thread */
+    if(ST_OFF_SCRIPT()) {
+        S_Thread_CallHandler(active_windows_update, user, event);
+        return;
+    }
     (void)user;
     (void)event;
 
@@ -3058,8 +3065,25 @@ void S_UI_PyRegister(PyObject *module)
     S_UI_Style_PyRegister(module, s_nk_ctx);
 }
 
+struct fwd_S_UI_MouseOverObscuringWindow{
+    int mouse_x;
+    int mouse_y;
+    bool ret;
+};
+
+static void fwd_S_UI_MouseOverObscuringWindow_thunk(void *arg)
+{
+    struct fwd_S_UI_MouseOverObscuringWindow *a = arg;
+    a->ret = S_UI_MouseOverObscuringWindow(a->mouse_x, a->mouse_y);
+}
+
 bool S_UI_MouseOverObscuringWindow(int mouse_x, int mouse_y)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_UI_MouseOverObscuringWindow call = {mouse_x, mouse_y};
+        S_Thread_Call(fwd_S_UI_MouseOverObscuringWindow_thunk, &call);
+        return call.ret;
+    }
     int w, h;
     Engine_WinDrawableSize(&w, &h);
 
@@ -3108,8 +3132,25 @@ bool S_UI_MouseOverObscuringWindow(int mouse_x, int mouse_y)
     return false;
 }
 
+struct fwd_S_UI_MouseOverWindow{
+    int mouse_x;
+    int mouse_y;
+    bool ret;
+};
+
+static void fwd_S_UI_MouseOverWindow_thunk(void *arg)
+{
+    struct fwd_S_UI_MouseOverWindow *a = arg;
+    a->ret = S_UI_MouseOverWindow(a->mouse_x, a->mouse_y);
+}
+
 bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_UI_MouseOverWindow call = {mouse_x, mouse_y};
+        S_Thread_Call(fwd_S_UI_MouseOverWindow_thunk, &call);
+        return call.ret;
+    }
     if(S_UI_MouseOverObscuringWindow(mouse_x, mouse_y))
         return true;
 
@@ -3119,8 +3160,24 @@ bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
     return false;
 }
 
+struct fwd_S_UI_TextEditHasFocus{
+    int unused;
+    bool ret;
+};
+
+static void fwd_S_UI_TextEditHasFocus_thunk(void *arg)
+{
+    struct fwd_S_UI_TextEditHasFocus *a = arg;
+    a->ret = S_UI_TextEditHasFocus();
+}
+
 bool S_UI_TextEditHasFocus(void)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_UI_TextEditHasFocus call = {0};
+        S_Thread_Call(fwd_S_UI_TextEditHasFocus_thunk, &call);
+        return call.ret;
+    }
     struct nk_window *console = nk_window_find(s_nk_ctx, "Console");
     if(console && (console->edit.active == nk_true))
         return true;

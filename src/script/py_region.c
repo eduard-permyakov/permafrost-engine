@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_SCRIPT_REGION
 
 #include "py_region.h"
+#include "script_thread.h"
 #include "py_entity.h"
 #include "py_pickle.h"
 #include "public/script.h"
@@ -735,8 +736,23 @@ void S_Region_Clear(void)
     Py_CLEAR(s_loaded);
 }
 
+struct fwd_S_Region_NotifyContentsChanged{
+    const char *name;
+};
+
+static void fwd_S_Region_NotifyContentsChanged_thunk(void *arg)
+{
+    struct fwd_S_Region_NotifyContentsChanged *a = arg;
+    S_Region_NotifyContentsChanged(a->name);
+}
+
 void S_Region_NotifyContentsChanged(const char *name)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_Region_NotifyContentsChanged call = {name};
+        S_Thread_Call(fwd_S_Region_NotifyContentsChanged_thunk, &call);
+        return;
+    }
     khiter_t k = kh_get(PyObject, s_name_pyobj_table, name);
     if(k == kh_end(s_name_pyobj_table))
         return;
@@ -764,9 +780,30 @@ PyObject *S_Region_GetLoaded(void)
     return ret;
 }
 
+struct fwd_S_Region_ObjFromAtts{
+    const char *name;
+    int type;
+    vec2_t pos;
+    float radius;
+    float xlen;
+    float zlen;
+    script_opaque_t ret;
+};
+
+static void fwd_S_Region_ObjFromAtts_thunk(void *arg)
+{
+    struct fwd_S_Region_ObjFromAtts *a = arg;
+    a->ret = S_Region_ObjFromAtts(a->name, a->type, a->pos, a->radius, a->xlen, a->zlen);
+}
+
 script_opaque_t S_Region_ObjFromAtts(const char *name, int type, vec2_t pos, 
                                      float radius, float xlen, float zlen)
 {
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_Region_ObjFromAtts call = {name, type, pos, radius, xlen, zlen};
+        S_Thread_Call(fwd_S_Region_ObjFromAtts_thunk, &call);
+        return call.ret;
+    }
     if(type != REGION_CIRCLE && type != REGION_RECTANGLE)
         return NULL;
 
