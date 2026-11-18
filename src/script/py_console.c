@@ -388,6 +388,11 @@ static void do_interactive_one(const char *str)
     }
 }
 
+bool S_Console_Shown(void)
+{
+    return s_shown;
+}
+
 void S_Console_Update(void)
 {
     assert(!ST_OFF_SCRIPT());

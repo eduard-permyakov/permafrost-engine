@@ -818,7 +818,21 @@ void Engine_SetDispMode(enum pf_window_flags wf)
 
 void Engine_WinDrawableSize(int *out_w, int *out_h)
 {
-    SDL_GL_GetDrawableSize(s_window, out_w, out_h);
+    /* Only the main thread asks the window: another is told what the main
+     * thread last heard
+     */
+    static int s_w, s_h;
+    if(SDL_ThreadID() == g_main_thread_id) {
+        int w, h;
+        SDL_GL_GetDrawableSize(s_window, &w, &h);
+        __atomic_store_n(&s_w, w, __ATOMIC_RELAXED);
+        __atomic_store_n(&s_h, h, __ATOMIC_RELAXED);
+    }
+    *out_w = __atomic_load_n(&s_w, __ATOMIC_RELAXED);
+    *out_h = __atomic_load_n(&s_h, __ATOMIC_RELAXED);
+    /* Before the main thread's first look */
+    if(*out_w == 0 || *out_h == 0)
+        SDL_GL_GetDrawableSize(s_window, out_w, out_h);
 }
 
 void Engine_FlushRenderWorkQueue(void)
@@ -989,7 +1003,8 @@ int main(int argc, char **argv)
             frame_stamp(FT_UPDATE_DONE);
             G_Render();
             frame_stamp(FT_RENDER_DONE);
-            if(Sched_ViewBacklog()) {
+            /* The scripts' windows are drawn against the last frame's world */
+            if(Sched_ViewBacklog() || UI_ScriptFrameAsked()) {
                 G_ScriptView_Publish();
             }else{
                 G_ScriptView_Skip();

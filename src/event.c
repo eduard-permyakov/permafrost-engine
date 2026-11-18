@@ -181,6 +181,7 @@ static const char *s_event_str_table[] = {
     STR(EVENT_ORDER_HOLD_END),
     STR(EVENT_POST_MANNED),
     STR(EVENT_DUTY_CHANGED),
+    STR(EVENT_UI_FRAME),
 };
 
 static khash_t(handler_desc) *s_event_handler_table;
@@ -393,7 +394,7 @@ static void e_run_handlers(khash_t(handler_desc) *table, struct event event, boo
                            const struct script_event_arg *sarg)
 {
     uint64_t key = e_key(event.receiver_id, event.type);
-    enum simstate ss = G_GetSimState();
+    enum simstate ss = G_PeekSimState();
     
     /* The execution of an event handler can cause one or more event handlers 
      * to be unregistered. We want to provide a guarantee that once an event 
@@ -987,7 +988,12 @@ void E_Global_NotifyScriptNow(enum eventtype event)
         .to_zombie = false,
     };
     S_EventArgEncode(event, ES_ENGINE, NULL, &sd.sarg);
-    e_dispatch_script(&sd);
+    /* From a view slice, the tasks waiting on the event are left for the next
+     * world window: only a view task may run alongside the main thread. The
+     * handlers run here and now, under the slice's own guard.
+     */
+    Sched_HandleScriptEvent(event, &sd.sarg, ES_ENGINE, !Sched_InViewSlice());
+    e_run_handlers(s_script_handler_table, sd.event, true, &sd.sarg);
     S_EventArgRelease(&sd.sarg);
 }
 

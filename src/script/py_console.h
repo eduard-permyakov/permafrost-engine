@@ -44,6 +44,7 @@ bool S_Console_Init(void);
 void S_Console_Shutdown(void);
 void S_Console_Show(void);
 void S_Console_ToggleShown(void);
+bool S_Console_Shown(void);
 /* Draws the console, if it is shown, into the frame of the scripts' windows */
 void S_Console_Update(void);
 bool S_Console_Bounds(struct nk_rect *out);

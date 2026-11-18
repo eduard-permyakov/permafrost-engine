@@ -3990,6 +3990,7 @@ static PyObject *PyCombatableEntity_clear_modifiers(PyCombatableEntityObject *se
 
 static PyObject *PyCombatableEntity_get_bonus(PyCombatableEntityObject *self, PyObject *args)
 {
+    S_VIEW_POLLED(PyCombatableEntity_get_bonus, self, args);
     int kind;
 
     if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
@@ -6619,6 +6620,7 @@ static PyObject *PyGarrisonEntity_get_is_ingredient(PyGarrisonEntityObject *self
 
 static PyObject *PyGarrisonableEntity_ingredients(PyGarrisonableEntityObject *self)
 {
+    S_VIEW_POLLED(PyGarrisonableEntity_ingredients, self, NULL);
     if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
         PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
         return NULL;

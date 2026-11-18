@@ -116,6 +116,16 @@ bool            S_UI_MouseOverObscuringWindow(int mouse_x, int mouse_y);
 /* Called once a frame by the main thread: the scripts' windows are drawn */
 void            S_UI_Frame(void);
 void            S_UpdateErrorWindow(void);
+bool            S_ErrorShown(void);
+/* On the script thread, when the main thread has asked for a frame */
+void            S_UI_FramePump(void);
+void            S_UI_StartFrameTask(void);
+/* From code a view task reached that needs the world: the rest of the task's
+ * slice runs in the main thread's next world window. Does nothing elsewhere.
+ */
+int             S_View_RequireWorld(void);
+/* Wakes the script thread for a frame of the scripts' windows, without waiting for it */
+void            S_Thread_Poke(void);
 bool            S_UI_TextEditHasFocus(void);
 
 /*###########################################################################*/

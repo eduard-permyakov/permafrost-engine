@@ -1809,6 +1809,11 @@ static void s_err_clear(void)
     s_err_ctx.occurred = false;
 }
 
+bool S_ErrorShown(void)
+{
+    return s_err_ctx.occurred;
+}
+
 void S_UpdateErrorWindow(void)
 {
     assert(!ST_OFF_SCRIPT());
@@ -7194,6 +7199,7 @@ static PyObject *PyPf_lens_ready(PyObject *self)
 
 static PyObject *PyPf_lens_shown(PyObject *self)
 {
+    S_VIEW_POLLED(PyPf_lens_shown, self, NULL);
     if(G_District_LensShown()) {
         Py_RETURN_TRUE;
     }else{
@@ -7457,6 +7463,7 @@ bool S_Init(const char *progname, const char *base_path, struct nk_context *ctx)
 
     s_create_settings();
     S_View_Init(module);
+    S_UI_StartFrameTask();
 
     E_Global_Register(EVENT_UPDATE_START, s_on_update, NULL, G_ALL);
     return true;

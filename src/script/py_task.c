@@ -120,6 +120,8 @@ typedef struct {
     uint32_t sleep_elapsed;
     bool small_stack;
     bool realtime;
+    /* The engine's own task: it runs while the game is paused and is not saved */
+    bool internal;
     bool view;
 }PyTaskObject;
 
@@ -738,10 +740,13 @@ static PyObject *PyTask_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
         self->realtime = (realtime && PyObject_IsTrue(realtime));
         PyObject *view = PyDict_GetItemString(kwds, "view");
         self->view = (view && PyObject_IsTrue(view));
+        PyObject *internal = PyDict_GetItemString(kwds, "_internal");
+        self->internal = (internal && PyObject_IsTrue(internal));
     }else{
         self->small_stack = false;
         self->realtime = false;
         self->view = false;
+        self->internal = false;
     }
 
     Py_INCREF(func);
@@ -1077,6 +1082,8 @@ static PyObject *PyTask_run(PyTaskObject *self)
         flags |= TASK_REALTIME;
     if(self->view)
         flags |= TASK_VIEW;
+    if(self->internal)
+        flags |= TASK_RUN_DURING_PAUSE;
 
     self->tid = pytask_schedule(self, 16, py_task, self, NULL, flags);
 
@@ -1557,22 +1564,42 @@ void S_Task_Clear(void)
 
 PyObject *S_Task_GetAll(void)
 {
-    PyObject *ret = PyTuple_New(kh_size(s_tid_task_map));
-    if(!ret)
-        return NULL;
-
     uint32_t key;
     PyTaskObject *curr;
     (void)key;
 
+    size_t ntasks = 0;
+    kh_foreach(s_tid_task_map, key, curr, {
+        if(!curr->internal)
+            ntasks++;
+    });
+
+    PyObject *ret = PyTuple_New(ntasks);
+    if(!ret)
+        return NULL;
+
     size_t nset = 0;
     kh_foreach(s_tid_task_map, key, curr, {
+        if(curr->internal)
+            continue;
         Py_INCREF(curr);
         PyTuple_SetItem(ret, nset++, (PyObject*)curr);
     });
 
     assert(nset == PyTuple_GET_SIZE(ret));
     return ret;
+}
+
+void S_Task_YieldSlice(void)
+{
+    khiter_t k = kh_get(task, s_tid_task_map, Sched_ActiveTID());
+    if(k == kh_end(s_tid_task_map))
+        return;
+    PyTaskObject *self = kh_value(s_tid_task_map, k);
+
+    pytask_pop_ctx(self);
+    Task_Yield();
+    pytask_push_ctx(self);
 }
 
 void S_Task_ViewPark(void)

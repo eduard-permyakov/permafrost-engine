@@ -266,6 +266,10 @@ void            G_ClockPace(float allowed);
 float           G_ClockSpeed(void);
 void            G_SetSimState(enum simstate ss);
 enum simstate   G_GetSimState(void);
+/* The same, for a thread that runs alongside the one that changes it: what it
+ * reads may be a frame old
+ */
+enum simstate   G_PeekSimState(void);
 void            G_UpdateSimStateChangeTick(void);
 void            G_SetLightPos(vec3_t pos);
 vec3_t          G_GetLightPos(void);

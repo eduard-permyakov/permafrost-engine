@@ -41,6 +41,8 @@
 #include "public/script.h"
 #include "py_ui_style.h"
 #include "script_thread.h"
+#include "py_task.h"
+#include "../sched.h"
 #include "py_pickle.h"
 #include "py_console.h"
 #include "../lib/public/pf_nuklear.h"
@@ -2943,11 +2945,19 @@ static int PyWindow_set_fixed_background(PyWindowObject *self, PyObject *value, 
     return 0;
 }
 
+/* The frame task was told to end while a window was drawn: the exception is
+ * left for it to end by, and nothing more of the frame is drawn
+ */
+static bool frame_task_ended(void)
+{
+    return PyErr_Occurred() && PyErr_ExceptionMatches(PyExc_SystemExit);
+}
+
 static bool call_registered(PyObject *obj, char *method_name)
 {
     assert(!ST_OFF_SCRIPT());
     PyObject *ret = PyObject_CallMethod(obj, method_name, NULL);
-    if(!ret) {
+    if(!ret && !frame_task_ended()) {
         S_ShowLastError();
     }
     Py_XDECREF(ret);
@@ -2957,7 +2967,7 @@ static bool call_registered(PyObject *obj, char *method_name)
 static void call_registered_arg(PyObject *obj, char *method_name, PyObject *arg)
 {
     PyObject *ret = PyObject_CallMethod(obj, method_name, "O", arg, NULL);
-    if(!ret) {
+    if(!ret && !frame_task_ended()) {
         S_ShowLastError();
     }
     Py_XDECREF(ret);
@@ -3033,18 +3043,46 @@ static void hit_state_read(struct hit_state *out)
     }
 }
 
+static bool window_active(const PyWindowObject *win)
+{
+    for(int i = 0; i < vec_size(&s_active_windows); i++) {
+        if(vec_AT(&s_active_windows, i) == win)
+            return true;
+    }
+    return false;
+}
+
 static void active_windows_update(void)
 {
     assert(!ST_OFF_SCRIPT());
 
+    /* A frame drawn alongside the main thread gives the thread up between
+     * windows, and a script may show or hide a window meanwhile: the frame
+     * goes by the windows there were when it began
+     */
+    vec_win_t wins;
+    vec_win_init(&wins);
     for(int i = 0; i < vec_size(&s_active_windows); i++) {
-    
         PyWindowObject *win = vec_AT(&s_active_windows, i);
+        Py_INCREF(win);
+        vec_win_push(&wins, win);
+    }
+
+    for(int i = 0; i < vec_size(&wins); i++) {
+    
+        PyWindowObject *win = vec_AT(&wins, i);
+        if(i > 0 && S_View_Active()) {
+            S_Task_YieldSlice();
+        }
+        if(PyErr_Occurred())
+            break;
+        if(!window_active(win))
+            continue;
         if(win->flags & (NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED))
             continue;
 
         bool interactive = !(win->flags & NK_WINDOW_NOT_INTERACTIVE);
-        bool suspended = win->suspend_on_pause && G_GetSimState() != G_RUNNING;
+        bool suspended = win->suspend_on_pause && G_PeekSimState() != G_RUNNING;
         if(suspended)
             win->flags |= NK_WINDOW_NOT_INTERACTIVE;
 
@@ -3078,14 +3116,14 @@ static void active_windows_update(void)
             /* A window that raises would raise again on every frame after the
              * error is dismissed, so it is closed until it is shown again
              */
-            if(!call_registered((PyObject*)win, "update")) {
+            if(!call_registered((PyObject*)win, "update") && !PyErr_Occurred()) {
                 win->hide = true;
             }
             PERF_POP();
         }
 
-        if(win->hide || (s_nk_ctx->current->flags & NK_WINDOW_HIDDEN 
-        && !(win->flags & NK_WINDOW_HIDDEN))) {
+        if(!PyErr_Occurred() && (win->hide || (s_nk_ctx->current->flags & NK_WINDOW_HIDDEN 
+        && !(win->flags & NK_WINDOW_HIDDEN)))) {
 
             PyObject *manual = win->hide ? Py_False : Py_True;
             Py_INCREF(manual);
@@ -3093,11 +3131,11 @@ static void active_windows_update(void)
             Py_DECREF(manual);
         }
 
-        if(s_nk_ctx->current->minimized) {
+        if(s_nk_ctx->current->minimized && !PyErr_Occurred()) {
             call_registered((PyObject*)win, "on_minimize");
         }
 
-        if(s_nk_ctx->current->maximized) {
+        if(s_nk_ctx->current->maximized && !PyErr_Occurred()) {
             call_registered((PyObject*)win, "on_maximize");
         }
 
@@ -3131,6 +3169,10 @@ static void active_windows_update(void)
             win->hide = false;
         }
     }
+    for(int i = 0; i < vec_size(&wins); i++) {
+        Py_DECREF(vec_AT(&wins, i));
+    }
+    vec_win_destroy(&wins);
     hit_state_publish();
 }
 
@@ -3160,19 +3202,81 @@ static void ui_frame(void *arg)
 {
     (void)arg;
     UI_ScriptFrameBegin();
+    /* Both act on the world from their buttons and their prompt */
+    if(S_ErrorShown() || S_Console_Shown()) {
+        S_View_RequireWorld();
+    }
     S_UpdateErrorWindow();
     S_Console_Update();
-    if(G_GetSimState() & (G_RUNNING | G_PAUSED_UI_RUNNING)) {
+    if(G_PeekSimState() & (G_RUNNING | G_PAUSED_UI_RUNNING)) {
         active_windows_update();
-        E_Global_NotifyScriptNow(EVENT_UPDATE_UI);
+        if(!PyErr_Occurred())
+            E_Global_NotifyScriptNow(EVENT_UPDATE_UI);
     }
     UI_ScriptFrameEnd();
+}
+
+/* The frame task's whole loop body: a frame of the scripts' windows */
+static PyObject *PyPf_ui_frame(PyObject *self)
+{
+    ui_frame(NULL);
+    if(PyErr_Occurred())
+        return NULL;
+    Py_RETURN_NONE;
+}
+
+static PyMethodDef s_ui_frame_def = {
+    "_ui_frame", (PyCFunction)PyPf_ui_frame, METH_NOARGS,
+    "Draws a frame of the windows. For the engine's own frame task."
+};
+
+void S_UI_StartFrameTask(void)
+{
+    char src[512];
+    pf_snprintf(src, sizeof(src),
+        "import pf\n"
+        "class __UIFrameTask(pf.Task):\n"
+        "    def __run__(self):\n"
+        "        while True:\n"
+        "            self.await_event(%d)\n"
+        "            pf._ui_frame()\n"
+        "__UIFrameTask(view=True, _internal=True).run()\n",
+        (int)EVENT_UI_FRAME);
+
+    PyObject *globals = PyDict_New();
+    if(!globals)
+        return;
+    PyDict_SetItemString(globals, "__builtins__", PyEval_GetBuiltins());
+    PyObject *ret = PyRun_String(src, Py_file_input, globals, globals);
+    if(!ret) {
+        PyErr_Print();
+    }
+    Py_XDECREF(ret);
+    Py_DECREF(globals);
+}
+
+void S_UI_FramePump(void)
+{
+    assert(S_Thread_OnScript());
+    struct script_event_arg sarg;
+    S_EventArgEncode(EVENT_UI_FRAME, ES_ENGINE, NULL, &sarg);
+    /* The frame task is made ready, not run: it runs as a view slice */
+    Sched_HandleScriptEvent(EVENT_UI_FRAME, &sarg, ES_ENGINE, false);
+    S_EventArgRelease(&sarg);
 }
 
 void S_UI_Frame(void)
 {
     UI_ScriptFrameAsk();
-    S_Thread_Call(ui_frame, NULL);
+    /* PF_UI_SYNC=1: the main thread waits for the frame, as it used to */
+    static int sync = -1;
+    if(sync < 0)
+        sync = (getenv("PF_UI_SYNC") != NULL);
+    if(sync || !S_Thread_Running()) {
+        S_Thread_Call(ui_frame, NULL);
+        return;
+    }
+    S_Thread_Poke();
 }
 
 void S_UI_PyRegister(PyObject *module)
@@ -3184,6 +3288,10 @@ void S_UI_PyRegister(PyObject *module)
 
     assert(s_nk_ctx);
     S_UI_Style_PyRegister(module, s_nk_ctx);
+
+    PyObject *frame = PyCFunction_New(&s_ui_frame_def, NULL);
+    if(frame)
+        PyModule_AddObject(module, "_ui_frame", frame);
 }
 
 /* The three are asked by the engine's input handlers on the main thread, of

@@ -96,7 +96,18 @@ struct view_getset{
 };
 
 KHASH_MAP_INIT_INT64(vclass, int)
-KHASH_SET_INIT_INT64(vsite)
+KHASH_MAP_INIT_INT64(vsite, int)
+
+/* A place in the scripts a view slice waited for the world from */
+struct park_site{
+    char     file[96];
+    int      line;
+    char     what[48];
+    uint64_t count;
+};
+
+VEC_TYPE(site, struct park_site)
+VEC_IMPL(static inline, site, struct park_site)
 VEC_TYPE(vuid, uint32_t)
 VEC_IMPL(static inline, vuid, uint32_t)
 
@@ -105,6 +116,12 @@ VEC_IMPL(static inline, vuid, uint32_t)
  * attribute's reading and writing are named apart. */
 static const char *s_allowed[] = {
     "pf.Task.",
+    "pf.Window.",
+    "pf.UI",
+    "pf._ui_frame",
+    "pf.draw_text",
+    "pf.set_active_font",
+    "pf.get_active_font",
     "pf.get_ticks",
     "pf.prev_frame_ms",
     "pf.Entity.uid.get",
@@ -149,6 +166,9 @@ static const char *s_polled[] = {
     "pf.get_key_name",
     "pf.get_resolution",
     "pf.districts_shown",
+    "pf.lens_shown",
+    "pf.CombatableEntity.get_bonus",
+    "pf.GarrisonableEntity.ingredients",
     NULL
 };
 
@@ -169,6 +189,7 @@ static bool             s_poll_working;
 static uint64_t         s_nparks, s_npoll_hits, s_npoll_learned, s_npoll_renewed;
 /* The places a view slice has parked from, each logged once */
 static khash_t(vsite)  *s_park_sites;
+static vec_site_t       s_sites;
 static bool             s_init = false;
 
 /*****************************************************************************/
@@ -198,11 +219,20 @@ static int park(const char *what)
         int line = PyFrame_GetLineNumber(frame);
         uint64_t site = ((uint64_t)(uintptr_t)frame->f_code << 20) ^ (uint64_t)line;
         int ret;
-        kh_put(vsite, s_park_sites, site, &ret);
+        khiter_t k = kh_put(vsite, s_park_sites, site, &ret);
         if(ret > 0) {
             fprintf(stderr, "[view] a view task waits for the world at %s:%d (%s)\n",
                 PyString_AsString(frame->f_code->co_filename), line, what);
+            struct park_site ps = {.line = line, .count = 0};
+            const char *file = PyString_AsString(frame->f_code->co_filename);
+            size_t len = strlen(file);
+            pf_strlcpy(ps.file, len >= sizeof(ps.file) ? file + len - sizeof(ps.file) + 1 : file, sizeof(ps.file));
+            pf_strlcpy(ps.what, what, sizeof(ps.what));
+            kh_value(s_park_sites, k) = vec_size(&s_sites);
+            vec_site_push(&s_sites, ps);
         }
+        if(ret != -1)
+            vec_AT(&s_sites, kh_value(s_park_sites, k)).count++;
     }
     s_nparks++;
     S_Task_ViewPark();
@@ -370,6 +400,7 @@ void S_View_Init(struct _object *module)
     if(!s_init) {
         s_method_class = kh_init(vclass);
         s_park_sites = kh_init(vsite);
+        vec_site_init(&s_sites);
         vec_vuid_init(&s_deferred_removes);
         vec_poll_init(&s_polls);
         vec_vuid_init(&s_poll_free);
@@ -393,6 +424,9 @@ int S_View_RequireWorld(void)
 
 void S_View_EnterTask(bool view)
 {
+    /* A view task with the world notes what it reads, to answer from later */
+    s_poll_learning = view && !Sched_InViewSlice();
+    s_poll_learned = 0;
     PyThreadState *ts = PyThreadState_GET();
     if(view && Sched_InViewSlice()) {
         if(ts->c_profilefunc != view_profile)
@@ -569,6 +603,13 @@ void S_View_Shutdown(void)
         fprintf(stderr, "[view-stats] parks %llu, polled: answered %llu, learned %llu, renewed %llu over %u frames\n",
             (unsigned long long)s_nparks, (unsigned long long)s_npoll_hits,
             (unsigned long long)s_npoll_learned, (unsigned long long)s_npoll_renewed, s_poll_frame);
+        for(int i = 0; i < vec_size(&s_sites); i++) {
+            const struct park_site *ps = &vec_AT(&s_sites, i);
+            if(ps->count > 1) {
+                fprintf(stderr, "[view-stats]   %llu waits at %s:%d (%s)\n",
+                    (unsigned long long)ps->count, ps->file, ps->line, ps->what);
+            }
+        }
     }
     for(int i = 0; i < vec_size(&s_polls); i++) {
         if(vec_AT(&s_polls, i).used)

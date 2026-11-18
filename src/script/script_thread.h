@@ -49,9 +49,6 @@ void S_Thread_CallHandler(void (*handler)(void *user, void *event), void *user, 
 /* View mode: what a view task may do without the world, run on the script
  * thread alongside the main thread */
 void S_View_Init(struct _object *module);
-/* From a binding or constructor a view task reached: the rest of the slice
- * runs in the main thread's next world window */
-int  S_View_RequireWorld(void);
 bool S_View_Active(void);
 /* A script task's thread state comes in: a view task in a view slice is
  * watched for what it reaches */

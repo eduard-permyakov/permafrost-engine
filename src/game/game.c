@@ -4171,6 +4171,11 @@ enum simstate G_GetSimState(void)
     return s_gs.ss;
 }
 
+enum simstate G_PeekSimState(void)
+{
+    return __atomic_load_n(&s_gs.ss, __ATOMIC_RELAXED);
+}
+
 void G_Zombiefy(uint32_t uid, bool invis)
 {
     ASSERT_IN_MAIN_THREAD();

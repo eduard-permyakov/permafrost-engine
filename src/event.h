@@ -142,6 +142,10 @@ enum eventtype{
     EVENT_POST_MANNED,
     /* A unit took a duty on, had it end, or stands by for its next request; the arg is the unit */
     EVENT_DUTY_CHANGED,
+    /* The main thread asked for a frame of the scripts' windows: raised by the
+     * script thread for the task that draws them
+     */
+    EVENT_UI_FRAME,
 
     EVENT_ENGINE_LAST = 0x1ffff,
 };

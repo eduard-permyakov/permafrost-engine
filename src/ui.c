@@ -509,6 +509,7 @@ static void clipboard_set_main(void *arg)
 static void ui_clipboard_paste(nk_handle usr, struct nk_text_edit *edit)
 {
     const char *text = NULL;
+    S_View_RequireWorld();
     S_Thread_CallMain(clipboard_get_main, &text);
     if(text) 
         nk_textedit_paste(edit, text, nk_strlen(text));
@@ -524,6 +525,7 @@ static void ui_clipboard_copy(nk_handle usr, const char *text, int len)
         return;
     memcpy(str, text, (size_t)len);
     str[len] = '\0';
+    S_View_RequireWorld();
     S_Thread_CallMain(clipboard_set_main, str);
     PF_FREE(str);
 }
@@ -690,6 +692,35 @@ static void *ui_convert(struct nk_context *ctx)
     nk_buffer_free(&cmds);
     nk_clear(ctx);
     return ret;
+}
+
+static bool ui_image_size(const char *texpath, int *out_w, int *out_h)
+{
+    khiter_t k = kh_get(imgsize, s_image_sizes, texpath);
+    if(k == kh_end(s_image_sizes)) {
+
+        char path[512];
+        pf_snprintf(path, sizeof(path), "%s/%s", g_basepath, texpath);
+
+        int w, h, components;
+        if(stbi_info(path, &w, &h, &components) != 1)
+            return false;
+
+        char *key = pf_strdup(texpath);
+        if(!key)
+            return false;
+        int status;
+        k = kh_put(imgsize, s_image_sizes, key, &status);
+        if(status == -1) {
+            PF_FREE(key);
+            return false;
+        }
+        kh_value(s_image_sizes, k) = ((uint64_t)(uint32_t)w << 32) | (uint32_t)h;
+    }
+    uint64_t size = kh_value(s_image_sizes, k);
+    *out_w = (int)(size >> 32);
+    *out_h = (int)(uint32_t)size;
+    return true;
 }
 
 /* A label a script asks for is drawn with the scripts' windows, the engine's
@@ -906,6 +937,11 @@ void UI_ScriptFrameAsk(void)
     s_script_asked_frame = g_frame_idx;
 }
 
+bool UI_ScriptFrameAsked(void)
+{
+    return (g_frame_idx - s_script_asked_frame <= 1);
+}
+
 void UI_ScriptFrameBegin(void)
 {
     SDL_LockMutex(s_script_lock);
@@ -1098,31 +1134,11 @@ void UI_ClearState(void)
 
 bool UI_ImageSize(const char *texpath, int *out_w, int *out_h)
 {
-    khiter_t k = kh_get(imgsize, s_image_sizes, texpath);
-    if(k == kh_end(s_image_sizes)) {
-
-        char path[512];
-        pf_snprintf(path, sizeof(path), "%s/%s", g_basepath, texpath);
-
-        int w, h, components;
-        if(stbi_info(path, &w, &h, &components) != 1)
-            return false;
-
-        char *key = pf_strdup(texpath);
-        if(!key)
-            return false;
-        int status;
-        k = kh_put(imgsize, s_image_sizes, key, &status);
-        if(status == -1) {
-            PF_FREE(key);
-            return false;
-        }
-        kh_value(s_image_sizes, k) = ((uint64_t)(uint32_t)w << 32) | (uint32_t)h;
-    }
-    uint64_t size = kh_value(s_image_sizes, k);
-    *out_w = (int)(size >> 32);
-    *out_h = (int)(uint32_t)size;
-    return true;
+    /* Both the main thread and the script thread ask */
+    SDL_LockMutex(s_lock);
+    bool ret = ui_image_size(texpath, out_w, out_h);
+    SDL_UnlockMutex(s_lock);
+    return ret;
 }
 
 void UI_LoadingScreenTick(void)

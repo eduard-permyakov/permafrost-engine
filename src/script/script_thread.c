@@ -81,6 +81,8 @@ static int             s_ready;         /* atomic */
 static struct st_side  s_main;
 static struct st_side  s_script;
 static uint64_t        s_idle_spin_ticks;
+/* Set by the main thread when it wants a frame of the scripts' windows */
+static int             s_poked;         /* atomic */
 static uint64_t        s_caller_spin_ticks;
 
 /*****************************************************************************/
@@ -147,6 +149,10 @@ static void wait_serving(struct st_side *self, int *flag, uint64_t spin_ticks)
             continue;
         }
 
+        if(!flag && LF_XCHG(&s_poked, 0, LF_SC)) {
+            S_UI_FramePump();
+        }
+
         /* Between calls, the script thread runs its view tasks. A slice runs
          * to its yield, as script code is atomic between yields: a call made
          * meanwhile waits for it.
@@ -165,6 +171,7 @@ static void wait_serving(struct st_side *self, int *flag, uint64_t spin_ticks)
         LF_FENCE(LF_SC);
         bool wake = (flag && LF_LOAD(flag, LF_SC))
                  || (!flag && LF_LOAD(&s_quit, LF_SC))
+                 || (!flag && LF_LOAD(&s_poked, LF_SC))
                  || LF_LOAD(&self->inbox, LF_SC);
         if(wake) {
             lf_parker_cancel(&self->parker);
@@ -284,6 +291,14 @@ void S_Thread_Call(void (*fn)(void *arg), void *arg)
     }
     assert(Engine_OwnsWorld());
     call_on(&s_script, fn, arg, false);
+}
+
+void S_Thread_Poke(void)
+{
+    if(!s_running)
+        return;
+    LF_STORE(&s_poked, 1, LF_SC);
+    lf_parker_unpark(&s_script.parker);
 }
 
 void S_Thread_Query(void (*fn)(void *arg), void *arg)

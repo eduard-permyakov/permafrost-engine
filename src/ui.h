@@ -97,6 +97,7 @@ struct nk_context *UI_GetScriptContext(void);
  * drawn into the list the main thread shows from then on.
  */
 void               UI_ScriptFrameAsk(void);
+bool               UI_ScriptFrameAsked(void);
 void               UI_ScriptFrameBegin(void);
 void               UI_ScriptFrameEnd(void);
 void               UI_ClearState(void);
