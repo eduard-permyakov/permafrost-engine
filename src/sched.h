@@ -118,6 +118,8 @@ void     Sched_HandleScriptEvent(int event, void *arg, int event_source, bool im
  * task, alongside the main thread. Returns false when none is ready. */
 bool     Sched_RunViewSlice(void);
 bool     Sched_InViewSlice(void);
+/* Whether a view task is ready or runs, and so a view of the world is wanted */
+bool     Sched_ViewBacklog(void);
 /* From a view task that reached the world: the rest of its slice runs in the
  * next world window, before any other script code
  */

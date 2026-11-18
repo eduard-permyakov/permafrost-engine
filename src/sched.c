@@ -797,6 +797,10 @@ static int s_view_slice;
  * until it finishes the slice in a world window
  */
 static struct task *s_parked;
+/* Set while a view task is ready or runs: the main thread publishes a view of
+ * the world only for the frames that have one to read it
+ */
+static int s_view_backlog;
 /* Whether the simulation runs, as the main thread last saw: the script
  * thread picks its view tasks by it, without reading the world */
 static int s_sim_running;
@@ -849,6 +853,8 @@ static void make_ready_pinned(struct task *task)
     do{
         task->inbox_next = head;
     }while(!LF_CASW(&home->inbox, &head, task->tid, LF_SC, LF_RLX));
+    if(home == VIEW_HOME)
+        LF_STORE(&s_view_backlog, 1, LF_SC);
 
     /* The main thread hands the script thread its share of the task loop */
     lf_parker_unpark(MAIN_PARKER);
@@ -2295,14 +2301,28 @@ bool Sched_RunViewSlice(void)
     drain_inbox(home);
     bool (*pred)(void*) = LF_LOAD(&s_sim_running, LF_ACQ) ? can_run_any : can_run_during_pause;
     struct task *curr = NULL;
-    if(!pop_runnable(&home->rt_heap, &curr, pred) && !pop_runnable(&home->heap, &curr, pred))
+    if(!pop_runnable(&home->rt_heap, &curr, pred) && !pop_runnable(&home->heap, &curr, pred)) {
+        /* A task pushed meanwhile is seen by the second look, or its pusher
+         * sets the backlog after this store
+         */
+        if(pq_size(&home->heap) == 0 && pq_size(&home->rt_heap) == 0) {
+            LF_STORE(&s_view_backlog, 0, LF_SC);
+            if(LF_LOAD(&home->inbox, LF_SC))
+                LF_STORE(&s_view_backlog, 1, LF_SC);
+        }
         return false;
+    }
     task_publish(curr, TK_ACTIVE);
 
     LF_STORE(&s_view_slice, 1, LF_SC);
     run_slice(self, curr);
     LF_STORE(&s_view_slice, 0, LF_REL);
     return true;
+}
+
+bool Sched_ViewBacklog(void)
+{
+    return LF_LOAD(&s_view_backlog, LF_SC);
 }
 
 bool Sched_InViewSlice(void)

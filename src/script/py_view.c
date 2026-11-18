@@ -79,7 +79,9 @@ static const char *s_allowed[] = {
     "pf.Task.",
     "pf.get_ticks",
     "pf.prev_frame_ms",
+    "pf.Entity.uid.get",
     "pf.Entity.zombie.get",
+    "pf.BuildableEntity.pos.get",
     "pf.Entity.pos.get",
     "pf.Entity.faction_id.get",
     "pf.HarvesterEntity.home_district.get",
@@ -94,6 +96,11 @@ static const char *s_allowed[] = {
     "pf.HarvesterEntity.automatic_transport.get",
     "pf.HarvesterEntity.pinned_work.get",
     "pf.HarvesterEntity.player_managed.get",
+    "pf.Entity.duty.get",
+    "pf.Entity.idle.get",
+    "pf.HarvesterEntity.queued_gather.get",
+    "pf.HarvesterEntity.current_job",
+    "pf.CombatableEntity.base_dmg.get",
     "pf.workshop_posts",
     "pf.post_workshop",
     NULL
@@ -278,6 +285,9 @@ void S_View_EnterTask(bool view)
 
 bool S_View_RunSlice(void)
 {
+    /* A task made ready on a frame that published no view waits for the next */
+    if(G_ScriptView_Published() && !G_ScriptView_Fresh())
+        return false;
     /* With no view to read, the view tasks run in the world windows */
     s_current = G_ScriptView_Pin();
     if(!s_current)

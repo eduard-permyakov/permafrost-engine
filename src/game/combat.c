@@ -521,6 +521,8 @@ static const char *s_name_for_state[] = {
 };
 
 static khash_t(state)    *s_entity_state_table;
+/* Bumped when an entity's base damage is set, so that a copy knows to refresh */
+static uint64_t           s_base_dmg_gen;
 /* Units whose attack animation is playing, polled once per frame for the
  * frame at which the hit lands. Batched into a single global handler. 
  */
@@ -580,6 +582,7 @@ static void combatstate_set(uint32_t uid, const struct combatstate *cs)
     khiter_t k = kh_put(state, s_entity_state_table, uid, &ret);
     assert(ret != -1 && ret != 0);
     kh_value(s_entity_state_table, k) = *cs;
+    s_base_dmg_gen++;
 }
 
 static void combatstate_remove(uint32_t uid)
@@ -1892,6 +1895,7 @@ static void do_set_base_damage(uint32_t uid, int dmg)
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
     cs->stats.base_dmg = dmg;
+    s_base_dmg_gen++;
 }
 
 static void do_set_current_hp(uint32_t uid, int hp)
@@ -4306,6 +4310,25 @@ void G_Combat_SetBaseDamage(uint32_t uid, int dmg)
         .type = COMBAT_CMD_SET_BASE_DAMAGE,
         .uid = uid,
         .u.base_damage.dmg = dmg
+    });
+}
+
+uint64_t G_Combat_BaseDamageGen(void)
+{
+    return s_base_dmg_gen;
+}
+
+void G_Combat_CopyBaseDamage(khash_t(id) *dst)
+{
+    ASSERT_IN_MAIN_THREAD();
+    kh_clear(id, dst);
+    uint32_t uid;
+    struct combatstate cs;
+    kh_foreach(s_entity_state_table, uid, cs, {
+        int ret;
+        khiter_t k = kh_put(id, dst, uid, &ret);
+        if(ret != -1)
+            kh_value(dst, k) = cs.stats.base_dmg;
     });
 }
 

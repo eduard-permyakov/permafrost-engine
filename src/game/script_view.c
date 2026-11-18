@@ -62,6 +62,10 @@ enum{
     VU_PLAYER_MANAGED  = (1 << 2),
     VU_INGREDIENT      = (1 << 3),
     VU_COMPLETED       = (1 << 4),
+    VU_IDLE            = (1 << 5),
+    VU_HAS_DUTY        = (1 << 6),
+    VU_HAS_QUEUED      = (1 << 7),
+    VU_HAS_JOB         = (1 << 8),
 };
 
 /* What a unit's or building's script attributes read, beyond its flags,
@@ -72,6 +76,12 @@ struct view_unit{
     uint32_t post_workshop;
     uint32_t bits;
     char     pinned[PINNED_LEN];
+    char     queued[PINNED_LEN];
+    struct duty duty;
+    int      job_state;
+    uint32_t job_src;
+    uint32_t job_dest;
+    char     job_rname[PINNED_LEN];
 };
 
 struct view_posts{
@@ -94,6 +104,8 @@ struct script_view{
     khash_t(pos)             *positions;
     khash_t(vunit)           *units;
     khash_t(vposts)          *posts;
+    khash_t(id)              *base_dmg;
+    uint64_t                  base_dmg_gen;
     uint16_t                  faction_mask;
     char                      faction_names[MAX_FACTIONS][MAX_FAC_NAME_LEN];
     vec3_t                    faction_colors[MAX_FACTIONS];
@@ -106,6 +118,10 @@ struct script_view{
 static struct script_view  s_views[NVIEWS];
 static int                 s_published = -1;   /* atomic */
 static int                 s_pinned = -1;      /* atomic */
+/* Whether the published view is of the frame before this one: an older one is
+ * not read
+ */
+static int                 s_fresh;            /* atomic */
 static bool                s_init = false;
 
 /*****************************************************************************/
@@ -125,6 +141,21 @@ static struct view_unit unit_fill(uint32_t uid, int flags)
             ret.bits |= VU_AUTO_TRANSPORT;
         if(G_Automation_PlayerManaged(uid))
             ret.bits |= VU_PLAYER_MANAGED;
+        if(G_Automation_IsIdle(uid))
+            ret.bits |= VU_IDLE;
+        if(G_Duty_Get(uid, &ret.duty))
+            ret.bits |= VU_HAS_DUTY;
+        const char *queued = G_Harvester_QueuedGather(uid);
+        if(queued) {
+            pf_strlcpy(ret.queued, queued, sizeof(ret.queued));
+            ret.bits |= VU_HAS_QUEUED;
+        }
+        const char *rname = NULL;
+        if(!(flags & ENTITY_FLAG_ZOMBIE)
+        && G_Harvester_JobInfo(uid, &ret.job_src, &ret.job_dest, &rname, &ret.job_state)) {
+            pf_strlcpy(ret.job_rname, rname ? rname : "", sizeof(ret.job_rname));
+            ret.bits |= VU_HAS_JOB;
+        }
     }
     if((flags & ENTITY_FLAG_GARRISONABLE) && !(flags & ENTITY_FLAG_ZOMBIE)
     && G_Garrison_IsIngredient(uid))
@@ -187,6 +218,11 @@ static void view_fill(struct script_view *view)
         pf_strlcpy(vc->type, G_Cluster_Type(ids[i]), sizeof(vc->type));
     }
 
+    if(view->base_dmg_gen != G_Combat_BaseDamageGen()) {
+        G_Combat_CopyBaseDamage(view->base_dmg);
+        view->base_dmg_gen = G_Combat_BaseDamageGen();
+    }
+
     G_District_SnapshotUpdate(view->districts);
 }
 
@@ -212,9 +248,11 @@ static bool view_init(void)
         view->positions = kh_init(pos);
         view->units = kh_init(vunit);
         view->posts = kh_init(vposts);
+        view->base_dmg = kh_init(id);
+        view->base_dmg_gen = ~(uint64_t)0;
         view->districts = G_District_SnapshotNew();
         if(!view->flags || !view->factions || !view->positions
-        || !view->units || !view->posts || !view->districts)
+        || !view->units || !view->posts || !view->base_dmg || !view->districts)
             return false;
     }
     s_init = true;
@@ -232,10 +270,12 @@ void G_ScriptView_Shutdown(void)
         if(view->positions)      kh_destroy(pos, view->positions);
         if(view->units)          kh_destroy(vunit, view->units);
         if(view->posts)          kh_destroy(vposts, view->posts);
+        if(view->base_dmg)       kh_destroy(id, view->base_dmg);
         G_District_SnapshotFree(view->districts);
         memset(view, 0, sizeof(*view));
     }
     LF_STORE(&s_published, -1, LF_SC);
+    LF_STORE(&s_fresh, 0, LF_SC);
     s_init = false;
 }
 
@@ -255,12 +295,25 @@ void G_ScriptView_Publish(void)
 
     view_fill(&s_views[next]);
     LF_STORE(&s_published, next, LF_SC);
+    LF_STORE(&s_fresh, 1, LF_SC);
+}
+
+void G_ScriptView_Skip(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    LF_STORE(&s_fresh, 0, LF_SC);
+}
+
+bool G_ScriptView_Fresh(void)
+{
+    return LF_LOAD(&s_fresh, LF_SC);
 }
 
 void G_ScriptView_Invalidate(void)
 {
     ASSERT_IN_MAIN_THREAD();
     LF_STORE(&s_published, -1, LF_SC);
+    LF_STORE(&s_fresh, 0, LF_SC);
 }
 
 bool G_ScriptView_Published(void)
@@ -348,6 +401,49 @@ bool G_ScriptView_Completed(const struct script_view *view, uint32_t uid)
 {
     const struct view_unit *vu = view_unit(view, uid);
     return vu && (vu->bits & VU_COMPLETED);
+}
+
+bool G_ScriptView_Duty(const struct script_view *view, uint32_t uid, struct duty *out)
+{
+    const struct view_unit *vu = view_unit(view, uid);
+    if(!vu || !(vu->bits & VU_HAS_DUTY))
+        return false;
+    *out = vu->duty;
+    return true;
+}
+
+bool G_ScriptView_Idle(const struct script_view *view, uint32_t uid)
+{
+    const struct view_unit *vu = view_unit(view, uid);
+    return !vu || (vu->bits & VU_IDLE);
+}
+
+const char *G_ScriptView_QueuedGather(const struct script_view *view, uint32_t uid)
+{
+    const struct view_unit *vu = view_unit(view, uid);
+    return (vu && (vu->bits & VU_HAS_QUEUED)) ? vu->queued : NULL;
+}
+
+bool G_ScriptView_JobInfo(const struct script_view *view, uint32_t uid, uint32_t *out_src, 
+                          uint32_t *out_dest, const char **out_rname, int *out_state)
+{
+    const struct view_unit *vu = view_unit(view, uid);
+    if(!vu || !(vu->bits & VU_HAS_JOB))
+        return false;
+    *out_src = vu->job_src;
+    *out_dest = vu->job_dest;
+    *out_rname = vu->job_rname;
+    *out_state = vu->job_state;
+    return true;
+}
+
+bool G_ScriptView_BaseDamage(const struct script_view *view, uint32_t uid, int *out)
+{
+    khiter_t k = kh_get(id, view->base_dmg, uid);
+    if(k == kh_end(view->base_dmg))
+        return false;
+    *out = kh_value(view->base_dmg, k);
+    return true;
 }
 
 bool G_ScriptView_Posts(const struct script_view *view, uint32_t uid, int *out_posts, 

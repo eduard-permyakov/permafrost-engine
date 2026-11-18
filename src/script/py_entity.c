@@ -2184,8 +2184,16 @@ static PyObject *PyEntity_get_zombie(PyEntityObject *self, void *closure)
 
 static PyObject *PyEntity_get_duty(PyEntityObject *self, void *closure)
 {
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    if(view && !(G_ScriptView_Flags(view, self->ent) & ENTITY_FLAG_HARVESTER)) {
+        if(S_View_RequireWorld() < 0)
+            return NULL;
+        view = NULL;
+    }
     struct duty d;
-    if(!G_Duty_Get(self->ent, &d))
+    if(!(view ? G_ScriptView_Duty(view, self->ent, &d) : G_Duty_Get(self->ent, &d)))
         Py_RETURN_NONE;
     PyObject *target = (d.target != NULL_UID) ? S_Entity_ObjForUID(d.target) : NULL;
     return Py_BuildValue("(sOssO)", G_Duty_KindName(d.kind), target ? target : Py_None, d.good,
@@ -2305,7 +2313,15 @@ static PyObject *PyEntity_get_selectable(PyEntityObject *self, void *closure)
 
 static PyObject *PyEntity_get_idle(PyEntityObject *self, void *closure)
 {
-    if(G_Automation_IsIdle(self->ent))
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    if(view && !(G_ScriptView_Flags(view, self->ent) & ENTITY_FLAG_HARVESTER)) {
+        if(S_View_RequireWorld() < 0)
+            return NULL;
+        view = NULL;
+    }
+    if(view ? G_ScriptView_Idle(view, self->ent) : G_Automation_IsIdle(self->ent))
         Py_RETURN_TRUE;
     else
         Py_RETURN_FALSE;
@@ -3732,11 +3748,21 @@ static int PyCombatableEntity_set_max_hp(PyCombatableEntityObject *self, PyObjec
 
 static PyObject *PyCombatableEntity_get_base_dmg(PyCombatableEntityObject *self, void *closure)
 {
-    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    int dmg;
+    if(view && !G_ScriptView_BaseDamage(view, self->super.ent, &dmg)) {
+        if(S_View_RequireWorld() < 0)
+            return NULL;
+        view = NULL;
+    }
+    uint32_t flags = view ? G_ScriptView_Flags(view, self->super.ent) : G_FlagsGet(self->super.ent);
+    if(flags & ENTITY_FLAG_ZOMBIE) {
         PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
         return NULL;
     }
-    return PyInt_FromLong(G_Combat_GetBaseDamage(self->super.ent));
+    return PyInt_FromLong(view ? dmg : G_Combat_GetBaseDamage(self->super.ent));
 }
 
 static int PyCombatableEntity_set_base_dmg(PyCombatableEntityObject *self, PyObject *value, void *closure)
@@ -4382,7 +4408,10 @@ static PyObject *PyBuildableEntity_placeable(PyBuildableEntityObject *self)
 
 static PyObject *PyBuildableEntity_get_pos(PyBuildableEntityObject *self, void *closure)
 {
-    vec3_t pos = G_Pos_Get(self->super.ent);
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    vec3_t pos = view ? G_ScriptView_Pos(view, self->super.ent) : G_Pos_Get(self->super.ent);
     return Py_BuildValue("(f,f,f)", pos.x, pos.y, pos.z);
 }
 
@@ -5647,7 +5676,11 @@ static PyObject *PyHarvesterEntity_get_pinned_work(PyHarvesterEntityObject *self
 
 static PyObject *PyHarvesterEntity_get_queued_gather(PyHarvesterEntityObject *self, void *closure)
 {
-    const char *rname = G_Harvester_QueuedGather(self->super.ent);
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    const char *rname = view ? G_ScriptView_QueuedGather(view, self->super.ent)
+                             : G_Harvester_QueuedGather(self->super.ent);
     if(!rname)
         Py_RETURN_NONE;
     return PyString_FromString(rname);
@@ -5795,14 +5828,19 @@ static PyObject *PyStorageSiteEntity_get_own_capacity(PyStorageSiteEntityObject 
 
 static PyObject *PyHarvesterEntity_current_job(PyHarvesterEntityObject *self)
 {
-    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    uint32_t flags = view ? G_ScriptView_Flags(view, self->super.ent) : G_FlagsGet(self->super.ent);
+    if(flags & ENTITY_FLAG_ZOMBIE) {
         PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
         return NULL;
     }
     uint32_t src, dest;
     const char *rname;
     int state;
-    if(!G_Harvester_JobInfo(self->super.ent, &src, &dest, &rname, &state))
+    if(!(view ? G_ScriptView_JobInfo(view, self->super.ent, &src, &dest, &rname, &state)
+              : G_Harvester_JobInfo(self->super.ent, &src, &dest, &rname, &state)))
         Py_RETURN_NONE;
 
     PyObject *srcobj = (src != NULL_UID) ? S_Entity_ObjForUID(src) : NULL;

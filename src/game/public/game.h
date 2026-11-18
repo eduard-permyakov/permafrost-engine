@@ -683,6 +683,11 @@ int   G_Group_GetBonuses(int group_id, struct group_bonus_desc *out, size_t maxo
 void  G_Group_SetHighlight(int group_id, const struct bonus_highlight *hl);
 void  G_Combat_SetBaseDamage(uint32_t uid, int dmg);
 int   G_Combat_GetBaseDamage(uint32_t uid);
+/* Every entity's base damage, as of the last tick, and a counter that moves
+ * when any of them changed
+ */
+uint64_t G_Combat_BaseDamageGen(void);
+void  G_Combat_CopyBaseDamage(struct kh_id_s *dst);
 void  G_Combat_SetMaxHP(uint32_t uid, int hp);
 void  G_Combat_Kill(uint32_t uid);
 void  G_Combat_SetAmmo(uint32_t uid, int shots);
@@ -1699,6 +1704,11 @@ int  G_Population_GetPlayerLimit(void);
 struct script_view;
 
 void        G_ScriptView_Publish(void);
+/* In place of publishing, on a frame with nobody to read a view: the last one
+ * is not read from here on
+ */
+void        G_ScriptView_Skip(void);
+bool        G_ScriptView_Fresh(void);
 void        G_ScriptView_Invalidate(void);
 bool        G_ScriptView_Published(void);
 void        G_ScriptView_Shutdown(void);
@@ -1716,6 +1726,12 @@ const char *G_ScriptView_PinnedWork(const struct script_view *view, uint32_t uid
 uint32_t    G_ScriptView_PostWorkshop(const struct script_view *view, uint32_t uid);
 bool        G_ScriptView_IsIngredient(const struct script_view *view, uint32_t uid);
 bool        G_ScriptView_Completed(const struct script_view *view, uint32_t uid);
+bool        G_ScriptView_Duty(const struct script_view *view, uint32_t uid, struct duty *out);
+bool        G_ScriptView_Idle(const struct script_view *view, uint32_t uid);
+const char *G_ScriptView_QueuedGather(const struct script_view *view, uint32_t uid);
+bool        G_ScriptView_JobInfo(const struct script_view *view, uint32_t uid, uint32_t *out_src, 
+                                 uint32_t *out_dest, const char **out_rname, int *out_state);
+bool        G_ScriptView_BaseDamage(const struct script_view *view, uint32_t uid, int *out);
 bool        G_ScriptView_Posts(const struct script_view *view, uint32_t uid, int *out_posts, 
                                int *out_locked, int *out_inside, int *out_coming);
 uint16_t    G_ScriptView_Factions(const struct script_view *view, 
