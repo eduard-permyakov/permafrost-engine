@@ -124,6 +124,13 @@ static const char *s_allowed[] = {
     "pf.Window.",
     "pf.UI",
     "pf._ui_frame",
+    "pf._dispatch_events",
+    "pf.rand",
+    "pf.Entity.register",
+    "pf.Entity.unregister",
+    "pf.register_event_handler",
+    "pf.register_ui_event_handler",
+    "pf.unregister_event_handler",
     "pf.draw_text",
     "pf.set_active_font",
     "pf.get_active_font",
@@ -151,6 +158,7 @@ static const char *s_allowed[] = {
     "pf.HarvesterEntity.queued_gather.get",
     "pf.HarvesterEntity.current_job",
     "pf.CombatableEntity.base_dmg.get",
+    "pf.CombatableEntity.attack_range.get",
     "pf.workshop_posts",
     "pf.post_workshop",
     NULL
@@ -198,6 +206,11 @@ static vec_vuid_t       s_poll_free;
 static uint32_t         s_poll_frame;
 /* Set from a view slice's park to its end: what it reads next is noted */
 static bool             s_poll_learning;
+/* Whether the running task's reads may be answered from what was polled. The
+ * answers are as of the last refresh, before scripts wrote what they wrote
+ * since, so only a task that shows what it reads may take them.
+ */
+static bool             s_task_polls;
 static int              s_poll_learned;
 /* Set while an entry is worked out, so that the call it makes is not itself looked up */
 static bool             s_poll_working;
@@ -256,7 +269,7 @@ static int park(const char *what)
     }
     s_nparks++;
     S_Task_ViewPark();
-    s_poll_learning = true;
+    s_poll_learning = s_task_polls;
     s_poll_learned = 0;
     return PyErr_Occurred() ? -1 : 0;
 }
@@ -443,10 +456,11 @@ int S_View_RequireWorld(void)
     return park("a constructor or the view not yet published");
 }
 
-void S_View_EnterTask(bool view)
+void S_View_EnterTask(bool view, bool poll)
 {
+    s_task_polls = poll;
     /* A view task with the world notes what it reads, to answer from later */
-    s_poll_learning = view && !Sched_InViewSlice();
+    s_poll_learning = view && poll && !Sched_InViewSlice();
     s_poll_learned = 0;
     PyThreadState *ts = PyThreadState_GET();
     if(view && Sched_InViewSlice()) {
@@ -459,14 +473,16 @@ void S_View_EnterTask(bool view)
 
 bool S_View_RunSlice(void)
 {
-    /* A task made ready on a frame that published no view waits for the next */
-    if(G_ScriptView_Published() && !G_ScriptView_Fresh())
+    /* With no view published lately, the view tasks run in the world windows */
+    if(!G_ScriptView_Current())
         return false;
-    /* With no view to read, the view tasks run in the world windows */
     s_current = G_ScriptView_Pin();
     if(!s_current)
         return false;
-    bool ret = Sched_RunViewSlice();
+    /* One that script code has written past since it was published is read
+     * only by the tasks that just show what they read
+     */
+    bool ret = Sched_RunViewSlice(G_ScriptView_Fresh());
     view_unpin();
     return ret;
 }
@@ -488,7 +504,17 @@ bool S_View_Poll(int kind, void *fn, struct _object *self, struct _object *args,
                  const char *what, struct _object **out)
 {
     bool view = Sched_InViewSlice();
-    if(s_poll_working || !s_init || (!view && !s_poll_learning))
+    if(s_poll_working || !s_init)
+        return false;
+    if(view && !s_task_polls) {
+        /* Read with the world, after the wait */
+        if(park(what) < 0) {
+            *out = NULL;
+            return true;
+        }
+        return false;
+    }
+    if(!view && !s_poll_learning)
         return false;
 
     *out = NULL;
@@ -614,6 +640,7 @@ void S_View_PollRefresh(void)
 void S_View_LeaveTask(void)
 {
     s_poll_learning = false;
+    s_task_polls = false;
 }
 
 void S_View_Shutdown(void)

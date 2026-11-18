@@ -90,10 +90,15 @@ enum{
      * past the frame's deadline: for light, latency-sensitive work only */
     TASK_REALTIME           = (1 << 5),
     /* A script task the script thread runs alongside the main thread, on the
-     * state the main thread published. It is interleaved with other script
-     * work at any point, and runs a slice that needs the live world in the
-     * main thread's next window instead */
-    TASK_VIEW               = (1 << 6)
+     * state the main thread published. A slice runs to its yield; one that
+     * needs the live world finishes in the main thread's next window, before
+     * any other script code
+     */
+    TASK_VIEW               = (1 << 6),
+    /* A view task that only shows what it reads: it may read a view that
+     * script code has written past since it was published
+     */
+    TASK_VIEW_STALE_OK      = (1 << 7)
 };
 
 typedef struct result (*task_func_t)(void *);
@@ -116,10 +121,12 @@ void     Sched_HandleEvent(int event, void *arg, int event_source, bool immediat
 void     Sched_HandleScriptEvent(int event, void *arg, int event_source, bool immediate);
 /* Called on the script thread between its calls: runs one slice of a view
  * task, alongside the main thread. Returns false when none is ready. */
-bool     Sched_RunViewSlice(void);
+bool     Sched_RunViewSlice(bool fresh);
 bool     Sched_InViewSlice(void);
 /* Whether a view task is ready or runs, and so a view of the world is wanted */
 bool     Sched_ViewBacklog(void);
+/* Whether a view slice waits for the world */
+bool     Sched_HasParked(void);
 /* From a view task that reached the world: the rest of its slice runs in the
  * next world window, before any other script code
  */

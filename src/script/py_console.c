@@ -138,8 +138,15 @@ static void write_str(const char *str, size_t idx)
 {
     assert(idx < 2);
 
-    struct sval setting;
-    if(Settings_Get("pf.debug.log_python", &setting) == SS_OKAY && setting.as_bool) {
+    /* A view slice goes by what the setting was when it was last read with
+     * the world
+     */
+    static bool s_log = false;
+    if(!S_View_Active()) {
+        struct sval setting;
+        s_log = (Settings_Get("pf.debug.log_python", &setting) == SS_OKAY && setting.as_bool);
+    }
+    if(s_log) {
         FILE *stream = (idx == 0) ? stdout : stderr;
         fputs(str, stream);
         fflush(stream);

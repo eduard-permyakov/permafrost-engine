@@ -1809,6 +1809,57 @@ static void s_err_clear(void)
     s_err_ctx.occurred = false;
 }
 
+/* The whole loop body of the task that hands the frame's events to their
+ * handlers alongside the main thread
+ */
+static PyObject *PyPf_dispatch_events(PyObject *self)
+{
+    E_DispatchScriptEvents();
+    if(PyErr_Occurred())
+        return NULL;
+    Py_RETURN_NONE;
+}
+
+static PyMethodDef s_dispatch_events_def = {
+    "_dispatch_events", (PyCFunction)PyPf_dispatch_events, METH_NOARGS,
+    "Hands the waiting events to their handlers. For the engine's own event task."
+};
+
+static void s_start_dispatch_task(void)
+{
+    char src[512];
+    pf_snprintf(src, sizeof(src),
+        "import pf\n"
+        "class __EventTask(pf.Task):\n"
+        "    def __run__(self):\n"
+        "        while True:\n"
+        "            self.await_event(%d)\n"
+        "            pf._dispatch_events()\n"
+        "__EventTask(view=True, _internal=True).run()\n",
+        (int)EVENT_SCRIPT_DISPATCH);
+
+    PyObject *globals = PyDict_New();
+    if(!globals)
+        return;
+    PyDict_SetItemString(globals, "__builtins__", PyEval_GetBuiltins());
+    PyObject *ret = PyRun_String(src, Py_file_input, globals, globals);
+    if(!ret) {
+        PyErr_Print();
+    }
+    Py_XDECREF(ret);
+    Py_DECREF(globals);
+}
+
+void S_EventsPump(void)
+{
+    assert(S_Thread_OnScript());
+    struct script_event_arg sarg;
+    S_EventArgEncode(EVENT_SCRIPT_DISPATCH, ES_ENGINE, NULL, &sarg);
+    /* The task is made ready, not run: it runs as a view slice */
+    Sched_HandleScriptEvent(EVENT_SCRIPT_DISPATCH, &sarg, ES_ENGINE, false);
+    S_EventArgRelease(&sarg);
+}
+
 bool S_ErrorShown(void)
 {
     return s_err_ctx.occurred;
@@ -1834,6 +1885,12 @@ static void s_on_update(void *user, void *event)
     Py_ssize_t arena_b = 0, arena_c = 0, raw_b = 0, raw_c = 0;
     _PyObject_MemStats(&arena_b, &arena_c, &raw_b, &raw_c);
     Mem_SetPythonStats((int64_t)arena_b, (int64_t)arena_c, (int64_t)raw_b, (int64_t)raw_c);
+}
+
+void S_FrameUpkeep(void)
+{
+    assert(!ST_OFF_SCRIPT());
+    s_on_update(NULL, NULL);
 }
 
 static PyObject *PyPf_load_map(PyObject *self, PyObject *args, PyObject *kwargs)
@@ -7495,10 +7552,13 @@ bool S_Init(const char *progname, const char *base_path, struct nk_context *ctx)
         return false;
 
     s_create_settings();
+    PyObject *dispatch = PyCFunction_New(&s_dispatch_events_def, NULL);
+    if(dispatch)
+        PyModule_AddObject(module, "_dispatch_events", dispatch);
     S_View_Init(module);
     S_UI_StartFrameTask();
+    s_start_dispatch_task();
 
-    E_Global_Register(EVENT_UPDATE_START, s_on_update, NULL, G_ALL);
     return true;
 }
 
@@ -7519,7 +7579,6 @@ void S_Shutdown(void)
         S_Thread_Call(fwd_S_Shutdown_thunk, &call);
         return;
     }
-    E_Global_Unregister(EVENT_UPDATE_START, s_on_update);
 
     /* Free any globaly retained Python objects before finalizing
      * the session */
@@ -7683,6 +7742,9 @@ bool S_GetFilePath(char *out, size_t maxout)
 /* With the perf log on, a handler that held the frame up says so, by name */
 static void log_slow_handler(PyObject *callable, uint64_t ticks)
 {
+    /* The setting is the world's to read */
+    if(S_View_Active())
+        return;
     double us = ticks * 1e6 / SDL_GetPerformanceFrequency();
     if(us < SLOW_HANDLER_US)
         return;
@@ -8343,6 +8405,8 @@ void S_ShowLastError(void)
         S_Thread_Call(fwd_S_ShowLastError_thunk, &call);
         return;
     }
+    /* It pauses the game: from a view slice, with the world */
+    S_View_RequireWorld();
     /* A second error over one still shown must not lose the state to go back to */
     bool showing = s_err_ctx.occurred;
     Py_CLEAR(s_err_ctx.type);

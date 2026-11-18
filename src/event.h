@@ -146,6 +146,10 @@ enum eventtype{
      * script thread for the task that draws them
      */
     EVENT_UI_FRAME,
+    /* The frame's events wait for their script handlers: raised by the script
+     * thread for the task that runs them
+     */
+    EVENT_SCRIPT_DISPATCH,
 
     EVENT_ENGINE_LAST = 0x1ffff,
 };
@@ -212,6 +216,19 @@ void E_Global_Notify(enum eventtype event, void *event_arg, enum event_source);
 void E_Global_NotifyImmediate(enum eventtype event, void *event_arg, enum event_source);
 /* Dispatches the event on the script thread, engine handlers and all: for an
  * event most of whose handlers are the script's, such as the UI update */
+/* After the frame's queue: the script side's events are handed to the script
+ * thread, which handles them alongside the main thread. What it has not
+ * handled by the next E_ServiceScriptEvents is handled there, with the main
+ * thread waiting.
+ */
+void E_PostScriptEvents(void);
+bool E_ScriptEventsWaiting(void);
+/* Has the script thread call 'fn' with 'arg' in its turn among the frame's
+ * events, and free 'arg' after
+ */
+void E_ScriptCallLater(void (*fn)(void *arg), void *arg);
+/* On the script thread, from the task that handles the events */
+void E_DispatchScriptEvents(void);
 /* On the script thread: the script tasks and handlers waiting on an engine
  * event with no argument are run at once
  */

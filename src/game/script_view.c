@@ -105,6 +105,7 @@ struct script_view{
     khash_t(vunit)           *units;
     khash_t(vposts)          *posts;
     khash_t(id)              *base_dmg;
+    khash_t(range)           *ranges;
     uint64_t                  base_dmg_gen;
     uint16_t                  faction_mask;
     char                      faction_names[MAX_FACTIONS][MAX_FAC_NAME_LEN];
@@ -122,6 +123,8 @@ static int                 s_pinned = -1;      /* atomic */
  * not read
  */
 static int                 s_fresh;            /* atomic */
+/* The frame the last view was published in */
+static unsigned long       s_published_frame;  /* atomic */
 static bool                s_init = false;
 
 /*****************************************************************************/
@@ -220,6 +223,7 @@ static void view_fill(struct script_view *view)
 
     if(view->base_dmg_gen != G_Combat_BaseDamageGen()) {
         G_Combat_CopyBaseDamage(view->base_dmg);
+        G_Combat_CopyRanges(view->ranges);
         view->base_dmg_gen = G_Combat_BaseDamageGen();
     }
 
@@ -249,10 +253,11 @@ static bool view_init(void)
         view->units = kh_init(vunit);
         view->posts = kh_init(vposts);
         view->base_dmg = kh_init(id);
+        view->ranges = kh_init(range);
         view->base_dmg_gen = ~(uint64_t)0;
         view->districts = G_District_SnapshotNew();
         if(!view->flags || !view->factions || !view->positions
-        || !view->units || !view->posts || !view->base_dmg || !view->districts)
+        || !view->units || !view->posts || !view->base_dmg || !view->ranges || !view->districts)
             return false;
     }
     s_init = true;
@@ -271,6 +276,7 @@ void G_ScriptView_Shutdown(void)
         if(view->units)          kh_destroy(vunit, view->units);
         if(view->posts)          kh_destroy(vposts, view->posts);
         if(view->base_dmg)       kh_destroy(id, view->base_dmg);
+        if(view->ranges)         kh_destroy(range, view->ranges);
         G_District_SnapshotFree(view->districts);
         memset(view, 0, sizeof(*view));
     }
@@ -296,11 +302,25 @@ void G_ScriptView_Publish(void)
     view_fill(&s_views[next]);
     LF_STORE(&s_published, next, LF_SC);
     LF_STORE(&s_fresh, 1, LF_SC);
+    __atomic_store_n(&s_published_frame, g_frame_idx, __ATOMIC_RELEASE);
+}
+
+bool G_ScriptView_Current(void)
+{
+    if(LF_LOAD(&s_published, LF_SC) < 0)
+        return false;
+    unsigned long frame = __atomic_load_n(&s_published_frame, __ATOMIC_ACQUIRE);
+    return (__atomic_load_n(&g_frame_idx, __ATOMIC_RELAXED) - frame) <= 1;
 }
 
 void G_ScriptView_Skip(void)
 {
     ASSERT_IN_MAIN_THREAD();
+    LF_STORE(&s_fresh, 0, LF_SC);
+}
+
+void G_ScriptView_MarkStale(void)
+{
     LF_STORE(&s_fresh, 0, LF_SC);
 }
 
@@ -443,6 +463,15 @@ bool G_ScriptView_BaseDamage(const struct script_view *view, uint32_t uid, int *
     if(k == kh_end(view->base_dmg))
         return false;
     *out = kh_value(view->base_dmg, k);
+    return true;
+}
+
+bool G_ScriptView_AttackRange(const struct script_view *view, uint32_t uid, float *out)
+{
+    khiter_t k = kh_get(range, view->ranges, uid);
+    if(k == kh_end(view->ranges))
+        return false;
+    *out = kh_value(view->ranges, k);
     return true;
 }
 

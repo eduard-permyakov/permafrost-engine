@@ -52,7 +52,7 @@ void S_View_Init(struct _object *module);
 bool S_View_Active(void);
 /* A script task's thread state comes in: a view task in a view slice is
  * watched for what it reaches */
-void S_View_EnterTask(bool view);
+void S_View_EnterTask(bool view, bool poll);
 /* Runs a view task's slice, alongside the main thread, on the newest view */
 bool S_View_RunSlice(void);
 /* For a binding: the view to read in a view slice, or NULL for the live world.

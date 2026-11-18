@@ -3240,7 +3240,7 @@ void S_UI_StartFrameTask(void)
         "        while True:\n"
         "            self.await_event(%d)\n"
         "            pf._ui_frame()\n"
-        "__UIFrameTask(view=True, _internal=True).run()\n",
+        "__UIFrameTask(view=True, _internal=True, _poll=True).run()\n",
         (int)EVENT_UI_FRAME);
 
     PyObject *globals = PyDict_New();
@@ -3276,7 +3276,7 @@ void S_UI_Frame(void)
         S_Thread_Call(ui_frame, NULL);
         return;
     }
-    S_Thread_Poke();
+    S_Thread_Poke(S_POKE_UI);
 }
 
 void S_UI_PyRegister(PyObject *module)

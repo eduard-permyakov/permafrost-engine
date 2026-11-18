@@ -997,18 +997,24 @@ int main(int argc, char **argv)
             frame_stamp(FT_EVENTS);
             process_sdl_events();
             E_ServiceQueue();
-            frame_stamp(FT_EVENTS_DONE);
-
-            G_Update();
-            frame_stamp(FT_UPDATE_DONE);
-            G_Render();
-            frame_stamp(FT_RENDER_DONE);
-            /* The scripts' windows are drawn against the last frame's world */
-            if(Sched_ViewBacklog() || UI_ScriptFrameAsked()) {
+            /* The script thread's turn at the frame's events and at its view
+             * tasks, against the world as the events left it
+             */
+            if(Sched_ViewBacklog() || UI_ScriptFrameAsked() || E_ScriptEventsWaiting()) {
                 G_ScriptView_Publish();
             }else{
                 G_ScriptView_Skip();
             }
+            E_PostScriptEvents();
+            frame_stamp(FT_EVENTS_DONE);
+            S_Thread_ServeParked();
+
+            G_Update();
+            frame_stamp(FT_UPDATE_DONE);
+            S_Thread_ServeParked();
+            G_Render();
+            frame_stamp(FT_RENDER_DONE);
+            S_Thread_ServeParked();
             Sched_Tick();
             frame_stamp(FT_SCHED_DONE);
 

@@ -4134,12 +4134,22 @@ static PyObject *PyCombatableEntity_get_effective_invulnerable(PyCombatableEntit
 
 static PyObject *PyCombatableEntity_get_attack_range(PyCombatableEntityObject *self, void *closure)
 {
-    if(G_FlagsGet(self->super.ent) & ENTITY_FLAG_ZOMBIE) {
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    float range;
+    if(view && !G_ScriptView_AttackRange(view, self->super.ent, &range)) {
+        if(S_View_RequireWorld() < 0)
+            return NULL;
+        view = NULL;
+    }
+    uint32_t flags = view ? G_ScriptView_Flags(view, self->super.ent) : G_FlagsGet(self->super.ent);
+    if(flags & ENTITY_FLAG_ZOMBIE) {
         PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
         return NULL;
     }
 
-    return PyFloat_FromDouble(G_Combat_GetRange(self->super.ent));
+    return PyFloat_FromDouble(view ? range : G_Combat_GetRange(self->super.ent));
 }
 
 static int PyCombatableEntity_set_attack_range(PyCombatableEntityObject *self, PyObject *value, void *closure)

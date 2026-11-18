@@ -797,6 +797,8 @@ static int s_view_slice;
  * until it finishes the slice in a world window
  */
 static struct task *s_parked;
+/* The same, for the main thread to see */
+static int s_has_parked;
 /* Set while a view task is ready or runs: the main thread publishes a view of
  * the world only for the frames that have one to read it
  */
@@ -1511,6 +1513,8 @@ static void task_switch_in(struct sched_thread *self, struct task *task)
     assert(stack_pointer_valid(task));
     /* The host context is one slot: a task is never switched in from inside another */
     assert(!self->curr);
+    /* On the script thread, only a view task runs alongside the main thread */
+    assert(self->idx != SCRIPT_IDX || !LF_LOAD(&s_view_slice, LF_RLX) || (task->flags & TASK_VIEW));
 
     self->curr = task;
 #if SCHED_PERF
@@ -1563,7 +1567,7 @@ static struct task *service(struct sched_thread *self, struct task *task)
     SchedStats_Count(SC_REQ_FIRST + (int)task->req.type, 1);
 
     /* A view task that blocks is done with what it needed the world for */
-    if(task->req.type != SCHED_REQ_YIELD)
+    if((int)task->req.type != SCHED_REQ_YIELD && (int)task->req.type != _SCHED_REQ_RUN_SYNC)
         task->needs_world = false;
 
     switch((int)task->req.type) {
@@ -1576,6 +1580,7 @@ static struct task *service(struct sched_thread *self, struct task *task)
              */
             task->needs_world = true;
             s_parked = task;
+            LF_STORE(&s_has_parked, 1, LF_REL);
             task_publish(task, TK_READY_MAIN);
             return NULL;
         }
@@ -1602,6 +1607,12 @@ static struct task *service(struct sched_thread *self, struct task *task)
     case _SCHED_REQ_RUN_SYNC:
         /* The requester claimed the task before asking */
         run_slice(self, &s_tasks[(uint32_t)task->req.argv[0] - 1]);
+        /* It goes on with the slice it was in. A view task that had the
+         * world keeps it: queued meanwhile, it comes back in a world window,
+         * not as a view slice in the middle of what it was doing.
+         */
+        if((task->flags & TASK_VIEW) && !(self->idx == SCRIPT_IDX && LF_LOAD(&s_view_slice, LF_RLX)))
+            task->needs_world = true;
         return task;
     case _SCHED_REQ_JOIN: {
         struct join *join = (struct join*)(uintptr_t)task->req.argv[0];
@@ -1647,6 +1658,8 @@ static void run_task(struct sched_thread *self, struct task *task)
 static void run_claimed(struct task *task)
 {
     struct sched_thread *self = sched_self();
+    /* On the script thread, only a view task runs alongside the main thread */
+    assert(self->idx != SCRIPT_IDX || !LF_LOAD(&s_view_slice, LF_RLX) || (task->flags & TASK_VIEW));
     if(!self->curr) {
         run_slice(self, task);
         return;
@@ -2290,7 +2303,14 @@ static void handle_event(struct home *home, int event, void *arg, int event_sour
     SchedStats_Set(prev_state);
 }
 
-bool Sched_RunViewSlice(void)
+static bool can_run_stale_ok(void *arg)
+{
+    struct task *task = *(struct task**)arg;
+    return (task->flags & TASK_VIEW_STALE_OK)
+        && (LF_LOAD(&s_sim_running, LF_ACQ) || (task->flags & TASK_RUN_DURING_PAUSE));
+}
+
+bool Sched_RunViewSlice(bool fresh)
 {
     struct sched_thread *self = sched_self();
     assert(thread_home(self) == SCRIPT_HOME);
@@ -2300,8 +2320,12 @@ bool Sched_RunViewSlice(void)
         return false;
     drain_inbox(home);
     bool (*pred)(void*) = LF_LOAD(&s_sim_running, LF_ACQ) ? can_run_any : can_run_during_pause;
+    if(!fresh)
+        pred = can_run_stale_ok;
     struct task *curr = NULL;
     if(!pop_runnable(&home->rt_heap, &curr, pred) && !pop_runnable(&home->heap, &curr, pred)) {
+        if(!fresh)
+            return false;
         /* A task pushed meanwhile is seen by the second look, or its pusher
          * sets the backlog after this store
          */
@@ -2318,6 +2342,11 @@ bool Sched_RunViewSlice(void)
     run_slice(self, curr);
     LF_STORE(&s_view_slice, 0, LF_REL);
     return true;
+}
+
+bool Sched_HasParked(void)
+{
+    return LF_LOAD(&s_has_parked, LF_ACQ);
 }
 
 bool Sched_ViewBacklog(void)
@@ -2346,6 +2375,7 @@ void Sched_RunParked(void)
     if(!task)
         return;
     s_parked = NULL;
+    LF_STORE(&s_has_parked, 0, LF_REL);
     task_publish(task, TK_ACTIVE);
     run_task(self, task);
 }
@@ -2401,8 +2431,10 @@ static void script_tick(void *arg)
     assert(thread_home(self) == SCRIPT_HOME);
 
     E_ServiceScriptEvents();
-    if(tick->realtime)
+    if(tick->realtime) {
+        S_FrameUpkeep();
         S_View_PollRefresh();
+    }
     /* The tasks keep their least share of the frame, whatever the handlers
      * and a parked slice took before them
      */
@@ -2420,7 +2452,7 @@ static void script_tick(void *arg)
     /* With no view of the world published, as while a map loads, the view
      * tasks run here like the others
      */
-    bool view = G_ScriptView_Published();
+    bool view = G_ScriptView_Current();
     struct task *curr;
     while(SDL_GetPerformanceCounter() < deadline
     && ((curr = home_pick(SCRIPT_HOME)) || (!view && (curr = home_pick(VIEW_HOME))))) {
@@ -2700,6 +2732,7 @@ void Sched_ClearState(void)
 
     struct task *keep = sched_self()->curr;
     s_parked = NULL;
+    LF_STORE(&s_has_parked, 0, LF_REL);
 
     for(int i = 0; i < NLEVELS; i++) {
         lf_ring_init(&s_rings[i], s_ring_cells[i], RING_CAP);

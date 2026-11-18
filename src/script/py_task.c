@@ -122,6 +122,10 @@ typedef struct {
     bool realtime;
     /* The engine's own task: it runs while the game is paused and is not saved */
     bool internal;
+    /* A view task whose reads may be answered from what was polled: one that
+     * only shows what it reads, as the windows do
+     */
+    bool poll;
     bool view;
 }PyTaskObject;
 
@@ -433,7 +437,7 @@ static void pytask_push_ctx(PyTaskObject *self)
 {
     assert(!ST_OFF_SCRIPT());
     s_main_thread_state = PyThreadState_Swap(self->ts);
-    S_View_EnterTask(self->view);
+    S_View_EnterTask(self->view, self->poll);
 }
 
 static void pytask_pop_ctx(PyTaskObject *self)
@@ -742,11 +746,14 @@ static PyObject *PyTask_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
         self->view = (view && PyObject_IsTrue(view));
         PyObject *internal = PyDict_GetItemString(kwds, "_internal");
         self->internal = (internal && PyObject_IsTrue(internal));
+        PyObject *poll = PyDict_GetItemString(kwds, "_poll");
+        self->poll = (poll && PyObject_IsTrue(poll));
     }else{
         self->small_stack = false;
         self->realtime = false;
         self->view = false;
         self->internal = false;
+        self->poll = false;
     }
 
     Py_INCREF(func);
@@ -1074,6 +1081,11 @@ fail_args:
 static PyObject *PyTask_run(PyTaskObject *self)
 {
     assert(!ST_OFF_SCRIPT());
+    /* A task's first slice runs here and now. One that is not a view task
+     * works on the world, so a view slice that starts it waits for the world.
+     */
+    if(!self->view && S_View_RequireWorld() < 0)
+        return NULL;
 
     int flags = TASK_MAIN_THREAD_PINNED | TASK_SCRIPT;
     if(!self->small_stack)
@@ -1084,6 +1096,8 @@ static PyObject *PyTask_run(PyTaskObject *self)
         flags |= TASK_VIEW;
     if(self->internal)
         flags |= TASK_RUN_DURING_PAUSE;
+    if(self->view && self->poll)
+        flags |= TASK_VIEW_STALE_OK;
 
     self->tid = pytask_schedule(self, 16, py_task, self, NULL, flags);
 
@@ -1588,6 +1602,12 @@ PyObject *S_Task_GetAll(void)
 
     assert(nset == PyTuple_GET_SIZE(ret));
     return ret;
+}
+
+bool S_Task_Ending(void)
+{
+    assert(!ST_OFF_SCRIPT());
+    return PyErr_Occurred() != NULL;
 }
 
 void S_Task_YieldSlice(void)

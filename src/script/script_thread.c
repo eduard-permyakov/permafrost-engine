@@ -36,6 +36,7 @@
 #include "public/script.h"
 #include "script_thread.h"
 #include "../main.h"
+#include "../game/public/game.h"
 #include "../perf.h"
 #include "../sched.h"
 #include "../lib/public/lockfree.h"
@@ -118,6 +119,8 @@ static struct st_side *side_other(struct st_side *self)
 static void run_call(struct st_side *self, struct st_call *call, bool outer)
 {
     if(self == &s_script) {
+        if(!call->query)
+            G_ScriptView_MarkStale();
         /* The main thread waits on the call, so the world is the script's */
         S_View_ApplyDeferred();
         /* A parked slice goes on before any other script code runs, as if it
@@ -157,7 +160,11 @@ static void wait_serving(struct st_side *self, int *flag, uint64_t spin_ticks)
             continue;
         }
 
-        if(!flag && LF_XCHG(&s_poked, 0, LF_SC)) {
+        int poked = flag ? 0 : LF_XCHG(&s_poked, 0, LF_SC);
+        if(poked & S_POKE_EVENTS) {
+            S_EventsPump();
+        }
+        if(poked & S_POKE_UI) {
             S_UI_FramePump();
         }
 
@@ -316,12 +323,27 @@ void S_Thread_Call(void (*fn)(void *arg), void *arg)
     call_on(&s_script, fn, arg, false);
 }
 
-void S_Thread_Poke(void)
+void S_Thread_Poke(int what)
 {
     if(!s_running)
         return;
-    LF_STORE(&s_poked, 1, LF_SC);
+    LF_FOR(&s_poked, what, LF_SC);
     lf_parker_unpark(&s_script.parker);
+}
+
+static void parked_window(void *arg)
+{
+    (void)arg;
+}
+
+void S_Thread_ServeParked(void)
+{
+    if(!s_running || !Sched_HasParked())
+        return;
+    /* The call does nothing itself: taking it, the script thread finishes
+     * the slice that waits for the world
+     */
+    S_Thread_Call(parked_window, NULL);
 }
 
 void S_Thread_Query(void (*fn)(void *arg), void *arg)

@@ -38,6 +38,7 @@
 
 #include "py_region.h"
 #include "script_thread.h"
+#include "../event.h"
 #include "py_entity.h"
 #include "py_pickle.h"
 #include "public/script.h"
@@ -769,27 +770,33 @@ void S_Region_NotifyContentsChanged(const char *name)
     Py_XDECREF(ret);
 }
 
-struct fwd_S_Region_NotifyContentsChangedAll{
-    const char **names;
-    size_t       nnames;
-};
-
-static void fwd_S_Region_NotifyContentsChangedAll_thunk(void *arg)
+/* The names, each ended by a zero, and an empty one after the last */
+static void region_notify_packed(void *arg)
 {
-    struct fwd_S_Region_NotifyContentsChangedAll *a = arg;
-    S_Region_NotifyContentsChangedAll(a->names, a->nnames);
+    for(const char *name = arg; *name; name += strlen(name) + 1) {
+        S_Region_NotifyContentsChanged(name);
+    }
 }
 
 void S_Region_NotifyContentsChangedAll(const char **names, size_t nnames)
 {
-    if(ST_OFF_SCRIPT()) {
-        struct fwd_S_Region_NotifyContentsChangedAll call = {names, nnames};
-        S_Thread_Call(fwd_S_Region_NotifyContentsChangedAll_thunk, &call);
+    /* The scripts are told in their turn among the frame's events, without
+     * the main thread waiting
+     */
+    size_t len = 1;
+    for(size_t i = 0; i < nnames; i++)
+        len += strlen(names[i]) + 1;
+    char *packed = PF_MALLOC(len);
+    if(!packed)
         return;
-    }
+    char *curr = packed;
     for(size_t i = 0; i < nnames; i++) {
-        S_Region_NotifyContentsChanged(names[i]);
+        size_t n = strlen(names[i]) + 1;
+        memcpy(curr, names[i], n);
+        curr += n;
     }
+    *curr = '\0';
+    E_ScriptCallLater(region_notify_packed, packed);
 }
 
 PyObject *S_Region_GetLoaded(void)

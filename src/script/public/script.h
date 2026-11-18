@@ -124,8 +124,28 @@ void            S_UI_StartFrameTask(void);
  * slice runs in the main thread's next world window. Does nothing elsewhere.
  */
 int             S_View_RequireWorld(void);
-/* Wakes the script thread for a frame of the scripts' windows, without waiting for it */
-void            S_Thread_Poke(void);
+/* Wakes the script thread for work it does alongside the main thread, without
+ * waiting for it: a frame of the scripts' windows, or the frame's events
+ */
+enum{
+    S_POKE_UI     = (1 << 0),
+    S_POKE_EVENTS = (1 << 1),
+};
+void            S_Thread_Poke(int what);
+void            S_EventsPump(void);
+/* Called by the main thread where a script may run: a view slice that waits
+ * for the world is finished now, so that the slices behind it need not wait
+ * for the main thread's next call
+ */
+void            S_Thread_ServeParked(void);
+/* Once a frame, on the script thread with the world: the sleeping tasks'
+ * clocks and the interpreter's memory figures
+ */
+void            S_FrameUpkeep(void);
+/* From C code a script task called: ends the task's slice where it stands */
+void            S_Task_YieldSlice(void);
+/* Whether the running script task was told to end */
+bool            S_Task_Ending(void);
 bool            S_UI_TextEditHasFocus(void);
 
 /*###########################################################################*/

@@ -692,6 +692,7 @@ int   G_Combat_GetBaseDamage(uint32_t uid);
  */
 uint64_t G_Combat_BaseDamageGen(void);
 void  G_Combat_CopyBaseDamage(struct kh_id_s *dst);
+void  G_Combat_CopyRanges(struct kh_range_s *dst);
 void  G_Combat_SetMaxHP(uint32_t uid, int hp);
 void  G_Combat_Kill(uint32_t uid);
 void  G_Combat_SetAmmo(uint32_t uid, int shots);
@@ -1713,6 +1714,14 @@ void        G_ScriptView_Publish(void);
  */
 void        G_ScriptView_Skip(void);
 bool        G_ScriptView_Fresh(void);
+/* Script code is about to run with the world: what it writes is not in the
+ * published view, so no view slice reads it again until the next is published
+ */
+void        G_ScriptView_MarkStale(void);
+/* Whether views are being published, the last one in this frame or the one
+ * before: if not, as while a session loads, view tasks run with the world
+ */
+bool        G_ScriptView_Current(void);
 void        G_ScriptView_Invalidate(void);
 bool        G_ScriptView_Published(void);
 void        G_ScriptView_Shutdown(void);
@@ -1736,6 +1745,7 @@ const char *G_ScriptView_QueuedGather(const struct script_view *view, uint32_t u
 bool        G_ScriptView_JobInfo(const struct script_view *view, uint32_t uid, uint32_t *out_src, 
                                  uint32_t *out_dest, const char **out_rname, int *out_state);
 bool        G_ScriptView_BaseDamage(const struct script_view *view, uint32_t uid, int *out);
+bool        G_ScriptView_AttackRange(const struct script_view *view, uint32_t uid, float *out);
 bool        G_ScriptView_Posts(const struct script_view *view, uint32_t uid, int *out_posts, 
                                int *out_locked, int *out_inside, int *out_coming);
 uint16_t    G_ScriptView_Factions(const struct script_view *view, 

@@ -93,6 +93,12 @@ VEC_IMPL(static inline, hd, struct handler_desc)
 
 KHASH_MAP_INIT_INT64(handler_desc, vec_hd_t)
 KHASH_MAP_INIT_INT(usub, int)
+KHASH_MAP_INIT_INT64(skey, int)
+
+/* Records the script thread hands to their handlers between two yields, when
+ * it does so alongside the main thread
+ */
+#define SCRIPT_DISPATCH_BATCH   (8)
 
 QUEUE_TYPE(event, struct event)
 QUEUE_IMPL(static, event, struct event)
@@ -182,6 +188,7 @@ static const char *s_event_str_table[] = {
     STR(EVENT_POST_MANNED),
     STR(EVENT_DUTY_CHANGED),
     STR(EVENT_UI_FRAME),
+    STR(EVENT_SCRIPT_DISPATCH),
 };
 
 static khash_t(handler_desc) *s_event_handler_table;
@@ -193,6 +200,20 @@ static khash_t(handler_desc) *s_script_handler_table;
  * table.
  */
 static khash_t(usub)         *s_update_start_subs;
+/* How many script handlers each entity has for each event. The script thread
+ * keeps it as handlers come and go; the main thread asks it, under the lock,
+ * in place of the script thread's own table.
+ */
+static khash_t(skey)         *s_script_keys;
+static SDL_SpinLock           s_script_keys_lock;
+/* Event records the script thread took and has yet to hand to their handlers,
+ * oldest first: its own
+ */
+static struct script_record  *s_script_pending;
+/* Whether it holds any, for the main thread to see */
+static int                    s_script_held;
+/* Whether the frame's events are handled alongside the main thread */
+static int                    s_script_async = -1;
 static queue(event)           s_event_queues[2];
 static int                    s_front_queue_idx = 0;
 /* What the script side has ever listened to, by event: sticky bits, so that
@@ -259,6 +280,24 @@ static bool e_is_timer_event(enum eventtype type)
     return false;
 }
 
+static void e_script_keys_add(uint64_t key, int delta)
+{
+    SDL_AtomicLock(&s_script_keys_lock);
+    khiter_t k = kh_get(skey, s_script_keys, key);
+    if(k == kh_end(s_script_keys)) {
+        int ret;
+        k = kh_put(skey, s_script_keys, key, &ret);
+        if(ret != -1)
+            kh_value(s_script_keys, k) = 0;
+    }
+    if(k != kh_end(s_script_keys)) {
+        kh_value(s_script_keys, k) += delta;
+        if(kh_value(s_script_keys, k) <= 0)
+            kh_del(skey, s_script_keys, k);
+    }
+    SDL_AtomicUnlock(&s_script_keys_lock);
+}
+
 static void e_update_start_subs_add(uint64_t key, int delta)
 {
     if((uint32_t)(key & 0xffffffff) != EVENT_UPDATE_START)
@@ -266,6 +305,8 @@ static void e_update_start_subs_add(uint64_t key, int delta)
     uint32_t uid = key >> 32;
     if(uid == GLOBAL_ID)
         return;
+    /* The main thread walks the index every frame */
+    S_View_RequireWorld();
 
     khiter_t k = kh_get(usub, s_update_start_subs, uid);
     if(k == kh_end(s_update_start_subs)) {
@@ -313,6 +354,8 @@ static bool e_register_handler(uint64_t key, struct handler_desc *desc)
         kh_value(table, k) = vec;
     }
 
+    if(desc->type == HANDLER_TYPE_SCRIPT)
+        e_script_keys_add(key, +1);
     e_update_start_subs_add(key, +1);
     return true;
 }
@@ -342,6 +385,8 @@ static bool e_unregister_handler(uint64_t key, const struct handler_desc *desc)
     vec_hd_del(&vec, idx);
     kh_value(table, k) = vec;
 
+    if(to_del.type == HANDLER_TYPE_SCRIPT)
+        e_script_keys_add(key, -1);
     e_update_start_subs_add(key, -1);
     return true;
 }
@@ -469,6 +514,9 @@ struct script_dispatch{
 struct script_record{
     struct script_dispatch  sd;
     struct script_record   *next;
+    /* Set for a call kept in the events' order in place of an event */
+    void                  (*call)(void *arg);
+    void                   *arg;
 };
 
 /* The script tasks waiting on the event wake first, then the handlers run,
@@ -477,7 +525,11 @@ static void e_dispatch_script(void *arg)
 {
     struct script_dispatch *sd = arg;
     void *task_arg = (sd->event.source == ES_SCRIPT) ? sd->event.arg : (void*)&sd->sarg;
-    Sched_HandleScriptEvent(sd->event.type, task_arg, sd->event.source, sd->immediate);
+    /* From a view slice, a task waiting on the event is left for the next
+     * world window: only a view task may run alongside the main thread
+     */
+    Sched_HandleScriptEvent(sd->event.type, task_arg, sd->event.source, 
+        sd->immediate && !Sched_InViewSlice());
     if(!sd->to_zombie)
         e_run_handlers(s_script_handler_table, sd->event, sd->immediate, &sd->sarg);
 }
@@ -513,6 +565,18 @@ static bool e_script_interested(struct event event, bool to_zombie)
 /* Events whose engine code goes on to read what the script handlers did;
  * input, as a script's key handler may set what the engine's next click does;
  * and the UI and render events, whose handlers draw into this frame's UI */
+/* The tasks that draw on the render events run at once only while the game
+ * is paused, where nothing else would run them. While it runs they are
+ * woken with the frame's other events, by the script tick at the latest.
+ */
+static bool e_script_render_now(enum eventtype type)
+{
+    if(type != EVENT_RENDER_3D_PRE && type != EVENT_RENDER_3D_POST
+    && type != EVENT_RENDER_UI && type != EVENT_RENDER_FINISH)
+        return false;
+    return G_PeekSimState() != G_RUNNING;
+}
+
 static bool e_script_needs_now(enum eventtype type)
 {
     return ((int)type < (int)SDL_LASTEVENT)
@@ -520,14 +584,16 @@ static bool e_script_needs_now(enum eventtype type)
         || (type == EVENT_UNIT_IDLE_PENDING)
         || (type == EVENT_POST_MANNED)
         || (type == EVENT_UPDATE_UI)
-        || (type == EVENT_RENDER_3D_PRE)
-        || (type == EVENT_RENDER_3D_POST)
-        || (type == EVENT_RENDER_UI)
-        || (type == EVENT_RENDER_FINISH);
+        || e_script_render_now(type);
 }
 
 static void e_script_record_free(struct script_record *rec)
 {
+    if(rec->call) {
+        PF_FREE(rec->arg);
+        PF_FREE(rec);
+        return;
+    }
     S_EventArgRelease(&rec->sd.sarg);
     if(rec->sd.event.source == ES_SCRIPT)
         S_Release(rec->sd.event.arg);
@@ -548,17 +614,37 @@ static struct script_record *e_script_take(void)
     return prev;
 }
 
+static void e_script_record_run(struct script_record *rec)
+{
+    if(rec->call) {
+        rec->call(rec->arg);
+        return;
+    }
+    e_dispatch_script(&rec->sd);
+}
+
+/* The next record to hand to its handlers. The task that handles them
+ * alongside the main thread and the drain the main thread waits for take
+ * from the one list, so the records keep their order whoever takes them.
+ */
+static struct script_record *e_script_next(void)
+{
+    if(!s_script_pending)
+        s_script_pending = e_script_take();
+    struct script_record *rec = s_script_pending;
+    if(rec)
+        s_script_pending = rec->next;
+    LF_STORE(&s_script_held, s_script_pending != NULL, LF_REL);
+    return rec;
+}
+
 static void e_script_drain(void *unused)
 {
     (void)unused;
     struct script_record *rec;
-    while((rec = e_script_take())) {
-        while(rec) {
-            struct script_record *next = rec->next;
-            e_dispatch_script(&rec->sd);
-            e_script_record_free(rec);
-            rec = next;
-        }
+    while((rec = e_script_next())) {
+        e_script_record_run(rec);
+        e_script_record_free(rec);
     }
 }
 
@@ -567,6 +653,8 @@ static bool e_script_send(struct event event, bool immediate, bool to_zombie)
     struct script_record *rec = PF_MALLOC(sizeof(struct script_record));
     if(!rec)
         return false;
+    rec->call = NULL;
+    rec->arg = NULL;
     rec->sd = (struct script_dispatch){event, immediate, to_zombie};
     /* A script argument's reference passes to the record */
     S_EventArgEncode(event.type, event.source, event.arg, &rec->sd.sarg);
@@ -650,6 +738,7 @@ bool E_Init(void)
         goto fail_script_table;
 
     s_update_start_subs = kh_init(usub);
+    s_script_keys = kh_init(skey);
     if(!s_update_start_subs)
         goto fail_front_queue;
 
@@ -667,6 +756,7 @@ fail_back_queue:
     queue_event_destroy(&s_event_queues[0]);
 fail_front_queue:
     kh_destroy(usub, s_update_start_subs);
+    kh_destroy(skey, s_script_keys);
     kh_destroy(handler_desc, s_script_handler_table);
 fail_script_table:
     kh_destroy(handler_desc, s_event_handler_table);
@@ -696,6 +786,7 @@ void E_Shutdown(void)
     }
 
     kh_destroy(usub, s_update_start_subs);
+    kh_destroy(skey, s_script_keys);
     kh_destroy(handler_desc, s_script_handler_table);
     kh_destroy(handler_desc, s_event_handler_table);
     queue_event_destroy(&s_event_queues[1]);
@@ -763,11 +854,6 @@ void E_ServiceQueue(void)
     e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID, ticks}, false);
     s_service_ticks[E_TIME_UPDATE_END] += SDL_GetPerformanceCounter() - t3;
 
-    /* The script thread's turn at the frame's events */
-    uint64_t t4 = SDL_GetPerformanceCounter();
-    E_ServiceScriptEvents();
-    s_service_ticks[E_TIME_SCRIPT] += SDL_GetPerformanceCounter() - t4;
-
     PERF_RETURN_VOID();
 }
 
@@ -782,8 +868,61 @@ void E_LastServiceTimes(uint64_t out_us[E_TIME_NBUCKETS])
 
 void E_ServiceScriptEvents(void)
 {
-    if(LF_LOAD(&s_script_inbox, LF_ACQ))
+    if(LF_LOAD(&s_script_inbox, LF_ACQ) || LF_LOAD(&s_script_held, LF_ACQ))
         S_Thread_Call(e_script_drain, NULL);
+}
+
+void E_ScriptCallLater(void (*fn)(void *arg), void *arg)
+{
+    struct script_record *rec = PF_CALLOC(1, sizeof(struct script_record));
+    if(!rec || !S_Thread_Running()) {
+        PF_FREE(rec);
+        fn(arg);
+        PF_FREE(arg);
+        return;
+    }
+    rec->call = fn;
+    rec->arg = arg;
+    struct script_record *head = LF_LOAD(&s_script_inbox, LF_RLX);
+    do{
+        rec->next = head;
+    }while(!LF_CASW(&s_script_inbox, &head, rec, LF_REL, LF_RLX));
+}
+
+bool E_ScriptEventsWaiting(void)
+{
+    return LF_LOAD(&s_script_inbox, LF_ACQ) != NULL;
+}
+
+void E_PostScriptEvents(void)
+{
+    /* PF_EVENTS_SYNC=1: the main thread waits for the handlers, as it used to */
+    if(s_script_async < 0)
+        s_script_async = (getenv("PF_EVENTS_SYNC") == NULL);
+
+    uint64_t t0 = SDL_GetPerformanceCounter();
+    if(!s_script_async || !S_Thread_Running()) {
+        E_ServiceScriptEvents();
+    }else if(LF_LOAD(&s_script_inbox, LF_ACQ)) {
+        S_Thread_Poke(S_POKE_EVENTS);
+    }
+    s_service_ticks[E_TIME_SCRIPT] += SDL_GetPerformanceCounter() - t0;
+}
+
+void E_DispatchScriptEvents(void)
+{
+    assert(S_Thread_OnScript());
+    struct script_record *rec;
+    int nhandled = 0;
+    while(!S_Task_Ending() && (rec = e_script_next())) {
+        e_script_record_run(rec);
+        e_script_record_free(rec);
+        /* Alongside the main thread, a few at a time: a call it makes waits
+         * for the slice to end
+         */
+        if(++nhandled % SCRIPT_DISPATCH_BATCH == 0 && Sched_InViewSlice())
+            S_Task_YieldSlice();
+    }
 }
 
 void E_NoteScriptAwait(int event)
@@ -791,14 +930,19 @@ void E_NoteScriptAwait(int event)
     e_sub_set(s_script_task_subs, event);
 }
 
+static void e_script_clear(void *unused)
+{
+    (void)unused;
+    struct script_record *rec;
+    while((rec = e_script_next())) {
+        e_script_record_free(rec);
+    }
+}
+
 void E_ClearPendingEvents(void)
 {
-    struct script_record *rec = e_script_take();
-    while(rec) {
-        struct script_record *next = rec->next;
-        e_script_record_free(rec);
-        rec = next;
-    }
+    /* The records it holds are the script thread's to free */
+    S_Thread_Call(e_script_clear, NULL);
 
     for(int q = 0; q < 2; q++) {
         queue_event_t *queue = &s_event_queues[q];
@@ -838,9 +982,10 @@ bool E_Entity_HasHandler(enum eventtype event, uint32_t ent_uid)
     khiter_t k = kh_get(handler_desc, s_event_handler_table, e_key(ent_uid, event));
     if(k != kh_end(s_event_handler_table) && vec_size(&kh_value(s_event_handler_table, k)) > 0)
         return true;
-    k = kh_get(handler_desc, s_script_handler_table, e_key(ent_uid, event));
-    return (k != kh_end(s_script_handler_table)) 
-        && vec_size(&kh_value(s_script_handler_table, k)) > 0;
+    SDL_AtomicLock(&s_script_keys_lock);
+    bool ret = kh_get(skey, s_script_keys, e_key(ent_uid, event)) != kh_end(s_script_keys);
+    SDL_AtomicUnlock(&s_script_keys_lock);
+    return ret;
 }
 
 bool E_QueuedThisFrame(enum eventtype event)
@@ -866,7 +1011,8 @@ bool E_EventsQueued(void)
 {
     return (queue_size(s_event_queues[0]) > 0) 
         || (queue_size(s_event_queues[1]) > 0)
-        || (LF_LOAD(&s_script_inbox, LF_ACQ) != NULL);
+        || (LF_LOAD(&s_script_inbox, LF_ACQ) != NULL)
+        || LF_LOAD(&s_script_held, LF_ACQ);
 }
 
 void E_DeleteScriptHandlers(void)
@@ -886,6 +1032,9 @@ void E_DeleteScriptHandlers(void)
         vec_hd_destroy(&curr);
     });
     kh_clear(handler_desc, s_script_handler_table);
+    SDL_AtomicLock(&s_script_keys_lock);
+    kh_clear(skey, s_script_keys);
+    SDL_AtomicUnlock(&s_script_keys_lock);
 }
 
 size_t E_GetScriptHandlers(size_t max_out, struct script_handler *out)
