@@ -5750,6 +5750,21 @@ static PyObject *PyPf_get_all_music(PyObject *self)
     return ret;
 }
 
+/* Sounds a view slice played: one that cannot be played is said, as nothing
+ * is raised this late
+ */
+static void apply_play_effect(const struct view_cmd *cmd)
+{
+    if(!Audio_Effect_Add((vec3_t){cmd->f[0], cmd->f[1], cmd->f[2]}, cmd->str))
+        fprintf(stderr, "[view] unable to play the effect '%s'\n", cmd->str);
+}
+
+static void apply_play_global_effect(const struct view_cmd *cmd)
+{
+    if(!Audio_PlayForegroundEffect(cmd->str, cmd->i[0], cmd->i[1]))
+        fprintf(stderr, "[view] unable to play the effect '%s'\n", cmd->str);
+}
+
 static PyObject *PyPf_play_effect(PyObject *self, PyObject *args)
 {
     vec3_t pos;
@@ -5757,6 +5772,15 @@ static PyObject *PyPf_play_effect(PyObject *self, PyObject *args)
 
     if(!PyArg_ParseTuple(args, "s(fff)", &name, &pos.x, &pos.y, &pos.z)) {
         PyErr_SetString(PyExc_TypeError, "Arugment must be a string (name) and a tuple of 3 floats (position).");
+        return NULL;
+    }
+
+    struct view_cmd cmd = {.apply = apply_play_effect, .f = {pos.x, pos.y, pos.z}};
+    if(strlen(name) < sizeof(cmd.str)) {
+        pf_strlcpy(cmd.str, name, sizeof(cmd.str));
+        if(S_View_Defer(&cmd))
+            Py_RETURN_NONE;
+    }else if(S_View_RequireWorld() < 0) {
         return NULL;
     }
 
@@ -5777,6 +5801,15 @@ static PyObject *PyPf_play_global_effect(PyObject *self, PyObject *args, PyObjec
     if(!PyArg_ParseTupleAndKeywords(args, kwargs, "s|ii", kwlist, &name, &interrupt, &channel)) {
         PyErr_SetString(PyExc_TypeError, "Expecting a string (effect name), an optional boolean (interrupt) argument, "
             "and an optional integer (channel) argument.");
+        return NULL;
+    }
+
+    struct view_cmd cmd = {.apply = apply_play_global_effect, .i = {interrupt, channel}};
+    if(strlen(name) < sizeof(cmd.str)) {
+        pf_strlcpy(cmd.str, name, sizeof(cmd.str));
+        if(S_View_Defer(&cmd))
+            Py_RETURN_NONE;
+    }else if(S_View_RequireWorld() < 0) {
         return NULL;
     }
 

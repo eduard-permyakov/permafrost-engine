@@ -120,6 +120,7 @@ static void run_call(struct st_side *self, struct st_call *call, bool outer)
          */
         if(outer && !call->query) {
             Perf_OwnTick();
+            S_View_ApplyCommands();
             Sched_RunParked();
         }
     }

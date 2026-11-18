@@ -81,6 +81,22 @@ bool S_View_Poll(int kind, void *fn, struct _object *self, struct _object *args,
 /* A script task's thread state goes out */
 void S_View_LeaveTask(void);
 void S_View_Shutdown(void);
+/* A write a view slice made that nothing it goes on to read depends on, such
+ * as an animation it set playing: kept, and applied in order as the next world
+ * window opens, before any script code that could see it missing
+ */
+struct view_cmd{
+    void     (*apply)(const struct view_cmd *cmd);
+    uint32_t   uid;
+    int        i[4];
+    float      f[4];
+    char       str[64];
+};
+/* From a binding: true when the write was kept, and the binding is to return
+ * as if it was done; false when it is to do it now
+ */
+bool S_View_Defer(const struct view_cmd *cmd);
+void S_View_ApplyCommands(void);
 /* Queues a write a view task made for the next world window */
 void S_View_DeferRemove(uint32_t uid);
 void S_View_ApplyDeferred(void);

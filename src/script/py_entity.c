@@ -3419,6 +3419,20 @@ static PyObject *PyAnimEntity_del(PyAnimEntityObject *self)
     return s_super_del((PyObject*)self, &PyAnimEntity_type);
 }
 
+/* An animation a view slice set playing. Nothing is raised this late: a
+ * clip the model does not have is said, and left unplayed.
+ */
+static void apply_play_anim(const struct view_cmd *cmd)
+{
+    if(!G_EntityExists(cmd->uid))
+        return;
+    if(!A_HasClip(cmd->uid, cmd->str)) {
+        fprintf(stderr, "[view] no animation clip named '%s' on entity %u\n", cmd->str, cmd->uid);
+        return;
+    }
+    A_SetActiveClip(cmd->uid, cmd->str, cmd->i[0], cmd->i[1]);
+}
+
 static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args, PyObject *kwds)
 {
     const char *clipname;
@@ -3448,6 +3462,15 @@ static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args
             return NULL;
         }
 		fps = PyInt_AsLong(fps_obj);
+    }
+
+    struct view_cmd cmd = {.apply = apply_play_anim, .uid = self->super.ent, .i = {mode, fps}};
+    if(strlen(clipname) < sizeof(cmd.str)) {
+        pf_strlcpy(cmd.str, clipname, sizeof(cmd.str));
+        if(S_View_Defer(&cmd))
+            Py_RETURN_NONE;
+    }else if(S_View_RequireWorld() < 0) {
+        return NULL;
     }
 
     if(!A_HasClip(self->super.ent, clipname)) {

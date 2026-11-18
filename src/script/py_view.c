@@ -83,8 +83,10 @@ VEC_IMPL(static inline, poll, struct poll_entry)
  * thousand things once is not a window that reads the same few every frame
  */
 #define POLL_LEARN_MAX  (1024)
-/* Frames an entry is kept for after it was last asked for */
-#define POLL_KEEP       (3)
+/* Frames an entry is kept for after it was last asked for. The windows' frames
+ * may come many of the main thread's frames apart when the script thread is busy.
+ */
+#define POLL_KEEP       (30)
 
 struct view_getset{
     getter      get;
@@ -110,6 +112,9 @@ VEC_TYPE(site, struct park_site)
 VEC_IMPL(static inline, site, struct park_site)
 VEC_TYPE(vuid, uint32_t)
 VEC_IMPL(static inline, vuid, uint32_t)
+
+VEC_TYPE(vcmd, struct view_cmd)
+VEC_IMPL(static inline, vcmd, struct view_cmd)
 
 /* What a view task may reach without the world: the task API, whose requests
  * go to the scheduler, the frame clock, and what the script view holds. An
@@ -151,6 +156,16 @@ static const char *s_allowed[] = {
     NULL
 };
 
+/* Functions and methods that keep their write for the next world window: each
+ * hands it to S_View_Defer
+ */
+static const char *s_deferred[] = {
+    "pf.AnimEntity.play_anim",
+    "pf.play_effect",
+    "pf.play_global_effect",
+    NULL
+};
+
 /* Functions and methods that answer from what was polled: each begins with
  * S_VIEW_POLLED. Getters need no listing: one the view does not hold is polled.
  */
@@ -176,6 +191,7 @@ static khash_t(vclass) *s_method_class;
 /* The view the running view slice reads, if one was published */
 static const struct script_view *s_current;
 static vec_vuid_t       s_deferred_removes;
+static vec_vcmd_t       s_cmds;
 static PyObject        *s_poll_index;      /* key -> index into s_polls */
 static vec_poll_t       s_polls;
 static vec_vuid_t       s_poll_free;
@@ -186,7 +202,7 @@ static int              s_poll_learned;
 /* Set while an entry is worked out, so that the call it makes is not itself looked up */
 static bool             s_poll_working;
 /* Counted for PF_VIEW_STATS */
-static uint64_t         s_nparks, s_npoll_hits, s_npoll_learned, s_npoll_renewed;
+static uint64_t         s_nparks, s_npoll_hits, s_npoll_learned, s_npoll_renewed, s_ncmds;
 /* The places a view slice has parked from, each logged once */
 static khash_t(vsite)  *s_park_sites;
 static vec_site_t       s_sites;
@@ -205,6 +221,10 @@ static int classify(const char *qualname)
     for(const char **curr = s_polled; *curr; curr++) {
         if(0 == strcmp(qualname, *curr))
             return VIEW_POLL;
+    }
+    for(const char **curr = s_deferred; *curr; curr++) {
+        if(0 == strcmp(qualname, *curr))
+            return VIEW_ALLOW;
     }
     return VIEW_PARK;
 }
@@ -402,6 +422,7 @@ void S_View_Init(struct _object *module)
         s_park_sites = kh_init(vsite);
         vec_site_init(&s_sites);
         vec_vuid_init(&s_deferred_removes);
+        vec_vcmd_init(&s_cmds);
         vec_poll_init(&s_polls);
         vec_vuid_init(&s_poll_free);
         s_init = true;
@@ -600,9 +621,11 @@ void S_View_Shutdown(void)
     if(!s_init || !s_poll_index)
         return;
     if(getenv("PF_VIEW_STATS")) {
-        fprintf(stderr, "[view-stats] parks %llu, polled: answered %llu, learned %llu, renewed %llu over %u frames\n",
+        fprintf(stderr, "[view-stats] parks %llu, polled: answered %llu, learned %llu, renewed %llu over %u frames; "
+            "writes kept %llu\n",
             (unsigned long long)s_nparks, (unsigned long long)s_npoll_hits,
-            (unsigned long long)s_npoll_learned, (unsigned long long)s_npoll_renewed, s_poll_frame);
+            (unsigned long long)s_npoll_learned, (unsigned long long)s_npoll_renewed, s_poll_frame,
+            (unsigned long long)s_ncmds);
         for(int i = 0; i < vec_size(&s_sites); i++) {
             const struct park_site *ps = &vec_AT(&s_sites, i);
             if(ps->count > 1) {
@@ -617,8 +640,31 @@ void S_View_Shutdown(void)
     }
     vec_poll_reset(&s_polls);
     vec_vuid_reset(&s_poll_free);
+    vec_vcmd_reset(&s_cmds);
     Py_CLEAR(s_poll_index);
     s_poll_learning = false;
+}
+
+bool S_View_Defer(const struct view_cmd *cmd)
+{
+    if(!S_View_Active())
+        return false;
+    vec_vcmd_push(&s_cmds, *cmd);
+    s_ncmds++;
+    return true;
+}
+
+void S_View_ApplyCommands(void)
+{
+    if(!s_init)
+        return;
+    assert(!Sched_InViewSlice());
+    /* One may queue no other: it has the world */
+    for(int i = 0; i < vec_size(&s_cmds); i++) {
+        const struct view_cmd *cmd = &vec_AT(&s_cmds, i);
+        cmd->apply(cmd);
+    }
+    vec_vcmd_reset(&s_cmds);
 }
 
 void S_View_DeferRemove(uint32_t uid)
