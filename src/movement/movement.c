@@ -6236,7 +6236,10 @@ static void move_trace_emit(void)
     }
 }
 
-static enum move_work_status nav_tick_finish_work(void)
+/* With 'wait', a task that a worker runs, or that waits for the ranges it handed
+ * out, is waited for: the caller is about to drop it and clear what it reads.
+ */
+static enum move_work_status nav_tick_finish_work(bool wait)
 {
     if(s_tick_task_tid == NULL_TID) {
         return WORK_COMPLETE;
@@ -6244,14 +6247,32 @@ static enum move_work_status nav_tick_finish_work(void)
 
     PERF_PUSH("nav tick drain");
     uint64_t drain_start = SDL_GetPerformanceCounter();
+    uint64_t wait_end = 0;
     while(!Sched_FutureIsReady(&s_tick_task_future)) {
+        if(Sched_RunSync(s_tick_task_tid)) {
+            wait_end = 0;
+            continue;
+        }
         /* If the task is event-blocked waiting for GPU results,
          * we are not able to run it to completion at this point.
          */
-        if(!Sched_RunSync(s_tick_task_tid)) {
+        if(Sched_IsEventBlocked(s_tick_task_tid)) {
             PERF_POP();
             return WORK_INCOMPLETE;
         }
+        if(!wait) {
+            PERF_POP();
+            return WORK_INCOMPLETE;
+        }
+        uint64_t now = SDL_GetPerformanceCounter();
+        if(!wait_end) {
+            wait_end = now + SDL_GetPerformanceFrequency() / 2;
+        }else if(now > wait_end) {
+            fprintf(stderr, "[movement] the navigation tick task could not be finished\n");
+            PERF_POP();
+            return WORK_INCOMPLETE;
+        }
+        SDL_Delay(0);
     }
     PERF_POP();
     s_tick_task_tid = NULL_TID;
@@ -7557,12 +7578,12 @@ uint32_t Move_GetNavTID(void)
 
 bool Move_NavQuiesce(void)
 {
-    return nav_tick_finish_work() == WORK_COMPLETE;
+    return nav_tick_finish_work(false) == WORK_COMPLETE;
 }
 
 bool Move_TickFinished(void)
 {
-    return nav_tick_finish_work() == WORK_COMPLETE;
+    return nav_tick_finish_work(false) == WORK_COMPLETE;
 }
 
 bool Move_TickConsume(void)
@@ -7765,7 +7786,7 @@ unsigned Move_TraceTick(void)
 
 void Move_FinishTick(void)
 {
-    if(nav_tick_finish_work() == WORK_INCOMPLETE) {
+    if(nav_tick_finish_work(true) == WORK_INCOMPLETE) {
         nav_cancel_gpu_work();
     }
 }
@@ -7807,7 +7828,7 @@ void Move_FlushWork(const struct move_world *world)
     /* Discard the results of the last
      * movement tick.
      */
-    if(nav_tick_finish_work() == WORK_INCOMPLETE) {
+    if(nav_tick_finish_work(true) == WORK_INCOMPLETE) {
         nav_cancel_gpu_work();
     }
     /* The first part of a split submit released the snapshot the drain below
