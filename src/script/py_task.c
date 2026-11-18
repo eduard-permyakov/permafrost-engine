@@ -1307,7 +1307,7 @@ static PyObject *PyTask_await_event(PyTaskObject *self, PyObject *args)
         return NULL;
 
     if(source == ES_ENGINE) {
-        return S_WrapEngineEventArg(event, arg);
+        return S_WrapEngineEventArg(event, (const struct script_event_arg*)arg);
     }else{
         return (PyObject*)arg; /* steal ref */
     }

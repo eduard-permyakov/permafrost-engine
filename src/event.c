@@ -183,6 +183,9 @@ static const char *s_event_str_table[] = {
 };
 
 static khash_t(handler_desc) *s_event_handler_table;
+/* The handlers registered by scripts. Only the script thread touches them, as
+ * they hold script objects. */
+static khash_t(handler_desc) *s_script_handler_table;
 /* Refcount of per-entity EVENT_UPDATE_START registrations, so the per-frame
  * notify iterates the live subscribers instead of scanning the whole handler
  * table.
@@ -266,32 +269,38 @@ static void e_update_start_subs_add(uint64_t key, int delta)
         kh_del(usub, s_update_start_subs, k);
 }
 
+static khash_t(handler_desc) *e_table(enum handler_type type)
+{
+    return (type == HANDLER_TYPE_SCRIPT) ? s_script_handler_table : s_event_handler_table;
+}
+
 static bool e_register_handler(uint64_t key, struct handler_desc *desc)
 {
+    khash_t(handler_desc) *table = e_table(desc->type);
     khiter_t k;
-    k = kh_get(handler_desc, s_event_handler_table, key);
+    k = kh_get(handler_desc, table, key);
 
-    if(k == kh_end(s_event_handler_table)) {
+    if(k == kh_end(table)) {
 
         vec_hd_t newv;
         vec_hd_init(&newv);
         vec_hd_push(&newv, *desc);
 
         int ret;
-        k = kh_put(handler_desc, s_event_handler_table, key, &ret);
+        k = kh_put(handler_desc, table, key, &ret);
         assert(ret == 1 || ret == 2);
-        kh_value(s_event_handler_table, k) = newv;
+        kh_value(table, k) = newv;
 
     }else{
     
-        vec_hd_t vec = kh_value(s_event_handler_table, k);
+        vec_hd_t vec = kh_value(table, k);
 
         int idx = vec_hd_indexof(&vec, *desc, e_handlers_equal);
         if(idx != -1)
             return false; /* Don't allow registering duplicate handlers for the same event */
 
         vec_hd_push(&vec, *desc);
-        kh_value(s_event_handler_table, k) = vec;
+        kh_value(table, k) = vec;
     }
 
     e_update_start_subs_add(key, +1);
@@ -300,13 +309,14 @@ static bool e_register_handler(uint64_t key, struct handler_desc *desc)
 
 static bool e_unregister_handler(uint64_t key, const struct handler_desc *desc)
 {
+    khash_t(handler_desc) *table = e_table(desc->type);
     khiter_t k;
-    k = kh_get(handler_desc, s_event_handler_table, key);
+    k = kh_get(handler_desc, table, key);
 
-    if(k == kh_end(s_event_handler_table))
+    if(k == kh_end(table))
         return false;
 
-    vec_hd_t vec = kh_value(s_event_handler_table, k);
+    vec_hd_t vec = kh_value(table, k);
 
     int idx = vec_hd_indexof(&vec, *desc, e_handlers_equal);
     if(idx == -1)
@@ -320,22 +330,22 @@ static bool e_unregister_handler(uint64_t key, const struct handler_desc *desc)
     }
 
     vec_hd_del(&vec, idx);
-    kh_value(s_event_handler_table, k) = vec;
+    kh_value(table, k) = vec;
 
     e_update_start_subs_add(key, -1);
     return true;
 }
 
-struct script_invoke{
-    struct handler_desc hd;
-    struct event        event;
-};
-
-static void e_invoke_script(void *arg)
+static void e_invoke(const struct handler_desc hd, struct event event, 
+                     const struct script_event_arg *sarg)
 {
-    struct script_invoke *si = arg;
-    const struct handler_desc hd = si->hd;
-    struct event event = si->event;
+    if(hd.type == HANDLER_TYPE_ENGINE) {
+
+        PERF_PUSH(hd.fname ? hd.fname : "handler");
+        hd.handler.as_function(hd.user_arg, event.arg);
+        PERF_POP();
+        return;
+    }
 
     /* Remove the handler if the user arg goes out of scope. Since Python
      * doesn't actually guarantee destructors getting called, it's possible
@@ -356,7 +366,7 @@ static void e_invoke_script(void *arg)
 
     script_opaque_t script_arg = (event.source == ES_SCRIPT)
         ? S_UnwrapIfWeakref(event.arg)
-        : S_WrapEngineEventArg(event.type, event.arg);
+        : S_WrapEngineEventArg(event.type, sarg);
     assert(script_arg);
     script_opaque_t user_arg = S_UnwrapIfWeakref(hd.user_arg);
 
@@ -369,36 +379,12 @@ static void e_invoke_script(void *arg)
     PERF_POP();
 }
 
-static void e_invoke(const struct handler_desc hd, struct event event)
+/* Runs the event's handlers in one table, in the order they registered */
+static void e_run_handlers(khash_t(handler_desc) *table, struct event event, bool immediate,
+                           const struct script_event_arg *sarg)
 {
-    if(hd.type == HANDLER_TYPE_ENGINE) {
-
-        PERF_PUSH(hd.fname ? hd.fname : "handler");
-        hd.handler.as_function(hd.user_arg, event.arg);
-        PERF_POP();
-
-    }else if(hd.type == HANDLER_TYPE_SCRIPT) {
-
-        /* Python runs on the script thread: the handler's whole call goes there */
-        struct script_invoke si = {hd, event};
-        S_Thread_Call(e_invoke_script, &si);
-    }
-}
-
-static void e_handle_event(struct event event, bool immediate)
-{
-    if((G_GetSimState() != G_RUNNING) && e_is_timer_event(event.type))
-        return;
-
-    Sched_HandleEvent(event.type, event.arg, event.source, immediate);
-
     uint64_t key = e_key(event.receiver_id, event.type);
     enum simstate ss = G_GetSimState();
-
-    if(event.receiver_id != GLOBAL_ID 
-    && G_EntityIsZombie(event.receiver_id) 
-    && !e_zombie_can_receive(event.type))
-        return;
     
     /* The execution of an event handler can cause one or more event handlers 
      * to be unregistered. We want to provide a guarantee that once an event 
@@ -409,7 +395,7 @@ static void e_handle_event(struct event event, bool immediate)
 
     vec_hd_t execd_local, curr_local;
     vec_hd_t *execd_handlers, *curr;
-    if(immediate) {
+    if(immediate || table == s_script_handler_table) {
         vec_hd_init(&execd_local);
         vec_hd_init(&curr_local);
         execd_handlers = &execd_local;
@@ -424,12 +410,12 @@ static void e_handle_event(struct event event, bool immediate)
 
     do{
         ran = false;
-        khiter_t k = kh_get(handler_desc, s_event_handler_table, key);
-        if(k == kh_end(s_event_handler_table))
+        khiter_t k = kh_get(handler_desc, table, key);
+        if(k == kh_end(table))
             break;
 
         vec_hd_reset(curr);
-        vec_hd_copy(curr, &kh_value(s_event_handler_table, k));
+        vec_hd_copy(curr, &kh_value(table, k));
 
         for(int i = 0; i < vec_size(curr); i++) {
 
@@ -450,18 +436,62 @@ static void e_handle_event(struct event event, bool immediate)
             if(event.tick != elem.register_tick && SDL_TICKS_PASSED(elem.register_tick, event.tick))
                 continue;
 
-            e_invoke(elem, event);
+            e_invoke(elem, event, sarg);
             ran = true;
             break;
         }
 
     }while(ran);
 
-    if(immediate) {
+    if(immediate || table == s_script_handler_table) {
         vec_hd_destroy(&execd_local);
         vec_hd_destroy(&curr_local);
     }
+}
 
+struct script_dispatch{
+    struct event            event;
+    bool                    immediate;
+    struct script_event_arg sarg;
+};
+
+static void e_dispatch_script(void *arg)
+{
+    struct script_dispatch *sd = arg;
+    e_run_handlers(s_script_handler_table, sd->event, sd->immediate, &sd->sarg);
+}
+
+static bool e_has_script_handlers(struct event event)
+{
+    khiter_t k = kh_get(handler_desc, s_script_handler_table, e_key(event.receiver_id, event.type));
+    return (k != kh_end(s_script_handler_table)) 
+        && vec_size(&kh_value(s_script_handler_table, k)) > 0;
+}
+
+static void e_handle_event(struct event event, bool immediate)
+{
+    if((G_GetSimState() != G_RUNNING) && e_is_timer_event(event.type))
+        return;
+
+    Sched_HandleEvent(event.type, event.arg, event.source, immediate);
+
+    if(event.receiver_id != GLOBAL_ID 
+    && G_EntityIsZombie(event.receiver_id) 
+    && !e_zombie_can_receive(event.type))
+        goto out;
+
+    e_run_handlers(s_event_handler_table, event, immediate, NULL);
+
+    /* The script handlers run after the engine's, on the script thread, with
+     * the argument copied out of whatever the engine pointed it at */
+    if(e_has_script_handlers(event)) {
+        struct script_dispatch sd = {event, immediate};
+        S_EventArgEncode(event.type, event.source, event.arg, &sd.sarg);
+        S_Thread_Call(e_dispatch_script, &sd);
+        S_EventArgRelease(&sd.sarg);
+    }
+
+out:
     if(event.source == ES_SCRIPT)
         S_Release(event.arg);
 }
@@ -493,6 +523,10 @@ bool E_Init(void)
     if(!s_event_handler_table)
         goto fail_table;
 
+    s_script_handler_table = kh_init(handler_desc);
+    if(!s_script_handler_table)
+        goto fail_script_table;
+
     s_update_start_subs = kh_init(usub);
     if(!s_update_start_subs)
         goto fail_front_queue;
@@ -511,6 +545,8 @@ fail_back_queue:
     queue_event_destroy(&s_event_queues[0]);
 fail_front_queue:
     kh_destroy(usub, s_update_start_subs);
+    kh_destroy(handler_desc, s_script_handler_table);
+fail_script_table:
     kh_destroy(handler_desc, s_event_handler_table);
 fail_table:
     return false;
@@ -528,7 +564,17 @@ void E_Shutdown(void)
         vec_hd_destroy(&vec);
     }
 
+    for (k = kh_begin(s_script_handler_table); k != kh_end(s_script_handler_table); ++k) {
+
+        if(!kh_exist(s_script_handler_table, k))
+            continue; 
+
+        vec_hd_t vec = kh_value(s_script_handler_table, k);
+        vec_hd_destroy(&vec);
+    }
+
     kh_destroy(usub, s_update_start_subs);
+    kh_destroy(handler_desc, s_script_handler_table);
     kh_destroy(handler_desc, s_event_handler_table);
     queue_event_destroy(&s_event_queues[1]);
     queue_event_destroy(&s_event_queues[0]);
@@ -643,9 +689,11 @@ bool E_Entity_HasHandler(enum eventtype event, uint32_t ent_uid)
     ASSERT_IN_MAIN_THREAD();
 
     khiter_t k = kh_get(handler_desc, s_event_handler_table, e_key(ent_uid, event));
-    if(k == kh_end(s_event_handler_table))
-        return false;
-    return vec_size(&kh_value(s_event_handler_table, k)) > 0;
+    if(k != kh_end(s_event_handler_table) && vec_size(&kh_value(s_event_handler_table, k)) > 0)
+        return true;
+    k = kh_get(handler_desc, s_script_handler_table, e_key(ent_uid, event));
+    return (k != kh_end(s_script_handler_table)) 
+        && vec_size(&kh_value(s_script_handler_table, k)) > 0;
 }
 
 bool E_QueuedThisFrame(enum eventtype event)
@@ -675,43 +723,21 @@ bool E_EventsQueued(void)
 
 void E_DeleteScriptHandlers(void)
 {
-    STALLOC(uint64_t, keys_to_del, kh_size(s_event_handler_table));
-    size_t ntodel = 0;
-
     uint64_t key;
     vec_hd_t curr;
 
-    kh_foreach(s_event_handler_table, key, curr, {
+    kh_foreach(s_script_handler_table, key, curr, {
 
-        /* iterate backwards to delete while iterating */
-        for(int i = vec_size(&curr)-1; i >= 0; i--) {
+        for(int i = 0; i < vec_size(&curr); i++) {
 
             struct handler_desc hd = vec_AT(&curr, i);
-            if(hd.type == HANDLER_TYPE_ENGINE)
-                continue;
-
             S_Release(hd.handler.as_script_callable);
             S_Release(hd.user_arg); 
-            vec_hd_del(&curr, i);
             e_update_start_subs_add(key, -1);
         }
-
-        khiter_t k = kh_get(handler_desc, s_event_handler_table, key);
-        assert(k != kh_end(s_event_handler_table));
-        kh_value(s_event_handler_table, k) = curr;
-
-        if(vec_size(&curr) == 0) {
-            keys_to_del[ntodel++] = key;
-        }
+        vec_hd_destroy(&curr);
     });
-    
-    for(int i = 0; i < ntodel; i++) {
-
-        khiter_t k = kh_get(handler_desc, s_event_handler_table, keys_to_del[i]);
-        assert(k != kh_end(s_event_handler_table));
-        vec_hd_destroy(&kh_value(s_event_handler_table, k));
-        kh_del(handler_desc, s_event_handler_table, k);
-    }
+    kh_clear(handler_desc, s_script_handler_table);
 }
 
 size_t E_GetScriptHandlers(size_t max_out, struct script_handler *out)
@@ -720,15 +746,11 @@ size_t E_GetScriptHandlers(size_t max_out, struct script_handler *out)
     uint64_t key;
     vec_hd_t curr;
 
-    kh_foreach(s_event_handler_table, key, curr, {
+    kh_foreach(s_script_handler_table, key, curr, {
 
         for(int i = 0; i < vec_size(&curr); i++) {
 
-            (void)key;
             struct handler_desc hd = vec_AT(&curr, i);
-            if(hd.type == HANDLER_TYPE_ENGINE)
-                continue;
-
             if(ret == max_out)
                 break;
 

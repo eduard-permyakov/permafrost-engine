@@ -1109,7 +1109,13 @@ static void await_event(struct task *task)
 static uint64_t sched_retain_arg(struct task *task, int event, int event_source, void *arg)
 {
     void *ret = NULL;
-    if(event_source == ES_SCRIPT) {
+    if(event_source != ES_SCRIPT && (task->flags & TASK_SCRIPT)) {
+        /* A script task reads it on the script thread, as plain data */
+        struct script_event_arg *sarg = PF_MALLOC(sizeof(struct script_event_arg));
+        S_EventArgEncode(event, event_source, arg, sarg);
+        task->erelease = S_EventArgFree;
+        ret = sarg;
+    }else if(event_source == ES_SCRIPT) {
         /* Scripting references will be released by the event consumer */
         S_Retain(arg);
         ret = arg;

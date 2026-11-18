@@ -7702,69 +7702,180 @@ void S_Release(script_opaque_t obj)
     Py_XDECREF(obj);
 }
 
-struct fwd_S_WrapEngineEventArg{
-    int eventnum;
-    void *arg;
-    script_opaque_t ret;
-};
-
-static void fwd_S_WrapEngineEventArg_thunk(void *arg)
+void S_EventArgEncode(int event, int source, void *arg, struct script_event_arg *out)
 {
-    struct fwd_S_WrapEngineEventArg *a = arg;
-    a->ret = S_WrapEngineEventArg(a->eventnum, a->arg);
+    *out = (struct script_event_arg){ .source = source };
+    if(source == ES_SCRIPT) {
+        out->obj = arg;
+        return;
+    }
+
+    switch(event) {
+    case SDL_KEYDOWN:
+    case SDL_KEYUP: {
+        const SDL_Event *e = arg;
+        out->i[0] = e->key.keysym.scancode;
+        out->i[1] = e->key.keysym.sym;
+        out->i[2] = e->key.keysym.mod;
+        break;
+    }
+    case SDL_MOUSEMOTION: {
+        const SDL_Event *e = arg;
+        out->i[0] = e->motion.x;
+        out->i[1] = e->motion.y;
+        out->i[2] = e->motion.xrel;
+        break;
+    }
+    case SDL_MOUSEBUTTONDOWN:
+    case SDL_MOUSEBUTTONUP: {
+        const SDL_Event *e = arg;
+        out->i[0] = e->button.button;
+        out->i[1] = e->button.state;
+        break;
+    }
+    case SDL_MOUSEWHEEL: {
+        const SDL_Event *e = arg;
+        int dir = (e->wheel.direction == SDL_MOUSEWHEEL_NORMAL) ? 1 : -1;
+        out->i[0] = e->wheel.x * dir;
+        out->i[1] = e->wheel.y * dir;
+        break;
+    }
+    case EVENT_SELECTED_TILE_CHANGED: {
+        const struct tile_desc *td = arg;
+        out->present = (td != NULL);
+        if(td) {
+            out->i[0] = td->chunk_r;
+            out->i[1] = td->chunk_c;
+            out->i[2] = td->tile_r;
+            out->i[3] = td->tile_c;
+        }
+        break;
+    }
+    case EVENT_GAME_SIMSTATE_CHANGED:
+    case EVENT_CLUSTER_CHANGED:
+        out->i[0] = (intptr_t)arg;
+        break;
+    case EVENT_SESSION_FAIL_LOAD:
+    case EVENT_ENTERED_REGION:
+    case EVENT_EXITED_REGION:
+        out->str = arg ? pf_strdup(arg) : NULL;
+        break;
+    case EVENT_BUILD_TARGET_ACQUIRED: 
+    case EVENT_HARVEST_TARGET_ACQUIRED:
+    case EVENT_STORAGE_TARGET_ACQUIRED:
+    case EVENT_TRANSPORT_TARGET_ACQUIRED:
+    case EVENT_BUILDING_MARKED:
+    case EVENT_BUILDING_CONSTRUCTED:
+    case EVENT_ORDER_ISSUED:
+    case EVENT_PLAYER_ORDER_ISSUED:
+    case EVENT_HUNT_HIT:
+    case EVENT_ORDER_HOLD_BEGIN:
+    case EVENT_ORDER_HOLD_END:
+    case EVENT_POST_MANNED:
+    case EVENT_DUTY_CHANGED:
+    case EVENT_UNIT_BECAME_IDLE:
+    case EVENT_UNIT_BECAME_ACTIVE:
+    case EVENT_UNIT_IDLE_PENDING:
+    case EVENT_REQUEST_BLOCKED:
+    case EVENT_PROVISION_CHANGED:
+    case EVENT_ENTITY_DIED:
+        out->i[0] = (uintptr_t)arg;
+        break;
+    case EVENT_SESSION_POPPED: {
+        const struct arg_desc *desc = arg;
+        out->argc = desc->argc;
+        out->argv = PF_CALLOC(desc->argc + 1, sizeof(char*));
+        for(int i = 0; out->argv && i < desc->argc; i++)
+            out->argv[i] = pf_strdup(desc->argv[i]);
+        break;
+    }
+    case EVENT_STORAGE_SITE_AMOUNT_CHANGED: {
+        const struct ss_delta_event *e = arg;
+        out->str = pf_strdup(e->name);
+        out->i[0] = e->delta;
+        break;
+    }
+    case EVENT_RESOURCES_SPILLED: {
+        const struct ss_spill_event *e = arg;
+        out->f[0] = e->x;
+        out->f[1] = e->z;
+        out->i[0] = e->faction_id;
+        out->str = pf_strdup(e->name);
+        out->i[1] = e->amount;
+        break;
+    }
+    case EVENT_PROJECTILE_HIT: {
+        const struct proj_hit *hit = arg;
+        out->i[0] = hit->ent_uid;
+        out->i[1] = hit->proj_uid;
+        out->i[2] = hit->parent_uid;
+        out->i[3] = hit->cookie;
+        out->i[4] = hit->dmg_type;
+        break;
+    }
+    case EVENT_BUILDING_PLACED:
+        out->i[0] = ((const struct entity_block_desc*)arg)->uid;
+        break;
+    default:
+        break;
+    }
 }
 
-script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
+void S_EventArgRelease(struct script_event_arg *arg)
 {
-    if(ST_OFF_SCRIPT()) {
-        struct fwd_S_WrapEngineEventArg call = {eventnum, arg};
-        S_Thread_Call(fwd_S_WrapEngineEventArg_thunk, &call);
-        return call.ret;
+    PF_FREE(arg->str);
+    if(arg->argv) {
+        for(int i = 0; i < arg->argc; i++)
+            PF_FREE(arg->argv[i]);
+        PF_FREE(arg->argv);
     }
+}
+
+void S_EventArgFree(void *arg)
+{
+    S_EventArgRelease(arg);
+    PF_FREE(arg);
+}
+
+static PyObject *entity_or_none(uint32_t uid)
+{
+    PyObject *ent = S_Entity_ObjForUID(uid);
+    if(!ent)
+        ent = Py_None;
+    Py_INCREF(ent);
+    return ent;
+}
+
+script_opaque_t S_WrapEngineEventArg(int eventnum, const struct script_event_arg *arg)
+{
+    assert(!ST_OFF_SCRIPT());
     switch(eventnum) {
     case SDL_KEYDOWN:
     case SDL_KEYUP:
-        return Py_BuildValue("(iii)", 
-            ((SDL_Event*)arg)->key.keysym.scancode, ((SDL_Event*)arg)->key.keysym.sym, ((SDL_Event*)arg)->key.keysym.mod);
+        return Py_BuildValue("(iii)", (int)arg->i[0], (int)arg->i[1], (int)arg->i[2]);
 
     case SDL_MOUSEMOTION:
-        return Py_BuildValue("(i,i), (i,i)",
-            ((SDL_Event*)arg)->motion.x,
-            ((SDL_Event*)arg)->motion.y,
-            ((SDL_Event*)arg)->motion.xrel,
-            ((SDL_Event*)arg)->motion.xrel);
+        return Py_BuildValue("(i,i), (i,i)", (int)arg->i[0], (int)arg->i[1], 
+            (int)arg->i[2], (int)arg->i[2]);
 
     case SDL_MOUSEBUTTONDOWN:
-        return Py_BuildValue("(i, i)",
-            ((SDL_Event*)arg)->button.button,
-            ((SDL_Event*)arg)->button.state);
-
     case SDL_MOUSEBUTTONUP:
-        return Py_BuildValue("(i, i)",
-            ((SDL_Event*)arg)->button.button,
-            ((SDL_Event*)arg)->button.state);
-
     case SDL_MOUSEWHEEL:
-    {
-        uint32_t dir = ((SDL_Event*)arg)->wheel.direction;
-        return Py_BuildValue("(i, i)",
-            ((SDL_Event*)arg)->wheel.x * (dir == SDL_MOUSEWHEEL_NORMAL ? 1 : -1),
-            ((SDL_Event*)arg)->wheel.y * (dir == SDL_MOUSEWHEEL_NORMAL ? 1 : -1));
-    }
+        return Py_BuildValue("(i, i)", (int)arg->i[0], (int)arg->i[1]);
+
     case EVENT_SELECTED_TILE_CHANGED:
-        if(!arg)
+        if(!arg->present)
             Py_RETURN_NONE;
-        return Py_BuildValue("(i,i), (i,i)", 
-            ((struct tile_desc*)arg)->chunk_r,
-            ((struct tile_desc*)arg)->chunk_c,
-            ((struct tile_desc*)arg)->tile_r,
-            ((struct tile_desc*)arg)->tile_c);
+        return Py_BuildValue("(i,i), (i,i)", (int)arg->i[0], (int)arg->i[1], 
+            (int)arg->i[2], (int)arg->i[3]);
 
     case EVENT_GAME_SIMSTATE_CHANGED:
-        return Py_BuildValue("(i)", (intptr_t)arg);
+        return Py_BuildValue("(i)", (int)arg->i[0]);
 
     case EVENT_SESSION_FAIL_LOAD:
-        return PyString_FromString(arg);
+    case EVENT_ENTERED_REGION:
+    case EVENT_EXITED_REGION:
+        return PyString_FromString(arg->str ? arg->str : "");
 
     case EVENT_BUILD_TARGET_ACQUIRED: 
     case EVENT_HARVEST_TARGET_ACQUIRED:
@@ -7784,52 +7895,35 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
     case EVENT_UNIT_IDLE_PENDING:
     case EVENT_REQUEST_BLOCKED:
     case EVENT_PROVISION_CHANGED:
-    case EVENT_ENTITY_DIED: {
-        PyObject *ent = S_Entity_ObjForUID((uintptr_t)arg);
-        if(ent) {
-            Py_INCREF(ent);
-            return ent;
-        }else{
-            Py_RETURN_NONE;
-        }
-    }
-    case EVENT_SESSION_POPPED:
-        return s_wrap_argv(arg);
+    case EVENT_ENTITY_DIED:
+    case EVENT_BUILDING_PLACED:
+        return entity_or_none((uint32_t)arg->i[0]);
 
-    case EVENT_STORAGE_SITE_AMOUNT_CHANGED: {
-        struct ss_delta_event *event = arg;
-        return Py_BuildValue("si", event->name, event->delta);
+    case EVENT_SESSION_POPPED: {
+        struct arg_desc desc = {0};
+        desc.argc = arg->argc;
+        for(int i = 0; i < arg->argc && i < MAX_ARGC; i++)
+            desc.argv[i] = arg->argv[i];
+        return s_wrap_argv(&desc);
     }
-    case EVENT_RESOURCES_SPILLED: {
-        struct ss_spill_event *event = arg;
-        return Py_BuildValue("(ff)isi", event->x, event->z, event->faction_id, event->name, event->amount);
-    }
+    case EVENT_STORAGE_SITE_AMOUNT_CHANGED:
+        return Py_BuildValue("si", arg->str, (int)arg->i[0]);
+
+    case EVENT_RESOURCES_SPILLED:
+        return Py_BuildValue("(ff)isi", arg->f[0], arg->f[1], (int)arg->i[0], 
+            arg->str, (int)arg->i[1]);
+
     case EVENT_CLUSTER_CHANGED:
-        return PyInt_FromLong((intptr_t)arg);
+        return PyInt_FromLong((long)arg->i[0]);
+
     case EVENT_PROJECTILE_HIT: {
-        struct proj_hit *hit = arg;
-        PyObject *ent = S_Entity_ObjForUID(hit->ent_uid);
-        if(!ent) {
-            ent = Py_None;
-        }
-        Py_INCREF(ent);
-        PyObject *parent = S_Entity_ObjForUID(hit->parent_uid);
-        if(!parent) {
-            parent = Py_None;
-        }
-        Py_INCREF(parent);
-        return Py_BuildValue("OIOII", ent, hit->proj_uid, parent, hit->cookie, hit->dmg_type);
-    }
-    case EVENT_ENTERED_REGION:
-    case EVENT_EXITED_REGION: {
-        return PyString_FromString(arg);
-    }
-    case EVENT_BUILDING_PLACED: {
-        PyObject *ent = S_Entity_ObjForUID(((struct entity_block_desc*)arg)->uid);
-        if(!ent)
-            Py_RETURN_NONE;
-        Py_INCREF(ent);
-        return ent;
+        PyObject *ent = entity_or_none((uint32_t)arg->i[0]);
+        PyObject *parent = entity_or_none((uint32_t)arg->i[2]);
+        PyObject *ret = Py_BuildValue("OIOII", ent, (unsigned)arg->i[1], parent, 
+            (unsigned)arg->i[3], (unsigned)arg->i[4]);
+        Py_DECREF(ent);
+        Py_DECREF(parent);
+        return ret;
     }
     default:
         Py_RETURN_NONE;

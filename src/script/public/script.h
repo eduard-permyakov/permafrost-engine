@@ -65,11 +65,30 @@ void            S_ShowLastError(void);
 void            S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, 
                                   void *event_arg);
 
+/* An event's argument as plain data, made where the event is dispatched, so
+ * that it outlives the pointers it was made from and can reach the script
+ * thread. A script event's argument is the script object itself. */
+struct script_event_arg{
+    int              source;
+    script_opaque_t  obj;
+    bool             present;
+    int64_t          i[5];
+    float            f[2];
+    char            *str;
+    int              argc;
+    char           **argv;
+};
+
+void            S_EventArgEncode(int event, int source, void *arg, struct script_event_arg *out);
+void            S_EventArgRelease(struct script_event_arg *arg);
+/* Releases and frees one made on the heap, for a waiting task */
+void            S_EventArgFree(void *arg);
+
 void            S_Retain(script_opaque_t obj);
 /* Decrement reference count for Python objects. 
  * No-op in the case of a NULL-pointer passed in */
 void            S_Release(script_opaque_t obj);
-script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg);
+script_opaque_t S_WrapEngineEventArg(int eventnum, const struct script_event_arg *arg);
 /* Returns 'arg' if this is not a weakref object. Otherwise, return a borrowed
  * reference extracted from the weakref. */
 script_opaque_t S_UnwrapIfWeakref(script_opaque_t arg);
@@ -125,6 +144,9 @@ script_opaque_t S_Camera_ObjFromAtts(const char *name, vec3_t pos,
 /*###########################################################################*/
 
 void            S_Task_KillAll(void);
+
+/* Measurement only: tells the Python profiler which frame stage is running */
+void S_ProfSetStage(int stage);
 
 /*###########################################################################*/
 /* SCRIPT THREAD                                                             */
