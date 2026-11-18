@@ -58,6 +58,7 @@
  * thread keeps spinning a while after each one. */
 #define SCRIPT_IDLE_SPIN_US     (50.0)
 #define CALLER_SPIN_US          (200.0)
+#define SCRIPT_STACK_SZ         (8 * 1024 * 1024)
 
 struct st_call{
     void (*fn)(void *arg);
@@ -198,7 +199,8 @@ bool S_Thread_Start(void)
     if(!s_main.parker.sem || !s_script.parker.sem)
         goto fail;
 
-    s_thread = SDL_CreateThread(script_threadfn, "script", NULL);
+    /* Python handlers run on this thread's own stack, not on a fiber's */
+    s_thread = SDL_CreateThreadWithStackSize(script_threadfn, "script", SCRIPT_STACK_SZ, NULL);
     if(!s_thread)
         goto fail;
 
