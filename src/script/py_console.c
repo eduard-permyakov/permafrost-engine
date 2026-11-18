@@ -390,13 +390,16 @@ static void do_interactive_one(const char *str)
 
 static void on_update(void *user, void *event)
 {
+    /* It is shown and hidden only while the main thread waits on the script
+     * thread, so the main thread may read the flag between its calls
+     */
+    if(!s_shown)
+        return;
     /* Runs Python: on the script thread */
     if(ST_OFF_SCRIPT()) {
         S_Thread_CallHandler(on_update, user, event);
         return;
     }
-    if(!s_shown)
-        return;
 
     static nk_uint x_offset = 0;
     static nk_uint y_offset = 0;

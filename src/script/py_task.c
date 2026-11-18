@@ -1439,24 +1439,6 @@ static PyObject *PyTask_get_completed(PyTaskObject *self, void *closure)
     }
 }
 
-static void on_update_start(void *user, void *event)
-{
-    /* Runs Python: on the script thread */
-    if(ST_OFF_SCRIPT()) {
-        S_Thread_CallHandler(on_update_start, user, event);
-        return;
-    }
-    uint32_t elapsed = Perf_LastFrameMS();
-    PyTaskObject *curr;
-    uint32_t key;
-    (void)key;
-
-    kh_foreach(s_tid_task_map, key, curr, {
-        if(curr->req.type == PYREQ_SLEEP)
-            curr->sleep_elapsed += elapsed;
-    });
-}
-
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1474,7 +1456,6 @@ bool S_Task_Init(void)
     s_tid_task_map = kh_init(task);
     if(!s_tid_task_map)
         return false;
-    E_Global_Register(EVENT_UPDATE_START, on_update_start, NULL, G_RUNNING);
     return true;
 }
 
@@ -1482,7 +1463,22 @@ void S_Task_Shutdown(void)
 {
     kh_destroy(task, s_tid_task_map);
     s_tid_task_map = NULL;
-    E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
+}
+
+void S_Task_FrameStart(void)
+{
+    assert(!ST_OFF_SCRIPT());
+    if(!s_tid_task_map)
+        return;
+    uint32_t elapsed = Perf_LastFrameMS();
+    PyTaskObject *curr;
+    uint32_t key;
+    (void)key;
+
+    kh_foreach(s_tid_task_map, key, curr, {
+        if(curr->req.type == PYREQ_SLEEP)
+            curr->sleep_elapsed += elapsed;
+    });
 }
 
 /* Unwind every blocked task by injecting SystemExit into its thread state and

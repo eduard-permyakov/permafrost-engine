@@ -131,6 +131,7 @@ uint64_t        S_Entity_TypeID(script_opaque_t obj);
 /*###########################################################################*/
 
 void            S_Region_NotifyContentsChanged(const char *name);
+void            S_Region_NotifyContentsChangedAll(const char **names, size_t nnames);
 script_opaque_t S_Region_ObjFromAtts(const char *name, int type, vec2_t pos, 
                                      float radius, float xlen, float zlen);
 

@@ -646,7 +646,8 @@ static void region_notify_exited(const char *name, uint32_t uid)
     E_Global_Notify(EVENT_EXITED_REGION, (void*)arg, ES_ENGINE);
 }
 
-static void region_notify_changed(const char *name, struct region *reg)
+/* Returns whether an entity entered or left the region */
+static bool region_notify_changed(const char *name, struct region *reg)
 {
     size_t nchanged = 0;
 
@@ -667,14 +668,12 @@ static void region_notify_changed(const char *name, struct region *reg)
         nchanged++;
     });
 
-    if(nchanged) {
-        S_Region_NotifyContentsChanged(name);
-    }
 
     kh_clear(uid, reg->prev_ents);
     kh_foreach_key(reg->curr_ents, uid, {
         kh_put(uid, reg->prev_ents, uid, &(int){0});
     });
+    return (nchanged > 0);
 }
 
 /* One ring under every unit the region is reaching, so the extent of a bonus
@@ -1149,6 +1148,9 @@ void G_Region_Update(void)
     vec_str_reset(&s_eventargs);
     regions_update_followers();
 
+    vec_str_t changed;
+    vec_str_init(&changed);
+
     for(khiter_t k = kh_begin(s_dirty); k != kh_end(s_dirty); k++) {
         if(!kh_exist(s_dirty, k))
             continue;
@@ -1158,9 +1160,20 @@ void G_Region_Update(void)
         assert(l != kh_end(s_regions));
 
         struct region *reg = &kh_value(s_regions, l);
-        region_notify_changed(key, reg);
+        if(region_notify_changed(key, reg)) {
+            /* A script may remove the region as it is told: the name is kept apart */
+            const char *arg = pf_strdup(key);
+            vec_str_push(&s_eventargs, arg);
+            vec_str_push(&changed, arg);
+        }
     }
     kh_clear(name, s_dirty);
+
+    /* The scripts are told of all the frame's changes in one go */
+    if(vec_size(&changed) > 0) {
+        S_Region_NotifyContentsChangedAll(changed.array, vec_size(&changed));
+    }
+    vec_str_destroy(&changed);
     PERF_RETURN_VOID();
 }
    

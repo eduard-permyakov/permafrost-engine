@@ -769,6 +769,29 @@ void S_Region_NotifyContentsChanged(const char *name)
     Py_XDECREF(ret);
 }
 
+struct fwd_S_Region_NotifyContentsChangedAll{
+    const char **names;
+    size_t       nnames;
+};
+
+static void fwd_S_Region_NotifyContentsChangedAll_thunk(void *arg)
+{
+    struct fwd_S_Region_NotifyContentsChangedAll *a = arg;
+    S_Region_NotifyContentsChangedAll(a->names, a->nnames);
+}
+
+void S_Region_NotifyContentsChangedAll(const char **names, size_t nnames)
+{
+    if(ST_OFF_SCRIPT()) {
+        struct fwd_S_Region_NotifyContentsChangedAll call = {names, nnames};
+        S_Thread_Call(fwd_S_Region_NotifyContentsChangedAll_thunk, &call);
+        return;
+    }
+    for(size_t i = 0; i < nnames; i++) {
+        S_Region_NotifyContentsChanged(names[i]);
+    }
+}
+
 PyObject *S_Region_GetLoaded(void)
 {
     PyObject *ret = s_loaded;
