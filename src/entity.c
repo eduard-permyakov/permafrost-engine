@@ -996,10 +996,7 @@ void Entity_CurrentOBBFrom(const struct aabb *aabb, mat4x4_t model, vec3_t scale
 
 uint64_t Entity_TypeID(uint32_t uid)
 {
-    script_opaque_t obj;
-    if((obj = S_Entity_ObjForUID(uid)) == NULL)
-        return 0;
-    return S_Entity_TypeID(obj);
+    return S_ScriptTypeID(uid);
 }
 
 bool Entity_SetIcons(uint32_t uid, size_t nicons, const char **icons)

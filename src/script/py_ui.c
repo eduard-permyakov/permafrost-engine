@@ -45,6 +45,7 @@
 #include "py_console.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/vec.h"
+#include "../lib/public/lockfree.h"
 #include "../mem.h"
 #include "../perf.h"
 #include "../lib/public/SDL_vec_rwops.h"
@@ -159,6 +160,7 @@ static PyObject *PyWindow_on_maximize(PyWindowObject *self);
 static PyObject *PyWindow_pickle(PyWindowObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyWindow_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 static PyObject *PyWindow_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
+static void      hit_state_publish(void);
 static void      PyWindow_dealloc(PyWindowObject *self);
 
 static PyObject *PyWindow_get_header(PyWindowObject *self, void *closure);
@@ -248,6 +250,31 @@ struct nk_button_userdata{
 
 static struct nk_context *s_nk_ctx;
 static vec_win_t          s_active_windows;
+
+/* What the engine's input handlers ask of the windows: where they are, and
+ * whether one is taking text. The script thread publishes it whenever the
+ * windows change, under a sequence lock, and the main thread reads it
+ * without calling into Python.
+ */
+#define MAX_HIT_WINDOWS (256)
+
+struct hit_window{
+    struct rect bounds;     /* in the window's aspect-adjusted virtual pixels */
+    vec2_t      vres;
+    float       visible_h;  /* only the header shows while minimized */
+    int         flags;
+};
+
+struct hit_state{
+    int               nwins;
+    struct hit_window wins[MAX_HIT_WINDOWS];
+    bool              edit_focus;
+    bool              console_shown;
+    struct nk_rect    console_bounds;
+};
+
+static int                s_hit_seq;    /* atomic: odd while the state is written */
+static struct hit_state   s_hit;
 
 static PyMethodDef PyWindow_methods[] = {
     {"layout_row_static", 
@@ -2043,6 +2070,7 @@ static PyObject *PyWindow_show(PyWindowObject *self)
     self->flags &= ~(NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED);
     nk_window_show(s_nk_ctx, self->name, NK_SHOWN);
     self->hide = false;
+    hit_state_publish();
     Py_RETURN_NONE;
 }
 
@@ -2251,6 +2279,7 @@ static PyObject *PyWindow_new(PyTypeObject *type, PyObject *args, PyObject *kwds
     ((PyWindowObject*)self)->suspend_on_pause = false;
     ((PyWindowObject*)self)->hide = false;
     vec_win_push(&s_active_windows, (PyWindowObject*)self);
+    hit_state_publish();
     return self;
 }
 
@@ -2260,6 +2289,7 @@ static void PyWindow_dealloc(PyWindowObject *self)
 
     int idx = vec_win_indexof(&s_active_windows, self, equal);
     vec_win_del(&s_active_windows, idx);
+    hit_state_publish();
 
     nk_window_close(s_nk_ctx, self->name);
     Py_TYPE(self)->tp_free((PyObject*)self);
@@ -2285,6 +2315,7 @@ static int PyWindow_set_pos(PyWindowObject *self, PyObject *value, void *closure
     }
     self->rect.x = x;
     self->rect.y = y;
+    hit_state_publish();
     return 0;
 }
 
@@ -2302,6 +2333,7 @@ static int PyWindow_set_size(PyWindowObject *self, PyObject *value, void *closur
     }
     self->rect.w = w;
     self->rect.h = h;
+    hit_state_publish();
     return 0;
 }
 
@@ -2927,6 +2959,76 @@ static void call_registered_arg(PyObject *obj, char *method_name, PyObject *arg)
     Py_XDECREF(ret);
 }
 
+static bool edit_focused(void)
+{
+    struct nk_window *console = nk_window_find(s_nk_ctx, "Console");
+    if(console && (console->edit.active == nk_true))
+        return true;
+
+    for(int i = 0; i < vec_size(&s_active_windows); i++) {
+
+        PyWindowObject *win = vec_AT(&s_active_windows, i);
+        if(win->flags & (NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED))
+            continue;
+
+        struct nk_window *nkwin = nk_window_find(s_nk_ctx, win->name);
+        if(nkwin && nkwin->edit.active == nk_true)
+            return true;
+    }
+    return false;
+}
+
+static void hit_state_publish(void)
+{
+    int seq = LF_LOAD(&s_hit_seq, LF_RLX);
+    LF_STORE(&s_hit_seq, seq + 1, LF_RLX);
+    LF_FENCE(LF_REL);
+
+    int n = 0;
+    for(int i = 0; i < vec_size(&s_active_windows) && n < MAX_HIT_WINDOWS; i++) {
+
+        PyWindowObject *win = vec_AT(&s_active_windows, i);
+        if(win->flags & (NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED))
+            continue;
+
+        vec2_t vres = UI_ArAdjustedVRes(TO_VEC2T(win->virt_res));
+        struct rect bounds = UI_BoundsForAspectRatio(win->rect, TO_VEC2T(win->virt_res),
+            vres, win->resize_mask);
+        float visible_h = bounds.h;
+
+        struct nk_window *nkwin = nk_window_find(s_nk_ctx, win->name);
+        if(nkwin && nkwin->flags & NK_WINDOW_MINIMIZED)
+            visible_h = S_UIHeaderGetHeight(win->header_style, s_nk_ctx);
+
+        s_hit.wins[n++] = (struct hit_window){bounds, vres, visible_h, win->flags};
+    }
+    s_hit.nwins = n;
+    s_hit.edit_focus = edit_focused();
+    s_hit.console_shown = S_Console_Bounds(&s_hit.console_bounds);
+
+    LF_STORE(&s_hit_seq, seq + 2, LF_REL);
+}
+
+void S_UI_PublishHitState(void)
+{
+    hit_state_publish();
+}
+
+static void hit_state_read(struct hit_state *out)
+{
+    for(;;) {
+        int seq = LF_LOAD(&s_hit_seq, LF_ACQ);
+        if(seq & 1) {
+            lf_relax();
+            continue;
+        }
+        memcpy(out, &s_hit, sizeof(*out));
+        LF_FENCE(LF_ACQ);
+        if(LF_LOAD(&s_hit_seq, LF_RLX) == seq)
+            return;
+    }
+}
+
 static void active_windows_update(void *user, void *event)
 {
     /* Runs Python: on the script thread */
@@ -3031,6 +3133,7 @@ static void active_windows_update(void *user, void *event)
             win->hide = false;
         }
     }
+    hit_state_publish();
 }
 
 /*****************************************************************************/
@@ -3065,92 +3168,56 @@ void S_UI_PyRegister(PyObject *module)
     S_UI_Style_PyRegister(module, s_nk_ctx);
 }
 
-struct fwd_S_UI_MouseOverObscuringWindow{
-    int mouse_x;
-    int mouse_y;
-    bool ret;
-};
-
-static void fwd_S_UI_MouseOverObscuringWindow_thunk(void *arg)
-{
-    struct fwd_S_UI_MouseOverObscuringWindow *a = arg;
-    a->ret = S_UI_MouseOverObscuringWindow(a->mouse_x, a->mouse_y);
-}
-
+/* The three are asked by the engine's input handlers on the main thread, of
+ * the windows as the script thread last published them */
 bool S_UI_MouseOverObscuringWindow(int mouse_x, int mouse_y)
 {
-    if(ST_OFF_SCRIPT()) {
-        struct fwd_S_UI_MouseOverObscuringWindow call = {mouse_x, mouse_y};
-        S_Thread_Call(fwd_S_UI_MouseOverObscuringWindow_thunk, &call);
-        return call.ret;
-    }
+    struct hit_state hit;
+    hit_state_read(&hit);
+
     int w, h;
     Engine_WinDrawableSize(&w, &h);
+    bool over_minimap = G_MouseOverMinimap();
 
-    for(int i = 0; i < vec_size(&s_active_windows); i++) {
+    for(int i = 0; i < hit.nwins; i++) {
 
-        PyWindowObject *win = vec_AT(&s_active_windows, i);
-        struct rect adj_bounds = UI_BoundsForAspectRatio(win->rect, TO_VEC2T(win->virt_res),
-            UI_ArAdjustedVRes(TO_VEC2T(win->virt_res)), win->resize_mask);
-        struct nk_vec2 visible_size = {adj_bounds.w, adj_bounds.h};
-
-        if(win->flags & NK_WINDOW_HIDDEN
-        || win->flags & NK_WINDOW_CLOSED) {
-            continue; 
-        }
+        const struct hit_window *win = &hit.wins[i];
 
         /* A panel behind the other windows is still UI, less the minimap showing through it */
         if((win->flags & NK_WINDOW_BACKGROUND)
-        && ((win->flags & NK_WINDOW_NO_INPUT) || G_MouseOverMinimap())) {
+        && ((win->flags & NK_WINDOW_NO_INPUT) || over_minimap)) {
             continue;
         }
 
-        int vmouse_x = (float)mouse_x / w * UI_ArAdjustedVRes(TO_VEC2T(win->virt_res)).x;
-        int vmouse_y = (float)mouse_y / h * UI_ArAdjustedVRes(TO_VEC2T(win->virt_res)).y;
-
-        /* For minimized windows, only the header is visible */
-        struct nk_window *nkwin = nk_window_find(s_nk_ctx, win->name);
-        if(nkwin && nkwin->flags & NK_WINDOW_MINIMIZED) {
-        
-            float header_height = S_UIHeaderGetHeight(win->header_style, s_nk_ctx);
-            visible_size.y = header_height;
-        }
+        int vmouse_x = (float)mouse_x / w * win->vres.x;
+        int vmouse_y = (float)mouse_y / h * win->vres.y;
+        struct rect b = win->bounds;
 
         if(C_PointInsideRect2D(
-            (vec2_t){vmouse_x,                      vmouse_y},
-            (vec2_t){adj_bounds.x,                  adj_bounds.y},
-            (vec2_t){adj_bounds.x + visible_size.x, adj_bounds.y},
-            (vec2_t){adj_bounds.x + visible_size.x, adj_bounds.y + visible_size.y},
-            (vec2_t){adj_bounds.x,                  adj_bounds.y + visible_size.y}))
+            (vec2_t){vmouse_x,      vmouse_y},
+            (vec2_t){b.x,           b.y},
+            (vec2_t){b.x + b.w,     b.y},
+            (vec2_t){b.x + b.w,     b.y + win->visible_h},
+            (vec2_t){b.x,           b.y + win->visible_h}))
             return true;
     }
 
-    /* The console is a C-side window, not tracked in s_active_windows. */
-    if(S_Console_MouseOver(mouse_x, mouse_y))
-        return true;
-
+    /* The console is a C-side window, not tracked in s_active_windows. It is
+     * built at a fixed virtual resolution. */
+    if(hit.console_shown) {
+        const vec2_t adj_vres = UI_ArAdjustedVRes((vec2_t){1920, 1080});
+        float vmouse_x = (float)mouse_x / w * adj_vres.x;
+        float vmouse_y = (float)mouse_y / h * adj_vres.y;
+        struct nk_rect b = hit.console_bounds;
+        if((vmouse_x >= b.x && vmouse_x <= b.x + b.w)
+        && (vmouse_y >= b.y && vmouse_y <= b.y + b.h))
+            return true;
+    }
     return false;
-}
-
-struct fwd_S_UI_MouseOverWindow{
-    int mouse_x;
-    int mouse_y;
-    bool ret;
-};
-
-static void fwd_S_UI_MouseOverWindow_thunk(void *arg)
-{
-    struct fwd_S_UI_MouseOverWindow *a = arg;
-    a->ret = S_UI_MouseOverWindow(a->mouse_x, a->mouse_y);
 }
 
 bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
 {
-    if(ST_OFF_SCRIPT()) {
-        struct fwd_S_UI_MouseOverWindow call = {mouse_x, mouse_y};
-        S_Thread_Call(fwd_S_UI_MouseOverWindow_thunk, &call);
-        return call.ret;
-    }
     if(S_UI_MouseOverObscuringWindow(mouse_x, mouse_y))
         return true;
 
@@ -3160,46 +3227,11 @@ bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
     return false;
 }
 
-struct fwd_S_UI_TextEditHasFocus{
-    int unused;
-    bool ret;
-};
-
-static void fwd_S_UI_TextEditHasFocus_thunk(void *arg)
-{
-    struct fwd_S_UI_TextEditHasFocus *a = arg;
-    a->ret = S_UI_TextEditHasFocus();
-}
-
 bool S_UI_TextEditHasFocus(void)
 {
-    if(ST_OFF_SCRIPT()) {
-        struct fwd_S_UI_TextEditHasFocus call = {0};
-        S_Thread_Call(fwd_S_UI_TextEditHasFocus_thunk, &call);
-        return call.ret;
-    }
-    struct nk_window *console = nk_window_find(s_nk_ctx, "Console");
-    if(console && (console->edit.active == nk_true))
-        return true;
-
-    for(int i = 0; i < vec_size(&s_active_windows); i++) {
-
-        PyWindowObject *win = vec_AT(&s_active_windows, i);
-
-        if(win->flags & NK_WINDOW_HIDDEN
-        || win->flags & NK_WINDOW_CLOSED) {
-            continue; 
-        }
-
-        struct nk_window *nkwin = nk_window_find(s_nk_ctx, win->name);
-        if(!nkwin)
-            continue;
-
-        if(nkwin->edit.active == nk_true)
-            return true;
-    }
-
-    return false;
+    struct hit_state hit;
+    hit_state_read(&hit);
+    return hit.edit_focus;
 }
 
 PyObject *S_UI_ActiveWindow(void)

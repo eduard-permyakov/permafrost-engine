@@ -49,5 +49,9 @@ void      S_UI_PyRegister(PyObject *module);
 int       S_UI_ParseNinePatch(PyObject *tuple, struct nk_nine_slice_texpath *out);
 PyObject *S_UI_ActiveWindow(void);
 
+/* Publishes where the windows are for the engine's input handlers; done
+ * whenever they change */
+void S_UI_PublishHitState(void);
+
 #endif
 

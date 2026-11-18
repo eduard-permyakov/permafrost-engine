@@ -70,6 +70,15 @@
 
 KHASH_MAP_INIT_INT(PyObject, PyObject*)
 
+/* What the engine asks about an entity's script class. It holds no Python
+ * objects, so the main thread reads it without calling into Python. */
+struct script_info{
+    uint64_t type_id;
+    int      formation_priority;
+};
+
+KHASH_MAP_INIT_INT(sinfo, struct script_info)
+
 /*****************************************************************************/
 /* pf.Entity                                                                 */
 /*****************************************************************************/
@@ -1916,6 +1925,7 @@ static PyTypeObject PyPopulationLimitContributorEntity_type = {
 /*****************************************************************************/
 
 static khash_t(PyObject) *s_uid_pyobj_table;
+static khash_t(sinfo)    *s_script_info;
 static PyObject          *s_loaded;
 
 /*****************************************************************************/
@@ -1979,6 +1989,18 @@ static PyObject *s_super_del(PyObject *self, PyTypeObject *type)
 static PyObject *PyEntity_del(PyEntityObject *self)
 {
     return s_super_del((PyObject*)self, &PyEntity_type);
+}
+
+static int class_formation_priority(PyTypeObject *type)
+{
+    PyObject *attr = PyObject_GetAttrString((PyObject*)type, "formation_priority");
+    if(!attr) {
+        PyErr_Clear();
+        return 0;
+    }
+    int ret = PyInt_Check(attr) ? PyInt_AS_LONG(attr) : 0;
+    Py_DECREF(attr);
+    return ret;
 }
 
 static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
@@ -2106,6 +2128,14 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
     assert(ret != -1 && ret != 0);
     kh_value(s_uid_pyobj_table, k) = (PyObject*)self;
 
+    k = kh_put(sinfo, s_script_info, uid, &ret);
+    if(ret != -1) {
+        kh_value(s_script_info, k) = (struct script_info){
+            .type_id = (uintptr_t)type,
+            .formation_priority = class_formation_priority(type)
+        };
+    }
+
     return (PyObject*)self;
 }
 
@@ -2114,6 +2144,10 @@ static void PyEntity_dealloc(PyEntityObject *self)
     khiter_t k = kh_get(PyObject, s_uid_pyobj_table, self->ent);
     assert(k != kh_end(s_uid_pyobj_table));
     kh_del(PyObject, s_uid_pyobj_table, k);
+
+    k = kh_get(sinfo, s_script_info, self->ent);
+    if(k != kh_end(s_script_info))
+        kh_del(sinfo, s_script_info, k);
 
     /* Fully remove the entity from the simulation at the end of the frame 
      * instead of immediately. This approach guarantees that an entity will 
@@ -7090,6 +7124,12 @@ bool S_Entity_Init(void)
         Py_DECREF(s_loaded);
         return false;
     }
+
+    if(!s_script_info && !(s_script_info = kh_init(sinfo))) {
+        kh_destroy(PyObject, s_uid_pyobj_table);
+        Py_DECREF(s_loaded);
+        return false;
+    }
     return true;
 }
 
@@ -7101,6 +7141,20 @@ void S_Entity_Clear(void)
 void S_Entity_Shutdown(void)
 {
     kh_destroy(PyObject, s_uid_pyobj_table);
+    kh_destroy(sinfo, s_script_info);
+    s_script_info = NULL;
+}
+
+bool S_Entity_ScriptInfo(uint32_t uid, uint64_t *out_type_id, int *out_formation_priority)
+{
+    if(!s_script_info)
+        return false;
+    khiter_t k = kh_get(sinfo, s_script_info, uid);
+    if(k == kh_end(s_script_info))
+        return false;
+    *out_type_id = kh_value(s_script_info, k).type_id;
+    *out_formation_priority = kh_value(s_script_info, k).formation_priority;
+    return true;
 }
 
 bool S_Entity_Check(PyObject *obj)

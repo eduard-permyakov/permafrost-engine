@@ -48,5 +48,8 @@ bool      S_Entity_Check(PyObject *obj);
 /* Returned list has a stolen reference to each object */
 PyObject *S_Entity_GetLoaded(void);
 
+/* The class an entity's object had when created, without calling into Python */
+bool      S_Entity_ScriptInfo(uint32_t uid, uint64_t *out_type_id, int *out_formation_priority);
+
 #endif
 

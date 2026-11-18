@@ -38,11 +38,13 @@
 
 #include <stdbool.h>
 
+struct nk_rect;
+
 bool S_Console_Init(void);
 void S_Console_Shutdown(void);
 void S_Console_Show(void);
 void S_Console_ToggleShown(void);
-bool S_Console_MouseOver(int mouse_x, int mouse_y);
+bool S_Console_Bounds(struct nk_rect *out);
 
 #endif
 

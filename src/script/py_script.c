@@ -8166,68 +8166,23 @@ void S_ShowLastError(void)
     }
 }
 
-struct fwd_S_ScriptTypeID{
-    uint32_t uid;
-    uint64_t ret;
-};
-
-static void fwd_S_ScriptTypeID_thunk(void *arg)
-{
-    struct fwd_S_ScriptTypeID *a = arg;
-    a->ret = S_ScriptTypeID(a->uid);
-}
-
+/* Both read what the entity's object was created with, so the main thread
+ * asks without calling into Python */
 uint64_t S_ScriptTypeID(uint32_t uid)
 {
-    if(ST_OFF_SCRIPT()) {
-        struct fwd_S_ScriptTypeID call = {uid};
-        S_Thread_Call(fwd_S_ScriptTypeID_thunk, &call);
-        return call.ret;
-    }
-    PyObject *ent = S_Entity_ObjForUID(uid);
-    if(!ent)
+    uint64_t type_id;
+    int priority;
+    if(!S_Entity_ScriptInfo(uid, &type_id, &priority))
         return 0;
-
-    uint64_t ret = (uintptr_t)(Py_TYPE(ent));
-    return ret;
-}
-
-struct fwd_S_FormationPriority{
-    uint32_t uid;
-    int ret;
-};
-
-static void fwd_S_FormationPriority_thunk(void *arg)
-{
-    struct fwd_S_FormationPriority *a = arg;
-    a->ret = S_FormationPriority(a->uid);
+    return type_id;
 }
 
 int S_FormationPriority(uint32_t uid)
 {
-    if(ST_OFF_SCRIPT()) {
-        struct fwd_S_FormationPriority call = {uid};
-        S_Thread_Call(fwd_S_FormationPriority_thunk, &call);
-        return call.ret;
-    }
-    PyObject *ent = S_Entity_ObjForUID(uid);
-    if(!ent)
+    uint64_t type_id;
+    int priority;
+    if(!S_Entity_ScriptInfo(uid, &type_id, &priority))
         return 0;
-
-    PyTypeObject *type = ent->ob_type;
-    PyObject *attr = PyObject_GetAttrString((PyObject*)type, "formation_priority");
-    if(!attr) {
-        PyErr_Clear();
-        return 0;
-    }
-
-    if(!PyInt_Check(attr)) {
-        Py_DECREF(attr);
-        return 0;
-    }
-
-    int ret = PyInt_AS_LONG(attr);
-    Py_DECREF(attr);
-    return ret;
+    return priority;
 }
 
