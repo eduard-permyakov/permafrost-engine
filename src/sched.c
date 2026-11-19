@@ -2135,15 +2135,9 @@ bool Sched_Init(void)
 
     s_worker_spin_ticks = ticks_for_us(WORKER_SPIN_US);
     s_batch_spin_ticks = ticks_for_us(BATCH_SPIN_US);
-    const char *spin_env = getenv("PF_SCHED_SPIN_US");
-    if(spin_env)
-        s_worker_spin_ticks = ticks_for_us(atof(spin_env));
 
     /* On a single-core system, all the tasks will just be run on the main thread */
     s_nworkers = SDL_GetCPUCount() - 1;
-    const char *nworkers_env = getenv("PF_SCHED_WORKERS");
-    if(nworkers_env && atoi(nworkers_env) >= 0)
-        s_nworkers = atoi(nworkers_env);
     if(s_nworkers > MAX_WORKER_THREADS)
         s_nworkers = MAX_WORKER_THREADS;
     SchedStats_Init(s_nworkers + 1);

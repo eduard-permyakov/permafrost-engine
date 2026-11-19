@@ -34,6 +34,8 @@
  */
 
 #include "sched_stats.h"
+#include "settings.h"
+#include "lib/public/pf_string.h"
 
 #include <SDL.h>
 
@@ -126,9 +128,10 @@ static uint64_t             s_last_dump_tsc;
 static uint64_t             s_frames;
 static bool                 s_header_printed;
 
-/* PF_SCHED_TRACE=path records every state change in [PF_SCHED_TRACE_FROM_S,
- * + PF_SCHED_TRACE_LEN_S) and writes it at shutdown */
-static const char          *s_trace_path;
+/* pf.debug.sched_trace_file records every state change in [pf.debug.sched_trace_from_s,
+ * + pf.debug.sched_trace_len_s) and writes it at shutdown
+ */
+static char                 s_trace_path[SETT_NAME_LEN];
 static uint64_t             s_trace_from;
 static uint64_t             s_trace_to;
 
@@ -152,6 +155,76 @@ static uint64_t             s_serial_samples[TASK_TABLE_SZ];
 /*****************************************************************************/
 
 static const char *code_name(void *code);
+
+static bool bool_val_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_BOOL);
+}
+
+static bool string_val_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_STRING);
+}
+
+static bool seconds_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_FLOAT && new_val->as_float >= 0.0f);
+}
+
+/* Read once, when the scheduler starts */
+static void create_settings(void)
+{
+    ss_e status;
+    (void)status;
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.log_sched_stats",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.sched_trace_file",
+        .val = (struct sval) {
+            .type = ST_TYPE_STRING,
+            .as_string = ""
+        },
+        .prio = 0,
+        .validate = string_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.sched_trace_from_s",
+        .val = (struct sval) {
+            .type = ST_TYPE_FLOAT,
+            .as_float = 60.0f
+        },
+        .prio = 0,
+        .validate = seconds_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.sched_trace_len_s",
+        .val = (struct sval) {
+            .type = ST_TYPE_FLOAT,
+            .as_float = 0.5f
+        },
+        .prio = 0,
+        .validate = seconds_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+}
 
 /* Never inlined, so that the thread-local address is not computed once and
  * carried across a fiber's context switch onto another thread.
@@ -454,8 +527,11 @@ static void dump_tables(double t_s)
 
 bool SchedStats_Init(int nthreads)
 {
-    const char *env = getenv("PF_SCHED_STATS");
-    g_sched_stats_on = env && atoi(env);
+    create_settings();
+
+    struct sval val;
+    Settings_Get("pf.debug.log_sched_stats", &val);
+    g_sched_stats_on = val.as_bool;
     if(!g_sched_stats_on)
         return true;
 
@@ -480,12 +556,13 @@ bool SchedStats_Init(int nthreads)
         s_threads[i].state = SS_OUTSIDE;
     }
 
-    s_trace_path = getenv("PF_SCHED_TRACE");
-    if(s_trace_path) {
-        const char *from = getenv("PF_SCHED_TRACE_FROM_S");
-        const char *len = getenv("PF_SCHED_TRACE_LEN_S");
-        double from_s = from ? atof(from) : 60.0;
-        double len_s = len ? atof(len) : 0.5;
+    Settings_Get("pf.debug.sched_trace_file", &val);
+    pf_strlcpy(s_trace_path, val.as_string, sizeof(s_trace_path));
+    if(s_trace_path[0]) {
+        Settings_Get("pf.debug.sched_trace_from_s", &val);
+        double from_s = val.as_float;
+        Settings_Get("pf.debug.sched_trace_len_s", &val);
+        double len_s = val.as_float;
         s_trace_from = tsc1 + (uint64_t)(from_s * 1e6 * s_ticks_per_us);
         s_trace_to = s_trace_from + (uint64_t)(len_s * 1e6 * s_ticks_per_us);
         for(int i = 0; i < s_nthreads; i++)
@@ -504,7 +581,7 @@ void SchedStats_Shutdown(void)
     if(s_sampler)
         SDL_WaitThread(s_sampler, NULL);
     dump_tables((__rdtsc() - s_start_tsc) / s_ticks_per_us / 1e6);
-    if(s_trace_path)
+    if(s_trace_path[0])
         trace_write();
     fflush(stdout);
 }
