@@ -189,6 +189,9 @@ static void view_fill(struct script_view *view)
     kh_foreach(view->flags, uid, flags, {
         if(!(flags & (ENTITY_FLAG_HARVESTER | ENTITY_FLAG_GARRISONABLE | ENTITY_FLAG_BUILDING)))
             continue;
+        /* The flags table keeps the flags of removed entities */
+        if(!G_EntityExists(uid))
+            continue;
         int ret;
         khiter_t k = kh_put(vunit, view->units, uid, &ret);
         if(ret == -1)
