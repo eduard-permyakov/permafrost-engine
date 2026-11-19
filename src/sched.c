@@ -2432,7 +2432,8 @@ static void script_tick(void *arg)
 
     E_ServiceScriptEvents();
     if(tick->realtime) {
-        S_FrameUpkeep();
+        if(E_TakeFrameUpkeep())
+            S_FrameUpkeep();
         S_View_PollRefresh();
     }
     /* The tasks keep their least share of the frame, whatever the handlers

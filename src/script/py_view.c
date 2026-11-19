@@ -170,6 +170,9 @@ static const char *s_allowed[] = {
  */
 static const char *s_deferred[] = {
     "pf.AnimEntity.play_anim",
+    "pf.Entity.set_icons",
+    "pf.Entity.clear_icons",
+    "pf.Entity.face_towards",
     "pf.play_effect",
     "pf.play_global_effect",
     NULL
@@ -668,6 +671,10 @@ void S_View_Shutdown(void)
     }
     vec_poll_reset(&s_polls);
     vec_vuid_reset(&s_poll_free);
+    for(int i = 0; i < vec_size(&s_cmds); i++) {
+        void *heap = vec_AT(&s_cmds, i).heap;
+        PF_FREE(heap);
+    }
     vec_vcmd_reset(&s_cmds);
     Py_CLEAR(s_poll_index);
     s_poll_learning = false;
@@ -691,6 +698,8 @@ void S_View_ApplyCommands(void)
     for(int i = 0; i < vec_size(&s_cmds); i++) {
         const struct view_cmd *cmd = &vec_AT(&s_cmds, i);
         cmd->apply(cmd);
+        void *heap = cmd->heap;
+        PF_FREE(heap);
     }
     vec_vcmd_reset(&s_cmds);
 }

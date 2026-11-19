@@ -2559,6 +2559,36 @@ static PyObject *PyEntity_stop(PyEntityObject *self)
     Py_RETURN_NONE;
 }
 
+/* Icons a view slice set over a unit: the paths one after another, each ended
+ * by a zero
+ */
+static void apply_set_icons(const struct view_cmd *cmd)
+{
+    if(!G_EntityExists(cmd->uid) || G_EntityIsZombie(cmd->uid))
+        return;
+    const char *strings[16] = {0};
+    const char *curr = cmd->heap;
+    for(int i = 0; i < cmd->i[0]; i++) {
+        strings[i] = curr;
+        curr += strlen(curr) + 1;
+    }
+    Entity_SetIcons(cmd->uid, cmd->i[0], strings);
+}
+
+static void apply_clear_icons(const struct view_cmd *cmd)
+{
+    if(!G_EntityExists(cmd->uid) || G_EntityIsZombie(cmd->uid))
+        return;
+    Entity_ClearIcons(cmd->uid);
+}
+
+static void apply_face_towards(const struct view_cmd *cmd)
+{
+    if(!G_EntityExists(cmd->uid) || G_EntityIsZombie(cmd->uid))
+        return;
+    Entity_FaceTowards(cmd->uid, (vec2_t){cmd->f[0], cmd->f[1]});
+}
+
 static PyObject *PyEntity_face_towards(PyEntityObject *self, PyObject *args)
 {
     vec3_t pos;
@@ -2567,6 +2597,9 @@ static PyObject *PyEntity_face_towards(PyEntityObject *self, PyObject *args)
         return NULL;
     }
 
+    struct view_cmd cmd = {.apply = apply_face_towards, .uid = self->ent, .f = {pos.x, pos.z}};
+    if(S_View_Defer(&cmd))
+        Py_RETURN_NONE;
     Entity_FaceTowards(self->ent, (vec2_t){pos.x, pos.z});
     Py_RETURN_NONE;
 }
@@ -2843,7 +2876,11 @@ static PyObject *PyEntity_get_cluster_type(PyEntityObject *self, void *closure)
 
 static PyObject *PyEntity_set_icons(PyEntityObject *self, PyObject *value)
 {
-    if(G_FlagsGet(self->ent) & ENTITY_FLAG_ZOMBIE) {
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    uint32_t flags = view ? G_ScriptView_Flags(view, self->ent) : G_FlagsGet(self->ent);
+    if(flags & ENTITY_FLAG_ZOMBIE) {
         PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
         return NULL;
     }
@@ -2863,6 +2900,27 @@ static PyObject *PyEntity_set_icons(PyEntityObject *self, PyObject *value)
         strings[i] = PyString_AS_STRING(strobj);
     }
 
+    if(view) {
+        size_t len = 0;
+        for(int i = 0; i < nicons; i++)
+            len += strlen(strings[i]) + 1;
+        struct view_cmd cmd = {.apply = apply_set_icons, .uid = self->ent, .i = {(int)nicons},
+            .heap = PF_MALLOC(len + 1)};
+        if(cmd.heap) {
+            char *curr = cmd.heap;
+            for(int i = 0; i < nicons; i++) {
+                size_t n = strlen(strings[i]) + 1;
+                memcpy(curr, strings[i], n);
+                curr += n;
+            }
+            if(S_View_Defer(&cmd))
+                Py_RETURN_NONE;
+            PF_FREE(cmd.heap);
+        }
+        if(S_View_RequireWorld() < 0)
+            return NULL;
+    }
+
     Entity_SetIcons(self->ent, nicons, strings);
     Py_RETURN_NONE;
 
@@ -2875,11 +2933,18 @@ fail:
 
 static PyObject *PyEntity_clear_icons(PyEntityObject *self)
 {
-    if(G_FlagsGet(self->ent) & ENTITY_FLAG_ZOMBIE) {
+    const struct script_view *view;
+    if(S_View_Read(&view) < 0)
+        return NULL;
+    uint32_t flags = view ? G_ScriptView_Flags(view, self->ent) : G_FlagsGet(self->ent);
+    if(flags & ENTITY_FLAG_ZOMBIE) {
         PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
         return NULL;
     }
 
+    struct view_cmd cmd = {.apply = apply_clear_icons, .uid = self->ent};
+    if(S_View_Defer(&cmd))
+        Py_RETURN_NONE;
     Entity_ClearIcons(self->ent);
     Py_RETURN_NONE;
 }

@@ -214,6 +214,10 @@ static struct script_record  *s_script_pending;
 static int                    s_script_held;
 /* Whether the frame's events are handled alongside the main thread */
 static int                    s_script_async = -1;
+/* Set as the frame's queue is served: the script thread's once-a-frame upkeep is
+ * due, on frames where the game ran, not while a session loads
+ */
+static int                    s_frame_upkeep_due;
 static queue(event)           s_event_queues[2];
 static int                    s_front_queue_idx = 0;
 /* What the script side has ever listened to, by event: sticky bits, so that
@@ -822,6 +826,7 @@ static enum e_time_bucket e_bucket(const struct event *event)
 void E_ServiceQueue(void)
 {
     PERF_ENTER();
+    LF_STORE(&s_frame_upkeep_due, 1, LF_REL);
     uint32_t ticks = G_ClockTicks();
 
     queue_event_t *queue = &s_event_queues[s_front_queue_idx];
@@ -887,6 +892,11 @@ void E_ScriptCallLater(void (*fn)(void *arg), void *arg)
     do{
         rec->next = head;
     }while(!LF_CASW(&s_script_inbox, &head, rec, LF_REL, LF_RLX));
+}
+
+bool E_TakeFrameUpkeep(void)
+{
+    return LF_XCHG(&s_frame_upkeep_due, 0, LF_ACQ) != 0;
 }
 
 bool E_ScriptEventsWaiting(void)

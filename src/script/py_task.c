@@ -1364,7 +1364,11 @@ static PyObject *PyTask_sleep(PyTaskObject *self, PyObject *args)
     pytask_req_set(self, args, NULL, PYREQ_SLEEP);
     pytask_pop_ctx(self);
 
-    Task_Sleep(ms - self->sleep_elapsed);
+    /* A task saved asleep comes back owing what was left of its sleep: never
+     * less than nothing, which the timer would take for forever
+     */
+    int left = ms - (int)self->sleep_elapsed;
+    Task_Sleep(left > 0 ? left : 0);
 
     self->sleep_elapsed = 0;
     pytask_push_ctx(self);

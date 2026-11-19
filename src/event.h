@@ -223,6 +223,8 @@ void E_Global_NotifyImmediate(enum eventtype event, void *event_arg, enum event_
  */
 void E_PostScriptEvents(void);
 bool E_ScriptEventsWaiting(void);
+/* Whether a frame the game ran has passed since it was last asked */
+bool E_TakeFrameUpkeep(void);
 /* Has the script thread call 'fn' with 'arg' in its turn among the frame's
  * events, and free 'arg' after
  */

@@ -91,6 +91,8 @@ struct view_cmd{
     int        i[4];
     float      f[4];
     char       str[64];
+    /* Freed once applied */
+    void      *heap;
 };
 /* From a binding: true when the write was kept, and the binding is to return
  * as if it was done; false when it is to do it now
