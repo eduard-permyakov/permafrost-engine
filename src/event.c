@@ -39,6 +39,7 @@
 #include "event.h"
 #include "main.h"
 #include "perf.h"
+#include "settings.h"
 #include "sched.h"
 #include "mem.h"
 #include "lib/public/khash.h"
@@ -212,8 +213,6 @@ static SDL_SpinLock           s_script_keys_lock;
 static struct script_record  *s_script_pending;
 /* Whether it holds any, for the main thread to see */
 static int                    s_script_held;
-/* Whether the frame's events are handled alongside the main thread */
-static int                    s_script_async = -1;
 /* Set as the frame's queue is served: the script thread's once-a-frame upkeep is
  * due, on frames where the game ran, not while a session loads
  */
@@ -906,12 +905,11 @@ bool E_ScriptEventsWaiting(void)
 
 void E_PostScriptEvents(void)
 {
-    /* PF_EVENTS_SYNC=1: the main thread waits for the handlers, as it used to */
-    if(s_script_async < 0)
-        s_script_async = (getenv("PF_EVENTS_SYNC") == NULL);
+    struct sval sync = {.as_bool = false};
+    Settings_Get("pf.debug.script_events_sync", &sync);
 
     uint64_t t0 = SDL_GetPerformanceCounter();
-    if(!s_script_async || !S_Thread_Running()) {
+    if(sync.as_bool || !S_Thread_Running()) {
         E_ServiceScriptEvents();
     }else if(LF_LOAD(&s_script_inbox, LF_ACQ)) {
         S_Thread_Poke(S_POKE_EVENTS);

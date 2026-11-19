@@ -5429,6 +5429,13 @@ static void trace_enable_commit(const struct sval *new_val)
         (void*)((uintptr_t)new_val->as_bool), G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
 }
 
+static void script_thread_stats_commit(const struct sval *new_val)
+{
+    if(new_val->as_bool) {
+        S_Thread_ResetWaitStats();
+    }
+}
+
 static void s_create_settings(void)
 {
     ss_e status;
@@ -5455,6 +5462,47 @@ static void s_create_settings(void)
         .prio = 0,
         .validate = bool_val_validate,
         .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    /* The main thread waits for the scripts' windows, as before the script thread drew them alongside */
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.script_ui_sync",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    /* The main thread waits for the frame's script event handlers, as before they ran alongside */
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.script_events_sync",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    /* Prints the view's parks and the main thread's wait on the script thread at exit;
+     * the wait is counted from when this is turned on
+     */
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.log_script_thread_stats",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = script_thread_stats_commit,
     });
     assert(status == SS_OKAY);
 }

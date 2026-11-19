@@ -57,6 +57,7 @@
 #include "../phys/public/collision.h"
 #include "../event.h"
 #include "../config.h"
+#include "../settings.h"
 #include "../main.h"
 #include "../ui.h"
 
@@ -3268,11 +3269,9 @@ void S_UI_FramePump(void)
 void S_UI_Frame(void)
 {
     UI_ScriptFrameAsk();
-    /* PF_UI_SYNC=1: the main thread waits for the frame, as it used to */
-    static int sync = -1;
-    if(sync < 0)
-        sync = (getenv("PF_UI_SYNC") != NULL);
-    if(sync || !S_Thread_Running()) {
+    struct sval sync = {.as_bool = false};
+    Settings_Get("pf.debug.script_ui_sync", &sync);
+    if(sync.as_bool || !S_Thread_Running()) {
         S_Thread_Call(ui_frame, NULL);
         return;
     }

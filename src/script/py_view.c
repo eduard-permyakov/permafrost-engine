@@ -38,6 +38,7 @@
 #include "py_task.h"
 #include "py_entity.h"
 #include "../sched.h"
+#include "../settings.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/pf_string.h"
@@ -218,7 +219,7 @@ static bool             s_task_polls;
 static int              s_poll_learned;
 /* Set while an entry is worked out, so that the call it makes is not itself looked up */
 static bool             s_poll_working;
-/* Counted for PF_VIEW_STATS */
+/* Counted for pf.debug.log_script_thread_stats */
 static uint64_t         s_nparks, s_npoll_hits, s_npoll_learned, s_npoll_renewed, s_ncmds;
 /* The places a view slice has parked from, each logged once */
 static khash_t(vsite)  *s_park_sites;
@@ -651,7 +652,9 @@ void S_View_Shutdown(void)
 {
     if(!s_init || !s_poll_index)
         return;
-    if(getenv("PF_VIEW_STATS")) {
+    struct sval log = {.as_bool = false};
+    Settings_Get("pf.debug.log_script_thread_stats", &log);
+    if(log.as_bool) {
         fprintf(stderr, "[view-stats] parks %llu, polled: answered %llu, learned %llu, renewed %llu over %u frames; "
             "writes kept %llu\n",
             (unsigned long long)s_nparks, (unsigned long long)s_npoll_hits,

@@ -39,6 +39,7 @@
 #include "../game/public/game.h"
 #include "../perf.h"
 #include "../sched.h"
+#include "../settings.h"
 #include "../lib/public/lockfree.h"
 
 #include <SDL.h>
@@ -85,13 +86,10 @@ static uint64_t        s_idle_spin_ticks;
 /* Set by the main thread when it wants a frame of the scripts' windows */
 static int             s_poked;         /* atomic */
 static uint64_t        s_caller_spin_ticks;
-/* How long the main thread waited on the script thread, for PF_VIEW_STATS;
- * counted from the frame PF_VIEW_STATS_FROM names, if it is set
- */
+/* How long the main thread waited on the script thread since the stats were turned on */
 static uint64_t        s_wait_ticks;
 static uint64_t        s_wait_calls;
 static uint64_t        s_wait_first_frame;
-static long            s_wait_from = -1;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -215,7 +213,7 @@ static void call_on(struct st_side *target, void (*fn)(void*), void *arg, bool q
     uint64_t begin = SDL_GetPerformanceCounter();
     wait_serving(self, &call.done, s_caller_spin_ticks);
     __atomic_store_n(&g_world_owner_id, prev, __ATOMIC_RELAXED);
-    if(target == &s_script && (long)g_frame_idx >= s_wait_from) {
+    if(target == &s_script) {
         if(!s_wait_calls)
             s_wait_first_frame = g_frame_idx;
         s_wait_ticks += SDL_GetPerformanceCounter() - begin;
@@ -247,7 +245,6 @@ bool S_Thread_Start(void)
     s_caller_spin_ticks = (uint64_t)(CALLER_SPIN_US * freq / 1e6);
 
     s_main.tid = g_main_thread_id;
-    s_wait_from = getenv("PF_VIEW_STATS_FROM") ? atol(getenv("PF_VIEW_STATS_FROM")) : 0;
     s_main.parker.sem = SDL_CreateSemaphore(0);
     s_script.parker.sem = SDL_CreateSemaphore(0);
     if(!s_main.parker.sem || !s_script.parker.sem)
@@ -287,7 +284,9 @@ void S_Thread_Stop(void)
 {
     if(!s_running)
         return;
-    if(getenv("PF_VIEW_STATS") && g_frame_idx > s_wait_first_frame) {
+    struct sval log = {.as_bool = false};
+    Settings_Get("pf.debug.log_script_thread_stats", &log);
+    if(log.as_bool && g_frame_idx > s_wait_first_frame) {
         uint64_t frames = g_frame_idx - s_wait_first_frame;
         double us = s_wait_ticks * 1e6 / SDL_GetPerformanceFrequency();
         fprintf(stderr, "[view-stats] the main thread waited on the script thread %.0f us a frame, "
@@ -306,6 +305,13 @@ void S_Thread_Stop(void)
 bool S_Thread_Running(void)
 {
     return s_running;
+}
+
+void S_Thread_ResetWaitStats(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    s_wait_ticks = 0;
+    s_wait_calls = 0;
 }
 
 bool S_Thread_OnScript(void)

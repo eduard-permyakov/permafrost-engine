@@ -45,6 +45,8 @@ struct _object;
 
 /* An event handler that runs Python, moved onto the script thread */
 void S_Thread_CallHandler(void (*handler)(void *user, void *event), void *user, void *event);
+/* The main thread's wait on the script thread is counted afresh from here */
+void S_Thread_ResetWaitStats(void);
 
 /* View mode: what a view task may do without the world, run on the script
  * thread alongside the main thread */
