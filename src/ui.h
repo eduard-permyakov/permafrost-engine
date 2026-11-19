@@ -104,6 +104,10 @@ void               UI_ClearState(void);
 
 const char        *UI_GetActiveFont(void);
 bool               UI_SetActiveFont(const char *name);
+/* From the main thread: the font the scripts' windows are drawn in, and with
+ * their next frame the engine's too
+ */
+void               UI_SetScriptFont(const char *name);
 
 /* The dimensions of the image at 'texpath', relative to the base directory: read
  * from the file once, as styles naming images are set many times a frame */

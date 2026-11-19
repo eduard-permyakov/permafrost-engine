@@ -182,6 +182,7 @@ static PyObject *PyPf_prev_frame_gpu_mem_accounting(PyObject *self);
 static PyObject *PyPf_mem_audit(PyObject *self);
 static PyObject *PyPf_prev_frame_allocd_bytes(PyObject *self);
 static PyObject *PyPf_get_resolution(PyObject *self);
+static PyObject *PyPf_get_window_size(PyObject *self);
 static PyObject *PyPf_get_native_resolution(PyObject *self);
 static PyObject *PyPf_get_basedir(PyObject *self);
 static PyObject *PyPf_get_render_info(PyObject *self);
@@ -752,6 +753,11 @@ static PyMethodDef pf_module_methods[] = {
     {"get_native_resolution", 
     (PyCFunction)PyPf_get_native_resolution, METH_NOARGS,
     "Returns the native resolution of the active monitor."},
+
+    {"get_window_size", 
+    (PyCFunction)PyPf_get_window_size, METH_NOARGS,
+    "Returns the size in pixels of what the game draws into: the window's, which differs from the "
+    "set resolution when the window was resized. Screen positions such as 'top_screen_pos' are in it."},
 
     {"get_basedir", 
     (PyCFunction)PyPf_get_basedir, METH_NOARGS,
@@ -3215,6 +3221,13 @@ static PyObject *PyPf_get_resolution(PyObject *self)
     assert(status == SS_OKAY);
 
     return Py_BuildValue("(i, i)", (int)res.as_vec2.x, (int)res.as_vec2.y);
+}
+
+static PyObject *PyPf_get_window_size(PyObject *self)
+{
+    int w, h;
+    Engine_WinDrawableSize(&w, &h);
+    return Py_BuildValue("(i, i)", w, h);
 }
 
 static PyObject *PyPf_get_native_resolution(PyObject *self)

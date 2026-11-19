@@ -4758,6 +4758,7 @@ bool G_LoadGlobalState(SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_STRING);
     UI_SetActiveFont(attr.val.as_string);
+    UI_SetScriptFont(attr.val.as_string);
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_BOOL);

@@ -135,6 +135,7 @@ static const char *s_allowed[] = {
     "pf.set_active_font",
     "pf.get_active_font",
     "pf.get_ticks",
+    "pf.get_window_size",
     "pf.prev_frame_ms",
     "pf.Entity.uid.get",
     "pf.Entity.zombie.get",

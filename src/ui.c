@@ -102,6 +102,8 @@ struct script_frame{
     void               *vmem;
     void               *emem;
     struct nk_style     style;
+    /* The scripts' font as the frame ended, which the engine's windows use */
+    const char         *font;
     bool                filled;
 };
 
@@ -157,6 +159,10 @@ static int                          s_script_shown = -1;
 static vec_td_t                     s_script_labels;
 static vec_td_t                     s_script_labels_prev;
 static const char                  *s_script_active_font = NULL;
+/* A font the main thread set for the scripts, as at a session's start: the
+ * script thread takes it up as it next draws, unless a script set one first
+ */
+static const char                  *s_script_font_pending = NULL;  /* atomic */
 /* The frame the scripts' windows were last asked to be drawn for */
 static uint64_t                     s_script_asked_frame;
 static vec2_t                       s_vres = {1920, 1080};
@@ -927,8 +933,12 @@ void UI_InputEnd(void)
      * stood when their last frame ended
      */
     SDL_LockMutex(s_script_lock);
-    if(s_script_shown >= 0)
-        s_ctx.style = s_script_frames[s_script_shown].style;
+    if(s_script_shown >= 0) {
+        const struct script_frame *sf = &s_script_frames[s_script_shown];
+        s_ctx.style = sf->style;
+        if(sf->font)
+            s_active_font = sf->font;
+    }
     SDL_UnlockMutex(s_script_lock);
 }
 
@@ -944,6 +954,10 @@ bool UI_ScriptFrameAsked(void)
 
 void UI_ScriptFrameBegin(void)
 {
+    const char *pending = __atomic_exchange_n(&s_script_font_pending, NULL, __ATOMIC_ACQ_REL);
+    if(pending)
+        UI_SetActiveFont(pending);
+
     SDL_LockMutex(s_script_lock);
     vec_sdlev_t taken = s_script_input;
     s_script_input = s_script_events;
@@ -1004,6 +1018,7 @@ void UI_ScriptFrameEnd(void)
     sf->list.vertices = &sf->verts;
     sf->list.elements = &sf->elems;
     sf->style = s_script_ctx.style;
+    sf->font = s_script_active_font;
     sf->filled = true;
     nk_clear(&s_script_ctx);
 
@@ -1120,6 +1135,7 @@ bool UI_SetActiveFont(const char *name)
     if(S_Thread_OnScript()) {
         nk_style_set_font(&s_script_ctx, uf);
         s_script_active_font = kh_key(s_fontmap, k);
+        __atomic_store_n(&s_script_font_pending, NULL, __ATOMIC_RELEASE);
         return true;
     }
     nk_style_set_font(&s_ctx, uf);
@@ -1127,9 +1143,23 @@ bool UI_SetActiveFont(const char *name)
     return true;
 }
 
+void UI_SetScriptFont(const char *name)
+{
+    khiter_t k = kh_get(font, s_fontmap, name);
+    if(k == kh_end(s_fontmap))
+        return;
+    if(!S_Thread_Running()) {
+        nk_style_set_font(&s_script_ctx, &kh_value(s_fontmap, k)->handle);
+        s_script_active_font = kh_key(s_fontmap, k);
+        return;
+    }
+    __atomic_store_n(&s_script_font_pending, kh_key(s_fontmap, k), __ATOMIC_RELEASE);
+}
+
 void UI_ClearState(void)
 {
     UI_SetActiveFont("__default__");
+    UI_SetScriptFont("__default__");
 }
 
 bool UI_ImageSize(const char *texpath, int *out_w, int *out_h)
