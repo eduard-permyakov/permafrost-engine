@@ -1112,7 +1112,7 @@ static void batch_do_drawcall_stat(struct gl_batch *batch, const struct ent_stat
     GLuint VAO = batch->vbos[dcall.vbo_idx].VAO;
     glBindVertexArray(VAO);
 
-    if(!GL_ARB_multi_draw_indirect) {
+    if(!GLEW_ARB_multi_draw_indirect) {
         batch_multidraw_legacy(batch, dcall, descs);
     }else{
         batch_multidraw(batch, dcall, descs);
@@ -1132,7 +1132,7 @@ static void batch_do_drawcall_anim(struct gl_batch *batch, const struct ent_anim
     GLuint VAO = batch->vbos[dcall.vbo_idx].VAO;
     glBindVertexArray(VAO);
 
-    if(!GL_ARB_multi_draw_indirect) {
+    if(!GLEW_ARB_multi_draw_indirect) {
         batch_multidraw_legacy(batch, dcall, descs);
     }else{
         batch_multidraw(batch, dcall, descs);

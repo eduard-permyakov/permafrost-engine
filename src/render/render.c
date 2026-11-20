@@ -550,6 +550,7 @@ static void render_dispatch_cmd(struct rcmd cmd)
             cmd.args[6],
             cmd.args[7]
         );
+        break;
     case 9:
         ((void(*)(void*, void*,
                   void*, void*,
@@ -566,6 +567,7 @@ static void render_dispatch_cmd(struct rcmd cmd)
             cmd.args[7],
             cmd.args[8]
         );
+        break;
     case 10:
         ((void(*)(void*, void*,
                   void*, void*,

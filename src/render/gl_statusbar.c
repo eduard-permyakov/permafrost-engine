@@ -164,7 +164,7 @@ void R_GL_DrawHealthbars(const size_t *num_ents, GLfloat *ent_health_pc,
     R_GL_Shader_Install("statusbar");
 
     /* Draw instances */
-    glDrawArraysInstanced(GL_TRIANGLES, 0, ARR_SIZE(vbuff), *num_ents);
+    glDrawArraysInstanced(GL_TRIANGLES, 0, ARR_SIZE(vbuff), ndraw);
 
     /* cleanup */
     glDeleteVertexArrays(1, &VAO);
