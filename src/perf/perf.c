@@ -37,14 +37,14 @@
 #define MEM_FILE_SUB 0
 #define PERF_INTERNAL
 
-#include "perf.h"
-#include "main.h"
-#include "lib/public/khash.h"
-#include "lib/public/vec.h"
-#include "lib/public/pf_string.h"
-#include "render/public/render.h"
-#include "render/public/render_ctrl.h"
-#include "settings.h"
+#include "public/perf.h"
+#include "../main.h"
+#include "../lib/public/khash.h"
+#include "../lib/public/vec.h"
+#include "../lib/public/pf_string.h"
+#include "../render/public/render.h"
+#include "../render/public/render_ctrl.h"
+#include "../settings.h"
 
 #include <mimalloc-stats.h>
 
@@ -62,7 +62,7 @@
 #include <errno.h>
 #endif
 
-#include "mem.h"
+#include "public/mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

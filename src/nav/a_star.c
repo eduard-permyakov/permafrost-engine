@@ -38,7 +38,7 @@
 
 #include "a_star.h"
 #include "nav_private.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../lib/public/pqueue.h"
 #include "../lib/public/khash.h"
 #include "fieldcache.h"
@@ -49,7 +49,7 @@
 #include <math.h>
 #include <float.h>
 
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

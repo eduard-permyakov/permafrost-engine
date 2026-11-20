@@ -45,7 +45,7 @@
 #include "gl_shader.h"
 #include "gl_state.h"
 #include "../lib/public/pf_string.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #include <SDL.h>
 

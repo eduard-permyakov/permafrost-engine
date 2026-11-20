@@ -48,7 +48,7 @@
 #include "../render/public/render_ctrl.h"
 #include "../asset/public/asset_load.h"
 #include "../lib/public/noise.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 #include "../phys/public/collision.h"
 #include "../pf_math.h"
 

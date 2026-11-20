@@ -41,7 +41,7 @@
 #include "position.h"
 #include "fog_of_war.h"
 #include "../ui.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../main.h"
 #include "../camera/public/camera.h"
 #include "../event/public/event.h"
@@ -52,7 +52,7 @@
 #include "../lib/public/pf_string.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #include <SDL.h>
 #include <assert.h>

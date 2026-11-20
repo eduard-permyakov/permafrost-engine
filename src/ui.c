@@ -50,7 +50,7 @@
 #include "lib/public/nk_file_browser.h"
 #include "lib/public/khash.h"
 #include "lib/public/stb_image.h"
-#include "mem.h"
+#include "perf/public/mem.h"
 #include "game/public/game.h"
 
 #include <stdbool.h>

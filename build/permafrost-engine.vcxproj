@@ -79,7 +79,7 @@
     <ClCompile Include="..\src\map\raycast.c" />
     <ClCompile Include="..\src\map\terrain_bake.c" />
     <ClCompile Include="..\src\map\tile.c" />
-    <ClCompile Include="..\src\mem.c" />
+    <ClCompile Include="..\src\perf\mem.c" />
     <ClCompile Include="..\src\move\arrival.c" />
     <ClCompile Include="..\src\move\clearpath.c" />
     <ClCompile Include="..\src\move\flocking.c" />
@@ -89,7 +89,7 @@
     <ClCompile Include="..\src\nav\field.c" />
     <ClCompile Include="..\src\nav\fieldcache.c" />
     <ClCompile Include="..\src\nav\nav.c" />
-    <ClCompile Include="..\src\perf.c" />
+    <ClCompile Include="..\src\perf\perf.c" />
     <ClCompile Include="..\src\pf_math.c" />
     <ClCompile Include="..\src\phys\collision.c" />
     <ClCompile Include="..\src\phys\projectile.c" />
@@ -225,7 +225,7 @@
     <ClInclude Include="..\src\map\pfchunk.h" />
     <ClInclude Include="..\src\map\public\map.h" />
     <ClInclude Include="..\src\map\public\tile.h" />
-    <ClInclude Include="..\src\mem.h" />
+    <ClInclude Include="..\src\perf\public\mem.h" />
     <ClInclude Include="..\src\move\arrival.h" />
     <ClInclude Include="..\src\move\clearpath.h" />
     <ClInclude Include="..\src\move\flocking.h" />
@@ -238,7 +238,7 @@
     <ClInclude Include="..\src\nav\nav_data.h" />
     <ClInclude Include="..\src\nav\nav_private.h" />
     <ClInclude Include="..\src\nav\public\nav.h" />
-    <ClInclude Include="..\src\perf.h" />
+    <ClInclude Include="..\src\perf\public\perf.h" />
     <ClInclude Include="..\src\pf_math.h" />
     <ClInclude Include="..\src\phys\public\collision.h" />
     <ClInclude Include="..\src\phys\public\phys.h" />

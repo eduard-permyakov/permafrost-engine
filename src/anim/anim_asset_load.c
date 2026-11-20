@@ -41,7 +41,7 @@
 #include "anim_data.h"
 #include "anim_ctx.h"
 #include "anim_texture.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #include "../asset/public/asset_load.h"
 #include "../asset/public/asset_cache.h"

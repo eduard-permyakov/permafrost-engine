@@ -38,10 +38,10 @@
 
 #include "public/event.h"
 #include "../main.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../settings.h"
 #include "../sched/public/sched.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/queue.h"

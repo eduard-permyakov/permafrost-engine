@@ -49,7 +49,7 @@
 #include "../config.h"
 #include "../main.h"
 #include "../lib/public/pf_string.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #include <GL/glew.h>
 #include <assert.h>

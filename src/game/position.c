@@ -47,9 +47,9 @@
 #include "public/game.h"
 #include "../main.h"
 #include "../event/public/event.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../sched/public/sched.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 

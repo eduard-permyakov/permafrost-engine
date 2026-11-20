@@ -48,7 +48,7 @@
 #include "public/game.h"
 #include "../sched/public/sched.h"
 #include "../entity.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../event/public/event.h"
 #include "../cursor.h"
 #include "../phys/public/collision.h"
@@ -62,7 +62,7 @@
 #include <math.h>
 #include <assert.h>
 
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

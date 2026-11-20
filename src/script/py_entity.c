@@ -53,7 +53,7 @@
 #include "../lib/public/khash.h"
 #include "../lib/public/SDL_vec_rwops.h"
 #include "../lib/public/pf_string.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #include <assert.h>
 #include <math.h>

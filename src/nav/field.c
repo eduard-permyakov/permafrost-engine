@@ -40,12 +40,12 @@
 #include "nav_private.h"
 #include "../entity.h"
 #include "../sched/public/sched.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../main.h"
 #include "../map/public/tile.h"
 #include "../game/public/game.h"
 #include "../lib/public/pqueue.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #include <string.h>
 #include <assert.h>

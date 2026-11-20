@@ -48,7 +48,7 @@
 #include "../event/public/event.h"
 #include "../entity.h"
 #include "../main.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../script/public/script.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
@@ -61,7 +61,7 @@
 #include <assert.h>
 #include <SDL.h>
 
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #define EPSILON               (1.0f/1024)
 

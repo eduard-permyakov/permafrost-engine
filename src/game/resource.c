@@ -51,7 +51,7 @@
 #include "../lib/public/pf_string.h"
 #include "../lib/public/string_intern.h"
 
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

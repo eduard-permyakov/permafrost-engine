@@ -41,7 +41,7 @@
 
 #include <string.h>
 
-#include "../mem.h"
+#include "../perf/public/mem.h"
 #include "../lib/public/khash.h"
 
 #undef PF_MALLOC

@@ -43,7 +43,7 @@
 #include "../pf_math.h"
 #include "../event/public/event.h"
 #include "../entity.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../settings.h"
 #include "../game/public/game.h"
 #include "../map/public/map.h"
@@ -59,7 +59,7 @@
 #include <AL/al.h>
 #include <AL/alc.h>
 
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

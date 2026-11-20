@@ -44,7 +44,7 @@
 #include "../event/public/event.h"
 #include "../camera/public/camera.h"
 #include "../settings.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 #include "../lib/public/attr.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/pf_string.h"

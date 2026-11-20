@@ -37,6 +37,12 @@
     <Filter Include="Header Files\asset">
       <UniqueIdentifier>{c857a76b-2632-4e84-9968-44280e70a9db}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\perf">
+      <UniqueIdentifier>{09381270-38fd-4b62-a1bb-1467a3bd3ca0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\perf">
+      <UniqueIdentifier>{59a7379f-eae6-4c56-a9f6-8411cdf60bbb}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\render">
       <UniqueIdentifier>{fc8ac884-ebc4-4088-a716-e0ae2aa9f718}</UniqueIdentifier>
     </Filter>
@@ -150,8 +156,8 @@
     <ClCompile Include="..\src\main.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\perf.c">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="..\src\perf\perf.c">
+      <Filter>Source Files\perf</Filter>
     </ClCompile>
     <ClCompile Include="..\src\pf_math.c">
       <Filter>Source Files</Filter>
@@ -459,8 +465,8 @@
     <ClCompile Include="..\src\map\terrain_bake.c">
       <Filter>Source Files\map</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\mem.c">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="..\src\perf\mem.c">
+      <Filter>Source Files\perf</Filter>
     </ClCompile>
     <ClCompile Include="..\src\render\gl_anim.c">
       <Filter>Source Files\render</Filter>
@@ -536,8 +542,8 @@
     <ClInclude Include="..\src\main.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\perf.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="..\src\perf\public\perf.h">
+      <Filter>Header Files\perf</Filter>
     </ClInclude>
     <ClInclude Include="..\src\pf_math.h">
       <Filter>Header Files</Filter>
@@ -896,8 +902,8 @@
     <ClInclude Include="..\src\lib\public\windows.h">
       <Filter>Header Files\lib\public</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\mem.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="..\src\perf\public\mem.h">
+      <Filter>Header Files\perf</Filter>
     </ClInclude>
     <ClInclude Include="..\src\render\gl_anim.h">
       <Filter>Header Files\render</Filter>

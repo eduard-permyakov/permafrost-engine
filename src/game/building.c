@@ -57,7 +57,7 @@
 #include "../lib/public/string_intern.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/stalloc.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #include <assert.h>
 #include <stdint.h>

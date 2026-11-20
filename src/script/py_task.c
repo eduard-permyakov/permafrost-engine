@@ -49,12 +49,12 @@
 #include "../sched/public/sched.h"
 #include "../main.h"
 #include "../event/public/event.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../game/public/game.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/SDL_vec_rwops.h"
 #include "../lib/public/pf_string.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #include <stdint.h>
 #include <stdlib.h>

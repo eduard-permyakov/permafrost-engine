@@ -45,7 +45,7 @@
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/pf_string.h"
 
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

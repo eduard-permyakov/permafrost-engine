@@ -42,7 +42,7 @@
 #include "../main.h"
 #include "../event/public/event.h"
 #include "../settings.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../camera/public/camera.h"
 #include "../sched/public/sched.h"
 #include "../sched/public/task.h"
@@ -63,7 +63,7 @@
 #include <SDL.h>
 #include <assert.h>
 
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

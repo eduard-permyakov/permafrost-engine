@@ -54,13 +54,13 @@
 #include "../entity.h"
 #include "../settings.h"
 #include "../ui.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../phys/public/collision.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../map/public/map.h"
 #include "../lib/public/pf_string.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #include <assert.h>
 #include <stdbool.h>

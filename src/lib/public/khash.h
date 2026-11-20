@@ -123,8 +123,8 @@ int main() {
   Generic hash table library.
  */
 
-#include "../../perf.h"
-#include "../../mem.h"
+#include "../../perf/public/perf.h"
+#include "../../perf/public/mem.h"
 
 #define AC_VERSION_KHASH_H "0.2.8"
 

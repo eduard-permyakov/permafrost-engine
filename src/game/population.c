@@ -47,7 +47,7 @@
 #include <assert.h>
 #include <string.h>
 
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

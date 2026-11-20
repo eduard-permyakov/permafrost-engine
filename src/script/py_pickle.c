@@ -42,7 +42,7 @@
 #include "py_traverse.h"
 #include "private_types.h"
 #include "../lib/public/pf_string.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 #include "../asset/public/asset_load.h"
 #include "../sched/public/sched.h"
 

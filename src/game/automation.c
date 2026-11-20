@@ -54,7 +54,7 @@
 #include "../settings.h"
 #include "../camera/public/camera.h"
 #include "../sched/public/sched.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/stalloc.h"
 #include "../lib/public/pf_string.h"
@@ -65,7 +65,7 @@
 #include <assert.h>
 #include <math.h>
 
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

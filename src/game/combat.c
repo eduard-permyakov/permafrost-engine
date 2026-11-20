@@ -51,7 +51,7 @@
 #include "../event/public/event.h"
 #include "../entity.h"
 #include "../main.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../settings.h"
 #include "../sched/public/sched.h"
 #include "../sched/public/task.h"
@@ -64,7 +64,7 @@
 #include "../lib/public/khash.h"
 #include "../lib/public/attr.h"
 #include "../lib/public/pf_string.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 #include "../lib/public/queue.h"
 #include "../lib/public/string_intern.h"
 

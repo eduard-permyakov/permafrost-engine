@@ -36,7 +36,7 @@
 #ifndef GL_PERF_H
 #define GL_PERF_H
 
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include <GL/glew.h>
 
 #include "gl_assert.h"

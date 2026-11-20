@@ -43,8 +43,8 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "../../perf.h"
-#include "../../mem.h"
+#include "../../perf/public/perf.h"
+#include "../../perf/public/mem.h"
 
 /***********************************************************************************************/
 

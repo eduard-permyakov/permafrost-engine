@@ -47,7 +47,7 @@
 #include "render_private.h"
 #include "public/render.h"
 #include "../main.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 #include "../camera/public/camera.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/stb_image.h"

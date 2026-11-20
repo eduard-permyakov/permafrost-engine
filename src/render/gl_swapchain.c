@@ -46,7 +46,7 @@
 #include "gl_shader.h"
 #include "public/render.h"
 #include "../main.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #include <SDL.h>
 #include <assert.h>

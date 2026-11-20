@@ -44,7 +44,7 @@
 #include "anim_texture.h"
 #include "../entity.h"
 #include "../event/public/event.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../asset/public/asset_load.h"
 #include "../lib/public/attr.h"
 #include "../lib/public/pf_string.h"
@@ -56,7 +56,7 @@
 #include <string.h>
 #include <assert.h>
 
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

@@ -53,7 +53,7 @@
 #include "../lib/public/pf_string.h"
 #include "../lib/public/stb_image.h"
 #include "../lib/public/stb_image_resize.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 #include "../pf_math.h"
 
 #include <SDL.h>

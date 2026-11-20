@@ -52,7 +52,7 @@
 #include "../lib/public/stb_image_resize.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/pf_string.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 #include "../loading_screen.h"
 #include "../config.h"
 #include "../main.h"

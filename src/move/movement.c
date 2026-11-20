@@ -50,7 +50,7 @@
 #include "../cursor.h"
 #include "../settings.h"
 #include "../ui.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../sched/public/sched.h"
 #include "../sched/public/task.h"
 #include "../lib/public/simd.h"
@@ -71,7 +71,7 @@
 #include <assert.h>
 #include <SDL.h>
 
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

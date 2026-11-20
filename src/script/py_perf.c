@@ -37,8 +37,8 @@
 #define MEM_FILE_SUB MEM_SUB_SCRIPT_PERF
 
 #include "py_perf.h"
-#include "../perf.h"
-#include "../mem.h"
+#include "../perf/public/perf.h"
+#include "../perf/public/mem.h"
 
 #include <assert.h>
 

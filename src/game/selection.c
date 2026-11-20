@@ -47,7 +47,7 @@
 #include "../config.h"
 #include "../camera/public/camera.h"
 #include "../main.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../sched/public/sched.h"
 
 #include <string.h>
@@ -57,7 +57,7 @@
 
 #include <SDL.h>
 
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

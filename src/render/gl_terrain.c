@@ -51,7 +51,7 @@
 #include "../main.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 #include "../lib/public/noise.h"
 
 #include <assert.h>

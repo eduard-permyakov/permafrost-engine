@@ -47,7 +47,7 @@
 #include "gl_shader.h"
 
 #include "../main.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../asset/public/asset_load.h"
 #include "../asset/public/asset_cache.h"
 #include "../map/public/tile.h"
@@ -59,7 +59,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

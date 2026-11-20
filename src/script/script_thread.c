@@ -37,7 +37,7 @@
 #include "script_thread.h"
 #include "../main.h"
 #include "../game/public/game.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../sched/public/sched.h"
 #include "../settings.h"
 #include "../lib/public/lockfree.h"

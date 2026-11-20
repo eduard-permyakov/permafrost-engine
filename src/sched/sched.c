@@ -39,7 +39,7 @@
 #include "public/sched.h"
 #include "sched_stats.h"
 #include "../config.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../main.h"
 #include "public/task.h"
 #include "../event/public/event.h"
@@ -50,7 +50,7 @@
 #include "../lib/public/khash.h"
 #include "../lib/public/lockfree.h"
 #include "../lib/public/pf_string.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 #include "../settings.h"
 
 #include <SDL.h>

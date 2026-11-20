@@ -41,7 +41,7 @@
 #include "../nav/public/nav.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 #include "../settings.h"
 #include "../lib/public/attr.h"
 

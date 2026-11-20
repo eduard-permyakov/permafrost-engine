@@ -36,8 +36,8 @@
 #ifndef QUEUE_H
 #define QUEUE_H
 
-#include "../../mem.h"
-#include "../../perf.h"
+#include "../../perf/public/mem.h"
+#include "../../perf/public/perf.h"
 
 #include <stddef.h>
 #include <stdint.h>

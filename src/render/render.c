@@ -68,7 +68,7 @@
 #include <SDL_opengl.h>
 #include <mimalloc-stats.h>
 
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

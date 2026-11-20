@@ -41,7 +41,7 @@
 #include "config.h"
 #include "asset/public/asset_load.h"
 #include "main.h"
-#include "mem.h"
+#include "perf/public/mem.h"
 #include "lib/public/khash.h"
 #include "lib/public/pf_string.h"
 

@@ -40,7 +40,7 @@
 #include "pfchunk.h"
 #include "public/map.h"
 #include "../sched/public/sched.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../camera/public/camera.h"
 #include "../settings.h"
 #include "../phys/public/collision.h"
@@ -54,7 +54,7 @@
 
 #include <SDL.h>
 
-#include "../mem.h"
+#include "../perf/public/mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

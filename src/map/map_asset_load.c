@@ -47,9 +47,9 @@
 #include "../game/public/game.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/lockfree.h"
-#include "../mem.h"
+#include "../perf/public/mem.h"
 #include "../ui.h"
-#include "../perf.h"
+#include "../perf/public/perf.h"
 #include "../event/public/event.h"
 #include "../settings.h"
 
