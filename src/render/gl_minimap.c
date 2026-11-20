@@ -405,7 +405,7 @@ static void create_water_texture(const struct map *map)
     };
 
     R_GL_MapUpdateFogClear();
-    R_GL_DrawWater(&in, &fval, &fval);
+    R_GL_DrawWater(&in, &fval, &fval, NULL, NULL);
     R_GL_MapInvalidate();
 
     glDeleteFramebuffers(1, &fb);

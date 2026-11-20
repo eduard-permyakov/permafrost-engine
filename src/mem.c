@@ -539,6 +539,7 @@ const char *Mem_SubName(uint16_t sys, uint16_t sub)
         [MEM_SUB_RENDER_GL_MINIMAP]     = "minimap",
         [MEM_SUB_RENDER_GL_MOVEMENT]    = "movement",
         [MEM_SUB_RENDER_GL_PERF]        = "perf",
+        [MEM_SUB_RENDER_GL_PIPELINE]    = "pipeline",
         [MEM_SUB_RENDER_GL_POSITION]    = "position",
         [MEM_SUB_RENDER_GL_RENDER]      = "renderer",
         [MEM_SUB_RENDER_GL_RINGBUFFER]  = "ringbuffer",

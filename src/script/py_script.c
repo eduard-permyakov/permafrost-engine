@@ -4686,18 +4686,7 @@ static PyObject *PyPf_dump_framebuffer(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    int width, height;
-    Engine_WinDrawableSize(&width, &height);
-
-    R_PushCmd((struct rcmd){
-        .func = R_GL_DumpFBColor_PPM,
-        .nargs = 3,
-        .args = {
-            R_PushArg(path, strlen(path) + 1),
-            R_PushArg(&width, sizeof(width)),
-            R_PushArg(&height, sizeof(height)),
-        },
-    });
+    R_RequestFramebufferDump(path);
     Py_RETURN_NONE;
 }
 

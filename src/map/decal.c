@@ -1220,8 +1220,9 @@ void M_Decal_UpdateTile(struct tile_desc td)
     }}
 }
 
-void M_Decal_Render(const struct camera *cam)
+void M_Decal_Scene(const struct camera *cam, struct scene_decals *out)
 {
+    *out = (struct scene_decals){0};
     if(!s_map)
         return;
 
@@ -1230,12 +1231,13 @@ void M_Decal_Render(const struct camera *cam)
     struct map_resolution res;
     M_GetResolution(s_map, &res);
 
-    vec2_t map_pos = (vec2_t){ s_map->pos.x, s_map->pos.z };
-
     struct frustum frustum;
     Camera_MakeFrustum(cam, &frustum);
 
-    bool any_visible = false;
+    size_t nchunks = (size_t)s_map->width * s_map->height;
+    STALLOC(size_t, visible, nchunks);
+    size_t nvisible = 0;
+
     for(int cr = 0; cr < s_map->height; cr++) {
     for(int cc = 0; cc < s_map->width; cc++) {
 
@@ -1248,29 +1250,16 @@ void M_Decal_Render(const struct camera *cam)
         if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
             continue;
 
-        if(!any_visible) {
-            R_PushCmd((struct rcmd){
-                .func  = R_GL_DecalBeginDraw,
-                .nargs = 3,
-                .args  = {
-                    R_PushArg(cam, g_sizeof_camera),
-                    R_PushArg(&res, sizeof(res)),
-                    R_PushArg(&map_pos, sizeof(map_pos)),
-                },
-            });
-            any_visible = true;
-        }
-
-        R_PushCmd((struct rcmd){
-            .func  = R_GL_DecalDrawChunk,
-            .nargs = 1,
-            .args  = { R_PushArg(&chunk_idx, sizeof(chunk_idx)) },
-        });
+        visible[nvisible++] = chunk_idx;
     }}
 
-    if(any_visible) {
-        R_PushCmd((struct rcmd){ .func = R_GL_DecalEndDraw, .nargs = 0 });
+    if(nvisible) {
+        out->res = R_PushArg(&res, sizeof(res));
+        out->map_pos = (vec2_t){ s_map->pos.x, s_map->pos.z };
+        out->chunks = R_PushArg(visible, nvisible * sizeof(size_t));
+        out->nchunks = out->chunks ? nvisible : 0;
     }
+    STFREE(visible);
 }
 
 bool M_Decal_SaveState(SDL_RWops *stream)

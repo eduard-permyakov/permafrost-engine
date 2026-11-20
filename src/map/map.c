@@ -349,108 +349,44 @@ void M_VisibleChunks(const struct map *map, const struct camera *cam, bool *out)
     }}
 }
 
-void M_RenderVisibleMap(const struct map *map, const struct camera *cam,
-                        bool shadows, enum render_pass pass, bool near_water_only,
-                        const int *bake_layers)
+void M_SceneTerrain(const struct map *map, const struct camera *cam,
+                    const int *bake_layers, struct scene_terrain *out)
 {
-    vec2_t pos = (vec2_t){map->pos.x, map->pos.z};
-    const bool fval = false;
     size_t nchunks = map->width * map->height;
 
     STALLOC(bool, vis, nchunks);
     M_VisibleChunks(map, cam, vis);
 
-    for(int r = 0; r < map->height; r++) {
-    for(int c = 0; c < map->width;  c++) {
-        if(near_water_only && !m_chunk_or_neighbour_has_water(map, r, c))
-            vis[r * map->width + c] = false;
-    }}
-
-    R_PushCmd((struct rcmd){
-        .func = R_GL_MapBegin,
-        .nargs = 4,
-        .args = {
-            R_PushArg(&shadows, sizeof(shadows)),
-            R_PushArg(&pos, sizeof(pos)),
-            R_PushArg(&map->num_splats, sizeof(map->num_splats)),
-            R_PushArg(&map->splatmap, sizeof(map->splatmap))
-        },
-    });
-
-    /* The baked top faces of the resident chunks go first, then the walls and
-     * the chunks drawn whole, so each program is installed once per pass.
-     */
+    size_t nvis = 0;
     for(int i = 0; i < nchunks; i++) {
-
-        if(!vis[i] || pass != RENDER_PASS_REGULAR || !bake_layers || bake_layers[i] < 0)
-            continue;
-
-        struct chunkpos cp = (struct chunkpos){i / map->width, i % map->width};
-        mat4x4_t chunk_model;
-        M_ModelMatrixForChunk(map, cp, &chunk_model);
-
-        struct terrain_bake_frame frame;
-        M_TerrainBake_ChunkFrame(map, cp.r, cp.c, &frame);
-
-        R_PushCmd((struct rcmd){
-            .func = R_GL_DrawChunkBaked,
-            .nargs = 4,
-            .args = {
-                map->chunks[i].render_private,
-                R_PushArg(&chunk_model, sizeof(chunk_model)),
-                R_PushArg(&bake_layers[i], sizeof(int)),
-                R_PushArg(&frame.xform, sizeof(frame.xform)),
-            },
-        });
+        nvis += vis[i];
     }
 
-    for(int i = 0; i < nchunks; i++) {
+    out->pos = (vec2_t){map->pos.x, map->pos.z};
+    out->num_splats = map->num_splats;
+    out->splatmap = R_PushArg(&map->splatmap, sizeof(map->splatmap));
+    out->nchunks = 0;
+    out->chunks = R_AllocArg(nvis * sizeof(struct scene_chunk));
+
+    for(int i = 0; out->chunks && i < nchunks; i++) {
 
         if(!vis[i])
             continue;
 
         struct chunkpos cp = (struct chunkpos){i / map->width, i % map->width};
-        mat4x4_t chunk_model;
-        const struct pfchunk *chunk = &map->chunks[i];
-        M_ModelMatrixForChunk(map, cp, &chunk_model);
+        struct scene_chunk *chunk = &out->chunks[out->nchunks++];
 
-        switch(pass) {
-        case RENDER_PASS_DEPTH: 
-            R_PushCmd((struct rcmd){
-                .func = R_GL_RenderDepthMap,
-                .nargs = 2,
-                .args = {
-                    chunk->render_private,
-                    R_PushArg(&chunk_model, sizeof(chunk_model)),
-                },
-            });
-            break;
-        case RENDER_PASS_REGULAR:
-            if(bake_layers && bake_layers[i] >= 0) {
-                R_PushCmd((struct rcmd){
-                    .func = R_GL_DrawChunkWalls,
-                    .nargs = 2,
-                    .args = {
-                        chunk->render_private,
-                        R_PushArg(&chunk_model, sizeof(chunk_model)),
-                    },
-                });
-            }else{
-                R_PushCmd((struct rcmd){
-                    .func = R_GL_Draw,
-                    .nargs = 3,
-                    .args = {
-                        chunk->render_private,
-                        R_PushArg(&chunk_model, sizeof(chunk_model)),
-                        R_PushArg(&fval, sizeof(fval)),
-                    },
-                });
-            }
-            break;
-        default: assert(0);
+        chunk->render_private = map->chunks[i].render_private;
+        M_ModelMatrixForChunk(map, cp, &chunk->model);
+        chunk->near_water = m_chunk_or_neighbour_has_water(map, cp.r, cp.c);
+        chunk->bake_layer = bake_layers ? bake_layers[i] : -1;
+
+        if(chunk->bake_layer >= 0) {
+            struct terrain_bake_frame frame;
+            M_TerrainBake_ChunkFrame(map, cp.r, cp.c, &frame);
+            chunk->bake_xform = frame.xform;
         }
     }
-    R_PushCmd((struct rcmd){ R_GL_MapEnd, 0 });
     STFREE(vis);
 }
 

@@ -453,6 +453,9 @@
     <ClCompile Include="..\src\render\gl_perf.c">
       <Filter>Source Files\render</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\render\gl_pipeline.c">
+      <Filter>Source Files\render</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\render\gl_sprite.c">
       <Filter>Source Files\render</Filter>
     </ClCompile>
@@ -537,6 +540,9 @@
       <Filter>Header Files\render</Filter>
     </ClInclude>
     <ClInclude Include="..\src\render\gl_perf.h">
+      <Filter>Header Files\render</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\render\gl_pipeline.h">
       <Filter>Header Files\render</Filter>
     </ClInclude>
     <ClInclude Include="..\src\render\gl_render.h">

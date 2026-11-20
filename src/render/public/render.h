@@ -54,6 +54,7 @@ struct map;
 struct camera;
 struct frustum;
 struct render_input;
+struct render_scene;
 struct nk_draw_list;
 struct map_resolution;
 struct terrain_bake_slice;
@@ -161,6 +162,12 @@ void   R_GL_DrawChunkBaked(const void *render_private, mat4x4_t *model,
  * ---------------------------------------------------------------------------
  */
 void   R_GL_DrawChunkWalls(const void *render_private, mat4x4_t *model);
+
+/* ---------------------------------------------------------------------------
+ * Draw the whole scene into the next swapchain image, stage by stage.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_Pipeline_Render(struct render_scene *scene);
 
 /* ---------------------------------------------------------------------------
  * Clear the draw buffer and set up the global OpenGL state at the beginning 
@@ -706,10 +713,13 @@ void R_GL_WaterInit(void);
 void R_GL_WaterShutdown(void);
 
 /* ---------------------------------------------------------------------------
- * Renders the water layer for the given map.
+ * Renders the water layer for the given map, over a frame that already holds 
+ * what is under the water. 'draw_world' draws what an enabled reflection pass 
+ * is to show, into the pass's target.
  * ---------------------------------------------------------------------------
  */
-void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const bool *reflection);
+void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const bool *reflection,
+                    void (*draw_world)(void *user), void *user);
 
 
 /*###########################################################################*/

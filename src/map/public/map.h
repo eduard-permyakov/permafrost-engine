@@ -52,6 +52,9 @@ struct pfchunk;
 struct pfmap_hdr;
 struct map;
 struct camera;
+struct scene_terrain;
+struct scene_decals;
+struct scene_minimap;
 struct tile;
 struct tile_desc;
 struct obb;
@@ -98,14 +101,13 @@ void   M_RenderEntireMap(const struct map *map, bool shadows, enum render_pass p
 void   M_ModelMatrixForChunk(const struct map *map, struct chunkpos p, mat4x4_t *out);
 
 /* ------------------------------------------------------------------------
- * Renders the chunks of the map that are currently visible by the specified
- * camera using a frustrum-chunk intersection test. Depending on the 'pass'
- * type, this will perform a different action.
+ * Gathers the chunks in the camera's frustum, found with an exact frustum
+ * to chunk intersection test, for every pass of the frame to draw from. 
+ * 'bake_layers' holds a layer per chunk of the map, or is NULL.
  * ------------------------------------------------------------------------
  */
-void   M_RenderVisibleMap(const struct map *map, const struct camera *cam,
-                          bool shadows, enum render_pass pass, bool near_water_only,
-                          const int *bake_layers);
+void   M_SceneTerrain(const struct map *map, const struct camera *cam,
+                      const int *bake_layers, struct scene_terrain *out);
 
 /* ------------------------------------------------------------------------
  * Set a flag for every chunk telling if it intersects the camera frustum.
@@ -905,18 +907,12 @@ void   M_SetMinimapSize(struct map *map, int side_len);
 void   M_SetMinimapResizeMask(struct map *map, int resize_mask);
 
 /* ------------------------------------------------------------------------
- * Render the minimap at the location specified by 'M_SetMinimapPos' and 
- * draw a box around the area visible by the specified camera.
+ * Describes the minimap at the location specified by 'M_SetMinimapPos', 
+ * with a coloured box for every specified unit.
  * ------------------------------------------------------------------------
  */
-void   M_RenderMinimap   (const struct map *map, const struct camera *cam);
-
-/* ------------------------------------------------------------------------
- * Render a coloroed box for every specified unit in the minimap region.
- * ------------------------------------------------------------------------
- */
-void   M_RenderMinimapUnits(const struct map *map, size_t nunits, 
-                            vec2_t *posbuff, vec3_t *colorbuff);
+void   M_SceneMinimap(const struct map *map, size_t nunits, const vec2_t *posbuff, 
+                      const vec3_t *colorbuff, struct scene_minimap *out);
 
 /* ------------------------------------------------------------------------
  * Render the minimap at the location specified by 'M_SetMinimapPos'.
@@ -1133,7 +1129,8 @@ void     M_Decal_SetDragBox(const vec2_t *start);
 /* Gather the foliage-hiding decals over a chunk for M_Decal_HidesFoliage */
 void     M_Decal_FoliageQueryBegin(int chunk_r, int chunk_c);
 bool     M_Decal_HidesFoliage(vec2_t xz);
-void     M_Decal_Render(const struct camera *cam);
+/* The chunks in the camera's frustum that have decals to draw */
+void     M_Decal_Scene(const struct camera *cam, struct scene_decals *out);
 bool     M_Decal_SaveState(SDL_RWops *stream);
 bool     M_Decal_LoadState(SDL_RWops *stream);
 

@@ -55,6 +55,8 @@
 #include "../config.h"
 #include "../game/public/game.h"
 #include "../lib/public/windows.h"
+#include "../lib/public/vec.h"
+#include "../lib/public/pf_string.h"
 
 #include <assert.h>
 #include <math.h>
@@ -89,6 +91,13 @@ bool g_trace_gpu;
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
+
+VEC_TYPE(rcmd, struct rcmd)
+VEC_IMPL(static inline, rcmd, struct rcmd)
+
+static bool                      s_capturing;
+static vec_rcmd_t                s_captured;
+static char                      s_dump_path[512];
 
 static SDL_GLContext             s_context;
 static SDL_Window               *s_window;
@@ -731,6 +740,8 @@ bool R_Init(const char *base_path)
     SDL_DisplayMode dm;
     SDL_GetDesktopDisplayMode(0, &dm);
 
+    vec_rcmd_init(&s_captured);
+
     status = Settings_Create((struct setting){
         .name = "pf.video.aspect_ratio",
         .val = (struct sval) {
@@ -920,8 +931,65 @@ void R_PushCmd(struct rcmd cmd)
         return;
     }
 
+    if(s_capturing) {
+        vec_rcmd_push(&s_captured, cmd);
+        return;
+    }
+
     struct render_workspace *ws = G_GetSimWS();
     queue_rcmd_push(&ws->commands, &cmd);
+}
+
+void R_BeginCapture(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    assert(!s_capturing);
+    s_capturing = true;
+    vec_rcmd_reset(&s_captured);
+}
+
+struct rcmd_list R_EndCapture(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    assert(s_capturing);
+    s_capturing = false;
+
+    struct rcmd_list ret = (struct rcmd_list){0};
+    size_t ncmds = vec_size(&s_captured);
+    if(ncmds == 0)
+        return ret;
+
+    ret.cmds = R_PushArg(s_captured.array, ncmds * sizeof(struct rcmd));
+    if(ret.cmds)
+        ret.ncmds = ncmds;
+    return ret;
+}
+
+void R_RunCmds(struct rcmd_list list)
+{
+    ASSERT_IN_RENDER_THREAD();
+    for(int i = 0; i < list.ncmds; i++) {
+        render_dispatch_cmd(list.cmds[i]);
+        GL_ASSERT_OK();
+        if((i + 1) % MOVE_POLL_INTERVAL == 0)
+            R_GL_MovePoll(false);
+    }
+}
+
+void R_RequestFramebufferDump(const char *path)
+{
+    ASSERT_IN_MAIN_THREAD();
+    pf_snprintf(s_dump_path, sizeof(s_dump_path), "%s", path);
+}
+
+const char *R_TakeFramebufferDump(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    if(s_dump_path[0] == '\0')
+        return NULL;
+    const char *ret = R_PushArg(s_dump_path, strlen(s_dump_path) + 1);
+    s_dump_path[0] = '\0';
+    return ret;
 }
 
 void R_PushCmdImmediate(struct rcmd cmd)

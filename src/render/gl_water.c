@@ -106,7 +106,6 @@ struct water_gl_state{
 
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0])) 
 #define MAX(a, b)       ((a) > (b) ? (a) : (b))
-
 #define WATER_LVL       (-1.0f * Y_COORDS_PER_TILE + 2.0f)
 #define DUDV_PATH       "assets/water_textures/dudvmap.png"
 #define NORM_PATH       "assets/water_textures/normalmap.png"
@@ -214,8 +213,9 @@ static GLuint make_new_depth_tex(int width, int height)
     GLuint ret;
     glGenTextures(1, &ret);
     glBindTexture(GL_TEXTURE_2D, ret);
-    R_GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32, width, height, 0,
-        GL_DEPTH_COMPONENT, GL_FLOAT, NULL));
+    /* The format of the frame's own depth, which is copied into it */
+    R_GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, width, height, 0,
+        GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL));
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -243,7 +243,7 @@ static void water_alloc_targets(int width, int height)
 
     glGenFramebuffers(1, &s_ctx.refract_fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, s_ctx.refract_fbo);
-    glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, s_ctx.refract_depth_tex, 0);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, s_ctx.refract_depth_tex, 0);
     glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, s_ctx.refract_tex, 0);
     glDrawBuffers(ARR_SIZE(draw_buffs), draw_buffs);
     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
@@ -317,32 +317,29 @@ static void water_ensure_targets(void)
     water_alloc_targets(width, height);
 }
 
-static void render_refraction_tex(bool on, struct render_input in)
+/* What lies under the water has already been drawn into the frame by the 
+ * time the water is, so the refraction is a copy of the frame and its depth.
+ */
+static void render_refraction_tex(bool on, const struct water_gl_state *frame)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
     GL_PERF_PUSH_GROUP(0, "water::render_refraction_tex");
-    in.shadows = false;
-    in.water_only = true;
 
     glBindFramebuffer(GL_FRAMEBUFFER, s_ctx.refract_fbo);
-
-    /* Clip everything above the water surface */
-    glEnable(GL_CLIP_DISTANCE0);
-    vec4_t plane_eq = (vec4_t){0.0f, -1.0f, 0.0f, WATER_LVL};
-    R_GL_SetClipPlane(plane_eq);
-
-    /* Render to the texture */
     glViewport(0, 0, s_ctx.rt_width, s_ctx.rt_height);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     if(on) {
-        GL_PERF_PUSH_GROUP(0, "water::RenderMapAndEntities");
-        G_RenderMapAndEntities(&in);
-        GL_PERF_POP_GROUP();
+        const GLint *vp = frame->viewport;
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, frame->fb);
+        glBlitFramebuffer(vp[0], vp[1], vp[0] + vp[2], vp[1] + vp[3],
+            0, 0, s_ctx.rt_width, s_ctx.rt_height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        glBlitFramebuffer(vp[0], vp[1], vp[0] + vp[2], vp[1] + vp[3],
+            0, 0, s_ctx.rt_width, s_ctx.rt_height, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    }else{
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     }
-
-    glDisable(GL_CLIP_DISTANCE0);
 
     GL_PERF_POP_GROUP();
     GL_ASSERT_OK();
@@ -365,13 +362,12 @@ static void render_non_parallax_skybox(const struct camera *cam, const struct re
     R_GL_DrawSkyboxScaled(cam, &map_size.x, &map_size.z);
 }
 
-static void render_reflection_tex(bool on, struct render_input in)
+static void render_reflection_tex(bool on, struct render_input in,
+                                  void (*draw_world)(void *user), void *user)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
     GL_PERF_PUSH_GROUP(0, "water::render_reflection_tex");
-    in.shadows = false;
-    in.water_only = true;
 
     glBindFramebuffer(GL_FRAMEBUFFER, s_ctx.reflect_fbo);
 
@@ -415,9 +411,8 @@ static void render_reflection_tex(bool on, struct render_input in)
     R_GL_SetClipPlane(plane_eq);
 
     /* Render to the texture */
-    GL_PERF_PUSH_GROUP(0, "water::RenderMapAndEntities");
-    in.shadows = false;
-    G_RenderMapAndEntities(&in);
+    GL_PERF_PUSH_GROUP(0, "water::draw_world");
+    draw_world(user);
     GL_PERF_POP_GROUP();
     render_non_parallax_skybox(cam, &in);
 
@@ -691,7 +686,8 @@ void R_GL_WaterShutdown(void)
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const bool *reflection)
+void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const bool *reflection,
+                    void (*draw_world)(void *user), void *user)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -702,8 +698,8 @@ void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const
 
     water_ensure_targets();
 
-    render_refraction_tex(*refraction, *in);
-    render_reflection_tex(*reflection, *in);
+    render_refraction_tex(*refraction, &state);
+    render_reflection_tex(*reflection, *in, draw_world, user);
 
     restore_gl_state(&state);
 

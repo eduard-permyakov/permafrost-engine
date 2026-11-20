@@ -103,6 +103,7 @@
     <ClCompile Include="..\src\render\gl_minimap.c" />
     <ClCompile Include="..\src\render\gl_movement.c" />
     <ClCompile Include="..\src\render\gl_perf.c" />
+    <ClCompile Include="..\src\render\gl_pipeline.c" />
     <ClCompile Include="..\src\render\gl_render.c" />
     <ClCompile Include="..\src\render\gl_ringbuffer.c" />
     <ClCompile Include="..\src\render\gl_shader.c" />
@@ -247,6 +248,7 @@
     <ClInclude Include="..\src\render\gl_mem.h" />
     <ClInclude Include="..\src\render\gl_mesh.h" />
     <ClInclude Include="..\src\render\gl_perf.h" />
+    <ClInclude Include="..\src\render\gl_pipeline.h" />
     <ClInclude Include="..\src\render\gl_render.h" />
     <ClInclude Include="..\src\render\gl_ringbuffer.h" />
     <ClInclude Include="..\src\render\gl_shader.h" />

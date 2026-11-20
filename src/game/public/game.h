@@ -102,13 +102,7 @@ struct render_input{
     const struct camera *cam;
     const struct map    *map;
     bool                 shadows;
-    /* Restrict terrain rendering to chunks at or adjacent to a water chunk.
-     * Set by the water reflection/refraction passes. 
-     */
-    bool                 water_only;
     vec3_t               light_pos;
-    /* Per-chunk baked terrain layer, or -1 to draw the chunk from its mesh */
-    const int           *terrain_layers;
     /* The visible entities to render */
     vec_rstat_t         cam_vis_stat;
     vec_ranim_t         cam_vis_anim;
@@ -154,11 +148,6 @@ void            G_ClearRenderWork(void);
 void            G_Update(void);
 void            G_Render(void);
 void            G_SwapBuffers(void);
-
-/* This does not have any side effects besides  making draw calls, 
- * so it is safe to invoke from the render thread. 
- */
-void            G_RenderMapAndEntities(struct render_input *in);
 
 bool            G_GetMinimapPos(float *out_x, float *out_y);
 bool            G_SetMinimapPos(float x, float y);

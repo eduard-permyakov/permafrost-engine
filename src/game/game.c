@@ -252,159 +252,7 @@ static void g_init_map(void)
     N_ClearState();
 }
 
-static void g_shadow_pass(struct render_input *in)
-{
-    R_PushCmd((struct rcmd){
-        .func = R_GL_DepthPassBegin,
-        .nargs = 2,
-        .args = {
-            R_PushArg(&in->light_pos, sizeof(in->light_pos)),
-            R_PushArg((void*)in->cam, g_sizeof_camera),
-        },
-    });
-
-    if(in->map) {
-        M_RenderVisibleMap(in->map, in->cam, true, RENDER_PASS_DEPTH, false, NULL);
-    }
-
-    if(s_gs.use_batch_rendering) {
-
-        R_PushCmd((struct rcmd){
-            .func = R_GL_Batch_RenderDepthMap,
-            .nargs = 1,
-            .args = { in }
-        });
-
-    }else{
-        for(int i = 0; i < vec_size(&in->light_vis_anim); i++) {
-        
-            struct ent_anim_rstate *curr = &vec_AT(&in->light_vis_anim, i);
-
-            mat4x4_t model, normal;
-            PFM_Mat4x4_Inverse(&curr->model, &model);
-            PFM_Mat4x4_Transpose(&model, &normal);
-
-            R_PushCmd((struct rcmd){
-                .func = R_GL_AnimSetUniforms,
-                .nargs = 2,
-                .args = {
-                    R_PushArg(&normal, sizeof(normal)),
-                    R_PushArg(&curr->desc, sizeof(curr->desc)),
-                },
-            });
-
-            R_PushCmd((struct rcmd){
-                .func = R_GL_RenderDepthMap,
-                .nargs = 2,
-                .args = {
-                    curr->render_private,
-                    R_PushArg(&curr->model, sizeof(curr->model)),
-                },
-            });
-        }
-
-        for(int i = 0; i < vec_size(&in->light_vis_stat); i++) {
-        
-            struct ent_stat_rstate *curr = &vec_AT(&in->light_vis_stat, i);
-            R_PushCmd((struct rcmd){
-                .func = R_GL_RenderDepthMap,
-                .nargs = 2,
-                .args = {
-                    curr->render_private,
-                    R_PushArg(&curr->model, sizeof(curr->model)),
-                },
-            });
-        }
-    }
-
-    if(vec_size(&in->light_vis_bill)) {
-        R_PushCmd((struct rcmd){
-            .func = R_GL_Billboard_DrawDepth,
-            .nargs = 1,
-            .args = { in },
-        });
-    }
-
-    R_PushCmd((struct rcmd){ R_GL_DepthPassEnd, 0 });
-}
-
-static void g_draw_pass(struct render_input *in)
-{
-    if(in->map) {
-        M_RenderVisibleMap(in->map, in->cam, in->shadows, RENDER_PASS_REGULAR, in->water_only,
-            in->terrain_layers);
-    }
-
-    /* The water passes re-enter here on the render thread */
-    if(in->map && !in->water_only) {
-        M_Decal_Render(in->cam);
-    }
-
-    if(s_gs.use_batch_rendering) {
-
-        R_PushCmd((struct rcmd){
-            .func = R_GL_Batch_Draw,
-            .nargs = 1,
-            .args = { in }
-        });
-
-    }else{
-        for(int i = 0; i < vec_size(&in->cam_vis_anim); i++) {
-        
-            struct ent_anim_rstate *curr = &vec_AT(&in->cam_vis_anim, i);
-
-            mat4x4_t model, normal;
-            PFM_Mat4x4_Inverse(&curr->model, &model);
-            PFM_Mat4x4_Transpose(&model, &normal);
-
-            R_PushCmd((struct rcmd){
-                .func = R_GL_AnimSetUniforms,
-                .nargs = 2,
-                .args = {
-                    R_PushArg(&normal, sizeof(normal)),
-                    R_PushArg(&curr->desc, sizeof(curr->desc)),
-                },
-            });
-
-            R_PushCmd((struct rcmd){
-                .func = R_GL_Draw,
-                .nargs = 3,
-                .args = {
-                    curr->render_private,
-                    R_PushArg(&curr->model, sizeof(curr->model)),
-                    R_PushArg(&curr->translucent, sizeof(curr->translucent)),
-                },
-            });
-        }
-
-        for(int i = 0; i < vec_size(&in->cam_vis_stat); i++) {
-        
-            struct ent_stat_rstate *curr = &vec_AT(&in->cam_vis_stat, i);
-            R_PushCmd((struct rcmd){
-                .func = R_GL_Draw,
-                .nargs = 3,
-                .args = {
-                    curr->render_private,
-                    R_PushArg(&curr->model, sizeof(curr->model)),
-                    R_PushArg(&curr->translucent, sizeof(curr->translucent)),
-                },
-            });
-        }
-    }
-
-    /* The billboard pass is a single self-contained instanced draw, used
-     * regardless of the batching mode. The water passes skip it.
-     */
-    if(!in->water_only && vec_size(&in->cam_vis_bill)) {
-        R_PushCmd((struct rcmd){
-            .func = R_GL_Billboard_Draw,
-            .nargs = 1,
-            .args = { in },
-        });
-    }
-}
-
-static void g_render_healthbars(void)
+static void g_scene_healthbars(struct scene_healthbars *out)
 {
     PERF_ENTER();
 
@@ -454,17 +302,11 @@ static void g_render_healthbars(void)
         num_combat_visible++;
     }
 
-    R_PushCmd((struct rcmd){
-        .func = R_GL_DrawHealthbars,
-        .nargs = 5,
-        .args = {
-            R_PushArg(&num_combat_visible, sizeof(num_combat_visible)),
-            R_PushArg(ent_health_pc, max_ents * sizeof(GLfloat)),
-            R_PushArg(ent_top_pos_ws, max_ents * sizeof(vec3_t)),
-            R_PushArg(ent_yoffsets, max_ents * sizeof(int)),
-            R_PushArg(s_gs.active_cam, g_sizeof_camera),
-        },
-    });
+    out->shown = true;
+    out->nents = num_combat_visible;
+    out->health_pc = R_PushArg(ent_health_pc, max_ents * sizeof(GLfloat));
+    out->top_pos_ws = R_PushArg(ent_top_pos_ws, max_ents * sizeof(vec3_t));
+    out->yoffsets = R_PushArg(ent_yoffsets, max_ents * sizeof(int));
 
     STFREE(ent_health_pc);
     STFREE(ent_top_pos_ws);
@@ -804,9 +646,7 @@ static void g_create_render_input(struct render_input *out)
     out->cam = s_gs.active_cam;
     out->map = s_gs.prev_tick_map;
     out->shadows = shadows_setting.as_bool;
-    out->water_only = false;
     out->light_pos = s_gs.light_pos;
-    out->terrain_layers = NULL;
 
     vec_rstat_init_alloc(&out->cam_vis_stat, stackrealloc, stackfree);
     vec_ranim_init_alloc(&out->cam_vis_anim, stackrealloc, stackfree);
@@ -2169,7 +2009,7 @@ static void g_create_settings(void)
     });
 }
 
-static void g_render_minimap_units(void)
+static void g_scene_minimap(struct scene_minimap *out)
 {
     ASSERT_IN_MAIN_THREAD();
     assert(Sched_UsingBigStack());
@@ -2200,7 +2040,7 @@ static void g_render_minimap_units(void)
         nunits++;
     });
 
-    M_RenderMinimapUnits(s_gs.map, nunits, positions, colors);
+    M_SceneMinimap(s_gs.map, nunits, positions, colors, out);
 
     STFREE(positions);
     STFREE(colors);
@@ -3172,6 +3012,47 @@ const struct map *G_GetMap(void)
     return s_gs.map;
 }
 
+static void g_scene_markers(struct render_scene *scene)
+{
+    enum selection_type sel_type;
+    const vec_entity_t *selected = G_Sel_Get(&sel_type);
+    bool ranged = s_range_indicator.active && G_EntityExists(s_range_indicator.uid);
+
+    size_t max = vec_size(selected) + ranged;
+    scene->markers = R_AllocArg(max * sizeof(struct scene_marker));
+    if(!scene->markers)
+        return;
+
+    for(int i = 0; i < vec_size(selected); i++) {
+
+        uint32_t curr = vec_AT(selected, i);
+        struct scene_marker *marker = &scene->markers[scene->nmarkers++];
+        *marker = (struct scene_marker){
+            .width = 0.4f,
+            .color = g_seltype_color_map[sel_type],
+        };
+
+        if(G_FlagsGet(curr) & ENTITY_FLAG_BUILDING) {
+            struct obb obb;
+            Entity_CurrentOBB(curr, &obb, false);
+            marker->box = R_PushArg(&obb, sizeof(obb));
+        }else{
+            marker->xz = G_Pos_GetXZ(curr);
+            marker->radius = G_GetSelectionRadius(curr);
+        }
+    }
+
+    /* A ring showing how far an ability reaches, while the player is asking. */
+    if(ranged) {
+        scene->markers[scene->nmarkers++] = (struct scene_marker){
+            .xz = G_Pos_GetXZ(s_range_indicator.uid),
+            .radius = s_range_indicator.radius,
+            .width = s_range_indicator.width,
+            .color = s_range_indicator.color,
+        };
+    }
+}
+
 void G_Render(void)
 {
     PERF_ENTER();
@@ -3182,142 +3063,77 @@ void G_Render(void)
     /* The chunk bakes render to their own target, so they precede the frame */
     const int *terrain_layers = s_gs.map ? M_TerrainBake_Tick(s_gs.active_cam) : NULL;
 
-    R_PushCmd((struct rcmd){ R_GL_BeginFrame, 0 });
+    struct render_scene scene = (struct render_scene){0};
+    scene.batching = s_gs.use_batch_rendering;
+    scene.map = s_gs.prev_tick_map;
+    scene.dump_path = R_TakeFramebufferDump();
+
+    struct sval setting;
+    status = Settings_Get("pf.video.water_refraction", &setting);
+    assert(status == SS_OKAY);
+    scene.water_refraction = setting.as_bool;
+
+    status = Settings_Get("pf.video.water_reflection", &setting);
+    assert(status == SS_OKAY);
+    scene.water_reflection = setting.as_bool;
+
+    R_BeginCapture();
     E_Global_NotifyImmediate(EVENT_RENDER_3D_PRE, NULL, ES_ENGINE);
+    scene.pre_world = R_EndCapture();
 
     uint64_t st0 = SDL_GetPerformanceCounter();
     struct render_input in;
     g_create_render_input(&in);
-    in.terrain_layers = terrain_layers;
 
-    struct render_input *rcopy = g_push_render_input(in);
+    scene.world = g_push_render_input(in);
+    scene.cam = scene.world->cam;
+    scene.shadows = in.shadows;
     s_stage_us[3] = stage_us(st0);
+
     st0 = SDL_GetPerformanceCounter();
-    G_RenderMapAndEntities(rcopy);
+    if(scene.map) {
+        M_SceneTerrain(scene.map, s_gs.active_cam, terrain_layers, &scene.terrain);
+        M_Decal_Scene(s_gs.active_cam, &scene.decals);
+    }
     s_stage_us[4] = stage_us(st0);
 
-    struct sval refract_setting;
-    status = Settings_Get("pf.video.water_refraction", &refract_setting);
-    assert(status == SS_OKAY);
-
-    struct sval reflect_setting;
-    status = Settings_Get("pf.video.water_reflection", &reflect_setting);
-    assert(status == SS_OKAY);
-
     if(s_gs.map && M_WaterMaybeVisible(s_gs.map, s_gs.active_cam)) {
-
         g_prune_water_input(&in);
-        struct render_input *water_rcopy = g_push_render_input(in);
-
-        R_PushCmd((struct rcmd){
-            .func = R_GL_DrawWater,
-            .nargs = 3,
-            .args = { 
-                water_rcopy,
-                R_PushArg(&refract_setting.as_bool, sizeof(bool)),
-                R_PushArg(&reflect_setting.as_bool, sizeof(bool)),
-            },
-        });
+        scene.water = g_push_render_input(in);
     }
     g_destroy_render_input();
+    g_scene_markers(&scene);
 
-    enum selection_type sel_type;
-    const vec_entity_t *selected = G_Sel_Get(&sel_type);
-    for(int i = 0; i < vec_size(selected); i++) {
-
-        uint32_t curr = vec_AT(selected, i);
-        vec2_t curr_pos = G_Pos_GetXZ(curr);
-        const float width = 0.4f;
-        uint32_t flags = G_FlagsGet(curr);
-
-        if(flags & ENTITY_FLAG_BUILDING) {
-
-            struct obb obb;
-            Entity_CurrentOBB(curr, &obb, false);
-            R_PushCmd((struct rcmd){
-                .func = R_GL_DrawSelectionRectangle,
-                .nargs = 4,
-                .args = {
-                    R_PushArg(&obb, sizeof(obb)),
-                    R_PushArg(&width, sizeof(width)),
-                    R_PushArg(&g_seltype_color_map[sel_type], sizeof(g_seltype_color_map[0])),
-                    (void*)s_gs.prev_tick_map,
-                },
-            });
-        }else{
-
-            float sel_radius = G_GetSelectionRadius(curr);
-            R_PushCmd((struct rcmd){
-                .func = R_GL_DrawSelectionCircle,
-                .nargs = 5,
-                .args = {
-                    R_PushArg(&curr_pos, sizeof(curr_pos)),
-                    R_PushArg(&sel_radius, sizeof(sel_radius)),
-                    R_PushArg(&width, sizeof(width)),
-                    R_PushArg(&g_seltype_color_map[sel_type], sizeof(g_seltype_color_map[0])),
-                    (void*)s_gs.prev_tick_map,
-                },
-            });
-        }
-    }
-
-    /* A ring showing how far an ability reaches, while the player is asking. */
-    if(s_range_indicator.active && G_EntityExists(s_range_indicator.uid)) {
-
-        vec2_t pos = G_Pos_GetXZ(s_range_indicator.uid);
-        R_PushCmd((struct rcmd){
-            .func = R_GL_DrawSelectionCircle,
-            .nargs = 5,
-            .args = {
-                R_PushArg(&pos, sizeof(pos)),
-                R_PushArg(&s_range_indicator.radius, sizeof(s_range_indicator.radius)),
-                R_PushArg(&s_range_indicator.width, sizeof(s_range_indicator.width)),
-                R_PushArg(&s_range_indicator.color, sizeof(s_range_indicator.color)),
-                (void*)s_gs.prev_tick_map,
-            },
-        });
-    }
-
-    R_PushCmd((struct rcmd){
-        .func = R_GL_DrawSkybox,
-        .nargs = 1,
-        .args = {
-            R_PushArg(s_gs.active_cam, g_sizeof_camera)
-        }
-    });
-
+    R_BeginCapture();
     E_Global_NotifyImmediate(EVENT_RENDER_3D_POST, NULL, ES_ENGINE);
-    R_PushCmd((struct rcmd) { R_GL_SetScreenspaceDrawMode, 0 });
+    scene.post_world = R_EndCapture();
 
     st0 = SDL_GetPerformanceCounter();
     if(!s_gs.hide_healthbars) {
-        g_render_healthbars();
+        g_scene_healthbars(&scene.healthbars);
     }
     s_stage_us[5] = stage_us(st0);
 
+    R_BeginCapture();
     E_Global_NotifyImmediate(EVENT_RENDER_UI, NULL, ES_ENGINE);
+    scene.ui = R_EndCapture();
 
     st0 = SDL_GetPerformanceCounter();
     if(s_gs.map) {
-        M_RenderMinimap(s_gs.map, s_gs.active_cam);
-        g_render_minimap_units();
-        R_PushCmd((struct rcmd){ R_GL_MapInvalidate, 0 });
+        g_scene_minimap(&scene.minimap);
     }
     s_stage_us[6] = stage_us(st0);
 
+    R_BeginCapture();
     E_Global_NotifyImmediate(EVENT_RENDER_FINISH, NULL, ES_ENGINE);
-    R_PushCmd((struct rcmd){ R_GL_EndFrame, 0 });
+    scene.finish = R_EndCapture();
 
-    PERF_RETURN_VOID();
-}
+    R_PushCmd((struct rcmd){
+        .func = R_GL_Pipeline_Render,
+        .nargs = 1,
+        .args = { R_PushArg(&scene, sizeof(scene)) },
+    });
 
-void G_RenderMapAndEntities(struct render_input *in)
-{
-    PERF_ENTER();
-    if(in->shadows) {
-        g_shadow_pass(in);
-    }
-    g_draw_pass(in);
     PERF_RETURN_VOID();
 }
 

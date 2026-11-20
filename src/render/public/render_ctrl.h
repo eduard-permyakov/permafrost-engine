@@ -51,6 +51,10 @@ struct frustum;
 struct tile_desc;
 struct map;
 struct camera;
+struct render_input;
+struct splatmap;
+struct map_resolution;
+struct obb;
 
 enum render_info{
     RENDER_INFO_VENDOR,
@@ -115,6 +119,98 @@ struct rcmd{
 QUEUE_TYPE(rcmd, struct rcmd)
 QUEUE_IMPL(static inline, rcmd, struct rcmd)
 
+/* A run of commands taken out of the queue while it was being captured */
+struct rcmd_list{
+    size_t       ncmds;
+    struct rcmd *cmds;
+};
+
+struct scene_chunk{
+    void     *render_private;
+    mat4x4_t  model;
+    /* The layer holding the baked top faces, or -1 to draw the chunk whole */
+    int       bake_layer;
+    vec4_t    bake_xform;
+    bool      near_water;
+};
+
+struct scene_terrain{
+    vec2_t                 pos;
+    size_t                 num_splats;
+    const struct splatmap *splatmap;
+    size_t                 nchunks;
+    struct scene_chunk    *chunks;
+};
+
+struct scene_decals{
+    const struct map_resolution *res;
+    vec2_t                       map_pos;
+    size_t                       nchunks;
+    size_t                      *chunks;
+};
+
+/* A ring on the ground around a unit, or a rectangle around a building */
+struct scene_marker{
+    const struct obb *box;
+    vec2_t            xz;
+    float             radius;
+    float             width;
+    vec3_t            color;
+};
+
+struct scene_healthbars{
+    bool    shown;
+    size_t  nents;
+    float  *health_pc;
+    vec3_t *top_pos_ws;
+    int    *yoffsets;
+};
+
+struct scene_minimap{
+    bool    shown;
+    vec2_t  center;
+    int     side_len;
+    vec4_t  border_clr;
+    size_t  nunits;
+    vec2_t *unit_pos;
+    vec3_t *unit_clr;
+};
+
+/* One frame's worth of drawing. Everything pointed to lives in the render 
+ * workspace the scene was pushed to, the map and the render data of the 
+ * entities and chunks excepted.
+ */
+struct render_scene{
+    bool                       shadows;
+    bool                       batching;
+    bool                       water_refraction;
+    bool                       water_reflection;
+
+    const struct camera       *cam;
+    /* NULL when no map is loaded */
+    const struct map          *map;
+    struct render_input       *world;
+    /* The entities by the water, or NULL when no water can be in view */
+    struct render_input       *water;
+
+    struct scene_terrain       terrain;
+    struct scene_decals        decals;
+    size_t                     nmarkers;
+    struct scene_marker       *markers;
+    struct scene_healthbars    healthbars;
+    struct scene_minimap       minimap;
+
+    /* What the listeners of the render events pushed: world geometry ahead
+     * of and after the engine's own, then the screen-space drawing.
+     */
+    struct rcmd_list           pre_world;
+    struct rcmd_list           post_world;
+    struct rcmd_list           ui;
+    struct rcmd_list           finish;
+
+    const char                *dump_path;
+};
+
 struct render_workspace{
     /* Stack allocator for storing all the data/arguments associated
      * with the commands */
@@ -136,6 +232,17 @@ void        R_PushCmd(struct rcmd cmd);
  * be called when the render thread is quiesced */
 void        R_PushCmdImmediate(struct rcmd cmd);
 void        R_PushCmdImmediateFront(struct rcmd cmd);
+
+/* Between the two calls, the commands the main thread pushes are set aside
+ * instead of queued. The list is theirs to run, in the pushed order.
+ */
+void        R_BeginCapture(void);
+struct rcmd_list R_EndCapture(void);
+
+/* The next frame is written to the PPM file once it is complete */
+void        R_RequestFramebufferDump(const char *path);
+/* The pending request, copied into the render workspace, or NULL */
+const char *R_TakeFramebufferDump(void);
 
 bool        R_InitWS(struct render_workspace *ws);
 void        R_DestroyWS(struct render_workspace *ws);

@@ -38,6 +38,7 @@
 
 #include "gl_mesh.h"
 #include "gl_texture.h"
+#include "public/render_ctrl.h"
 #include "../map/public/tile.h"
 
 struct terrain_vert;
@@ -58,6 +59,7 @@ extern float g_water_rt_scale;
 
 /* General */
 void R_Yield(void);
+void R_RunCmds(struct rcmd_list list);
 
 /* Tile */
 void R_TileGetVertices(const struct map *map, struct tile_desc td, struct terrain_vert *out);
