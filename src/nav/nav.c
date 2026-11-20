@@ -54,7 +54,7 @@
 #include "../phys/public/collision.h"
 #include "../pf_math.h"
 #include "../entity.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../main.h"
 #include "../perf.h"
 #include "../sched/public/sched.h"

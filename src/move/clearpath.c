@@ -50,7 +50,7 @@
 #include "../game/public/game.h"
 #include "move_private.h"
 #include "../main.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../entity.h"
 #include "../settings.h"
 #include "../ui.h"

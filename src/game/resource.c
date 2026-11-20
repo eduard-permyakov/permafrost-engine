@@ -42,7 +42,7 @@
 #include "public/game.h"
 #include "storage_site.h"
 #include "../sched/public/sched.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../entity.h"
 #include "../phys/public/collision.h"
 #include "../map/public/map.h"

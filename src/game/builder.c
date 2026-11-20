@@ -49,7 +49,7 @@
 #include "../sched/public/sched.h"
 #include "../entity.h"
 #include "../perf.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../cursor.h"
 #include "../phys/public/collision.h"
 #include "../map/public/map.h"

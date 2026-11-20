@@ -39,7 +39,7 @@
 #include "entity.h" 
 #include "sched/public/sched.h"
 #include "sched/public/task.h"
-#include "event.h"
+#include "event/public/event.h"
 #include "main.h"
 #include "camera/public/camera.h"
 #include "asset_load.h"

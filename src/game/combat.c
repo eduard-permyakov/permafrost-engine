@@ -48,7 +48,7 @@
 #include "storage_site.h"
 #include "public/game.h"
 #include "../ui.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../entity.h"
 #include "../main.h"
 #include "../perf.h"

@@ -49,7 +49,7 @@
 #include "harvester.h"
 #include "resource.h"
 #include "command.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../entity.h"
 #include "../settings.h"
 #include "../camera/public/camera.h"

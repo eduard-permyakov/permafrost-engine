@@ -40,7 +40,7 @@
 #include "../game/public/game.h"
 #include "move_private.h"
 #include "../main.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../settings.h"
 #include "../perf.h"
 #include "../camera/public/camera.h"

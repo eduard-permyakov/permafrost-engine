@@ -39,7 +39,7 @@
 #include "public/task.h"
 #include "../game/public/game.h"
 #include "public/sched.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../main.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/pqueue.h"

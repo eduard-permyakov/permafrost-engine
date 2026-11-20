@@ -42,7 +42,7 @@
 #include "position.h"
 #include "fog_of_war.h"
 #include "../ui.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../entity.h"
 #include "../sched/public/sched.h"
 #include "../lib/public/khash.h"

@@ -48,7 +48,7 @@
 #include "../sched/public/task.h"
 #include "../sched/public/sched.h"
 #include "../main.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../perf.h"
 #include "../game/public/game.h"
 #include "../lib/public/khash.h"

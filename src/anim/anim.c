@@ -43,7 +43,7 @@
 #include "anim_ctx.h"
 #include "anim_texture.h"
 #include "../entity.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../perf.h"
 #include "../asset_load.h"
 #include "../lib/public/attr.h"

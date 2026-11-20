@@ -47,7 +47,7 @@
 #include "script_thread.h"
 #include "../ui.h"
 #include "../main.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../settings.h"
 #include "../lib/public/lru_cache.h"
 #include "../mem.h"

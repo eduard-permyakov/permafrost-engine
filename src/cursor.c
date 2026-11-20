@@ -39,7 +39,7 @@
 #include "cursor.h"
 #include "script/public/script.h"
 #include "config.h"
-#include "event.h"
+#include "event/public/event.h"
 #include "main.h"
 #include "sched/public/sched.h"
 #include "game/public/game.h"

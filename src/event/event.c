@@ -36,17 +36,17 @@
 #define MEM_FILE_SYS MEM_SYS_EVENT
 #define MEM_FILE_SUB 0
 
-#include "event.h"
-#include "main.h"
-#include "perf.h"
-#include "settings.h"
-#include "sched/public/sched.h"
-#include "mem.h"
-#include "lib/public/khash.h"
-#include "lib/public/vec.h"
-#include "lib/public/queue.h"
-#include "lib/public/lockfree.h"
-#include "game/public/game.h"
+#include "public/event.h"
+#include "../main.h"
+#include "../perf.h"
+#include "../settings.h"
+#include "../sched/public/sched.h"
+#include "../mem.h"
+#include "../lib/public/khash.h"
+#include "../lib/public/vec.h"
+#include "../lib/public/queue.h"
+#include "../lib/public/lockfree.h"
+#include "../game/public/game.h"
 
 #include <assert.h>
 

@@ -39,7 +39,7 @@
 #include "map_private.h"
 #include "public/tile.h"
 #include "public/map.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../pf_math.h"
 #include "../camera/public/camera.h"
 #include "../config.h"

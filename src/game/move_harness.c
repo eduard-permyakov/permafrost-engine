@@ -45,7 +45,7 @@
 #include "../move/public/movement.h"
 #include "../config.h"
 #include "../asset_load.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../entity.h"
 #include "../main.h"
 #include "../perf.h"

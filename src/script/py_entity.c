@@ -44,7 +44,7 @@
 #include "public/script.h"
 #include "../main.h"
 #include "../entity.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../asset_load.h"
 #include "../anim/public/anim.h"
 #include "../game/public/game.h"

@@ -39,7 +39,7 @@
 #include "roads.h"
 #include "public/game.h"
 #include "game_private.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../camera/public/camera.h"
 #include "../entity.h"
 #include "../phys/public/collision.h"

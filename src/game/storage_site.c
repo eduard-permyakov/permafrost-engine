@@ -43,7 +43,7 @@
 #include "selection.h"
 #include "../sched/public/sched.h"
 #include "../ui.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../settings.h"
 #include "../main.h"
 #include "../lib/public/pf_nuklear.h"

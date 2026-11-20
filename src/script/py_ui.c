@@ -56,7 +56,7 @@
 #include "../lib/public/nk_file_browser.h"
 #include "../game/public/game.h"
 #include "../phys/public/collision.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../config.h"
 #include "../settings.h"
 #include "../main.h"

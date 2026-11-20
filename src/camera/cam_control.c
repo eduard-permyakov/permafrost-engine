@@ -40,7 +40,7 @@
 #include "../script/public/script.h"
 #include "../config.h"
 #include "../settings.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../main.h"
 #include "../cursor.h"
 #include "../game/public/game.h"

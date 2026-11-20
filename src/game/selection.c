@@ -41,7 +41,7 @@
 #include "public/game.h"
 #include "move_harness.h"
 #include "../pf_math.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../config.h"

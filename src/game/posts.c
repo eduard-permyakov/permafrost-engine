@@ -47,7 +47,7 @@
 #include "builder.h"
 #include "provision.h"
 #include "../main.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../entity.h"
 #include "../sched/public/sched.h"
 #include "../script/public/script.h"

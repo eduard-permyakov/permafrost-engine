@@ -38,7 +38,7 @@
 
 #include "py_constants.h"
 #include "../lib/public/pf_nuklear.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../config.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"

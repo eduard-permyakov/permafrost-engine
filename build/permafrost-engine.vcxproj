@@ -30,7 +30,7 @@
     <ClCompile Include="..\src\camera\cam_control.c" />
     <ClCompile Include="..\src\cursor.c" />
     <ClCompile Include="..\src\entity.c" />
-    <ClCompile Include="..\src\event.c" />
+    <ClCompile Include="..\src\event\event.c" />
     <ClCompile Include="..\src\game\automation.c" />
     <ClCompile Include="..\src\game\builder.c" />
     <ClCompile Include="..\src\game\building.c" />
@@ -54,7 +54,7 @@
     <ClCompile Include="..\src\game\roads.c" />
     <ClCompile Include="..\src\game\selection.c" />
     <ClCompile Include="..\src\game\storage_site.c" />
-    <ClCompile Include="..\src\game\timer_events.c" />
+    <ClCompile Include="..\src\event\timer.c" />
     <ClCompile Include="..\src\move\wander.c" />
     <ClCompile Include="..\src\lib\attr.c" />
     <ClCompile Include="..\src\lib\bitgrid.c" />
@@ -165,7 +165,7 @@
     <ClInclude Include="..\src\config.h" />
     <ClInclude Include="..\src\cursor.h" />
     <ClInclude Include="..\src\entity.h" />
-    <ClInclude Include="..\src\event.h" />
+    <ClInclude Include="..\src\event\public\event.h" />
     <ClInclude Include="..\src\game\automation.h" />
     <ClInclude Include="..\src\game\builder.h" />
     <ClInclude Include="..\src\game\building.h" />
@@ -192,7 +192,7 @@
     <ClInclude Include="..\src\game\roads.h" />
     <ClInclude Include="..\src\game\selection.h" />
     <ClInclude Include="..\src\game\storage_site.h" />
-    <ClInclude Include="..\src\game\timer_events.h" />
+    <ClInclude Include="..\src\event\public\timer.h" />
     <ClInclude Include="..\src\lib\public\attr.h" />
     <ClInclude Include="..\src\lib\public\bitgrid.h" />
     <ClInclude Include="..\src\lib\public\bitmap_grid.h" />

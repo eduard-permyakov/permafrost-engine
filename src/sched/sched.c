@@ -42,7 +42,7 @@
 #include "../perf.h"
 #include "../main.h"
 #include "public/task.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../game/public/game.h"
 #include "../phys/public/phys.h"
 #include "../script/public/script.h"

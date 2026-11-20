@@ -39,7 +39,7 @@
 #include "public/phys.h"
 #include "public/collision.h"
 #include "../main.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../sched/public/task.h"
 #include "../perf.h"
 #include "../sched/public/sched.h"

@@ -44,7 +44,7 @@
 #include "posts.h"
 #include "automation.h"
 #include "../main.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../entity.h"
 #include "../sched/public/sched.h"
 #include "../lib/public/khash.h"

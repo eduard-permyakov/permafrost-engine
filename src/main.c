@@ -54,7 +54,7 @@
 #include "audio/public/audio.h"
 #include "phys/public/phys.h"
 #include "anim/public/anim.h"
-#include "event.h"
+#include "event/public/event.h"
 #include "ui.h"
 #include "pf_math.h"
 #include "settings.h"

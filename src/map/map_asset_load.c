@@ -50,7 +50,7 @@
 #include "../mem.h"
 #include "../ui.h"
 #include "../perf.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../settings.h"
 
 #include <stdlib.h>

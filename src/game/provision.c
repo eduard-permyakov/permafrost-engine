@@ -46,7 +46,7 @@
 #include "storage_site.h"
 #include "harvester.h"
 #include "builder.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../entity.h"
 #include "../sched/public/sched.h"
 #include "../lib/public/khash.h"

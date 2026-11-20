@@ -43,7 +43,7 @@
 #include "../main.h"
 #include "../sched/public/sched.h"
 #include "../ui.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../camera/public/camera.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/attr.h"

@@ -42,7 +42,7 @@
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"
 #include "../mem.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../sched/public/sched.h"
 #include "../config.h"
 #include "../map/public/tile.h"

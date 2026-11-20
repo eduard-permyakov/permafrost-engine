@@ -37,7 +37,7 @@
 #define MEM_FILE_SUB 0
 
 #include "sprite.h"
-#include "event.h"
+#include "event/public/event.h"
 #include "camera/public/camera.h"
 #include "main.h"
 #include "lib/public/nk_file_browser.h"

@@ -39,7 +39,7 @@
 #include "ui.h"
 #include "script/public/script.h"
 #include "config.h"
-#include "event.h"
+#include "event/public/event.h"
 #include "main.h"
 
 #include "lib/public/pf_nuklear.h"

@@ -42,7 +42,7 @@
 #include "../render/public/render_ctrl.h"
 #include "../phys/public/collision.h"
 #include "../game/public/game.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../main.h"
 #include "../ui.h"
 #include "../camera/public/camera.h"

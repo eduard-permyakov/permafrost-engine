@@ -41,7 +41,7 @@
 #include "al_assert.h"
 #include "../sched/public/sched.h"
 #include "../pf_math.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../entity.h"
 #include "../perf.h"
 #include "../settings.h"

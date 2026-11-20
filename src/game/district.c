@@ -41,7 +41,7 @@
 #include "public/game.h"
 #include "game_private.h"
 #include "position.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../entity.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"

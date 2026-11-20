@@ -38,7 +38,7 @@
 
 #include "py_region.h"
 #include "script_thread.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "py_entity.h"
 #include "py_pickle.h"
 #include "py_prof.h"

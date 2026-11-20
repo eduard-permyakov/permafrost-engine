@@ -36,9 +36,9 @@
 #define MEM_FILE_SYS MEM_SYS_GAME
 #define MEM_FILE_SUB MEM_SUB_GAME_TIMER_EVENTS
 
-#include "public/game.h"
-#include "timer_events.h"
-#include "../event.h"
+#include "../game/public/game.h"
+#include "public/timer.h"
+#include "public/event.h"
 
 #include <math.h>
 #include <assert.h>

@@ -41,7 +41,7 @@
 #include "al_assert.h"
 #include "../sched/public/sched.h"
 #include "../main.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../camera/public/camera.h"
 #include "../settings.h"
 #include "../mem.h"

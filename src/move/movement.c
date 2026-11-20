@@ -45,7 +45,7 @@
 #include "../game/public/game.h"
 #include "../config.h"
 #include "../camera/public/camera.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../entity.h"
 #include "../cursor.h"
 #include "../settings.h"

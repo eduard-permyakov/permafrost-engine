@@ -33,8 +33,8 @@
  *
  */
 
-#ifndef TIMER_EVENTS_H
-#define TIMER_EVENTS_H
+#ifndef TIMER_H
+#define TIMER_H
 
 #include <stdbool.h>
 

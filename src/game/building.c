@@ -43,7 +43,7 @@
 #include "storage_site.h"
 #include "fog_of_war.h"
 #include "public/game.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../entity.h"
 #include "../asset_load.h"
 #include "../sched/public/sched.h"

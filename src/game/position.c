@@ -46,7 +46,7 @@
 #include "region.h"
 #include "public/game.h"
 #include "../main.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../perf.h"
 #include "../sched/public/sched.h"
 #include "../mem.h"

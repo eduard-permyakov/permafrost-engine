@@ -40,7 +40,7 @@
 #include "public/game.h"
 #include "position.h"
 #include "game_private.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../settings.h"
 #include "../sched/public/sched.h"
 #include "../perf.h"

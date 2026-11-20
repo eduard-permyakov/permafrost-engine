@@ -25,6 +25,12 @@
     <Filter Include="Header Files\camera">
       <UniqueIdentifier>{bec8c988-ea1c-4269-8c8b-c1244f2d10a0}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\event">
+      <UniqueIdentifier>{a2c87e17-2ab7-47cb-9d02-d68e7c5f102e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\event">
+      <UniqueIdentifier>{5605d4ca-c2a8-4aab-915c-c441adaee87b}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\render">
       <UniqueIdentifier>{fc8ac884-ebc4-4088-a716-e0ae2aa9f718}</UniqueIdentifier>
     </Filter>
@@ -132,8 +138,8 @@
     <ClCompile Include="..\src\entity.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\event.c">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="..\src\event\event.c">
+      <Filter>Source Files\event</Filter>
     </ClCompile>
     <ClCompile Include="..\src\main.c">
       <Filter>Source Files</Filter>
@@ -258,8 +264,8 @@
     <ClCompile Include="..\src\game\storage_site.c">
       <Filter>Source Files\game</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\game\timer_events.c">
-      <Filter>Source Files\game</Filter>
+    <ClCompile Include="..\src\event\timer.c">
+      <Filter>Source Files\event</Filter>
     </ClCompile>
     <ClCompile Include="..\src\lib\attr.c">
       <Filter>Source Files\lib</Filter>
@@ -518,8 +524,8 @@
     <ClInclude Include="..\src\entity.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\event.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="..\src\event\public\event.h">
+      <Filter>Header Files\event</Filter>
     </ClInclude>
     <ClInclude Include="..\src\main.h">
       <Filter>Header Files</Filter>
@@ -668,8 +674,8 @@
     <ClInclude Include="..\src\game\storage_site.h">
       <Filter>Header Files\game</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\game\timer_events.h">
-      <Filter>Header Files\game</Filter>
+    <ClInclude Include="..\src\event\public\timer.h">
+      <Filter>Header Files\event</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\public\game.h">
       <Filter>Header Files\game\public</Filter>

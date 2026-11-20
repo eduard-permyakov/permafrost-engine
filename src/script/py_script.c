@@ -70,7 +70,7 @@
 #include "../lib/public/nk_file_browser.h"
 #include "../mem.h"
 #include "../lib/public/windows.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../config.h"
 #include "../scene.h"
 #include "../settings.h"

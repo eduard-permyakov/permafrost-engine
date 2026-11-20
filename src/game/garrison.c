@@ -49,7 +49,7 @@
 #include "../main.h"
 #include "../ui.h"
 #include "../entity.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../sched/public/sched.h"
 #include "../sched/public/task.h"
 #include "../lib/public/khash.h"

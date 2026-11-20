@@ -39,7 +39,7 @@
 #include "population.h"
 #include "game_private.h"
 #include "../entity.h"
-#include "../event.h"
+#include "../event/public/event.h"
 #include "../main.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/attr.h"
