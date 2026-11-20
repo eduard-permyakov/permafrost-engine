@@ -76,6 +76,7 @@
  * that objects just outside the visible area can still cast shadows into it.
  */
 #define SHADOW_XY_BUFFER      (64.0f)
+#define SHADOW_EXTENT_STEP    (32.0f)
 
 /* Padding along the light direction so the near plane clears tall casters above
  * the visible area and the far plane clears terrain dipping below it.
@@ -200,6 +201,32 @@ static struct light_frustum_fit make_light_fit(vec3_t light_pos, const struct ca
     }
     half_x = fmin(half_x + SHADOW_XY_BUFFER, CONFIG_SHADOW_MAX_EXTENT);
     half_y = fmin(half_y + SHADOW_XY_BUFFER, CONFIG_SHADOW_MAX_EXTENT);
+
+    /* Hold the map's texels to the same spots of the world as the camera pans, 
+     * or shadow edges shimmer. The extents are stepped so that the size of a 
+     * texel does not drift with them, and the light then moves sideways by 
+     * under a texel to put the world's origin on a texel corner.
+     */
+    half_x = ceil(half_x / SHADOW_EXTENT_STEP) * SHADOW_EXTENT_STEP;
+    half_y = ceil(half_y / SHADOW_EXTENT_STEP) * SHADOW_EXTENT_STEP;
+
+    vec3_t side, upward;
+    PFM_Vec3_Cross(&light_dir, &up, &side);
+    PFM_Vec3_Normal(&side, &side);
+    PFM_Vec3_Cross(&side, &light_dir, &upward);
+
+    float texel_x = 2.0f * half_x / CONFIG_SHADOW_MAP_RES;
+    float texel_y = 2.0f * half_y / CONFIG_SHADOW_MAP_RES;
+    float along_x = PFM_Vec3_Dot(&light_origin, &side);
+    float along_y = PFM_Vec3_Dot(&light_origin, &upward);
+
+    PFM_Vec3_Scale(&side, roundf(along_x / texel_x) * texel_x - along_x, &delta);
+    PFM_Vec3_Add(&light_origin, &delta, &light_origin);
+    PFM_Vec3_Scale(&upward, roundf(along_y / texel_y) * texel_y - along_y, &delta);
+    PFM_Vec3_Add(&light_origin, &delta, &light_origin);
+
+    PFM_Vec3_Add(&light_origin, &light_dir, &target);
+    PFM_Mat4x4_MakeLookAt(&light_origin, &target, &up, &view);
 
     float near_d = fmax(1.0f, min_d - SHADOW_DEPTH_BUFFER);
     float far_d  = fmin(max_d + SHADOW_DEPTH_BUFFER, CONFIG_SHADOW_DRAWDIST);
