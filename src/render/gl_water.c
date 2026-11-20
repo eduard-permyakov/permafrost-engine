@@ -106,6 +106,10 @@ struct water_gl_state{
 
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0])) 
 #define MAX(a, b)       ((a) > (b) ? (a) : (b))
+#define CLAMP(a, lo, hi) ((a) < (lo) ? (lo) : (a) > (hi) ? (hi) : (a))
+/* How far from the middle of the sky box its camera may get, of the way to a wall */
+#define SKY_CAM_REACH   (0.6f)
+
 #define WATER_LVL       (-1.0f * Y_COORDS_PER_TILE + 2.0f)
 #define DUDV_PATH       "assets/water_textures/dudvmap.png"
 #define NORM_PATH       "assets/water_textures/normalmap.png"
@@ -346,7 +350,13 @@ static void render_refraction_tex(bool on, const struct water_gl_state *frame)
     GL_PERF_RETURN_VOID();
 }
 
-static void render_non_parallax_skybox(const struct camera *cam, const struct render_input *in)
+/* The sky is a box the size of the map, centred on it, seen from where the 
+ * camera is over the map, which is what makes the reflected clouds slide as 
+ * the view pans. The camera is held well inside the box: pulled back at the 
+ * highest zoom it can pass through a wall near the map's edges, and the sky 
+ * breaks up as it does.
+ */
+static void render_non_parallax_skybox(struct camera *cam, const struct render_input *in)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -358,6 +368,13 @@ static void render_non_parallax_skybox(const struct camera *cam, const struct re
         res.chunk_w * res.tile_w * X_COORDS_PER_TILE, 
         res.chunk_h * res.tile_h * Z_COORDS_PER_TILE
     };
+    float reach = MAX(map_size.x, map_size.z) / 2.0f * SKY_CAM_REACH;
+
+    vec3_t pos = Camera_GetPos(cam);
+    pos.x = CLAMP(pos.x - map_center.x, -reach, reach);
+    pos.y = CLAMP(pos.y, -reach, reach);
+    pos.z = CLAMP(pos.z - map_center.z, -reach, reach);
+    Camera_SetPos(cam, pos);
 
     R_GL_DrawSkyboxScaled(cam, &map_size.x, &map_size.z);
 }
@@ -414,6 +431,14 @@ static void render_reflection_tex(bool on, struct render_input in,
     GL_PERF_PUSH_GROUP(0, "water::draw_world");
     draw_world(user);
     GL_PERF_POP_GROUP();
+
+    /* An orthographic view looks at the sky along a single direction, which 
+     * reflects as one flat colour. The sky is at no distance to line up with, 
+     * so it is reflected in perspective whatever the main projection is.
+     */
+    if(Camera_GetProjection(in.cam) == CAM_PROJ_ORTHOGRAPHIC) {
+        Camera_TickFinishPerspective(cam);
+    }
     render_non_parallax_skybox(cam, &in);
 
     glDisable(GL_CLIP_DISTANCE0);
