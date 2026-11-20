@@ -351,6 +351,32 @@ void R_GL_DepthPassBeginCustom(const mat4x4_t *light_space_trans)
     GL_PERF_RETURN_VOID();
 }
 
+/* A depth pass into a caller-owned framebuffer of the given square size,
+ * which leaves the shadow map the shaders sample untouched.
+ */
+void R_GL_DepthPassBeginTarget(const mat4x4_t *light_space_trans, unsigned int fb, int res)
+{
+    GL_PERF_ENTER();
+    ASSERT_IN_RENDER_THREAD();
+    GL_PERF_PUSH_GROUP(0, "depth pass");
+
+    assert(!s_depth_pass_active);
+    s_depth_pass_active = true;
+
+    glGetIntegerv(GL_VIEWPORT, s_saved.viewport);
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &s_saved.fb);
+
+    R_GL_SetLightSpaceTrans(light_space_trans);
+
+    glViewport(0, 0, res, res);
+    glBindFramebuffer(GL_FRAMEBUFFER, fb);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    glCullFace(GL_FRONT);
+
+    GL_ASSERT_OK();
+    GL_PERF_RETURN_VOID();
+}
+
 void R_GL_DepthPassEnd(void)
 {
     GL_PERF_ENTER();

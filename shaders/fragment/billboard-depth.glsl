@@ -40,14 +40,17 @@
 /*****************************************************************************/
 
 in VertexToFrag{
-         vec2 uv;
-    flat int  layer;
+         vec2  uv;
+         float card_depth;
+    flat float depth_slope;
+    flat int   layer;
 }from_vertex;
 
 /*****************************************************************************/
 /* UNIFORMS                                                                  */
 /*****************************************************************************/
 
+/* The model's depths as the bake's light saw it; 1 where it saw nothing */
 uniform sampler2DArray tex_array0;
 
 /*****************************************************************************/
@@ -56,7 +59,10 @@ uniform sampler2DArray tex_array0;
 
 void main()
 {
-    float alpha = texture(tex_array0, vec3(from_vertex.uv, float(from_vertex.layer))).a;
-    if(alpha < 0.5)
+    float depth = texture(tex_array0, vec3(from_vertex.uv, float(from_vertex.layer))).r;
+    if(depth >= 1.0)
         discard;
+
+    float ndc = from_vertex.card_depth + from_vertex.depth_slope * (2.0 * depth - 1.0);
+    gl_FragDepth = 0.5 * ndc + 0.5;
 }

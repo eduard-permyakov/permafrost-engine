@@ -234,6 +234,22 @@ static bool al_is_lod_name(const char *pfobj_name)
         || pf_endswith(pfobj_name, ".lod2.pfobj");
 }
 
+static void al_lod_name(const char *pfobj_name, int level, char *out, size_t size)
+{
+    size_t stem = strlen(pfobj_name) - strlen(".pfobj");
+    pf_snprintf(out, size, "%.*s.lod%d.pfobj", (int)stem, pfobj_name, level);
+}
+
+/* The coarsest level of detail loaded for a model, or 0 when it has none */
+static int al_coarsest_lod(const struct shared_resource *res)
+{
+    for(int level = 2; level >= 1; level--) {
+        if(res->render_private_lod[level - 1] != res->render_private)
+            return level;
+    }
+    return 0;
+}
+
 /* Discover and load the lower-detail siblings longside a base model. Each 
  * loads as its own resource so its mesh lands in the shared batch and its 
  * textures dedup against the base. A missing or unparseable level falls back 
@@ -248,12 +264,10 @@ static void al_attach_lods(const char *basedir, const char *pfobj_name,
     if(!pf_endswith(pfobj_name, ".pfobj"))
         return;
 
-    size_t stem = strlen(pfobj_name) - strlen(".pfobj");
     for(int level = 1; level <= 2; level++) {
 
         char lodname[256];
-        pf_snprintf(lodname, sizeof(lodname), "%.*s.lod%d.pfobj",
-            (int)stem, pfobj_name, level);
+        al_lod_name(pfobj_name, level, lodname, sizeof(lodname));
 
         char lodpath[512];
         pf_snprintf(lodpath, sizeof(lodpath), "%s/%s/%s", g_basepath, basedir, lodname);
@@ -285,7 +299,16 @@ static void al_commit_resource(const char *path, const char *basedir,
 
     if(!is_lod) {
         al_render_to_texture(out);
-        R_Billboard_Register(out->render_private, basedir, pfobj_name, &out->aabb,
+
+        char lodname[256];
+        void *bake_private = out->render_private;
+        int level = al_coarsest_lod(out);
+        if(level > 0) {
+            al_lod_name(pfobj_name, level, lodname, sizeof(lodname));
+            bake_private = out->render_private_lod[level - 1];
+        }
+        R_Billboard_Register(out->render_private, bake_private,
+            basedir, pfobj_name, (level > 0) ? lodname : NULL, &out->aabb,
             (out->ent_flags & ENTITY_FLAG_ANIMATED) ? out->anim_private : NULL);
         R_Billboard_EnsureBaked(out->render_private);
     }

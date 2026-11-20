@@ -49,56 +49,56 @@ layout (location = 4) in int in_cell_base;
 /*****************************************************************************/
 
 out VertexToFrag{
-         vec2 uv;
-    flat int  layer;
+         vec2  uv;
+         float card_depth;
+    flat float depth_slope;
+    flat int   layer;
 }to_fragment;
 
 /*****************************************************************************/
 /* UNIFORMS                                                                  */
 /*****************************************************************************/
 
-uniform mat4 light_space_transform;
-uniform vec3 light_pos;
-
-uniform vec2 bb_world_size;
-uniform vec2 bb_anchor_off;
-uniform int  bb_nazimuths;
+uniform mat4  light_space_transform;
+uniform int   bb_nazimuths;
+/* From the silhouette's light clip space back to the bake's model space */
+uniform mat4  bb_sil_unproj;
+/* The Y rotation that carried the world's light into the bake's frame */
+uniform float bb_sil_delta;
 
 /*****************************************************************************/
 /* PROGRAM                                                                   */
 /*****************************************************************************/
 
+vec3 bake_to_world(vec3 v)
+{
+    float c = cos(bb_sil_delta);
+    float s = sin(bb_sil_delta);
+    return vec3((c * v.x - s * v.z) * in_scale.x,
+                v.y * in_scale.y,
+                (s * v.x + c * v.z) * in_scale.x);
+}
+
 void main()
 {
-    /* The light is directional: rays travel opposite the position vector */
-    vec3 light_dir = -normalize(light_pos);
-
-    /* An upright card yawed to face the light's horizontal azimuth. The right
-     * vector matches the colour path's cross(forward, world_up) convention so
-     * asymmetric silhouettes are not mirrored. A near-vertical light
-     * degenerates the azimuth; fall back to an arbitrary horizontal axis.
+    /* The bake frame is the RTS camera's, with the light fixed in it, so the
+     * cell whose model stands to the light as this entity does is the one
+     * the colour pass would show the RTS camera
      */
-    float hlen = length(light_dir.xz);
-    vec3 card_right = (hlen > 1e-3)
-        ? vec3(-light_dir.z, 0.0, light_dir.x) / hlen
-        : vec3(1.0, 0.0, 0.0);
-    vec3 card_up = vec3(0.0, 1.0, 0.0);
-
-    /* The atlas cell as seen from the light: the colour pass's binning with
-     * the light direction standing in for the view ray
-     */
-    float phi = atan(light_dir.x, light_dir.z);
-    float rel = PI - in_yaw - phi;
+    float rel = bb_sil_delta - in_yaw;
     int bin = int(mod(floor(rel * float(bb_nazimuths) / TAU + 0.5), float(bb_nazimuths)));
 
-    vec3 center = in_pos
-                + card_right * (bb_anchor_off.x * in_scale.x)
-                + card_up    * (bb_anchor_off.y * in_scale.y);
-    vec3 ws_pos = center
-                + card_right * (in_corner.x * bb_world_size.x * 0.5 * in_scale.x)
-                + card_up    * (in_corner.y * bb_world_size.y * 0.5 * in_scale.y);
+    /* A card facing the light through the middle of the silhouette's depth
+     * window; each texel's own depth lies along the light's rays from it
+     */
+    vec4 card = bb_sil_unproj * vec4(in_corner, 0.0, 1.0);
+    vec3 ws_pos = in_pos + bake_to_world(card.xyz / card.w);
+    vec3 ray = bake_to_world((bb_sil_unproj * vec4(0.0, 0.0, 1.0, 0.0)).xyz);
 
+    vec4 clip = light_space_transform * vec4(ws_pos, 1.0);
     to_fragment.uv = in_corner * 0.5 + 0.5;
+    to_fragment.card_depth = clip.z / clip.w;
+    to_fragment.depth_slope = (light_space_transform * vec4(ray, 0.0)).z;
     to_fragment.layer = in_cell_base + bin;
-    gl_Position = light_space_transform * vec4(ws_pos, 1.0);
+    gl_Position = clip;
 }

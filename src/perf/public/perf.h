@@ -139,11 +139,15 @@ struct gpu_frame_stats{
 };
 
 /* Draw-list composition for one frame: how many of the camera-visible
- * entities were rendered as billboards, out of the total drawn.
+ * entities were rendered as billboards, out of the total drawn, and how many
+ * drew as meshes while their atlas re-baked for the camera's elevation.
  */
 struct billboard_frame_stats{
     uint32_t nbillboard;
     uint32_t ntotal;
+    uint32_t nstale;
+    uint32_t noff_angle;
+    uint32_t nunits;     /* camera-visible animated entities */
 };
 
 

@@ -62,7 +62,11 @@ in VertexToFrag {
 /* OUTPUTS                                                                   */
 /*****************************************************************************/
 
-out vec4 o_frag_color;
+layout(location = 0) out vec4 o_frag_color;
+/* The impostor bake's second target: the octahedral normal and the ambient and
+ * specular strengths, relative to the diffuse colour the first target holds
+ */
+layout(location = 1) out vec4 o_baked_surface;
 
 /*****************************************************************************/
 /* UNIFORMS                                                                  */
@@ -128,14 +132,49 @@ float shadow_factor(vec4 light_space_pos)
     }
 }
 
+vec2 sign_not_zero(vec2 v)
+{
+    return vec2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);
+}
+
+vec2 octahedral_encode(vec3 n)
+{
+    n /= (abs(n.x) + abs(n.y) + abs(n.z));
+    return (n.z >= 0.0) ? n.xy : (1.0 - abs(n.yx)) * sign_not_zero(n.xy);
+}
+
+/* The impostor bake keeps the surface rather than its lighting, which the
+ * sprite applies when drawn, so a sprite seen from off its baked direction is
+ * still lit as the mesh would be
+ */
+void bake_surface(vec3 tex_color)
+{
+    material mat = materials[from_vertex.mat_idx];
+    float diffuse = max(max(mat.diffuse_clr.r, mat.diffuse_clr.g), max(mat.diffuse_clr.b, 1e-3));
+    float specular = (mat.specular_clr.r + mat.specular_clr.g + mat.specular_clr.b) / 3.0;
+
+    o_frag_color = vec4(tex_color * mat.diffuse_clr, 1.0);
+    o_baked_surface = vec4(
+        octahedral_encode(normalize(from_vertex.normal)) * 0.5 + 0.5,
+        clamp(mat.ambient_intensity / diffuse * 0.25, 0.0, 1.0),
+        clamp(SPECULAR_STRENGTH * specular / diffuse * 0.25, 0.0, 1.0));
+}
+
 void main()
 {
     vec4 tex_color = sample_material(from_vertex.mat_idx, from_vertex.uv);
+
+    o_baked_surface = vec4(0.5, 0.5, 0.0, 0.0);
 
     /* Simple alpha test to reject transparent pixels (with mipmapping) */
     tex_color.rgb *= tex_color.a;
     if(tex_color.a <= 0.5)
         discard;
+
+    if(shadows_on == SHADOWS_MODE_BAKE) {
+        bake_surface(tex_color.rgb);
+        return;
+    }
 
     /* Ambient calculations */
     vec3 ambient = materials[from_vertex.mat_idx].ambient_intensity * ambient_color;
@@ -160,17 +199,7 @@ void main()
     /* Shadow calculations */
     float shadow = shadow_factor(from_vertex.light_space_pos);
     if(shadow > 0.0) {
-        if(shadows_on == SHADOWS_MODE_BAKE) {
-            /* Impostor bakes self-shadow far more finely than the runtime
-             * shadow map ever resolves for a unit, so a whole-colour
-             * multiplier reads too dark; shadow only the direct light and
-             * keep the ambient floor.
-             */
-            o_frag_color = vec4((ambient * 0.55
-                + (diffuse + specular) * 1.5 * SHADOW_MULTIPLIER) * tex_color.xyz, 1.0);
-        }else{
-            o_frag_color = vec4(final_color.xyz * SHADOW_MULTIPLIER, 1.0);
-        }
+        o_frag_color = vec4(final_color.xyz * SHADOW_MULTIPLIER, 1.0);
     }else{
         o_frag_color = final_color;
     }

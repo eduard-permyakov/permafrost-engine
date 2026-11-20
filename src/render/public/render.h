@@ -669,6 +669,7 @@ void  R_GL_DecalEndDraw(void);
  */
 void R_GL_DepthPassBegin(const vec3_t *light_pos, const struct camera *cam);
 void R_GL_DepthPassBeginCustom(const mat4x4_t *light_space_trans);
+void R_GL_DepthPassBeginTarget(const mat4x4_t *light_space_trans, unsigned int fb, int res);
 
 /* ---------------------------------------------------------------------------
  * Set up the rendering context for normal rendering. This _must_ be called
@@ -904,38 +905,63 @@ struct anim_data;
  * Main-thread registry of billboard atlas descriptors, keyed by the model's
  * base render_private. Registration computes the descriptor (cell layout,
  * framing, cache tag) but does not touch the GPU; EnsureBaked enqueues the
- * render-thread bake. Get returns NULL until the atlas is resident.
+ * render-thread bake. Get returns NULL until the atlas is resident. The
+ * sprites are baked from 'bake_private', the model's coarsest level of
+ * detail, which they take over from at a distance; 'bake_filename' is its
+ * file, or NULL when that is the base model.
  * ---------------------------------------------------------------------------
  */
 bool R_Billboard_Init(void);
 void R_Billboard_Shutdown(void);
-void R_Billboard_Register(void *render_key, const char *basedir, const char *filename,
+void R_Billboard_Register(void *render_key, void *bake_private, const char *basedir,
+                          const char *filename, const char *bake_filename,
                           const struct aabb *aabb, const struct anim_data *anim_data);
+/* NULL unless the model's atlas is resident. A model asked for is wanted on
+ * screen, and re-bakes ahead of those off screen.
+ */
 const struct bb_model_desc *R_Billboard_Get(void *render_key);
+/* Whether the resident atlas was baked within reach of an elevation the
+ * model is seen from, in degrees
+ */
+bool R_Billboard_ElevationMatches(const struct bb_model_desc *desc, float elev_deg);
+/* Whether the resident atlas shows the model as seen along a world-space
+ * view direction: from within reach of its elevation. The sprites are lit
+ * when drawn, so the direction's azimuth does not matter.
+ */
+bool R_Billboard_ViewMatches(const struct bb_model_desc *desc, vec3_t view_dir);
 /* An entity scaled so large that its sprite would fall below the density
  * floor keeps rendering as a mesh.
  */
 bool R_Billboard_ScaleEligible(const struct bb_model_desc *desc, vec2_t scale);
+/* The sprite's texels per world unit for an entity of the given scale */
+float R_Billboard_Density(const struct bb_model_desc *desc, vec2_t scale);
 int  R_Billboard_CellBase(const struct bb_model_desc *desc, int clip_idx, int frame_idx);
 void R_Billboard_EnsureBaked(void *render_key);
 void R_Billboard_EnsureAllBaked(void);
 
 /* ---------------------------------------------------------------------------
- * Once-per-frame pump: when the wanted bake variant changes (the shadows
- * setting, or a material change of the global light), enqueue re-bakes for
- * stale atlases, capped per frame. The old atlas keeps drawing until its
- * replacement lands.
+ * Once-per-frame pump: when the wanted bake variant changes (the camera
+ * elevation once it rests, the shadows setting, or a material change of the
+ * global light), start background re-bakes of the stale atlases and advance
+ * them by a few cells. The old atlas keeps drawing until its replacement
+ * lands, as long as its elevation is close enough to the camera's.
  * ---------------------------------------------------------------------------
  */
 void R_Billboard_Tick(void);
 
 /* ---------------------------------------------------------------------------
- * Bake the given variant of a model's atlas, or upload it from the impostor
- * cache, replacing the resident atlas if there is one.
+ * Bake the given variant of a model's atlas, replacing the resident atlas if
+ * there is one. EnsureBaked does all the work at once, loading from and
+ * storing to the impostor cache when 'cached'; BakeBegin starts a background
+ * bake, with no disk access, that BakePump advances each frame, abandoning
+ * those for a stale generation.
  * ---------------------------------------------------------------------------
  */
 void R_GL_Billboard_EnsureBaked(struct bb_model_desc *desc, const void *render_private,
-                                const struct bb_variant *var, const int *gen);
+                                const struct bb_variant *var, const int *gen, const bool *cached);
+void R_GL_Billboard_BakeBegin(struct bb_model_desc *desc, const void *render_private,
+                              const struct bb_variant *var, const int *gen);
+void R_GL_Billboard_BakePump(const int *gen);
 
 /* ---------------------------------------------------------------------------
  * Render every entity in the input's billboard list, one instanced draw call

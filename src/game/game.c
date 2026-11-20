@@ -391,6 +391,26 @@ static bool g_billboard_excluded(const struct entity *ent)
         && (strcmp(ent->name, "__tile__") == 0);
 }
 
+/* The screen pixels per world unit of an orthographic camera's view */
+static float g_ortho_screen_density(const struct camera *cam)
+{
+    int w, h;
+    Engine_WinDrawableSize(&w, &h);
+    vec2_t bot_left, top_right;
+    Camera_GetOrthoExtents(cam, &bot_left, &top_right);
+    return h / MAX(top_right.y - bot_left.y, 1e-3f);
+}
+
+/* The screen pixels per world unit of a perspective camera's view, times the
+ * distance from the camera
+ */
+static float g_persp_screen_density_dist(void)
+{
+    int w, h;
+    Engine_WinDrawableSize(&w, &h);
+    return h / (2.0f * tanf(CAM_FOV_RAD / 2.0f));
+}
+
 static int g_select_lod(float dist, float d1, float d2)
 {
     if(dist >= d2)
@@ -448,22 +468,23 @@ static void g_make_draw_lists(struct render_input *out)
     if(Settings_Get("pf.video.billboard_dist", &bb_setting) == SS_OKAY)
         bb_dist = bb_setting.as_float;
 
-    /* A camera pitched away from the RTS elevation the atlases are baked for
-     * shows sheared, mis-rotated cards; statics fall back to meshes there.
+    /* An atlas baked for another elevation shows sheared, mis-rotated cards;
+     * its entities draw as meshes until the re-bake for this one lands.
      */
-    bool bb_pitch_ok = true;
-    if(bb_enabled && (Settings_Get("pf.game.camera_tilt", &bb_setting) == SS_OKAY)) {
-        float rts_pitch = -(90.0f - bb_setting.as_int);
-        bb_pitch_ok = fabsf(Camera_GetPitch(s_gs.active_cam) - rts_pitch)
-                   <= CONFIG_BILLBOARD_MAX_PITCH_DEV_DEG;
-    }
+    vec3_t cam_dir = Camera_GetDir(s_gs.active_cam);
+    uint32_t nstale = 0, noff_angle = 0, nunits = 0;
 
-    /* Under an orthographic projection the apparent size is set by the zoom
-     * alone, so billboarding gates uniformly on the camera height; under a
-     * perspective one it gates on the per-entity distance.
+    /* A model billboards once its sprite is as detailed as the screen where
+     * it is drawn: set by the zoom alone under an orthographic projection,
+     * by the entity's distance under a perspective one. Under a perspective
+     * projection the sprites, baked for one view, are off for most of the
+     * screen, so only units, small and many, billboard there.
      */
     bool bb_ortho = (Camera_GetProjection(s_gs.active_cam) == CAM_PROJ_ORTHOGRAPHIC);
-    bool bb_zoomed_out = (Camera_GetHeight(s_gs.active_cam) >= bb_dist);
+    float cam_elev = -Camera_GetPitch(s_gs.active_cam)
+                   - (bb_ortho ? 0 : CONFIG_BILLBOARD_PERSP_ELEV_OFFSET_DEG);
+    float screen_density = g_ortho_screen_density(s_gs.active_cam);
+    float persp_density_dist = g_persp_screen_density_dist();
 
     vec3_t campos = Camera_GetPos(s_gs.active_cam);
     uint32_t ncam_drawn = 0;
@@ -487,8 +508,10 @@ static void g_make_draw_lists(struct render_input *out)
         if(!passes)
             continue;
 
-        if(passes & DRAW_PASS_CAM)
+        if(passes & DRAW_PASS_CAM) {
             ncam_drawn++;
+            nunits += !!(flags & ENTITY_FLAG_ANIMATED);
+        }
 
         const struct entity *ent = AL_EntityGet(curr);
         mat4x4_t model;
@@ -503,8 +526,7 @@ static void g_make_draw_lists(struct render_input *out)
          * camera and the shadow pass; the card replaces the mesh everywhere
          */
         if(bb_enabled
-        && (bb_pitch_ok || (flags & ENTITY_FLAG_ANIMATED))
-        && (bb_ortho ? bb_zoomed_out : (cam_dist >= bb_dist))
+        && (bb_ortho || (flags & ENTITY_FLAG_ANIMATED))
         && !(flags & ENTITY_FLAG_TRANSLUCENT)
         && !g_billboard_excluded(ent)) {
 
@@ -515,7 +537,30 @@ static void g_make_draw_lists(struct render_input *out)
                 scale = Entity_GetScale(curr);
                 scale2 = (vec2_t){MAX(scale.x, scale.z), scale.y};
             }
-            if(bb && R_Billboard_ScaleEligible(bb, scale2)) {
+            float entity_density = bb_ortho ? screen_density
+                                            : persp_density_dist / MAX(cam_dist, 1e-3f);
+            bool sharp = (bb_dist <= 0.0f)
+                || (!bb_ortho && cam_dist >= bb_dist)
+                || (bb && R_Billboard_Density(bb, scale2) * CONFIG_BILLBOARD_MAX_MAGNIFICATION
+                    >= entity_density);
+            if(bb && sharp && R_Billboard_ScaleEligible(bb, scale2)) {
+
+                /* The light's silhouettes do not depend on the view. A
+                 * perspective camera sees each entity along its own ray,
+                 * up to half the field of view off its direction.
+                 */
+                uint32_t bb_passes = passes & DRAW_PASS_LIGHT;
+                vec3_t view_dir = cam_dir;
+                if(!bb_ortho) {
+                    PFM_Vec3_Scale(&delta, -1.0f, &view_dir);
+                }
+                if(R_Billboard_ViewMatches(bb, view_dir)) {
+                    bb_passes |= passes & DRAW_PASS_CAM;
+                }else if(passes & DRAW_PASS_CAM) {
+                    bool stale = !R_Billboard_ElevationMatches(bb, cam_elev);
+                    nstale += stale;
+                    noff_angle += !stale;
+                }
 
                 int cell = 0;
                 if(flags & ENTITY_FLAG_ANIMATED) {
@@ -532,13 +577,15 @@ static void g_make_draw_lists(struct render_input *out)
                     .scale = scale2,
                     .cell_base = cell,
                 };
-                if(passes & DRAW_PASS_CAM) {
+                if(bb_passes & DRAW_PASS_CAM) {
                     vec_rbill_push(&out->cam_vis_bill, rstate);
                 }
-                if(passes & DRAW_PASS_LIGHT) {
+                if(bb_passes & DRAW_PASS_LIGHT) {
                     vec_rbill_push(&out->light_vis_bill, rstate);
                 }
-                continue;
+                passes &= ~bb_passes;
+                if(!passes)
+                    continue;
             }
         }
 
@@ -608,6 +655,9 @@ static void g_make_draw_lists(struct render_input *out)
     Perf_RecordBillboardStats(&(struct billboard_frame_stats){
         .nbillboard = vec_size(&out->cam_vis_bill),
         .ntotal = ncam_drawn,
+        .nstale = nstale,
+        .noff_angle = noff_angle,
+        .nunits = nunits,
     });
     PERF_RETURN_VOID();
 }
@@ -1466,10 +1516,10 @@ static void g_create_settings(void)
     });
     assert(status == SS_OKAY);
 
-    /* Threshold past which entities with a baked atlas render as billboards:
-     * the camera height under an orthographic projection, the per-entity
-     * camera distance under a perspective one. 0 renders them as billboards
-     * at every zoom level.
+    /* Entities with a baked atlas render as billboards once their sprite is
+     * as detailed as the screen; under a perspective projection, units past
+     * this camera distance do regardless. 0 renders them as billboards at
+     * every zoom level.
      */
     status = Settings_Create((struct setting){
         .name = "pf.video.billboard_dist",

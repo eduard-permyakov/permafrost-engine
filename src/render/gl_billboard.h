@@ -69,38 +69,69 @@ struct bb_clip_desc{
  */
 struct bb_variant{
     bool   shadowed;
+    int    elev_deg;   /* bake camera elevation above the horizon */
     vec3_t light_pos;
     vec3_t ambient_color;
     vec3_t emit_color;
 };
 
+/* The textures of one baked atlas, each an array with a slice per cell */
+struct bb_atlas{
+    GLuint color;   /* RGBA, mipmapped */
+    GLuint depth;   /* the bake's window depths */
+    GLuint surface; /* mipmapped; octahedral normal, ambient and specular strengths */
+    GLuint sil;     /* the model's depths as seen from the light, at 'sil_res' */
+};
+
+/* The view-plane framing of an atlas baked at one elevation: the extents of
+ * the sprite and the offset of its centre from the model origin, in model
+ * space, and the linear decoding of its baked depths into offsets from the
+ * card plane.
+ */
+struct bb_frame{
+    vec2_t world_size;
+    vec2_t anchor_off;
+    float  depth_extent;
+    vec2_t depth_decode;   /* offset = depth * x + y */
+    /* From the silhouette's light clip space back to the bake's model space */
+    mat4x4_t sil_unproj;
+    /* How far toward the light a sprite looks up the shadows it receives, in
+     * model units: past its own silhouette's texel error
+     */
+    float    shadow_offset;
+};
+
 /* The billboard atlas for one model: one texture array slice per cell, laid
- * out [clip][keyframe][azimuth]. All fields except 'state' and 'tex_arr' are
- * written once at registration on the main thread and immutable afterwards.
+ * out [clip][keyframe][azimuth]. The layout fields are written once at
+ * registration on the main thread and immutable afterwards; the resident
+ * atlas and its framing belong to the render thread.
  */
 struct bb_model_desc{
     void        *render_key;               /* the model's base render_private */
+    void        *bake_private;             /* the render_private the sprites are baked from */
     char         cache_name[BB_CACHE_NAME_LEN];
     uint64_t     tag;
     int          nazimuths;
     int          cell_res;
+    int          sil_res;
     int          total_slices;
-    float        tilt_rad;                 /* bake camera elevation */
-    /* View-plane extents of the sprite and the offset of its centre from the
-     * model origin, in model space; the per-entity scale applies at draw.
+    /* The largest view-plane extent at the RTS elevation of registration, which
+     * sized the cells
      */
-    vec2_t       world_size;
-    vec2_t       anchor_off;
-    /* Model-space vertical range of the baked samples, for the bake's light
-     * frustum fit
+    float        ref_extent;
+    /* Rotation-invariant model-space bounds of the baked samples: the
+     * horizontal radius about the Y axis and the vertical range
      */
+    float        radius;
     float        ymin;
     float        ymax;
     SDL_atomic_t state;                    /* enum bb_state */
     SDL_atomic_t baked_gen;                /* variant generation of the resident atlas */
+    SDL_atomic_t baked_elev;               /* elevation of the resident atlas, degrees */
     int          inflight_gen;             /* main thread: generation of the enqueued bake */
-    GLuint       tex_arr;                  /* render thread only */
-    GLuint       depth_arr;                /* render thread only: per-texel depth offsets */
+    uint32_t     demand_frame;             /* main thread: last frame it was wanted on screen */
+    struct bb_frame frame;                 /* render thread only */
+    struct bb_atlas atlas;                 /* render thread only */
     int          nclips;                   /* 0 for models without animations */
     struct bb_clip_desc clips[];
 };

@@ -38,6 +38,7 @@
 
 #include "public/asset_cache.h"
 #include "../main.h"
+#include "../config.h"
 #include "../lib/public/windows.h"
 #include "../lib/public/pf_string.h"
 #include "../perf/public/mem.h"
@@ -46,9 +47,19 @@
 
 #include <string.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <errno.h>
+#include <time.h>
+#include <assert.h>
 #include <sys/stat.h>
+
+#if defined(_WIN32)
+#include <sys/utime.h>
+#else
+#include <dirent.h>
+#include <utime.h>
+#endif
 
 #undef PF_MALLOC
 #undef PF_CALLOC
@@ -65,7 +76,8 @@
 #define TEXBLOB_MAGIC       "PFTB"
 #define TEXTURE_VERSION     (1)
 #define IMPOSTOR_MAGIC      "PFIM"
-#define IMPOSTOR_VERSION    (2)
+#define IMPOSTOR_VERSION    (6)
+#define IMPOSTOR_EXT        ".pfi"
 #define MAX_PATH_LEN        (512)
 #define MAX_REL_PATH_LEN    (256)
 
@@ -116,9 +128,9 @@ struct texblob_hdr{
     uint32_t channels;
 };
 
-/* The atlas metadata, followed on disk by the tightly-packed RGBA slices.
- * 'rel_path' disambiguates the (flattened) cache filename like the object
- * cache's does.
+/* The atlas metadata, followed on disk by the tightly-packed RGBA, depth,
+ * surface and silhouette slices. 'rel_path' disambiguates the (flattened) cache filename like
+ * the object cache's does.
  */
 struct impostor_hdr{
     char     magic[4];
@@ -127,7 +139,26 @@ struct impostor_hdr{
     char     rel_path[MAX_REL_PATH_LEN];
     uint32_t cell_res;
     uint32_t nslices;
+    uint32_t sil_res;
 };
+
+/* One file of the impostor cache, for keeping the cache within its bounds */
+struct impostor_entry{
+    char     file[MAX_REL_PATH_LEN + 8];
+    uint64_t size;
+    time_t   used;
+};
+
+/*****************************************************************************/
+/* STATIC VARIABLES                                                          */
+/*****************************************************************************/
+
+/* The impostor cache's files, listed on first use. Render thread only. */
+static bool                   s_imp_indexed;
+static struct impostor_entry *s_imp_entries;
+static size_t                 s_imp_nentries;
+static size_t                 s_imp_cap;
+static uint64_t               s_imp_total;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -224,7 +255,13 @@ static void texblob_path(char *out, size_t size, uint64_t hash)
     pf_snprintf(out, size, "%s/cache/textures/%s.tex", g_basepath, hex);
 }
 
-static bool impostor_path(char *out, size_t size, const char *name)
+static void impostor_file_path(char *out, size_t size, const char *file)
+{
+    pf_snprintf(out, size, "%s/cache/impostors/%s", g_basepath, file);
+}
+
+/* The name of the file within the cache directory */
+static bool impostor_file(char *out, size_t size, const char *name)
 {
     if(name[0] == '\0')
         return false;
@@ -236,8 +273,241 @@ static bool impostor_path(char *out, size_t size, const char *name)
             *c = '-';
     }
 
-    pf_snprintf(out, size, "%s/cache/impostors/%s.pfi", g_basepath, flat);
+    pf_snprintf(out, size, "%s" IMPOSTOR_EXT, flat);
     return true;
+}
+
+static bool file_stat(const char *path, uint64_t *out_size, time_t *out_mtime)
+{
+#if defined(_WIN32)
+    struct _stat64 st;
+    if(_stat64(path, &st) != 0)
+        return false;
+#else
+    struct stat st;
+    if(stat(path, &st) != 0)
+        return false;
+#endif
+    *out_size = (uint64_t)st.st_size;
+    *out_mtime = st.st_mtime;
+    return true;
+}
+
+/* Marks a file used now, so the least recently used order survives restarts */
+static void file_touch(const char *path)
+{
+#if defined(_WIN32)
+    _utime(path, NULL);
+#else
+    utime(path, NULL);
+#endif
+}
+
+static void list_dir(const char *dir, void (*on_file)(const char *name))
+{
+#if defined(_WIN32)
+    size_t wlen;
+    wchar_t wdir[MAX_PATH_LEN + 2];
+    mbstowcs_s(&wlen, wdir, MAX_PATH_LEN, dir, _TRUNCATE);
+    wdir[wlen - 1] = '/';
+    wdir[wlen + 0] = '*';
+    wdir[wlen + 1] = '\0';
+
+    WIN32_FIND_DATA entry = {0};
+    HANDLE handle = FindFirstFile(wdir, &entry);
+    if(handle == INVALID_HANDLE_VALUE)
+        return;
+
+    do{
+        char cname[MAX_PATH];
+        WideCharToMultiByte(CP_UTF8, WC_NO_BEST_FIT_CHARS | WC_COMPOSITECHECK | WC_DEFAULTCHAR,
+            entry.cFileName, -1, cname, sizeof(cname), NULL, NULL);
+        if(!(entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+            on_file(cname);
+        }
+    }while(FindNextFile(handle, &entry));
+    FindClose(handle);
+#else
+    DIR *d = opendir(dir);
+    if(!d)
+        return;
+
+    struct dirent *entry;
+    while((entry = readdir(d)) != NULL) {
+        if(entry->d_type != DT_DIR) {
+            on_file(entry->d_name);
+        }
+    }
+    closedir(d);
+#endif
+}
+
+static bool has_suffix(const char *str, const char *suffix)
+{
+    size_t len = strlen(str), slen = strlen(suffix);
+    return (len >= slen) && (strcmp(str + len - slen, suffix) == 0);
+}
+
+/* The files of one model's variants share the name up to the last '#' */
+static size_t impostor_model_len(const char *file)
+{
+    const char *hash = strrchr(file, '#');
+    return hash ? (size_t)(hash - file) : strlen(file);
+}
+
+static bool impostor_same_model(const char *a, const char *b)
+{
+    size_t len = impostor_model_len(a);
+    return (len == impostor_model_len(b)) && (strncmp(a, b, len) == 0);
+}
+
+static bool impostor_header_current(const char *path)
+{
+    SDL_RWops *stream = SDL_RWFromFile(path, "rb");
+    if(!stream)
+        return false;
+
+    struct impostor_hdr hdr;
+    bool ret = (SDL_RWread(stream, &hdr, sizeof(hdr), 1) == 1)
+            && (memcmp(hdr.magic, IMPOSTOR_MAGIC, sizeof(hdr.magic)) == 0)
+            && (hdr.version == IMPOSTOR_VERSION);
+    SDL_RWclose(stream);
+    return ret;
+}
+
+static struct impostor_entry *impostor_find(const char *file)
+{
+    for(size_t i = 0; i < s_imp_nentries; i++) {
+        if(strcmp(s_imp_entries[i].file, file) == 0)
+            return &s_imp_entries[i];
+    }
+    return NULL;
+}
+
+static void impostor_track(const char *file, uint64_t size, time_t used)
+{
+    struct impostor_entry *entry = impostor_find(file);
+    if(entry) {
+        s_imp_total -= entry->size;
+    }else{
+        if(s_imp_nentries == s_imp_cap) {
+            size_t cap = s_imp_cap ? s_imp_cap * 2 : 256;
+            struct impostor_entry *entries = PF_REALLOC(s_imp_entries, cap * sizeof(*entries));
+            if(!entries)
+                return;
+            s_imp_entries = entries;
+            s_imp_cap = cap;
+        }
+        entry = &s_imp_entries[s_imp_nentries++];
+        pf_strlcpy(entry->file, file, sizeof(entry->file));
+    }
+    entry->size = size;
+    entry->used = used;
+    s_imp_total += size;
+}
+
+static void impostor_evict(size_t idx)
+{
+    char path[MAX_PATH_LEN];
+    impostor_file_path(path, sizeof(path), s_imp_entries[idx].file);
+    remove(path);
+
+    s_imp_total -= s_imp_entries[idx].size;
+    s_imp_entries[idx] = s_imp_entries[--s_imp_nentries];
+}
+
+/* The least recently used file other than 'keep' (if any), optionally of
+ * the same model as it; -1 if there is none.
+ */
+static ptrdiff_t impostor_oldest(const char *keep, bool same_model)
+{
+    ptrdiff_t ret = -1;
+    for(size_t i = 0; i < s_imp_nentries; i++) {
+        const struct impostor_entry *curr = &s_imp_entries[i];
+        if(keep && strcmp(curr->file, keep) == 0)
+            continue;
+        if(same_model && !impostor_same_model(curr->file, keep))
+            continue;
+        if(ret < 0 || curr->used < s_imp_entries[ret].used) {
+            ret = i;
+        }
+    }
+    return ret;
+}
+
+static uint64_t impostor_cap_bytes(void)
+{
+    return (uint64_t)CONFIG_IMPOSTOR_CACHE_MAX_MB * 1024 * 1024;
+}
+
+/* Past the cap, the total is brought down to 90% of it so that eviction does
+ * not run on every store
+ */
+static void impostor_trim_total(const char *keep)
+{
+    uint64_t cap = impostor_cap_bytes();
+    if(s_imp_total <= cap)
+        return;
+
+    while(s_imp_total > cap / 10 * 9) {
+        ptrdiff_t oldest = impostor_oldest(keep, false);
+        if(oldest < 0)
+            break;
+        impostor_evict(oldest);
+    }
+}
+
+/* Bounds the cache after 'file' was written: the variants of its model, then
+ * the total size.
+ */
+static void impostor_enforce_bounds(const char *file)
+{
+    size_t nvariants = 0;
+    for(size_t i = 0; i < s_imp_nentries; i++) {
+        nvariants += impostor_same_model(s_imp_entries[i].file, file);
+    }
+    for(; nvariants > CONFIG_IMPOSTOR_CACHE_VARIANTS_PER_MODEL; nvariants--) {
+        ptrdiff_t oldest = impostor_oldest(file, true);
+        if(oldest < 0)
+            break;
+        impostor_evict(oldest);
+    }
+    impostor_trim_total(file);
+}
+
+static void impostor_index_file(const char *file)
+{
+    if(!has_suffix(file, IMPOSTOR_EXT))
+        return;
+
+    char path[MAX_PATH_LEN];
+    impostor_file_path(path, sizeof(path), file);
+
+    /* Files of an older format can never be loaded again */
+    if(!impostor_header_current(path)) {
+        remove(path);
+        return;
+    }
+
+    uint64_t size;
+    time_t mtime;
+    if(file_stat(path, &size, &mtime)) {
+        impostor_track(file, size, mtime);
+    }
+}
+
+static void impostor_index_ensure(void)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    if(s_imp_indexed)
+        return;
+    s_imp_indexed = true;
+
+    char dir[MAX_PATH_LEN];
+    pf_snprintf(dir, sizeof(dir), "%s/cache/impostors", g_basepath);
+    list_dir(dir, impostor_index_file);
+    impostor_trim_total(NULL);
 }
 
 /*****************************************************************************/
@@ -273,6 +543,12 @@ bool AssetCache_Init(void)
 
 void AssetCache_Shutdown(void)
 {
+    PF_FREE(s_imp_entries);
+    s_imp_entries = NULL;
+    s_imp_nentries = 0;
+    s_imp_cap = 0;
+    s_imp_total = 0;
+    s_imp_indexed = false;
 }
 
 uint64_t AssetCache_SourceTag(const char *path)
@@ -635,9 +911,14 @@ void AssetCache_TextureRelease(struct texture_cache *cache)
 
 bool AssetCache_ImpostorLoad(const char *name, uint64_t tag, struct impostor_cache *out)
 {
-    char path[MAX_PATH_LEN];
-    if(!impostor_path(path, sizeof(path), name))
+    impostor_index_ensure();
+
+    char file[MAX_REL_PATH_LEN + 8];
+    if(!impostor_file(file, sizeof(file), name))
         return false;
+
+    char path[MAX_PATH_LEN];
+    impostor_file_path(path, sizeof(path), file);
 
     SDL_RWops *stream = SDL_RWFromFile(path, "rb");
     if(!stream)
@@ -646,8 +927,10 @@ bool AssetCache_ImpostorLoad(const char *name, uint64_t tag, struct impostor_cac
     bool ret = false;
     void *pixels = NULL;
     void *depth = NULL;
+    void *surface = NULL;
+    void *sil = NULL;
     struct impostor_hdr hdr;
-    size_t nbytes;
+    size_t ntexels, nsil;
 
     if(SDL_RWread(stream, &hdr, sizeof(hdr), 1) != 1)
         goto out;
@@ -663,23 +946,41 @@ bool AssetCache_ImpostorLoad(const char *name, uint64_t tag, struct impostor_cac
     if(strcmp(hdr.rel_path, name) != 0)
         goto out;
 
-    nbytes = (size_t)hdr.cell_res * hdr.cell_res * hdr.nslices * 4;
-    if(nbytes == 0)
+    ntexels = (size_t)hdr.cell_res * hdr.cell_res * hdr.nslices;
+    nsil = (size_t)hdr.sil_res * hdr.sil_res * hdr.nslices;
+    if(ntexels == 0 || nsil == 0)
         goto out;
 
-    pixels = PF_MALLOC(nbytes);
-    depth = PF_MALLOC(nbytes / 4);
-    if(!pixels || !depth)
+    pixels = PF_MALLOC(ntexels * 4);
+    depth = PF_MALLOC(ntexels * sizeof(uint16_t));
+    surface = PF_MALLOC(ntexels * 4);
+    sil = PF_MALLOC(nsil * sizeof(uint16_t));
+    if(!pixels || !depth || !surface || !sil)
         goto fail;
-    if(SDL_RWread(stream, pixels, nbytes, 1) != 1)
+    if(SDL_RWread(stream, pixels, ntexels * 4, 1) != 1)
         goto fail;
-    if(SDL_RWread(stream, depth, nbytes / 4, 1) != 1)
+    if(SDL_RWread(stream, depth, ntexels * sizeof(uint16_t), 1) != 1)
         goto fail;
+    if(SDL_RWread(stream, surface, ntexels * 4, 1) != 1)
+        goto fail;
+    if(SDL_RWread(stream, sil, nsil * sizeof(uint16_t), 1) != 1)
+        goto fail;
+
+    {
+        struct impostor_entry *entry = impostor_find(file);
+        if(entry) {
+            entry->used = time(NULL);
+            file_touch(path);
+        }
+    }
 
     out->cell_res = hdr.cell_res;
     out->nslices = hdr.nslices;
+    out->sil_res = hdr.sil_res;
     out->pixels = pixels;
     out->depth = depth;
+    out->surface = surface;
+    out->sil = sil;
     ret = true;
     goto out;
 
@@ -688,6 +989,10 @@ fail:
         PF_FREE(pixels);
     if(depth)
         PF_FREE(depth);
+    if(surface)
+        PF_FREE(surface);
+    if(sil)
+        PF_FREE(sil);
 
 out:
     SDL_RWclose(stream);
@@ -696,12 +1001,23 @@ out:
 
 bool AssetCache_ImpostorStore(const char *name, uint64_t tag, const struct impostor_cache *in)
 {
-    char path[MAX_PATH_LEN];
-    if(!impostor_path(path, sizeof(path), name))
+    impostor_index_ensure();
+
+    char file[MAX_REL_PATH_LEN + 8];
+    if(!impostor_file(file, sizeof(file), name))
         return false;
 
-    size_t nbytes = (size_t)in->cell_res * in->cell_res * in->nslices * 4;
-    if(nbytes == 0 || !in->pixels || !in->depth)
+    char path[MAX_PATH_LEN];
+    impostor_file_path(path, sizeof(path), file);
+
+    size_t ntexels = (size_t)in->cell_res * in->cell_res * in->nslices;
+    size_t nsil = (size_t)in->sil_res * in->sil_res * in->nslices;
+    if(ntexels == 0 || nsil == 0 || !in->pixels || !in->depth || !in->surface || !in->sil)
+        return false;
+
+    uint64_t fsize = sizeof(struct impostor_hdr) + ntexels * (4 + sizeof(uint16_t) + 4)
+                   + nsil * sizeof(uint16_t);
+    if(fsize > impostor_cap_bytes())
         return false;
 
     SDL_RWops *stream = SDL_RWFromFile(path, "wb");
@@ -715,16 +1031,24 @@ bool AssetCache_ImpostorStore(const char *name, uint64_t tag, const struct impos
     pf_strlcpy(hdr.rel_path, name, sizeof(hdr.rel_path));
     hdr.cell_res = in->cell_res;
     hdr.nslices = in->nslices;
+    hdr.sil_res = in->sil_res;
 
     bool ret = (SDL_RWwrite(stream, &hdr, sizeof(hdr), 1) == 1)
-            && (SDL_RWwrite(stream, in->pixels, nbytes, 1) == 1)
-            && (SDL_RWwrite(stream, in->depth, nbytes / 4, 1) == 1);
+            && (SDL_RWwrite(stream, in->pixels, ntexels * 4, 1) == 1)
+            && (SDL_RWwrite(stream, in->depth, ntexels * sizeof(uint16_t), 1) == 1)
+            && (SDL_RWwrite(stream, in->surface, ntexels * 4, 1) == 1)
+            && (SDL_RWwrite(stream, in->sil, nsil * sizeof(uint16_t), 1) == 1);
     SDL_RWclose(stream);
 
     /* Don't leave a truncated file behind to be mistaken for a valid entry */
-    if(!ret)
+    if(!ret) {
         remove(path);
-    return ret;
+        return false;
+    }
+
+    impostor_track(file, fsize, time(NULL));
+    impostor_enforce_bounds(file);
+    return true;
 }
 
 void AssetCache_ImpostorRelease(struct impostor_cache *cache)
@@ -733,5 +1057,9 @@ void AssetCache_ImpostorRelease(struct impostor_cache *cache)
         PF_FREE(cache->pixels);
     if(cache->depth)
         PF_FREE(cache->depth);
+    if(cache->surface)
+        PF_FREE(cache->surface);
+    if(cache->sil)
+        PF_FREE(cache->sil);
 }
 

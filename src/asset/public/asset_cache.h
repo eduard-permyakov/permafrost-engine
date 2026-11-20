@@ -131,12 +131,17 @@ void AssetCache_TextureRelease(struct texture_cache *cache);
  * RGBA texels, tightly packed, ready for upload as a single GL_TEXTURE_2D_ARRAY.
  * 'name' is the model's base-path-relative path; 'tag' folds the source model's
  * fingerprint with the bake parameters, so either kind of change re-bakes.
+ * The cache is bounded in total size and in variants per model, least
+ * recently used first out; it is used from the render thread only.
  */
 struct impostor_cache{
     int   cell_res;
     int   nslices;
+    int   sil_res;
     void *pixels;   /* RGBA8 */
-    void *depth;    /* SNORM8 */
+    void *depth;    /* 16-bit unsigned normalised depth */
+    void *surface;  /* RGBA8 */
+    void *sil;      /* 16-bit unsigned normalised depth, from the light */
 };
 
 bool AssetCache_ImpostorLoad(const char *name, uint64_t tag, struct impostor_cache *out);

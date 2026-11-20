@@ -90,25 +90,57 @@
  * atlas and keep rendering as meshes; they are few and would only blur.
  */
 #define CONFIG_BILLBOARD_MIN_PX_PER_WU (2.0f)
-/* At most this many stale atlases are re-baked per frame, so a mid-session
- * variant change (shadow toggle, light change) is a spread of small hitches
- * rather than one long stall.
+/* Under an orthographic camera a model renders as a billboard once its sprite
+ * is magnified by no more than this on screen
  */
-#define CONFIG_BILLBOARD_REBAKES_PER_FRAME (1)
+#define CONFIG_BILLBOARD_MAX_MAGNIFICATION (1.5f)
+/* Stale atlases re-bake in the background, at most this many at once and
+ * this many cells per frame between them, so a mid-session variant change
+ * (camera pitch, shadow toggle, light change) is spread over frames rather
+ * than one long stall.
+ */
+#define CONFIG_BILLBOARD_JOBS_INFLIGHT        (2)
+#define CONFIG_BILLBOARD_BAKE_CELLS_PER_FRAME (20)
+/* The camera pitch must rest this many frames before the atlases follow it,
+ * so a pitch in motion does not start a bake per degree.
+ */
+#define CONFIG_BILLBOARD_TILT_SETTLE_FRAMES (8)
+/* The lowest bake camera elevation, in degrees above the horizon */
+#define CONFIG_BILLBOARD_MIN_ELEV_DEG (5)
 /* The light must move by this much before the atlases re-bake, so an animated
  * day-night light re-bakes a handful of times per cycle rather than per frame.
  */
 #define CONFIG_BILLBOARD_LIGHT_REBAKE_DEG (10.0f)
-/* Statics billboard only when the active camera's pitch is within this many
- * degrees of the RTS camera's, the elevation the sprites are baked for.
+/* Entities billboard only when the active camera's pitch is within this many
+ * degrees of the elevation their atlas was baked for.
  */
 #define CONFIG_BILLBOARD_MAX_PITCH_DEV_DEG (2.5f)
+/* Units are small and many: under a perspective camera their sprites stand in
+ * for views this far off the baked elevation, which covers the whole screen
+ * at the RTS tilt, so a formation shows no line where sprites give way to
+ * meshes
+ */
+#define CONFIG_BILLBOARD_UNIT_MAX_PITCH_DEV_DEG (35.0f)
+/* Under a perspective camera most of the visible ground lies above the middle
+ * of the screen, seen flatter than the camera's pitch; the atlases are baked
+ * this much flatter to suit it
+ */
+#define CONFIG_BILLBOARD_PERSP_ELEV_OFFSET_DEG (10)
 /* Depth extent of the bake's light frustum. Kept wide regardless of model size
  * so the shaders' constant depth bias stays reasonable in world units and the
  * model sits well inside the shadow lookup's valid depth band.
  */
 #define CONFIG_BILLBOARD_SHADOW_DEPTH_RANGE (250.0f)
-#define CONFIG_BILLBOARD_CACHE_VER  (3)
+/* The silhouettes cast into the scene's shadow map are this many times
+ * coarser than the sprites; the shadow map resolves no finer.
+ */
+#define CONFIG_BILLBOARD_SIL_RES_DIV (2)
+#define CONFIG_BILLBOARD_CACHE_VER  (7)
+/* Bounds of the on-disk impostor cache: its total size, past which the least
+ * recently used atlases are deleted, and the variants kept per model.
+ */
+#define CONFIG_IMPOSTOR_CACHE_MAX_MB            (2048)
+#define CONFIG_IMPOSTOR_CACHE_VARIANTS_PER_MODEL (4)
 
 #define CONFIG_SETTINGS_FILENAME    "pf.conf"
 

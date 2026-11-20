@@ -712,7 +712,11 @@ static PyMethodDef pf_module_methods[] = {
     {"prev_frame_billboard_stats",
     (PyCFunction)PyPf_prev_frame_billboard_stats, METH_NOARGS,
     "Get a dictionary with the number of camera-visible entities rendered as "
-    "billboards and the total number drawn for the previous frame."},
+    "billboards, the total number drawn, the number drawn as meshes while "
+    "their atlas re-bakes for the camera's elevation, and the number drawn as "
+    "meshes because a perspective camera sees them from too far off that "
+    "elevation, and the number of animated entities drawn, for the previous "
+    "frame."},
 
     {"get_nav_tick_times",
     (PyCFunction)PyPf_get_nav_tick_times, METH_NOARGS,
@@ -3027,9 +3031,12 @@ static PyObject *PyPf_prev_frame_billboard_stats(PyObject *self)
     struct billboard_frame_stats stats = {0};
     Perf_GetBillboardStats(&stats);
 
-    return Py_BuildValue("{s:I,s:I}",
+    return Py_BuildValue("{s:I,s:I,s:I,s:I,s:I}",
         "nbillboard", stats.nbillboard,
-        "ntotal",     stats.ntotal);
+        "ntotal",     stats.ntotal,
+        "nstale",     stats.nstale,
+        "noff_angle", stats.noff_angle,
+        "nunits",     stats.nunits);
 }
 
 static PyObject *PyPf_get_nav_tick_times(PyObject *self)
