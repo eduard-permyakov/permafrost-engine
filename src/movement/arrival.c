@@ -35,7 +35,7 @@
 
 #include "arrival.h"
 #include "../game/public/game.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 #include "../navigation/public/nav.h"

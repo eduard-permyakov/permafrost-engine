@@ -49,7 +49,7 @@
 #include "../main.h"
 #include "../ui.h"
 #include "../cursor.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 
 #include <SDL.h>
 

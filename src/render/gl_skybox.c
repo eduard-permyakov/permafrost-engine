@@ -45,7 +45,7 @@
 #include "gl_perf.h"
 #include "gl_state.h"
 #include "../main.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../config.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/stb_image.h"

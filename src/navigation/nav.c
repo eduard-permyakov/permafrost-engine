@@ -59,7 +59,7 @@
 #include "../perf.h"
 #include "../sched/public/sched.h"
 #include "../ui.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 
 #include <stdlib.h>
 #include <stdbool.h>

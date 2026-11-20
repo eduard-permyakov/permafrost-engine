@@ -54,7 +54,7 @@
 #include "gl_swapchain.h"
 #include "public/render.h"
 #include "../entity.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../config.h"
 #include "../anim/public/skeleton.h"
 #include "../anim/public/anim.h"

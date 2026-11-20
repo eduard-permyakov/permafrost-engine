@@ -26,8 +26,8 @@
     <ClCompile Include="..\src\asset_load.c" />
     <ClCompile Include="..\src\audio\al_audio.c" />
     <ClCompile Include="..\src\audio\al_effect.c" />
-    <ClCompile Include="..\src\camera.c" />
-    <ClCompile Include="..\src\cam_control.c" />
+    <ClCompile Include="..\src\camera\camera.c" />
+    <ClCompile Include="..\src\camera\cam_control.c" />
     <ClCompile Include="..\src\cursor.c" />
     <ClCompile Include="..\src\entity.c" />
     <ClCompile Include="..\src\event.c" />
@@ -160,8 +160,8 @@
     <ClInclude Include="..\src\audio\al_effect.h" />
     <ClInclude Include="..\src\audio\al_private.h" />
     <ClInclude Include="..\src\audio\public\audio.h" />
-    <ClInclude Include="..\src\camera.h" />
-    <ClInclude Include="..\src\cam_control.h" />
+    <ClInclude Include="..\src\camera\public\camera.h" />
+    <ClInclude Include="..\src\camera\public\cam_control.h" />
     <ClInclude Include="..\src\config.h" />
     <ClInclude Include="..\src\cursor.h" />
     <ClInclude Include="..\src\entity.h" />

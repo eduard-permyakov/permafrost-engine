@@ -42,7 +42,7 @@
 #include "pfchunk.h"
 #include "../main.h"
 #include "../settings.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../event.h"
 #include "../game/public/game.h"
 #include "../render/public/render.h"

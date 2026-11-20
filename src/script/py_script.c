@@ -79,7 +79,7 @@
 #include "../session.h"
 #include "../perf.h"
 #include "../cursor.h"
-#include "../cam_control.h"
+#include "../camera/public/cam_control.h"
 #include "../sched/public/task.h"
 #include "../sched/public/sched.h"
 #include "../asset_load.h"

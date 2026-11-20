@@ -52,7 +52,7 @@
 #include "../map/public/tile.h"
 #include "../map/public/map.h"
 #include "../phys/public/collision.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../config.h"
 #include "../main.h"
 #include "../perf.h"

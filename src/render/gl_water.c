@@ -51,7 +51,7 @@
 #include "public/render.h"
 #include "../game/public/game.h"
 #include "../settings.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../config.h"
 #include "../main.h"
 #include "../map/public/map.h"

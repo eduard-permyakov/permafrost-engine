@@ -43,7 +43,7 @@
 #include "../game/public/game.h"
 #include "../settings.h"
 #include "../event.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../asset_load.h"

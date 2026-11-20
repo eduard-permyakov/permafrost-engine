@@ -40,7 +40,7 @@
 #include "public/game.h"
 #include "game_private.h"
 #include "../event.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../entity.h"
 #include "../phys/public/collision.h"
 #include "../render/public/render.h"

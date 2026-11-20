@@ -36,12 +36,12 @@
 #define MEM_FILE_SYS MEM_SYS_CAMERA
 #define MEM_FILE_SUB 0
 
-#include "camera.h"
-#include "config.h"
-#include "main.h"
-#include "render/public/render.h"
-#include "render/public/render_ctrl.h"
-#include "phys/public/collision.h"
+#include "public/camera.h"
+#include "../config.h"
+#include "../main.h"
+#include "../render/public/render.h"
+#include "../render/public/render_ctrl.h"
+#include "../phys/public/collision.h"
 
 #include <SDL.h>
 
@@ -50,7 +50,7 @@
 #include <string.h>
 #include <assert.h>
 
-#include "mem.h"
+#include "../mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

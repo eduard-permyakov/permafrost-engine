@@ -52,7 +52,7 @@
 #include "public/render.h"
 #include "../game/public/game.h"
 #include "../phys/public/collision.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../settings.h"
 #include "../pf_math.h"
 #include "../config.h"

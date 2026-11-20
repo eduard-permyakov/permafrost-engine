@@ -52,7 +52,7 @@
 #include "../pf_math.h"
 #include "../config.h"
 #include "../settings.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../phys/public/collision.h"
 #include "../game/public/game.h"
 

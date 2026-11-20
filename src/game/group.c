@@ -44,7 +44,7 @@
 #include "../sched/public/sched.h"
 #include "../ui.h"
 #include "../event.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/attr.h"
 #include "../lib/public/pf_nuklear.h"

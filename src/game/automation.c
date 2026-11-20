@@ -52,7 +52,7 @@
 #include "../event.h"
 #include "../entity.h"
 #include "../settings.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../sched/public/sched.h"
 #include "../perf.h"
 #include "../lib/public/khash.h"

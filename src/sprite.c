@@ -38,7 +38,7 @@
 
 #include "sprite.h"
 #include "event.h"
-#include "camera.h"
+#include "camera/public/camera.h"
 #include "main.h"
 #include "lib/public/nk_file_browser.h"
 #include "game/public/game.h"

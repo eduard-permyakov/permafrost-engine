@@ -36,8 +36,8 @@
 #ifndef CAMERA_H
 #define CAMERA_H
 
-#include "pf_math.h"
-#include "mem.h"
+#include "../../pf_math.h"
+#include "../../mem.h"
 #include <stdbool.h>
 
 struct camera;

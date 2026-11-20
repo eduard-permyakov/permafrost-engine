@@ -44,7 +44,7 @@
 #include "flocking.h"
 #include "../game/public/game.h"
 #include "../config.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../event.h"
 #include "../entity.h"
 #include "../cursor.h"

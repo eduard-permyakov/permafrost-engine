@@ -45,7 +45,7 @@
 #include "public/render.h"
 #include "public/render_ctrl.h"
 #include "../main.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../entity.h"
 #include "../game/public/game.h"
 #include "../map/public/map.h"

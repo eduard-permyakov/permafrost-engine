@@ -47,7 +47,7 @@
 #define GPU_MEM_FILE_SYS GPU_MEM_SYS_GL_DECAL
 #include "gl_mem.h"
 #include "gl_perf.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../main.h"
 #include "../asset_cache.h"
 #include "../lib/public/stb_image.h"

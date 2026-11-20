@@ -48,7 +48,7 @@
 #include "public/render.h"
 #include "../main.h"
 #include "../mem.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/stb_image.h"
 

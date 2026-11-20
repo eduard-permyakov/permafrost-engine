@@ -44,7 +44,7 @@
 #define GPU_MEM_FILE_SYS GPU_MEM_SYS_GL_STATUSBAR
 #include "gl_mem.h"
 #include "gl_perf.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../pf_math.h"
 #include "../config.h"
 #include "../main.h"

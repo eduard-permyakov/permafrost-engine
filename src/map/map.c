@@ -41,7 +41,7 @@
 #include "public/map.h"
 #include "../sched/public/sched.h"
 #include "../perf.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../settings.h"
 #include "../phys/public/collision.h"
 #include "../render/public/render.h"

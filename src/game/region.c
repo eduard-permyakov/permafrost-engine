@@ -43,7 +43,7 @@
 #include "../ui.h"
 #include "../perf.h"
 #include "../main.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../event.h"
 #include "../sched/public/sched.h"
 #include "../phys/public/collision.h"

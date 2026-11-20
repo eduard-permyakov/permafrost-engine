@@ -45,7 +45,7 @@
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../config.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../main.h"
 #include "../perf.h"
 #include "../sched/public/sched.h"

@@ -49,7 +49,7 @@
 #include "gl_vertex.h"
 #include "gl_perf.h"
 #include "../main.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../lib/public/pf_string.h"
 
 #include "../mem.h"

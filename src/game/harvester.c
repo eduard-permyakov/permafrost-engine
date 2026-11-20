@@ -49,7 +49,7 @@
 #include "../entity.h"
 #include "../cursor.h"
 #include "../settings.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/pf_string.h"

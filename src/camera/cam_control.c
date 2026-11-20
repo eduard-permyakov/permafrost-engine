@@ -36,20 +36,20 @@
 #define MEM_FILE_SYS MEM_SYS_CAM_CONTROL
 #define MEM_FILE_SUB 0
 
-#include "cam_control.h"
-#include "script/public/script.h"
-#include "config.h"
-#include "settings.h"
-#include "event.h"
-#include "main.h"
-#include "cursor.h"
-#include "game/public/game.h"
+#include "public/cam_control.h"
+#include "../script/public/script.h"
+#include "../config.h"
+#include "../settings.h"
+#include "../event.h"
+#include "../main.h"
+#include "../cursor.h"
+#include "../game/public/game.h"
 
 #include <stdbool.h>
 #include <assert.h>
 #include <string.h>
 
-#include "mem.h"
+#include "../mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

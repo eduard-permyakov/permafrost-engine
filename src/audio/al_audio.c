@@ -42,7 +42,7 @@
 #include "../sched/public/sched.h"
 #include "../main.h"
 #include "../event.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../settings.h"
 #include "../mem.h"
 #include "../lib/public/attr.h"

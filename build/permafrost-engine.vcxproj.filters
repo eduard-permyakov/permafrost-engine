@@ -19,6 +19,12 @@
     <Filter Include="Header Files\sched">
       <UniqueIdentifier>{09a7d75a-6be0-429e-a1ca-2dea15201c92}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\camera">
+      <UniqueIdentifier>{8892416c-0e13-4d45-a638-4f6f8dfbc879}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\camera">
+      <UniqueIdentifier>{bec8c988-ea1c-4269-8c8b-c1244f2d10a0}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\render">
       <UniqueIdentifier>{fc8ac884-ebc4-4088-a716-e0ae2aa9f718}</UniqueIdentifier>
     </Filter>
@@ -114,11 +120,11 @@
     <ClCompile Include="..\src\asset_load.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\cam_control.c">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="..\src\camera\cam_control.c">
+      <Filter>Source Files\camera</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\camera.c">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="..\src\camera\camera.c">
+      <Filter>Source Files\camera</Filter>
     </ClCompile>
     <ClCompile Include="..\src\cursor.c">
       <Filter>Source Files</Filter>
@@ -497,11 +503,11 @@
     <ClInclude Include="..\src\asset_load.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\cam_control.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="..\src\camera\public\cam_control.h">
+      <Filter>Header Files\camera</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\camera.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="..\src\camera\public\camera.h">
+      <Filter>Header Files\camera</Filter>
     </ClInclude>
     <ClInclude Include="..\src\config.h">
       <Filter>Header Files</Filter>

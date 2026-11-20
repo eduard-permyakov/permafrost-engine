@@ -48,7 +48,7 @@
 #include "gl_mem.h"
 #include "gl_perf.h"
 #include "gl_material.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../main.h"
 #include "../map/public/tile.h"
 #include "../mem.h"

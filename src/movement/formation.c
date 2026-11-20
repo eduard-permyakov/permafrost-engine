@@ -43,7 +43,7 @@
 #include "../event.h"
 #include "../settings.h"
 #include "../perf.h"
-#include "../camera.h"
+#include "../camera/public/camera.h"
 #include "../sched/public/sched.h"
 #include "../sched/public/task.h"
 #include "../map/public/map.h"
