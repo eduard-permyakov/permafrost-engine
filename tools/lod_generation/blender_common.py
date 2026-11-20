@@ -30,6 +30,7 @@ except ModuleNotFoundError:
                      "  blender --background --python tools/lod_generation/<pass>.py -- <dir>")
 import os
 import sys
+import math
 from mathutils import Matrix, Vector
 from mathutils.bvhtree import BVHTree
 from bpy_extras.io_utils import axis_conversion
@@ -105,7 +106,57 @@ def weight_line(vert, vgroups, name_to_idx):
     return "vw " + "".join(" %d/%.6f" % (idx, w / total) for idx, w in pairs) + "\n"
 
 
-def mesh_blocks(obj, name_to_idx):
+class NormalSource:
+    # The source mesh's corner normals, for carrying its hard and soft edges over to a
+    # decimated copy: COLLAPSE drops custom split normals, which flattens faceted roofs and
+    # rounds off hard corners.
+
+    def __init__(self, obj):
+        me = obj.data
+        me.calc_loop_triangles()
+        self.tris = [tuple(t.vertices) for t in me.loop_triangles]
+        self.coords = [v.co.copy() for v in me.vertices]
+        try:
+            corner_n = [Vector(n.vector) for n in me.corner_normals]
+        except Exception:
+            corner_n = None
+        self.normals = []
+        for t in me.loop_triangles:
+            if corner_n is None:
+                self.normals.append((t.normal.copy(),) * 3)
+            else:
+                self.normals.append(tuple(corner_n[li] for li in t.loops))
+        self.bvh = BVHTree.FromPolygons(self.coords, self.tris)
+
+    def sample(self, co, toward, face_n):
+        # The source normal at a point just inside the decimated face from its corner, so a
+        # corner on a hard edge takes the normal of its own side of the edge
+        p = co.lerp(toward, 0.15)
+        hit = self.bvh.find_nearest(p)
+        if hit[2] is None:
+            return None
+        a, b, c = (self.coords[i] for i in self.tris[hit[2]])
+        w = barycentric(hit[0], a, b, c)
+        na, nb, nc = self.normals[hit[2]]
+        n = (na * w[0] + nb * w[1] + nc * w[2])
+        if n.length < 1e-6 or n.dot(face_n) <= 0.0:
+            return None
+        return n.normalized()
+
+
+def barycentric(p, a, b, c):
+    v0, v1, v2 = b - a, c - a, p - a
+    d00, d01, d11 = v0.dot(v0), v0.dot(v1), v1.dot(v1)
+    d20, d21 = v2.dot(v0), v2.dot(v1)
+    den = d00 * d11 - d01 * d01
+    if abs(den) < 1e-12:
+        return (1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0)
+    v = (d11 * d20 - d01 * d21) / den
+    w = (d00 * d21 - d01 * d20) / den
+    return (1.0 - v - w, v, w)
+
+
+def mesh_blocks(obj, name_to_idx, normal_src=None):
     me = obj.data
     me.calc_loop_triangles()
     trans = GLOBAL_MATRIX @ obj.matrix_world
@@ -122,11 +173,17 @@ def mesh_blocks(obj, name_to_idx):
     for tri in me.loop_triangles:
         face_n = (normal_mat @ tri.normal).normalized()
         vm = tri.material_index
+        centre = sum((me.vertices[v].co for v in tri.vertices), Vector()) / 3.0
         for k in order:
             li = tri.loops[k]
             vi = tri.vertices[k]
             co = trans @ me.vertices[vi].co
-            if corner_n is not None and li < len(corner_n):
+            src_n = None
+            if normal_src is not None:
+                src_n = normal_src.sample(me.vertices[vi].co, centre, tri.normal)
+            if src_n is not None:
+                no = (normal_mat @ src_n).normalized()
+            elif corner_n is not None and li < len(corner_n):
                 no = (normal_mat @ corner_n[li]).normalized()
             else:
                 no = face_n
@@ -140,16 +197,25 @@ def mesh_blocks(obj, name_to_idx):
     return blocks
 
 
-def tag_material_boundary(obj):
+def tag_material_boundary(obj, uv_seams=False):
     # COLLAPSE has no material delimiter, so a collapse may weld two materials together and
     # hand the survivors one material index: a thin two-sided sheet, such as a cape lined with
     # the faction colour, loses its outer surface to the lining. Pin the seam vertices instead.
+    # A collapse across a UV seam likewise stretches the texture between two islands.
     me = obj.data
     mats = {}
     for poly in me.polygons:
         for vi in poly.vertices:
             mats.setdefault(vi, set()).add(poly.material_index)
-    seam = [vi for vi, m in mats.items() if len(m) > 1]
+    seam = {vi for vi, m in mats.items() if len(m) > 1}
+    if uv_seams:
+        uv = me.uv_layers.active.data
+        uvs = {}
+        for loop in me.loops:
+            u = uv[loop.index].uv
+            uvs.setdefault(loop.vertex_index, set()).add((round(u.x, 4), round(u.y, 4)))
+        seam |= {vi for vi, s in uvs.items() if len(s) > 1}
+    seam = sorted(seam)
     if not seam:
         return None
     vg = obj.vertex_groups.new(name=MAT_BOUNDARY_GROUP)
@@ -157,7 +223,7 @@ def tag_material_boundary(obj):
     return vg.name
 
 
-def decimate_copy(base, ratio):
+def decimate_copy(base, ratio, uv_seams=False):
     # Apply (not just evaluate) the modifier so the result keeps interpolated vertex weights.
     new = base.copy()
     new.data = base.data.copy()
@@ -168,7 +234,7 @@ def decimate_copy(base, ratio):
     dec.decimate_type = 'COLLAPSE'
     dec.ratio = ratio
     dec.use_collapse_triangulate = True
-    seam = tag_material_boundary(new)
+    seam = tag_material_boundary(new, uv_seams)
     if seam:
         dec.vertex_group = seam
         dec.vertex_group_factor = 1.0
@@ -188,63 +254,107 @@ def drop(obj):
         bpy.data.meshes.remove(me)
 
 
-def collapse_gated(base, ntris, start, cap, floor, gate, max_holes, max_tries, name_to_idx):
-    # Collapse toward the keep-ratio; if the coverage gate finds holes, back off toward the
-    # cap and retry. Returns (blocks, holes, achieved_ratio) for the best attempt.
-    orig_vox, mn, step = gate
-    ratio = start
-    result = None
-    for _ in range(max_tries):
-        target = max(int(round(ratio * ntris)), floor)
-        eff = min(1.0, target / float(ntris))
-        dup = decimate_copy(base, eff)
-        blocks = mesh_blocks(dup, name_to_idx)
-        drop(dup)
-        holes = ll.hole_pct(orig_vox, ll.surface_voxels(ll.blocks_to_tris(blocks), mn, step))
-        result = (blocks, holes, eff)
-        if holes <= max_holes:
-            break
-        nxt = min(cap, ratio / 0.6)
-        if nxt - ratio < 1e-6:
-            break
-        ratio = nxt
-    return result
-
-
 def surface_points(obj, cap=2000):
     vs = obj.data.vertices
     step = max(1, len(vs) // cap)
     return [obj.matrix_world @ vs[i].co for i in range(0, len(vs), step)]
 
 
+def surface_points_by_material(obj, cap=4000, min_share=0.02):
+    # Corners and centres of the faces, each tagged with its face's material. A material
+    # covering less than 'min_share' of the surface, such as a small emblem, is tagged None:
+    # losing it costs a speck of colour, and it would otherwise hold the whole model back.
+    me = obj.data
+    polys = me.polygons
+    area = {}
+    for poly in polys:
+        area[poly.material_index] = area.get(poly.material_index, 0.0) + poly.area
+    total = sum(area.values()) or 1.0
+    step = max(1, len(polys) // (cap // 4))
+    mw = obj.matrix_world
+    coords = [(mw @ v.co) for v in me.vertices]
+    bvh = BVHTree.FromPolygons([c[:] for c in coords], [list(p.vertices) for p in polys])
+    out = []
+    every = []
+    for i in range(0, len(polys), step):
+        poly = polys[i]
+        tag = poly.material_index if area[poly.material_index] / total >= min_share else None
+        centre = mw @ poly.center
+        for co in [centre] + [coords[vi].lerp(centre, 0.1) for vi in poly.vertices]:
+            every.append((co, tag))
+            if seen_from_above(bvh, co):
+                out.append((co, tag))
+    return out or every
+
+
+# The directions an RTS camera or the sun looks at a model from, pointing away from it, in
+# Blender's Z-up space the importer converts to
+SKY_DIRS = [Vector((math.cos(e) * math.sin(a), math.cos(e) * math.cos(a), math.sin(e)))
+            for e in (math.radians(20), math.radians(45), math.radians(70))
+            for a in (k * math.pi / 4.0 for k in range(8))] + [Vector((0.0, 0.0, 1.0))]
+
+
+def seen_from_above(bvh, co):
+    # A point no ray toward the sky escapes from is inside or under the model, where its loss
+    # cannot show. Faces are not trusted to point outward.
+    for d in SKY_DIRS:
+        if bvh.ray_cast(co + d * 1e-3, d)[0] is None:
+            return True
+    return False
+
+
+MATERIAL_PERCENTILE = 0.98
+
+
 def deviation(dup, orig_pts, extent):
     # Largest distance from an original surface point to the decimated surface, over the extent.
+    # Points tagged with a material also measure to that material's surface alone, so trim that
+    # collapses into the wall behind it counts as lost; a high percentile rather than the
+    # largest distance, so that one small detail lost in a colour costs no more than its shape.
     me = dup.data
     coords = [(dup.matrix_world @ v.co)[:] for v in me.vertices]
-    polys = [list(p.vertices) for p in me.polygons]
-    bvh = BVHTree.FromPolygons(coords, polys)
+    tagged = bool(orig_pts) and isinstance(orig_pts[0], tuple)
+    if not tagged:
+        orig_pts = [(co, None) for co in orig_pts]
+    by_mat = {None: []}
+    for p in me.polygons:
+        by_mat[None].append(list(p.vertices))
+        if tagged:
+            by_mat.setdefault(p.material_index, []).append(list(p.vertices))
+    bvhs = {m: BVHTree.FromPolygons(coords, polys) for m, polys in by_mat.items()}
     md = 0.0
-    for co in orig_pts:
-        hit = bvh.find_nearest(co)
+    per_mat = {}
+    for co, mat in orig_pts:
+        hit = bvhs[None].find_nearest(co)
         if hit[3] is not None and hit[3] > md:
             md = hit[3]
+        if mat is None:
+            continue
+        bvh = bvhs.get(mat)
+        d = float("inf") if bvh is None else bvh.find_nearest(co)[3]
+        per_mat.setdefault(mat, []).append(d if d is not None else 0.0)
+    for ds in per_mat.values():
+        ds.sort()
+        md = max(md, ds[min(len(ds) - 1, int(len(ds) * MATERIAL_PERCENTILE))])
     return md / extent
 
 
-def collapse_to_error(base, orig_pts, extent, target_err, min_ratio, steps, name_to_idx):
+def collapse_to_error(base, orig_pts, extent, target_err, min_ratio, steps, name_to_idx,
+                      max_ratio=1.0, uv_seams=False, normal_src=None):
     # Binary-search the lowest keep-ratio whose surface deviation stays within target_err, so a
     # uniform error bound collapses over-tessellated meshes more and lean ones less.
-    lo, hi, best = min_ratio, 1.0, 1.0
+    lo, hi, best = min_ratio, max_ratio, max_ratio
     for _ in range(steps):
         mid = (lo + hi) / 2.0
-        dup = decimate_copy(base, mid)
+        dup = decimate_copy(base, mid, uv_seams)
         err = deviation(dup, orig_pts, extent)
         drop(dup)
         if err <= target_err:
             best, hi = mid, mid
         else:
             lo = mid
-    dup = decimate_copy(base, best)
-    blocks = mesh_blocks(dup, name_to_idx)
+    dup = decimate_copy(base, best, uv_seams)
+    err = deviation(dup, orig_pts, extent)
+    blocks = mesh_blocks(dup, name_to_idx, normal_src)
     drop(dup)
-    return blocks, best
+    return blocks, best, err

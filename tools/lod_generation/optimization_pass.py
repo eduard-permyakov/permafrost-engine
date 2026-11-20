@@ -58,8 +58,8 @@ def process(src, args):
     extent = max(max(p[i] for p in bb) - min(p[i] for p in bb) for i in range(3)) or 1.0
     pts = bl.surface_points(base)
     name_to_idx = {n: i for i, n in enumerate(bl.joint_names(tail))}
-    blocks, ratio = bl.collapse_to_error(base, pts, extent, args.error,
-                                         args.min_ratio, args.steps, name_to_idx)
+    blocks, ratio, _ = bl.collapse_to_error(base, pts, extent, args.error,
+                                            args.min_ratio, args.steps, name_to_idx)
     if not args.dry_run:
         if not os.path.exists(backup):
             shutil.copy2(src, backup)

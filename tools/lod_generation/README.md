@@ -12,10 +12,13 @@ the only dependency is **Blender (>= 2.80)**.
    organic ones barely change. Rewrites each `.pfobj` in place and keeps a one-time `.orig`
    backup, the original is always re-read from `.orig` so re-runs don't compound.
 
-2. **`lod_generation_pass.py`** — writes `<name>.lod1.pfobj` (50%) and `<name>.lod2.pfobj`
-   (25%) next to each source using COLLAPSE decimation. LOD2 backs off toward LOD1 wherever a
-   model would tear, so output is hole-free by default. Pass `--max-holes 100` to force the
-   full reduction on geometry where tearing is acceptable (e.g. flat ground detail).
+2. **`lod_generation_pass.py`** — writes `<name>.lod1.pfobj` and `<name>.lod2.pfobj` next to
+   each source using COLLAPSE decimation. Each level collapses as far as a surface-error bound
+   allows (`--lod1-error 0.003`, `--lod2-error 0.008` of the model extent) but no further than
+   `--lod1 0.5` / `--lod2 0.25` of the triangles, so thin parts that cast shadows survive. UV
+   seams are pinned and the source's corner normals are carried over to the decimated mesh, so
+   textures do not stretch and hard edges keep their shading. Levels with surface holes past
+   `--max-holes` are reported.
 
 Both walk a directory recursively (or take explicit `.pfobj` paths), skip meshes below
 `--min-tris`, and reuse each model's materials, joints, animations and bounds verbatim.

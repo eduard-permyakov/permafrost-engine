@@ -18,9 +18,12 @@
 #
 #
 #  LOD-generation pass: writes <name>.lod1.pfobj and <name>.lod2.pfobj next to each source
-#  mesh using Blender's COLLAPSE decimate. LOD1 keeps 50%, LOD2 targets 25% and backs off no
-#  further than LOD1 when the collapse would tear the surface (a coverage gate). The PFOBJ
-#  tail is reused verbatim, so materials, joints, animations and bounds are unchanged.
+#  mesh using Blender's COLLAPSE decimate. Each level collapses as far as a surface-error bound
+#  allows (a fraction of the model extent, sized for the distance the level shows at), but no
+#  further than LOD1 keeps 50% and LOD2 25%, so thin parts that cast shadows survive where a
+#  fixed ratio removes them. UV seams are pinned, and the source's corner normals are carried
+#  over so hard and soft edges shade as before. The PFOBJ tail is reused verbatim, so
+#  materials, joints, animations and bounds are unchanged.
 #
 #  Run: blender --background --python tools/lod_generation/lod_generation_pass.py -- <dir> [opts]
 #
@@ -29,6 +32,7 @@ import os
 import re
 import sys
 import argparse
+from mathutils import Vector                       # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -51,42 +55,55 @@ def process(src, args):
         print("RESULT\t%s\terror\t%d" % (name, ntris))
         return
 
-    lod1_eff = 1.0
+    bb = [base.matrix_world @ Vector(c) for c in base.bound_box]
+    extent = max(max(p[i] for p in bb) - min(p[i] for p in bb) for i in range(3)) or 1.0
+    pts = bl.surface_points_by_material(base)
+    normal_src = bl.NormalSource(base)
+    floor_ratio = min(1.0, args.floor / float(ntris))
+
+    cap = 1.0
     lod_tris = {}
-    for level, start, cap in ((1, args.lod1, 1.0), (2, args.lod2, None)):
-        # LOD2 backs off no further than LOD1: a mesh that cannot decimate cleanly falls back
-        # to the LOD1 mesh rather than tearing.
-        cap = lod1_eff if cap is None else cap
-        blocks, holes, eff = bl.collapse_gated(base, ntris, min(start, cap), cap, args.floor,
-                                               gate, args.max_holes, args.max_tries, name_to_idx)
-        if level == 1:
-            lod1_eff = eff
+    for level, min_ratio, err in ((1, args.lod1, args.lod1_error), (2, args.lod2, args.lod2_error)):
+        # Each level reduces no less than the one before it
+        blocks, eff, dev = bl.collapse_to_error(base, pts, extent, err,
+                                                max(min(min_ratio, cap), floor_ratio), args.steps,
+                                                name_to_idx, max_ratio=cap, uv_seams=True,
+                                                normal_src=normal_src)
+        cap = eff
+        holes = ll.hole_pct(gate[0], ll.surface_voxels(ll.blocks_to_tris(blocks), gate[1], gate[2]))
         out = re.sub(r"\.pfobj$", ".lod%d.pfobj" % level, src, flags=re.I)
         if not args.dry_run:
             ll.write_lod(out, header, len(blocks), blocks, tail)
         lod_tris[level] = len(blocks) // 3
-        flag = "MISSED" if holes > args.max_holes else ("relaxed" if eff > start + 0.02 else "ok")
-        print("RESULT\t%s\tlod%d\t%d\t%.2f\t%.3f\t%s" % (name, level, lod_tris[level], holes, eff, flag))
+        flag = "holes" if holes > args.max_holes else ("bounded" if eff > min_ratio + 0.02 else "ok")
+        print("RESULT\t%s\tlod%d\t%d\t%.2f\t%.3f\t%.4f\t%s" % (
+            name, level, lod_tris[level], holes, eff, dev, flag))
     return ntris, lod_tris[1], lod_tris[2]
 
 
 def main():
     ap = argparse.ArgumentParser(description="Generate PFOBJ LODs with Blender COLLAPSE decimate.")
     ap.add_argument("inputs", nargs="+", help="directories and/or .pfobj files")
-    ap.add_argument("--lod1", type=float, default=0.50, help="LOD1 keep-ratio (default 0.50)")
-    ap.add_argument("--lod2", type=float, default=0.25, help="LOD2 target keep-ratio (default 0.25)")
+    ap.add_argument("--lod1", type=float, default=0.50,
+                    help="LOD1 lowest keep-ratio (default 0.50)")
+    ap.add_argument("--lod2", type=float, default=0.25,
+                    help="LOD2 lowest keep-ratio (default 0.25)")
+    ap.add_argument("--lod1-error", type=float, default=0.003,
+                    help="LOD1 max surface deviation as a fraction of model extent (default 0.003)")
+    ap.add_argument("--lod2-error", type=float, default=0.008,
+                    help="LOD2 max surface deviation as a fraction of model extent (default 0.008)")
+    ap.add_argument("--steps", type=int, default=6, help="binary-search iterations (default 6)")
     ap.add_argument("--min-tris", type=int, default=150, help="skip meshes below this (default 150)")
     ap.add_argument("--floor", type=int, default=64, help="never reduce a level below this (default 64)")
     ap.add_argument("--max-holes", type=float, default=1.0,
-                    help="max uncovered surface %% before backing off; pass a large value to force (default 1.0)")
-    ap.add_argument("--max-tries", type=int, default=5)
+                    help="uncovered surface %% past which a level is reported (default 1.0)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(bl.args_after_dashes())
     bl.require_blender()
 
     sources = bl.collect_sources(args.inputs)
-    print("PROCESSING %d source meshes (lod1 %.2f, lod2 %.2f, max-holes %.1f%%)" % (
-        len(sources), args.lod1, args.lod2, args.max_holes))
+    print("PROCESSING %d source meshes (lod1 >= %.2f within %.4f, lod2 >= %.2f within %.4f)" % (
+        len(sources), args.lod1, args.lod1_error, args.lod2, args.lod2_error))
     tot_in = tot1 = tot2 = 0
     for src in sources:
         try:
