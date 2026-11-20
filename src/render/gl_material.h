@@ -36,7 +36,7 @@
 #ifndef GL_MATERIAL_H
 #define GL_MATERIAL_H
 
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include "gl_texture.h"
 
 struct material{

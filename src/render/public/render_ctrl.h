@@ -38,7 +38,7 @@
 
 #include "../../lib/public/queue.h"
 #include "../../lib/public/stalloc.h"
-#include "../../pf_math.h"
+#include "../../lib/public/pf_math.h"
 
 #include <stddef.h>
 

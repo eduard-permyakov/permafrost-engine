@@ -36,7 +36,7 @@
 #ifndef ANIM_H
 #define ANIM_H
 
-#include "../../pf_math.h"
+#include "../../lib/public/pf_math.h"
 
 #include <stddef.h>
 #include <stdio.h>

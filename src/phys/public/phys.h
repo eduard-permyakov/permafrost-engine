@@ -39,7 +39,7 @@
 struct obb;
 struct SDL_RWops;
 
-#include "../../pf_math.h"
+#include "../../lib/public/pf_math.h"
 #include "../../sprite.h"
 
 #include <stdint.h>

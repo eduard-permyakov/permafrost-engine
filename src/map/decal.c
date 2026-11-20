@@ -54,7 +54,7 @@
 #include "../lib/public/stb_image.h"
 #include "../lib/public/stb_image_resize.h"
 #include "../perf/public/mem.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 
 #include <SDL.h>
 #include <assert.h>

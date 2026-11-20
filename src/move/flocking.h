@@ -36,7 +36,7 @@
 #ifndef FLOCKING_H
 #define FLOCKING_H
 
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include "../nav/public/nav.h"
 
 #include <stdbool.h>

@@ -36,7 +36,7 @@
 #ifndef RENDER_H
 #define RENDER_H
 
-#include "../../pf_math.h"
+#include "../../lib/public/pf_math.h"
 #include "../../sprite.h"
 
 #include <stddef.h>

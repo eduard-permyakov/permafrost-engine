@@ -54,7 +54,7 @@
 #include "../phys/public/collision.h"
 #include "../camera/public/camera.h"
 #include "../settings.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include "../config.h"
 #include "../map/public/map.h"
 #include "../main.h"

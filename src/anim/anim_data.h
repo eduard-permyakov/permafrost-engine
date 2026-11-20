@@ -37,7 +37,7 @@
 #define ANIM_DATA_H
 
 #include "public/skeleton.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include "../phys/public/collision.h"
 
 #include <stddef.h>

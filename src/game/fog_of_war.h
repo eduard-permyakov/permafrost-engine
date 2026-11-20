@@ -36,7 +36,7 @@
 #ifndef FOG_OF_WAR_H
 #define FOG_OF_WAR_H
 
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include <stdbool.h>
 #include <stdint.h>
 

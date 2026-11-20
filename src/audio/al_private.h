@@ -36,7 +36,7 @@
 #ifndef AL_PRIVATE_H
 #define AL_PRIVATE_H
 
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include <AL/al.h>
 
 #define HEARING_RANGE   (165.0f)

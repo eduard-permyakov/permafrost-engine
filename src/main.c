@@ -56,7 +56,7 @@
 #include "anim/public/anim.h"
 #include "event/public/event.h"
 #include "ui.h"
-#include "pf_math.h"
+#include "lib/public/pf_math.h"
 #include "settings.h"
 #include "session.h"
 #include "perf/public/perf.h"

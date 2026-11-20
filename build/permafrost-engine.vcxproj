@@ -90,7 +90,7 @@
     <ClCompile Include="..\src\nav\fieldcache.c" />
     <ClCompile Include="..\src\nav\nav.c" />
     <ClCompile Include="..\src\perf\perf.c" />
-    <ClCompile Include="..\src\pf_math.c" />
+    <ClCompile Include="..\src\lib\pf_math.c" />
     <ClCompile Include="..\src\phys\collision.c" />
     <ClCompile Include="..\src\phys\projectile.c" />
     <ClCompile Include="..\src\render\gl_anim.c" />
@@ -239,7 +239,7 @@
     <ClInclude Include="..\src\nav\nav_private.h" />
     <ClInclude Include="..\src\nav\public\nav.h" />
     <ClInclude Include="..\src\perf\public\perf.h" />
-    <ClInclude Include="..\src\pf_math.h" />
+    <ClInclude Include="..\src\lib\public\pf_math.h" />
     <ClInclude Include="..\src\phys\public\collision.h" />
     <ClInclude Include="..\src\phys\public\phys.h" />
     <ClInclude Include="..\src\render\gl_anim.h" />

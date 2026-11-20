@@ -36,7 +36,7 @@
 #ifndef SCENE_H
 #define SCENE_H
 
-#include "pf_math.h"
+#include "lib/public/pf_math.h"
 #include "lib/public/attr.h"
 #include "lib/public/vec.h"
 #include "lib/public/khash.h"

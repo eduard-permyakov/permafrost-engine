@@ -41,7 +41,7 @@
 #include "py_pickle.h"
 #include "public/script.h"
 #include "../camera/public/camera.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include "../map/public/map.h"
 #include "../lib/public/SDL_vec_rwops.h"
 #include "../lib/public/pf_string.h"

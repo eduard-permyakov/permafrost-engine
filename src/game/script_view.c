@@ -40,7 +40,7 @@
 #include "../lib/public/lockfree.h"
 #include "../lib/public/pf_string.h"
 #include "../entity.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 
 #include <string.h>
 #include <assert.h>

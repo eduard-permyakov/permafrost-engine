@@ -36,7 +36,7 @@
 #ifndef AUDIO_H
 #define AUDIO_H
 
-#include "../../pf_math.h"
+#include "../../lib/public/pf_math.h"
 
 #include <stdbool.h>
 #include <stddef.h>

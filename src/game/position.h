@@ -37,7 +37,7 @@
 #define POSITION_H
 
 #include "game_private.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/bitmap_grid.h"
 

@@ -37,7 +37,7 @@
 #define MOVEMENT_H
 
 #include "../../game/public/game.h"
-#include "../../pf_math.h"
+#include "../../lib/public/pf_math.h"
 
 #include <stdbool.h>
 #include <stddef.h>

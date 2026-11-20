@@ -36,7 +36,7 @@
 #ifndef GL_MESH_H
 #define GL_MESH_H
 
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 
 #include <stddef.h>
 

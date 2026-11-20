@@ -42,7 +42,7 @@
 #include "../lib/public/khash.h"
 #include "../lib/public/attr.h"
 #include "../map/public/map.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 
 #include <assert.h>
 #include <math.h>

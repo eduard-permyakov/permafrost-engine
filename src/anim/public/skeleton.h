@@ -20,7 +20,7 @@
 #ifndef SKELETON_H
 #define SKELETON_H
 
-#include "../../pf_math.h"
+#include "../../lib/public/pf_math.h"
 
 #define JOINT_NAME_LEN 64
 

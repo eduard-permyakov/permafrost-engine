@@ -36,7 +36,7 @@
 #ifndef GL_BILLBOARD_H
 #define GL_BILLBOARD_H
 
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include "../config.h"
 #include "../anim/public/anim.h"
 

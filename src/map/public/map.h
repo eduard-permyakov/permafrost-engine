@@ -36,7 +36,7 @@
 #ifndef MAP_H
 #define MAP_H
 
-#include "../../pf_math.h"
+#include "../../lib/public/pf_math.h"
 #include "../../nav/public/nav.h" /* dest_id_t */
 
 #include <stdio.h>

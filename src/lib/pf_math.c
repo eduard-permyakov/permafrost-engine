@@ -36,11 +36,11 @@
 #define MEM_FILE_SYS MEM_SYS_PF_MATH
 #define MEM_FILE_SUB 0
 
-#include "pf_math.h"
+#include "public/pf_math.h"
 #include <string.h>
 #include <assert.h>
 
-#include "perf/public/mem.h"
+#include "../perf/public/mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

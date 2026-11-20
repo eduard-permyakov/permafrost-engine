@@ -37,7 +37,7 @@
 #define SCRIPT_H
 
 #include "../../scene.h"
-#include "../../pf_math.h"
+#include "../../lib/public/pf_math.h"
 
 #include <stdio.h>
 #include <stdbool.h>

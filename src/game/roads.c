@@ -50,7 +50,7 @@
 #include "../lib/public/attr.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/pf_string.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 
 #include <assert.h>
 #include <string.h>

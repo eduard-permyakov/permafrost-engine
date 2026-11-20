@@ -38,7 +38,7 @@
 
 #include "public/tile.h"
 #include "public/map.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 
 #include <stdbool.h>
 

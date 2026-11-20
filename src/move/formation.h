@@ -37,7 +37,7 @@
 #define FORMATION_H
 
 #include "public/movement.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include "../nav/public/nav.h"
 
 /* The layout of a box formation: a set of concentric square shells, one per

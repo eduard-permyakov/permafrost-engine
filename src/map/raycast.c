@@ -40,7 +40,7 @@
 #include "public/tile.h"
 #include "public/map.h"
 #include "../event/public/event.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include "../camera/public/camera.h"
 #include "../config.h"
 #include "../main.h"

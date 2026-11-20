@@ -50,7 +50,7 @@
 #include "../lib/public/noise.h"
 #include "../perf/public/mem.h"
 #include "../phys/public/collision.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 
 #include <stdlib.h>
 #include <assert.h>

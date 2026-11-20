@@ -37,7 +37,7 @@
 #define MAP_PRIVATE_H
 
 #include "pfchunk.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include "../lib/public/bitgrid.h"
 
 #define MAX_NUM_MATS   (256)

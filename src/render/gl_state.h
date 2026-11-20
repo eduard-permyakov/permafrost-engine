@@ -35,7 +35,7 @@
 #ifndef GL_STATE_H
 #define GL_STATE_H
 
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include <stdbool.h>
 #include <GL/glew.h>
 

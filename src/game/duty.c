@@ -51,7 +51,7 @@
 #include "../lib/public/attr.h"
 #include "../lib/public/pf_string.h"
 #include "../map/public/map.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include "position.h"
 
 #include <assert.h>

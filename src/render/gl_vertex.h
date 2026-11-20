@@ -36,7 +36,7 @@
 #ifndef GL_VERTEX_H
 #define GL_VERTEX_H
 
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include <stdint.h>
 #include <GL/glew.h>
 

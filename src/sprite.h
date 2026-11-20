@@ -39,7 +39,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "pf_math.h"
+#include "lib/public/pf_math.h"
 
 struct SDL_RWops;
 

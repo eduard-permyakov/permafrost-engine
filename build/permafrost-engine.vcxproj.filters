@@ -159,8 +159,8 @@
     <ClCompile Include="..\src\perf\perf.c">
       <Filter>Source Files\perf</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\pf_math.c">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="..\src\lib\pf_math.c">
+      <Filter>Source Files\lib</Filter>
     </ClCompile>
     <ClCompile Include="..\src\scene.c">
       <Filter>Source Files</Filter>
@@ -545,8 +545,8 @@
     <ClInclude Include="..\src\perf\public\perf.h">
       <Filter>Header Files\perf</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\pf_math.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="..\src\lib\public\pf_math.h">
+      <Filter>Header Files\lib\public</Filter>
     </ClInclude>
     <ClInclude Include="..\src\scene.h">
       <Filter>Header Files</Filter>

@@ -36,7 +36,7 @@
 #ifndef UI_H
 #define UI_H
 
-#include "pf_math.h"
+#include "lib/public/pf_math.h"
 #include <stdbool.h>
 #include <SDL.h>
 

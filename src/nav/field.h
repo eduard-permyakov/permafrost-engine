@@ -38,7 +38,7 @@
 
 #include "public/nav.h"
 #include "nav_data.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include "../map/public/tile.h"
 #include <stdbool.h>
 

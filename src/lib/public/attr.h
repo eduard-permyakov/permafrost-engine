@@ -36,7 +36,7 @@
 #ifndef ATTR_H
 #define ATTR_H
 
-#include "../../pf_math.h"
+#include "pf_math.h"
 #include <stdbool.h>
 
 struct SDL_RWops;

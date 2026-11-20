@@ -37,7 +37,7 @@
 #define FACTION_H
 
 #include "public/game.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 
 struct faction{
     vec3_t color;

@@ -45,7 +45,7 @@
 #include "gl_mem.h"
 #include "gl_perf.h"
 #include "../camera/public/camera.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include "../config.h"
 #include "../main.h"
 #include "../lib/public/pf_string.h"

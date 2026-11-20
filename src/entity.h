@@ -36,7 +36,7 @@
 #ifndef ENTITY_H
 #define ENTITY_H
 
-#include "pf_math.h"
+#include "lib/public/pf_math.h"
 #include "lib/public/khash.h"
 #include "lib/public/vec.h"
 #include "map/public/tile.h"

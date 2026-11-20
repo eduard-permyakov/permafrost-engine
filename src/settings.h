@@ -36,7 +36,7 @@
 #ifndef SETTINGS_H
 #define SETTINGS_H
 
-#include "pf_math.h"
+#include "lib/public/pf_math.h"
 
 #include <stdbool.h>
 #include <stdint.h>

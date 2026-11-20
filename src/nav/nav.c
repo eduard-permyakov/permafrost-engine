@@ -52,7 +52,7 @@
 #include "../lib/public/pqueue.h"
 #include "../lib/public/pf_string.h"
 #include "../phys/public/collision.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include "../entity.h"
 #include "../event/public/event.h"
 #include "../main.h"

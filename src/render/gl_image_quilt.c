@@ -49,7 +49,7 @@
 #define GPU_MEM_FILE_SYS GPU_MEM_SYS_GL_IMAGE_QUILT
 #include "gl_mem.h"
 #include "../main.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include "../lib/public/stb_image.h"
 #include "../lib/public/stb_image_resize.h"
 #include "../lib/public/vec.h"

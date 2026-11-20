@@ -40,7 +40,7 @@
 #include "al_private.h"
 #include "al_assert.h"
 #include "../sched/public/sched.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include "../event/public/event.h"
 #include "../entity.h"
 #include "../perf/public/perf.h"

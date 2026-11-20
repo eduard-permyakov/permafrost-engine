@@ -49,7 +49,7 @@
 #include "gl_perf.h"
 #include "gl_anim.h"
 #include "../main.h"
-#include "../pf_math.h"
+#include "../lib/public/pf_math.h"
 #include "../config.h"
 #include "../settings.h"
 #include "../camera/public/camera.h"
