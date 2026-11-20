@@ -37,8 +37,8 @@
 #define MEM_FILE_SUB 0
 
 #include "entity.h" 
-#include "sched.h"
-#include "task.h"
+#include "sched/public/sched.h"
+#include "sched/public/task.h"
 #include "event.h"
 #include "main.h"
 #include "camera.h"

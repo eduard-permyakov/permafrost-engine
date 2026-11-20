@@ -39,7 +39,7 @@
 #include "field.h"
 #include "nav_private.h"
 #include "../entity.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 #include "../perf.h"
 #include "../main.h"
 #include "../map/public/tile.h"

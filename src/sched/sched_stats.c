@@ -34,8 +34,8 @@
  */
 
 #include "sched_stats.h"
-#include "settings.h"
-#include "lib/public/pf_string.h"
+#include "../settings.h"
+#include "../lib/public/pf_string.h"
 
 #include <SDL.h>
 

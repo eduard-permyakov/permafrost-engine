@@ -60,7 +60,7 @@
 #include "settings.h"
 #include "session.h"
 #include "perf.h"
-#include "sched.h"
+#include "sched/public/sched.h"
 #include "sprite.h"
 #include "loading_screen.h"
 

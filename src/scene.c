@@ -37,7 +37,7 @@
 #define MEM_FILE_SUB 0
 
 #include "scene.h"
-#include "sched.h"
+#include "sched/public/sched.h"
 #include "asset_load.h"
 #include "main.h"
 #include "script/public/script.h"

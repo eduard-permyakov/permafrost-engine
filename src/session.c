@@ -40,7 +40,7 @@
 #include "event.h"
 #include "main.h"
 #include "ui.h"
-#include "sched.h"
+#include "sched/public/sched.h"
 #include "cursor.h"
 #include "sprite.h"
 #include "asset_load.h"

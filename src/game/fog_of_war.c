@@ -42,7 +42,7 @@
 #include "game_private.h"
 #include "../event.h"
 #include "../settings.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 #include "../perf.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"

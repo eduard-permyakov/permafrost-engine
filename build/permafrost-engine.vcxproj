@@ -123,7 +123,8 @@
     <ClCompile Include="..\src\render\render.c" />
     <ClCompile Include="..\src\render\render_asset_load.c" />
     <ClCompile Include="..\src\scene.c" />
-    <ClCompile Include="..\src\sched.c" />
+    <ClCompile Include="..\src\sched\sched.c" />
+    <ClCompile Include="..\src\sched\sched_stats.c" />
     <ClCompile Include="..\src\script\py_camera.c" />
     <ClCompile Include="..\src\script\py_console.c" />
     <ClCompile Include="..\src\script\py_constants.c" />
@@ -142,7 +143,7 @@
     <ClCompile Include="..\src\session.c" />
     <ClCompile Include="..\src\settings.c" />
     <ClCompile Include="..\src\sprite.c" />
-    <ClCompile Include="..\src\task.c" />
+    <ClCompile Include="..\src\sched\task.c" />
     <ClCompile Include="..\src\ui.c" />
     <ClCompile Include="..\src\version.c" />
   </ItemGroup>
@@ -264,7 +265,8 @@
     <ClInclude Include="..\src\render\public\render_ctrl.h" />
     <ClInclude Include="..\src\render\render_private.h" />
     <ClInclude Include="..\src\scene.h" />
-    <ClInclude Include="..\src\sched.h" />
+    <ClInclude Include="..\src\sched\public\sched.h" />
+    <ClInclude Include="..\src\sched\sched_stats.h" />
     <ClInclude Include="..\src\script\private_types.h" />
     <ClInclude Include="..\src\script\public\script.h" />
     <ClInclude Include="..\src\script\py_camera.h" />
@@ -284,11 +286,11 @@
     <ClInclude Include="..\src\session.h" />
     <ClInclude Include="..\src\settings.h" />
     <ClInclude Include="..\src\sprite.h" />
-    <ClInclude Include="..\src\task.h" />
+    <ClInclude Include="..\src\sched\public\task.h" />
     <ClInclude Include="..\src\ui.h" />
   </ItemGroup>
   <ItemGroup>
-    <MASM Include="..\src\context_switch.asm">
+    <MASM Include="..\src\sched\context_switch.asm">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">ml64.exe /c /I $(Filename) /Fo context_switch.obj</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(TargetDir)/context_switch.obj</Outputs>

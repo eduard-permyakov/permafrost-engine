@@ -48,7 +48,7 @@
 #include "builder.h"
 #include "../event.h"
 #include "../entity.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/attr.h"
 #include "../lib/public/pf_string.h"

@@ -80,8 +80,8 @@
 #include "../perf.h"
 #include "../cursor.h"
 #include "../cam_control.h"
-#include "../task.h"
-#include "../sched.h"
+#include "../sched/public/task.h"
+#include "../sched/public/sched.h"
 #include "../asset_load.h"
 #include "../sprite.h"
 

@@ -13,6 +13,12 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav</Extensions>
     </Filter>
+    <Filter Include="Source Files\sched">
+      <UniqueIdentifier>{2c39e5a4-a764-496c-a2c0-e697f6d69e0c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\sched">
+      <UniqueIdentifier>{09a7d75a-6be0-429e-a1ca-2dea15201c92}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\render">
       <UniqueIdentifier>{fc8ac884-ebc4-4088-a716-e0ae2aa9f718}</UniqueIdentifier>
     </Filter>
@@ -135,8 +141,11 @@
     <ClCompile Include="..\src\scene.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\sched.c">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="..\src\sched\sched.c">
+      <Filter>Source Files\sched</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\sched\sched_stats.c">
+      <Filter>Source Files\sched</Filter>
     </ClCompile>
     <ClCompile Include="..\src\session.c">
       <Filter>Source Files</Filter>
@@ -144,8 +153,8 @@
     <ClCompile Include="..\src\settings.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\task.c">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="..\src\sched\task.c">
+      <Filter>Source Files\sched</Filter>
     </ClCompile>
     <ClCompile Include="..\src\ui.c">
       <Filter>Source Files</Filter>
@@ -518,8 +527,11 @@
     <ClInclude Include="..\src\scene.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\sched.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="..\src\sched\public\sched.h">
+      <Filter>Header Files\sched</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\sched\sched_stats.h">
+      <Filter>Header Files\sched</Filter>
     </ClInclude>
     <ClInclude Include="..\src\session.h">
       <Filter>Header Files</Filter>
@@ -527,8 +539,8 @@
     <ClInclude Include="..\src\settings.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\task.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="..\src\sched\public\task.h">
+      <Filter>Header Files\sched</Filter>
     </ClInclude>
     <ClInclude Include="..\src\ui.h">
       <Filter>Header Files</Filter>
@@ -904,7 +916,7 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <MASM Include="..\src\context_switch.asm">
+    <MASM Include="..\src\sched\context_switch.asm">
       <Filter>Source Files</Filter>
     </MASM>
   </ItemGroup>

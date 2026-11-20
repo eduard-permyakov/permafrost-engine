@@ -48,7 +48,7 @@
 #include "../camera.h"
 #include "../main.h"
 #include "../perf.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 
 #include <string.h>
 #include <stdbool.h>

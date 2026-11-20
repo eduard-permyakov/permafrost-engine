@@ -41,7 +41,7 @@
 #include "config.h"
 #include "event.h"
 #include "main.h"
-#include "sched.h"
+#include "sched/public/sched.h"
 #include "game/public/game.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/khash.h"

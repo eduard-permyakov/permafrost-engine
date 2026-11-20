@@ -53,7 +53,7 @@
 #include "../entity.h"
 #include "../settings.h"
 #include "../camera.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 #include "../perf.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/stalloc.h"

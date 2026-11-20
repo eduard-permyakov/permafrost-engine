@@ -36,20 +36,20 @@
 #define MEM_FILE_SYS MEM_SYS_TASK
 #define MEM_FILE_SUB 0
 
-#include "task.h"
-#include "game/public/game.h"
-#include "sched.h"
-#include "event.h"
-#include "main.h"
-#include "lib/public/pf_string.h"
-#include "lib/public/pqueue.h"
-#include "lib/public/queue.h"
-#include "lib/public/khash.h"
+#include "public/task.h"
+#include "../game/public/game.h"
+#include "public/sched.h"
+#include "../event.h"
+#include "../main.h"
+#include "../lib/public/pf_string.h"
+#include "../lib/public/pqueue.h"
+#include "../lib/public/queue.h"
+#include "../lib/public/khash.h"
 
 #include <SDL.h>
 #include <assert.h>
 
-#include "mem.h"
+#include "../mem.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC

@@ -46,7 +46,7 @@
 #include "../movement/public/movement.h"
 #include "position.h"
 #include "public/game.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 #include "../entity.h"
 #include "../perf.h"
 #include "../event.h"

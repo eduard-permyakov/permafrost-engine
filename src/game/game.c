@@ -85,7 +85,7 @@
 #include "../ui.h"
 #include "../perf.h"
 #include "../cursor.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 #include "../sprite.h"
 
 #include <assert.h> 

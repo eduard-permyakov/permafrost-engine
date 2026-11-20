@@ -44,7 +44,7 @@
 #include "provision.h"
 #include "game_private.h"
 #include "public/game.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 #include "../event.h"
 #include "../entity.h"
 #include "../cursor.h"

@@ -41,7 +41,7 @@
 #include "public/game.h"
 #include "../script/public/script.h"
 #include "../main.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 #include "../ui.h"
 #include "../event.h"
 #include "../camera.h"

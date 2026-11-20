@@ -39,7 +39,7 @@
 #include "map_private.h"
 #include "pfchunk.h"
 #include "public/map.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 #include "../perf.h"
 #include "../camera.h"
 #include "../settings.h"

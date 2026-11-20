@@ -46,7 +46,7 @@
 #include "../event.h"
 #include "../entity.h"
 #include "../asset_load.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 #include "../phys/public/collision.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"

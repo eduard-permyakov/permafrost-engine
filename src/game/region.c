@@ -45,7 +45,7 @@
 #include "../main.h"
 #include "../camera.h"
 #include "../event.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 #include "../phys/public/collision.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"

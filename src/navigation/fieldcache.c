@@ -43,7 +43,7 @@
 #include "../lib/public/vec.h"
 #include "../mem.h"
 #include "../event.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 #include "../config.h"
 #include "../map/public/tile.h"
 

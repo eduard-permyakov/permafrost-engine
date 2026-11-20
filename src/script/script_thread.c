@@ -38,7 +38,7 @@
 #include "../main.h"
 #include "../game/public/game.h"
 #include "../perf.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 #include "../settings.h"
 #include "../lib/public/lockfree.h"
 

@@ -41,7 +41,7 @@
 #include <math.h>
 #include "public/game.h"
 #include "storage_site.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 #include "../event.h"
 #include "../entity.h"
 #include "../phys/public/collision.h"

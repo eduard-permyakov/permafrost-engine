@@ -36,22 +36,22 @@
 #define MEM_FILE_SYS MEM_SYS_SCHED
 #define MEM_FILE_SUB 0
 
-#include "sched.h"
+#include "public/sched.h"
 #include "sched_stats.h"
-#include "config.h"
-#include "perf.h"
-#include "main.h"
-#include "task.h"
-#include "event.h"
-#include "game/public/game.h"
-#include "phys/public/phys.h"
-#include "script/public/script.h"
-#include "lib/public/pqueue.h"
-#include "lib/public/khash.h"
-#include "lib/public/lockfree.h"
-#include "lib/public/pf_string.h"
-#include "mem.h"
-#include "settings.h"
+#include "../config.h"
+#include "../perf.h"
+#include "../main.h"
+#include "public/task.h"
+#include "../event.h"
+#include "../game/public/game.h"
+#include "../phys/public/phys.h"
+#include "../script/public/script.h"
+#include "../lib/public/pqueue.h"
+#include "../lib/public/khash.h"
+#include "../lib/public/lockfree.h"
+#include "../lib/public/pf_string.h"
+#include "../mem.h"
+#include "../settings.h"
 
 #include <SDL.h>
 #include <mimalloc-stats.h>

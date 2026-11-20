@@ -40,7 +40,7 @@
 #include "main.h"
 #include "perf.h"
 #include "settings.h"
-#include "sched.h"
+#include "sched/public/sched.h"
 #include "mem.h"
 #include "lib/public/khash.h"
 #include "lib/public/vec.h"

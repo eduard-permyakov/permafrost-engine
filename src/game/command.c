@@ -42,7 +42,7 @@
 #include "harvester.h"
 #include "game_private.h"
 #include "public/game.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/attr.h"

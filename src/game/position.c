@@ -48,7 +48,7 @@
 #include "../main.h"
 #include "../event.h"
 #include "../perf.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 #include "../mem.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"

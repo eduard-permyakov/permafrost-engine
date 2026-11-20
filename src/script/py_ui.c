@@ -42,7 +42,7 @@
 #include "py_ui_style.h"
 #include "script_thread.h"
 #include "py_task.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 #include "py_pickle.h"
 #include "py_console.h"
 #include "py_prof.h"

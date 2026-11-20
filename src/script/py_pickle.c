@@ -44,7 +44,7 @@
 #include "../lib/public/pf_string.h"
 #include "../mem.h"
 #include "../asset_load.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 
 
 /* Additional Python headers */

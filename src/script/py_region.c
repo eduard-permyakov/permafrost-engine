@@ -43,7 +43,7 @@
 #include "py_pickle.h"
 #include "py_prof.h"
 #include "public/script.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/khash.h"
 #include "../mem.h"

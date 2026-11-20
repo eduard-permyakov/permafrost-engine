@@ -37,7 +37,7 @@
 #include "script_thread.h"
 #include "py_task.h"
 #include "py_entity.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 #include "../settings.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"

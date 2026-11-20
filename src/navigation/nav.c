@@ -57,7 +57,7 @@
 #include "../event.h"
 #include "../main.h"
 #include "../perf.h"
-#include "../sched.h"
+#include "../sched/public/sched.h"
 #include "../ui.h"
 #include "../camera.h"
 
