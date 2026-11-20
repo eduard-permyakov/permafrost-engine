@@ -39,7 +39,7 @@
 #include "public/map.h"
 #include "pfchunk.h"
 #include "map_private.h"
-#include "../asset_load.h"
+#include "../asset/public/asset_load.h"
 #include "../render/public/render.h"
 #include "../render/public/render_al.h"
 #include "../render/public/render_ctrl.h"

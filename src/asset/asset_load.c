@@ -36,22 +36,22 @@
 #define MEM_FILE_SYS MEM_SYS_ASSET_LOAD
 #define MEM_FILE_SUB 0
 
-#include "asset_load.h"
-#include "asset_cache.h"
-#include "entity.h"
-#include "main.h"
+#include "public/asset_load.h"
+#include "public/asset_cache.h"
+#include "../entity.h"
+#include "../main.h"
 
-#include "render/public/render.h"
-#include "render/public/render_al.h"
-#include "render/public/render_ctrl.h"
-#include "anim/public/anim.h"
-#include "game/public/game.h"
-#include "lib/public/attr.h"
-#include "map/public/map.h"
-#include "lib/public/khash.h"
-#include "lib/public/pf_string.h"
-#include "lib/public/mpool_allocator.h"
-#include "mem.h"
+#include "../render/public/render.h"
+#include "../render/public/render_al.h"
+#include "../render/public/render_ctrl.h"
+#include "../anim/public/anim.h"
+#include "../game/public/game.h"
+#include "../lib/public/attr.h"
+#include "../map/public/map.h"
+#include "../lib/public/khash.h"
+#include "../lib/public/pf_string.h"
+#include "../lib/public/mpool_allocator.h"
+#include "../mem.h"
 
 #include <SDL.h>
 

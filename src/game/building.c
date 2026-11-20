@@ -45,7 +45,7 @@
 #include "public/game.h"
 #include "../event/public/event.h"
 #include "../entity.h"
-#include "../asset_load.h"
+#include "../asset/public/asset_load.h"
 #include "../sched/public/sched.h"
 #include "../phys/public/collision.h"
 #include "../map/public/map.h"

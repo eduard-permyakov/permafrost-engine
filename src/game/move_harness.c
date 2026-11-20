@@ -44,7 +44,7 @@
 #include "public/game.h"
 #include "../move/public/movement.h"
 #include "../config.h"
-#include "../asset_load.h"
+#include "../asset/public/asset_load.h"
 #include "../event/public/event.h"
 #include "../entity.h"
 #include "../main.h"

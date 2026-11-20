@@ -36,11 +36,11 @@
 #define MEM_FILE_SYS MEM_SYS_ASSET_CACHE
 #define MEM_FILE_SUB 0
 
-#include "asset_cache.h"
-#include "main.h"
-#include "lib/public/windows.h"
-#include "lib/public/pf_string.h"
-#include "mem.h"
+#include "public/asset_cache.h"
+#include "../main.h"
+#include "../lib/public/windows.h"
+#include "../lib/public/pf_string.h"
+#include "../mem.h"
 
 #include <SDL.h>
 

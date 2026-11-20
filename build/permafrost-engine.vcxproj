@@ -22,8 +22,8 @@
     <ClCompile Include="..\src\anim\anim.c" />
     <ClCompile Include="..\src\anim\anim_asset_load.c" />
     <ClCompile Include="..\src\anim\anim_texture.c" />
-    <ClCompile Include="..\src\asset_cache.c" />
-    <ClCompile Include="..\src\asset_load.c" />
+    <ClCompile Include="..\src\asset\asset_cache.c" />
+    <ClCompile Include="..\src\asset\asset_load.c" />
     <ClCompile Include="..\src\audio\al_audio.c" />
     <ClCompile Include="..\src\audio\al_effect.c" />
     <ClCompile Include="..\src\camera\camera.c" />
@@ -154,8 +154,8 @@
     <ClInclude Include="..\src\anim\anim_texture.h" />
     <ClInclude Include="..\src\anim\public\anim.h" />
     <ClInclude Include="..\src\anim\public\skeleton.h" />
-    <ClInclude Include="..\src\asset_cache.h" />
-    <ClInclude Include="..\src\asset_load.h" />
+    <ClInclude Include="..\src\asset\public\asset_cache.h" />
+    <ClInclude Include="..\src\asset\public\asset_load.h" />
     <ClInclude Include="..\src\audio\al_assert.h" />
     <ClInclude Include="..\src\audio\al_effect.h" />
     <ClInclude Include="..\src\audio\al_private.h" />

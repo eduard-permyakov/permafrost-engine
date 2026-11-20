@@ -42,7 +42,7 @@
 #include "anim_data.h"
 #include "anim_ctx.h"
 #include "../entity.h"
-#include "../asset_load.h"
+#include "../asset/public/asset_load.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../lib/public/khash.h"

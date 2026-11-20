@@ -37,7 +37,7 @@
 #define ASSET_CACHE_H
 
 #include "asset_load.h"
-#include "phys/public/collision.h"
+#include "../../phys/public/collision.h"
 
 #include <stddef.h>
 #include <stdbool.h>

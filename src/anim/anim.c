@@ -45,7 +45,7 @@
 #include "../entity.h"
 #include "../event/public/event.h"
 #include "../perf.h"
-#include "../asset_load.h"
+#include "../asset/public/asset_load.h"
 #include "../lib/public/attr.h"
 #include "../lib/public/pf_string.h"
 #include "../render/public/render.h"

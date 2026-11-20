@@ -43,8 +43,8 @@
 #include "anim_texture.h"
 #include "../mem.h"
 
-#include "../asset_load.h"
-#include "../asset_cache.h"
+#include "../asset/public/asset_load.h"
+#include "../asset/public/asset_cache.h"
 #include "../lib/public/pf_string.h"
 
 #include <string.h>

@@ -48,8 +48,8 @@
 
 #include "../main.h"
 #include "../perf.h"
-#include "../asset_load.h"
-#include "../asset_cache.h"
+#include "../asset/public/asset_load.h"
+#include "../asset/public/asset_cache.h"
 #include "../map/public/tile.h"
 #include "../settings.h"
 #include "../lib/public/pf_string.h"

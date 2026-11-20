@@ -31,6 +31,12 @@
     <Filter Include="Header Files\event">
       <UniqueIdentifier>{5605d4ca-c2a8-4aab-915c-c441adaee87b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\asset">
+      <UniqueIdentifier>{f0461057-91bf-4b16-a8cf-43798f1f0407}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\asset">
+      <UniqueIdentifier>{c857a76b-2632-4e84-9968-44280e70a9db}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\render">
       <UniqueIdentifier>{fc8ac884-ebc4-4088-a716-e0ae2aa9f718}</UniqueIdentifier>
     </Filter>
@@ -123,8 +129,8 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\src\asset_load.c">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="..\src\asset\asset_load.c">
+      <Filter>Source Files\asset</Filter>
     </ClCompile>
     <ClCompile Include="..\src\camera\cam_control.c">
       <Filter>Source Files\camera</Filter>
@@ -402,8 +408,8 @@
     <ClCompile Include="..\src\anim\anim_texture.c">
       <Filter>Source Files\anim</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\asset_cache.c">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="..\src\asset\asset_cache.c">
+      <Filter>Source Files\asset</Filter>
     </ClCompile>
     <ClCompile Include="..\src\move\arrival.c">
       <Filter>Source Files\move</Filter>
@@ -506,8 +512,8 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\src\asset_load.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="..\src\asset\public\asset_load.h">
+      <Filter>Header Files\asset</Filter>
     </ClInclude>
     <ClInclude Include="..\src\camera\public\cam_control.h">
       <Filter>Header Files\camera</Filter>
@@ -836,8 +842,8 @@
     <ClInclude Include="..\src\anim\anim_texture.h">
       <Filter>Header Files\anim</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\asset_cache.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="..\src\asset\public\asset_cache.h">
+      <Filter>Header Files\asset</Filter>
     </ClInclude>
     <ClInclude Include="..\src\move\arrival.h">
       <Filter>Header Files\move</Filter>

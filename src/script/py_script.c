@@ -82,7 +82,7 @@
 #include "../camera/public/cam_control.h"
 #include "../sched/public/task.h"
 #include "../sched/public/sched.h"
-#include "../asset_load.h"
+#include "../asset/public/asset_load.h"
 #include "../sprite.h"
 
 #include <SDL.h>

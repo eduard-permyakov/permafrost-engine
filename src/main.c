@@ -37,8 +37,8 @@
 #define MEM_FILE_SUB 0
 
 #include "main.h"
-#include "asset_load.h"
-#include "asset_cache.h"
+#include "asset/public/asset_load.h"
+#include "asset/public/asset_cache.h"
 #include "config.h"
 #include "cursor.h"
 #include "render/public/render.h"

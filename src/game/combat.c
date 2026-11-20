@@ -55,7 +55,7 @@
 #include "../settings.h"
 #include "../sched/public/sched.h"
 #include "../sched/public/task.h"
-#include "../asset_load.h"
+#include "../asset/public/asset_load.h"
 #include "../sprite.h"
 #include "../phys/public/collision.h"
 #include "../render/public/render.h"

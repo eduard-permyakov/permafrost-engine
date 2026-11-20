@@ -45,7 +45,7 @@
 #include "../main.h"
 #include "../entity.h"
 #include "../event/public/event.h"
-#include "../asset_load.h"
+#include "../asset/public/asset_load.h"
 #include "../anim/public/anim.h"
 #include "../game/public/game.h"
 #include "../move/public/movement.h"

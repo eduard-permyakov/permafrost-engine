@@ -44,7 +44,7 @@
 #include "../perf.h"
 #include "../sched/public/sched.h"
 #include "../entity.h"
-#include "../asset_load.h"
+#include "../asset/public/asset_load.h"
 #include "../sprite.h"
 #include "../map/public/tile.h"
 #include "../game/public/game.h"

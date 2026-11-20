@@ -49,7 +49,7 @@
 #include "gl_perf.h"
 #include "../camera/public/camera.h"
 #include "../main.h"
-#include "../asset_cache.h"
+#include "../asset/public/asset_cache.h"
 #include "../lib/public/stb_image.h"
 #include "../lib/public/stb_image_resize.h"
 #include "../lib/public/pf_string.h"

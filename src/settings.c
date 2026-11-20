@@ -39,7 +39,7 @@
 
 #include "settings.h"
 #include "config.h"
-#include "asset_load.h"
+#include "asset/public/asset_load.h"
 #include "main.h"
 #include "mem.h"
 #include "lib/public/khash.h"

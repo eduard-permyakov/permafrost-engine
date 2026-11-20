@@ -38,7 +38,7 @@
 
 #include "scene.h"
 #include "sched/public/sched.h"
-#include "asset_load.h"
+#include "asset/public/asset_load.h"
 #include "main.h"
 #include "script/public/script.h"
 #include "game/public/game.h"

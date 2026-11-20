@@ -56,7 +56,7 @@
 #include "../loading_screen.h"
 #include "../config.h"
 #include "../main.h"
-#include "../asset_cache.h"
+#include "../asset/public/asset_cache.h"
 
 #include <string.h>
 #include <assert.h>

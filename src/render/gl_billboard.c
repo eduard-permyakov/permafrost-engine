@@ -48,7 +48,7 @@
 #include "gl_postprocess.h"
 #include "public/render.h"
 #include "public/render_ctrl.h"
-#include "../asset_cache.h"
+#include "../asset/public/asset_cache.h"
 #include "../entity.h"
 #include "../settings.h"
 #include "../main.h"

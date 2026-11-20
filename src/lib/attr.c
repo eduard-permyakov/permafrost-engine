@@ -38,7 +38,7 @@
 
 #include "public/attr.h"
 #include "public/pf_string.h"
-#include "../asset_load.h"
+#include "../asset/public/asset_load.h"
 
 #include <string.h>
 #include <assert.h>

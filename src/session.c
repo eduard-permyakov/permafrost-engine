@@ -43,7 +43,7 @@
 #include "sched/public/sched.h"
 #include "cursor.h"
 #include "sprite.h"
-#include "asset_load.h"
+#include "asset/public/asset_load.h"
 #include "loading_screen.h"
 #include "settings.h"
 #include "lib/public/attr.h"

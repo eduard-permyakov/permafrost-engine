@@ -77,7 +77,7 @@
 #include "../entity.h"
 #include "../camera/public/camera.h"
 #include "../camera/public/cam_control.h"
-#include "../asset_load.h"
+#include "../asset/public/asset_load.h"
 #include "../event/public/event.h"
 #include "../config.h"
 #include "../settings.h"

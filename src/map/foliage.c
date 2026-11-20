@@ -46,7 +46,7 @@
 #include "../camera/public/camera.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
-#include "../asset_load.h"
+#include "../asset/public/asset_load.h"
 #include "../lib/public/noise.h"
 #include "../mem.h"
 #include "../phys/public/collision.h"
