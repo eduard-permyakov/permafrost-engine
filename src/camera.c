@@ -91,6 +91,14 @@ struct camera {
 const unsigned g_sizeof_camera = sizeof(struct camera);
 
 /*****************************************************************************/
+/* STATIC VARIABLES                                                          */
+/*****************************************************************************/
+
+/* The pixel grid orthographic views are held to, or zero for none */
+static int s_grid_width;
+static int s_grid_height;
+
+/*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
@@ -124,6 +132,36 @@ static void camera_ortho_extents(const struct camera *cam, float aspect,
 
     *out_bot_left  = (vec2_t){-half_w, -half_h};
     *out_top_right = (vec2_t){ half_w,  half_h};
+}
+
+/* The camera's position moved, by under a pixel of the grid, to where the 
+ * grid's pixels fall on the same spots of the world as they did before the 
+ * camera panned. Without it the picture crawls as an orthographic view moves.
+ */
+static vec3_t camera_grid_pos(const struct camera *cam, vec2_t bot_left, vec2_t top_right)
+{
+    if(s_grid_width <= 0 || s_grid_height <= 0)
+        return cam->pos;
+
+    vec3_t right, up;
+    PFM_Vec3_Cross((vec3_t*)&cam->front, (vec3_t*)&cam->up, &right);
+    if(PFM_Vec3_Len(&right) < EPSILON)
+        return cam->pos;
+    PFM_Vec3_Normal(&right, &right);
+    PFM_Vec3_Cross(&right, (vec3_t*)&cam->front, &up);
+    PFM_Vec3_Normal(&up, &up);
+
+    float step_x = (top_right.x - bot_left.x) / s_grid_width;
+    float step_y = (top_right.y - bot_left.y) / s_grid_height;
+    float along_x = PFM_Vec3_Dot((vec3_t*)&cam->pos, &right);
+    float along_y = PFM_Vec3_Dot((vec3_t*)&cam->pos, &up);
+
+    vec3_t ret = cam->pos, delta;
+    PFM_Vec3_Scale(&right, roundf(along_x / step_x) * step_x - along_x, &delta);
+    PFM_Vec3_Add(&ret, &delta, &ret);
+    PFM_Vec3_Scale(&up, roundf(along_y / step_y) * step_y - along_y, &delta);
+    PFM_Vec3_Add(&ret, &delta, &ret);
+    return ret;
 }
 
 /*****************************************************************************/
@@ -442,16 +480,17 @@ void Camera_TickFinishOrthographic(struct camera *cam, vec2_t bot_left, vec2_t t
     mat4x4_t view, proj;
 
     /* Set the view matrix for the vertex shader */
+    vec3_t pos = camera_grid_pos(cam, bot_left, top_right);
     vec3_t target;
-    PFM_Vec3_Add(&cam->pos, &cam->front, &target);
-    PFM_Mat4x4_MakeLookAt(&cam->pos, &target, &cam->up, &view);
+    PFM_Vec3_Add(&pos, &cam->front, &target);
+    PFM_Mat4x4_MakeLookAt(&pos, &target, &cam->up, &view);
 
     R_PushCmd((struct rcmd){
         .func = R_GL_SetViewMatAndPos,
         .nargs = 2,
         .args = {
             R_PushArg(&view, sizeof(view)),
-            R_PushArg(&cam->pos, sizeof(cam->pos)),
+            R_PushArg(&pos, sizeof(pos)),
         },
     });
     
@@ -520,9 +559,21 @@ bool Camera_PosIsRestricted(const struct camera *cam)
 
 void Camera_MakeViewMat(const struct camera *cam, mat4x4_t *out)
 {
+    vec3_t pos = cam->pos;
+    if(cam->projection == CAM_PROJ_ORTHOGRAPHIC) {
+        vec2_t bot_left, top_right;
+        Camera_GetOrthoExtents(cam, &bot_left, &top_right);
+        pos = camera_grid_pos(cam, bot_left, top_right);
+    }
     vec3_t target;
-    PFM_Vec3_Add((vec3_t*)&cam->pos, (vec3_t*)&cam->front, &target);
-    PFM_Mat4x4_MakeLookAt((vec3_t*)&cam->pos, &target, (vec3_t*)&cam->up, out);
+    PFM_Vec3_Add(&pos, (vec3_t*)&cam->front, &target);
+    PFM_Mat4x4_MakeLookAt(&pos, &target, (vec3_t*)&cam->up, out);
+}
+
+void Camera_SetPixelGrid(int width, int height)
+{
+    s_grid_width = width;
+    s_grid_height = height;
 }
 
 void Camera_MakeProjMat(const struct camera *cam, mat4x4_t *out)

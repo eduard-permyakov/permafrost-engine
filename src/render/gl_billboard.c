@@ -45,6 +45,7 @@
 #include "gl_shader.h"
 #include "gl_state.h"
 #include "gl_perf.h"
+#include "gl_postprocess.h"
 #include "public/render.h"
 #include "public/render_ctrl.h"
 #include "../asset_cache.h"
@@ -67,6 +68,9 @@
 #define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_BILLBOARD)
 #define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_BILLBOARD)
 #define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_RENDER, MEM_SUB_RENDER_GL_BILLBOARD)
+
+/* The texture unit of the look's grade, past the two the atlases use */
+#define GRADE_TUNIT (GL_TEXTURE2)
 
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
@@ -1090,6 +1094,11 @@ static void bb_draw_desc_runs(const vec_rbill_t *list, GLuint prog, bool depth_u
 
 void R_GL_Billboard_Draw(struct render_input *in)
 {
+    R_GL_Billboard_DrawGraded(in, false);
+}
+
+void R_GL_Billboard_DrawGraded(struct render_input *in, bool graded)
+{
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
@@ -1111,6 +1120,7 @@ void R_GL_Billboard_Draw(struct render_input *in)
         .type = UTYPE_INT,
         .val.as_int = 1
     });
+    R_GL_PostProcess_GradeBind(GRADE_TUNIT, graded);
     R_GL_Shader_Install("billboard");
     GLuint prog = R_GL_Shader_GetProgForName("billboard");
 
@@ -1121,6 +1131,7 @@ void R_GL_Billboard_Draw(struct render_input *in)
 
     bb_draw_desc_runs(&in->cam_vis_bill, prog, true);
 
+    R_GL_PostProcess_GradeBind(GRADE_TUNIT, false);
     glEnable(GL_CULL_FACE);
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);

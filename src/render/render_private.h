@@ -57,6 +57,10 @@ struct render_private{
  * commit callback. Defined in gl_water.c. */
 extern float g_water_rt_scale;
 
+/* How many times smaller than the frame the target of the world passes is 
+ * along each side, while they are redirected. Defined in gl_postprocess.c. */
+extern float g_world_scale;
+
 /* General */
 void R_Yield(void);
 void R_RunCmds(struct rcmd_list list);

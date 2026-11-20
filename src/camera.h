@@ -75,6 +75,11 @@ vec3_t         Camera_GetDir       (const struct camera *cam);
 vec3_t         Camera_GetPos       (const struct camera *cam);
 
 void           Camera_MakeViewMat  (const struct camera *cam, mat4x4_t *out);
+/* Hold orthographic views to a grid of this many pixels across the view, so 
+ * that a picture drawn at that size does not crawl as the view pans. Zero 
+ * for either lets the view move freely.
+ */
+void           Camera_SetPixelGrid (int width, int height);
 void           Camera_MakeProjMat  (const struct camera *cam, mat4x4_t *out);
 
 void           Camera_RestrictPosWithBox(struct camera *cam, struct bound_box box);

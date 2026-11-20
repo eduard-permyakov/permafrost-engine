@@ -48,6 +48,7 @@
 #include "gl_billboard.h"
 #include "gl_anim.h"
 #include "gl_swapchain.h"
+#include "gl_postprocess.h"
 #include "render_private.h"
 #include "../settings.h"
 #include "../main.h"
@@ -264,6 +265,25 @@ static bool water_rt_scale_validate(const struct sval *new_val)
         && (new_val->as_float <= 1.0f);
 }
 
+static bool string_val_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_STRING);
+}
+
+static bool postprocess_dither_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_FLOAT)
+        && (new_val->as_float >= 0.0f)
+        && (new_val->as_float <= 0.25f);
+}
+
+static bool world_scale_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_FLOAT)
+        && (new_val->as_float >= 1.0f)
+        && (new_val->as_float <= 4.0f);
+}
+
 static void render_set_logmask(int *mask)
 {
     if(!GLEW_KHR_debug)
@@ -465,6 +485,7 @@ static void render_init_ctx(struct render_init_arg *arg)
 static void render_destroy_ctx(void)
 {
     R_GL_TerrainBakeShutdown();
+    R_GL_PostProcess_Shutdown();
     R_GL_SwapchainShutdown();
     R_GL_AnimShutdown();
     R_GL_Billboard_ShutdownCtx();
@@ -811,6 +832,66 @@ bool R_Init(const char *base_path)
         .prio = 0,
         .validate = bool_val_validate,
         .commit = vsync_commit,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.video.antialiasing",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.video.postprocess",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.video.postprocess_look",
+        .val = (struct sval) {
+            .type = ST_TYPE_STRING,
+            .as_string = "assets/looks/imperial"
+        },
+        .prio = 0,
+        .validate = string_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.video.postprocess_dither",
+        .val = (struct sval) {
+            .type = ST_TYPE_FLOAT,
+            .as_float = 0.04f
+        },
+        .prio = 0,
+        .validate = postprocess_dither_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.video.world_scale",
+        .val = (struct sval) {
+            .type = ST_TYPE_FLOAT,
+            .as_float = 1.5f
+        },
+        .prio = 0,
+        .validate = world_scale_validate,
+        .commit = NULL,
     });
     assert(status == SS_OKAY);
 

@@ -185,6 +185,13 @@ struct render_scene{
     bool                       batching;
     bool                       water_refraction;
     bool                       water_reflection;
+    /* The directory of the look the world is graded to, or NULL for none.
+     * The world is then drawn 'world_scale' times smaller along each side.
+     */
+    const char                *look;
+    bool                       antialias;
+    float                      world_scale;
+    float                      dither;
 
     const struct camera       *cam;
     /* NULL when no map is loaded */

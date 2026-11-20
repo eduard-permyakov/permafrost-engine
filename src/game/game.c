@@ -3077,6 +3077,37 @@ void G_Render(void)
     assert(status == SS_OKAY);
     scene.water_reflection = setting.as_bool;
 
+    int grid_width = 0, grid_height = 0;
+    status = Settings_Get("pf.video.postprocess", &setting);
+    assert(status == SS_OKAY);
+    if(setting.as_bool) {
+        status = Settings_Get("pf.video.postprocess_look", &setting);
+        assert(status == SS_OKAY);
+        scene.look = R_PushArg(setting.as_string, strlen(setting.as_string) + 1);
+
+        status = Settings_Get("pf.video.world_scale", &setting);
+        assert(status == SS_OKAY);
+        scene.world_scale = setting.as_float;
+
+        int width, height;
+        Engine_WinDrawableSize(&width, &height);
+        grid_width = lroundf(width / scene.world_scale);
+        grid_height = lroundf(height / scene.world_scale);
+
+        status = Settings_Get("pf.video.postprocess_dither", &setting);
+        assert(status == SS_OKAY);
+        scene.dither = setting.as_float;
+    }
+
+    status = Settings_Get("pf.video.antialiasing", &setting);
+    assert(status == SS_OKAY);
+    scene.antialias = setting.as_bool;
+    if(!scene.look) {
+        scene.world_scale = 1.0f;
+    }
+
+    Camera_SetPixelGrid(grid_width, grid_height);
+
     R_BeginCapture();
     E_Global_NotifyImmediate(EVENT_RENDER_3D_PRE, NULL, ES_ENGINE);
     scene.pre_world = R_EndCapture();

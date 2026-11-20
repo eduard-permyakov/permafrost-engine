@@ -123,6 +123,13 @@
 #define GL_U_BAKE_VIEW_DIR      "bake_view_dir"
 #define GL_U_BC3_SRC_TEX        "bc3_src_tex"
 #define GL_U_BC3_SRC_LEVEL      "bc3_src_level"
+#define GL_U_POST_WORLD_TEX     "post_world_tex"
+#define GL_U_POST_GRADE_LUT     "post_grade_lut"
+#define GL_U_POST_PALETTE_LUT   "post_palette_lut"
+#define GL_U_POST_OUT_SIZE      "post_out_size"
+#define GL_U_POST_DITHER_OFFSET "post_dither_offset"
+#define GL_U_POST_DITHER        "post_dither"
+#define GL_U_POST_GRADE_ON      "post_grade_on"
 
 enum utype{
     UTYPE_FLOAT,

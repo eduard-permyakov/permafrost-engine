@@ -180,7 +180,7 @@ static int wbuff_width(void)
 
     int viewport[4];
     glGetIntegerv(GL_VIEWPORT, viewport);
-    return (int)(viewport[2] * g_water_rt_scale);
+    return (int)(viewport[2] * g_world_scale * g_water_rt_scale);
 }
 
 static int wbuff_height(int width)

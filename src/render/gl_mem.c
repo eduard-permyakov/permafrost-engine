@@ -297,6 +297,7 @@ const char *gpu_mem_sys_name(int sys)
         [GPU_MEM_SYS_GL_MINIMAP]     = "minimap",
         [GPU_MEM_SYS_GL_MOVEMENT]    = "movement",
         [GPU_MEM_SYS_GL_POSITION]    = "position",
+        [GPU_MEM_SYS_GL_POSTPROCESS] = "postprocess",
         [GPU_MEM_SYS_GL_RENDER]      = "render",
         [GPU_MEM_SYS_GL_RINGBUFFER]  = "ringbuffer",
         [GPU_MEM_SYS_GL_SHADOWS]     = "shadows",

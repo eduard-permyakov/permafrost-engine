@@ -280,6 +280,36 @@ static struct shader s_shaders[] = {
     },
     {
         .prog_id        = (intptr_t)NULL,
+        .name           = "fxaa",
+        .vertex_path    = "shaders/vertex/fullscreen.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/fxaa.glsl",
+        .uniforms       = (struct uniform[]){
+            { UTYPE_INT,       GL_U_POST_WORLD_TEX     },
+            { UTYPE_VEC2,      GL_U_POST_OUT_SIZE      },
+            {0}
+        },
+    },
+    {
+        .prog_id        = (intptr_t)NULL,
+        .name           = "postprocess",
+        .vertex_path    = "shaders/vertex/fullscreen.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/postprocess.glsl",
+        .uniforms       = (struct uniform[]){
+            { UTYPE_INT,       GL_U_POST_WORLD_TEX     },
+            { UTYPE_INT,       GL_U_POST_GRADE_LUT     },
+            { UTYPE_INT,       GL_U_POST_PALETTE_LUT   },
+            { UTYPE_VEC2,      GL_U_POST_OUT_SIZE      },
+            { UTYPE_IVEC2,     GL_U_POST_DITHER_OFFSET },
+            { UTYPE_FLOAT,     GL_U_POST_DITHER        },
+            {0}
+        },
+    },
+    {
+        .prog_id        = (intptr_t)NULL,
         .name           = "terrain-bake-bc3",
         .vertex_path    = "shaders/vertex/fullscreen.glsl",
         .geo_path       = NULL,
@@ -637,6 +667,8 @@ static struct shader s_shaders[] = {
             { UTYPE_VEC2,      GL_U_BB_ANCHOR_OFF     },
             { UTYPE_INT,       GL_U_BB_NAZIMUTHS      },
             { UTYPE_FLOAT,     GL_U_BB_DEPTH_EXTENT   },
+            { UTYPE_INT,       GL_U_POST_GRADE_LUT    },
+            { UTYPE_INT,       GL_U_POST_GRADE_ON     },
             {0}
         },
     },

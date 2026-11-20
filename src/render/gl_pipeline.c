@@ -37,6 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_RENDER_GL_PIPELINE
 
 #include "gl_pipeline.h"
+#include "gl_postprocess.h"
 #include "gl_render.h"
 #include "gl_assert.h"
 #include "gl_perf.h"
@@ -179,7 +180,7 @@ static void decals_draw(const struct render_scene *scene)
     R_GL_DecalEndDraw();
 }
 
-static void stage_world(const struct render_scene *scene)
+static void stage_world(const struct render_scene *scene, bool billboards)
 {
     GL_PERF_ENTER();
     struct render_input *in = scene->world;
@@ -190,7 +191,7 @@ static void stage_world(const struct render_scene *scene)
     }
     entities_colour(scene, in);
     /* The billboards are one instanced draw whatever the batching mode */
-    if(vec_size(&in->cam_vis_bill)) {
+    if(billboards && vec_size(&in->cam_vis_bill)) {
         R_GL_Billboard_Draw(in);
     }
 
@@ -266,6 +267,13 @@ void R_GL_Pipeline_Render(struct render_scene *scene)
     ASSERT_IN_RENDER_THREAD();
 
     R_GL_BeginFrame();
+    bool redirected = (scene->look || scene->antialias)
+        && R_GL_PostProcess_BeginWorld(scene->look, scene->world_scale, scene->antialias);
+    /* Billboards are small pictures of models already: drawn into a reduced 
+     * world they blur, so over a graded world they are drawn afterwards, at 
+     * full size and in its colours.
+     */
+    bool late_billboards = redirected && R_GL_PostProcess_Graded();
     R_RunCmds(scene->pre_world);
     R_GL_MovePoll(false);
 
@@ -273,7 +281,7 @@ void R_GL_Pipeline_Render(struct render_scene *scene)
         stage_shadow_map(scene);
         R_GL_MovePoll(false);
     }
-    stage_world(scene);
+    stage_world(scene, !late_billboards);
     R_GL_MovePoll(false);
 
     if(scene->water) {
@@ -284,6 +292,15 @@ void R_GL_Pipeline_Render(struct render_scene *scene)
     R_GL_DrawSkybox(scene->cam);
     R_RunCmds(scene->post_world);
     R_GL_MovePoll(false);
+
+    /* The world ends here: what follows is drawn over it at full size */
+    if(redirected) {
+        R_GL_PostProcess_Resolve(scene->cam, scene->dither, scene->antialias);
+    }
+    if(late_billboards && vec_size(&scene->world->cam_vis_bill)) {
+        R_GL_PostProcess_CopyDepth();
+        R_GL_Billboard_DrawGraded(scene->world, true);
+    }
 
     stage_overlay(scene);
 

@@ -65,6 +65,10 @@ uniform sampler2DArray tex_array0;
  */
 uniform sampler2DArray tex_array1;
 
+/* The look the world is graded to, for billboards drawn over the graded world */
+uniform sampler3D post_grade_lut;
+uniform int       post_grade_on;
+
 /*****************************************************************************/
 /* PROGRAM                                                                   */
 /*****************************************************************************/
@@ -74,7 +78,12 @@ void main()
     vec4 texel = texture(tex_array0, vec3(from_vertex.uv, float(from_vertex.layer)));
     if(texel.a < 0.5)
         discard;
-    o_frag_color = vec4(texel.rgb, 1.0);
+    vec3 color = texel.rgb;
+    if(post_grade_on != 0) {
+        vec3 dim = vec3(textureSize(post_grade_lut, 0));
+        color = texture(post_grade_lut, clamp(color, 0.0, 1.0) * ((dim - 1.0) / dim) + 0.5 / dim).rgb;
+    }
+    o_frag_color = vec4(color, 1.0);
 
     float off = texture(tex_array1, vec3(from_vertex.uv, float(from_vertex.layer))).r
               * from_vertex.depth_scale;

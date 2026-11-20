@@ -113,6 +113,7 @@ enum gpu_mem_sys{
     GPU_MEM_SYS_GL_MINIMAP,
     GPU_MEM_SYS_GL_MOVEMENT,
     GPU_MEM_SYS_GL_POSITION,
+    GPU_MEM_SYS_GL_POSTPROCESS,
     GPU_MEM_SYS_GL_RENDER,
     GPU_MEM_SYS_GL_RINGBUFFER,
     GPU_MEM_SYS_GL_SHADOWS,
@@ -942,6 +943,8 @@ void R_GL_Billboard_EnsureBaked(struct bb_model_desc *desc, const void *render_p
  * ---------------------------------------------------------------------------
  */
 void R_GL_Billboard_Draw(struct render_input *in);
+/* The same, in the colours of the look the world is graded to when 'graded' */
+void R_GL_Billboard_DrawGraded(struct render_input *in, bool graded);
 void R_GL_Billboard_DrawDepth(struct render_input *in);
 
 #endif
