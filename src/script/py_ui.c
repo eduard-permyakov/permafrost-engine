@@ -45,6 +45,7 @@
 #include "../sched.h"
 #include "py_pickle.h"
 #include "py_console.h"
+#include "py_prof.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/lockfree.h"
@@ -2957,7 +2958,11 @@ static bool frame_task_ended(void)
 static bool call_registered(PyObject *obj, char *method_name)
 {
     assert(!ST_OFF_SCRIPT());
+    if(PYPROF_ON())
+        PyProf_SliceBegin(PYPROF_WINDOW, obj, method_name);
     PyObject *ret = PyObject_CallMethod(obj, method_name, NULL);
+    if(PYPROF_ON())
+        PyProf_SliceEnd();
     if(!ret && !frame_task_ended()) {
         S_ShowLastError();
     }
@@ -2967,7 +2972,11 @@ static bool call_registered(PyObject *obj, char *method_name)
 
 static void call_registered_arg(PyObject *obj, char *method_name, PyObject *arg)
 {
+    if(PYPROF_ON())
+        PyProf_SliceBegin(PYPROF_WINDOW, obj, method_name);
     PyObject *ret = PyObject_CallMethod(obj, method_name, "O", arg, NULL);
+    if(PYPROF_ON())
+        PyProf_SliceEnd();
     if(!ret && !frame_task_ended()) {
         S_ShowLastError();
     }

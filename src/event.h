@@ -206,6 +206,7 @@ void        E_NoteScriptAwait(int event);
 void        E_FlushEventQueue(void);
 const char *E_EngineEventString(enum eventtype event);
 bool        E_EventsQueued(void);
+bool        E_InImmediateDispatch(void);
 bool        E_QueuedThisFrame(enum eventtype event);
 
 /*###########################################################################*/

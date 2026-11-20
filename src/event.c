@@ -437,6 +437,8 @@ static void e_invoke(const struct handler_desc hd, struct event event,
     PERF_POP();
 }
 
+static int s_immediate_depth = 0;
+
 /* Runs the event's handlers in one table, in the order they registered */
 static void e_run_handlers(khash_t(handler_desc) *table, struct event event, bool immediate,
                            const struct script_event_arg *sarg)
@@ -494,7 +496,9 @@ static void e_run_handlers(khash_t(handler_desc) *table, struct event event, boo
             if(event.tick != elem.register_tick && SDL_TICKS_PASSED(elem.register_tick, event.tick))
                 continue;
 
+            s_immediate_depth += immediate;
             e_invoke(elem, event, sarg);
+            s_immediate_depth -= immediate;
             ran = true;
             break;
         }
@@ -1013,6 +1017,11 @@ bool E_QueuedThisFrame(enum eventtype event)
         }
     }
     return false;
+}
+
+bool E_InImmediateDispatch(void)
+{
+    return (s_immediate_depth > 0);
 }
 
 bool E_EventsQueued(void)

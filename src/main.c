@@ -406,7 +406,10 @@ static bool frame_prof_enabled(void)
 
 static void frame_stamp(enum frame_stamp stamp)
 {
+    /* The Python profiler's stage numbers follow the frame stamps */
+    static const int stages[] = {0, 1, 2, 3, 4, 5, 5, 0};
     s_frame_stamps[stamp] = SDL_GetPerformanceCounter();
+    S_ProfSetStage(stages[stamp]);
 }
 
 static double span_us(enum frame_stamp from, enum frame_stamp to)

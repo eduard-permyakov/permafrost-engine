@@ -41,6 +41,7 @@
 #include "../event.h"
 #include "py_entity.h"
 #include "py_pickle.h"
+#include "py_prof.h"
 #include "public/script.h"
 #include "../sched.h"
 #include "../lib/public/pf_string.h"
@@ -763,7 +764,11 @@ void S_Region_NotifyContentsChanged(const char *name)
     if(!PyObject_HasAttrString(reg, "on_contents_changed"))
         return;
 
+    if(PYPROF_ON())
+        PyProf_SliceBegin(PYPROF_REGION, reg, "on_contents_changed");
     PyObject *ret = PyObject_CallMethod(reg, "on_contents_changed", NULL);
+    if(PYPROF_ON())
+        PyProf_SliceEnd();
     if(!ret) {
         S_ShowLastError();
     }

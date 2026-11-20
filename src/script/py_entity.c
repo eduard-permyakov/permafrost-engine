@@ -39,6 +39,7 @@
 #include <Python.h> /* must be first */
 #include "py_entity.h"
 #include "script_thread.h"
+#include "py_prof.h"
 #include "py_pickle.h"
 #include "public/script.h"
 #include "../main.h"
@@ -2003,7 +2004,19 @@ static int class_formation_priority(PyTypeObject *type)
     return ret;
 }
 
+static PyObject *pyentity_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
+
 static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+    if(!PYPROF_ON())
+        return pyentity_new(type, args, kwds);
+    PyProf_PseudoEnter("pf.Entity.__new__");
+    PyObject *ret = pyentity_new(type, args, kwds);
+    PyProf_PseudoExit();
+    return ret;
+}
+
+static PyObject *pyentity_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
     PyEntityObject *self;
     const char *dirpath, *filename, *name;

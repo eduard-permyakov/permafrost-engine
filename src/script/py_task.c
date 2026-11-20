@@ -42,6 +42,7 @@
 
 #include "py_task.h"
 #include "script_thread.h"
+#include "py_prof.h"
 #include "py_pickle.h"
 #include "public/script.h"
 #include "../task.h"
@@ -438,10 +439,17 @@ static void pytask_push_ctx(PyTaskObject *self)
     assert(!ST_OFF_SCRIPT());
     s_main_thread_state = PyThreadState_Swap(self->ts);
     S_View_EnterTask(self->view, self->poll);
+    if(PYPROF_ON()) {
+        PyProf_WatchThreadState(self->ts);
+        PyProf_SliceBegin(self->view && Sched_InViewSlice() ? PYPROF_VIEW_TASK : PYPROF_TASK, 
+            (PyObject*)self, NULL);
+    }
 }
 
 static void pytask_pop_ctx(PyTaskObject *self)
 {
+    if(PYPROF_ON())
+        PyProf_SliceEnd();
     assert(s_main_thread_state);
     PyThreadState *ts = PyThreadState_Swap(s_main_thread_state);
     assert(ts == self->ts);

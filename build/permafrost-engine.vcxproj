@@ -130,6 +130,7 @@
     <ClCompile Include="..\src\script\py_entity.c" />
     <ClCompile Include="..\src\script\py_error.c" />
     <ClCompile Include="..\src\script\py_perf.c" />
+    <ClCompile Include="..\src\script\py_prof.c" />
     <ClCompile Include="..\src\script\py_pickle.c" />
     <ClCompile Include="..\src\script\py_region.c" />
     <ClCompile Include="..\src\script\py_script.c" />
@@ -272,6 +273,7 @@
     <ClInclude Include="..\src\script\py_entity.h" />
     <ClInclude Include="..\src\script\py_error.h" />
     <ClInclude Include="..\src\script\py_perf.h" />
+    <ClInclude Include="..\src\script\py_prof.h" />
     <ClInclude Include="..\src\script\py_pickle.h" />
     <ClInclude Include="..\src\script\py_region.h" />
     <ClInclude Include="..\src\script\py_task.h" />

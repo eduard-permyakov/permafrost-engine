@@ -51,6 +51,7 @@
 #include "py_error.h"
 #include "py_console.h"
 #include "py_perf.h"
+#include "py_prof.h"
 #include "public/script.h"
 #include "../entity.h"
 #include "../game/public/game.h"
@@ -1887,10 +1888,18 @@ static void s_on_update(void *user, void *event)
     /* The frame's one call for the script thread's own upkeep */
     if(G_GetSimState() == G_RUNNING)
         S_Task_FrameStart();
+    if(PYPROF_ON())
+        PyProf_SliceBegin(PYPROF_ENGINE, NULL, "error_update");
+    if(PYPROF_ON()) {
+        PyProf_SliceEnd();
+        PyProf_SliceBegin(PYPROF_ENGINE, NULL, "mem_stats");
+    }
 
     Py_ssize_t arena_b = 0, arena_c = 0, raw_b = 0, raw_c = 0;
     _PyObject_MemStats(&arena_b, &arena_c, &raw_b, &raw_c);
     Mem_SetPythonStats((int64_t)arena_b, (int64_t)arena_c, (int64_t)raw_b, (int64_t)raw_c);
+    if(PYPROF_ON())
+        PyProf_SliceEnd();
 }
 
 void S_FrameUpkeep(void)
@@ -7608,6 +7617,7 @@ bool S_Init(const char *progname, const char *base_path, struct nk_context *ctx)
     S_View_Init(module);
     S_UI_StartFrameTask();
     s_start_dispatch_task();
+    PyProf_Init(module);
 
     return true;
 }
@@ -7854,7 +7864,12 @@ void S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, scrip
     Py_INCREF(callable);
     clear_stale_error("handler", callable);
     uint64_t t0 = SDL_GetPerformanceCounter();
+    if(PYPROF_ON())
+        PyProf_SliceBegin(E_InImmediateDispatch() ? PYPROF_HANDLER_IMMEDIATE : PYPROF_HANDLER, 
+            callable, NULL);
     ret = PyObject_CallObject(callable, args);
+    if(PYPROF_ON())
+        PyProf_SliceEnd();
     log_slow_handler(callable, SDL_GetPerformanceCounter() - t0);
     Py_DECREF(callable);
     Py_DECREF(args);

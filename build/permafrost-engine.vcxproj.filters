@@ -471,6 +471,9 @@
     <ClCompile Include="..\src\script\py_perf.c">
       <Filter>Source Files\script</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\script\py_prof.c">
+      <Filter>Source Files\script</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\sprite.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -879,6 +882,9 @@
       <Filter>Header Files\render</Filter>
     </ClInclude>
     <ClInclude Include="..\src\script\py_perf.h">
+      <Filter>Header Files\script</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\script\py_prof.h">
       <Filter>Header Files\script</Filter>
     </ClInclude>
     <ClInclude Include="..\src\sprite.h">
