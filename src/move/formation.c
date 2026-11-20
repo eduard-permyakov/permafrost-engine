@@ -55,7 +55,7 @@
 #include "../lib/public/stalloc.h"
 #include "../lib/public/attr.h"
 #include "../lib/public/shared_ptr.h"
-#include "../navigation/public/nav.h"
+#include "../nav/public/nav.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../phys/public/collision.h"

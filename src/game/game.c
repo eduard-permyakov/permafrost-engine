@@ -41,7 +41,7 @@
 #include "selection.h"
 #include "timer_events.h"
 #include "move_harness.h"
-#include "../movement/public/movement.h"
+#include "../move/public/movement.h"
 #include "game_private.h"
 #include "combat.h" 
 #include "position.h"

@@ -38,7 +38,7 @@
 
 #include "position.h"
 #include "game_private.h"
-#include "../movement/public/movement.h"
+#include "../move/public/movement.h"
 #include "building.h"
 #include "resource.h"
 #include "fog_of_war.h"

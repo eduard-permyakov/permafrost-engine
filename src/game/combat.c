@@ -39,7 +39,7 @@
 #include "combat.h"
 #include "game_private.h"
 #include "move_harness.h"
-#include "../movement/public/movement.h"
+#include "../move/public/movement.h"
 #include "building.h"
 #include "fog_of_war.h"
 #include "position.h"

@@ -36,7 +36,7 @@
 #include "flocking.h"
 #include "../lib/public/simd.h"
 #include "../map/public/map.h"
-#include "../navigation/public/nav.h"
+#include "../nav/public/nav.h"
 
 #include <assert.h>
 #include <math.h>

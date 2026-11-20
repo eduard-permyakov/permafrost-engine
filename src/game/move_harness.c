@@ -42,7 +42,7 @@
 #include "position.h"
 #include "fog_of_war.h"
 #include "public/game.h"
-#include "../movement/public/movement.h"
+#include "../move/public/movement.h"
 #include "../config.h"
 #include "../asset_load.h"
 #include "../event.h"

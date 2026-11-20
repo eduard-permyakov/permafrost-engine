@@ -37,7 +37,7 @@
 #define MAP_H
 
 #include "../../pf_math.h"
-#include "../../navigation/public/nav.h" /* dest_id_t */
+#include "../../nav/public/nav.h" /* dest_id_t */
 
 #include <stdio.h>
 #include <stdbool.h>

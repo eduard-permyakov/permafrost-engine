@@ -38,7 +38,7 @@
 #include "../camera/public/camera.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
-#include "../navigation/public/nav.h"
+#include "../nav/public/nav.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../mem.h"

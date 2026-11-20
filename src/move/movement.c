@@ -55,7 +55,7 @@
 #include "../sched/public/task.h"
 #include "../lib/public/simd.h"
 #include "../main.h"
-#include "../navigation/public/nav.h"
+#include "../nav/public/nav.h"
 #include "../lib/public/queue.h"
 #include "../phys/public/collision.h"
 #include "../render/public/render.h"

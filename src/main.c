@@ -50,7 +50,7 @@
 #include "mem.h"
 #include "script/public/script.h"
 #include "game/public/game.h"
-#include "navigation/public/nav.h"
+#include "nav/public/nav.h"
 #include "audio/public/audio.h"
 #include "phys/public/phys.h"
 #include "anim/public/anim.h"

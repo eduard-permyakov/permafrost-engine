@@ -36,7 +36,7 @@
 #ifndef MOVE_HARNESS_H
 #define MOVE_HARNESS_H
 
-#include "../movement/public/movement.h"
+#include "../move/public/movement.h"
 
 #include <stdbool.h>
 

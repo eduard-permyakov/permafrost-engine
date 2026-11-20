@@ -42,7 +42,7 @@
 #include "combat.h"
 #include "fog_of_war.h"
 #include "selection.h"
-#include "../movement/public/movement.h"
+#include "../move/public/movement.h"
 #include "harvester.h"
 #include "builder.h"
 #include "position.h"

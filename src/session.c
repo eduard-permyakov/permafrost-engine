@@ -51,7 +51,7 @@
 #include "lib/public/vec.h"
 #include "mem.h"
 #include "lib/public/SDL_vec_rwops.h"
-#include "navigation/public/nav.h"
+#include "nav/public/nav.h"
 #include "game/public/game.h"
 #include "script/public/script.h"
 #include "audio/public/audio.h"

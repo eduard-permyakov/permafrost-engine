@@ -43,7 +43,7 @@
 #include "command.h"
 #include "storage_site.h"
 #include "game_private.h"
-#include "../movement/public/movement.h"
+#include "../move/public/movement.h"
 #include "position.h"
 #include "public/game.h"
 #include "../sched/public/sched.h"

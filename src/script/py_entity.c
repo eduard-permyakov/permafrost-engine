@@ -48,7 +48,7 @@
 #include "../asset_load.h"
 #include "../anim/public/anim.h"
 #include "../game/public/game.h"
-#include "../movement/public/movement.h"
+#include "../move/public/movement.h"
 #include "../phys/public/phys.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/SDL_vec_rwops.h"

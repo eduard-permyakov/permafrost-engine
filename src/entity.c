@@ -45,7 +45,7 @@
 #include "asset_load.h"
 #include "render/public/render.h"
 #include "render/public/render_ctrl.h"
-#include "navigation/public/nav.h"
+#include "nav/public/nav.h"
 #include "game/public/game.h"
 #include "anim/public/anim.h"
 #include "lib/public/mpool.h"

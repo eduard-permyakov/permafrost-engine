@@ -43,7 +43,7 @@
 #include "fieldcache.h"
 #include "../map/public/tile.h"
 #include "../game/public/game.h"
-#include "../movement/public/movement.h"
+#include "../move/public/movement.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../mem.h"

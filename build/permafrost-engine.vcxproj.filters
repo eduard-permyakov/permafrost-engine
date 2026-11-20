@@ -64,10 +64,10 @@
     <Filter Include="Header Files\map\public">
       <UniqueIdentifier>{4f03cfdc-1f2a-45d6-948c-c81bd4c921cd}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Header Files\navigation">
+    <Filter Include="Header Files\nav">
       <UniqueIdentifier>{bbb4a0cf-bf52-4558-b31c-edc4d75222d1}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Header Files\navigation\public">
+    <Filter Include="Header Files\nav\public">
       <UniqueIdentifier>{f1cee2e5-5e14-4db4-96c0-2004359733c5}</UniqueIdentifier>
     </Filter>
     <Filter Include="Header Files\phys">
@@ -97,7 +97,7 @@
     <Filter Include="Source Files\map">
       <UniqueIdentifier>{ac5b48de-78a3-437b-a08a-e8caaaae95d4}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\navigation">
+    <Filter Include="Source Files\nav">
       <UniqueIdentifier>{feae6e20-280a-46e9-a0dd-580cfbcf0aad}</UniqueIdentifier>
     </Filter>
     <Filter Include="Source Files\script">
@@ -106,13 +106,13 @@
     <Filter Include="Source Files\phys">
       <UniqueIdentifier>{16491370-e219-4415-92c9-a19f5d60fea4}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\movement">
+    <Filter Include="Source Files\move">
       <UniqueIdentifier>{5f26b292-5f77-4ed2-8f3e-58346902bcd5}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Header Files\movement">
+    <Filter Include="Header Files\move">
       <UniqueIdentifier>{a578ac1a-27eb-4849-a7ea-9c713053c48c}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Header Files\movement\public">
+    <Filter Include="Header Files\move\public">
       <UniqueIdentifier>{3a0f193e-596f-4872-8ca6-99c6107d3034}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
@@ -225,8 +225,8 @@
     <ClCompile Include="..\src\game\building.c">
       <Filter>Source Files\game</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\movement\clearpath.c">
-      <Filter>Source Files\movement</Filter>
+    <ClCompile Include="..\src\move\clearpath.c">
+      <Filter>Source Files\move</Filter>
     </ClCompile>
     <ClCompile Include="..\src\game\combat.c">
       <Filter>Source Files\game</Filter>
@@ -240,8 +240,8 @@
     <ClCompile Include="..\src\game\harvester.c">
       <Filter>Source Files\game</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\movement\movement.c">
-      <Filter>Source Files\movement</Filter>
+    <ClCompile Include="..\src\move\movement.c">
+      <Filter>Source Files\move</Filter>
     </ClCompile>
     <ClCompile Include="..\src\game\position.c">
       <Filter>Source Files\game</Filter>
@@ -306,17 +306,17 @@
     <ClCompile Include="..\src\map\tile.c">
       <Filter>Source Files\map</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\navigation\a_star.c">
-      <Filter>Source Files\navigation</Filter>
+    <ClCompile Include="..\src\nav\a_star.c">
+      <Filter>Source Files\nav</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\navigation\field.c">
-      <Filter>Source Files\navigation</Filter>
+    <ClCompile Include="..\src\nav\field.c">
+      <Filter>Source Files\nav</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\navigation\fieldcache.c">
-      <Filter>Source Files\navigation</Filter>
+    <ClCompile Include="..\src\nav\fieldcache.c">
+      <Filter>Source Files\nav</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\navigation\nav.c">
-      <Filter>Source Files\navigation</Filter>
+    <ClCompile Include="..\src\nav\nav.c">
+      <Filter>Source Files\nav</Filter>
     </ClCompile>
     <ClCompile Include="..\src\phys\collision.c">
       <Filter>Source Files\phys</Filter>
@@ -369,8 +369,8 @@
     <ClCompile Include="..\src\game\automation.c">
       <Filter>Source Files\game</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\movement\formation.c">
-      <Filter>Source Files\movement</Filter>
+    <ClCompile Include="..\src\move\formation.c">
+      <Filter>Source Files\move</Filter>
     </ClCompile>
     <ClCompile Include="..\src\game\garrison.c">
       <Filter>Source Files\game</Filter>
@@ -399,8 +399,8 @@
     <ClCompile Include="..\src\asset_cache.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\movement\arrival.c">
-      <Filter>Source Files\movement</Filter>
+    <ClCompile Include="..\src\move\arrival.c">
+      <Filter>Source Files\move</Filter>
     </ClCompile>
     <ClCompile Include="..\src\game\cluster.c">
       <Filter>Source Files\game</Filter>
@@ -429,8 +429,8 @@
     <ClCompile Include="..\src\game\roads.c">
       <Filter>Source Files\game</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\movement\wander.c">
-      <Filter>Source Files\movement</Filter>
+    <ClCompile Include="..\src\move\wander.c">
+      <Filter>Source Files\move</Filter>
     </ClCompile>
     <ClCompile Include="..\src\lib\bitgrid.c">
       <Filter>Source Files\lib</Filter>
@@ -495,8 +495,8 @@
     <ClCompile Include="..\src\game\move_harness.c">
       <Filter>Source Files\game</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\movement\flocking.c">
-      <Filter>Source Files\movement</Filter>
+    <ClCompile Include="..\src\move\flocking.c">
+      <Filter>Source Files\move</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -632,8 +632,8 @@
     <ClInclude Include="..\src\game\building.h">
       <Filter>Header Files\game</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\movement\clearpath.h">
-      <Filter>Header Files\movement</Filter>
+    <ClInclude Include="..\src\move\clearpath.h">
+      <Filter>Header Files\move</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\combat.h">
       <Filter>Header Files\game</Filter>
@@ -740,23 +740,23 @@
     <ClInclude Include="..\src\map\public\tile.h">
       <Filter>Header Files\map\public</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\navigation\a_star.h">
-      <Filter>Header Files\navigation</Filter>
+    <ClInclude Include="..\src\nav\a_star.h">
+      <Filter>Header Files\nav</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\navigation\field.h">
-      <Filter>Header Files\navigation</Filter>
+    <ClInclude Include="..\src\nav\field.h">
+      <Filter>Header Files\nav</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\navigation\fieldcache.h">
-      <Filter>Header Files\navigation</Filter>
+    <ClInclude Include="..\src\nav\fieldcache.h">
+      <Filter>Header Files\nav</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\navigation\nav_data.h">
-      <Filter>Header Files\navigation</Filter>
+    <ClInclude Include="..\src\nav\nav_data.h">
+      <Filter>Header Files\nav</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\navigation\nav_private.h">
-      <Filter>Header Files\navigation</Filter>
+    <ClInclude Include="..\src\nav\nav_private.h">
+      <Filter>Header Files\nav</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\navigation\public\nav.h">
-      <Filter>Header Files\navigation\public</Filter>
+    <ClInclude Include="..\src\nav\public\nav.h">
+      <Filter>Header Files\nav\public</Filter>
     </ClInclude>
     <ClInclude Include="..\src\phys\public\collision.h">
       <Filter>Header Files\phys\public</Filter>
@@ -809,8 +809,8 @@
     <ClInclude Include="..\src\game\garrison.h">
       <Filter>Header Files\game</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\movement\formation.h">
-      <Filter>Header Files\movement</Filter>
+    <ClInclude Include="..\src\move\formation.h">
+      <Filter>Header Files\move</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\automation.h">
       <Filter>Header Files\game</Filter>
@@ -833,8 +833,8 @@
     <ClInclude Include="..\src\asset_cache.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\movement\arrival.h">
-      <Filter>Header Files\movement</Filter>
+    <ClInclude Include="..\src\move\arrival.h">
+      <Filter>Header Files\move</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\cluster.h">
       <Filter>Header Files\game</Filter>
@@ -911,14 +911,14 @@
     <ClInclude Include="..\src\game\move_harness.h">
       <Filter>Header Files\game</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\movement\public\movement.h">
-      <Filter>Header Files\movement\public</Filter>
+    <ClInclude Include="..\src\move\public\movement.h">
+      <Filter>Header Files\move\public</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\movement\move_private.h">
-      <Filter>Header Files\movement</Filter>
+    <ClInclude Include="..\src\move\move_private.h">
+      <Filter>Header Files\move</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\movement\flocking.h">
-      <Filter>Header Files\movement</Filter>
+    <ClInclude Include="..\src\move\flocking.h">
+      <Filter>Header Files\move</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

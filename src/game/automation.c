@@ -38,7 +38,7 @@
 
 #include "automation.h"
 #include "duty.h"
-#include "../movement/public/movement.h"
+#include "../move/public/movement.h"
 #include "harvester.h"
 #include "builder.h"
 #include "combat.h"

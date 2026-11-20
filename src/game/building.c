@@ -38,7 +38,7 @@
 
 #include "building.h"
 #include "duty.h"
-#include "../movement/public/movement.h"
+#include "../move/public/movement.h"
 #include "game_private.h"
 #include "storage_site.h"
 #include "fog_of_war.h"

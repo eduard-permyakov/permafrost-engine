@@ -43,7 +43,7 @@
 #include "../render/public/render.h"
 #include "../render/public/render_al.h"
 #include "../render/public/render_ctrl.h"
-#include "../navigation/public/nav.h"
+#include "../nav/public/nav.h"
 #include "../game/public/game.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/lockfree.h"

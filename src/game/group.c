@@ -37,7 +37,7 @@
 #define MEM_FILE_SUB MEM_SUB_GAME_GROUP
 
 #include "group.h"
-#include "../movement/public/movement.h"
+#include "../move/public/movement.h"
 #include "public/game.h"
 #include "../script/public/script.h"
 #include "../main.h"

@@ -38,7 +38,7 @@
 
 #include "public/movement.h"
 #include "../pf_math.h"
-#include "../navigation/public/nav.h"
+#include "../nav/public/nav.h"
 
 /* The layout of a box formation: a set of concentric square shells, one per
  * unit group, with the highest-priority group forming the outer wall and the

@@ -38,7 +38,7 @@
 #include "duty.h"
 #include "public/game.h"
 #include "game_private.h"
-#include "../movement/public/movement.h"
+#include "../move/public/movement.h"
 #include "harvester.h"
 #include "builder.h"
 #include "posts.h"
