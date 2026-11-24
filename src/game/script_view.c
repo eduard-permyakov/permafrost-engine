@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_GAME
+#define MEM_FILE_SUB MEM_SUB_GAME_SCRIPT_VIEW
+
 #include "public/game.h"
 #include "game_private.h"
 #include "position.h"

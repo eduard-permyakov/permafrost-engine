@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_MOVE
+#define MEM_FILE_SUB MEM_SUB_MOVE_FLOCKING
+
 #include "flocking.h"
 #include "../lib/public/simd.h"
 #include "../map/public/map.h"

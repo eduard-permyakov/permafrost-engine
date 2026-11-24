@@ -34,6 +34,9 @@
  */
 
 
+#define MEM_FILE_SYS MEM_SYS_RENDER
+#define MEM_FILE_SUB MEM_SUB_RENDER_GL_TERRAIN_BAKE
+
 #include "gl_render.h"
 #include "gl_shader.h"
 #include "gl_state.h"

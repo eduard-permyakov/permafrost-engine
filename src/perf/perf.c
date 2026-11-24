@@ -34,7 +34,7 @@
  */
 
 #define MEM_FILE_SYS MEM_SYS_PERF
-#define MEM_FILE_SUB 0
+#define MEM_FILE_SUB MEM_SUB_PERF_PERF
 #define PERF_INTERNAL
 
 #include "public/perf.h"
@@ -67,9 +67,9 @@
 #undef PF_MALLOC
 #undef PF_CALLOC
 #undef PF_REALLOC
-#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_PERF, 0)
-#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_PERF, 0)
-#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_PERF, 0)
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_PERF, MEM_SUB_PERF_PERF)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_PERF, MEM_SUB_PERF_PERF)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_PERF, MEM_SUB_PERF_PERF)
 
 
 #define PARENT_NONE     ~((uint32_t)0)

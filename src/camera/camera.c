@@ -34,7 +34,7 @@
  */
 
 #define MEM_FILE_SYS MEM_SYS_CAMERA
-#define MEM_FILE_SUB 0
+#define MEM_FILE_SUB MEM_SUB_CAMERA_CAMERA
 
 #include "public/camera.h"
 #include "../config.h"
@@ -55,9 +55,9 @@
 #undef PF_MALLOC
 #undef PF_CALLOC
 #undef PF_REALLOC
-#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_CAMERA, 0)
-#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_CAMERA, 0)
-#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_CAMERA, 0)
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_CAMERA, MEM_SUB_CAMERA_CAMERA)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_CAMERA, MEM_SUB_CAMERA_CAMERA)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_CAMERA, MEM_SUB_CAMERA_CAMERA)
 
 struct camera {
     float    speed;

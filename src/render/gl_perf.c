@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_RENDER
+#define MEM_FILE_SUB MEM_SUB_RENDER_GL_PERF
+
 #include "gl_perf.h"
 #include "public/render.h"
 

@@ -33,8 +33,8 @@
  *
  */
 
-#define MEM_FILE_SYS MEM_SYS_ASSET_LOAD
-#define MEM_FILE_SUB 0
+#define MEM_FILE_SYS MEM_SYS_ASSET
+#define MEM_FILE_SUB MEM_SUB_ASSET_LOAD
 
 #include "public/asset_load.h"
 #include "public/asset_cache.h"
@@ -64,9 +64,9 @@
 #undef PF_MALLOC
 #undef PF_CALLOC
 #undef PF_REALLOC
-#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_ASSET_LOAD, 0)
-#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_ASSET_LOAD, 0)
-#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_ASSET_LOAD, 0)
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_ASSET, MEM_SUB_ASSET_LOAD)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_ASSET, MEM_SUB_ASSET_LOAD)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_ASSET, MEM_SUB_ASSET_LOAD)
 
 
 #define CHK_TRUE_RET(_pred)             \

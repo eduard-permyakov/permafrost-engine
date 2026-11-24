@@ -56,36 +56,32 @@
 enum mem_system{
     MEM_SYS_UNKNOWN = 0,
 
-    /* Systems with subsystems */
+    /* One per folder of src, with a subsystem per file */
     MEM_SYS_ANIM,
+    MEM_SYS_ASSET,
     MEM_SYS_AUDIO,
+    MEM_SYS_CAMERA,
+    MEM_SYS_EVENT,
     MEM_SYS_GAME,
     MEM_SYS_LIB,
     MEM_SYS_MAP,
-    MEM_SYS_MOVEMENT,
+    MEM_SYS_MOVE,
     MEM_SYS_NAV,
+    MEM_SYS_PERF,
     MEM_SYS_PHYS,
     MEM_SYS_RENDER,
+    MEM_SYS_SCHED,
     MEM_SYS_SCRIPT,
 
-    /* Single-file systems */
-    MEM_SYS_ASSET_CACHE,
-    MEM_SYS_ASSET_LOAD,
-    MEM_SYS_CAM_CONTROL,
-    MEM_SYS_CAMERA,
+    /* One per file at the top of src */
     MEM_SYS_CURSOR,
     MEM_SYS_ENTITY,
-    MEM_SYS_EVENT,
     MEM_SYS_LOADING_SCREEN,
     MEM_SYS_MAIN,
-    MEM_SYS_PERF,
-    MEM_SYS_PF_MATH,
     MEM_SYS_SCENE,
-    MEM_SYS_SCHED,
     MEM_SYS_SESSION,
     MEM_SYS_SETTINGS,
     MEM_SYS_SPRITE,
-    MEM_SYS_TASK,
     MEM_SYS_UI,
 
     /* Embedded Python runtime (pymalloc arena footprint) */
@@ -97,14 +93,29 @@ enum mem_system{
 #define MEM_SUB_MAX_PER_SYS 32
 
 enum mem_sub_anim{
-    MEM_SUB_ANIM_DISPATCH = 0,
-    MEM_SUB_ANIM_ASSET_LOAD,
+    MEM_SUB_ANIM_ASSET_LOAD = 0,
+    MEM_SUB_ANIM_DISPATCH,
     MEM_SUB_ANIM_TEXTURE
+};
+
+enum mem_sub_asset{
+    MEM_SUB_ASSET_CACHE = 0,
+    MEM_SUB_ASSET_LOAD
 };
 
 enum mem_sub_audio{
     MEM_SUB_AUDIO_DISPATCH = 0,
     MEM_SUB_AUDIO_EFFECT
+};
+
+enum mem_sub_camera{
+    MEM_SUB_CAMERA_CAM_CONTROL = 0,
+    MEM_SUB_CAMERA_CAMERA
+};
+
+enum mem_sub_event{
+    MEM_SUB_EVENT_EVENT = 0,
+    MEM_SUB_EVENT_TIMER
 };
 
 enum mem_sub_game{
@@ -121,7 +132,7 @@ enum mem_sub_game{
     MEM_SUB_GAME_GARRISON,
     MEM_SUB_GAME_GROUP,
     MEM_SUB_GAME_HARVESTER,
-    MEM_SUB_GAME_MOVEMENT,
+    MEM_SUB_GAME_MOVE_HARNESS,
     MEM_SUB_GAME_POPULATION,
     MEM_SUB_GAME_POSITION,
     MEM_SUB_GAME_POSTS,
@@ -129,9 +140,9 @@ enum mem_sub_game{
     MEM_SUB_GAME_REGION,
     MEM_SUB_GAME_RESOURCE,
     MEM_SUB_GAME_ROADS,
+    MEM_SUB_GAME_SCRIPT_VIEW,
     MEM_SUB_GAME_SELECTION,
-    MEM_SUB_GAME_STORAGE_SITE,
-    MEM_SUB_GAME_TIMER_EVENTS
+    MEM_SUB_GAME_STORAGE_SITE
 };
 
 enum mem_sub_lib{
@@ -139,7 +150,9 @@ enum mem_sub_lib{
     MEM_SUB_LIB_BITGRID,
     MEM_SUB_LIB_NK_FILE_BROWSER,
     MEM_SUB_LIB_NOISE,
+    MEM_SUB_LIB_PF_COW_REGION,
     MEM_SUB_LIB_PF_MALLOC,
+    MEM_SUB_LIB_PF_MATH,
     MEM_SUB_LIB_PF_STRING,
     MEM_SUB_LIB_SDL_VEC_RWOPS,
     MEM_SUB_LIB_STALLOC,
@@ -147,27 +160,35 @@ enum mem_sub_lib{
 };
 
 enum mem_sub_map{
-    MEM_SUB_MAP_FOLIAGE = 0,
-    MEM_SUB_MAP_ASSET_LOAD,
+    MEM_SUB_MAP_ASSET_LOAD = 0,
+    MEM_SUB_MAP_DECAL,
     MEM_SUB_MAP_DISPATCH,
+    MEM_SUB_MAP_FOLIAGE,
     MEM_SUB_MAP_MINIMAP,
     MEM_SUB_MAP_RAYCAST,
-    MEM_SUB_MAP_TILE,
     MEM_SUB_MAP_TERRAIN_BAKE,
-    MEM_SUB_MAP_DECAL
+    MEM_SUB_MAP_TILE
 };
 
-enum mem_sub_movement{
-    MEM_SUB_MOVEMENT_CLEARPATH = 0,
-    MEM_SUB_MOVEMENT_FORMATION,
-    MEM_SUB_MOVEMENT_MOVEMENT
+enum mem_sub_move{
+    MEM_SUB_MOVE_ARRIVAL = 0,
+    MEM_SUB_MOVE_CLEARPATH,
+    MEM_SUB_MOVE_FLOCKING,
+    MEM_SUB_MOVE_FORMATION,
+    MEM_SUB_MOVE_MOVEMENT,
+    MEM_SUB_MOVE_WANDER
 };
 
 enum mem_sub_nav{
     MEM_SUB_NAV_A_STAR = 0,
+    MEM_SUB_NAV_DISPATCH,
     MEM_SUB_NAV_FIELD,
-    MEM_SUB_NAV_FIELDCACHE,
-    MEM_SUB_NAV_DISPATCH
+    MEM_SUB_NAV_FIELDCACHE
+};
+
+enum mem_sub_perf{
+    MEM_SUB_PERF_MEM = 0,
+    MEM_SUB_PERF_PERF
 };
 
 enum mem_sub_phys{
@@ -176,8 +197,8 @@ enum mem_sub_phys{
 };
 
 enum mem_sub_render{
-    MEM_SUB_RENDER_DISPATCH = 0,
-    MEM_SUB_RENDER_ASSET_LOAD,
+    MEM_SUB_RENDER_ASSET_LOAD = 0,
+    MEM_SUB_RENDER_DISPATCH,
     MEM_SUB_RENDER_GL_ANIM,
     MEM_SUB_RENDER_GL_BATCH,
     MEM_SUB_RENDER_GL_BILLBOARD,
@@ -189,7 +210,6 @@ enum mem_sub_render{
     MEM_SUB_RENDER_GL_MOVEMENT,
     MEM_SUB_RENDER_GL_PERF,
     MEM_SUB_RENDER_GL_PIPELINE,
-    MEM_SUB_RENDER_GL_POSITION,
     MEM_SUB_RENDER_GL_POSTPROCESS,
     MEM_SUB_RENDER_GL_RENDER,
     MEM_SUB_RENDER_GL_RINGBUFFER,
@@ -201,10 +221,17 @@ enum mem_sub_render{
     MEM_SUB_RENDER_GL_STATUSBAR,
     MEM_SUB_RENDER_GL_SWAPCHAIN,
     MEM_SUB_RENDER_GL_TERRAIN,
+    MEM_SUB_RENDER_GL_TERRAIN_BAKE,
     MEM_SUB_RENDER_GL_TEXTURE,
     MEM_SUB_RENDER_GL_TILE,
     MEM_SUB_RENDER_GL_UI,
     MEM_SUB_RENDER_GL_WATER
+};
+
+enum mem_sub_sched{
+    MEM_SUB_SCHED_SCHED = 0,
+    MEM_SUB_SCHED_STATS,
+    MEM_SUB_SCHED_TASK
 };
 
 enum mem_sub_script{
@@ -216,12 +243,15 @@ enum mem_sub_script{
     MEM_SUB_SCRIPT_ERROR,
     MEM_SUB_SCRIPT_PERF,
     MEM_SUB_SCRIPT_PICKLE,
+    MEM_SUB_SCRIPT_PROF,
     MEM_SUB_SCRIPT_REGION,
     MEM_SUB_SCRIPT_TASK,
+    MEM_SUB_SCRIPT_THREAD,
     MEM_SUB_SCRIPT_TILE,
     MEM_SUB_SCRIPT_TRAVERSE,
     MEM_SUB_SCRIPT_UI,
-    MEM_SUB_SCRIPT_UI_STYLE
+    MEM_SUB_SCRIPT_UI_STYLE,
+    MEM_SUB_SCRIPT_VIEW
 };
 
 enum mem_sub_python{

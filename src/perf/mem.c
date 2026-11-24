@@ -419,32 +419,28 @@ const char *Mem_SysName(uint16_t sys)
     static const char *names[MEM_SYS_COUNT] = {
         [MEM_SYS_UNKNOWN]        = "unknown",
         [MEM_SYS_ANIM]           = "anim",
+        [MEM_SYS_ASSET]          = "asset",
         [MEM_SYS_AUDIO]          = "audio",
+        [MEM_SYS_CAMERA]         = "camera",
+        [MEM_SYS_EVENT]          = "event",
         [MEM_SYS_GAME]           = "game",
         [MEM_SYS_LIB]            = "lib",
         [MEM_SYS_MAP]            = "map",
-        [MEM_SYS_MOVEMENT]       = "movement",
+        [MEM_SYS_MOVE]           = "move",
         [MEM_SYS_NAV]            = "nav",
+        [MEM_SYS_PERF]           = "perf",
         [MEM_SYS_PHYS]           = "phys",
         [MEM_SYS_RENDER]         = "render",
+        [MEM_SYS_SCHED]          = "sched",
         [MEM_SYS_SCRIPT]         = "script",
-        [MEM_SYS_ASSET_CACHE]    = "asset_cache",
-        [MEM_SYS_ASSET_LOAD]     = "asset_load",
-        [MEM_SYS_CAM_CONTROL]    = "cam_control",
-        [MEM_SYS_CAMERA]         = "camera",
         [MEM_SYS_CURSOR]         = "cursor",
         [MEM_SYS_ENTITY]         = "entity",
-        [MEM_SYS_EVENT]          = "event",
         [MEM_SYS_LOADING_SCREEN] = "loading_screen",
         [MEM_SYS_MAIN]           = "main",
-        [MEM_SYS_PERF]           = "perf",
-        [MEM_SYS_PF_MATH]        = "pf_math",
         [MEM_SYS_SCENE]          = "scene",
-        [MEM_SYS_SCHED]          = "sched",
         [MEM_SYS_SESSION]        = "session",
         [MEM_SYS_SETTINGS]       = "settings",
         [MEM_SYS_SPRITE]         = "sprite",
-        [MEM_SYS_TASK]           = "task",
         [MEM_SYS_UI]             = "ui",
         [MEM_SYS_PYTHON]         = "python",
     };
@@ -456,13 +452,25 @@ const char *Mem_SysName(uint16_t sys)
 const char *Mem_SubName(uint16_t sys, uint16_t sub)
 {
     static const char *anim_subs[] = {
-        [MEM_SUB_ANIM_DISPATCH]   = "dispatch",
         [MEM_SUB_ANIM_ASSET_LOAD] = "asset_load",
+        [MEM_SUB_ANIM_DISPATCH]   = "dispatch",
         [MEM_SUB_ANIM_TEXTURE]    = "texture",
+    };
+    static const char *asset_subs[] = {
+        [MEM_SUB_ASSET_CACHE] = "cache",
+        [MEM_SUB_ASSET_LOAD]  = "load",
     };
     static const char *audio_subs[] = {
         [MEM_SUB_AUDIO_DISPATCH] = "dispatch",
         [MEM_SUB_AUDIO_EFFECT]   = "effect",
+    };
+    static const char *camera_subs[] = {
+        [MEM_SUB_CAMERA_CAM_CONTROL] = "cam_control",
+        [MEM_SUB_CAMERA_CAMERA]      = "camera",
+    };
+    static const char *event_subs[] = {
+        [MEM_SUB_EVENT_EVENT] = "event",
+        [MEM_SUB_EVENT_TIMER] = "timer",
     };
     static const char *game_subs[] = {
         [MEM_SUB_GAME_AUTOMATION]   = "automation",
@@ -478,7 +486,7 @@ const char *Mem_SubName(uint16_t sys, uint16_t sub)
         [MEM_SUB_GAME_GARRISON]     = "garrison",
         [MEM_SUB_GAME_GROUP]        = "group",
         [MEM_SUB_GAME_HARVESTER]    = "harvester",
-        [MEM_SUB_GAME_MOVEMENT]     = "movement",
+        [MEM_SUB_GAME_MOVE_HARNESS] = "move_harness",
         [MEM_SUB_GAME_POPULATION]   = "population",
         [MEM_SUB_GAME_POSITION]     = "position",
         [MEM_SUB_GAME_POSTS]        = "posts",
@@ -486,76 +494,90 @@ const char *Mem_SubName(uint16_t sys, uint16_t sub)
         [MEM_SUB_GAME_REGION]       = "region",
         [MEM_SUB_GAME_RESOURCE]     = "resource",
         [MEM_SUB_GAME_ROADS]        = "roads",
+        [MEM_SUB_GAME_SCRIPT_VIEW]  = "script_view",
         [MEM_SUB_GAME_SELECTION]    = "selection",
         [MEM_SUB_GAME_STORAGE_SITE] = "storage_site",
-        [MEM_SUB_GAME_TIMER_EVENTS] = "timer_events",
     };
     static const char *lib_subs[] = {
         [MEM_SUB_LIB_ATTR]            = "attr",
         [MEM_SUB_LIB_BITGRID]         = "bitgrid",
         [MEM_SUB_LIB_NK_FILE_BROWSER] = "nk_file_browser",
         [MEM_SUB_LIB_NOISE]           = "noise",
+        [MEM_SUB_LIB_PF_COW_REGION]   = "pf_cow_region",
         [MEM_SUB_LIB_PF_MALLOC]       = "pf_malloc",
+        [MEM_SUB_LIB_PF_MATH]         = "pf_math",
         [MEM_SUB_LIB_PF_STRING]       = "pf_string",
         [MEM_SUB_LIB_SDL_VEC_RWOPS]   = "sdl_vec_rwops",
         [MEM_SUB_LIB_STALLOC]         = "stalloc",
         [MEM_SUB_LIB_STRING_INTERN]   = "string_intern",
     };
     static const char *map_subs[] = {
-        [MEM_SUB_MAP_FOLIAGE]    = "foliage",
-        [MEM_SUB_MAP_ASSET_LOAD] = "asset_load",
-        [MEM_SUB_MAP_DISPATCH]   = "dispatch",
-        [MEM_SUB_MAP_MINIMAP]    = "minimap",
-        [MEM_SUB_MAP_RAYCAST]    = "raycast",
-        [MEM_SUB_MAP_TILE]       = "tile",
+        [MEM_SUB_MAP_ASSET_LOAD]   = "asset_load",
+        [MEM_SUB_MAP_DECAL]        = "decal",
+        [MEM_SUB_MAP_DISPATCH]     = "dispatch",
+        [MEM_SUB_MAP_FOLIAGE]      = "foliage",
+        [MEM_SUB_MAP_MINIMAP]      = "minimap",
+        [MEM_SUB_MAP_RAYCAST]      = "raycast",
         [MEM_SUB_MAP_TERRAIN_BAKE] = "terrain_bake",
-        [MEM_SUB_MAP_DECAL]      = "decal",
+        [MEM_SUB_MAP_TILE]         = "tile",
     };
-    static const char *movement_subs[] = {
-        [MEM_SUB_MOVEMENT_CLEARPATH] = "clearpath",
-        [MEM_SUB_MOVEMENT_FORMATION] = "formation",
-        [MEM_SUB_MOVEMENT_MOVEMENT]  = "movement",
+    static const char *move_subs[] = {
+        [MEM_SUB_MOVE_ARRIVAL]   = "arrival",
+        [MEM_SUB_MOVE_CLEARPATH] = "clearpath",
+        [MEM_SUB_MOVE_FLOCKING]  = "flocking",
+        [MEM_SUB_MOVE_FORMATION] = "formation",
+        [MEM_SUB_MOVE_MOVEMENT]  = "movement",
+        [MEM_SUB_MOVE_WANDER]    = "wander",
     };
     static const char *nav_subs[] = {
         [MEM_SUB_NAV_A_STAR]     = "a_star",
+        [MEM_SUB_NAV_DISPATCH]   = "dispatch",
         [MEM_SUB_NAV_FIELD]      = "field",
         [MEM_SUB_NAV_FIELDCACHE] = "fieldcache",
-        [MEM_SUB_NAV_DISPATCH]   = "dispatch",
+    };
+    static const char *perf_subs[] = {
+        [MEM_SUB_PERF_MEM]  = "mem",
+        [MEM_SUB_PERF_PERF] = "perf",
     };
     static const char *phys_subs[] = {
         [MEM_SUB_PHYS_COLLISION]  = "collision",
         [MEM_SUB_PHYS_PROJECTILE] = "projectile",
     };
     static const char *render_subs[] = {
-        [MEM_SUB_RENDER_DISPATCH]       = "dispatch",
-        [MEM_SUB_RENDER_ASSET_LOAD]     = "asset_load",
-        [MEM_SUB_RENDER_GL_ANIM]        = "anim",
-        [MEM_SUB_RENDER_GL_BATCH]       = "batch",
-        [MEM_SUB_RENDER_GL_BILLBOARD]   = "billboard",
-        [MEM_SUB_RENDER_GL_DECAL]       = "decal",
-        [MEM_SUB_RENDER_GL_FOLIAGE]     = "foliage",
-        [MEM_SUB_RENDER_GL_IMAGE_QUILT] = "image_quilt",
-        [MEM_SUB_RENDER_GL_MEM]         = "mem",
-        [MEM_SUB_RENDER_GL_MINIMAP]     = "minimap",
-        [MEM_SUB_RENDER_GL_MOVEMENT]    = "movement",
-        [MEM_SUB_RENDER_GL_PERF]        = "perf",
-        [MEM_SUB_RENDER_GL_PIPELINE]    = "pipeline",
-        [MEM_SUB_RENDER_GL_POSITION]    = "position",
-        [MEM_SUB_RENDER_GL_POSTPROCESS] = "postprocess",
-        [MEM_SUB_RENDER_GL_RENDER]      = "renderer",
-        [MEM_SUB_RENDER_GL_RINGBUFFER]  = "ringbuffer",
-        [MEM_SUB_RENDER_GL_SHADER]      = "shader",
-        [MEM_SUB_RENDER_GL_SHADOWS]     = "shadows",
-        [MEM_SUB_RENDER_GL_SKYBOX]      = "skybox",
-        [MEM_SUB_RENDER_GL_SPRITE]      = "sprite",
-        [MEM_SUB_RENDER_GL_STATE]       = "state",
-        [MEM_SUB_RENDER_GL_STATUSBAR]   = "statusbar",
-        [MEM_SUB_RENDER_GL_SWAPCHAIN]   = "swapchain",
-        [MEM_SUB_RENDER_GL_TERRAIN]     = "terrain",
-        [MEM_SUB_RENDER_GL_TEXTURE]     = "texture",
-        [MEM_SUB_RENDER_GL_TILE]        = "tile",
-        [MEM_SUB_RENDER_GL_UI]          = "ui",
-        [MEM_SUB_RENDER_GL_WATER]       = "water",
+        [MEM_SUB_RENDER_ASSET_LOAD]      = "asset_load",
+        [MEM_SUB_RENDER_DISPATCH]        = "dispatch",
+        [MEM_SUB_RENDER_GL_ANIM]         = "anim",
+        [MEM_SUB_RENDER_GL_BATCH]        = "batch",
+        [MEM_SUB_RENDER_GL_BILLBOARD]    = "billboard",
+        [MEM_SUB_RENDER_GL_DECAL]        = "decal",
+        [MEM_SUB_RENDER_GL_FOLIAGE]      = "foliage",
+        [MEM_SUB_RENDER_GL_IMAGE_QUILT]  = "image_quilt",
+        [MEM_SUB_RENDER_GL_MEM]          = "mem",
+        [MEM_SUB_RENDER_GL_MINIMAP]      = "minimap",
+        [MEM_SUB_RENDER_GL_MOVEMENT]     = "movement",
+        [MEM_SUB_RENDER_GL_PERF]         = "perf",
+        [MEM_SUB_RENDER_GL_PIPELINE]     = "pipeline",
+        [MEM_SUB_RENDER_GL_POSTPROCESS]  = "postprocess",
+        [MEM_SUB_RENDER_GL_RENDER]       = "renderer",
+        [MEM_SUB_RENDER_GL_RINGBUFFER]   = "ringbuffer",
+        [MEM_SUB_RENDER_GL_SHADER]       = "shader",
+        [MEM_SUB_RENDER_GL_SHADOWS]      = "shadows",
+        [MEM_SUB_RENDER_GL_SKYBOX]       = "skybox",
+        [MEM_SUB_RENDER_GL_SPRITE]       = "sprite",
+        [MEM_SUB_RENDER_GL_STATE]        = "state",
+        [MEM_SUB_RENDER_GL_STATUSBAR]    = "statusbar",
+        [MEM_SUB_RENDER_GL_SWAPCHAIN]    = "swapchain",
+        [MEM_SUB_RENDER_GL_TERRAIN]      = "terrain",
+        [MEM_SUB_RENDER_GL_TERRAIN_BAKE] = "terrain_bake",
+        [MEM_SUB_RENDER_GL_TEXTURE]      = "texture",
+        [MEM_SUB_RENDER_GL_TILE]         = "tile",
+        [MEM_SUB_RENDER_GL_UI]           = "ui",
+        [MEM_SUB_RENDER_GL_WATER]        = "water",
+    };
+    static const char *sched_subs[] = {
+        [MEM_SUB_SCHED_SCHED] = "sched",
+        [MEM_SUB_SCHED_STATS] = "stats",
+        [MEM_SUB_SCHED_TASK]  = "task",
     };
     static const char *script_subs[] = {
         [MEM_SUB_SCRIPT_CAMERA]    = "camera",
@@ -566,15 +588,18 @@ const char *Mem_SubName(uint16_t sys, uint16_t sub)
         [MEM_SUB_SCRIPT_ERROR]     = "error",
         [MEM_SUB_SCRIPT_PERF]      = "perf",
         [MEM_SUB_SCRIPT_PICKLE]    = "pickle",
+        [MEM_SUB_SCRIPT_PROF]      = "prof",
         [MEM_SUB_SCRIPT_REGION]    = "region",
         [MEM_SUB_SCRIPT_TASK]      = "task",
+        [MEM_SUB_SCRIPT_THREAD]    = "thread",
         [MEM_SUB_SCRIPT_TILE]      = "tile",
         [MEM_SUB_SCRIPT_TRAVERSE]  = "traverse",
         [MEM_SUB_SCRIPT_UI]        = "ui",
         [MEM_SUB_SCRIPT_UI_STYLE]  = "ui_style",
+        [MEM_SUB_SCRIPT_VIEW]      = "view",
     };
     static const char *python_subs[] = {
-        [MEM_SUB_PYTHON_ARENAS]   = "arenas",
+        [MEM_SUB_PYTHON_ARENAS]       = "arenas",
         [MEM_SUB_PYTHON_LARGE_ALLOCS] = "large allocations",
     };
 
@@ -582,14 +607,19 @@ const char *Mem_SubName(uint16_t sys, uint16_t sub)
     size_t       n;
     switch(sys) {
     case MEM_SYS_ANIM:   table = anim_subs;   n = ARR_SIZE(anim_subs);   break;
+    case MEM_SYS_ASSET:  table = asset_subs;  n = ARR_SIZE(asset_subs);  break;
     case MEM_SYS_AUDIO:  table = audio_subs;  n = ARR_SIZE(audio_subs);  break;
+    case MEM_SYS_CAMERA: table = camera_subs; n = ARR_SIZE(camera_subs); break;
+    case MEM_SYS_EVENT:  table = event_subs;  n = ARR_SIZE(event_subs);  break;
     case MEM_SYS_GAME:   table = game_subs;   n = ARR_SIZE(game_subs);   break;
     case MEM_SYS_LIB:    table = lib_subs;    n = ARR_SIZE(lib_subs);    break;
     case MEM_SYS_MAP:    table = map_subs;    n = ARR_SIZE(map_subs);    break;
-    case MEM_SYS_MOVEMENT: table = movement_subs; n = ARR_SIZE(movement_subs); break;
+    case MEM_SYS_MOVE:   table = move_subs;   n = ARR_SIZE(move_subs);   break;
     case MEM_SYS_NAV:    table = nav_subs;    n = ARR_SIZE(nav_subs);    break;
+    case MEM_SYS_PERF:   table = perf_subs;   n = ARR_SIZE(perf_subs);   break;
     case MEM_SYS_PHYS:   table = phys_subs;   n = ARR_SIZE(phys_subs);   break;
     case MEM_SYS_RENDER: table = render_subs; n = ARR_SIZE(render_subs); break;
+    case MEM_SYS_SCHED:  table = sched_subs;  n = ARR_SIZE(sched_subs);  break;
     case MEM_SYS_SCRIPT: table = script_subs; n = ARR_SIZE(script_subs); break;
     case MEM_SYS_PYTHON: table = python_subs; n = ARR_SIZE(python_subs); break;
     default: return NULL;

@@ -34,7 +34,7 @@
  */
 
 #define MEM_FILE_SYS MEM_SYS_SCHED
-#define MEM_FILE_SUB 0
+#define MEM_FILE_SUB MEM_SUB_SCHED_SCHED
 
 #include "public/sched.h"
 #include "sched_stats.h"
@@ -61,9 +61,9 @@
 #undef PF_MALLOC
 #undef PF_CALLOC
 #undef PF_REALLOC
-#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_SCHED, 0)
-#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_SCHED, 0)
-#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_SCHED, 0)
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_SCHED, MEM_SUB_SCHED_SCHED)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_SCHED, MEM_SUB_SCHED_SCHED)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_SCHED, MEM_SUB_SCHED_SCHED)
 
 #if !defined(NDEBUG) || defined(PF_PERF_MARKERS)
 #define SCHED_PERF 1

@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_SCRIPT
+#define MEM_FILE_SUB MEM_SUB_SCRIPT_PROF
+
 #include "py_prof.h"
 #include "../main.h"
 #include "../settings.h"
@@ -40,6 +43,7 @@
 #include "../lib/public/khash.h"
 #include "../lib/public/pf_malloc.h"
 #include "../lib/public/pf_string.h"
+#include "../perf/public/mem.h"
 
 #include <frameobject.h>
 #include <assert.h>
@@ -47,6 +51,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+#undef PF_MALLOC
+#undef PF_CALLOC
+#undef PF_REALLOC
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_PROF)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_PROF)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_SCRIPT, MEM_SUB_SCRIPT_PROF)
 
 #define MAX_DEPTH  (32)
 #define MAX_CALLS  (4096)

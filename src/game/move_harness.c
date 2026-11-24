@@ -34,7 +34,7 @@
  */
 
 #define MEM_FILE_SYS MEM_SYS_GAME
-#define MEM_FILE_SUB MEM_SUB_GAME_MOVEMENT
+#define MEM_FILE_SUB MEM_SUB_GAME_MOVE_HARNESS
 
 #include "move_harness.h"
 #include "game_private.h"

@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_SCHED
+#define MEM_FILE_SUB MEM_SUB_SCHED_STATS
+
 #include "sched_stats.h"
 #include "../settings.h"
 #include "../lib/public/pf_string.h"

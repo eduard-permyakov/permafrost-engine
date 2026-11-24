@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_MOVE
+#define MEM_FILE_SUB MEM_SUB_MOVE_WANDER
+
 #include "public/movement.h"
 #include "../game/public/game.h"
 #include "../main.h"

@@ -38,6 +38,7 @@
 #endif
 
 #define MEM_FILE_SYS MEM_SYS_LIB
+#define MEM_FILE_SUB MEM_SUB_LIB_PF_COW_REGION
 
 #include "public/pf_cow_region.h"
 
@@ -102,7 +103,7 @@ struct pf_cow_region *pf_cow_create(size_t size)
     if(size == 0)
         return NULL;
 
-    struct pf_cow_region *region = PF_MALLOC_TAGGED(sizeof(*region), MEM_SYS_LIB, 0);
+    struct pf_cow_region *region = PF_MALLOC_TAGGED(sizeof(*region), MEM_SYS_LIB, MEM_SUB_LIB_PF_COW_REGION);
     if(!region)
         return NULL;
 

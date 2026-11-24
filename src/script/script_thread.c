@@ -33,6 +33,9 @@
  *
  */
 
+#define MEM_FILE_SYS MEM_SYS_SCRIPT
+#define MEM_FILE_SUB MEM_SUB_SCRIPT_THREAD
+
 #include "public/script.h"
 #include "script_thread.h"
 #include "../main.h"

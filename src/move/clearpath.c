@@ -41,8 +41,8 @@
  *         (http://gamma.cs.unc.edu/HRVO/HRVO-T-RO.pdf)
  */
 
-#define MEM_FILE_SYS MEM_SYS_MOVEMENT
-#define MEM_FILE_SUB MEM_SUB_MOVEMENT_CLEARPATH
+#define MEM_FILE_SYS MEM_SYS_MOVE
+#define MEM_FILE_SUB MEM_SUB_MOVE_CLEARPATH
 
 #include "clearpath.h"
 #include "../lib/public/vec.h"
@@ -69,9 +69,9 @@
 #undef PF_MALLOC
 #undef PF_CALLOC
 #undef PF_REALLOC
-#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_MOVEMENT, MEM_SUB_MOVEMENT_CLEARPATH)
-#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_MOVEMENT, MEM_SUB_MOVEMENT_CLEARPATH)
-#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_MOVEMENT, MEM_SUB_MOVEMENT_CLEARPATH)
+#define PF_MALLOC(_n)       PF_MALLOC_TAGGED((_n), MEM_SYS_MOVE, MEM_SUB_MOVE_CLEARPATH)
+#define PF_CALLOC(_c, _n)   PF_CALLOC_TAGGED((_c), (_n), MEM_SYS_MOVE, MEM_SUB_MOVE_CLEARPATH)
+#define PF_REALLOC(_p, _n)  PF_REALLOC_TAGGED((_p), (_n), MEM_SYS_MOVE, MEM_SUB_MOVE_CLEARPATH)
 
 
 #define EPSILON         (1.0/1024)
