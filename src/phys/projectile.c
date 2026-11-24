@@ -61,6 +61,7 @@
 #include <SDL.h>
 
 #include "../perf/public/mem.h"
+#include "../lib/public/lockfree.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC
@@ -401,7 +402,7 @@ static void on_30hz_tick(void *user, void *event)
         arg->begin_idx = nitems * i;
         arg->end_idx = MIN(nitems * (i + 1) - 1, nwork-1);
 
-        SDL_AtomicSet(&s_work.futures[s_work.ntasks].status, FUTURE_INCOMPLETE);
+        LF_STORE(&s_work.futures[s_work.ntasks].status, FUTURE_INCOMPLETE, LF_SC);
         s_work.tids[s_work.ntasks] = Sched_Create(4, phys_proj_task, arg, 
             "phys_proj_task", &s_work.futures[s_work.ntasks], 0);
 

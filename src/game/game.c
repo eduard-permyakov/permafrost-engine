@@ -2783,7 +2783,7 @@ void G_Shutdown(void)
 /* The simulation's millisecond clock: the real one run at the game's speed.
  * Integrated, so that a change of speed never makes it jump. The frames, the
  * camera, the sound and the profiler keep the real clock. */
-static SDL_SpinLock s_clock_lock;
+static struct lf_spinlock s_clock_lock;
 static bool         s_clock_init;
 static uint64_t     s_clock_last_pc;
 static double       s_clock_freq;
@@ -2811,35 +2811,35 @@ static void clock_advance(void)
 
 uint32_t G_ClockTicks(void)
 {
-    SDL_AtomicLock(&s_clock_lock);
+    lf_spin_lock(&s_clock_lock);
     clock_advance();
     uint32_t ret = (uint32_t)s_clock_ms;
-    SDL_AtomicUnlock(&s_clock_lock);
+    lf_spin_unlock(&s_clock_lock);
     return ret;
 }
 
 void G_ClockSetSpeed(float speed)
 {
-    SDL_AtomicLock(&s_clock_lock);
+    lf_spin_lock(&s_clock_lock);
     clock_advance();
     s_clock_speed = MAX(speed, 0.0f);
     s_clock_allowed = CLOCK_UNPACED;
-    SDL_AtomicUnlock(&s_clock_lock);
+    lf_spin_unlock(&s_clock_lock);
 }
 
 void G_ClockPace(float allowed)
 {
-    SDL_AtomicLock(&s_clock_lock);
+    lf_spin_lock(&s_clock_lock);
     clock_advance();
     s_clock_allowed = allowed;
-    SDL_AtomicUnlock(&s_clock_lock);
+    lf_spin_unlock(&s_clock_lock);
 }
 
 float G_ClockSpeed(void)
 {
-    SDL_AtomicLock(&s_clock_lock);
+    lf_spin_lock(&s_clock_lock);
     float ret = clock_factor();
-    SDL_AtomicUnlock(&s_clock_lock);
+    lf_spin_unlock(&s_clock_lock);
     return ret;
 }
 

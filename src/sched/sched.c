@@ -960,7 +960,7 @@ static void future_complete(struct future *future, const struct result *res)
     if(res)
         future->res = *res;
     uintptr_t waiters = LF_XCHG(&future->waiter, JOIN_DONE, LF_AR);
-    LF_STORE(&future->status.value, FUTURE_COMPLETE, LF_SC);
+    LF_STORE(&future->status, FUTURE_COMPLETE, LF_SC);
     /* While the state is cleared, the waiters are discarded with the rest */
     if(s_clearing)
         return;
@@ -986,7 +986,7 @@ static bool future_register(struct future *future, struct join_node *node)
 
 static void future_await_status(const struct future *future)
 {
-    while(LF_LOAD(&future->status.value, LF_ACQ) != FUTURE_COMPLETE)
+    while(LF_LOAD(&future->status, LF_ACQ) != FUTURE_COMPLETE)
         lf_relax();
 }
 
@@ -1471,7 +1471,7 @@ static uint32_t sched_create(int prio, task_func_t code, void *arg, const char *
 
     if(future) {
         LF_STORE(&future->waiter, 0, LF_RLX);
-        LF_STORE(&future->status.value, FUTURE_INCOMPLETE, LF_RLX);
+        LF_STORE(&future->status, FUTURE_INCOMPLETE, LF_RLX);
     }
 
     if(flags & TASK_BIG_STACK) {
@@ -2866,7 +2866,7 @@ uint32_t Sched_ActiveTID(void)
 
 bool Sched_FutureIsReady(const struct future *future)
 {
-    return (LF_LOAD(&future->status.value, LF_ACQ) == FUTURE_COMPLETE);
+    return (LF_LOAD(&future->status, LF_ACQ) == FUTURE_COMPLETE);
 }
 
 void Sched_TryYield(void)

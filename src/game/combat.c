@@ -67,6 +67,7 @@
 #include "../perf/public/mem.h"
 #include "../lib/public/queue.h"
 #include "../lib/public/string_intern.h"
+#include "../lib/public/lockfree.h"
 
 #include <assert.h>
 #include <float.h>
@@ -3245,7 +3246,7 @@ static void combat_submit_work(void)
         arg->begin_idx = nitems * i;
         arg->end_idx = MIN(nitems * (i + 1) - 1, s_combat_work.nwork-1);
 
-        SDL_AtomicSet(&s_combat_work.futures[s_combat_work.ntasks].status, FUTURE_INCOMPLETE);
+        LF_STORE(&s_combat_work.futures[s_combat_work.ntasks].status, FUTURE_INCOMPLETE, LF_SC);
         s_combat_work.tids[s_combat_work.ntasks] = Sched_Create(4, combat_task, arg, 
             "combat_task", &s_combat_work.futures[s_combat_work.ntasks], TASK_BIG_STACK);
 

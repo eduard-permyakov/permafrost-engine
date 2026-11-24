@@ -37,6 +37,7 @@
 #define LOCKFREE_H
 
 #include <SDL_mutex.h>
+#include <SDL_timer.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -445,5 +446,37 @@ static inline bool lf_parker_unpark(struct lf_parker *parker)
     return true;
 }
 
-#endif
+/*****************************************************************************/
+/* Spin lock                                                                 */
+/*****************************************************************************/
 
+/* For a critical section of a few instructions: a waiter spins on a plain
+ * load so the holder keeps the cache line, and gives up its time slice once
+ * the wait has gone on.
+ */
+struct lf_spinlock{
+    int held;
+};
+
+#define LF_SPINS_BEFORE_YIELD (32)
+
+static inline void lf_spin_lock(struct lf_spinlock *lock)
+{
+    int spins = 0;
+    while(LF_XCHG(&lock->held, 1, LF_ACQ)) {
+        while(LF_LOAD(&lock->held, LF_RLX)) {
+            if(spins++ < LF_SPINS_BEFORE_YIELD) {
+                lf_relax();
+            }else{
+                SDL_Delay(0);
+            }
+        }
+    }
+}
+
+static inline void lf_spin_unlock(struct lf_spinlock *lock)
+{
+    LF_STORE(&lock->held, 0, LF_REL);
+}
+
+#endif

@@ -106,51 +106,6 @@ static void atomic_store64(int64_t *p, int64_t val)
     LF_STORE(p, val, LF_RLX);
 }
 
-static struct mem_scope_stack *scope_get_or_create(void);
-static void                    scope_peek(uint16_t *out_sys, uint16_t *out_sub);
-static void                    counter_add(uint16_t sys, uint16_t sub,
-                                           int64_t bytes_delta, int64_t count_delta);
-static void                   *alloc_with_tag(size_t n, uint16_t sys, uint16_t sub);
-
-/*****************************************************************************/
-/* STATIC VARIABLES                                                          */
-/*****************************************************************************/
-
-static SDL_TLSID s_scope_tls;
-
-static int64_t   s_sys_bytes[MEM_SYS_COUNT];
-static int64_t   s_sys_count[MEM_SYS_COUNT];
-static int64_t   s_sub_bytes[MEM_SYS_COUNT][MEM_SUB_MAX_PER_SYS];
-static int64_t   s_sub_count[MEM_SYS_COUNT][MEM_SUB_MAX_PER_SYS];
-
-/*****************************************************************************/
-/* STATIC FUNCTIONS                                                          */
-/*****************************************************************************/
-
-/* SDL2 only exposes a 32-bit atomic_add; for our 64-bit counters we CAS on a
- * pointer-sized slot, which is 64 bits on every target we support. 
- */
-static int64_t atomic_add64(int64_t *p, int64_t delta)
-{
-    void **slot = (void**)p;
-    void  *old, *next;
-    do {
-        old  = SDL_AtomicGetPtr(slot);
-        next = (void*)((intptr_t)old + (intptr_t)delta);
-    } while(!SDL_AtomicCASPtr(slot, old, next));
-    return (int64_t)(intptr_t)next;
-}
-
-static int64_t atomic_load64(int64_t *p)
-{
-    return (int64_t)(intptr_t)SDL_AtomicGetPtr((void**)p);
-}
-
-static void atomic_store64(int64_t *p, int64_t val)
-{
-    SDL_AtomicSetPtr((void**)p, (void*)(intptr_t)val);
-}
-
 static struct mem_scope_stack *scope_get_or_create(void)
 {
     struct mem_scope_stack *s = SDL_TLSGet(s_scope_tls);

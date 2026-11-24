@@ -41,7 +41,6 @@
 #include "../anim/public/anim.h"
 
 #include <stdint.h>
-#include <SDL_atomic.h>
 #include <GL/glew.h>
 
 #define BB_CACHE_NAME_LEN (256)
@@ -125,9 +124,9 @@ struct bb_model_desc{
     float        radius;
     float        ymin;
     float        ymax;
-    SDL_atomic_t state;                    /* enum bb_state */
-    SDL_atomic_t baked_gen;                /* variant generation of the resident atlas */
-    SDL_atomic_t baked_elev;               /* elevation of the resident atlas, degrees */
+    int state;                    /* enum bb_state */
+    int baked_gen;                /* variant generation of the resident atlas */
+    int baked_elev;               /* elevation of the resident atlas, degrees */
     int          inflight_gen;             /* main thread: generation of the enqueued bake */
     uint32_t     demand_frame;             /* main thread: last frame it was wanted on screen */
     struct bb_frame frame;                 /* render thread only */

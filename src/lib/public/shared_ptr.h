@@ -36,7 +36,7 @@
 #ifndef SHARED_PTR_H
 #define SHARED_PTR_H
 
-#include <SDL_atomic.h>
+#include "lockfree.h"
 #include <stddef.h>
 
 /***********************************************************************************************/
@@ -48,7 +48,7 @@
  */
 
 struct sharedptr_header{
-    SDL_atomic_t   refcount;
+    int            refcount;
     void         (*destroy)(void *owner);
 };
 
@@ -71,7 +71,7 @@ static inline void *sp_init(void *owner, void (*destroy)(void *owner))
 {
     struct sharedptr_header *sp = owner;
     sp->destroy = destroy;
-    SDL_AtomicSet(&sp->refcount, 1);
+    LF_STORE(&sp->refcount, 1, LF_SC);
     return owner;
 }
 
@@ -84,8 +84,8 @@ static inline void *sp_retain(void *owner)
 
     int old;
     do {
-        old = SDL_AtomicGet(&sp->refcount);
-    } while(!SDL_AtomicCAS(&sp->refcount, old, old + 1));
+        old = LF_LOAD(&sp->refcount, LF_SC);
+    } while(!LF_CAS(&sp->refcount, &old, old + 1, LF_SC, LF_SC));
     return owner;
 }
 
@@ -99,18 +99,18 @@ static inline void sp_release(void *owner)
     /* Publish this thread's writes before the count drops, so the thread that
      * observes the final reference is guaranteed to see them.
      */
-    SDL_MemoryBarrierRelease();
+    LF_FENCE(LF_REL);
 
     int old;
     do {
-        old = SDL_AtomicGet(&sp->refcount);
-    } while(!SDL_AtomicCAS(&sp->refcount, old, old - 1));
+        old = LF_LOAD(&sp->refcount, LF_SC);
+    } while(!LF_CAS(&sp->refcount, &old, old - 1, LF_SC, LF_SC));
 
     if(old == 1) {
         /* Acquire the release sequence of every prior sp_release so that the
          * destructor happens-after all of them.
          */
-        SDL_MemoryBarrierAcquire();
+        LF_FENCE(LF_ACQ);
         sp->destroy(owner);
     }
 }
@@ -121,7 +121,7 @@ static inline int sp_refcount(const void *owner)
     const struct sharedptr_header *sp = owner;
     if(!owner)
         return 0;
-    return SDL_AtomicGet((SDL_atomic_t*)&sp->refcount);
+    return LF_LOAD((int*)&sp->refcount, LF_SC);
 }
 
 #endif /* SHARED_PTR_H */

@@ -57,6 +57,7 @@
 #include "../camera/public/camera.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/khash.h"
+#include "../lib/public/lockfree.h"
 
 #include <assert.h>
 #include <string.h>
@@ -162,11 +163,11 @@ static int              s_still_frames;
 static uint32_t         s_frame;
 
 /* Written once by the render thread at context init */
-static SDL_atomic_t     s_max_layers;
+static int              s_max_layers;
 /* Background bakes enqueued by the main thread and not yet ended by the
  * render thread
  */
-static SDL_atomic_t     s_jobs_inflight;
+static int              s_jobs_inflight;
 
 /* Render thread */
 static GLuint           s_quad_vbo;
@@ -416,7 +417,7 @@ static void bb_variant_cache_name(const struct bb_model_desc *desc, const struct
 
 static void bb_enqueue_job(struct bb_model_desc *desc, int gen)
 {
-    SDL_AtomicIncRef(&s_jobs_inflight);
+    LF_FADD(&s_jobs_inflight, 1, LF_SC);
     desc->inflight_gen = gen;
     R_PushCmd((struct rcmd){
         .func = R_GL_Billboard_BakeBegin,
@@ -432,14 +433,14 @@ static void bb_enqueue_job(struct bb_model_desc *desc, int gen)
 
 static bool bb_stale(struct bb_model_desc *desc, int gen)
 {
-    return (SDL_AtomicGet(&desc->state) == BB_STATE_READY)
-        && (SDL_AtomicGet(&desc->baked_gen) != gen)
+    return (LF_LOAD(&desc->state, LF_SC) == BB_STATE_READY)
+        && (LF_LOAD(&desc->baked_gen, LF_SC) != gen)
         && (desc->inflight_gen != gen);
 }
 
 static bool bb_job_slot_free(void)
 {
-    return (SDL_AtomicGet(&s_jobs_inflight) < CONFIG_BILLBOARD_JOBS_INFLIGHT);
+    return (LF_LOAD(&s_jobs_inflight, LF_SC) < CONFIG_BILLBOARD_JOBS_INFLIGHT);
 }
 
 /* The sprite's framing at one elevation. The depth extent bounds how far any
@@ -931,15 +932,15 @@ static void bb_job_end(struct bb_job *job, bool ok)
         bb_atlas_free(&desc->atlas);
         desc->atlas = job->atlas;
         desc->frame = job->frame;
-        SDL_AtomicSet(&desc->baked_elev, job->var.elev_deg);
-        SDL_AtomicSet(&desc->state, BB_STATE_READY);
+        LF_STORE(&desc->baked_elev, job->var.elev_deg, LF_SC);
+        LF_STORE(&desc->state, BB_STATE_READY, LF_SC);
     }else{
         bb_atlas_free(&job->atlas);
         if(!desc->atlas.color) {
-            SDL_AtomicSet(&desc->state, BB_STATE_FAILED);
+            LF_STORE(&desc->state, BB_STATE_FAILED, LF_SC);
         }
     }
-    SDL_AtomicSet(&desc->baked_gen, job->gen);
+    LF_STORE(&desc->baked_gen, job->gen, LF_SC);
 }
 
 static void bb_point_inst_attrs(size_t base_inst)
@@ -1021,12 +1022,12 @@ void R_Billboard_Register(void *render_key, void *bake_private, const char *base
     desc->bake_private = bake_private;
     desc->nazimuths = bb_azimuth_count(aabb, nclips);
     desc->nclips = nclips;
-    SDL_AtomicSet(&desc->state, BB_STATE_PENDING);
+    LF_STORE(&desc->state, BB_STATE_PENDING, LF_SC);
 
     /* Reduce the per-clip keyframe count until the atlas fits within the
      * texture array layer limit.
      */
-    int max_layers = SDL_AtomicGet(&s_max_layers);
+    int max_layers = LF_LOAD(&s_max_layers, LF_SC);
     if(max_layers <= 0) {
         max_layers = FALLBACK_MAX_LAYERS;
     }
@@ -1118,7 +1119,7 @@ const struct bb_model_desc *R_Billboard_Get(void *render_key)
     ASSERT_IN_MAIN_THREAD();
 
     struct bb_model_desc *desc = bb_desc_for_key(render_key);
-    if(!desc || SDL_AtomicGet(&desc->state) != BB_STATE_READY)
+    if(!desc || LF_LOAD(&desc->state, LF_SC) != BB_STATE_READY)
         return NULL;
 
     desc->demand_frame = s_frame;
@@ -1127,7 +1128,7 @@ const struct bb_model_desc *R_Billboard_Get(void *render_key)
 
 bool R_Billboard_ElevationMatches(const struct bb_model_desc *desc, float elev_deg)
 {
-    float baked = (float)SDL_AtomicGet((SDL_atomic_t*)&desc->baked_elev);
+    float baked = (float)LF_LOAD((int*)&desc->baked_elev, LF_SC);
     return (fabsf(baked - elev_deg) <= CONFIG_BILLBOARD_MAX_PITCH_DEV_DEG);
 }
 
@@ -1138,7 +1139,7 @@ bool R_Billboard_ViewMatches(const struct bb_model_desc *desc, vec3_t view_dir)
 
     float hlen = sqrtf(view_dir.x * view_dir.x + view_dir.z * view_dir.z);
     float elev = RAD_TO_DEG(atan2f(-view_dir.y, hlen));
-    float baked = (float)SDL_AtomicGet((SDL_atomic_t*)&desc->baked_elev);
+    float baked = (float)LF_LOAD((int*)&desc->baked_elev, LF_SC);
     return (fabsf(baked - elev) <= max_pitch_dev);
 }
 
@@ -1178,12 +1179,12 @@ void R_Billboard_EnsureBaked(void *render_key)
         return;
 
     struct bb_model_desc *desc = bb_desc_for_key(render_key);
-    if(!desc || SDL_AtomicGet(&desc->state) != BB_STATE_PENDING)
+    if(!desc || LF_LOAD(&desc->state, LF_SC) != BB_STATE_PENDING)
         return;
 
     int gen = bb_wanted_refresh();
     bool cached = bb_variant_cacheable(&s_wanted);
-    SDL_AtomicSet(&desc->state, BB_STATE_QUEUED);
+    LF_STORE(&desc->state, BB_STATE_QUEUED, LF_SC);
     desc->inflight_gen = gen;
     R_PushCmd((struct rcmd){
         .func = R_GL_Billboard_EnsureBaked,
@@ -1226,7 +1227,7 @@ void R_Billboard_Tick(void)
         });
     }
 
-    if(SDL_AtomicGet(&s_jobs_inflight) == 0)
+    if(LF_LOAD(&s_jobs_inflight, LF_SC) == 0)
         return;
 
     R_PushCmd((struct rcmd){
@@ -1255,7 +1256,7 @@ bool R_GL_Billboard_InitCtx(void)
 
     GLint max_layers = 0;
     glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &max_layers);
-    SDL_AtomicSet(&s_max_layers, max_layers);
+    LF_STORE(&s_max_layers, max_layers, LF_SC);
 
     const GLfloat corners[] = {
         -1.0f, -1.0f,
@@ -1291,7 +1292,7 @@ void R_GL_Billboard_ShutdownCtx(void)
         bb_job_abandon(&s_jobs[i]);
     }
     s_njobs = 0;
-    SDL_AtomicSet(&s_jobs_inflight, 0);
+    LF_STORE(&s_jobs_inflight, 0, LF_SC);
 
     if(s_vao) {
         glDeleteVertexArrays(1, &s_vao);
@@ -1319,7 +1320,7 @@ void R_GL_Billboard_EnsureBaked(struct bb_model_desc *desc, const void *render_p
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    if(SDL_AtomicGet(&desc->baked_gen) == *gen)
+    if(LF_LOAD(&desc->baked_gen, LF_SC) == *gen)
         GL_PERF_RETURN_VOID();
 
     struct bb_job job;
@@ -1353,7 +1354,7 @@ void R_GL_Billboard_BakeBegin(struct bb_model_desc *desc, const void *render_pri
 
     if(!bb_job_begin(job)) {
         bb_job_end(job, false);
-        SDL_AtomicAdd(&s_jobs_inflight, -1);
+        LF_FADD(&s_jobs_inflight, -1, LF_SC);
     }else{
         s_njobs++;
     }
@@ -1372,7 +1373,7 @@ void R_GL_Billboard_BakePump(const int *gen)
     for(int i = 0; i < s_njobs; i++) {
         if(s_jobs[i].gen != *gen) {
             bb_job_abandon(&s_jobs[i]);
-            SDL_AtomicAdd(&s_jobs_inflight, -1);
+            LF_FADD(&s_jobs_inflight, -1, LF_SC);
             continue;
         }
         s_jobs[nkept++] = s_jobs[i];
@@ -1395,7 +1396,7 @@ void R_GL_Billboard_BakePump(const int *gen)
 
         budget -= MAX(nbaked, 0);
         bb_job_end(job, nbaked >= 0);
-        SDL_AtomicAdd(&s_jobs_inflight, -1);
+        LF_FADD(&s_jobs_inflight, -1, LF_SC);
         memmove(&s_jobs[0], &s_jobs[1], (s_njobs - 1) * sizeof(struct bb_job));
         s_njobs--;
     }

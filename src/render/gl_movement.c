@@ -49,6 +49,7 @@
 #include "../main.h"
 
 #include "../perf/public/mem.h"
+#include "../lib/public/lockfree.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC
@@ -86,7 +87,7 @@ struct move_post{
     struct map_resolution  res;
     vec2_t                 nav_pos;
     int                    nwork;
-    SDL_atomic_t          *done;
+    int                   *done;
     int                    seq;
     struct gpu_move_times *times;
 };
@@ -97,7 +98,7 @@ static void            *s_posted;
 /* The solve in flight, and the flag set to its sequence number once its
  * results are visible */
 static GLsync        s_fence;
-static SDL_atomic_t *s_done;
+static int *s_done;
 static int           s_done_seq;
 /* Timestamps around the solve in flight, and where its times go */
 static GLuint                 s_queries[2];
@@ -154,7 +155,7 @@ static void move_signal(void)
     }
     glDeleteSync(s_fence);
     s_fence = 0;
-    SDL_AtomicSet(s_done, s_done_seq);
+    LF_STORE(s_done, s_done_seq, LF_SC);
     s_done = NULL;
 }
 
@@ -215,7 +216,7 @@ static void move_dispatch(const struct move_post *post)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_MoveReserve(const size_t *caps, struct gpu_move_bufs *out, SDL_atomic_t *done)
+void R_GL_MoveReserve(const size_t *caps, struct gpu_move_bufs *out, int *done)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -246,19 +247,19 @@ void R_GL_MoveReserve(const size_t *caps, struct gpu_move_bufs *out, SDL_atomic_
         .patch_cap   = ok ? s_caps[BUF_PATCH]   : 0,
         .results_cap = ok ? s_caps[BUF_RESULTS] : 0,
     };
-    SDL_AtomicSet(done, 1);
+    LF_STORE(done, 1, LF_SC);
 
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }
 
 void R_GL_MovePost(const struct map_resolution *res, vec2_t nav_pos, int nwork,
-                   SDL_atomic_t *done, int seq, struct gpu_move_times *out_times)
+                   int *done, int seq, struct gpu_move_times *out_times)
 {
     struct move_post *post = &s_posts[s_next_post];
     s_next_post = !s_next_post;
     *post = (struct move_post){*res, nav_pos, nwork, done, seq, out_times};
-    SDL_AtomicSetPtr(&s_posted, post);
+    LF_STORE(&s_posted, post, LF_SC);
 }
 
 void R_GL_MovePoll(bool boundary)
@@ -272,9 +273,9 @@ void R_GL_MovePoll(bool boundary)
         }
     }
     /* Between commands, the program one installed may be live for the next */
-    if(boundary && !s_fence && SDL_AtomicGetPtr(&s_posted)) {
+    if(boundary && !s_fence && LF_LOAD(&s_posted, LF_SC)) {
         assert(R_ComputeShaderSupported());
-        move_dispatch(SDL_AtomicSetPtr(&s_posted, NULL));
+        move_dispatch(LF_XCHG(&s_posted, NULL, LF_SC));
     }
     GL_ASSERT_OK();
 }
@@ -291,7 +292,7 @@ void R_GL_MoveClearState(void)
     }
     s_done = NULL;
     s_times = NULL;
-    SDL_AtomicSetPtr(&s_posted, NULL);
+    LF_STORE(&s_posted, NULL, LF_SC);
     if(s_queries[0]) {
         glDeleteQueries(2, s_queries);
         s_queries[0] = s_queries[1] = 0;

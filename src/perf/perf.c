@@ -53,7 +53,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
-#include <SDL_atomic.h>
 
 #if defined(__linux__) && !defined(NDEBUG)
 #include <linux/perf_event.h>
@@ -193,7 +192,7 @@ static struct frame_time_sample s_frame_time_hist[PERF_FRAME_HISTORY];
 static size_t                   s_frame_time_head;
 static size_t                   s_frame_time_count;
 static uint32_t                 s_frame_time_seq;
-static SDL_atomic_t           s_nav_parallel_us;
+static int                    s_nav_parallel_us;
 /* Hardware counter sampling at every probe push/pop costs two read() syscalls
  * per scope; keep it opt-in so instrumented builds stay representative.
  */
@@ -1041,19 +1040,19 @@ void Perf_RecordNavTick(const struct nav_tick_sample *sample)
 
 void Perf_NavParallelReset(void)
 {
-    SDL_AtomicSet(&s_nav_parallel_us, 0);
+    LF_STORE(&s_nav_parallel_us, 0, LF_SC);
 }
 
 void Perf_NavParallelAddSince(uint64_t start_ticks)
 {
     uint64_t freq = SDL_GetPerformanceFrequency();
     uint64_t us = freq ? (SDL_GetPerformanceCounter() - start_ticks) * 1000000ull / freq : 0;
-    SDL_AtomicAdd(&s_nav_parallel_us, (int)us);
+    LF_FADD(&s_nav_parallel_us, (int)us, LF_SC);
 }
 
 uint32_t Perf_NavParallelGet(void)
 {
-    return (uint32_t)SDL_AtomicGet(&s_nav_parallel_us);
+    return (uint32_t)LF_LOAD(&s_nav_parallel_us, LF_SC);
 }
 
 size_t Perf_GetNavTickTimes(size_t maxout, struct nav_tick_sample *out)

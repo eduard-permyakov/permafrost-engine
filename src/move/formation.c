@@ -64,6 +64,7 @@
 #include <assert.h>
 
 #include "../perf/public/mem.h"
+#include "../lib/public/lockfree.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC
@@ -3781,11 +3782,11 @@ static void dispatch_cell_task(struct formation *parent, vec2_t center, uint32_t
     work->input.cell_tile = cell_td;
     work->input.center_tile = center_td;
 
-    SDL_AtomicSet(&work->future.status, FUTURE_INCOMPLETE);
+    LF_STORE(&work->future.status, FUTURE_INCOMPLETE, LF_SC);
     work->tid = Sched_Create(31, func, work, "formation::work", &work->future, 0);
     if(work->tid == NULL_TID) {
         func(work);
-        SDL_AtomicSet(&work->future.status, FUTURE_COMPLETE);
+        LF_STORE(&work->future.status, FUTURE_COMPLETE, LF_SC);
     }
 }
 
@@ -4970,12 +4971,12 @@ static void dispatch_cell_assignment_task(struct cell_assignment_work *work)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    SDL_AtomicSet(&work->future.status, FUTURE_INCOMPLETE);
+    LF_STORE(&work->future.status, FUTURE_INCOMPLETE, LF_SC);
     work->tid = Sched_Create(16, cell_assignment_task, work, "cell_assignment_task",
         &work->future, 0);
     if(work->tid == NULL_TID) {
         cell_assignment_task(work);
-        SDL_AtomicSet(&work->future.status, FUTURE_COMPLETE);
+        LF_STORE(&work->future.status, FUTURE_COMPLETE, LF_SC);
     }
 }
 

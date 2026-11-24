@@ -60,6 +60,7 @@
 #include "../sched/public/sched.h"
 #include "../ui.h"
 #include "../camera/public/camera.h"
+#include "../lib/public/lockfree.h"
 
 #include <stdlib.h>
 #include <stdbool.h>
@@ -217,7 +218,7 @@ static vec_inval_t s_pending_inval;
 static vec_inval_t s_inval_stage[NAV_LAYER_MAX];
 static bool        s_full_layer[NAV_LAYER_MAX];
 /* Road cells on the live map's 1x1 ground layer */
-static SDL_atomic_t s_road_cells;
+static int s_road_cells;
 
 VEC_TYPE(crange, struct cow_range)
 VEC_IMPL(static inline, crange, struct cow_range)
@@ -310,23 +311,23 @@ static struct los_work   s_los_work;
  * the nav tick in N_ApplyDeferredInvalidations. */
 static struct nav_tick_diag s_tick_diag;
 /* Pool-task accounting for the tick diag: written by worker tasks, so atomic */
-static SDL_atomic_t             s_field_us_sum;
-static SDL_atomic_t             s_field_us_max;
-static SDL_atomic_t             s_nfield_tasks;
-static SDL_atomic_t             s_chain_us_sum;
-static SDL_atomic_t             s_chain_us_max;
-static SDL_atomic_t             s_nchain_tasks;
+static int                      s_field_us_sum;
+static int                      s_field_us_max;
+static int                      s_nfield_tasks;
+static int                      s_chain_us_sum;
+static int                      s_chain_us_max;
+static int                      s_nchain_tasks;
 static uint64_t                 s_field_dispatch_pc;
 static uint64_t                 s_chain_dispatch_pc;
 
-static void task_time_note(SDL_atomic_t *sum, SDL_atomic_t *max, SDL_atomic_t *count, uint64_t t0)
+static void task_time_note(int *sum, int *max, int *count, uint64_t t0)
 {
     int us = (SDL_GetPerformanceCounter() - t0) * 1000000 / SDL_GetPerformanceFrequency();
-    SDL_AtomicAdd(sum, us);
-    SDL_AtomicAdd(count, 1);
-    int curr = SDL_AtomicGet(max);
-    while(us > curr && !SDL_AtomicCAS(max, curr, us))
-        curr = SDL_AtomicGet(max);
+    LF_FADD(sum, us, LF_SC);
+    LF_FADD(count, 1, LF_SC);
+    int curr = LF_LOAD(max, LF_SC);
+    while(us > curr && !LF_CAS(max, &curr, us, LF_SC, LF_SC))
+        curr = LF_LOAD(max, LF_SC);
 }
 
 /* Per-tick memo of the portal-graph solve in n_request_path, keyed by
@@ -3662,12 +3663,12 @@ static void field_submit_slot(struct field_work_in entry, const struct flow_fiel
         vec_AT(&s_field_work.out, idx).field.patched = 0;
     }
 
-    SDL_AtomicSet(&s_field_work.futures[idx].status, FUTURE_INCOMPLETE);
+    LF_STORE(&s_field_work.futures[idx].status, FUTURE_INCOMPLETE, LF_SC);
     s_field_work.tids[idx] = Sched_Create(1, field_task, arg,
             "nav::field_task", &s_field_work.futures[idx], TASK_BIG_STACK);
     if(s_field_work.tids[idx] == NULL_TID) {
         field_task(arg);
-        SDL_AtomicSet(&s_field_work.futures[idx].status, FUTURE_COMPLETE);
+        LF_STORE(&s_field_work.futures[idx].status, FUTURE_COMPLETE, LF_SC);
     }
 }
 
@@ -3766,12 +3767,12 @@ static struct result los_chain_task(void *arg)
 static void los_submit_chain(size_t idx)
 {
     struct los_chain *chain = &s_los_work.chains[idx];
-    SDL_AtomicSet(&s_los_work.futures[idx].status, FUTURE_INCOMPLETE);
+    LF_STORE(&s_los_work.futures[idx].status, FUTURE_INCOMPLETE, LF_SC);
     s_los_work.tids[idx] = Sched_Create(1, los_chain_task, chain,
         "nav::los_chain_task", &s_los_work.futures[idx], TASK_BIG_STACK);
     if(s_los_work.tids[idx] == NULL_TID) {
         los_chain_task(chain);
-        SDL_AtomicSet(&s_los_work.futures[idx].status, FUTURE_COMPLETE);
+        LF_STORE(&s_los_work.futures[idx].status, FUTURE_COMPLETE, LF_SC);
     }
 }
 
@@ -4055,12 +4056,12 @@ void N_ApplyDeferredInvalidations(void)
     memset(&s_tick_diag, 0, sizeof(s_tick_diag));
     s_field_dispatch_pc = 0;
     s_field_tick++;
-    SDL_AtomicSet(&s_field_us_sum, 0);
-    SDL_AtomicSet(&s_field_us_max, 0);
-    SDL_AtomicSet(&s_nfield_tasks, 0);
-    SDL_AtomicSet(&s_chain_us_sum, 0);
-    SDL_AtomicSet(&s_chain_us_max, 0);
-    SDL_AtomicSet(&s_nchain_tasks, 0);
+    LF_STORE(&s_field_us_sum, 0, LF_SC);
+    LF_STORE(&s_field_us_max, 0, LF_SC);
+    LF_STORE(&s_nfield_tasks, 0, LF_SC);
+    LF_STORE(&s_chain_us_sum, 0, LF_SC);
+    LF_STORE(&s_chain_us_max, 0, LF_SC);
+    LF_STORE(&s_nchain_tasks, 0, LF_SC);
     astar_memo_clear();
 
     struct fieldcache_ctx *fc = N_FC_GetSingleton();
@@ -4083,12 +4084,12 @@ void N_ApplyDeferredInvalidations(void)
 
 void N_GetTickDiag(struct nav_tick_diag *out)
 {
-    s_tick_diag.nfield_tasks = SDL_AtomicGet(&s_nfield_tasks);
-    s_tick_diag.field_us_sum = SDL_AtomicGet(&s_field_us_sum);
-    s_tick_diag.field_us_max = SDL_AtomicGet(&s_field_us_max);
-    s_tick_diag.nchain_tasks = SDL_AtomicGet(&s_nchain_tasks);
-    s_tick_diag.chain_us_sum = SDL_AtomicGet(&s_chain_us_sum);
-    s_tick_diag.chain_us_max = SDL_AtomicGet(&s_chain_us_max);
+    s_tick_diag.nfield_tasks = LF_LOAD(&s_nfield_tasks, LF_SC);
+    s_tick_diag.field_us_sum = LF_LOAD(&s_field_us_sum, LF_SC);
+    s_tick_diag.field_us_max = LF_LOAD(&s_field_us_max, LF_SC);
+    s_tick_diag.nchain_tasks = LF_LOAD(&s_nchain_tasks, LF_SC);
+    s_tick_diag.chain_us_sum = LF_LOAD(&s_chain_us_sum, LF_SC);
+    s_tick_diag.chain_us_max = LF_LOAD(&s_chain_us_max, LF_SC);
     *out = s_tick_diag;
 }
 
@@ -4183,7 +4184,7 @@ void *N_NewCtxForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
     ret->width = w;
     ret->height = h;
     ret->layer_mask = NAV_LAYER_MASK_ALL;
-    SDL_AtomicSet(&s_road_cells, 0);
+    LF_STORE(&s_road_cells, 0, LF_SC);
     ret->window = (struct nav_window){0, 0, (int)h - 1, (int)w - 1};
 
     /* One copy-on-write region holds all layers' chunks (inlined portal_travel_costs
@@ -5324,7 +5325,7 @@ void N_SetRoadCells(void *nav_private, vec3_t map_pos, vec2_t xz_min, vec2_t xz_
             n_set_add(priv->road_dirty, chunk);
         }
     }}
-    SDL_AtomicAdd(&s_road_cells, delta);
+    LF_FADD(&s_road_cells, delta, LF_SC);
 }
 
 bool N_RoadSpan(void *nav_private, vec3_t map_pos, vec2_t xz, vec2_t across, float max_dist,
@@ -5384,7 +5385,7 @@ bool N_OnRoad(void *nav_private, vec3_t map_pos, vec2_t xz)
 
 float N_MinCellCost(void)
 {
-    return SDL_AtomicGet(&s_road_cells) > 0 ? ROAD_COST_FACTOR : 1.0f;
+    return LF_LOAD(&s_road_cells, LF_SC) > 0 ? ROAD_COST_FACTOR : 1.0f;
 }
 
 void N_UpdatePortals(void *nav_private)
@@ -7850,7 +7851,7 @@ bool N_DestUsesRoads(dest_id_t id)
 dest_id_t N_DestIDWithRoads(dest_id_t id)
 {
     /* Without roads, the paths are the same either way: keep to one */
-    if(SDL_AtomicGet(&s_road_cells) == 0)
+    if(LF_LOAD(&s_road_cells, LF_SC) == 0)
         return id;
     return n_dest_id_with_roads(id);
 }

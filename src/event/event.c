@@ -206,7 +206,7 @@ static khash_t(usub)         *s_update_start_subs;
  * in place of the script thread's own table.
  */
 static khash_t(skey)         *s_script_keys;
-static SDL_SpinLock           s_script_keys_lock;
+static struct lf_spinlock     s_script_keys_lock;
 /* Event records the script thread took and has yet to hand to their handlers,
  * oldest first: its own
  */
@@ -285,7 +285,7 @@ static bool e_is_timer_event(enum eventtype type)
 
 static void e_script_keys_add(uint64_t key, int delta)
 {
-    SDL_AtomicLock(&s_script_keys_lock);
+    lf_spin_lock(&s_script_keys_lock);
     khiter_t k = kh_get(skey, s_script_keys, key);
     if(k == kh_end(s_script_keys)) {
         int ret;
@@ -298,7 +298,7 @@ static void e_script_keys_add(uint64_t key, int delta)
         if(kh_value(s_script_keys, k) <= 0)
             kh_del(skey, s_script_keys, k);
     }
-    SDL_AtomicUnlock(&s_script_keys_lock);
+    lf_spin_unlock(&s_script_keys_lock);
 }
 
 static void e_update_start_subs_add(uint64_t key, int delta)
@@ -994,9 +994,9 @@ bool E_Entity_HasHandler(enum eventtype event, uint32_t ent_uid)
     khiter_t k = kh_get(handler_desc, s_event_handler_table, e_key(ent_uid, event));
     if(k != kh_end(s_event_handler_table) && vec_size(&kh_value(s_event_handler_table, k)) > 0)
         return true;
-    SDL_AtomicLock(&s_script_keys_lock);
+    lf_spin_lock(&s_script_keys_lock);
     bool ret = kh_get(skey, s_script_keys, e_key(ent_uid, event)) != kh_end(s_script_keys);
-    SDL_AtomicUnlock(&s_script_keys_lock);
+    lf_spin_unlock(&s_script_keys_lock);
     return ret;
 }
 
@@ -1049,9 +1049,9 @@ void E_DeleteScriptHandlers(void)
         vec_hd_destroy(&curr);
     });
     kh_clear(handler_desc, s_script_handler_table);
-    SDL_AtomicLock(&s_script_keys_lock);
+    lf_spin_lock(&s_script_keys_lock);
     kh_clear(skey, s_script_keys);
-    SDL_AtomicUnlock(&s_script_keys_lock);
+    lf_spin_unlock(&s_script_keys_lock);
 }
 
 size_t E_GetScriptHandlers(size_t max_out, struct script_handler *out)

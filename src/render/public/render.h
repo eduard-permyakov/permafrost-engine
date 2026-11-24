@@ -801,7 +801,7 @@ struct gpu_move_bufs{
  * and set 'done'. The mappings are NULL if the buffers could not be created.
  * ---------------------------------------------------------------------------
  */
-void R_GL_MoveReserve(const size_t *caps, struct gpu_move_bufs *out, SDL_atomic_t *done);
+void R_GL_MoveReserve(const size_t *caps, struct gpu_move_bufs *out, int *done);
 
 /* When a posted solve was dispatched and signalled (performance counter
  * ticks), and its GPU time.
@@ -821,7 +821,7 @@ struct gpu_move_times{
  * ---------------------------------------------------------------------------
  */
 void R_GL_MovePost(const struct map_resolution *res, vec2_t nav_pos, int nwork,
-                   SDL_atomic_t *done, int seq, struct gpu_move_times *out_times);
+                   int *done, int seq, struct gpu_move_times *out_times);
 
 /* ---------------------------------------------------------------------------
  * Signal a dispatched solve that has finished, and at a frame 'boundary',

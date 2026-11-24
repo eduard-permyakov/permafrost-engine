@@ -72,6 +72,7 @@
 #include <SDL.h>
 
 #include "../perf/public/mem.h"
+#include "../lib/public/lockfree.h"
 
 #undef PF_MALLOC
 #undef PF_CALLOC
@@ -1011,7 +1012,7 @@ static bool                    s_log_cp_captures;
 static bool                    s_log_perf_csv;
 static bool                    s_move_parallel_executor;
 static struct cp_capture       s_cp_captures[CP_CAPTURE_MAX_PER_TICK];
-static SDL_atomic_t            s_cp_ncaptures;
+static int                     s_cp_ncaptures;
 
 /* pf.debug.log_move_trace_min_radius, hoisted once per tick; negative = off */
 static float                   s_move_trace_min_radius = -1.0f;
@@ -1035,15 +1036,15 @@ static bool                    s_use_gpu = true;
  * sets once it has (re)created them, and the number of the last solve whose
  * results are visible */
 static struct gpu_move_bufs    s_gpu_bufs;
-static SDL_atomic_t            s_gpu_reserved;
-static SDL_atomic_t            s_gpu_solved;
+static int                     s_gpu_reserved;
+static int                     s_gpu_solved;
 static int                     s_gpu_seq;
 /* pf.debug.gpu_move_parity: every GPU solve is also run on the CPU and the
  * disagreements are counted */
 static bool                    s_gpu_parity;
-static SDL_atomic_t            s_gpu_nparity;
-static SDL_atomic_t            s_gpu_nvel_diff;
-static SDL_atomic_t            s_gpu_ndiag_diff;
+static int                     s_gpu_nparity;
+static int                     s_gpu_nvel_diff;
+static int                     s_gpu_ndiag_diff;
 /* The times of the last solve, when logging perf */
 static struct gpu_move_times   s_gpu_times;
 static uint64_t                s_prepare_copy_ticks;
@@ -5598,7 +5599,7 @@ static bool velocity_gather(int i)
     int cap_slot = -1;
     if(s_log_cp_captures
     && (traced || (in->ndyn + in->nstat) >= CP_CAPTURE_MIN_NEIGHBS)) {
-        int slot = SDL_AtomicAdd(&s_cp_ncaptures, 1);
+        int slot = LF_FADD(&s_cp_ncaptures, 1, LF_SC);
         if(slot < CP_CAPTURE_MAX_PER_TICK) {
             cap_slot = slot;
             struct cp_capture *cap = &s_cp_captures[slot];
@@ -6075,7 +6076,7 @@ static void move_submit_cpu_work(task_func_t code)
         arg->begin_idx = nitems * i;
         arg->end_idx = MIN(nitems * (i + 1) - 1, s_move_work.nwork-1);
 
-        SDL_AtomicSet(&s_move_work.futures[s_move_work.ntasks].status, FUTURE_INCOMPLETE);
+        LF_STORE(&s_move_work.futures[s_move_work.ntasks].status, FUTURE_INCOMPLETE, LF_SC);
         s_move_work.tids[s_move_work.ntasks] = Sched_Create(4, code, arg,
             "move::work", &s_move_work.futures[s_move_work.ntasks], TASK_BIG_STACK);
 
@@ -6091,7 +6092,7 @@ static void nav_tick_submit_work(void)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    SDL_AtomicSet(&s_tick_task_future.status, FUTURE_INCOMPLETE);
+    LF_STORE(&s_tick_task_future.status, FUTURE_INCOMPLETE, LF_SC);
     s_tick_task_tid = Sched_Create(0, navigation_tick_task, NULL, 
             "navigation_tick_task", &s_tick_task_future, TASK_BIG_STACK);
     assert(s_tick_task_tid != NULL_TID);
@@ -6328,7 +6329,7 @@ static enum move_work_status nav_tick_finish_work(bool wait)
         s_last_nav_tick_stats.nheading_gated += !!(out->patch.flags & UPDATE_HEADING_GATED);
     }
 
-    int ncaps = MIN(SDL_AtomicGet(&s_cp_ncaptures), CP_CAPTURE_MAX_PER_TICK);
+    int ncaps = MIN(LF_LOAD(&s_cp_ncaptures, LF_SC), CP_CAPTURE_MAX_PER_TICK);
     for(int i = 0; i < ncaps; i++) {
         const struct cp_capture *cap = &s_cp_captures[i];
         fprintf(stdout, "[cp-cap] %u,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%u,%u",
@@ -6735,11 +6736,11 @@ static void gpu_assign_slots(void)
     s_move_work.gpu_nwords = nwords;
 }
 
-static void gpu_await(SDL_atomic_t *flag, int value)
+static void gpu_await(int *flag, int value)
 {
     /* The render thread signals from inside its frame, which spans both */
     static const int events[] = {EVENT_UPDATE_START, EVENT_UPDATE_END};
-    for(int i = 0; SDL_AtomicGet(flag) != value; i++) {
+    for(int i = 0; LF_LOAD(flag, LF_SC) != value; i++) {
         int source;
         Task_AwaitEvent(events[i % 2], &source);
     }
@@ -6771,7 +6772,7 @@ static bool gpu_reserve(void)
         caps[i] = MAX(need[i] + need[i] / 2, (size_t)4096);
     }
 
-    SDL_AtomicSet(&s_gpu_reserved, 0);
+    LF_STORE(&s_gpu_reserved, 0, LF_SC);
     Task_RescheduleOnMain();
     R_PushCmd((struct rcmd){
         .func = R_GL_MoveReserve,
@@ -6912,12 +6913,12 @@ static void move_velocity_finish_range(int begin, int end, void *arg)
         };
         if(s_gpu_parity) {
             const struct gpu_parity_ref *ref = &s_move_work.gpu_parity[i];
-            SDL_AtomicAdd(&s_gpu_nparity, 1);
+            LF_FADD(&s_gpu_nparity, 1, LF_SC);
             if(ref->vel.x != res.vx || ref->vel.z != res.vz)
-                SDL_AtomicAdd(&s_gpu_nvel_diff, 1);
+                LF_FADD(&s_gpu_nvel_diff, 1, LF_SC);
             if(ref->diag.retries != diag.retries || ref->diag.gave_up != diag.gave_up
             || ref->diag.side != diag.side)
-                SDL_AtomicAdd(&s_gpu_ndiag_diff, 1);
+                LF_FADD(&s_gpu_ndiag_diff, 1, LF_SC);
         }
         velocity_finish(i, (vec2_t){res.vx, res.vz}, diag);
     }
@@ -6931,9 +6932,9 @@ static void move_velocity_finish_range(int begin, int end, void *arg)
  */
 static void gpu_velocity_computations(void)
 {
-    SDL_AtomicSet(&s_gpu_nparity, 0);
-    SDL_AtomicSet(&s_gpu_nvel_diff, 0);
-    SDL_AtomicSet(&s_gpu_ndiag_diff, 0);
+    LF_STORE(&s_gpu_nparity, 0, LF_SC);
+    LF_STORE(&s_gpu_nvel_diff, 0, LF_SC);
+    LF_STORE(&s_gpu_ndiag_diff, 0, LF_SC);
     uint64_t start = SDL_GetPerformanceCounter();
     uint64_t t_post = 0, t_wake = 0;
     unsigned long start_frame = g_frame_idx;
@@ -6973,8 +6974,8 @@ static void gpu_velocity_computations(void)
         fprintf(stdout, "[gpu-move] %u,%zu,%zu,%lu,%u,%d,%d,%d,%u,%u,%u,%u,%u\n", s_move_trace_tick,
             s_move_work.gpu_nunits, s_move_work.gpu_nnbs, g_frame_idx - start_frame,
             (unsigned)perf_ticks_to_us(t_end - start),
-            SDL_AtomicGet(&s_gpu_nparity), SDL_AtomicGet(&s_gpu_nvel_diff),
-            SDL_AtomicGet(&s_gpu_ndiag_diff), s_gpu_times.gpu_us,
+            LF_LOAD(&s_gpu_nparity, LF_SC), LF_LOAD(&s_gpu_nvel_diff, LF_SC),
+            LF_LOAD(&s_gpu_ndiag_diff, LF_SC), s_gpu_times.gpu_us,
             t_post ? (unsigned)perf_ticks_to_us(t_post - start) : 0,
             s_gpu_times.dispatched ? (unsigned)perf_ticks_to_us(s_gpu_times.dispatched - start) : 0,
             s_gpu_times.signalled ? (unsigned)perf_ticks_to_us(s_gpu_times.signalled - start) : 0,
@@ -7597,7 +7598,7 @@ bool Move_TickConsume(void)
     struct sval csv_setting;
     s_log_perf_csv = (Settings_Get("pf.debug.log_perf_csv", &csv_setting) == SS_OKAY)
                   && csv_setting.as_bool;
-    SDL_AtomicSet(&s_cp_ncaptures, 0);
+    LF_STORE(&s_cp_ncaptures, 0, LF_SC);
 
     struct sval trace_setting;
     s_move_trace_min_radius =

@@ -40,7 +40,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <assert.h>
-#include <SDL_atomic.h>
 
 
 #define NULL_TID (0)
@@ -76,7 +75,7 @@ enum comp_status{
 
 struct future{
     struct result res;
-    SDL_atomic_t  status;
+    int           status;
     uintptr_t     waiter;   /* the joins blocked on it */
 };
 
