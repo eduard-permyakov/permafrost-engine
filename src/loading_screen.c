@@ -66,9 +66,11 @@ VEC_TYPE(str, const char*)
 VEC_IMPL(static inline, str, const char*)
 
 #define LOADING_SCREEN_CHANGE_PERIOD_MS (5000)
-#define MAX_STATUS_TEXT_LEN             (80)
+#define STATUS_MIN_SHOWN_MS              (1000)
 #define STATUS_BOX_WIDTH                (1400)
 #define STATUS_TEXT_PAD                 (80)
+#define STATUS_TEXT_MARGIN              (18)
+#define STATUS_CHAR_WIDTH               (17)
 #define SPRITE_FPS                      (1)
 
 #define MIN(a, b)                       ((a) < (b) ? (a) : (b))
@@ -84,6 +86,9 @@ static uint32_t     s_last_change_tick = 0;
 static vec_str_t    s_loading_screens;
 static int          s_curr_index = 0;
 static char         s_status_text[512];
+/* The status on screen, and when it was put there */
+static char         s_shown_text[256];
+static uint32_t     s_shown_tick = 0;
 
 static vec_str_t    s_anim_sprites;
 static uint32_t     s_anim_update_tick = 0;
@@ -271,8 +276,50 @@ static void get_status_text(char *out, size_t maxout)
     }
 
     pf_snprintf(out, maxout, "%s", status);
-    size_t idx = maxout < MAX_STATUS_TEXT_LEN ? maxout : MAX_STATUS_TEXT_LEN;
-    out[idx] = '\0';
+}
+
+/* A status stays on screen for STATUS_MIN_SHOWN_MS before the next replaces it */
+static const char *shown_status_text(void)
+{
+    char curr[sizeof(s_shown_text)];
+    get_status_text(curr, sizeof(curr));
+
+    uint32_t now = SDL_GetTicks();
+    bool first = (s_shown_text[0] == '\0');
+    if(strcmp(curr, s_shown_text)
+    && (first || SDL_TICKS_PASSED(now, s_shown_tick + STATUS_MIN_SHOWN_MS))) {
+        pf_strlcpy(s_shown_text, curr, sizeof(s_shown_text));
+        s_shown_tick = now;
+    }
+    return s_shown_text;
+}
+
+static float text_width(const char *text, size_t len)
+{
+    const struct nk_user_font *font = UI_GetContext()->style.font;
+    if(!font || !font->width)
+        return len * STATUS_CHAR_WIDTH;
+    return font->width(font->userdata, font->height, text, (int)len);
+}
+
+/* Ends a text that does not fit the width in an ellipsis */
+static void ellipsize(char *text, size_t maxlen, float width)
+{
+    const char dots[] = "...";
+    size_t len = strlen(text);
+    if(text_width(text, len) <= width)
+        return;
+
+    float room = width - text_width(dots, strlen(dots));
+    while(len > 0 && (text_width(text, len) > room || len + sizeof(dots) > maxlen)) {
+        /* Step back a whole UTF-8 character */
+        do{
+            len--;
+        }while(len > 0 && ((unsigned char)text[len] & 0xc0) == 0x80);
+    }
+    while(len > 0 && text[len - 1] == ' ')
+        len--;
+    memcpy(text + len, dots, sizeof(dots));
 }
 
 /*****************************************************************************/
@@ -386,16 +433,18 @@ void LoadingScreen_Tick(void)
     R_PushCmdImmediateFront((struct rcmd){ R_GL_SwapchainPresentLast, 0 });
     R_PushCmdImmediateFront((struct rcmd){ R_GL_EndFrame, 0 });
 
-    char buff[256];
-    get_status_text(buff, sizeof(buff));
-
     char old_font[256];
     pf_strlcpy(old_font, UI_GetActiveFont(), sizeof(old_font));
     UI_SetActiveFont("__default__.32");
 
+    const float max_width = STATUS_BOX_WIDTH - 2 * STATUS_TEXT_PAD;
+    char buff[256];
+    pf_strlcpy(buff, shown_status_text(), sizeof(buff));
+    ellipsize(buff, sizeof(buff), max_width - STATUS_TEXT_MARGIN);
+
     const vec2_t vres = (vec2_t){1920, 1080};
     const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
-    const float width = MIN(strlen(buff) * 17 + 18, STATUS_BOX_WIDTH - 2 * STATUS_TEXT_PAD);
+    const float width = MIN(text_width(buff, strlen(buff)) + STATUS_TEXT_MARGIN, max_width);
     const struct rect bounds = (struct rect){
         .x = (adj_vres.x / 2) - (width / 2),
         .y = adj_vres.y - 45,
@@ -513,5 +562,6 @@ void LoadingScreen_ClearState(void)
         PF_FREE(curr);
     }
     vec_str_reset(&s_main_stack);
+    s_shown_text[0] = '\0';
 }
 
