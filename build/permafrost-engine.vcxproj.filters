@@ -498,9 +498,6 @@
     <ClCompile Include="..\src\render\gl_swapchain.c">
       <Filter>Source Files\render</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\render\gl_terrain_bake.c">
-      <Filter>Source Files\render</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\script\py_perf.c">
       <Filter>Source Files\script</Filter>
     </ClCompile>

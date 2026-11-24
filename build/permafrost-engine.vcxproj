@@ -116,7 +116,6 @@
     <ClCompile Include="..\src\render\gl_statusbar.c" />
     <ClCompile Include="..\src\render\gl_swapchain.c" />
     <ClCompile Include="..\src\render\gl_terrain.c" />
-    <ClCompile Include="..\src\render\gl_terrain_bake.c" />
     <ClCompile Include="..\src\render\gl_texture.c" />
     <ClCompile Include="..\src\render\gl_tile.c" />
     <ClCompile Include="..\src\render\gl_ui.c" />

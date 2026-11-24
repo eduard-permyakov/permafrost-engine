@@ -560,7 +560,6 @@ const char *Mem_SubName(uint16_t sys, uint16_t sub)
         [MEM_SUB_RENDER_GL_STATUSBAR]    = "statusbar",
         [MEM_SUB_RENDER_GL_SWAPCHAIN]    = "swapchain",
         [MEM_SUB_RENDER_GL_TERRAIN]      = "terrain",
-        [MEM_SUB_RENDER_GL_TERRAIN_BAKE] = "terrain_bake",
         [MEM_SUB_RENDER_GL_TEXTURE]      = "texture",
         [MEM_SUB_RENDER_GL_TILE]         = "tile",
         [MEM_SUB_RENDER_GL_UI]           = "ui",
