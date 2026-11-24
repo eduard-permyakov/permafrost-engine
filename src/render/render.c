@@ -839,7 +839,7 @@ bool R_Init(const char *base_path)
         .name = "pf.video.antialiasing",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
-            .as_bool = false
+            .as_bool = true
         },
         .prio = 0,
         .validate = bool_val_validate,
@@ -851,7 +851,7 @@ bool R_Init(const char *base_path)
         .name = "pf.video.postprocess",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
-            .as_bool = false
+            .as_bool = true
         },
         .prio = 0,
         .validate = bool_val_validate,
@@ -887,7 +887,7 @@ bool R_Init(const char *base_path)
         .name = "pf.video.world_scale",
         .val = (struct sval) {
             .type = ST_TYPE_FLOAT,
-            .as_float = 1.5f
+            .as_float = 1.0f
         },
         .prio = 0,
         .validate = world_scale_validate,
