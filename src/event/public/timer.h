@@ -39,8 +39,8 @@
 #include <stdbool.h>
 
 
-bool G_Timer_Init(void);
-void G_Timer_Shutdown(void);
+bool E_Timer_Init(void);
+void E_Timer_Shutdown(void);
 
 #endif
 

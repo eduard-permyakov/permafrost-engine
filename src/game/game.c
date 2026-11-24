@@ -2338,7 +2338,7 @@ bool G_Init(void)
 
     G_Sel_Init();
     G_Sel_Enable();
-    G_Timer_Init();
+    E_Timer_Init();
     G_StorageSite_Init();
     G_Population_Init();
 
@@ -2757,7 +2757,7 @@ void G_Shutdown(void)
 
     G_Population_Shutdown();
     G_StorageSite_Shutdown();
-    G_Timer_Shutdown();
+    E_Timer_Shutdown();
     G_Sel_Shutdown();
 
     Camera_Free(s_gs.active_cam);

@@ -137,7 +137,7 @@ static void timer_60hz_handler(void *unused1, void *unused2)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool G_Timer_Init(void)
+bool E_Timer_Init(void)
 {
     s_60hz_timer = SDL_AddTimer(TIMER_INTERVAL, timer_callback, NULL);
     if(0 == s_60hz_timer)
@@ -150,7 +150,7 @@ bool G_Timer_Init(void)
     return true;
 }
 
-void G_Timer_Shutdown(void)
+void E_Timer_Shutdown(void)
 {
     E_Global_Unregister(EVENT_60HZ_TICK, timer_60hz_handler);
     SDL_RemoveTimer(s_60hz_timer);
