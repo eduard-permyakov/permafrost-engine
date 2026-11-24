@@ -743,7 +743,19 @@ void R_GL_DrawModelToTexture(const void *render_private, const struct obb *obb,
         R_GL_AnimSetUniforms(&normal, &anim_state->desc);
     }
     Camera_TickFinishPerspectiveUpsideDown(cam);
+
+    /* The shadow mode is whatever was drawn last: the scene's shadow map has
+     * no bearing on a model at the origin, and an impostor bake's mode writes
+     * the surface unlit
+     */
+    struct uval saved_shadows = (struct uval){.type = UTYPE_INT, .val.as_int = false};
+    R_GL_StateGet(GL_U_SHADOWS_ON, &saved_shadows);
+    R_GL_StateSet(GL_U_SHADOWS_ON, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = false
+    });
     R_GL_Draw(priv, &model, &translucent);
+    R_GL_StateSet(GL_U_SHADOWS_ON, saved_shadows);
     R_GL_Texture_AddExisting(key, tex);
 
     /* Cleanup */
