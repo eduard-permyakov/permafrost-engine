@@ -47,6 +47,7 @@
 #include "render/public/render_ctrl.h"
 #include "lib/public/vec.h"
 #include "lib/public/pf_string.h"
+#include "lib/public/lockfree.h"
 #include "lib/public/nk_file_browser.h"
 #include "lib/public/khash.h"
 #include "lib/public/stb_image.h"
@@ -954,7 +955,7 @@ bool UI_ScriptFrameAsked(void)
 
 void UI_ScriptFrameBegin(void)
 {
-    const char *pending = __atomic_exchange_n(&s_script_font_pending, NULL, __ATOMIC_ACQ_REL);
+    const char *pending = LF_XCHG(&s_script_font_pending, NULL, LF_AR);
     if(pending)
         UI_SetActiveFont(pending);
 
@@ -1135,7 +1136,7 @@ bool UI_SetActiveFont(const char *name)
     if(S_Thread_OnScript()) {
         nk_style_set_font(&s_script_ctx, uf);
         s_script_active_font = kh_key(s_fontmap, k);
-        __atomic_store_n(&s_script_font_pending, NULL, __ATOMIC_RELEASE);
+        LF_STORE(&s_script_font_pending, NULL, LF_REL);
         return true;
     }
     nk_style_set_font(&s_ctx, uf);
@@ -1153,7 +1154,7 @@ void UI_SetScriptFont(const char *name)
         s_script_active_font = kh_key(s_fontmap, k);
         return;
     }
-    __atomic_store_n(&s_script_font_pending, kh_key(s_fontmap, k), __ATOMIC_RELEASE);
+    LF_STORE(&s_script_font_pending, kh_key(s_fontmap, k), LF_REL);
 }
 
 void UI_ClearState(void)

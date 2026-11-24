@@ -41,9 +41,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#if !defined(__GNUC__)
-#error "lockfree.h needs the GCC/Clang __atomic builtins"
-#endif
+#define LF_CACHELINE                 (64)
+#define LF_NIL                       (0xffffffffu)
+
+#if defined(__GNUC__)
 
 #define LF_RLX  __ATOMIC_RELAXED
 #define LF_ACQ  __ATOMIC_ACQUIRE
@@ -62,14 +63,198 @@
 #define LF_FAND(_p, _v, _mo)         __atomic_fetch_and((_p), (_v), (_mo))
 #define LF_FENCE(_mo)                __atomic_thread_fence(_mo)
 
-#define LF_CACHELINE                 (64)
+/* Goes ahead of a member's or a variable's type, or after the 'struct' keyword */
 #define LF_ALIGNED                   __attribute__((aligned(LF_CACHELINE)))
-#define LF_NIL                       (0xffffffffu)
 
 static inline void lf_relax(void)
 {
+#if defined(__x86_64__) || defined(__i386__)
     __builtin_ia32_pause();
+#elif defined(__aarch64__)
+    __asm__ __volatile__("yield");
+#endif
 }
+
+#elif defined(_MSC_VER)
+
+/* Visual Studio has no atomics that take an ordering for a plain object, so
+ * each operation is built from the Interlocked intrinsics, one family per
+ * type, picked by _Generic (which needs /std:c11 or later). An Interlocked
+ * operation is sequentially consistent: it serves the read-modify-write
+ * operations and the sequentially consistent store, and plain loads and
+ * stores serve the rest.
+ */
+#include <intrin.h>
+
+#if !defined(_M_X64) && !defined(_M_ARM64)
+#error "lockfree.h supports Visual Studio on x64 and ARM64 only"
+#endif
+
+enum{ LF_RLX, LF_ACQ, LF_REL, LF_AR, LF_SC };
+
+#define LF_ALIGNED                   __declspec(align(LF_CACHELINE))
+
+#if defined(_M_ARM64)
+#define LF_PLAIN_LOAD(_w, _p)        __iso_volatile_load##_w(_p)
+#define LF_PLAIN_STORE(_w, _p, _v)   __iso_volatile_store##_w((_p), (_v))
+#define LF_BARRIER()                 __dmb(_ARM64_BARRIER_ISH)
+#else
+/* On x86 an aligned load or store is atomic, and the processor keeps every
+ * ordering but a load running ahead of an earlier store
+ */
+#define LF_PLAIN_LOAD(_w, _p)        (*(_p))
+#define LF_PLAIN_STORE(_w, _p, _v)   (*(_p) = (_v))
+#define LF_BARRIER()                 ((void)0)
+#endif
+
+static __forceinline void lf_relax(void)
+{
+#if defined(_M_ARM64)
+    __yield();
+#else
+    _mm_pause();
+#endif
+}
+
+static __forceinline void lf_fence(int mo)
+{
+#if defined(_M_ARM64)
+    if(mo != LF_RLX)
+        __dmb(_ARM64_BARRIER_ISH);
+#else
+    if(mo == LF_SC)
+        _mm_mfence();
+#endif
+}
+
+/* _s: the family's suffix, _t: its type, _w: its width in bits, _it: the
+ * Interlocked type of that width, _x: the suffix of its Interlocked names
+ */
+#define LF_DEFINE(_s, _t, _w, _it, _x)                                                          \
+    static __forceinline _t lf_load_##_s(const volatile _t *p, int mo)                          \
+    {                                                                                           \
+        _t ret = (_t)LF_PLAIN_LOAD(_w, (const volatile _it*)p);                                 \
+        if(mo != LF_RLX)                                                                        \
+            LF_BARRIER();                                                                       \
+        return ret;                                                                             \
+    }                                                                                           \
+    static __forceinline _t lf_xchg_##_s(volatile _t *p, _t v, int mo)                          \
+    {                                                                                           \
+        (void)mo;                                                                               \
+        return (_t)_InterlockedExchange##_x((volatile _it*)p, (_it)v);                          \
+    }                                                                                           \
+    static __forceinline void lf_store_##_s(volatile _t *p, _t v, int mo)                       \
+    {                                                                                           \
+        if(mo == LF_SC) {                                                                       \
+            _InterlockedExchange##_x((volatile _it*)p, (_it)v);                                 \
+            return;                                                                             \
+        }                                                                                       \
+        if(mo != LF_RLX)                                                                        \
+            LF_BARRIER();                                                                       \
+        LF_PLAIN_STORE(_w, (volatile _it*)p, (_it)v);                                           \
+    }                                                                                           \
+    static __forceinline bool lf_cas_##_s(volatile _t *p, _t *expected, _t desired)             \
+    {                                                                                           \
+        _it want = (_it)*expected;                                                              \
+        _it had = _InterlockedCompareExchange##_x((volatile _it*)p, (_it)desired, want);        \
+        if(had == want)                                                                         \
+            return true;                                                                        \
+        *expected = (_t)had;                                                                    \
+        return false;                                                                           \
+    }                                                                                           \
+    static __forceinline _t lf_fadd_##_s(volatile _t *p, _t v, int mo)                          \
+    {                                                                                           \
+        (void)mo;                                                                               \
+        return (_t)_InterlockedExchangeAdd##_x((volatile _it*)p, (_it)v);                       \
+    }                                                                                           \
+    static __forceinline _t lf_fsub_##_s(volatile _t *p, _t v, int mo)                          \
+    {                                                                                           \
+        (void)mo;                                                                               \
+        return (_t)_InterlockedExchangeAdd##_x((volatile _it*)p, (_it)(0 - (_it)v));            \
+    }                                                                                           \
+    static __forceinline _t lf_for_##_s(volatile _t *p, _t v, int mo)                           \
+    {                                                                                           \
+        (void)mo;                                                                               \
+        return (_t)_InterlockedOr##_x((volatile _it*)p, (_it)v);                                \
+    }                                                                                           \
+    static __forceinline _t lf_fand_##_s(volatile _t *p, _t v, int mo)                          \
+    {                                                                                           \
+        (void)mo;                                                                               \
+        return (_t)_InterlockedAnd##_x((volatile _it*)p, (_it)v);                               \
+    }
+
+LF_DEFINE(b8,   bool,               8,  char,    8)
+LF_DEFINE(c8,   char,               8,  char,    8)
+LF_DEFINE(i8,   signed char,        8,  char,    8)
+LF_DEFINE(u8,   unsigned char,      8,  char,    8)
+LF_DEFINE(i16,  short,              16, short,   16)
+LF_DEFINE(u16,  unsigned short,     16, short,   16)
+LF_DEFINE(i32,  int,                32, long,    )
+LF_DEFINE(u32,  unsigned int,       32, long,    )
+LF_DEFINE(l32,  long,               32, long,    )
+LF_DEFINE(ul32, unsigned long,      32, long,    )
+LF_DEFINE(i64,  long long,          64, __int64, 64)
+LF_DEFINE(u64,  unsigned long long, 64, __int64, 64)
+
+/* Pointers of every type share one family; they have no arithmetic */
+static __forceinline void *lf_load_ptr(void *const volatile *p, int mo)
+{
+    return (void*)lf_load_u64((const volatile unsigned long long*)p, mo);
+}
+
+static __forceinline void *lf_xchg_ptr(void *volatile *p, void *v, int mo)
+{
+    (void)mo;
+    return _InterlockedExchangePointer(p, v);
+}
+
+static __forceinline void lf_store_ptr(void *volatile *p, void *v, int mo)
+{
+    lf_store_u64((volatile unsigned long long*)p, (unsigned long long)v, mo);
+}
+
+static __forceinline bool lf_cas_ptr(void *volatile *p, void **expected, void *desired)
+{
+    void *want = *expected;
+    void *had = _InterlockedCompareExchangePointer(p, desired, want);
+    if(had == want)
+        return true;
+    *expected = had;
+    return false;
+}
+
+#define LF_FAMILY(_p, _op) _Generic(*(_p),                                                      \
+    bool: lf_##_op##_b8, char: lf_##_op##_c8,                                                   \
+    signed char: lf_##_op##_i8, unsigned char: lf_##_op##_u8,                                   \
+    short: lf_##_op##_i16, unsigned short: lf_##_op##_u16,                                      \
+    int: lf_##_op##_i32, unsigned int: lf_##_op##_u32,                                          \
+    long: lf_##_op##_l32, unsigned long: lf_##_op##_ul32,                                       \
+    long long: lf_##_op##_i64, unsigned long long: lf_##_op##_u64,                              \
+    default: lf_##_op##_ptr)
+
+/* Arithmetic has no pointer family: a pointer argument fails to compile */
+#define LF_FAMILY_INT(_p, _op) _Generic(*(_p),                                                  \
+    bool: lf_##_op##_b8, char: lf_##_op##_c8,                                                   \
+    signed char: lf_##_op##_i8, unsigned char: lf_##_op##_u8,                                   \
+    short: lf_##_op##_i16, unsigned short: lf_##_op##_u16,                                      \
+    int: lf_##_op##_i32, unsigned int: lf_##_op##_u32,                                          \
+    long: lf_##_op##_l32, unsigned long: lf_##_op##_ul32,                                       \
+    long long: lf_##_op##_i64, unsigned long long: lf_##_op##_u64)
+
+#define LF_LOAD(_p, _mo)             LF_FAMILY(_p, load)((void*)(_p), (_mo))
+#define LF_STORE(_p, _v, _mo)        LF_FAMILY(_p, store)((void*)(_p), (_v), (_mo))
+#define LF_XCHG(_p, _v, _mo)         LF_FAMILY(_p, xchg)((void*)(_p), (_v), (_mo))
+#define LF_CAS(_p, _e, _d, _s, _f)   ((void)(_s), (void)(_f), LF_FAMILY(_p, cas)((void*)(_p), (void*)(_e), (_d)))
+#define LF_CASW(_p, _e, _d, _s, _f)  LF_CAS(_p, _e, _d, _s, _f)
+#define LF_FADD(_p, _v, _mo)         LF_FAMILY_INT(_p, fadd)((void*)(_p), (_v), (_mo))
+#define LF_FSUB(_p, _v, _mo)         LF_FAMILY_INT(_p, fsub)((void*)(_p), (_v), (_mo))
+#define LF_FOR(_p, _v, _mo)          LF_FAMILY_INT(_p, for)((void*)(_p), (_v), (_mo))
+#define LF_FAND(_p, _v, _mo)         LF_FAMILY_INT(_p, fand)((void*)(_p), (_v), (_mo))
+#define LF_FENCE(_mo)                lf_fence(_mo)
+
+#else
+#error "lockfree.h needs the GCC/Clang __atomic builtins or the Visual Studio Interlocked intrinsics"
+#endif
 
 /*****************************************************************************/
 /* Bounded multi-producer multi-consumer FIFO (Vyukov)                       */
@@ -86,9 +271,9 @@ struct lf_cell{
 };
 
 struct lf_ring{
-    uint64_t        enq LF_ALIGNED;
-    uint64_t        deq LF_ALIGNED;
-    struct lf_cell *cells LF_ALIGNED;
+    LF_ALIGNED uint64_t        enq;
+    LF_ALIGNED uint64_t        deq;
+    LF_ALIGNED struct lf_cell *cells;
     uint64_t        mask;
 };
 
@@ -172,7 +357,7 @@ static inline uint64_t lf_ring_size_hint(struct lf_ring *ring)
  * link before the entry was taken and pushed back cannot succeed (ABA).
  */
 struct lf_istack{
-    uint64_t  head LF_ALIGNED;
+    LF_ALIGNED uint64_t  head;
     uint32_t *links;
 };
 
@@ -217,7 +402,7 @@ static inline uint32_t lf_istack_pop(struct lf_istack *stack)
  * holds a stale count.
  */
 struct lf_parker{
-    int     state LF_ALIGNED;
+    LF_ALIGNED int     state;
     SDL_sem *sem;
 };
 

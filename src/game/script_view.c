@@ -308,15 +308,15 @@ void G_ScriptView_Publish(void)
     view_fill(&s_views[next]);
     LF_STORE(&s_published, next, LF_SC);
     LF_STORE(&s_fresh, 1, LF_SC);
-    __atomic_store_n(&s_published_frame, g_frame_idx, __ATOMIC_RELEASE);
+    LF_STORE(&s_published_frame, g_frame_idx, LF_REL);
 }
 
 bool G_ScriptView_Current(void)
 {
     if(LF_LOAD(&s_published, LF_SC) < 0)
         return false;
-    unsigned long frame = __atomic_load_n(&s_published_frame, __ATOMIC_ACQUIRE);
-    return (__atomic_load_n(&g_frame_idx, __ATOMIC_RELAXED) - frame) <= 1;
+    unsigned long frame = LF_LOAD(&s_published_frame, LF_ACQ);
+    return (LF_LOAD(&g_frame_idx, LF_RLX) - frame) <= 1;
 }
 
 void G_ScriptView_Skip(void)

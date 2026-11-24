@@ -39,6 +39,7 @@
 #include "sched_stats.h"
 #include "../settings.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/lockfree.h"
 
 #include <SDL.h>
 
@@ -86,7 +87,7 @@ struct trace_entry{
     uint32_t  pad;
 };
 
-struct thread_stats{
+struct LF_ALIGNED thread_stats{
     int                state;
     void              *running;
     uint64_t           t_last;
@@ -100,7 +101,7 @@ struct thread_stats{
     struct batch_entry batches[BATCH_TABLE_SZ];
     struct trace_entry *trace;
     size_t             ntrace;
-}__attribute__((aligned(64)));
+};
 
 struct totals{
     uint64_t acc_main[SS_COUNT];
@@ -310,8 +311,8 @@ static void sampler_note_serial(void *code)
     for(int i = 0; i < TASK_TABLE_SZ; i++) {
         int slot = (h + i) % TASK_TABLE_SZ;
         if(s_serial_code[slot] == code || s_serial_code[slot] == NULL) {
-            __atomic_store_n(&s_serial_code[slot], code, __ATOMIC_RELAXED);
-            __atomic_fetch_add(&s_serial_samples[slot], 1, __ATOMIC_RELAXED);
+            LF_STORE(&s_serial_code[slot], code, LF_RLX);
+            LF_FADD(&s_serial_samples[slot], 1, LF_RLX);
             return;
         }
     }
@@ -321,7 +322,7 @@ static int sampler_threadfn(void *arg)
 {
 #if defined(__linux__)
     struct timespec period = { 0, SAMPLE_PERIOD_NS };
-    while(!__atomic_load_n(&s_sampler_quit, __ATOMIC_RELAXED)) {
+    while(!LF_LOAD(&s_sampler_quit, LF_RLX)) {
 
         nanosleep(&period, NULL);
 
@@ -329,10 +330,10 @@ static int sampler_threadfn(void *arg)
         int noutside = 0;
         void *last_busy = NULL;
         for(int i = 1; i < s_nthreads; i++) {
-            int state = __atomic_load_n(&s_threads[i].state, __ATOMIC_RELAXED);
+            int state = LF_LOAD(&s_threads[i].state, LF_RLX);
             if(busy_state(state)) {
                 nbusy++;
-                last_busy = __atomic_load_n(&s_threads[i].running, __ATOMIC_RELAXED);
+                last_busy = LF_LOAD(&s_threads[i].running, LF_RLX);
             }
             if(state == SS_OUTSIDE)
                 noutside++;
@@ -341,11 +342,11 @@ static int sampler_threadfn(void *arg)
         if(noutside == s_nthreads - 1)
             continue;
 
-        __atomic_fetch_add(&s_window_samples, 1, __ATOMIC_RELAXED);
-        __atomic_fetch_add(&s_conc[nbusy], 1, __ATOMIC_RELAXED);
-        int main_state = __atomic_load_n(&s_threads[0].state, __ATOMIC_RELAXED);
+        LF_FADD(&s_window_samples, 1, LF_RLX);
+        LF_FADD(&s_conc[nbusy], 1, LF_RLX);
+        int main_state = LF_LOAD(&s_threads[0].state, LF_RLX);
         if(main_state == SS_OUTSIDE || busy_state(main_state))
-            __atomic_fetch_add(&s_main_busy_samples, 1, __ATOMIC_RELAXED);
+            LF_FADD(&s_main_busy_samples, 1, LF_RLX);
         if(nbusy == 1 && last_busy)
             sampler_note_serial(last_busy);
     }
@@ -375,9 +376,9 @@ static void collect(struct totals *out)
     }
     out->idle_work = s_idle_work;
     for(int i = 0; i <= MAX_STAT_THREADS; i++)
-        out->conc[i] = __atomic_load_n(&s_conc[i], __ATOMIC_RELAXED);
-    out->main_busy_samples = __atomic_load_n(&s_main_busy_samples, __ATOMIC_RELAXED);
-    out->window_samples = __atomic_load_n(&s_window_samples, __ATOMIC_RELAXED);
+        out->conc[i] = LF_LOAD(&s_conc[i], LF_RLX);
+    out->main_busy_samples = LF_LOAD(&s_main_busy_samples, LF_RLX);
+    out->window_samples = LF_LOAD(&s_window_samples, LF_RLX);
 }
 
 static const char *code_name(void *code)
@@ -515,11 +516,11 @@ static void dump_tables(double t_s)
     }
 
     for(int i = 0; i < TASK_TABLE_SZ; i++) {
-        void *code = __atomic_load_n(&s_serial_code[i], __ATOMIC_RELAXED);
+        void *code = LF_LOAD(&s_serial_code[i], LF_RLX);
         if(!code)
             continue;
         fprintf(stdout, "[sched-serial] %.1f,%s,%llu\n", t_s, code_name(code),
-            (unsigned long long)__atomic_load_n(&s_serial_samples[i], __ATOMIC_RELAXED));
+            (unsigned long long)LF_LOAD(&s_serial_samples[i], LF_RLX));
     }
     fprintf(stdout, "[sched-anchor] %p\n", (void*)SchedStats_Init);
 }
@@ -580,7 +581,7 @@ void SchedStats_Shutdown(void)
 {
     if(!g_sched_stats_on)
         return;
-    __atomic_store_n(&s_sampler_quit, 1, __ATOMIC_RELAXED);
+    LF_STORE(&s_sampler_quit, 1, LF_RLX);
     if(s_sampler)
         SDL_WaitThread(s_sampler, NULL);
     dump_tables((__rdtsc() - s_start_tsc) / s_ticks_per_us / 1e6);
@@ -691,7 +692,7 @@ int SchedStats_Set(int state)
     int prev = ts->state;
     ts->acc[prev] += now - ts->t_last;
     ts->t_last = now;
-    __atomic_store_n(&ts->state, state, __ATOMIC_RELAXED);
+    LF_STORE(&ts->state, state, LF_RLX);
     if(ts->trace && prev != state)
         trace_note(ts, now, state);
     return prev;
@@ -757,7 +758,7 @@ void SchedStats_SetRunning(void *code)
     struct thread_stats *ts = stats_self();
     if(!ts)
         return;
-    __atomic_store_n(&ts->running, code, __ATOMIC_RELAXED);
+    LF_STORE(&ts->running, code, LF_RLX);
 }
 
 void SchedStats_ReadyIntegrate(int queued, int idle_workers)

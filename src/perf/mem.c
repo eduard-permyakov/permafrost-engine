@@ -34,6 +34,7 @@
  */
 
 #include "public/mem.h"
+#include "../lib/public/lockfree.h"
 
 #include <SDL.h>
 #include <mimalloc.h>
@@ -68,6 +69,42 @@ struct mem_scope_stack{
     int                    depth;
     struct mem_scope_frame frames[MEM_SCOPE_DEPTH_MAX];
 };
+
+static struct mem_scope_stack *scope_get_or_create(void);
+static void                    scope_peek(uint16_t *out_sys, uint16_t *out_sub);
+static void                    counter_add(uint16_t sys, uint16_t sub,
+                                           int64_t bytes_delta, int64_t count_delta);
+static void                   *alloc_with_tag(size_t n, uint16_t sys, uint16_t sub);
+
+/*****************************************************************************/
+/* STATIC VARIABLES                                                          */
+/*****************************************************************************/
+
+static SDL_TLSID s_scope_tls;
+
+static int64_t   s_sys_bytes[MEM_SYS_COUNT];
+static int64_t   s_sys_count[MEM_SYS_COUNT];
+static int64_t   s_sub_bytes[MEM_SYS_COUNT][MEM_SUB_MAX_PER_SYS];
+static int64_t   s_sub_count[MEM_SYS_COUNT][MEM_SUB_MAX_PER_SYS];
+
+/*****************************************************************************/
+/* STATIC FUNCTIONS                                                          */
+/*****************************************************************************/
+
+static int64_t atomic_add64(int64_t *p, int64_t delta)
+{
+    return LF_FADD(p, delta, LF_RLX) + delta;
+}
+
+static int64_t atomic_load64(int64_t *p)
+{
+    return LF_LOAD(p, LF_RLX);
+}
+
+static void atomic_store64(int64_t *p, int64_t val)
+{
+    LF_STORE(p, val, LF_RLX);
+}
 
 static struct mem_scope_stack *scope_get_or_create(void);
 static void                    scope_peek(uint16_t *out_sys, uint16_t *out_sub);

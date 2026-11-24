@@ -175,7 +175,7 @@ enum{
     _SCHED_REQ_JOIN,
 };
 
-struct task{
+struct LF_ALIGNED task{
     struct context ctx;
     uint64_t       state;       /* atomic */
     uint32_t       inc;         /* atomic: bumped by every allocation of the slot */
@@ -222,9 +222,9 @@ struct task{
 #if defined(__SANITIZE_THREAD__)
     void          *tsan_fiber;
 #endif
-} LF_ALIGNED;
+};
 
-struct sched_thread{
+struct LF_ALIGNED sched_thread{
     struct context   ctx;
     int              idx;       /* 0 for the main thread, workers from 1, SCRIPT_IDX */
     struct task     *curr;
@@ -238,7 +238,7 @@ struct sched_thread{
 #if defined(__SANITIZE_THREAD__)
     void            *tsan_fiber;
 #endif
-} LF_ALIGNED;
+};
 
 /* A message waiting in a receiver's mailbox: the sender and the sequence of
  * its blocked state, so that a sender aborted in the meantime is told apart */
@@ -344,12 +344,12 @@ static struct lf_ring          s_rings[NLEVELS];
 static struct lf_cell          s_ring_cells[NLEVELS][RING_CAP];
 
 static struct{
-    uint64_t idle_mask LF_ALIGNED;      /* parked workers */
-    int      nspinning LF_ALIGNED;      /* workers looking for work, or woken to */
-    int      nactive LF_ALIGNED;        /* workers not parked */
-    int      quiesce LF_ALIGNED;        /* workers must park: the frame is over */
+    LF_ALIGNED uint64_t idle_mask;      /* parked workers */
+    LF_ALIGNED int      nspinning;      /* workers looking for work, or woken to */
+    LF_ALIGNED int      nactive;        /* workers not parked */
+    LF_ALIGNED int      quiesce;        /* workers must park: the frame is over */
     int      quit;
-    int      main_idle LF_ALIGNED;      /* the main thread sleeps in its tick, waiting for work */
+    LF_ALIGNED int      main_idle;      /* the main thread sleeps in its tick, waiting for work */
 }s_sync;
 
 /* A home is the tasks only one thread runs, with their event waiters: the
@@ -358,8 +358,8 @@ static struct{
  * inboxes take tasks from any thread.
  */
 struct home{
-    uint32_t      inbox LF_ALIGNED;     /* tasks made ready for the home's thread */
-    uint32_t      reg_inbox LF_ALIGNED; /* tasks registering for an event */
+    LF_ALIGNED uint32_t      inbox;     /* tasks made ready for the home's thread */
+    LF_ALIGNED uint32_t      reg_inbox; /* tasks registering for an event */
     pq_task_t     heap;
     pq_task_t     rt_heap;
     khash_t(evw) *waiters;
@@ -389,10 +389,10 @@ static bool                    s_clearing = false;
  * batch after its own items, and the submitter does not return before that.
  */
 struct batch{
-    uint64_t      claim LF_ALIGNED;
-    int           pending LF_ALIGNED;   /* items not done, plus the submitter's token */
+    LF_ALIGNED uint64_t      claim;
+    LF_ALIGNED int           pending;   /* items not done, plus the submitter's token */
     struct join  *join;
-    void        (*func)(int, int, void*) LF_ALIGNED;
+    LF_ALIGNED void (*func)(int, int, void*);
     void         *arg;
     int           nitems;
     int           chunk;

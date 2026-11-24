@@ -74,7 +74,7 @@ struct st_call{
 };
 
 struct st_side{
-    struct st_call  *inbox LF_ALIGNED;   /* atomic: the call this thread is asked to run */
+    LF_ALIGNED struct st_call *inbox;    /* atomic: the call this thread is asked to run */
     struct lf_parker parker;
     SDL_threadID     tid;
 };
@@ -203,8 +203,8 @@ static void call_on(struct st_side *target, void (*fn)(void*), void *arg, bool q
     struct st_side *self = side_self();
     struct st_call call = {.fn = fn, .arg = arg, .done = 0, .query = query};
 
-    SDL_threadID prev = __atomic_load_n(&g_world_owner_id, __ATOMIC_RELAXED);
-    __atomic_store_n(&g_world_owner_id, target->tid, __ATOMIC_RELAXED);
+    SDL_threadID prev = LF_LOAD(&g_world_owner_id, LF_RLX);
+    LF_STORE(&g_world_owner_id, target->tid, LF_RLX);
 
     /* One call is outstanding to a thread at a time: its caller waits on it,
      * and a nested call is only made by the thread running the outer one. */
@@ -215,7 +215,7 @@ static void call_on(struct st_side *target, void (*fn)(void*), void *arg, bool q
 
     uint64_t begin = SDL_GetPerformanceCounter();
     wait_serving(self, &call.done, s_caller_spin_ticks);
-    __atomic_store_n(&g_world_owner_id, prev, __ATOMIC_RELAXED);
+    LF_STORE(&g_world_owner_id, prev, LF_RLX);
     if(target == &s_script) {
         if(!s_wait_calls)
             s_wait_first_frame = g_frame_idx;

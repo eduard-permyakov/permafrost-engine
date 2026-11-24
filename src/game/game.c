@@ -72,6 +72,7 @@
 #include "../phys/public/phys.h"
 #include "../phys/public/collision.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/lockfree.h"
 #include "../perf/public/mem.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../entity.h"
@@ -4070,7 +4071,7 @@ enum simstate G_GetSimState(void)
 
 enum simstate G_PeekSimState(void)
 {
-    return __atomic_load_n(&s_gs.ss, __ATOMIC_RELAXED);
+    return LF_LOAD(&s_gs.ss, LF_RLX);
 }
 
 void G_Zombiefy(uint32_t uid, bool invis)

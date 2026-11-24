@@ -46,6 +46,7 @@
 #include "lib/public/stb_image.h"
 #include "lib/public/vec.h"
 #include "lib/public/pf_string.h"
+#include "lib/public/lockfree.h"
 #include "lib/public/noise.h"
 #include "perf/public/mem.h"
 #include "script/public/script.h"
@@ -828,11 +829,11 @@ void Engine_WinDrawableSize(int *out_w, int *out_h)
     if(SDL_ThreadID() == g_main_thread_id) {
         int w, h;
         SDL_GL_GetDrawableSize(s_window, &w, &h);
-        __atomic_store_n(&s_w, w, __ATOMIC_RELAXED);
-        __atomic_store_n(&s_h, h, __ATOMIC_RELAXED);
+        LF_STORE(&s_w, w, LF_RLX);
+        LF_STORE(&s_h, h, LF_RLX);
     }
-    *out_w = __atomic_load_n(&s_w, __ATOMIC_RELAXED);
-    *out_h = __atomic_load_n(&s_h, __ATOMIC_RELAXED);
+    *out_w = LF_LOAD(&s_w, LF_RLX);
+    *out_h = LF_LOAD(&s_h, LF_RLX);
     /* Before the main thread's first look */
     if(*out_w == 0 || *out_h == 0)
         SDL_GL_GetDrawableSize(s_window, out_w, out_h);

@@ -52,6 +52,7 @@
     <ClCompile Include="..\src\game\region.c" />
     <ClCompile Include="..\src\game\resource.c" />
     <ClCompile Include="..\src\game\roads.c" />
+    <ClCompile Include="..\src\game\script_view.c" />
     <ClCompile Include="..\src\game\selection.c" />
     <ClCompile Include="..\src\game\storage_site.c" />
     <ClCompile Include="..\src\event\timer.c" />
@@ -140,6 +141,8 @@
     <ClCompile Include="..\src\script\py_traverse.c" />
     <ClCompile Include="..\src\script\py_ui.c" />
     <ClCompile Include="..\src\script\py_ui_style.c" />
+    <ClCompile Include="..\src\script\py_view.c" />
+    <ClCompile Include="..\src\script\script_thread.c" />
     <ClCompile Include="..\src\session.c" />
     <ClCompile Include="..\src\settings.c" />
     <ClCompile Include="..\src\sprite.c" />
@@ -425,6 +428,7 @@
       </SubSystem>
     </Link>
     <ClCompile>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
       <Optimization>MaxSpeed</Optimization>
     </ClCompile>
     <ClCompile>

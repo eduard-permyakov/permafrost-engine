@@ -37,6 +37,7 @@
 #define MAIN_H
 
 #include <SDL.h>
+#include "lib/public/lockfree.h"
 #include <assert.h>
 #include <stdbool.h>
 
@@ -59,7 +60,7 @@ extern const char     g_version[]; /* readonly */
 
 static inline bool Engine_OwnsWorld(void)
 {
-    return SDL_ThreadID() == __atomic_load_n(&g_world_owner_id, __ATOMIC_RELAXED);
+    return SDL_ThreadID() == LF_LOAD(&g_world_owner_id, LF_RLX);
 }
 
 

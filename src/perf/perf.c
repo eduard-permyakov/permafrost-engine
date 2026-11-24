@@ -42,6 +42,7 @@
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/lockfree.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../settings.h"
@@ -595,7 +596,7 @@ void Perf_OwnTick(void)
     if(k == kh_end(s_thread_state_table))
         return;
     struct perf_state *ps = &kh_val(s_thread_state_table, k);
-    uint64_t ticks = __atomic_load_n(&s_finished_ticks, __ATOMIC_ACQUIRE);
+    uint64_t ticks = LF_LOAD(&s_finished_ticks, LF_ACQ);
     if(!ps->own_ticks || ps->own_tick_seen == ticks || vec_size(&ps->perf_stack) > 0)
         return;
     ps->own_tick_seen = ticks;
@@ -843,7 +844,7 @@ void Perf_FinishTick(void)
         vec_perf_reset(&curr->perf_trees[curr->perf_tree_idx]);
         curr->last_read_size[curr->perf_tree_idx] = 0;
     }
-    __atomic_add_fetch(&s_finished_ticks, 1, __ATOMIC_RELEASE);
+    LF_FADD(&s_finished_ticks, 1, LF_REL);
 
     gather_mem_stats(&s_last_frames_memstats[s_last_idx]);
     Mem_GetAccounting(&s_last_frames_accounting[s_last_idx]);
